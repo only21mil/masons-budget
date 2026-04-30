@@ -73,11 +73,8 @@ jobs:
           mkdir -p ~/private_keys
           printf '%s\n' "$ASC_API_KEY_P8" > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
 
-      # ── Archive iOS ──
+      # ── Archive iOS (manual signing, no API auth needed) ──
       - name: Archive iOS
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         working-directory: MasonsBudget
         run: |
           xcodebuild archive \
@@ -86,17 +83,12 @@ jobs:
             -configuration Release \
             -destination "generic/platform=iOS" \
             -archivePath /tmp/MasonsBudget-iOS.xcarchive \
-            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            -allowProvisioningUpdates \
+            CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE_SPECIFIER="MasonsBudget AppStore CI" \
             DEVELOPMENT_TEAM=384ZGKG4GB
 
       # ── Archive macOS ──
       - name: Archive macOS
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         working-directory: MasonsBudget
         run: |
           xcodebuild archive \
@@ -105,10 +97,7 @@ jobs:
             -configuration Release \
             -destination "generic/platform=macOS" \
             -archivePath /tmp/MasonsBudget-macOS.xcarchive \
-            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            -allowProvisioningUpdates \
+            CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM=384ZGKG4GB
 
       # ── Upload iOS to TestFlight ──
@@ -189,4 +178,5 @@ jobs:
         run: |
           security delete-keychain $RUNNER_TEMP/app-signing.keychain-db 2>/dev/null || true
           rm -f $RUNNER_TEMP/certificate.p12
+          rm -f ~/Library/MobileDevice/Provisioning\ Profiles/ci_profile.mobileprovision
           rm -rf ~/private_keys
