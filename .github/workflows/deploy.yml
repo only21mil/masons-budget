@@ -63,7 +63,7 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
         run: |
           mkdir -p ~/private_keys
-          echo "$ASC_API_KEY_P8" | base64 --decode > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+          printf '%s\n' "$ASC_API_KEY_P8" > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
 
       # ── Archive iOS ──
       - name: Archive iOS
