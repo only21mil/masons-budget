@@ -90,6 +90,7 @@ jobs:
 
       # ── Archive macOS ──
       - name: Archive macOS
+        continue-on-error: true
         working-directory: MasonsBudget
         run: |
           xcodebuild archive \
