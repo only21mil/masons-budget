@@ -1,0 +1,32 @@
+disabled_rules:
+  - trailing_comma
+  - opening_brace
+  - statement_position
+
+opt_in_rules:
+  - empty_count
+  - explicit_init
+  - closure_spacing
+  - redundant_nil_coalescing
+  - private_outlet
+
+excluded:
+  - MasonsBudgetTests
+  - drafts
+  - .build
+
+line_length: 140
+type_body_length: 400
+file_length: 500
+function_body_length: 80
+
+identifier_name:
+  min_length: 2
+  max_length: 50
+  excluded:
+    - i
+    - id
+    - x
+    - y
+    - r
+    - f
