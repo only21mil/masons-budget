@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "linear": {
+      "type": "local",
+      "command": ["npx", "linear-mcp"],
+      "enabled": true,
+      "environment": {
+        "LINEAR_ACCESS_TOKEN": "{file:~/.openclaw/workspace-sats-daily-ops/private/linear-api-key}"
+      }
+    }
+  }
+}
