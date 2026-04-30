@@ -4,7 +4,16 @@ import SwiftData
 struct SpendingTab: View {
     @Query private var transactions: [Transaction]
     @Query private var categories: [BudgetCategory]
+    @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
     @State private var monthOffset: Int = 0
+
+    private var currentMember: FamilyMember {
+        FamilyMember(rawValue: selectedMember) ?? .victor
+    }
+
+    private var myTransactions: [Transaction] {
+        transactions.filter { $0.owner == currentMember }
+    }
 
     private var selectedMonth: Date {
         Calendar.current.date(byAdding: .month, value: monthOffset, to: Date()) ?? Date()
@@ -20,7 +29,7 @@ struct SpendingTab: View {
 
     private var selectedMonthTransactions: [Transaction] {
         let cal = Calendar.current
-        return transactions.filter {
+        return myTransactions.filter {
             cal.isDate($0.date, equalTo: selectedMonth, toGranularity: .month)
         }
     }

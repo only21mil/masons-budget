@@ -9,25 +9,42 @@ struct DashboardTab: View {
     @Query private var categories: [BudgetCategory]
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var fileObserver: MC2FileObserver
+    @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
     @State private var showVoiceCapture = false
     @State private var showAddTransaction = false
     @Binding var selectedTab: AppTab
+
+    private var currentMember: FamilyMember {
+        FamilyMember(rawValue: selectedMember) ?? .victor
+    }
 
     init(selectedTab: Binding<AppTab>) {
         self._selectedTab = selectedTab
     }
 
+    private var myTransactions: [Transaction] {
+        transactions.filter { $0.owner == currentMember }
+    }
+
     private var currentMonthTransactions: [Transaction] {
         let cal = Calendar.current
         let now = Date()
-        return transactions.filter {
+        return myTransactions.filter {
             cal.isDate($0.date, equalTo: now, toGranularity: .month)
         }
     }
 
+    private var myBtcAccounts: [BTCAccount] {
+        btcAccounts.filter { $0.owner == currentMember }
+    }
+
+    private var myHoldingAccounts: [HoldingAccount] {
+        holdingAccounts.filter { $0.owner == currentMember }
+    }
+
     private var netWorth: Decimal {
-        let holdingsTotal = holdingAccounts.reduce(Decimal(0)) { $0 + $1.totalValue }
-        let btcTotal = btcAccounts.reduce(Decimal(0)) { $0 + $1.btc }
+        let holdingsTotal = myHoldingAccounts.reduce(Decimal(0)) { $0 + $1.totalValue }
+        let btcTotal = myBtcAccounts.reduce(Decimal(0)) { $0 + $1.btc }
         return holdingsTotal + (btcTotal * AppTheme.assumedBTCPrice)
     }
 
@@ -40,7 +57,7 @@ struct DashboardTab: View {
     }
 
     private var totalBtc: Decimal {
-        btcAccounts.reduce(Decimal(0)) { $0 + $1.btc }
+        myBtcAccounts.reduce(Decimal(0)) { $0 + $1.btc }
     }
 
     private var totalBudgeted: Decimal {
@@ -48,8 +65,8 @@ struct DashboardTab: View {
     }
 
     private var netWorthSubtitle: String {
-        let hasBtc = !btcAccounts.isEmpty
-        let hasHoldings = !holdingAccounts.isEmpty
+        let hasBtc = !myBtcAccounts.isEmpty
+        let hasHoldings = !myHoldingAccounts.isEmpty
         switch (hasBtc, hasHoldings) {
         case (true, true):  return "BTC + 401k + WAP"
         case (true, false): return "BTC only"
@@ -93,7 +110,7 @@ struct DashboardTab: View {
                     StatCard(
                         title: "Bitcoin Stack",
                         value: formatBtc(totalBtc),
-                        subtitle: btcAccounts.isEmpty ? "Waiting for MC2 sync" : "\(btcAccounts.count) accounts",
+                        subtitle: myBtcAccounts.isEmpty ? "Waiting for MC2 sync" : "\(myBtcAccounts.count) accounts",
                         icon: "bitcoinsign.circle"
                     )
 
@@ -134,6 +151,7 @@ struct DashboardTab: View {
             category: category,
             card: card,
             note: note,
+            owner: currentMember,
             createdBy: "manual",
             createdAt: Date()
         )
@@ -159,6 +177,7 @@ struct DashboardTab: View {
             category: category,
             card: card,
             note: note,
+            owner: currentMember,
             createdBy: "voice",
             createdAt: Date()
         )
@@ -168,7 +187,7 @@ struct DashboardTab: View {
 
     private var syncStatusBanner: some View {
         Group {
-            if snapshots.isEmpty && btcAccounts.isEmpty {
+            if snapshots.isEmpty && myBtcAccounts.isEmpty {
                 HStack(spacing: 10) {
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .font(.caption)

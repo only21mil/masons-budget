@@ -21,7 +21,7 @@ enum MC2Mapper {
         return .distantPast
     }
 
-    static func mapTransactions(_ dtos: [MC2Transaction]) -> [Transaction] {
+    static func mapTransactions(_ dtos: [MC2Transaction], owner: FamilyMember = .victor) -> [Transaction] {
         dtos.map { dto in
             Transaction(
                 id: dto.id,
@@ -31,6 +31,7 @@ enum MC2Mapper {
                 category: dto.category,
                 card: dto.card?.isEmpty == true ? nil : dto.card,
                 note: dto.note?.isEmpty == true ? nil : dto.note,
+                owner: owner,
                 createdBy: "mc2",
                 createdAt: parseDate(dto.date),
                 sourceFile: "transactions.json"

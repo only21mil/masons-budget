@@ -5,13 +5,26 @@ struct MoneyTab: View {
     @Query private var btcAccounts: [BTCAccount]
     @Query private var holdingAccounts: [HoldingAccount]
     @Query private var btcBuys: [BTCBuy]
+    @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
+
+    private var currentMember: FamilyMember {
+        FamilyMember(rawValue: selectedMember) ?? .victor
+    }
+
+    private var myBtcAccounts: [BTCAccount] {
+        btcAccounts.filter { $0.owner == currentMember }
+    }
+
+    private var myHoldingAccounts: [HoldingAccount] {
+        holdingAccounts.filter { $0.owner == currentMember }
+    }
 
     private var totalBtc: Decimal {
-        btcAccounts.reduce(Decimal(0)) { $0 + $1.btc }
+        myBtcAccounts.reduce(Decimal(0)) { $0 + $1.btc }
     }
 
     private var totalHoldingsValue: Decimal {
-        holdingAccounts.reduce(Decimal(0)) { $0 + $1.totalValue }
+        myHoldingAccounts.reduce(Decimal(0)) { $0 + $1.totalValue }
     }
 
     private var estimatedBtcUsd: Decimal { totalBtc * AppTheme.assumedBTCPrice }
@@ -29,10 +42,10 @@ struct MoneyTab: View {
                     )
 
                     SectionHeader(title: "Bitcoin", icon: "bitcoinsign.circle")
-                    if btcAccounts.isEmpty {
+                    if myBtcAccounts.isEmpty {
                         emptyState(icon: "bitcoinsign.circle", message: "BTC account balances will appear here once MC2 sync is configured.")
                     } else {
-                        ForEach(btcAccounts.sorted(by: { $0.btc > $1.btc }), id: \.key) { account in
+                        ForEach(myBtcAccounts.sorted(by: { $0.btc > $1.btc }), id: \.key) { account in
                             btcAccountRow(account)
                         }
                     }
@@ -53,10 +66,10 @@ struct MoneyTab: View {
                     }
 
                     SectionHeader(title: "Retirement & Brokerage", icon: "building.columns.fill")
-                    if holdingAccounts.isEmpty {
+                    if myHoldingAccounts.isEmpty {
                         emptyState(icon: "building.columns", message: "401k and WAP holdings will appear here once MC2 sync is configured.")
                     } else {
-                        ForEach(holdingAccounts, id: \.name) { account in
+                        ForEach(myHoldingAccounts, id: \.name) { account in
                             holdingAccountCard(account)
                         }
                     }

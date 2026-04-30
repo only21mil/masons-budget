@@ -14,6 +14,7 @@ final class Transaction {
     var category: String
     var card: String?
     var note: String?
+    var owner: FamilyMember
     var createdBy: String
     var createdAt: Date
     var sourceFile: String?
@@ -26,6 +27,7 @@ final class Transaction {
         category: String,
         card: String? = nil,
         note: String? = nil,
+        owner: FamilyMember = .victor,
         createdBy: String,
         createdAt: Date = .now,
         sourceFile: String? = nil
@@ -37,6 +39,7 @@ final class Transaction {
         self.category = category
         self.card = card
         self.note = note
+        self.owner = owner
         self.createdBy = createdBy
         self.createdAt = createdAt
         self.sourceFile = sourceFile
