@@ -63,31 +63,7 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
         run: |
           mkdir -p ~/private_keys
-          printf '%s' "$ASC_API_KEY_P8" > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
-
-      - name: Verify API key works
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-        run: |
-          pip3 install pyjwt cryptography --quiet --break-system-packages
-          STATUS=$(python3 -c "
-          import jwt, time, urllib.request, json
-          with open('$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8', 'r') as f:
-              key = f.read()
-          now = int(time.time())
-          payload = {'iss': '${ASC_ISSUER_ID}', 'iat': now, 'exp': now + 1200, 'aud': 'appstoreconnect-v1'}
-          token = jwt.encode(payload, key, algorithm='ES256', headers={'kid': '${ASC_KEY_ID}'})
-          req = urllib.request.Request('https://api.appstoreconnect.apple.com/v1/apps',
-                                       headers={'Authorization': f'Bearer {token}'})
-          try:
-              resp = urllib.request.urlopen(req)
-              data = json.loads(resp.read())
-              print(f'API OK - {data[\"meta\"][\"paging\"][\"total\"]} apps found')
-          except urllib.error.HTTPError as e:
-              print(f'API FAILED - HTTP {e.code}: {e.read().decode()[:200]}')
-          ")
-          echo "$STATUS"
+          echo "$ASC_API_KEY_P8" | base64 --decode > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
 
       # ── Archive iOS ──
       - name: Archive iOS
