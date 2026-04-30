@@ -35,8 +35,7 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: "Mason's Budget"
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Voice input lets you log transactions by speaking."
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Microphone access is needed for voice transaction entry."
-        # CODE_SIGN_ENTITLEMENTS will be added back when iCloud provisioning is set up
-        # CODE_SIGN_ENTITLEMENTS: MasonsBudget/MasonsBudget.entitlements
+        CODE_SIGN_ENTITLEMENTS: MasonsBudget/MasonsBudget.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         DEVELOPMENT_TEAM: "8KN6X3FLPZ"

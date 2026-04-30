@@ -29,11 +29,15 @@ struct MasonsBudgetApp: App {
         }
     }()
 
+    @StateObject private var fileObserver = MC2FileObserver()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(fileObserver)
                 .task {
                     await syncFromMC2()
+                    startFileObservation()
                 }
         }
         .modelContainer(sharedModelContainer)
@@ -41,15 +45,21 @@ struct MasonsBudgetApp: App {
 
     @MainActor
     private func syncFromMC2() async {
-        let mc2URL = mc2FolderURL()
-        guard FileManager.default.fileExists(atPath: mc2URL.path) else { return }
+        let folder = MC2FolderManager.shared
+        guard let mc2URL = folder.folderURL, folder.isAccessible else { return }
         let reader = MC2Reader(baseURL: mc2URL)
         let sync = MC2SyncService(reader: reader, context: sharedModelContainer.mainContext)
         await sync.syncAll()
     }
 
-    private func mc2FolderURL() -> URL {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        return docs.appendingPathComponent("mission-control")
+    @MainActor
+    private func startFileObservation() {
+        let folder = MC2FolderManager.shared
+        guard let mc2URL = folder.folderURL, folder.isAccessible else { return }
+
+        fileObserver.onFilesChanged = { [self] in
+            await syncFromMC2()
+        }
+        fileObserver.startObserving(folderURL: mc2URL)
     }
 }

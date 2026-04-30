@@ -1,27 +1,47 @@
 import SwiftUI
 
 enum AppTheme {
-    static let accentColor = Color(hex: 0xF7931A)
+    // MARK: - Color tokens (spec-aligned)
+    static let accentColor = Color(hex: 0xF7931A)      // accent.bitcoin
+    static let accentGold = Color(hex: 0xD4A857)        // accent.gold
     static let secondaryAccent = Color(hex: 0x4ECDC4)
-    static let background = Color(hex: 0x0A0A0A)
-    static let cardBackground = Color(hex: 0x161616)
-    static let cardBackgroundElevated = Color(hex: 0x1E1E1E)
-    static let primaryText = Color(hex: 0xFAF0E6)
-    static let secondaryText = Color(hex: 0xA0A0A0)
+    static let background = Color(hex: 0x0A0A0A)        // bg.canvas
+    static let cardBackground = Color(hex: 0x161616)     // bg.surface
+    static let cardBackgroundElevated = Color(hex: 0x1F1F1F) // bg.surfaceHi
+    static let primaryText = Color(hex: 0xF5F1E8)       // text.primary (ivory)
+    static let secondaryText = Color(hex: 0xA8A39B)      // text.secondary
     static let tertiaryText = Color(hex: 0x555555)
-    static let positive = Color(hex: 0x4ADE80)
-    static let negative = Color(hex: 0xF87171)
+    static let positive = Color(hex: 0x4ADE80)          // state.positive
+    static let warning = Color(hex: 0xFBBF24)           // state.warning
+    static let negative = Color(hex: 0xEF4444)          // state.negative
+
+    // MARK: - Layout
     static let cornerRadius: CGFloat = 18
     static let cardSpacing: CGFloat = 14
     static let horizontalPadding: CGFloat = 18
 
+    // MARK: - Gradients
     static let accentGradient = LinearGradient(
         colors: [Color(hex: 0xF7931A), Color(hex: 0xE8721A)],
         startPoint: .topLeading, endPoint: .bottomTrailing
     )
-
     static let warmGlow = Color(hex: 0xF7931A, opacity: 0.08)
 
+    // MARK: - Typography
+    static let heroNumber: Font = .system(size: 56, weight: .bold, design: .rounded)
+    static let largeNumber: Font = .system(size: 32, weight: .bold, design: .rounded)
+    static let subNumber: Font = .system(size: 28, weight: .semibold, design: .rounded)
+    static let monoCaption: Font = .system(size: 13, weight: .medium, design: .monospaced)
+    static let monoData: Font = .system(size: 17, weight: .medium, design: .monospaced)
+
+    // MARK: - Motion
+    static let durationFast: Double = 0.2
+    static let durationMedium: Double = 0.3
+    static let durationSlow: Double = 0.45
+    static let entryAnimation: Animation = .easeOut(duration: 0.3)
+    static let springAnimation: Animation = .spring(response: 0.45, dampingFraction: 0.7)
+
+    // MARK: - Data
     static let assumedBTCPrice: Decimal = 90000
 }
 

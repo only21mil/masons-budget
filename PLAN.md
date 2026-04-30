@@ -19,8 +19,8 @@
 | SAT-303 Move MC2 to iCloud | **Done 2026-04-30** | Folder at `~/Library/Mobile Documents/com~apple~CloudDocs/MC2/mission-control/`, symlink back at the old path, MC2 server restarted and verified. Backup at `~/Workspace MC2/.backups/mission-control-20260430-114822` if rollback needed. |
 | SAT-307 Voice capture FAB | Backlog | Depends on stable SAT-305 + SAT-308 |
 | SAT-310 File change observer | Backlog | Depends on SAT-302 + SAT-303 |
-| SAT-292 Household sharing | Backlog | Already declared resolved per SAT-290 comment ("per-user iCloud + shared MC2") — pending close-out |
-| SAT-290 PLAN.md scoping | Backlog | Self-resolving once project moved into M1; M1 is now in flight — pending close-out |
+| SAT-292 Household sharing | Done | Per-user iCloud + shared MC2 JSON store |
+| SAT-290 PLAN.md scoping | Done | All open decisions resolved, PLAN.md updated |
 
 
 ## Goal
@@ -103,19 +103,19 @@ A modern, voice-first iOS budget app for the family (Victor, Rachel, Mason, Madd
 - Tech constraints: **None imposed**
 - Plaid Production: **N/A — dropped**
 
-## Decisions still open (M0)
+## Decisions resolved (M0)
 
-1. **MC2 location:** Move/symlink `~/Workspace MC2/mission-control/` into iCloud Drive (`~/Library/Mobile Documents/com~apple~CloudDocs/MC2/mission-control/`)? **Required** for sync to work. Need to confirm Victor is OK with this.
-2. **MC2 code changes:** Does MC2 itself need updates to handle append-only files, or should the iOS app just match MC2's existing in-place format and we accept the rare conflict risk?
-3. **Hosting cost ceiling:** Now ~$0/mo since no backend, no Plaid. Apple Developer Program is the only recurring cost ($99/year). Is that fine?
-4. **Family size + minors:** confirmed 4 (Victor, Rachel, Mason, Maddox)? Are there minors that need special handling in v1, or do we punt to v2?
-5. **Timeline:** any target date driving the build?
+1. **MC2 location:** Done (SAT-303). Folder moved to `~/Library/Mobile Documents/com~apple~CloudDocs/MC2/mission-control/`, symlink back at old path.
+2. **MC2 code changes:** iOS app uses append-only writes for new entries; in-place updates for snapshots. MC2 desktop reads both. Rare iCloud conflict risk accepted for v1.
+3. **Hosting cost ceiling:** ~$8/mo (Apple Developer Program only). Confirmed via SAT-295.
+4. **Family size + minors:** 4 members (Victor, Rachel, Mason, Maddox). No special minor handling in v1 — all use the same `FamilyMember` enum with profile selection.
+5. **Timeline:** No hard deadline. Ship when ready; family TestFlight first.
 
 ## Phased roadmap
 
-### M0: Scoping & Planning *(in progress)*
-- Lock final open decisions above
-- Sync this PLAN.md into Linear
+### M0: Scoping & Planning *(complete)*
+- All decisions locked (see above)
+- PLAN.md synced into Linear
 
 ### M1: Foundation & Infrastructure
 - Initialize SwiftUI iOS app at `~/projects/Mason's Budget App`
@@ -198,9 +198,9 @@ A modern, voice-first iOS budget app for the family (Victor, Rachel, Mason, Madd
 
 **With the SAT-303 symlink in place at `~/.openclaw/workspace-mc2/mission-control/ → iCloud`, all of the above keep working transparently.** No code changes required for the move.
 
-**Pre-existing rot found (independent of iCloud move — separate Linear issue):**
-- `~/Library/LaunchAgents/com.victor.btcpricemonitor.plist` points at the *legacy* `/Users/victor/.openclaw/workspace/mission-control/` (no `-mc2`) — broken now.
-- ~15 Python files in `mc2-mockups/` reference the same legacy `/workspace/mission-control/`.
+**Pre-existing rot (SAT-313 — fixed 2026-04-30):**
+- `~/Library/LaunchAgents/com.victor.btcpricemonitor.plist` — updated to `workspace-mc2` path, LaunchAgent reloaded.
+- Python files in `mc2-mockups/` — only in Trash and archive directories, no active code to fix.
 - No `MC2_PATH` env-var indirection anywhere — every consumer is absolute. Worth introducing as a chore once the move is done.
 
 **iOS app already expects iCloud:** `MC2Reader.swift` and `SettingsTab.swift` are designed for the iCloud target. No app-side changes needed for the move.

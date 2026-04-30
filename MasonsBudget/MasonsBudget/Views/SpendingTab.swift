@@ -59,14 +59,20 @@ struct SpendingTab: View {
                     if !groupedByCategory.isEmpty {
                         SectionHeader(title: "By Category", icon: "chart.bar.fill")
                         ForEach(groupedByCategory, id: \.0) { catName, budget, spent, icon in
-                            categoryRow(name: catName, icon: icon, spent: spent, budget: budget)
+                            CategoryRow(name: catName, icon: icon, spent: spent, budget: budget)
                         }
                     }
 
                     if !sortedTransactions.isEmpty {
                         SectionHeader(title: "Recent Transactions", icon: "list.bullet.rectangle")
                         ForEach(sortedTransactions.prefix(20), id: \.id) { tx in
-                            transactionRow(tx)
+                            TransactionRow(
+                                merchant: tx.merchant,
+                                amount: tx.amount,
+                                category: tx.category,
+                                date: tx.date,
+                                card: tx.card
+                            )
                         }
                     }
                 }
@@ -122,37 +128,6 @@ struct SpendingTab: View {
         .glassCard(highlight: true)
     }
 
-    private func categoryRow(name: String, icon: String, spent: Decimal, budget: Decimal) -> some View {
-        let pct = budget > 0 ? spent / budget : 0
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("\(icon) \(name)")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(AppTheme.primaryText)
-                Spacer()
-                Text("\(formatCurrency(spent)) / \(formatCurrency(budget))")
-                    .font(.caption)
-                    .foregroundStyle(pct > 1.0 ? AppTheme.negative : AppTheme.secondaryText)
-            }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(AppTheme.background)
-                        .frame(height: 7)
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(
-                            pct > 1.0
-                            ? LinearGradient(colors: [AppTheme.negative, AppTheme.negative.opacity(0.6)], startPoint: .leading, endPoint: .trailing)
-                            : LinearGradient(colors: [AppTheme.accentColor, AppTheme.accentColor.opacity(0.5)], startPoint: .leading, endPoint: .trailing)
-                        )
-                        .frame(width: max(0, min(geo.size.width, CGFloat(truncating: pct as NSNumber) * geo.size.width)), height: 7)
-                }
-            }
-            .frame(height: 7)
-        }
-        .glassCard()
-    }
-
     private var monthNavigator: some View {
         HStack {
             Button { monthOffset -= 1 } label: {
@@ -179,35 +154,6 @@ struct SpendingTab: View {
         .padding(.horizontal, 4)
     }
 
-    private func transactionRow(_ tx: Transaction) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(tx.merchant)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(AppTheme.primaryText)
-                Text(tx.date.formatted(date: .abbreviated, time: .omitted))
-                    .font(.caption2)
-                    .foregroundStyle(AppTheme.tertiaryText)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(formatCurrency(tx.amount))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(AppTheme.negative)
-                Text(tx.category)
-                    .font(.caption2)
-                    .foregroundStyle(AppTheme.secondaryText)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(AppTheme.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color.white.opacity(0.04), lineWidth: 1)
-        )
-    }
 }
 
 #Preview {

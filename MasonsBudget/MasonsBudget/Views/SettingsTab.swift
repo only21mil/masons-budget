@@ -8,12 +8,8 @@ struct SettingsTab: View {
     @Query private var categories: [BudgetCategory]
     @Query private var snapshots: [MonthlyBudgetSnapshot]
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
-
-    private var mc2FolderExists: Bool {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let mc2Path = docs.appendingPathComponent("mission-control").path
-        return FileManager.default.fileExists(atPath: mc2Path)
-    }
+    @ObservedObject private var folderManager = MC2FolderManager.shared
+    @State private var showFolderPicker = false
 
     private var hasAnyData: Bool {
         !transactions.isEmpty || !btcAccounts.isEmpty || !holdingAccounts.isEmpty
@@ -72,12 +68,20 @@ struct SettingsTab: View {
 
                 // MARK: - MC2 Sync
                 Section {
-                    HStack {
-                        Label("MC2 Folder", systemImage: "folder.badge.gearshape")
-                        Spacer()
-                        Text(mc2FolderExists ? "Linked" : "Not linked")
-                            .font(.caption)
-                            .foregroundStyle(mc2FolderExists ? AppTheme.positive : AppTheme.tertiaryText)
+                    Button {
+                        showFolderPicker = true
+                    } label: {
+                        HStack {
+                            Label("MC2 Folder", systemImage: "folder.badge.gearshape")
+                                .foregroundStyle(AppTheme.primaryText)
+                            Spacer()
+                            Text(folderManager.isAccessible ? folderManager.folderDisplayPath : "Select…")
+                                .font(.caption)
+                                .foregroundStyle(folderManager.isAccessible ? AppTheme.positive : AppTheme.accentColor)
+                            Image(systemName: "chevron.right")
+                                .font(.caption2)
+                                .foregroundStyle(AppTheme.tertiaryText)
+                        }
                     }
                     HStack {
                         Label("Last Sync", systemImage: "arrow.triangle.2.circlepath")
@@ -106,14 +110,20 @@ struct SettingsTab: View {
                     HStack {
                         Label("iCloud", systemImage: "icloud")
                         Spacer()
-                        Text(FileManager.default.ubiquityIdentityToken != nil ? "Signed in" : "Not available")
-                            .font(.caption)
-                            .foregroundStyle(FileManager.default.ubiquityIdentityToken != nil ? AppTheme.positive : AppTheme.tertiaryText)
+                        SyncBadge(status: folderManager.isAccessible ? .synced : .disconnected)
+                    }
+                    if folderManager.isAccessible {
+                        Button(role: .destructive) {
+                            folderManager.clearBookmark()
+                        } label: {
+                            Label("Unlink MC2 Folder", systemImage: "folder.badge.minus")
+                                .font(.caption)
+                        }
                     }
                 } header: {
                     Text("Data & Sync")
                 } footer: {
-                    Text("Link the MC2 mission-control folder on iCloud Drive to sync budgets, transactions, and net worth data.")
+                    Text("Select the MC2 mission-control folder on iCloud Drive to sync budgets, transactions, and net worth data.")
                 }
 
                 // MARK: - Preferences
@@ -141,6 +151,11 @@ struct SettingsTab: View {
             .background(AppTheme.background)
             .navigationTitle("Settings")
             .toolbarColorScheme(.dark, for: .navigationBar)
+            .sheet(isPresented: $showFolderPicker) {
+                MC2FolderPicker { url in
+                    folderManager.saveBookmark(for: url)
+                }
+            }
         }
     }
 }
