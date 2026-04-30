@@ -35,6 +35,7 @@ final class MC2SyncService {
         totalEntities += await syncBTCBillPays(&errors)
         totalEntities += await syncFinances(&errors)
         totalEntities += await syncSonBalances(&errors)
+        recordNetWorthSnapshot()
 
         do {
             try context.save()
@@ -151,6 +152,30 @@ final class MC2SyncService {
             log.error("Son balances sync failed: \(error.localizedDescription)")
             errors.append("Son balances: \(error.localizedDescription)")
             return 0
+        }
+    }
+
+    private func recordNetWorthSnapshot() {
+        do {
+            let btcAccounts = try context.fetch(FetchDescriptor<BTCAccount>())
+            let holdingAccounts = try context.fetch(FetchDescriptor<HoldingAccount>())
+
+            let btcValue = btcAccounts
+                .filter { $0.owner == currentMember }
+                .reduce(Decimal(0)) { $0 + $1.btc } * AppTheme.assumedBTCPrice
+            let holdingsValue = holdingAccounts
+                .filter { $0.owner == currentMember }
+                .reduce(Decimal(0)) { $0 + $1.totalValue }
+
+            let snapshot = NetWorthSnapshot(
+                totalValue: btcValue + holdingsValue,
+                btcValue: btcValue,
+                holdingsValue: holdingsValue,
+                owner: currentMember
+            )
+            context.insert(snapshot)
+        } catch {
+            log.error("Failed to record net worth snapshot: \(error.localizedDescription)")
         }
     }
 

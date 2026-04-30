@@ -126,6 +126,18 @@ struct SettingsTab: View {
                     Text("Select the MC2 mission-control folder on iCloud Drive to sync budgets, transactions, and net worth data.")
                 }
 
+                // MARK: - Categories
+                Section {
+                    NavigationLink {
+                        CategoryManagementView()
+                    } label: {
+                        Label("Budget Categories", systemImage: "list.bullet.rectangle")
+                            .foregroundStyle(AppTheme.primaryText)
+                    }
+                } header: {
+                    Text("Budget")
+                }
+
                 // MARK: - Preferences
                 Section {
                     Label("Appearance", systemImage: "paintbrush")

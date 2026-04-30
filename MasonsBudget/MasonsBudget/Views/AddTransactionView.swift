@@ -1,19 +1,16 @@
 import SwiftUI
+import SwiftData
 
 struct AddTransactionView: View {
     @Environment(\.dismiss) private var dismiss
+    @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
     @State private var amountText = ""
     @State private var merchant = ""
-    @State private var category = "Groceries"
+    @State private var category = ""
     @State private var card = "Aven"
     @State private var note = ""
 
     var onSave: (Decimal, String, String, String?, String?) -> Void
-
-    private let categories = [
-        "Bills & Utilities", "Dining & Drinks", "Auto & Transport",
-        "Shopping", "Groceries", "Health & Wellness", "Medical", "Pets",
-    ]
 
     private let cards = ["Aven", "Strike", "River", ""]
 
@@ -30,7 +27,17 @@ struct AddTransactionView: View {
                 Section("Details") {
                     TextField("Merchant", text: $merchant)
                     Picker("Category", selection: $category) {
-                        ForEach(categories, id: \.self) { Text($0).tag($0) }
+                        if categories.isEmpty {
+                            Text("Other").tag("Other")
+                        }
+                        ForEach(categories, id: \.name) { cat in
+                            Label {
+                                Text(cat.name)
+                            } icon: {
+                                Text(cat.icon)
+                            }
+                            .tag(cat.name)
+                        }
                     }
                     Picker("Card", selection: $card) {
                         Text("None").tag("")
@@ -43,6 +50,7 @@ struct AddTransactionView: View {
             .background(AppTheme.background)
             .navigationTitle("Add Transaction")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -50,11 +58,17 @@ struct AddTransactionView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         guard let amount = Decimal(string: amountText), !merchant.isEmpty else { return }
-                        onSave(amount, merchant, category, card.isEmpty ? nil : card, note.isEmpty ? nil : note)
+                        let cat = category.isEmpty ? (categories.first?.name ?? "Other") : category
+                        onSave(amount, merchant, cat, card.isEmpty ? nil : card, note.isEmpty ? nil : note)
                         dismiss()
                     }
                     .fontWeight(.semibold)
                     .disabled(amountText.isEmpty || merchant.isEmpty)
+                }
+            }
+            .onAppear {
+                if category.isEmpty {
+                    category = categories.first?.name ?? "Other"
                 }
             }
         }

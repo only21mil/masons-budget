@@ -5,6 +5,8 @@ struct MoneyTab: View {
     @Query private var btcAccounts: [BTCAccount]
     @Query private var holdingAccounts: [HoldingAccount]
     @Query private var btcBuys: [BTCBuy]
+    @Query private var snapshots: [MonthlyBudgetSnapshot]
+    @Query private var transactions: [Transaction]
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
 
     private var currentMember: FamilyMember {
@@ -19,6 +21,12 @@ struct MoneyTab: View {
         holdingAccounts.filter { $0.owner == currentMember }
     }
 
+    private var recentPaychecks: [Transaction] {
+        transactions
+            .filter { $0.owner == currentMember && $0.category.lowercased() == "income" }
+            .sorted { $0.date > $1.date }
+    }
+
     private var totalBtc: Decimal {
         myBtcAccounts.reduce(Decimal(0)) { $0 + $1.btc }
     }
@@ -28,6 +36,18 @@ struct MoneyTab: View {
     }
 
     private var estimatedBtcUsd: Decimal { totalBtc * AppTheme.assumedBTCPrice }
+
+    private var latestSnapshot: MonthlyBudgetSnapshot? {
+        snapshots.sorted { $0.monthKey > $1.monthKey }.first
+    }
+
+    private var monthlyGross: Decimal {
+        latestSnapshot?.monthlyGross ?? 0
+    }
+
+    private var yearlyProjected: Decimal {
+        monthlyGross * 12
+    }
 
     var body: some View {
         NavigationStack {
@@ -40,6 +60,14 @@ struct MoneyTab: View {
                         subtitle: "BTC (\(formatBtc(totalBtc))) + 401k/WAP (\(formatCurrency(totalHoldingsValue)))",
                         icon: "dollarsign.circle.fill"
                     )
+
+                    NetWorthHistoryChart()
+                    AssetBreakdownChart()
+
+                    if let snapshot = latestSnapshot {
+                        SectionHeader(title: "Income", icon: "arrow.down.circle.fill")
+                        incomeSection(snapshot)
+                    }
 
                     SectionHeader(title: "Bitcoin", icon: "bitcoinsign.circle")
                     if myBtcAccounts.isEmpty {
@@ -83,6 +111,110 @@ struct MoneyTab: View {
         }
     }
 
+    private func incomeSection(_ snapshot: MonthlyBudgetSnapshot) -> some View {
+        VStack(spacing: AppTheme.cardSpacing) {
+            HStack(spacing: AppTheme.cardSpacing) {
+                StatCard(
+                    title: "Monthly Gross",
+                    value: formatCurrency(snapshot.monthlyGross),
+                    subtitle: snapshot.payFrequency.capitalized,
+                    icon: "calendar"
+                )
+                StatCard(
+                    title: "Yearly Projected",
+                    value: formatCurrency(yearlyProjected),
+                    subtitle: "12 × monthly",
+                    icon: "chart.bar.fill"
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Weekly Breakdown")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppTheme.secondaryText)
+                    .padding(.horizontal, 4)
+
+                incomeRow(label: "Weekly Gross", value: snapshot.weeklyGross)
+                incomeRow(label: "Strike (weekly)", value: snapshot.weeklyStrike)
+                incomeRow(label: "River (weekly)", value: snapshot.weeklyRiver)
+
+                Divider().overlay(Color.white.opacity(0.05))
+                HStack {
+                    Text("Weekly Total")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppTheme.primaryText)
+                    Spacer()
+                    Text(formatCurrency(snapshot.weeklyStrike + snapshot.weeklyRiver))
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(AppTheme.accentColor)
+                }
+            }
+            .glassCard()
+
+            if let note = snapshot.strategyNote {
+                HStack(spacing: 8) {
+                    Image(systemName: "lightbulb.fill")
+                        .foregroundStyle(AppTheme.warning)
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(AppTheme.secondaryText)
+                        .lineLimit(4)
+                }
+                .glassCard()
+            }
+
+            if !recentPaychecks.isEmpty {
+                paycheckHistory
+            }
+        }
+    }
+
+    private var paycheckHistory: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Recent Paychecks")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppTheme.secondaryText)
+                Spacer()
+                Text("\(recentPaychecks.count) total")
+                    .font(.caption2)
+                    .foregroundStyle(AppTheme.tertiaryText)
+            }
+            .padding(.horizontal, 4)
+
+            ForEach(recentPaychecks.prefix(8), id: \.id) { paycheck in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(paycheck.merchant)
+                            .font(.subheadline)
+                            .foregroundStyle(AppTheme.primaryText)
+                        Text(paycheck.date.formatted(date: .abbreviated, time: .omitted))
+                            .font(.caption2)
+                            .foregroundStyle(AppTheme.tertiaryText)
+                    }
+                    Spacer()
+                    Text(formatCurrency(paycheck.amount))
+                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(AppTheme.positive)
+                }
+                .padding(.horizontal, 4)
+            }
+        }
+        .glassCard()
+    }
+
+    private func incomeRow(label: String, value: Decimal) -> some View {
+        HStack {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(AppTheme.secondaryText)
+            Spacer()
+            Text(formatCurrency(value))
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(AppTheme.primaryText)
+        }
+        .padding(.horizontal, 4)
+    }
     private func btcAccountRow(_ account: BTCAccount) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {

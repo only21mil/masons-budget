@@ -6,6 +6,7 @@ struct SpendingTab: View {
     @Query private var categories: [BudgetCategory]
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
     @State private var monthOffset: Int = 0
+    @State private var recurringItems: [RecurringTransaction] = []
 
     private var currentMember: FamilyMember {
         FamilyMember(rawValue: selectedMember) ?? .victor
@@ -72,6 +73,16 @@ struct SpendingTab: View {
                         }
                     }
 
+                    SpendingDonutChart(categoryBreakdown: groupedByCategory.map { ($0.0, $0.2, $0.3) })
+                    MonthlyTrendChart()
+
+                    if !recurringItems.isEmpty {
+                        SectionHeader(title: "Recurring", icon: "arrow.triangle.2.circlepath")
+                        ForEach(recurringItems.prefix(6)) { item in
+                            recurringRow(item)
+                        }
+                    }
+
                     if !sortedTransactions.isEmpty {
                         SectionHeader(title: "Recent Transactions", icon: "list.bullet.rectangle")
                         ForEach(sortedTransactions.prefix(20), id: \.id) { tx in
@@ -92,7 +103,43 @@ struct SpendingTab: View {
             .background(AppTheme.background)
             .navigationTitle("Spending")
             .toolbarColorScheme(.dark, for: .navigationBar)
+            .task {
+                recurringItems = RecurringDetector().detect(from: myTransactions)
+            }
         }
+    }
+
+    private func recurringRow(_ item: RecurringTransaction) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.merchant)
+                    .font(.subheadline)
+                    .foregroundStyle(AppTheme.primaryText)
+                HStack(spacing: 4) {
+                    Text(item.category)
+                        .font(.caption2)
+                    Text("·")
+                    Text("~\(item.estimatedInterval)d")
+                        .font(.caption2)
+                    Text("·")
+                    Text("\(item.occurrences)×")
+                        .font(.caption2)
+                }
+                .foregroundStyle(AppTheme.tertiaryText)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(formatCurrency(item.averageAmount))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(AppTheme.primaryText)
+                if let next = item.nextDate {
+                    Text("Next: \(next.formatted(date: .abbreviated, time: .omitted))")
+                        .font(.caption2)
+                        .foregroundStyle(AppTheme.secondaryText)
+                }
+            }
+        }
+        .glassCard()
     }
 
     private var spendingHero: some View {

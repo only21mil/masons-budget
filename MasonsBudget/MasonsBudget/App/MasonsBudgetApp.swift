@@ -16,6 +16,7 @@ struct MasonsBudgetApp: App {
             HoldingLot.self,
             SyncEvent.self,
             FamilyProfile.self,
+            NetWorthSnapshot.self,
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
@@ -30,6 +31,7 @@ struct MasonsBudgetApp: App {
     }()
 
     @StateObject private var fileObserver = MC2FileObserver()
+    @AppStorage("has_completed_onboarding") private var hasCompletedOnboarding = false
 
     var body: some Scene {
         WindowGroup {
@@ -38,6 +40,13 @@ struct MasonsBudgetApp: App {
                 .task {
                     await syncFromMC2()
                     startFileObservation()
+                    BudgetNotificationManager.shared.requestPermission()
+                }
+                .fullScreenCover(isPresented: Binding(
+                    get: { !hasCompletedOnboarding },
+                    set: { hasCompletedOnboarding = !$0 }
+                )) {
+                    OnboardingView()
                 }
         }
         .modelContainer(sharedModelContainer)
