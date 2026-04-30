@@ -1,0 +1,157 @@
+name: Deploy to TestFlight
+
+on:
+  push:
+    branches:
+      - main
+
+# Only one deploy at a time — cancel in-flight if a newer push arrives.
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build, sign, and deploy
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: MasonsBudget
+        run: xcodegen generate
+
+      # ── Signing setup ──
+      - name: Install App Store Connect API key
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: |
+          mkdir -p ~/private_keys
+          echo "$ASC_API_KEY_P8" | base64 --decode > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+
+      # ── Archive iOS ──
+      - name: Archive iOS
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        working-directory: MasonsBudget
+        run: |
+          xcodebuild archive \
+            -project MasonsBudget.xcodeproj \
+            -scheme MasonsBudget \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath /tmp/MasonsBudget-iOS.xcarchive \
+            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            -allowProvisioningUpdates \
+            DEVELOPMENT_TEAM=384ZGKG4GB
+
+      # ── Archive macOS ──
+      - name: Archive macOS
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        working-directory: MasonsBudget
+        run: |
+          xcodebuild archive \
+            -project MasonsBudget.xcodeproj \
+            -scheme MasonsBudgetMac \
+            -configuration Release \
+            -destination "generic/platform=macOS" \
+            -archivePath /tmp/MasonsBudget-macOS.xcarchive \
+            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            -allowProvisioningUpdates \
+            DEVELOPMENT_TEAM=384ZGKG4GB
+
+      # ── Upload iOS to TestFlight ──
+      - name: Upload iOS to TestFlight
+        continue-on-error: true
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          cat > /tmp/ExportOptions-iOS.plist << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+            "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>teamID</key>
+            <string>384ZGKG4GB</string>
+            <key>destination</key>
+            <string>upload</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+          </dict>
+          </plist>
+          PLIST
+
+          xcodebuild -exportArchive \
+            -archivePath /tmp/MasonsBudget-iOS.xcarchive \
+            -exportPath /tmp/testflight-ios \
+            -exportOptionsPlist /tmp/ExportOptions-iOS.plist \
+            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            -allowProvisioningUpdates
+
+          echo "iOS TestFlight upload complete!"
+
+      # ── Upload macOS to TestFlight ──
+      - name: Upload macOS to TestFlight
+        continue-on-error: true
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          cat > /tmp/ExportOptions-macOS.plist << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+            "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>teamID</key>
+            <string>384ZGKG4GB</string>
+            <key>destination</key>
+            <string>upload</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+          </dict>
+          </plist>
+          PLIST
+
+          xcodebuild -exportArchive \
+            -archivePath /tmp/MasonsBudget-macOS.xcarchive \
+            -exportPath /tmp/testflight-macos \
+            -exportOptionsPlist /tmp/ExportOptions-macOS.plist \
+            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            -allowProvisioningUpdates
+
+          echo "macOS TestFlight upload complete!"
+
+      # ── Cleanup ──
+      - name: Clean up signing
+        if: always()
+        run: rm -rf ~/private_keys
