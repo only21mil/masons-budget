@@ -65,22 +65,6 @@ jobs:
           mkdir -p ~/private_keys
           printf '%s' "$ASC_API_KEY_P8" > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
 
-      - name: Debug API key format
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-        run: |
-          echo "P8 file size: $(wc -c < ~/private_keys/AuthKey_${ASC_KEY_ID}.p8) bytes"
-          echo "P8 md5: $(md5 -q ~/private_keys/AuthKey_${ASC_KEY_ID}.p8)"
-          echo "P8 expected md5: 143153dafae8c006a0d02cf6477c2d07"
-          echo "Key ID length: ${#ASC_KEY_ID}"
-          echo "Issuer ID length: ${#ASC_ISSUER_ID}"
-          # Check for carriage returns
-          echo "CR chars in P8: $(tr -cd '\r' < ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 | wc -c)"
-          # Hex dump of first and last 20 bytes
-          echo "First 40 bytes hex: $(xxd -l 40 -p ~/private_keys/AuthKey_${ASC_KEY_ID}.p8)"
-          echo "Last 30 bytes hex: $(tail -c 30 ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 | xxd -p)"
-
       # ── Archive iOS ──
       - name: Archive iOS
         env:
