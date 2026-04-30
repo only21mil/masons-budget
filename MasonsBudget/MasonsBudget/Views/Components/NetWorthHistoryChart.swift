@@ -3,7 +3,7 @@ import SwiftData
 import Charts
 
 struct NetWorthHistoryChart: View {
-    @Query(sort: \NetWorthSnapshot.date) private var snapshots: [NetWorthSnapshot]
+    @Query(sort: \NetWorthSnapshot.date, order: .forward) private var snapshots: [NetWorthSnapshot]
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
     @State private var range: RangePicker.Range = .threeMonths
 
@@ -22,12 +22,16 @@ struct NetWorthHistoryChart: View {
     }
 
     private var changeFromFirst: Decimal {
-        guard let first = filteredSnapshots.first, let last = filteredSnapshots.last, first.totalValue > 0 else { return 0 }
+        guard let first = filteredSnapshots.first,
+              let last = filteredSnapshots.last,
+              first.totalValue > 0 else { return 0 }
         return last.totalValue - first.totalValue
     }
 
     private var changePct: Double {
-        guard let first = filteredSnapshots.first, first.totalValue > 0, let last = filteredSnapshots.last else { return 0 }
+        guard let first = filteredSnapshots.first,
+              first.totalValue > 0,
+              let last = filteredSnapshots.last else { return 0 }
         return Double(truncating: ((last.totalValue - first.totalValue) / first.totalValue * 100) as NSNumber)
     }
 
@@ -54,13 +58,6 @@ struct NetWorthHistoryChart: View {
                     }
 
                     Chart(filteredSnapshots, id: \.date) { snapshot in
-                        LineMark(
-                            x: .value("Date", snapshot.date),
-                            y: .value("Value", snapshot.totalValue)
-                        )
-                        .foregroundStyle(AppTheme.accentColor)
-                        .interpolationMethod(.catmullRom)
-
                         AreaMark(
                             x: .value("Date", snapshot.date),
                             y: .value("Value", snapshot.totalValue)
@@ -71,6 +68,13 @@ struct NetWorthHistoryChart: View {
                                 startPoint: .top, endPoint: .bottom
                             )
                         )
+                        .interpolationMethod(.catmullRom)
+
+                        LineMark(
+                            x: .value("Date", snapshot.date),
+                            y: .value("Value", snapshot.totalValue)
+                        )
+                        .foregroundStyle(AppTheme.accentColor)
                         .interpolationMethod(.catmullRom)
                     }
                     .chartYAxis {

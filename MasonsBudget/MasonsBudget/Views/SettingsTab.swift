@@ -9,7 +9,9 @@ struct SettingsTab: View {
     @Query private var snapshots: [MonthlyBudgetSnapshot]
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
     @ObservedObject private var folderManager = MC2FolderManager.shared
+    @Environment(\.modelContext) private var modelContext
     @State private var showFolderPicker = false
+    @State private var isSyncing = false
 
     private var hasAnyData: Bool {
         !transactions.isEmpty || !btcAccounts.isEmpty || !holdingAccounts.isEmpty
@@ -40,7 +42,6 @@ struct SettingsTab: View {
     var body: some View {
         NavigationStack {
             List {
-                // MARK: - Profile
                 Section {
                     HStack(spacing: 12) {
                         Image(systemName: "person.circle.fill")
@@ -66,7 +67,6 @@ struct SettingsTab: View {
                     Text("Profile")
                 }
 
-                // MARK: - MC2 Sync
                 Section {
                     Button {
                         showFolderPicker = true
@@ -113,6 +113,17 @@ struct SettingsTab: View {
                         SyncBadge(status: folderManager.isAccessible ? .synced : .disconnected)
                     }
                     if folderManager.isAccessible {
+                        Button {
+                            Task { await syncNow() }
+                        } label: {
+                            HStack {
+                                Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                                Spacer()
+                                if isSyncing {
+                                    ProgressView()
+                                }
+                            }
+                        }
                         Button(role: .destructive) {
                             folderManager.clearBookmark()
                         } label: {
@@ -126,7 +137,6 @@ struct SettingsTab: View {
                     Text("Select the MC2 mission-control folder on iCloud Drive to sync budgets, transactions, and net worth data.")
                 }
 
-                // MARK: - Categories
                 Section {
                     NavigationLink {
                         CategoryManagementView()
@@ -138,7 +148,6 @@ struct SettingsTab: View {
                     Text("Budget")
                 }
 
-                // MARK: - Preferences
                 Section {
                     Label("Appearance", systemImage: "paintbrush")
                     Label("Notifications", systemImage: "bell.badge")
@@ -147,7 +156,6 @@ struct SettingsTab: View {
                     Text("Preferences")
                 }
 
-                // MARK: - About
                 Section {
                     HStack {
                         Text("Version")
@@ -169,6 +177,15 @@ struct SettingsTab: View {
                 }
             }
         }
+    }
+
+    private func syncNow() async {
+        guard let url = folderManager.folderURL, folderManager.isAccessible else { return }
+        isSyncing = true
+        let reader = MC2Reader(baseURL: url)
+        let sync = MC2SyncService(reader: reader, context: modelContext)
+        await sync.syncAll()
+        isSyncing = false
     }
 }
 

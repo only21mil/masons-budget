@@ -35,6 +35,7 @@ final class MC2SyncService {
         totalEntities += await syncBTCBillPays(&errors)
         totalEntities += await syncFinances(&errors)
         totalEntities += await syncSonBalances(&errors)
+
         recordNetWorthSnapshot()
 
         do {

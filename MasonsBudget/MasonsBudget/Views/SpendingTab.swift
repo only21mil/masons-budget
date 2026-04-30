@@ -73,7 +73,7 @@ struct SpendingTab: View {
                         }
                     }
 
-                    SpendingDonutChart(categoryBreakdown: groupedByCategory.map { ($0.0, $0.2, $0.3) })
+                    SpendingDonutChart()
                     MonthlyTrendChart()
 
                     if !recurringItems.isEmpty {
