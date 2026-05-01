@@ -1,21 +1,18 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct OnboardingView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("has_completed_onboarding") private var hasCompleted = false
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
-    @ObservedObject private var folderManager = MC2FolderManager.shared
-    @State private var showFolderPicker = false
     @State private var step = 0
 
     private var currentMember: FamilyMember {
         FamilyMember(rawValue: selectedMember) ?? .victor
     }
 
-    /// Total steps vary by profile — kids skip the iCloud/MC2 step
+    /// Total steps vary by profile — kids skip the voice step
     private var totalSteps: Int {
-        currentMember.showsFullBudget ? 4 : 3
+        currentMember.showsFullBudget ? 3 : 3
     }
 
     var body: some View {
@@ -27,13 +24,12 @@ struct OnboardingView: View {
 
                 Group {
                     if currentMember.showsFullBudget {
-                        // Adults: welcome → profile → voice → iCloud → ready
+                        // Adults: welcome → profile → voice → ready
                         switch step {
                         case 0: welcomeStep
                         case 1: profileStep
                         case 2: voiceStep
-                        case 3: icloudStep
-                        case 4: readyStep
+                        case 3: readyStep
                         default: EmptyView()
                         }
                     } else {
@@ -75,28 +71,6 @@ struct OnboardingView: View {
                 }
                 .padding(.horizontal, AppTheme.horizontalPadding)
                 .padding(.bottom, 40)
-            }
-        }
-        #if os(iOS)
-        .sheet(isPresented: $showFolderPicker) {
-            MC2FolderPicker { url in
-                folderManager.saveBookmark(for: url)
-            }
-        }
-        #else
-        .fileImporter(
-            isPresented: $showFolderPicker,
-            allowedContentTypes: [.folder],
-            allowsMultipleSelection: false
-        ) { result in
-            if case .success(let urls) = result, let url = urls.first {
-                folderManager.saveBookmark(for: url)
-            }
-        }
-        #endif
-        .onAppear {
-            if !folderManager.isAccessible {
-                folderManager.autoConnectICloud()
             }
         }
     }
@@ -170,50 +144,6 @@ struct OnboardingView: View {
                 onboardingBullet("Confirm & save", "Review the parsed result and tap Save")
             }
             .padding(.horizontal, 24)
-        }
-    }
-
-    private var icloudStep: some View {
-        VStack(spacing: 24) {
-            Image(systemName: folderManager.isAccessible ? "checkmark.icloud.fill" : "icloud.fill")
-                .font(.system(size: 72))
-                .foregroundStyle(folderManager.isAccessible ? AppTheme.positive : AppTheme.secondaryAccent)
-
-            Text(folderManager.isAccessible ? "iCloud Connected" : "Connect Your Data")
-                .font(.title2.weight(.bold))
-                .foregroundStyle(AppTheme.primaryText)
-
-            if folderManager.isAccessible {
-                VStack(spacing: 12) {
-                    onboardingBullet("Syncing via iCloud", "Your data syncs automatically across all your devices")
-                    onboardingBullet("No banks linked", "Manual + voice entry only — no Plaid, no data sharing")
-                    onboardingBullet("Private & secure", "Everything stays in your personal iCloud Drive")
-                }
-                .padding(.horizontal, 24)
-            } else {
-                VStack(spacing: 12) {
-                    onboardingBullet("iCloud Drive", "Your data stays private in your iCloud")
-                    onboardingBullet("No banks linked", "Manual + voice entry only — no Plaid, no data sharing")
-                    onboardingBullet("Sign in to iCloud", "Make sure iCloud Drive is enabled in Settings")
-                }
-                .padding(.horizontal, 24)
-
-                Button {
-                    folderManager.autoConnectICloud()
-                } label: {
-                    Label("Retry iCloud Connection", systemImage: "arrow.clockwise")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(AppTheme.accentColor)
-                }
-
-                Button {
-                    showFolderPicker = true
-                } label: {
-                    Label("Select Folder Manually", systemImage: "folder.badge.plus")
-                        .font(.caption)
-                        .foregroundStyle(AppTheme.secondaryText)
-                }
-            }
         }
     }
 

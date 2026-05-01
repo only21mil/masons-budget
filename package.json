@@ -1,0 +1,14 @@
+{
+  "name": "vogel-vault-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx convex dev",
+    "deploy": "npx convex deploy",
+    "sync": "node scripts/mc2-to-convex.mjs"
+  },
+  "dependencies": {
+    "convex": "^1.17.0"
+  }
+}

@@ -12,6 +12,7 @@ final class MC2SyncService {
     static let lastSyncErrorKey = "mc2_last_sync_error"
     static let syncCountKey = "mc2_sync_entity_count"
     static let selectedMemberKey = "selected_family_member"
+    static let dataVersionsKey = "mc2_data_versions"
 
     private var currentMember: FamilyMember {
         let raw = UserDefaults.standard.string(forKey: Self.selectedMemberKey) ?? "victor"
@@ -23,12 +24,18 @@ final class MC2SyncService {
         self.context = context
     }
 
+    /// Convenience init using the default Convex client.
+    init(context: ModelContext) {
+        self.reader = MC2Reader()
+        self.context = context
+    }
+
     func syncAll() async {
-        log.info("Starting MC2 sync")
+        log.info("Starting Convex sync")
         var errors: [String] = []
         var totalEntities = 0
 
-        // Always sync Mason's BTC from son-balances.json
+        // Always sync Mason's BTC from son-balances
         totalEntities += await syncSonBalances(&errors)
 
         if currentMember == .mason {
@@ -36,7 +43,7 @@ final class MC2SyncService {
             totalEntities += await syncMasonBudget(&errors)
             totalEntities += await syncMasonTransactions(&errors)
         } else {
-            // Adults: full MC2 sync
+            // Adults: full sync
             totalEntities += await syncTransactions(&errors)
             totalEntities += await syncBudget(&errors)
             totalEntities += await syncBTCAccounts(&errors)
@@ -49,7 +56,7 @@ final class MC2SyncService {
 
         do {
             try context.save()
-            log.info("MC2 sync complete: \(totalEntities) entities")
+            log.info("Convex sync complete: \(totalEntities) entities")
         } catch {
             log.error("Failed to save context: \(error.localizedDescription)")
             errors.append("Save failed: \(error.localizedDescription)")
@@ -64,6 +71,25 @@ final class MC2SyncService {
             log.warning("Sync completed with errors: \(errors.joined(separator: "; "))")
         }
     }
+
+    /// Lightweight version check — returns true if any data has changed since last sync.
+    func hasUpdates() async -> Bool {
+        do {
+            let remoteVersions = try await reader.checkVersions()
+            let savedData = UserDefaults.standard.dictionary(forKey: Self.dataVersionsKey) as? [String: Double] ?? [:]
+
+            let changed = remoteVersions != savedData
+            if changed {
+                UserDefaults.standard.set(remoteVersions, forKey: Self.dataVersionsKey)
+            }
+            return changed
+        } catch {
+            log.error("Version check failed: \(error.localizedDescription)")
+            return true // Assume updates if check fails
+        }
+    }
+
+    // MARK: - Individual sync methods
 
     private func syncTransactions(_ errors: inout [String]) async -> Int {
         do {

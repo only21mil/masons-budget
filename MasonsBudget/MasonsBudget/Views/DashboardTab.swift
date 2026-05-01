@@ -8,7 +8,6 @@ struct DashboardTab: View {
     @Query private var transactions: [Transaction]
     @Query private var categories: [BudgetCategory]
     @Environment(\.modelContext) private var modelContext
-    @EnvironmentObject private var fileObserver: MC2FileObserver
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
     @State private var showVoiceCapture = false
     @State private var showAddTransaction = false
@@ -79,9 +78,6 @@ struct DashboardTab: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: AppTheme.cardSpacing) {
-                    if fileObserver.hasUnresolvedConflicts {
-                        conflictBanner
-                    }
                     syncStatusBanner
 
                     StatCard(
@@ -315,34 +311,8 @@ struct DashboardTab: View {
         .glassCard()
     }
 
-    private var conflictBanner: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(AppTheme.warning)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Sync conflict detected")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AppTheme.primaryText)
-                Text("\(fileObserver.conflictFiles.joined(separator: ", "))")
-                    .font(.caption2)
-                    .foregroundStyle(AppTheme.secondaryText)
-                    .lineLimit(1)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(AppTheme.warning.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(AppTheme.warning.opacity(0.3), lineWidth: 1)
-        )
-    }
 }
 
 #Preview {
     DashboardTab(selectedTab: .constant(.dashboard))
-        .environmentObject(MC2FileObserver())
 }

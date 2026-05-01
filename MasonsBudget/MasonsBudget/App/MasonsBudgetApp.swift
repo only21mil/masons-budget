@@ -30,24 +30,18 @@ struct MasonsBudgetApp: App {
         }
     }()
 
-    @StateObject private var fileObserver = MC2FileObserver()
     @AppStorage("has_completed_onboarding") private var hasCompletedOnboarding = false
     @AppStorage("app_lock_enabled") private var appLockEnabled = true
     @State private var isUnlocked = false
+    @State private var syncTimer: Timer?
 
     var body: some Scene {
         WindowGroup {
             ZStack {
                 ContentView()
-                    .environmentObject(fileObserver)
                     .task {
-                        // Auto-connect iCloud if not already connected
-                        let folder = MC2FolderManager.shared
-                        if !folder.isAccessible {
-                            folder.autoConnectICloud()
-                        }
-                        await syncFromMC2()
-                        startFileObservation()
+                        await syncFromConvex()
+                        startPeriodicSync()
                         BudgetNotificationManager.shared.requestPermission()
                     }
                     .opacity(isUnlocked || !appLockEnabled ? 1 : 0)
@@ -81,6 +75,11 @@ struct MasonsBudgetApp: App {
                     isUnlocked = true
                 }
             }
+            #if os(iOS)
+            .onReceive(NotificationCenter.default.publisher(for: UIScene.willEnterForegroundNotification)) { _ in
+                Task { await syncIfChanged() }
+            }
+            #endif
         }
         .modelContainer(sharedModelContainer)
         #if os(macOS)
@@ -88,23 +87,34 @@ struct MasonsBudgetApp: App {
         #endif
     }
 
+    // MARK: - Convex Sync
+
     @MainActor
-    private func syncFromMC2() async {
-        let folder = MC2FolderManager.shared
-        guard let mc2URL = folder.folderURL, folder.isAccessible else { return }
-        let reader = MC2Reader(baseURL: mc2URL)
-        let sync = MC2SyncService(reader: reader, context: sharedModelContainer.mainContext)
+    private func syncFromConvex() async {
+        guard ConvexConfig.isConfigured else { return }
+        let sync = MC2SyncService(context: sharedModelContainer.mainContext)
         await sync.syncAll()
     }
 
+    /// Check if data has changed on Convex, and sync if so.
     @MainActor
-    private func startFileObservation() {
-        let folder = MC2FolderManager.shared
-        guard let mc2URL = folder.folderURL, folder.isAccessible else { return }
-
-        fileObserver.onFilesChanged = { [self] in
-            await syncFromMC2()
+    private func syncIfChanged() async {
+        guard ConvexConfig.isConfigured else { return }
+        let sync = MC2SyncService(context: sharedModelContainer.mainContext)
+        let changed = await sync.hasUpdates()
+        if changed {
+            await sync.syncAll()
         }
-        fileObserver.startObserving(folderURL: mc2URL)
+    }
+
+    /// Poll for changes every 15 seconds while the app is in the foreground.
+    /// This provides near-real-time updates for BTC buys, transactions, etc.
+    private func startPeriodicSync() {
+        syncTimer?.invalidate()
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in
+            Task { @MainActor in
+                await syncIfChanged()
+            }
+        }
     }
 }

@@ -52,5 +52,10 @@ Pods/
 # Environment / secrets (never commit)
 .env
 .env.*
+.env.local
 *.pem
 credentials.json
+
+# Node / Convex
+node_modules/
+convex/_generated/

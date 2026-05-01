@@ -34,22 +34,20 @@
 		299ED7B254C76D1E92A0220D /* BudgetCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F123D957238EE653A6F6751 /* BudgetCategory.swift */; };
 		2D6EE4A463AD6DCC08897957 /* AddTransactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C8D2DE28EC878C7C3600E4B /* AddTransactionView.swift */; };
 		2E6BBAB1336B38FD1D9EC8A5 /* BTCBuy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 471D5A1DCF4CD1B4C10217A1 /* BTCBuy.swift */; };
-		2F6077BCD0FB832C47CB7769 /* MC2FolderManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48F23CF5B67FAD1C5C1BE1F2 /* MC2FolderManager.swift */; };
 		31A7572529909DA600564F06 /* SpendingDonutChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C5C2A1636BDCDC17E23E67E /* SpendingDonutChart.swift */; };
 		33BBD55C6D82640D4E3554E9 /* SharedEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97885C819FB926B04D0E8D3F /* SharedEnums.swift */; };
 		34914E79C185ED10EEFDAFF5 /* SpendingTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DE48E957A60591CF071E174 /* SpendingTab.swift */; };
+		3C32EB91AFCE7AE683B55CA6 /* ConvexClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */; };
 		3C6A2ED56808C670CD87623F /* MoneyTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63CA7C8138C20D50AEE3C69 /* MoneyTab.swift */; };
 		3D7B8A5C7F91BA8DE42D76C8 /* SpendingTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DE48E957A60591CF071E174 /* SpendingTab.swift */; };
 		3DE421A2F3EF19FAB52A43ED /* RangePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C05480193020874646ACF43 /* RangePicker.swift */; };
 		3F55B3C03BBD1E4EE61A0DC2 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E34240C2E281F20DD41FF8D /* ContentView.swift */; };
 		45356F553F6824CCE0B888BA /* AssetBreakdownChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E25B9BA6192CA956FF0246 /* AssetBreakdownChart.swift */; };
-		459654DB0D06426C4B7AD7CF /* MC2FolderManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48F23CF5B67FAD1C5C1BE1F2 /* MC2FolderManager.swift */; };
 		471E9F1E7909AFA2155E8129 /* VoiceCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADD3A332127776CF17AD6132 /* VoiceCaptureView.swift */; };
 		472A41D28DD9D5D4083D88FD /* FamilyProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05894A6118C6AC44E989181E /* FamilyProfile.swift */; };
 		4791F32E8839FE9E35DB2FCE /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E34240C2E281F20DD41FF8D /* ContentView.swift */; };
 		4883E47A8D6BC35A90E82C1A /* MC2Reader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FED6C930AD774521B536178 /* MC2Reader.swift */; };
 		4896678F33B0AD12A9247DE2 /* HoldingAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19DCBB53F51F8E4A3BE1BD9E /* HoldingAccount.swift */; };
-		4A43B41E605EC8984C5BB53B /* MC2FileObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 885D982C478AA7BB34BE6FD5 /* MC2FileObserver.swift */; };
 		4A58601D081D021F3B18B255 /* BTCAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC62602DF8D847C5671804D /* BTCAccount.swift */; };
 		4B346A59BD332EF252AF63A1 /* BudgetNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7307B6F0A5546DBFB1FE332B /* BudgetNotificationManager.swift */; };
 		4B43ABD83280EB7928ED2DE8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 69F495FB3EBA9A3F6B589C2E /* Assets.xcassets */; };
@@ -82,14 +80,12 @@
 		73FA764086DAAC1259026A39 /* QuickActionButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E9CA657FCD8F39AC5395870 /* QuickActionButton.swift */; };
 		7563328AA8BADD5505402EE8 /* SyncEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F048D3DB36FA73A8D570960 /* SyncEvent.swift */; };
 		7605540B201A48941ED794B3 /* RecurringDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6B72C3A66D87A91EEF55223 /* RecurringDetectorTests.swift */; };
-		7660942564CA00669D3BC1BB /* MC2FileObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 885D982C478AA7BB34BE6FD5 /* MC2FileObserver.swift */; };
 		778D1DB82E26660D79200AF9 /* RangePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C05480193020874646ACF43 /* RangePicker.swift */; };
 		782A09EC4BA962E5BC01FA87 /* SpendingTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DE48E957A60591CF071E174 /* SpendingTab.swift */; };
 		79A6C2D2F98F3A14B180940A /* SectionHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 731A2E18DA739BFAA36799B7 /* SectionHeader.swift */; };
 		7A6F4CE5CE7C098A4BEB7835 /* VoiceParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B1E681CE6C03C61153CAE59 /* VoiceParser.swift */; };
 		7D74B14636589F6D904B3C66 /* DashboardTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82835D1EBE720A8FCF6AF6F4 /* DashboardTab.swift */; };
 		7EBF6FD4B75F9AED49ED1929 /* MC2Writer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83FF5881FEDEF12488ADDF0F /* MC2Writer.swift */; };
-		7FFC14343E8DD1EEA02F4683 /* MC2FileObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 885D982C478AA7BB34BE6FD5 /* MC2FileObserver.swift */; };
 		8017B8AF02E47E882740DB76 /* MicFAB.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14917D69DA4E2A3C2E635E78 /* MicFAB.swift */; };
 		806AEA108D187D253151859C /* SpendingDonutChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C5C2A1636BDCDC17E23E67E /* SpendingDonutChart.swift */; };
 		80A637E625F3EF70CF7EF91A /* MC2DTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 130D186945E2F17AE4A79132 /* MC2DTOs.swift */; };
@@ -99,14 +95,15 @@
 		886FC7BE950409B868A7FC01 /* TransactionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35FA4150361CC749FF574EF9 /* TransactionRow.swift */; };
 		8A0A5A6536516FF4425A41D5 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5AFC3C821C582B4F9E705206 /* Preview Assets.xcassets */; };
 		8A41817F4810A032FC16524A /* MC2Mapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7153D63352CB5B58C4F366A /* MC2Mapper.swift */; };
+		8B7D4660455866A0008B1DA6 /* ConvexClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */; };
 		8BA35B984CBC11936AF54AD2 /* StatCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA23871743A5C2BF75CD9262 /* StatCard.swift */; };
 		8CF4139C75810E99221B0692 /* FamilyProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05894A6118C6AC44E989181E /* FamilyProfile.swift */; };
 		8D76986C56C1119C0838190D /* MC2SyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F83F4110E2D16CDC2FE7C85A /* MC2SyncService.swift */; };
-		8DDF3C0FE84A21C5000D828C /* MC2FolderManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48F23CF5B67FAD1C5C1BE1F2 /* MC2FolderManager.swift */; };
 		8EC6A19D6A56533D10952339 /* MoneyTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63CA7C8138C20D50AEE3C69 /* MoneyTab.swift */; };
 		91B5B4B30530980D88BA4D5F /* QuickActionButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E9CA657FCD8F39AC5395870 /* QuickActionButton.swift */; };
 		9D6F85F37E6F099555915BC7 /* StatCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA23871743A5C2BF75CD9262 /* StatCard.swift */; };
 		A0353F71D2174CC8D429E7B9 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5AFC3C821C582B4F9E705206 /* Preview Assets.xcassets */; };
+		A2757F55A7495EBA3A48C270 /* ConvexClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */; };
 		AC4B388167FA9DAB45D43515 /* SyncEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F048D3DB36FA73A8D570960 /* SyncEvent.swift */; };
 		AC9DFD3F20A65000ABF54CDC /* HoldingAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19DCBB53F51F8E4A3BE1BD9E /* HoldingAccount.swift */; };
 		ADA692279C957C0AFBD77C69 /* VoiceParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B1E681CE6C03C61153CAE59 /* VoiceParser.swift */; };
@@ -171,7 +168,6 @@
 		42C739032DD87F0935207375 /* MonthlyTrendChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonthlyTrendChart.swift; sourceTree = "<group>"; };
 		471D5A1DCF4CD1B4C10217A1 /* BTCBuy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BTCBuy.swift; sourceTree = "<group>"; };
 		480C74EED82F7E8CACA2ECAD /* MasonsBudget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MasonsBudget.entitlements; sourceTree = "<group>"; };
-		48F23CF5B67FAD1C5C1BE1F2 /* MC2FolderManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MC2FolderManager.swift; sourceTree = "<group>"; };
 		4CC62602DF8D847C5671804D /* BTCAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BTCAccount.swift; sourceTree = "<group>"; };
 		4E34240C2E281F20DD41FF8D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		5AFC3C821C582B4F9E705206 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
@@ -188,7 +184,6 @@
 		8388ECD356E3E00B77790681 /* MasonsBudgetApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasonsBudgetApp.swift; sourceTree = "<group>"; };
 		83FF5881FEDEF12488ADDF0F /* MC2Writer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MC2Writer.swift; sourceTree = "<group>"; };
 		84B5CA78FD69DF5C17B4C334 /* MasonsBudgetTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MasonsBudgetTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		885D982C478AA7BB34BE6FD5 /* MC2FileObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MC2FileObserver.swift; sourceTree = "<group>"; };
 		8B1E681CE6C03C61153CAE59 /* VoiceParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceParser.swift; sourceTree = "<group>"; };
 		8B2D2A739D76D88CF2D981C6 /* MonthlyBudgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonthlyBudgetSnapshot.swift; sourceTree = "<group>"; };
 		97885C819FB926B04D0E8D3F /* SharedEnums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedEnums.swift; sourceTree = "<group>"; };
@@ -208,6 +203,7 @@
 		E117823C6DA6138431AE80C8 /* LockScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenView.swift; sourceTree = "<group>"; };
 		EF559B68DCF5C8C506B2A151 /* NetWorthSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetWorthSnapshot.swift; sourceTree = "<group>"; };
 		EF5C5935A12805ECA579168B /* MasonsBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasonsBudgetTests.swift; sourceTree = "<group>"; };
+		F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexClient.swift; sourceTree = "<group>"; };
 		F83F4110E2D16CDC2FE7C85A /* MC2SyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MC2SyncService.swift; sourceTree = "<group>"; };
 		FA0A8C471C710071DD40D002 /* CategoryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryRow.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -288,9 +284,8 @@
 			isa = PBXGroup;
 			children = (
 				7307B6F0A5546DBFB1FE332B /* BudgetNotificationManager.swift */,
+				F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */,
 				130D186945E2F17AE4A79132 /* MC2DTOs.swift */,
-				885D982C478AA7BB34BE6FD5 /* MC2FileObserver.swift */,
-				48F23CF5B67FAD1C5C1BE1F2 /* MC2FolderManager.swift */,
 				A7153D63352CB5B58C4F366A /* MC2Mapper.swift */,
 				3FED6C930AD774521B536178 /* MC2Reader.swift */,
 				F83F4110E2D16CDC2FE7C85A /* MC2SyncService.swift */,
@@ -497,13 +492,12 @@
 				0BFF56D9C81E3D5407DF92E2 /* CategoryManagementView.swift in Sources */,
 				B94B3D13C901AACAC16345CB /* CategoryRow.swift in Sources */,
 				4791F32E8839FE9E35DB2FCE /* ContentView.swift in Sources */,
+				3C32EB91AFCE7AE683B55CA6 /* ConvexClient.swift in Sources */,
 				D23DC90030D328B07EDF624D /* DashboardTab.swift in Sources */,
 				8CF4139C75810E99221B0692 /* FamilyProfile.swift in Sources */,
 				4896678F33B0AD12A9247DE2 /* HoldingAccount.swift in Sources */,
 				F9EAF981A0A2BBC7BF5398C7 /* LockScreenView.swift in Sources */,
 				FF848533C741DC91C85E63A6 /* MC2DTOs.swift in Sources */,
-				4A43B41E605EC8984C5BB53B /* MC2FileObserver.swift in Sources */,
-				8DDF3C0FE84A21C5000D828C /* MC2FolderManager.swift in Sources */,
 				8A41817F4810A032FC16524A /* MC2Mapper.swift in Sources */,
 				4883E47A8D6BC35A90E82C1A /* MC2Reader.swift in Sources */,
 				8D76986C56C1119C0838190D /* MC2SyncService.swift in Sources */,
@@ -549,13 +543,12 @@
 				CF4B751C83D857C859E39CA7 /* CategoryManagementView.swift in Sources */,
 				FF8D53D5163A1B9AE2CDF489 /* CategoryRow.swift in Sources */,
 				84D36BF1F75AFCEAE45CA0A2 /* ContentView.swift in Sources */,
+				A2757F55A7495EBA3A48C270 /* ConvexClient.swift in Sources */,
 				63C72DAD9763699A8C54F17B /* DashboardTab.swift in Sources */,
 				4C8EAE9F329F12474404F004 /* FamilyProfile.swift in Sources */,
 				AC9DFD3F20A65000ABF54CDC /* HoldingAccount.swift in Sources */,
 				D1F0030EFC8EF2EF555C9F9B /* LockScreenView.swift in Sources */,
 				80A637E625F3EF70CF7EF91A /* MC2DTOs.swift in Sources */,
-				7660942564CA00669D3BC1BB /* MC2FileObserver.swift in Sources */,
-				2F6077BCD0FB832C47CB7769 /* MC2FolderManager.swift in Sources */,
 				0CFAF3E5C73D4E08B671BCD1 /* MC2Mapper.swift in Sources */,
 				0163BE114D91A8E5CC8B83D9 /* MC2Reader.swift in Sources */,
 				644A9C60B8F4E48663CBB5E8 /* MC2SyncService.swift in Sources */,
@@ -601,13 +594,12 @@
 				07037ECDC93BA6E34F109E58 /* CategoryManagementView.swift in Sources */,
 				5AEBD7763FADB16C4853FCF9 /* CategoryRow.swift in Sources */,
 				3F55B3C03BBD1E4EE61A0DC2 /* ContentView.swift in Sources */,
+				8B7D4660455866A0008B1DA6 /* ConvexClient.swift in Sources */,
 				7D74B14636589F6D904B3C66 /* DashboardTab.swift in Sources */,
 				472A41D28DD9D5D4083D88FD /* FamilyProfile.swift in Sources */,
 				BCDB4955AE6195145DB25EB0 /* HoldingAccount.swift in Sources */,
 				C156A53D5E586FF9A67A0545 /* LockScreenView.swift in Sources */,
 				E678847B04562368D94CD18E /* MC2DTOs.swift in Sources */,
-				7FFC14343E8DD1EEA02F4683 /* MC2FileObserver.swift in Sources */,
-				459654DB0D06426C4B7AD7CF /* MC2FolderManager.swift in Sources */,
 				E1C04F1716739188C30E08AE /* MC2Mapper.swift in Sources */,
 				6BD6E79598F2D802012B0E0B /* MC2Reader.swift in Sources */,
 				13B0689FDDF4EC812E83272D /* MC2ReaderTests.swift in Sources */,

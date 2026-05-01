@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import UniformTypeIdentifiers
 
 struct SettingsTab: View {
     @Query private var transactions: [Transaction]
@@ -10,9 +9,7 @@ struct SettingsTab: View {
     @Query private var snapshots: [MonthlyBudgetSnapshot]
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
     @AppStorage("app_lock_enabled") private var appLockEnabled = true
-    @ObservedObject private var folderManager = MC2FolderManager.shared
     @Environment(\.modelContext) private var modelContext
-    @State private var showFolderPicker = false
     @State private var isSyncing = false
 
     private var currentMember: FamilyMember {
@@ -75,19 +72,9 @@ struct SettingsTab: View {
 
                 Section {
                     HStack {
-                        Label("iCloud", systemImage: folderManager.isAccessible ? "checkmark.icloud.fill" : "icloud")
+                        Label("Convex Cloud", systemImage: ConvexConfig.isConfigured ? "cloud.fill" : "cloud")
                         Spacer()
-                        SyncBadge(status: folderManager.isAccessible ? .synced : .disconnected)
-                    }
-                    if folderManager.isAccessible {
-                        HStack {
-                            Label("MC2 Folder", systemImage: "folder.fill")
-                                .foregroundStyle(AppTheme.primaryText)
-                            Spacer()
-                            Text(folderManager.folderDisplayPath)
-                                .font(.caption)
-                                .foregroundStyle(AppTheme.positive)
-                        }
+                        SyncBadge(status: ConvexConfig.isConfigured ? .synced : .disconnected)
                     }
                     HStack {
                         Label("Last Sync", systemImage: "arrow.triangle.2.circlepath")
@@ -113,44 +100,22 @@ struct SettingsTab: View {
                                 .lineLimit(2)
                         }
                     }
-                    if folderManager.isAccessible {
-                        Button {
-                            Task { await syncNow() }
-                        } label: {
-                            HStack {
-                                Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
-                                Spacer()
-                                if isSyncing {
-                                    ProgressView()
-                                }
+                    Button {
+                        Task { await syncNow() }
+                    } label: {
+                        HStack {
+                            Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                            Spacer()
+                            if isSyncing {
+                                ProgressView()
                             }
                         }
-                    } else {
-                        Button {
-                            folderManager.autoConnectICloud()
-                        } label: {
-                            Label("Reconnect iCloud", systemImage: "arrow.clockwise")
-                        }
                     }
-                    Button {
-                        showFolderPicker = true
-                    } label: {
-                        Label("Choose Folder Manually", systemImage: "folder.badge.gearshape")
-                            .font(.caption)
-                            .foregroundStyle(AppTheme.secondaryText)
-                    }
-                    if folderManager.isAccessible {
-                        Button(role: .destructive) {
-                            folderManager.clearBookmark()
-                        } label: {
-                            Label("Disconnect", systemImage: "folder.badge.minus")
-                                .font(.caption)
-                        }
-                    }
+                    .disabled(!ConvexConfig.isConfigured)
                 } header: {
                     Text("Data & Sync")
                 } footer: {
-                    Text("Data syncs automatically via iCloud Drive. Use \"Choose Folder Manually\" to override the default location.")
+                    Text("Data syncs automatically from the cloud every 15 seconds. Tap \"Sync Now\" to refresh immediately.")
                 }
 
                 Section {
@@ -179,7 +144,7 @@ struct SettingsTab: View {
                     HStack {
                         Text("Version")
                         Spacer()
-                        Text("0.1.0")
+                        Text("0.2.0")
                             .foregroundStyle(AppTheme.tertiaryText)
                     }
                 } header: {
@@ -191,30 +156,13 @@ struct SettingsTab: View {
             .navigationTitle("Settings")
             #if os(iOS)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            .sheet(isPresented: $showFolderPicker) {
-                MC2FolderPicker { url in
-                    folderManager.saveBookmark(for: url)
-                }
-            }
-            #else
-            .fileImporter(
-                isPresented: $showFolderPicker,
-                allowedContentTypes: [.folder],
-                allowsMultipleSelection: false
-            ) { result in
-                if case .success(let urls) = result, let url = urls.first {
-                    folderManager.saveBookmark(for: url)
-                }
-            }
             #endif
         }
     }
 
     private func syncNow() async {
-        guard let url = folderManager.folderURL, folderManager.isAccessible else { return }
         isSyncing = true
-        let reader = MC2Reader(baseURL: url)
-        let sync = MC2SyncService(reader: reader, context: modelContext)
+        let sync = MC2SyncService(context: modelContext)
         await sync.syncAll()
         isSyncing = false
     }
