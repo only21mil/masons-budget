@@ -8,6 +8,8 @@ struct MoneyTab: View {
     @Query private var snapshots: [MonthlyBudgetSnapshot]
     @Query private var transactions: [Transaction]
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
+    @AppStorage(BTCPriceService.priceKey) private var liveBTCPriceUSD: Double = 0
+    @AppStorage(BTCPriceService.sourceKey) private var liveBTCPriceSource: String = ""
 
     private var currentMember: FamilyMember {
         FamilyMember(rawValue: selectedMember) ?? .victor
@@ -35,10 +37,16 @@ struct MoneyTab: View {
         myHoldingAccounts.reduce(Decimal(0)) { $0 + $1.totalValue }
     }
 
-    private var estimatedBtcUsd: Decimal { totalBtc * AppTheme.assumedBTCPrice }
+    private var estimatedBtcUsd: Decimal {
+        myBtcAccounts.reduce(Decimal(0)) { $0 + $1.usdValue(liveBTCPrice: liveBTCPrice) }
+    }
+
+    private var liveBTCPrice: Decimal? {
+        liveBTCPriceUSD > 0 ? Decimal(liveBTCPriceUSD) : nil
+    }
 
     private var latestSnapshot: MonthlyBudgetSnapshot? {
-        snapshots.sorted { $0.monthKey > $1.monthKey }.first
+        snapshots.sorted { $0.lastUpdated > $1.lastUpdated }.first
     }
 
     private var monthlyGross: Decimal {
@@ -57,7 +65,7 @@ struct MoneyTab: View {
                     StatCard(
                         title: "Estimated Total",
                         value: formatCurrency(totalHoldingsValue + estimatedBtcUsd),
-                        subtitle: "BTC (\(formatBtc(totalBtc))) + 401k/WAP (\(formatCurrency(totalHoldingsValue)))",
+                        subtitle: "BTC (\(formatBtc(totalBtc))) @ \(btcPriceLabel) + 401k/WAP (\(formatCurrency(totalHoldingsValue)))",
                         icon: "dollarsign.circle.fill"
                     )
 
@@ -233,13 +241,19 @@ struct MoneyTab: View {
                     Text(formatBtc(account.btc))
                         .font(.headline)
                         .foregroundStyle(AppTheme.accentColor)
-                    Text(formatCurrency(account.btc * AppTheme.assumedBTCPrice))
+                    Text(formatCurrency(account.usdValue(liveBTCPrice: liveBTCPrice)))
                         .font(.caption2)
                         .foregroundStyle(AppTheme.secondaryText)
                 }
             }
         }
         .glassCard()
+    }
+
+    private var btcPriceLabel: String {
+        guard let liveBTCPrice else { return "snapshot" }
+        let source = liveBTCPriceSource.isEmpty ? "live" : liveBTCPriceSource
+        return "\(formatCurrency(liveBTCPrice)) \(source)"
     }
 
     private func holdingAccountCard(_ account: HoldingAccount) -> some View {

@@ -91,6 +91,33 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertEqual(acct.fiat, 0)
     }
 
+    func testBTCAccountUsesSyncedFiatValue() {
+        UserDefaults.standard.removeObject(forKey: BTCPriceService.priceKey)
+        let acct = BTCAccount(
+            key: "river-victor",
+            label: "River",
+            custody: .exchange,
+            btc: Decimal(string: "0.5")!,
+            fiat: 50000,
+            owner: .victor
+        )
+
+        XCTAssertEqual(acct.usdValue(), 50000)
+    }
+
+    func testBTCAccountUsesLivePriceOverSnapshotFiat() {
+        let acct = BTCAccount(
+            key: "river-victor-live",
+            label: "River",
+            custody: .exchange,
+            btc: Decimal(string: "0.5")!,
+            fiat: 50000,
+            owner: .victor
+        )
+
+        XCTAssertEqual(acct.usdValue(liveBTCPrice: 100000), 50000)
+    }
+
     func testBTCBuyInit() {
         let buy = BTCBuy(
             id: "b-strike-2026-04-30",

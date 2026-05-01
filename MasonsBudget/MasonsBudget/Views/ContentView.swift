@@ -68,6 +68,7 @@ struct ContentView: View {
                 .tag(AppTab.settings)
         }
         .tint(AppTheme.accentColor)
+        .preferredColorScheme(.dark)
         #endif
     }
 }

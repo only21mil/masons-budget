@@ -102,7 +102,7 @@ enum MC2Mapper {
             category: dto.category,
             amountUSD: dto.amountUsd,
             btcSpent: dto.btcSpent,
-            btcPrice: dto.btcPrice,
+            btcPrice: dto.effectiveBtcPrice,
             feeUSD: dto.feeUsd,
             platform: dto.platform ?? "Strike",
             note: dto.note,

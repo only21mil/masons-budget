@@ -66,6 +66,8 @@ final class MC2SyncService {
         UserDefaults.standard.set(totalEntities, forKey: Self.syncCountKey)
         if errors.isEmpty {
             UserDefaults.standard.removeObject(forKey: Self.lastSyncErrorKey)
+            // Only mark versions as synced when sync fully succeeds
+            await saveCurrentVersions()
         } else {
             UserDefaults.standard.set(errors.joined(separator: "; "), forKey: Self.lastSyncErrorKey)
             log.warning("Sync completed with errors: \(errors.joined(separator: "; "))")
@@ -73,19 +75,26 @@ final class MC2SyncService {
     }
 
     /// Lightweight version check — returns true if any data has changed since last sync.
+    /// Note: versions are stored AFTER syncAll() completes (in syncAll), not here,
+    /// so a failed sync will retry on the next poll.
     func hasUpdates() async -> Bool {
         do {
             let remoteVersions = try await reader.checkVersions()
             let savedData = UserDefaults.standard.dictionary(forKey: Self.dataVersionsKey) as? [String: Double] ?? [:]
-
-            let changed = remoteVersions != savedData
-            if changed {
-                UserDefaults.standard.set(remoteVersions, forKey: Self.dataVersionsKey)
-            }
-            return changed
+            return remoteVersions != savedData
         } catch {
             log.error("Version check failed: \(error.localizedDescription)")
             return true // Assume updates if check fails
+        }
+    }
+
+    /// Save current remote versions to UserDefaults (call after successful sync).
+    func saveCurrentVersions() async {
+        do {
+            let versions = try await reader.checkVersions()
+            UserDefaults.standard.set(versions, forKey: Self.dataVersionsKey)
+        } catch {
+            log.error("Failed to save versions: \(error.localizedDescription)")
         }
     }
 
@@ -229,12 +238,29 @@ final class MC2SyncService {
 
     private func recordNetWorthSnapshot() {
         do {
+            // Only record one snapshot per day per member to avoid unbounded growth
+            let cal = Calendar.current
+            let existing = try context.fetch(FetchDescriptor<NetWorthSnapshot>())
+            let todaySnapshots = existing.filter {
+                $0.owner == currentMember && cal.isDateInToday($0.date)
+            }
+            // Remove today's stale snapshots — we'll replace with fresh data
+            for old in todaySnapshots {
+                context.delete(old)
+            }
+
+            // Prune snapshots older than 90 days to keep storage bounded
+            let cutoff = cal.date(byAdding: .day, value: -90, to: Date()) ?? Date()
+            for old in existing.filter({ $0.date < cutoff }) {
+                context.delete(old)
+            }
+
             let btcAccounts = try context.fetch(FetchDescriptor<BTCAccount>())
             let holdingAccounts = try context.fetch(FetchDescriptor<HoldingAccount>())
 
             let btcValue = btcAccounts
                 .filter { $0.owner == currentMember }
-                .reduce(Decimal(0)) { $0 + $1.btc } * AppTheme.assumedBTCPrice
+                .reduce(Decimal(0)) { $0 + $1.usdValue() }
             let holdingsValue = holdingAccounts
                 .filter { $0.owner == currentMember }
                 .reduce(Decimal(0)) { $0 + $1.totalValue }

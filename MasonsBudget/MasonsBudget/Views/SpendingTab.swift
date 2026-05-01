@@ -4,9 +4,11 @@ import SwiftData
 struct SpendingTab: View {
     @Query private var transactions: [Transaction]
     @Query private var categories: [BudgetCategory]
+    @Environment(\.modelContext) private var modelContext
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
     @State private var monthOffset: Int = 0
     @State private var recurringItems: [RecurringTransaction] = []
+    @State private var transactionToDelete: Transaction?
 
     private var currentMember: FamilyMember {
         FamilyMember(rawValue: selectedMember) ?? .victor
@@ -69,11 +71,22 @@ struct SpendingTab: View {
                     if !groupedByCategory.isEmpty {
                         SectionHeader(title: "By Category", icon: "chart.bar.fill")
                         ForEach(groupedByCategory, id: \.0) { catName, budget, spent, icon in
-                            CategoryRow(name: catName, icon: icon, spent: spent, budget: budget)
+                            NavigationLink {
+                                CategoryDetailView(
+                                    categoryName: catName,
+                                    categoryIcon: icon,
+                                    budget: budget,
+                                    spent: spent,
+                                    transactions: selectedMonthTransactions.filter { $0.category == catName }
+                                )
+                            } label: {
+                                CategoryRow(name: catName, icon: icon, spent: spent, budget: budget)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
 
-                    SpendingDonutChart()
+                    SpendingDonutChart(selectedMonth: selectedMonth)
                     MonthlyTrendChart()
 
                     if !recurringItems.isEmpty {
@@ -93,6 +106,13 @@ struct SpendingTab: View {
                                 date: tx.date,
                                 card: tx.card
                             )
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    transactionToDelete = tx
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                         }
                     }
                 }
@@ -107,6 +127,23 @@ struct SpendingTab: View {
             #endif
             .task {
                 recurringItems = RecurringDetector().detect(from: myTransactions)
+            }
+            .alert("Delete Transaction?", isPresented: Binding(
+                get: { transactionToDelete != nil },
+                set: { if !$0 { transactionToDelete = nil } }
+            )) {
+                Button("Cancel", role: .cancel) { transactionToDelete = nil }
+                Button("Delete", role: .destructive) {
+                    if let tx = transactionToDelete {
+                        modelContext.delete(tx)
+                        try? modelContext.save()
+                    }
+                    transactionToDelete = nil
+                }
+            } message: {
+                if let tx = transactionToDelete {
+                    Text("Delete \(tx.merchant) — \(formatCurrency(tx.amount))?")
+                }
             }
         }
     }

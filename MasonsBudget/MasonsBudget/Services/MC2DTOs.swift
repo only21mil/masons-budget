@@ -139,11 +139,18 @@ struct MC2BTCBillPay: Codable {
     let category: String
     let amountUsd: Decimal
     let btcSpent: Decimal
-    let btcPrice: Decimal
+    let btcPrice: Decimal?
     let platform: String?
     let note: String?
     let feeUsd: Decimal?
     let reference: String?
+
+    /// BTC price at time of bill pay — computed from amount/btc when missing.
+    var effectiveBtcPrice: Decimal {
+        if let price = btcPrice { return price }
+        guard btcSpent > 0 else { return 0 }
+        return amountUsd / btcSpent
+    }
 
     enum CodingKeys: String, CodingKey {
         case id, date, merchant, category, platform, note, reference
@@ -162,11 +169,24 @@ struct MC2BillPaysWrapper: Codable {
     }
 }
 
-struct MC2FinancesRetirement: Codable {
+struct MC2FinancesRetirement: Decodable {
     let accounts: [String: MC2FinanceAccount]
 
     enum CodingKeys: String, CodingKey {
         case accounts
+    }
+
+    private struct DynamicKey: CodingKey {
+        let stringValue: String
+        let intValue: Int? = nil
+
+        init?(stringValue: String) {
+            self.stringValue = stringValue
+        }
+
+        init?(intValue: Int) {
+            return nil
+        }
     }
 
     init(from decoder: Decoder) throws {
@@ -174,12 +194,19 @@ struct MC2FinancesRetirement: Codable {
            let acc = try? container.decode([String: MC2FinanceAccount].self, forKey: .accounts) {
             self.accounts = acc
         } else {
-            self.accounts = try decoder.singleValueContainer().decode([String: MC2FinanceAccount].self)
+            let container = try decoder.container(keyedBy: DynamicKey.self)
+            var decoded: [String: MC2FinanceAccount] = [:]
+            for key in container.allKeys {
+                if let account = try? container.decode(MC2FinanceAccount.self, forKey: key) {
+                    decoded[key.stringValue] = account
+                }
+            }
+            self.accounts = decoded
         }
     }
 }
 
-struct MC2FinanceAccount: Codable {
+struct MC2FinanceAccount: Decodable {
     let provider: String?
     let total: Decimal?
     let weeklyContribution: Decimal?
@@ -188,9 +215,17 @@ struct MC2FinanceAccount: Codable {
     enum CodingKeys: String, CodingKey {
         case provider, total, weeklyContribution, holdings
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try container.decodeIfPresent(String.self, forKey: .provider)
+        total = try container.decodeIfPresent(Decimal.self, forKey: .total)
+        weeklyContribution = try container.decodeIfPresent(Decimal.self, forKey: .weeklyContribution)
+        holdings = try container.decodeIfPresent([MC2FinanceHolding].self, forKey: .holdings) ?? []
+    }
 }
 
-struct MC2FinanceHolding: Codable {
+struct MC2FinanceHolding: Decodable {
     let name: String
     let category: String
     let ticker: String?
@@ -209,9 +244,25 @@ struct MC2FinanceHolding: Codable {
         case costBasis, gainPct, avgCost, currentPricePerShare
         case proxy, proxyNote
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        category = try container.decodeIfPresent(String.self, forKey: .category) ?? "Uncategorized"
+        ticker = try container.decodeIfPresent(String.self, forKey: .ticker)
+        value = try container.decodeIfPresent(Decimal.self, forKey: .value) ?? 0
+        costBasis = try container.decodeIfPresent(Decimal.self, forKey: .costBasis) ?? value
+        gainPct = try container.decodeIfPresent(Decimal.self, forKey: .gainPct) ?? 0
+        shares = try container.decodeIfPresent(Decimal.self, forKey: .shares) ?? 0
+        avgCost = try container.decodeIfPresent(Decimal.self, forKey: .avgCost) ?? 0
+        currentPricePerShare = try container.decodeIfPresent(Decimal.self, forKey: .currentPricePerShare) ?? 0
+        proxy = try container.decodeIfPresent(Bool.self, forKey: .proxy)
+        proxyNote = try container.decodeIfPresent(String.self, forKey: .proxyNote)
+        lots = try container.decodeIfPresent([MC2FinanceLot].self, forKey: .lots)
+    }
 }
 
-struct MC2FinanceLot: Codable {
+struct MC2FinanceLot: Decodable {
     let date: String
     let type: String
     let pricePerShare: Decimal?
@@ -220,19 +271,21 @@ struct MC2FinanceLot: Codable {
     let note: String?
 }
 
-struct MC2Finances: Codable {
+struct MC2Finances: Decodable {
     let retirement: MC2FinancesRetirement
     let lastUpdated: String?
 
     enum CodingKeys: String, CodingKey {
         case retirement
         case lastUpdated = "last_updated"
+        case camelLastUpdated = "lastUpdated"
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         retirement = try container.decode(MC2FinancesRetirement.self, forKey: .retirement)
         lastUpdated = try container.decodeIfPresent(String.self, forKey: .lastUpdated)
+            ?? container.decodeIfPresent(String.self, forKey: .camelLastUpdated)
     }
 }
 

@@ -9,6 +9,7 @@ struct DashboardTab: View {
     @Query private var categories: [BudgetCategory]
     @Environment(\.modelContext) private var modelContext
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
+    @AppStorage(BTCPriceService.priceKey) private var liveBTCPriceUSD: Double = 0
     @State private var showVoiceCapture = false
     @State private var showAddTransaction = false
     @Binding var selectedTab: AppTab
@@ -43,8 +44,12 @@ struct DashboardTab: View {
 
     private var netWorth: Decimal {
         let holdingsTotal = myHoldingAccounts.reduce(Decimal(0)) { $0 + $1.totalValue }
-        let btcTotal = myBtcAccounts.reduce(Decimal(0)) { $0 + $1.btc }
-        return holdingsTotal + (btcTotal * AppTheme.assumedBTCPrice)
+        let btcValue = myBtcAccounts.reduce(Decimal(0)) { $0 + $1.usdValue(liveBTCPrice: liveBTCPrice) }
+        return holdingsTotal + btcValue
+    }
+
+    private var liveBTCPrice: Decimal? {
+        liveBTCPriceUSD > 0 ? Decimal(liveBTCPriceUSD) : nil
     }
 
     private var latestSnapshot: MonthlyBudgetSnapshot? {
@@ -154,7 +159,7 @@ struct DashboardTab: View {
     }
 
     private func handleManualSave(amount: Decimal, merchant: String, category: String, card: String?, note: String?) {
-        let id = "manual-\(Int(Date().timeIntervalSince1970))"
+        let id = "manual-\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString.prefix(6))"
         let tx = Transaction(
             id: id,
             date: Date(),
@@ -180,7 +185,7 @@ struct DashboardTab: View {
         let card = parsed.card
         let note = parsed.note
 
-        let id = "voice-\(Int(date.timeIntervalSince1970))"
+        let id = "voice-\(Int(date.timeIntervalSince1970))-\(UUID().uuidString.prefix(6))"
         let tx = Transaction(
             id: id,
             date: date,

@@ -5,24 +5,38 @@ import Charts
 struct AssetBreakdownChart: View {
     @Query private var btcAccounts: [BTCAccount]
     @Query private var holdingAccounts: [HoldingAccount]
+    @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
+    @AppStorage(BTCPriceService.priceKey) private var liveBTCPriceUSD: Double = 0
+
+    private var currentMember: FamilyMember {
+        FamilyMember(rawValue: selectedMember) ?? .victor
+    }
+
+    private var myBtcAccounts: [BTCAccount] {
+        btcAccounts.filter { $0.owner == currentMember }
+    }
+
+    private var myHoldingAccounts: [HoldingAccount] {
+        holdingAccounts.filter { $0.owner == currentMember }
+    }
 
     private var btcTotal: Decimal {
-        btcAccounts.reduce(Decimal(0)) { $0 + $1.btc } * AppTheme.assumedBTCPrice
+        myBtcAccounts.reduce(Decimal(0)) { $0 + $1.usdValue(liveBTCPrice: liveBTCPrice) }
     }
 
     private var holdingsTotal: Decimal {
-        holdingAccounts.reduce(Decimal(0)) { $0 + $1.totalValue }
+        myHoldingAccounts.reduce(Decimal(0)) { $0 + $1.totalValue }
     }
 
     private var segments: [(String, Decimal, Color)] {
         var items: [(String, Decimal, Color)] = []
-        for account in btcAccounts.sorted(by: { $0.btc > $1.btc }) {
-            let value = account.btc * AppTheme.assumedBTCPrice
+        for account in myBtcAccounts.sorted(by: { $0.btc > $1.btc }) {
+            let value = account.usdValue(liveBTCPrice: liveBTCPrice)
             if value > 0 {
                 items.append((account.label, value, AppTheme.accentColor))
             }
         }
-        for account in holdingAccounts.sorted(by: { $0.totalValue > $1.totalValue }) {
+        for account in myHoldingAccounts.sorted(by: { $0.totalValue > $1.totalValue }) {
             if account.totalValue > 0 {
                 items.append((account.provider, account.totalValue, AppTheme.secondaryAccent))
             }
@@ -81,6 +95,10 @@ struct AssetBreakdownChart: View {
 
     private var totalValue: Decimal {
         segments.reduce(Decimal(0)) { $0 + $1.1 }
+    }
+
+    private var liveBTCPrice: Decimal? {
+        liveBTCPriceUSD > 0 ? Decimal(liveBTCPriceUSD) : nil
     }
 
     private func pctString(_ value: Decimal) -> String {

@@ -55,13 +55,15 @@ final class VoiceCaptureModel: ObservableObject {
         isListening = true
 
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
-            guard let self = self else { return }
-            if let result = result {
-                self.transcript = result.bestTranscription.formattedString
-            }
-            if error != nil || result?.isFinal == true {
-                self.stopListening()
-                self.parseTranscript()
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if let result = result {
+                    self.transcript = result.bestTranscription.formattedString
+                }
+                if error != nil || result?.isFinal == true {
+                    self.stopListening()
+                    self.parseTranscript()
+                }
             }
         }
     }

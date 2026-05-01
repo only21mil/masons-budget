@@ -340,6 +340,56 @@ final class MC2ReaderTests: XCTestCase {
         XCTAssertEqual(finances.retirement.accounts["401k"]?.holdings.count, 1)
     }
 
+    func testDecodeLiveFinancesShape() throws {
+        let json = """
+        {
+          "lastUpdated": "2026-04-29",
+          "retirement": {
+            "401k": {
+              "provider": "Discount Tire 401(k)",
+              "total": 773307.46,
+              "holdings": [
+                {
+                  "name": "Cash & Money Market",
+                  "category": "Cash",
+                  "value": 37.83,
+                  "costBasis": 37.83,
+                  "gainPct": 0
+                }
+              ],
+              "weeklyContribution": 291.6,
+              "weeklyContributionDay": "Friday"
+            },
+            "wap": {
+              "provider": "Discount Tire WAP",
+              "total": 911987.42,
+              "holdings": [
+                {
+                  "name": "VOO - Vanguard S&P 500 ETF",
+                  "ticker": "VOO",
+                  "value": 911987.42,
+                  "costBasis": 356459.07,
+                  "gainPct": 155.85,
+                  "shares": 1393.9646307166,
+                  "avgCost": 255.72,
+                  "currentPricePerShare": 654.24
+                }
+              ]
+            },
+            "total": 1685294.88
+          }
+        }
+        """.data(using: .utf8)!
+
+        let finances = try JSONDecoder().decode(MC2Finances.self, from: json)
+
+        XCTAssertEqual(finances.lastUpdated, "2026-04-29")
+        XCTAssertEqual(Set(finances.retirement.accounts.keys), ["401k", "wap"])
+        XCTAssertNil(finances.retirement.accounts["total"])
+        XCTAssertEqual(finances.retirement.accounts["401k"]?.holdings[0].shares, 0)
+        XCTAssertEqual(finances.retirement.accounts["wap"]?.holdings[0].category, "Uncategorized")
+    }
+
     func testMapFinancesCreatesHoldingTree() throws {
         let json = """
         {

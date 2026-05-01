@@ -3,9 +3,14 @@ import SwiftData
 import Charts
 
 struct SpendingDonutChart: View {
+    let selectedMonth: Date
     @Query private var transactions: [Transaction]
     @Query private var categories: [BudgetCategory]
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
+
+    init(selectedMonth: Date = Date()) {
+        self.selectedMonth = selectedMonth
+    }
 
     private var currentMember: FamilyMember {
         FamilyMember(rawValue: selectedMember) ?? .victor
@@ -13,9 +18,8 @@ struct SpendingDonutChart: View {
 
     private var currentMonthTransactions: [Transaction] {
         let cal = Calendar.current
-        let now = Date()
         return transactions.filter {
-            $0.owner == currentMember && cal.isDate($0.date, equalTo: now, toGranularity: .month)
+            $0.owner == currentMember && cal.isDate($0.date, equalTo: selectedMonth, toGranularity: .month)
         }
     }
 
@@ -56,7 +60,7 @@ struct SpendingDonutChart: View {
                         Text(formatCurrency(totalSpent))
                             .font(.system(size: 18, weight: .bold, design: .rounded))
                             .foregroundStyle(AppTheme.primaryText)
-                        Text("this month")
+                        Text(selectedMonth.formatted(.dateTime.month(.abbreviated)))
                             .font(.system(size: 10))
                             .foregroundStyle(AppTheme.tertiaryText)
                     }

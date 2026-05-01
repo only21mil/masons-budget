@@ -42,6 +42,7 @@
 		3D7B8A5C7F91BA8DE42D76C8 /* SpendingTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DE48E957A60591CF071E174 /* SpendingTab.swift */; };
 		3DE421A2F3EF19FAB52A43ED /* RangePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C05480193020874646ACF43 /* RangePicker.swift */; };
 		3F55B3C03BBD1E4EE61A0DC2 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E34240C2E281F20DD41FF8D /* ContentView.swift */; };
+		42CC887EC2077D56C2F0AA2F /* BTCPriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D42E3A9B8292524595DB757 /* BTCPriceService.swift */; };
 		45356F553F6824CCE0B888BA /* AssetBreakdownChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E25B9BA6192CA956FF0246 /* AssetBreakdownChart.swift */; };
 		471E9F1E7909AFA2155E8129 /* VoiceCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADD3A332127776CF17AD6132 /* VoiceCaptureView.swift */; };
 		472A41D28DD9D5D4083D88FD /* FamilyProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05894A6118C6AC44E989181E /* FamilyProfile.swift */; };
@@ -89,6 +90,7 @@
 		8017B8AF02E47E882740DB76 /* MicFAB.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14917D69DA4E2A3C2E635E78 /* MicFAB.swift */; };
 		806AEA108D187D253151859C /* SpendingDonutChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C5C2A1636BDCDC17E23E67E /* SpendingDonutChart.swift */; };
 		80A637E625F3EF70CF7EF91A /* MC2DTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 130D186945E2F17AE4A79132 /* MC2DTOs.swift */; };
+		81E3E50B298B92A078D72F26 /* CategoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C36C77D7DBD148BABE55D1D /* CategoryDetailView.swift */; };
 		83CB43F26149141D33507DBB /* SettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D950D4C7F390299D6C1F7C2A /* SettingsTab.swift */; };
 		84D36BF1F75AFCEAE45CA0A2 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E34240C2E281F20DD41FF8D /* ContentView.swift */; };
 		8867C535286754DAF5670F07 /* SettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D950D4C7F390299D6C1F7C2A /* SettingsTab.swift */; };
@@ -109,6 +111,7 @@
 		ADA692279C957C0AFBD77C69 /* VoiceParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B1E681CE6C03C61153CAE59 /* VoiceParser.swift */; };
 		B050CA04D447A9AC059FE2BC /* MoneyTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63CA7C8138C20D50AEE3C69 /* MoneyTab.swift */; };
 		B0BA76198540A09C7051C200 /* BTCBuy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 471D5A1DCF4CD1B4C10217A1 /* BTCBuy.swift */; };
+		B30351D759C3C58F53E15C32 /* BTCPriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D42E3A9B8292524595DB757 /* BTCPriceService.swift */; };
 		B905BA054AC3B0023406A113 /* VoiceCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADD3A332127776CF17AD6132 /* VoiceCaptureView.swift */; };
 		B94B3D13C901AACAC16345CB /* CategoryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0A8C471C710071DD40D002 /* CategoryRow.swift */; };
 		B9BB77FF6FDB83BA802A2564 /* SharedEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97885C819FB926B04D0E8D3F /* SharedEnums.swift */; };
@@ -129,14 +132,17 @@
 		DA23904746F07B295FA1DF79 /* MC2WriterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9FC2C1CCBFD1D750EC52D56 /* MC2WriterTests.swift */; };
 		DC2D9EE18A5205B311893805 /* TransactionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35FA4150361CC749FF574EF9 /* TransactionRow.swift */; };
 		DD95463755A63ABE04964599 /* BTCBillPay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DC543643B1F2899DDB38FE5 /* BTCBillPay.swift */; };
+		DF65E6D92D46BEC9CAF1EAC9 /* CategoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C36C77D7DBD148BABE55D1D /* CategoryDetailView.swift */; };
 		E0FCD4B89D605971E357D92B /* MonthlyBudgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B2D2A739D76D88CF2D981C6 /* MonthlyBudgetSnapshot.swift */; };
 		E1C04F1716739188C30E08AE /* MC2Mapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7153D63352CB5B58C4F366A /* MC2Mapper.swift */; };
 		E2F8586BAC515B8742BA438A /* MonthlyBudgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B2D2A739D76D88CF2D981C6 /* MonthlyBudgetSnapshot.swift */; };
+		E34D5F595CF9BA1B8014E792 /* CategoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C36C77D7DBD148BABE55D1D /* CategoryDetailView.swift */; };
 		E6167BE075D915EAACB5C1B8 /* RecurringDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13B457058988A6C86FCA5978 /* RecurringDetector.swift */; };
 		E678847B04562368D94CD18E /* MC2DTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 130D186945E2F17AE4A79132 /* MC2DTOs.swift */; };
 		E748DE87C77526CF1C9469D0 /* VoiceParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B1E681CE6C03C61153CAE59 /* VoiceParser.swift */; };
 		E7735A84FAB8CCBB3AA04C72 /* VoiceParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B419D48E89A2C2DCD79A7F8 /* VoiceParserTests.swift */; };
 		E79EA711535BD09C489E3966 /* SyncBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40DDB8FBCF8E46E75B608E60 /* SyncBadge.swift */; };
+		E7A545B3227D5DE6C136EEBC /* BTCPriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D42E3A9B8292524595DB757 /* BTCPriceService.swift */; };
 		E8A2B2E3E36EE2477C974D38 /* MonthlyTrendChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42C739032DD87F0935207375 /* MonthlyTrendChart.swift */; };
 		F12B99F5E2C30602F5A71F05 /* MasonsBudgetApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8388ECD356E3E00B77790681 /* MasonsBudgetApp.swift */; };
 		F548573F0234DD7F15A33816 /* AssetBreakdownChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E25B9BA6192CA956FF0246 /* AssetBreakdownChart.swift */; };
@@ -163,6 +169,7 @@
 		310E21BFB1D9D582BCD6A71B /* MasonsBudget.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MasonsBudget.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		356313511C4DFD7C19146702 /* NetWorthHistoryChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetWorthHistoryChart.swift; sourceTree = "<group>"; };
 		35FA4150361CC749FF574EF9 /* TransactionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionRow.swift; sourceTree = "<group>"; };
+		3C36C77D7DBD148BABE55D1D /* CategoryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryDetailView.swift; sourceTree = "<group>"; };
 		3FED6C930AD774521B536178 /* MC2Reader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MC2Reader.swift; sourceTree = "<group>"; };
 		40DDB8FBCF8E46E75B608E60 /* SyncBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncBadge.swift; sourceTree = "<group>"; };
 		42C739032DD87F0935207375 /* MonthlyTrendChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonthlyTrendChart.swift; sourceTree = "<group>"; };
@@ -175,6 +182,7 @@
 		5DC543643B1F2899DDB38FE5 /* BTCBillPay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BTCBillPay.swift; sourceTree = "<group>"; };
 		69F495FB3EBA9A3F6B589C2E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6C05480193020874646ACF43 /* RangePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RangePicker.swift; sourceTree = "<group>"; };
+		6D42E3A9B8292524595DB757 /* BTCPriceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BTCPriceService.swift; sourceTree = "<group>"; };
 		6D9D2114CBEC645F03E11CE8 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
 		6F123D957238EE653A6F6751 /* BudgetCategory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetCategory.swift; sourceTree = "<group>"; };
 		7307B6F0A5546DBFB1FE332B /* BudgetNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetNotificationManager.swift; sourceTree = "<group>"; };
@@ -283,6 +291,7 @@
 		89080DBDB1E2E6C690796BC8 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				6D42E3A9B8292524595DB757 /* BTCPriceService.swift */,
 				7307B6F0A5546DBFB1FE332B /* BudgetNotificationManager.swift */,
 				F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */,
 				130D186945E2F17AE4A79132 /* MC2DTOs.swift */,
@@ -317,6 +326,7 @@
 			isa = PBXGroup;
 			children = (
 				1C8D2DE28EC878C7C3600E4B /* AddTransactionView.swift */,
+				3C36C77D7DBD148BABE55D1D /* CategoryDetailView.swift */,
 				C4F25B63857534E6FC195E16 /* CategoryManagementView.swift */,
 				4E34240C2E281F20DD41FF8D /* ContentView.swift */,
 				82835D1EBE720A8FCF6AF6F4 /* DashboardTab.swift */,
@@ -487,8 +497,10 @@
 				4A58601D081D021F3B18B255 /* BTCAccount.swift in Sources */,
 				73546E975D23A07500289ECE /* BTCBillPay.swift in Sources */,
 				2534056FCF15384BBCC22038 /* BTCBuy.swift in Sources */,
+				B30351D759C3C58F53E15C32 /* BTCPriceService.swift in Sources */,
 				299ED7B254C76D1E92A0220D /* BudgetCategory.swift in Sources */,
 				1A66DF88BA4B309BA08D2EA9 /* BudgetNotificationManager.swift in Sources */,
+				E34D5F595CF9BA1B8014E792 /* CategoryDetailView.swift in Sources */,
 				0BFF56D9C81E3D5407DF92E2 /* CategoryManagementView.swift in Sources */,
 				B94B3D13C901AACAC16345CB /* CategoryRow.swift in Sources */,
 				4791F32E8839FE9E35DB2FCE /* ContentView.swift in Sources */,
@@ -538,8 +550,10 @@
 				16B5DB8412A7E38E35B9104C /* BTCAccount.swift in Sources */,
 				CB9BB3C97CAED9728CE9B542 /* BTCBillPay.swift in Sources */,
 				B0BA76198540A09C7051C200 /* BTCBuy.swift in Sources */,
+				42CC887EC2077D56C2F0AA2F /* BTCPriceService.swift in Sources */,
 				0B7AFCE74E5D43974F8AC1AE /* BudgetCategory.swift in Sources */,
 				4B346A59BD332EF252AF63A1 /* BudgetNotificationManager.swift in Sources */,
+				81E3E50B298B92A078D72F26 /* CategoryDetailView.swift in Sources */,
 				CF4B751C83D857C859E39CA7 /* CategoryManagementView.swift in Sources */,
 				FF8D53D5163A1B9AE2CDF489 /* CategoryRow.swift in Sources */,
 				84D36BF1F75AFCEAE45CA0A2 /* ContentView.swift in Sources */,
@@ -589,8 +603,10 @@
 				6D9F88BEA980C5F18C00E5D5 /* BTCAccount.swift in Sources */,
 				DD95463755A63ABE04964599 /* BTCBillPay.swift in Sources */,
 				2E6BBAB1336B38FD1D9EC8A5 /* BTCBuy.swift in Sources */,
+				E7A545B3227D5DE6C136EEBC /* BTCPriceService.swift in Sources */,
 				25D761D3D754B167202F23A7 /* BudgetCategory.swift in Sources */,
 				70B97A8C3F140C4A841E0D1D /* BudgetNotificationManager.swift in Sources */,
+				DF65E6D92D46BEC9CAF1EAC9 /* CategoryDetailView.swift in Sources */,
 				07037ECDC93BA6E34F109E58 /* CategoryManagementView.swift in Sources */,
 				5AEBD7763FADB16C4853FCF9 /* CategoryRow.swift in Sources */,
 				3F55B3C03BBD1E4EE61A0DC2 /* ContentView.swift in Sources */,
@@ -729,7 +745,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -744,7 +760,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.2.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -878,7 +894,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -899,7 +915,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.2.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

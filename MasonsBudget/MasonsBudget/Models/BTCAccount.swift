@@ -15,6 +15,13 @@ final class BTCAccount {
     var owner: FamilyMember
     var lastUpdated: Date
 
+    func usdValue(liveBTCPrice: Decimal? = BTCPriceService.storedPrice) -> Decimal {
+        if let liveBTCPrice, liveBTCPrice > 0 {
+            return btc * liveBTCPrice
+        }
+        return fiat > 0 ? fiat : btc * AppTheme.fallbackBTCPrice
+    }
+
     init(
         key: String,
         label: String,

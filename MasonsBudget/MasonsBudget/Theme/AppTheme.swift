@@ -43,7 +43,7 @@ enum AppTheme {
     static let springAnimation: Animation = .spring(response: 0.45, dampingFraction: 0.7)
 
     // MARK: - Data
-    static let assumedBTCPrice: Decimal = 90000
+    static let fallbackBTCPrice: Decimal = 90000
 }
 
 // MARK: - Shared formatters

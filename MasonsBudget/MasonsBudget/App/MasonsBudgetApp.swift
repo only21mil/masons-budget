@@ -32,6 +32,7 @@ struct MasonsBudgetApp: App {
 
     @AppStorage("has_completed_onboarding") private var hasCompletedOnboarding = false
     @AppStorage("app_lock_enabled") private var appLockEnabled = true
+    @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
     @State private var isUnlocked = false
     @State private var syncTimer: Timer?
 
@@ -80,6 +81,9 @@ struct MasonsBudgetApp: App {
                 Task { await syncIfChanged() }
             }
             #endif
+            .onChange(of: selectedMember) { _, _ in
+                Task { await syncFromConvex() }
+            }
         }
         .modelContainer(sharedModelContainer)
         #if os(macOS)
@@ -91,6 +95,7 @@ struct MasonsBudgetApp: App {
 
     @MainActor
     private func syncFromConvex() async {
+        await BTCPriceService.shared.refreshAndStore()
         guard ConvexConfig.isConfigured else { return }
         let sync = MC2SyncService(context: sharedModelContainer.mainContext)
         await sync.syncAll()
@@ -99,6 +104,7 @@ struct MasonsBudgetApp: App {
     /// Check if data has changed on Convex, and sync if so.
     @MainActor
     private func syncIfChanged() async {
+        await BTCPriceService.shared.refreshAndStore()
         guard ConvexConfig.isConfigured else { return }
         let sync = MC2SyncService(context: sharedModelContainer.mainContext)
         let changed = await sync.hasUpdates()
