@@ -42,14 +42,30 @@ struct MasonsBudgetApp: App {
                     startFileObservation()
                     BudgetNotificationManager.shared.requestPermission()
                 }
+                #if os(iOS)
                 .fullScreenCover(isPresented: Binding(
                     get: { !hasCompletedOnboarding },
                     set: { hasCompletedOnboarding = !$0 }
                 )) {
                     OnboardingView()
                 }
+                #else
+                .sheet(isPresented: Binding(
+                    get: { !hasCompletedOnboarding },
+                    set: { hasCompletedOnboarding = !$0 }
+                )) {
+                    OnboardingView()
+                        .frame(minWidth: 500, minHeight: 600)
+                }
+                #endif
+                #if os(macOS)
+                .frame(minWidth: 800, minHeight: 500)
+                #endif
         }
         .modelContainer(sharedModelContainer)
+        #if os(macOS)
+        .defaultSize(width: 1000, height: 700)
+        #endif
     }
 
     @MainActor

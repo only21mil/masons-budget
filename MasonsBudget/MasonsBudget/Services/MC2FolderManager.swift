@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(UIKit)
 import UIKit
+#endif
 import os
 
 final class MC2FolderManager: ObservableObject {
@@ -30,8 +32,13 @@ final class MC2FolderManager: ObservableObject {
         defer { url.stopAccessingSecurityScopedResource() }
 
         do {
+            #if os(macOS)
+            let bookmarkOptions: URL.BookmarkCreationOptions = [.withSecurityScope]
+            #else
+            let bookmarkOptions: URL.BookmarkCreationOptions = .minimalBookmark
+            #endif
             let data = try url.bookmarkData(
-                options: .minimalBookmark,
+                options: bookmarkOptions,
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil
             )
@@ -53,9 +60,14 @@ final class MC2FolderManager: ObservableObject {
 
         do {
             var isStale = false
+            #if os(macOS)
+            let resolveOptions: URL.BookmarkResolutionOptions = [.withSecurityScope]
+            #else
+            let resolveOptions: URL.BookmarkResolutionOptions = []
+            #endif
             let url = try URL(
                 resolvingBookmarkData: data,
-                options: [],
+                options: resolveOptions,
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
             )
@@ -97,6 +109,7 @@ final class MC2FolderManager: ObservableObject {
 
 import SwiftUI
 
+#if os(iOS)
 struct MC2FolderPicker: UIViewControllerRepresentable {
     let onPick: (URL) -> Void
 
@@ -125,3 +138,4 @@ struct MC2FolderPicker: UIViewControllerRepresentable {
         }
     }
 }
+#endif

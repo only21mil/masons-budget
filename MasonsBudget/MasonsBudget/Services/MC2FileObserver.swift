@@ -1,6 +1,11 @@
 import Foundation
 import Combine
+#if canImport(UIKit)
 import UIKit
+#endif
+#if canImport(AppKit)
+import AppKit
+#endif
 import os
 
 @MainActor
@@ -113,6 +118,7 @@ final class MC2FileObserver: ObservableObject {
     // MARK: - Scene lifecycle
 
     private func observeSceneLifecycle() {
+        #if os(iOS)
         let foreground = NotificationCenter.default.addObserver(
             forName: UIScene.willEnterForegroundNotification,
             object: nil,
@@ -136,6 +142,31 @@ final class MC2FileObserver: ObservableObject {
         }
 
         sceneObservers = [foreground, background]
+        #elseif os(macOS)
+        let activate = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.metadataQuery?.enableUpdates()
+                self?.log.info("Resumed file observation")
+            }
+        }
+
+        let resign = NotificationCenter.default.addObserver(
+            forName: NSApplication.willResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.metadataQuery?.disableUpdates()
+                self?.log.info("Suspended file observation")
+            }
+        }
+
+        sceneObservers = [activate, resign]
+        #endif
     }
 
     // MARK: - Conflict resolution

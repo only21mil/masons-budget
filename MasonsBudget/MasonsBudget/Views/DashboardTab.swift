@@ -124,6 +124,7 @@ struct DashboardTab: View {
             }
             .background(AppTheme.background)
             .navigationTitle("Dashboard")
+            #if os(iOS)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .overlay(alignment: .bottom) {
                 MicFAB { showVoiceCapture = true }
@@ -133,6 +134,21 @@ struct DashboardTab: View {
                     handleVoiceSave(parsed)
                 })
             }
+            #else
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { showVoiceCapture = true } label: {
+                        Label("Voice Input", systemImage: "mic.fill")
+                    }
+                }
+            }
+            .sheet(isPresented: $showVoiceCapture) {
+                VoiceCaptureView(onSave: { parsed in
+                    handleVoiceSave(parsed)
+                })
+                .frame(minWidth: 400, minHeight: 500)
+            }
+            #endif
             .sheet(isPresented: $showAddTransaction) {
                 AddTransactionView { amount, merchant, category, card, note in
                     handleManualSave(amount: amount, merchant: merchant, category: category, card: card, note: note)

@@ -27,7 +27,9 @@ struct CategoryManagementView: View {
         }
         .background(AppTheme.background)
         .navigationTitle("Categories")
+        #if os(iOS)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        #endif
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button { showAddSheet = true } label: {
@@ -216,8 +218,10 @@ struct CategoryEditView: View {
             }
             .background(AppTheme.background)
             .navigationTitle(mode.isEdit ? "Edit Category" : "New Category")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -342,7 +346,9 @@ struct CategoryEditView: View {
                 TextField("0", text: $budgetText)
                     .font(.title2.weight(.semibold).monospacedDigit())
                     .foregroundStyle(AppTheme.primaryText)
+                    #if os(iOS)
                     .keyboardType(.decimalPad)
+                    #endif
             }
             .padding(14)
             .background(AppTheme.cardBackground)

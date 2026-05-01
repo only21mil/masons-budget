@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct OnboardingView: View {
     @Environment(\.dismiss) private var dismiss
@@ -51,11 +52,23 @@ struct OnboardingView: View {
                 .padding(.bottom, 40)
             }
         }
+        #if os(iOS)
         .sheet(isPresented: $showFolderPicker) {
             MC2FolderPicker { url in
                 folderManager.saveBookmark(for: url)
             }
         }
+        #else
+        .fileImporter(
+            isPresented: $showFolderPicker,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let url = urls.first {
+                folderManager.saveBookmark(for: url)
+            }
+        }
+        #endif
     }
 
     private var welcomeStep: some View {

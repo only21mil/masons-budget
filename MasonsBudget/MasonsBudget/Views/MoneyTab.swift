@@ -107,7 +107,9 @@ struct MoneyTab: View {
             }
             .background(AppTheme.background)
             .navigationTitle("Money")
+            #if os(iOS)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            #endif
         }
     }
 

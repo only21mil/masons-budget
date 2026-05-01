@@ -4,6 +4,27 @@ struct ContentView: View {
     @State private var selectedTab: AppTab = .dashboard
 
     var body: some View {
+        #if os(macOS)
+        let sidebarBinding = Binding<AppTab?>(
+            get: { selectedTab },
+            set: { if let tab = $0 { selectedTab = tab } }
+        )
+        NavigationSplitView {
+            List(AppTab.allCases, selection: sidebarBinding) { tab in
+                Label(tab.title, systemImage: tab.icon)
+            }
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
+        } detail: {
+            switch selectedTab {
+            case .dashboard: DashboardTab(selectedTab: $selectedTab)
+            case .money: MoneyTab()
+            case .spending: SpendingTab()
+            case .settings: SettingsTab()
+            }
+        }
+        .tint(AppTheme.accentColor)
+        #else
         TabView(selection: $selectedTab) {
             DashboardTab(selectedTab: $selectedTab)
                 .tabItem {
@@ -30,6 +51,7 @@ struct ContentView: View {
                 .tag(AppTab.settings)
         }
         .tint(AppTheme.accentColor)
+        #endif
     }
 }
 

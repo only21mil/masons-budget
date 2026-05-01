@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 struct SettingsTab: View {
     @Query private var transactions: [Transaction]
@@ -170,12 +171,24 @@ struct SettingsTab: View {
             .scrollContentBackground(.hidden)
             .background(AppTheme.background)
             .navigationTitle("Settings")
+            #if os(iOS)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .sheet(isPresented: $showFolderPicker) {
                 MC2FolderPicker { url in
                     folderManager.saveBookmark(for: url)
                 }
             }
+            #else
+            .fileImporter(
+                isPresented: $showFolderPicker,
+                allowedContentTypes: [.folder],
+                allowsMultipleSelection: false
+            ) { result in
+                if case .success(let urls) = result, let url = urls.first {
+                    folderManager.saveBookmark(for: url)
+                }
+            }
+            #endif
         }
     }
 

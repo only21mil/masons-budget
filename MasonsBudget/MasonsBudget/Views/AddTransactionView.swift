@@ -19,7 +19,9 @@ struct AddTransactionView: View {
             Form {
                 Section("Amount") {
                     TextField("0.00", text: $amountText)
+                        #if os(iOS)
                         .keyboardType(.decimalPad)
+                        #endif
                         .font(.title2.monospaced())
                         .foregroundStyle(AppTheme.accentColor)
                 }
@@ -49,8 +51,10 @@ struct AddTransactionView: View {
             .scrollContentBackground(.hidden)
             .background(AppTheme.background)
             .navigationTitle("Add Transaction")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

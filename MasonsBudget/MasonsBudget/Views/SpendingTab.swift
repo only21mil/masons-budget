@@ -102,7 +102,9 @@ struct SpendingTab: View {
             }
             .background(AppTheme.background)
             .navigationTitle("Spending")
+            #if os(iOS)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            #endif
             .task {
                 recurringItems = RecurringDetector().detect(from: myTransactions)
             }
