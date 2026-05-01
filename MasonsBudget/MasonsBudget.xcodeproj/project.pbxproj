@@ -120,10 +120,12 @@
 		BCDB4955AE6195145DB25EB0 /* HoldingAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19DCBB53F51F8E4A3BE1BD9E /* HoldingAccount.swift */; };
 		BFC671B851CC2F446976907C /* SettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D950D4C7F390299D6C1F7C2A /* SettingsTab.swift */; };
 		C022EFD8A3AF0B3748433C49 /* MasonsBudgetApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8388ECD356E3E00B77790681 /* MasonsBudgetApp.swift */; };
+		C156A53D5E586FF9A67A0545 /* LockScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E117823C6DA6138431AE80C8 /* LockScreenView.swift */; };
 		C8AB2C8731BC8ADE20214120 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D9D2114CBEC645F03E11CE8 /* AppTheme.swift */; };
 		CA974F20B48556D7C1FD187F /* Transaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28C9AC48788F6BD75F27ADC1 /* Transaction.swift */; };
 		CB9BB3C97CAED9728CE9B542 /* BTCBillPay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DC543643B1F2899DDB38FE5 /* BTCBillPay.swift */; };
 		CF4B751C83D857C859E39CA7 /* CategoryManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F25B63857534E6FC195E16 /* CategoryManagementView.swift */; };
+		D1F0030EFC8EF2EF555C9F9B /* LockScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E117823C6DA6138431AE80C8 /* LockScreenView.swift */; };
 		D23DC90030D328B07EDF624D /* DashboardTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82835D1EBE720A8FCF6AF6F4 /* DashboardTab.swift */; };
 		D4D00A5A4054A43453F6CBB1 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 083F88D8EB4768C9BEDF39F9 /* OnboardingView.swift */; };
 		D91BC26A059E314C5E36CB39 /* NetWorthHistoryChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 356313511C4DFD7C19146702 /* NetWorthHistoryChart.swift */; };
@@ -143,6 +145,7 @@
 		F548573F0234DD7F15A33816 /* AssetBreakdownChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E25B9BA6192CA956FF0246 /* AssetBreakdownChart.swift */; };
 		F5FA7686B0618197DF8F8E58 /* MicFAB.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14917D69DA4E2A3C2E635E78 /* MicFAB.swift */; };
 		F9ABB4FF696573BDEF25CB28 /* NetWorthSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF559B68DCF5C8C506B2A151 /* NetWorthSnapshot.swift */; };
+		F9EAF981A0A2BBC7BF5398C7 /* LockScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E117823C6DA6138431AE80C8 /* LockScreenView.swift */; };
 		FAA7D8D2E43C7B7093314FC6 /* SectionHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 731A2E18DA739BFAA36799B7 /* SectionHeader.swift */; };
 		FBB4AE269CCCEC5D4EEABC02 /* MonthlyBudgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B2D2A739D76D88CF2D981C6 /* MonthlyBudgetSnapshot.swift */; };
 		FF848533C741DC91C85E63A6 /* MC2DTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 130D186945E2F17AE4A79132 /* MC2DTOs.swift */; };
@@ -202,6 +205,7 @@
 		CA23871743A5C2BF75CD9262 /* StatCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatCard.swift; sourceTree = "<group>"; };
 		D63CA7C8138C20D50AEE3C69 /* MoneyTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyTab.swift; sourceTree = "<group>"; };
 		D950D4C7F390299D6C1F7C2A /* SettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTab.swift; sourceTree = "<group>"; };
+		E117823C6DA6138431AE80C8 /* LockScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenView.swift; sourceTree = "<group>"; };
 		EF559B68DCF5C8C506B2A151 /* NetWorthSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetWorthSnapshot.swift; sourceTree = "<group>"; };
 		EF5C5935A12805ECA579168B /* MasonsBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasonsBudgetTests.swift; sourceTree = "<group>"; };
 		F83F4110E2D16CDC2FE7C85A /* MC2SyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MC2SyncService.swift; sourceTree = "<group>"; };
@@ -321,6 +325,7 @@
 				C4F25B63857534E6FC195E16 /* CategoryManagementView.swift */,
 				4E34240C2E281F20DD41FF8D /* ContentView.swift */,
 				82835D1EBE720A8FCF6AF6F4 /* DashboardTab.swift */,
+				E117823C6DA6138431AE80C8 /* LockScreenView.swift */,
 				D63CA7C8138C20D50AEE3C69 /* MoneyTab.swift */,
 				083F88D8EB4768C9BEDF39F9 /* OnboardingView.swift */,
 				D950D4C7F390299D6C1F7C2A /* SettingsTab.swift */,
@@ -425,11 +430,11 @@
 				LastUpgradeCheck = 1640;
 				TargetAttributes = {
 					6650D6D4CE8B75E1CBD2DEFB = {
-						DevelopmentTeam = 8KN6X3FLPZ;
+						DevelopmentTeam = 384ZGKG4GB;
 						ProvisioningStyle = Automatic;
 					};
 					EFDC4FC30F8EFE1C5A5CD380 = {
-						DevelopmentTeam = 8KN6X3FLPZ;
+						DevelopmentTeam = 384ZGKG4GB;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -495,6 +500,7 @@
 				D23DC90030D328B07EDF624D /* DashboardTab.swift in Sources */,
 				8CF4139C75810E99221B0692 /* FamilyProfile.swift in Sources */,
 				4896678F33B0AD12A9247DE2 /* HoldingAccount.swift in Sources */,
+				F9EAF981A0A2BBC7BF5398C7 /* LockScreenView.swift in Sources */,
 				FF848533C741DC91C85E63A6 /* MC2DTOs.swift in Sources */,
 				4A43B41E605EC8984C5BB53B /* MC2FileObserver.swift in Sources */,
 				8DDF3C0FE84A21C5000D828C /* MC2FolderManager.swift in Sources */,
@@ -546,6 +552,7 @@
 				63C72DAD9763699A8C54F17B /* DashboardTab.swift in Sources */,
 				4C8EAE9F329F12474404F004 /* FamilyProfile.swift in Sources */,
 				AC9DFD3F20A65000ABF54CDC /* HoldingAccount.swift in Sources */,
+				D1F0030EFC8EF2EF555C9F9B /* LockScreenView.swift in Sources */,
 				80A637E625F3EF70CF7EF91A /* MC2DTOs.swift in Sources */,
 				7660942564CA00669D3BC1BB /* MC2FileObserver.swift in Sources */,
 				2F6077BCD0FB832C47CB7769 /* MC2FolderManager.swift in Sources */,
@@ -597,6 +604,7 @@
 				7D74B14636589F6D904B3C66 /* DashboardTab.swift in Sources */,
 				472A41D28DD9D5D4083D88FD /* FamilyProfile.swift in Sources */,
 				BCDB4955AE6195145DB25EB0 /* HoldingAccount.swift in Sources */,
+				C156A53D5E586FF9A67A0545 /* LockScreenView.swift in Sources */,
 				E678847B04562368D94CD18E /* MC2DTOs.swift in Sources */,
 				7FFC14343E8DD1EEA02F4683 /* MC2FileObserver.swift in Sources */,
 				459654DB0D06426C4B7AD7CF /* MC2FolderManager.swift in Sources */,
@@ -645,10 +653,12 @@
 				CODE_SIGN_ENTITLEMENTS = MasonsBudget/MasonsBudgetMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = 8KN6X3FLPZ;
+				DEVELOPMENT_TEAM = 384ZGKG4GB;
 				ENABLE_PREVIEWS = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Mason's Budget";
+				INFOPLIST_KEY_CFBundleDisplayName = "The Vogel Vault";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Unlock The Vogel Vault with Face ID.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone access is needed for voice transaction entry.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Voice input lets you log transactions by speaking.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -669,15 +679,18 @@
 				CODE_SIGN_ENTITLEMENTS = MasonsBudget/MasonsBudget.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 8KN6X3FLPZ;
+				DEVELOPMENT_TEAM = 384ZGKG4GB;
 				ENABLE_PREVIEWS = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Mason's Budget";
+				INFOPLIST_KEY_CFBundleDisplayName = "The Vogel Vault";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Unlock The Vogel Vault with Face ID.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone access is needed for voice transaction entry.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Voice input lets you log transactions by speaking.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -757,10 +770,12 @@
 				CODE_SIGN_ENTITLEMENTS = MasonsBudget/MasonsBudgetMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = 8KN6X3FLPZ;
+				DEVELOPMENT_TEAM = 384ZGKG4GB;
 				ENABLE_PREVIEWS = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Mason's Budget";
+				INFOPLIST_KEY_CFBundleDisplayName = "The Vogel Vault";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Unlock The Vogel Vault with Face ID.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone access is needed for voice transaction entry.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Voice input lets you log transactions by speaking.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -797,15 +812,18 @@
 				CODE_SIGN_ENTITLEMENTS = MasonsBudget/MasonsBudget.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 8KN6X3FLPZ;
+				DEVELOPMENT_TEAM = 384ZGKG4GB;
 				ENABLE_PREVIEWS = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Mason's Budget";
+				INFOPLIST_KEY_CFBundleDisplayName = "The Vogel Vault";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Unlock The Vogel Vault with Face ID.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone access is needed for voice transaction entry.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Voice input lets you log transactions by speaking.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

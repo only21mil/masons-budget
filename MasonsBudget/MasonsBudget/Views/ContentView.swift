@@ -2,6 +2,21 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var selectedTab: AppTab = .dashboard
+    @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
+
+    private var currentMember: FamilyMember {
+        FamilyMember(rawValue: selectedMember) ?? .victor
+    }
+
+    /// Tabs available for the current profile
+    private var availableTabs: [AppTab] {
+        if currentMember.showsFullBudget {
+            return AppTab.allCases
+        } else {
+            // Kids: Dashboard (BTC-focused), Money, Settings — no Spending tab
+            return [.dashboard, .money, .settings]
+        }
+    }
 
     var body: some View {
         #if os(macOS)
@@ -10,7 +25,7 @@ struct ContentView: View {
             set: { if let tab = $0 { selectedTab = tab } }
         )
         NavigationSplitView {
-            List(AppTab.allCases, selection: sidebarBinding) { tab in
+            List(availableTabs, selection: sidebarBinding) { tab in
                 Label(tab.title, systemImage: tab.icon)
             }
             .listStyle(.sidebar)
@@ -38,11 +53,13 @@ struct ContentView: View {
                 }
                 .tag(AppTab.money)
 
-            SpendingTab()
-                .tabItem {
-                    Label(AppTab.spending.title, systemImage: AppTab.spending.icon)
-                }
-                .tag(AppTab.spending)
+            if currentMember.showsFullBudget {
+                SpendingTab()
+                    .tabItem {
+                        Label(AppTab.spending.title, systemImage: AppTab.spending.icon)
+                    }
+                    .tag(AppTab.spending)
+            }
 
             SettingsTab()
                 .tabItem {

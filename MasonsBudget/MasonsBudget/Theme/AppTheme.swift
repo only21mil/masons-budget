@@ -11,6 +11,7 @@ enum AppTheme {
     static let primaryText = Color(hex: 0xF5F1E8)       // text.primary (ivory)
     static let secondaryText = Color(hex: 0xA8A39B)      // text.secondary
     static let tertiaryText = Color(hex: 0x555555)
+    static let cardBorder = Color(hex: 0x2A2A2A)         // border.card
     static let positive = Color(hex: 0x4ADE80)          // state.positive
     static let warning = Color(hex: 0xFBBF24)           // state.warning
     static let negative = Color(hex: 0xEF4444)          // state.negative

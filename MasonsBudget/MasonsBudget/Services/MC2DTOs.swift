@@ -243,3 +243,15 @@ struct MC2SonBalances: Codable {
     let total: Decimal
     let lastUpdated: String
 }
+
+struct MC2MasonAllowance: Codable {
+    let weekly: Decimal
+    let source: String
+}
+
+struct MC2MasonBudget: Codable {
+    let month: String
+    let owner: String
+    let categories: [MC2BudgetCategory]
+    let allowance: MC2MasonAllowance?
+}

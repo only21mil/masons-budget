@@ -75,6 +75,16 @@ actor MC2Reader {
         try decode(MC2SonBalances.self, from: "son-balances.json")
     }
 
+    /// Read Mason's budget from `mason-budget.json`.
+    func readMasonBudget() throws -> MC2MasonBudget {
+        try decode(MC2MasonBudget.self, from: "mason-budget.json")
+    }
+
+    /// Read Mason's transactions from `mason-transactions.json`.
+    func readMasonTransactions() throws -> [MC2Transaction] {
+        try decode([MC2Transaction].self, from: "mason-transactions.json")
+    }
+
     /// Check if the MC2 folder exists and is readable.
     func validateFolder() -> Bool {
         FileManager.default.isReadableFile(atPath: baseURL.path)

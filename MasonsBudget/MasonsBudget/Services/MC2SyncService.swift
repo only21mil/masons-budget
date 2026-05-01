@@ -28,13 +28,22 @@ final class MC2SyncService {
         var errors: [String] = []
         var totalEntities = 0
 
-        totalEntities += await syncTransactions(&errors)
-        totalEntities += await syncBudget(&errors)
-        totalEntities += await syncBTCAccounts(&errors)
-        totalEntities += await syncBTCBuys(&errors)
-        totalEntities += await syncBTCBillPays(&errors)
-        totalEntities += await syncFinances(&errors)
+        // Always sync Mason's BTC from son-balances.json
         totalEntities += await syncSonBalances(&errors)
+
+        if currentMember == .mason {
+            // Mason: sync his own budget & transactions
+            totalEntities += await syncMasonBudget(&errors)
+            totalEntities += await syncMasonTransactions(&errors)
+        } else {
+            // Adults: full MC2 sync
+            totalEntities += await syncTransactions(&errors)
+            totalEntities += await syncBudget(&errors)
+            totalEntities += await syncBTCAccounts(&errors)
+            totalEntities += await syncBTCBuys(&errors)
+            totalEntities += await syncBTCBillPays(&errors)
+            totalEntities += await syncFinances(&errors)
+        }
 
         recordNetWorthSnapshot()
 
@@ -152,6 +161,42 @@ final class MC2SyncService {
         } catch {
             log.error("Son balances sync failed: \(error.localizedDescription)")
             errors.append("Son balances: \(error.localizedDescription)")
+            return 0
+        }
+    }
+
+    private func syncMasonBudget(_ errors: inout [String]) async -> Int {
+        do {
+            let dto = try await reader.readMasonBudget()
+            let categories = MC2Mapper.mapBudgetCategories(dto.categories)
+
+            let weeklyAllowance = dto.allowance?.weekly ?? 0
+            let snapshot = MonthlyBudgetSnapshot(
+                monthKey: dto.month,
+                weeklyGross: weeklyAllowance,
+                monthlyGross: weeklyAllowance * 4,
+                strategyNote: "Allowance: $\(weeklyAllowance)/week from \(dto.allowance?.source ?? "Parents")"
+            )
+
+            replaceAll(MonthlyBudgetSnapshot.self, with: [snapshot])
+            replaceAll(BudgetCategory.self, with: categories)
+            return 1 + categories.count
+        } catch {
+            log.error("Mason budget sync failed: \(error.localizedDescription)")
+            errors.append("Mason budget: \(error.localizedDescription)")
+            return 0
+        }
+    }
+
+    private func syncMasonTransactions(_ errors: inout [String]) async -> Int {
+        do {
+            let dtos = try await reader.readMasonTransactions()
+            let models = MC2Mapper.mapTransactions(dtos, owner: .mason)
+            replaceAll(Transaction.self, with: models)
+            return models.count
+        } catch {
+            log.error("Mason transactions sync failed: \(error.localizedDescription)")
+            errors.append("Mason transactions: \(error.localizedDescription)")
             return 0
         }
     }

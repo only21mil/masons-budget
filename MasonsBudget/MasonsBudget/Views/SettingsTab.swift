@@ -9,10 +9,15 @@ struct SettingsTab: View {
     @Query private var categories: [BudgetCategory]
     @Query private var snapshots: [MonthlyBudgetSnapshot]
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
+    @AppStorage("app_lock_enabled") private var appLockEnabled = true
     @ObservedObject private var folderManager = MC2FolderManager.shared
     @Environment(\.modelContext) private var modelContext
     @State private var showFolderPicker = false
     @State private var isSyncing = false
+
+    private var currentMember: FamilyMember {
+        FamilyMember(rawValue: selectedMember) ?? .victor
+    }
 
     private var hasAnyData: Bool {
         !transactions.isEmpty || !btcAccounts.isEmpty || !holdingAccounts.isEmpty
@@ -45,14 +50,14 @@ struct SettingsTab: View {
             List {
                 Section {
                     HStack(spacing: 12) {
-                        Image(systemName: "person.circle.fill")
+                        Image(systemName: currentMember.icon)
                             .font(.system(size: 44))
                             .foregroundStyle(AppTheme.accentColor)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(FamilyMember(rawValue: selectedMember)?.displayName ?? "Select")
+                            Text(currentMember.displayName)
                                 .font(.headline)
                                 .foregroundStyle(AppTheme.primaryText)
-                            Text("Family member profile")
+                            Text(currentMember.profileDescription)
                                 .font(.caption)
                                 .foregroundStyle(AppTheme.tertiaryText)
                         }
@@ -60,7 +65,7 @@ struct SettingsTab: View {
                     .padding(.vertical, 4)
 
                     Picker("Family Member", selection: $selectedMember) {
-                        ForEach(FamilyMember.allCases, id: \.rawValue) { member in
+                        ForEach(FamilyMember.allCases) { member in
                             Text(member.displayName).tag(member.rawValue)
                         }
                     }
@@ -69,19 +74,19 @@ struct SettingsTab: View {
                 }
 
                 Section {
-                    Button {
-                        showFolderPicker = true
-                    } label: {
+                    HStack {
+                        Label("iCloud", systemImage: folderManager.isAccessible ? "checkmark.icloud.fill" : "icloud")
+                        Spacer()
+                        SyncBadge(status: folderManager.isAccessible ? .synced : .disconnected)
+                    }
+                    if folderManager.isAccessible {
                         HStack {
-                            Label("MC2 Folder", systemImage: "folder.badge.gearshape")
+                            Label("MC2 Folder", systemImage: "folder.fill")
                                 .foregroundStyle(AppTheme.primaryText)
                             Spacer()
-                            Text(folderManager.isAccessible ? folderManager.folderDisplayPath : "Select…")
+                            Text(folderManager.folderDisplayPath)
                                 .font(.caption)
-                                .foregroundStyle(folderManager.isAccessible ? AppTheme.positive : AppTheme.accentColor)
-                            Image(systemName: "chevron.right")
-                                .font(.caption2)
-                                .foregroundStyle(AppTheme.tertiaryText)
+                                .foregroundStyle(AppTheme.positive)
                         }
                     }
                     HStack {
@@ -108,11 +113,6 @@ struct SettingsTab: View {
                                 .lineLimit(2)
                         }
                     }
-                    HStack {
-                        Label("iCloud", systemImage: "icloud")
-                        Spacer()
-                        SyncBadge(status: folderManager.isAccessible ? .synced : .disconnected)
-                    }
                     if folderManager.isAccessible {
                         Button {
                             Task { await syncNow() }
@@ -125,17 +125,32 @@ struct SettingsTab: View {
                                 }
                             }
                         }
+                    } else {
+                        Button {
+                            folderManager.autoConnectICloud()
+                        } label: {
+                            Label("Reconnect iCloud", systemImage: "arrow.clockwise")
+                        }
+                    }
+                    Button {
+                        showFolderPicker = true
+                    } label: {
+                        Label("Choose Folder Manually", systemImage: "folder.badge.gearshape")
+                            .font(.caption)
+                            .foregroundStyle(AppTheme.secondaryText)
+                    }
+                    if folderManager.isAccessible {
                         Button(role: .destructive) {
                             folderManager.clearBookmark()
                         } label: {
-                            Label("Unlink MC2 Folder", systemImage: "folder.badge.minus")
+                            Label("Disconnect", systemImage: "folder.badge.minus")
                                 .font(.caption)
                         }
                     }
                 } header: {
                     Text("Data & Sync")
                 } footer: {
-                    Text("Select the MC2 mission-control folder on iCloud Drive to sync budgets, transactions, and net worth data.")
+                    Text("Data syncs automatically via iCloud Drive. Use \"Choose Folder Manually\" to override the default location.")
                 }
 
                 Section {
@@ -150,11 +165,14 @@ struct SettingsTab: View {
                 }
 
                 Section {
-                    Label("Appearance", systemImage: "paintbrush")
+                    Toggle(isOn: $appLockEnabled) {
+                        Label("Face ID / Passcode Lock", systemImage: "faceid")
+                    }
+                    .tint(AppTheme.accentColor)
                     Label("Notifications", systemImage: "bell.badge")
                     Label("Voice Input", systemImage: "mic")
                 } header: {
-                    Text("Preferences")
+                    Text("Security & Preferences")
                 }
 
                 Section {

@@ -9,20 +9,63 @@ final class MC2FolderManager: ObservableObject {
 
     @Published private(set) var folderURL: URL?
     @Published private(set) var isAccessible: Bool = false
+    @Published private(set) var iCloudAvailable: Bool = false
 
     private let bookmarkKey = "mc2_folder_bookmark"
+    private let iCloudContainerID = "iCloud.com.sats21m.masonsbudget"
     private let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "MC2Folder")
 
     init() {
         restoreBookmark()
+        // If no bookmark saved yet, try iCloud auto-connect
+        if folderURL == nil {
+            autoConnectICloud()
+        }
     }
 
     var folderDisplayPath: String {
-        guard let url = folderURL else { return "Not selected" }
+        guard let url = folderURL else { return "Not connected" }
         return url.lastPathComponent
     }
 
-    // MARK: - Bookmark persistence
+    // MARK: - iCloud auto-connect
+
+    /// Automatically connects to the iCloud Drive container, creating
+    /// the Documents/MC2 folder if needed. No user interaction required.
+    func autoConnectICloud() {
+        guard let containerURL = FileManager.default.url(
+            forUbiquityContainerIdentifier: iCloudContainerID
+        ) else {
+            iCloudAvailable = false
+            log.warning("iCloud container not available — user may not be signed in to iCloud")
+            return
+        }
+
+        iCloudAvailable = true
+        let documentsURL = containerURL.appendingPathComponent("Documents")
+        let mc2URL = documentsURL.appendingPathComponent("MC2")
+
+        do {
+            // Create Documents/MC2 inside the iCloud container if it doesn't exist
+            if !FileManager.default.fileExists(atPath: mc2URL.path) {
+                try FileManager.default.createDirectory(
+                    at: mc2URL,
+                    withIntermediateDirectories: true,
+                    attributes: nil
+                )
+                log.info("Created MC2 folder in iCloud: \(mc2URL.path)")
+            }
+
+            folderURL = mc2URL
+            isAccessible = FileManager.default.isReadableFile(atPath: mc2URL.path)
+            log.info("Auto-connected to iCloud MC2 folder: \(mc2URL.path), accessible=\(self.isAccessible)")
+        } catch {
+            log.error("Failed to create MC2 folder in iCloud: \(error.localizedDescription)")
+            isAccessible = false
+        }
+    }
+
+    // MARK: - Bookmark persistence (manual override)
 
     func saveBookmark(for url: URL) {
         guard url.startAccessingSecurityScopedResource() else {
@@ -103,9 +146,15 @@ final class MC2FolderManager: ObservableObject {
         isAccessible = false
         log.info("MC2 folder bookmark cleared")
     }
+
+    /// Reset to iCloud auto-connect after clearing a manual override
+    func reconnectICloud() {
+        clearBookmark()
+        autoConnectICloud()
+    }
 }
 
-// MARK: - SwiftUI folder picker
+// MARK: - SwiftUI folder picker (manual override)
 
 import SwiftUI
 
