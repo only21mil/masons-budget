@@ -46,6 +46,7 @@ targets:
         CODE_SIGN_STYLE: Automatic
         SWIFT_EMIT_LOC_STRINGS: YES
         ENABLE_PREVIEWS: YES
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: "NO"
     dependencies: []
 
   MasonsBudgetMac:
@@ -72,6 +73,7 @@ targets:
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.finance"
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Voice input lets you log transactions by speaking."
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Microphone access is needed for voice transaction entry."
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: "NO"
     dependencies: []
 
   MasonsBudgetTests:
