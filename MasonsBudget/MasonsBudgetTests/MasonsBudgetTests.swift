@@ -78,6 +78,41 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertFalse(cat.isIncome)
     }
 
+    func testBudgetNotificationsFilterTransactionsByFamilyMember() {
+        let category = BudgetCategory(
+            name: "Gaming",
+            icon: "gamecontroller.fill",
+            monthlyBudget: 100
+        )
+        let masonTransaction = Transaction(
+            id: "tx-mason-gaming",
+            date: Date(),
+            merchant: "Game Store",
+            amount: 90,
+            category: "Gaming",
+            owner: .mason,
+            createdBy: "mason"
+        )
+        let victorTransaction = Transaction(
+            id: "tx-victor-gaming",
+            date: Date(),
+            merchant: "Console Store",
+            amount: 90,
+            category: "Gaming",
+            owner: .victor,
+            createdBy: "victor"
+        )
+
+        let alerts = BudgetNotificationManager.shared.budgetAlerts(
+            categories: [category],
+            transactions: [masonTransaction, victorTransaction],
+            member: .mason
+        )
+
+        XCTAssertEqual(alerts.count, 1)
+        XCTAssertEqual(alerts.first?.title, "Gaming Almost at Limit")
+    }
+
     func testBTCAccountInit() {
         let acct = BTCAccount(
             key: "strike-victor",

@@ -12,7 +12,7 @@ enum MC2Mapper {
         let ymd = DateFormatter()
         ymd.dateFormat = "yyyy-MM-dd"
         ymd.locale = Locale(identifier: "en_US_POSIX")
-        ymd.timeZone = TimeZone(secondsFromGMT: 0)
+        ymd.timeZone = .current
         if let d = ymd.date(from: raw) { return d }
 
         ymd.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
