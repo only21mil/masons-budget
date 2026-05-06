@@ -76,7 +76,9 @@ struct EditTransactionView: View {
                         }
                     }
                     TextField("Custom source", text: $card)
+                    #if os(iOS)
                         .textInputAutocapitalization(.words)
+                    #endif
                 }
             }
             .scrollContentBackground(.hidden)
