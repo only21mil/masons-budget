@@ -8,7 +8,6 @@ import SwiftData
 @Model
 final class MonthlyBudgetSnapshot {
     @Attribute(.unique) var monthKey: String
-    var avenBalance: Decimal
     var coinbaseOneBalance: Decimal
     var weeklyGross: Decimal
     var weeklyStrike: Decimal
@@ -20,7 +19,6 @@ final class MonthlyBudgetSnapshot {
 
     init(
         monthKey: String,
-        avenBalance: Decimal = 0,
         coinbaseOneBalance: Decimal = 0,
         weeklyGross: Decimal = 0,
         weeklyStrike: Decimal = 0,
@@ -31,7 +29,6 @@ final class MonthlyBudgetSnapshot {
         lastUpdated: Date = .now
     ) {
         self.monthKey = monthKey
-        self.avenBalance = avenBalance
         self.coinbaseOneBalance = coinbaseOneBalance
         self.weeklyGross = weeklyGross
         self.weeklyStrike = weeklyStrike

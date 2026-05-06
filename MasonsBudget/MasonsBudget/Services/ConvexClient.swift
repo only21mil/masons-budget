@@ -128,11 +128,33 @@ final class ConvexClient: Sendable {
         return result
     }
 
+    /// Push one app-created transaction into the shared MC2 transactions document.
+    @discardableResult
+    func appendTransaction(_ transaction: MC2Transaction, to name: String = "transactions") async throws -> Double {
+        let raw = try await mutation("dataFiles:appendTransaction", args: [
+            "name": name,
+            "transaction": try transaction.convexJSONObject()
+        ])
+        guard let result = raw as? [String: Any] else { return 0 }
+        if let version = result["version"] as? Double { return version }
+        if let version = result["version"] as? Int { return Double(version) }
+        return 0
+    }
+
     // MARK: - Internal
 
     /// Execute a Convex query and return the raw result.
     private func query(_ path: String, args: [String: Any]) async throws -> Any {
-        let url = deploymentURL.appendingPathComponent("api/query")
+        try await call(endpoint: "api/query", path: path, args: args)
+    }
+
+    /// Execute a Convex mutation and return the raw result.
+    private func mutation(_ path: String, args: [String: Any]) async throws -> Any {
+        try await call(endpoint: "api/mutation", path: path, args: args)
+    }
+
+    private func call(endpoint: String, path: String, args: [String: Any]) async throws -> Any {
+        let url = deploymentURL.appendingPathComponent(endpoint)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -150,7 +172,7 @@ final class ConvexClient: Sendable {
             throw ConvexError.httpError(0)
         }
         guard http.statusCode == 200 else {
-            log.error("Convex query failed: HTTP \(http.statusCode)")
+            log.error("Convex call failed: HTTP \(http.statusCode)")
             throw ConvexError.httpError(http.statusCode)
         }
 
@@ -162,7 +184,7 @@ final class ConvexClient: Sendable {
 
         if status == "error" {
             let msg = json?["errorMessage"] as? String ?? "Unknown error"
-            log.error("Convex query error: \(msg)")
+            log.error("Convex call error: \(msg)")
             throw ConvexError.decodeFailed(path, NSError(domain: "Convex", code: -1, userInfo: [
                 NSLocalizedDescriptionKey: msg
             ]))

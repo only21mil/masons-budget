@@ -10,23 +10,29 @@ struct MoneyTab: View {
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
     @AppStorage(BTCPriceService.priceKey) private var liveBTCPriceUSD: Double = 0
     @AppStorage(BTCPriceService.sourceKey) private var liveBTCPriceSource: String = ""
+    @AppStorage(StockPriceService.vooPriceKey) private var liveVOOPriceUSD: Double = 0
+    @AppStorage(StockPriceService.ibitPriceKey) private var liveIBITPriceUSD: Double = 0
 
     private var currentMember: FamilyMember {
         FamilyMember(rawValue: selectedMember) ?? .victor
     }
 
     private var myBtcAccounts: [BTCAccount] {
-        btcAccounts.filter { $0.owner == currentMember }
+        btcAccounts.filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
     }
 
     private var myHoldingAccounts: [HoldingAccount] {
-        holdingAccounts.filter { $0.owner == currentMember }
+        holdingAccounts.filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
     }
 
     private var recentPaychecks: [Transaction] {
         transactions
-            .filter { $0.owner == currentMember && $0.category.lowercased() == "income" }
+            .filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) && $0.category.lowercased() == "income" }
             .sorted { $0.date > $1.date }
+    }
+
+    private var myBtcBuys: [BTCBuy] {
+        btcBuys.filter { currentMember.canSee(dataOwnedBy: $0.ownerMember ?? .victor) }
     }
 
     private var totalBtc: Decimal {
@@ -35,6 +41,20 @@ struct MoneyTab: View {
 
     private var totalHoldingsValue: Decimal {
         myHoldingAccounts.reduce(Decimal(0)) { $0 + $1.totalValue }
+    }
+
+    private var liveHoldingsValue: Decimal {
+        myHoldingAccounts.reduce(Decimal(0)) { total, account in
+            total + account.liveValue(vooPrice: liveVOOPrice, ibitPrice: liveIBITPrice)
+        }
+    }
+
+    private var liveVOOPrice: Decimal? {
+        liveVOOPriceUSD > 0 ? Decimal(liveVOOPriceUSD) : nil
+    }
+
+    private var liveIBITPrice: Decimal? {
+        liveIBITPriceUSD > 0 ? Decimal(liveIBITPriceUSD) : nil
     }
 
     private var estimatedBtcUsd: Decimal {
@@ -49,12 +69,32 @@ struct MoneyTab: View {
         snapshots.sorted { $0.lastUpdated > $1.lastUpdated }.first
     }
 
-    private var monthlyGross: Decimal {
+    private var monthlyNet: Decimal {
         latestSnapshot?.monthlyGross ?? 0
     }
 
-    private var yearlyProjected: Decimal {
-        monthlyGross * 12
+    private var monthlySpending: Decimal {
+        let cal = Calendar.current
+        let thisMonth = transactions.filter {
+            currentMember.canSee(dataOwnedBy: $0.ownerMember) &&
+            cal.isDate($0.date, equalTo: Date(), toGranularity: .month) &&
+            ($0.category.lowercased() != "income")
+        }
+        return thisMonth.reduce(Decimal(0)) { $0 + $1.amount }
+    }
+
+    private var monthlySavingsRate: Double {
+        guard monthlyNet > 0 else { return 0 }
+        let saved = monthlyNet - monthlySpending
+        return Double(truncating: (saved / monthlyNet) as NSNumber)
+    }
+
+    private var yearlySavingsRate: Double {
+        guard monthlyNet > 0 else { return 0 }
+        let yearlyNet = monthlyNet * 12
+        let yearlySpent = monthlySpending * 12
+        let saved = yearlyNet - yearlySpent
+        return Double(truncating: (saved / yearlyNet) as NSNumber)
     }
 
     var body: some View {
@@ -64,7 +104,7 @@ struct MoneyTab: View {
                     SectionHeader(title: "Total Net Worth", icon: "chart.pie.fill")
                     StatCard(
                         title: "Estimated Total",
-                        value: formatCurrency(totalHoldingsValue + estimatedBtcUsd),
+                        value: formatCurrency(liveHoldingsValue + estimatedBtcUsd),
                         subtitle: "BTC (\(formatBtc(totalBtc))) @ \(btcPriceLabel) + 401k/WAP (\(formatCurrency(totalHoldingsValue)))",
                         icon: "dollarsign.circle.fill"
                     )
@@ -82,13 +122,16 @@ struct MoneyTab: View {
                         emptyState(icon: "bitcoinsign.circle", message: "BTC account balances will appear here once MC2 sync is configured.")
                     } else {
                         ForEach(myBtcAccounts.sorted(by: { $0.btc > $1.btc }), id: \.key) { account in
-                            btcAccountRow(account)
+                            NavigationLink(destination: BTCAccountDetailView(account: account)) {
+                                btcAccountRow(account)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
 
-                    if !btcBuys.isEmpty {
+                    if !myBtcBuys.isEmpty {
                         SectionHeader(title: "Recent Buys", icon: "arrow.up.right")
-                        ForEach(btcBuys.sorted(by: { $0.date > $1.date }).prefix(5), id: \.id) { buy in
+                        ForEach(myBtcBuys.sorted(by: { $0.date > $1.date }).prefix(5), id: \.id) { buy in
                             HStack {
                                 VStack(alignment: .leading) {
                                     Text(buy.source).font(.caption).foregroundStyle(AppTheme.primaryText)
@@ -125,15 +168,29 @@ struct MoneyTab: View {
         VStack(spacing: AppTheme.cardSpacing) {
             HStack(spacing: AppTheme.cardSpacing) {
                 StatCard(
-                    title: "Monthly Gross",
+                    title: "Monthly Net",
                     value: formatCurrency(snapshot.monthlyGross),
                     subtitle: snapshot.payFrequency.capitalized,
                     icon: "calendar"
                 )
                 StatCard(
-                    title: "Yearly Projected",
-                    value: formatCurrency(yearlyProjected),
+                    title: "Monthly Savings",
+                    value: "\(Int(monthlySavingsRate * 100))%",
+                    subtitle: monthlySpending > 0 ? "\(formatCurrency(monthlyNet - monthlySpending)) saved" : "No spending yet",
+                    icon: "chart.line.uptrend.xyaxis"
+                )
+            }
+            HStack(spacing: AppTheme.cardSpacing) {
+                StatCard(
+                    title: "Yearly Net",
+                    value: formatCurrency(monthlyNet * 12),
                     subtitle: "12 × monthly",
+                    icon: "calendar.badge.clock"
+                )
+                StatCard(
+                    title: "Yearly Savings",
+                    value: "\(Int(yearlySavingsRate * 100))%",
+                    subtitle: "Est. \(formatCurrency((monthlyNet - monthlySpending) * 12)) saved",
                     icon: "chart.bar.fill"
                 )
             }
@@ -226,26 +283,27 @@ struct MoneyTab: View {
         .padding(.horizontal, 4)
     }
     private func btcAccountRow(_ account: BTCAccount) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(account.label)
-                        .font(.headline)
-                        .foregroundStyle(AppTheme.primaryText)
-                    Text(account.custody == .selfCustody ? "Self-custody" : "Exchange")
-                        .font(.caption)
-                        .foregroundStyle(AppTheme.secondaryText)
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(formatBtc(account.btc))
-                        .font(.headline)
-                        .foregroundStyle(AppTheme.accentColor)
-                    Text(formatCurrency(account.usdValue(liveBTCPrice: liveBTCPrice)))
-                        .font(.caption2)
-                        .foregroundStyle(AppTheme.secondaryText)
-                }
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(account.label)
+                    .font(.headline)
+                    .foregroundStyle(AppTheme.primaryText)
+                Text(account.custody == .selfCustody ? "Self-custody" : "Exchange")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.secondaryText)
             }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(formatBtc(account.btc))
+                    .font(.headline)
+                    .foregroundStyle(AppTheme.accentColor)
+                Text(formatCurrency(account.usdValue(liveBTCPrice: liveBTCPrice)))
+                    .font(.caption2)
+                    .foregroundStyle(AppTheme.secondaryText)
+            }
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(AppTheme.tertiaryText)
         }
         .glassCard()
     }
@@ -263,7 +321,7 @@ struct MoneyTab: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(AppTheme.primaryText)
                 Spacer()
-                Text(formatCurrency(account.totalValue))
+                Text(formatCurrency(account.liveValue(vooPrice: liveVOOPrice, ibitPrice: liveIBITPrice)))
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(AppTheme.positive)
             }

@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import os
 
 struct DashboardTab: View {
     @Query private var snapshots: [MonthlyBudgetSnapshot]
@@ -10,9 +11,13 @@ struct DashboardTab: View {
     @Environment(\.modelContext) private var modelContext
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
     @AppStorage(BTCPriceService.priceKey) private var liveBTCPriceUSD: Double = 0
+    @AppStorage(StockPriceService.vooPriceKey) private var liveVOOPriceUSD: Double = 0
+    @AppStorage(StockPriceService.ibitPriceKey) private var liveIBITPriceUSD: Double = 0
     @State private var showVoiceCapture = false
     @State private var showAddTransaction = false
     @Binding var selectedTab: AppTab
+    private let syncClient = ConvexClient(deploymentURL: ConvexConfig.deploymentURL)
+    private let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "Dashboard")
 
     private var currentMember: FamilyMember {
         FamilyMember(rawValue: selectedMember) ?? .victor
@@ -23,7 +28,7 @@ struct DashboardTab: View {
     }
 
     private var myTransactions: [Transaction] {
-        transactions.filter { $0.owner == currentMember }
+        transactions.filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
     }
 
     private var currentMonthTransactions: [Transaction] {
@@ -35,21 +40,29 @@ struct DashboardTab: View {
     }
 
     private var myBtcAccounts: [BTCAccount] {
-        btcAccounts.filter { $0.owner == currentMember }
+        btcAccounts.filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
     }
 
     private var myHoldingAccounts: [HoldingAccount] {
-        holdingAccounts.filter { $0.owner == currentMember }
+        holdingAccounts.filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
     }
 
     private var netWorth: Decimal {
-        let holdingsTotal = myHoldingAccounts.reduce(Decimal(0)) { $0 + $1.totalValue }
+        let holdingsTotal = myHoldingAccounts.reduce(Decimal(0)) { $0 + $1.liveValue(vooPrice: liveVOOPrice, ibitPrice: liveIBITPrice) }
         let btcValue = myBtcAccounts.reduce(Decimal(0)) { $0 + $1.usdValue(liveBTCPrice: liveBTCPrice) }
         return holdingsTotal + btcValue
     }
 
     private var liveBTCPrice: Decimal? {
         liveBTCPriceUSD > 0 ? Decimal(liveBTCPriceUSD) : nil
+    }
+
+    private var liveVOOPrice: Decimal? {
+        liveVOOPriceUSD > 0 ? Decimal(liveVOOPriceUSD) : nil
+    }
+
+    private var liveIBITPrice: Decimal? {
+        liveIBITPriceUSD > 0 ? Decimal(liveIBITPriceUSD) : nil
     }
 
     private var latestSnapshot: MonthlyBudgetSnapshot? {
@@ -135,6 +148,11 @@ struct DashboardTab: View {
                     handleVoiceSave(parsed)
                 })
             }
+            .sheet(isPresented: $showAddTransaction) {
+                AddTransactionView(onSave: { amount, merchant, category, card, note in
+                    handleManualSave(amount: amount, merchant: merchant, category: category, card: card, note: note)
+                })
+            }
             #else
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -149,12 +167,12 @@ struct DashboardTab: View {
                 })
                 .frame(minWidth: 400, minHeight: 500)
             }
-            #endif
             .sheet(isPresented: $showAddTransaction) {
-                AddTransactionView { amount, merchant, category, card, note in
+                AddTransactionView(onSave: { amount, merchant, category, card, note in
                     handleManualSave(amount: amount, merchant: merchant, category: category, card: card, note: note)
-                }
+                })
             }
+            #endif
         }
     }
 
@@ -173,7 +191,7 @@ struct DashboardTab: View {
             createdAt: Date()
         )
         modelContext.insert(tx)
-        try? modelContext.save()
+        saveAndSync(tx)
     }
 
     private func handleVoiceSave(_ parsed: ParsedTransaction) {
@@ -181,7 +199,7 @@ struct DashboardTab: View {
               let merchant = parsed.merchant else { return }
 
         let date = parsed.date ?? Date()
-        let category = parsed.category ?? "Other"
+        let category = resolveCanonicalCategory(parsed.category) ?? categories.first?.name ?? "Uncategorized"
         let card = parsed.card
         let note = parsed.note
 
@@ -199,7 +217,36 @@ struct DashboardTab: View {
             createdAt: Date()
         )
         modelContext.insert(tx)
-        try? modelContext.save()
+        saveAndSync(tx)
+    }
+
+    private func resolveCanonicalCategory(_ parsedCategory: String?) -> String? {
+        guard let parsedCategory, !parsedCategory.isEmpty else { return nil }
+        if let exact = categories.first(where: { $0.name == parsedCategory })?.name {
+            return exact
+        }
+        return categories.first(where: { $0.name.caseInsensitiveCompare(parsedCategory) == .orderedSame })?.name
+    }
+
+    private func saveAndSync(_ transaction: Transaction) {
+        do {
+            try modelContext.save()
+            pushAppTransaction(transaction)
+        } catch {
+            log.error("Failed to save transaction locally: \(error.localizedDescription)")
+        }
+    }
+
+    private func pushAppTransaction(_ transaction: Transaction) {
+        let dto = MC2Transaction(appTransaction: transaction)
+        let fileName = transaction.ownerMember == .mason ? "mason-transactions" : "transactions"
+        Task {
+            do {
+                try await syncClient.appendTransaction(dto, to: fileName)
+            } catch {
+                log.error("Failed to push transaction to Convex: \(error.localizedDescription)")
+            }
+        }
     }
 
     private var syncStatusBanner: some View {
@@ -282,7 +329,7 @@ struct DashboardTab: View {
     private var budgetCategoryBars: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionHeader(title: "Top Categories", icon: "chart.bar.fill")
-            ForEach(categories.sorted(by: { $0.monthlyBudget > $1.monthlyBudget }).prefix(4), id: \.name) { cat in
+            ForEach(categories.sorted(by: { ($0.displayRank, -$0.monthlyBudget) < ($1.displayRank, -$1.monthlyBudget) }).prefix(4), id: \.name) { cat in
                 let spent = currentMonthTransactions.filter { $0.category == cat.name }.reduce(Decimal(0)) { $0 + $1.amount }
                 let pct = cat.monthlyBudget > 0 ? spent / cat.monthlyBudget : 0
                 VStack(alignment: .leading, spacing: 5) {

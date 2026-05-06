@@ -63,6 +63,11 @@ final class VoiceParserTests: XCTestCase {
         XCTAssertEqual(parser.parse("$30 from Amazon", today: today).merchant, "Amazon")
     }
 
+    func testMerchant_ForServiceSubscription() {
+        XCTAssertEqual(parser.parse("I spent $9.99 for an Apple iCloud subscription", today: today).merchant, "Apple iCloud")
+        XCTAssertEqual(parser.parse("paid 9.99 for Apple iCloud subscription", today: today).merchant, "Apple iCloud")
+    }
+
     func testMerchant_TrimsTrailingFollowOn() {
         // "Costco For" should drop the "For"
         XCTAssertEqual(parser.parse("$45 at Costco For", today: today).merchant, "Costco")
@@ -88,6 +93,24 @@ final class VoiceParserTests: XCTestCase {
         // No known merchant; keyword "groceries" should resolve.
         let r = parser.parse("$45 for groceries", today: today)
         XCTAssertEqual(r.category, "Groceries")
+    }
+
+    func testCategory_ServiceSubscription() {
+        XCTAssertEqual(parser.parse("I spent $9.99 for an Apple iCloud subscription", today: today).category, "Bills & Utilities")
+        XCTAssertEqual(parser.parse("paid 9.99 for Apple iCloud subscription", today: today).category, "Bills & Utilities")
+    }
+
+    func testCategory_CommonMicrophoneCuesUseCanonicalCategories() {
+        XCTAssertEqual(parser.parse("log 18 dollars at Starbucks for coffee", today: today).category, "Dining & Drinks")
+        XCTAssertEqual(parser.parse("spent 42 dollars at Shell gas station", today: today).category, "Auto & Transport")
+        XCTAssertEqual(parser.parse("paid 120 dollars at CVS pharmacy", today: today).category, "Medical")
+        XCTAssertEqual(parser.parse("spent 64 dollars at Chewy for dog food", today: today).category, "Pets")
+        XCTAssertEqual(parser.parse("paid 80 dollars under health and wellness", today: today).category, "Health & Wellness")
+    }
+
+    func testCategory_ExplicitAliasWins() {
+        XCTAssertEqual(parser.parse("spent 22 dollars at Unknown category bills", today: today).category, "Bills & Utilities")
+        XCTAssertEqual(parser.parse("spent 30 dollars at Food Truck under dining", today: today).category, "Dining & Drinks")
     }
 
     func testCategory_LunchKeyword() {
@@ -194,7 +217,7 @@ final class VoiceParserTests: XCTestCase {
     // MARK: - Card
 
     func testCard_OnPreposition() {
-        XCTAssertEqual(parser.parse("$45 at Costco on Aven", today: today).card, "Aven")
+        XCTAssertEqual(parser.parse("$45 at Costco on Strike", today: today).card, "Strike")
     }
 
     func testCard_WithMy() {
@@ -246,11 +269,11 @@ final class VoiceParserTests: XCTestCase {
     // MARK: - Integration
 
     func testIntegration_RealisticTranscript() {
-        let r = parser.parse("Spent $76.81 at Kroger yesterday with Aven", today: today)
+        let r = parser.parse("Spent $76.81 at Kroger yesterday with Strike", today: today)
         XCTAssertEqual(r.amount, Decimal(string: "76.81"))
         XCTAssertEqual(r.merchant, "Kroger")
         XCTAssertEqual(r.category, "Groceries")
-        XCTAssertEqual(r.card, "Aven")
+        XCTAssertEqual(r.card, "Strike")
         let cal = Calendar(identifier: .gregorian)
         let expected = cal.date(byAdding: .day, value: -1, to: cal.startOfDay(for: today))!
         XCTAssertEqual(cal.startOfDay(for: r.date ?? .distantPast), expected)

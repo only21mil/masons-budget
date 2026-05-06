@@ -20,7 +20,7 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .victor: "person.fill"
         case .rachel: "person.fill"
-        case .mason:  "figure.child"
+        case .mason:  "person.fill"
         case .maddox: "figure.child"
         }
     }
@@ -38,8 +38,8 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable {
     /// or a simplified Bitcoin-focused experience (kids).
     var showsFullBudget: Bool {
         switch self {
-        case .victor, .rachel: true
-        case .mason, .maddox:  false
+        case .victor, .rachel, .mason: true
+        case .maddox: false
         }
     }
 
@@ -47,9 +47,31 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .victor: "Full budget, spending & Bitcoin"
         case .rachel: "Full budget, spending & Bitcoin"
-        case .mason:  "Bitcoin stack & allowance"
+        case .mason:  "Full budget, spending & Bitcoin"
         case .maddox: "Bitcoin stack & allowance"
         }
+    }
+
+    var isAdult: Bool {
+        switch self {
+        case .victor, .rachel, .mason: true
+        case .maddox: false
+        }
+    }
+
+    var allowedSwitchTargets: [FamilyMember] {
+        return FamilyMember.allCases
+    }
+
+    var requiresAuthToSwitch: Bool {
+        true
+    }
+
+    /// Only Victor and Rachel share household data. Mason sees only his own, Maddox sees only his own.
+    func canSee(dataOwnedBy owner: FamilyMember) -> Bool {
+        if self == owner { return true }
+        if (self == .victor || self == .rachel) && (owner == .victor || owner == .rachel) { return true }
+        return false
     }
 }
 

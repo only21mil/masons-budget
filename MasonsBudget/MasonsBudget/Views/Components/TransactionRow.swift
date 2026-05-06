@@ -61,7 +61,7 @@ struct TransactionRow: View {
 
 #Preview {
     VStack(spacing: 8) {
-        TransactionRow(merchant: "Costco", amount: 142.37, category: "Groceries", date: .now, card: "Aven")
+        TransactionRow(merchant: "Costco", amount: 142.37, category: "Groceries", date: .now, card: "Strike")
         TransactionRow(merchant: "Shell Gas", amount: 54.20, category: "Auto", date: .now)
         TransactionRow(merchant: "Netflix", amount: 15.99, category: "Bills", date: .now, card: "Strike")
     }

@@ -7,12 +7,12 @@ struct AddTransactionView: View {
     @State private var amountText = ""
     @State private var merchant = ""
     @State private var category = ""
-    @State private var card = "Aven"
+    @State private var card = "Strike"
     @State private var note = ""
 
-    var onSave: (Decimal, String, String, String?, String?) -> Void
+    private let cards = ["Strike", "River", ""]
 
-    private let cards = ["Aven", "Strike", "River", ""]
+    var onSave: (Decimal, String, String, String?, String?) -> Void
 
     var body: some View {
         NavigationStack {

@@ -20,6 +20,7 @@ final class BTCBuy {
     var costBasisStatus: String
     var loggedBy: String?
     var archimedesRequestId: String?
+    var owner: String?
 
     init(
         id: String,
@@ -33,7 +34,8 @@ final class BTCBuy {
         status: String = "complete",
         costBasisStatus: String = "complete",
         loggedBy: String? = nil,
-        archimedesRequestId: String? = nil
+        archimedesRequestId: String? = nil,
+        owner: FamilyMember? = nil
     ) {
         self.id = id
         self.date = date
@@ -47,5 +49,11 @@ final class BTCBuy {
         self.costBasisStatus = costBasisStatus
         self.loggedBy = loggedBy
         self.archimedesRequestId = archimedesRequestId
+        self.owner = owner?.rawValue
+    }
+
+    var ownerMember: FamilyMember? {
+        get { owner.flatMap(FamilyMember.init(rawValue:)) }
+        set { owner = newValue?.rawValue }
     }
 }

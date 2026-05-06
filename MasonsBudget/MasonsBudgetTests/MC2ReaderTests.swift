@@ -38,7 +38,7 @@ final class MC2ReaderTests: XCTestCase {
         let json = """
         [
           {"id":"mortgage-2026-03-01","date":"2026-03-01","merchant":"PennyMac (Mortgage)","amount":3613.79,"category":"Bills & Utilities","card":"Strike (BTC)","note":"Monthly mortgage payment"},
-          {"id":"t001","date":"2026-03-02","merchant":"Kroger","amount":76.81,"category":"Groceries","card":"Aven","note":""}
+          {"id":"t001","date":"2026-03-02","merchant":"Kroger","amount":76.81,"category":"Groceries","card":"Strike","note":""}
         ]
         """.data(using: .utf8)!
 
@@ -51,7 +51,7 @@ final class MC2ReaderTests: XCTestCase {
 
     func testMapTransactions() throws {
         let json = """
-        [{"id":"t001","date":"2026-03-02","merchant":"Kroger","amount":76.81,"category":"Groceries","card":"Aven","note":""}]
+        [{"id":"t001","date":"2026-03-02","merchant":"Kroger","amount":76.81,"category":"Groceries","card":"Strike","note":""}]
         """.data(using: .utf8)!
 
         let dtos = try JSONDecoder().decode([MC2Transaction].self, from: json)
@@ -66,12 +66,50 @@ final class MC2ReaderTests: XCTestCase {
         XCTAssertNotEqual(models[0].date, .distantPast)
     }
 
+    func testAppTransactionPayloadMatchesMC2Shape() throws {
+        var components = DateComponents()
+        components.calendar = Calendar(identifier: .gregorian)
+        components.timeZone = TimeZone(secondsFromGMT: 0)
+        components.year = 2026
+        components.month = 5
+        components.day = 1
+        components.hour = 12
+
+        let transaction = Transaction(
+            id: "manual-1-abcdef",
+            date: try XCTUnwrap(components.date),
+            merchant: "Starbucks",
+            amount: 25.00,
+            category: "Dining & Drinks",
+            card: "Strike",
+            note: "Coffee",
+            owner: .victor,
+            createdBy: "manual"
+        )
+
+        let dto = MC2Transaction(appTransaction: transaction)
+        XCTAssertEqual(dto.id, "manual-1-abcdef")
+        XCTAssertEqual(dto.date, "2026-05-01")
+        XCTAssertEqual(dto.merchant, "Starbucks")
+        XCTAssertEqual(dto.category, "Dining & Drinks")
+        XCTAssertEqual(dto.card, "Strike")
+        XCTAssertEqual(dto.note, "Coffee")
+
+        let payload = try dto.convexJSONObject()
+        XCTAssertEqual(payload["id"] as? String, "manual-1-abcdef")
+        XCTAssertEqual(payload["date"] as? String, "2026-05-01")
+        XCTAssertEqual(payload["merchant"] as? String, "Starbucks")
+        XCTAssertEqual(payload["category"] as? String, "Dining & Drinks")
+        XCTAssertEqual(payload["card"] as? String, "Strike")
+        XCTAssertEqual(payload["note"] as? String, "Coffee")
+        XCTAssertEqual(payload["amount"] as? Double, 25.0)
+    }
+
     // MARK: - budget.json
 
     func testDecodeBudget() throws {
         let json = """
         {
-          "aven_balance": 27751.68,
           "coinbase_one_balance": 26.42,
           "month": "April 2026",
           "categories": [
@@ -79,10 +117,8 @@ final class MC2ReaderTests: XCTestCase {
             {"name":"Groceries","icon":"cart","budget":1500,"spent":1527.27}
           ],
           "strategy": {
-            "aven_apr": 7.99,
-            "aven_cashback_pct": 2,
             "effective_apr": 5.99,
-            "strategy_note": "Carry Aven balance at 7.99% APR."
+            "strategy_note": "BTC-first cashflow plan."
           },
           "income": {
             "weekly_gross": 3941.53,
@@ -96,16 +132,14 @@ final class MC2ReaderTests: XCTestCase {
 
         let budget = try JSONDecoder().decode(MC2Budget.self, from: json)
         XCTAssertEqual(budget.month, "April 2026")
-        assertDecimalClose(budget.avenBalance, 27751.68)
         XCTAssertEqual(budget.categories.count, 2)
         assertDecimalClose(budget.income?.weeklyGross, 3941.53)
-        XCTAssertEqual(budget.strategy?.strategyNote, "Carry Aven balance at 7.99% APR.")
+        XCTAssertEqual(budget.strategy?.strategyNote, "BTC-first cashflow plan.")
     }
 
     func testMapBudgetSnapshot() throws {
         let json = """
         {
-          "aven_balance": 27751.68,
           "month": "April 2026",
           "categories": [],
           "income": {
@@ -122,7 +156,6 @@ final class MC2ReaderTests: XCTestCase {
         let snapshot = MC2Mapper.mapBudgetSnapshot(dto)
 
         XCTAssertEqual(snapshot.monthKey, "April 2026")
-        assertDecimalClose(snapshot.avenBalance, 27751.68)
         assertDecimalClose(snapshot.weeklyGross, 3941.53)
         assertDecimalClose(snapshot.monthlyGross, 17079.96)
         XCTAssertEqual(snapshot.payFrequency, "weekly")
@@ -189,7 +222,7 @@ final class MC2ReaderTests: XCTestCase {
 
         XCTAssertEqual(accounts.count, 2)
         for acct in accounts {
-            XCTAssertEqual(acct.owner, .victor)
+            XCTAssertEqual(acct.ownerMember, .victor)
             XCTAssertTrue(acct.key.hasSuffix("-victor"))
         }
 
@@ -424,7 +457,7 @@ final class MC2ReaderTests: XCTestCase {
 
         let k401 = accounts.first(where: { $0.name == "401k" })!
         XCTAssertEqual(k401.provider, "Discount Tire 401(k)")
-        XCTAssertEqual(k401.owner, .victor)
+        XCTAssertEqual(k401.ownerMember, .victor)
         assertDecimalClose(k401.totalValue, 773307.46)
         XCTAssertEqual(k401.holdings.count, 1)
         XCTAssertEqual(k401.holdings[0].ticker, "VOO")
@@ -450,7 +483,7 @@ final class MC2ReaderTests: XCTestCase {
 
         XCTAssertEqual(accounts.count, 3)
         for acct in accounts {
-            XCTAssertEqual(acct.owner, .mason)
+            XCTAssertEqual(acct.ownerMember, .mason)
             XCTAssertTrue(acct.key.hasSuffix("-mason"))
         }
 

@@ -12,7 +12,7 @@ struct NetWorthHistoryChart: View {
     }
 
     private var filteredSnapshots: [NetWorthSnapshot] {
-        let mine = snapshots.filter { $0.owner == currentMember }
+        let mine = snapshots.filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
         let cutoff = cutoffDate(for: range)
         return mine.filter { $0.date >= cutoff }
     }

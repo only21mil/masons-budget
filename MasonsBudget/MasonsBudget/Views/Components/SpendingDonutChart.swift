@@ -19,7 +19,7 @@ struct SpendingDonutChart: View {
     private var currentMonthTransactions: [Transaction] {
         let cal = Calendar.current
         return transactions.filter {
-            $0.owner == currentMember && cal.isDate($0.date, equalTo: selectedMonth, toGranularity: .month)
+            currentMember.canSee(dataOwnedBy: $0.ownerMember) && cal.isDate($0.date, equalTo: selectedMonth, toGranularity: .month)
         }
     }
 
@@ -67,7 +67,11 @@ struct SpendingDonutChart: View {
                 }
 
                 VStack(spacing: 8) {
-                    ForEach(categoryBreakdown.prefix(8), id: \.0) { name, spent, icon in
+                    ForEach(categoryBreakdown.sorted(by: { cat1, cat2 in
+                        let r1 = BudgetCategory.displayPriority[cat1.0] ?? 50
+                        let r2 = BudgetCategory.displayPriority[cat2.0] ?? 50
+                        return r1 < r2
+                    }).prefix(8), id: \.0) { name, spent, icon in
                         HStack(spacing: 8) {
                             Circle()
                                 .fill(chartColor(for: name))

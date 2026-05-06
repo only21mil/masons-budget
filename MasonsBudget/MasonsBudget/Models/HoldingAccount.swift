@@ -11,12 +11,29 @@ import SwiftData
 final class HoldingAccount {
     @Attribute(.unique) var name: String
     var provider: String
-    var owner: FamilyMember
+    var owner: String
     var totalValue: Decimal
     var weeklyContribution: Decimal
     var lastUpdated: Date
 
     @Relationship(deleteRule: .cascade) var holdings: [Holding] = []
+
+    func liveValue(vooPrice: Decimal?, ibitPrice: Decimal?) -> Decimal {
+        var total: Decimal = 0
+        for holding in holdings {
+            let ticker = holding.ticker?.uppercased() ?? ""
+            let shares = holding.shares
+            switch ticker {
+            case "VOO" where vooPrice != nil:
+                total += (vooPrice ?? 0) * shares
+            case "IBIT" where ibitPrice != nil:
+                total += (ibitPrice ?? 0) * shares
+            default:
+                total += holding.value
+            }
+        }
+        return total > 0 ? total : totalValue
+    }
 
     init(
         name: String,
@@ -28,10 +45,15 @@ final class HoldingAccount {
     ) {
         self.name = name
         self.provider = provider
-        self.owner = owner
+        self.owner = owner.rawValue
         self.totalValue = totalValue
         self.weeklyContribution = weeklyContribution
         self.lastUpdated = lastUpdated
+    }
+
+    var ownerMember: FamilyMember {
+        get { FamilyMember(rawValue: owner) ?? .victor }
+        set { owner = newValue.rawValue }
     }
 }
 

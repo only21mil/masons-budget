@@ -39,6 +39,36 @@ export const list = query({
 
 // ── Mutations (called by the MC2 sync script) ──
 
+const appTransactionValidator = v.object({
+  id: v.string(),
+  date: v.string(),
+  merchant: v.string(),
+  amount: v.float64(),
+  category: v.string(),
+  card: v.optional(v.union(v.string(), v.null())),
+  note: v.optional(v.union(v.string(), v.null())),
+});
+
+async function bumpSyncVersion(ctx: any, name: string, version: number, updatedAt: number) {
+  const versionDoc = await ctx.db
+    .query("syncVersions")
+    .withIndex("by_name", (q: any) => q.eq("name", name))
+    .first();
+
+  if (versionDoc) {
+    await ctx.db.patch(versionDoc._id, {
+      version,
+      updatedAt,
+    });
+  } else {
+    await ctx.db.insert("syncVersions", {
+      name,
+      version,
+      updatedAt,
+    });
+  }
+}
+
 /** Upsert a data file — replaces the entire payload and bumps the version. */
 export const sync = mutation({
   args: {
@@ -71,24 +101,7 @@ export const sync = mutation({
       });
     }
 
-    // Update the sync version tracker
-    const versionDoc = await ctx.db
-      .query("syncVersions")
-      .withIndex("by_name", (q) => q.eq("name", name))
-      .first();
-
-    if (versionDoc) {
-      await ctx.db.patch(versionDoc._id, {
-        version: nextVersion,
-        updatedAt: now,
-      });
-    } else {
-      await ctx.db.insert("syncVersions", {
-        name,
-        version: nextVersion,
-        updatedAt: now,
-      });
-    }
+    await bumpSyncVersion(ctx, name, nextVersion, now);
 
     return { name, version: nextVersion };
   },
@@ -131,29 +144,62 @@ export const syncBatch = mutation({
         });
       }
 
-      // Update sync version
-      const versionDoc = await ctx.db
-        .query("syncVersions")
-        .withIndex("by_name", (q) => q.eq("name", file.name))
-        .first();
-
-      if (versionDoc) {
-        await ctx.db.patch(versionDoc._id, {
-          version: nextVersion,
-          updatedAt: now,
-        });
-      } else {
-        await ctx.db.insert("syncVersions", {
-          name: file.name,
-          version: nextVersion,
-          updatedAt: now,
-        });
-      }
+      await bumpSyncVersion(ctx, file.name, nextVersion, now);
 
       results.push({ name: file.name, version: nextVersion });
     }
 
     return results;
+  },
+});
+
+/** Upsert one app-created transaction into transactions.json and bump its version. */
+export const appendTransaction = mutation({
+  args: {
+    name: v.optional(v.union(v.literal("transactions"), v.literal("mason-transactions"))),
+    transaction: appTransactionValidator,
+  },
+  handler: async (ctx, { name: fileName, transaction }) => {
+    const name = fileName ?? "transactions";
+    const now = Date.now();
+
+    const existing = await ctx.db
+      .query("dataFiles")
+      .withIndex("by_name", (q) => q.eq("name", name))
+      .first();
+
+    const currentData = existing?.data;
+    const transactions = Array.isArray(currentData) ? [...currentData] : [];
+    const existingIndex = transactions.findIndex(
+      (item) => item && typeof item === "object" && "id" in item && item.id === transaction.id
+    );
+
+    if (existingIndex >= 0) {
+      transactions[existingIndex] = transaction;
+    } else {
+      transactions.push(transaction);
+    }
+
+    const nextVersion = (existing?.version ?? 0) + 1;
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        data: transactions,
+        version: nextVersion,
+        updatedAt: now,
+      });
+    } else {
+      await ctx.db.insert("dataFiles", {
+        name,
+        data: transactions,
+        version: nextVersion,
+        updatedAt: now,
+      });
+    }
+
+    await bumpSyncVersion(ctx, name, nextVersion, now);
+
+    return { name, version: nextVersion, id: transaction.id };
   },
 });
 

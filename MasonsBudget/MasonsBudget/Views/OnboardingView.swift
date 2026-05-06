@@ -140,7 +140,7 @@ struct OnboardingView: View {
 
             VStack(spacing: 12) {
                 onboardingBullet("Tap the mic", "Use the floating mic button on the Dashboard")
-                onboardingBullet("Say it naturally", "\"$45 at Costco on Aven\"")
+                onboardingBullet("Say it naturally", "\"$45 at Costco on Strike\"")
                 onboardingBullet("Confirm & save", "Review the parsed result and tap Save")
             }
             .padding(.horizontal, 24)

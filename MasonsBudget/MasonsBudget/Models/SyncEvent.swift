@@ -1,6 +1,5 @@
-// Mason's Budget App — Sync event model
-// Tracks all write operations for conflict resolution and audit.
-// Each create/update/delete from any device is logged here.
+// The Vogel Vault — Legacy sync event model
+// Retained in the SwiftData schema so existing installs can migrate safely.
 
 import Foundation
 import SwiftData

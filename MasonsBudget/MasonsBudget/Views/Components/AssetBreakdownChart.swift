@@ -13,11 +13,11 @@ struct AssetBreakdownChart: View {
     }
 
     private var myBtcAccounts: [BTCAccount] {
-        btcAccounts.filter { $0.owner == currentMember }
+        btcAccounts.filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
     }
 
     private var myHoldingAccounts: [HoldingAccount] {
-        holdingAccounts.filter { $0.owner == currentMember }
+        holdingAccounts.filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
     }
 
     private var btcTotal: Decimal {

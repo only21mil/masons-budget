@@ -14,7 +14,7 @@ final class Transaction {
     var category: String
     var card: String?
     var note: String?
-    var owner: FamilyMember
+    var owner: String
     var createdBy: String
     var createdAt: Date
     var sourceFile: String?
@@ -39,9 +39,14 @@ final class Transaction {
         self.category = category
         self.card = card
         self.note = note
-        self.owner = owner
+        self.owner = owner.rawValue
         self.createdBy = createdBy
         self.createdAt = createdAt
         self.sourceFile = sourceFile
+    }
+
+    var ownerMember: FamilyMember {
+        get { FamilyMember(rawValue: owner) ?? .victor }
+        set { owner = newValue.rawValue }
     }
 }

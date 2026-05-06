@@ -12,7 +12,7 @@ final class BTCAccount {
     var custody: BTCCustody
     var btc: Decimal
     var fiat: Decimal
-    var owner: FamilyMember
+    var owner: String
     var lastUpdated: Date
 
     func usdValue(liveBTCPrice: Decimal? = BTCPriceService.storedPrice) -> Decimal {
@@ -36,7 +36,12 @@ final class BTCAccount {
         self.custody = custody
         self.btc = btc
         self.fiat = fiat
-        self.owner = owner
+        self.owner = owner.rawValue
         self.lastUpdated = lastUpdated
+    }
+
+    var ownerMember: FamilyMember {
+        get { FamilyMember(rawValue: owner) ?? .victor }
+        set { owner = newValue.rawValue }
     }
 }

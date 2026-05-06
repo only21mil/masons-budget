@@ -69,6 +69,11 @@ actor MC2Reader {
         try await client.fetchFile("mason-transactions", as: [MC2Transaction].self)
     }
 
+    /// Read Mason's BTC buys from Convex.
+    func readMasonBTCBuys() async throws -> [MC2BTCBuy] {
+        try await client.fetchFile("mason-bitcoin-buys", as: [MC2BTCBuy].self)
+    }
+
     /// Check current data versions (lightweight — for change detection).
     func checkVersions() async throws -> [String: Double] {
         try await client.fetchVersions()

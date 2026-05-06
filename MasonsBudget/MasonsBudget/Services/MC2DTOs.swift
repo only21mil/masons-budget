@@ -10,6 +10,37 @@ struct MC2Transaction: Codable {
     let note: String?
 }
 
+extension MC2Transaction {
+    init(appTransaction transaction: Transaction) {
+        self.init(
+            id: transaction.id,
+            date: Self.dateString(from: transaction.date),
+            merchant: transaction.merchant,
+            amount: transaction.amount,
+            category: transaction.category,
+            card: transaction.card,
+            note: transaction.note
+        )
+    }
+
+    static func dateString(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    func convexJSONObject() throws -> [String: Any] {
+        let data = try JSONEncoder().encode(self)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw ConvexError.decodeFailed("transaction", NSError(domain: "MC2Transaction", code: -1))
+        }
+        return object
+    }
+}
+
 struct MC2BudgetCategory: Codable {
     let name: String
     let icon: String?
@@ -18,14 +49,10 @@ struct MC2BudgetCategory: Codable {
 }
 
 struct MC2BudgetStrategy: Codable {
-    let avenApr: Decimal?
-    let avenCashbackPct: Decimal?
     let effectiveApr: Decimal?
     let strategyNote: String?
 
     enum CodingKeys: String, CodingKey {
-        case avenApr = "aven_apr"
-        case avenCashbackPct = "aven_cashback_pct"
         case effectiveApr = "effective_apr"
         case strategyNote = "strategy_note"
     }
@@ -49,7 +76,6 @@ struct MC2BudgetIncome: Codable {
 
 struct MC2Budget: Codable {
     let month: String
-    let avenBalance: Decimal
     let coinbaseOneBalance: Decimal?
     let categories: [MC2BudgetCategory]
     let strategy: MC2BudgetStrategy?
@@ -57,7 +83,6 @@ struct MC2Budget: Codable {
 
     enum CodingKeys: String, CodingKey {
         case month
-        case avenBalance = "aven_balance"
         case coinbaseOneBalance = "coinbase_one_balance"
         case categories
         case strategy
@@ -211,9 +236,12 @@ struct MC2FinanceAccount: Decodable {
     let total: Decimal?
     let weeklyContribution: Decimal?
     let holdings: [MC2FinanceHolding]
+    /// Per-account owner from MC2 finances.json. Missing → treated as "victor"
+    /// for backwards compatibility with adult-only accounts.
+    let owner: String?
 
     enum CodingKeys: String, CodingKey {
-        case provider, total, weeklyContribution, holdings
+        case provider, total, weeklyContribution, holdings, owner
     }
 
     init(from decoder: Decoder) throws {
@@ -222,6 +250,7 @@ struct MC2FinanceAccount: Decodable {
         total = try container.decodeIfPresent(Decimal.self, forKey: .total)
         weeklyContribution = try container.decodeIfPresent(Decimal.self, forKey: .weeklyContribution)
         holdings = try container.decodeIfPresent([MC2FinanceHolding].self, forKey: .holdings) ?? []
+        owner = try container.decodeIfPresent(String.self, forKey: .owner)
     }
 }
 
@@ -273,10 +302,12 @@ struct MC2FinanceLot: Decodable {
 
 struct MC2Finances: Decodable {
     let retirement: MC2FinancesRetirement
+    let mason401k: MC2FinanceAccount?
     let lastUpdated: String?
 
     enum CodingKeys: String, CodingKey {
         case retirement
+        case mason401k = "mason_401k"
         case lastUpdated = "last_updated"
         case camelLastUpdated = "lastUpdated"
     }
@@ -284,6 +315,7 @@ struct MC2Finances: Decodable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         retirement = try container.decode(MC2FinancesRetirement.self, forKey: .retirement)
+        mason401k = try container.decodeIfPresent(MC2FinanceAccount.self, forKey: .mason401k)
         lastUpdated = try container.decodeIfPresent(String.self, forKey: .lastUpdated)
             ?? container.decodeIfPresent(String.self, forKey: .camelLastUpdated)
     }
@@ -307,4 +339,5 @@ struct MC2MasonBudget: Codable {
     let owner: String
     let categories: [MC2BudgetCategory]
     let allowance: MC2MasonAllowance?
+    let income: MC2BudgetIncome?
 }

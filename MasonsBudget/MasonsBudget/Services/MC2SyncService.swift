@@ -39,9 +39,11 @@ final class MC2SyncService {
         totalEntities += await syncSonBalances(&errors)
 
         if currentMember == .mason {
-            // Mason: sync his own budget & transactions
+            // Mason: sync his own budget, transactions, BTC buys, and finances (401k filtered by owner)
             totalEntities += await syncMasonBudget(&errors)
             totalEntities += await syncMasonTransactions(&errors)
+            totalEntities += await syncMasonBTCBuys(&errors)
+            totalEntities += await syncFinances(&errors)
         } else {
             // Adults: full sync
             totalEntities += await syncTransactions(&errors)
@@ -204,14 +206,7 @@ final class MC2SyncService {
         do {
             let dto = try await reader.readMasonBudget()
             let categories = MC2Mapper.mapBudgetCategories(dto.categories)
-
-            let weeklyAllowance = dto.allowance?.weekly ?? 0
-            let snapshot = MonthlyBudgetSnapshot(
-                monthKey: dto.month,
-                weeklyGross: weeklyAllowance,
-                monthlyGross: weeklyAllowance * 4,
-                strategyNote: "Allowance: $\(weeklyAllowance)/week from \(dto.allowance?.source ?? "Parents")"
-            )
+            let snapshot = makeMasonSnapshot(from: dto)
 
             replaceAll(MonthlyBudgetSnapshot.self, with: [snapshot])
             replaceAll(BudgetCategory.self, with: categories)
@@ -221,6 +216,32 @@ final class MC2SyncService {
             errors.append("Mason budget: \(error.localizedDescription)")
             return 0
         }
+    }
+
+    /// Build Mason's monthly snapshot. Prefers a real `income` block (e.g., River
+    /// direct-deposit paychecks) when present; falls back to the legacy
+    /// `allowance` field for kids who don't have real income yet.
+    private func makeMasonSnapshot(from dto: MC2MasonBudget) -> MonthlyBudgetSnapshot {
+        if let income = dto.income, let weeklyGross = income.weeklyGross, weeklyGross > 0 {
+            let monthly = income.monthlyGross ?? (weeklyGross * Decimal(52) / Decimal(12))
+            return MonthlyBudgetSnapshot(
+                monthKey: dto.month,
+                weeklyGross: weeklyGross,
+                weeklyStrike: income.weeklyStrike ?? 0,
+                weeklyRiver: income.weeklyRiver ?? 0,
+                monthlyGross: monthly,
+                payFrequency: income.payFrequency ?? "weekly",
+                strategyNote: nil
+            )
+        }
+
+        let weeklyAllowance = dto.allowance?.weekly ?? 0
+        return MonthlyBudgetSnapshot(
+            monthKey: dto.month,
+            weeklyGross: weeklyAllowance,
+            monthlyGross: weeklyAllowance * 4,
+            strategyNote: "Allowance: $\(weeklyAllowance)/week from \(dto.allowance?.source ?? "Parents")"
+        )
     }
 
     private func syncMasonTransactions(_ errors: inout [String]) async -> Int {
@@ -236,13 +257,26 @@ final class MC2SyncService {
         }
     }
 
+    private func syncMasonBTCBuys(_ errors: inout [String]) async -> Int {
+        do {
+            let dtos = try await reader.readMasonBTCBuys()
+            let models = dtos.map { MC2Mapper.mapBTCBuy($0, owner: .mason) }
+            replaceAll(BTCBuy.self, with: models)
+            return models.count
+        } catch {
+            log.error("Mason BTC buys sync failed: \(error.localizedDescription)")
+            errors.append("Mason BTC buys: \(error.localizedDescription)")
+            return 0
+        }
+    }
+
     private func recordNetWorthSnapshot() {
         do {
             // Only record one snapshot per day per member to avoid unbounded growth
             let cal = Calendar.current
             let existing = try context.fetch(FetchDescriptor<NetWorthSnapshot>())
             let todaySnapshots = existing.filter {
-                $0.owner == currentMember && cal.isDateInToday($0.date)
+                $0.ownerMember == currentMember && cal.isDateInToday($0.date)
             }
             // Remove today's stale snapshots — we'll replace with fresh data
             for old in todaySnapshots {
@@ -259,10 +293,10 @@ final class MC2SyncService {
             let holdingAccounts = try context.fetch(FetchDescriptor<HoldingAccount>())
 
             let btcValue = btcAccounts
-                .filter { $0.owner == currentMember }
+                .filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
                 .reduce(Decimal(0)) { $0 + $1.usdValue() }
             let holdingsValue = holdingAccounts
-                .filter { $0.owner == currentMember }
+                .filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
                 .reduce(Decimal(0)) { $0 + $1.totalValue }
 
             let snapshot = NetWorthSnapshot(

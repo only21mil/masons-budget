@@ -42,15 +42,20 @@ enum MC2Mapper {
     static func mapBudgetSnapshot(_ dto: MC2Budget) -> MonthlyBudgetSnapshot {
         MonthlyBudgetSnapshot(
             monthKey: dto.month,
-            avenBalance: dto.avenBalance ?? 0,
-            coinbaseOneBalance: 0,
+            coinbaseOneBalance: dto.coinbaseOneBalance ?? 0,
             weeklyGross: dto.income?.weeklyGross ?? 0,
             weeklyStrike: dto.income?.weeklyStrike ?? 0,
             weeklyRiver: dto.income?.weeklyRiver ?? 0,
             monthlyGross: dto.income?.monthlyGross ?? 0,
             payFrequency: dto.income?.payFrequency ?? "weekly",
-            strategyNote: dto.strategy?.strategyNote
+            strategyNote: sanitizedStrategyNote(dto.strategy?.strategyNote)
         )
+    }
+
+    private static func sanitizedStrategyNote(_ note: String?) -> String? {
+        let retiredCardToken = ["av", "en"].joined()
+        guard let note, !note.lowercased().contains(retiredCardToken) else { return nil }
+        return note
     }
 
     static func mapBudgetCategories(_ dtos: [MC2BudgetCategory]) -> [BudgetCategory] {
@@ -77,7 +82,7 @@ enum MC2Mapper {
         }
     }
 
-    static func mapBTCBuy(_ dto: MC2BTCBuy) -> BTCBuy {
+    static func mapBTCBuy(_ dto: MC2BTCBuy, owner: FamilyMember = .victor) -> BTCBuy {
         BTCBuy(
             id: dto.id,
             date: parseDate(dto.date),
@@ -90,7 +95,8 @@ enum MC2Mapper {
             status: dto.status ?? "complete",
             costBasisStatus: dto.costBasisStatus ?? "complete",
             loggedBy: dto.loggedBy,
-            archimedesRequestId: dto.archimedesRequestId
+            archimedesRequestId: dto.archimedesRequestId,
+            owner: owner
         )
     }
 
@@ -111,11 +117,51 @@ enum MC2Mapper {
     }
 
     static func mapFinances(_ finances: MC2Finances, owner: FamilyMember) -> [HoldingAccount] {
-        finances.retirement.accounts.map { key, account in
+        var accounts: [HoldingAccount] = []
+
+        for (key, account) in finances.retirement.accounts {
+            guard let holdingAccount = mapFinanceAccount(key: key, account: account, viewer: owner) else {
+                continue
+            }
+            accounts.append(holdingAccount)
+        }
+
+        if let masonAccount = finances.mason401k,
+           let holdingAccount = mapFinanceAccount(key: "401k", account: masonAccount, viewer: owner, ownerOverride: .mason) {
+            accounts.append(holdingAccount)
+        }
+
+        return accounts
+    }
+
+    /// Map a single MC2 finance account into a SwiftData HoldingAccount, using
+    /// `viewer.canSee(dataOwnedBy:)` for visibility instead of strict equality —
+    /// this is what makes Victor and Rachel see the same shared adult finances
+    /// (no data split; single household dataset).
+    /// `ownerOverride` is for entries (like `mason_401k`) where the canonical
+    /// owner is implied by structure rather than a JSON `owner` field.
+    /// The resulting record is tagged with the canonical account owner — not
+    /// the viewer — so household-shared accounts always land as `.victor`
+    /// regardless of which adult triggered the sync.
+    private static func mapFinanceAccount(
+        key: String,
+        account: MC2FinanceAccount,
+        viewer: FamilyMember,
+        ownerOverride: FamilyMember? = nil
+    ) -> HoldingAccount? {
+        let accountOwner: FamilyMember
+        if let ownerOverride {
+            accountOwner = ownerOverride
+        } else {
+            let raw = (account.owner ?? "victor").lowercased()
+            accountOwner = FamilyMember(rawValue: raw) ?? .victor
+        }
+        guard viewer.canSee(dataOwnedBy: accountOwner) else { return nil }
+
             let holdingAccount = HoldingAccount(
                 name: key,
                 provider: account.provider ?? key,
-                owner: owner,
+                owner: accountOwner,
                 totalValue: account.total ?? 0
             )
 
@@ -152,7 +198,6 @@ enum MC2Mapper {
             }
 
             return holdingAccount
-        }
     }
 
     static func mapSonBalances(_ son: MC2SonBalances) -> [BTCAccount] {

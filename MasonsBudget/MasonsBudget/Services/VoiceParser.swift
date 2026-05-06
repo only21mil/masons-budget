@@ -187,12 +187,11 @@ final class VoiceParser {
         if let match = matchWordAfter(transcript, lower: lower, after: " at ") ?? matchWordAfter(transcript, lower: lower, after: " from ") ?? matchWordAfter(transcript, lower: lower, after: " to ") {
             return trimTrailingWords(match)
         }
-        return nil
+        return matchServiceMerchantAfterFor(transcript, lower: lower)
     }
 
     private func matchWordAfter(_ original: String, lower: String, after word: String) -> String? {
         guard let range = lower.range(of: word) else { return nil }
-        let afterLower = String(lower[range.upperBound...])
         let afterOriginal = String(original[range.upperBound...])
         let words = afterOriginal.split(separator: " ").map(String.init)
         guard !words.isEmpty else { return nil }
@@ -209,6 +208,27 @@ final class VoiceParser {
         }
         guard !merchWords.isEmpty else { return nil }
         return merchWords.joined(separator: " ")
+    }
+
+    private func matchServiceMerchantAfterFor(_ original: String, lower: String) -> String? {
+        guard let range = lower.range(of: " for ") else { return nil }
+        let afterOriginal = String(original[range.upperBound...])
+        let afterLower = String(lower[range.upperBound...])
+        let serviceWords: Set<String> = ["subscription", "subscriptions", "service", "membership", "icloud"]
+        guard afterLower.split(separator: " ").contains(where: { serviceWords.contains(String($0).trimmingCharacters(in: .punctuationCharacters)) }) else { return nil }
+
+        var merchWords: [String] = []
+        let skipWords: Set<String> = ["a", "an", "the"]
+        let stopWords: Set<String> = ["subscription", "subscriptions", "service", "membership", "yesterday", "today", "on", "with", "last"]
+        for w in afterOriginal.split(separator: " ").map(String.init) {
+            let lowerW = w.lowercased().trimmingCharacters(in: .punctuationCharacters)
+            if skipWords.contains(lowerW) { continue }
+            if stopWords.contains(lowerW) { break }
+            if lowerW.hasPrefix("note:") { break }
+            if isDateWord(lowerW) { break }
+            merchWords.append(w.trimmingCharacters(in: .punctuationCharacters))
+        }
+        return merchWords.isEmpty ? nil : merchWords.joined(separator: " ")
     }
 
     private func trimTrailingWords(_ input: String) -> String? {
@@ -230,41 +250,97 @@ final class VoiceParser {
     // MARK: - Category inference
 
     private let merchantCategories: [String: String] = [
-        "costco": "Groceries", "kroger": "Groceries", "trader joe's": "Groceries",
-        "chick-fil-a": "Dining & Drinks", "dunkin'": "Dining & Drinks",
-        "starbucks": "Dining & Drinks", "chickfila": "Dining & Drinks",
-        "shell": "Auto & Transport", "chevron": "Auto & Transport",
-        "racetrac": "Auto & Transport", "love's": "Auto & Transport",
-        "target": "Shopping", "amazon": "Shopping", "walmart": "Shopping",
-        "netflix": "Bills & Utilities", "zapier": "Bills & Utilities",
-        "apple": "Bills & Utilities", "pennymac": "Bills & Utilities",
+        "aldi": "Groceries", "costco": "Groceries", "kroger": "Groceries",
+        "publix": "Groceries", "samsclub": "Groceries", "traderjoes": "Groceries",
+        "chickfila": "Dining & Drinks", "chipotle": "Dining & Drinks",
+        "dunkin": "Dining & Drinks", "mcdonalds": "Dining & Drinks",
+        "starbucks": "Dining & Drinks", "tacobell": "Dining & Drinks",
+        "chevron": "Auto & Transport", "loves": "Auto & Transport",
+        "racetrac": "Auto & Transport", "shell": "Auto & Transport",
+        "amazon": "Shopping", "homedepot": "Shopping", "lowes": "Shopping",
+        "target": "Shopping", "walmart": "Shopping",
+        "apple": "Bills & Utilities", "appleicloud": "Bills & Utilities",
+        "att": "Bills & Utilities", "comcast": "Bills & Utilities",
+        "netflix": "Bills & Utilities", "pennymac": "Bills & Utilities",
+        "verizon": "Bills & Utilities", "xfinity": "Bills & Utilities",
+        "zapier": "Bills & Utilities",
+        "cvs": "Medical", "walgreens": "Medical",
+        "chewy": "Pets", "petsmart": "Pets", "petco": "Pets",
+    ]
+
+    private let categoryAliases: [(String, String)] = [
+        ("bills and utilities", "Bills & Utilities"), ("bills utilities", "Bills & Utilities"),
+        ("utilities", "Bills & Utilities"), ("bills", "Bills & Utilities"),
+        ("dining and drinks", "Dining & Drinks"), ("dining drinks", "Dining & Drinks"),
+        ("dining", "Dining & Drinks"), ("restaurants", "Dining & Drinks"),
+        ("restaurant", "Dining & Drinks"), ("groceries", "Groceries"),
+        ("grocery", "Groceries"), ("auto and transport", "Auto & Transport"),
+        ("auto transport", "Auto & Transport"), ("transportation", "Auto & Transport"),
+        ("auto", "Auto & Transport"), ("shopping", "Shopping"),
+        ("health and wellness", "Health & Wellness"), ("health wellness", "Health & Wellness"),
+        ("wellness", "Health & Wellness"), ("medical", "Medical"),
+        ("pets", "Pets"), ("pet", "Pets"), ("income", "Income"),
     ]
 
     private let keywordCategories: [(String, String)] = [
-        ("groceries", "Groceries"), ("lunch", "Dining & Drinks"),
-        ("dinner", "Dining & Drinks"), ("breakfast", "Dining & Drinks"),
+        ("paycheck", "Income"), ("direct deposit", "Income"),
+        ("groceries", "Groceries"), ("grocery", "Groceries"),
+        ("lunch", "Dining & Drinks"), ("dinner", "Dining & Drinks"),
+        ("breakfast", "Dining & Drinks"), ("coffee", "Dining & Drinks"),
+        ("restaurant", "Dining & Drinks"), ("eating out", "Dining & Drinks"),
+        ("takeout", "Dining & Drinks"), ("fast food", "Dining & Drinks"),
+        ("gas station", "Auto & Transport"), ("gasoline", "Auto & Transport"),
         ("gas", "Auto & Transport"), ("fuel", "Auto & Transport"),
-        ("shopping", "Shopping"), ("clothes", "Shopping"),
-        ("medical", "Medical"), ("prescription", "Medical"),
-        ("pets", "Pets"), ("dog", "Pets"), ("cat", "Pets"),
+        ("oil change", "Auto & Transport"), ("car wash", "Auto & Transport"),
+        ("parking", "Auto & Transport"), ("shopping", "Shopping"),
+        ("clothes", "Shopping"), ("clothing", "Shopping"),
+        ("home improvement", "Shopping"), ("medical", "Medical"),
+        ("doctor", "Medical"), ("dentist", "Medical"),
+        ("prescription", "Medical"), ("pharmacy", "Medical"),
+        ("gym", "Health & Wellness"), ("fitness", "Health & Wellness"),
+        ("subscription", "Bills & Utilities"), ("icloud", "Bills & Utilities"),
+        ("electric", "Bills & Utilities"), ("internet", "Bills & Utilities"),
+        ("phone bill", "Bills & Utilities"), ("mortgage", "Bills & Utilities"),
+        ("insurance", "Bills & Utilities"), ("pets", "Pets"),
+        ("pet food", "Pets"), ("dog", "Pets"), ("cat", "Pets"),
+        ("vet", "Pets"), ("veterinary", "Pets"),
     ]
 
     private func inferCategory(transcript: String, merchant: String?) -> String? {
-        if transcript.contains("paycheck") {
-            return "Income"
-        }
-
-        if let m = merchant?.replacingOccurrences(of: "'", with: "").lowercased(),
-           let cat = merchantCategories[m] {
-            return cat
-        }
-
         let lower = transcript.lowercased()
+
+        if let explicit = inferExplicitCategory(from: lower) {
+            return explicit
+        }
+
+        if let merchantKey = merchant.map(normalizeCategoryKey), !merchantKey.isEmpty {
+            if let exact = merchantCategories[merchantKey] {
+                return exact
+            }
+            if let fuzzy = merchantCategories.first(where: { merchantKey.contains($0.key) || $0.key.contains(merchantKey) })?.value {
+                return fuzzy
+            }
+        }
+
         for (keyword, category) in keywordCategories {
             if lower.contains(keyword) { return category }
         }
 
         return nil
+    }
+
+    private func inferExplicitCategory(from lower: String) -> String? {
+        let prefixes = ["category", "categorize as", "categorized as", "under", "as"]
+        for prefix in prefixes {
+            for (alias, category) in categoryAliases {
+                if lower.contains("\(prefix) \(alias)") { return category }
+            }
+        }
+        return nil
+    }
+
+    private func normalizeCategoryKey(_ value: String) -> String {
+        value.lowercased().filter { $0.isLetter || $0.isNumber }
     }
 
     // MARK: - Date extraction

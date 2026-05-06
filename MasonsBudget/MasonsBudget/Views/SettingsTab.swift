@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import LocalAuthentication
 
 struct SettingsTab: View {
     @Query private var transactions: [Transaction]
@@ -11,6 +12,8 @@ struct SettingsTab: View {
     @AppStorage("app_lock_enabled") private var appLockEnabled = true
     @Environment(\.modelContext) private var modelContext
     @State private var isSyncing = false
+    @State private var pendingMember: String?
+    @State private var authError: String?
 
     private var currentMember: FamilyMember {
         FamilyMember(rawValue: selectedMember) ?? .victor
@@ -62,8 +65,16 @@ struct SettingsTab: View {
                     .padding(.vertical, 4)
 
                     Picker("Family Member", selection: $selectedMember) {
-                        ForEach(FamilyMember.allCases) { member in
+                        ForEach(currentMember.allowedSwitchTargets) { member in
                             Text(member.displayName).tag(member.rawValue)
+                        }
+                    }
+                    .onChange(of: selectedMember) { _, newValue in
+                        guard let target = FamilyMember(rawValue: newValue) else { return }
+                        if currentMember.requiresAuthToSwitch && target != currentMember {
+                            pendingMember = newValue
+                            selectedMember = currentMember.rawValue
+                            authenticateProfileSwitch()
                         }
                     }
                 } header: {
@@ -165,6 +176,28 @@ struct SettingsTab: View {
         let sync = MC2SyncService(context: modelContext)
         await sync.syncAll()
         isSyncing = false
+    }
+
+    private func authenticateProfileSwitch() {
+        let context = LAContext()
+        var error: NSError?
+
+        if context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) {
+            context.evaluatePolicy(
+                .deviceOwnerAuthentication,
+                localizedReason: "Authenticate to switch profiles"
+            ) { success, _ in
+                DispatchQueue.main.async {
+                    if success, let pending = pendingMember {
+                        selectedMember = pending
+                    }
+                    pendingMember = nil
+                }
+            }
+        } else {
+            selectedMember = pendingMember ?? selectedMember
+            pendingMember = nil
+        }
     }
 }
 

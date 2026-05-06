@@ -35,7 +35,7 @@ final class BudgetNotificationManager {
     ) -> [BudgetAlert] {
         let cal = Calendar.current
         let thisMonth = transactions.filter {
-            $0.owner == member && cal.isDate($0.date, equalTo: now, toGranularity: .month)
+            member.canSee(dataOwnedBy: $0.ownerMember) && cal.isDate($0.date, equalTo: now, toGranularity: .month)
         }
 
         var spentByCategory: [String: Decimal] = [:]

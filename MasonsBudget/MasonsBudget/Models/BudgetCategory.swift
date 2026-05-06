@@ -12,6 +12,17 @@ final class BudgetCategory {
     var sortOrder: Int
     var isIncome: Bool
 
+    static let displayPriority: [String: Int] = [
+        "Bills & Utilities": 0,
+        "Groceries": 1,
+        "Dining & Drinks": 98,
+        "Auto & Transport": 99,
+    ]
+
+    var displayRank: Int {
+        Self.displayPriority[name] ?? 50
+    }
+
     init(
         name: String,
         icon: String,

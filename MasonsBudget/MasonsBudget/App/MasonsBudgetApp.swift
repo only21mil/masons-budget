@@ -4,6 +4,8 @@ import SwiftData
 @main
 struct MasonsBudgetApp: App {
     var sharedModelContainer: ModelContainer = {
+        resetSwiftDataStoreIfNeeded()
+
         let schema = Schema([
             Transaction.self,
             BudgetCategory.self,
@@ -29,6 +31,33 @@ struct MasonsBudgetApp: App {
             fatalError("Could not create ModelContainer: \(error)")
         }
     }()
+
+    private static func resetSwiftDataStoreIfNeeded() {
+        let resetKey = "swiftdata_store_reset_for_owner_strings_v1"
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: resetKey) else { return }
+
+        guard let supportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            defaults.set(true, forKey: resetKey)
+            return
+        }
+
+        let storeURLs = [
+            supportURL.appendingPathComponent("default.store"),
+            supportURL.appendingPathComponent("default.store-shm"),
+            supportURL.appendingPathComponent("default.store-wal"),
+        ]
+
+        for url in storeURLs where FileManager.default.fileExists(atPath: url.path) {
+            do {
+                try FileManager.default.removeItem(at: url)
+            } catch {
+                print("SwiftData store reset skipped \(url.lastPathComponent): \(error)")
+            }
+        }
+
+        defaults.set(true, forKey: resetKey)
+    }
 
     @AppStorage("has_completed_onboarding") private var hasCompletedOnboarding = false
     @AppStorage("app_lock_enabled") private var appLockEnabled = true
@@ -96,6 +125,7 @@ struct MasonsBudgetApp: App {
     @MainActor
     private func syncFromConvex() async {
         await BTCPriceService.shared.refreshAndStore()
+        await StockPriceService.shared.refreshAndStore()
         guard ConvexConfig.isConfigured else { return }
         let sync = MC2SyncService(context: sharedModelContainer.mainContext)
         await sync.syncAll()

@@ -7,7 +7,6 @@ struct SpendingTab: View {
     @Environment(\.modelContext) private var modelContext
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
     @State private var monthOffset: Int = 0
-    @State private var recurringItems: [RecurringTransaction] = []
     @State private var transactionToDelete: Transaction?
 
     private var currentMember: FamilyMember {
@@ -15,7 +14,7 @@ struct SpendingTab: View {
     }
 
     private var myTransactions: [Transaction] {
-        transactions.filter { $0.owner == currentMember }
+        transactions.filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
     }
 
     private var selectedMonth: Date {
@@ -89,13 +88,6 @@ struct SpendingTab: View {
                     SpendingDonutChart(selectedMonth: selectedMonth)
                     MonthlyTrendChart()
 
-                    if !recurringItems.isEmpty {
-                        SectionHeader(title: "Recurring", icon: "arrow.triangle.2.circlepath")
-                        ForEach(recurringItems.prefix(6)) { item in
-                            recurringRow(item)
-                        }
-                    }
-
                     if !sortedTransactions.isEmpty {
                         SectionHeader(title: "Recent Transactions", icon: "list.bullet.rectangle")
                         ForEach(sortedTransactions.prefix(20), id: \.id) { tx in
@@ -125,9 +117,6 @@ struct SpendingTab: View {
             #if os(iOS)
             .toolbarColorScheme(.dark, for: .navigationBar)
             #endif
-            .task {
-                recurringItems = RecurringDetector().detect(from: myTransactions)
-            }
             .alert("Delete Transaction?", isPresented: Binding(
                 get: { transactionToDelete != nil },
                 set: { if !$0 { transactionToDelete = nil } }
@@ -146,39 +135,6 @@ struct SpendingTab: View {
                 }
             }
         }
-    }
-
-    private func recurringRow(_ item: RecurringTransaction) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.merchant)
-                    .font(.subheadline)
-                    .foregroundStyle(AppTheme.primaryText)
-                HStack(spacing: 4) {
-                    Text(item.category)
-                        .font(.caption2)
-                    Text("·")
-                    Text("~\(item.estimatedInterval)d")
-                        .font(.caption2)
-                    Text("·")
-                    Text("\(item.occurrences)×")
-                        .font(.caption2)
-                }
-                .foregroundStyle(AppTheme.tertiaryText)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(formatCurrency(item.averageAmount))
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(AppTheme.primaryText)
-                if let next = item.nextDate {
-                    Text("Next: \(next.formatted(date: .abbreviated, time: .omitted))")
-                        .font(.caption2)
-                        .foregroundStyle(AppTheme.secondaryText)
-                }
-            }
-        }
-        .glassCard()
     }
 
     private var spendingHero: some View {

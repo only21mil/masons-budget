@@ -7,7 +7,7 @@ final class NetWorthSnapshot {
     var totalValue: Decimal
     var btcValue: Decimal
     var holdingsValue: Decimal
-    var owner: FamilyMember
+    var owner: String
 
     init(
         date: Date = .now,
@@ -20,6 +20,11 @@ final class NetWorthSnapshot {
         self.totalValue = totalValue
         self.btcValue = btcValue
         self.holdingsValue = holdingsValue
-        self.owner = owner
+        self.owner = owner.rawValue
+    }
+
+    var ownerMember: FamilyMember {
+        get { FamilyMember(rawValue: owner) ?? .victor }
+        set { owner = newValue.rawValue }
     }
 }

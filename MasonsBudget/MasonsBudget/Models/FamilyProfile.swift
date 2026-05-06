@@ -1,14 +1,11 @@
-// Mason's Budget App — Family profile model
-// Per-user profile linking iCloud identity to a FamilyMember.
-// Controls who can view/edit other members' data.
+// The Vogel Vault — Legacy family profile model
+// Retained in the SwiftData schema so existing installs can migrate safely.
 
 import Foundation
 import SwiftData
 
 @Model
 final class FamilyProfile {
-    /// Unique key — stores FamilyMember.rawValue as a String
-    /// (SwiftData unique constraints require primitive types).
     @Attribute(.unique) var memberKey: String
     var displayName: String
     var iCloudUserHash: String?
@@ -16,7 +13,6 @@ final class FamilyProfile {
     var canEditOthers: Bool
     var lastSyncedAt: Date?
 
-    /// Computed accessor for the typed enum.
     var member: FamilyMember {
         get { FamilyMember(rawValue: memberKey) ?? .victor }
         set { memberKey = newValue.rawValue }

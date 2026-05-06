@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "npx convex dev",
     "deploy": "npx convex deploy",
-    "sync": "node scripts/mc2-to-convex.mjs"
+    "sync": "node scripts/mc2-to-convex.mjs",
+    "sync:dry-run": "node scripts/mc2-to-convex.mjs --dry-run",
+    "sync:watch": "node scripts/mc2-to-convex.mjs --watch"
   },
   "dependencies": {
     "convex": "^1.17.0"
