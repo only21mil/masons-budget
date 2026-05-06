@@ -8,6 +8,8 @@ struct SpendingTab: View {
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
     @State private var monthOffset: Int = 0
     @State private var transactionToDelete: Transaction?
+    @State private var transactionToEdit: Transaction?
+    private let syncClient = ConvexClient(deploymentURL: ConvexConfig.deploymentURL)
 
     private var currentMember: FamilyMember {
         FamilyMember(rawValue: selectedMember) ?? .victor
@@ -91,14 +93,24 @@ struct SpendingTab: View {
                     if !sortedTransactions.isEmpty {
                         SectionHeader(title: "Recent Transactions", icon: "list.bullet.rectangle")
                         ForEach(sortedTransactions.prefix(20), id: \.id) { tx in
-                            TransactionRow(
-                                merchant: tx.merchant,
-                                amount: tx.amount,
-                                category: tx.category,
-                                date: tx.date,
-                                card: tx.card
-                            )
+                            Button {
+                                transactionToEdit = tx
+                            } label: {
+                                TransactionRow(
+                                    merchant: tx.merchant,
+                                    amount: tx.amount,
+                                    category: tx.category,
+                                    date: tx.date,
+                                    card: tx.card
+                                )
+                            }
+                            .buttonStyle(.plain)
                             .contextMenu {
+                                Button {
+                                    transactionToEdit = tx
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
                                 Button(role: .destructive) {
                                     transactionToDelete = tx
                                 } label: {
@@ -117,6 +129,17 @@ struct SpendingTab: View {
             #if os(iOS)
             .toolbarColorScheme(.dark, for: .navigationBar)
             #endif
+            .sheet(isPresented: Binding(
+                get: { transactionToEdit != nil },
+                set: { if !$0 { transactionToEdit = nil } }
+            )) {
+                if let tx = transactionToEdit {
+                    EditTransactionView(transaction: tx) { savedTransaction in
+                        saveAndSync(savedTransaction)
+                        transactionToEdit = nil
+                    }
+                }
+            }
             .alert("Delete Transaction?", isPresented: Binding(
                 get: { transactionToDelete != nil },
                 set: { if !$0 { transactionToDelete = nil } }
@@ -177,6 +200,27 @@ struct SpendingTab: View {
             }
         }
         .glassCard(highlight: true)
+    }
+
+    private func saveAndSync(_ transaction: Transaction) {
+        do {
+            try modelContext.save()
+            pushTransaction(transaction)
+        } catch {
+            assertionFailure("Failed to save edited transaction: \(error)")
+        }
+    }
+
+    private func pushTransaction(_ transaction: Transaction) {
+        let fileName = transaction.ownerMember == .mason ? "mason-transactions" : "transactions"
+        let dto = MC2Transaction(appTransaction: transaction)
+        Task {
+            do {
+                try await syncClient.appendTransaction(dto, to: fileName)
+            } catch {
+                assertionFailure("Failed to sync edited transaction: \(error)")
+            }
+        }
     }
 
     private var monthNavigator: some View {

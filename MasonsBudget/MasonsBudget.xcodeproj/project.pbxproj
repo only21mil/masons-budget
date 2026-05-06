@@ -31,12 +31,14 @@
 		26A9F98B72A257BB65FC0437 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 083F88D8EB4768C9BEDF39F9 /* OnboardingView.swift */; };
 		279E7FCE4B46305136F1BBDA /* SyncBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40DDB8FBCF8E46E75B608E60 /* SyncBadge.swift */; };
 		299ED7B254C76D1E92A0220D /* BudgetCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F123D957238EE653A6F6751 /* BudgetCategory.swift */; };
+		2BAFCED5D73FB67D0C79A643 /* EditTransactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40F7C583BCD2B2C1254F0F2 /* EditTransactionView.swift */; };
 		2D6EE4A463AD6DCC08897957 /* AddTransactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C8D2DE28EC878C7C3600E4B /* AddTransactionView.swift */; };
 		2E6BBAB1336B38FD1D9EC8A5 /* BTCBuy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 471D5A1DCF4CD1B4C10217A1 /* BTCBuy.swift */; };
 		31A7572529909DA600564F06 /* SpendingDonutChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C5C2A1636BDCDC17E23E67E /* SpendingDonutChart.swift */; };
 		33BBD55C6D82640D4E3554E9 /* SharedEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97885C819FB926B04D0E8D3F /* SharedEnums.swift */; };
 		34914E79C185ED10EEFDAFF5 /* SpendingTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DE48E957A60591CF071E174 /* SpendingTab.swift */; };
 		38577EC83C821AB7A38BC136 /* BTCAccountDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F6201F4879FBB5F1E11AAE0 /* BTCAccountDetailView.swift */; };
+		3ACD856D9038D6E439D42F3F /* EditTransactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40F7C583BCD2B2C1254F0F2 /* EditTransactionView.swift */; };
 		3C32EB91AFCE7AE683B55CA6 /* ConvexClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */; };
 		3C6A2ED56808C670CD87623F /* MoneyTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63CA7C8138C20D50AEE3C69 /* MoneyTab.swift */; };
 		3D7B8A5C7F91BA8DE42D76C8 /* SpendingTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DE48E957A60591CF071E174 /* SpendingTab.swift */; };
@@ -75,6 +77,7 @@
 		6BD6E79598F2D802012B0E0B /* MC2Reader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FED6C930AD774521B536178 /* MC2Reader.swift */; };
 		6D8FD1A7D21195F90F959E8D /* MasonsBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF5C5935A12805ECA579168B /* MasonsBudgetTests.swift */; };
 		6D9F88BEA980C5F18C00E5D5 /* BTCAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC62602DF8D847C5671804D /* BTCAccount.swift */; };
+		6F1AEA5DFC4F99DE084BC37B /* EditTransactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40F7C583BCD2B2C1254F0F2 /* EditTransactionView.swift */; };
 		6FEB03CDBBE23394B9B2BFFB /* SectionHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 731A2E18DA739BFAA36799B7 /* SectionHeader.swift */; };
 		70B97A8C3F140C4A841E0D1D /* BudgetNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7307B6F0A5546DBFB1FE332B /* BudgetNotificationManager.swift */; };
 		73546E975D23A07500289ECE /* BTCBillPay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DC543643B1F2899DDB38FE5 /* BTCBillPay.swift */; };
@@ -202,6 +205,7 @@
 		9DE48E957A60591CF071E174 /* SpendingTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpendingTab.swift; sourceTree = "<group>"; };
 		9F048D3DB36FA73A8D570960 /* SyncEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEvent.swift; sourceTree = "<group>"; };
 		A32E35D9FF3B8E22B92A21A8 /* MC2ReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MC2ReaderTests.swift; sourceTree = "<group>"; };
+		A40F7C583BCD2B2C1254F0F2 /* EditTransactionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditTransactionView.swift; sourceTree = "<group>"; };
 		A6B72C3A66D87A91EEF55223 /* RecurringDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringDetectorTests.swift; sourceTree = "<group>"; };
 		A7153D63352CB5B58C4F366A /* MC2Mapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MC2Mapper.swift; sourceTree = "<group>"; };
 		A7E25B9BA6192CA956FF0246 /* AssetBreakdownChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetBreakdownChart.swift; sourceTree = "<group>"; };
@@ -332,6 +336,7 @@
 				C4F25B63857534E6FC195E16 /* CategoryManagementView.swift */,
 				4E34240C2E281F20DD41FF8D /* ContentView.swift */,
 				82835D1EBE720A8FCF6AF6F4 /* DashboardTab.swift */,
+				A40F7C583BCD2B2C1254F0F2 /* EditTransactionView.swift */,
 				E117823C6DA6138431AE80C8 /* LockScreenView.swift */,
 				D63CA7C8138C20D50AEE3C69 /* MoneyTab.swift */,
 				083F88D8EB4768C9BEDF39F9 /* OnboardingView.swift */,
@@ -509,6 +514,7 @@
 				4791F32E8839FE9E35DB2FCE /* ContentView.swift in Sources */,
 				3C32EB91AFCE7AE683B55CA6 /* ConvexClient.swift in Sources */,
 				D23DC90030D328B07EDF624D /* DashboardTab.swift in Sources */,
+				6F1AEA5DFC4F99DE084BC37B /* EditTransactionView.swift in Sources */,
 				8CF4139C75810E99221B0692 /* FamilyProfile.swift in Sources */,
 				4896678F33B0AD12A9247DE2 /* HoldingAccount.swift in Sources */,
 				F9EAF981A0A2BBC7BF5398C7 /* LockScreenView.swift in Sources */,
@@ -563,6 +569,7 @@
 				84D36BF1F75AFCEAE45CA0A2 /* ContentView.swift in Sources */,
 				A2757F55A7495EBA3A48C270 /* ConvexClient.swift in Sources */,
 				63C72DAD9763699A8C54F17B /* DashboardTab.swift in Sources */,
+				3ACD856D9038D6E439D42F3F /* EditTransactionView.swift in Sources */,
 				4C8EAE9F329F12474404F004 /* FamilyProfile.swift in Sources */,
 				AC9DFD3F20A65000ABF54CDC /* HoldingAccount.swift in Sources */,
 				D1F0030EFC8EF2EF555C9F9B /* LockScreenView.swift in Sources */,
@@ -617,6 +624,7 @@
 				3F55B3C03BBD1E4EE61A0DC2 /* ContentView.swift in Sources */,
 				8B7D4660455866A0008B1DA6 /* ConvexClient.swift in Sources */,
 				7D74B14636589F6D904B3C66 /* DashboardTab.swift in Sources */,
+				2BAFCED5D73FB67D0C79A643 /* EditTransactionView.swift in Sources */,
 				472A41D28DD9D5D4083D88FD /* FamilyProfile.swift in Sources */,
 				BCDB4955AE6195145DB25EB0 /* HoldingAccount.swift in Sources */,
 				C156A53D5E586FF9A67A0545 /* LockScreenView.swift in Sources */,
