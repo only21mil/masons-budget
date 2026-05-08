@@ -79,9 +79,10 @@ struct MoneyTab: View {
 
     private var monthlySpending: Decimal {
         let cal = Calendar.current
+        let referenceDate = latestSnapshotMonthDate ?? Date()
         let thisMonth = transactions.filter {
             currentMember.canSee(dataOwnedBy: $0.ownerMember) &&
-            cal.isDate($0.date, equalTo: Date(), toGranularity: .month) &&
+            cal.isDate($0.date, equalTo: referenceDate, toGranularity: .month) &&
             ($0.category.lowercased() != "income")
         }
         return thisMonth.reduce(Decimal(0)) { $0 + $1.amount }
@@ -89,12 +90,24 @@ struct MoneyTab: View {
 
     private var ytdSpending: Decimal {
         let cal = Calendar.current
-        let thisYear = transactions.filter {
+        let referenceDate = latestSnapshotMonthDate ?? Date()
+        guard let year = cal.dateComponents([.year], from: referenceDate).year,
+              let startOfYear = cal.date(from: DateComponents(year: year, month: 1, day: 1)),
+              let startOfNextMonth = cal.dateInterval(of: .month, for: referenceDate)?.end else {
+            return 0
+        }
+
+        let yearToSelectedMonth = transactions.filter {
             currentMember.canSee(dataOwnedBy: $0.ownerMember) &&
-            cal.isDate($0.date, equalTo: Date(), toGranularity: .year) &&
+            $0.date >= startOfYear &&
+            $0.date < startOfNextMonth &&
             ($0.category.lowercased() != "income")
         }
-        return thisYear.reduce(Decimal(0)) { $0 + $1.amount }
+        return yearToSelectedMonth.reduce(Decimal(0)) { $0 + $1.amount }
+    }
+
+    private var latestSnapshotMonthDate: Date? {
+        latestSnapshot.flatMap { parseMonthYear($0.monthKey) }
     }
 
     private var monthlySavingsRate: Double {
@@ -358,6 +371,15 @@ struct MoneyTab: View {
             }
         }
         .glassCard()
+    }
+
+    private func parseMonthYear(_ raw: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.date(from: raw)
     }
 
     private func emptyState(icon: String, message: String) -> some View {
