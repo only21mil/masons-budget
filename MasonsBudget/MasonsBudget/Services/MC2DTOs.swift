@@ -58,12 +58,24 @@ struct MC2BudgetStrategy: Codable {
     }
 }
 
+struct MC2Paycheck: Codable {
+    let date: String
+    let platform: String?
+    let source: String?
+    let amount: Decimal?
+    let net: Decimal?
+    let note: String?
+}
+
 struct MC2BudgetIncome: Codable {
     let weeklyGross: Decimal?
     let weeklyStrike: Decimal?
     let weeklyRiver: Decimal?
     let payFrequency: String?
     let monthlyGross: Decimal?
+    let mtdIncome: Decimal?
+    let ytdIncome: Decimal?
+    let paychecks: [MC2Paycheck]?
 
     enum CodingKeys: String, CodingKey {
         case weeklyGross = "weekly_gross"
@@ -71,6 +83,9 @@ struct MC2BudgetIncome: Codable {
         case weeklyRiver = "weekly_river"
         case payFrequency = "pay_frequency"
         case monthlyGross = "monthly_gross"
+        case mtdIncome = "mtd_income"
+        case ytdIncome = "ytd_income"
+        case paychecks
     }
 }
 
@@ -80,6 +95,8 @@ struct MC2Budget: Codable {
     let categories: [MC2BudgetCategory]
     let strategy: MC2BudgetStrategy?
     let income: MC2BudgetIncome?
+    let mtdIncome: Decimal?
+    let ytdIncome: Decimal?
 
     enum CodingKeys: String, CodingKey {
         case month
@@ -87,6 +104,8 @@ struct MC2Budget: Codable {
         case categories
         case strategy
         case income
+        case mtdIncome = "mtd_income"
+        case ytdIncome = "ytd_income"
     }
 }
 

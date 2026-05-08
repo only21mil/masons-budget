@@ -224,12 +224,15 @@ final class MC2SyncService {
     private func makeMasonSnapshot(from dto: MC2MasonBudget) -> MonthlyBudgetSnapshot {
         if let income = dto.income, let weeklyGross = income.weeklyGross, weeklyGross > 0 {
             let monthly = income.monthlyGross ?? (weeklyGross * Decimal(52) / Decimal(12))
+            let actualIncome = MC2Mapper.actualIncomeTotals(income: income, budgetMonth: dto.month)
             return MonthlyBudgetSnapshot(
                 monthKey: dto.month,
                 weeklyGross: weeklyGross,
                 weeklyStrike: income.weeklyStrike ?? 0,
                 weeklyRiver: income.weeklyRiver ?? 0,
                 monthlyGross: monthly,
+                mtdIncome: actualIncome.mtd,
+                ytdIncome: actualIncome.ytd,
                 payFrequency: income.payFrequency ?? "weekly",
                 strategyNote: nil
             )
@@ -240,6 +243,8 @@ final class MC2SyncService {
             monthKey: dto.month,
             weeklyGross: weeklyAllowance,
             monthlyGross: weeklyAllowance * 4,
+            mtdIncome: weeklyAllowance * 4,
+            ytdIncome: weeklyAllowance * 4,
             strategyNote: "Allowance: $\(weeklyAllowance)/week from \(dto.allowance?.source ?? "Parents")"
         )
     }

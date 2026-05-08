@@ -40,16 +40,68 @@ enum MC2Mapper {
     }
 
     static func mapBudgetSnapshot(_ dto: MC2Budget) -> MonthlyBudgetSnapshot {
-        MonthlyBudgetSnapshot(
+        let actualIncome = actualIncomeTotals(
+            income: dto.income,
+            budgetMonth: dto.month,
+            topLevelMTD: dto.mtdIncome,
+            topLevelYTD: dto.ytdIncome
+        )
+
+        return MonthlyBudgetSnapshot(
             monthKey: dto.month,
             coinbaseOneBalance: dto.coinbaseOneBalance ?? 0,
             weeklyGross: dto.income?.weeklyGross ?? 0,
             weeklyStrike: dto.income?.weeklyStrike ?? 0,
             weeklyRiver: dto.income?.weeklyRiver ?? 0,
             monthlyGross: dto.income?.monthlyGross ?? 0,
+            mtdIncome: actualIncome.mtd,
+            ytdIncome: actualIncome.ytd,
             payFrequency: dto.income?.payFrequency ?? "weekly",
             strategyNote: sanitizedStrategyNote(dto.strategy?.strategyNote)
         )
+    }
+
+    static func actualIncomeTotals(
+        income: MC2BudgetIncome?,
+        budgetMonth: String,
+        topLevelMTD: Decimal? = nil,
+        topLevelYTD: Decimal? = nil
+    ) -> (mtd: Decimal, ytd: Decimal) {
+        let paychecks = income?.paychecks ?? []
+        let calendar = Calendar.current
+        let monthDate = parseMonthYear(budgetMonth) ?? Date()
+        let monthComponents = calendar.dateComponents([.year, .month], from: monthDate)
+
+        let mtdFromLedger = paychecks.reduce(Decimal(0)) { total, paycheck in
+            let date = parseDate(paycheck.date)
+            let components = calendar.dateComponents([.year, .month], from: date)
+            guard components.year == monthComponents.year,
+                  components.month == monthComponents.month else { return total }
+            return total + (paycheck.net ?? paycheck.amount ?? 0)
+        }
+
+        let ytdFromLedger = paychecks.reduce(Decimal(0)) { total, paycheck in
+            let date = parseDate(paycheck.date)
+            let components = calendar.dateComponents([.year], from: date)
+            guard components.year == monthComponents.year else { return total }
+            return total + (paycheck.net ?? paycheck.amount ?? 0)
+        }
+
+        let explicitMTD = income?.mtdIncome ?? topLevelMTD
+        let explicitYTD = income?.ytdIncome ?? topLevelYTD
+        let mtd = explicitMTD ?? mtdFromLedger
+        let ytd = explicitYTD ?? (ytdFromLedger > 0 ? ytdFromLedger : mtd)
+
+        return (mtd: mtd, ytd: ytd)
+    }
+
+    private static func parseMonthYear(_ raw: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.date(from: raw)
     }
 
     private static func sanitizedStrategyNote(_ note: String?) -> String? {

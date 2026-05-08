@@ -13,6 +13,8 @@ final class MonthlyBudgetSnapshot {
     var weeklyStrike: Decimal
     var weeklyRiver: Decimal
     var monthlyGross: Decimal
+    var mtdIncome: Decimal = 0
+    var ytdIncome: Decimal = 0
     var payFrequency: String
     var strategyNote: String?
     var lastUpdated: Date
@@ -24,6 +26,8 @@ final class MonthlyBudgetSnapshot {
         weeklyStrike: Decimal = 0,
         weeklyRiver: Decimal = 0,
         monthlyGross: Decimal = 0,
+        mtdIncome: Decimal = 0,
+        ytdIncome: Decimal = 0,
         payFrequency: String = "weekly",
         strategyNote: String? = nil,
         lastUpdated: Date = .now
@@ -34,6 +38,8 @@ final class MonthlyBudgetSnapshot {
         self.weeklyStrike = weeklyStrike
         self.weeklyRiver = weeklyRiver
         self.monthlyGross = monthlyGross
+        self.mtdIncome = mtdIncome
+        self.ytdIncome = ytdIncome
         self.payFrequency = payFrequency
         self.strategyNote = strategyNote
         self.lastUpdated = lastUpdated

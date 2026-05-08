@@ -125,7 +125,12 @@ final class MC2ReaderTests: XCTestCase {
             "weekly_strike": 500,
             "weekly_river": 3441.53,
             "pay_frequency": "weekly",
-            "monthly_gross": 17079.96
+            "monthly_gross": 17079.96,
+            "mtd_income": 3941.53,
+            "paychecks": [
+              {"date":"2026-04-01","platform":"Strike","amount":500,"net":500},
+              {"date":"2026-04-03","platform":"River","amount":3441.53,"net":3441.53}
+            ]
           }
         }
         """.data(using: .utf8)!
@@ -134,6 +139,8 @@ final class MC2ReaderTests: XCTestCase {
         XCTAssertEqual(budget.month, "April 2026")
         XCTAssertEqual(budget.categories.count, 2)
         assertDecimalClose(budget.income?.weeklyGross, 3941.53)
+        assertDecimalClose(budget.income?.mtdIncome, 3941.53)
+        XCTAssertEqual(budget.income?.paychecks?.count, 2)
         XCTAssertEqual(budget.strategy?.strategyNote, "BTC-first cashflow plan.")
     }
 
@@ -147,7 +154,12 @@ final class MC2ReaderTests: XCTestCase {
             "weekly_strike": 500,
             "weekly_river": 3441.53,
             "pay_frequency": "weekly",
-            "monthly_gross": 17079.96
+            "monthly_gross": 17079.96,
+            "paychecks": [
+              {"date":"2026-01-03","platform":"River","amount":3000,"net":3000},
+              {"date":"2026-04-01","platform":"Strike","amount":500,"net":500},
+              {"date":"2026-04-03","platform":"River","amount":3441.53,"net":3441.53}
+            ]
           }
         }
         """.data(using: .utf8)!
@@ -158,6 +170,8 @@ final class MC2ReaderTests: XCTestCase {
         XCTAssertEqual(snapshot.monthKey, "April 2026")
         assertDecimalClose(snapshot.weeklyGross, 3941.53)
         assertDecimalClose(snapshot.monthlyGross, 17079.96)
+        assertDecimalClose(snapshot.mtdIncome, 3941.53)
+        assertDecimalClose(snapshot.ytdIncome, 6941.53)
         XCTAssertEqual(snapshot.payFrequency, "weekly")
     }
 

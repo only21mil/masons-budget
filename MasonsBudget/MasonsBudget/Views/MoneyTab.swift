@@ -69,8 +69,12 @@ struct MoneyTab: View {
         snapshots.sorted { $0.lastUpdated > $1.lastUpdated }.first
     }
 
-    private var monthlyNet: Decimal {
-        latestSnapshot?.monthlyGross ?? 0
+    private var mtdIncome: Decimal {
+        latestSnapshot?.mtdIncome ?? 0
+    }
+
+    private var ytdIncome: Decimal {
+        latestSnapshot?.ytdIncome ?? 0
     }
 
     private var monthlySpending: Decimal {
@@ -83,18 +87,26 @@ struct MoneyTab: View {
         return thisMonth.reduce(Decimal(0)) { $0 + $1.amount }
     }
 
+    private var ytdSpending: Decimal {
+        let cal = Calendar.current
+        let thisYear = transactions.filter {
+            currentMember.canSee(dataOwnedBy: $0.ownerMember) &&
+            cal.isDate($0.date, equalTo: Date(), toGranularity: .year) &&
+            ($0.category.lowercased() != "income")
+        }
+        return thisYear.reduce(Decimal(0)) { $0 + $1.amount }
+    }
+
     private var monthlySavingsRate: Double {
-        guard monthlyNet > 0 else { return 0 }
-        let saved = monthlyNet - monthlySpending
-        return Double(truncating: (saved / monthlyNet) as NSNumber)
+        guard mtdIncome > 0 else { return 0 }
+        let saved = mtdIncome - monthlySpending
+        return Double(truncating: (saved / mtdIncome) as NSNumber)
     }
 
     private var yearlySavingsRate: Double {
-        guard monthlyNet > 0 else { return 0 }
-        let yearlyNet = monthlyNet * 12
-        let yearlySpent = monthlySpending * 12
-        let saved = yearlyNet - yearlySpent
-        return Double(truncating: (saved / yearlyNet) as NSNumber)
+        guard ytdIncome > 0 else { return 0 }
+        let saved = ytdIncome - ytdSpending
+        return Double(truncating: (saved / ytdIncome) as NSNumber)
     }
 
     var body: some View {
@@ -168,39 +180,40 @@ struct MoneyTab: View {
         VStack(spacing: AppTheme.cardSpacing) {
             HStack(spacing: AppTheme.cardSpacing) {
                 StatCard(
-                    title: "Monthly Net",
-                    value: formatCurrency(snapshot.monthlyGross),
-                    subtitle: snapshot.payFrequency.capitalized,
+                    title: "MTD Income",
+                    value: formatCurrency(mtdIncome),
+                    subtitle: "Actual income logged",
                     icon: "calendar"
                 )
                 StatCard(
-                    title: "Monthly Savings",
+                    title: "MTD Savings",
                     value: "\(Int(monthlySavingsRate * 100))%",
-                    subtitle: monthlySpending > 0 ? "\(formatCurrency(monthlyNet - monthlySpending)) saved" : "No spending yet",
+                    subtitle: monthlySpending > 0 ? "\(formatCurrency(mtdIncome - monthlySpending)) saved" : "No spending yet",
                     icon: "chart.line.uptrend.xyaxis"
                 )
             }
             HStack(spacing: AppTheme.cardSpacing) {
                 StatCard(
-                    title: "Yearly Net",
-                    value: formatCurrency(monthlyNet * 12),
-                    subtitle: "12 × monthly",
+                    title: "YTD Income",
+                    value: formatCurrency(ytdIncome),
+                    subtitle: "Actual income logged",
                     icon: "calendar.badge.clock"
                 )
                 StatCard(
-                    title: "Yearly Savings",
+                    title: "YTD Savings",
                     value: "\(Int(yearlySavingsRate * 100))%",
-                    subtitle: "Est. \(formatCurrency((monthlyNet - monthlySpending) * 12)) saved",
+                    subtitle: "\(formatCurrency(ytdIncome - ytdSpending)) saved",
                     icon: "chart.bar.fill"
                 )
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Weekly Breakdown")
+                Text("Income Plan")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AppTheme.secondaryText)
                     .padding(.horizontal, 4)
 
+                incomeRow(label: "Projected Monthly", value: snapshot.monthlyGross)
                 incomeRow(label: "Weekly Gross", value: snapshot.weeklyGross)
                 incomeRow(label: "Strike (weekly)", value: snapshot.weeklyStrike)
                 incomeRow(label: "River (weekly)", value: snapshot.weeklyRiver)
