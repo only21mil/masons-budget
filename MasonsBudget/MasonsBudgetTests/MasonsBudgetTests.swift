@@ -17,7 +17,7 @@ final class MasonsBudgetTests: XCTestCase {
 
     func testAppTabCases() {
         let tabs = AppTab.allCases
-        XCTAssertEqual(tabs.count, 4)
+        XCTAssertEqual(tabs.count, 5)
         for tab in tabs {
             XCTAssertFalse(tab.title.isEmpty, "\(tab) should have a title")
             XCTAssertFalse(tab.icon.isEmpty, "\(tab) should have an icon")
@@ -47,6 +47,21 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertEqual(SyncOperation.create.rawValue, "create")
         XCTAssertEqual(SyncOperation.update.rawValue, "update")
         XCTAssertEqual(SyncOperation.delete.rawValue, "delete")
+    }
+
+    func testTransactionSourceCatalogIncludesRequestedCards() {
+        let spendSources = TransactionSourceCatalog.sources(for: .spend)
+        XCTAssertTrue(spendSources.contains("Aven Card"))
+        XCTAssertTrue(spendSources.contains("Coinbase One Card"))
+        XCTAssertTrue(spendSources.contains("Gemini Card"))
+        XCTAssertTrue(spendSources.contains("SoFi Card"))
+    }
+
+    func testTransactionSourceCatalogFiltersByActivity() {
+        let billPaySources = TransactionSourceCatalog.sources(for: .btcBillPay)
+        XCTAssertTrue(billPaySources.contains("River Bill Pay"))
+        XCTAssertTrue(billPaySources.contains("Strike Bill Pay"))
+        XCTAssertFalse(billPaySources.contains("SoFi Card"))
     }
 
     // MARK: - Model init (verify defaults)
@@ -180,6 +195,67 @@ final class MasonsBudgetTests: XCTestCase {
         )
         XCTAssertEqual(pay.platform, "Strike")
         XCTAssertNil(pay.feeUSD)
+        XCTAssertEqual(pay.ownerMember, .victor)
+    }
+
+    func testBTCBillPayHiddenFromKidProfiles() {
+        let pay = BTCBillPay(
+            id: "bp-victor",
+            date: .now,
+            merchant: "PENNYMAC",
+            category: "Mortgage",
+            amountUSD: 3613.79,
+            btcSpent: Decimal(string: "0.054")!,
+            btcPrice: 66612.33
+        )
+        XCTAssertTrue(FamilyMember.victor.canSee(dataOwnedBy: pay.ownerMember))
+        XCTAssertTrue(FamilyMember.rachel.canSee(dataOwnedBy: pay.ownerMember))
+        XCTAssertFalse(FamilyMember.mason.canSee(dataOwnedBy: pay.ownerMember))
+    }
+
+    func testTodoItemInit() {
+        let todo = TodoItem(
+            id: "vv-test-task",
+            title: "Verify MC2 todo sync",
+            project: "Inbox",
+            dueDate: Date(),
+            isFlagged: true,
+            owner: .victor,
+            createdBy: "vogel-vault"
+        )
+
+        XCTAssertEqual(todo.id, "vv-test-task")
+        XCTAssertEqual(todo.title, "Verify MC2 todo sync")
+        XCTAssertEqual(todo.project, "Inbox")
+        XCTAssertTrue(todo.isFlagged)
+        XCTAssertFalse(todo.isDone)
+        XCTAssertEqual(todo.ownerMember, .victor)
+    }
+
+    func testTodoMapperSkipsNonFamilyAssignee() throws {
+        let json = """
+        [
+          {
+            "id": "sats-agent-task",
+            "text": "Operational task that should stay out of Vogel Vault",
+            "category": "sats",
+            "assignee": "sats",
+            "done": false
+          },
+          {
+            "id": "family-task",
+            "text": "Call Ann about hiring",
+            "category": "work",
+            "status": "pending"
+          }
+        ]
+        """.data(using: .utf8)!
+        let dtos = try JSONDecoder().decode([MC2TodoItem].self, from: json)
+        let todos = MC2Mapper.mapTodos(dtos, viewer: .victor)
+
+        XCTAssertEqual(todos.map(\.id), ["family-task"])
+        XCTAssertEqual(todos.first?.ownerMember, .victor)
+        XCTAssertEqual(todos.first?.project, "work")
     }
 
     func testHoldingAccountRelationship() {

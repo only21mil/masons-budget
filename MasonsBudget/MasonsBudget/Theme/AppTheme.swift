@@ -59,6 +59,14 @@ func formatBtc(_ value: Decimal) -> String {
     String(format: "%.4f BTC", Double(truncating: value as NSNumber))
 }
 
+func formatSats(_ btc: Decimal) -> String {
+    let sats = btc * Decimal(100_000_000)
+    let f = NumberFormatter()
+    f.numberStyle = .decimal
+    f.maximumFractionDigits = 0
+    return f.string(from: sats as NSDecimalNumber) ?? "0"
+}
+
 struct GlassCard: ViewModifier {
     var highlight: Bool = false
     func body(content: Content) -> some View {

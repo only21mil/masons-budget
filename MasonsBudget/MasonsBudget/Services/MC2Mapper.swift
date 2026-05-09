@@ -153,7 +153,10 @@ enum MC2Mapper {
     }
 
     static func mapBTCBillPay(_ dto: MC2BTCBillPay) -> BTCBillPay {
-        BTCBillPay(
+        let owner = dto.owner
+            .flatMap { FamilyMember(rawValue: $0.lowercased()) }
+            ?? .victor
+        return BTCBillPay(
             id: dto.id,
             date: parseDate(dto.date),
             merchant: dto.merchant,
@@ -164,7 +167,8 @@ enum MC2Mapper {
             feeUSD: dto.feeUsd,
             platform: dto.platform ?? "Strike",
             note: dto.note,
-            reference: dto.reference
+            reference: dto.reference,
+            owner: owner
         )
     }
 
@@ -258,5 +262,38 @@ enum MC2Mapper {
             BTCAccount(key: "son-river-mason", label: "River", custody: .exchange, btc: son.river, fiat: 0, owner: .mason),
             BTCAccount(key: "son-coldcard-mason", label: "Coldcard", custody: .selfCustody, btc: son.coldcard, fiat: 0, owner: .mason),
         ]
+    }
+
+    static func mapTodos(_ dtos: [MC2TodoItem], viewer: FamilyMember) -> [TodoItem] {
+        dtos.compactMap { dto in
+            guard let owner = dto.effectiveOwner else { return nil }
+            guard viewer.canSee(dataOwnedBy: owner) else { return nil }
+
+            return TodoItem(
+                id: dto.id,
+                title: dto.effectiveTitle,
+                project: dto.effectiveProject,
+                area: dto.area,
+                dueDate: parseTodoDueDate(dto.effectiveDueDate),
+                priority: dto.priority ?? 0,
+                isFlagged: dto.effectiveFlagged,
+                isDone: dto.effectiveDone,
+                owner: owner,
+                createdBy: "mc2",
+                updatedAt: dto.updatedAt.map(parseDate) ?? .now,
+                sourceFile: "todos.json"
+            )
+        }
+    }
+
+    private static func parseTodoDueDate(_ raw: String?) -> Date? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let normalized = raw.lowercased()
+        let calendar = Calendar.current
+        if normalized == "today" { return calendar.startOfDay(for: Date()) }
+        if normalized == "tomorrow" {
+            return calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: Date()))
+        }
+        return parseDate(raw)
     }
 }

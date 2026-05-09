@@ -49,7 +49,38 @@ const appTransactionValidator = v.object({
   note: v.optional(v.union(v.string(), v.null())),
 });
 
-async function bumpSyncVersion(ctx: any, name: string, version: number, updatedAt: number) {
+const appTodoValidator = v.object({
+  id: v.string(),
+  title: v.optional(v.union(v.string(), v.null())),
+  text: v.optional(v.union(v.string(), v.null())),
+  project: v.optional(v.union(v.string(), v.null())),
+  area: v.optional(v.union(v.string(), v.null())),
+  category: v.optional(v.union(v.string(), v.null())),
+  type: v.optional(v.union(v.string(), v.null())),
+  due_date: v.optional(v.union(v.string(), v.null())),
+  dueDate: v.optional(v.union(v.string(), v.null())),
+  when: v.optional(v.union(v.string(), v.null())),
+  priority: v.optional(v.float64()),
+  flag: v.optional(v.boolean()),
+  flagged: v.optional(v.boolean()),
+  done: v.optional(v.boolean()),
+  completed: v.optional(v.boolean()),
+  status: v.optional(v.union(v.string(), v.null())),
+  owner: v.optional(v.union(v.string(), v.null())),
+  assignee: v.optional(v.union(v.string(), v.null())),
+  created_by: v.optional(v.union(v.string(), v.null())),
+  sync_source: v.optional(v.union(v.string(), v.null())),
+  createdAt: v.optional(v.union(v.string(), v.null())),
+  created: v.optional(v.union(v.string(), v.null())),
+  updated_at: v.optional(v.union(v.string(), v.null())),
+});
+
+async function bumpSyncVersion(
+  ctx: any,
+  name: string,
+  version: number,
+  updatedAt: number,
+) {
   const versionDoc = await ctx.db
     .query("syncVersions")
     .withIndex("by_name", (q: any) => q.eq("name", name))
@@ -114,7 +145,7 @@ export const syncBatch = mutation({
       v.object({
         name: v.string(),
         data: v.any(),
-      })
+      }),
     ),
   },
   handler: async (ctx, { files }) => {
@@ -156,7 +187,9 @@ export const syncBatch = mutation({
 /** Upsert one app-created transaction into transactions.json and bump its version. */
 export const appendTransaction = mutation({
   args: {
-    name: v.optional(v.union(v.literal("transactions"), v.literal("mason-transactions"))),
+    name: v.optional(
+      v.union(v.literal("transactions"), v.literal("mason-transactions")),
+    ),
     transaction: appTransactionValidator,
   },
   handler: async (ctx, { name: fileName, transaction }) => {
@@ -171,7 +204,11 @@ export const appendTransaction = mutation({
     const currentData = existing?.data;
     const transactions = Array.isArray(currentData) ? [...currentData] : [];
     const existingIndex = transactions.findIndex(
-      (item) => item && typeof item === "object" && "id" in item && item.id === transaction.id
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        "id" in item &&
+        item.id === transaction.id,
     );
 
     if (existingIndex >= 0) {
@@ -200,6 +237,86 @@ export const appendTransaction = mutation({
     await bumpSyncVersion(ctx, name, nextVersion, now);
 
     return { name, version: nextVersion, id: transaction.id };
+  },
+});
+
+/** Upsert one app-created todo into todos.json and bump its version. */
+export const upsertTodo = mutation({
+  args: {
+    name: v.optional(v.literal("todos")),
+    todo: appTodoValidator,
+  },
+  handler: async (ctx, { name: fileName, todo }) => {
+    const name = fileName ?? "todos";
+    const now = Date.now();
+
+    const existing = await ctx.db
+      .query("dataFiles")
+      .withIndex("by_name", (q) => q.eq("name", name))
+      .first();
+
+    const currentData = existing?.data;
+    const currentTodos = Array.isArray(currentData)
+      ? [...currentData]
+      : currentData &&
+          typeof currentData === "object" &&
+          Array.isArray((currentData as any).todos)
+        ? [...(currentData as any).todos]
+        : [];
+
+    const existingIndex = currentTodos.findIndex(
+      (item) =>
+        item && typeof item === "object" && "id" in item && item.id === todo.id,
+    );
+
+    const normalized = {
+      ...todo,
+      title: todo.title ?? todo.text ?? "Untitled task",
+      text: todo.text ?? todo.title ?? "Untitled task",
+      category: todo.category ?? "sats",
+      type: todo.type ?? todo.category ?? "sats",
+      status:
+        todo.status ?? (todo.done || todo.completed ? "completed" : "pending"),
+      owner: todo.owner ?? "victor",
+      assignee: todo.assignee ?? todo.owner ?? "victor",
+      created_by: todo.created_by ?? "vogel-vault",
+      sync_source: todo.sync_source ?? "vogel-vault",
+      updated_at: todo.updated_at ?? new Date(now).toISOString(),
+    };
+
+    if (existingIndex >= 0) {
+      currentTodos[existingIndex] = normalized;
+    } else {
+      currentTodos.push(normalized);
+    }
+
+    const nextData =
+      currentData &&
+      typeof currentData === "object" &&
+      !Array.isArray(currentData) &&
+      Array.isArray((currentData as any).todos)
+        ? { ...(currentData as any), todos: currentTodos }
+        : currentTodos;
+    const nextVersion = (existing?.version ?? 0) + 1;
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        data: nextData,
+        version: nextVersion,
+        updatedAt: now,
+      });
+    } else {
+      await ctx.db.insert("dataFiles", {
+        name,
+        data: nextData,
+        version: nextVersion,
+        updatedAt: now,
+      });
+    }
+
+    await bumpSyncVersion(ctx, name, nextVersion, now);
+
+    return { name, version: nextVersion, id: todo.id };
   },
 });
 

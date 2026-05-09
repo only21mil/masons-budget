@@ -8,11 +8,13 @@ struct DashboardTab: View {
     @Query private var holdingAccounts: [HoldingAccount]
     @Query private var transactions: [Transaction]
     @Query private var categories: [BudgetCategory]
+    @Query private var todos: [TodoItem]
     @Environment(\.modelContext) private var modelContext
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
     @AppStorage(BTCPriceService.priceKey) private var liveBTCPriceUSD: Double = 0
     @AppStorage(StockPriceService.vooPriceKey) private var liveVOOPriceUSD: Double = 0
     @AppStorage(StockPriceService.ibitPriceKey) private var liveIBITPriceUSD: Double = 0
+    @AppStorage("btc_display_unit") private var btcDisplayUnitRaw: String = BitcoinDisplayUnit.btc.rawValue
     @State private var showVoiceCapture = false
     @State private var showAddTransaction = false
     @Binding var selectedTab: AppTab
@@ -37,6 +39,19 @@ struct DashboardTab: View {
         return myTransactions.filter {
             cal.isDate($0.date, equalTo: now, toGranularity: .month)
         }
+    }
+
+    private var todayTodos: [TodoItem] {
+        todos
+            .filter { todo in
+                guard currentMember.canSee(dataOwnedBy: todo.ownerMember), !todo.isDone else { return false }
+                guard let due = todo.dueDate else { return true }
+                return Calendar.current.isDateInToday(due)
+            }
+            .sorted {
+                if $0.isFlagged != $1.isFlagged { return $0.isFlagged && !$1.isFlagged }
+                return $0.title < $1.title
+            }
     }
 
     private var myBtcAccounts: [BTCAccount] {
@@ -65,6 +80,13 @@ struct DashboardTab: View {
         liveIBITPriceUSD > 0 ? Decimal(liveIBITPriceUSD) : nil
     }
 
+    private var btcDisplayUnit: Binding<BitcoinDisplayUnit> {
+        Binding(
+            get: { BitcoinDisplayUnit(rawValue: btcDisplayUnitRaw) ?? .btc },
+            set: { btcDisplayUnitRaw = $0.rawValue }
+        )
+    }
+
     private var latestSnapshot: MonthlyBudgetSnapshot? {
         snapshots.sorted { $0.lastUpdated > $1.lastUpdated }.first
     }
@@ -75,6 +97,10 @@ struct DashboardTab: View {
 
     private var totalBtc: Decimal {
         myBtcAccounts.reduce(Decimal(0)) { $0 + $1.btc }
+    }
+
+    private var estimatedBtcUsd: Decimal {
+        myBtcAccounts.reduce(Decimal(0)) { $0 + $1.usdValue(liveBTCPrice: liveBTCPrice) }
     }
 
     private var totalBudgeted: Decimal {
@@ -106,6 +132,8 @@ struct DashboardTab: View {
                         style: .hero
                     )
 
+                    livePriceStrip
+
                     HStack(spacing: AppTheme.cardSpacing) {
                         QuickActionButton(
                             title: "Add\nTransaction",
@@ -116,14 +144,18 @@ struct DashboardTab: View {
                             title: "View\nSpending",
                             icon: "list.bullet",
                             color: AppTheme.secondaryAccent
-                        ) { selectedTab = .spending }
+                        ) { selectedTab = .budget }
                     }
 
                     budgetOverview
 
+                    if !todayTodos.isEmpty {
+                        todayPreview
+                    }
+
                     StatCard(
                         title: "Bitcoin Stack",
-                        value: formatBtc(totalBtc),
+                        value: bitcoinStackValue,
                         subtitle: myBtcAccounts.isEmpty ? "Waiting for MC2 sync" : "\(myBtcAccounts.count) accounts",
                         icon: "bitcoinsign.circle"
                     )
@@ -137,7 +169,7 @@ struct DashboardTab: View {
                 .padding(.bottom, 24)
             }
             .background(AppTheme.background)
-            .navigationTitle("Dashboard")
+            .navigationTitle("Home")
             #if os(iOS)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .overlay(alignment: .bottom) {
@@ -173,6 +205,82 @@ struct DashboardTab: View {
                 })
             }
             #endif
+        }
+    }
+
+    private var bitcoinStackValue: String {
+        switch BitcoinDisplayUnit(rawValue: btcDisplayUnitRaw) ?? .btc {
+        case .btc:
+            return formatBtc(totalBtc)
+        case .sats:
+            return "\(formatSats(totalBtc)) sats"
+        case .usd:
+            return formatCurrency(estimatedBtcUsd)
+        }
+    }
+
+    private var livePriceStrip: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            BitcoinUnitPicker(unit: btcDisplayUnit)
+
+            HStack(spacing: 10) {
+                pricePill(label: "BTC", value: liveBTCPrice.map(formatCurrency) ?? "snapshot")
+                pricePill(label: "VOO", value: liveVOOPrice.map(formatCurrency) ?? "syncing")
+                pricePill(label: "IBIT", value: liveIBITPrice.map(formatCurrency) ?? "syncing")
+            }
+        }
+        .glassCard(highlight: true)
+    }
+
+    private func pricePill(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(AppTheme.accentColor)
+            Text(value)
+                .font(AppTheme.monoCaption)
+                .foregroundStyle(AppTheme.primaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(AppTheme.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var todayPreview: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                SectionHeader(title: "Today", icon: "checkmark.circle.fill")
+                Spacer()
+                Text("\(todayTodos.count) open")
+                    .font(AppTheme.monoCaption)
+                    .foregroundStyle(AppTheme.accentColor)
+            }
+
+            VStack(spacing: 0) {
+                ForEach(Array(todayTodos.prefix(4).enumerated()), id: \.element.id) { index, todo in
+                    HStack(spacing: 10) {
+                        Image(systemName: todo.isFlagged ? "flag.fill" : "circle")
+                            .foregroundStyle(todo.isFlagged ? AppTheme.accentColor : AppTheme.secondaryText)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(todo.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(AppTheme.primaryText)
+                                .lineLimit(1)
+                            Text(todo.project ?? "Inbox")
+                                .font(.caption2)
+                                .foregroundStyle(AppTheme.secondaryText)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 9)
+                    if index < min(todayTodos.count, 4) - 1 {
+                        Divider().overlay(AppTheme.cardBorder)
+                    }
+                }
+            }
+            .glassCard()
         }
     }
 
@@ -366,5 +474,5 @@ struct DashboardTab: View {
 }
 
 #Preview {
-    DashboardTab(selectedTab: .constant(.dashboard))
+    DashboardTab(selectedTab: .constant(.home))
 }

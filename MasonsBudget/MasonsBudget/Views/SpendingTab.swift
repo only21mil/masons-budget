@@ -4,8 +4,11 @@ import SwiftData
 struct SpendingTab: View {
     @Query private var transactions: [Transaction]
     @Query private var categories: [BudgetCategory]
+    @Query(sort: \BTCBillPay.date, order: .reverse) private var btcBillPays: [BTCBillPay]
     @Environment(\.modelContext) private var modelContext
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
+    @AppStorage(BTCPriceService.priceKey) private var liveBTCPriceUSD: Double = 0
+    @AppStorage("btc_display_unit") private var btcDisplayUnitRaw: String = BitcoinDisplayUnit.btc.rawValue
     @State private var monthOffset: Int = 0
     @State private var transactionToDelete: Transaction?
     @State private var transactionToEdit: Transaction?
@@ -13,6 +16,10 @@ struct SpendingTab: View {
 
     private var currentMember: FamilyMember {
         FamilyMember(rawValue: selectedMember) ?? .victor
+    }
+
+    private var liveBTCPrice: Decimal? {
+        liveBTCPriceUSD > 0 ? Decimal(liveBTCPriceUSD) : nil
     }
 
     private var myTransactions: [Transaction] {
@@ -62,6 +69,15 @@ struct SpendingTab: View {
         }.sorted(by: { $0.2 > $1.2 })
     }
 
+    private var selectedMonthBillPays: [BTCBillPay] {
+        let cal = Calendar.current
+        return btcBillPays.filter { pay in
+            currentMember.canSee(dataOwnedBy: pay.ownerMember) &&
+                cal.isDate(pay.date, equalTo: selectedMonth, toGranularity: .month)
+        }
+        .sorted { $0.date > $1.date }
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -85,6 +101,10 @@ struct SpendingTab: View {
                             }
                             .buttonStyle(.plain)
                         }
+                    }
+
+                    if !selectedMonthBillPays.isEmpty {
+                        bitcoinBillPaySection
                     }
 
                     SpendingDonutChart(selectedMonth: selectedMonth)
@@ -125,7 +145,7 @@ struct SpendingTab: View {
                 .padding(.bottom, 24)
             }
             .background(AppTheme.background)
-            .navigationTitle("Spending")
+            .navigationTitle("Budget")
             #if os(iOS)
             .toolbarColorScheme(.dark, for: .navigationBar)
             #endif
@@ -156,6 +176,41 @@ struct SpendingTab: View {
                 if let tx = transactionToDelete {
                     Text("Delete \(tx.merchant) — \(formatCurrency(tx.amount))?")
                 }
+            }
+        }
+    }
+
+    private var bitcoinBillPaySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeader(title: "Bitcoin Bill Pay", icon: "bitcoinsign.circle.fill")
+            ForEach(selectedMonthBillPays.prefix(6), id: \.id) { pay in
+                HStack(spacing: 12) {
+                    Image(systemName: "bolt.circle.fill")
+                        .foregroundStyle(AppTheme.accentColor)
+                        .font(.title3)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(pay.merchant)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppTheme.primaryText)
+                        Text("\(pay.platform) · \(pay.date.formatted(date: .abbreviated, time: .omitted))")
+                            .font(.caption2)
+                            .foregroundStyle(AppTheme.secondaryText)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(formatCurrency(pay.amountUSD))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppTheme.primaryText)
+                        BitcoinAmountView(
+                            btc: pay.btcSpent,
+                            unit: BitcoinDisplayUnit(rawValue: btcDisplayUnitRaw) ?? .btc,
+                            liveBTCPrice: liveBTCPrice,
+                            font: .caption2,
+                            color: AppTheme.secondaryText
+                        )
+                    }
+                }
+                .glassCard()
             }
         }
     }

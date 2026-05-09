@@ -188,6 +188,7 @@ struct MC2BTCBillPay: Codable {
     let note: String?
     let feeUsd: Decimal?
     let reference: String?
+    let owner: String?
 
     /// BTC price at time of bill pay — computed from amount/btc when missing.
     var effectiveBtcPrice: Decimal {
@@ -197,7 +198,7 @@ struct MC2BTCBillPay: Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, date, merchant, category, platform, note, reference
+        case id, date, merchant, category, platform, note, reference, owner
         case amountUsd = "amount_usd"
         case btcSpent = "btc_spent"
         case btcPrice = "btc_price"
@@ -359,4 +360,216 @@ struct MC2MasonBudget: Codable {
     let categories: [MC2BudgetCategory]
     let allowance: MC2MasonAllowance?
     let income: MC2BudgetIncome?
+}
+
+struct MC2TodoItem: Codable {
+    let id: String
+    let title: String?
+    let text: String?
+    let project: String?
+    let area: String?
+    let category: String?
+    let type: String?
+    let dueDate: String?
+    let due: String?
+    let date: String?
+    let deadline: String?
+    let when: String?
+    let priority: Int?
+    let flag: Bool?
+    let flagged: Bool?
+    let done: Bool?
+    let completed: Bool?
+    let status: String?
+    let owner: String?
+    let assignee: String?
+    let updatedAt: String?
+    let createdAt: String?
+    let completedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, text, project, area, category, type, due, date, deadline, when, priority, flag, flagged, done, completed, status, owner, assignee
+        case dueDate = "due_date"
+        case camelDueDate = "dueDate"
+        case updatedAt = "updated_at"
+        case camelUpdatedAt = "updatedAt"
+        case createdAt = "createdAt"
+        case completedAt = "completedAt"
+    }
+
+    init(
+        id: String,
+        title: String,
+        project: String? = nil,
+        area: String? = nil,
+        dueDate: String? = nil,
+        priority: Int = 0,
+        flag: Bool = false,
+        done: Bool = false,
+        owner: String = FamilyMember.victor.rawValue,
+        updatedAt: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.text = nil
+        self.project = project
+        self.area = area
+        self.category = "sats"
+        self.type = "sats"
+        self.dueDate = dueDate
+        self.due = nil
+        self.date = nil
+        self.deadline = nil
+        self.when = nil
+        self.priority = priority
+        self.flag = flag
+        self.flagged = nil
+        self.done = done
+        self.completed = nil
+        self.status = nil
+        self.owner = owner
+        self.assignee = owner
+        self.updatedAt = updatedAt
+        self.createdAt = nil
+        self.completedAt = nil
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        text = try container.decodeIfPresent(String.self, forKey: .text)
+        project = try container.decodeIfPresent(String.self, forKey: .project)
+        area = try container.decodeIfPresent(String.self, forKey: .area)
+        category = try container.decodeIfPresent(String.self, forKey: .category)
+        type = try container.decodeIfPresent(String.self, forKey: .type)
+        dueDate = try container.decodeIfPresent(String.self, forKey: .dueDate)
+            ?? container.decodeIfPresent(String.self, forKey: .camelDueDate)
+        due = try container.decodeIfPresent(String.self, forKey: .due)
+        date = try container.decodeIfPresent(String.self, forKey: .date)
+        deadline = try container.decodeIfPresent(String.self, forKey: .deadline)
+        when = try container.decodeIfPresent(String.self, forKey: .when)
+        priority = Self.decodePriority(from: container)
+        flag = try container.decodeIfPresent(Bool.self, forKey: .flag)
+        flagged = try container.decodeIfPresent(Bool.self, forKey: .flagged)
+        done = try container.decodeIfPresent(Bool.self, forKey: .done)
+        completed = try container.decodeIfPresent(Bool.self, forKey: .completed)
+        status = try container.decodeIfPresent(String.self, forKey: .status)
+        owner = try container.decodeIfPresent(String.self, forKey: .owner)
+        assignee = try container.decodeIfPresent(String.self, forKey: .assignee)
+        updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
+            ?? container.decodeIfPresent(String.self, forKey: .camelUpdatedAt)
+        createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
+        completedAt = try container.decodeIfPresent(String.self, forKey: .completedAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(title, forKey: .title)
+        try container.encodeIfPresent(text, forKey: .text)
+        try container.encodeIfPresent(project, forKey: .project)
+        try container.encodeIfPresent(area, forKey: .area)
+        try container.encodeIfPresent(category, forKey: .category)
+        try container.encodeIfPresent(type, forKey: .type)
+        try container.encodeIfPresent(dueDate, forKey: .dueDate)
+        try container.encodeIfPresent(when, forKey: .when)
+        try container.encodeIfPresent(priority, forKey: .priority)
+        try container.encodeIfPresent(flag, forKey: .flag)
+        try container.encodeIfPresent(flagged, forKey: .flagged)
+        try container.encodeIfPresent(done, forKey: .done)
+        try container.encodeIfPresent(completed, forKey: .completed)
+        try container.encodeIfPresent(status, forKey: .status)
+        try container.encodeIfPresent(owner, forKey: .owner)
+        try container.encodeIfPresent(assignee, forKey: .assignee)
+        try container.encodeIfPresent(updatedAt, forKey: .updatedAt)
+    }
+
+    init(appTodo todo: TodoItem) {
+        self.init(
+            id: todo.id,
+            title: todo.title,
+            project: todo.project,
+            area: todo.area,
+            dueDate: todo.dueDate.map(Self.dateString),
+            priority: todo.priority,
+            flag: todo.isFlagged,
+            done: todo.isDone,
+            owner: todo.owner,
+            updatedAt: Self.dateTimeString(todo.updatedAt)
+        )
+    }
+
+    var effectiveTitle: String {
+        if let title, !title.isEmpty { return title }
+        if let text, !text.isEmpty { return text }
+        return "Untitled task"
+    }
+
+    var effectiveDueDate: String? {
+        dueDate ?? due ?? date ?? deadline ?? when
+    }
+
+    var effectiveProject: String? {
+        project ?? category ?? type
+    }
+
+    var effectiveOwner: FamilyMember? {
+        let raw = owner ?? assignee
+        guard let raw else { return .victor }
+        return FamilyMember(rawValue: raw.lowercased())
+    }
+
+    var effectiveFlagged: Bool {
+        flagged ?? flag ?? false
+    }
+
+    var effectiveDone: Bool {
+        if let completed { return completed }
+        if let done { return done }
+        let normalized = status?.lowercased() ?? ""
+        return normalized == "completed" || normalized == "done"
+    }
+
+    static func decodePriority(from container: KeyedDecodingContainer<CodingKeys>) -> Int? {
+        if let intValue = try? container.decodeIfPresent(Int.self, forKey: .priority) {
+            return intValue
+        }
+        guard let stringValue = try? container.decodeIfPresent(String.self, forKey: .priority) else {
+            return nil
+        }
+        switch stringValue.lowercased() {
+        case "urgent", "high": return 1
+        case "medium", "normal": return 2
+        case "low": return 3
+        default: return Int(stringValue)
+        }
+    }
+
+    static func dateString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    static func dateTimeString(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: date)
+    }
+
+    func convexJSONObject() throws -> [String: Any] {
+        let data = try JSONEncoder().encode(self)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw ConvexError.decodeFailed("todo", NSError(domain: "MC2TodoItem", code: -1))
+        }
+        return object
+    }
+}
+
+struct MC2TodosWrapper: Codable {
+    let todos: [MC2TodoItem]
 }

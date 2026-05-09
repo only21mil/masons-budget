@@ -7,6 +7,7 @@ struct BTCAccountDetailView: View {
     @Query private var btcBuys: [BTCBuy]
     @Query private var btcBillPays: [BTCBillPay]
     @AppStorage(BTCPriceService.priceKey) private var liveBTCPriceUSD: Double = 0
+    @AppStorage("btc_display_unit") private var btcDisplayUnitRaw: String = BitcoinDisplayUnit.btc.rawValue
 
     private var liveBTCPrice: Decimal? {
         liveBTCPriceUSD > 0 ? Decimal(liveBTCPriceUSD) : nil
@@ -22,7 +23,7 @@ struct BTCAccountDetailView: View {
 
     private var accountBillPays: [BTCBillPay] {
         btcBillPays
-            .filter { isSameAccountName($0.platform, account.label) }
+            .filter { $0.ownerMember == account.ownerMember && isSameAccountName($0.platform, account.label) }
             .sorted { $0.date > $1.date }
     }
 
@@ -57,9 +58,13 @@ struct BTCAccountDetailView: View {
                     Text(account.custody == .selfCustody ? "Self-Custody" : "Exchange")
                         .font(.caption)
                         .foregroundStyle(AppTheme.secondaryText)
-                    Text(formatBtc(account.btc))
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(AppTheme.primaryText)
+                    BitcoinAmountView(
+                        btc: account.btc,
+                        unit: BitcoinDisplayUnit(rawValue: btcDisplayUnitRaw) ?? .btc,
+                        liveBTCPrice: liveBTCPrice,
+                        font: .title2.weight(.bold),
+                        color: AppTheme.primaryText
+                    )
                     Text(formatCurrency(account.usdValue(liveBTCPrice: liveBTCPrice)))
                         .font(.caption)
                         .foregroundStyle(AppTheme.secondaryText)
@@ -88,9 +93,13 @@ struct BTCAccountDetailView: View {
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text(formatBtc(buy.amountBTC))
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(AppTheme.positive)
+                        BitcoinAmountView(
+                            btc: buy.amountBTC,
+                            unit: BitcoinDisplayUnit(rawValue: btcDisplayUnitRaw) ?? .btc,
+                            liveBTCPrice: liveBTCPrice,
+                            font: .subheadline.weight(.semibold),
+                            color: AppTheme.positive
+                        )
                         Text(formatCurrency(buy.usd))
                             .font(.caption2)
                             .foregroundStyle(AppTheme.secondaryText)
@@ -119,9 +128,13 @@ struct BTCAccountDetailView: View {
                         Text(formatCurrency(pay.amountUSD))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(AppTheme.negative)
-                        Text(formatBtc(pay.btcSpent))
-                            .font(.caption2)
-                            .foregroundStyle(AppTheme.secondaryText)
+                        BitcoinAmountView(
+                            btc: pay.btcSpent,
+                            unit: BitcoinDisplayUnit(rawValue: btcDisplayUnitRaw) ?? .btc,
+                            liveBTCPrice: liveBTCPrice,
+                            font: .caption2,
+                            color: AppTheme.secondaryText
+                        )
                     }
                 }
                 .glassCard()

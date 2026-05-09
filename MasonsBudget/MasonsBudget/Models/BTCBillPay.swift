@@ -18,6 +18,7 @@ final class BTCBillPay {
     var platform: String
     var note: String?
     var reference: String?
+    var owner: String = FamilyMember.victor.rawValue
 
     init(
         id: String,
@@ -30,7 +31,8 @@ final class BTCBillPay {
         feeUSD: Decimal? = nil,
         platform: String = "Strike",
         note: String? = nil,
-        reference: String? = nil
+        reference: String? = nil,
+        owner: FamilyMember = .victor
     ) {
         self.id = id
         self.date = date
@@ -43,5 +45,11 @@ final class BTCBillPay {
         self.platform = platform
         self.note = note
         self.reference = reference
+        self.owner = owner.rawValue
+    }
+
+    var ownerMember: FamilyMember {
+        get { FamilyMember(rawValue: owner) ?? .victor }
+        set { owner = newValue.rawValue }
     }
 }

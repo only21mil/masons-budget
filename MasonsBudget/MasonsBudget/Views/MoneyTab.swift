@@ -12,6 +12,7 @@ struct MoneyTab: View {
     @AppStorage(BTCPriceService.sourceKey) private var liveBTCPriceSource: String = ""
     @AppStorage(StockPriceService.vooPriceKey) private var liveVOOPriceUSD: Double = 0
     @AppStorage(StockPriceService.ibitPriceKey) private var liveIBITPriceUSD: Double = 0
+    @AppStorage("btc_display_unit") private var btcDisplayUnitRaw: String = BitcoinDisplayUnit.btc.rawValue
 
     private var currentMember: FamilyMember {
         FamilyMember(rawValue: selectedMember) ?? .victor
@@ -55,6 +56,13 @@ struct MoneyTab: View {
 
     private var liveIBITPrice: Decimal? {
         liveIBITPriceUSD > 0 ? Decimal(liveIBITPriceUSD) : nil
+    }
+
+    private var btcDisplayUnit: Binding<BitcoinDisplayUnit> {
+        Binding(
+            get: { BitcoinDisplayUnit(rawValue: btcDisplayUnitRaw) ?? .btc },
+            set: { btcDisplayUnitRaw = $0.rawValue }
+        )
     }
 
     private var estimatedBtcUsd: Decimal {
@@ -130,9 +138,12 @@ struct MoneyTab: View {
                     StatCard(
                         title: "Estimated Total",
                         value: formatCurrency(liveHoldingsValue + estimatedBtcUsd),
-                        subtitle: "BTC (\(formatBtc(totalBtc))) @ \(btcPriceLabel) + 401k/WAP (\(formatCurrency(totalHoldingsValue)))",
+                        subtitle: "BTC (\(bitcoinStackValue)) @ \(btcPriceLabel) + 401k/WAP (\(formatCurrency(totalHoldingsValue)))",
                         icon: "dollarsign.circle.fill"
                     )
+
+                    BitcoinUnitPicker(unit: btcDisplayUnit)
+                        .glassCard()
 
                     NetWorthHistoryChart()
                     AssetBreakdownChart()
@@ -163,7 +174,13 @@ struct MoneyTab: View {
                                     Text(buy.date.formatted(date: .abbreviated, time: .omitted)).font(.caption2).foregroundStyle(AppTheme.tertiaryText)
                                 }
                                 Spacer()
-                                Text(formatBtc(buy.amountBTC)).font(.caption).foregroundStyle(AppTheme.accentColor)
+                                BitcoinAmountView(
+                                    btc: buy.amountBTC,
+                                    unit: BitcoinDisplayUnit(rawValue: btcDisplayUnitRaw) ?? .btc,
+                                    liveBTCPrice: liveBTCPrice,
+                                    font: .caption.weight(.semibold),
+                                    color: AppTheme.accentColor
+                                )
                             }
                             .glassCard()
                         }
@@ -182,10 +199,21 @@ struct MoneyTab: View {
                 .padding(.top, 8)
             }
             .background(AppTheme.background)
-            .navigationTitle("Money")
+            .navigationTitle("Stack")
             #if os(iOS)
             .toolbarColorScheme(.dark, for: .navigationBar)
             #endif
+        }
+    }
+
+    private var bitcoinStackValue: String {
+        switch BitcoinDisplayUnit(rawValue: btcDisplayUnitRaw) ?? .btc {
+        case .btc:
+            return formatBtc(totalBtc)
+        case .sats:
+            return "\(formatSats(totalBtc)) sats"
+        case .usd:
+            return formatCurrency(estimatedBtcUsd)
         }
     }
 
@@ -320,9 +348,13 @@ struct MoneyTab: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
-                Text(formatBtc(account.btc))
-                    .font(.headline)
-                    .foregroundStyle(AppTheme.accentColor)
+                BitcoinAmountView(
+                    btc: account.btc,
+                    unit: BitcoinDisplayUnit(rawValue: btcDisplayUnitRaw) ?? .btc,
+                    liveBTCPrice: liveBTCPrice,
+                    font: .headline,
+                    color: AppTheme.accentColor
+                )
                 Text(formatCurrency(account.usdValue(liveBTCPrice: liveBTCPrice)))
                     .font(.caption2)
                     .foregroundStyle(AppTheme.secondaryText)

@@ -37,6 +37,7 @@ final class MC2SyncService {
 
         // Always sync Mason's BTC from son-balances
         totalEntities += await syncSonBalances(&errors)
+        totalEntities += await syncTodos(&errors)
 
         if currentMember == .mason {
             // Mason: sync his own budget, transactions, BTC buys, and finances (401k filtered by owner)
@@ -165,6 +166,19 @@ final class MC2SyncService {
         } catch {
             log.error("BTC bill pays sync failed: \(error.localizedDescription)")
             errors.append("BTC bill pays: \(error.localizedDescription)")
+            return 0
+        }
+    }
+
+    private func syncTodos(_ errors: inout [String]) async -> Int {
+        do {
+            let dtos = try await reader.readTodos()
+            let models = MC2Mapper.mapTodos(dtos, viewer: currentMember)
+            replaceAll(TodoItem.self, with: models)
+            return models.count
+        } catch {
+            log.error("Todos sync failed: \(error.localizedDescription)")
+            errors.append("Todos: \(error.localizedDescription)")
             return 0
         }
     }

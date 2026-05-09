@@ -19,6 +19,7 @@ struct MasonsBudgetApp: App {
             SyncEvent.self,
             FamilyProfile.self,
             NetWorthSnapshot.self,
+            TodoItem.self,
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
@@ -135,6 +136,7 @@ struct MasonsBudgetApp: App {
     @MainActor
     private func syncIfChanged() async {
         await BTCPriceService.shared.refreshAndStore()
+        await StockPriceService.shared.refreshAndStore()
         guard ConvexConfig.isConfigured else { return }
         let sync = MC2SyncService(context: sharedModelContainer.mainContext)
         let changed = await sync.hasUpdates()

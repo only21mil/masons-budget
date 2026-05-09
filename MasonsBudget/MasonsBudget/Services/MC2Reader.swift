@@ -74,6 +74,16 @@ actor MC2Reader {
         try await client.fetchFile("mason-bitcoin-buys", as: [MC2BTCBuy].self)
     }
 
+    /// Read MC2 todos. Supports either a raw array or `{ "todos": [...] }`.
+    func readTodos() async throws -> [MC2TodoItem] {
+        do {
+            return try await client.fetchFile("todos", as: [MC2TodoItem].self)
+        } catch {
+            let wrapper = try await client.fetchFile("todos", as: MC2TodosWrapper.self)
+            return wrapper.todos
+        }
+    }
+
     /// Check current data versions (lightweight — for change detection).
     func checkVersions() async throws -> [String: Double] {
         try await client.fetchVersions()

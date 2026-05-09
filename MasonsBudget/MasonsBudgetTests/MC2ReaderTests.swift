@@ -341,13 +341,35 @@ final class MC2ReaderTests: XCTestCase {
             platform: "Strike",
             note: "Mortgage",
             feeUsd: 28.55,
-            reference: nil
+            reference: nil,
+            owner: nil
         )
 
         let model = MC2Mapper.mapBTCBillPay(dto)
         XCTAssertEqual(model.platform, "Strike")
         XCTAssertEqual(model.feeUSD, 28.55)
         XCTAssertEqual(model.btcSpent, 0.05425107)
+        XCTAssertEqual(model.ownerMember, .victor)
+    }
+
+    func testMapBTCBillPayMasonOwner() throws {
+        let dto = MC2BTCBillPay(
+            id: "bp-mason-allowance",
+            date: "2026-04-15",
+            merchant: "Mason allowance",
+            category: "Allowance",
+            amountUsd: 25,
+            btcSpent: 0.0003,
+            btcPrice: 83333,
+            platform: "Strike",
+            note: nil,
+            feeUsd: nil,
+            reference: nil,
+            owner: "mason"
+        )
+
+        let model = MC2Mapper.mapBTCBillPay(dto)
+        XCTAssertEqual(model.ownerMember, .mason)
     }
 
     // MARK: - finances.json

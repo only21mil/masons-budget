@@ -12,31 +12,27 @@ struct EditTransactionView: View {
     @State private var merchant: String = ""
     @State private var date: Date = .now
     @State private var category: String = ""
+    @State private var activityType: TransactionActivityType = .spend
     @State private var card: String = ""
+    @State private var customSource: String = ""
     @State private var note: String = ""
 
-    private let commonPaymentSources = [
-        "Aven",
-        "River",
-        "River Bill Pay",
-        "River (BTC)",
-        "Strike",
-        "Strike (BTC)",
-        "Cash App",
-        "SoFi"
-    ]
-
     private var paymentSources: [String] {
-        var sources = commonPaymentSources
-        if !card.isEmpty && !sources.contains(card) {
-            sources.insert(card, at: 0)
-        }
-        return sources
+        TransactionSourceCatalog.sources(for: activityType, including: card)
     }
 
     var body: some View {
         NavigationStack {
             Form {
+                Section("Type") {
+                    Picker("Type", selection: $activityType) {
+                        ForEach(TransactionActivityType.allCases) { type in
+                            Text(type.title).tag(type)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
                 Section("Amount") {
                     TextField("0.00", text: $amountText)
                         #if os(iOS)
@@ -75,7 +71,7 @@ struct EditTransactionView: View {
                             Text(source).tag(source)
                         }
                     }
-                    TextField("Custom source", text: $card)
+                    TextField("Custom source", text: $customSource)
                     #if os(iOS)
                         .textInputAutocapitalization(.words)
                     #endif
@@ -101,6 +97,11 @@ struct EditTransactionView: View {
                 }
             }
             .onAppear(perform: loadTransaction)
+            .onChange(of: activityType) { _, newType in
+                if !TransactionSourceCatalog.sources(for: newType).contains(card) {
+                    card = TransactionSourceCatalog.defaultSource(for: newType)
+                }
+            }
         }
         .preferredColorScheme(.dark)
     }
@@ -115,6 +116,7 @@ struct EditTransactionView: View {
         date = transaction.date
         category = transaction.category.isEmpty ? (categories.first?.name ?? "Other") : transaction.category
         card = transaction.card ?? ""
+        activityType = inferredActivityType(source: card, note: transaction.note)
         note = transaction.note ?? ""
     }
 
@@ -124,11 +126,21 @@ struct EditTransactionView: View {
         transaction.merchant = merchant.trimmingCharacters(in: .whitespacesAndNewlines)
         transaction.date = date
         transaction.category = category.isEmpty ? (categories.first?.name ?? "Other") : category
-        let trimmedCard = card.trimmingCharacters(in: .whitespacesAndNewlines)
+        let custom = customSource.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedCard = custom.isEmpty ? card.trimmingCharacters(in: .whitespacesAndNewlines) : custom
         transaction.card = trimmedCard.isEmpty ? nil : trimmedCard
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
         transaction.note = trimmedNote.isEmpty ? nil : trimmedNote
         onSave(transaction)
         dismiss()
+    }
+
+    private func inferredActivityType(source: String, note: String?) -> TransactionActivityType {
+        let combined = "\(source) \(note ?? "")".lowercased()
+        if combined.contains("bill pay") { return .btcBillPay }
+        if combined.contains("btc buy") || combined.contains("(btc)") { return .btcBuy }
+        if combined.contains("income") { return .income }
+        if combined.contains("transfer") || combined.contains("coldcard") { return .transfer }
+        return .spend
     }
 }

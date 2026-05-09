@@ -23,6 +23,7 @@
  *     --allow-target-mismatch is explicitly passed.
  *   - Adult app transactions are written through MC2's log_transaction.py.
  *   - Mason app transactions are written through MC2's log_mason_transaction.py.
+ *   - App todos are reconciled into todos.json directly; no helper exists yet.
  *   - Convex versions are only bumped for files whose JSON payload changed.
  */
 
@@ -38,7 +39,7 @@ const APP_CONVEX_URL = "https://keen-elephant-452.convex.cloud";
 const DEFAULT_POLL_INTERVAL_MS = 30_000;
 const DEFAULT_MC2_PATH = path.join(
   process.env.HOME,
-  "Library/Mobile Documents/com~apple~CloudDocs/MC2/mission-control"
+  "Library/Mobile Documents/com~apple~CloudDocs/MC2/mission-control",
 );
 
 function parseArgs(argv) {
@@ -46,7 +47,9 @@ function parseArgs(argv) {
     dryRun: process.env.DRY_RUN === "1",
     watch: false,
     allowTargetMismatch: false,
-    pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || DEFAULT_POLL_INTERVAL_MS),
+    pollIntervalMs: Number(
+      process.env.POLL_INTERVAL_MS || DEFAULT_POLL_INTERVAL_MS,
+    ),
     mc2Path: process.env.MC2_PATH || DEFAULT_MC2_PATH,
   };
 
@@ -54,7 +57,8 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === "--dry-run") options.dryRun = true;
     else if (arg === "--watch" || arg === "--poll") options.watch = true;
-    else if (arg === "--allow-target-mismatch") options.allowTargetMismatch = true;
+    else if (arg === "--allow-target-mismatch")
+      options.allowTargetMismatch = true;
     else if (arg === "--poll-interval-ms" || arg === "--interval-ms") {
       options.pollIntervalMs = Number(argv[++i]);
     } else if (arg.startsWith("--poll-interval-ms=")) {
@@ -68,7 +72,10 @@ function parseArgs(argv) {
     }
   }
 
-  if (!Number.isFinite(options.pollIntervalMs) || options.pollIntervalMs < 5_000) {
+  if (
+    !Number.isFinite(options.pollIntervalMs) ||
+    options.pollIntervalMs < 5_000
+  ) {
     throw new Error("--poll-interval-ms must be a number >= 5000");
   }
 
@@ -87,7 +94,9 @@ if (fs.existsSync(envLocalPath)) {
     if (!trimmed || trimmed.startsWith("#")) continue;
     const match = trimmed.match(/^(\w+)=(.*)$/);
     if (match && !process.env[match[1]]) {
-      process.env[match[1]] = match[2].replace(/\s+#.*$/, "").replace(/^["']|["']$/g, "");
+      process.env[match[1]] = match[2]
+        .replace(/\s+#.*$/, "")
+        .replace(/^["']|["']$/g, "");
     }
   }
 }
@@ -95,8 +104,12 @@ if (fs.existsSync(envLocalPath)) {
 const convexUrl = process.env.CONVEX_URL || APP_CONVEX_URL;
 const expectedConvexUrl = process.env.EXPECTED_CONVEX_URL || APP_CONVEX_URL;
 if (convexUrl !== expectedConvexUrl && !options.allowTargetMismatch) {
-  console.error(`Error: CONVEX_URL (${convexUrl}) does not match app deployment (${expectedConvexUrl}).`);
-  console.error("Refusing to sync to avoid split-brain drift. Pass --allow-target-mismatch only for explicit dev testing.");
+  console.error(
+    `Error: CONVEX_URL (${convexUrl}) does not match app deployment (${expectedConvexUrl}).`,
+  );
+  console.error(
+    "Refusing to sync to avoid split-brain drift. Pass --allow-target-mismatch only for explicit dev testing.",
+  );
   process.exit(1);
 }
 
@@ -110,15 +123,23 @@ const MC2_FILES = [
   { file: "bitcoin-buys.json", name: "bitcoin-buys" },
   { file: "bitcoin-bill-pays.json", name: "bitcoin-bill-pays" },
   { file: "finances.json", name: "finances" },
+  { file: "todos.json", name: "todos" },
   { file: "son-balances.json", name: "son-balances" },
   { file: "mason-budget.json", name: "mason-budget" },
   { file: "mason-transactions.json", name: "mason-transactions" },
   { file: "mason-bitcoin-buys.json", name: "mason-bitcoin-buys" },
 ];
 
+const APP_TODO_FILES = [{ name: "todos", file: "todos.json" }];
+const VALID_TODO_LANES = ["work", "personal", "sats"];
+
 const APP_TRANSACTION_FILES = [
   { name: "transactions", file: "transactions.json", owner: "victor" },
-  { name: "mason-transactions", file: "mason-transactions.json", owner: "mason" },
+  {
+    name: "mason-transactions",
+    file: "mason-transactions.json",
+    owner: "mason",
+  },
 ];
 
 function sleep(ms) {
@@ -136,7 +157,10 @@ function readJson(filePath, fallback) {
 function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value && typeof value === "object") {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+      .join(",")}}`;
   }
   return JSON.stringify(value);
 }
@@ -156,10 +180,16 @@ function isAppCreatedTransaction(transaction) {
 function normalizeAppTransaction(transaction) {
   const amount = Number(transaction?.amount);
   const id = String(transaction?.id || "");
-  const externalId = String(transaction?.external_id || transaction?.archimedes_request_id || `vogel-vault:${id}`);
+  const externalId = String(
+    transaction?.external_id ||
+      transaction?.archimedes_request_id ||
+      `vogel-vault:${id}`,
+  );
   return {
     id,
-    date: String(transaction?.date || new Date().toISOString().slice(0, 10)).slice(0, 10),
+    date: String(
+      transaction?.date || new Date().toISOString().slice(0, 10),
+    ).slice(0, 10),
     merchant: String(transaction?.merchant || "").trim(),
     amount,
     category: String(transaction?.category || "").trim(),
@@ -171,23 +201,109 @@ function normalizeAppTransaction(transaction) {
   };
 }
 
+function normalizeTodoLane(value) {
+  if (value == null) return null;
+  const normalized = String(value).trim().toLowerCase();
+  return VALID_TODO_LANES.includes(normalized) ? normalized : null;
+}
+
 function isValidAppTransaction(transaction) {
   return Boolean(
     transaction.id &&
     transaction.merchant &&
     transaction.category &&
     Number.isFinite(transaction.amount) &&
-    transaction.amount > 0
+    transaction.amount > 0,
   );
 }
 
 function findTransaction(transactions, appTransaction) {
-  const externalId = String(appTransaction.external_id || `vogel-vault:${appTransaction.id}`);
-  return transactions.find((transaction) =>
-    String(transaction?.id || "") === String(appTransaction.id) ||
-    String(transaction?.external_id || "") === externalId ||
-    String(transaction?.archimedes_request_id || "") === externalId
+  const externalId = String(
+    appTransaction.external_id || `vogel-vault:${appTransaction.id}`,
   );
+  return transactions.find(
+    (transaction) =>
+      String(transaction?.id || "") === String(appTransaction.id) ||
+      String(transaction?.external_id || "") === externalId ||
+      String(transaction?.archimedes_request_id || "") === externalId,
+  );
+}
+
+function todoListFromData(data) {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === "object" && Array.isArray(data.todos))
+    return data.todos;
+  return [];
+}
+
+function withTodoList(originalData, todos) {
+  if (
+    originalData &&
+    typeof originalData === "object" &&
+    !Array.isArray(originalData) &&
+    Array.isArray(originalData.todos)
+  ) {
+    return { ...originalData, todos };
+  }
+  return todos;
+}
+
+function isAppCreatedTodo(todo) {
+  const id = String(todo?.id || "");
+  return (
+    id.startsWith("vv-") ||
+    String(todo?.created_by || "") === "vogel-vault" ||
+    String(todo?.sync_source || "") === "vogel-vault"
+  );
+}
+
+function normalizeAppTodo(todo) {
+  const id = String(todo?.id || "");
+  const title = String(todo?.title || todo?.text || "").trim();
+  const category =
+    normalizeTodoLane(todo?.category || todo?.type || todo?.project) || "sats";
+  const createdAt =
+    todo?.createdAt == null ? new Date().toISOString() : String(todo.createdAt);
+  const dueDate =
+    todo?.due_date == null ? "" : String(todo.due_date).slice(0, 10);
+  return {
+    id,
+    text: title,
+    title,
+    project: todo?.project == null ? "Inbox" : String(todo.project),
+    area: todo?.area == null ? "" : String(todo.area),
+    due_date: dueDate,
+    dueDate,
+    priority: Number(todo?.priority || 0),
+    flag: Boolean(todo?.flag || todo?.flagged),
+    done: Boolean(todo?.done || todo?.completed),
+    status: todo?.done || todo?.completed ? "completed" : "pending",
+    type: category,
+    category,
+    owner: todo?.owner == null ? "victor" : String(todo.owner),
+    assignee:
+      todo?.assignee == null
+        ? todo?.owner == null
+          ? "victor"
+          : String(todo.owner)
+        : String(todo.assignee),
+    created_by: "vogel-vault",
+    sync_source: "vogel-vault",
+    createdAt,
+    created: createdAt.slice(0, 10),
+    updated_at:
+      todo?.updated_at == null
+        ? new Date().toISOString()
+        : String(todo.updated_at),
+  };
+}
+
+function isValidAppTodo(todo) {
+  return Boolean(todo.id && todo.title);
+}
+
+function findTodo(todos, appTodo) {
+  return todos.find((todo) => String(todo?.id || "") === String(appTodo.id));
 }
 
 function runHelper(scriptName, transaction, payloadOverrides = {}) {
@@ -206,13 +322,19 @@ function runHelper(scriptName, transaction, payloadOverrides = {}) {
 
   if (dryRun) return { ok: true, stdout: "dry-run" };
 
-  const result = spawnSync("python3", [path.join(mc2Path, "scripts", scriptName), payload], {
-    cwd: mc2Path,
-    encoding: "utf-8",
-  });
+  const result = spawnSync(
+    "python3",
+    [path.join(mc2Path, "scripts", scriptName), payload],
+    {
+      cwd: mc2Path,
+      encoding: "utf-8",
+    },
+  );
 
   if (result.status !== 0) {
-    throw new Error(`${scriptName} failed for ${transaction.id}: ${result.stderr || result.stdout}`);
+    throw new Error(
+      `${scriptName} failed for ${transaction.id}: ${result.stderr || result.stdout}`,
+    );
   }
   return { ok: true, stdout: result.stdout };
 }
@@ -247,7 +369,9 @@ async function pullAppTransactionsFromConvex(client) {
         applyMasonTransactionViaHelper(transaction);
         local.push(transaction);
         applied += 1;
-        console.log(`  PULL  ${name}:${transaction.id} → log_mason_transaction.py`);
+        console.log(
+          `  PULL  ${name}:${transaction.id} → log_mason_transaction.py`,
+        );
       } else {
         applyAdultTransactionViaHelper(transaction);
         local.push(transaction);
@@ -259,6 +383,52 @@ async function pullAppTransactionsFromConvex(client) {
 
   if (applied === 0) console.log("  OK    no app-created transactions to pull");
   else console.log(`  OK    pulled ${applied} app-created transaction(s)`);
+  return applied;
+}
+
+async function pullAppTodosFromConvex(client) {
+  console.log("Reconciling app-created Convex todos into MC2...");
+  let applied = 0;
+
+  for (const { name, file } of APP_TODO_FILES) {
+    const remote = await client.query(api.dataFiles.get, { name });
+    const remoteTodos = todoListFromData(remote);
+    if (remoteTodos.length === 0) continue;
+
+    const localPath = path.join(mc2Path, file);
+    const localData = readJson(localPath, []);
+    const localTodos = todoListFromData(localData);
+    let changed = false;
+
+    for (const raw of remoteTodos) {
+      if (!isAppCreatedTodo(raw)) continue;
+      const todo = normalizeAppTodo(raw);
+      if (!isValidAppTodo(todo)) continue;
+
+      const existing = findTodo(localTodos, todo);
+      if (existing && canonicalJson(existing) === canonicalJson(todo)) continue;
+
+      if (existing) {
+        const idx = localTodos.indexOf(existing);
+        localTodos[idx] = { ...existing, ...todo };
+      } else {
+        localTodos.push(todo);
+      }
+      applied += 1;
+      changed = true;
+      console.log(`  PULL  ${name}:${todo.id} → ${file}`);
+    }
+
+    if (changed && !dryRun) {
+      fs.writeFileSync(
+        localPath,
+        `${JSON.stringify(withTodoList(localData, localTodos), null, 2)}\n`,
+      );
+    }
+  }
+
+  if (applied === 0) console.log("  OK    no app-created todos to pull");
+  else console.log(`  OK    pulled ${applied} app-created todo(s)`);
   return applied;
 }
 
@@ -293,16 +463,19 @@ async function collectChangedFiles(client) {
 
 async function runSyncOnce(client) {
   const pulled = await pullAppTransactionsFromConvex(client);
+  const pulledTodos = await pullAppTodosFromConvex(client);
   const filesToSync = await collectChangedFiles(client);
 
   if (filesToSync.length === 0) {
     console.log("\nNo changed files to sync.");
-    return { pulled, pushed: 0 };
+    return { pulled, pulledTodos, pushed: 0 };
   }
 
   if (dryRun) {
-    console.log(`\nDry run complete: would push ${filesToSync.length} changed file(s) to Convex.`);
-    return { pulled, pushed: 0 };
+    console.log(
+      `\nDry run complete: would push ${filesToSync.length} changed file(s) to Convex.`,
+    );
+    return { pulled, pulledTodos, pushed: 0 };
   }
 
   console.log(`\nPushing ${filesToSync.length} changed file(s) to Convex...`);
@@ -315,7 +488,7 @@ async function runSyncOnce(client) {
   for (const { name, version } of results) {
     console.log(`  ✓ ${name} → v${version}`);
   }
-  return { pulled, pushed: results.length };
+  return { pulled, pulledTodos, pushed: results.length };
 }
 
 // ── Main ──
@@ -324,7 +497,8 @@ async function main() {
   console.log(`MC2 ↔ Convex Sync`);
   console.log(`Source: ${mc2Path}`);
   console.log(`Target: ${convexUrl}`);
-  if (options.watch) console.log(`Mode: watch/poll every ${options.pollIntervalMs}ms`);
+  if (options.watch)
+    console.log(`Mode: watch/poll every ${options.pollIntervalMs}ms`);
   if (dryRun) console.log("Mode: dry-run");
   console.log();
 

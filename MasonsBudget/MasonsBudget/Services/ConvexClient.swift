@@ -141,6 +141,19 @@ final class ConvexClient: Sendable {
         return 0
     }
 
+    /// Upsert one app-created or app-edited todo into the shared MC2 todos document.
+    @discardableResult
+    func upsertTodo(_ todo: MC2TodoItem, to name: String = "todos") async throws -> Double {
+        let raw = try await mutation("dataFiles:upsertTodo", args: [
+            "name": name,
+            "todo": try todo.convexJSONObject()
+        ])
+        guard let result = raw as? [String: Any] else { return 0 }
+        if let version = result["version"] as? Double { return version }
+        if let version = result["version"] as? Int { return Double(version) }
+        return 0
+    }
+
     // MARK: - Internal
 
     /// Execute a Convex query and return the raw result.
