@@ -436,7 +436,13 @@ struct MC2TodoItem: Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(String.self, forKey: .id)
+        guard let decodedId = Self.decodeFlexibleString(from: container, forKey: .id) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.id,
+                DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Todo id is missing")
+            )
+        }
+        id = decodedId
         title = try container.decodeIfPresent(String.self, forKey: .title)
         text = try container.decodeIfPresent(String.self, forKey: .text)
         project = try container.decodeIfPresent(String.self, forKey: .project)
@@ -457,10 +463,10 @@ struct MC2TodoItem: Codable {
         status = try container.decodeIfPresent(String.self, forKey: .status)
         owner = try container.decodeIfPresent(String.self, forKey: .owner)
         assignee = try container.decodeIfPresent(String.self, forKey: .assignee)
-        updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
-            ?? container.decodeIfPresent(String.self, forKey: .camelUpdatedAt)
-        createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
-        completedAt = try container.decodeIfPresent(String.self, forKey: .completedAt)
+        updatedAt = Self.decodeFlexibleString(from: container, forKey: .updatedAt)
+            ?? Self.decodeFlexibleString(from: container, forKey: .camelUpdatedAt)
+        createdAt = Self.decodeFlexibleString(from: container, forKey: .createdAt)
+        completedAt = Self.decodeFlexibleString(from: container, forKey: .completedAt)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -544,6 +550,22 @@ struct MC2TodoItem: Codable {
         case "low": return 3
         default: return Int(stringValue)
         }
+    }
+
+    static func decodeFlexibleString(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> String? {
+        if let stringValue = try? container.decodeIfPresent(String.self, forKey: key) {
+            return stringValue
+        }
+        if let intValue = try? container.decodeIfPresent(Int.self, forKey: key) {
+            return String(intValue)
+        }
+        if let doubleValue = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return String(doubleValue)
+        }
+        return nil
     }
 
     static func dateString(_ date: Date) -> String {

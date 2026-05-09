@@ -10,12 +10,20 @@ struct ContentView: View {
 
     /// Tabs available for the current profile
     private var availableTabs: [AppTab] {
+        #if os(macOS)
         if currentMember.showsFullBudget {
-            return AppTab.allCases
+            return AppTab.macMoneyTabs + AppTab.macTaskTabs
+        } else {
+            return [.home, .today, .projects, .stack, .netWorth, .more]
+        }
+        #else
+        if currentMember.showsFullBudget {
+            return AppTab.iOSTabs
         } else {
             // Kids: Home, Today, Stack, More — no shared household budget tab
             return [.home, .today, .stack, .more]
         }
+        #endif
     }
 
     var body: some View {
@@ -25,8 +33,31 @@ struct ContentView: View {
             set: { if let tab = $0 { selectedTab = tab } }
         )
         NavigationSplitView {
-            List(availableTabs, selection: sidebarBinding) { tab in
-                Label(tab.title, systemImage: tab.icon)
+            List(selection: sidebarBinding) {
+                Section {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(currentMember.displayName)
+                            .font(.headline)
+                        Text("The Bitcoin Standard")
+                            .font(.caption)
+                            .foregroundStyle(AppTheme.secondaryText)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                Section("Money") {
+                    ForEach(AppTab.macMoneyTabs.filter { availableTabs.contains($0) }) { tab in
+                        Label(tab.macTitle, systemImage: tab.icon)
+                            .tag(tab)
+                    }
+                }
+
+                Section("Tasks") {
+                    ForEach(AppTab.macTaskTabs.filter { availableTabs.contains($0) }) { tab in
+                        Label(tab.macTitle, systemImage: tab.icon)
+                            .tag(tab)
+                    }
+                }
             }
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
@@ -34,8 +65,11 @@ struct ContentView: View {
             switch selectedTab {
             case .home: DashboardTab(selectedTab: $selectedTab)
             case .budget: SpendingTab()
+            case .activity: SpendingTab()
             case .today: TodayTab()
             case .stack: MoneyTab()
+            case .netWorth: MoneyTab()
+            case .projects: MoreTab()
             case .more: MoreTab()
             }
         }
@@ -95,27 +129,44 @@ struct ContentView: View {
 }
 
 enum AppTab: String, CaseIterable, Identifiable {
-    case home, budget, today, stack, more
+    case home, budget, activity, today, stack, netWorth, projects, more
 
-    var id: String { rawValue }
+    var id: AppTab { self }
+
+    static let iOSTabs: [AppTab] = [.home, .budget, .today, .stack, .more]
+    static let macMoneyTabs: [AppTab] = [.home, .budget, .activity, .stack, .netWorth]
+    static let macTaskTabs: [AppTab] = [.today, .projects, .more]
 
     var title: String {
         switch self {
-        case .home:   "Home"
-        case .budget: "Budget"
-        case .today:  "Today"
-        case .stack:  "Stack"
-        case .more:   "More"
+        case .home:     "Home"
+        case .budget:   "Budget"
+        case .activity: "Activity"
+        case .today:    "Today"
+        case .stack:    "Stack"
+        case .netWorth: "Net Worth"
+        case .projects: "Projects"
+        case .more:     "More"
+        }
+    }
+
+    var macTitle: String {
+        switch self {
+        case .home: "Dashboard"
+        default: title
         }
     }
 
     var icon: String {
         switch self {
-        case .home:   "bitcoinsign.circle.fill"
-        case .budget: "chart.bar.xaxis"
-        case .today:  "checkmark.circle.fill"
-        case .stack:  "vault.fill"
-        case .more:   "ellipsis.circle.fill"
+        case .home:     "bitcoinsign.circle.fill"
+        case .budget:   "chart.bar.xaxis"
+        case .activity: "bolt.circle.fill"
+        case .today:    "checkmark.circle.fill"
+        case .stack:    "vault.fill"
+        case .netWorth: "target"
+        case .projects: "tray.full.fill"
+        case .more:     "ellipsis.circle.fill"
         }
     }
 }

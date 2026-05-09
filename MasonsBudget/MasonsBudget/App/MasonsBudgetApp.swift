@@ -34,7 +34,7 @@ struct MasonsBudgetApp: App {
     }()
 
     private static func resetSwiftDataStoreIfNeeded() {
-        let resetKey = "swiftdata_store_reset_for_owner_strings_v1"
+        let resetKey = "swiftdata_store_reset_for_todo_item_schema_v2"
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: resetKey) else { return }
 

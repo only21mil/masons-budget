@@ -76,11 +76,22 @@ actor MC2Reader {
 
     /// Read MC2 todos. Supports either a raw array or `{ "todos": [...] }`.
     func readTodos() async throws -> [MC2TodoItem] {
-        do {
-            return try await client.fetchFile("todos", as: [MC2TodoItem].self)
-        } catch {
-            let wrapper = try await client.fetchFile("todos", as: MC2TodosWrapper.self)
-            return wrapper.todos
+        let raw = try await client.fetchFileValue("todos")
+        let rawTodos: [Any]
+        if let array = raw as? [Any] {
+            rawTodos = array
+        } else if let wrapper = raw as? [String: Any], let array = wrapper["todos"] as? [Any] {
+            rawTodos = array
+        } else {
+            return []
+        }
+
+        return rawTodos.compactMap { item in
+            guard JSONSerialization.isValidJSONObject(item),
+                  let data = try? JSONSerialization.data(withJSONObject: item) else {
+                return nil
+            }
+            return try? JSONDecoder().decode(MC2TodoItem.self, from: data)
         }
     }
 

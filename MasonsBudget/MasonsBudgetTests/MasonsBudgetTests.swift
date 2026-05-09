@@ -17,9 +17,14 @@ final class MasonsBudgetTests: XCTestCase {
 
     func testAppTabCases() {
         let tabs = AppTab.allCases
-        XCTAssertEqual(tabs.count, 5)
+        XCTAssertEqual(tabs.count, 8)
+        XCTAssertEqual(AppTab.iOSTabs, [.home, .budget, .today, .stack, .more])
+        XCTAssertTrue(AppTab.macMoneyTabs.contains(.activity))
+        XCTAssertTrue(AppTab.macMoneyTabs.contains(.netWorth))
+        XCTAssertTrue(AppTab.macTaskTabs.contains(.projects))
         for tab in tabs {
             XCTAssertFalse(tab.title.isEmpty, "\(tab) should have a title")
+            XCTAssertFalse(tab.macTitle.isEmpty, "\(tab) should have a mac title")
             XCTAssertFalse(tab.icon.isEmpty, "\(tab) should have an icon")
         }
     }
@@ -36,6 +41,18 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertEqual(members.count, 4)
         XCTAssertEqual(FamilyMember.victor.displayName, "Victor")
         XCTAssertEqual(FamilyMember.mason.displayName, "Mason")
+    }
+
+    func testFamilyMemberVisibilityRules() {
+        XCTAssertTrue(FamilyMember.victor.isAdult)
+        XCTAssertTrue(FamilyMember.rachel.isAdult)
+        XCTAssertFalse(FamilyMember.mason.isAdult)
+        XCTAssertFalse(FamilyMember.maddox.isAdult)
+
+        XCTAssertTrue(FamilyMember.victor.canSee(dataOwnedBy: .mason))
+        XCTAssertTrue(FamilyMember.rachel.canSee(dataOwnedBy: .victor))
+        XCTAssertFalse(FamilyMember.mason.canSee(dataOwnedBy: .victor))
+        XCTAssertEqual(FamilyMember.mason.allowedSwitchTargets, [.mason])
     }
 
     func testBTCCustodyRawValues() {
@@ -256,6 +273,28 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertEqual(todos.map(\.id), ["family-task"])
         XCTAssertEqual(todos.first?.ownerMember, .victor)
         XCTAssertEqual(todos.first?.project, "work")
+    }
+
+    func testTodoDecoderAcceptsNumericTimestamps() throws {
+        let json = """
+        [
+          {
+            "id": 1774806795347,
+            "text": "Sync task with legacy numeric timestamps",
+            "category": "family",
+            "createdAt": 1774914863033,
+            "updated_at": 1774914863034,
+            "completedAt": 1774914863035
+          }
+        ]
+        """.data(using: .utf8)!
+
+        let dtos = try JSONDecoder().decode([MC2TodoItem].self, from: json)
+
+        XCTAssertEqual(dtos.first?.id, "1774806795347")
+        XCTAssertEqual(dtos.first?.createdAt, "1774914863033")
+        XCTAssertEqual(dtos.first?.updatedAt, "1774914863034")
+        XCTAssertEqual(dtos.first?.completedAt, "1774914863035")
     }
 
     func testHoldingAccountRelationship() {

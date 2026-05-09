@@ -116,6 +116,11 @@ final class ConvexClient: Sendable {
         }
     }
 
+    /// Fetch a data file without decoding it so callers can handle legacy or mixed schemas.
+    func fetchFileValue(_ name: String) async throws -> Any {
+        try await query("dataFiles:get", args: ["name": name])
+    }
+
     /// Fetch current data file versions (lightweight change detection).
     func fetchVersions() async throws -> [String: Double] {
         let raw = try await query("dataFiles:getVersions", args: [:])

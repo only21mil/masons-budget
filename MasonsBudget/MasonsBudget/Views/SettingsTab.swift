@@ -155,7 +155,7 @@ struct SettingsTab: View {
                     HStack {
                         Text("Version")
                         Spacer()
-                        Text("0.2.0")
+                        Text(appVersionDisplay)
                             .foregroundStyle(AppTheme.tertiaryText)
                     }
                 } header: {
@@ -176,6 +176,13 @@ struct SettingsTab: View {
         let sync = MC2SyncService(context: modelContext)
         await sync.syncAll()
         isSyncing = false
+    }
+
+    private var appVersionDisplay: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "0.3.0"
+        let build = info?["CFBundleVersion"] as? String ?? ""
+        return build.isEmpty ? version : "\(version) (\(build))"
     }
 
     private func authenticateProfileSwitch() {
