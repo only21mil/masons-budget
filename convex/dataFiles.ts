@@ -297,6 +297,7 @@ export const upsertTodo = mutation({
       Array.isArray((currentData as any).todos)
         ? { ...(currentData as any), todos: currentTodos }
         : currentTodos;
+
     const nextVersion = (existing?.version ?? 0) + 1;
 
     if (existing) {
@@ -317,6 +318,74 @@ export const upsertTodo = mutation({
     await bumpSyncVersion(ctx, name, nextVersion, now);
 
     return { name, version: nextVersion, id: todo.id };
+  },
+});
+
+/** Upsert one app-created BTC bill pay into bitcoin-bill-pays and bump its version. */
+export const appendBillPay = mutation({
+  args: {
+    billPay: v.object({
+      id: v.string(),
+      date: v.string(),
+      merchant: v.string(),
+      category: v.string(),
+      amount_usd: v.float64(),
+      btc_spent: v.float64(),
+      btc_price: v.optional(v.union(v.float64(), v.null())),
+      platform: v.optional(v.union(v.string(), v.null())),
+      note: v.optional(v.union(v.string(), v.null())),
+      fee_usd: v.optional(v.union(v.float64(), v.null())),
+      reference: v.optional(v.union(v.string(), v.null())),
+      owner: v.optional(v.union(v.string(), v.null())),
+    }),
+  },
+  handler: async (ctx, { billPay }) => {
+    const name = "bitcoin-bill-pays";
+    const now = Date.now();
+
+    const existing = await ctx.db
+      .query("dataFiles")
+      .withIndex("by_name", (q) => q.eq("name", name))
+      .first();
+
+    const currentData = existing?.data;
+    // bill pays file has { bill_pays: [...] } structure
+    let wrapper: any = currentData && typeof currentData === "object" && !Array.isArray(currentData)
+      ? { ...currentData }
+      : { bill_pays: [] };
+
+    const billPays = Array.isArray(wrapper.bill_pays) ? [...wrapper.bill_pays] : [];
+    const existingIndex = billPays.findIndex(
+      (item: any) => item && typeof item === "object" && "id" in item && item.id === billPay.id
+    );
+
+    if (existingIndex >= 0) {
+      billPays[existingIndex] = billPay;
+    } else {
+      billPays.push(billPay);
+    }
+    wrapper.bill_pays = billPays;
+
+    const nextVersion = (existing?.version ?? 0) + 1;
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        data: wrapper,
+        version: nextVersion,
+        updatedAt: now,
+      });
+    } else {
+      await ctx.db.insert("dataFiles", {
+        name,
+        data: wrapper,
+        version: nextVersion,
+        updatedAt: now,
+      });
+    }
+
+    await bumpSyncVersion(ctx, name, nextVersion, now);
+
+    return { name, version: nextVersion, id: billPay.id };
   },
 });
 

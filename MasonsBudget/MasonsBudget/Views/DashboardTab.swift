@@ -446,9 +446,87 @@ struct DashboardTab: View {
         do {
             try modelContext.save()
             pushAppTransaction(transaction)
+            logBTCBillPayIfNeeded(for: transaction)
         } catch {
             log.error("Failed to save transaction locally: \(error.localizedDescription)")
         }
+    }
+
+    /// When a transaction is explicitly entered as bill pay, automatically log it as a BTC bill pay.
+    /// This creates a BTCBillPay record and subtracts the BTC from the matching account.
+    private func logBTCBillPayIfNeeded(for transaction: Transaction) {
+        guard let source = transaction.card,
+              isBillPaySource(source, note: transaction.note) else { return }
+
+        let btcPrice = BTCPriceService.storedPrice ?? Decimal(0)
+        guard btcPrice > 0 else {
+            log.warning("Cannot log BTC bill pay — no live BTC price available")
+            return
+        }
+
+        let btcSpent = transaction.amount / btcPrice
+        let billPayId = "bp-\(transaction.id)"
+
+        let billPay = BTCBillPay(
+            id: billPayId,
+            date: transaction.date,
+            merchant: transaction.merchant,
+            category: transaction.category,
+            amountUSD: transaction.amount,
+            btcSpent: btcSpent,
+            btcPrice: btcPrice,
+            platform: billPayPlatform(for: source),
+            note: transaction.note,
+            owner: transaction.ownerMember
+        )
+        modelContext.insert(billPay)
+
+        // Subtract from the matching BTC account (filtered to current member's visible accounts)
+        let platform = billPayPlatform(for: source).lowercased()
+        if let account = myBtcAccounts.first(where: { $0.label.lowercased() == platform }) {
+            account.btc -= btcSpent
+            account.lastUpdated = Date()
+        }
+
+        do {
+            try modelContext.save()
+        } catch {
+            log.error("Failed to save bill pay: \(error.localizedDescription)")
+        }
+
+        // Push bill pay to Convex
+        let dto = MC2BTCBillPay(
+            id: billPayId,
+            date: MC2Transaction.dateString(from: transaction.date),
+            merchant: transaction.merchant,
+            category: transaction.category,
+            amountUsd: transaction.amount,
+            btcSpent: btcSpent,
+            btcPrice: btcPrice,
+            platform: billPayPlatform(for: source),
+            note: transaction.note,
+            feeUsd: nil,
+            reference: nil,
+            owner: transaction.ownerMember.rawValue
+        )
+        Task {
+            do {
+                try await syncClient.appendBillPay(dto)
+            } catch {
+                log.error("Failed to push bill pay to Convex: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func isBillPaySource(_ source: String, note: String?) -> Bool {
+        source.localizedCaseInsensitiveContains("Bill Pay") ||
+            (note ?? "").localizedCaseInsensitiveContains("BTC Bill Pay")
+    }
+
+    private func billPayPlatform(for source: String) -> String {
+        if source.localizedCaseInsensitiveContains("River") { return "River" }
+        if source.localizedCaseInsensitiveContains("Strike") { return "Strike" }
+        return source
     }
 
     private func pushAppTransaction(_ transaction: Transaction) {

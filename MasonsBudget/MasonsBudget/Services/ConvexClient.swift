@@ -159,6 +159,22 @@ final class ConvexClient: Sendable {
         return 0
     }
 
+    /// Push one app-created bill pay into the bitcoin-bill-pays document.
+    @discardableResult
+    func appendBillPay(_ billPay: MC2BTCBillPay) async throws -> Double {
+        let data = try JSONEncoder().encode(billPay)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw ConvexError.decodeFailed("billPay", NSError(domain: "MC2BTCBillPay", code: -1))
+        }
+        let raw = try await mutation("dataFiles:appendBillPay", args: [
+            "billPay": object
+        ])
+        guard let result = raw as? [String: Any] else { return 0 }
+        if let version = result["version"] as? Double { return version }
+        if let version = result["version"] as? Int { return Double(version) }
+        return 0
+    }
+
     // MARK: - Internal
 
     /// Execute a Convex query and return the raw result.
