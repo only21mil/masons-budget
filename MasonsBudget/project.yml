@@ -13,7 +13,7 @@ settings:
     SWIFT_VERSION: "5.9"
     GENERATE_INFOPLIST_FILE: YES
     CURRENT_PROJECT_VERSION: 22
-    MARKETING_VERSION: "0.3.0"
+    MARKETING_VERSION: "0.4.0"
 
 targets:
   MasonsBudget:
