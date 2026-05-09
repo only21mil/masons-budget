@@ -6,6 +6,7 @@ struct AddTransactionView: View {
     @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
     @Query private var transactions: [Transaction]
     @State private var amountText = ""
+    @State private var inputUnit: BitcoinDisplayUnit = .usd
     @State private var merchant = ""
     @State private var category = ""
     @State private var activityType: TransactionActivityType = .spend
@@ -16,6 +17,10 @@ struct AddTransactionView: View {
     @State private var showDuplicateWarning = false
 
     var onSave: (Decimal, String, String, String?, String?) -> Void
+
+    private var liveBTCPrice: Decimal {
+        BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+    }
 
     private var sourceOptions: [String] {
         TransactionSourceCatalog.sources(for: activityType, including: card)
@@ -44,12 +49,25 @@ struct AddTransactionView: View {
                 }
 
                 Section("Amount") {
+                    Picker("Input Unit", selection: $inputUnit) {
+                        Text("USD").tag(BitcoinDisplayUnit.usd)
+                        Text("BTC").tag(BitcoinDisplayUnit.btc)
+                        Text("SATS").tag(BitcoinDisplayUnit.sats)
+                    }
+                    .pickerStyle(.segmented)
+
                     TextField("0.00", text: $amountText)
                         #if os(iOS)
                         .keyboardType(.decimalPad)
                         #endif
                         .font(.title2.monospaced())
                         .foregroundStyle(AppTheme.accentColor)
+
+                    if let converted = convertedAmountSummary {
+                        Text(converted)
+                            .font(AppTheme.monoCaption)
+                            .foregroundStyle(AppTheme.secondaryText)
+                    }
                 }
 
                 Section("Details") {
@@ -108,6 +126,9 @@ struct AddTransactionView: View {
                 card = TransactionSourceCatalog.defaultSource(for: newType)
                 customSource = ""
             }
+            .onChange(of: inputUnit) { oldUnit, newUnit in
+                convertAmount(from: oldUnit, to: newUnit)
+            }
             .alert("Possible Duplicate", isPresented: $showDuplicateWarning) {
                 Button("Save Anyway") { commitPendingSave() }
                 Button("Review", role: .cancel) { pendingSave = nil }
@@ -119,7 +140,7 @@ struct AddTransactionView: View {
     }
 
     private func prepareSave() {
-        guard let amount = Decimal(string: amountText),
+        guard let amount = amountInUSD,
               !merchant.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let cat = category.isEmpty ? (categories.first?.name ?? "Other") : category
         let finalNote = noteWithActivity(note.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -155,6 +176,79 @@ struct AddTransactionView: View {
                 && tx.merchant.caseInsensitiveCompare(merchant) == .orderedSame
                 && (tx.card ?? "") == (source ?? "")
         }
+    }
+
+    private var enteredAmount: Decimal? {
+        Decimal(string: amountText.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private var amountInBTC: Decimal? {
+        guard let value = enteredAmount else { return nil }
+        switch inputUnit {
+        case .usd:
+            guard liveBTCPrice > 0 else { return nil }
+            return value / liveBTCPrice
+        case .btc:
+            return value
+        case .sats:
+            return value / Decimal(100_000_000)
+        }
+    }
+
+    private var amountInUSD: Decimal? {
+        guard let btc = amountInBTC else { return nil }
+        return btc * liveBTCPrice
+    }
+
+    private var convertedAmountSummary: String? {
+        guard let btc = amountInBTC, let usd = amountInUSD else { return nil }
+        switch inputUnit {
+        case .usd:
+            return "≈ \(formatBtc(btc)) · \(formatSats(btc)) sats"
+        case .btc:
+            return "≈ \(formatCurrency(usd)) · \(formatSats(btc)) sats"
+        case .sats:
+            return "≈ \(formatCurrency(usd)) · \(formatBtc(btc))"
+        }
+    }
+
+    private func convertAmount(from oldUnit: BitcoinDisplayUnit, to newUnit: BitcoinDisplayUnit) {
+        guard oldUnit != newUnit,
+              let raw = Decimal(string: amountText.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
+
+        let btc: Decimal
+        switch oldUnit {
+        case .usd:
+            guard liveBTCPrice > 0 else { return }
+            btc = raw / liveBTCPrice
+        case .btc:
+            btc = raw
+        case .sats:
+            btc = raw / Decimal(100_000_000)
+        }
+
+        switch newUnit {
+        case .usd:
+            amountText = decimalString(btc * liveBTCPrice, scale: 2)
+        case .btc:
+            amountText = decimalString(btc, scale: 8)
+        case .sats:
+            amountText = decimalString(btc * Decimal(100_000_000), scale: 0)
+        }
+    }
+
+    private func decimalString(_ value: Decimal, scale: Int) -> String {
+        let handler = NSDecimalNumberHandler(
+            roundingMode: .plain,
+            scale: Int16(scale),
+            raiseOnExactness: false,
+            raiseOnOverflow: false,
+            raiseOnUnderflow: false,
+            raiseOnDivideByZero: false
+        )
+        return NSDecimalNumber(decimal: value)
+            .rounding(accordingToBehavior: handler)
+            .stringValue
     }
 
     private func noteWithActivity(_ rawNote: String) -> String? {

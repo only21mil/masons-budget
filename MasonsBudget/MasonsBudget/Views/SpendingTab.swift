@@ -5,6 +5,7 @@ struct SpendingTab: View {
     private let title: String
     @Query private var transactions: [Transaction]
     @Query private var categories: [BudgetCategory]
+    @Query private var snapshots: [MonthlyBudgetSnapshot]
     @Query(sort: \BTCBillPay.date, order: .reverse) private var btcBillPays: [BTCBillPay]
     @Environment(\.modelContext) private var modelContext
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
@@ -32,7 +33,10 @@ struct SpendingTab: View {
     }
 
     private var selectedMonth: Date {
-        Calendar.current.date(byAdding: .month, value: monthOffset, to: Date()) ?? Date()
+        if let month = selectedHistoryMonth {
+            return month
+        }
+        return Calendar.current.date(byAdding: .month, value: monthOffset, to: Date()) ?? Date()
     }
 
     private var monthLabel: String {
@@ -83,10 +87,30 @@ struct SpendingTab: View {
         .sorted { $0.date > $1.date }
     }
 
+    private var historyMonths: [Date] {
+        let calendar = Calendar.current
+        let starts = Set(myTransactions.map { calendar.startOfMonth(for: $0.date) })
+        let snapshotStarts = snapshots.compactMap { parseMonthYear($0.monthKey) }.map { calendar.startOfMonth(for: $0) }
+        let all = Array(starts.union(snapshotStarts)).sorted()
+        if all.isEmpty {
+            return (0..<12).compactMap {
+                calendar.date(byAdding: .month, value: -11 + $0, to: calendar.startOfMonth(for: Date()))
+            }
+        }
+        return Array(all.suffix(12))
+    }
+
+    private var selectedHistoryMonth: Date? {
+        let index = historyMonths.count - 1 + monthOffset
+        guard historyMonths.indices.contains(index) else { return nil }
+        return historyMonths[index]
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: AppTheme.cardSpacing) {
+                    monthStrip
                     monthNavigator
                     spendingHero
 
@@ -309,6 +333,95 @@ struct SpendingTab: View {
         .padding(.horizontal, 4)
     }
 
+    private var monthStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Array(historyMonths.enumerated()), id: \.offset) { index, month in
+                    let offset = index - (historyMonths.count - 1)
+                    let selected = Calendar.current.isDate(month, equalTo: selectedMonth, toGranularity: .month)
+                    Button {
+                        monthOffset = offset
+                    } label: {
+                        monthChip(month: month, selected: selected)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+    }
+
+    private func monthChip(month: Date, selected: Bool) -> some View {
+        let spending = spending(for: month)
+        let income = income(for: month)
+        let saved = income - spending
+        let rate = income > 0 ? Double(truncating: (saved / income) as NSNumber) : 0
+
+        return VStack(alignment: .leading, spacing: 4) {
+            Text(month.formatted(.dateTime.month(.abbreviated).year(.twoDigits)))
+                .font(.system(size: 10, weight: .bold))
+                .textCase(.uppercase)
+            Text(formatCurrency(spending))
+                .font(AppTheme.monoCaption.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            Text(income > 0 ? "\(Int(rate * 100))% saved" : "No income")
+                .font(.system(size: 10, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .foregroundStyle(selected ? Color.white : AppTheme.primaryText)
+        .frame(width: 82, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(selected ? AppTheme.accentColor : AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(selected ? AppTheme.accentColor : AppTheme.cardBorder, lineWidth: 1)
+        )
+    }
+
+    private func spending(for month: Date) -> Decimal {
+        let cal = Calendar.current
+        return myTransactions
+            .filter {
+                cal.isDate($0.date, equalTo: month, toGranularity: .month) &&
+                !$0.category.localizedCaseInsensitiveContains("income")
+            }
+            .reduce(Decimal(0)) { $0 + $1.amount }
+    }
+
+    private func income(for month: Date) -> Decimal {
+        if let snapshot = snapshots.first(where: { snapshot in
+            guard let snapshotMonth = parseMonthYear(snapshot.monthKey) else { return false }
+            return Calendar.current.isDate(snapshotMonth, equalTo: month, toGranularity: .month)
+        }) {
+            return snapshot.mtdIncome > 0 ? snapshot.mtdIncome : snapshot.monthlyGross
+        }
+        return myTransactions
+            .filter {
+                Calendar.current.isDate($0.date, equalTo: month, toGranularity: .month) &&
+                $0.category.localizedCaseInsensitiveContains("income")
+            }
+            .reduce(Decimal(0)) { $0 + $1.amount }
+    }
+
+    private func parseMonthYear(_ raw: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.date(from: raw)
+    }
+
+}
+
+private extension Calendar {
+    func startOfMonth(for date: Date) -> Date {
+        let components = dateComponents([.year, .month], from: date)
+        return self.date(from: components) ?? startOfDay(for: date)
+    }
 }
 
 #Preview {

@@ -107,6 +107,46 @@ struct DashboardTab: View {
         categories.reduce(Decimal(0)) { $0 + $1.monthlyBudget }
     }
 
+    private var latestSnapshotMonthDate: Date {
+        latestSnapshot.flatMap { parseMonthYear($0.monthKey) } ?? Date()
+    }
+
+    private var mtdIncome: Decimal {
+        latestSnapshot?.mtdIncome ?? 0
+    }
+
+    private var ytdIncome: Decimal {
+        latestSnapshot?.ytdIncome ?? 0
+    }
+
+    private var mtdSpending: Decimal {
+        let cal = Calendar.current
+        let month = latestSnapshotMonthDate
+        return myTransactions
+            .filter {
+                cal.isDate($0.date, equalTo: month, toGranularity: .month) &&
+                !$0.category.localizedCaseInsensitiveContains("income")
+            }
+            .reduce(Decimal(0)) { $0 + $1.amount }
+    }
+
+    private var ytdSpending: Decimal {
+        let cal = Calendar.current
+        let referenceDate = latestSnapshotMonthDate
+        guard let year = cal.dateComponents([.year], from: referenceDate).year,
+              let startOfYear = cal.date(from: DateComponents(year: year, month: 1, day: 1)),
+              let startOfNextMonth = cal.dateInterval(of: .month, for: referenceDate)?.end else {
+            return 0
+        }
+        return myTransactions
+            .filter {
+                $0.date >= startOfYear &&
+                $0.date < startOfNextMonth &&
+                !$0.category.localizedCaseInsensitiveContains("income")
+            }
+            .reduce(Decimal(0)) { $0 + $1.amount }
+    }
+
     private var netWorthSubtitle: String {
         let hasBtc = !myBtcAccounts.isEmpty
         let hasHoldings = !myHoldingAccounts.isEmpty
@@ -133,6 +173,8 @@ struct DashboardTab: View {
                     )
 
                     livePriceStrip
+
+                    incomeSavingsOverview
 
                     HStack(spacing: AppTheme.cardSpacing) {
                         QuickActionButton(
@@ -230,6 +272,70 @@ struct DashboardTab: View {
             }
         }
         .glassCard(highlight: true)
+    }
+
+    private var incomeSavingsOverview: some View {
+        let mtdSaved = mtdIncome - mtdSpending
+        let ytdSaved = ytdIncome - ytdSpending
+        let mtdRate = savingsRate(saved: mtdSaved, income: mtdIncome)
+        let ytdRate = savingsRate(saved: ytdSaved, income: ytdIncome)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                SectionHeader(title: "Income & Savings", icon: "chart.line.uptrend.xyaxis")
+                Spacer()
+                Text(latestSnapshot?.monthKey ?? "MTD")
+                    .font(AppTheme.monoCaption)
+                    .foregroundStyle(AppTheme.secondaryText)
+            }
+
+            HStack(spacing: 10) {
+                savingsMetric(title: "MTD Income", value: formatCurrency(mtdIncome), subtitle: "\(formatCurrency(mtdSaved)) saved", rate: mtdRate)
+                savingsMetric(title: "YTD Income", value: formatCurrency(ytdIncome), subtitle: "\(formatCurrency(ytdSaved)) saved", rate: ytdRate)
+            }
+        }
+        .glassCard()
+    }
+
+    private func savingsMetric(title: String, value: String, subtitle: String, rate: Double) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(AppTheme.secondaryText)
+                .textCase(.uppercase)
+            Text(value)
+                .font(.system(size: 18, weight: .bold, design: .monospaced))
+                .foregroundStyle(AppTheme.primaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+            HStack(spacing: 6) {
+                Text("\(Int(rate * 100))%")
+                    .font(AppTheme.monoCaption.weight(.bold))
+                    .foregroundStyle(rate >= 0 ? AppTheme.positive : AppTheme.negative)
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(AppTheme.tertiaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(AppTheme.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func savingsRate(saved: Decimal, income: Decimal) -> Double {
+        guard income > 0 else { return 0 }
+        return Double(truncating: (saved / income) as NSNumber)
+    }
+
+    private func parseMonthYear(_ raw: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.date(from: raw)
     }
 
     private func pricePill(label: String, value: String) -> some View {

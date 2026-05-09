@@ -3,18 +3,18 @@ import SwiftUI
 enum AppTheme {
     // MARK: - Color tokens (spec-aligned)
     static let accentColor = Color(hex: 0xF7931A)      // accent.bitcoin
-    static let accentGold = Color(hex: 0xD4A857)        // accent.gold
-    static let secondaryAccent = Color(hex: 0x4ECDC4)
-    static let background = Color(hex: 0x0A0A0A)        // bg.canvas
-    static let cardBackground = Color(hex: 0x161616)     // bg.surface
-    static let cardBackgroundElevated = Color(hex: 0x1F1F1F) // bg.surfaceHi
-    static let primaryText = Color(hex: 0xF5F1E8)       // text.primary (ivory)
-    static let secondaryText = Color(hex: 0xA8A39B)      // text.secondary
-    static let tertiaryText = Color(hex: 0x555555)
-    static let cardBorder = Color(hex: 0x2A2A2A)         // border.card
-    static let positive = Color(hex: 0x4ADE80)          // state.positive
-    static let warning = Color(hex: 0xFBBF24)           // state.warning
-    static let negative = Color(hex: 0xEF4444)          // state.negative
+    static let accentGold = Color(hex: 0xFFB347)
+    static let secondaryAccent = Color(hex: 0xF7931A)
+    static let background = Color(hex: 0x0B0907)
+    static let cardBackground = Color(hex: 0x15120E)
+    static let cardBackgroundElevated = Color(hex: 0x211C16)
+    static let primaryText = Color(hex: 0xF4ECD8)
+    static let secondaryText = Color(hex: 0xF4ECD8, opacity: 0.62)
+    static let tertiaryText = Color(hex: 0xF4ECD8, opacity: 0.38)
+    static let cardBorder = Color(hex: 0xFFECC8, opacity: 0.10)
+    static let positive = Color(hex: 0x4ADE80)
+    static let warning = Color(hex: 0xF2C94C)
+    static let negative = Color(hex: 0xF87171)
 
     // MARK: - Layout
     static let cornerRadius: CGFloat = 18
@@ -23,15 +23,15 @@ enum AppTheme {
 
     // MARK: - Gradients
     static let accentGradient = LinearGradient(
-        colors: [Color(hex: 0xF7931A), Color(hex: 0xE8721A)],
+        colors: [Color(hex: 0xF7931A), Color(hex: 0xE07B0E)],
         startPoint: .topLeading, endPoint: .bottomTrailing
     )
-    static let warmGlow = Color(hex: 0xF7931A, opacity: 0.08)
+    static let warmGlow = Color(hex: 0xF7931A, opacity: 0.16)
 
     // MARK: - Typography
-    static let heroNumber: Font = .system(size: 56, weight: .bold, design: .rounded)
-    static let largeNumber: Font = .system(size: 32, weight: .bold, design: .rounded)
-    static let subNumber: Font = .system(size: 28, weight: .semibold, design: .rounded)
+    static let heroNumber: Font = .system(size: 56, weight: .bold)
+    static let largeNumber: Font = .system(size: 32, weight: .bold)
+    static let subNumber: Font = .system(size: 28, weight: .semibold)
     static let monoCaption: Font = .system(size: 13, weight: .medium, design: .monospaced)
     static let monoData: Font = .system(size: 17, weight: .medium, design: .monospaced)
 

@@ -3,6 +3,9 @@ import SwiftUI
 struct ContentView: View {
     @State private var selectedTab: AppTab = .home
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
+    #if os(macOS)
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    #endif
 
     private var currentMember: FamilyMember {
         FamilyMember(rawValue: selectedMember) ?? .victor
@@ -12,7 +15,7 @@ struct ContentView: View {
     private var availableTabs: [AppTab] {
         #if os(macOS)
         if currentMember.showsFullBudget {
-            return AppTab.macMoneyTabs + AppTab.macTaskTabs
+            return AppTab.macMoneyTabs + AppTab.macTaskTabs + AppTab.macSystemTabs
         } else {
             return [.home, .today, .projects, .stack, .netWorth, .more]
         }
@@ -32,7 +35,7 @@ struct ContentView: View {
             get: { selectedTab },
             set: { if let tab = $0 { selectedTab = tab } }
         )
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             List(selection: sidebarBinding) {
                 Section {
                     VStack(alignment: .leading, spacing: 3) {
@@ -58,6 +61,13 @@ struct ContentView: View {
                             .tag(tab)
                     }
                 }
+
+                Section("System") {
+                    ForEach(AppTab.macSystemTabs.filter { availableTabs.contains($0) }) { tab in
+                        Label(tab.macTitle, systemImage: tab.icon)
+                            .tag(tab)
+                    }
+                }
             }
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
@@ -73,6 +83,7 @@ struct ContentView: View {
             case .more: MoreTab()
             }
         }
+        .navigationSplitViewStyle(.balanced)
         .tint(AppTheme.accentColor)
         .onAppear(perform: ensureSelectedTabIsAvailable)
         .onChange(of: selectedMember) { _, _ in
@@ -125,6 +136,9 @@ struct ContentView: View {
         if !availableTabs.contains(selectedTab) {
             selectedTab = .home
         }
+        #if os(macOS)
+        columnVisibility = .all
+        #endif
     }
 }
 
@@ -135,7 +149,8 @@ enum AppTab: String, CaseIterable, Identifiable {
 
     static let iOSTabs: [AppTab] = [.home, .budget, .today, .stack, .more]
     static let macMoneyTabs: [AppTab] = [.home, .budget, .activity, .stack, .netWorth]
-    static let macTaskTabs: [AppTab] = [.today, .projects, .more]
+    static let macTaskTabs: [AppTab] = [.today, .projects]
+    static let macSystemTabs: [AppTab] = [.more]
 
     var title: String {
         switch self {
@@ -153,6 +168,7 @@ enum AppTab: String, CaseIterable, Identifiable {
     var macTitle: String {
         switch self {
         case .home: "Dashboard"
+        case .stack: "Retirement"
         default: title
         }
     }
