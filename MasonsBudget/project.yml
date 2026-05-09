@@ -23,6 +23,7 @@ targets:
       - path: MasonsBudget
         excludes:
           - "**/.DS_Store"
+          - "Info-macOS.plist"
     resources:
       - path: MasonsBudget/Resources/Assets.xcassets
       - path: MasonsBudget/Preview Content
@@ -73,6 +74,7 @@ targets:
       - path: MasonsBudget
         excludes:
           - "**/.DS_Store"
+          - "Info-iOS.plist"
     resources:
       - path: MasonsBudget/Resources/Assets.xcassets
       - path: MasonsBudget/Preview Content

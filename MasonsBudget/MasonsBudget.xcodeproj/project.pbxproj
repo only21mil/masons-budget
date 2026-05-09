@@ -85,7 +85,6 @@
 		6450803384B53495A70FA0DF /* TransactionRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 641CECF33E019AC203606AE1 /* TransactionRecorder.swift */; };
 		66094469BCE1F0473F1EE01C /* AddTransactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C8D2DE28EC878C7C3600E4B /* AddTransactionView.swift */; };
 		6700EF3793D4D70A6F67E0BC /* SharedEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97885C819FB926B04D0E8D3F /* SharedEnums.swift */; };
-		6ABEEF94B55373480B4655C4 /* Info-iOS.plist in Resources */ = {isa = PBXBuildFile; fileRef = 56A48B42A33357F6A153A98F /* Info-iOS.plist */; };
 		6BD6E79598F2D802012B0E0B /* MC2Reader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FED6C930AD774521B536178 /* MC2Reader.swift */; };
 		6D8FD1A7D21195F90F959E8D /* MasonsBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF5C5935A12805ECA579168B /* MasonsBudgetTests.swift */; };
 		6D9F88BEA980C5F18C00E5D5 /* BTCAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC62602DF8D847C5671804D /* BTCAccount.swift */; };
@@ -121,7 +120,6 @@
 		8DE9DEEC7C13F47DE8082CB2 /* ActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A607E96A81E1DA82D0B761 /* ActivityView.swift */; };
 		8EC6A19D6A56533D10952339 /* MoneyTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63CA7C8138C20D50AEE3C69 /* MoneyTab.swift */; };
 		91B5B4B30530980D88BA4D5F /* QuickActionButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E9CA657FCD8F39AC5395870 /* QuickActionButton.swift */; };
-		9471A5CE89F06A3E1BA881DC /* Info-macOS.plist in Resources */ = {isa = PBXBuildFile; fileRef = 2B2DCF8DA0C2EC97CE81528E /* Info-macOS.plist */; };
 		985D0401B3002E1FB27C77E2 /* ProjectsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97A7967267E12D44D8D590ED /* ProjectsTab.swift */; };
 		9D6F85F37E6F099555915BC7 /* StatCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA23871743A5C2BF75CD9262 /* StatCard.swift */; };
 		A0353F71D2174CC8D429E7B9 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5AFC3C821C582B4F9E705206 /* Preview Assets.xcassets */; };
@@ -556,7 +554,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				4B43ABD83280EB7928ED2DE8 /* Assets.xcassets in Resources */,
-				6ABEEF94B55373480B4655C4 /* Info-iOS.plist in Resources */,
 				A0353F71D2174CC8D429E7B9 /* Preview Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -566,7 +563,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				0AB1B206D3B377094C8D79E4 /* Assets.xcassets in Resources */,
-				9471A5CE89F06A3E1BA881DC /* Info-macOS.plist in Resources */,
 				8A0A5A6536516FF4425A41D5 /* Preview Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
