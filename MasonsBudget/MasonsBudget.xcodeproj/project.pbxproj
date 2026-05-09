@@ -118,6 +118,7 @@
 		8BA35B984CBC11936AF54AD2 /* StatCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA23871743A5C2BF75CD9262 /* StatCard.swift */; };
 		8CF4139C75810E99221B0692 /* FamilyProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05894A6118C6AC44E989181E /* FamilyProfile.swift */; };
 		8D76986C56C1119C0838190D /* MC2SyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F83F4110E2D16CDC2FE7C85A /* MC2SyncService.swift */; };
+		8DE9DEEC7C13F47DE8082CB2 /* ActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A607E96A81E1DA82D0B761 /* ActivityView.swift */; };
 		8EC6A19D6A56533D10952339 /* MoneyTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63CA7C8138C20D50AEE3C69 /* MoneyTab.swift */; };
 		91B5B4B30530980D88BA4D5F /* QuickActionButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E9CA657FCD8F39AC5395870 /* QuickActionButton.swift */; };
 		9471A5CE89F06A3E1BA881DC /* Info-macOS.plist in Resources */ = {isa = PBXBuildFile; fileRef = 2B2DCF8DA0C2EC97CE81528E /* Info-macOS.plist */; };
@@ -125,6 +126,7 @@
 		9D6F85F37E6F099555915BC7 /* StatCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA23871743A5C2BF75CD9262 /* StatCard.swift */; };
 		A0353F71D2174CC8D429E7B9 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5AFC3C821C582B4F9E705206 /* Preview Assets.xcassets */; };
 		A2757F55A7495EBA3A48C270 /* ConvexClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */; };
+		AB6BFCBF29D0A371027E8804 /* ActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A607E96A81E1DA82D0B761 /* ActivityView.swift */; };
 		ABE21967D72F27364C3FE742 /* BTCAccountDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F6201F4879FBB5F1E11AAE0 /* BTCAccountDetailView.swift */; };
 		AC4B388167FA9DAB45D43515 /* SyncEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F048D3DB36FA73A8D570960 /* SyncEvent.swift */; };
 		AC9DFD3F20A65000ABF54CDC /* HoldingAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19DCBB53F51F8E4A3BE1BD9E /* HoldingAccount.swift */; };
@@ -173,6 +175,7 @@
 		E7A545B3227D5DE6C136EEBC /* BTCPriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D42E3A9B8292524595DB757 /* BTCPriceService.swift */; };
 		E8A2B2E3E36EE2477C974D38 /* MonthlyTrendChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42C739032DD87F0935207375 /* MonthlyTrendChart.swift */; };
 		EB27119E6894C18C6F85FA3B /* ProjectsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97A7967267E12D44D8D590ED /* ProjectsTab.swift */; };
+		EE0A97C58533AA6BFD518534 /* ActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A607E96A81E1DA82D0B761 /* ActivityView.swift */; };
 		F12B99F5E2C30602F5A71F05 /* MasonsBudgetApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8388ECD356E3E00B77790681 /* MasonsBudgetApp.swift */; };
 		F1E1F30E33C8D118321240FB /* AddTransactionIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF0ECC1570EE9836864D7FB1 /* AddTransactionIntent.swift */; };
 		F3B60DDF5B09E9D11DC19BF4 /* TodayTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 155E620DC774B52D280CE3AA /* TodayTab.swift */; };
@@ -255,6 +258,7 @@
 		D950D4C7F390299D6C1F7C2A /* SettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTab.swift; sourceTree = "<group>"; };
 		DF0ECC1570EE9836864D7FB1 /* AddTransactionIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTransactionIntent.swift; sourceTree = "<group>"; };
 		E117823C6DA6138431AE80C8 /* LockScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenView.swift; sourceTree = "<group>"; };
+		E1A607E96A81E1DA82D0B761 /* ActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityView.swift; sourceTree = "<group>"; };
 		EF559B68DCF5C8C506B2A151 /* NetWorthSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetWorthSnapshot.swift; sourceTree = "<group>"; };
 		EF5C5935A12805ECA579168B /* MasonsBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasonsBudgetTests.swift; sourceTree = "<group>"; };
 		F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexClient.swift; sourceTree = "<group>"; };
@@ -385,6 +389,7 @@
 		C64CE5DEC5F7C30B3A39C58E /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				E1A607E96A81E1DA82D0B761 /* ActivityView.swift */,
 				1C8D2DE28EC878C7C3600E4B /* AddTransactionView.swift */,
 				4F6201F4879FBB5F1E11AAE0 /* BTCAccountDetailView.swift */,
 				3C36C77D7DBD148BABE55D1D /* CategoryDetailView.swift */,
@@ -573,6 +578,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AB6BFCBF29D0A371027E8804 /* ActivityView.swift in Sources */,
 				BBEACEB16EFED7F2420A5C65 /* AddTransactionIntent.swift in Sources */,
 				2D6EE4A463AD6DCC08897957 /* AddTransactionView.swift in Sources */,
 				C8AB2C8731BC8ADE20214120 /* AppTheme.swift in Sources */,
@@ -636,6 +642,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EE0A97C58533AA6BFD518534 /* ActivityView.swift in Sources */,
 				F1E1F30E33C8D118321240FB /* AddTransactionIntent.swift in Sources */,
 				66094469BCE1F0473F1EE01C /* AddTransactionView.swift in Sources */,
 				5AB5EAF56B9C5DD97AD09DCD /* AppTheme.swift in Sources */,
@@ -699,6 +706,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8DE9DEEC7C13F47DE8082CB2 /* ActivityView.swift in Sources */,
 				0601CB33237774D6D963285F /* AddTransactionIntent.swift in Sources */,
 				4B897B1CB2B6841B840D978D /* AddTransactionView.swift in Sources */,
 				064EE72180F8557196303AF4 /* AppTheme.swift in Sources */,

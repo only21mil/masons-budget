@@ -418,12 +418,13 @@ struct DashboardTab: View {
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(AppTheme.primaryText)
                 Spacer()
-                Button { selectedTab = .budget } label: {
+                NavigationLink {
+                    ActivityView()
+                } label: {
                     Text("See all")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(AppTheme.accentColor)
                 }
-                .buttonStyle(.plain)
             }
             .padding(.horizontal, 4)
 
