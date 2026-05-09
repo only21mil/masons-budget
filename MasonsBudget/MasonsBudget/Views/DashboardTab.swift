@@ -141,10 +141,10 @@ struct DashboardTab: View {
                             color: AppTheme.accentColor
                         ) { showAddTransaction = true }
                         QuickActionButton(
-                            title: "View\nSpending",
-                            icon: "list.bullet",
+                            title: currentMember.showsFullBudget ? "View\nSpending" : "View\nStack",
+                            icon: currentMember.showsFullBudget ? "list.bullet" : "bitcoinsign.circle",
                             color: AppTheme.secondaryAccent
-                        ) { selectedTab = .budget }
+                        ) { selectedTab = currentMember.showsFullBudget ? .budget : .stack }
                     }
 
                     budgetOverview

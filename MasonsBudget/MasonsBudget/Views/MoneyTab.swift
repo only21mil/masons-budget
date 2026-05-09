@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct MoneyTab: View {
+    private let title: String
     @Query private var btcAccounts: [BTCAccount]
     @Query private var holdingAccounts: [HoldingAccount]
     @Query private var btcBuys: [BTCBuy]
@@ -13,6 +14,10 @@ struct MoneyTab: View {
     @AppStorage(StockPriceService.vooPriceKey) private var liveVOOPriceUSD: Double = 0
     @AppStorage(StockPriceService.ibitPriceKey) private var liveIBITPriceUSD: Double = 0
     @AppStorage("btc_display_unit") private var btcDisplayUnitRaw: String = BitcoinDisplayUnit.btc.rawValue
+
+    init(title: String = "Stack") {
+        self.title = title
+    }
 
     private var currentMember: FamilyMember {
         FamilyMember(rawValue: selectedMember) ?? .victor
@@ -199,7 +204,7 @@ struct MoneyTab: View {
                 .padding(.top, 8)
             }
             .background(AppTheme.background)
-            .navigationTitle("Stack")
+            .navigationTitle(title)
             #if os(iOS)
             .toolbarColorScheme(.dark, for: .navigationBar)
             #endif

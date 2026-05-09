@@ -2,10 +2,15 @@ import SwiftData
 import SwiftUI
 
 struct MoreTab: View {
+    private let title: String
     @Query private var todos: [TodoItem]
     @Query private var accounts: [BTCAccount]
     @Query private var holdings: [HoldingAccount]
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
+
+    init(title: String = "More") {
+        self.title = title
+    }
 
     private var currentMember: FamilyMember {
         FamilyMember(rawValue: selectedMember) ?? .victor
@@ -61,7 +66,7 @@ struct MoreTab: View {
                 .padding(.bottom, 32)
             }
             .background(AppTheme.background.ignoresSafeArea())
-            .navigationTitle("More")
+            .navigationTitle(title)
         }
     }
 

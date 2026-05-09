@@ -35,12 +35,11 @@ final class MC2SyncService {
         var errors: [String] = []
         var totalEntities = 0
 
-        // Always sync Mason's BTC from son-balances
-        totalEntities += await syncSonBalances(&errors)
         totalEntities += await syncTodos(&errors)
 
         if currentMember == .mason {
             // Mason: sync his own budget, transactions, BTC buys, and finances (401k filtered by owner)
+            totalEntities += await syncSonBalances(&errors)
             totalEntities += await syncMasonBudget(&errors)
             totalEntities += await syncMasonTransactions(&errors)
             totalEntities += await syncMasonBTCBuys(&errors)
@@ -50,6 +49,7 @@ final class MC2SyncService {
             totalEntities += await syncTransactions(&errors)
             totalEntities += await syncBudget(&errors)
             totalEntities += await syncBTCAccounts(&errors)
+            totalEntities += await syncSonBalances(&errors)
             totalEntities += await syncBTCBuys(&errors)
             totalEntities += await syncBTCBillPays(&errors)
             totalEntities += await syncFinances(&errors)
@@ -134,8 +134,9 @@ final class MC2SyncService {
     private func syncBTCAccounts(_ errors: inout [String]) async -> Int {
         do {
             let dto = try await reader.readBTCSnapshot()
-            let accounts = MC2Mapper.mapBTCAccounts(dto, owner: currentMember)
-            replaceAll(BTCAccount.self, with: accounts)
+            let owner: FamilyMember = currentMember.isAdult ? .victor : currentMember
+            let accounts = MC2Mapper.mapBTCAccounts(dto, owner: owner)
+            replaceBTCAccounts(ownedBy: [.victor, .rachel], with: accounts)
             return accounts.count
         } catch {
             log.error("BTC accounts sync failed: \(error.localizedDescription)")
@@ -205,9 +206,7 @@ final class MC2SyncService {
         do {
             let dto = try await reader.readSonBalances()
             let accounts = MC2Mapper.mapSonBalances(dto)
-            for account in accounts {
-                context.insert(account)
-            }
+            replaceBTCAccounts(ownedBy: [.mason], with: accounts)
             return accounts.count
         } catch {
             log.error("Son balances sync failed: \(error.localizedDescription)")
@@ -334,6 +333,21 @@ final class MC2SyncService {
         deleteAll(type)
         for model in models {
             context.insert(model)
+        }
+    }
+
+    private func replaceBTCAccounts(ownedBy owners: [FamilyMember], with accounts: [BTCAccount]) {
+        do {
+            let existing = try context.fetch(FetchDescriptor<BTCAccount>())
+            for account in existing where owners.contains(account.ownerMember) {
+                context.delete(account)
+            }
+        } catch {
+            log.error("Failed to delete BTCAccount slice: \(error.localizedDescription)")
+        }
+
+        for account in accounts {
+            context.insert(account)
         }
     }
 

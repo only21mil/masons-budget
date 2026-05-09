@@ -130,7 +130,7 @@ struct EditTransactionView: View {
         let trimmedCard = custom.isEmpty ? card.trimmingCharacters(in: .whitespacesAndNewlines) : custom
         transaction.card = trimmedCard.isEmpty ? nil : trimmedCard
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        transaction.note = trimmedNote.isEmpty ? nil : trimmedNote
+        transaction.note = noteWithActivity(trimmedNote)
         onSave(transaction)
         dismiss()
     }
@@ -142,5 +142,28 @@ struct EditTransactionView: View {
         if combined.contains("income") { return .income }
         if combined.contains("transfer") || combined.contains("coldcard") { return .transfer }
         return .spend
+    }
+
+    private func noteWithActivity(_ rawNote: String) -> String? {
+        let cleanedNote = rawNote.removingActivityPrefix()
+        guard activityType != .spend else {
+            return cleanedNote.isEmpty ? nil : cleanedNote
+        }
+
+        let activityNote = "Activity: \(activityType.noteLabel)"
+        return cleanedNote.isEmpty ? activityNote : "\(activityNote) · \(cleanedNote)"
+    }
+}
+
+private extension String {
+    func removingActivityPrefix() -> String {
+        let pattern = #"^Activity:\s*[^·\n]+(?:\s*·\s*)?"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        let range = NSRange(startIndex..<endIndex, in: self)
+        let stripped = regex.stringByReplacingMatches(in: self, options: [], range: range, withTemplate: "")
+        return stripped.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

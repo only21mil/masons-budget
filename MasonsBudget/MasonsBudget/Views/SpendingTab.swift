@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct SpendingTab: View {
+    private let title: String
     @Query private var transactions: [Transaction]
     @Query private var categories: [BudgetCategory]
     @Query(sort: \BTCBillPay.date, order: .reverse) private var btcBillPays: [BTCBillPay]
@@ -13,6 +14,10 @@ struct SpendingTab: View {
     @State private var transactionToDelete: Transaction?
     @State private var transactionToEdit: Transaction?
     private let syncClient = ConvexClient(deploymentURL: ConvexConfig.deploymentURL)
+
+    init(title: String = "Budget") {
+        self.title = title
+    }
 
     private var currentMember: FamilyMember {
         FamilyMember(rawValue: selectedMember) ?? .victor
@@ -145,7 +150,7 @@ struct SpendingTab: View {
                 .padding(.bottom, 24)
             }
             .background(AppTheme.background)
-            .navigationTitle("Budget")
+            .navigationTitle(title)
             #if os(iOS)
             .toolbarColorScheme(.dark, for: .navigationBar)
             #endif

@@ -65,11 +65,11 @@ struct ContentView: View {
             switch selectedTab {
             case .home: DashboardTab(selectedTab: $selectedTab)
             case .budget: SpendingTab()
-            case .activity: SpendingTab()
+            case .activity: SpendingTab(title: "Activity")
             case .today: TodayTab()
             case .stack: MoneyTab()
-            case .netWorth: MoneyTab()
-            case .projects: MoreTab()
+            case .netWorth: MoneyTab(title: "Net Worth")
+            case .projects: MoreTab(title: "Projects")
             case .more: MoreTab()
             }
         }
