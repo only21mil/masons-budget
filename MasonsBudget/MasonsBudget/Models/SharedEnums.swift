@@ -85,3 +85,18 @@ enum BTCCustody: String, Codable {
 enum SyncOperation: String, Codable {
     case create, update, delete
 }
+
+/// Bitcoin amount display unit.
+enum BitcoinDisplayUnit: String, CaseIterable, Identifiable {
+    case btc, sats, usd
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .btc: "BTC"
+        case .sats: "SATS"
+        case .usd: "USD"
+        }
+    }
+}

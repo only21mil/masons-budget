@@ -1,98 +1,177 @@
 import SwiftUI
+import SwiftData
 
 struct ContentView: View {
-    @State private var selectedTab: AppTab = .dashboard
+    @State private var selectedTab: AppTab = .home
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
+    @AppStorage("btc_display_unit") private var unitRaw: String = BitcoinDisplayUnit.btc.rawValue
+
+    #if os(macOS)
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    #endif
 
     private var currentMember: FamilyMember {
         FamilyMember(rawValue: selectedMember) ?? .victor
     }
 
-    /// Tabs available for the current profile
-    private var availableTabs: [AppTab] {
+    private var unit: BitcoinDisplayUnit {
+        get { BitcoinDisplayUnit(rawValue: unitRaw) ?? .btc }
+    }
+
+    private var unitBinding: Binding<BitcoinDisplayUnit> {
+        Binding(
+            get: { BitcoinDisplayUnit(rawValue: unitRaw) ?? .btc },
+            set: { unitRaw = $0.rawValue }
+        )
+    }
+
+    private var iOSTabs: [AppTab] {
         if currentMember.showsFullBudget {
-            return AppTab.allCases
+            return [.home, .budget, .today, .stack, .more]
         } else {
-            // Kids: Dashboard (BTC-focused), Money, Settings — no Spending tab
-            return [.dashboard, .money, .settings]
+            return [.home, .today, .stack, .more]
         }
     }
 
     var body: some View {
         #if os(macOS)
+        macOSBody
+        #else
+        iOSBody
+        #endif
+    }
+
+    // MARK: - iOS
+
+    #if os(iOS)
+    private var iOSBody: some View {
+        TabView(selection: $selectedTab) {
+            DashboardTab(selectedTab: $selectedTab)
+                .tabItem { Label(AppTab.home.title, systemImage: AppTab.home.icon) }
+                .tag(AppTab.home)
+
+            if currentMember.showsFullBudget {
+                SpendingTab()
+                    .tabItem { Label(AppTab.budget.title, systemImage: AppTab.budget.icon) }
+                    .tag(AppTab.budget)
+            }
+
+            TodayTab()
+                .tabItem { Label(AppTab.today.title, systemImage: AppTab.today.icon) }
+                .tag(AppTab.today)
+
+            RetirementTab()
+                .tabItem { Label(AppTab.stack.title, systemImage: AppTab.stack.icon) }
+                .tag(AppTab.stack)
+
+            ProjectsTab()
+                .tabItem { Label(AppTab.more.title, systemImage: AppTab.more.icon) }
+                .tag(AppTab.more)
+        }
+        .tint(AppTheme.accentColor)
+        .preferredColorScheme(.dark)
+    }
+    #endif
+
+    // MARK: - macOS
+
+    #if os(macOS)
+    private var macOSBody: some View {
         let sidebarBinding = Binding<AppTab?>(
             get: { selectedTab },
             set: { if let tab = $0 { selectedTab = tab } }
         )
-        NavigationSplitView {
-            List(availableTabs, selection: sidebarBinding) { tab in
-                Label(tab.title, systemImage: tab.icon)
+
+        return NavigationSplitView(columnVisibility: $columnVisibility) {
+            VStack(spacing: 0) {
+                macOSSidebarContent(selection: sidebarBinding)
             }
             .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
-        } detail: {
-            switch selectedTab {
-            case .dashboard: DashboardTab(selectedTab: $selectedTab)
-            case .money: MoneyTab()
-            case .spending: SpendingTab()
-            case .settings: SettingsTab()
-            }
-        }
-        .tint(AppTheme.accentColor)
-        #else
-        TabView(selection: $selectedTab) {
-            DashboardTab(selectedTab: $selectedTab)
-                .tabItem {
-                    Label(AppTab.dashboard.title, systemImage: AppTab.dashboard.icon)
-                }
-                .tag(AppTab.dashboard)
-
-            MoneyTab()
-                .tabItem {
-                    Label(AppTab.money.title, systemImage: AppTab.money.icon)
-                }
-                .tag(AppTab.money)
-
-            if currentMember.showsFullBudget {
-                SpendingTab()
-                    .tabItem {
-                        Label(AppTab.spending.title, systemImage: AppTab.spending.icon)
+            .navigationSplitViewColumnWidth(min: 200, ideal: 220)
+            .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        columnVisibility = (columnVisibility == .detailOnly) ? .all : .detailOnly
+                    } label: {
+                        Label("Toggle Sidebar", systemImage: "sidebar.left")
                     }
-                    .tag(AppTab.spending)
+                    .keyboardShortcut("s", modifiers: [.command, .control])
+                }
+            }
+        } detail: {
+            macOSDetail
+        }
+        .navigationSplitViewStyle(.balanced)
+        .tint(AppTheme.accentColor)
+    }
+
+    @ViewBuilder
+    private var macOSDetail: some View {
+        switch selectedTab {
+        case .home:    DashboardTab(selectedTab: $selectedTab)
+        case .budget:  SpendingTab()
+        case .today:   TodayTab()
+        case .stack:   RetirementTab()
+        case .more:    ProjectsTab()
+        case .settings: SettingsTab()
+        }
+    }
+
+    private func macOSSidebarContent(selection: Binding<AppTab?>) -> some View {
+        List(selection: selection) {
+            Section("Money") {
+                Label(AppTab.home.title, systemImage: AppTab.home.icon)
+                    .tag(AppTab.home)
+                if currentMember.showsFullBudget {
+                    Label(AppTab.budget.title, systemImage: AppTab.budget.icon)
+                        .tag(AppTab.budget)
+                }
+                Label(AppTab.stack.title, systemImage: AppTab.stack.icon)
+                    .tag(AppTab.stack)
             }
 
-            SettingsTab()
-                .tabItem {
-                    Label(AppTab.settings.title, systemImage: AppTab.settings.icon)
-                }
-                .tag(AppTab.settings)
+            Section("Tasks") {
+                Label(AppTab.today.title, systemImage: AppTab.today.icon)
+                    .tag(AppTab.today)
+                Label(AppTab.more.title, systemImage: AppTab.more.icon)
+                    .tag(AppTab.more)
+            }
+
+            Section {
+                Label(AppTab.settings.title, systemImage: AppTab.settings.icon)
+                    .tag(AppTab.settings)
+            }
         }
-        .tint(AppTheme.accentColor)
-        .preferredColorScheme(.dark)
-        #endif
     }
+    #endif
 }
 
+// MARK: - Tab enum
+
 enum AppTab: String, CaseIterable, Identifiable {
-    case dashboard, money, spending, settings
+    case home, budget, today, stack, more, settings
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .dashboard: "Dashboard"
-        case .money:     "Money"
-        case .spending:  "Spending"
-        case .settings:  "Settings"
+        case .home:     "Home"
+        case .budget:   "Budget"
+        case .today:    "Today"
+        case .stack:    "Stack"
+        case .more:     "More"
+        case .settings: "Settings"
         }
     }
 
     var icon: String {
         switch self {
-        case .dashboard: "chart.bar.fill"
-        case .money:     "bitcoinsign.circle.fill"
-        case .spending:  "creditcard.fill"
-        case .settings:  "gearshape.fill"
+        case .home:     "bitcoinsign.circle.fill"
+        case .budget:   "chart.bar.fill"
+        case .today:    "checkmark.circle.fill"
+        case .stack:    "building.columns.fill"
+        case .more:     "ellipsis.circle.fill"
+        case .settings: "gearshape.fill"
         }
     }
 }

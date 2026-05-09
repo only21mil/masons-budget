@@ -26,20 +26,37 @@ targets:
     resources:
       - path: MasonsBudget/Resources/Assets.xcassets
       - path: MasonsBudget/Preview Content
+    info:
+      path: MasonsBudget/Info-iOS.plist
+      properties:
+        CFBundleDisplayName: The Vogel Vault
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.finance
+        NSSpeechRecognitionUsageDescription: Voice input lets you log transactions by speaking.
+        NSMicrophoneUsageDescription: Microphone access is needed for voice transaction entry.
+        NSFaceIDUsageDescription: Unlock The Vogel Vault with Face ID.
+        ITSAppUsesNonExemptEncryption: false
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+        UIApplicationSupportsIndirectInputEvents: true
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations~iphone:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        INAlternativeAppNames:
+          - INAlternativeAppName: Budget App
+          - INAlternativeAppName: Todo List App
+          - INAlternativeAppName: Vault
+          - INAlternativeAppName: Vogel
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sats21m.masonsbudget
         TARGETED_DEVICE_FAMILY: "1,2"
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
-        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait"
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
-        INFOPLIST_KEY_CFBundleDisplayName: "The Vogel Vault"
-        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Voice input lets you log transactions by speaking."
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Microphone access is needed for voice transaction entry."
-        INFOPLIST_KEY_NSFaceIDUsageDescription: "Unlock The Vogel Vault with Face ID."
-        INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.finance"
         CODE_SIGN_ENTITLEMENTS: MasonsBudget/MasonsBudget.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
@@ -47,7 +64,6 @@ targets:
         CODE_SIGN_STYLE: Automatic
         SWIFT_EMIT_LOC_STRINGS: YES
         ENABLE_PREVIEWS: YES
-        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: "NO"
     dependencies: []
 
   MasonsBudgetMac:
@@ -60,6 +76,22 @@ targets:
     resources:
       - path: MasonsBudget/Resources/Assets.xcassets
       - path: MasonsBudget/Preview Content
+    info:
+      path: MasonsBudget/Info-macOS.plist
+      properties:
+        CFBundleDisplayName: The Vogel Vault
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.finance
+        NSSpeechRecognitionUsageDescription: Voice input lets you log transactions by speaking.
+        NSMicrophoneUsageDescription: Microphone access is needed for voice transaction entry.
+        NSFaceIDUsageDescription: Unlock The Vogel Vault with Face ID.
+        ITSAppUsesNonExemptEncryption: false
+        INAlternativeAppNames:
+          - INAlternativeAppName: Budget App
+          - INAlternativeAppName: Todo List App
+          - INAlternativeAppName: Vault
+          - INAlternativeAppName: Vogel
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sats21m.masonsbudget
@@ -70,12 +102,6 @@ targets:
         CODE_SIGN_STYLE: Automatic
         SWIFT_EMIT_LOC_STRINGS: YES
         ENABLE_PREVIEWS: YES
-        INFOPLIST_KEY_CFBundleDisplayName: "The Vogel Vault"
-        INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.finance"
-        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Voice input lets you log transactions by speaking."
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Microphone access is needed for voice transaction entry."
-        INFOPLIST_KEY_NSFaceIDUsageDescription: "Unlock The Vogel Vault with Face ID."
-        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: "NO"
     dependencies: []
 
   MasonsBudgetTests:
@@ -96,6 +122,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sats21m.masonsbudget.tests
         GENERATE_INFOPLIST_FILE: YES
+        DEVELOPMENT_TEAM: "384ZGKG4GB"
+        CODE_SIGN_STYLE: Automatic
 
 schemes:
   MasonsBudget:

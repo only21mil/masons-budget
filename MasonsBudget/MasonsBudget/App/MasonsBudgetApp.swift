@@ -1,9 +1,14 @@
+import AppIntents
 import SwiftUI
 import SwiftData
 
 @main
 struct MasonsBudgetApp: App {
-    var sharedModelContainer: ModelContainer = {
+    init() {
+        AppDependencyManager.shared.add(dependency: Self.sharedModelContainer)
+    }
+
+    static let sharedModelContainer: ModelContainer = {
         resetSwiftDataStoreIfNeeded()
 
         let schema = Schema([
@@ -114,7 +119,7 @@ struct MasonsBudgetApp: App {
                 Task { await syncFromConvex() }
             }
         }
-        .modelContainer(sharedModelContainer)
+        .modelContainer(Self.sharedModelContainer)
         #if os(macOS)
         .defaultSize(width: 1000, height: 700)
         #endif
@@ -127,7 +132,7 @@ struct MasonsBudgetApp: App {
         await BTCPriceService.shared.refreshAndStore()
         await StockPriceService.shared.refreshAndStore()
         guard ConvexConfig.isConfigured else { return }
-        let sync = MC2SyncService(context: sharedModelContainer.mainContext)
+        let sync = MC2SyncService(context: Self.sharedModelContainer.mainContext)
         await sync.syncAll()
     }
 
@@ -136,7 +141,7 @@ struct MasonsBudgetApp: App {
     private func syncIfChanged() async {
         await BTCPriceService.shared.refreshAndStore()
         guard ConvexConfig.isConfigured else { return }
-        let sync = MC2SyncService(context: sharedModelContainer.mainContext)
+        let sync = MC2SyncService(context: Self.sharedModelContainer.mainContext)
         let changed = await sync.hasUpdates()
         if changed {
             await sync.syncAll()

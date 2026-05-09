@@ -116,7 +116,7 @@ struct DashboardTab: View {
                             title: "View\nSpending",
                             icon: "list.bullet",
                             color: AppTheme.secondaryAccent
-                        ) { selectedTab = .spending }
+                        ) { selectedTab = .budget }
                     }
 
                     budgetOverview
@@ -177,21 +177,7 @@ struct DashboardTab: View {
     }
 
     private func handleManualSave(amount: Decimal, merchant: String, category: String, card: String?, note: String?) {
-        let id = "manual-\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString.prefix(6))"
-        let tx = Transaction(
-            id: id,
-            date: Date(),
-            merchant: merchant,
-            amount: amount,
-            category: category,
-            card: card,
-            note: note,
-            owner: currentMember,
-            createdBy: "manual",
-            createdAt: Date()
-        )
-        modelContext.insert(tx)
-        saveAndSync(tx)
+        record(amount: amount, merchant: merchant, category: category, card: card, note: note, date: Date(), source: .manual)
     }
 
     private func handleVoiceSave(_ parsed: ParsedTransaction) {
@@ -200,24 +186,24 @@ struct DashboardTab: View {
 
         let date = parsed.date ?? Date()
         let category = resolveCanonicalCategory(parsed.category) ?? categories.first?.name ?? "Uncategorized"
-        let card = parsed.card
-        let note = parsed.note
+        record(amount: amount, merchant: merchant, category: category, card: parsed.card, note: parsed.note, date: date, source: .voice)
+    }
 
-        let id = "voice-\(Int(date.timeIntervalSince1970))-\(UUID().uuidString.prefix(6))"
-        let tx = Transaction(
-            id: id,
-            date: date,
-            merchant: merchant,
-            amount: amount,
-            category: category,
-            card: card,
-            note: note,
-            owner: currentMember,
-            createdBy: "voice",
-            createdAt: Date()
-        )
-        modelContext.insert(tx)
-        saveAndSync(tx)
+    private func record(amount: Decimal, merchant: String, category: String, card: String?, note: String?, date: Date, source: TransactionRecorder.Source) {
+        do {
+            try TransactionRecorder(modelContext: modelContext, convex: syncClient).record(
+                amount: amount,
+                merchant: merchant,
+                category: category,
+                card: card,
+                note: note,
+                date: date,
+                owner: currentMember,
+                source: source
+            )
+        } catch {
+            log.error("Failed to record transaction: \(error.localizedDescription)")
+        }
     }
 
     private func resolveCanonicalCategory(_ parsedCategory: String?) -> String? {
@@ -226,27 +212,6 @@ struct DashboardTab: View {
             return exact
         }
         return categories.first(where: { $0.name.caseInsensitiveCompare(parsedCategory) == .orderedSame })?.name
-    }
-
-    private func saveAndSync(_ transaction: Transaction) {
-        do {
-            try modelContext.save()
-            pushAppTransaction(transaction)
-        } catch {
-            log.error("Failed to save transaction locally: \(error.localizedDescription)")
-        }
-    }
-
-    private func pushAppTransaction(_ transaction: Transaction) {
-        let dto = MC2Transaction(appTransaction: transaction)
-        let fileName = transaction.ownerMember == .mason ? "mason-transactions" : "transactions"
-        Task {
-            do {
-                try await syncClient.appendTransaction(dto, to: fileName)
-            } catch {
-                log.error("Failed to push transaction to Convex: \(error.localizedDescription)")
-            }
-        }
     }
 
     private var syncStatusBanner: some View {
@@ -366,5 +331,5 @@ struct DashboardTab: View {
 }
 
 #Preview {
-    DashboardTab(selectedTab: .constant(.dashboard))
+    DashboardTab(selectedTab: .constant(.home))
 }

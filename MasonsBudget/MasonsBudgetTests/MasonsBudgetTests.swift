@@ -17,7 +17,7 @@ final class MasonsBudgetTests: XCTestCase {
 
     func testAppTabCases() {
         let tabs = AppTab.allCases
-        XCTAssertEqual(tabs.count, 4)
+        XCTAssertEqual(tabs.count, 6)
         for tab in tabs {
             XCTAssertFalse(tab.title.isEmpty, "\(tab) should have a title")
             XCTAssertFalse(tab.icon.isEmpty, "\(tab) should have an icon")
