@@ -123,10 +123,20 @@ struct MoneyTab: View {
     }
 
     var body: some View {
+        #if os(iOS)
         NavigationStack {
-            ScrollView {
-                VStack(spacing: AppTheme.cardSpacing) {
-                    SectionHeader(title: "Total Net Worth", icon: "chart.pie.fill")
+            moneyContent
+                .toolbarColorScheme(.dark, for: .navigationBar)
+        }
+        #else
+        moneyContent
+        #endif
+    }
+
+    private var moneyContent: some View {
+        ScrollView {
+            VStack(spacing: AppTheme.cardSpacing) {
+                SectionHeader(title: "Total Net Worth", icon: "chart.pie.fill")
                     StatCard(
                         title: "Estimated Total",
                         value: formatCurrency(liveHoldingsValue + estimatedBtcUsd),
@@ -181,12 +191,8 @@ struct MoneyTab: View {
                 .padding(.horizontal, AppTheme.horizontalPadding)
                 .padding(.top, 8)
             }
-            .background(AppTheme.background)
-            .navigationTitle("Money")
-            #if os(iOS)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            #endif
-        }
+        .background(AppTheme.background)
+        .navigationTitle("Money")
     }
 
     private func incomeSection(_ snapshot: MonthlyBudgetSnapshot) -> some View {

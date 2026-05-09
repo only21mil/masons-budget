@@ -10,10 +10,7 @@ struct OnboardingView: View {
         FamilyMember(rawValue: selectedMember) ?? .victor
     }
 
-    /// Total steps vary by profile — kids skip the voice step
-    private var totalSteps: Int {
-        currentMember.showsFullBudget ? 3 : 3
-    }
+    private var totalSteps: Int { 3 }
 
     var body: some View {
         ZStack {
@@ -73,6 +70,7 @@ struct OnboardingView: View {
                 .padding(.bottom, 40)
             }
         }
+        .preferredColorScheme(.dark)
     }
 
     // MARK: - Steps

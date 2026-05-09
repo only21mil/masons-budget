@@ -93,41 +93,42 @@ struct DashboardTab: View {
     }
 
     var body: some View {
+        #if os(iOS)
         NavigationStack {
-            ScrollView {
-                VStack(spacing: AppTheme.cardSpacing) {
-                    heroBalance
-                    storageStatRow
-                    incomeCard
-                    monthSpending
-                    recentActivity
+            dashboardContent
+                .toolbarColorScheme(.dark, for: .navigationBar)
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button { showAddTransaction = true } label: {
+                            Label("Add Transaction", systemImage: "plus")
+                        }
+                    }
                 }
-                .padding(.horizontal, AppTheme.horizontalPadding)
-                .padding(.top, 8)
-                .padding(.bottom, 100)
-            }
-            .background(AppTheme.background)
-            .navigationTitle("Home")
-            #if os(iOS)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .overlay(alignment: .bottom) {
-                MicFAB { showVoiceCapture = true }
-            }
-            .fullScreenCover(isPresented: $showVoiceCapture) {
-                VoiceCaptureView(onSave: { parsed in
-                    handleVoiceSave(parsed)
-                })
-            }
-            .sheet(isPresented: $showAddTransaction) {
-                AddTransactionView(onSave: { amount, merchant, category, card, note in
-                    handleManualSave(amount: amount, merchant: merchant, category: category, card: card, note: note)
-                })
-            }
-            #else
+                .overlay(alignment: .bottom) {
+                    MicFAB { showVoiceCapture = true }
+                }
+                .fullScreenCover(isPresented: $showVoiceCapture) {
+                    VoiceCaptureView(onSave: { parsed in
+                        handleVoiceSave(parsed)
+                    })
+                }
+                .sheet(isPresented: $showAddTransaction) {
+                    AddTransactionView(onSave: { amount, merchant, category, card, note in
+                        handleManualSave(amount: amount, merchant: merchant, category: category, card: card, note: note)
+                    })
+                }
+        }
+        #else
+        dashboardContent
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button { showVoiceCapture = true } label: {
-                        Label("Voice Input", systemImage: "mic.fill")
+                    HStack(spacing: 8) {
+                        Button { showAddTransaction = true } label: {
+                            Label("Add Transaction", systemImage: "plus")
+                        }
+                        Button { showVoiceCapture = true } label: {
+                            Label("Voice Input", systemImage: "mic.fill")
+                        }
                     }
                 }
             }
@@ -142,8 +143,28 @@ struct DashboardTab: View {
                     handleManualSave(amount: amount, merchant: merchant, category: category, card: card, note: note)
                 })
             }
+        #endif
+    }
+
+    private var dashboardContent: some View {
+        ScrollView {
+            VStack(spacing: AppTheme.cardSpacing) {
+                heroBalance
+                storageStatRow
+                incomeCard
+                monthSpending
+                recentActivity
+            }
+            .padding(.horizontal, AppTheme.horizontalPadding)
+            .padding(.top, 8)
+            #if os(iOS)
+            .padding(.bottom, 100)
+            #else
+            .padding(.bottom, 40)
             #endif
         }
+        .background(AppTheme.background)
+        .navigationTitle("Home")
     }
 
     private func handleManualSave(amount: Decimal, merchant: String, category: String, card: String?, note: String?) {

@@ -64,7 +64,7 @@ struct CategoryDetailView: View {
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
                             RoundedRectangle(cornerRadius: 4)
-                                .fill(AppTheme.background)
+                                .fill(AppTheme.surface2)
                                 .frame(height: 8)
                             RoundedRectangle(cornerRadius: 4)
                                 .fill(pct > 1.0 ? AppTheme.negative : AppTheme.accentColor)

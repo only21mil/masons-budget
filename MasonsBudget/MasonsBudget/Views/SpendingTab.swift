@@ -65,51 +65,57 @@ struct SpendingTab: View {
     }
 
     var body: some View {
+        #if os(iOS)
         NavigationStack {
-            ScrollView {
-                VStack(spacing: AppTheme.cardSpacing) {
-                    screenHeader
-                    monthStrip
-                    spentLimitCard
-                    categorySection
-                    transactionSection
-                }
-                .padding(.horizontal, AppTheme.horizontalPadding)
-                .padding(.top, 8)
-                .padding(.bottom, 100)
+            spendingContent
+                .toolbarColorScheme(.dark, for: .navigationBar)
+        }
+        #else
+        spendingContent
+        #endif
+    }
+
+    private var spendingContent: some View {
+        ScrollView {
+            VStack(spacing: AppTheme.cardSpacing) {
+                screenHeader
+                monthStrip
+                spentLimitCard
+                categorySection
+                transactionSection
             }
-            .background(AppTheme.background)
-            .navigationTitle("Budget")
-            #if os(iOS)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            #endif
-            .sheet(isPresented: Binding(
-                get: { transactionToEdit != nil },
-                set: { if !$0 { transactionToEdit = nil } }
-            )) {
-                if let tx = transactionToEdit {
-                    EditTransactionView(transaction: tx) { savedTransaction in
-                        saveAndSync(savedTransaction)
-                        transactionToEdit = nil
-                    }
+            .padding(.horizontal, AppTheme.horizontalPadding)
+            .padding(.top, 8)
+            .padding(.bottom, 100)
+        }
+        .background(AppTheme.background)
+        .navigationTitle("Budget")
+        .sheet(isPresented: Binding(
+            get: { transactionToEdit != nil },
+            set: { if !$0 { transactionToEdit = nil } }
+        )) {
+            if let tx = transactionToEdit {
+                EditTransactionView(transaction: tx) { savedTransaction in
+                    saveAndSync(savedTransaction)
+                    transactionToEdit = nil
                 }
             }
-            .alert("Delete Transaction?", isPresented: Binding(
-                get: { transactionToDelete != nil },
-                set: { if !$0 { transactionToDelete = nil } }
-            )) {
-                Button("Cancel", role: .cancel) { transactionToDelete = nil }
-                Button("Delete", role: .destructive) {
-                    if let tx = transactionToDelete {
-                        modelContext.delete(tx)
-                        try? modelContext.save()
-                    }
-                    transactionToDelete = nil
-                }
-            } message: {
+        }
+        .alert("Delete Transaction?", isPresented: Binding(
+            get: { transactionToDelete != nil },
+            set: { if !$0 { transactionToDelete = nil } }
+        )) {
+            Button("Cancel", role: .cancel) { transactionToDelete = nil }
+            Button("Delete", role: .destructive) {
                 if let tx = transactionToDelete {
-                    Text("Delete \(tx.merchant) — \(formatCurrency(tx.amount))?")
+                    modelContext.delete(tx)
+                    try? modelContext.save()
                 }
+                transactionToDelete = nil
+            }
+        } message: {
+            if let tx = transactionToDelete {
+                Text("Delete \(tx.merchant) — \(formatCurrency(tx.amount))?")
             }
         }
     }
@@ -190,7 +196,6 @@ struct SpendingTab: View {
     private var spentLimitCard: some View {
         let pct = totalBudgeted > 0 ? Double(truncating: (totalSpent / totalBudgeted) as NSNumber) : 0
         let saved = totalBudgeted - totalSpent
-        let savedPct = totalBudgeted > 0 ? Int(Double(truncating: (saved / totalBudgeted) as NSNumber) * 100) : 0
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack {

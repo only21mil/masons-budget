@@ -171,6 +171,7 @@ struct AddTransactionView: View {
     // MARK: - Number Pad
 
     private var numberPad: some View {
+        #if os(iOS)
         VStack(spacing: 0) {
             ForEach([["1","2","3"],["4","5","6"],["7","8","9"],[".","0","⌫"]], id: \.self) { row in
                 HStack(spacing: 0) {
@@ -191,6 +192,27 @@ struct AddTransactionView: View {
         }
         .padding(.horizontal, 8)
         .padding(.bottom, 4)
+        #else
+        HStack {
+            Text("Amount")
+                .font(.system(size: 13))
+                .foregroundStyle(AppTheme.secondaryText)
+                .frame(width: 80, alignment: .leading)
+            TextField("0.00", text: $amountText)
+                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                .foregroundStyle(AppTheme.primaryText)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(AppTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(AppTheme.cardBorder, lineWidth: 1)
+        )
+        .padding(.horizontal, AppTheme.horizontalPadding)
+        .padding(.top, 8)
+        #endif
     }
 
     private func handleKey(_ key: String) {

@@ -6,6 +6,17 @@ struct LockScreenView: View {
     @State private var authError: String?
     @State private var showError = false
 
+    private var biometryIcon: String {
+        let context = LAContext()
+        _ = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+        switch context.biometryType {
+        case .faceID: return "faceid"
+        case .touchID: return "touchid"
+        case .opticID: return "opticid"
+        default: return "lock.fill"
+        }
+    }
+
     var body: some View {
         ZStack {
             AppTheme.background.ignoresSafeArea()
@@ -30,7 +41,7 @@ struct LockScreenView: View {
                 Button {
                     authenticate()
                 } label: {
-                    Label("Unlock", systemImage: "faceid")
+                    Label("Unlock", systemImage: biometryIcon)
                         .font(.headline)
                         .foregroundStyle(.black)
                         .frame(maxWidth: .infinity)

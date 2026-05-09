@@ -112,6 +112,7 @@ struct VoiceCaptureView: View {
             }
             .padding(.horizontal, AppTheme.horizontalPadding)
         }
+        .preferredColorScheme(.dark)
         .task {
             let granted = await model.requestPermission()
             if granted { model.startListening() }

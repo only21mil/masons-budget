@@ -13,7 +13,6 @@ struct SettingsTab: View {
     @Environment(\.modelContext) private var modelContext
     @State private var isSyncing = false
     @State private var pendingMember: String?
-    @State private var authError: String?
 
     private var currentMember: FamilyMember {
         FamilyMember(rawValue: selectedMember) ?? .victor
@@ -46,129 +45,135 @@ struct SettingsTab: View {
     }
 
     var body: some View {
+        #if os(iOS)
         NavigationStack {
-            List {
-                Section {
-                    HStack(spacing: 12) {
-                        Image(systemName: currentMember.icon)
-                            .font(.system(size: 44))
-                            .foregroundStyle(AppTheme.accentColor)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(currentMember.displayName)
-                                .font(.headline)
-                                .foregroundStyle(AppTheme.primaryText)
-                            Text(currentMember.profileDescription)
-                                .font(.caption)
-                                .foregroundStyle(AppTheme.tertiaryText)
-                        }
-                    }
-                    .padding(.vertical, 4)
+            settingsContent
+                .toolbarColorScheme(.dark, for: .navigationBar)
+        }
+        #else
+        settingsContent
+        #endif
+    }
 
-                    Picker("Family Member", selection: $selectedMember) {
-                        ForEach(currentMember.allowedSwitchTargets) { member in
-                            Text(member.displayName).tag(member.rawValue)
-                        }
-                    }
-                    .onChange(of: selectedMember) { _, newValue in
-                        guard let target = FamilyMember(rawValue: newValue) else { return }
-                        if currentMember.requiresAuthToSwitch && target != currentMember {
-                            pendingMember = newValue
-                            selectedMember = currentMember.rawValue
-                            authenticateProfileSwitch()
-                        }
-                    }
-                } header: {
-                    Text("Profile")
-                }
-
-                Section {
-                    HStack {
-                        Label("Convex Cloud", systemImage: ConvexConfig.isConfigured ? "cloud.fill" : "cloud")
-                        Spacer()
-                        SyncBadge(status: ConvexConfig.isConfigured ? .synced : .disconnected)
-                    }
-                    HStack {
-                        Label("Last Sync", systemImage: "arrow.triangle.2.circlepath")
-                        Spacer()
-                        Text(lastSyncText)
-                            .font(.caption)
-                            .foregroundStyle(lastSyncText == "Never" ? AppTheme.tertiaryText : AppTheme.positive)
-                    }
-                    HStack {
-                        Label("Data", systemImage: "cylinder.split.1x2")
-                        Spacer()
-                        Text(dataSummary)
-                            .font(.caption)
-                            .foregroundStyle(AppTheme.secondaryText)
-                    }
-                    if let error = syncError {
-                        HStack {
-                            Label("Errors", systemImage: "exclamationmark.triangle")
-                            Spacer()
-                            Text(error)
-                                .font(.caption)
-                                .foregroundStyle(AppTheme.negative)
-                                .lineLimit(2)
-                        }
-                    }
-                    Button {
-                        Task { await syncNow() }
-                    } label: {
-                        HStack {
-                            Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
-                            Spacer()
-                            if isSyncing {
-                                ProgressView()
-                            }
-                        }
-                    }
-                    .disabled(!ConvexConfig.isConfigured)
-                } header: {
-                    Text("Data & Sync")
-                } footer: {
-                    Text("Data syncs automatically from the cloud every 15 seconds. Tap \"Sync Now\" to refresh immediately.")
-                }
-
-                Section {
-                    NavigationLink {
-                        CategoryManagementView()
-                    } label: {
-                        Label("Budget Categories", systemImage: "list.bullet.rectangle")
+    private var settingsContent: some View {
+        List {
+            Section {
+                HStack(spacing: 12) {
+                    Image(systemName: currentMember.icon)
+                        .font(.system(size: 44))
+                        .foregroundStyle(AppTheme.accentColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(currentMember.displayName)
+                            .font(.headline)
                             .foregroundStyle(AppTheme.primaryText)
-                    }
-                } header: {
-                    Text("Budget")
-                }
-
-                Section {
-                    Toggle(isOn: $appLockEnabled) {
-                        Label("Face ID / Passcode Lock", systemImage: "faceid")
-                    }
-                    .tint(AppTheme.accentColor)
-                    Label("Notifications", systemImage: "bell.badge")
-                    Label("Voice Input", systemImage: "mic")
-                } header: {
-                    Text("Security & Preferences")
-                }
-
-                Section {
-                    HStack {
-                        Text("Version")
-                        Spacer()
-                        Text("0.2.0")
+                        Text(currentMember.profileDescription)
+                            .font(.caption)
                             .foregroundStyle(AppTheme.tertiaryText)
                     }
-                } header: {
-                    Text("About")
                 }
+                .padding(.vertical, 4)
+
+                Picker("Family Member", selection: $selectedMember) {
+                    ForEach(currentMember.allowedSwitchTargets) { member in
+                        Text(member.displayName).tag(member.rawValue)
+                    }
+                }
+                .onChange(of: selectedMember) { _, newValue in
+                    guard let target = FamilyMember(rawValue: newValue) else { return }
+                    if currentMember.requiresAuthToSwitch && target != currentMember {
+                        pendingMember = newValue
+                        selectedMember = currentMember.rawValue
+                        authenticateProfileSwitch()
+                    }
+                }
+            } header: {
+                Text("Profile")
             }
-            .scrollContentBackground(.hidden)
-            .background(AppTheme.background)
-            .navigationTitle("Settings")
-            #if os(iOS)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            #endif
+
+            Section {
+                HStack {
+                    Label("Convex Cloud", systemImage: ConvexConfig.isConfigured ? "cloud.fill" : "cloud")
+                    Spacer()
+                    SyncBadge(status: ConvexConfig.isConfigured ? .synced : .disconnected)
+                }
+                HStack {
+                    Label("Last Sync", systemImage: "arrow.triangle.2.circlepath")
+                    Spacer()
+                    Text(lastSyncText)
+                        .font(.caption)
+                        .foregroundStyle(lastSyncText == "Never" ? AppTheme.tertiaryText : AppTheme.positive)
+                }
+                HStack {
+                    Label("Data", systemImage: "cylinder.split.1x2")
+                    Spacer()
+                    Text(dataSummary)
+                        .font(.caption)
+                        .foregroundStyle(AppTheme.secondaryText)
+                }
+                if let error = syncError {
+                    HStack {
+                        Label("Errors", systemImage: "exclamationmark.triangle")
+                        Spacer()
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(AppTheme.negative)
+                            .lineLimit(2)
+                    }
+                }
+                Button {
+                    Task { await syncNow() }
+                } label: {
+                    HStack {
+                        Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                        Spacer()
+                        if isSyncing {
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(!ConvexConfig.isConfigured)
+            } header: {
+                Text("Data & Sync")
+            } footer: {
+                Text("Data syncs automatically from the cloud every 15 seconds. Tap \"Sync Now\" to refresh immediately.")
+            }
+
+            Section {
+                NavigationLink {
+                    CategoryManagementView()
+                } label: {
+                    Label("Budget Categories", systemImage: "list.bullet.rectangle")
+                        .foregroundStyle(AppTheme.primaryText)
+                }
+            } header: {
+                Text("Budget")
+            }
+
+            Section {
+                Toggle(isOn: $appLockEnabled) {
+                    Label("Face ID / Passcode Lock", systemImage: "faceid")
+                }
+                .tint(AppTheme.accentColor)
+                Label("Notifications", systemImage: "bell.badge")
+                Label("Voice Input", systemImage: "mic")
+            } header: {
+                Text("Security & Preferences")
+            }
+
+            Section {
+                HStack {
+                    Text("Version")
+                    Spacer()
+                    Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
+                        .foregroundStyle(AppTheme.tertiaryText)
+                }
+            } header: {
+                Text("About")
+            }
         }
+        .scrollContentBackground(.hidden)
+        .background(AppTheme.background)
+        .navigationTitle("Settings")
     }
 
     private func syncNow() async {

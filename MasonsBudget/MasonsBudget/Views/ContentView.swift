@@ -4,33 +4,12 @@ import SwiftData
 struct ContentView: View {
     @State private var selectedTab: AppTab = .home
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
-    @AppStorage("btc_display_unit") private var unitRaw: String = BitcoinDisplayUnit.btc.rawValue
-
     #if os(macOS)
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     #endif
 
     private var currentMember: FamilyMember {
         FamilyMember(rawValue: selectedMember) ?? .victor
-    }
-
-    private var unit: BitcoinDisplayUnit {
-        get { BitcoinDisplayUnit(rawValue: unitRaw) ?? .btc }
-    }
-
-    private var unitBinding: Binding<BitcoinDisplayUnit> {
-        Binding(
-            get: { BitcoinDisplayUnit(rawValue: unitRaw) ?? .btc },
-            set: { unitRaw = $0.rawValue }
-        )
-    }
-
-    private var iOSTabs: [AppTab] {
-        if currentMember.showsFullBudget {
-            return [.home, .budget, .today, .stack, .more]
-        } else {
-            return [.home, .today, .stack, .more]
-        }
     }
 
     var body: some View {
@@ -99,10 +78,14 @@ struct ContentView: View {
                 }
             }
         } detail: {
-            macOSDetail
+            NavigationStack {
+                macOSDetail
+            }
+            .id(selectedTab)
         }
         .navigationSplitViewStyle(.balanced)
         .tint(AppTheme.accentColor)
+        .preferredColorScheme(.dark)
     }
 
     @ViewBuilder

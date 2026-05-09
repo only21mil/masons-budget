@@ -26,23 +26,29 @@ struct ProjectsTab: View {
     }
 
     var body: some View {
+        #if os(iOS)
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: AppTheme.cardSpacing) {
-                    screenHeader
-                    shortcutGrid
-                    projectsList
-                }
-                .padding(.horizontal, AppTheme.horizontalPadding)
-                .padding(.top, 8)
-                .padding(.bottom, 100)
-            }
-            .background(AppTheme.background)
-            .navigationTitle("More")
-            #if os(iOS)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            #endif
+            projectsContent
+                .toolbarColorScheme(.dark, for: .navigationBar)
         }
+        #else
+        projectsContent
+        #endif
+    }
+
+    private var projectsContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: AppTheme.cardSpacing) {
+                screenHeader
+                shortcutGrid
+                projectsList
+            }
+            .padding(.horizontal, AppTheme.horizontalPadding)
+            .padding(.top, 8)
+            .padding(.bottom, 100)
+        }
+        .background(AppTheme.background)
+        .navigationTitle("Projects")
     }
 
     // MARK: - Header

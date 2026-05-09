@@ -4,14 +4,9 @@ import SwiftData
 struct TodayTab: View {
     @Query(sort: \TodoItem.sortOrder) private var allTodos: [TodoItem]
     @Environment(\.modelContext) private var modelContext
-    @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
     @State private var draftText: String = ""
     @State private var showDraftField = false
     @FocusState private var draftFocused: Bool
-
-    private var currentMember: FamilyMember {
-        FamilyMember(rawValue: selectedMember) ?? .victor
-    }
 
     private var dayLabel: String {
         let fmt = DateFormatter()
@@ -20,11 +15,15 @@ struct TodayTab: View {
     }
 
     private var todayTodos: [TodoItem] {
-        allTodos.filter { $0.when == "Today" }
+        allTodos.filter { $0.when == "Today" && !$0.isDone }
+    }
+
+    private var completedTodayTodos: [TodoItem] {
+        allTodos.filter { $0.when == "Today" && $0.isDone }
     }
 
     private var upcomingTodos: [TodoItem] {
-        allTodos.filter { $0.when != "Today" }
+        allTodos.filter { $0.when != "Today" && !$0.isDone }
     }
 
     private var remainingCount: Int {
@@ -32,23 +31,29 @@ struct TodayTab: View {
     }
 
     var body: some View {
+        #if os(iOS)
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: AppTheme.cardSpacing) {
-                    screenHeader
-                    taskSection
-                    upcomingSection
-                }
-                .padding(.horizontal, AppTheme.horizontalPadding)
-                .padding(.top, 8)
-                .padding(.bottom, 100)
-            }
-            .background(AppTheme.background)
-            .navigationTitle("Today")
-            #if os(iOS)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            #endif
+            todayContent
+                .toolbarColorScheme(.dark, for: .navigationBar)
         }
+        #else
+        todayContent
+        #endif
+    }
+
+    private var todayContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: AppTheme.cardSpacing) {
+                screenHeader
+                taskSection
+                upcomingSection
+            }
+            .padding(.horizontal, AppTheme.horizontalPadding)
+            .padding(.top, 8)
+            .padding(.bottom, 100)
+        }
+        .background(AppTheme.background)
+        .navigationTitle("Today")
     }
 
     // MARK: - Header
@@ -117,6 +122,32 @@ struct TodayTab: View {
                 RoundedRectangle(cornerRadius: AppTheme.cornerRadius)
                     .strokeBorder(AppTheme.cardBorder, lineWidth: 1)
             )
+
+            if !completedTodayTodos.isEmpty {
+                Text("COMPLETED")
+                    .font(.system(size: 12, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundStyle(AppTheme.tertiaryText)
+                    .padding(.horizontal, 4)
+                    .padding(.top, 4)
+
+                VStack(spacing: 0) {
+                    ForEach(Array(completedTodayTodos.enumerated()), id: \.element.id) { index, todo in
+                        todoRow(todo)
+                        if index < completedTodayTodos.count - 1 {
+                            Divider()
+                                .background(AppTheme.cardBorder)
+                                .padding(.leading, 48)
+                        }
+                    }
+                }
+                .background(AppTheme.cardBackground)
+                .clipShape(RoundedRectangle(cornerRadius: AppTheme.cornerRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppTheme.cornerRadius)
+                        .strokeBorder(AppTheme.cardBorder, lineWidth: 1)
+                )
+            }
         }
     }
 

@@ -16,6 +16,10 @@ struct RetirementTab: View {
         btcAccounts.filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
     }
 
+    private var myBuys: [BTCBuy] {
+        btcBuys.filter { currentMember.canSee(dataOwnedBy: $0.ownerMember ?? .victor) }
+    }
+
     private var totalBTC: Decimal {
         myAccounts.reduce(Decimal(0)) { $0 + $1.btc }
     }
@@ -28,25 +32,31 @@ struct RetirementTab: View {
     private var monthlyBurn: Decimal { 8500 }
 
     var body: some View {
+        #if os(iOS)
         NavigationStack {
-            ScrollView {
-                VStack(spacing: AppTheme.cardSpacing) {
-                    screenHeader
-                    runwayHero
-                    storageBreakdown
-                    dcaProjection
-                    costBasisSection
-                }
-                .padding(.horizontal, AppTheme.horizontalPadding)
-                .padding(.top, 8)
-                .padding(.bottom, 100)
-            }
-            .background(AppTheme.background)
-            .navigationTitle("Stack")
-            #if os(iOS)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            #endif
+            stackContent
+                .toolbarColorScheme(.dark, for: .navigationBar)
         }
+        #else
+        stackContent
+        #endif
+    }
+
+    private var stackContent: some View {
+        ScrollView {
+            VStack(spacing: AppTheme.cardSpacing) {
+                screenHeader
+                runwayHero
+                storageBreakdown
+                dcaProjection
+                costBasisSection
+            }
+            .padding(.horizontal, AppTheme.horizontalPadding)
+            .padding(.top, 8)
+            .padding(.bottom, 100)
+        }
+        .background(AppTheme.background)
+        .navigationTitle("Stack")
     }
 
     // MARK: - Header
@@ -103,7 +113,11 @@ struct RetirementTab: View {
             HStack {
                 Text("\(Int(goalPct * 100))% of \(formatBtc(goalBTC)) goal")
                 Spacer()
-                Text("\(formatBtc(goalBTC - totalBTC)) to go")
+                if totalBTC >= goalBTC {
+                    Text("Goal reached")
+                } else {
+                    Text("\(formatBtc(goalBTC - totalBTC)) to go")
+                }
             }
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(.white.opacity(0.85))
@@ -128,7 +142,7 @@ struct RetirementTab: View {
             VStack(spacing: 0) {
                 ForEach(Array(myAccounts.enumerated()), id: \.element.id) { index, account in
                     HStack(spacing: 12) {
-                        Image(systemName: account.custody == .selfCustody ? "building.columns.fill" : "bolt.fill")
+                        Image(systemName: account.custody == .selfCustody ? "lock.shield.fill" : "building.columns.fill")
                             .foregroundStyle(AppTheme.accentColor)
                             .frame(width: 38, height: 38)
                             .background(AppTheme.accentSoft)
@@ -182,15 +196,16 @@ struct RetirementTab: View {
         let currentBtc = Double(truncating: totalBTC as NSNumber)
         let weeklyDCA = 0.002
         let years = 10
+        let baseYear = Calendar.current.component(.year, from: .now)
         var points: [(year: Int, btc: Double)] = []
         for i in 0...years {
             let projected = currentBtc + Double(i) * 52 * weeklyDCA + Double(i) * 12 * extraBtcPerMonth
-            points.append((year: 2026 + i, btc: projected))
+            points.append((year: baseYear + i, btc: projected))
         }
         let goal = Double(truncating: goalBTC as NSNumber)
         let reached = points.first { $0.btc >= goal }
         let goalYear = reached.map { String($0.year) } ?? "—"
-        let yearsToGoal = reached.map { $0.year - 2026 }
+        let yearsToGoal = reached.map { $0.year - baseYear }
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -261,11 +276,12 @@ struct RetirementTab: View {
     private func projectionChart(points: [(year: Int, btc: Double)], goal: Double) -> some View {
         let maxVal = max(points.map(\.btc).max() ?? goal, goal)
         let minVal = (points.map(\.btc).min() ?? 0) * 0.9
+        let range = maxVal - minVal
 
         return GeometryReader { geo in
             let w = geo.size.width
             let h = geo.size.height
-            let goalY = h - CGFloat((goal - minVal) / (maxVal - minVal)) * h * 0.8 - h * 0.1
+            let goalY = range > 0 ? h - CGFloat((goal - minVal) / range) * h * 0.8 - h * 0.1 : h * 0.5
 
             ZStack(alignment: .topLeading) {
                 Path { path in
@@ -277,7 +293,7 @@ struct RetirementTab: View {
                 Path { path in
                     for (i, point) in points.enumerated() {
                         let x = CGFloat(i) / CGFloat(points.count - 1) * w
-                        let y = h - CGFloat((point.btc - minVal) / (maxVal - minVal)) * h * 0.8 - h * 0.1
+                        let y = range > 0 ? h - CGFloat((point.btc - minVal) / range) * h * 0.8 - h * 0.1 : h * 0.5
                         if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
                         else { path.addLine(to: CGPoint(x: x, y: y)) }
                     }
@@ -287,7 +303,7 @@ struct RetirementTab: View {
                 ForEach(Array(points.enumerated()), id: \.offset) { i, point in
                     if i % 2 == 0 {
                         let x = CGFloat(i) / CGFloat(points.count - 1) * w
-                        let y = h - CGFloat((point.btc - minVal) / (maxVal - minVal)) * h * 0.8 - h * 0.1
+                        let y = range > 0 ? h - CGFloat((point.btc - minVal) / range) * h * 0.8 - h * 0.1 : h * 0.5
                         Circle()
                             .fill(AppTheme.accentColor)
                             .frame(width: 4, height: 4)
@@ -307,7 +323,7 @@ struct RetirementTab: View {
     // MARK: - Cost Basis
 
     private var costBasisSection: some View {
-        let totalBasis = btcBuys.reduce(Decimal(0)) { $0 + $1.usd }
+        let totalBasis = myBuys.reduce(Decimal(0)) { $0 + $1.usd }
         let currentValue = totalBTC * btcPrice
         let unrealized = currentValue - totalBasis
 
@@ -325,7 +341,7 @@ struct RetirementTab: View {
                             .font(.system(size: 11, weight: .bold))
                             .tracking(0.5)
                             .foregroundStyle(AppTheme.secondaryText)
-                        Text("\(btcBuys.count) buys tracked")
+                        Text("\(myBuys.count) buys tracked")
                             .font(.system(size: 13))
                             .foregroundStyle(AppTheme.tertiaryText)
                     }
@@ -347,7 +363,7 @@ struct RetirementTab: View {
                 }
                 .padding(14)
 
-                ForEach(Array(btcBuys.suffix(5).reversed().enumerated()), id: \.element.id) { index, buy in
+                ForEach(Array(myBuys.suffix(5).reversed().enumerated()), id: \.element.id) { index, buy in
                     Divider().background(AppTheme.cardBorder)
 
                     HStack(spacing: 12) {
