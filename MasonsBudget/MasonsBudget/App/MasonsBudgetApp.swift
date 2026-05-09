@@ -24,6 +24,7 @@ struct MasonsBudgetApp: App {
             SyncEvent.self,
             FamilyProfile.self,
             NetWorthSnapshot.self,
+            TodoItem.self,
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
