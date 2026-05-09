@@ -96,48 +96,18 @@ struct DashboardTab: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: AppTheme.cardSpacing) {
-                    syncStatusBanner
-
-                    StatCard(
-                        title: "Net Worth",
-                        value: formatCurrency(netWorth),
-                        subtitle: netWorthSubtitle,
-                        icon: "chart.line.uptrend.xyaxis",
-                        style: .hero
-                    )
-
-                    HStack(spacing: AppTheme.cardSpacing) {
-                        QuickActionButton(
-                            title: "Add\nTransaction",
-                            icon: "plus",
-                            color: AppTheme.accentColor
-                        ) { showAddTransaction = true }
-                        QuickActionButton(
-                            title: "View\nSpending",
-                            icon: "list.bullet",
-                            color: AppTheme.secondaryAccent
-                        ) { selectedTab = .budget }
-                    }
-
-                    budgetOverview
-
-                    StatCard(
-                        title: "Bitcoin Stack",
-                        value: formatBtc(totalBtc),
-                        subtitle: myBtcAccounts.isEmpty ? "Waiting for MC2 sync" : "\(myBtcAccounts.count) accounts",
-                        icon: "bitcoinsign.circle"
-                    )
-
-                    if !categories.isEmpty {
-                        budgetCategoryBars
-                    }
+                    heroBalance
+                    storageStatRow
+                    incomeCard
+                    monthSpending
+                    recentActivity
                 }
                 .padding(.horizontal, AppTheme.horizontalPadding)
                 .padding(.top, 8)
-                .padding(.bottom, 24)
+                .padding(.bottom, 100)
             }
             .background(AppTheme.background)
-            .navigationTitle("Dashboard")
+            .navigationTitle("Home")
             #if os(iOS)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .overlay(alignment: .bottom) {
@@ -214,118 +184,300 @@ struct DashboardTab: View {
         return categories.first(where: { $0.name.caseInsensitiveCompare(parsedCategory) == .orderedSame })?.name
     }
 
-    private var syncStatusBanner: some View {
-        Group {
-            if snapshots.isEmpty && myBtcAccounts.isEmpty {
-                HStack(spacing: 10) {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.caption)
-                        .foregroundStyle(AppTheme.accentColor)
-                    Text("Connect MC2 to sync your data")
-                        .font(.caption)
-                        .foregroundStyle(AppTheme.secondaryText)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption2)
-                        .foregroundStyle(AppTheme.tertiaryText)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(AppTheme.warmGlow)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(AppTheme.accentColor.opacity(0.2), lineWidth: 1)
-                )
+    // MARK: - Hero Balance
+
+    private var heroBalance: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("NET WORTH")
+                .font(.system(size: 11, weight: .bold))
+                .tracking(1)
+                .foregroundStyle(AppTheme.accentColor)
+
+            Text(formatCurrency(netWorth))
+                .font(AppTheme.heroNumber)
+                .foregroundStyle(AppTheme.primaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+
+            HStack(spacing: 8) {
+                Text(netWorthSubtitle)
+                    .font(.system(size: 13))
+                    .foregroundStyle(AppTheme.secondaryText)
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
+    }
+
+    // MARK: - Storage Stat Row
+
+    private var coldBtc: Decimal {
+        myBtcAccounts.filter { $0.custody == .selfCustody }.reduce(Decimal(0)) { $0 + $1.btc }
+    }
+
+    private var hotBtc: Decimal {
+        myBtcAccounts.filter { $0.custody == .exchange }.reduce(Decimal(0)) { $0 + $1.btc }
+    }
+
+    private var storageStatRow: some View {
+        HStack(spacing: 10) {
+            storageStatCard(
+                label: "Cold Storage",
+                icon: "building.columns.fill",
+                iconColor: AppTheme.plum,
+                iconBg: AppTheme.plumSoft,
+                value: formatBtc(coldBtc),
+                subtitle: totalBtc > 0
+                    ? "\(Int(Double(truncating: (coldBtc / totalBtc) as NSNumber) * 100))% of stack"
+                    : "self-custody"
+            )
+            storageStatCard(
+                label: "Spending",
+                icon: "bolt.fill",
+                iconColor: AppTheme.info,
+                iconBg: AppTheme.infoSoft,
+                value: formatBtc(hotBtc),
+                subtitle: "exchange"
+            )
         }
     }
 
-    private var budgetOverview: some View {
-        VStack(alignment: .leading, spacing: 10) {
+    private func storageStatCard(label: String, icon: String, iconColor: Color, iconBg: Color, value: String, subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 11))
+                    .foregroundStyle(iconColor)
+                    .frame(width: 18, height: 18)
+                    .background(iconBg)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                Text(label.uppercased())
+                    .font(.system(size: 11, weight: .bold))
+                    .tracking(0.5)
+                    .foregroundStyle(iconColor)
+            }
+            Text(value)
+                .font(AppTheme.subNumber)
+                .foregroundStyle(AppTheme.primaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text(subtitle)
+                .font(.system(size: 11))
+                .foregroundStyle(AppTheme.tertiaryText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard()
+    }
+
+    // MARK: - Income Card
+
+    private var incomeCard: some View {
+        let snapshot = latestSnapshot
+        let mtdIncome = snapshot?.mtdIncome ?? 0
+        let ytdIncome = snapshot?.ytdIncome ?? 0
+        let mtdSpent = totalSpent
+        let mtdSaved = mtdIncome - mtdSpent
+        let mtdRate = mtdIncome > 0 ? Int(Double(truncating: (mtdSaved / mtdIncome) as NSNumber) * 100) : 0
+
+        return VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                incomeCell(label: "INCOME MTD", value: mtdIncome, saved: mtdSaved, rate: mtdRate)
+                Rectangle()
+                    .fill(AppTheme.cardBorder)
+                    .frame(width: 1)
+                    .padding(.vertical, 12)
+                incomeCell(label: "INCOME YTD", value: ytdIncome, saved: nil, rate: nil)
+            }
+        }
+        .background(AppTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.cornerRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.cornerRadius)
+                .strokeBorder(AppTheme.cardBorder, lineWidth: 1)
+        )
+    }
+
+    private func incomeCell(label: String, value: Decimal, saved: Decimal?, rate: Int?) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.system(size: 10, weight: .bold))
+                .tracking(1)
+                .foregroundStyle(AppTheme.secondaryText)
+            Text(formatCurrency(value))
+                .font(AppTheme.subNumber)
+                .foregroundStyle(AppTheme.primaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            if let saved, let rate {
+                HStack(spacing: 6) {
+                    Text("\(rate)%")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(rate >= 30 ? AppTheme.accentColor : AppTheme.secondaryText)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(rate >= 30 ? AppTheme.accentSoft2 : AppTheme.surface2)
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                    Text("saved \(formatCurrency(saved))")
+                        .font(.system(size: 11))
+                        .foregroundStyle(AppTheme.tertiaryText)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+    }
+
+    // MARK: - Month Spending
+
+    private var monthSpending: some View {
+        let pct = totalBudgeted > 0 ? Int(Double(truncating: (totalSpent / totalBudgeted) as NSNumber) * 100) : 0
+        let monthName = Date().formatted(.dateTime.month(.wide))
+
+        return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(latestSnapshot?.monthKey ?? "Budget")
-                        .font(.caption)
-                        .foregroundStyle(AppTheme.secondaryText)
-                        .textCase(.uppercase)
+                    Text("\(monthName) SPENDING")
+                        .font(.system(size: 11, weight: .bold))
                         .tracking(0.5)
-                    Text(formatCurrency(latestSnapshot?.monthlyGross ?? 0))
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(AppTheme.primaryText)
+                        .foregroundStyle(AppTheme.secondaryText)
+                    Text("\(pct)% of monthly limit")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AppTheme.tertiaryText)
                 }
                 Spacer()
-                if totalBudgeted > 0 {
-                    budgetRing
-                }
+                Text(formatCurrency(totalSpent))
+                    .font(.system(size: 18, weight: .bold, design: .monospaced))
+                    .foregroundStyle(AppTheme.primaryText)
             }
-            if !categories.isEmpty {
-                HStack(spacing: 4) {
-                    Text("\(categories.count) categories")
-                    Text("·")
-                    Text("\(formatCurrency(totalSpent)) spent")
-                }
-                .font(.caption2)
-                .foregroundStyle(AppTheme.tertiaryText)
-            }
-        }
-        .glassCard()
-    }
 
-    private var budgetRing: some View {
-        let pct = totalBudgeted > 0 ? Double(truncating: (totalSpent / totalBudgeted) as NSNumber) : 0
-        return ZStack {
-            Circle()
-                .stroke(AppTheme.background, lineWidth: 5)
-            Circle()
-                .trim(from: 0, to: min(pct, 1.0))
-                .stroke(
-                    pct > 1.0 ? AppTheme.negative : AppTheme.accentColor,
-                    style: StrokeStyle(lineWidth: 5, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
-            Text("\(Int(pct * 100))%")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .foregroundStyle(AppTheme.primaryText)
-        }
-        .frame(width: 44, height: 44)
-    }
-
-    private var budgetCategoryBars: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: "Top Categories", icon: "chart.bar.fill")
-            ForEach(categories.sorted(by: { ($0.displayRank, -$0.monthlyBudget) < ($1.displayRank, -$1.monthlyBudget) }).prefix(4), id: \.name) { cat in
-                let spent = currentMonthTransactions.filter { $0.category == cat.name }.reduce(Decimal(0)) { $0 + $1.amount }
-                let pct = cat.monthlyBudget > 0 ? spent / cat.monthlyBudget : 0
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack {
-                        Text("\(cat.icon) \(cat.name)")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(AppTheme.primaryText)
-                        Spacer()
-                        Text(formatCurrency(spent))
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(pct > 1.0 ? AppTheme.negative : AppTheme.primaryText)
+            if totalBudgeted > 0 {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(AppTheme.surface2)
+                            .frame(height: 10)
+                        HStack(spacing: 1) {
+                            ForEach(
+                                categories
+                                    .filter { !$0.isIncome }
+                                    .sorted(by: { ($0.displayRank, -$0.monthlyBudget) < ($1.displayRank, -$1.monthlyBudget) }),
+                                id: \.name
+                            ) { cat in
+                                let spent = currentMonthTransactions.filter { $0.category == cat.name }.reduce(Decimal(0)) { $0 + $1.amount }
+                                let width = totalBudgeted > 0 ? CGFloat(truncating: (spent / totalBudgeted) as NSNumber) * geo.size.width : 0
+                                if width > 0 {
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .fill(AppTheme.accentColor.opacity(0.85))
+                                        .frame(width: max(2, width), height: 10)
+                                }
+                            }
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
                     }
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(AppTheme.background)
-                                .frame(height: 6)
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(
-                                    pct > 1.0
-                                    ? LinearGradient(colors: [AppTheme.negative, AppTheme.negative.opacity(0.7)], startPoint: .leading, endPoint: .trailing)
-                                    : LinearGradient(colors: [AppTheme.accentColor, AppTheme.accentColor.opacity(0.6)], startPoint: .leading, endPoint: .trailing)
-                                )
-                                .frame(width: max(0, min(geo.size.width, CGFloat(truncating: pct as NSNumber) * geo.size.width)), height: 6)
+                }
+                .frame(height: 10)
+
+                let topCats = categories
+                    .filter { !$0.isIncome }
+                    .sorted(by: { ($0.displayRank, -$0.monthlyBudget) < ($1.displayRank, -$1.monthlyBudget) })
+                    .prefix(4)
+                let remaining = max(0, categories.filter { !$0.isIncome }.count - 4)
+
+                HStack(spacing: 12) {
+                    ForEach(Array(topCats), id: \.name) { cat in
+                        HStack(spacing: 4) {
+                            Text(cat.icon)
+                                .font(.system(size: 10))
+                            Text(cat.name)
+                                .font(.system(size: 12))
+                                .foregroundStyle(AppTheme.secondaryText)
                         }
                     }
-                    .frame(height: 6)
+                    if remaining > 0 {
+                        Text("+\(remaining) more")
+                            .font(.system(size: 12))
+                            .foregroundStyle(AppTheme.tertiaryText)
+                    }
                 }
             }
         }
         .glassCard()
+    }
+
+    // MARK: - Recent Activity
+
+    private var recentTransactions: [Transaction] {
+        myTransactions.sorted { $0.date > $1.date }.prefix(4).map { $0 }
+    }
+
+    private var recentActivity: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Recent activity")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(AppTheme.primaryText)
+                Spacer()
+                Button { selectedTab = .budget } label: {
+                    Text("See all")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AppTheme.accentColor)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 4)
+
+            if recentTransactions.isEmpty {
+                Text("No transactions yet")
+                    .font(.system(size: 14))
+                    .foregroundStyle(AppTheme.tertiaryText)
+                    .frame(maxWidth: .infinity)
+                    .glassCard()
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(recentTransactions.enumerated()), id: \.element.id) { index, tx in
+                        HStack(spacing: 12) {
+                            Text(String(tx.merchant.prefix(1)).uppercased())
+                                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                .foregroundStyle(AppTheme.accentColor)
+                                .frame(width: 34, height: 34)
+                                .background(AppTheme.accentSoft)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(tx.merchant)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(AppTheme.primaryText)
+                                    .lineLimit(1)
+                                Text("\(tx.category) · \(tx.date.formatted(date: .abbreviated, time: .omitted))")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(AppTheme.tertiaryText)
+                            }
+
+                            Spacer()
+
+                            Text(formatCurrency(tx.amount))
+                                .font(AppTheme.monoData)
+                                .foregroundStyle(AppTheme.primaryText)
+                        }
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 14)
+
+                        if index < recentTransactions.count - 1 {
+                            Divider()
+                                .background(AppTheme.cardBorder)
+                                .padding(.leading, 60)
+                        }
+                    }
+                }
+                .background(AppTheme.cardBackground)
+                .clipShape(RoundedRectangle(cornerRadius: AppTheme.cornerRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppTheme.cornerRadius)
+                        .strokeBorder(AppTheme.cardBorder, lineWidth: 1)
+                )
+            }
+        }
     }
 
 }
