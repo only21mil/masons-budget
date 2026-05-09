@@ -62,6 +62,14 @@ struct DashboardTab: View {
         holdingAccounts.filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
     }
 
+    private var budgetSnapshots: [MonthlyBudgetSnapshot] {
+        currentMember.showsFullBudget ? snapshots : []
+    }
+
+    private var budgetCategories: [BudgetCategory] {
+        currentMember.showsFullBudget ? categories : []
+    }
+
     private var netWorth: Decimal {
         let holdingsTotal = myHoldingAccounts.reduce(Decimal(0)) { $0 + $1.liveValue(vooPrice: liveVOOPrice, ibitPrice: liveIBITPrice) }
         let btcValue = myBtcAccounts.reduce(Decimal(0)) { $0 + $1.usdValue(liveBTCPrice: liveBTCPrice) }
@@ -88,7 +96,7 @@ struct DashboardTab: View {
     }
 
     private var latestSnapshot: MonthlyBudgetSnapshot? {
-        snapshots.sorted { $0.lastUpdated > $1.lastUpdated }.first
+        budgetSnapshots.sorted { $0.lastUpdated > $1.lastUpdated }.first
     }
 
     private var totalSpent: Decimal {
@@ -104,7 +112,7 @@ struct DashboardTab: View {
     }
 
     private var totalBudgeted: Decimal {
-        categories.reduce(Decimal(0)) { $0 + $1.monthlyBudget }
+        budgetCategories.reduce(Decimal(0)) { $0 + $1.monthlyBudget }
     }
 
     private var latestSnapshotMonthDate: Date {
@@ -174,7 +182,9 @@ struct DashboardTab: View {
 
                     livePriceStrip
 
-                    incomeSavingsOverview
+                    if currentMember.showsFullBudget {
+                        incomeSavingsOverview
+                    }
 
                     HStack(spacing: AppTheme.cardSpacing) {
                         QuickActionButton(
@@ -189,7 +199,9 @@ struct DashboardTab: View {
                         ) { selectedTab = currentMember.showsFullBudget ? .budget : .stack }
                     }
 
-                    budgetOverview
+                    if currentMember.showsFullBudget {
+                        budgetOverview
+                    }
 
                     if !todayTodos.isEmpty {
                         todayPreview
@@ -202,7 +214,7 @@ struct DashboardTab: View {
                         icon: "bitcoinsign.circle"
                     )
 
-                    if !categories.isEmpty {
+                    if !budgetCategories.isEmpty {
                         budgetCategoryBars
                     }
                 }
@@ -413,7 +425,7 @@ struct DashboardTab: View {
               let merchant = parsed.merchant else { return }
 
         let date = parsed.date ?? Date()
-        let category = resolveCanonicalCategory(parsed.category) ?? categories.first?.name ?? "Uncategorized"
+        let category = resolveCanonicalCategory(parsed.category) ?? budgetCategories.first?.name ?? "Uncategorized"
         let card = parsed.card
         let note = parsed.note
 
@@ -436,10 +448,10 @@ struct DashboardTab: View {
 
     private func resolveCanonicalCategory(_ parsedCategory: String?) -> String? {
         guard let parsedCategory, !parsedCategory.isEmpty else { return nil }
-        if let exact = categories.first(where: { $0.name == parsedCategory })?.name {
+        if let exact = budgetCategories.first(where: { $0.name == parsedCategory })?.name {
             return exact
         }
-        return categories.first(where: { $0.name.caseInsensitiveCompare(parsedCategory) == .orderedSame })?.name
+        return budgetCategories.first(where: { $0.name.caseInsensitiveCompare(parsedCategory) == .orderedSame })?.name
     }
 
     private func saveAndSync(_ transaction: Transaction) {
@@ -531,7 +543,7 @@ struct DashboardTab: View {
 
     private func pushAppTransaction(_ transaction: Transaction) {
         let dto = MC2Transaction(appTransaction: transaction)
-        let fileName = transaction.ownerMember == .mason ? "mason-transactions" : "transactions"
+        let fileName = transaction.ownerMember.mc2TransactionsFileName
         Task {
             do {
                 try await syncClient.appendTransaction(dto, to: fileName)
@@ -543,7 +555,7 @@ struct DashboardTab: View {
 
     private var syncStatusBanner: some View {
         Group {
-            if snapshots.isEmpty && myBtcAccounts.isEmpty {
+            if budgetSnapshots.isEmpty && myBtcAccounts.isEmpty {
                 HStack(spacing: 10) {
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .font(.caption)
@@ -586,9 +598,9 @@ struct DashboardTab: View {
                     budgetRing
                 }
             }
-            if !categories.isEmpty {
+            if !budgetCategories.isEmpty {
                 HStack(spacing: 4) {
-                    Text("\(categories.count) categories")
+                    Text("\(budgetCategories.count) categories")
                     Text("·")
                     Text("\(formatCurrency(totalSpent)) spent")
                 }
@@ -621,7 +633,7 @@ struct DashboardTab: View {
     private var budgetCategoryBars: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionHeader(title: "Top Categories", icon: "chart.bar.fill")
-            ForEach(categories.sorted(by: { ($0.displayRank, -$0.monthlyBudget) < ($1.displayRank, -$1.monthlyBudget) }).prefix(4), id: \.name) { cat in
+            ForEach(budgetCategories.sorted(by: { ($0.displayRank, -$0.monthlyBudget) < ($1.displayRank, -$1.monthlyBudget) }).prefix(4), id: \.name) { cat in
                 let spent = currentMonthTransactions.filter { $0.category == cat.name }.reduce(Decimal(0)) { $0 + $1.amount }
                 let pct = cat.monthlyBudget > 0 ? spent / cat.monthlyBudget : 0
                 VStack(alignment: .leading, spacing: 5) {

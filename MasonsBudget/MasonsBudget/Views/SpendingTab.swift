@@ -32,6 +32,14 @@ struct SpendingTab: View {
         transactions.filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
     }
 
+    private var budgetCategories: [BudgetCategory] {
+        currentMember.showsFullBudget ? categories : []
+    }
+
+    private var budgetSnapshots: [MonthlyBudgetSnapshot] {
+        currentMember.showsFullBudget ? snapshots : []
+    }
+
     private var selectedMonth: Date {
         if let month = selectedHistoryMonth {
             return month
@@ -63,12 +71,12 @@ struct SpendingTab: View {
     }
 
     private var totalBudgeted: Decimal {
-        categories.reduce(Decimal(0)) { $0 + $1.monthlyBudget }
+        budgetCategories.reduce(Decimal(0)) { $0 + $1.monthlyBudget }
     }
 
     private var groupedByCategory: [(String, Decimal, Decimal, String)] {
-        let categoryBudget = Dictionary(uniqueKeysWithValues: categories.map { ($0.name, $0.monthlyBudget) })
-        let categoryIcons = Dictionary(uniqueKeysWithValues: categories.map { ($0.name, $0.icon) })
+        let categoryBudget = Dictionary(uniqueKeysWithValues: budgetCategories.map { ($0.name, $0.monthlyBudget) })
+        let categoryIcons = Dictionary(uniqueKeysWithValues: budgetCategories.map { ($0.name, $0.icon) })
         var spentByCategory: [String: Decimal] = [:]
         for tx in selectedMonthTransactions {
             spentByCategory[tx.category, default: 0] += tx.amount
@@ -90,7 +98,7 @@ struct SpendingTab: View {
     private var historyMonths: [Date] {
         let calendar = Calendar.current
         let starts = Set(myTransactions.map { calendar.startOfMonth(for: $0.date) })
-        let snapshotStarts = snapshots.compactMap { parseMonthYear($0.monthKey) }.map { calendar.startOfMonth(for: $0) }
+        let snapshotStarts = budgetSnapshots.compactMap { parseMonthYear($0.monthKey) }.map { calendar.startOfMonth(for: $0) }
         let all = Array(starts.union(snapshotStarts)).sorted()
         if all.isEmpty {
             return (0..<12).compactMap {
@@ -296,7 +304,7 @@ struct SpendingTab: View {
     }
 
     private func pushTransaction(_ transaction: Transaction) {
-        let fileName = transaction.ownerMember == .mason ? "mason-transactions" : "transactions"
+        let fileName = transaction.ownerMember.mc2TransactionsFileName
         let dto = MC2Transaction(appTransaction: transaction)
         Task {
             do {
@@ -392,7 +400,7 @@ struct SpendingTab: View {
     }
 
     private func income(for month: Date) -> Decimal {
-        if let snapshot = snapshots.first(where: { snapshot in
+        if let snapshot = budgetSnapshots.first(where: { snapshot in
             guard let snapshotMonth = parseMonthYear(snapshot.monthKey) else { return false }
             return Calendar.current.isDate(snapshotMonth, equalTo: month, toGranularity: .month)
         }) {

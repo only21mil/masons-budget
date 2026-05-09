@@ -165,7 +165,7 @@ struct CategoryDetailView: View {
     }
 
     private func pushTransaction(_ transaction: Transaction) {
-        let fileName = transaction.ownerMember == .mason ? "mason-transactions" : "transactions"
+        let fileName = transaction.ownerMember.mc2TransactionsFileName
         let dto = MC2Transaction(appTransaction: transaction)
         Task {
             do {

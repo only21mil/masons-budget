@@ -37,15 +37,8 @@ final class MC2SyncService {
 
         totalEntities += await syncTodos(&errors)
 
-        if currentMember == .mason {
-            // Mason: sync his own budget, transactions, BTC buys, and finances (401k filtered by owner)
-            totalEntities += await syncSonBalances(&errors)
-            totalEntities += await syncMasonBudget(&errors)
-            totalEntities += await syncMasonTransactions(&errors)
-            totalEntities += await syncMasonBTCBuys(&errors)
-            totalEntities += await syncFinances(&errors)
-        } else {
-            // Adults: full sync
+        if currentMember.isAdult {
+            // Adults: full household sync
             totalEntities += await syncTransactions(&errors)
             totalEntities += await syncBudget(&errors)
             totalEntities += await syncBTCAccounts(&errors)
@@ -53,6 +46,17 @@ final class MC2SyncService {
             totalEntities += await syncBTCBuys(&errors)
             totalEntities += await syncBTCBillPays(&errors)
             totalEntities += await syncFinances(&errors)
+        } else if currentMember.hasDedicatedMC2ChildFinanceFiles {
+            // Mason: sync his own budget, transactions, BTC buys, and finances.
+            totalEntities += await syncSonBalances(&errors)
+            totalEntities += await syncMasonBudget(&errors)
+            totalEntities += await syncMasonTransactions(&errors)
+            totalEntities += await syncMasonBTCBuys(&errors)
+            totalEntities += await syncFinances(&errors)
+        } else {
+            // Maddox does not have dedicated MC2 finance files yet. Keep his sync
+            // limited to shared todos until those data files exist.
+            log.info("No dedicated MC2 finance sync path for \(self.currentMember.rawValue, privacy: .public)")
         }
 
         recordNetWorthSnapshot()
@@ -107,7 +111,7 @@ final class MC2SyncService {
         do {
             let dtos = try await reader.readTransactions()
             let models = MC2Mapper.mapTransactions(dtos)
-            replaceAll(Transaction.self, with: models)
+            replaceTransactions(ownedBy: [.victor, .rachel], with: models)
             return models.count
         } catch {
             log.error("Transactions sync failed: \(error.localizedDescription)")
@@ -149,7 +153,7 @@ final class MC2SyncService {
         do {
             let dtos = try await reader.readBTCBuys()
             let models = dtos.map { MC2Mapper.mapBTCBuy($0) }
-            replaceAll(BTCBuy.self, with: models)
+            replaceBTCBuys(ownedBy: [.victor, .rachel], with: models)
             return models.count
         } catch {
             log.error("BTC buys sync failed: \(error.localizedDescription)")
@@ -162,7 +166,7 @@ final class MC2SyncService {
         do {
             let dtos = try await reader.readBTCBillPays()
             let models = dtos.map { MC2Mapper.mapBTCBillPay($0) }
-            replaceAll(BTCBillPay.self, with: models)
+            replaceBTCBillPays(ownedBy: [.victor, .rachel], with: models)
             return models.count
         } catch {
             log.error("BTC bill pays sync failed: \(error.localizedDescription)")
@@ -175,7 +179,7 @@ final class MC2SyncService {
         do {
             let dtos = try await reader.readTodos()
             let models = MC2Mapper.mapTodos(dtos, viewer: currentMember)
-            replaceAll(TodoItem.self, with: models)
+            replaceTodos(visibleTo: currentMember, with: models)
             return models.count
         } catch {
             log.error("Todos sync failed: \(error.localizedDescription)")
@@ -188,12 +192,7 @@ final class MC2SyncService {
         do {
             let dto = try await reader.readFinances()
             let accounts = MC2Mapper.mapFinances(dto, owner: currentMember)
-            deleteAll(HoldingLot.self)
-            deleteAll(Holding.self)
-            deleteAll(HoldingAccount.self)
-            for account in accounts {
-                context.insert(account)
-            }
+            replaceHoldingAccounts(visibleTo: currentMember, with: accounts)
             return accounts.count
         } catch {
             log.error("Finances sync failed: \(error.localizedDescription)")
@@ -266,7 +265,7 @@ final class MC2SyncService {
         do {
             let dtos = try await reader.readMasonTransactions()
             let models = MC2Mapper.mapTransactions(dtos, owner: .mason)
-            replaceAll(Transaction.self, with: models)
+            replaceTransactions(ownedBy: [.mason], with: models)
             return models.count
         } catch {
             log.error("Mason transactions sync failed: \(error.localizedDescription)")
@@ -279,7 +278,7 @@ final class MC2SyncService {
         do {
             let dtos = try await reader.readMasonBTCBuys()
             let models = dtos.map { MC2Mapper.mapBTCBuy($0, owner: .mason) }
-            replaceAll(BTCBuy.self, with: models)
+            replaceBTCBuys(ownedBy: [.mason], with: models)
             return models.count
         } catch {
             log.error("Mason BTC buys sync failed: \(error.localizedDescription)")
@@ -344,6 +343,81 @@ final class MC2SyncService {
             }
         } catch {
             log.error("Failed to delete BTCAccount slice: \(error.localizedDescription)")
+        }
+
+        for account in accounts {
+            context.insert(account)
+        }
+    }
+
+    private func replaceTransactions(ownedBy owners: [FamilyMember], with transactions: [Transaction]) {
+        do {
+            let existing = try context.fetch(FetchDescriptor<Transaction>())
+            for transaction in existing where owners.contains(transaction.ownerMember) {
+                context.delete(transaction)
+            }
+        } catch {
+            log.error("Failed to delete Transaction slice: \(error.localizedDescription)")
+        }
+
+        for transaction in transactions {
+            context.insert(transaction)
+        }
+    }
+
+    private func replaceBTCBuys(ownedBy owners: [FamilyMember], with buys: [BTCBuy]) {
+        do {
+            let existing = try context.fetch(FetchDescriptor<BTCBuy>())
+            for buy in existing where owners.contains(buy.ownerMember ?? .victor) {
+                context.delete(buy)
+            }
+        } catch {
+            log.error("Failed to delete BTCBuy slice: \(error.localizedDescription)")
+        }
+
+        for buy in buys {
+            context.insert(buy)
+        }
+    }
+
+    private func replaceBTCBillPays(ownedBy owners: [FamilyMember], with billPays: [BTCBillPay]) {
+        do {
+            let existing = try context.fetch(FetchDescriptor<BTCBillPay>())
+            for billPay in existing where owners.contains(billPay.ownerMember) {
+                context.delete(billPay)
+            }
+        } catch {
+            log.error("Failed to delete BTCBillPay slice: \(error.localizedDescription)")
+        }
+
+        for billPay in billPays {
+            context.insert(billPay)
+        }
+    }
+
+    private func replaceTodos(visibleTo viewer: FamilyMember, with todos: [TodoItem]) {
+        do {
+            let existing = try context.fetch(FetchDescriptor<TodoItem>())
+            for todo in existing where viewer.canSee(dataOwnedBy: todo.ownerMember) {
+                context.delete(todo)
+            }
+        } catch {
+            log.error("Failed to delete TodoItem slice: \(error.localizedDescription)")
+        }
+
+        for todo in todos {
+            context.insert(todo)
+        }
+    }
+
+    private func replaceHoldingAccounts(visibleTo viewer: FamilyMember, with accounts: [HoldingAccount]) {
+        do {
+            let existing = try context.fetch(FetchDescriptor<HoldingAccount>())
+            for account in existing where viewer.canSee(dataOwnedBy: account.ownerMember) {
+                context.delete(account)
+            }
+        } catch {
+            log.error("Failed to delete HoldingAccount slice: \(error.localizedDescription)")
         }
 
         for account in accounts {

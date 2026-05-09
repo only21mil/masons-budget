@@ -67,6 +67,26 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable {
         true
     }
 
+    var mc2TransactionsFileName: String {
+        switch self {
+        case .victor, .rachel:
+            "transactions"
+        case .mason:
+            "mason-transactions"
+        case .maddox:
+            "maddox-transactions"
+        }
+    }
+
+    var hasDedicatedMC2ChildFinanceFiles: Bool {
+        switch self {
+        case .mason:
+            true
+        case .victor, .rachel, .maddox:
+            false
+        }
+    }
+
     /// Adults can see the household and kids. Kids see only their own data.
     func canSee(dataOwnedBy owner: FamilyMember) -> Bool {
         if self == owner { return true }
