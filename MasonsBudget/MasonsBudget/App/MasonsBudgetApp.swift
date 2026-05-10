@@ -20,6 +20,9 @@ struct MasonsBudgetApp: App {
             FamilyProfile.self,
             NetWorthSnapshot.self,
             TodoItem.self,
+            TodoProject.self,
+            TodoArea.self,
+            CostBasisLot.self,
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
@@ -114,6 +117,7 @@ struct MasonsBudgetApp: App {
             .onChange(of: selectedMember) { _, _ in
                 Task { await syncFromConvex() }
             }
+            .themed()
         }
         .modelContainer(sharedModelContainer)
         #if os(macOS)

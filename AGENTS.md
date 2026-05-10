@@ -89,7 +89,7 @@ Stop and ask Victor before:
 - exporting an `.ipa`, `.app`, `.pkg`, `.dmg`, or other release artifact
 - uploading to TestFlight/App Store Connect or any distribution channel
 
-Read `/Users/victor/Obsidian/Victor/Agent-Shared/rules/app-build-deploy-workflow.md` before any approved build/release sequence.
+Read `/Users/node2m1pro/Obsidian/Victor/Agent-Shared/rules/app-build-deploy-workflow.md` before any approved build/release sequence.
 
 ## Build, archive, TestFlight
 

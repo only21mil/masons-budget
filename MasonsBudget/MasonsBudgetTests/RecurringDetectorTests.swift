@@ -3,13 +3,21 @@ import Foundation
 
 final class RecurringDetectorTests: XCTestCase {
 
-    private func makeTransaction(id: String, merchant: String, category: String, amount: Decimal, date: Date) -> Transaction {
+    private func makeTransaction(
+        id: String,
+        merchant: String,
+        category: String,
+        amount: Decimal,
+        date: Date,
+        amountSats: Int64? = nil
+    ) -> Transaction {
         Transaction(
             id: id,
             date: date,
             merchant: merchant,
             amount: amount,
             category: category,
+            amountSats: amountSats,
             createdBy: "test",
             createdAt: date
         )
@@ -74,5 +82,21 @@ final class RecurringDetectorTests: XCTestCase {
         let results = RecurringDetector().detect(from: txs)
         XCTAssertEqual(results.count, 1)
         XCTAssertNotNil(results[0].nextDate)
+    }
+
+    func testSatsDeflationUsesExplicitSatsNotFiatAmount() {
+        let txs = [
+            makeTransaction(id: "1", merchant: "Rent", category: "Housing", amount: 1_500, date: ymd("2025-03-01"), amountSats: 600_000),
+            makeTransaction(id: "2", merchant: "Rent", category: "Housing", amount: 1_500, date: ymd("2025-04-01"), amountSats: 600_000),
+            makeTransaction(id: "3", merchant: "Rent", category: "Housing", amount: 1_500, date: ymd("2026-03-01"), amountSats: 400_000),
+            makeTransaction(id: "4", merchant: "Rent", category: "Housing", amount: 1_500, date: ymd("2026-04-01"), amountSats: 400_000),
+        ]
+
+        let results = RecurringDetector().detect(from: txs, referenceDate: ymd("2026-05-09"))
+
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results[0].satsLastYear, 1_200_000)
+        let diff = abs((results[0].yoyChangePct ?? 0) - Decimal(-33.3333))
+        XCTAssertLessThan(diff, Decimal(0.001))
     }
 }

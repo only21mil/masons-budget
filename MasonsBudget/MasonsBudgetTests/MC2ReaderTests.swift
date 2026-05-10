@@ -66,6 +66,35 @@ final class MC2ReaderTests: XCTestCase {
         XCTAssertNotEqual(models[0].date, .distantPast)
     }
 
+    func testMC2PositiveSpendingClassifiesAsSpend() throws {
+        let json = """
+        [{"id":"t001","date":"2026-03-02","merchant":"Kroger","amount":76.81,"category":"Groceries","card":"Aven","note":""}]
+        """.data(using: .utf8)!
+
+        let dtos = try JSONDecoder().decode([MC2Transaction].self, from: json)
+        let tx = try XCTUnwrap(MC2Mapper.mapTransactions(dtos).first)
+
+        XCTAssertTrue(tx.isSpend)
+        XCTAssertFalse(tx.isIncome)
+        assertDecimalClose(tx.spendAmount, 76.81)
+        assertDecimalClose(tx.displayAmount, -76.81)
+    }
+
+    func testIncomeCategoryClassifiesAsIncome() {
+        let tx = Transaction(
+            id: "income-1",
+            date: .now,
+            merchant: "Paycheck",
+            amount: 500,
+            category: "Income",
+            createdBy: "app"
+        )
+
+        XCTAssertTrue(tx.isIncome)
+        XCTAssertFalse(tx.isSpend)
+        assertDecimalClose(tx.displayAmount, 500)
+    }
+
     func testAppTransactionPayloadMatchesMC2Shape() throws {
         var components = DateComponents()
         components.calendar = Calendar(identifier: .gregorian)

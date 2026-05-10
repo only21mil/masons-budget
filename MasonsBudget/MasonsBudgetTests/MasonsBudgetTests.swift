@@ -17,16 +17,15 @@ final class MasonsBudgetTests: XCTestCase {
 
     func testAppTabCases() {
         let tabs = AppTab.allCases
-        XCTAssertEqual(tabs.count, 8)
-        XCTAssertEqual(AppTab.iOSTabs, [.home, .budget, .today, .stack, .more])
-        XCTAssertTrue(AppTab.macMoneyTabs.contains(.activity))
-        XCTAssertTrue(AppTab.macMoneyTabs.contains(.netWorth))
-        XCTAssertTrue(AppTab.macTaskTabs.contains(.projects))
+        XCTAssertEqual(tabs, [.home, .budget, .today, .stack, .more])
         for tab in tabs {
-            XCTAssertFalse(tab.title.isEmpty, "\(tab) should have a title")
-            XCTAssertFalse(tab.macTitle.isEmpty, "\(tab) should have a mac title")
+            XCTAssertFalse(tab.label.isEmpty, "\(tab) should have a label")
             XCTAssertFalse(tab.icon.isEmpty, "\(tab) should have an icon")
         }
+
+        XCTAssertTrue(MacNav.moneyItems.contains(.activity))
+        XCTAssertTrue(MacNav.moneyItems.contains(.netWorth))
+        XCTAssertTrue(MacNav.taskItems.contains(.projects))
     }
 
     func testColorHexInit() {
@@ -95,8 +94,39 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertEqual(tx.id, "t-test-001")
         XCTAssertEqual(tx.merchant, "Costco")
         XCTAssertEqual(tx.amount, 45.99)
+        XCTAssertNil(tx.amountSats)
         XCTAssertNil(tx.card)
         XCTAssertNil(tx.note)
+    }
+
+    func testTransactionKeepsFiatAmountSeparateFromSats() {
+        let tx = Transaction(
+            id: "t-sats-001",
+            date: .now,
+            merchant: "Strike DCA",
+            amount: 90,
+            category: "Bitcoin",
+            amountSats: 125_000,
+            createdBy: "test"
+        )
+
+        XCTAssertEqual(tx.amount, 90)
+        XCTAssertEqual(tx.amountSats, 125_000)
+        XCTAssertEqual(tx.satsValue(btcPrice: 90_000), 125_000)
+    }
+
+    func testTransactionDerivesSatsFromFiatWhenExplicitSatsMissing() {
+        let tx = Transaction(
+            id: "t-usd-001",
+            date: .now,
+            merchant: "Coffee",
+            amount: 90,
+            category: "Dining",
+            createdBy: "test"
+        )
+
+        XCTAssertNil(tx.amountSats)
+        XCTAssertEqual(tx.satsValue(btcPrice: 90_000), 100_000)
     }
 
     func testBudgetCategoryInit() {

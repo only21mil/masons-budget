@@ -353,7 +353,7 @@ final class MC2SyncService {
     private func replaceTransactions(ownedBy owners: [FamilyMember], with transactions: [Transaction]) {
         do {
             let existing = try context.fetch(FetchDescriptor<Transaction>())
-            for transaction in existing where owners.contains(transaction.ownerMember) {
+            for transaction in existing where owners.contains(transaction.ownerMember) && transaction.createdBy == "mc2" {
                 context.delete(transaction)
             }
         } catch {
@@ -398,7 +398,7 @@ final class MC2SyncService {
     private func replaceTodos(visibleTo viewer: FamilyMember, with todos: [TodoItem]) {
         do {
             let existing = try context.fetch(FetchDescriptor<TodoItem>())
-            for todo in existing where viewer.canSee(dataOwnedBy: todo.ownerMember) {
+            for todo in existing where viewer.canSee(dataOwnedBy: todo.ownerMember) && todo.createdBy == "mc2" {
                 context.delete(todo)
             }
         } catch {
