@@ -31,11 +31,14 @@ struct BTCBuysView: View {
             map[key, default: []].append(buy)
         }
         let sorted = map.keys.sorted { k1, k2 in
-            let d1 = map[k1]!.first!.date
-            let d2 = map[k2]!.first!.date
+            let d1 = map[k1]?.first?.date ?? .distantPast
+            let d2 = map[k2]?.first?.date ?? .distantPast
             return d1 > d2
         }
-        return sorted.map { ($0, map[$0]!) }
+        return sorted.compactMap { key in
+            guard let buys = map[key], !buys.isEmpty else { return nil }
+            return (key, buys)
+        }
     }
 
     var body: some View {
@@ -120,9 +123,7 @@ struct BTCBuysView: View {
                 Text(buy.source)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(theme.text)
-                let df = DateFormatter()
-                let _ = df.dateFormat = "MMM d"
-                Text(df.string(from: buy.date))
+                Text(buy.date.formatted(.dateTime.month(.abbreviated).day()))
                     .font(.system(size: 11))
                     .foregroundStyle(theme.textFaint)
             }

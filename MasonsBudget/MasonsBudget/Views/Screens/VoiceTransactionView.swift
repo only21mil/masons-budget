@@ -262,6 +262,10 @@ final class SpeechTranscriber: ObservableObject {
 
         let inputNode = audioEngine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
+        guard format.sampleRate > 0 else {
+            errorMessage = "No audio input device available."
+            return
+        }
         inputNode.removeTap(onBus: 0)
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak request] buffer, _ in
             request?.append(buffer)

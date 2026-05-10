@@ -167,9 +167,13 @@ struct ExportView: View {
     private func shareCSV(_ content: String, filename: String) {
         let tmpDir = FileManager.default.temporaryDirectory
         let fileURL = tmpDir.appendingPathComponent(filename)
-        try? content.write(to: fileURL, atomically: true, encoding: .utf8)
-        exportURL = fileURL
-        showShareSheet = true
+        do {
+            try content.write(to: fileURL, atomically: true, encoding: .utf8)
+            exportURL = fileURL
+            showShareSheet = true
+        } catch {
+            print("[Export] Failed to write \(filename): \(error)")
+        }
     }
 }
 

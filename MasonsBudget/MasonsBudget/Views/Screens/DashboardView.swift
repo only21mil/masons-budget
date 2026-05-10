@@ -214,9 +214,11 @@ struct DashboardView: View {
             ))
             context.stroke(path, with: .color(theme.accent), lineWidth: 1.6)
 
-            let lastX = w
-            let lastY = h - ((data.last! - minVal) / range) * h * 0.8 - h * 0.1
-            context.fill(Circle().path(in: CGRect(x: lastX - 3, y: lastY - 3, width: 6, height: 6)), with: .color(theme.accent))
+            if let lastVal = data.last {
+                let lastX = w
+                let lastY = h - ((lastVal - minVal) / range) * h * 0.8 - h * 0.1
+                context.fill(Circle().path(in: CGRect(x: lastX - 3, y: lastY - 3, width: 6, height: 6)), with: .color(theme.accent))
+            }
         }
         .frame(height: 56)
     }

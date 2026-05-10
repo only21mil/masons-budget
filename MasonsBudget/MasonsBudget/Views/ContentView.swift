@@ -228,18 +228,21 @@ struct ContentView: View {
 
     @ViewBuilder
     private var macDetail: some View {
-        switch macNav ?? .dashboard {
-        case .dashboard:  DashboardView()
-        case .budget:     BudgetView()
-        case .activity:   ActivityView()
-        case .btcBuys:    BTCBuysView()
-        case .billPay:    BTCBillPayView()
-        case .retirement: RetirementView()
-        case .netWorth:   NetWorthView()
-        case .today:      TodayView()
-        case .projects:   ProjectsView()
-        case .export:     ExportView()
+        NavigationStack {
+            switch macNav ?? .dashboard {
+            case .dashboard:  DashboardView()
+            case .budget:     BudgetView()
+            case .activity:   ActivityView()
+            case .btcBuys:    BTCBuysView()
+            case .billPay:    BTCBillPayView()
+            case .retirement: RetirementView()
+            case .netWorth:   NetWorthView()
+            case .today:      TodayView()
+            case .projects:   ProjectsView()
+            case .export:     ExportView()
+            }
         }
+        .id(macNav)
     }
 
     private var workspaceSwitcher: some View {

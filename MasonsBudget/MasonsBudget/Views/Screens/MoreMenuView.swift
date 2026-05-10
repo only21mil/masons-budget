@@ -4,31 +4,29 @@ struct MoreMenuView: View {
     @Environment(\.theme) var theme
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 0) {
-                    ScreenHeader(title: "More", eyebrow: "Explore")
+        ScrollView {
+            VStack(spacing: 0) {
+                ScreenHeader(title: "More", eyebrow: "Explore")
 
-                    VStack(spacing: 0) {
-                        moreRow(icon: "target", label: "Net Worth", destination: NetWorthView())
-                        Hairline(indent: 52)
-                        moreRow(icon: "bolt.fill", label: "Activity", destination: ActivityView())
-                        Hairline(indent: 52)
-                        moreRow(icon: "bitcoinsign.circle.fill", label: "Bitcoin Buys", destination: BTCBuysView())
-                        Hairline(indent: 52)
-                        moreRow(icon: "banknote.fill", label: "Bill Pay", destination: BTCBillPayView())
-                        Hairline(indent: 52)
-                        moreRow(icon: "tray.fill", label: "Projects", destination: ProjectsView())
-                        Hairline(indent: 52)
-                        moreRow(icon: "square.and.arrow.up", label: "Export", destination: ExportView())
-                    }
-                    .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                VStack(spacing: 0) {
+                    moreRow(icon: "target", label: "Net Worth", destination: NetWorthView())
+                    Hairline(indent: 52)
+                    moreRow(icon: "bolt.fill", label: "Activity", destination: ActivityView())
+                    Hairline(indent: 52)
+                    moreRow(icon: "bitcoinsign.circle.fill", label: "Bitcoin Buys", destination: BTCBuysView())
+                    Hairline(indent: 52)
+                    moreRow(icon: "banknote.fill", label: "Bill Pay", destination: BTCBillPayView())
+                    Hairline(indent: 52)
+                    moreRow(icon: "tray.fill", label: "Projects", destination: ProjectsView())
+                    Hairline(indent: 52)
+                    moreRow(icon: "square.and.arrow.up", label: "Export", destination: ExportView())
                 }
-                .padding(.bottom, 100)
+                .glassCard(padding: 0, radius: AppLayout.radiusMedium)
+                .padding(.horizontal, AppLayout.sectionPadding)
             }
-            .background(theme.bg)
+            .padding(.bottom, 100)
         }
+        .background(theme.bg)
     }
 
     private func moreRow<D: View>(icon: String, label: String, destination: D) -> some View {
