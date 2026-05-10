@@ -77,6 +77,7 @@ enum MacNav: String, CaseIterable, Identifiable {
 struct ContentView: View {
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
+    @AppStorage("appearance_mode") private var appearanceModeRaw = AppearanceMode.system.rawValue
     @Environment(\.theme) var theme
 
     @Query private var btcAccounts: [BTCAccount]
@@ -97,6 +98,10 @@ struct ContentView: View {
 
     var unit: DisplayUnit {
         get { DisplayUnit(rawValue: displayUnitRaw) ?? .btc }
+    }
+
+    private var appearanceMode: AppearanceMode {
+        AppearanceMode(rawValue: appearanceModeRaw) ?? .system
     }
 
     var body: some View {
@@ -243,6 +248,42 @@ struct ContentView: View {
             }
         }
         .id(macNav)
+        .overlay(alignment: .topTrailing) {
+            appearanceToggle
+                .padding(.top, 12)
+                .padding(.trailing, 20)
+        }
+    }
+
+    private var appearanceToggle: some View {
+        HStack(spacing: 0) {
+            Button {
+                appearanceModeRaw = AppearanceMode.light.rawValue
+            } label: {
+                Image(systemName: "sun.max.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(appearanceMode == .light ? .white : theme.textMuted)
+                    .frame(width: 28, height: 24)
+                    .background(appearanceMode == .light ? theme.accent : Color.clear)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                appearanceModeRaw = AppearanceMode.dark.rawValue
+            } label: {
+                Image(systemName: "moon.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(appearanceMode == .dark ? .white : theme.textMuted)
+                    .frame(width: 28, height: 24)
+                    .background(appearanceMode == .dark ? theme.accent : Color.clear)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(2)
+        .background(theme.surface2)
+        .clipShape(Capsule())
     }
 
     private var workspaceSwitcher: some View {

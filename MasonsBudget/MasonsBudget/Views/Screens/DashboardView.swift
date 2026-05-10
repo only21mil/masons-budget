@@ -136,11 +136,11 @@ struct DashboardView: View {
         let athValue = mySnapshots.map(\.totalValue).max() ?? totalBtc * btcPrice
         let currentValue = totalBtc * btcPrice + totalRetirementUsd
         let drawdown: Decimal = athValue > 0 ? ((athValue - currentValue) / athValue) * 100 : 0
+        let athSats: Decimal = btcPrice > 0 ? (athValue / btcPrice) * 100_000_000 : 0
         return HStack(spacing: 5) {
             Text("ATH")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
-            Text(AppFormatter.formatCurrency(athValue))
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
+            AmountView(sats: athSats, unit: unit, size: 11, weight: .bold, accent: true, btcPrice: btcPrice)
             if drawdown > 1 {
                 Text("· -\(NSDecimalNumber(decimal: drawdown).doubleValue, specifier: "%.1f")%")
                     .font(.system(size: 11, weight: .semibold))

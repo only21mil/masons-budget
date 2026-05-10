@@ -88,9 +88,7 @@ struct BTCBuysView: View {
                     .font(.system(size: 11, weight: .bold))
                     .tracking(0.66)
                     .foregroundStyle(.white.opacity(0.7))
-                Text(AppFormatter.formatBtc(totalBtc) + " BTC")
-                    .font(.system(size: 22, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white)
+                AmountView(sats: totalBtc * 100_000_000, unit: unit, size: 22, weight: .bold, color: .white, btcPrice: btcPrice)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
@@ -98,9 +96,7 @@ struct BTCBuysView: View {
                     .font(.system(size: 11, weight: .bold))
                     .tracking(0.66)
                     .foregroundStyle(.white.opacity(0.7))
-                Text(AppFormatter.formatCurrency(totalUsd))
-                    .font(.system(size: 22, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white)
+                AmountView(sats: btcPrice > 0 ? (totalUsd / btcPrice) * 100_000_000 : 0, unit: unit, size: 22, weight: .bold, color: .white, btcPrice: btcPrice)
             }
         }
         .padding(20)

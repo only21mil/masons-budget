@@ -78,6 +78,10 @@ struct BTCBillPayView: View {
         #endif
     }
 
+    private var totalSats: Decimal {
+        btcPrice > 0 ? (totalUsd / btcPrice) * 100_000_000 : 0
+    }
+
     private var summaryCard: some View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
@@ -85,9 +89,7 @@ struct BTCBillPayView: View {
                     .font(.system(size: 11, weight: .bold))
                     .tracking(0.66)
                     .foregroundStyle(.white.opacity(0.7))
-                Text(AppFormatter.formatCurrency(totalUsd))
-                    .font(.system(size: 22, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white)
+                AmountView(sats: totalSats, unit: unit, size: 22, weight: .bold, color: .white, btcPrice: btcPrice)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
@@ -95,9 +97,7 @@ struct BTCBillPayView: View {
                     .font(.system(size: 11, weight: .bold))
                     .tracking(0.66)
                     .foregroundStyle(.white.opacity(0.7))
-                Text(AppFormatter.formatBtc(totalBtcSpent) + " BTC")
-                    .font(.system(size: 22, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white)
+                AmountView(sats: totalBtcSpent * 100_000_000, unit: unit, size: 22, weight: .bold, color: .white, btcPrice: btcPrice)
             }
         }
         .padding(20)
@@ -131,12 +131,8 @@ struct BTCBillPayView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text(AppFormatter.formatCurrency(bp.amountUSD))
-                    .font(.system(size: 14, weight: .bold, design: .monospaced))
-                    .foregroundStyle(theme.text)
-                Text(AppFormatter.formatBtc(bp.btcSpent) + " BTC")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(theme.textFaint)
+                AmountView(sats: btcPrice > 0 ? (bp.amountUSD / btcPrice) * 100_000_000 : 0, unit: unit, size: 14, weight: .bold, btcPrice: btcPrice)
+                AmountView(sats: bp.btcSpent * 100_000_000, unit: unit, size: 11, weight: .regular, color: theme.textFaint, btcPrice: btcPrice)
             }
         }
         .padding(14)

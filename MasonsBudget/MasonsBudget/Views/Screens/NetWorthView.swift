@@ -374,6 +374,7 @@ struct NetWorthView: View {
 
     private func retirementRow(account: HoldingAccount) -> some View {
         let value = account.liveValue(vooPrice: vooPrice, ibitPrice: ibitPrice)
+        let sats: Decimal = btcPrice > 0 ? (value / btcPrice) * 100_000_000 : 0
         return HStack(spacing: 12) {
             RoundedRectangle(cornerRadius: 3)
                 .fill(theme.plum.opacity(0.8))
@@ -390,9 +391,7 @@ struct NetWorthView: View {
 
             Spacer()
 
-            Text(AppFormatter.formatCurrency(value))
-                .font(.system(size: 14, weight: .bold, design: .monospaced))
-                .foregroundStyle(theme.text)
+            AmountView(sats: sats, unit: unit, size: 14, weight: .bold, btcPrice: btcPrice)
         }
         .padding(14)
     }

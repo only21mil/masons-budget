@@ -215,6 +215,10 @@ struct RetirementView: View {
 
     // MARK: - Holdings (401k, WAP)
 
+    private var totalHoldingsSats: Decimal {
+        btcPrice > 0 ? (totalHoldingsUsd / btcPrice) * 100_000_000 : 0
+    }
+
     private var holdingsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -223,9 +227,7 @@ struct RetirementView: View {
                     .tracking(0.72)
                     .foregroundStyle(theme.textMuted)
                 Spacer()
-                Text(AppFormatter.formatCurrency(totalHoldingsUsd))
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .foregroundStyle(theme.accent)
+                AmountView(sats: totalHoldingsSats, unit: unit, size: 12, weight: .bold, accent: true, btcPrice: btcPrice)
             }
             .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -246,6 +248,7 @@ struct RetirementView: View {
         let vooPrice = StockPriceService.vooPrice
         let ibitPrice = StockPriceService.ibitPrice
         let value = account.liveValue(vooPrice: vooPrice, ibitPrice: ibitPrice)
+        let sats: Decimal = btcPrice > 0 ? (value / btcPrice) * 100_000_000 : 0
 
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
@@ -269,9 +272,7 @@ struct RetirementView: View {
 
                 Spacer()
 
-                Text(AppFormatter.formatCurrency(value))
-                    .font(.system(size: 14, weight: .bold, design: .monospaced))
-                    .foregroundStyle(theme.text)
+                AmountView(sats: sats, unit: unit, size: 14, weight: .bold, btcPrice: btcPrice)
             }
             .padding(14)
 
@@ -301,6 +302,7 @@ struct RetirementView: View {
             liveVal = holding.value
         }
         let gainPct = holding.gainPct
+        let sats: Decimal = btcPrice > 0 ? (liveVal / btcPrice) * 100_000_000 : 0
 
         return HStack(spacing: 8) {
             Text(holding.ticker ?? "—")
@@ -315,9 +317,7 @@ struct RetirementView: View {
 
             Spacer()
 
-            Text(AppFormatter.formatCurrency(liveVal))
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(theme.text)
+            AmountView(sats: sats, unit: unit, size: 12, weight: .semibold, btcPrice: btcPrice)
 
             let positive = gainPct >= 0
             Text("\(positive ? "+" : "")\(NSDecimalNumber(decimal: gainPct).intValue)%")
@@ -331,12 +331,16 @@ struct RetirementView: View {
 
     // MARK: - Projections
 
-    private let weekly401k: Decimal = 291.60
+    private let btcIbitAnnualReturn: Double = 0.15
+    private let vooAnnualReturn: Double = 0.10
     private let matchRate: Decimal = 1.0
-    private let annualGrowthRate: Double = 0.07
-    private let annualBonuses: Decimal = 97_000
+    private let victorAnnualBonuses: Decimal = 97_000
 
-    private var current401kBalance: Decimal {
+    private var weekly401kContribution: Decimal {
+        visibleHoldings.reduce(Decimal(0)) { $0 + $1.weeklyContribution }
+    }
+
+    private var currentHoldingsBalance: Decimal {
         let vooPrice = StockPriceService.vooPrice
         let ibitPrice = StockPriceService.ibitPrice
         return visibleHoldings.reduce(Decimal(0)) { $0 + $1.liveValue(vooPrice: vooPrice, ibitPrice: ibitPrice) }
@@ -361,16 +365,55 @@ struct RetirementView: View {
         return max(surplus, 0)
     }
 
-    private func project401k(years: Int) -> Decimal {
-        let quarterlyContrib = weekly401k * 13
+    private func projectHoldings(years: Int) -> Decimal {
+        let vooPrice = StockPriceService.vooPrice
+        let ibitPrice = StockPriceService.ibitPrice
+        let weeklyContrib = weekly401kContribution
+        let quarterlyContrib = weeklyContrib * 13
         let quarterlyTotal = quarterlyContrib + (quarterlyContrib * matchRate)
-        let quarterlyRate = Decimal(annualGrowthRate / 4.0)
-        let quarters = years * 4
-        var balance = current401kBalance
-        for _ in 0..<quarters {
-            balance = balance * (1 + quarterlyRate) + quarterlyTotal
+
+        var vooBalance: Decimal = 0
+        var ibitBalance: Decimal = 0
+        var otherBalance: Decimal = 0
+
+        for account in visibleHoldings {
+            for holding in account.holdings {
+                let ticker = holding.ticker?.uppercased() ?? ""
+                let val: Decimal
+                switch ticker {
+                case "VOO" where vooPrice != nil:
+                    val = (vooPrice ?? 0) * holding.shares
+                    vooBalance += val
+                case "IBIT" where ibitPrice != nil:
+                    val = (ibitPrice ?? 0) * holding.shares
+                    ibitBalance += val
+                default:
+                    otherBalance += holding.value
+                }
+            }
         }
-        return balance
+
+        let quarters = years * 4
+        let vooQuarterlyRate = Decimal(vooAnnualReturn / 4.0)
+        let ibitQuarterlyRate = Decimal(btcIbitAnnualReturn / 4.0)
+
+        let totalBalance = vooBalance + ibitBalance + otherBalance
+        let vooFraction: Decimal = totalBalance > 0 ? vooBalance / totalBalance : Decimal(0.5)
+        let ibitFraction: Decimal = totalBalance > 0 ? ibitBalance / totalBalance : Decimal(0.5)
+
+        for _ in 0..<quarters {
+            let vooContrib = quarterlyTotal * vooFraction
+            let ibitContrib = quarterlyTotal * ibitFraction
+            vooBalance = vooBalance * (1 + vooQuarterlyRate) + vooContrib
+            ibitBalance = ibitBalance * (1 + ibitQuarterlyRate) + ibitContrib
+        }
+
+        let otherRate = Decimal(vooAnnualReturn / 4.0)
+        for _ in 0..<quarters {
+            otherBalance = otherBalance * (1 + otherRate)
+        }
+
+        return vooBalance + ibitBalance + otherBalance
     }
 
     private func projectBtc(years: Int) -> Decimal {
@@ -378,9 +421,24 @@ struct RetirementView: View {
         let weeklyBtcFromDCA = dcaWeeklySats / 100_000_000
         let monthlyBtcFromDCA = weeklyBtcFromDCA * Decimal(4.33)
         let monthlyBtcFromSurplus = monthlySurplusForBtc / btcPrice
-        let annualBtcFromBonuses = annualBonuses / btcPrice
-        let monthlyBtc = monthlyBtcFromDCA + monthlyBtcFromSurplus + (annualBtcFromBonuses / 12)
-        return totalBtc + (monthlyBtc * 12 * Decimal(years))
+
+        var monthlyBtc = monthlyBtcFromDCA + monthlyBtcFromSurplus
+
+        if activeMember == .victor || activeMember == .rachel {
+            let annualBtcFromBonuses = victorAnnualBonuses / btcPrice
+            monthlyBtc += annualBtcFromBonuses / 12
+        }
+
+        let currentBtcValue = totalBtc * btcPrice
+        let annualAppreciation = Decimal(btcIbitAnnualReturn)
+        var projectedValue = currentBtcValue
+        let monthlyRate = annualAppreciation / 12
+
+        for _ in 0..<(years * 12) {
+            projectedValue = projectedValue * (1 + monthlyRate) + (monthlyBtc * btcPrice)
+        }
+
+        return projectedValue / btcPrice
     }
 
     private var projectionHorizons: [Int] { [5, 10, 15, 20] }
@@ -431,20 +489,18 @@ struct RetirementView: View {
 
     private var projectionSummaryCard: some View {
         let btcProjected = projectBtc(years: projectionHorizon)
-        let retirementProjected = project401k(years: projectionHorizon)
+        let holdingsProjected = projectHoldings(years: projectionHorizon)
         let btcUsd = btcProjected * btcPrice
-        let totalUsd = btcUsd + retirementProjected
+        let totalUsd = btcUsd + holdingsProjected
+        let totalSats: Decimal = btcPrice > 0 ? (totalUsd / btcPrice) * 100_000_000 : 0
 
         return VStack(alignment: .leading, spacing: 4) {
             Text("TOTAL AT \(projectionHorizon) YEARS")
                 .font(.system(size: 10, weight: .bold))
                 .tracking(0.8)
                 .foregroundStyle(theme.textFaint)
-            Text(AppFormatter.formatCurrency(totalUsd))
-                .font(.system(size: 28, weight: .bold, design: .monospaced))
-                .tracking(-0.56)
-                .foregroundStyle(theme.text)
-            Text("at today's BTC price")
+            AmountView(sats: totalSats, unit: unit, size: 28, weight: .bold, btcPrice: btcPrice)
+            Text("with 15% BTC/IBIT · 10% VOO growth")
                 .font(.system(size: 11))
                 .foregroundStyle(theme.textFaint)
         }
@@ -452,29 +508,30 @@ struct RetirementView: View {
 
     private var projectionBreakdown: some View {
         let btcProjected = projectBtc(years: projectionHorizon)
-        let retirementProjected = project401k(years: projectionHorizon)
-        let btcUsd = btcProjected * btcPrice
+        let holdingsProjected = projectHoldings(years: projectionHorizon)
+        let holdingsSats: Decimal = btcPrice > 0 ? (holdingsProjected / btcPrice) * 100_000_000 : 0
+        let btcSats = btcProjected * 100_000_000
 
         return VStack(spacing: 0) {
-            projectionRow(
-                label: "401(k)",
+            projectionAmountRow(
+                label: "401(k) + WAP",
                 icon: "chart.line.uptrend.xyaxis",
-                value: AppFormatter.formatCurrency(retirementProjected),
-                subtitle: "7% growth · 100% match"
+                sats: holdingsSats,
+                subtitle: "IBIT 15% · VOO 10% · 100% match"
             )
             Divider().background(theme.border)
-            projectionRow(
+            projectionAmountRow(
                 label: "Bitcoin",
                 icon: "bitcoinsign.circle.fill",
-                value: "\(AppFormatter.formatBtc(btcProjected)) BTC",
-                subtitle: AppFormatter.formatCurrency(btcUsd)
+                sats: btcSats,
+                subtitle: "\(AppFormatter.formatBtc(btcProjected)) BTC"
             )
         }
         .background(theme.surface2)
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    private func projectionRow(label: String, icon: String, value: String, subtitle: String) -> some View {
+    private func projectionAmountRow(label: String, icon: String, sats: Decimal, subtitle: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
                 .font(.system(size: 16))
@@ -492,11 +549,33 @@ struct RetirementView: View {
 
             Spacer()
 
-            Text(value)
-                .font(.system(size: 14, weight: .bold, design: .monospaced))
-                .foregroundStyle(theme.text)
+            AmountView(sats: sats, unit: unit, size: 14, weight: .bold, btcPrice: btcPrice)
         }
         .padding(12)
+    }
+
+    private var assumptionLines: [String] {
+        let weeklySatsLabel = AppFormatter.formatSats(dcaWeeklySats)
+        let surplusLabel = AppFormatter.formatCurrency(monthlySurplusForBtc)
+        let weeklyLabel = AppFormatter.formatCurrency(weekly401kContribution)
+
+        if activeMember == .victor || activeMember == .rachel {
+            return [
+                "401k + WAP: \(weeklyLabel)/wk (Fri) + 100% match (quarterly)",
+                "IBIT & BTC: 15%/yr growth",
+                "VOO: 10%/yr growth",
+                "DCA: \(weeklySatsLabel) sats/wk",
+                "Budget surplus: \(surplusLabel)/mo → BTC",
+                "Bonuses: $24k Jul · $24k Dec · $49k Mar → BTC"
+            ]
+        } else {
+            return [
+                "401k: \(weeklyLabel)/wk (Fri) + 100% match (quarterly)",
+                "IBIT & BTC: 15%/yr growth",
+                "VOO: 10%/yr growth",
+                "Budget surplus: \(surplusLabel)/mo → BTC"
+            ]
+        }
     }
 
     private var projectionAssumptions: some View {
@@ -505,17 +584,7 @@ struct RetirementView: View {
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(theme.textMuted)
 
-            let weeklySatsLabel = AppFormatter.formatSats(dcaWeeklySats)
-            let surplusLabel = AppFormatter.formatCurrency(monthlySurplusForBtc)
-            let lines = [
-                "401k: $291.60/wk + 100% match (quarterly)",
-                "Stock growth: 7%/yr compounded",
-                "DCA: \(weeklySatsLabel) sats/wk",
-                "Surplus: \(surplusLabel)/mo → BTC",
-                "Bonuses: $24k Jul · $24k Dec · $49k Mar → BTC",
-                "BTC price: current (no appreciation)"
-            ]
-            ForEach(lines, id: \.self) { line in
+            ForEach(assumptionLines, id: \.self) { line in
                 Text("• \(line)")
                     .font(.system(size: 10))
                     .foregroundStyle(theme.textFaint)
@@ -688,6 +757,7 @@ struct RetirementView: View {
         let value = lot.currentValue(btcPrice: btcPrice)
         let returnPct = lot.unrealizedGainPct(btcPrice: btcPrice)
         let positive = returnPct >= 0
+        let lotSats: Decimal = btcPrice > 0 ? (value / btcPrice) * 100_000_000 : 0
 
         return HStack(spacing: 12) {
             RoundedRectangle(cornerRadius: 3)
@@ -712,9 +782,7 @@ struct RetirementView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text(AppFormatter.formatCurrency(value))
-                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                    .foregroundStyle(theme.text)
+                AmountView(sats: lotSats, unit: unit, size: 13, weight: .bold, btcPrice: btcPrice)
                 Text("\(positive ? "+" : "")\(NSDecimalNumber(decimal: returnPct).intValue)%")
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundStyle(positive ? theme.success : theme.danger)
