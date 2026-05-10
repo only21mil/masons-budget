@@ -127,7 +127,11 @@ final class MC2SyncService {
             let historicalSnapshots = MC2Mapper.mapMonthlyHistory(dto.monthlyHistory)
             let categories = MC2Mapper.mapBudgetCategories(dto.categories)
             replaceBudgetData(forOwner: .victor, snapshots: [currentSnapshot] + historicalSnapshots, categories: categories)
-            return 1 + historicalSnapshots.count + categories.count
+
+            let incomeTransactions = MC2Mapper.mapPaychecksToTransactions(dto.income?.paychecks)
+            replaceIncomeTransactions(forOwner: .victor, with: incomeTransactions)
+
+            return 1 + historicalSnapshots.count + categories.count + incomeTransactions.count
         } catch {
             log.error("Budget sync failed: \(error.localizedDescription)")
             errors.append("Budget: \(error.localizedDescription)")
@@ -426,6 +430,20 @@ final class MC2SyncService {
 
         for todo in todos {
             context.insert(todo)
+        }
+    }
+
+    private func replaceIncomeTransactions(forOwner owner: FamilyMember, with transactions: [Transaction]) {
+        do {
+            let existing = try context.fetch(FetchDescriptor<Transaction>())
+            for tx in existing where tx.ownerMember == owner && tx.category == "Income" && tx.createdBy == "mc2" {
+                context.delete(tx)
+            }
+        } catch {
+            log.error("Failed to delete income transactions: \(error.localizedDescription)")
+        }
+        for tx in transactions {
+            context.insert(tx)
         }
     }
 

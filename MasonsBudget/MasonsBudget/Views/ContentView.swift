@@ -32,8 +32,8 @@ enum AppTab: String, CaseIterable, Identifiable {
 // MARK: - macOS Sidebar Navigation
 
 enum MacNav: String, CaseIterable, Identifiable {
-    case dashboard, budget, activity, retirement, netWorth
-    case today, projects
+    case dashboard, budget, activity, btcBuys, billPay, retirement, netWorth
+    case today, projects, export
 
     var id: String { rawValue }
 
@@ -42,10 +42,13 @@ enum MacNav: String, CaseIterable, Identifiable {
         case .dashboard: "Dashboard"
         case .budget: "Budget"
         case .activity: "Activity"
+        case .btcBuys: "Bitcoin Buys"
+        case .billPay: "Bill Pay"
         case .retirement: "Retirement"
         case .netWorth: "Net Worth"
         case .today: "Today"
         case .projects: "Projects"
+        case .export: "Export"
         }
     }
 
@@ -54,15 +57,19 @@ enum MacNav: String, CaseIterable, Identifiable {
         case .dashboard: "bitcoinsign.circle"
         case .budget: "chart.bar.fill"
         case .activity: "bolt.fill"
+        case .btcBuys: "bitcoinsign.circle.fill"
+        case .billPay: "banknote.fill"
         case .retirement: "lock.shield.fill"
         case .netWorth: "target"
         case .today: "checkmark.circle"
         case .projects: "tray.fill"
+        case .export: "square.and.arrow.up"
         }
     }
 
-    static let moneyItems: [MacNav] = [.dashboard, .budget, .activity, .retirement, .netWorth]
+    static let moneyItems: [MacNav] = [.dashboard, .budget, .activity, .btcBuys, .billPay, .retirement, .netWorth]
     static let taskItems: [MacNav] = [.today, .projects]
+    static let toolItems: [MacNav] = [.export]
 }
 
 // MARK: - Content View
@@ -198,6 +205,18 @@ struct ContentView: View {
                         .textCase(.uppercase)
                         .foregroundStyle(theme.textFaint)
                 }
+
+                Section {
+                    ForEach(MacNav.toolItems) { item in
+                        Label(item.label, systemImage: item.icon).tag(item)
+                    }
+                } header: {
+                    Text("Tools")
+                        .font(AppFont.sectionHeader)
+                        .tracking(AppFont.sectionTracking)
+                        .textCase(.uppercase)
+                        .foregroundStyle(theme.textFaint)
+                }
             }
             .listStyle(.sidebar)
 
@@ -213,10 +232,13 @@ struct ContentView: View {
         case .dashboard:  DashboardView()
         case .budget:     BudgetView()
         case .activity:   ActivityView()
+        case .btcBuys:    BTCBuysView()
+        case .billPay:    BTCBillPayView()
         case .retirement: RetirementView()
         case .netWorth:   NetWorthView()
         case .today:      TodayView()
         case .projects:   ProjectsView()
+        case .export:     ExportView()
         }
     }
 

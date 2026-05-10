@@ -87,6 +87,9 @@ struct BudgetView: View {
                     .padding(.horizontal, AppLayout.sectionPadding)
                     .padding(.bottom, AppLayout.cardSpacing)
 
+                budgetVsActualSection
+                    .padding(.bottom, AppLayout.cardSpacing)
+
                 categoriesSection
             }
             .padding(.bottom, 100)
@@ -203,6 +206,61 @@ struct BudgetView: View {
             }
         }
         .glassCard()
+    }
+
+    // MARK: - Budget vs Actual
+
+    private var budgetVsActualSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("BUDGET vs ACTUAL")
+                .font(.system(size: 12, weight: .bold))
+                .tracking(0.72)
+                .foregroundStyle(theme.textMuted)
+                .padding(.horizontal, AppLayout.sectionPadding + 4)
+
+            VStack(spacing: 6) {
+                ForEach(myCategories.filter { $0.monthlyBudget > 0 }, id: \.name) { cat in
+                    budgetVsActualRow(cat: cat)
+                }
+            }
+            .glassCard(padding: 12, radius: 18)
+            .padding(.horizontal, AppLayout.sectionPadding)
+        }
+    }
+
+    private func budgetVsActualRow(cat: BudgetCategory) -> some View {
+        let spent = spentInCategory(cat.name)
+        let budget = cat.monthlyBudget
+        let maxVal = max(spent, budget)
+        let budgetPct = maxVal > 0 ? CGFloat(NSDecimalNumber(decimal: budget / maxVal).doubleValue) : 0
+        let spentPct = maxVal > 0 ? CGFloat(NSDecimalNumber(decimal: spent / maxVal).doubleValue) : 0
+        let over = spent > budget
+
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(cat.name)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+                Spacer()
+                Text("\(AppFormatter.formatCurrency(spent)) / \(AppFormatter.formatCurrency(budget))")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(over ? theme.danger : theme.textMuted)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(theme.surface2)
+                        .frame(width: geo.size.width * budgetPct, height: 6)
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(over ? theme.danger : theme.accent)
+                        .frame(width: geo.size.width * spentPct, height: 4)
+                        .offset(y: 0)
+                }
+            }
+            .frame(height: 6)
+        }
+        .padding(.vertical, 2)
     }
 
     // MARK: - Categories

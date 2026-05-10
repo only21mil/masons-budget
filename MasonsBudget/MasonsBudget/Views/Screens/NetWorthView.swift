@@ -59,6 +59,9 @@ struct NetWorthView: View {
                     .padding(.horizontal, AppLayout.sectionPadding)
                     .padding(.bottom, AppLayout.cardSpacing)
 
+                timelineSection
+                    .padding(.bottom, AppLayout.cardSpacing)
+
                 holdingsSection
 
                 if !myRetirementAccounts.isEmpty {
@@ -172,6 +175,125 @@ struct NetWorthView: View {
                     .foregroundStyle(theme.textFaint)
                     .frame(maxWidth: .infinity)
             }
+        }
+    }
+
+    // MARK: - Timeline Chart
+
+    private var timelineData: [(date: Date, total: Decimal, btc: Decimal, holdings: Decimal)] {
+        let mySnaps = snapshots
+            .filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
+            .sorted { $0.date < $1.date }
+        let cal = Calendar.current
+        let now = Date()
+        var data: [(date: Date, total: Decimal, btc: Decimal, holdings: Decimal)] = []
+
+        for offset in stride(from: -11, through: 0, by: 1) {
+            guard let monthDate = cal.date(byAdding: .month, value: offset, to: now) else { continue }
+            if let snap = mySnaps.first(where: { cal.isDate($0.date, equalTo: monthDate, toGranularity: .month) }) {
+                data.append((date: snap.date, total: snap.totalValue, btc: snap.btcValue, holdings: snap.holdingsValue))
+            } else if offset == 0 {
+                let btcUsd = totalBtc * btcPrice
+                let total = btcUsd + totalRetirementUsd
+                data.append((date: now, total: total, btc: btcUsd, holdings: totalRetirementUsd))
+            } else if let last = data.last {
+                data.append((date: monthDate, total: last.total, btc: last.btc, holdings: last.holdings))
+            } else {
+                data.append((date: monthDate, total: 0, btc: 0, holdings: 0))
+            }
+        }
+        return data
+    }
+
+    private var timelineSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("TIMELINE")
+                .font(.system(size: 12, weight: .bold))
+                .tracking(0.72)
+                .foregroundStyle(theme.textMuted)
+                .padding(.horizontal, AppLayout.sectionPadding + 4)
+
+            VStack(alignment: .leading, spacing: 12) {
+                timelineChart
+                    .frame(height: 160)
+
+                timelineLegend
+            }
+            .glassCard()
+            .padding(.horizontal, AppLayout.sectionPadding)
+        }
+    }
+
+    private var timelineChart: some View {
+        let data = timelineData
+        return Canvas { context, size in
+            guard data.count > 1 else { return }
+            let totals = data.map { NSDecimalNumber(decimal: $0.total).doubleValue }
+            let btcVals = data.map { NSDecimalNumber(decimal: $0.btc).doubleValue }
+
+            let maxVal = totals.max() ?? 1
+            let minVal = (totals.min() ?? 0) * 0.9
+            let range = maxVal - minVal
+            guard range > 0 else { return }
+
+            func pointFor(_ val: Double, at index: Int) -> CGPoint {
+                let x = size.width * CGFloat(index) / CGFloat(data.count - 1)
+                let y = size.height - ((CGFloat(val) - CGFloat(minVal)) / CGFloat(range)) * size.height * 0.85 - size.height * 0.075
+                return CGPoint(x: x, y: y)
+            }
+
+            var btcPath = Path()
+            var btcFill = Path()
+            for (i, val) in btcVals.enumerated() {
+                let pt = pointFor(val, at: i)
+                if i == 0 { btcPath.move(to: pt); btcFill.move(to: pt) }
+                else { btcPath.addLine(to: pt); btcFill.addLine(to: pt) }
+            }
+            btcFill.addLine(to: CGPoint(x: size.width, y: size.height))
+            btcFill.addLine(to: CGPoint(x: 0, y: size.height))
+            btcFill.closeSubpath()
+            context.fill(btcFill, with: .color(theme.accent.opacity(0.15)))
+
+            var totalPath = Path()
+            for (i, val) in totals.enumerated() {
+                let pt = pointFor(val, at: i)
+                if i == 0 { totalPath.move(to: pt) }
+                else { totalPath.addLine(to: pt) }
+            }
+
+            context.stroke(btcPath, with: .color(theme.accent.opacity(0.6)), lineWidth: 1.5)
+            context.stroke(totalPath, with: .color(theme.accent), lineWidth: 2.5)
+
+            let lastPt = pointFor(totals.last ?? 0, at: data.count - 1)
+            context.fill(Path(ellipseIn: CGRect(x: lastPt.x - 4, y: lastPt.y - 4, width: 8, height: 8)), with: .color(theme.accent))
+        }
+    }
+
+    private var timelineLegend: some View {
+        HStack(spacing: 16) {
+            legendItem(color: theme.accent, label: "Total")
+            legendItem(color: theme.accent.opacity(0.5), label: "Bitcoin")
+            Spacer()
+            let data = timelineData
+            if data.count >= 2, let first = data.first, let last = data.last, first.total > 0 {
+                let change = last.total - first.total
+                let pct = (change / first.total) * 100
+                let positive = change >= 0
+                Text("\(positive ? "+" : "")\(NSDecimalNumber(decimal: pct).intValue)% 12mo")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(positive ? theme.success : theme.danger)
+            }
+        }
+    }
+
+    private func legendItem(color: Color, label: String) -> some View {
+        HStack(spacing: 4) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(color)
+                .frame(width: 12, height: 3)
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(theme.textMuted)
         }
     }
 

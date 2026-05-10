@@ -110,6 +110,26 @@ enum MC2Mapper {
         return note
     }
 
+    static func mapPaychecksToTransactions(_ paychecks: [MC2Paycheck]?, owner: FamilyMember = .victor) -> [Transaction] {
+        guard let paychecks else { return [] }
+        return paychecks.map { paycheck in
+            let src = paycheck.source ?? "Paycheck"
+            return Transaction(
+                id: "income-\(paycheck.date)-\(src)",
+                date: parseDate(paycheck.date),
+                merchant: src,
+                amount: paycheck.net ?? paycheck.amount ?? 0,
+                category: "Income",
+                card: nil,
+                note: nil,
+                owner: owner,
+                createdBy: "mc2",
+                createdAt: parseDate(paycheck.date),
+                sourceFile: "budget.json"
+            )
+        }
+    }
+
     static func mapMonthlyHistory(_ entries: [MC2MonthlyHistoryEntry]?) -> [MonthlyBudgetSnapshot] {
         guard let entries else { return [] }
         return entries.compactMap { entry in

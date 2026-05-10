@@ -14,7 +14,13 @@ struct MoreMenuView: View {
                         Hairline(indent: 52)
                         moreRow(icon: "bolt.fill", label: "Activity", destination: ActivityView())
                         Hairline(indent: 52)
+                        moreRow(icon: "bitcoinsign.circle.fill", label: "Bitcoin Buys", destination: BTCBuysView())
+                        Hairline(indent: 52)
+                        moreRow(icon: "banknote.fill", label: "Bill Pay", destination: BTCBillPayView())
+                        Hairline(indent: 52)
                         moreRow(icon: "tray.fill", label: "Projects", destination: ProjectsView())
+                        Hairline(indent: 52)
+                        moreRow(icon: "square.and.arrow.up", label: "Export", destination: ExportView())
                     }
                     .glassCard(padding: 0, radius: AppLayout.radiusMedium)
                     .padding(.horizontal, AppLayout.sectionPadding)
