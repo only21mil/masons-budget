@@ -45,6 +45,7 @@
 		299ED7B254C76D1E92A0220D /* BudgetCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F123D957238EE653A6F6751 /* BudgetCategory.swift */; };
 		2E6BBAB1336B38FD1D9EC8A5 /* BTCBuy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 471D5A1DCF4CD1B4C10217A1 /* BTCBuy.swift */; };
 		33BBD55C6D82640D4E3554E9 /* SharedEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97885C819FB926B04D0E8D3F /* SharedEnums.swift */; };
+		353D0C4ED3F4B00D713E03C8 /* AppWriteSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D424253F2EA585494807458 /* AppWriteSyncService.swift */; };
 		3C32EB91AFCE7AE683B55CA6 /* ConvexClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */; };
 		3C5D681E2D464F77A40D8608 /* CategoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBBF456CA8F45467DE539B3 /* CategoryDetailView.swift */; };
 		3D33AAE7E64E51E6A10F22EB /* CSVImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D264872AB987E5209C0B6A3 /* CSVImportView.swift */; };
@@ -86,6 +87,7 @@
 		7278CE8F39F5AFB791DE48D4 /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BCFC0CB64EDE2474B2E5620 /* TransactionDetailView.swift */; };
 		727E7F9A70589881AA409AC7 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2EE11ADEBED01F399DA8F0F /* DashboardView.swift */; };
 		73546E975D23A07500289ECE /* BTCBillPay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DC543643B1F2899DDB38FE5 /* BTCBillPay.swift */; };
+		7455ECEB00AC386FEC93935D /* AppWriteSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D424253F2EA585494807458 /* AppWriteSyncService.swift */; };
 		7563328AA8BADD5505402EE8 /* SyncEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F048D3DB36FA73A8D570960 /* SyncEvent.swift */; };
 		7605540B201A48941ED794B3 /* RecurringDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6B72C3A66D87A91EEF55223 /* RecurringDetectorTests.swift */; };
 		777A58FB2F9ED9243F50855A /* ProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E87F8471A5178129ADC32F6 /* ProjectsView.swift */; };
@@ -121,6 +123,7 @@
 		A4BFB4132F896AF661537AAF /* CSVImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D264872AB987E5209C0B6A3 /* CSVImportView.swift */; };
 		A8842AB993A3B57408404D4E /* ProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E87F8471A5178129ADC32F6 /* ProjectsView.swift */; };
 		A97366A2EB4EA2FFDBA47FA5 /* Hairline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 598608F085B0A81286803F0F /* Hairline.swift */; };
+		AAEBC48066D2E3E788C9E5AA /* AppWriteSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D424253F2EA585494807458 /* AppWriteSyncService.swift */; };
 		AC4B388167FA9DAB45D43515 /* SyncEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F048D3DB36FA73A8D570960 /* SyncEvent.swift */; };
 		AC9DFD3F20A65000ABF54CDC /* HoldingAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19DCBB53F51F8E4A3BE1BD9E /* HoldingAccount.swift */; };
 		ADA692279C957C0AFBD77C69 /* VoiceParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B1E681CE6C03C61153CAE59 /* VoiceParser.swift */; };
@@ -188,6 +191,7 @@
 		2AC58C7449FBDB08006CFC23 /* FamilyVisibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyVisibilityTests.swift; sourceTree = "<group>"; };
 		310E21BFB1D9D582BCD6A71B /* MasonsBudget.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MasonsBudget.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		355DA4D064A09FC72695758B /* ActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityView.swift; sourceTree = "<group>"; };
+		3D424253F2EA585494807458 /* AppWriteSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppWriteSyncService.swift; sourceTree = "<group>"; };
 		3FED6C930AD774521B536178 /* MC2Reader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MC2Reader.swift; sourceTree = "<group>"; };
 		460FAFA4D544CE62A5974814 /* CostBasisLot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CostBasisLot.swift; sourceTree = "<group>"; };
 		471D5A1DCF4CD1B4C10217A1 /* BTCBuy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BTCBuy.swift; sourceTree = "<group>"; };
@@ -312,6 +316,7 @@
 		89080DBDB1E2E6C690796BC8 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				3D424253F2EA585494807458 /* AppWriteSyncService.swift */,
 				6D42E3A9B8292524595DB757 /* BTCPriceService.swift */,
 				7307B6F0A5546DBFB1FE332B /* BudgetNotificationManager.swift */,
 				F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */,
@@ -536,6 +541,7 @@
 				13B46090FA129DE2F6714ADB /* AddTransactionView.swift in Sources */,
 				713310A2FC852F3ED403DD16 /* AmountView.swift in Sources */,
 				C8AB2C8731BC8ADE20214120 /* AppTheme.swift in Sources */,
+				7455ECEB00AC386FEC93935D /* AppWriteSyncService.swift in Sources */,
 				4A58601D081D021F3B18B255 /* BTCAccount.swift in Sources */,
 				F7BC632EB189C29BFBD81043 /* BTCAccountDetailView.swift in Sources */,
 				73546E975D23A07500289ECE /* BTCBillPay.swift in Sources */,
@@ -595,6 +601,7 @@
 				2390818D6483951CA8A38B45 /* AddTransactionView.swift in Sources */,
 				7F8A473271BB9A5EA21AA6C5 /* AmountView.swift in Sources */,
 				5AB5EAF56B9C5DD97AD09DCD /* AppTheme.swift in Sources */,
+				AAEBC48066D2E3E788C9E5AA /* AppWriteSyncService.swift in Sources */,
 				16B5DB8412A7E38E35B9104C /* BTCAccount.swift in Sources */,
 				B348E53CF2F397BC7DA7FE98 /* BTCAccountDetailView.swift in Sources */,
 				CB9BB3C97CAED9728CE9B542 /* BTCBillPay.swift in Sources */,
@@ -654,6 +661,7 @@
 				C196EDE6E90DE6BBB122E90A /* AddTransactionView.swift in Sources */,
 				0F8ED58D169C39B1704B92F1 /* AmountView.swift in Sources */,
 				064EE72180F8557196303AF4 /* AppTheme.swift in Sources */,
+				353D0C4ED3F4B00D713E03C8 /* AppWriteSyncService.swift in Sources */,
 				6D9F88BEA980C5F18C00E5D5 /* BTCAccount.swift in Sources */,
 				ADF07F1500B9EBF914125718 /* BTCAccountDetailView.swift in Sources */,
 				DD95463755A63ABE04964599 /* BTCBillPay.swift in Sources */,
