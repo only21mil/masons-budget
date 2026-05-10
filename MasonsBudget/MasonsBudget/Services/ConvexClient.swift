@@ -26,6 +26,8 @@ enum ConvexConfig {
         let url = deploymentURL.absoluteString
         return !url.contains("placeholder")
     }
+
+    static let syncToken = "40baea8c22e35057930eb7427aa6d0a4559fcfedd46b3c13d10343e4e707c804"
 }
 
 /// Errors specific to Convex operations.
@@ -133,6 +135,19 @@ final class ConvexClient: Sendable {
         return result
     }
 
+    /// Replace a whole data file payload and bump its sync version.
+    @discardableResult
+    func syncFile(name: String, data: Any) async throws -> Double {
+        let raw = try await mutation("dataFiles:sync", args: [
+            "name": name,
+            "data": data
+        ])
+        guard let result = raw as? [String: Any] else { return 0 }
+        if let version = result["version"] as? Double { return version }
+        if let version = result["version"] as? Int { return Double(version) }
+        return 0
+    }
+
     /// Push one app-created transaction into the shared MC2 transactions document.
     @discardableResult
     func appendTransaction(_ transaction: MC2Transaction, to name: String = "transactions") async throws -> Double {
@@ -193,9 +208,17 @@ final class ConvexClient: Sendable {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        var finalArgs = args
+        if endpoint == "api/mutation" {
+            let token = ConvexConfig.syncToken
+            if !token.isEmpty {
+                finalArgs["token"] = token
+            }
+        }
+
         let body: [String: Any] = [
             "path": path,
-            "args": args,
+            "args": finalArgs,
             "format": "json",
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)

@@ -3,6 +3,8 @@ import SwiftData
 
 struct CategoryDetailView: View {
     @Environment(\.theme) private var theme
+    @Environment(\.modelContext) private var modelContext
+    @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
     @Bindable var category: BudgetCategory
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
@@ -15,6 +17,9 @@ struct CategoryDetailView: View {
     }
 
     private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
+    private var unit: DisplayUnit { DisplayUnit(rawValue: displayUnitRaw) ?? .btc }
+    private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
+
     private var categoryTransactions: [Transaction] {
         transactions.filter {
             activeMember.canSee(dataOwnedBy: $0.ownerMember) && $0.category == category.name
@@ -71,9 +76,15 @@ struct CategoryDetailView: View {
                                         .foregroundStyle(theme.textFaint)
                                 }
                                 Spacer()
-                                Text(AppFormatter.formatCurrency(tx.displayAmount))
-                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(tx.isSpend ? theme.text : theme.success)
+                                AmountView(
+                                    sats: tx.displaySatsValue(btcPrice: btcPrice),
+                                    unit: unit,
+                                    size: 13,
+                                    weight: .bold,
+                                    showSign: true,
+                                    accent: tx.isIncome,
+                                    btcPrice: btcPrice
+                                )
                             }
                             .padding(14)
                         }
@@ -87,7 +98,7 @@ struct CategoryDetailView: View {
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
                 .padding(.horizontal, AppLayout.sectionPadding)
             }
-            .padding(.bottom, 28)
+            .padding(.bottom, 100)
         }
         .background(theme.bg)
         .navigationTitle(category.name)
@@ -110,6 +121,8 @@ struct CategoryDetailView: View {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if let value = Decimal(string: clean), value >= 0 {
             category.monthlyBudget = value
+            try? modelContext.save()
+            AppWriteSyncService.pushBudgetCategoryUpdate(category)
         }
     }
 

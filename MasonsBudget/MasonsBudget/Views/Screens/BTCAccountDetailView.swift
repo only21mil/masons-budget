@@ -15,7 +15,7 @@ struct BTCAccountDetailView: View {
     private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
     private var visibleAccounts: [BTCAccount] {
         accounts.filter { account in
-            activeMember.canSee(dataOwnedBy: account.ownerMember) &&
+            activeMember.sharesNetWorth(with: account.ownerMember) &&
             (custody == nil || account.custody == custody)
         }
     }
@@ -36,7 +36,7 @@ struct BTCAccountDetailView: View {
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
                 .padding(.horizontal, AppLayout.sectionPadding)
             }
-            .padding(.bottom, 28)
+            .padding(.bottom, 100)
         }
         .background(theme.bg)
         .navigationTitle(title)

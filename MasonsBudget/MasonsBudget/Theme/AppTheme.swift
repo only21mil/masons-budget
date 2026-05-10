@@ -22,6 +22,30 @@ extension Color {
     }
 }
 
+// MARK: - Appearance Mode
+
+enum AppearanceMode: String, CaseIterable, Identifiable {
+    case system, light, dark
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .system: "System"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+}
+
 // MARK: - Display Unit
 
 enum DisplayUnit: String, CaseIterable, Identifiable {
@@ -38,10 +62,7 @@ enum DisplayUnit: String, CaseIterable, Identifiable {
     }
 
     var prefix: String {
-        switch self {
-        case .usd: "$"
-        case .btc, .sats: ""
-        }
+        ""
     }
 }
 
@@ -216,7 +237,7 @@ enum AppTheme {
     static let cardSpacing = AppLayout.cardSpacing
     static let horizontalPadding = AppLayout.sectionPadding
 
-    static let fallbackBTCPrice: Decimal = 90_000
+    static let fallbackBTCPrice: Decimal = 104_000
 
     static let accentGradient = LinearGradient(
         colors: [Color(hex: 0xF7931A), Color(hex: 0xE07B0E)],

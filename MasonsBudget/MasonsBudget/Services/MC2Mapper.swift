@@ -110,13 +110,27 @@ enum MC2Mapper {
         return note
     }
 
-    static func mapBudgetCategories(_ dtos: [MC2BudgetCategory]) -> [BudgetCategory] {
+    static func mapMonthlyHistory(_ entries: [MC2MonthlyHistoryEntry]?) -> [MonthlyBudgetSnapshot] {
+        guard let entries else { return [] }
+        return entries.compactMap { entry in
+            guard !entry.month.isEmpty else { return nil }
+            return MonthlyBudgetSnapshot(
+                monthKey: entry.month,
+                mtdIncome: entry.income ?? 0,
+                ytdIncome: entry.income ?? 0
+            )
+        }
+    }
+
+    static func mapBudgetCategories(_ dtos: [MC2BudgetCategory], owner: FamilyMember = .victor) -> [BudgetCategory] {
         dtos.enumerated().map { index, dto in
-            BudgetCategory(
-                name: dto.name,
+            let name = owner == .victor ? dto.name : "\(owner.rawValue):\(dto.name)"
+            return BudgetCategory(
+                name: name,
                 icon: dto.icon ?? "questionmark.circle",
                 monthlyBudget: dto.budget,
-                sortOrder: index
+                sortOrder: index,
+                owner: owner
             )
         }
     }
@@ -183,7 +197,7 @@ enum MC2Mapper {
         }
 
         if let masonAccount = finances.mason401k,
-           let holdingAccount = mapFinanceAccount(key: "401k", account: masonAccount, viewer: owner, ownerOverride: .mason) {
+           let holdingAccount = mapFinanceAccount(key: "mason_401k", account: masonAccount, viewer: owner, ownerOverride: .mason) {
             accounts.append(holdingAccount)
         }
 

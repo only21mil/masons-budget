@@ -110,7 +110,12 @@ struct ProjectsView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(visible.enumerated()), id: \.element.projectId) { idx, project in
-                        projectRow(project: project)
+                        NavigationLink {
+                            ProjectTodoListView(projectName: project.name)
+                        } label: {
+                            projectRow(project: project)
+                        }
+                        .buttonStyle(.plain)
                         if idx < visible.count - 1 {
                             Hairline(indent: 58)
                         }

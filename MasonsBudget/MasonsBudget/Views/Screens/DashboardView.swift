@@ -3,14 +3,17 @@ import SwiftData
 
 struct DashboardView: View {
     @Environment(\.theme) var theme
+    @Environment(\.modelContext) private var modelContext
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
     @Query private var accounts: [BTCAccount]
+    @Query private var holdingAccounts: [HoldingAccount]
     @Query private var snapshots: [MonthlyBudgetSnapshot]
     @Query private var categories: [BudgetCategory]
     @Query(sort: \TodoItem.dueDate) private var allTodos: [TodoItem]
     @Query(sort: \Transaction.date, order: .reverse) private var allTransactions: [Transaction]
+    @Query(sort: \NetWorthSnapshot.date) private var netWorthSnapshots: [NetWorthSnapshot]
 
     private var unit: DisplayUnit { DisplayUnit(rawValue: displayUnitRaw) ?? .btc }
     private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
@@ -23,12 +26,30 @@ struct DashboardView: View {
         return Int(value.rounded())
     }
 
+    private var myCategories: [BudgetCategory] {
+        categories.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+    }
+
     private var visibleAccounts: [BTCAccount] {
-        accounts.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+        accounts.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
+    }
+
+    private var myRetirementAccounts: [HoldingAccount] {
+        holdingAccounts.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
     }
 
     private var totalBtc: Decimal { visibleAccounts.reduce(Decimal(0)) { $0 + $1.btc } }
-    private var totalSats: Decimal { totalBtc * 100_000_000 }
+    private var vooPrice: Decimal? { StockPriceService.vooPrice }
+    private var ibitPrice: Decimal? { StockPriceService.ibitPrice }
+
+    private var totalRetirementUsd: Decimal {
+        myRetirementAccounts.reduce(Decimal(0)) { $0 + $1.liveValue(vooPrice: vooPrice, ibitPrice: ibitPrice) }
+    }
+    private var totalRetirementSats: Decimal {
+        guard btcPrice > 0 else { return 0 }
+        return (totalRetirementUsd / btcPrice) * 100_000_000
+    }
+    private var totalSats: Decimal { (totalBtc * 100_000_000) + totalRetirementSats }
 
     private var coldBtc: Decimal {
         visibleAccounts.filter { $0.custody == .selfCustody }.reduce(Decimal(0)) { $0 + $1.btc }
@@ -38,6 +59,7 @@ struct DashboardView: View {
     private var todayTodos: [TodoItem] {
         let cal = Calendar.current
         return allTodos.filter { todo in
+            !todo.isDone &&
             activeMember.canSee(dataOwnedBy: todo.ownerMember) &&
             (todo.dueDate.map { cal.isDateInToday($0) } ?? false)
         }
@@ -53,7 +75,8 @@ struct DashboardView: View {
     private var currentSnapshot: MonthlyBudgetSnapshot? {
         let df = DateFormatter()
         df.dateFormat = "MMMM yyyy"
-        let key = df.string(from: Date())
+        let baseKey = df.string(from: Date())
+        let key = activeMember.isAdult ? baseKey : "\(activeMember.rawValue):\(baseKey)"
         return snapshots.first(where: { $0.monthKey == key })
     }
 
@@ -76,7 +99,7 @@ struct DashboardView: View {
 
     private var heroBalance: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("NET WORTH · 100% BITCOIN")
+            Text("NET WORTH")
                 .font(.system(size: 11, weight: .semibold))
                 .tracking(0.88)
                 .foregroundStyle(theme.accent)
@@ -84,13 +107,14 @@ struct DashboardView: View {
             AmountView(sats: totalSats, unit: unit, size: 42, weight: .bold, btcPrice: btcPrice)
 
             HStack(spacing: 8) {
+                let isPositive = !change30dFormatted.hasPrefix("-")
                 HStack(spacing: 4) {
-                    Image(systemName: AppIcon.arrowUp)
+                    Image(systemName: isPositive ? AppIcon.arrowUp : "arrow.down.right")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(theme.success)
-                    Text("+\(change30dFormatted)%")
+                        .foregroundStyle(isPositive ? theme.success : theme.danger)
+                    Text("\(isPositive ? "+" : "")\(change30dFormatted)%")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(theme.success)
+                        .foregroundStyle(isPositive ? theme.success : theme.danger)
                 }
                 Text("past 30 days")
                     .font(.system(size: 14))
@@ -109,14 +133,15 @@ struct DashboardView: View {
     }
 
     private var athPill: some View {
-        let athBtc = totalBtc
-        let drawdown = athBtc > 0 ? Decimal(0) : Decimal(0)
+        let athValue = mySnapshots.map(\.totalValue).max() ?? totalBtc * btcPrice
+        let currentValue = totalBtc * btcPrice + totalRetirementUsd
+        let drawdown: Decimal = athValue > 0 ? ((athValue - currentValue) / athValue) * 100 : 0
         return HStack(spacing: 5) {
             Text("ATH")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
-            Text(AppFormatter.formatBtc(athBtc))
+            Text(AppFormatter.formatCurrency(athValue))
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
-            if drawdown > 0 {
+            if drawdown > 1 {
                 Text("· -\(NSDecimalNumber(decimal: drawdown).doubleValue, specifier: "%.1f")%")
                     .font(.system(size: 11, weight: .semibold))
                     .opacity(0.7)
@@ -129,18 +154,37 @@ struct DashboardView: View {
         .clipShape(Capsule())
     }
 
+    private var mySnapshots: [NetWorthSnapshot] {
+        netWorthSnapshots.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
+    }
+
     private var change30dFormatted: String {
-        "3.2"
+        guard let latest = mySnapshots.last else { return "0.0" }
+        let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+        let baseline = mySnapshots.last(where: { $0.date <= cutoff }) ?? mySnapshots.first
+        guard let base = baseline, base.totalValue > 0, base.date != latest.date else { return "0.0" }
+        let pctChange = ((latest.totalValue - base.totalValue) / base.totalValue) * 100
+        let value = NSDecimalNumber(decimal: pctChange).doubleValue
+        return String(format: "%.1f", value)
+    }
+
+    private var sparklineData: [CGFloat] {
+        let recent = mySnapshots.suffix(30)
+        let currentVal = CGFloat(NSDecimalNumber(decimal: totalBtc * btcPrice + totalRetirementUsd).doubleValue)
+        guard !recent.isEmpty else { return [currentVal, currentVal] }
+        var points = recent.map { CGFloat(NSDecimalNumber(decimal: $0.totalValue).doubleValue) }
+        if points.count < 3 { points.append(currentVal) }
+        return points
     }
 
     private var sparklineChart: some View {
-        let data: [CGFloat] = [82, 78, 91, 88, 95, 102, 98, 110, 108, 115, 112, 118]
+        let data = sparklineData
         let maxVal = data.max() ?? 1
         let minVal = data.min() ?? 0
         let range = maxVal - minVal
 
         return Canvas { context, size in
-            guard range > 0 else { return }
+            guard range > 0, data.count > 1 else { return }
             let w = size.width
             let h = size.height
 
@@ -187,7 +231,7 @@ struct DashboardView: View {
                 iconColor: theme.plum,
                 iconBg: theme.plumSoft,
                 btc: coldBtc,
-                subtitle: coldPct + " of stack · multisig"
+                subtitle: coldPct + " of stack · " + coldLabel
             )
             statCard(
                 title: "Spending Wallet",
@@ -195,7 +239,7 @@ struct DashboardView: View {
                 iconColor: theme.info,
                 iconBg: theme.infoSoft,
                 btc: hotBtc,
-                subtitle: "Lightning · daily"
+                subtitle: hotLabel
             )
         }
         .padding(.horizontal, AppLayout.sectionPadding)
@@ -205,6 +249,16 @@ struct DashboardView: View {
     private var coldPct: String {
         guard totalBtc > 0 else { return "0%" }
         return "\(percent(coldBtc, of: totalBtc))%"
+    }
+
+    private var coldLabel: String {
+        let labels = visibleAccounts.filter { $0.custody == .selfCustody }.map(\.label)
+        return labels.first ?? "self-custody"
+    }
+
+    private var hotLabel: String {
+        let labels = visibleAccounts.filter { $0.custody == .exchange }.map(\.label)
+        return labels.isEmpty ? "Lightning" : labels.prefix(2).joined(separator: " · ")
     }
 
     private func statCard(title: String, icon: String, iconColor: Color, iconBg: Color, btc: Decimal, subtitle: String) -> some View {
@@ -236,11 +290,24 @@ struct DashboardView: View {
 
     // MARK: - Income & Savings Card
 
+    private var ytdSpending: Decimal {
+        let cal = Calendar.current
+        let now = Date()
+        let startOfYear = cal.date(from: cal.dateComponents([.year], from: now)) ?? now
+        return allTransactions
+            .filter { tx in
+                activeMember.canSee(dataOwnedBy: tx.ownerMember) &&
+                tx.isSpend &&
+                tx.date >= startOfYear
+            }
+            .reduce(Decimal(0)) { $0 + $1.spendAmount }
+    }
+
     private var incomeCard: some View {
         let mtdIncome = currentSnapshot?.mtdIncome ?? 0
         let ytdIncome = currentSnapshot?.ytdIncome ?? 0
         let mtdSpend = monthlySpending
-        let ytdSpend = ytdIncome * Decimal(0.65)
+        let ytdSpend = ytdSpending
         let mtdSaved = mtdIncome - mtdSpend
         let ytdSaved = ytdIncome - ytdSpend
         let mtdRate = percent(mtdIncome - mtdSpend, of: mtdIncome)
@@ -297,6 +364,31 @@ struct DashboardView: View {
         .padding(14)
     }
 
+    private var recentMonthlyData: [(income: CGFloat, spend: CGFloat)] {
+        let cal = Calendar.current
+        let now = Date()
+        var result: [(income: CGFloat, spend: CGFloat)] = []
+        for offset in stride(from: -5, through: 0, by: 1) {
+            guard let monthDate = cal.date(byAdding: .month, value: offset, to: now) else { continue }
+            let df = DateFormatter()
+            df.dateFormat = "MMMM yyyy"
+            let key = df.string(from: monthDate)
+            let income = snapshots.first(where: { $0.monthKey == key })?.mtdIncome ?? 0
+            let spend = allTransactions
+                .filter { tx in
+                    activeMember.canSee(dataOwnedBy: tx.ownerMember) &&
+                    tx.isSpend &&
+                    cal.isDate(tx.date, equalTo: monthDate, toGranularity: .month)
+                }
+                .reduce(Decimal(0)) { $0 + $1.spendAmount }
+            result.append((
+                income: CGFloat(NSDecimalNumber(decimal: income).doubleValue),
+                spend: CGFloat(NSDecimalNumber(decimal: spend).doubleValue)
+            ))
+        }
+        return result
+    }
+
     private var incomeChart: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -318,15 +410,17 @@ struct DashboardView: View {
             }
 
             Canvas { context, size in
-                let months = 6
+                let monthData = recentMonthlyData
+                let months = monthData.count
+                guard months > 0 else { return }
                 let barWidth = size.width / CGFloat(months) * 0.32
-                let maxAmt: CGFloat = 8000
+                let maxAmt = max(monthData.map(\.income).max() ?? 1, monthData.map(\.spend).max() ?? 1, 1)
 
-                for i in 0..<months {
+                for (i, data) in monthData.enumerated() {
                     let slot = size.width / CGFloat(months)
                     let cx = CGFloat(i) * slot + slot / 2
-                    let incH = CGFloat(5000 + i * 300) / maxAmt * size.height * 0.86
-                    let spdH = CGFloat(3500 + i * 200) / maxAmt * size.height * 0.86
+                    let incH = data.income / maxAmt * size.height * 0.86
+                    let spdH = data.spend / maxAmt * size.height * 0.86
 
                     let incRect = CGRect(x: cx - barWidth - 0.4, y: size.height - incH, width: barWidth, height: incH)
                     let spdRect = CGRect(x: cx + 0.4, y: size.height - spdH, width: barWidth, height: spdH)
@@ -362,22 +456,9 @@ struct DashboardView: View {
             .reduce(Decimal(0)) { $0 + $1.spendAmount }
     }
 
-    private var monthlySpendingSats: Decimal {
-        let cal = Calendar.current
-        let now = Date()
-        return allTransactions
-            .filter { tx in
-                activeMember.canSee(dataOwnedBy: tx.ownerMember) &&
-                tx.isSpend &&
-                cal.isDate(tx.date, equalTo: now, toGranularity: .month)
-            }
-            .reduce(Decimal(0)) { $0 + $1.spendSatsValue(btcPrice: btcPrice) }
-    }
-
     private var spendingCard: some View {
         let spent = monthlySpending
-        let spentSats = monthlySpendingSats
-        let limit = categories.reduce(Decimal(0)) { $0 + $1.monthlyBudget }
+        let limit = myCategories.reduce(Decimal(0)) { $0 + $1.monthlyBudget }
         let pct = percent(spent, of: limit)
 
         return VStack(alignment: .leading, spacing: 12) {
@@ -392,7 +473,9 @@ struct DashboardView: View {
                         .foregroundStyle(theme.textFaint)
                 }
                 Spacer()
-                AmountView(sats: spentSats, unit: unit, size: 18, weight: .bold, btcPrice: btcPrice)
+                Text(AppFormatter.formatCurrency(spent))
+                    .font(.system(size: 18, weight: .bold, design: .monospaced))
+                    .foregroundStyle(theme.text)
             }
 
             spendingBar(spent: spent, limit: limit)
@@ -415,7 +498,7 @@ struct DashboardView: View {
         let totalLimit = limit > 0 ? limit : 1
         return GeometryReader { geo in
             HStack(spacing: 0) {
-                ForEach(Array(categories.prefix(5).enumerated()), id: \.offset) { idx, cat in
+                ForEach(Array(myCategories.prefix(5).enumerated()), id: \.offset) { idx, cat in
                     let fraction = cat.monthlyBudget / totalLimit
                     Rectangle()
                         .fill(categoryColors[idx % categoryColors.count].opacity(0.85))
@@ -432,7 +515,7 @@ struct DashboardView: View {
 
     private var categoryLegend: some View {
         let categoryColors: [Color] = [theme.accent, theme.plum, theme.info, theme.success, theme.warn]
-        let cats = Array(categories.prefix(4))
+        let cats = Array(myCategories.prefix(4))
         return HStack(spacing: 12) {
             ForEach(Array(cats.enumerated()), id: \.offset) { idx, cat in
                 HStack(spacing: 6) {
@@ -444,8 +527,8 @@ struct DashboardView: View {
                         .foregroundStyle(theme.textMuted)
                 }
             }
-            if categories.count > 4 {
-                Text("+\(categories.count - 4) more")
+            if myCategories.count > 4 {
+                Text("+\(myCategories.count - 4) more")
                     .font(.system(size: 12))
                     .foregroundStyle(theme.textFaint)
             }
@@ -461,17 +544,25 @@ struct DashboardView: View {
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(theme.text)
                 Spacer()
-                Text("\(todayTodos.filter { !$0.isDone }.count) tasks")
+                Text("\(todayTodos.count) tasks")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(theme.accent)
             }
             .padding(.horizontal, 4)
 
             VStack(spacing: 0) {
-                ForEach(Array(todayTodos.prefix(4).enumerated()), id: \.element.id) { idx, todo in
-                    todoRow(todo: todo)
-                    if idx < min(todayTodos.count, 4) - 1 {
-                        Hairline(indent: 46)
+                if todayTodos.isEmpty {
+                    Text("No tasks due today")
+                        .font(.system(size: 13))
+                        .foregroundStyle(theme.textFaint)
+                        .frame(maxWidth: .infinity)
+                        .padding(20)
+                } else {
+                    ForEach(Array(todayTodos.prefix(4).enumerated()), id: \.element.id) { idx, todo in
+                        todoRow(todo: todo)
+                        if idx < min(todayTodos.count, 4) - 1 {
+                            Hairline(indent: 46)
+                        }
                     }
                 }
             }
@@ -482,33 +573,40 @@ struct DashboardView: View {
     }
 
     private func todoRow(todo: TodoItem) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: todo.isDone ? AppIcon.checkDone : AppIcon.checkOpen)
-                .font(.system(size: 20))
-                .foregroundStyle(todo.isDone ? theme.accent : theme.borderStrong)
+        Button {
+            todo.isDone.toggle()
+            try? modelContext.save()
+            AppWriteSyncService.pushTodo(todo)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: todo.isDone ? AppIcon.checkDone : AppIcon.checkOpen)
+                    .font(.system(size: 20))
+                    .foregroundStyle(todo.isDone ? theme.accent : theme.borderStrong)
 
-            Text(todo.title)
-                .font(.system(size: 14))
-                .foregroundStyle(todo.isDone ? theme.textFaint : theme.text)
-                .strikethrough(todo.isDone)
-                .lineLimit(1)
+                Text(todo.title)
+                    .font(.system(size: 14))
+                    .foregroundStyle(todo.isDone ? theme.textFaint : theme.text)
+                    .strikethrough(todo.isDone)
+                    .lineLimit(1)
 
-            Spacer()
+                Spacer()
 
-            if todo.isFlagged {
-                Image(systemName: AppIcon.flagFilled)
-                    .font(.system(size: 13))
-                    .foregroundStyle(theme.accent)
+                if todo.isFlagged {
+                    Image(systemName: AppIcon.flagFilled)
+                        .font(.system(size: 13))
+                        .foregroundStyle(theme.accent)
+                }
+
+                if let project = todo.project {
+                    Text(project)
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.textFaint)
+                }
             }
-
-            if let project = todo.project {
-                Text(project)
-                    .font(.system(size: 11))
-                    .foregroundStyle(theme.textFaint)
-            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .buttonStyle(.plain)
     }
 
     // MARK: - Recent Activity
@@ -520,17 +618,29 @@ struct DashboardView: View {
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(theme.text)
                 Spacer()
-                Text("See all")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(theme.accent)
+                NavigationLink {
+                    ActivityView()
+                } label: {
+                    Text("See all")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.accent)
+                }
             }
             .padding(.horizontal, 4)
 
             VStack(spacing: 0) {
-                ForEach(Array(recentTransactions.enumerated()), id: \.element.id) { idx, tx in
-                    transactionRow(tx: tx)
-                    if idx < recentTransactions.count - 1 {
-                        Hairline(indent: 58)
+                if recentTransactions.isEmpty {
+                    Text("No transactions yet")
+                        .font(.system(size: 13))
+                        .foregroundStyle(theme.textFaint)
+                        .frame(maxWidth: .infinity)
+                        .padding(20)
+                } else {
+                    ForEach(Array(recentTransactions.enumerated()), id: \.element.id) { idx, tx in
+                        transactionRow(tx: tx)
+                        if idx < recentTransactions.count - 1 {
+                            Hairline(indent: 58)
+                        }
                     }
                 }
             }
@@ -562,7 +672,7 @@ struct DashboardView: View {
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                 HStack(spacing: 5) {
-                    Image(systemName: "bolt.fill")
+                    Image(systemName: tx.card == "lightning" ? "bolt.fill" : "link")
                         .font(.system(size: 10))
                         .foregroundStyle(theme.textFaint)
                     Text(relativeDateString(tx.date))

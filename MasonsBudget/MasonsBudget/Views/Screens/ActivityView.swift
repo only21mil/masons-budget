@@ -9,7 +9,6 @@ struct ActivityView: View {
     @Query(sort: \Transaction.date, order: .reverse) private var allTransactions: [Transaction]
 
     @State private var filter: TxFilter = .all
-    @State private var showImport = false
     @State private var showCSVImport = false
 
     private var unit: DisplayUnit { DisplayUnit(rawValue: displayUnitRaw) ?? .btc }
@@ -191,7 +190,7 @@ struct ActivityView: View {
         let map: [String: String] = [
             "Housing": "home", "Groceries": "fork", "Dining": "fork",
             "Transport": "plane", "Health": "heart", "Utilities": "bolt",
-            "Shopping": "gift", "Bitcoin": "vault",
+            "Shopping": "gift", "Entertainment": "bolt", "Bitcoin": "vault",
         ]
         return map[category] ?? "wrench"
     }
@@ -200,7 +199,8 @@ struct ActivityView: View {
         let map: [String: Color] = [
             "Housing": theme.plum, "Groceries": theme.success,
             "Dining": theme.warn, "Transport": theme.info,
-            "Health": theme.danger, "Bitcoin": theme.accent,
+            "Health": theme.danger, "Entertainment": theme.info,
+            "Bitcoin": theme.accent,
         ]
         return map[category] ?? theme.textMuted
     }

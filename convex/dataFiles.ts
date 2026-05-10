@@ -1,6 +1,14 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 
+function validateSyncToken(token?: string) {
+  const expected = process.env.CONVEX_SYNC_TOKEN;
+  if (!expected) return;
+  if (!token || token !== expected) {
+    throw new Error("Unauthorized: invalid sync token");
+  }
+}
+
 // ── Queries (called by the iOS app) ──
 
 /** Fetch a single data file by name. Returns the raw JSON data. */
@@ -105,8 +113,10 @@ export const sync = mutation({
   args: {
     name: v.string(),
     data: v.any(),
+    token: v.optional(v.string()),
   },
-  handler: async (ctx, { name, data }) => {
+  handler: async (ctx, { name, data, token }) => {
+    validateSyncToken(token);
     const now = Date.now();
 
     // Upsert the data file
@@ -147,8 +157,10 @@ export const syncBatch = mutation({
         data: v.any(),
       }),
     ),
+    token: v.optional(v.string()),
   },
-  handler: async (ctx, { files }) => {
+  handler: async (ctx, { files, token }) => {
+    validateSyncToken(token);
     const now = Date.now();
     const results: { name: string; version: number }[] = [];
 
@@ -191,8 +203,10 @@ export const appendTransaction = mutation({
       v.union(v.literal("transactions"), v.literal("mason-transactions")),
     ),
     transaction: appTransactionValidator,
+    token: v.optional(v.string()),
   },
-  handler: async (ctx, { name: fileName, transaction }) => {
+  handler: async (ctx, { name: fileName, transaction, token }) => {
+    validateSyncToken(token);
     const name = fileName ?? "transactions";
     const now = Date.now();
 
@@ -245,8 +259,10 @@ export const upsertTodo = mutation({
   args: {
     name: v.optional(v.literal("todos")),
     todo: appTodoValidator,
+    token: v.optional(v.string()),
   },
-  handler: async (ctx, { name: fileName, todo }) => {
+  handler: async (ctx, { name: fileName, todo, token }) => {
+    validateSyncToken(token);
     const name = fileName ?? "todos";
     const now = Date.now();
 
@@ -338,8 +354,10 @@ export const appendBillPay = mutation({
       reference: v.optional(v.union(v.string(), v.null())),
       owner: v.optional(v.union(v.string(), v.null())),
     }),
+    token: v.optional(v.string()),
   },
-  handler: async (ctx, { billPay }) => {
+  handler: async (ctx, { billPay, token }) => {
+    validateSyncToken(token);
     const name = "bitcoin-bill-pays";
     const now = Date.now();
 
@@ -391,8 +409,9 @@ export const appendBillPay = mutation({
 
 /** Delete a data file. */
 export const remove = mutation({
-  args: { name: v.string() },
-  handler: async (ctx, { name }) => {
+  args: { name: v.string(), token: v.optional(v.string()) },
+  handler: async (ctx, { name, token }) => {
+    validateSyncToken(token);
     const doc = await ctx.db
       .query("dataFiles")
       .withIndex("by_name", (q) => q.eq("name", name))

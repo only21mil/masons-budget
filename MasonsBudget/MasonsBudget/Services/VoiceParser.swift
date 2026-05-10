@@ -418,7 +418,7 @@ final class VoiceParser {
             comps.month = monthNum
             comps.day = day
             if monthNum > (cal.component(.month, from: today)) {
-                comps.year = (comps.year ?? 2026) - 1
+                comps.year = (comps.year ?? cal.component(.year, from: today)) - 1
             }
             return cal.date(from: comps)
         }

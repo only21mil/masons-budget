@@ -123,11 +123,11 @@ final class MC2SyncService {
     private func syncBudget(_ errors: inout [String]) async -> Int {
         do {
             let dto = try await reader.readBudget()
-            let snapshot = MC2Mapper.mapBudgetSnapshot(dto)
+            let currentSnapshot = MC2Mapper.mapBudgetSnapshot(dto)
+            let historicalSnapshots = MC2Mapper.mapMonthlyHistory(dto.monthlyHistory)
             let categories = MC2Mapper.mapBudgetCategories(dto.categories)
-            replaceAll(MonthlyBudgetSnapshot.self, with: [snapshot])
-            replaceAll(BudgetCategory.self, with: categories)
-            return 1 + categories.count
+            replaceBudgetData(forOwner: .victor, snapshots: [currentSnapshot] + historicalSnapshots, categories: categories)
+            return 1 + historicalSnapshots.count + categories.count
         } catch {
             log.error("Budget sync failed: \(error.localizedDescription)")
             errors.append("Budget: \(error.localizedDescription)")
@@ -217,11 +217,10 @@ final class MC2SyncService {
     private func syncMasonBudget(_ errors: inout [String]) async -> Int {
         do {
             let dto = try await reader.readMasonBudget()
-            let categories = MC2Mapper.mapBudgetCategories(dto.categories)
+            let categories = MC2Mapper.mapBudgetCategories(dto.categories, owner: .mason)
             let snapshot = makeMasonSnapshot(from: dto)
 
-            replaceAll(MonthlyBudgetSnapshot.self, with: [snapshot])
-            replaceAll(BudgetCategory.self, with: categories)
+            replaceBudgetData(forOwner: .mason, snapshots: [snapshot], categories: categories)
             return 1 + categories.count
         } catch {
             log.error("Mason budget sync failed: \(error.localizedDescription)")
@@ -234,11 +233,12 @@ final class MC2SyncService {
     /// direct-deposit paychecks) when present; falls back to the legacy
     /// `allowance` field for kids who don't have real income yet.
     private func makeMasonSnapshot(from dto: MC2MasonBudget) -> MonthlyBudgetSnapshot {
+        let masonKey = "mason:\(dto.month)"
         if let income = dto.income, let weeklyGross = income.weeklyGross, weeklyGross > 0 {
             let monthly = income.monthlyGross ?? (weeklyGross * Decimal(52) / Decimal(12))
             let actualIncome = MC2Mapper.actualIncomeTotals(income: income, budgetMonth: dto.month)
             return MonthlyBudgetSnapshot(
-                monthKey: dto.month,
+                monthKey: masonKey,
                 weeklyGross: weeklyGross,
                 weeklyStrike: income.weeklyStrike ?? 0,
                 weeklyRiver: income.weeklyRiver ?? 0,
@@ -252,7 +252,7 @@ final class MC2SyncService {
 
         let weeklyAllowance = dto.allowance?.weekly ?? 0
         return MonthlyBudgetSnapshot(
-            monthKey: dto.month,
+            monthKey: masonKey,
             weeklyGross: weeklyAllowance,
             monthlyGross: weeklyAllowance * 4,
             mtdIncome: weeklyAllowance * 4,
@@ -312,9 +312,11 @@ final class MC2SyncService {
             let btcValue = btcAccounts
                 .filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
                 .reduce(Decimal(0)) { $0 + $1.usdValue() }
+            let vooPrice = StockPriceService.vooPrice
+            let ibitPrice = StockPriceService.ibitPrice
             let holdingsValue = holdingAccounts
                 .filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
-                .reduce(Decimal(0)) { $0 + $1.totalValue }
+                .reduce(Decimal(0)) { $0 + $1.liveValue(vooPrice: vooPrice, ibitPrice: ibitPrice) }
 
             let snapshot = NetWorthSnapshot(
                 totalValue: btcValue + holdingsValue,
@@ -328,10 +330,26 @@ final class MC2SyncService {
         }
     }
 
-    private func replaceAll<T: PersistentModel>(_ type: T.Type, with models: [T]) {
-        deleteAll(type)
-        for model in models {
-            context.insert(model)
+    private func replaceBudgetData(forOwner owner: FamilyMember, snapshots: [MonthlyBudgetSnapshot], categories: [BudgetCategory]) {
+        do {
+            let existingSnapshots = try context.fetch(FetchDescriptor<MonthlyBudgetSnapshot>())
+            let prefix = owner == .victor ? "" : "\(owner.rawValue):"
+            for s in existingSnapshots {
+                let isOwned = owner == .victor ? !s.monthKey.contains(":") : s.monthKey.hasPrefix(prefix)
+                if isOwned { context.delete(s) }
+            }
+            let existingCats = try context.fetch(FetchDescriptor<BudgetCategory>())
+            for cat in existingCats where cat.owner == owner.rawValue {
+                context.delete(cat)
+            }
+        } catch {
+            log.error("Failed to scope-delete budget data: \(error.localizedDescription)")
+        }
+        for snapshot in snapshots {
+            context.insert(snapshot)
+        }
+        for cat in categories {
+            context.insert(cat)
         }
     }
 
@@ -368,7 +386,8 @@ final class MC2SyncService {
     private func replaceBTCBuys(ownedBy owners: [FamilyMember], with buys: [BTCBuy]) {
         do {
             let existing = try context.fetch(FetchDescriptor<BTCBuy>())
-            for buy in existing where owners.contains(buy.ownerMember ?? .victor) {
+            for buy in existing {
+                guard let member = buy.ownerMember, owners.contains(member) else { continue }
                 context.delete(buy)
             }
         } catch {
@@ -425,14 +444,4 @@ final class MC2SyncService {
         }
     }
 
-    private func deleteAll<T: PersistentModel>(_ type: T.Type) {
-        do {
-            let existing = try context.fetch(FetchDescriptor<T>())
-            for item in existing {
-                context.delete(item)
-            }
-        } catch {
-            log.error("Failed to delete \(String(describing: type)): \(error.localizedDescription)")
-        }
-    }
 }

@@ -13,10 +13,10 @@ struct RetirementView: View {
 
     private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
     private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
-    private var unit: DisplayUnit { .usd }
+    private var unit: DisplayUnit { DisplayUnit(rawValue: displayUnitRaw) ?? .btc }
 
     private var visibleAccounts: [BTCAccount] {
-        accounts.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+        accounts.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
     }
 
     private var totalBtc: Decimal { visibleAccounts.reduce(Decimal(0)) { $0 + $1.btc } }
@@ -26,7 +26,7 @@ struct RetirementView: View {
     private var hotBtc: Decimal { totalBtc - coldBtc }
 
     private let targetBtc: Decimal = 10
-    private let runwayYears = 18
+    private let annualBurnUsd: Decimal = 60_000
     private let dcaWeeklySats: Decimal = 2_100_000
 
     private var goalPct: Double {
@@ -35,7 +35,7 @@ struct RetirementView: View {
     }
 
     private var visibleLots: [CostBasisLot] {
-        lots.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+        lots.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
     }
 
     var body: some View {
@@ -62,6 +62,16 @@ struct RetirementView: View {
 
     // MARK: - Runway Hero Card
 
+    private var runwayYears: Int {
+        guard annualBurnUsd > 0, btcPrice > 0 else { return 0 }
+        let totalUsd = totalBtc * btcPrice
+        return Int(NSDecimalNumber(decimal: totalUsd / annualBurnUsd).doubleValue)
+    }
+
+    private var runwayEndYear: Int {
+        Calendar.current.component(.year, from: Date()) + runwayYears
+    }
+
     private var runwayCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("PROJECTED RUNWAY")
@@ -78,7 +88,7 @@ struct RetirementView: View {
                     .opacity(0.85)
             }
 
-            Text("At your current burn, your stack covers life past 2044.")
+            Text("At your current burn, your stack covers life past \(runwayEndYear).")
                 .font(.system(size: 13))
                 .opacity(0.85)
                 .padding(.top, 2)
@@ -223,7 +233,7 @@ struct RetirementView: View {
         let weeklyBtc = dcaWeeklySats / 100_000_000
         let monthlyBtc = weeklyBtc * Decimal(4.33) + Decimal(extraBtcPerMonth)
         var projected = totalBtc
-        var year = 2026
+        var year = Calendar.current.component(.year, from: Date())
         while projected < targetBtc && year < 2050 {
             projected += monthlyBtc * 12
             year += 1

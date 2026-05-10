@@ -31,7 +31,7 @@ struct VoiceTransactionView: View {
                     transcriptCard
                     parsedCard
                 }
-                .padding(.bottom, 28)
+                .padding(.bottom, 100)
             }
             .background(theme.bg)
             .navigationTitle("Voice Transaction")
@@ -188,6 +188,8 @@ struct VoiceTransactionView: View {
             createdBy: "voice"
         )
         modelContext.insert(tx)
+        try? modelContext.save()
+        AppWriteSyncService.pushTransaction(tx, owner: activeMember)
         transcriber.stop()
         dismiss()
     }

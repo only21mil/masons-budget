@@ -5,6 +5,7 @@ struct TransactionDetailView: View {
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
     @Bindable var transaction: Transaction
 
     @State private var merchant: String
@@ -35,7 +36,20 @@ struct TransactionDetailView: View {
                     }
                     Hairline()
                     editRow("Category") {
-                        TextField("Category", text: $category)
+                        Menu {
+                            ForEach(categories, id: \.name) { cat in
+                                Button(cat.name) { category = cat.name }
+                            }
+                        } label: {
+                            HStack {
+                                Text(category.isEmpty ? "Select" : category)
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(category.isEmpty ? theme.textFaint : theme.text)
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(theme.textFaint)
+                            }
+                        }
                     }
                     Hairline()
                     editRow("USD") {
@@ -64,7 +78,10 @@ struct TransactionDetailView: View {
                 .padding(.horizontal, AppLayout.sectionPadding)
 
                 Button(role: .destructive) {
+                    let owner = transaction.ownerMember
+                    AppWriteSyncService.deleteTransaction(transaction, owner: owner)
                     modelContext.delete(transaction)
+                    try? modelContext.save()
                     dismiss()
                 } label: {
                     Text("Delete Transaction")
@@ -78,7 +95,7 @@ struct TransactionDetailView: View {
                 .clipShape(RoundedRectangle(cornerRadius: AppLayout.radiusSmall))
                 .padding(.horizontal, AppLayout.sectionPadding)
             }
-            .padding(.bottom, 28)
+            .padding(.bottom, 100)
         }
         .background(theme.bg)
         .navigationTitle("Transaction")
@@ -121,6 +138,8 @@ struct TransactionDetailView: View {
         transaction.card = method
         transaction.note = note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : note
         transaction.date = date
+        try? modelContext.save()
+        AppWriteSyncService.pushTransaction(transaction, owner: transaction.ownerMember)
         dismiss()
     }
 }

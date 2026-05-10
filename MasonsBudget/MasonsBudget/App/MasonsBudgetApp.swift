@@ -66,8 +66,13 @@ struct MasonsBudgetApp: App {
     @AppStorage("has_completed_onboarding") private var hasCompletedOnboarding = false
     @AppStorage("app_lock_enabled") private var appLockEnabled = true
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
+    @AppStorage("appearance_mode") private var appearanceModeRaw = AppearanceMode.system.rawValue
     @State private var isUnlocked = false
     @State private var syncTimer: Timer?
+
+    private var appearanceMode: AppearanceMode {
+        AppearanceMode(rawValue: appearanceModeRaw) ?? .system
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -118,6 +123,7 @@ struct MasonsBudgetApp: App {
                 Task { await syncFromConvex() }
             }
             .themed()
+            .preferredColorScheme(appearanceMode.colorScheme)
         }
         .modelContainer(sharedModelContainer)
         #if os(macOS)

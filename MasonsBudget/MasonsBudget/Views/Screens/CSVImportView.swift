@@ -304,6 +304,8 @@ struct CSVImportView: View {
         for tx in transactions {
             modelContext.insert(tx)
         }
+        try? modelContext.save()
+        transactions.forEach { AppWriteSyncService.pushTransaction($0, owner: activeMember) }
 
         importCount = transactions.count
         isImporting = false

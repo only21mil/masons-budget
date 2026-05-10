@@ -5,8 +5,13 @@ struct ProfileSwitcherView: View {
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
+    @AppStorage("appearance_mode") private var appearanceModeRaw = AppearanceMode.system.rawValue
 
     @State private var authError: String?
+
+    private var appearanceMode: AppearanceMode {
+        get { AppearanceMode(rawValue: appearanceModeRaw) ?? .system }
+    }
 
     private var activeMember: FamilyMember {
         FamilyMember(rawValue: selectedMemberRaw) ?? .victor
@@ -29,6 +34,8 @@ struct ProfileSwitcherView: View {
                     .glassCard(padding: 0, radius: AppLayout.radiusMedium)
                     .padding(.horizontal, AppLayout.sectionPadding)
 
+                    appearanceSection
+
                     if let authError {
                         Text(authError)
                             .font(.system(size: 12, weight: .medium))
@@ -37,7 +44,7 @@ struct ProfileSwitcherView: View {
                             .padding(.horizontal, AppLayout.sectionPadding)
                     }
                 }
-                .padding(.bottom, 28)
+                .padding(.bottom, 100)
             }
             .background(theme.bg)
             .navigationTitle("Switch Profile")
@@ -50,6 +57,51 @@ struct ProfileSwitcherView: View {
                         .foregroundStyle(theme.accent)
                 }
             }
+        }
+    }
+
+    private var appearanceSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("APPEARANCE")
+                .font(.system(size: 12, weight: .bold))
+                .tracking(0.72)
+                .foregroundStyle(theme.textMuted)
+                .padding(.horizontal, AppLayout.sectionPadding + 4)
+
+            HStack(spacing: 6) {
+                ForEach(AppearanceMode.allCases) { mode in
+                    let isSelected = mode == appearanceMode
+                    Button {
+                        appearanceModeRaw = mode.rawValue
+                    } label: {
+                        VStack(spacing: 6) {
+                            Image(systemName: iconForMode(mode))
+                                .font(.system(size: 18))
+                            Text(mode.label)
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundStyle(isSelected ? .white : theme.text)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(isSelected ? theme.accent : theme.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(isSelected ? theme.accent : theme.border, lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, AppLayout.sectionPadding)
+        }
+    }
+
+    private func iconForMode(_ mode: AppearanceMode) -> String {
+        switch mode {
+        case .system: "circle.lefthalf.filled"
+        case .light: "sun.max.fill"
+        case .dark: "moon.fill"
         }
     }
 

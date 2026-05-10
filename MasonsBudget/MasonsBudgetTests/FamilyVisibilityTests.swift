@@ -90,6 +90,19 @@ final class FamilyVisibilityTests: XCTestCase {
         XCTAssertEqual(masonVisible.first?.label, "Mason Strike")
     }
 
+    func testNetWorthScopeKeepsAdultHouseholdButExcludesKids() {
+        let accounts = sampleAccounts()
+
+        let victorNetWorth = accounts.filter { FamilyMember.victor.sharesNetWorth(with: $0.ownerMember) }
+        XCTAssertEqual(victorNetWorth.map(\.label), ["Coldcard", "Phoenix LN"])
+
+        let rachelNetWorth = accounts.filter { FamilyMember.rachel.sharesNetWorth(with: $0.ownerMember) }
+        XCTAssertEqual(rachelNetWorth.map(\.label), ["Coldcard", "Phoenix LN"])
+
+        let masonNetWorth = accounts.filter { FamilyMember.mason.sharesNetWorth(with: $0.ownerMember) }
+        XCTAssertEqual(masonNetWorth.map(\.label), ["Mason Strike"])
+    }
+
     // MARK: - Todo Filtering (TodayView, ProjectsView)
 
     func testTodoFilteringForAdult() {

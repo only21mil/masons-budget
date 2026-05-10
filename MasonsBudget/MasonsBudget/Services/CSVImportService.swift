@@ -176,16 +176,17 @@ final class CSVImportService: Sendable {
     }
 
     func convertToSats(amount: Decimal, source: ImportSource) -> Int64 {
-        let absVal = abs(Double(truncating: amount as NSNumber))
-        let sats: Int64
-        if absVal < 10 {
-            sats = Int64(truncating: (amount * 100_000_000) as NSNumber)
-        } else if absVal < 100_000 {
-            sats = Int64(truncating: amount as NSNumber)
-        } else {
-            sats = Int64(truncating: amount as NSNumber)
+        switch source {
+        case .strike, .coinbase, .cashApp:
+            return Int64(truncating: (amount * 100_000_000) as NSNumber)
+        case .kraken, .selfCustody, .custom:
+            let absVal = abs(Double(truncating: amount as NSNumber))
+            if absVal < 1 {
+                return Int64(truncating: (amount * 100_000_000) as NSNumber)
+            } else {
+                return Int64(truncating: amount as NSNumber)
+            }
         }
-        return sats
     }
 
     // MARK: - Duplicate Detection
@@ -261,7 +262,8 @@ final class CSVImportService: Sendable {
     }
 
     private func usdValue(fromSats sats: Int64) -> Decimal {
-        (Decimal(sats) / 100_000_000) * AppTheme.fallbackBTCPrice
+        let price = BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+        return (Decimal(sats) / 100_000_000) * price
     }
 
     private static let dateFormatters: [DateFormatter] = {

@@ -16,6 +16,10 @@ struct BudgetView: View {
     private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
     private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
 
+    private var myCategories: [BudgetCategory] {
+        categories.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+    }
+
     private var selectedMonth: Date {
         Calendar.current.date(byAdding: .month, value: -selectedMonthOffset, to: Date()) ?? Date()
     }
@@ -33,10 +37,40 @@ struct BudgetView: View {
     }
 
     private var monthLimit: Decimal {
-        categories.reduce(Decimal(0)) { $0 + $1.monthlyBudget }
+        myCategories.reduce(Decimal(0)) { $0 + $1.monthlyBudget }
     }
 
     private var isCurrent: Bool { selectedMonthOffset == 0 }
+
+    private func spentForOffset(_ offset: Int) -> Decimal {
+        let cal = Calendar.current
+        let date = cal.date(byAdding: .month, value: -offset, to: Date()) ?? Date()
+        return allTransactions.filter { tx in
+            activeMember.canSee(dataOwnedBy: tx.ownerMember) &&
+            cal.isDate(tx.date, equalTo: date, toGranularity: .month) &&
+            tx.isSpend
+        }.reduce(Decimal(0)) { $0 + $1.spendAmount }
+    }
+
+    private func incomeForOffset(_ offset: Int) -> Decimal {
+        let cal = Calendar.current
+        let date = cal.date(byAdding: .month, value: -offset, to: Date()) ?? Date()
+        let df = DateFormatter()
+        df.dateFormat = "MMMM yyyy"
+        let baseKey = df.string(from: date)
+        let key = activeMember.isAdult ? baseKey : "\(activeMember.rawValue):\(baseKey)"
+        guard let snapshot = snapshots.first(where: { $0.monthKey == key }) else { return 0 }
+        if snapshot.mtdIncome > 0 { return snapshot.mtdIncome }
+        return max(snapshot.monthlyGross, 0)
+    }
+
+    private func savingsRateForOffset(_ offset: Int) -> Int? {
+        let income = incomeForOffset(offset)
+        guard income > 0 else { return nil }
+        let spent = spentForOffset(offset)
+        let saved = income - spent
+        return max(0, Int(NSDecimalNumber(decimal: (saved / income) * 100).doubleValue))
+    }
 
     var body: some View {
         ScrollView {
@@ -51,9 +85,6 @@ struct BudgetView: View {
 
                 spentCard
                     .padding(.horizontal, AppLayout.sectionPadding)
-                    .padding(.bottom, AppLayout.cardSpacing)
-
-                recurringSection
                     .padding(.bottom, AppLayout.cardSpacing)
 
                 categoriesSection
@@ -92,6 +123,7 @@ struct BudgetView: View {
         df.dateFormat = "MMM"
         let label = df.string(from: date)
         let year = Calendar.current.component(.year, from: date)
+        let rate = savingsRateForOffset(offset)
 
         return Button {
             selectedMonthOffset = offset
@@ -103,8 +135,13 @@ struct BudgetView: View {
                     .textCase(.uppercase)
                     .opacity(isSelected ? 0.85 : 0.55)
 
-                Text("--")
-                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                if let rate {
+                    Text("\(rate)%")
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                } else {
+                    Text("--")
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                }
             }
             .foregroundStyle(isSelected ? .white : theme.text)
             .padding(.horizontal, 12)
@@ -168,77 +205,6 @@ struct BudgetView: View {
         .glassCard()
     }
 
-    // MARK: - Recurring Section
-
-    private var recurringSection: some View {
-        let detector = RecurringDetector()
-        let visible = allTransactions.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
-        let recurring = detector.detect(from: visible)
-
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("RECURRING")
-                .font(.system(size: 12, weight: .bold))
-                .tracking(0.72)
-                .foregroundStyle(theme.textMuted)
-                .padding(.horizontal, AppLayout.sectionPadding + 4)
-
-            if recurring.isEmpty {
-                Text("No recurring patterns detected yet")
-                    .font(.system(size: 13))
-                    .foregroundStyle(theme.textFaint)
-                    .padding(.horizontal, AppLayout.sectionPadding)
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(recurring.prefix(5).enumerated()), id: \.element.id) { idx, item in
-                        recurringRow(item: item)
-                        if idx < min(recurring.count, 5) - 1 {
-                            Hairline(indent: 54)
-                        }
-                    }
-                }
-                .glassCard(padding: 0)
-                .padding(.horizontal, AppLayout.sectionPadding)
-            }
-        }
-    }
-
-    private func recurringRow(item: RecurringTransaction) -> some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 9)
-                .fill(theme.accentSoft)
-                .frame(width: 30, height: 30)
-                .overlay(
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 14))
-                        .foregroundStyle(theme.accent)
-                )
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.merchant)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(theme.text)
-                    .lineLimit(1)
-                Text("monthly · \(item.estimatedInterval)d interval")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(theme.textFaint)
-            }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 2) {
-                AmountView(sats: item.averageSats, unit: .sats, size: 13, weight: .bold, btcPrice: btcPrice)
-                if let yoy = item.yoyChangePct {
-                    let improving = yoy < 0
-                    Text("\(improving ? "▼" : "▲")\(abs(NSDecimalNumber(decimal: yoy).intValue))% YoY")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(improving ? theme.success : theme.danger)
-                }
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 11)
-    }
-
     // MARK: - Categories
 
     private var categoriesSection: some View {
@@ -250,7 +216,7 @@ struct BudgetView: View {
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
             VStack(spacing: 10) {
-                ForEach(categories, id: \.name) { cat in
+                ForEach(myCategories, id: \.name) { cat in
                     NavigationLink {
                         CategoryDetailView(category: cat)
                     } label: {
@@ -298,7 +264,9 @@ struct BudgetView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 4))
                     }
                     Spacer()
-                    AmountView(sats: spent, unit: .usd, size: 14, weight: .bold, btcPrice: btcPrice)
+                    Text(AppFormatter.formatCurrency(spent))
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .foregroundStyle(theme.text)
                 }
 
                 HStack(spacing: 10) {

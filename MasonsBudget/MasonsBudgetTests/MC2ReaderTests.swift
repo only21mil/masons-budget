@@ -134,6 +134,25 @@ final class MC2ReaderTests: XCTestCase {
         XCTAssertEqual(payload["amount"] as? Double, 25.0)
     }
 
+    func testAppSpendPayloadUsesPositiveMC2Amount() throws {
+        let transaction = Transaction(
+            id: "manual-spend",
+            date: .now,
+            merchant: "Dominos",
+            amount: -32.45,
+            category: "Dining & Drinks",
+            card: "Aven",
+            owner: .victor,
+            createdBy: "app"
+        )
+
+        let dto = MC2Transaction(appTransaction: transaction)
+        assertDecimalClose(dto.amount, 32.45)
+
+        let payload = try dto.convexJSONObject()
+        XCTAssertEqual(payload["amount"] as? Double, 32.45)
+    }
+
     // MARK: - budget.json
 
     func testDecodeBudget() throws {

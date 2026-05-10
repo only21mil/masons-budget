@@ -45,7 +45,8 @@ final class BudgetNotificationManager {
 
         var alerts: [BudgetAlert] = []
         for cat in categories {
-            let spent = spentByCategory[cat.name] ?? 0
+            let catKey = cat.name.contains(":") ? String(cat.name.split(separator: ":").last ?? "") : cat.name
+            let spent = spentByCategory[catKey] ?? 0
             guard cat.monthlyBudget > 0 else { continue }
             let pct = spent / cat.monthlyBudget
 
@@ -78,10 +79,7 @@ final class BudgetNotificationManager {
         let id = "budget-\(member.rawValue)-\(categorySlug)"
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
 
-        let calendar = Calendar.current
-        var comps = calendar.dateComponents([.hour], from: Date())
-        comps.hour = (comps.hour ?? 9) + 1
-        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 3600, repeats: false)
 
         let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
         UNUserNotificationCenter.current().add(request)

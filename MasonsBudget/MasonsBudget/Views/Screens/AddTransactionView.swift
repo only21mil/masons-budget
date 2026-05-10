@@ -27,7 +27,11 @@ struct AddTransactionView: View {
     }
 
     private var numericAmount: Decimal {
-        Decimal(string: amount.replacingOccurrences(of: ",", with: "")) ?? 0
+        let cleaned = amount
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: "$", with: "")
+            .replacingOccurrences(of: "₿", with: "")
+        return Decimal(string: cleaned) ?? 0
     }
 
     private var computedSats: Decimal {
@@ -188,21 +192,31 @@ struct AddTransactionView: View {
     private var fieldsCard: some View {
         VStack(spacing: 0) {
             fieldRow(label: "Category") {
-                HStack(spacing: 8) {
-                    if !selectedCategory.isEmpty {
-                        let cat = categories.first(where: { $0.name == selectedCategory })
-                        CatGlyphView(kind: cat?.icon ?? "wrench", size: 11, color: .white)
-                            .frame(width: 18, height: 18)
-                            .background(theme.accent)
-                            .clipShape(RoundedRectangle(cornerRadius: 5))
+                Menu {
+                    ForEach(categories.filter { !$0.isIncome }, id: \.name) { cat in
+                        Button {
+                            selectedCategory = cat.name
+                        } label: {
+                            Label(cat.name, systemImage: cat.icon)
+                        }
                     }
-                    Text(selectedCategory.isEmpty ? "Select" : selectedCategory)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(selectedCategory.isEmpty ? theme.textFaint : theme.text)
-                    Spacer()
-                    Image(systemName: AppIcon.arrowRight)
-                        .font(.system(size: 12))
-                        .foregroundStyle(theme.textFaint)
+                } label: {
+                    HStack(spacing: 8) {
+                        if !selectedCategory.isEmpty {
+                            let cat = categories.first(where: { $0.name == selectedCategory })
+                            CatGlyphView(kind: cat?.icon ?? "wrench", size: 11, color: .white)
+                                .frame(width: 18, height: 18)
+                                .background(theme.accent)
+                                .clipShape(RoundedRectangle(cornerRadius: 5))
+                        }
+                        Text(selectedCategory.isEmpty ? "Select" : selectedCategory)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(selectedCategory.isEmpty ? theme.textFaint : theme.text)
+                        Spacer()
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 12))
+                            .foregroundStyle(theme.textFaint)
+                    }
                 }
             }
 
@@ -320,6 +334,8 @@ struct AddTransactionView: View {
             createdBy: "app"
         )
         modelContext.insert(tx)
+        try? modelContext.save()
+        AppWriteSyncService.pushTransaction(tx, owner: activeMember)
         dismiss()
     }
 }

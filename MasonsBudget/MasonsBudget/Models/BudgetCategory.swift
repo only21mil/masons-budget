@@ -11,6 +11,7 @@ final class BudgetCategory {
     var monthlyBudget: Decimal
     var sortOrder: Int
     var isIncome: Bool
+    var owner: String = "victor"
 
     static let displayPriority: [String: Int] = [
         "Bills & Utilities": 0,
@@ -23,17 +24,23 @@ final class BudgetCategory {
         Self.displayPriority[name] ?? 50
     }
 
+    var ownerMember: FamilyMember {
+        FamilyMember(rawValue: owner) ?? .victor
+    }
+
     init(
         name: String,
         icon: String,
         monthlyBudget: Decimal,
         sortOrder: Int = 0,
-        isIncome: Bool = false
+        isIncome: Bool = false,
+        owner: FamilyMember = .victor
     ) {
         self.name = name
         self.icon = icon
         self.monthlyBudget = monthlyBudget
         self.sortOrder = sortOrder
         self.isIncome = isIncome
+        self.owner = owner.rawValue
     }
 }

@@ -72,6 +72,9 @@ struct ContentView: View {
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @Environment(\.theme) var theme
 
+    @Query private var btcAccounts: [BTCAccount]
+    @Query private var holdingAccounts: [HoldingAccount]
+
     @State private var selectedTab: AppTab = .home
     @State private var showAddTransaction = false
     @State private var showProfileSwitcher = false
@@ -301,6 +304,20 @@ struct ContentView: View {
         .buttonStyle(.plain)
     }
 
+    private var sidebarNetWorth: String {
+        let btcPrice = BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+        let totalBtc = btcAccounts
+            .filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
+            .reduce(Decimal(0)) { $0 + $1.btc }
+        let vooPrice = StockPriceService.vooPrice
+        let ibitPrice = StockPriceService.ibitPrice
+        let holdingsUsd = holdingAccounts
+            .filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
+            .reduce(Decimal(0)) { $0 + $1.liveValue(vooPrice: vooPrice, ibitPrice: ibitPrice) }
+        let totalSats = (totalBtc * 100_000_000) + (btcPrice > 0 ? (holdingsUsd / btcPrice) * 100_000_000 : 0)
+        return AppFormatter.formatAmount(sats: totalSats, unit: unit, btcPrice: btcPrice)
+    }
+
     private var macSidebarFooter: some View {
         VStack(alignment: .leading, spacing: 10) {
             Divider()
@@ -313,7 +330,7 @@ struct ContentView: View {
                     .foregroundStyle(theme.textFaint)
                     .padding(.horizontal, 6)
 
-                Text("--")
+                Text(sidebarNetWorth)
                     .font(.system(size: 18, weight: .bold, design: .monospaced))
                     .foregroundStyle(theme.text)
                     .padding(.horizontal, 6)
@@ -408,7 +425,7 @@ struct ContentView: View {
         case .budget: BudgetView()
         case .today:  TodayView()
         case .stack:  RetirementView()
-        case .more:   NetWorthView()
+        case .more:   MoreMenuView()
         }
     }
 

@@ -7,23 +7,48 @@ struct NetWorthView: View {
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
     @Query private var accounts: [BTCAccount]
+    @Query private var holdingAccounts: [HoldingAccount]
     @Query(sort: \NetWorthSnapshot.date, order: .reverse) private var snapshots: [NetWorthSnapshot]
 
     private var unit: DisplayUnit { DisplayUnit(rawValue: displayUnitRaw) ?? .btc }
     private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
     private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
 
-    private var visibleAccounts: [BTCAccount] {
-        accounts.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+    private var myAccounts: [BTCAccount] {
+        accounts.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
     }
 
-    private var totalBtc: Decimal { visibleAccounts.reduce(Decimal(0)) { $0 + $1.btc } }
-    private var totalSats: Decimal { totalBtc * 100_000_000 }
+    private var myRetirementAccounts: [HoldingAccount] {
+        holdingAccounts.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
+    }
+
+    private var vooPrice: Decimal? { StockPriceService.vooPrice }
+    private var ibitPrice: Decimal? { StockPriceService.ibitPrice }
+
+    private var totalBtc: Decimal { myAccounts.reduce(Decimal(0)) { $0 + $1.btc } }
+    private var totalRetirementUsd: Decimal {
+        myRetirementAccounts.reduce(Decimal(0)) { $0 + $1.liveValue(vooPrice: vooPrice, ibitPrice: ibitPrice) }
+    }
+    private var totalRetirementSats: Decimal {
+        guard btcPrice > 0 else { return 0 }
+        return (totalRetirementUsd / btcPrice) * 100_000_000
+    }
+    private var totalSats: Decimal { (totalBtc * 100_000_000) + totalRetirementSats }
 
     private var coldBtc: Decimal {
-        visibleAccounts.filter { $0.custody == .selfCustody }.reduce(Decimal(0)) { $0 + $1.btc }
+        myAccounts.filter { $0.custody == .selfCustody }.reduce(Decimal(0)) { $0 + $1.btc }
     }
     private var hotBtc: Decimal { totalBtc - coldBtc }
+
+    private var coldSubtitle: String {
+        let labels = myAccounts.filter { $0.custody == .selfCustody }.map(\.label)
+        return labels.isEmpty ? "Self-custody" : labels.prefix(2).joined(separator: " · ")
+    }
+
+    private var hotSubtitle: String {
+        let labels = myAccounts.filter { $0.custody == .exchange }.map(\.label)
+        return labels.isEmpty ? "Exchange" : labels.prefix(2).joined(separator: " · ")
+    }
 
     var body: some View {
         ScrollView {
@@ -35,6 +60,11 @@ struct NetWorthView: View {
                     .padding(.bottom, AppLayout.cardSpacing)
 
                 holdingsSection
+
+                if !myRetirementAccounts.isEmpty {
+                    retirementSection
+                        .padding(.top, AppLayout.cardSpacing)
+                }
             }
             .padding(.bottom, 100)
         }
@@ -52,12 +82,14 @@ struct NetWorthView: View {
             AmountView(sats: totalSats, unit: unit, size: 32, weight: .bold, btcPrice: btcPrice)
 
             HStack(spacing: 8) {
-                Image(systemName: AppIcon.arrowUp)
+                let change = yearlyBtcChange
+                let positive = change >= 0
+                Image(systemName: positive ? AppIcon.arrowUp : "arrow.down.right")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(theme.success)
-                Text("+0.81 BTC")
+                    .foregroundStyle(positive ? theme.success : theme.danger)
+                Text("\(positive ? "+" : "")\(AppFormatter.formatBtc(change)) BTC")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(theme.success)
+                    .foregroundStyle(positive ? theme.success : theme.danger)
                 Text("past year")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(theme.textFaint)
@@ -73,8 +105,33 @@ struct NetWorthView: View {
         .glassCard(padding: 18, radius: 22)
     }
 
+    private var monthlyBtcValues: [CGFloat] {
+        let mySnaps = snapshots.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
+        let cal = Calendar.current
+        let now = Date()
+        var values: [CGFloat] = []
+        for offset in stride(from: -11, through: 0, by: 1) {
+            guard let monthDate = cal.date(byAdding: .month, value: offset, to: now) else { continue }
+            let snap = mySnaps.first(where: { cal.isDate($0.date, equalTo: monthDate, toGranularity: .month) })
+            if let s = snap {
+                values.append(CGFloat(NSDecimalNumber(decimal: s.btcValue / btcPrice).doubleValue))
+            } else if offset == 0 {
+                values.append(CGFloat(NSDecimalNumber(decimal: totalBtc).doubleValue))
+            } else {
+                values.append(values.last ?? 0)
+            }
+        }
+        return values.isEmpty ? [CGFloat(NSDecimalNumber(decimal: totalBtc).doubleValue)] : values
+    }
+
+    private var yearlyBtcChange: Decimal {
+        let values = monthlyBtcValues
+        guard let first = values.first, first > 0, let last = values.last else { return 0 }
+        return Decimal(Double(last - first))
+    }
+
     private var barChart: some View {
-        let data: [CGFloat] = [3.4, 3.5, 3.5, 3.6, 3.7, 3.8, 3.85, 3.9, 4.0, 4.1, 4.15, 4.22]
+        let data = monthlyBtcValues
         let maxVal = data.max() ?? 1
         let minVal = (data.min() ?? 0) * 0.92
 
@@ -100,7 +157,14 @@ struct NetWorthView: View {
     }
 
     private var monthLabels: some View {
-        let labels = ["Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May"]
+        let cal = Calendar.current
+        let now = Date()
+        let df = DateFormatter()
+        df.dateFormat = "MMM"
+        let labels: [String] = (0..<12).map { offset in
+            let d = cal.date(byAdding: .month, value: offset - 11, to: now) ?? now
+            return df.string(from: d)
+        }
         return HStack(spacing: 4) {
             ForEach(Array(labels.enumerated()), id: \.offset) { idx, label in
                 Text(idx % 2 == 1 ? label : "")
@@ -111,11 +175,11 @@ struct NetWorthView: View {
         }
     }
 
-    // MARK: - Holdings
+    // MARK: - BTC Holdings
 
     private var holdingsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("HOLDINGS")
+            Text("BITCOIN")
                 .font(.system(size: 12, weight: .bold))
                 .tracking(0.72)
                 .foregroundStyle(theme.textMuted)
@@ -125,14 +189,14 @@ struct NetWorthView: View {
                 NavigationLink {
                     BTCAccountDetailView(title: "Cold Storage", custody: .selfCustody)
                 } label: {
-                    holdingRow(title: "Cold Storage", subtitle: "Coldcard Q · Multisig", btc: coldBtc, opacity: 1.0)
+                    holdingRow(title: "Cold Storage", subtitle: coldSubtitle, btc: coldBtc, opacity: 1.0)
                 }
                 .buttonStyle(.plain)
                 Hairline(indent: 32)
                 NavigationLink {
                     BTCAccountDetailView(title: "Spending Wallets", custody: .exchange)
                 } label: {
-                    holdingRow(title: "Lightning", subtitle: "Phoenix · Self-custody", btc: hotBtc, opacity: 0.5)
+                    holdingRow(title: "Spending", subtitle: hotSubtitle, btc: hotBtc, opacity: 0.5)
                 }
                 .buttonStyle(.plain)
             }
@@ -159,6 +223,54 @@ struct NetWorthView: View {
             Spacer()
 
             AmountView(sats: btc * 100_000_000, unit: unit, size: 14, weight: .bold, btcPrice: btcPrice)
+        }
+        .padding(14)
+    }
+
+    // MARK: - Retirement
+
+    private var retirementSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("RETIREMENT")
+                .font(.system(size: 12, weight: .bold))
+                .tracking(0.72)
+                .foregroundStyle(theme.textMuted)
+                .padding(.horizontal, AppLayout.sectionPadding + 4)
+
+            VStack(spacing: 0) {
+                ForEach(Array(myRetirementAccounts.enumerated()), id: \.element.name) { idx, acct in
+                    retirementRow(account: acct)
+                    if idx < myRetirementAccounts.count - 1 {
+                        Hairline(indent: 32)
+                    }
+                }
+            }
+            .glassCard(padding: 0, radius: 18)
+            .padding(.horizontal, AppLayout.sectionPadding)
+        }
+    }
+
+    private func retirementRow(account: HoldingAccount) -> some View {
+        let value = account.liveValue(vooPrice: vooPrice, ibitPrice: ibitPrice)
+        return HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 3)
+                .fill(theme.plum.opacity(0.8))
+                .frame(width: 6, height: 36)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(account.name.uppercased())
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.text)
+                Text(account.provider)
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.textFaint)
+            }
+
+            Spacer()
+
+            Text(AppFormatter.formatCurrency(value))
+                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                .foregroundStyle(theme.text)
         }
         .padding(14)
     }

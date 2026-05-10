@@ -16,7 +16,7 @@ extension MC2Transaction {
             id: transaction.id,
             date: Self.dateString(from: transaction.date),
             merchant: transaction.merchant,
-            amount: transaction.amount,
+            amount: transaction.isSpend ? transaction.spendAmount : transaction.displayAmount,
             category: transaction.category,
             card: transaction.card,
             note: transaction.note
@@ -89,6 +89,18 @@ struct MC2BudgetIncome: Codable {
     }
 }
 
+struct MC2MonthlyHistoryEntry: Codable {
+    let month: String
+    let income: Decimal?
+    let expenses: Decimal?
+    let savingsPct: Decimal?
+
+    enum CodingKeys: String, CodingKey {
+        case month, income, expenses
+        case savingsPct = "savings_pct"
+    }
+}
+
 struct MC2Budget: Codable {
     let month: String
     let coinbaseOneBalance: Decimal?
@@ -97,6 +109,7 @@ struct MC2Budget: Codable {
     let income: MC2BudgetIncome?
     let mtdIncome: Decimal?
     let ytdIncome: Decimal?
+    let monthlyHistory: [MC2MonthlyHistoryEntry]?
 
     enum CodingKeys: String, CodingKey {
         case month
@@ -106,6 +119,7 @@ struct MC2Budget: Codable {
         case income
         case mtdIncome = "mtd_income"
         case ytdIncome = "ytd_income"
+        case monthlyHistory = "monthly_history"
     }
 }
 
@@ -242,8 +256,11 @@ struct MC2FinancesRetirement: Decodable {
             let container = try decoder.container(keyedBy: DynamicKey.self)
             var decoded: [String: MC2FinanceAccount] = [:]
             for key in container.allKeys {
-                if let account = try? container.decode(MC2FinanceAccount.self, forKey: key) {
+                do {
+                    let account = try container.decode(MC2FinanceAccount.self, forKey: key)
                     decoded[key.stringValue] = account
+                } catch {
+                    print("[MC2] Failed to decode retirement account '\(key.stringValue)': \(error)")
                 }
             }
             self.accounts = decoded
