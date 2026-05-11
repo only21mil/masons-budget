@@ -64,19 +64,7 @@ enum AppWriteSyncService {
         Task {
             let client = makeClient()
             await withRetry(label: "delete todo \(todoId)") {
-                let raw = try await client.fetchFileValue("todos")
-                var todos: [Any]
-                if let array = raw as? [Any] {
-                    todos = array
-                } else if let wrapper = raw as? [String: Any], let array = wrapper["todos"] as? [Any] {
-                    todos = array
-                } else {
-                    throw SyncError.unexpectedPayload
-                }
-                todos.removeAll { item in
-                    (item as? [String: Any])?["id"] as? String == todoId
-                }
-                _ = try await client.syncFile(name: "todos", data: todos)
+                _ = try await client.removeTodo(id: todoId)
             }
         }
     }

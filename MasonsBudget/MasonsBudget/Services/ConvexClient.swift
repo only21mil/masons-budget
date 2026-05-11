@@ -174,6 +174,15 @@ final class ConvexClient: Sendable {
         return 0
     }
 
+    @discardableResult
+    func removeTodo(id: String) async throws -> Bool {
+        let raw = try await mutation("dataFiles:removeTodo", args: [
+            "todoId": id
+        ])
+        guard let result = raw as? [String: Any] else { return false }
+        return result["removed"] as? Bool ?? false
+    }
+
     /// Push one app-created bill pay into the bitcoin-bill-pays document.
     @discardableResult
     func appendBillPay(_ billPay: MC2BTCBillPay) async throws -> Double {

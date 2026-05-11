@@ -301,7 +301,16 @@ export const upsertTodo = mutation({
     };
 
     if (existingIndex >= 0) {
-      currentTodos[existingIndex] = normalized;
+      const existingItem = currentTodos[existingIndex] as Record<string, unknown>;
+      const existingUpdated = existingItem?.updated_at
+        ? new Date(existingItem.updated_at as string).getTime()
+        : 0;
+      const incomingUpdated = normalized.updated_at
+        ? new Date(normalized.updated_at).getTime()
+        : now;
+      if (incomingUpdated >= existingUpdated) {
+        currentTodos[existingIndex] = normalized;
+      }
     } else {
       currentTodos.push(normalized);
     }
@@ -334,6 +343,60 @@ export const upsertTodo = mutation({
     await bumpSyncVersion(ctx, name, nextVersion, now);
 
     return { name, version: nextVersion, id: todo.id };
+  },
+});
+
+/** Atomically remove a todo by ID from todos and bump its version. */
+export const removeTodo = mutation({
+  args: {
+    todoId: v.string(),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { todoId, token }) => {
+    validateSyncToken(token);
+    const name = "todos";
+    const now = Date.now();
+
+    const existing = await ctx.db
+      .query("dataFiles")
+      .withIndex("by_name", (q) => q.eq("name", name))
+      .first();
+
+    if (!existing) return { name, removed: false };
+
+    const currentData = existing.data;
+    const currentTodos = Array.isArray(currentData)
+      ? [...currentData]
+      : currentData &&
+          typeof currentData === "object" &&
+          Array.isArray((currentData as any).todos)
+        ? [...(currentData as any).todos]
+        : [];
+
+    const beforeCount = currentTodos.length;
+    const filtered = currentTodos.filter(
+      (item) => !(item && typeof item === "object" && "id" in item && item.id === todoId),
+    );
+
+    if (filtered.length === beforeCount) return { name, removed: false };
+
+    const nextData =
+      currentData &&
+      typeof currentData === "object" &&
+      !Array.isArray(currentData) &&
+      Array.isArray((currentData as any).todos)
+        ? { ...(currentData as any), todos: filtered }
+        : filtered;
+
+    const nextVersion = (existing.version ?? 0) + 1;
+    await ctx.db.patch(existing._id, {
+      data: nextData,
+      version: nextVersion,
+      updatedAt: now,
+    });
+
+    await bumpSyncVersion(ctx, name, nextVersion, now);
+    return { name, version: nextVersion, removed: true };
   },
 });
 

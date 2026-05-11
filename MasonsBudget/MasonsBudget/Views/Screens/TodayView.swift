@@ -4,8 +4,11 @@ import SwiftData
 struct TodayView: View {
     @Environment(\.theme) var theme
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
+    @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
 
     @Query(sort: \TodoItem.priority, order: .reverse) private var allTodos: [TodoItem]
+    @Query private var holdingAccounts: [HoldingAccount]
+    @Query private var budgetSnapshots: [MonthlyBudgetSnapshot]
 
     @State private var draftText = ""
     @State private var showingDraft = false
@@ -13,6 +16,8 @@ struct TodayView: View {
     @Environment(\.modelContext) private var modelContext
 
     private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
+    private var unit: DisplayUnit { DisplayUnit(rawValue: displayUnitRaw) ?? .btc }
+    private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
 
     private var myTodos: [TodoItem] {
         allTodos.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) && !$0.isDone }
@@ -51,10 +56,103 @@ struct TodayView: View {
         return df.string(from: Date())
     }
 
+    // MARK: - DCA Calendar Data
+
+    private struct IncomingEvent: Identifiable {
+        let id = UUID()
+        let date: Date
+        let icon: String
+        let title: String
+        let subtitle: String
+        let amountUSD: Decimal
+        let color: Color
+    }
+
+    private var weekDays: [Date] {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: today) }
+    }
+
+    private var weeklyPayAmount: Decimal {
+        if let snapshot = budgetSnapshots.sorted(by: { $0.lastUpdated > $1.lastUpdated }).first {
+            return snapshot.weeklyRiver
+        }
+        return 4308.83
+    }
+
+    private var memberAccounts: [HoldingAccount] {
+        holdingAccounts.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+    }
+
+    private var weekly401kAmount: Decimal {
+        memberAccounts.reduce(Decimal(0)) { $0 + $1.weeklyContribution }
+    }
+
+    private var incomingEvents: [IncomingEvent] {
+        let cal = Calendar.current
+        var events: [IncomingEvent] = []
+
+        for day in weekDays {
+            let weekday = cal.component(.weekday, from: day)
+
+            if weekday == 6 {
+                if activeMember == .victor || activeMember == .rachel {
+                    events.append(IncomingEvent(
+                        date: day,
+                        icon: "arrow.down.circle.fill",
+                        title: "Payday → River",
+                        subtitle: "Weekly DCA to BTC",
+                        amountUSD: weeklyPayAmount,
+                        color: theme.success
+                    ))
+                }
+
+                if weekly401kAmount > 0 {
+                    events.append(IncomingEvent(
+                        date: day,
+                        icon: "chart.bar.fill",
+                        title: "401k Contribution",
+                        subtitle: memberAccounts.map(\.name).joined(separator: " + "),
+                        amountUSD: weekly401kAmount,
+                        color: theme.accent
+                    ))
+                }
+            }
+
+            let dayOfMonth = cal.component(.day, from: day)
+            let month = cal.component(.month, from: day)
+            if (month == 3 || month == 6 || month == 9 || month == 12) && dayOfMonth == 15 {
+                if activeMember == .mason {
+                    events.append(IncomingEvent(
+                        date: day,
+                        icon: "gift.fill",
+                        title: "401k Employer Match",
+                        subtitle: "Quarterly 100% match",
+                        amountUSD: weekly401kAmount * 13,
+                        color: theme.plum
+                    ))
+                }
+            }
+        }
+
+        return events.sorted { $0.date < $1.date }
+    }
+
+    private var weekTotalSats: Decimal {
+        let total = incomingEvents.reduce(Decimal(0)) { $0 + $1.amountUSD }
+        return btcPrice > 0 ? (total / btcPrice) * 100_000_000 : 0
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
                 ScreenHeader(title: "Today", eyebrow: todayEyebrow)
+
+                if !incomingEvents.isEmpty {
+                    incomingSection
+                        .padding(.bottom, AppLayout.cardSpacing)
+                }
 
                 tasksSection
                     .padding(.bottom, AppLayout.cardSpacing)
@@ -71,6 +169,118 @@ struct TodayView: View {
             .padding(.bottom, 100)
         }
         .background(theme.bg)
+    }
+
+    // MARK: - Incoming Section
+
+    private var incomingSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("INCOMING")
+                    .font(.system(size: 12, weight: .bold))
+                    .tracking(0.72)
+                    .foregroundStyle(theme.textMuted)
+                Spacer()
+                HStack(spacing: 4) {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(theme.accent)
+                    AmountView(sats: weekTotalSats, unit: unit, size: 12, weight: .bold, accent: true, btcPrice: btcPrice)
+                    Text("this week")
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.textMuted)
+                }
+            }
+            .padding(.horizontal, AppLayout.sectionPadding + 4)
+
+            weekStrip
+                .padding(.horizontal, AppLayout.sectionPadding)
+
+            VStack(spacing: 0) {
+                ForEach(Array(incomingEvents.enumerated()), id: \.element.id) { idx, event in
+                    incomingEventRow(event)
+                    if idx < incomingEvents.count - 1 {
+                        Hairline(indent: 56)
+                    }
+                }
+            }
+            .glassCard(padding: 0)
+            .padding(.horizontal, AppLayout.sectionPadding)
+        }
+    }
+
+    private var weekStrip: some View {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let eventDates = Set(incomingEvents.map { cal.startOfDay(for: $0.date) })
+
+        return HStack(spacing: 0) {
+            ForEach(weekDays, id: \.self) { day in
+                let isToday = day == today
+                let hasEvent = eventDates.contains(day)
+                VStack(spacing: 4) {
+                    Text(dayLabel(day))
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(isToday ? .white : theme.textMuted)
+                    Text("\(cal.component(.day, from: day))")
+                        .font(.system(size: 14, weight: isToday ? .bold : .medium))
+                        .foregroundStyle(isToday ? .white : theme.text)
+                    Circle()
+                        .fill(hasEvent ? theme.accent : Color.clear)
+                        .frame(width: 5, height: 5)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(isToday ? theme.accent : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+        }
+        .padding(4)
+        .background(theme.surface2)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func incomingEventRow(_ event: IncomingEvent) -> some View {
+        let sats: Decimal = btcPrice > 0 ? (event.amountUSD / btcPrice) * 100_000_000 : 0
+        return HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(event.color.opacity(0.15))
+                .frame(width: 38, height: 38)
+                .overlay(
+                    Image(systemName: event.icon)
+                        .font(.system(size: 16))
+                        .foregroundStyle(event.color)
+                )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.text)
+                Text("\(relativeDay(event.date)) · \(event.subtitle)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.textFaint)
+            }
+
+            Spacer()
+
+            AmountView(sats: sats, unit: unit, size: 14, weight: .bold, btcPrice: btcPrice)
+        }
+        .padding(14)
+    }
+
+    private func dayLabel(_ date: Date) -> String {
+        let df = DateFormatter()
+        df.dateFormat = "EEE"
+        return df.string(from: date).uppercased()
+    }
+
+    private func relativeDay(_ date: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return "Today" }
+        if cal.isDateInTomorrow(date) { return "Tomorrow" }
+        let df = DateFormatter()
+        df.dateFormat = "EEE"
+        return df.string(from: date)
     }
 
     // MARK: - Today Tasks

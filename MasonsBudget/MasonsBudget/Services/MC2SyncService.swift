@@ -418,18 +418,43 @@ final class MC2SyncService {
         }
     }
 
-    private func replaceTodos(visibleTo viewer: FamilyMember, with todos: [TodoItem]) {
+    private func replaceTodos(visibleTo viewer: FamilyMember, with remoteTodos: [TodoItem]) {
+        let existing: [TodoItem]
         do {
-            let existing = try context.fetch(FetchDescriptor<TodoItem>())
-            for todo in existing where viewer.canSee(dataOwnedBy: todo.ownerMember) && todo.createdBy == "mc2" {
-                context.delete(todo)
-            }
+            existing = try context.fetch(FetchDescriptor<TodoItem>())
         } catch {
-            log.error("Failed to delete TodoItem slice: \(error.localizedDescription)")
+            log.error("Failed to fetch TodoItem slice: \(error.localizedDescription)")
+            return
         }
 
-        for todo in todos {
-            context.insert(todo)
+        let visibleLocal = existing.filter { viewer.canSee(dataOwnedBy: $0.ownerMember) }
+        let localById = Dictionary(visibleLocal.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let remoteById = Dictionary(remoteTodos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+
+        for remote in remoteTodos {
+            if let local = localById[remote.id] {
+                if remote.updatedAt > local.updatedAt {
+                    local.title = remote.title
+                    local.project = remote.project
+                    local.area = remote.area
+                    local.dueDate = remote.dueDate
+                    local.priority = remote.priority
+                    local.isFlagged = remote.isFlagged
+                    local.isDone = remote.isDone
+                    local.owner = remote.owner
+                    local.updatedAt = remote.updatedAt
+                    local.sourceFile = remote.sourceFile
+                    local.createdBy = "mc2"
+                }
+            } else {
+                context.insert(remote)
+            }
+        }
+
+        for local in visibleLocal where local.createdBy == "mc2" {
+            if remoteById[local.id] == nil {
+                context.delete(local)
+            }
         }
     }
 
