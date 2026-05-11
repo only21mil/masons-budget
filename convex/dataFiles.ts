@@ -302,12 +302,14 @@ export const upsertTodo = mutation({
 
     if (existingIndex >= 0) {
       const existingItem = currentTodos[existingIndex] as Record<string, unknown>;
-      const existingUpdated = existingItem?.updated_at
+      const rawExisting = existingItem?.updated_at
         ? new Date(existingItem.updated_at as string).getTime()
         : 0;
-      const incomingUpdated = normalized.updated_at
+      const rawIncoming = normalized.updated_at
         ? new Date(normalized.updated_at).getTime()
         : now;
+      const existingUpdated = Number.isNaN(rawExisting) ? 0 : rawExisting;
+      const incomingUpdated = Number.isNaN(rawIncoming) ? now : rawIncoming;
       if (incomingUpdated >= existingUpdated) {
         currentTodos[existingIndex] = normalized;
       }

@@ -13,7 +13,7 @@ struct ProjectTodoListView: View {
     private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
 
     private var todos: [TodoItem] {
-        allTodos.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) && $0.project == projectName }
+        allTodos.filter { $0.ownerMember == activeMember && $0.project == projectName }
     }
 
     private var pending: [TodoItem] { todos.filter { !$0.isDone } }
@@ -53,7 +53,9 @@ struct ProjectTodoListView: View {
         Button {
             todo.isDone.toggle()
             try? modelContext.save()
-            AppWriteSyncService.pushTodo(todo)
+            if todo.ownerMember == .victor {
+                AppWriteSyncService.pushTodo(todo)
+            }
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: todo.isDone ? AppIcon.checkDone : AppIcon.checkOpen)

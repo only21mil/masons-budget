@@ -12,26 +12,26 @@ struct ProjectsView: View {
     private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
 
     private var inboxCount: Int {
-        allTodos.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) && !$0.isDone && $0.project == nil && $0.area == nil }.count
+        allTodos.filter { $0.ownerMember == activeMember && !$0.isDone && $0.project == nil && $0.area == nil }.count
     }
 
     private var todayCount: Int {
         let cal = Calendar.current
         return allTodos.filter { todo in
-            activeMember.canSee(dataOwnedBy: todo.ownerMember) && !todo.isDone &&
+            todo.ownerMember == activeMember && !todo.isDone &&
             (todo.dueDate.map { cal.isDateInToday($0) } ?? false)
         }.count
     }
 
     private var upcomingCount: Int {
         allTodos.filter { todo in
-            activeMember.canSee(dataOwnedBy: todo.ownerMember) && !todo.isDone &&
+            todo.ownerMember == activeMember && !todo.isDone &&
             (todo.dueDate.map { $0 > Date() } ?? false)
         }.count
     }
 
     private var flaggedCount: Int {
-        allTodos.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) && !$0.isDone && $0.isFlagged }.count
+        allTodos.filter { $0.ownerMember == activeMember && !$0.isDone && $0.isFlagged }.count
     }
 
     var body: some View {

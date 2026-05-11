@@ -51,7 +51,8 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable {
     }
 
     var allowedSwitchTargets: [FamilyMember] {
-        isAdult ? FamilyMember.allCases : [self]
+        if isAdult { return FamilyMember.allCases }
+        return FamilyMember.allCases.filter { $0.isAdult || $0 == self }
     }
 
     var requiresAuthToSwitch: Bool {

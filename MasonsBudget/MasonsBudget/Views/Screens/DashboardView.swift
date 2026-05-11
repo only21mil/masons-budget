@@ -60,7 +60,7 @@ struct DashboardView: View {
         let cal = Calendar.current
         return allTodos.filter { todo in
             !todo.isDone &&
-            activeMember.canSee(dataOwnedBy: todo.ownerMember) &&
+            todo.ownerMember == activeMember &&
             (todo.dueDate.map { cal.isDateInToday($0) } ?? false)
         }
     }
@@ -578,7 +578,9 @@ struct DashboardView: View {
         Button {
             todo.isDone.toggle()
             try? modelContext.save()
-            AppWriteSyncService.pushTodo(todo)
+            if todo.ownerMember == .victor {
+                AppWriteSyncService.pushTodo(todo)
+            }
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: todo.isDone ? AppIcon.checkDone : AppIcon.checkOpen)

@@ -301,7 +301,7 @@ enum MC2Mapper {
     static func mapTodos(_ dtos: [MC2TodoItem], viewer: FamilyMember) -> [TodoItem] {
         dtos.compactMap { dto in
             guard let owner = dto.effectiveOwner else { return nil }
-            guard viewer.canSee(dataOwnedBy: owner) else { return nil }
+            guard owner == .victor else { return nil }
 
             return TodoItem(
                 id: dto.id,

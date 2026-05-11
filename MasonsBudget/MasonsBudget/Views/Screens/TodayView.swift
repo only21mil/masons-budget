@@ -20,7 +20,7 @@ struct TodayView: View {
     private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
 
     private var myTodos: [TodoItem] {
-        allTodos.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) && !$0.isDone }
+        allTodos.filter { $0.ownerMember == activeMember && !$0.isDone }
     }
 
     private var todayTodos: [TodoItem] {
@@ -382,7 +382,9 @@ struct TodayView: View {
                     todo.isDone = true
                     todo.updatedAt = .now
                     try? modelContext.save()
-                    AppWriteSyncService.pushTodo(todo)
+                    if todo.ownerMember == .victor {
+                        AppWriteSyncService.pushTodo(todo)
+                    }
                 }
             } label: {
                 Image(systemName: AppIcon.checkOpen)
@@ -427,7 +429,9 @@ struct TodayView: View {
                     todo.isDone = true
                     todo.updatedAt = .now
                     try? modelContext.save()
-                    AppWriteSyncService.pushTodo(todo)
+                    if todo.ownerMember == .victor {
+                        AppWriteSyncService.pushTodo(todo)
+                    }
                 }
             } label: {
                 Image(systemName: AppIcon.checkOpen)
@@ -510,7 +514,9 @@ struct TodayView: View {
         )
         modelContext.insert(todo)
         try? modelContext.save()
-        AppWriteSyncService.pushTodo(todo)
+        if activeMember == .victor {
+            AppWriteSyncService.pushTodo(todo)
+        }
         draftText = ""
         showingDraft = false
     }

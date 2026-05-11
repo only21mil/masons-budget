@@ -427,8 +427,9 @@ final class MC2SyncService {
             return
         }
 
-        let visibleLocal = existing.filter { viewer.canSee(dataOwnedBy: $0.ownerMember) }
-        let localById = Dictionary(visibleLocal.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // Only touch Victor-owned mc2-sourced todos — other members' app-only todos are untouched
+        let victorMC2Local = existing.filter { $0.ownerMember == .victor && $0.createdBy == "mc2" }
+        let localById = Dictionary(victorMC2Local.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let remoteById = Dictionary(remoteTodos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
 
         for remote in remoteTodos {
@@ -451,7 +452,7 @@ final class MC2SyncService {
             }
         }
 
-        for local in visibleLocal where local.createdBy == "mc2" {
+        for local in victorMC2Local {
             if remoteById[local.id] == nil {
                 context.delete(local)
             }
