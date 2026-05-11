@@ -82,7 +82,7 @@ struct TodayView: View {
     }
 
     private var memberAccounts: [HoldingAccount] {
-        holdingAccounts.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+        holdingAccounts.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
     }
 
     private var weekly401kAmount: Decimal {

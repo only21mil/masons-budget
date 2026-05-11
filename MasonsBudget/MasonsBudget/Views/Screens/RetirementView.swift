@@ -361,7 +361,7 @@ struct RetirementView: View {
 
     private var monthlyBudgetTotal: Decimal {
         budgetCategories
-            .filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) && !$0.isIncome }
+            .filter { activeMember.sharesNetWorth(with: $0.ownerMember) && !$0.isIncome }
             .reduce(Decimal(0)) { $0 + $1.monthlyBudget }
     }
 

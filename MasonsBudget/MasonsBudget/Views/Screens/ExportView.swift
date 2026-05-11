@@ -16,7 +16,7 @@ struct ExportView: View {
     private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
 
     private var myTransactions: [Transaction] {
-        allTransactions.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+        allTransactions.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
     }
 
     var body: some View {
@@ -119,7 +119,7 @@ struct ExportView: View {
         let monthTxns = myTransactions.filter { cal.isDate($0.date, equalTo: Date(), toGranularity: .month) }
 
         var csv = "Category,Budget,Actual,Remaining,Percent Used\n"
-        for cat in categories.filter({ activeMember.canSee(dataOwnedBy: $0.ownerMember) && !$0.isIncome }) {
+        for cat in categories.filter({ activeMember.sharesNetWorth(with: $0.ownerMember) && !$0.isIncome }) {
             let spent = monthTxns.filter { $0.category == cat.name && $0.isSpend }.reduce(Decimal(0)) { $0 + $1.spendAmount }
             let remaining = cat.monthlyBudget - spent
             let pct = cat.monthlyBudget > 0 ? Int(NSDecimalNumber(decimal: (spent / cat.monthlyBudget) * 100).doubleValue) : 0

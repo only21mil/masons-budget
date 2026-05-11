@@ -15,7 +15,7 @@ struct BTCBuysView: View {
     private var visibleBuys: [BTCBuy] {
         allBuys.filter { buy in
             guard let owner = buy.ownerMember else { return false }
-            return activeMember.canSee(dataOwnedBy: owner)
+            return activeMember.sharesNetWorth(with: owner)
         }
     }
 

@@ -24,7 +24,7 @@ struct ActivityView: View {
     }
 
     private var filtered: [Transaction] {
-        let visible = allTransactions.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+        let visible = allTransactions.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
         switch filter {
         case .all: return visible
         case .income: return visible.filter { $0.isIncome }

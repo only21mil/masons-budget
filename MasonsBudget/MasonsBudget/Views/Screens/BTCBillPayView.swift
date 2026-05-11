@@ -13,7 +13,7 @@ struct BTCBillPayView: View {
     private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
 
     private var visibleBillPays: [BTCBillPay] {
-        allBillPays.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+        allBillPays.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
     }
 
     private var totalUsd: Decimal { visibleBillPays.reduce(Decimal(0)) { $0 + $1.amountUSD } }

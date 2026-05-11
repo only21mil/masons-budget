@@ -27,7 +27,7 @@ struct DashboardView: View {
     }
 
     private var myCategories: [BudgetCategory] {
-        categories.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+        categories.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
     }
 
     private var visibleAccounts: [BTCAccount] {
@@ -67,7 +67,7 @@ struct DashboardView: View {
 
     private var recentTransactions: [Transaction] {
         allTransactions
-            .filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+            .filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
             .prefix(4)
             .map { $0 }
     }
@@ -298,7 +298,7 @@ struct DashboardView: View {
         let startOfYear = cal.date(from: cal.dateComponents([.year], from: now)) ?? now
         return allTransactions
             .filter { tx in
-                activeMember.canSee(dataOwnedBy: tx.ownerMember) &&
+                activeMember.sharesNetWorth(with: tx.ownerMember) &&
                 tx.isSpend &&
                 tx.date >= startOfYear
             }
@@ -378,7 +378,7 @@ struct DashboardView: View {
             let income = snapshots.first(where: { $0.monthKey == key })?.mtdIncome ?? 0
             let spend = allTransactions
                 .filter { tx in
-                    activeMember.canSee(dataOwnedBy: tx.ownerMember) &&
+                    activeMember.sharesNetWorth(with: tx.ownerMember) &&
                     tx.isSpend &&
                     cal.isDate(tx.date, equalTo: monthDate, toGranularity: .month)
                 }
@@ -451,7 +451,7 @@ struct DashboardView: View {
         let now = Date()
         return allTransactions
             .filter { tx in
-                activeMember.canSee(dataOwnedBy: tx.ownerMember) &&
+                activeMember.sharesNetWorth(with: tx.ownerMember) &&
                 tx.isSpend &&
                 cal.isDate(tx.date, equalTo: now, toGranularity: .month)
             }

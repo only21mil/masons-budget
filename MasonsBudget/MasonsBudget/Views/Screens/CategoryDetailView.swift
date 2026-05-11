@@ -22,7 +22,7 @@ struct CategoryDetailView: View {
 
     private var categoryTransactions: [Transaction] {
         transactions.filter {
-            activeMember.canSee(dataOwnedBy: $0.ownerMember) && $0.category == category.name
+            activeMember.sharesNetWorth(with: $0.ownerMember) && $0.category == category.name
         }
     }
 

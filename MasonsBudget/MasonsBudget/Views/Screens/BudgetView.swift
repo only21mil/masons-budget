@@ -17,7 +17,7 @@ struct BudgetView: View {
     private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
 
     private var myCategories: [BudgetCategory] {
-        categories.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+        categories.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
     }
 
     private var selectedMonth: Date {
@@ -27,7 +27,7 @@ struct BudgetView: View {
     private var monthTransactions: [Transaction] {
         let cal = Calendar.current
         return allTransactions.filter { tx in
-            activeMember.canSee(dataOwnedBy: tx.ownerMember) &&
+            activeMember.sharesNetWorth(with: tx.ownerMember) &&
             cal.isDate(tx.date, equalTo: selectedMonth, toGranularity: .month)
         }
     }
@@ -46,7 +46,7 @@ struct BudgetView: View {
         let cal = Calendar.current
         let date = cal.date(byAdding: .month, value: -offset, to: Date()) ?? Date()
         return allTransactions.filter { tx in
-            activeMember.canSee(dataOwnedBy: tx.ownerMember) &&
+            activeMember.sharesNetWorth(with: tx.ownerMember) &&
             cal.isDate(tx.date, equalTo: date, toGranularity: .month) &&
             tx.isSpend
         }.reduce(Decimal(0)) { $0 + $1.spendAmount }
