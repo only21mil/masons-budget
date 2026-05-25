@@ -1,185 +1,41 @@
-name: Deploy to TestFlight
+name: Deploy to TestFlight (manual trigger only)
 
 on:
-  push:
-    branches:
-      - main
-
-# Only one deploy at a time — cancel in-flight if a newer push arrives.
-concurrency:
-  group: deploy
-  cancel-in-progress: true
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Build platform'
+        required: true
+        type: choice
+        options:
+          - ios
+          - macos
+          - both
 
 jobs:
-  deploy:
-    name: Build, sign, and deploy
-    runs-on: macos-15
-    timeout-minutes: 45
-
+  build:
+    if: github.repository == 'only21mil/masons-budget'
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        platform: ${{ fromJSON(github.event.inputs.platform == 'both' && '["ios", "macos"]' || format('["{0}"]', github.event.inputs.platform)) }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Select Xcode
+      - uses: actions/checkout@v4
+      - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
-
-      - name: Install XcodeGen
-        run: brew install xcodegen
-
-      - name: Generate Xcode project
-        working-directory: MasonsBudget
-        run: xcodegen generate
-
-      # ── Signing setup ──
-      - name: Install signing certificate
+          xcode-version: '16.4'
+      - name: Build and Archive
+        run: |
+          if [ "${{ matrix.platform }}" = "ios" ]; then
+            xcodebuild archive -scheme MasonsBudget -destination "generic/platform=iOS" -archivePath build/MasonsBudget.xcarchive CODE_SIGN_STYLE=Automatic
+            xcodebuild -exportArchive -archivePath build/MasonsBudget.xcarchive -exportPath build/ios -exportOptionsPlist ExportOptions.plist
+            xcrun altool --upload-app -f build/ios/MasonsBudget.ipa -t ios -u "${{ secrets.APPSTORE_USERNAME }}" -p "${{ secrets.APPSTORE_PASSWORD }}"
+          else
+            xcodebuild archive -scheme MasonsBudgetMac -destination "generic/platform=macOS" -archivePath build/MasonsBudgetMac.xcarchive CODE_SIGN_STYLE=Automatic
+            xcodebuild -exportArchive -archivePath build/MasonsBudgetMac.xcarchive -exportPath build/macos -exportOptionsPlist ExportOptions.plist
+            xcrun altool --upload-app -f build/macos/MasonsBudget.pkg -t osx -u "${{ secrets.APPSTORE_USERNAME }}" -p "${{ secrets.APPSTORE_PASSWORD }}"
+          fi
         env:
-          CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          KEYCHAIN_PASSWORD=$(openssl rand -base64 24)
-
-          echo "$CERTIFICATE_P12" | base64 --decode > $RUNNER_TEMP/certificate.p12
-
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          security import $RUNNER_TEMP/certificate.p12 \
-            -P "$CERTIFICATE_PASSWORD" \
-            -A -t cert -f pkcs12 \
-            -k "$KEYCHAIN_PATH"
-
-          security set-key-partition-list -S apple-tool:,apple:,codesign: \
-            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
-
-      - name: Install provisioning profile
-        env:
-          PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
-        run: |
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          echo "$PROVISIONING_PROFILE" | base64 --decode \
-            > ~/Library/MobileDevice/Provisioning\ Profiles/ci_profile.mobileprovision
-
-      - name: Install App Store Connect API key
-        env:
-          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-        run: |
-          mkdir -p ~/private_keys
-          printf '%s\n' "$ASC_API_KEY_P8" > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
-
-      # ── Archive iOS ──
-      - name: Archive iOS
-        working-directory: MasonsBudget
-        run: |
-          xcodebuild archive \
-            -project MasonsBudget.xcodeproj \
-            -scheme MasonsBudget \
-            -configuration Release \
-            -destination "generic/platform=iOS" \
-            -archivePath /tmp/MasonsBudget-iOS.xcarchive \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="MasonsBudget AppStore CI v2" \
-            DEVELOPMENT_TEAM=384ZGKG4GB
-
-      # ── Archive macOS ──
-      - name: Archive macOS
-        continue-on-error: true
-        working-directory: MasonsBudget
-        run: |
-          xcodebuild archive \
-            -project MasonsBudget.xcodeproj \
-            -scheme MasonsBudgetMac \
-            -configuration Release \
-            -destination "generic/platform=macOS" \
-            -archivePath /tmp/MasonsBudget-macOS.xcarchive \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            DEVELOPMENT_TEAM=384ZGKG4GB
-
-      # ── Upload iOS to TestFlight ──
-      - name: Upload iOS to TestFlight
-        continue-on-error: true
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-        run: |
-          cat > /tmp/ExportOptions-iOS.plist << 'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-            "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key>
-            <string>app-store-connect</string>
-            <key>teamID</key>
-            <string>384ZGKG4GB</string>
-            <key>destination</key>
-            <string>upload</string>
-            <key>signingStyle</key>
-            <string>automatic</string>
-          </dict>
-          </plist>
-          PLIST
-
-          xcodebuild -exportArchive \
-            -archivePath /tmp/MasonsBudget-iOS.xcarchive \
-            -exportPath /tmp/testflight-ios \
-            -exportOptionsPlist /tmp/ExportOptions-iOS.plist \
-            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            -allowProvisioningUpdates
-
-          echo "iOS TestFlight upload complete!"
-
-      # ── Upload macOS to TestFlight ──
-      - name: Upload macOS to TestFlight
-        continue-on-error: true
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-        run: |
-          cat > /tmp/ExportOptions-macOS.plist << 'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-            "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key>
-            <string>app-store-connect</string>
-            <key>teamID</key>
-            <string>384ZGKG4GB</string>
-            <key>destination</key>
-            <string>upload</string>
-            <key>signingStyle</key>
-            <string>automatic</string>
-          </dict>
-          </plist>
-          PLIST
-
-          xcodebuild -exportArchive \
-            -archivePath /tmp/MasonsBudget-macOS.xcarchive \
-            -exportPath /tmp/testflight-macos \
-            -exportOptionsPlist /tmp/ExportOptions-macOS.plist \
-            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            -allowProvisioningUpdates
-
-          echo "macOS TestFlight upload complete!"
-
-      # ── Cleanup ──
-      - name: Clean up signing
-        if: always()
-        run: |
-          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db 2>/dev/null || true
-          rm -f $RUNNER_TEMP/certificate.p12
-          rm -f ~/Library/MobileDevice/Provisioning\ Profiles/ci_profile.mobileprovision
-          rm -rf ~/private_keys
+          APPSTORE_USERNAME: ${{ secrets.APPSTORE_USERNAME }}
+          APPSTORE_PASSWORD: ${{ secrets.APPSTORE_PASSWORD }}
