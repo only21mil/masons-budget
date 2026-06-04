@@ -27,7 +27,12 @@ enum ConvexConfig {
         return !url.contains("placeholder")
     }
 
-    static let syncToken = "40baea8c22e35057930eb7427aa6d0a4559fcfedd46b3c13d10343e4e707c804"
+    /// Optional sync token for an authorized write path. NEVER hardcode a shared secret here
+    /// (see AGENTS.md). Sourced from UserDefaults so it can be injected at runtime; empty by
+    /// default so native writes stay fail-closed (the server rejects an empty/invalid token).
+    static var syncToken: String {
+        UserDefaults.standard.string(forKey: "convex_sync_token") ?? ""
+    }
 }
 
 /// Errors specific to Convex operations.
