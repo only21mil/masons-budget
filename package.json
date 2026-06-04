@@ -9,7 +9,10 @@
     "codegen": "node scripts/convex-codegen.mjs",
     "sync": "node scripts/mc2-to-convex.mjs",
     "sync:dry-run": "node scripts/mc2-to-convex.mjs --dry-run",
-    "sync:watch": "node scripts/mc2-to-convex.mjs --watch"
+    "sync:watch": "node scripts/mc2-to-convex.mjs --watch",
+    "canary:todos": "node scripts/canary-todo-sync.mjs",
+    "canary:todos:local": "node scripts/canary-todo-sync.mjs --skip-live",
+    "test:todo-sync": "node scripts/canary-todo-sync.mjs --skip-live"
   },
   "dependencies": {
     "convex": "^1.17.0"

@@ -2,7 +2,14 @@ import XCTest
 import Foundation
 
 final class CSVImportServiceTests: XCTestCase {
+    override func tearDown() {
+        UserDefaults.standard.removeObject(forKey: BTCPriceService.priceKey)
+        super.tearDown()
+    }
+
     func testImportedBitcoinRowKeepsFiatAndSatsSeparate() throws {
+        UserDefaults.standard.set(90_000, forKey: BTCPriceService.priceKey)
+
         let csv = """
         date,amount,memo
         2026-05-01,0.01,Strike DCA
@@ -23,6 +30,8 @@ final class CSVImportServiceTests: XCTestCase {
     }
 
     func testDuplicateDetectionComparesExplicitSats() throws {
+        UserDefaults.standard.set(90_000, forKey: BTCPriceService.priceKey)
+
         let csv = """
         date,amount,memo
         2026-05-01,0.01,Strike DCA

@@ -19,6 +19,8 @@ struct MoreMenuView: View {
                     Hairline(indent: 52)
                     moreRow(icon: "tray.fill", label: "Projects", destination: ProjectsView())
                     Hairline(indent: 52)
+                    moreRow(icon: "link.circle.fill", label: "MC2 Sync", destination: MissionControlSyncSettingsView())
+                    Hairline(indent: 52)
                     moreRow(icon: "square.and.arrow.up", label: "Export", destination: ExportView())
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)

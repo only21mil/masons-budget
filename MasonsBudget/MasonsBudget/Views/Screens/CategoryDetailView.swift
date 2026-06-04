@@ -7,12 +7,14 @@ struct CategoryDetailView: View {
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
     @Bindable var category: BudgetCategory
+    let selectedMonth: Date
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
 
     @State private var monthlyBudget: String
 
-    init(category: BudgetCategory) {
+    init(category: BudgetCategory, selectedMonth: Date = Date()) {
         self.category = category
+        self.selectedMonth = selectedMonth
         _monthlyBudget = State(initialValue: NSDecimalNumber(decimal: category.monthlyBudget).stringValue)
     }
 
@@ -21,15 +23,24 @@ struct CategoryDetailView: View {
     private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
 
     private var categoryTransactions: [Transaction] {
-        transactions.filter {
-            activeMember.sharesNetWorth(with: $0.ownerMember) && $0.category == category.name
+        let calendar = Calendar.current
+        return transactions.filter {
+            activeMember.sharesNetWorth(with: $0.ownerMember) &&
+            $0.category == category.name &&
+            calendar.isDate($0.date, equalTo: selectedMonth, toGranularity: .month)
         }
+    }
+
+    private var selectedMonthLabel: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.string(from: selectedMonth)
     }
 
     var body: some View {
         ScrollView {
             VStack(spacing: AppLayout.cardSpacing) {
-                ScreenHeader(title: category.name, eyebrow: "Budget category")
+                ScreenHeader(title: category.name, eyebrow: selectedMonthLabel)
 
                 VStack(spacing: 0) {
                     HStack {

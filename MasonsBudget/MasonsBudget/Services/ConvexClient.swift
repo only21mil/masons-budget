@@ -27,7 +27,9 @@ enum ConvexConfig {
         return !url.contains("placeholder")
     }
 
-    static let syncToken = "40baea8c22e35057930eb7427aa6d0a4559fcfedd46b3c13d10343e4e707c804"
+    // Native app writes are disabled until Convex mutations use per-user auth
+    // or a server-owned write path. MC2 remains the private sync writer.
+    static let nativeWritesEnabled = false
 }
 
 /// Errors specific to Convex operations.
@@ -37,6 +39,7 @@ enum ConvexError: LocalizedError {
     case httpError(Int)
     case decodeFailed(String, Error)
     case noData(String)
+    case nativeWritesDisabled
 
     var errorDescription: String? {
         switch self {
@@ -50,6 +53,8 @@ enum ConvexError: LocalizedError {
             return "Failed to decode \(name): \(error.localizedDescription)"
         case .noData(let name):
             return "No data found for '\(name)'"
+        case .nativeWritesDisabled:
+            return "Convex writes are disabled in the native app."
         }
     }
 }
@@ -203,12 +208,15 @@ final class ConvexClient: Sendable {
 
     /// Execute a Convex query and return the raw result.
     private func query(_ path: String, args: [String: Any]) async throws -> Any {
-        try await call(endpoint: "api/query", path: path, args: args)
+        return try await call(endpoint: "api/query", path: path, args: args)
     }
 
     /// Execute a Convex mutation and return the raw result.
     private func mutation(_ path: String, args: [String: Any]) async throws -> Any {
-        try await call(endpoint: "api/mutation", path: path, args: args)
+        guard ConvexConfig.nativeWritesEnabled else {
+            throw ConvexError.nativeWritesDisabled
+        }
+        return try await call(endpoint: "api/mutation", path: path, args: args)
     }
 
     private func call(endpoint: String, path: String, args: [String: Any]) async throws -> Any {
@@ -217,17 +225,9 @@ final class ConvexClient: Sendable {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        var finalArgs = args
-        if endpoint == "api/mutation" {
-            let token = ConvexConfig.syncToken
-            if !token.isEmpty {
-                finalArgs["token"] = token
-            }
-        }
-
         let body: [String: Any] = [
             "path": path,
-            "args": finalArgs,
+            "args": args,
             "format": "json",
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)

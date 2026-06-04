@@ -52,7 +52,7 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable {
 
     var allowedSwitchTargets: [FamilyMember] {
         if isAdult { return FamilyMember.allCases }
-        return FamilyMember.allCases.filter { $0.isAdult || $0 == self }
+        return [self]
     }
 
     var requiresAuthToSwitch: Bool {

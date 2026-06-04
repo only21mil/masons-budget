@@ -85,10 +85,11 @@ function parseArgs(argv) {
 const options = parseArgs(process.argv.slice(2));
 const { dryRun, mc2Path } = options;
 
-// Load .env.local if it exists (don't override explicit env vars)
-const envLocalPath = path.join(process.cwd(), ".env.local");
-if (fs.existsSync(envLocalPath)) {
-  const envContent = fs.readFileSync(envLocalPath, "utf-8");
+// Load env files if they exist (don't override explicit env vars).
+// MC2 owns CONVEX_SYNC_TOKEN; the app repo usually only owns CONVEX_URL.
+function loadEnvFile(envPath) {
+  if (!fs.existsSync(envPath)) return;
+  const envContent = fs.readFileSync(envPath, "utf-8");
   for (const line of envContent.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
@@ -100,6 +101,10 @@ if (fs.existsSync(envLocalPath)) {
     }
   }
 }
+
+loadEnvFile(path.join(process.cwd(), ".env.local"));
+loadEnvFile(path.join(mc2Path, ".env.local"));
+loadEnvFile(path.join(mc2Path, ".env"));
 
 const convexUrl = process.env.CONVEX_URL || APP_CONVEX_URL;
 const expectedConvexUrl = process.env.EXPECTED_CONVEX_URL || APP_CONVEX_URL;
@@ -482,6 +487,7 @@ async function runSyncOnce(client) {
 
   const results = await client.mutation(api.dataFiles.syncBatch, {
     files: filesToSync,
+    token: process.env.CONVEX_SYNC_TOKEN || undefined,
   });
 
   console.log("\nSync complete:");

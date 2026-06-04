@@ -276,7 +276,7 @@ struct BudgetView: View {
             VStack(spacing: 10) {
                 ForEach(myCategories, id: \.name) { cat in
                     NavigationLink {
-                        CategoryDetailView(category: cat)
+                        CategoryDetailView(category: cat, selectedMonth: selectedMonth)
                     } label: {
                         categoryCard(cat: cat)
                     }

@@ -540,8 +540,21 @@ struct MC2TodoItem: Codable {
     var effectiveOwner: FamilyMember? {
         let raw = owner ?? assignee
         guard let raw else { return .victor }
-        return FamilyMember(rawValue: raw.lowercased())
+        let normalized = raw.lowercased()
+        if Self.satsTodoOwners.contains(normalized) { return .victor }
+        return FamilyMember(rawValue: normalized)
     }
+
+    /// MC2 todos created from Victor's Sats/Hermes lanes are family-visible
+    /// Victor todos, even when the source marks the assignee/owner as the agent
+    /// lane instead of a household member. Keep these mapped to `.victor` so the
+    /// mobile app mirrors the tasks Victor gives Sats/Hermes.
+    private static let satsTodoOwners: Set<String> = [
+        "sats",
+        "hermes",
+        "sats-hermes",
+        "sats hermes",
+    ]
 
     var effectiveFlagged: Bool {
         flagged ?? flag ?? false
