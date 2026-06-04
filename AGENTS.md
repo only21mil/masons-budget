@@ -21,6 +21,7 @@ This is **The Vogel Vault** (internal repo name still "Mason's Budget App"). Swi
 - Bundle id: `com.sats21m.masonsbudget` · Team `384ZGKG4GB`
 - Live to TestFlight via temp keychain + API key auth. Build BOTH `MasonsBudget` (iOS) AND `MasonsBudgetMac` (macOS) schemes on every release.
 - iOS DTOs in `MasonsBudget/MasonsBudget/Services/MC2DTOs.swift` mirror MC2's JSON schemas. If a JSON shape changes in MC2, the DTO + mapper change here.
+- Native app Convex mutations are disabled until there is real per-user auth or a server-owned write path. Do **not** put `CONVEX_SYNC_TOKEN` or any shared write token in Swift source, UserDefaults, or bundled config. MC2/private sync owns the current Convex write token.
 
 ---
 

@@ -16,6 +16,12 @@ xcuserdata/
 
 # Build artifacts
 build/
+Build/
+Archives/
+*.xcarchive
+*.pkg
+*.dmg
+*.app
 *.ipa
 *.dSYM.zip
 *.dSYM
@@ -54,8 +60,14 @@ Pods/
 .env.*
 .env.local
 *.pem
+*.p8
+AuthKey_*.p8
+*.p12
+*.mobileprovision
+*.provisionprofile
 credentials.json
 
 # Node / Convex
 node_modules/
+.convex/
 convex/_generated/
