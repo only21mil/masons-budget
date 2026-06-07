@@ -89,9 +89,16 @@ actor MC2Reader {
         return rawTodos.compactMap { item in
             guard JSONSerialization.isValidJSONObject(item),
                   let data = try? JSONSerialization.data(withJSONObject: item) else {
+                log.warning("Todo item is not valid JSON, skipping")
                 return nil
             }
-            return try? JSONDecoder().decode(MC2TodoItem.self, from: data)
+            do {
+                return try JSONDecoder().decode(MC2TodoItem.self, from: data)
+            } catch {
+                let id = (item as? [String: Any])?["id"] as? String ?? "unknown"
+                log.warning("Failed to decode todo \(id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                return nil
+            }
         }
     }
 

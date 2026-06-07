@@ -17,16 +17,15 @@ final class MasonsBudgetTests: XCTestCase {
 
     func testAppTabCases() {
         let tabs = AppTab.allCases
-        XCTAssertEqual(tabs.count, 8)
-        XCTAssertEqual(AppTab.iOSTabs, [.home, .budget, .today, .stack, .more])
-        XCTAssertTrue(AppTab.macMoneyTabs.contains(.activity))
-        XCTAssertTrue(AppTab.macMoneyTabs.contains(.netWorth))
-        XCTAssertTrue(AppTab.macTaskTabs.contains(.projects))
+        XCTAssertEqual(tabs, [.home, .budget, .today, .stack, .more])
         for tab in tabs {
-            XCTAssertFalse(tab.title.isEmpty, "\(tab) should have a title")
-            XCTAssertFalse(tab.macTitle.isEmpty, "\(tab) should have a mac title")
+            XCTAssertFalse(tab.label.isEmpty, "\(tab) should have a label")
             XCTAssertFalse(tab.icon.isEmpty, "\(tab) should have an icon")
         }
+
+        XCTAssertTrue(MacNav.moneyItems.contains(.activity))
+        XCTAssertTrue(MacNav.moneyItems.contains(.netWorth))
+        XCTAssertTrue(MacNav.taskItems.contains(.projects))
     }
 
     func testColorHexInit() {
@@ -95,8 +94,39 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertEqual(tx.id, "t-test-001")
         XCTAssertEqual(tx.merchant, "Costco")
         XCTAssertEqual(tx.amount, 45.99)
+        XCTAssertNil(tx.amountSats)
         XCTAssertNil(tx.card)
         XCTAssertNil(tx.note)
+    }
+
+    func testTransactionKeepsFiatAmountSeparateFromSats() {
+        let tx = Transaction(
+            id: "t-sats-001",
+            date: .now,
+            merchant: "Strike DCA",
+            amount: 90,
+            category: "Bitcoin",
+            amountSats: 125_000,
+            createdBy: "test"
+        )
+
+        XCTAssertEqual(tx.amount, 90)
+        XCTAssertEqual(tx.amountSats, 125_000)
+        XCTAssertEqual(tx.satsValue(btcPrice: 90_000), 125_000)
+    }
+
+    func testTransactionDerivesSatsFromFiatWhenExplicitSatsMissing() {
+        let tx = Transaction(
+            id: "t-usd-001",
+            date: .now,
+            merchant: "Coffee",
+            amount: 90,
+            category: "Dining",
+            createdBy: "test"
+        )
+
+        XCTAssertNil(tx.amountSats)
+        XCTAssertEqual(tx.satsValue(btcPrice: 90_000), 100_000)
     }
 
     func testBudgetCategoryInit() {
@@ -249,12 +279,12 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertEqual(todo.ownerMember, .victor)
     }
 
-    func testTodoMapperSkipsNonFamilyAssignee() throws {
+    func testTodoMapperTreatsSatsAssigneeAsVictorTodo() throws {
         let json = """
         [
           {
             "id": "sats-agent-task",
-            "text": "Operational task that should stay out of Vogel Vault",
+            "text": "Task Victor gave Sats that should appear in Vogel Vault",
             "category": "sats",
             "assignee": "sats",
             "done": false
@@ -270,9 +300,11 @@ final class MasonsBudgetTests: XCTestCase {
         let dtos = try JSONDecoder().decode([MC2TodoItem].self, from: json)
         let todos = MC2Mapper.mapTodos(dtos, viewer: .victor)
 
-        XCTAssertEqual(todos.map(\.id), ["family-task"])
+        XCTAssertEqual(todos.map(\.id), ["sats-agent-task", "family-task"])
+        XCTAssertEqual(todos[0].ownerMember, .victor)
+        XCTAssertEqual(todos[0].project, "sats")
         XCTAssertEqual(todos.first?.ownerMember, .victor)
-        XCTAssertEqual(todos.first?.project, "work")
+        XCTAssertEqual(todos[1].project, "work")
     }
 
     func testTodoDecoderAcceptsNumericTimestamps() throws {
@@ -295,6 +327,42 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertEqual(dtos.first?.createdAt, "1774914863033")
         XCTAssertEqual(dtos.first?.updatedAt, "1774914863034")
         XCTAssertEqual(dtos.first?.completedAt, "1774914863035")
+    }
+
+    func testMissionControlTodoCompleteRequestAddsMobileAuthHeaders() throws {
+        let credentials = MissionControlMobileCredentials(
+            deviceID: " device-123 ",
+            deviceToken: " token-abc "
+        )
+
+        let request = try MissionControlServerConfig.makeTodoCompleteRequest(
+            todoID: "todo-1",
+            title: "Pay the mortgage",
+            credentials: credentials,
+            baseURL: URL(string: "https://example.test")!
+        )
+
+        XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/mobile/todos/complete")
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "x-mobile-device-id"), "device-123")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "x-mobile-device-token"), "token-abc")
+
+        let body = try XCTUnwrap(request.httpBody)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: String])
+        XCTAssertEqual(json["id"], "todo-1")
+        XCTAssertEqual(json["title"], "Pay the mortgage")
+    }
+
+    func testMissionControlTodoCompleteRequestRequiresCredentials() {
+        XCTAssertThrowsError(
+            try MissionControlServerConfig.makeTodoCompleteRequest(
+                todoID: "todo-1",
+                title: "Pay the mortgage",
+                credentials: MissionControlMobileCredentials(deviceID: "", deviceToken: "token"),
+                baseURL: URL(string: "https://example.test")!
+            )
+        )
     }
 
     func testHoldingAccountRelationship() {

@@ -110,13 +110,47 @@ enum MC2Mapper {
         return note
     }
 
-    static func mapBudgetCategories(_ dtos: [MC2BudgetCategory]) -> [BudgetCategory] {
+    static func mapPaychecksToTransactions(_ paychecks: [MC2Paycheck]?, owner: FamilyMember = .victor) -> [Transaction] {
+        guard let paychecks else { return [] }
+        return paychecks.map { paycheck in
+            let src = paycheck.source ?? "Paycheck"
+            return Transaction(
+                id: "income-\(paycheck.date)-\(src)",
+                date: parseDate(paycheck.date),
+                merchant: src,
+                amount: paycheck.net ?? paycheck.amount ?? 0,
+                category: "Income",
+                card: nil,
+                note: nil,
+                owner: owner,
+                createdBy: "mc2",
+                createdAt: parseDate(paycheck.date),
+                sourceFile: "budget.json"
+            )
+        }
+    }
+
+    static func mapMonthlyHistory(_ entries: [MC2MonthlyHistoryEntry]?) -> [MonthlyBudgetSnapshot] {
+        guard let entries else { return [] }
+        return entries.compactMap { entry in
+            guard !entry.month.isEmpty else { return nil }
+            return MonthlyBudgetSnapshot(
+                monthKey: entry.month,
+                mtdIncome: entry.income ?? 0,
+                ytdIncome: entry.income ?? 0
+            )
+        }
+    }
+
+    static func mapBudgetCategories(_ dtos: [MC2BudgetCategory], owner: FamilyMember = .victor) -> [BudgetCategory] {
         dtos.enumerated().map { index, dto in
-            BudgetCategory(
-                name: dto.name,
+            let name = owner == .victor ? dto.name : "\(owner.rawValue):\(dto.name)"
+            return BudgetCategory(
+                name: name,
                 icon: dto.icon ?? "questionmark.circle",
                 monthlyBudget: dto.budget,
-                sortOrder: index
+                sortOrder: index,
+                owner: owner
             )
         }
     }
@@ -183,7 +217,7 @@ enum MC2Mapper {
         }
 
         if let masonAccount = finances.mason401k,
-           let holdingAccount = mapFinanceAccount(key: "401k", account: masonAccount, viewer: owner, ownerOverride: .mason) {
+           let holdingAccount = mapFinanceAccount(key: "mason_401k", account: masonAccount, viewer: owner, ownerOverride: .mason) {
             accounts.append(holdingAccount)
         }
 
@@ -267,7 +301,7 @@ enum MC2Mapper {
     static func mapTodos(_ dtos: [MC2TodoItem], viewer: FamilyMember) -> [TodoItem] {
         dtos.compactMap { dto in
             guard let owner = dto.effectiveOwner else { return nil }
-            guard viewer.canSee(dataOwnedBy: owner) else { return nil }
+            guard owner == .victor else { return nil }
 
             return TodoItem(
                 id: dto.id,

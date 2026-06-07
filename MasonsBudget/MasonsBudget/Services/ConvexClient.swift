@@ -26,6 +26,10 @@ enum ConvexConfig {
         let url = deploymentURL.absoluteString
         return !url.contains("placeholder")
     }
+
+    // Native app writes are disabled until Convex mutations use per-user auth
+    // or a server-owned write path. MC2 remains the private sync writer.
+    static let nativeWritesEnabled = false
 }
 
 /// Errors specific to Convex operations.
@@ -35,6 +39,7 @@ enum ConvexError: LocalizedError {
     case httpError(Int)
     case decodeFailed(String, Error)
     case noData(String)
+    case nativeWritesDisabled
 
     var errorDescription: String? {
         switch self {
@@ -48,6 +53,8 @@ enum ConvexError: LocalizedError {
             return "Failed to decode \(name): \(error.localizedDescription)"
         case .noData(let name):
             return "No data found for '\(name)'"
+        case .nativeWritesDisabled:
+            return "Convex writes are disabled in the native app."
         }
     }
 }
@@ -133,6 +140,19 @@ final class ConvexClient: Sendable {
         return result
     }
 
+    /// Replace a whole data file payload and bump its sync version.
+    @discardableResult
+    func syncFile(name: String, data: Any) async throws -> Double {
+        let raw = try await mutation("dataFiles:sync", args: [
+            "name": name,
+            "data": data
+        ])
+        guard let result = raw as? [String: Any] else { return 0 }
+        if let version = result["version"] as? Double { return version }
+        if let version = result["version"] as? Int { return Double(version) }
+        return 0
+    }
+
     /// Push one app-created transaction into the shared MC2 transactions document.
     @discardableResult
     func appendTransaction(_ transaction: MC2Transaction, to name: String = "transactions") async throws -> Double {
@@ -159,6 +179,15 @@ final class ConvexClient: Sendable {
         return 0
     }
 
+    @discardableResult
+    func removeTodo(id: String) async throws -> Bool {
+        let raw = try await mutation("dataFiles:removeTodo", args: [
+            "todoId": id
+        ])
+        guard let result = raw as? [String: Any] else { return false }
+        return result["removed"] as? Bool ?? false
+    }
+
     /// Push one app-created bill pay into the bitcoin-bill-pays document.
     @discardableResult
     func appendBillPay(_ billPay: MC2BTCBillPay) async throws -> Double {
@@ -179,12 +208,15 @@ final class ConvexClient: Sendable {
 
     /// Execute a Convex query and return the raw result.
     private func query(_ path: String, args: [String: Any]) async throws -> Any {
-        try await call(endpoint: "api/query", path: path, args: args)
+        return try await call(endpoint: "api/query", path: path, args: args)
     }
 
     /// Execute a Convex mutation and return the raw result.
     private func mutation(_ path: String, args: [String: Any]) async throws -> Any {
-        try await call(endpoint: "api/mutation", path: path, args: args)
+        guard ConvexConfig.nativeWritesEnabled else {
+            throw ConvexError.nativeWritesDisabled
+        }
+        return try await call(endpoint: "api/mutation", path: path, args: args)
     }
 
     private func call(endpoint: String, path: String, args: [String: Any]) async throws -> Any {

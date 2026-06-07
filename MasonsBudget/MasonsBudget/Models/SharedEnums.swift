@@ -25,15 +25,6 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    var accentColorName: String {
-        switch self {
-        case .victor: "AccentColor"
-        case .rachel: "AccentColor"
-        case .mason:  "AccentColor"
-        case .maddox: "AccentColor"
-        }
-    }
-
     /// Whether this profile shows full budget/spending views (adults)
     /// or a simplified Bitcoin-focused experience (kids).
     var showsFullBudget: Bool {
@@ -60,7 +51,8 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable {
     }
 
     var allowedSwitchTargets: [FamilyMember] {
-        isAdult ? FamilyMember.allCases : [self]
+        if isAdult { return FamilyMember.allCases }
+        return [self]
     }
 
     var requiresAuthToSwitch: Bool {
@@ -92,6 +84,12 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable {
         if self == owner { return true }
         if isAdult { return true }
         return false
+    }
+
+    /// Net-worth totals are household-scoped for adults, but must not roll child stacks into adult totals.
+    func sharesNetWorth(with owner: FamilyMember) -> Bool {
+        if self == owner { return true }
+        return isAdult && owner.isAdult
     }
 }
 

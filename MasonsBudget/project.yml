@@ -12,8 +12,8 @@ settings:
   base:
     SWIFT_VERSION: "5.9"
     GENERATE_INFOPLIST_FILE: YES
-    CURRENT_PROJECT_VERSION: 22
-    MARKETING_VERSION: "0.4.0"
+    CURRENT_PROJECT_VERSION: 33
+    MARKETING_VERSION: "0.5.0"
 
 targets:
   MasonsBudget:
@@ -28,6 +28,9 @@ targets:
       - path: MasonsBudget/Preview Content
     settings:
       base:
+        SDKROOT: iphoneos
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        PRODUCT_NAME: MasonsBudget
         PRODUCT_BUNDLE_IDENTIFIER: com.sats21m.masonsbudget
         TARGETED_DEVICE_FAMILY: "1,2"
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
@@ -62,6 +65,9 @@ targets:
       - path: MasonsBudget/Preview Content
     settings:
       base:
+        SDKROOT: macosx
+        SUPPORTED_PLATFORMS: "macosx"
+        PRODUCT_NAME: MasonsBudgetMac
         PRODUCT_BUNDLE_IDENTIFIER: com.sats21m.masonsbudget
         CODE_SIGN_ENTITLEMENTS: MasonsBudget/MasonsBudgetMac.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -94,6 +100,9 @@ targets:
     dependencies: []
     settings:
       base:
+        SDKROOT: iphoneos
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        PRODUCT_NAME: MasonsBudgetTests
         PRODUCT_BUNDLE_IDENTIFIER: com.sats21m.masonsbudget.tests
         GENERATE_INFOPLIST_FILE: YES
 
