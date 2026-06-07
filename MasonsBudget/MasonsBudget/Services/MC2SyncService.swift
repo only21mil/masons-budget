@@ -595,6 +595,10 @@ final class MC2SyncService {
         // existing @Attribute(.unique) id (app-created or out-of-scope owner).
         let existingById = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let remoteById = Dictionary(remoteTodos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // A todo the user just deleted is removed locally immediately but its remote row
+        // survives until the delayed remote delete fires (undo window). Don't resurrect it
+        // if a sync lands inside that window. Same-actor (@MainActor) read — race-free.
+        let pendingDeleteID = TaskUndoStore.shared.pending?.id
 
         for remote in remoteTodos {
             if let local = existingById[remote.id] {
@@ -621,7 +625,7 @@ final class MC2SyncService {
                     local.sourceFile = remote.sourceFile
                     local.createdBy = "mc2"
                 }
-            } else {
+            } else if remote.id != pendingDeleteID {
                 context.insert(remote)
             }
         }
