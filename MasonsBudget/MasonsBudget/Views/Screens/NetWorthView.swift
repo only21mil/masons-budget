@@ -102,7 +102,7 @@ struct NetWorthView: View {
     private var totalCard: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Total")
-                .font(.system(size: 13, weight: .medium))
+                .font(AppFont.caption)
                 .foregroundStyle(theme.textMuted)
 
             AmountView(sats: totalSats, unit: unit, size: 32, weight: .bold, btcPrice: btcPrice)
@@ -111,14 +111,14 @@ struct NetWorthView: View {
                 let change = yearlyBtcChange
                 let positive = change >= 0
                 Image(systemName: positive ? AppIcon.arrowUp : "arrow.down.right")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(AppFont.sectionHeaderMedium)
                     .foregroundStyle(positive ? theme.success : theme.danger)
                 Text("\(positive ? "+" : "")\(AppFormatter.formatBtc(change)) BTC")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(AppFont.captionStrong)
                     .foregroundStyle(positive ? theme.success : theme.danger)
                 Text("past year")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(theme.textFaint)
+                    .font(AppFont.caption)
+                    .foregroundStyle(theme.textMuted)
             }
             .padding(.top, 2)
 
@@ -172,7 +172,7 @@ struct NetWorthView: View {
                     .overlay(alignment: .top) {
                         if isLast {
                             Text(String(format: "%.2f", val))
-                                .font(.system(size: 10, weight: .bold))
+                                .font(AppFont.microStrong)
                                 .foregroundStyle(theme.accent)
                                 .offset(y: -18)
                         }
@@ -194,8 +194,8 @@ struct NetWorthView: View {
         return HStack(spacing: 4) {
             ForEach(Array(labels.enumerated()), id: \.offset) { idx, label in
                 Text(idx % 2 == 1 ? label : "")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(theme.textFaint)
+                    .font(AppFont.microMedium)
+                    .foregroundStyle(theme.textMuted)
                     .frame(maxWidth: .infinity)
             }
         }
@@ -231,8 +231,8 @@ struct NetWorthView: View {
     private var timelineSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("TIMELINE")
-                .font(.system(size: 12, weight: .bold))
-                .tracking(0.72)
+                .font(AppFont.labelSmallStrong)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -303,7 +303,7 @@ struct NetWorthView: View {
                 let pct = (change / first.total) * 100
                 let positive = change >= 0
                 Text("\(positive ? "+" : "")\(NSDecimalNumber(decimal: pct).intValue)% 12mo")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .font(AppFont.monoSmallStrong)
                     .foregroundStyle(positive ? theme.success : theme.danger)
             }
         }
@@ -315,7 +315,7 @@ struct NetWorthView: View {
                 .fill(color)
                 .frame(width: 12, height: 3)
             Text(label)
-                .font(.system(size: 11))
+                .font(AppFont.smallRegular)
                 .foregroundStyle(theme.textMuted)
         }
     }
@@ -325,8 +325,8 @@ struct NetWorthView: View {
     private var holdingsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("BITCOIN")
-                .font(.system(size: 12, weight: .bold))
-                .tracking(0.72)
+                .font(AppFont.labelSmallStrong)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -358,11 +358,11 @@ struct NetWorthView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(AppFont.labelLarge)
                     .foregroundStyle(theme.text)
                 Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(theme.textFaint)
+                    .font(AppFont.smallRegular)
+                    .foregroundStyle(theme.textMuted)
             }
 
             Spacer()
@@ -377,8 +377,8 @@ struct NetWorthView: View {
     private var retirementSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("RETIREMENT")
-                .font(.system(size: 12, weight: .bold))
-                .tracking(0.72)
+                .font(AppFont.labelSmallStrong)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -405,11 +405,11 @@ struct NetWorthView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.name.uppercased())
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(AppFont.labelLarge)
                     .foregroundStyle(theme.text)
                 Text(account.provider)
-                    .font(.system(size: 11))
-                    .foregroundStyle(theme.textFaint)
+                    .font(AppFont.smallRegular)
+                    .foregroundStyle(theme.textMuted)
             }
 
             Spacer()
