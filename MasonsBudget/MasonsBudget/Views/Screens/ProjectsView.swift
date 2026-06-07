@@ -172,17 +172,16 @@ struct ProjectsView: View {
                         .frame(width: 32, height: 32)
                         .overlay(
                             Image(systemName: item.icon)
-                                .font(.system(size: 18))
+                                .font(AppFont.iconSmall)
                                 .foregroundStyle(theme.accent),
                         )
 
                     Text(item.label)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(AppFont.labelMedium)
                         .foregroundStyle(theme.textMuted)
 
                     Text("\(item.count)")
-                        .font(.system(size: 22, weight: .bold))
-                        .tracking(-0.44)
+                        .font(AppFont.title)
                         .foregroundStyle(theme.text)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -196,8 +195,8 @@ struct ProjectsView: View {
     private var projectsList: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("PROJECTS")
-                .font(.system(size: 12, weight: .bold))
-                .tracking(0.72)
+                .font(AppFont.labelSmallStrong)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -239,26 +238,26 @@ struct ProjectsView: View {
                             CatGlyphView(kind: meta.icon, size: 16, color: accent)
                         } else {
                             Image(systemName: "folder")
-                                .font(.system(size: 15))
+                                .font(AppFont.iconTiny)
                                 .foregroundStyle(accent)
                         }
                     },
                 )
 
             Text(project.name)
-                .font(.system(size: 15, weight: .medium))
+                .font(AppFont.body)
                 .foregroundStyle(theme.text)
 
             Spacer()
 
             Text("\(project.openCount)")
-                .font(.system(size: 13, design: .monospaced))
-                .foregroundStyle(theme.textFaint)
+                .font(AppFont.monoCaption)
+                .foregroundStyle(theme.textMuted)
                 .monospacedDigit()
 
             Image(systemName: AppIcon.arrowRight)
-                .font(.system(size: 12))
-                .foregroundStyle(theme.textFaint)
+                .font(AppFont.labelSmallRegular)
+                .foregroundStyle(theme.textMuted)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -271,16 +270,16 @@ struct ProjectsView: View {
                 .frame(width: 40, height: 40)
                 .overlay(
                     Image(systemName: icon)
-                        .font(.system(size: 18))
+                        .font(AppFont.iconSmall)
                         .foregroundStyle(theme.accent),
                 )
 
             Text(headline)
-                .font(.system(size: 14, weight: .semibold))
+                .font(AppFont.labelLarge)
                 .foregroundStyle(theme.text)
 
             Text(message)
-                .font(.system(size: 12))
+                .font(AppFont.labelSmallRegular)
                 .foregroundStyle(theme.textMuted)
                 .multilineTextAlignment(.center)
         }
@@ -296,15 +295,15 @@ struct ProjectsView: View {
     private var taskSearchResults: some View {
         LazyVStack(alignment: .leading, spacing: AppLayout.cardSpacing) {
             Text("TASKS")
-                .font(.system(size: 12, weight: .bold))
-                .tracking(0.72)
+                .font(AppFont.labelSmallStrong)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
             if searchableTodos.isEmpty {
                 Text("No matching tasks")
-                    .font(.system(size: 13))
-                    .foregroundStyle(theme.textFaint)
+                    .font(AppFont.labelRegular)
+                    .foregroundStyle(theme.textMuted)
                     .frame(maxWidth: .infinity)
                     .padding(20)
                     .glassCard(padding: 0)
@@ -329,8 +328,8 @@ struct ProjectsView: View {
     private var areasList: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("AREAS")
-                .font(.system(size: 12, weight: .bold))
-                .tracking(0.72)
+                .font(AppFont.labelSmallStrong)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -366,26 +365,26 @@ struct ProjectsView: View {
                             CatGlyphView(kind: meta.icon, size: 16, color: theme.textMuted)
                         } else {
                             Image(systemName: "square.stack.3d.up")
-                                .font(.system(size: 15))
+                                .font(AppFont.iconTiny)
                                 .foregroundStyle(theme.textMuted)
                         }
                     },
                 )
 
             Text(area.name)
-                .font(.system(size: 15, weight: .medium))
+                .font(AppFont.body)
                 .foregroundStyle(theme.text)
 
             Spacer()
 
             Text("\(area.openCount)")
-                .font(.system(size: 13, design: .monospaced))
-                .foregroundStyle(theme.textFaint)
+                .font(AppFont.monoCaption)
+                .foregroundStyle(theme.textMuted)
                 .monospacedDigit()
 
             Image(systemName: AppIcon.arrowRight)
-                .font(.system(size: 12))
-                .foregroundStyle(theme.textFaint)
+                .font(AppFont.labelSmallRegular)
+                .foregroundStyle(theme.textMuted)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)

@@ -142,15 +142,14 @@ struct TasksView: View {
                             .frame(width: 32, height: 32)
                             .overlay(
                                 Image(systemName: filter.icon)
-                                    .font(.system(size: 18))
+                                    .font(AppFont.iconSmall)
                                     .foregroundStyle(theme.accent),
                             )
                         Text(filter.title)
-                            .font(.system(size: 13, weight: .medium))
+                            .font(AppFont.labelMedium)
                             .foregroundStyle(theme.textMuted)
                         Text("\(count(filter))")
-                            .font(.system(size: 22, weight: .bold))
-                            .tracking(-0.44)
+                            .font(AppFont.title)
                             .foregroundStyle(theme.text)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -168,15 +167,15 @@ struct TasksView: View {
             if showingDraft {
                 HStack(spacing: 10) {
                     Image(systemName: AppIcon.checkOpen)
-                        .font(.system(size: 18))
+                        .font(AppFont.iconSmall)
                         .foregroundStyle(theme.borderStrong)
                     TextField("New task", text: $draftText)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 15))
+                        .font(AppFont.bodyRegular)
                         .foregroundStyle(theme.text)
                         .onSubmit(addTask)
                     Button("Add", action: addTask)
-                        .font(.system(size: 13, weight: .bold))
+                        .font(AppFont.labelStrong)
                         .foregroundStyle(theme.accent)
                         .buttonStyle(.plain)
                 }
@@ -189,10 +188,10 @@ struct TasksView: View {
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 18))
+                            .font(AppFont.iconSmall)
                             .foregroundStyle(theme.accent)
                         Text("Add task")
-                            .font(.system(size: 15, weight: .medium))
+                            .font(AppFont.body)
                             .foregroundStyle(theme.textMuted)
                         Spacer()
                     }
@@ -228,8 +227,8 @@ struct TasksView: View {
     private func section(title: String, todos: [TodoItem]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.system(size: 12, weight: .bold))
-                .tracking(0.72)
+                .font(AppFont.labelSmallStrong)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -251,8 +250,8 @@ struct TasksView: View {
     private var projectsList: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("PROJECTS")
-                .font(.system(size: 12, weight: .bold))
-                .tracking(0.72)
+                .font(AppFont.labelSmallStrong)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -291,22 +290,22 @@ struct TasksView: View {
                             CatGlyphView(kind: meta.icon, size: 16, color: accent)
                         } else {
                             Image(systemName: "folder")
-                                .font(.system(size: 15))
+                                .font(AppFont.iconTiny)
                                 .foregroundStyle(accent)
                         }
                     },
                 )
             Text(summary.name)
-                .font(.system(size: 15, weight: .medium))
+                .font(AppFont.body)
                 .foregroundStyle(theme.text)
             Spacer()
             Text("\(summary.openCount)")
-                .font(.system(size: 13, design: .monospaced))
-                .foregroundStyle(theme.textFaint)
+                .font(AppFont.monoCaption)
+                .foregroundStyle(theme.textMuted)
                 .monospacedDigit()
             Image(systemName: AppIcon.arrowRight)
-                .font(.system(size: 12))
-                .foregroundStyle(theme.textFaint)
+                .font(AppFont.labelSmallRegular)
+                .foregroundStyle(theme.textMuted)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -317,12 +316,12 @@ struct TasksView: View {
             RoundedRectangle(cornerRadius: 10)
                 .fill(theme.accentSoft)
                 .frame(width: 40, height: 40)
-                .overlay(Image(systemName: icon).font(.system(size: 18)).foregroundStyle(theme.accent))
+                .overlay(Image(systemName: icon).font(AppFont.iconSmall).foregroundStyle(theme.accent))
             Text(headline)
-                .font(.system(size: 14, weight: .semibold))
+                .font(AppFont.labelLarge)
                 .foregroundStyle(theme.text)
             Text(message)
-                .font(.system(size: 12))
+                .font(AppFont.labelSmallRegular)
                 .foregroundStyle(theme.textMuted)
                 .multilineTextAlignment(.center)
         }
@@ -336,8 +335,8 @@ struct TasksView: View {
     private var areasList: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("AREAS")
-                .font(.system(size: 12, weight: .bold))
-                .tracking(0.72)
+                .font(AppFont.labelSmallStrong)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -355,16 +354,16 @@ struct TasksView: View {
                                 .frame(width: 32, height: 32)
                                 .overlay(
                                     Image(systemName: areaMeta[name]?.icon ?? "square.stack.3d.up")
-                                        .font(.system(size: 15))
+                                        .font(AppFont.bodyRegular)
                                         .foregroundStyle(theme.textMuted),
                                 )
                             Text(name)
-                                .font(.system(size: 15, weight: .medium))
+                                .font(AppFont.body)
                                 .foregroundStyle(theme.text)
                             Spacer()
                             Text("\(openCount)")
-                                .font(.system(size: 13, design: .monospaced))
-                                .foregroundStyle(theme.textFaint)
+                                .font(AppFont.monoCaption)
+                                .foregroundStyle(theme.textMuted)
                                 .monospacedDigit()
                         }
                         .padding(.horizontal, 14)

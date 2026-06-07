@@ -42,14 +42,14 @@ struct TaskDetailView: View {
                 fieldCard("TITLE") {
                     TextField("Task title", text: $title, axis: .vertical)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 16, weight: .medium))
+                        .font(AppFont.headlineMedium)
                         .foregroundStyle(theme.text)
                 }
 
                 fieldCard("DUE DATE") {
                     Toggle(isOn: $hasDueDate.animation()) {
                         Text("Has a due date")
-                            .font(.system(size: 14))
+                            .font(AppFont.labelLarge)
                             .foregroundStyle(theme.text)
                     }
                     .tint(theme.accent)
@@ -64,14 +64,14 @@ struct TaskDetailView: View {
                 fieldCard("PROJECT") {
                     TextField("None", text: $project)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 15))
+                        .font(AppFont.bodyRegular)
                         .foregroundStyle(theme.text)
                 }
 
                 fieldCard("AREA") {
                     TextField("None", text: $area)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 15))
+                        .font(AppFont.bodyRegular)
                         .foregroundStyle(theme.text)
                 }
 
@@ -90,7 +90,7 @@ struct TaskDetailView: View {
                             Image(systemName: AppIcon.flagFilled)
                                 .foregroundStyle(theme.accent)
                             Text("Flagged")
-                                .font(.system(size: 14))
+                                .font(AppFont.labelLarge)
                                 .foregroundStyle(theme.text)
                         }
                     }
@@ -115,8 +115,8 @@ struct TaskDetailView: View {
     private func fieldCard(_ label: String, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(label)
-                .font(.system(size: 11, weight: .bold))
-                .tracking(0.88)
+                .font(AppFont.sectionHeader)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.textMuted)
             content()
         }
@@ -128,7 +128,7 @@ struct TaskDetailView: View {
     private var saveButton: some View {
         Button(action: save) {
             Text("Save changes")
-                .font(.system(size: 15, weight: .bold))
+                .font(AppFont.bodyBold)
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 13)
@@ -145,7 +145,7 @@ struct TaskDetailView: View {
             showDeleteConfirm = true
         } label: {
             Text("Delete task")
-                .font(.system(size: 14, weight: .semibold))
+                .font(AppFont.labelLarge)
                 .foregroundStyle(theme.danger)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 11)

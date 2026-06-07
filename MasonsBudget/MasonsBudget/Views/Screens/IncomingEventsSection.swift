@@ -110,17 +110,17 @@ struct IncomingEventsSection: View {
     private var header: some View {
         HStack {
             Text("INCOMING")
-                .font(.system(size: 12, weight: .bold))
-                .tracking(0.72)
+                .font(AppFont.labelSmallStrong)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.textMuted)
             Spacer()
             HStack(spacing: 4) {
                 Image(systemName: "bolt.fill")
-                    .font(.system(size: 9))
+                    .font(AppFont.microStrong)
                     .foregroundStyle(theme.accent)
                 AmountView(sats: weekTotalSats, unit: unit, size: 12, weight: .bold, accent: true, btcPrice: btcPrice)
                 Text("this week")
-                    .font(.system(size: 11))
+                    .font(AppFont.smallRegular)
                     .foregroundStyle(theme.textMuted)
             }
         }
@@ -138,10 +138,10 @@ struct IncomingEventsSection: View {
                 let hasEvent = eventDates.contains(day)
                 VStack(spacing: 4) {
                     Text(dayLabel(day))
-                        .font(.system(size: 10, weight: .bold))
+                        .font(AppFont.microStrong)
                         .foregroundStyle(isToday ? .white : theme.textMuted)
                     Text("\(calendar.component(.day, from: day))")
-                        .font(.system(size: 14, weight: isToday ? .bold : .medium))
+                        .font(isToday ? AppFont.labelLargeStrong : AppFont.labelLarge)
                         .foregroundStyle(isToday ? .white : theme.text)
                     Circle()
                         .fill(hasEvent ? theme.accent : Color.clear)
@@ -179,17 +179,17 @@ struct IncomingEventsSection: View {
                 .frame(width: 38, height: 38)
                 .overlay(
                     Image(systemName: event.icon)
-                        .font(.system(size: 16))
+                        .font(AppFont.iconTiny)
                         .foregroundStyle(event.color),
                 )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(event.title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(AppFont.labelLarge)
                     .foregroundStyle(theme.text)
                 Text("\(relativeDay(event.date)) - \(event.subtitle)")
-                    .font(.system(size: 11))
-                    .foregroundStyle(theme.textFaint)
+                    .font(AppFont.smallRegular)
+                    .foregroundStyle(theme.textMuted)
             }
 
             Spacer()

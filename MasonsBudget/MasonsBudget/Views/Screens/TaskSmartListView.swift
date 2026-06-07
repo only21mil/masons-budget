@@ -62,11 +62,12 @@ struct TaskRowView: View {
             // Discrete tap-zone: completes without triggering row navigation.
             Button(action: toggleDone) {
                 Image(systemName: todo.isDone ? AppIcon.checkDone : AppIcon.checkOpen)
-                    .font(.system(size: 20))
+                    .font(AppFont.iconMedium)
                     .foregroundStyle(todo.isDone ? theme.accent : theme.borderStrong)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(todo.isDone ? "Mark task not done" : "Mark task done")
 
             // Full-row tap opens the editor.
             NavigationLink {
@@ -124,7 +125,7 @@ struct TaskRowView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(todo.title)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(AppFont.body)
                     .foregroundStyle(theme.text)
                     .strikethrough(todo.isDone, color: theme.textFaint)
 
@@ -134,7 +135,7 @@ struct TaskRowView: View {
                             .fill(theme.accent.opacity(0.5))
                             .frame(width: 6, height: 6)
                         Text(project)
-                            .font(.system(size: 11))
+                            .font(AppFont.smallRegular)
                             .foregroundStyle(theme.textMuted)
                     }
                 }
@@ -144,13 +145,13 @@ struct TaskRowView: View {
 
             if let due = todo.dueDate {
                 Text(Self.relativeDue(due))
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(AppFont.sectionHeaderMedium)
                     .foregroundStyle(Self.isOverdue(due) ? theme.danger : theme.accent)
             }
 
             if todo.isFlagged {
                 Image(systemName: AppIcon.flagFilled)
-                    .font(.system(size: 13))
+                    .font(AppFont.labelRegular)
                     .foregroundStyle(theme.accent)
             }
         }
@@ -255,14 +256,14 @@ struct TaskSmartListView: View {
                 .frame(width: 44, height: 44)
                 .overlay(
                     Image(systemName: filter.icon)
-                        .font(.system(size: 20))
+                        .font(AppFont.iconMedium)
                         .foregroundStyle(theme.accent),
                 )
             Text("Nothing in \(filter.title)")
-                .font(.system(size: 15, weight: .semibold))
+                .font(AppFont.bodyStrong)
                 .foregroundStyle(theme.text)
             Text("You're all caught up here.")
-                .font(.system(size: 13))
+                .font(AppFont.labelRegular)
                 .foregroundStyle(theme.textMuted)
         }
         .frame(maxWidth: .infinity)

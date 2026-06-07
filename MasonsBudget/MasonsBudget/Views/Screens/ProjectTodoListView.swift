@@ -32,8 +32,8 @@ struct ProjectTodoListView: View {
 
                 if pending.isEmpty, done.isEmpty {
                     Text("No tasks in this project")
-                        .font(.system(size: 13))
-                        .foregroundStyle(theme.textFaint)
+                        .font(AppFont.labelRegular)
+                        .foregroundStyle(theme.textMuted)
                         .frame(maxWidth: .infinity)
                         .padding(20)
                 } else {

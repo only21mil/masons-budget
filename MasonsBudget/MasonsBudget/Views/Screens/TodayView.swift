@@ -90,12 +90,12 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("TODAY")
-                    .font(.system(size: 12, weight: .bold))
-                    .tracking(0.72)
+                    .font(AppFont.labelSmallStrong)
+                    .tracking(AppFont.sectionTracking)
                     .foregroundStyle(theme.textMuted)
                 Spacer()
                 Text("\(todayTodos.count) remaining")
-                    .font(.system(size: 12))
+                    .font(AppFont.labelSmallRegular)
                     .foregroundStyle(theme.textMuted)
             }
             .padding(.horizontal, AppLayout.sectionPadding + 4)
@@ -104,10 +104,10 @@ struct TodayView: View {
                 if todayTodos.isEmpty {
                     HStack {
                         Image(systemName: "checkmark.circle")
-                            .font(.system(size: 18))
+                            .font(AppFont.iconSmall)
                             .foregroundStyle(theme.success)
                         Text("All clear for today")
-                            .font(.system(size: 14))
+                            .font(AppFont.labelLarge)
                             .foregroundStyle(theme.textMuted)
                         Spacer()
                     }
@@ -133,8 +133,8 @@ struct TodayView: View {
     private var shortTermSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("THIS WEEK")
-                .font(.system(size: 12, weight: .bold))
-                .tracking(0.72)
+                .font(AppFont.labelSmallStrong)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -156,8 +156,8 @@ struct TodayView: View {
     private var longTermSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("LONG TERM")
-                .font(.system(size: 12, weight: .bold))
-                .tracking(0.72)
+                .font(AppFont.labelSmallStrong)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -180,10 +180,10 @@ struct TodayView: View {
             if showingDraft {
                 HStack(spacing: 12) {
                     Image(systemName: AppIcon.checkOpen)
-                        .font(.system(size: 22))
+                        .font(AppFont.title)
                         .foregroundStyle(theme.borderStrong)
                     TextField("New task", text: $draftText)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(AppFont.body)
                         .foregroundStyle(theme.text)
                         .onSubmit { addTask() }
                 }
@@ -193,15 +193,16 @@ struct TodayView: View {
                 Button { showingDraft = true } label: {
                     HStack(spacing: 12) {
                         Image(systemName: AppIcon.plus)
-                            .font(.system(size: 20))
+                            .font(AppFont.iconMedium)
                             .foregroundStyle(theme.accent)
                         Text("Add task")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(AppFont.bodyStrong)
                             .foregroundStyle(theme.accent)
                         Spacer()
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
