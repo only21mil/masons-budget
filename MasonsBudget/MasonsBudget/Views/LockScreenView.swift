@@ -11,7 +11,7 @@ struct LockScreenView: View {
             theme.bg.ignoresSafeArea()
             VStack(spacing: 24) {
                 Image(systemName: "lock.shield.fill")
-                    .font(.system(size: 48))
+                    .font(AppFont.iconXL)
                     .foregroundStyle(theme.accent)
                 Text("Vogel Vault")
                     .font(AppFont.title)

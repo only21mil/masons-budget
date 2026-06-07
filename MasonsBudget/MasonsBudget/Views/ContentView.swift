@@ -289,25 +289,27 @@ struct ContentView: View {
                     appearanceModeRaw = AppearanceMode.light.rawValue
                 } label: {
                     Image(systemName: "sun.max.fill")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(AppFont.sectionHeaderMedium)
                         .foregroundStyle(appearanceMode == .light ? .white : theme.textMuted)
                         .frame(width: 28, height: 24)
                         .background(appearanceMode == .light ? theme.accent : Color.clear)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Use light appearance")
 
                 Button {
                     appearanceModeRaw = AppearanceMode.dark.rawValue
                 } label: {
                     Image(systemName: "moon.fill")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(AppFont.sectionHeaderMedium)
                         .foregroundStyle(appearanceMode == .dark ? .white : theme.textMuted)
                         .frame(width: 28, height: 24)
                         .background(appearanceMode == .dark ? theme.accent : Color.clear)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Use dark appearance")
             }
             .padding(2)
             .background(theme.surface2)
@@ -324,23 +326,23 @@ struct ContentView: View {
                         .frame(width: 22, height: 22)
                         .overlay(
                             Text(String(activeMember.displayName.prefix(1)))
-                                .font(.system(size: 11, weight: .bold))
+                                .font(AppFont.sectionHeader)
                                 .foregroundStyle(.white),
                         )
 
                     VStack(alignment: .leading, spacing: 1) {
                         Text(activeMember.displayName)
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(AppFont.labelSmall)
                             .foregroundStyle(theme.text)
                         Text("Vogel Vault")
-                            .font(.system(size: 10))
-                            .foregroundStyle(theme.textFaint)
+                            .font(AppFont.micro)
+                            .foregroundStyle(theme.textMuted)
                     }
 
                     Spacer()
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 10))
-                        .foregroundStyle(theme.textFaint)
+                        .font(AppFont.micro)
+                        .foregroundStyle(theme.textMuted)
                 }
             }
             .buttonStyle(.plain)
@@ -360,12 +362,12 @@ struct ContentView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "plus")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(AppFont.label)
                     Text("New transaction")
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .font(AppFont.labelSmall)
                     Spacer()
                     Text("\u{2318}N")
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(AppFont.monoMicro)
                         .foregroundStyle(.white.opacity(0.85))
                 }
                 .foregroundStyle(.white)
@@ -384,9 +386,9 @@ struct ContentView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "mic.fill")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(AppFont.label)
                     Text("Voice transaction")
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .font(AppFont.labelSmall)
                     Spacer()
                 }
                 .foregroundStyle(theme.accent)
@@ -425,7 +427,7 @@ struct ContentView: View {
                         .padding(.horizontal, 6)
 
                     Text(sidebarNetWorth)
-                        .font(.system(size: 18, weight: .bold, design: .monospaced))
+                        .font(AppFont.mediumNumberMono)
                         .foregroundStyle(theme.text)
                         .padding(.horizontal, 6)
                 }
@@ -452,7 +454,7 @@ struct ContentView: View {
                 .frame(width: 32, height: 32)
                 .overlay(
                     Text(String(activeMember.displayName.prefix(1)))
-                        .font(.system(size: 13, weight: .bold))
+                        .font(AppFont.labelStrong)
                         .foregroundStyle(.white),
                 )
                 .shadow(color: Color(hex: 0xF7931A).opacity(0.35), radius: 3, y: 2)
@@ -466,7 +468,7 @@ struct ContentView: View {
             showAddTransaction = true
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 14, weight: .semibold))
+                .font(AppFont.labelLarge)
                 .foregroundStyle(.white)
                 .frame(width: 32, height: 32)
                 .background(theme.accent)
@@ -481,7 +483,7 @@ struct ContentView: View {
             showVoiceTransaction = true
         } label: {
             Image(systemName: "mic.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .font(AppFont.label)
                 .foregroundStyle(theme.accent)
                 .frame(width: 32, height: 32)
                 .background(theme.accentSoft)
@@ -500,7 +502,7 @@ struct ContentView: View {
                 }
             } label: {
                 Image(systemName: syncStatusIcon)
-                    .font(.system(size: 13, weight: .bold))
+                    .font(AppFont.labelStrong)
                     .foregroundStyle(syncStatus.phase == .failed ? theme.danger : theme.accent)
                     .frame(width: 32, height: 32)
                     .background(syncStatus.phase == .failed ? theme.dangerSoft : theme.accentSoft)
@@ -508,7 +510,7 @@ struct ContentView: View {
                     .overlay(alignment: .topTrailing) {
                         if syncStatus.pendingCount > 1 {
                             Text("\(syncStatus.pendingCount)")
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .font(AppFont.monoNanoStrong)
                                 .foregroundStyle(.white)
                                 .frame(minWidth: 14, minHeight: 14)
                                 .background(theme.accent)
@@ -535,15 +537,15 @@ struct ContentView: View {
         if syncStatus.phase == .failed, let message = syncStatus.lastError {
             HStack(spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(AppFont.labelLargeStrong)
                     .foregroundStyle(theme.danger)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(message)
-                        .font(.system(size: 13, weight: .bold))
+                        .font(AppFont.labelStrong)
                         .foregroundStyle(theme.text)
                     Text("Saved locally. Retry sync when ready.")
-                        .font(.system(size: 11))
+                        .font(AppFont.smallRegular)
                         .foregroundStyle(theme.textMuted)
                 }
 
@@ -552,7 +554,7 @@ struct ContentView: View {
                 Button("Retry") {
                     syncStatus.retry()
                 }
-                .font(.system(size: 12, weight: .bold))
+                .font(AppFont.labelSmallStrong)
                 .foregroundStyle(theme.accent)
                 .buttonStyle(.plain)
 
@@ -560,7 +562,7 @@ struct ContentView: View {
                     syncStatus.dismissFailure()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(AppFont.sectionHeader)
                         .foregroundStyle(theme.textMuted)
                 }
                 .buttonStyle(.plain)

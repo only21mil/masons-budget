@@ -12,7 +12,7 @@ struct OnboardingView: View {
                 Spacer()
 
                 Image(systemName: "bitcoinsign.circle.fill")
-                    .font(.system(size: 64))
+                    .font(AppFont.iconHero)
                     .foregroundStyle(theme.accent)
 
                 VStack(spacing: 8) {

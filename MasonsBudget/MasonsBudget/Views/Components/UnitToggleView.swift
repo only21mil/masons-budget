@@ -23,6 +23,13 @@ enum UnitToggleSize {
         case .lg: 11
         }
     }
+
+    var font: Font {
+        switch self {
+        case .sm: AppFont.microStrong
+        case .lg: AppFont.labelSmallStrong
+        }
+    }
 }
 
 struct UnitToggleView: View {
@@ -38,7 +45,7 @@ struct UnitToggleView: View {
                     unit = u
                 } label: {
                     Text(u.label)
-                        .font(.system(size: size.fontSize, weight: .bold))
+                        .font(size.font)
                         .foregroundStyle(unit == u ? .white : theme.textMuted)
                         .frame(height: size.height)
                         .padding(.horizontal, size.horizontalPadding)
