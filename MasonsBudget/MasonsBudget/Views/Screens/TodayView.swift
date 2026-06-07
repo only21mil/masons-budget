@@ -214,7 +214,7 @@ struct TodayView: View {
         let todo = TodoItem(
             id: UUID().uuidString,
             title: draftText,
-            dueDate: Date(),
+            dueDate: nil,
             owner: activeMember,
             createdBy: "app",
         )
