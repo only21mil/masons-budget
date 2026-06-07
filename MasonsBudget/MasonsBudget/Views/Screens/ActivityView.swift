@@ -129,6 +129,7 @@ struct ActivityView: View {
 
     // MARK: - Transaction Groups
 
+    @ViewBuilder
     private var transactionGroups: some View {
         let isSearching = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
