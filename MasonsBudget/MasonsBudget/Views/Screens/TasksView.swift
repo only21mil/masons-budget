@@ -62,6 +62,17 @@ struct TasksView: View {
         let name: String
         let openCount: Int
         let meta: TodoProject?
+
+        var id: String {
+            name
+        }
+    }
+
+    private struct AreaSummary: Identifiable {
+        let name: String
+        let openCount: Int
+        let meta: TodoArea?
+
         var id: String {
             name
         }
@@ -71,19 +82,51 @@ struct TasksView: View {
         allTodos.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
     }
 
+    private func projectName(for todo: TodoItem) -> String? {
+        let trimmed = todo.project?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func areaName(for todo: TodoItem) -> String? {
+        let trimmed = todo.area?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     private var derivedProjects: [ProjectSummary] {
-        let names = Set(visibleTodos.compactMap { $0.project?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty })
-        let metaByName = Dictionary(projects.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
+        let names = Set(visibleTodos.compactMap(projectName))
+        let metaByName = Dictionary(
+            projects
+                .filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+                .compactMap { project -> (String, TodoProject)? in
+                    let name = project.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return name.isEmpty ? nil : (name, project)
+                },
+            uniquingKeysWith: { a, _ in a },
+        )
         return names.sorted().map { name in
-            let open = visibleTodos.count(where: { $0.project == name && !$0.isDone })
+            let open = visibleTodos.count(where: { projectName(for: $0) == name && !$0.isDone })
             return ProjectSummary(name: name, openCount: open, meta: metaByName[name])
         }
     }
 
-    private var derivedAreas: [String] {
-        Set(visibleTodos.compactMap { $0.area?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }).sorted()
+    private var derivedAreas: [AreaSummary] {
+        let names = Set(visibleTodos.compactMap(areaName))
+        let metaByName = Dictionary(
+            areas
+                .filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+                .compactMap { area -> (String, TodoArea)? in
+                    let name = area.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return name.isEmpty ? nil : (name, area)
+                },
+            uniquingKeysWith: { a, _ in a },
+        )
+        return names.sorted().map { name in
+            AreaSummary(
+                name: name,
+                openCount: visibleTodos.count(where: { areaName(for: $0) == name && !$0.isDone }),
+                meta: metaByName[name],
+            )
+        }
     }
 
     private var eyebrow: String {
@@ -344,24 +387,22 @@ struct TasksView: View {
                 emptyState(icon: "square.stack.3d.up", headline: "No areas yet",
                            message: "Tag a task with an area to group it here.")
             } else {
-                let areaMeta = Dictionary(areas.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
                 VStack(spacing: 0) {
-                    ForEach(Array(derivedAreas.enumerated()), id: \.element) { idx, name in
-                        let openCount = visibleTodos.count(where: { $0.area == name && !$0.isDone })
+                    ForEach(Array(derivedAreas.enumerated()), id: \.element.id) { idx, area in
                         HStack(spacing: 12) {
                             RoundedRectangle(cornerRadius: 9)
                                 .fill(theme.surface2)
                                 .frame(width: 32, height: 32)
                                 .overlay(
-                                    Image(systemName: areaMeta[name]?.icon ?? "square.stack.3d.up")
+                                    Image(systemName: area.meta?.icon ?? "square.stack.3d.up")
                                         .font(AppFont.bodyRegular)
                                         .foregroundStyle(theme.textMuted),
                                 )
-                            Text(name)
+                            Text(area.name)
                                 .font(AppFont.body)
                                 .foregroundStyle(theme.text)
                             Spacer()
-                            Text("\(openCount)")
+                            Text("\(area.openCount)")
                                 .font(AppFont.monoCaption)
                                 .foregroundStyle(theme.textMuted)
                                 .monospacedDigit()
