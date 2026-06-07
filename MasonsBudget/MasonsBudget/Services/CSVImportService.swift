@@ -178,13 +178,13 @@ final class CSVImportService: Sendable {
     func convertToSats(amount: Decimal, source: ImportSource) -> Int64 {
         switch source {
         case .strike, .coinbase, .cashApp:
-            return Int64(truncating: (amount * 100_000_000) as NSNumber)
+            return (amount * 100_000_000).clampedInt64
         case .kraken, .selfCustody, .custom:
             let absVal = abs(Double(truncating: amount as NSNumber))
             if absVal < 1 {
-                return Int64(truncating: (amount * 100_000_000) as NSNumber)
+                return (amount * 100_000_000).clampedInt64
             } else {
-                return Int64(truncating: amount as NSNumber)
+                return amount.clampedInt64
             }
         }
     }

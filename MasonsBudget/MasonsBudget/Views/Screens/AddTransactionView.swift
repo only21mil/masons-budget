@@ -372,7 +372,7 @@ struct AddTransactionView: View {
         }
 
         let signedSatsDecimal = txType == .spend ? -abs(sats) : abs(sats)
-        let signedSats = Int64(truncating: signedSatsDecimal as NSNumber)
+        let signedSats = signedSatsDecimal.clampedInt64
         let signedUsd = (Decimal(signedSats) / 100_000_000) * btcPrice
 
         let tx = Transaction(

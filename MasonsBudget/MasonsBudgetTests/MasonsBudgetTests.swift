@@ -19,7 +19,7 @@ final class MasonsBudgetTests: XCTestCase {
 
     func testAppTabCases() {
         let tabs = AppTab.allCases
-        XCTAssertEqual(tabs, [.home, .budget, .today, .stack, .more])
+        XCTAssertEqual(tabs, [.home, .budget, .tasks, .vault, .more])
         for tab in tabs {
             XCTAssertFalse(tab.label.isEmpty, "\(tab) should have a label")
             XCTAssertFalse(tab.icon.isEmpty, "\(tab) should have an icon")
