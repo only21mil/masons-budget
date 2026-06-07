@@ -67,6 +67,8 @@ struct MasonsBudgetApp: App {
     @AppStorage("app_lock_enabled") private var appLockEnabled = true
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
     @AppStorage("appearance_mode") private var appearanceModeRaw = AppearanceMode.system.rawValue
+    @StateObject private var syncStatus = SyncStatusStore.shared
+    @StateObject private var taskUndoStore = TaskUndoStore.shared
     @State private var isUnlocked = false
     @State private var syncTimer: Timer?
 
@@ -122,6 +124,8 @@ struct MasonsBudgetApp: App {
             .onChange(of: selectedMember) { _, _ in
                 Task { await syncFromConvex() }
             }
+            .environmentObject(syncStatus)
+            .environmentObject(taskUndoStore)
             .themed()
             .preferredColorScheme(appearanceMode.colorScheme)
         }
