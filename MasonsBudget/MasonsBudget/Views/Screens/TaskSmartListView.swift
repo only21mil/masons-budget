@@ -56,7 +56,45 @@ struct TaskRowView: View {
     @Environment(\.theme) var theme
     @Environment(\.modelContext) private var modelContext
 
+    // Custom trailing swipe (SAT-1405): native .swipeActions only fire inside a List, but
+    // the task screens render rows in a page-level ScrollView+VStack. This reveal works in
+    // that context. The contextMenu (long-press) + checkbox remain as equivalent fallbacks.
+    @State private var settledOffset: CGFloat = 0
+    @GestureState private var dragOffset: CGFloat = 0
+    private static let swipeActionWidth: CGFloat = 72
+    private var revealWidth: CGFloat { Self.swipeActionWidth * 2 }
+    private var swipeOffset: CGFloat { min(0, max(-revealWidth, settledOffset + dragOffset)) }
+
     var body: some View {
+        ZStack(alignment: .trailing) {
+            trailingSwipeActions
+
+            rowForeground
+                .background(theme.surface)
+                .offset(x: swipeOffset)
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: settledOffset)
+                .gesture(swipeGesture)
+        }
+        .clipped()
+        .contextMenu {
+            Button(action: toggleDone) {
+                Label(todo.isDone ? "Mark not done" : "Mark done",
+                      systemImage: todo.isDone ? "arrow.uturn.backward" : "checkmark.circle")
+            }
+            Button(action: toggleFlag) {
+                Label(todo.isFlagged ? "Remove flag" : "Flag", systemImage: AppIcon.flagFilled)
+            }
+            Button(role: .destructive) {
+                deleteSelf()
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var rowForeground: some View {
         HStack(spacing: 12) {
             // Discrete tap-zone: completes without triggering row navigation.
             Button(action: toggleDone) {
@@ -78,40 +116,62 @@ struct TaskRowView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .contextMenu {
-            Button(action: toggleDone) {
-                Label(todo.isDone ? "Mark not done" : "Mark done",
-                      systemImage: todo.isDone ? "arrow.uturn.backward" : "checkmark.circle")
-            }
-            Button(action: toggleFlag) {
-                Label(todo.isFlagged ? "Remove flag" : "Flag", systemImage: AppIcon.flagFilled)
-            }
-            Button(role: .destructive) {
-                deleteSelf()
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
+    }
+
+    private var trailingSwipeActions: some View {
+        HStack(spacing: 0) {
+            swipeActionButton(
+                label: todo.isFlagged ? "Unflag" : "Flag",
+                icon: AppIcon.flagFilled,
+                tint: .orange,
+                action: toggleFlag,
+            )
+            swipeActionButton(
+                label: "Delete",
+                icon: "trash",
+                tint: theme.danger,
+                action: deleteSelf,
+            )
         }
-        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button(action: toggleDone) {
-                Label(todo.isDone ? "Undo" : "Done",
-                      systemImage: todo.isDone ? "arrow.uturn.backward" : "checkmark")
+    }
+
+    private func swipeActionButton(
+        label: String,
+        icon: String,
+        tint: Color,
+        action: @escaping () -> Void,
+    ) -> some View {
+        Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { settledOffset = 0 }
+            action()
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(AppFont.iconSmall)
+                Text(label)
+                    .font(AppFont.micro)
             }
-            .tint(theme.accent)
+            .foregroundStyle(.white)
+            .frame(width: Self.swipeActionWidth)
+            .frame(maxHeight: .infinity)
+            .background(tint)
         }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button(role: .destructive) {
-                deleteSelf()
-            } label: {
-                Label("Delete", systemImage: "trash")
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: 18, coordinateSpace: .local)
+            .updating($dragOffset) { value, state, _ in
+                // Only claim predominantly-horizontal drags so vertical scrolling passes through.
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                state = value.translation.width
             }
-            Button(action: toggleFlag) {
-                Label(todo.isFlagged ? "Unflag" : "Flag", systemImage: AppIcon.flagFilled)
+            .onEnded { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                let proposed = settledOffset + value.translation.width
+                settledOffset = proposed < -revealWidth / 2 ? -revealWidth : 0
             }
-            .tint(.orange)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText)
     }
 
     private var rowContent: some View {
