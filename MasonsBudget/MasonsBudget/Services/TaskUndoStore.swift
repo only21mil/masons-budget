@@ -71,20 +71,21 @@ final class TaskUndoStore: ObservableObject {
 
     @Published private(set) var pending: DeletedTodoSnapshot?
 
-    private var dismissalTask: Task<Void, Never>?
+    private var expiryTask: Task<Void, Never>?
 
     private init() {}
 
     func delete(_ todo: TodoItem, in modelContext: ModelContext) {
         let snapshot = DeletedTodoSnapshot(todo: todo)
+        commitPendingDelete()
         modelContext.delete(todo)
         try? modelContext.save()
-        AppWriteSyncService.deleteTodo(id: snapshot.id)
         present(snapshot)
     }
 
     func restore(in modelContext: ModelContext) {
         guard let snapshot = pending else { return }
+        clearPending()
         let todo: TodoItem
         if let existing = existingTodo(id: snapshot.id, in: modelContext) {
             snapshot.apply(to: existing)
@@ -96,26 +97,35 @@ final class TaskUndoStore: ObservableObject {
         }
         try? modelContext.save()
         AppWriteSyncService.pushTodo(todo)
-        dismiss()
     }
 
     func dismiss() {
-        dismissalTask?.cancel()
-        dismissalTask = nil
-        pending = nil
+        commitPendingDelete()
     }
 
     private func present(_ snapshot: DeletedTodoSnapshot) {
-        dismissalTask?.cancel()
+        expiryTask?.cancel()
         pending = snapshot
-        dismissalTask = Task { [weak self] in
+        expiryTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 6_000_000_000)
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                guard self?.pending?.id == snapshot.id else { return }
-                self?.dismiss()
+                self?.commitPendingDelete(matching: snapshot.id)
             }
         }
+    }
+
+    private func clearPending() {
+        expiryTask?.cancel()
+        expiryTask = nil
+        pending = nil
+    }
+
+    private func commitPendingDelete(matching id: String? = nil) {
+        guard let snapshot = pending else { return }
+        if let id, snapshot.id != id { return }
+        clearPending()
+        AppWriteSyncService.deleteTodo(id: snapshot.id)
     }
 
     private func existingTodo(id: String, in modelContext: ModelContext) -> TodoItem? {
