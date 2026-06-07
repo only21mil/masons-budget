@@ -56,7 +56,8 @@ final class MC2SyncService {
         } else {
             // Maddox does not have dedicated MC2 finance files yet. Keep his sync
             // limited to shared todos until those data files exist.
-            log.info("No dedicated MC2 finance sync path for \(currentMember.rawValue, privacy: .public)")
+            let member = currentMember
+            log.info("No dedicated MC2 finance sync path for \(member.rawValue, privacy: .public)")
         }
 
         recordNetWorthSnapshot()
