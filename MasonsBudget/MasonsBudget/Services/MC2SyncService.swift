@@ -335,56 +335,158 @@ final class MC2SyncService {
     }
 
     private func replaceBudgetData(forOwner owner: FamilyMember, snapshots: [MonthlyBudgetSnapshot], categories: [BudgetCategory]) {
+        let existingSnapshots: [MonthlyBudgetSnapshot]
+        let existingCats: [BudgetCategory]
         do {
-            let existingSnapshots = try context.fetch(FetchDescriptor<MonthlyBudgetSnapshot>())
-            let prefix = owner == .victor ? "" : "\(owner.rawValue):"
-            for s in existingSnapshots {
-                let isOwned = owner == .victor ? !s.monthKey.contains(":") : s.monthKey.hasPrefix(prefix)
-                if isOwned { context.delete(s) }
-            }
-            let existingCats = try context.fetch(FetchDescriptor<BudgetCategory>())
-            for cat in existingCats where cat.owner == owner.rawValue {
-                context.delete(cat)
-            }
+            existingSnapshots = try context.fetch(FetchDescriptor<MonthlyBudgetSnapshot>())
+            existingCats = try context.fetch(FetchDescriptor<BudgetCategory>())
         } catch {
-            log.error("Failed to scope-delete budget data: \(error.localizedDescription)")
+            log.error("Failed to fetch budget data: \(error.localizedDescription)")
+            return
+        }
+
+        // Snapshots: keyed by unique monthKey. Index ALL existing rows so an insert
+        // can never collide with an out-of-scope monthKey.
+        let prefix = owner == .victor ? "" : "\(owner.rawValue):"
+        let remoteSnapshotKeys = Set(snapshots.map(\.monthKey))
+        var existingSnapshotByKey: [String: MonthlyBudgetSnapshot] = [:]
+        for s in existingSnapshots {
+            existingSnapshotByKey[s.monthKey] = s
+        }
+        for s in existingSnapshots {
+            let isOwned = owner == .victor ? !s.monthKey.contains(":") : s.monthKey.hasPrefix(prefix)
+            guard isOwned else { continue }
+            guard !remoteSnapshotKeys.contains(s.monthKey) else { continue }
+            context.delete(s)
         }
         for snapshot in snapshots {
-            context.insert(snapshot)
+            if let local = existingSnapshotByKey[snapshot.monthKey] {
+                updateMonthlyBudgetSnapshot(local, from: snapshot)
+            } else {
+                context.insert(snapshot)
+            }
+        }
+
+        // Categories: keyed by unique name. Index ALL existing rows so an insert
+        // can never collide with an out-of-scope name.
+        let remoteCatKeys = Set(categories.map(\.name))
+        var existingCatByKey: [String: BudgetCategory] = [:]
+        for cat in existingCats {
+            existingCatByKey[cat.name] = cat
+        }
+        for cat in existingCats where cat.owner == owner.rawValue {
+            guard !remoteCatKeys.contains(cat.name) else { continue }
+            context.delete(cat)
         }
         for cat in categories {
-            context.insert(cat)
+            if let local = existingCatByKey[cat.name] {
+                updateBudgetCategory(local, from: cat)
+            } else {
+                context.insert(cat)
+            }
         }
+    }
+
+    private func updateMonthlyBudgetSnapshot(_ local: MonthlyBudgetSnapshot, from remote: MonthlyBudgetSnapshot) {
+        local.coinbaseOneBalance = remote.coinbaseOneBalance
+        local.weeklyGross = remote.weeklyGross
+        local.weeklyStrike = remote.weeklyStrike
+        local.weeklyRiver = remote.weeklyRiver
+        local.monthlyGross = remote.monthlyGross
+        local.mtdIncome = remote.mtdIncome
+        local.ytdIncome = remote.ytdIncome
+        local.payFrequency = remote.payFrequency
+        local.strategyNote = remote.strategyNote
+        local.lastUpdated = remote.lastUpdated
+    }
+
+    private func updateBudgetCategory(_ local: BudgetCategory, from remote: BudgetCategory) {
+        local.icon = remote.icon
+        local.monthlyBudget = remote.monthlyBudget
+        local.sortOrder = remote.sortOrder
+        local.isIncome = remote.isIncome
+        local.owner = remote.owner
     }
 
     private func replaceBTCAccounts(ownedBy owners: [FamilyMember], with accounts: [BTCAccount]) {
+        let existing: [BTCAccount]
         do {
-            let existing = try context.fetch(FetchDescriptor<BTCAccount>())
-            for account in existing where owners.contains(account.ownerMember) {
-                context.delete(account)
-            }
+            existing = try context.fetch(FetchDescriptor<BTCAccount>())
         } catch {
-            log.error("Failed to delete BTCAccount slice: \(error.localizedDescription)")
+            log.error("Failed to fetch BTCAccount slice: \(error.localizedDescription)")
+            return
+        }
+
+        let remoteKeys = Set(accounts.map(\.key))
+        var existingByKey: [String: BTCAccount] = [:]
+        for account in existing {
+            existingByKey[account.key] = account
+        }
+
+        for account in existing where owners.contains(account.ownerMember) {
+            guard !remoteKeys.contains(account.key) else { continue }
+            context.delete(account)
         }
 
         for account in accounts {
-            context.insert(account)
+            if let local = existingByKey[account.key] {
+                updateBTCAccount(local, from: account)
+            } else {
+                context.insert(account)
+            }
         }
     }
 
+    private func updateBTCAccount(_ local: BTCAccount, from remote: BTCAccount) {
+        local.label = remote.label
+        local.custody = remote.custody
+        local.btc = remote.btc
+        local.fiat = remote.fiat
+        local.owner = remote.owner
+        local.lastUpdated = remote.lastUpdated
+    }
+
     private func replaceTransactions(ownedBy owners: [FamilyMember], with transactions: [Transaction]) {
+        let existing: [Transaction]
         do {
-            let existing = try context.fetch(FetchDescriptor<Transaction>())
-            for transaction in existing where owners.contains(transaction.ownerMember) && transaction.createdBy == "mc2" {
-                context.delete(transaction)
-            }
+            existing = try context.fetch(FetchDescriptor<Transaction>())
         } catch {
-            log.error("Failed to delete Transaction slice: \(error.localizedDescription)")
+            log.error("Failed to fetch Transaction slice: \(error.localizedDescription)")
+            return
+        }
+
+        let remoteIds = Set(transactions.map(\.id))
+        var existingById: [String: Transaction] = [:]
+        for transaction in existing {
+            existingById[transaction.id] = transaction
+        }
+
+        for transaction in existing where owners.contains(transaction.ownerMember) && transaction.createdBy == "mc2" {
+            guard !remoteIds.contains(transaction.id) else { continue }
+            context.delete(transaction)
         }
 
         for transaction in transactions {
-            context.insert(transaction)
+            if let local = existingById[transaction.id] {
+                updateTransaction(local, from: transaction)
+            } else {
+                context.insert(transaction)
+            }
         }
+    }
+
+    private func updateTransaction(_ local: Transaction, from remote: Transaction) {
+        local.date = remote.date
+        local.merchant = remote.merchant
+        local.amount = remote.amount
+        local.category = remote.category
+        local.amountSats = remote.amountSats
+        local.card = remote.card
+        local.note = remote.note
+        local.owner = remote.owner
+        local.createdBy = remote.createdBy
+        local.createdAt = remote.createdAt
+        local.sourceFile = remote.sourceFile
     }
 
     private func replaceBTCBuys(ownedBy owners: [FamilyMember], with buys: [BTCBuy]) {
@@ -434,18 +536,46 @@ final class MC2SyncService {
     }
 
     private func replaceBTCBillPays(ownedBy owners: [FamilyMember], with billPays: [BTCBillPay]) {
+        let existing: [BTCBillPay]
         do {
-            let existing = try context.fetch(FetchDescriptor<BTCBillPay>())
-            for billPay in existing where owners.contains(billPay.ownerMember) {
-                context.delete(billPay)
-            }
+            existing = try context.fetch(FetchDescriptor<BTCBillPay>())
         } catch {
-            log.error("Failed to delete BTCBillPay slice: \(error.localizedDescription)")
+            log.error("Failed to fetch BTCBillPay slice: \(error.localizedDescription)")
+            return
+        }
+
+        let remoteIds = Set(billPays.map(\.id))
+        var existingById: [String: BTCBillPay] = [:]
+        for billPay in existing {
+            existingById[billPay.id] = billPay
+        }
+
+        for billPay in existing where owners.contains(billPay.ownerMember) {
+            guard !remoteIds.contains(billPay.id) else { continue }
+            context.delete(billPay)
         }
 
         for billPay in billPays {
-            context.insert(billPay)
+            if let local = existingById[billPay.id] {
+                updateBTCBillPay(local, from: billPay)
+            } else {
+                context.insert(billPay)
+            }
         }
+    }
+
+    private func updateBTCBillPay(_ local: BTCBillPay, from remote: BTCBillPay) {
+        local.date = remote.date
+        local.merchant = remote.merchant
+        local.category = remote.category
+        local.amountUSD = remote.amountUSD
+        local.btcSpent = remote.btcSpent
+        local.btcPrice = remote.btcPrice
+        local.feeUSD = remote.feeUSD
+        local.platform = remote.platform
+        local.note = remote.note
+        local.reference = remote.reference
+        local.owner = remote.owner
     }
 
     func replaceTodos(visibleTo _: FamilyMember, with remoteTodos: [TodoItem]) {
@@ -504,31 +634,77 @@ final class MC2SyncService {
     }
 
     private func replaceIncomeTransactions(forOwner owner: FamilyMember, with transactions: [Transaction]) {
+        let existing: [Transaction]
         do {
-            let existing = try context.fetch(FetchDescriptor<Transaction>())
-            for tx in existing where tx.ownerMember == owner && tx.category == "Income" && tx.createdBy == "mc2" {
-                context.delete(tx)
-            }
+            existing = try context.fetch(FetchDescriptor<Transaction>())
         } catch {
-            log.error("Failed to delete income transactions: \(error.localizedDescription)")
+            log.error("Failed to fetch income transactions: \(error.localizedDescription)")
+            return
         }
+
+        let remoteIds = Set(transactions.map(\.id))
+        var existingById: [String: Transaction] = [:]
+        for tx in existing {
+            existingById[tx.id] = tx
+        }
+
+        for tx in existing where tx.ownerMember == owner && tx.category == "Income" && tx.createdBy == "mc2" {
+            guard !remoteIds.contains(tx.id) else { continue }
+            context.delete(tx)
+        }
+
         for tx in transactions {
-            context.insert(tx)
+            if let local = existingById[tx.id] {
+                updateTransaction(local, from: tx)
+            } else {
+                context.insert(tx)
+            }
         }
     }
 
     private func replaceHoldingAccounts(visibleTo viewer: FamilyMember, with accounts: [HoldingAccount]) {
+        let existing: [HoldingAccount]
         do {
-            let existing = try context.fetch(FetchDescriptor<HoldingAccount>())
-            for account in existing where viewer.canSee(dataOwnedBy: account.ownerMember) {
-                context.delete(account)
-            }
+            existing = try context.fetch(FetchDescriptor<HoldingAccount>())
         } catch {
-            log.error("Failed to delete HoldingAccount slice: \(error.localizedDescription)")
+            log.error("Failed to fetch HoldingAccount slice: \(error.localizedDescription)")
+            return
+        }
+
+        let remoteNames = Set(accounts.map(\.name))
+        var existingByName: [String: HoldingAccount] = [:]
+        for account in existing {
+            existingByName[account.name] = account
+        }
+
+        for account in existing where viewer.canSee(dataOwnedBy: account.ownerMember) {
+            guard !remoteNames.contains(account.name) else { continue }
+            context.delete(account)
         }
 
         for account in accounts {
-            context.insert(account)
+            if let local = existingByName[account.name] {
+                // Update the existing (uniquely-named) parent in place. The remote
+                // parent object is discarded; only its freshly-built cascade children
+                // are reparented onto the local row. Holding / HoldingLot carry no
+                // unique attribute, so delete+reinsert of children is collision-safe.
+                updateHoldingAccount(local, from: account)
+            } else {
+                // Brand-new account: its cascade children come with it.
+                context.insert(account)
+            }
         }
+    }
+
+    private func updateHoldingAccount(_ local: HoldingAccount, from remote: HoldingAccount) {
+        local.provider = remote.provider
+        local.owner = remote.owner
+        local.totalValue = remote.totalValue
+        local.weeklyContribution = remote.weeklyContribution
+        local.lastUpdated = remote.lastUpdated
+        for h in local.holdings {
+            context.delete(h)
+        }
+        local.holdings = remote.holdings
     }
 }
