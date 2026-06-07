@@ -16,7 +16,7 @@ struct VoiceTransactionView: View {
 
     private let parser = VoiceParser()
     private var btcPrice: Decimal {
-        BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+        BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
     }
 
     private var activeMember: FamilyMember {

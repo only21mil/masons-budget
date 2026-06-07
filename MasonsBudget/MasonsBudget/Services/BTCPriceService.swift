@@ -15,6 +15,7 @@ actor BTCPriceService {
     static let change24hKey = "btc_live_price_change_24h"
     static let sourceKey = "btc_live_price_source"
     static let updatedAtKey = "btc_live_price_updated_at"
+    static let fallbackPriceUSD: Decimal = 104_000
 
     private let session: URLSession
     private let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "BTCPrice")

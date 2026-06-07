@@ -23,7 +23,7 @@ struct DashboardView: View {
     }
 
     private var btcPrice: Decimal {
-        BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+        BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
     }
 
     private func percent(_ numerator: Decimal, of denominator: Decimal) -> Int {

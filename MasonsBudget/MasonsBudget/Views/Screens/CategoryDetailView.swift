@@ -25,7 +25,7 @@ struct CategoryDetailView: View {
     }
 
     private var btcPrice: Decimal {
-        BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+        BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
     }
 
     private var categoryTransactions: [Transaction] {

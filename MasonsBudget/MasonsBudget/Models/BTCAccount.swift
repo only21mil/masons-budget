@@ -19,7 +19,7 @@ final class BTCAccount {
         if let liveBTCPrice, liveBTCPrice > 0 {
             return btc * liveBTCPrice
         }
-        return fiat > 0 ? fiat : btc * AppTheme.fallbackBTCPrice
+        return fiat > 0 ? fiat : btc * BTCPriceService.fallbackPriceUSD
     }
 
     init(

@@ -21,7 +21,7 @@ struct ActivityView: View {
     }
 
     private var btcPrice: Decimal {
-        BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+        BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
     }
 
     enum TxFilter: String, CaseIterable {

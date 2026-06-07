@@ -262,7 +262,7 @@ final class CSVImportService: Sendable {
     }
 
     private func usdValue(fromSats sats: Int64) -> Decimal {
-        let price = BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+        let price = BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
         return (Decimal(sats) / 100_000_000) * price
     }
 

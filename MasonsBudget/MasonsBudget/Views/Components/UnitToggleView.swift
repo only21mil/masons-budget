@@ -39,7 +39,6 @@ struct UnitToggleView: View {
                 } label: {
                     Text(u.label)
                         .font(.system(size: size.fontSize, weight: .bold))
-                        .tracking(0.04 * size.fontSize)
                         .foregroundStyle(unit == u ? .white : theme.textMuted)
                         .frame(height: size.height)
                         .padding(.horizontal, size.horizontalPadding)
@@ -47,6 +46,7 @@ struct UnitToggleView: View {
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Show amounts in \(u.label)")
             }
         }
         .padding(2)

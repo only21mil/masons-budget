@@ -54,7 +54,7 @@ final class Transaction {
         set { owner = newValue.rawValue }
     }
 
-    func satsValue(btcPrice: Decimal = AppTheme.fallbackBTCPrice) -> Decimal {
+    func satsValue(btcPrice: Decimal = BTCPriceService.fallbackPriceUSD) -> Decimal {
         if let amountSats {
             return Decimal(amountSats)
         }
@@ -79,12 +79,12 @@ final class Transaction {
         isSpend ? -abs(amount) : abs(amount)
     }
 
-    func displaySatsValue(btcPrice: Decimal = AppTheme.fallbackBTCPrice) -> Decimal {
+    func displaySatsValue(btcPrice: Decimal = BTCPriceService.fallbackPriceUSD) -> Decimal {
         let sats = abs(satsValue(btcPrice: btcPrice))
         return isSpend ? -sats : sats
     }
 
-    func spendSatsValue(btcPrice: Decimal = AppTheme.fallbackBTCPrice) -> Decimal {
+    func spendSatsValue(btcPrice: Decimal = BTCPriceService.fallbackPriceUSD) -> Decimal {
         isSpend ? abs(satsValue(btcPrice: btcPrice)) : 0
     }
 }

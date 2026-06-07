@@ -20,7 +20,7 @@ struct AddTransactionView: View {
     @State private var amountValidationMessage: String?
 
     private var btcPrice: Decimal {
-        BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+        BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
     }
 
     private var activeMember: FamilyMember {

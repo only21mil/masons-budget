@@ -17,7 +17,7 @@ struct BTCBillPayView: View {
     }
 
     private var btcPrice: Decimal {
-        BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+        BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
     }
 
     private var visibleBillPays: [BTCBillPay] {

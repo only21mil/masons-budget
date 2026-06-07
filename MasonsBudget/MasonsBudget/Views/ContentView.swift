@@ -111,6 +111,13 @@ struct ContentView: View {
         DisplayUnit(rawValue: displayUnitRaw) ?? .btc
     }
 
+    private var unitBinding: Binding<DisplayUnit> {
+        Binding(
+            get: { unit },
+            set: { displayUnitRaw = $0.rawValue },
+        )
+    }
+
     private var appearanceMode: AppearanceMode {
         AppearanceMode(rawValue: appearanceModeRaw) ?? .system
     }
@@ -153,7 +160,7 @@ struct ContentView: View {
                                     avatarButton
                                 }
                                 ToolbarItem(placement: .principal) {
-                                    unitToggleCompact
+                                    UnitToggleView(unit: unitBinding, size: .sm)
                                 }
                                 ToolbarItem(placement: .topBarTrailing) {
                                     HStack(spacing: 8) {
@@ -392,7 +399,7 @@ struct ContentView: View {
         }
 
         private var sidebarNetWorth: String {
-            let btcPrice = BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+            let btcPrice = BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
             let totalBtc = btcAccounts
                 .filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
                 .reduce(Decimal(0)) { $0 + $1.btc }
@@ -425,7 +432,7 @@ struct ContentView: View {
                 .padding(.horizontal, 10)
 
                 HStack(spacing: 6) {
-                    unitToggleCompact
+                    UnitToggleView(unit: unitBinding, size: .sm)
                     Spacer()
                 }
                 .padding(.horizontal, 10)
@@ -451,6 +458,7 @@ struct ContentView: View {
                 .shadow(color: Color(hex: 0xF7931A).opacity(0.35), radius: 3, y: 2)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Switch profile")
     }
 
     private var addButton: some View {
@@ -465,6 +473,7 @@ struct ContentView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .shadow(color: Color(hex: 0xF7931A).opacity(0.35), radius: 3, y: 2)
         }
+        .accessibilityLabel("New transaction")
     }
 
     private var voiceButton: some View {
@@ -479,28 +488,7 @@ struct ContentView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
-    }
-
-    private var unitToggleCompact: some View {
-        HStack(spacing: 0) {
-            ForEach(DisplayUnit.allCases) { u in
-                Button {
-                    displayUnitRaw = u.rawValue
-                } label: {
-                    Text(u.label)
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundStyle(unit == u ? .white : theme.textMuted)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(unit == u ? theme.accent : Color.clear)
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(2)
-        .background(theme.surface2)
-        .clipShape(Capsule())
+        .accessibilityLabel("Voice transaction")
     }
 
     @ViewBuilder
@@ -530,6 +518,7 @@ struct ContentView: View {
                     }
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(syncStatus.phase == .failed ? "Retry sync" : "Sync status")
         }
     }
 
@@ -575,6 +564,7 @@ struct ContentView: View {
                         .foregroundStyle(theme.textMuted)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss sync failure")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
