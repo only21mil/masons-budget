@@ -8,6 +8,7 @@ struct ProjectTodoListView: View {
     @Query(sort: \TodoItem.dueDate) private var allTodos: [TodoItem]
 
     let projectName: String
+    var owner: FamilyMember = .victor
 
     private var activeMember: FamilyMember {
         FamilyMember(rawValue: selectedMemberRaw) ?? .victor
@@ -25,6 +26,7 @@ struct ProjectTodoListView: View {
     private var todos: [TodoItem] {
         allTodos.filter {
             activeMember.canSee(dataOwnedBy: $0.ownerMember) &&
+                $0.ownerMember == owner &&
                 projectName(for: $0) == normalizedProjectName
         }
     }

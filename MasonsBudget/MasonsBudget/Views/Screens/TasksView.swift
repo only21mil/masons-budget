@@ -59,22 +59,25 @@ struct TasksView: View {
     // appear on visible todos (TodoProject/TodoArea records were never populated).
     // Where a matching TodoProject record exists, its icon/color metadata is used.
     private struct ProjectSummary: Identifiable {
+        let owner: FamilyMember
         let name: String
         let openCount: Int
         let meta: TodoProject?
 
+        // Composite (owner, name) so same-named projects from different owners stay distinct.
         var id: String {
-            name
+            "\(owner.rawValue)|\(name)"
         }
     }
 
     private struct AreaSummary: Identifiable {
+        let owner: FamilyMember
         let name: String
         let openCount: Int
         let meta: TodoArea?
 
         var id: String {
-            name
+            "\(owner.rawValue)|\(name)"
         }
     }
 
@@ -92,39 +95,60 @@ struct TasksView: View {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    /// Distinct (owner, name) pairs from the viewer-visible todos, in a stable order.
+    private func ownerNamePairs(_ nameOf: (TodoItem) -> String?) -> [(owner: FamilyMember, name: String)] {
+        var seen = Set<String>()
+        var ordered: [(owner: FamilyMember, name: String)] = []
+        for todo in visibleTodos {
+            guard let name = nameOf(todo) else { continue }
+            if seen.insert("\(todo.ownerMember.rawValue)|\(name)").inserted {
+                ordered.append((todo.ownerMember, name))
+            }
+        }
+        return ordered.sorted { ($0.name, $0.owner.rawValue) < ($1.name, $1.owner.rawValue) }
+    }
+
     private var derivedProjects: [ProjectSummary] {
-        let names = Set(visibleTodos.compactMap(projectName))
-        let metaByName = Dictionary(
+        let metaByKey = Dictionary(
             projects
                 .filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
                 .compactMap { project -> (String, TodoProject)? in
                     let name = project.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                    return name.isEmpty ? nil : (name, project)
+                    return name.isEmpty ? nil : ("\(project.ownerMember.rawValue)|\(name)", project)
                 },
             uniquingKeysWith: { a, _ in a },
         )
-        return names.sorted().map { name in
-            let open = visibleTodos.count(where: { projectName(for: $0) == name && !$0.isDone })
-            return ProjectSummary(name: name, openCount: open, meta: metaByName[name])
+        return ownerNamePairs(projectName).map { pair in
+            let open = visibleTodos.count(where: {
+                $0.ownerMember == pair.owner && projectName(for: $0) == pair.name && !$0.isDone
+            })
+            return ProjectSummary(
+                owner: pair.owner,
+                name: pair.name,
+                openCount: open,
+                meta: metaByKey["\(pair.owner.rawValue)|\(pair.name)"],
+            )
         }
     }
 
     private var derivedAreas: [AreaSummary] {
-        let names = Set(visibleTodos.compactMap(areaName))
-        let metaByName = Dictionary(
+        let metaByKey = Dictionary(
             areas
                 .filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
                 .compactMap { area -> (String, TodoArea)? in
                     let name = area.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                    return name.isEmpty ? nil : (name, area)
+                    return name.isEmpty ? nil : ("\(area.ownerMember.rawValue)|\(name)", area)
                 },
             uniquingKeysWith: { a, _ in a },
         )
-        return names.sorted().map { name in
+        return ownerNamePairs(areaName).map { pair in
             AreaSummary(
-                name: name,
-                openCount: visibleTodos.count(where: { areaName(for: $0) == name && !$0.isDone }),
-                meta: metaByName[name],
+                owner: pair.owner,
+                name: pair.name,
+                openCount: visibleTodos.count(where: {
+                    $0.ownerMember == pair.owner && areaName(for: $0) == pair.name && !$0.isDone
+                }),
+                meta: metaByKey["\(pair.owner.rawValue)|\(pair.name)"],
             )
         }
     }
@@ -305,7 +329,7 @@ struct TasksView: View {
                 VStack(spacing: 0) {
                     ForEach(Array(derivedProjects.enumerated()), id: \.element.id) { idx, summary in
                         NavigationLink {
-                            ProjectTodoListView(projectName: summary.name)
+                            ProjectTodoListView(projectName: summary.name, owner: summary.owner)
                         } label: {
                             projectRow(summary)
                         }
@@ -338,9 +362,16 @@ struct TasksView: View {
                         }
                     },
                 )
-            Text(summary.name)
-                .font(AppFont.body)
-                .foregroundStyle(theme.text)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(summary.name)
+                    .font(AppFont.body)
+                    .foregroundStyle(theme.text)
+                if summary.owner != activeMember {
+                    Text(summary.owner.displayName)
+                        .font(AppFont.labelSmallRegular)
+                        .foregroundStyle(theme.textMuted)
+                }
+            }
             Spacer()
             Text("\(summary.openCount)")
                 .font(AppFont.monoCaption)
@@ -390,7 +421,7 @@ struct TasksView: View {
                 VStack(spacing: 0) {
                     ForEach(Array(derivedAreas.enumerated()), id: \.element.id) { idx, area in
                         NavigationLink {
-                            AreaTodoListView(areaName: area.name)
+                            AreaTodoListView(areaName: area.name, owner: area.owner)
                         } label: {
                             HStack(spacing: 12) {
                                 RoundedRectangle(cornerRadius: 9)
@@ -401,9 +432,16 @@ struct TasksView: View {
                                             .font(AppFont.iconTiny)
                                             .foregroundStyle(theme.textMuted),
                                     )
-                                Text(area.name)
-                                    .font(AppFont.body)
-                                    .foregroundStyle(theme.text)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(area.name)
+                                        .font(AppFont.body)
+                                        .foregroundStyle(theme.text)
+                                    if area.owner != activeMember {
+                                        Text(area.owner.displayName)
+                                            .font(AppFont.labelSmallRegular)
+                                            .foregroundStyle(theme.textMuted)
+                                    }
+                                }
                                 Spacer()
                                 Text("\(area.openCount)")
                                     .font(AppFont.monoCaption)

@@ -41,59 +41,75 @@ struct ProjectsView: View {
     }
 
     private struct ProjectSummary: Identifiable {
+        let owner: FamilyMember
         let name: String
         let openCount: Int
         let meta: TodoProject?
 
+        // Composite (owner, name) so same-named projects from different owners stay distinct.
         var id: String {
-            name
+            "\(owner.rawValue)|\(name)"
         }
     }
 
     private struct AreaSummary: Identifiable {
+        let owner: FamilyMember
         let name: String
         let openCount: Int
         let meta: TodoArea?
 
         var id: String {
-            name
+            "\(owner.rawValue)|\(name)"
         }
     }
 
+    /// Distinct (owner, name) pairs from the viewer-visible todos, preserving a stable order.
+    private func ownerNamePairs(_ nameOf: (TodoItem) -> String?) -> [(owner: FamilyMember, name: String)] {
+        var seen = Set<String>()
+        var ordered: [(owner: FamilyMember, name: String)] = []
+        for todo in visibleTodos {
+            guard let name = nameOf(todo) else { continue }
+            if seen.insert("\(todo.ownerMember.rawValue)|\(name)").inserted {
+                ordered.append((todo.ownerMember, name))
+            }
+        }
+        return ordered.sorted { ($0.name, $0.owner.rawValue) < ($1.name, $1.owner.rawValue) }
+    }
+
     private var derivedProjects: [ProjectSummary] {
-        let names = Set(
-            visibleTodos.compactMap(projectName),
-        )
-        let metaByName = Dictionary(
+        let metaByKey = Dictionary(
             projects
                 .filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
-                .map { ($0.name, $0) },
+                .map { ("\($0.ownerMember.rawValue)|\($0.name)", $0) },
             uniquingKeysWith: { a, _ in a },
         )
-        return names.sorted().map { name in
+        return ownerNamePairs(projectName).map { pair in
             ProjectSummary(
-                name: name,
-                openCount: visibleTodos.count(where: { projectName(for: $0) == name && !$0.isDone }),
-                meta: metaByName[name],
+                owner: pair.owner,
+                name: pair.name,
+                openCount: visibleTodos.count(where: {
+                    $0.ownerMember == pair.owner && projectName(for: $0) == pair.name && !$0.isDone
+                }),
+                meta: metaByKey["\(pair.owner.rawValue)|\(pair.name)"],
             )
         }
     }
 
     private var derivedAreas: [AreaSummary] {
-        let names = Set(
-            visibleTodos.compactMap(areaName),
-        )
-        let metaByName = Dictionary(
+        let metaByKey = Dictionary(
             areas
                 .filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
-                .map { ($0.name, $0) },
+                .map { ("\($0.ownerMember.rawValue)|\($0.name)", $0) },
             uniquingKeysWith: { a, _ in a },
         )
-        return names.sorted().map { name in
+        return ownerNamePairs(areaName).map { pair in
             AreaSummary(
-                name: name,
-                openCount: visibleTodos.count(where: { areaName(for: $0) == name && !$0.isDone }),
-                meta: metaByName[name],
+                owner: pair.owner,
+                name: pair.name,
+                openCount: visibleTodos.count(where: {
+                    $0.ownerMember == pair.owner && areaName(for: $0) == pair.name && !$0.isDone
+                }),
+                meta: metaByKey["\(pair.owner.rawValue)|\(pair.name)"],
             )
         }
     }
@@ -213,7 +229,7 @@ struct ProjectsView: View {
                 VStack(spacing: 0) {
                     ForEach(Array(derivedProjects.enumerated()), id: \.element.id) { idx, project in
                         NavigationLink {
-                            ProjectTodoListView(projectName: project.name)
+                            ProjectTodoListView(projectName: project.name, owner: project.owner)
                         } label: {
                             projectRow(project: project)
                         }
@@ -247,9 +263,16 @@ struct ProjectsView: View {
                     },
                 )
 
-            Text(project.name)
-                .font(AppFont.body)
-                .foregroundStyle(theme.text)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(project.name)
+                    .font(AppFont.body)
+                    .foregroundStyle(theme.text)
+                if project.owner != activeMember {
+                    Text(project.owner.displayName)
+                        .font(AppFont.labelSmallRegular)
+                        .foregroundStyle(theme.textMuted)
+                }
+            }
 
             Spacer()
 
@@ -346,7 +369,7 @@ struct ProjectsView: View {
                 VStack(spacing: 0) {
                     ForEach(Array(derivedAreas.enumerated()), id: \.element.id) { idx, area in
                         NavigationLink {
-                            AreaTodoListView(areaName: area.name)
+                            AreaTodoListView(areaName: area.name, owner: area.owner)
                         } label: {
                             areaRow(area: area)
                         }
@@ -379,9 +402,16 @@ struct ProjectsView: View {
                     },
                 )
 
-            Text(area.name)
-                .font(AppFont.body)
-                .foregroundStyle(theme.text)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(area.name)
+                    .font(AppFont.body)
+                    .foregroundStyle(theme.text)
+                if area.owner != activeMember {
+                    Text(area.owner.displayName)
+                        .font(AppFont.labelSmallRegular)
+                        .foregroundStyle(theme.textMuted)
+                }
+            }
 
             Spacer()
 
