@@ -33,19 +33,19 @@ struct MoreMenuView: View {
         } label: {
             HStack(spacing: 14) {
                 Image(systemName: icon)
-                    .font(.system(size: 16))
+                    .font(AppFont.iconTiny)
                     .foregroundStyle(theme.accent)
                     .frame(width: 28)
 
                 Text(label)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(AppFont.bodyStrong)
                     .foregroundStyle(theme.text)
 
                 Spacer()
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(theme.textFaint)
+                    .font(AppFont.labelSmall)
+                    .foregroundStyle(theme.textMuted)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 14)

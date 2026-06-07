@@ -66,8 +66,8 @@ struct BTCBuysView: View {
                 ForEach(grouped, id: \.0) { month, buys in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(month.uppercased())
-                            .font(.system(size: 11, weight: .bold))
-                            .tracking(0.66)
+                            .font(AppFont.sectionHeader)
+                            .tracking(AppFont.sectionTracking)
                             .foregroundStyle(theme.textMuted)
                             .padding(.horizontal, 4)
 
@@ -98,16 +98,16 @@ struct BTCBuysView: View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("TOTAL BOUGHT")
-                    .font(.system(size: 11, weight: .bold))
-                    .tracking(0.66)
+                    .font(AppFont.sectionHeader)
+                    .tracking(AppFont.sectionTracking)
                     .foregroundStyle(.white.opacity(0.7))
                 AmountView(sats: totalBtc * 100_000_000, unit: unit, size: 22, weight: .bold, color: .white, btcPrice: btcPrice)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
                 Text("TOTAL INVESTED")
-                    .font(.system(size: 11, weight: .bold))
-                    .tracking(0.66)
+                    .font(AppFont.sectionHeader)
+                    .tracking(AppFont.sectionTracking)
                     .foregroundStyle(.white.opacity(0.7))
                 AmountView(sats: btcPrice > 0 ? (totalUsd / btcPrice) * 100_000_000 : 0, unit: unit, size: 22, weight: .bold, color: .white, btcPrice: btcPrice)
             }
@@ -130,11 +130,11 @@ struct BTCBuysView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(buy.source)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(AppFont.labelLarge)
                     .foregroundStyle(theme.text)
                 Text(buy.date.formatted(.dateTime.month(.abbreviated).day()))
-                    .font(.system(size: 11))
-                    .foregroundStyle(theme.textFaint)
+                    .font(AppFont.smallRegular)
+                    .foregroundStyle(theme.textMuted)
             }
 
             Spacer()
@@ -142,8 +142,8 @@ struct BTCBuysView: View {
             VStack(alignment: .trailing, spacing: 2) {
                 AmountView(sats: buy.amountBTC * 100_000_000, unit: unit, size: 14, weight: .bold, btcPrice: btcPrice)
                 Text("@ \(AppFormatter.formatCurrency(buy.priceUSD))")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(theme.textFaint)
+                    .font(AppFont.monoSmall)
+                    .foregroundStyle(theme.textMuted)
             }
         }
         .padding(14)

@@ -63,8 +63,8 @@ struct BTCBillPayView: View {
                 ForEach(grouped, id: \.0) { month, billPays in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(month.uppercased())
-                            .font(.system(size: 11, weight: .bold))
-                            .tracking(0.66)
+                            .font(AppFont.sectionHeader)
+                            .tracking(AppFont.sectionTracking)
                             .foregroundStyle(theme.textMuted)
                             .padding(.horizontal, 4)
 
@@ -99,16 +99,16 @@ struct BTCBillPayView: View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("BILLS PAID")
-                    .font(.system(size: 11, weight: .bold))
-                    .tracking(0.66)
+                    .font(AppFont.sectionHeader)
+                    .tracking(AppFont.sectionTracking)
                     .foregroundStyle(.white.opacity(0.7))
                 AmountView(sats: totalSats, unit: unit, size: 22, weight: .bold, color: .white, btcPrice: btcPrice)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
                 Text("BTC SPENT")
-                    .font(.system(size: 11, weight: .bold))
-                    .tracking(0.66)
+                    .font(AppFont.sectionHeader)
+                    .tracking(AppFont.sectionTracking)
                     .foregroundStyle(.white.opacity(0.7))
                 AmountView(sats: totalBtcSpent * 100_000_000, unit: unit, size: 22, weight: .bold, color: .white, btcPrice: btcPrice)
             }
@@ -127,25 +127,25 @@ struct BTCBillPayView: View {
                 .frame(width: 38, height: 38)
                 .overlay(
                     Image(systemName: iconFor(bp.category))
-                        .font(.system(size: 16))
+                        .font(AppFont.iconTiny)
                         .foregroundStyle(theme.plum),
                 )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(bp.merchant)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(AppFont.labelLarge)
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                 Text("\(bp.date.formatted(.dateTime.month(.abbreviated).day())) · \(bp.platform)")
-                    .font(.system(size: 11))
-                    .foregroundStyle(theme.textFaint)
+                    .font(AppFont.smallRegular)
+                    .foregroundStyle(theme.textMuted)
             }
 
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
                 AmountView(sats: btcPrice > 0 ? (bp.amountUSD / btcPrice) * 100_000_000 : 0, unit: unit, size: 14, weight: .bold, btcPrice: btcPrice)
-                AmountView(sats: bp.btcSpent * 100_000_000, unit: unit, size: 11, weight: .regular, color: theme.textFaint, btcPrice: btcPrice)
+                AmountView(sats: bp.btcSpent * 100_000_000, unit: unit, size: 11, weight: .regular, color: theme.textMuted, btcPrice: btcPrice)
             }
         }
         .padding(14)

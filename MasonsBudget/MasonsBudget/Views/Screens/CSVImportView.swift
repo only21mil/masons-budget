@@ -90,23 +90,23 @@ struct CSVImportView: View {
                     .frame(width: 40, height: 40)
                     .overlay(
                         Text(sourceGlyph(source))
-                            .font(.system(size: 18)),
+                            .font(AppFont.iconSmall),
                     )
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(source.rawValue)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(AppFont.bodyStrong)
                         .foregroundStyle(theme.text)
                     Text(sourceDesc(source))
-                        .font(.system(size: 12))
-                        .foregroundStyle(theme.textFaint)
+                        .font(AppFont.labelSmallRegular)
+                        .foregroundStyle(theme.textMuted)
                 }
 
                 Spacer()
 
                 Image(systemName: AppIcon.arrowRight)
-                    .font(.system(size: 12))
-                    .foregroundStyle(theme.textFaint)
+                    .font(AppFont.labelSmallRegular)
+                    .foregroundStyle(theme.textMuted)
             }
             .glassCard(padding: AppLayout.paddingCompact, radius: AppLayout.radiusMedium)
         }
@@ -142,17 +142,17 @@ struct CSVImportView: View {
     private var previewHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("\(importedRows.count) rows parsed")
-                .font(.system(size: 13, weight: .semibold))
+                .font(AppFont.captionStrong)
                 .foregroundStyle(theme.text)
 
             let income = importedRows.filter(\.isIncome)
             let spends = importedRows.filter { !$0.isIncome }
             HStack(spacing: 12) {
                 Text("\(income.count) income")
-                    .font(.system(size: 12))
+                    .font(AppFont.labelSmallRegular)
                     .foregroundStyle(theme.success)
                 Text("\(spends.count) spends")
-                    .font(.system(size: 12))
+                    .font(AppFont.labelSmallRegular)
                     .foregroundStyle(theme.textMuted)
             }
         }
@@ -169,32 +169,33 @@ struct CSVImportView: View {
                 else { selectedRows.insert(row.id) }
             } label: {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 20))
+                    .font(AppFont.iconMedium)
                     .foregroundStyle(isSelected ? theme.accent : theme.borderStrong)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(isSelected ? "Deselect transaction" : "Select transaction")
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.merchant)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(AppFont.labelLarge)
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                 HStack(spacing: 6) {
                     Text(row.category)
-                        .font(.system(size: 11))
-                        .foregroundStyle(theme.textFaint)
+                        .font(AppFont.smallRegular)
+                        .foregroundStyle(theme.textMuted)
                     Text("·")
-                        .foregroundStyle(theme.textFaint)
+                        .foregroundStyle(theme.textMuted)
                     Text(formatDate(row.date))
-                        .font(.system(size: 11))
-                        .foregroundStyle(theme.textFaint)
+                        .font(AppFont.smallRegular)
+                        .foregroundStyle(theme.textMuted)
                 }
             }
 
             Spacer()
 
             Text("\(row.isIncome ? "+" : "−")\(abs(row.sats))")
-                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .font(AppFont.monoCaptionStrong)
                 .foregroundStyle(row.isIncome ? theme.success : theme.text)
         }
         .padding(.horizontal, 14)
@@ -214,7 +215,7 @@ struct CSVImportView: View {
                     selectedRows = []
                 } label: {
                     Text("Back")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(AppFont.labelLargeStrong)
                         .foregroundStyle(theme.text)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 14)
@@ -230,7 +231,7 @@ struct CSVImportView: View {
                                 .tint(Color(hex: 0x1A0D00))
                         }
                         Text("Import \(count) transaction\(count == 1 ? "" : "s")")
-                            .font(.system(size: 14, weight: .heavy))
+                            .font(AppFont.labelLargeStrong)
                     }
                     .foregroundStyle(Color(hex: 0x1A0D00))
                     .frame(maxWidth: .infinity)
@@ -251,20 +252,20 @@ struct CSVImportView: View {
     private var doneView: some View {
         VStack(spacing: 6) {
             Text("✓")
-                .font(.system(size: 46))
+                .font(AppFont.iconXL)
                 .padding(.bottom, 4)
 
             Text("\(importCount) transactions added")
-                .font(.system(size: 16, weight: .bold))
+                .font(AppFont.headline)
                 .foregroundStyle(theme.text)
 
             Text("Recurring patterns will be detected on next sync.")
-                .font(.system(size: 12))
+                .font(AppFont.labelSmallRegular)
                 .foregroundStyle(theme.textMuted)
 
             Button { dismiss() } label: {
                 Text("Done")
-                    .font(.system(size: 14, weight: .heavy))
+                    .font(AppFont.labelLargeStrong)
                     .foregroundStyle(Color(hex: 0x1A0D00))
                     .padding(.horizontal, 28)
                     .padding(.vertical, 12)

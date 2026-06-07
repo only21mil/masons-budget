@@ -65,23 +65,23 @@ struct ExportView: View {
         Button(action: action) {
             HStack(spacing: 14) {
                 Image(systemName: icon)
-                    .font(.system(size: 16))
+                    .font(AppFont.iconTiny)
                     .foregroundStyle(theme.accent)
                     .frame(width: 28)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(AppFont.bodyStrong)
                         .foregroundStyle(theme.text)
                     Text(subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(theme.textFaint)
+                        .font(AppFont.labelSmallRegular)
+                        .foregroundStyle(theme.textMuted)
                 }
 
                 Spacer()
 
                 Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(AppFont.labelLarge)
                     .foregroundStyle(theme.accent)
             }
             .padding(.horizontal, 14)
@@ -190,7 +190,7 @@ struct ShareSheetView: View {
                 Text("Export Ready")
                     .font(.headline)
                 Text(url.lastPathComponent)
-                    .font(.system(size: 13, design: .monospaced))
+                    .font(AppFont.monoCaption)
                 Button("Reveal in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting([url])
                 }

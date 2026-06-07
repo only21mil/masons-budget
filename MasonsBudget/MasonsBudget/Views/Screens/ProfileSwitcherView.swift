@@ -38,7 +38,7 @@ struct ProfileSwitcherView: View {
 
                     if let authError {
                         Text(authError)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(AppFont.labelSmallRegular)
                             .foregroundStyle(theme.danger)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, AppLayout.sectionPadding)
@@ -63,8 +63,8 @@ struct ProfileSwitcherView: View {
     private var appearanceSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("APPEARANCE")
-                .font(.system(size: 12, weight: .bold))
-                .tracking(0.72)
+                .font(AppFont.labelSmallStrong)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -76,9 +76,9 @@ struct ProfileSwitcherView: View {
                     } label: {
                         VStack(spacing: 6) {
                             Image(systemName: iconForMode(mode))
-                                .font(.system(size: 18))
+                                .font(AppFont.iconSmall)
                             Text(mode.label)
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(AppFont.sectionHeaderMedium)
                         }
                         .foregroundStyle(isSelected ? .white : theme.text)
                         .frame(maxWidth: .infinity)
@@ -118,17 +118,17 @@ struct ProfileSwitcherView: View {
                     .frame(width: 40, height: 40)
                     .overlay(
                         Text(String(member.displayName.prefix(1)))
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(isAllowed ? theme.accent : theme.textFaint),
+                            .font(AppFont.headline)
+                            .foregroundStyle(isAllowed ? theme.accent : theme.textMuted),
                     )
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(member.displayName)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(isAllowed ? theme.text : theme.textFaint)
+                        .font(AppFont.bodyStrong)
+                        .foregroundStyle(isAllowed ? theme.text : theme.textMuted)
                     Text(member.profileDescription)
-                        .font(.system(size: 12))
-                        .foregroundStyle(theme.textFaint)
+                        .font(AppFont.labelSmallRegular)
+                        .foregroundStyle(theme.textMuted)
                 }
 
                 Spacer()
@@ -138,12 +138,12 @@ struct ProfileSwitcherView: View {
                         .foregroundStyle(theme.accent)
                 } else if !isAllowed {
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(theme.textFaint)
+                        .font(AppFont.labelSmallRegular)
+                        .foregroundStyle(theme.textMuted)
                 } else {
                     Image(systemName: AppIcon.arrowRight)
-                        .font(.system(size: 12))
-                        .foregroundStyle(theme.textFaint)
+                        .font(AppFont.labelSmallRegular)
+                        .foregroundStyle(theme.textMuted)
                 }
             }
             .padding(.horizontal, 14)

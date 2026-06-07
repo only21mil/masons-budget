@@ -61,17 +61,17 @@ struct BTCAccountDetailView: View {
                 .frame(width: 38, height: 38)
                 .overlay(
                     Image(systemName: account.custody == .selfCustody ? AppIcon.vault : "building.columns.fill")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(AppFont.subtitleStrong)
                         .foregroundStyle(theme.accent),
                 )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.label)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(AppFont.labelLarge)
                     .foregroundStyle(theme.text)
                 Text(account.ownerMember.displayName)
-                    .font(.system(size: 11))
-                    .foregroundStyle(theme.textFaint)
+                    .font(AppFont.smallRegular)
+                    .foregroundStyle(theme.textMuted)
             }
 
             Spacer()
