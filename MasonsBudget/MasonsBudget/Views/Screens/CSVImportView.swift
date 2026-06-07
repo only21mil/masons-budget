@@ -1,5 +1,5 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
 import UniformTypeIdentifiers
 
 struct CSVImportView: View {
@@ -18,7 +18,10 @@ struct CSVImportView: View {
     @State private var showFilePicker = false
     @State private var importCount = 0
 
-    private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
+    private var activeMember: FamilyMember {
+        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    }
+
     private let service = CSVImportService()
 
     enum ImportStep {
@@ -46,13 +49,13 @@ struct CSVImportView: View {
             }
             .navigationTitle("Import CSV")
             #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
+                .navigationBarTitleDisplayMode(.inline)
             #endif
         }
         .fileImporter(
             isPresented: $showFilePicker,
             allowedContentTypes: [UTType.commaSeparatedText, UTType.plainText],
-            allowsMultipleSelection: false
+            allowsMultipleSelection: false,
         ) { result in
             handleFile(result)
         }
@@ -87,7 +90,7 @@ struct CSVImportView: View {
                     .frame(width: 40, height: 40)
                     .overlay(
                         Text(sourceGlyph(source))
-                            .font(.system(size: 18))
+                            .font(.system(size: 18)),
                     )
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -142,7 +145,7 @@ struct CSVImportView: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(theme.text)
 
-            let income = importedRows.filter { $0.isIncome }
+            let income = importedRows.filter(\.isIncome)
             let spends = importedRows.filter { !$0.isIncome }
             HStack(spacing: 12) {
                 Text("\(income.count) income")
@@ -224,12 +227,12 @@ struct CSVImportView: View {
                     HStack {
                         if isImporting {
                             ProgressView()
-                                .tint(Color(hex: 0x1a0d00))
+                                .tint(Color(hex: 0x1A0D00))
                         }
                         Text("Import \(count) transaction\(count == 1 ? "" : "s")")
                             .font(.system(size: 14, weight: .heavy))
                     }
-                    .foregroundStyle(Color(hex: 0x1a0d00))
+                    .foregroundStyle(Color(hex: 0x1A0D00))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .background(theme.accent)
@@ -262,7 +265,7 @@ struct CSVImportView: View {
             Button { dismiss() } label: {
                 Text("Done")
                     .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(Color(hex: 0x1a0d00))
+                    .foregroundStyle(Color(hex: 0x1A0D00))
                     .padding(.horizontal, 28)
                     .padding(.vertical, 12)
                     .background(theme.accent)
@@ -276,7 +279,7 @@ struct CSVImportView: View {
 
     private func handleFile(_ result: Result<[URL], Error>) {
         guard let source = selectedSource else { return }
-        guard case .success(let urls) = result, let url = urls.first else { return }
+        guard case let .success(urls) = result, let url = urls.first else { return }
 
         guard url.startAccessingSecurityScopedResource() else { return }
         defer { url.stopAccessingSecurityScopedResource() }

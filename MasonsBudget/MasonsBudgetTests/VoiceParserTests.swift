@@ -1,11 +1,10 @@
 // Mason's Budget App — VoiceParser tests (SAT-308)
 
-import XCTest
 import Foundation
+import XCTest
 
 final class VoiceParserTests: XCTestCase {
-
-    // Pin "today" so weekday math is deterministic. 2026-04-30 is a Thursday.
+    /// Pin "today" so weekday math is deterministic. 2026-04-30 is a Thursday.
     private let today: Date = {
         var c = DateComponents()
         c.year = 2026; c.month = 4; c.day = 30
@@ -136,17 +135,17 @@ final class VoiceParserTests: XCTestCase {
         XCTAssertEqual(cal.startOfDay(for: r.date ?? .distantPast), cal.startOfDay(for: today))
     }
 
-    func testDate_Yesterday() {
+    func testDate_Yesterday() throws {
         let r = parser.parse("$5 at Costco yesterday", today: today)
         let cal = Calendar(identifier: .gregorian)
-        let expected = cal.date(byAdding: .day, value: -1, to: cal.startOfDay(for: today))!
+        let expected = try XCTUnwrap(cal.date(byAdding: .day, value: -1, to: cal.startOfDay(for: today)))
         XCTAssertEqual(cal.startOfDay(for: r.date ?? .distantPast), expected)
     }
 
-    func testDate_DayBeforeYesterday() {
+    func testDate_DayBeforeYesterday() throws {
         let r = parser.parse("$5 at Costco the day before yesterday", today: today)
         let cal = Calendar(identifier: .gregorian)
-        let expected = cal.date(byAdding: .day, value: -2, to: cal.startOfDay(for: today))!
+        let expected = try XCTUnwrap(cal.date(byAdding: .day, value: -2, to: cal.startOfDay(for: today)))
         XCTAssertEqual(cal.startOfDay(for: r.date ?? .distantPast), expected)
     }
 
@@ -268,14 +267,14 @@ final class VoiceParserTests: XCTestCase {
 
     // MARK: - Integration
 
-    func testIntegration_RealisticTranscript() {
+    func testIntegration_RealisticTranscript() throws {
         let r = parser.parse("Spent $76.81 at Kroger yesterday with Strike", today: today)
         XCTAssertEqual(r.amount, Decimal(string: "76.81"))
         XCTAssertEqual(r.merchant, "Kroger")
         XCTAssertEqual(r.category, "Groceries")
         XCTAssertEqual(r.card, "Strike")
         let cal = Calendar(identifier: .gregorian)
-        let expected = cal.date(byAdding: .day, value: -1, to: cal.startOfDay(for: today))!
+        let expected = try XCTUnwrap(cal.date(byAdding: .day, value: -1, to: cal.startOfDay(for: today)))
         XCTAssertEqual(cal.startOfDay(for: r.date ?? .distantPast), expected)
         XCTAssertGreaterThan(r.confidence.overall, 0.8)
     }
@@ -312,10 +311,10 @@ final class VoiceParserTests: XCTestCase {
     }
 }
 
-// Test double — counts how many times the fallback was invoked.
+/// Test double — counts how many times the fallback was invoked.
 private final class RecordingFallback: VoiceParserLLMFallback, @unchecked Sendable {
     var callCount = 0
-    func refine(transcript: String, partial: ParsedTransaction) async -> ParsedTransaction {
+    func refine(transcript _: String, partial: ParsedTransaction) async -> ParsedTransaction {
         callCount += 1
         return partial
     }

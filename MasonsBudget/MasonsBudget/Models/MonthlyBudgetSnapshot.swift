@@ -30,7 +30,7 @@ final class MonthlyBudgetSnapshot {
         ytdIncome: Decimal = 0,
         payFrequency: String = "weekly",
         strategyNote: String? = nil,
-        lastUpdated: Date = .now
+        lastUpdated: Date = .now,
     ) {
         self.monthKey = monthKey
         self.coinbaseOneBalance = coinbaseOneBalance

@@ -1,5 +1,5 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 @main
 struct MasonsBudgetApp: App {
@@ -26,7 +26,7 @@ struct MasonsBudgetApp: App {
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
-            isStoredInMemoryOnly: false
+            isStoredInMemoryOnly: false,
         )
 
         do {
@@ -85,7 +85,7 @@ struct MasonsBudgetApp: App {
                     }
                     .opacity(isUnlocked || !appLockEnabled ? 1 : 0)
 
-                if appLockEnabled && !isUnlocked {
+                if appLockEnabled, !isUnlocked {
                     LockScreenView(isUnlocked: $isUnlocked)
                         .transition(.opacity)
                 }
@@ -93,18 +93,18 @@ struct MasonsBudgetApp: App {
             #if os(iOS)
             .fullScreenCover(isPresented: Binding(
                 get: { !hasCompletedOnboarding && isUnlocked },
-                set: { hasCompletedOnboarding = !$0 }
+                set: { hasCompletedOnboarding = !$0 },
             )) {
                 OnboardingView()
             }
             #else
             .sheet(isPresented: Binding(
-                get: { !hasCompletedOnboarding && isUnlocked },
-                set: { hasCompletedOnboarding = !$0 }
-            )) {
-                OnboardingView()
-                    .frame(minWidth: 500, minHeight: 600)
-            }
+                        get: { !hasCompletedOnboarding && isUnlocked },
+                        set: { hasCompletedOnboarding = !$0 },
+                    )) {
+                        OnboardingView()
+                            .frame(minWidth: 500, minHeight: 600)
+                    }
             #endif
             #if os(macOS)
             .frame(minWidth: 800, minHeight: 500)
@@ -127,7 +127,7 @@ struct MasonsBudgetApp: App {
         }
         .modelContainer(sharedModelContainer)
         #if os(macOS)
-        .defaultSize(width: 1000, height: 700)
+            .defaultSize(width: 1000, height: 700)
         #endif
     }
 

@@ -12,7 +12,7 @@ final class TodoArea {
         areaId: String = UUID().uuidString,
         name: String,
         icon: String = "vault",
-        owner: FamilyMember = .victor
+        owner: FamilyMember = .victor,
     ) {
         self.areaId = areaId
         self.name = name

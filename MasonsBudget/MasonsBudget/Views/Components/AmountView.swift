@@ -12,8 +12,13 @@ struct AmountView: View {
 
     @Environment(\.theme) var theme
 
-    private var isNegative: Bool { sats < 0 }
-    private var isPositive: Bool { sats > 0 }
+    private var isNegative: Bool {
+        sats < 0
+    }
+
+    private var isPositive: Bool {
+        sats > 0
+    }
 
     private var signPrefix: String {
         if showSign {

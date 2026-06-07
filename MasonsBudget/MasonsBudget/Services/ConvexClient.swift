@@ -11,7 +11,8 @@ enum ConvexConfig {
     /// Store in UserDefaults so it can be changed without an app update.
     static var deploymentURL: URL {
         if let saved = UserDefaults.standard.string(forKey: "convex_deployment_url"),
-           let url = URL(string: saved) {
+           let url = URL(string: saved)
+        {
             return url
         }
         return URL(string: "https://keen-elephant-452.convex.cloud")!
@@ -46,15 +47,15 @@ enum ConvexError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notConfigured:
-            return "Convex backend not configured. Please set up in Settings."
-        case .networkError(let error):
-            return "Network error: \(error.localizedDescription)"
-        case .httpError(let code):
-            return "Server returned HTTP \(code)"
-        case .decodeFailed(let name, let error):
-            return "Failed to decode \(name): \(error.localizedDescription)"
-        case .noData(let name):
-            return "No data found for '\(name)'"
+            "Convex backend not configured. Please set up in Settings."
+        case let .networkError(error):
+            "Network error: \(error.localizedDescription)"
+        case let .httpError(code):
+            "Server returned HTTP \(code)"
+        case let .decodeFailed(name, error):
+            "Failed to decode \(name): \(error.localizedDescription)"
+        case let .noData(name):
+            "No data found for '\(name)'"
         }
     }
 }
@@ -88,7 +89,7 @@ struct AnyCodable: Decodable {
             value = dict.mapValues(\.value)
         } else {
             throw DecodingError.dataCorrupted(
-                .init(codingPath: decoder.codingPath, debugDescription: "Unsupported type")
+                .init(codingPath: decoder.codingPath, debugDescription: "Unsupported type"),
             )
         }
     }
@@ -106,7 +107,7 @@ final class ConvexClient: Sendable {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 60
-        self.session = URLSession(configuration: config)
+        session = URLSession(configuration: config)
     }
 
     /// Fetch a data file from Convex and decode it as the given type.
@@ -145,7 +146,7 @@ final class ConvexClient: Sendable {
     func syncFile(name: String, data: Any) async throws -> Double {
         let raw = try await mutation("dataFiles:sync", args: [
             "name": name,
-            "data": data
+            "data": data,
         ])
         guard let result = raw as? [String: Any] else { return 0 }
         if let version = result["version"] as? Double { return version }
@@ -158,7 +159,7 @@ final class ConvexClient: Sendable {
     func appendTransaction(_ transaction: MC2Transaction, to name: String = "transactions") async throws -> Double {
         let raw = try await mutation("dataFiles:appendTransaction", args: [
             "name": name,
-            "transaction": try transaction.convexJSONObject()
+            "transaction": transaction.convexJSONObject(),
         ])
         guard let result = raw as? [String: Any] else { return 0 }
         if let version = result["version"] as? Double { return version }
@@ -171,7 +172,7 @@ final class ConvexClient: Sendable {
     func upsertTodo(_ todo: MC2TodoItem, to name: String = "todos") async throws -> Double {
         let raw = try await mutation("dataFiles:upsertTodo", args: [
             "name": name,
-            "todo": try todo.convexJSONObject()
+            "todo": todo.convexJSONObject(),
         ])
         guard let result = raw as? [String: Any] else { return 0 }
         if let version = result["version"] as? Double { return version }
@@ -182,7 +183,7 @@ final class ConvexClient: Sendable {
     @discardableResult
     func removeTodo(id: String) async throws -> Bool {
         let raw = try await mutation("dataFiles:removeTodo", args: [
-            "todoId": id
+            "todoId": id,
         ])
         guard let result = raw as? [String: Any] else { return false }
         return result["removed"] as? Bool ?? false
@@ -196,7 +197,7 @@ final class ConvexClient: Sendable {
             throw ConvexError.decodeFailed("billPay", NSError(domain: "MC2BTCBillPay", code: -1))
         }
         let raw = try await mutation("dataFiles:appendBillPay", args: [
-            "billPay": object
+            "billPay": object,
         ])
         guard let result = raw as? [String: Any] else { return 0 }
         if let version = result["version"] as? Double { return version }
@@ -257,7 +258,7 @@ final class ConvexClient: Sendable {
             let msg = json?["errorMessage"] as? String ?? "Unknown error"
             log.error("Convex call error: \(msg)")
             throw ConvexError.decodeFailed(path, NSError(domain: "Convex", code: -1, userInfo: [
-                NSLocalizedDescriptionKey: msg
+                NSLocalizedDescriptionKey: msg,
             ]))
         }
 

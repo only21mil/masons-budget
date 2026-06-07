@@ -35,6 +35,31 @@ xcodebuild -project MasonsBudget.xcodeproj -scheme MasonsBudget \
   -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
 
+## DGX Preflight
+
+On DGX Spark, run the safe static preflight before asking the Mac build host to
+compile:
+
+```bash
+scripts/vv-swift-check.sh
+```
+
+This does not run `xcodebuild`, simulator actions, signing, archives, uploads,
+or TestFlight. It checks the Swift toolchain, temp XcodeGen generation,
+SourceKit-backed SwiftLint, SwiftFormat, `git diff --check`, a Swift typecheck
+smoke, serialized SwiftPM core tests, a `Package.resolved` mutation guard, and
+a redacted gitleaks scan over tracked/unignored working-tree files.
+
+For Apple SDK builds, use the approval-gated Mac bridge documented in
+`docs/dgx-apple-build-boundary.md`.
+
+If SourceKit-LSP feels stale on DGX, use:
+
+```bash
+scripts/vv-swift-lsp-reset.sh status
+scripts/vv-swift-lsp-reset.sh prime
+```
+
 ## Project Structure
 
 ```

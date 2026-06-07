@@ -34,7 +34,7 @@ final class BudgetCategory {
         monthlyBudget: Decimal,
         sortOrder: Int = 0,
         isIncome: Bool = false,
-        owner: FamilyMember = .victor
+        owner: FamilyMember = .victor,
     ) {
         self.name = name
         self.icon = icon

@@ -1,7 +1,6 @@
 import XCTest
 
 final class FamilyVisibilityTests: XCTestCase {
-
     // MARK: - Core canSee Logic
 
     func testAdultSeesAllMembers() {
@@ -9,7 +8,7 @@ final class FamilyVisibilityTests: XCTestCase {
             for member in FamilyMember.allCases {
                 XCTAssertTrue(
                     adult.canSee(dataOwnedBy: member),
-                    "\(adult) should see \(member)'s data"
+                    "\(adult) should see \(member)'s data",
                 )
             }
         }
@@ -23,7 +22,7 @@ final class FamilyVisibilityTests: XCTestCase {
                 } else {
                     XCTAssertFalse(
                         child.canSee(dataOwnedBy: member),
-                        "\(child) should NOT see \(member)'s data"
+                        "\(child) should NOT see \(member)'s data",
                     )
                 }
             }
@@ -33,7 +32,7 @@ final class FamilyVisibilityTests: XCTestCase {
     func testRachelSeesVictorData_CriticalRegression() {
         XCTAssertTrue(
             FamilyMember.rachel.canSee(dataOwnedBy: .victor),
-            "CRITICAL: Rachel must see Victor's data (shared household). This bug shipped in v0.3."
+            "CRITICAL: Rachel must see Victor's data (shared household). This bug shipped in v0.3.",
         )
     }
 
@@ -109,6 +108,19 @@ final class FamilyVisibilityTests: XCTestCase {
         let todos = sampleTodos()
         let victorVisible = todos.filter { FamilyMember.victor.canSee(dataOwnedBy: $0.ownerMember) }
         XCTAssertEqual(victorVisible.count, todos.count, "Victor sees all todos")
+
+        let rachelVisible = todos.filter { FamilyMember.rachel.canSee(dataOwnedBy: $0.ownerMember) }
+        XCTAssertEqual(rachelVisible.count, todos.count, "Rachel sees all todos")
+    }
+
+    func testRachelSeesVictorTodo_CriticalRegression() {
+        let todos = sampleTodos()
+        let rachelVisible = todos.filter { FamilyMember.rachel.canSee(dataOwnedBy: $0.ownerMember) }
+
+        XCTAssertTrue(
+            rachelVisible.contains { $0.title == "Pay mortgage" && $0.ownerMember == .victor },
+            "CRITICAL: Rachel must see Victor-owned todos in shared household views.",
+        )
     }
 
     func testTodoFilteringForChild() {
@@ -159,7 +171,7 @@ final class FamilyVisibilityTests: XCTestCase {
             merchant: "Test",
             amount: -10,
             category: "Other",
-            createdBy: "mc2"
+            createdBy: "mc2",
         )
         XCTAssertEqual(tx.ownerMember, .victor, "Untagged records default to Victor (MC2 convention)")
     }
@@ -172,7 +184,7 @@ final class FamilyVisibilityTests: XCTestCase {
             amount: -10,
             category: "Other",
             owner: .mason,
-            createdBy: "mc2"
+            createdBy: "mc2",
         )
         XCTAssertEqual(tx.ownerMember, .mason)
     }
@@ -217,6 +229,7 @@ final class FamilyVisibilityTests: XCTestCase {
             TodoItem(id: "todo-1", title: "Pay mortgage", owner: .victor, createdBy: "mc2"),
             TodoItem(id: "todo-2", title: "Schedule dentist", owner: .rachel, createdBy: "mc2"),
             TodoItem(id: "todo-3", title: "Finish homework", owner: .mason, createdBy: "mc2"),
+            TodoItem(id: "todo-4", title: "Pack lunch", owner: .maddox, createdBy: "mc2"),
         ]
     }
 }

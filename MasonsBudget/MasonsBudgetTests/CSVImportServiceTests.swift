@@ -1,5 +1,5 @@
-import XCTest
 import Foundation
+import XCTest
 
 final class CSVImportServiceTests: XCTestCase {
     func testImportedBitcoinRowKeepsFiatAndSatsSeparate() throws {
@@ -19,7 +19,7 @@ final class CSVImportServiceTests: XCTestCase {
         XCTAssertEqual(transactions.count, 1)
         XCTAssertEqual(transactions[0].amount, 900)
         XCTAssertEqual(transactions[0].amountSats, 1_000_000)
-        XCTAssertEqual(transactions[0].satsValue(btcPrice: 90_000), 1_000_000)
+        XCTAssertEqual(transactions[0].satsValue(btcPrice: 90000), 1_000_000)
     }
 
     func testDuplicateDetectionComparesExplicitSats() throws {
@@ -37,7 +37,7 @@ final class CSVImportServiceTests: XCTestCase {
             amount: 900,
             category: "Bitcoin",
             amountSats: 1_000_000,
-            createdBy: "test"
+            createdBy: "test",
         )
 
         XCTAssertTrue(service.filterDuplicates(imported, existing: [existing]).isEmpty)

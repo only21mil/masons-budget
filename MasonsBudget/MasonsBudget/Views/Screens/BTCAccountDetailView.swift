@@ -1,5 +1,5 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct BTCAccountDetailView: View {
     @Environment(\.theme) private var theme
@@ -10,13 +10,22 @@ struct BTCAccountDetailView: View {
     let title: String
     let custody: BTCCustody?
 
-    private var unit: DisplayUnit { DisplayUnit(rawValue: displayUnitRaw) ?? .btc }
-    private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
-    private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
+    private var unit: DisplayUnit {
+        DisplayUnit(rawValue: displayUnitRaw) ?? .btc
+    }
+
+    private var activeMember: FamilyMember {
+        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    }
+
+    private var btcPrice: Decimal {
+        BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+    }
+
     private var visibleAccounts: [BTCAccount] {
         accounts.filter { account in
             activeMember.sharesNetWorth(with: account.ownerMember) &&
-            (custody == nil || account.custody == custody)
+                (custody == nil || account.custody == custody)
         }
     }
 
@@ -41,7 +50,7 @@ struct BTCAccountDetailView: View {
         .background(theme.bg)
         .navigationTitle(title)
         #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.inline)
         #endif
     }
 
@@ -53,7 +62,7 @@ struct BTCAccountDetailView: View {
                 .overlay(
                     Image(systemName: account.custody == .selfCustody ? AppIcon.vault : "building.columns.fill")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(theme.accent)
+                        .foregroundStyle(theme.accent),
                 )
 
             VStack(alignment: .leading, spacing: 2) {

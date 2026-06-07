@@ -31,7 +31,7 @@ final class TodoItem {
         owner: FamilyMember = .victor,
         createdBy: String = "mc2",
         updatedAt: Date = .now,
-        sourceFile: String? = "todos.json"
+        sourceFile: String? = "todos.json",
     ) {
         self.id = id
         self.title = title

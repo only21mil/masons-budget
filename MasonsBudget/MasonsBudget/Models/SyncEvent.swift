@@ -23,7 +23,7 @@ final class SyncEvent {
         entityId: String,
         deviceId: String,
         userId: String,
-        checksum: String? = nil
+        checksum: String? = nil,
     ) {
         self.id = id
         self.timestamp = timestamp

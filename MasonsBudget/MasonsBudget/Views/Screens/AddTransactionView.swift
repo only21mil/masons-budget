@@ -1,5 +1,5 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct AddTransactionView: View {
     @Environment(\.theme) var theme
@@ -16,18 +16,39 @@ struct AddTransactionView: View {
     @State private var selectedCategory = ""
     @State private var method: String = "Lightning"
     @State private var merchant = ""
+    @State private var btcBuyPrice = ""
+    @State private var amountValidationMessage: String?
 
-    private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
-    private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
+    private var btcPrice: Decimal {
+        BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+    }
+
+    private var activeMember: FamilyMember {
+        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    }
 
     enum TxType: String, CaseIterable {
         case spend = "Spend"
         case income = "Income"
         case transfer = "Transfer"
+        case btcBuy = "Buy BTC"
     }
 
     private var numericAmount: Decimal {
-        let cleaned = amount
+        decimal(from: amount)
+    }
+
+    private var effectiveBTCBuyPrice: Decimal {
+        let entered = decimal(from: btcBuyPrice)
+        return entered > 0 ? entered : btcPrice
+    }
+
+    private var conversionBTCPrice: Decimal {
+        txType == .btcBuy ? effectiveBTCBuyPrice : btcPrice
+    }
+
+    private func decimal(from rawValue: String) -> Decimal {
+        let cleaned = rawValue
             .replacingOccurrences(of: ",", with: "")
             .replacingOccurrences(of: "$", with: "")
             .replacingOccurrences(of: "₿", with: "")
@@ -36,9 +57,10 @@ struct AddTransactionView: View {
 
     private var computedSats: Decimal {
         switch inputUnit {
-        case .sats: return numericAmount
-        case .btc: return numericAmount * 100_000_000
-        case .usd: return btcPrice > 0 ? (numericAmount / btcPrice) * 100_000_000 : 0
+        case .sats: numericAmount
+        case .btc: numericAmount * 100_000_000
+        case .usd:
+            conversionBTCPrice > 0 ? (numericAmount / conversionBTCPrice) * 100_000_000 : 0
         }
     }
 
@@ -74,9 +96,9 @@ struct AddTransactionView: View {
                 }
             }
             .navigationTitle("New transaction")
-#if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-#endif
+            #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+            #endif
         }
     }
 
@@ -131,6 +153,12 @@ struct AddTransactionView: View {
             }
 
             conversionLine
+
+            if let amountValidationMessage {
+                Text(amountValidationMessage)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.danger)
+            }
         }
         .padding(.horizontal, AppLayout.sectionPadding)
     }
@@ -160,7 +188,7 @@ struct AddTransactionView: View {
     private var conversionLine: some View {
         let sats = computedSats
         let btc = sats / 100_000_000
-        let usd = btc * btcPrice
+        let usd = btc * conversionBTCPrice
 
         return Group {
             switch inputUnit {
@@ -173,7 +201,7 @@ struct AddTransactionView: View {
             }
         }
         .font(.system(size: 13))
-        .foregroundStyle(theme.textFaint)
+        .foregroundStyle(amountValidationMessage == nil ? theme.textFaint : theme.danger)
     }
 
     private func switchUnit(to newUnit: DisplayUnit) {
@@ -182,7 +210,7 @@ struct AddTransactionView: View {
         switch newUnit {
         case .sats: amount = AppFormatter.formatSats(sats)
         case .btc: amount = AppFormatter.formatBtc(sats / 100_000_000)
-        case .usd: amount = AppFormatter.formatCurrency(sats / 100_000_000 * btcPrice)
+        case .usd: amount = AppFormatter.formatCurrency(sats / 100_000_000 * conversionBTCPrice)
         }
         inputUnit = newUnit
     }
@@ -191,57 +219,73 @@ struct AddTransactionView: View {
 
     private var fieldsCard: some View {
         VStack(spacing: 0) {
-            fieldRow(label: "Category") {
-                Menu {
-                    ForEach(categories.filter { !$0.isIncome }, id: \.name) { cat in
-                        Button {
-                            selectedCategory = cat.name
-                        } label: {
-                            Label(cat.name, systemImage: cat.icon)
+            if txType == .btcBuy {
+                fieldRow(label: "Price") {
+                    TextField(AppFormatter.formatCurrency(btcPrice), text: $btcBuyPrice)
+                        .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(theme.text)
+                }
+
+                Hairline()
+
+                fieldRow(label: "Account") {
+                    TextField("Strike, River...", text: $merchant)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(theme.text)
+                }
+            } else {
+                fieldRow(label: "Category") {
+                    Menu {
+                        ForEach(categories.filter { !$0.isIncome }, id: \.name) { cat in
+                            Button {
+                                selectedCategory = cat.name
+                            } label: {
+                                Label(cat.name, systemImage: cat.icon)
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            if !selectedCategory.isEmpty {
+                                let cat = categories.first(where: { $0.name == selectedCategory })
+                                CatGlyphView(kind: cat?.icon ?? "wrench", size: 11, color: .white)
+                                    .frame(width: 18, height: 18)
+                                    .background(theme.accent)
+                                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                            }
+                            Text(selectedCategory.isEmpty ? "Select" : selectedCategory)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(selectedCategory.isEmpty ? theme.textFaint : theme.text)
+                            Spacer()
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 12))
+                                .foregroundStyle(theme.textFaint)
                         }
                     }
-                } label: {
-                    HStack(spacing: 8) {
-                        if !selectedCategory.isEmpty {
-                            let cat = categories.first(where: { $0.name == selectedCategory })
-                            CatGlyphView(kind: cat?.icon ?? "wrench", size: 11, color: .white)
-                                .frame(width: 18, height: 18)
-                                .background(theme.accent)
-                                .clipShape(RoundedRectangle(cornerRadius: 5))
-                        }
-                        Text(selectedCategory.isEmpty ? "Select" : selectedCategory)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(selectedCategory.isEmpty ? theme.textFaint : theme.text)
+                }
+
+                Hairline()
+
+                fieldRow(label: "Method") {
+                    HStack(spacing: 6) {
+                        methodChip("Lightning", icon: "bolt.fill")
+                        methodChip("On-chain", icon: "link")
                         Spacer()
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 12))
-                            .foregroundStyle(theme.textFaint)
                     }
                 }
-            }
 
-            Hairline()
+                Hairline()
 
-            fieldRow(label: "Method") {
-                HStack(spacing: 6) {
-                    methodChip("Lightning", icon: "bolt.fill")
-                    methodChip("On-chain", icon: "link")
-                    Spacer()
+                fieldRow(label: "Merchant") {
+                    TextField("Where?", text: $merchant)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(theme.text)
                 }
-            }
-
-            Hairline()
-
-            fieldRow(label: "Merchant") {
-                TextField("Where?", text: $merchant)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(theme.text)
             }
         }
         .glassCard(padding: 0, radius: AppLayout.radiusCompact)
     }
 
-    private func fieldRow<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
+    private func fieldRow(label: String, @ViewBuilder content: () -> some View) -> some View {
         HStack {
             Text(label)
                 .font(.system(size: 13))
@@ -269,7 +313,7 @@ struct AddTransactionView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? theme.accent : theme.border, lineWidth: 1)
+                    .stroke(isSelected ? theme.accent : theme.border, lineWidth: 1),
             )
         }
         .buttonStyle(.plain)
@@ -279,7 +323,7 @@ struct AddTransactionView: View {
 
     private var numPad: some View {
         VStack(spacing: 0) {
-            ForEach([["1","2","3"],["4","5","6"],["7","8","9"],[".","0","⌫"]], id: \.self) { row in
+            ForEach([["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], [".", "0", "⌫"]], id: \.self) { row in
                 HStack(spacing: 0) {
                     ForEach(row, id: \.self) { key in
                         Button {
@@ -301,6 +345,7 @@ struct AddTransactionView: View {
     }
 
     private func handleKey(_ key: String) {
+        amountValidationMessage = nil
         if key == "⌫" {
             if !amount.isEmpty { amount.removeLast() }
         } else if key == "." {
@@ -315,8 +360,16 @@ struct AddTransactionView: View {
     // MARK: - Save
 
     private func saveTransaction() {
+        if txType == .btcBuy {
+            saveBTCBuy()
+            return
+        }
+
         let sats = computedSats
-        guard sats != 0 else { return }
+        guard sats != 0 else {
+            amountValidationMessage = "Enter an amount"
+            return
+        }
 
         let signedSatsDecimal = txType == .spend ? -abs(sats) : abs(sats)
         let signedSats = Int64(truncating: signedSatsDecimal as NSNumber)
@@ -331,12 +384,66 @@ struct AddTransactionView: View {
             amountSats: signedSats,
             card: method == "Lightning" ? "lightning" : "on-chain",
             owner: activeMember,
-            createdBy: "app"
+            createdBy: "app",
         )
         modelContext.insert(tx)
         try? modelContext.save()
         AppWriteSyncService.pushTransaction(tx, owner: activeMember)
         dismiss()
+    }
+
+    private func saveBTCBuy() {
+        let sats = roundedSats(from: abs(computedSats))
+        guard sats > 0 else {
+            amountValidationMessage = "Enter an amount"
+            return
+        }
+
+        let btc = Decimal(sats) / 100_000_000
+        let price = effectiveBTCBuyPrice
+        let usd = inputUnit == .usd ? abs(numericAmount) : btc * price
+        let source = merchant.trimmingCharacters(in: .whitespacesAndNewlines)
+        let account = source.isEmpty ? "Bitcoin Buy" : source
+        let date = Date()
+
+        let buy = BTCBuy(
+            id: "b-app-\(UUID().uuidString)",
+            date: date,
+            source: account,
+            amountBTC: btc,
+            amountSats: sats,
+            priceUSD: price,
+            usd: usd,
+            note: "Logged in app",
+            loggedBy: "app",
+            owner: activeMember,
+        )
+        let lot = CostBasisLot(
+            lotId: buy.id,
+            date: MC2Transaction.dateString(from: date),
+            sats: sats,
+            basisUsd: usd,
+            label: account,
+            owner: activeMember,
+        )
+
+        modelContext.insert(buy)
+        modelContext.insert(lot)
+        try? modelContext.save()
+        AppWriteSyncService.pushBTCBuy(buy, owner: activeMember)
+        dismiss()
+    }
+
+    private func roundedSats(from value: Decimal) -> Int64 {
+        let handler = NSDecimalNumberHandler(
+            roundingMode: .plain,
+            scale: 0,
+            raiseOnExactness: false,
+            raiseOnOverflow: false,
+            raiseOnUnderflow: false,
+            raiseOnDivideByZero: false,
+        )
+        return NSDecimalNumber(decimal: value).rounding(accordingToBehavior: handler).int64Value
     }
 }
 

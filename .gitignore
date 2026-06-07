@@ -55,6 +55,9 @@ Pods/
 # Claude Code
 .claude/
 
+# Serena
+.serena/
+
 # Environment / secrets (never commit)
 .env
 .env.*

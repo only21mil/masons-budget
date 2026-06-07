@@ -10,7 +10,9 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable {
     case mason
     case maddox
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var displayName: String {
         rawValue.capitalized
@@ -20,7 +22,7 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .victor: "person.fill"
         case .rachel: "person.fill"
-        case .mason:  "person.fill"
+        case .mason: "person.fill"
         case .maddox: "figure.child"
         }
     }
@@ -38,7 +40,7 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .victor: "Full budget, spending & Bitcoin"
         case .rachel: "Full budget, spending & Bitcoin"
-        case .mason:  "Bitcoin stack & spending"
+        case .mason: "Bitcoin stack & spending"
         case .maddox: "Bitcoin stack & allowance"
         }
     }
@@ -67,6 +69,15 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable {
             "mason-transactions"
         case .maddox:
             "maddox-transactions"
+        }
+    }
+
+    var mc2BTCBuysFileName: String {
+        switch self {
+        case .mason:
+            "mason-bitcoin-buys"
+        case .victor, .rachel, .maddox:
+            "bitcoin-buys"
         }
     }
 

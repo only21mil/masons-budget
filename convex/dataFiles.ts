@@ -1,9 +1,30 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import { normalizeTodoRecord, todoUpdatedMs } from "./todoNormalize";
 
+declare const process: { env: Record<string, string | undefined> };
+
+// SAT-1326: FAIL-CLOSED token validation. Previously an unset CONVEX_SYNC_TOKEN
+// silently allowed all mutations (open). Now an unset token rejects every
+// mutation UNLESS the explicit escape hatch ALLOW_TOKENLESS_SYNC === "true" is
+// set on the deployment.
+//
+// ⚠️ CUTOVER SEQUENCING (not this lane's job to deploy): this deploy MUST be
+// sequenced with the writers having CONVEX_SYNC_TOKEN set. If Convex starts
+// enforcing the token before mission-control/server.js and the MC2 bridge send
+// it, all todo/transaction writes lock out. Order: (1) set the token in the
+// Convex deployment env + on both writers, (2) confirm writers send it, then
+// (3) deploy this fail-closed change.
 function validateSyncToken(token?: string) {
   const expected = process.env.CONVEX_SYNC_TOKEN;
-  if (!expected) return;
+  if (!expected) {
+    if (process.env.ALLOW_TOKENLESS_SYNC === "true") return;
+    throw new Error(
+      "Unauthorized: CONVEX_SYNC_TOKEN is not configured (fail-closed). " +
+        "Set the token on the deployment, or set ALLOW_TOKENLESS_SYNC=true to " +
+        "explicitly allow tokenless writes.",
+    );
+  }
   if (!token || token !== expected) {
     throw new Error("Unauthorized: invalid sync token");
   }
@@ -80,7 +101,13 @@ const appTodoValidator = v.object({
   sync_source: v.optional(v.union(v.string(), v.null())),
   createdAt: v.optional(v.union(v.string(), v.null())),
   created: v.optional(v.union(v.string(), v.null())),
+  updatedAt: v.optional(v.union(v.string(), v.null())),
   updated_at: v.optional(v.union(v.string(), v.null())),
+  // SAT-1328 canonical superset additions:
+  notes: v.optional(v.union(v.string(), v.null())),
+  source: v.optional(v.union(v.string(), v.null())),
+  completedAt: v.optional(v.union(v.string(), v.null())),
+  completed_by: v.optional(v.union(v.string(), v.null())),
 });
 
 async function bumpSyncVersion(
@@ -285,31 +312,18 @@ export const upsertTodo = mutation({
         item && typeof item === "object" && "id" in item && item.id === todo.id,
     );
 
-    const normalized = {
-      ...todo,
-      title: todo.title ?? todo.text ?? "Untitled task",
-      text: todo.text ?? todo.title ?? "Untitled task",
-      category: todo.category ?? "sats",
-      type: todo.type ?? todo.category ?? "sats",
-      status:
-        todo.status ?? (todo.done || todo.completed ? "completed" : "pending"),
-      owner: todo.owner ?? "victor",
-      assignee: todo.assignee ?? todo.owner ?? "victor",
-      created_by: todo.created_by ?? "vogel-vault",
-      sync_source: todo.sync_source ?? "vogel-vault",
-      updated_at: todo.updated_at ?? new Date(now).toISOString(),
-    };
+    // SAT-1328: normalize via the shared mirror (canonical: mission-control/
+    // lib/todo-normalize.js). Emits the dual-field superset.
+    const normalized = normalizeTodoRecord(todo as Record<string, any>, {
+      now,
+    });
 
     if (existingIndex >= 0) {
-      const existingItem = currentTodos[existingIndex] as Record<string, unknown>;
-      const rawExisting = existingItem?.updated_at
-        ? new Date(existingItem.updated_at as string).getTime()
-        : 0;
-      const rawIncoming = normalized.updated_at
-        ? new Date(normalized.updated_at).getTime()
-        : now;
-      const existingUpdated = Number.isNaN(rawExisting) ? 0 : rawExisting;
-      const incomingUpdated = Number.isNaN(rawIncoming) ? now : rawIncoming;
+      // SAT-1326 LWW: incoming applies only when its updated_at is newer (ties
+      // favor the incoming write, which is the freshly stamped server edit).
+      const existingItem = currentTodos[existingIndex] as Record<string, any>;
+      const existingUpdated = todoUpdatedMs(existingItem);
+      const incomingUpdated = todoUpdatedMs(normalized) || now;
       if (incomingUpdated >= existingUpdated) {
         currentTodos[existingIndex] = normalized;
       }
@@ -348,7 +362,13 @@ export const upsertTodo = mutation({
   },
 });
 
-/** Atomically remove a todo by ID from todos and bump its version. */
+/**
+ * Atomically remove a todo by ID from todos AND write a delete tombstone
+ * (SAT-1327) so the MC2 sync bridge removes it locally and a later pull cannot
+ * resurrect it. The tombstone always gets (re)written even if the todo was not
+ * present in the payload, so a delete for a todo that only exists locally still
+ * propagates. Keeps the `{ removed: bool }` return contract.
+ */
 export const removeTodo = mutation({
   args: {
     todoId: v.string(),
@@ -359,6 +379,19 @@ export const removeTodo = mutation({
     const name = "todos";
     const now = Date.now();
 
+    // 1. Upsert the tombstone first (separate table; out of the app payload).
+    const tombstone = await ctx.db
+      .query("todoTombstones")
+      .withIndex("by_todo_id", (q) => q.eq("id", todoId))
+      .first();
+    if (tombstone) {
+      await ctx.db.patch(tombstone._id, { deletedAt: now });
+    } else {
+      await ctx.db.insert("todoTombstones", { id: todoId, deletedAt: now });
+    }
+
+    // 2. Remove from the todos payload if present, bumping the version so the
+    //    app re-fetches the cleaned list.
     const existing = await ctx.db
       .query("dataFiles")
       .withIndex("by_name", (q) => q.eq("name", name))
@@ -377,10 +410,19 @@ export const removeTodo = mutation({
 
     const beforeCount = currentTodos.length;
     const filtered = currentTodos.filter(
-      (item) => !(item && typeof item === "object" && "id" in item && item.id === todoId),
+      (item) =>
+        !(
+          item &&
+          typeof item === "object" &&
+          "id" in item &&
+          item.id === todoId
+        ),
     );
 
-    if (filtered.length === beforeCount) return { name, removed: false };
+    if (filtered.length === beforeCount) {
+      // Tombstone written, but nothing to strip from the payload.
+      return { name, removed: false };
+    }
 
     const nextData =
       currentData &&
@@ -399,6 +441,19 @@ export const removeTodo = mutation({
 
     await bumpSyncVersion(ctx, name, nextVersion, now);
     return { name, version: nextVersion, removed: true };
+  },
+});
+
+/**
+ * List all todo delete tombstones (SAT-1327). The MC2 sync bridge calls this on
+ * every pull to drop locally any todo whose tombstone deletedAt is newer than
+ * its local updated_at.
+ */
+export const listTodoTombstones = query({
+  args: {},
+  handler: async (ctx) => {
+    const docs = await ctx.db.query("todoTombstones").collect();
+    return docs.map((d) => ({ id: d.id, deletedAt: d.deletedAt }));
   },
 });
 
@@ -433,13 +488,22 @@ export const appendBillPay = mutation({
 
     const currentData = existing?.data;
     // bill pays file has { bill_pays: [...] } structure
-    let wrapper: any = currentData && typeof currentData === "object" && !Array.isArray(currentData)
-      ? { ...currentData }
-      : { bill_pays: [] };
+    let wrapper: any =
+      currentData &&
+      typeof currentData === "object" &&
+      !Array.isArray(currentData)
+        ? { ...currentData }
+        : { bill_pays: [] };
 
-    const billPays = Array.isArray(wrapper.bill_pays) ? [...wrapper.bill_pays] : [];
+    const billPays = Array.isArray(wrapper.bill_pays)
+      ? [...wrapper.bill_pays]
+      : [];
     const existingIndex = billPays.findIndex(
-      (item: any) => item && typeof item === "object" && "id" in item && item.id === billPay.id
+      (item: any) =>
+        item &&
+        typeof item === "object" &&
+        "id" in item &&
+        item.id === billPay.id,
     );
 
     if (existingIndex >= 0) {

@@ -1,5 +1,5 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct ActivityView: View {
     @Environment(\.theme) var theme
@@ -9,11 +9,20 @@ struct ActivityView: View {
     @Query(sort: \Transaction.date, order: .reverse) private var allTransactions: [Transaction]
 
     @State private var filter: TxFilter = .all
+    @State private var searchText = ""
     @State private var showCSVImport = false
 
-    private var unit: DisplayUnit { DisplayUnit(rawValue: displayUnitRaw) ?? .btc }
-    private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
-    private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
+    private var unit: DisplayUnit {
+        DisplayUnit(rawValue: displayUnitRaw) ?? .btc
+    }
+
+    private var activeMember: FamilyMember {
+        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    }
+
+    private var btcPrice: Decimal {
+        BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+    }
 
     enum TxFilter: String, CaseIterable {
         case all = "All"
@@ -24,14 +33,16 @@ struct ActivityView: View {
     }
 
     private var filtered: [Transaction] {
-        let visible = allTransactions.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
-        switch filter {
-        case .all: return visible
-        case .income: return visible.filter { $0.isIncome }
-        case .spends: return visible.filter { $0.isSpend }
-        case .lightning: return visible.filter { $0.card == "lightning" }
-        case .onChain: return visible.filter { $0.card == "on-chain" || $0.card == nil }
+        let visible = allTransactions.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+        let scoped: [Transaction] = switch filter {
+        case .all: visible
+        case .income: visible.filter(\.isIncome)
+        case .spends: visible.filter(\.isSpend)
+        case .lightning: visible.filter { $0.card == "lightning" }
+        case .onChain: visible.filter { $0.card == "on-chain" || $0.card == nil }
         }
+
+        return scoped.filter { SearchMatcher.matches(transaction: $0, query: searchText) }
     }
 
     private var grouped: [(String, [Transaction])] {
@@ -64,7 +75,7 @@ struct ActivityView: View {
                 HStack(alignment: .top) {
                     ScreenHeader(
                         title: "Activity",
-                        eyebrow: "Lightning + On-chain"
+                        eyebrow: "Lightning + On-chain",
                     )
                     Spacer()
                     Button {
@@ -95,6 +106,7 @@ struct ActivityView: View {
             .padding(.bottom, 100)
         }
         .background(theme.bg)
+        .searchable(text: $searchText, prompt: "Search activity")
         .sheet(isPresented: $showCSVImport) {
             CSVImportView()
         }
@@ -118,24 +130,35 @@ struct ActivityView: View {
     // MARK: - Transaction Groups
 
     private var transactionGroups: some View {
-        VStack(spacing: AppLayout.cardSpacing) {
-            ForEach(Array(grouped.prefix(10)), id: \.0) { day, txs in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(day.uppercased())
-                        .font(.system(size: 11, weight: .bold))
-                        .tracking(0.66)
-                        .foregroundStyle(theme.textMuted)
-                        .padding(.horizontal, 4)
+        let isSearching = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
-                    VStack(spacing: 0) {
-                        ForEach(Array(txs.enumerated()), id: \.element.id) { idx, tx in
-                            txRow(tx: tx)
-                            if idx < txs.count - 1 {
-                                Hairline(indent: 60)
+        LazyVStack(spacing: AppLayout.cardSpacing) {
+            if grouped.isEmpty {
+                Text(isSearching ? "No matching transactions" : "No transactions yet")
+                    .font(.system(size: 13))
+                    .foregroundStyle(theme.textFaint)
+                    .frame(maxWidth: .infinity)
+                    .padding(20)
+                    .glassCard(padding: 0, radius: AppLayout.radiusMedium)
+            } else {
+                ForEach(grouped, id: \.0) { day, txs in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(day.uppercased())
+                            .font(.system(size: 11, weight: .bold))
+                            .tracking(0.66)
+                            .foregroundStyle(theme.textMuted)
+                            .padding(.horizontal, 4)
+
+                        VStack(spacing: 0) {
+                            ForEach(Array(txs.enumerated()), id: \.element.id) { idx, tx in
+                                txRow(tx: tx)
+                                if idx < txs.count - 1 {
+                                    Hairline(indent: 60)
+                                }
                             }
                         }
+                        .glassCard(padding: 0, radius: AppLayout.radiusMedium)
                     }
-                    .glassCard(padding: 0, radius: AppLayout.radiusMedium)
                 }
             }
         }
@@ -158,7 +181,7 @@ struct ActivityView: View {
                             } else {
                                 CatGlyphView(kind: glyphFor(tx.category), size: 16, color: colorFor(tx.category))
                             }
-                        }
+                        },
                     )
 
                 VStack(alignment: .leading, spacing: 2) {

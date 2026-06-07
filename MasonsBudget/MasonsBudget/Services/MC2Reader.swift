@@ -88,7 +88,8 @@ actor MC2Reader {
 
         return rawTodos.compactMap { item in
             guard JSONSerialization.isValidJSONObject(item),
-                  let data = try? JSONSerialization.data(withJSONObject: item) else {
+                  let data = try? JSONSerialization.data(withJSONObject: item)
+            else {
                 log.warning("Todo item is not valid JSON, skipping")
                 return nil
             }

@@ -1,5 +1,5 @@
-import SwiftUI
 import LocalAuthentication
+import SwiftUI
 
 struct LockScreenView: View {
     @Binding var isUnlocked: Bool

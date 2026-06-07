@@ -17,11 +17,11 @@
 
 This is **The Vogel Vault** (internal repo name still "Mason's Budget App"). SwiftUI iOS + macOS app, multi-profile family Bitcoin + budget dashboard. Backend is Convex (`keen-elephant-452.convex.cloud`); MC2 pushes JSON files there via `dataFiles:sync`, the app reads them.
 
-- App repo: this directory (`~/projects/Mason's Budget App`) — **iOS + macOS targets share the same Swift source code**
+- App repo: this directory (`/home/victor/dgxprojects/Mason's Budget App` on DGX) — **iOS + macOS targets share the same Swift source code**
 - Bundle id: `com.sats21m.masonsbudget` · Team `384ZGKG4GB`
 - Live to TestFlight via temp keychain + API key auth. Build BOTH `MasonsBudget` (iOS) AND `MasonsBudgetMac` (macOS) schemes on every release.
 - iOS DTOs in `MasonsBudget/MasonsBudget/Services/MC2DTOs.swift` mirror MC2's JSON schemas. If a JSON shape changes in MC2, the DTO + mapper change here.
-- Native app Convex mutations are disabled until there is real per-user auth or a server-owned write path. Do **not** put `CONVEX_SYNC_TOKEN` or any shared write token in Swift source, UserDefaults, or bundled config. MC2/private sync owns the current Convex write token.
+- Native app writeback exists through `AppWriteSyncService` for approved app-originated transactions/todos when `ConvexConfig.isConfigured` is true. Do **not** put shared Convex write tokens in Swift source, UserDefaults, or bundled config; app writeback must use the approved configured path only, and MC2/private sync remains the owner of private bulk sync.
 
 ---
 
@@ -47,7 +47,7 @@ extension FamilyMember {
 
 Records persisted to SwiftData are tagged with the **canonical** owner from the JSON (adults → `.victor`, mason_401k → `.mason`). Visibility is then resolved at query time via `canSee`. Don't tag records with the active member just because that member triggered the sync.
 
-Profile switching is in `Views/SettingsTab.swift`. Kids cannot switch into adult profiles; the picker uses `FamilyMember.allowedSwitchTargets` (returns `[self]` for kids). Adults switching profiles must pass Face ID via `LocalAuthentication` — see `requiresAuthToSwitch`.
+Profile switching is in `Views/Components/ProfileSwitcherView.swift`. Kids cannot switch into adult profiles; the picker uses `FamilyMember.allowedSwitchTargets` (returns `[self]` for kids). Adults switching profiles must pass Face ID via `LocalAuthentication` — see `requiresAuthToSwitch`.
 
 ---
 
@@ -62,7 +62,7 @@ Profile switching is in `Views/SettingsTab.swift`. Kids cannot switch into adult
 | Convex client | `Services/ConvexClient.swift` |
 | Convex reader | `Services/MC2Reader.swift` |
 | App entry | `App/MasonsBudgetApp.swift` |
-| Tabs | `Views/{Dashboard,Money,Spending,Settings}Tab.swift` |
+| Screens / tabs | `Views/Screens/*.swift` |
 | Charts | `Views/Components/*.swift` |
 
 Sync entry points in `MC2SyncService.syncAll()` are split by member. Mason path: `syncSonBalances`, `syncMasonBudget`, `syncMasonTransactions`, `syncMasonBTCBuys`, `syncFinances`. Adult path: `syncTransactions`, `syncBudget`, `syncBTCAccounts`, `syncBTCBuys`, `syncBTCBillPays`, `syncFinances`. The wipe-and-replace pattern (`replaceAll(...)`) is intentional — profile switches re-sync from scratch.
@@ -82,15 +82,16 @@ Sync entry points in `MC2SyncService.syncAll()` are split by member. Mason path:
 
 **Do not start a new distributable build without Victor's explicit approval.**
 
-This app is often worked by Codex, OpenCode, Claude, and Sats lanes. All of them may keep fixing bugs, creating/updating Linear issues, moving to the next issue, editing code, and running local tests/simulator checks automatically.
+This app is often worked by Codex, OpenCode, Claude, and Sats lanes. All of them may keep fixing bugs, creating/updating Linear issues, moving to the next issue, editing code, and running static/non-app-artifact checks automatically.
 
 Stop and ask Victor before:
 - bumping `CURRENT_PROJECT_VERSION` for distribution
+- any `xcodebuild build` / `xcodebuild test` / simulator build-run command that builds app targets
 - creating an archive for TestFlight/App Store/tester distribution
 - exporting an `.ipa`, `.app`, `.pkg`, `.dmg`, or other release artifact
 - uploading to TestFlight/App Store Connect or any distribution channel
 
-Read `/Users/node2m1pro/Obsidian/Victor/Agent-Shared/rules/app-build-deploy-workflow.md` before any approved build/release sequence.
+Read `/home/victor/Obsidian/Victor/Agent-Shared/rules/app-build-deploy-workflow.md` before any approved build/release sequence on DGX.
 
 ## Build, archive, TestFlight
 
@@ -98,14 +99,14 @@ This app runs in macOS Background sessions (Claude Code, Codex), which **don't s
 
 - Combined Dev + Distribution p12: `~/.openclaw/private/signing-transfer/air-xcode-identities.p12`
 - Password file: `~/.openclaw/private/signing-transfer/rlh-p12-pass.txt` (yes, the rlh-named file is the one with the air-xcode-identities password — confusing but durable)
-- ASC API key (Admin tier): `~/.appstoreconnect/private_keys/AuthKey_59588HYRQK.p8` · ID `59588HYRQK` · Issuer `ded50b50-7670-456c-b221-10f1d038c7ea`
+- ASC API key: use the approved App Store Connect private key from the local secret store; do not copy key filenames, key IDs, issuer IDs, or private key material into repo docs.
 
 Build pipeline reference: `/tmp/vogel-vault-build.sh` (1) creates a temp keychain, (2) imports the combined p12 with `set-key-partition-list`, (3) replaces the search list, (4) `xcodebuild ... archive` with `-allowProvisioningUpdates` + the API key flags, (5) `-exportArchive` with the same flags, (6) `xcrun altool --upload-app`, (7) cleanup.
 
 **Pre-archive checklist after Victor approves the distributable build:**
 1. Confirm Victor explicitly approved starting this build/release sequence.
-2. `xcodegen generate` — `project.yml` is source of truth; `MasonsBudget.xcodeproj` is generated. Don't edit pbxproj by hand.
-3. Bump `CURRENT_PROJECT_VERSION` in `project.yml` (App Store Connect requires monotonic increase across all builds for a given app).
+2. `cd MasonsBudget && xcodegen generate --spec project.yml` — `MasonsBudget/project.yml` is source of truth; `MasonsBudget.xcodeproj` is generated. Don't edit pbxproj by hand.
+3. Bump `CURRENT_PROJECT_VERSION` in `MasonsBudget/project.yml` (App Store Connect requires monotonic increase across all builds for a given app).
 3. `xcodebuild test -destination 'platform=iOS Simulator,name=iPhone 17'` → must be green.
 4. `xcodebuild build -destination 'platform=iOS Simulator,name=iPhone 17'` → must be clean.
 5. SourceKit/LSP "Cannot find type" diagnostics on the MC2DTOs / MC2Mapper / MC2SyncService files are **persistent index noise**, not real errors. Trust `xcodebuild`.
@@ -135,4 +136,4 @@ Multiple agents work this project (Claude Code, OpenCode, Codex, Sats workers). 
 
 ---
 
-*Last updated 2026-05-01 · v0.3.0 in progress · Victor Vogel*
+*Last updated 2026-06-06 · v0.5.0 / build 32 source line · Victor Vogel*

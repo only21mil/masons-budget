@@ -1,5 +1,5 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct BTCBillPayView: View {
     @Environment(\.theme) var theme
@@ -8,16 +8,29 @@ struct BTCBillPayView: View {
 
     @Query(sort: \BTCBillPay.date, order: .reverse) private var allBillPays: [BTCBillPay]
 
-    private var unit: DisplayUnit { DisplayUnit(rawValue: displayUnitRaw) ?? .btc }
-    private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
-    private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
+    private var unit: DisplayUnit {
+        DisplayUnit(rawValue: displayUnitRaw) ?? .btc
+    }
+
+    private var activeMember: FamilyMember {
+        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    }
+
+    private var btcPrice: Decimal {
+        BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+    }
 
     private var visibleBillPays: [BTCBillPay] {
         allBillPays.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
     }
 
-    private var totalUsd: Decimal { visibleBillPays.reduce(Decimal(0)) { $0 + $1.amountUSD } }
-    private var totalBtcSpent: Decimal { visibleBillPays.reduce(Decimal(0)) { $0 + $1.btcSpent } }
+    private var totalUsd: Decimal {
+        visibleBillPays.reduce(Decimal(0)) { $0 + $1.amountUSD }
+    }
+
+    private var totalBtcSpent: Decimal {
+        visibleBillPays.reduce(Decimal(0)) { $0 + $1.btcSpent }
+    }
 
     private var grouped: [(String, [BTCBillPay])] {
         let df = DateFormatter()
@@ -74,7 +87,7 @@ struct BTCBillPayView: View {
         .background(theme.bg)
         .navigationTitle("Bill Pay")
         #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.inline)
         #endif
     }
 
@@ -102,7 +115,7 @@ struct BTCBillPayView: View {
         }
         .padding(20)
         .background(
-            LinearGradient(colors: [theme.plum, theme.plum.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            LinearGradient(colors: [theme.plum, theme.plum.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing),
         )
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
@@ -115,7 +128,7 @@ struct BTCBillPayView: View {
                 .overlay(
                     Image(systemName: iconFor(bp.category))
                         .font(.system(size: 16))
-                        .foregroundStyle(theme.plum)
+                        .foregroundStyle(theme.plum),
                 )
 
             VStack(alignment: .leading, spacing: 2) {
@@ -140,12 +153,12 @@ struct BTCBillPayView: View {
 
     private func iconFor(_ category: String) -> String {
         switch category.lowercased() {
-        case let c where c.contains("mortgage") || c.contains("housing"): return "house.fill"
-        case let c where c.contains("insurance"): return "shield.fill"
-        case let c where c.contains("credit"): return "creditcard.fill"
-        case let c where c.contains("auto") || c.contains("car"): return "car.fill"
-        case let c where c.contains("util"): return "bolt.fill"
-        default: return "banknote.fill"
+        case let c where c.contains("mortgage") || c.contains("housing"): "house.fill"
+        case let c where c.contains("insurance"): "shield.fill"
+        case let c where c.contains("credit"): "creditcard.fill"
+        case let c where c.contains("auto") || c.contains("car"): "car.fill"
+        case let c where c.contains("util"): "bolt.fill"
+        default: "banknote.fill"
         }
     }
 }

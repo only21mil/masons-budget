@@ -20,7 +20,7 @@ final class BudgetNotificationManager {
     func evaluateBudgetAlerts(
         categories: [BudgetCategory],
         transactions: [Transaction],
-        member: FamilyMember = BudgetNotificationManager.currentMember
+        member: FamilyMember = BudgetNotificationManager.currentMember,
     ) {
         for alert in budgetAlerts(categories: categories, transactions: transactions, member: member) {
             notify(title: alert.title, body: alert.body, category: alert.category, member: member)
@@ -31,7 +31,7 @@ final class BudgetNotificationManager {
         categories: [BudgetCategory],
         transactions: [Transaction],
         member: FamilyMember = BudgetNotificationManager.currentMember,
-        now: Date = Date()
+        now: Date = Date(),
     ) -> [BudgetAlert] {
         let cal = Calendar.current
         let thisMonth = transactions.filter {
@@ -54,13 +54,13 @@ final class BudgetNotificationManager {
                 alerts.append(BudgetAlert(
                     title: "\(cat.name) Over Budget",
                     body: "You've spent \(formatCurrency(spent)) of \(formatCurrency(cat.monthlyBudget)). Over by \(formatCurrency(spent - cat.monthlyBudget)).",
-                    category: cat.name
+                    category: cat.name,
                 ))
             } else if pct > 0.85 {
                 alerts.append(BudgetAlert(
                     title: "\(cat.name) Almost at Limit",
                     body: "\(formatCurrency(spent)) spent of \(formatCurrency(cat.monthlyBudget)) (\(Int(Double(truncating: (pct * 100) as NSNumber)))%).",
-                    category: cat.name
+                    category: cat.name,
                 ))
             }
         }
@@ -88,7 +88,7 @@ final class BudgetNotificationManager {
     func syncDaily(
         categories: [BudgetCategory],
         transactions: [Transaction],
-        member: FamilyMember = BudgetNotificationManager.currentMember
+        member: FamilyMember = BudgetNotificationManager.currentMember,
     ) {
         requestPermission()
         evaluateBudgetAlerts(categories: categories, transactions: transactions, member: member)

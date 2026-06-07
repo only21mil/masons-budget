@@ -14,7 +14,7 @@ final class NetWorthSnapshot {
         totalValue: Decimal,
         btcValue: Decimal,
         holdingsValue: Decimal,
-        owner: FamilyMember = .victor
+        owner: FamilyMember = .victor,
     ) {
         self.date = date
         self.totalValue = totalValue

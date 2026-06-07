@@ -1,7 +1,6 @@
 import Foundation
 
 enum MC2Mapper {
-
     static func parseDate(_ raw: String) -> Date {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime]
@@ -34,7 +33,7 @@ enum MC2Mapper {
                 owner: owner,
                 createdBy: "mc2",
                 createdAt: parseDate(dto.date),
-                sourceFile: "transactions.json"
+                sourceFile: "transactions.json",
             )
         }
     }
@@ -44,7 +43,7 @@ enum MC2Mapper {
             income: dto.income,
             budgetMonth: dto.month,
             topLevelMTD: dto.mtdIncome,
-            topLevelYTD: dto.ytdIncome
+            topLevelYTD: dto.ytdIncome,
         )
 
         return MonthlyBudgetSnapshot(
@@ -57,7 +56,7 @@ enum MC2Mapper {
             mtdIncome: actualIncome.mtd,
             ytdIncome: actualIncome.ytd,
             payFrequency: dto.income?.payFrequency ?? "weekly",
-            strategyNote: sanitizedStrategyNote(dto.strategy?.strategyNote)
+            strategyNote: sanitizedStrategyNote(dto.strategy?.strategyNote),
         )
     }
 
@@ -65,7 +64,7 @@ enum MC2Mapper {
         income: MC2BudgetIncome?,
         budgetMonth: String,
         topLevelMTD: Decimal? = nil,
-        topLevelYTD: Decimal? = nil
+        topLevelYTD: Decimal? = nil,
     ) -> (mtd: Decimal, ytd: Decimal) {
         let paychecks = income?.paychecks ?? []
         let calendar = Calendar.current
@@ -125,7 +124,7 @@ enum MC2Mapper {
                 owner: owner,
                 createdBy: "mc2",
                 createdAt: parseDate(paycheck.date),
-                sourceFile: "budget.json"
+                sourceFile: "budget.json",
             )
         }
     }
@@ -137,7 +136,7 @@ enum MC2Mapper {
             return MonthlyBudgetSnapshot(
                 monthKey: entry.month,
                 mtdIncome: entry.income ?? 0,
-                ytdIncome: entry.income ?? 0
+                ytdIncome: entry.income ?? 0,
             )
         }
     }
@@ -150,7 +149,7 @@ enum MC2Mapper {
                 icon: dto.icon ?? "questionmark.circle",
                 monthlyBudget: dto.budget,
                 sortOrder: index,
-                owner: owner
+                owner: owner,
             )
         }
     }
@@ -163,12 +162,16 @@ enum MC2Mapper {
                 custody: entry.custody == "self_custody" ? .selfCustody : .exchange,
                 btc: entry.btc,
                 fiat: entry.fiat,
-                owner: owner
+                owner: owner,
             )
         }
     }
 
     static func mapBTCBuy(_ dto: MC2BTCBuy, owner: FamilyMember = .victor) -> BTCBuy {
+        let resolvedOwner = dto.owner
+            .flatMap { FamilyMember(rawValue: $0.lowercased()) }
+            ?? owner
+
         BTCBuy(
             id: dto.id,
             date: parseDate(dto.date),
@@ -182,7 +185,7 @@ enum MC2Mapper {
             costBasisStatus: dto.costBasisStatus ?? "complete",
             loggedBy: dto.loggedBy,
             archimedesRequestId: dto.archimedesRequestId,
-            owner: owner
+            owner: resolvedOwner,
         )
     }
 
@@ -202,7 +205,7 @@ enum MC2Mapper {
             platform: dto.platform ?? "Strike",
             note: dto.note,
             reference: dto.reference,
-            owner: owner
+            owner: owner,
         )
     }
 
@@ -217,7 +220,8 @@ enum MC2Mapper {
         }
 
         if let masonAccount = finances.mason401k,
-           let holdingAccount = mapFinanceAccount(key: "mason_401k", account: masonAccount, viewer: owner, ownerOverride: .mason) {
+           let holdingAccount = mapFinanceAccount(key: "mason_401k", account: masonAccount, viewer: owner, ownerOverride: .mason)
+        {
             accounts.append(holdingAccount)
         }
 
@@ -237,7 +241,7 @@ enum MC2Mapper {
         key: String,
         account: MC2FinanceAccount,
         viewer: FamilyMember,
-        ownerOverride: FamilyMember? = nil
+        ownerOverride: FamilyMember? = nil,
     ) -> HoldingAccount? {
         let accountOwner: FamilyMember
         if let ownerOverride {
@@ -248,46 +252,46 @@ enum MC2Mapper {
         }
         guard viewer.canSee(dataOwnedBy: accountOwner) else { return nil }
 
-            let holdingAccount = HoldingAccount(
-                name: key,
-                provider: account.provider ?? key,
-                owner: accountOwner,
-                totalValue: account.total ?? 0
+        let holdingAccount = HoldingAccount(
+            name: key,
+            provider: account.provider ?? key,
+            owner: accountOwner,
+            totalValue: account.total ?? 0,
+        )
+
+        for holding in account.holdings {
+            let h = Holding(
+                name: holding.name,
+                category: holding.category,
+                ticker: holding.ticker,
+                value: holding.value,
+                costBasis: holding.costBasis,
+                gainPct: holding.gainPct,
+                shares: holding.shares,
+                avgCost: holding.avgCost,
+                currentPricePerShare: holding.currentPricePerShare,
+                isProxy: holding.proxy ?? false,
+                proxyNote: holding.proxyNote,
             )
+            h.account = holdingAccount
 
-            for holding in account.holdings {
-                let h = Holding(
-                    name: holding.name,
-                    category: holding.category,
-                    ticker: holding.ticker,
-                    value: holding.value,
-                    costBasis: holding.costBasis,
-                    gainPct: holding.gainPct,
-                    shares: holding.shares,
-                    avgCost: holding.avgCost,
-                    currentPricePerShare: holding.currentPricePerShare,
-                    isProxy: holding.proxy ?? false,
-                    proxyNote: holding.proxyNote
+            for lot in holding.lots ?? [] {
+                let l = HoldingLot(
+                    date: parseDate(lot.date),
+                    type: lot.type,
+                    pricePerShare: lot.pricePerShare ?? 0,
+                    shares: lot.shares ?? 0,
+                    amountInvested: lot.amountInvested ?? 0,
+                    note: lot.note,
                 )
-                h.account = holdingAccount
-
-                for lot in (holding.lots ?? []) {
-                    let l = HoldingLot(
-                        date: parseDate(lot.date),
-                        type: lot.type,
-                        pricePerShare: lot.pricePerShare ?? 0,
-                        shares: lot.shares ?? 0,
-                        amountInvested: lot.amountInvested ?? 0,
-                        note: lot.note
-                    )
-                    l.holding = h
-                    h.lots.append(l)
-                }
-
-                holdingAccount.holdings.append(h)
+                l.holding = h
+                h.lots.append(l)
             }
 
-            return holdingAccount
+            holdingAccount.holdings.append(h)
+        }
+
+        return holdingAccount
     }
 
     static func mapSonBalances(_ son: MC2SonBalances) -> [BTCAccount] {
@@ -298,10 +302,11 @@ enum MC2Mapper {
         ]
     }
 
-    static func mapTodos(_ dtos: [MC2TodoItem], viewer: FamilyMember) -> [TodoItem] {
+    static func mapTodos(_ dtos: [MC2TodoItem], viewer _: FamilyMember) -> [TodoItem] {
         dtos.compactMap { dto in
+            // Drop todos whose owner string is a non-nil unrecognized value; an absent owner
+            // defaults to .victor via effectiveOwner. All recognized owners are mapped (multi-profile).
             guard let owner = dto.effectiveOwner else { return nil }
-            guard owner == .victor else { return nil }
 
             return TodoItem(
                 id: dto.id,
@@ -315,7 +320,7 @@ enum MC2Mapper {
                 owner: owner,
                 createdBy: "mc2",
                 updatedAt: dto.updatedAt.map(parseDate) ?? .now,
-                sourceFile: "todos.json"
+                sourceFile: "todos.json",
             )
         }
     }

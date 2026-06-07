@@ -7,7 +7,9 @@ enum TransactionActivityType: String, CaseIterable, Identifiable {
     case income
     case transfer
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var title: String {
         switch self {
@@ -36,7 +38,9 @@ struct TransactionSourceOption: Identifiable, Hashable {
     let supportedTypes: Set<TransactionActivityType>
     let isBitcoinNative: Bool
 
-    var id: String { name }
+    var id: String {
+        name
+    }
 }
 
 enum TransactionSourceCatalog {
@@ -55,7 +59,7 @@ enum TransactionSourceCatalog {
         TransactionSourceOption(name: "Strike", provider: "Strike", supportedTypes: [.spend, .btcBillPay, .btcBuy, .income, .transfer], isBitcoinNative: true),
         TransactionSourceOption(name: "Strike Bill Pay", provider: "Strike", supportedTypes: [.btcBillPay], isBitcoinNative: true),
         TransactionSourceOption(name: "Strike BTC Buy", provider: "Strike", supportedTypes: [.btcBuy], isBitcoinNative: true),
-        TransactionSourceOption(name: "Coldcard", provider: "Coldcard", supportedTypes: [.transfer], isBitcoinNative: true)
+        TransactionSourceOption(name: "Coldcard", provider: "Coldcard", supportedTypes: [.transfer], isBitcoinNative: true),
     ]
 
     static func sources(for type: TransactionActivityType, including current: String? = nil) -> [String] {
@@ -65,7 +69,8 @@ enum TransactionSourceCatalog {
 
         if let current = current?.trimmingCharacters(in: .whitespacesAndNewlines),
            !current.isEmpty,
-           !names.contains(current) {
+           !names.contains(current)
+        {
             names.insert(current, at: 0)
         }
 

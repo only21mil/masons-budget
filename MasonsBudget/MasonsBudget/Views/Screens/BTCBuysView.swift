@@ -1,5 +1,5 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct BTCBuysView: View {
     @Environment(\.theme) var theme
@@ -8,9 +8,17 @@ struct BTCBuysView: View {
 
     @Query(sort: \BTCBuy.date, order: .reverse) private var allBuys: [BTCBuy]
 
-    private var unit: DisplayUnit { DisplayUnit(rawValue: displayUnitRaw) ?? .btc }
-    private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
-    private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
+    private var unit: DisplayUnit {
+        DisplayUnit(rawValue: displayUnitRaw) ?? .btc
+    }
+
+    private var activeMember: FamilyMember {
+        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    }
+
+    private var btcPrice: Decimal {
+        BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+    }
 
     private var visibleBuys: [BTCBuy] {
         allBuys.filter { buy in
@@ -19,8 +27,13 @@ struct BTCBuysView: View {
         }
     }
 
-    private var totalBtc: Decimal { visibleBuys.reduce(Decimal(0)) { $0 + $1.amountBTC } }
-    private var totalUsd: Decimal { visibleBuys.reduce(Decimal(0)) { $0 + $1.usd } }
+    private var totalBtc: Decimal {
+        visibleBuys.reduce(Decimal(0)) { $0 + $1.amountBTC }
+    }
+
+    private var totalUsd: Decimal {
+        visibleBuys.reduce(Decimal(0)) { $0 + $1.usd }
+    }
 
     private var grouped: [(String, [BTCBuy])] {
         let df = DateFormatter()
@@ -77,7 +90,7 @@ struct BTCBuysView: View {
         .background(theme.bg)
         .navigationTitle("Bitcoin Buys")
         #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.inline)
         #endif
     }
 
@@ -101,7 +114,7 @@ struct BTCBuysView: View {
         }
         .padding(20)
         .background(
-            LinearGradient(colors: [theme.accent, theme.accentDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
+            LinearGradient(colors: [theme.accent, theme.accentDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
         )
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
@@ -112,7 +125,7 @@ struct BTCBuysView: View {
                 .fill(theme.accentSoft)
                 .frame(width: 38, height: 38)
                 .overlay(
-                    BtcGlyphView(size: 18, color: theme.accent)
+                    BtcGlyphView(size: 18, color: theme.accent),
                 )
 
             VStack(alignment: .leading, spacing: 2) {

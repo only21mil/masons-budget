@@ -23,7 +23,9 @@
  *     --allow-target-mismatch is explicitly passed.
  *   - Adult app transactions are written through MC2's log_transaction.py.
  *   - Mason app transactions are written through MC2's log_mason_transaction.py.
- *   - App todos are reconciled into todos.json directly; no helper exists yet.
+ *   - App todos are reconciled into todos.json by id + updated_at LWW.
+ *   - The bridge never full-file pushes todos; Mission Control is the single
+ *     todos writer and Convex tombstones are honored on pull.
  *   - Convex versions are only bumped for files whose JSON payload changed.
  */
 
@@ -32,6 +34,8 @@ import { api } from "../convex/_generated/api.js";
 import fs from "fs";
 import path from "path";
 import { spawnSync } from "child_process";
+import { createRequire } from "module";
+import { fileURLToPath } from "url";
 
 // ── Configuration ──
 
@@ -84,6 +88,36 @@ function parseArgs(argv) {
 
 const options = parseArgs(process.argv.slice(2));
 const { dryRun, mc2Path } = options;
+const require = createRequire(import.meta.url);
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+
+function loadTodoNormalizer() {
+  const candidates = [
+    path.join(mc2Path, "lib", "todo-normalize.js"),
+    path.resolve(scriptDir, "../../mission-control/lib/todo-normalize.js"),
+    path.resolve(process.cwd(), "../mission-control/lib/todo-normalize.js"),
+  ];
+
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate)) continue;
+    const mod = require(candidate);
+    if (
+      typeof mod.isAppCreatedTodo === "function" &&
+      typeof mod.normalizeTodoRecord === "function"
+    ) {
+      return {
+        isAppCreatedTodo: mod.isAppCreatedTodo,
+        normalizeTodoRecord: mod.normalizeTodoRecord,
+      };
+    }
+  }
+
+  throw new Error(
+    `Canonical todo normalizer not found. Expected one of: ${candidates.join(", ")}`,
+  );
+}
+
+const { isAppCreatedTodo, normalizeTodoRecord } = loadTodoNormalizer();
 
 // Load .env.local if it exists (don't override explicit env vars)
 const envLocalPath = path.join(process.cwd(), ".env.local");
@@ -123,7 +157,6 @@ const MC2_FILES = [
   { file: "bitcoin-buys.json", name: "bitcoin-buys" },
   { file: "bitcoin-bill-pays.json", name: "bitcoin-bill-pays" },
   { file: "finances.json", name: "finances" },
-  { file: "todos.json", name: "todos" },
   { file: "son-balances.json", name: "son-balances" },
   { file: "mason-budget.json", name: "mason-budget" },
   { file: "mason-transactions.json", name: "mason-transactions" },
@@ -131,7 +164,6 @@ const MC2_FILES = [
 ];
 
 const APP_TODO_FILES = [{ name: "todos", file: "todos.json" }];
-const VALID_TODO_LANES = ["work", "personal", "sats"];
 
 const APP_TRANSACTION_FILES = [
   { name: "transactions", file: "transactions.json", owner: "victor" },
@@ -201,12 +233,6 @@ function normalizeAppTransaction(transaction) {
   };
 }
 
-function normalizeTodoLane(value) {
-  if (value == null) return null;
-  const normalized = String(value).trim().toLowerCase();
-  return VALID_TODO_LANES.includes(normalized) ? normalized : null;
-}
-
 function isValidAppTransaction(transaction) {
   return Boolean(
     transaction.id &&
@@ -248,54 +274,8 @@ function withTodoList(originalData, todos) {
   return todos;
 }
 
-function isAppCreatedTodo(todo) {
-  const id = String(todo?.id || "");
-  return (
-    id.startsWith("vv-") ||
-    String(todo?.created_by || "") === "vogel-vault" ||
-    String(todo?.sync_source || "") === "vogel-vault"
-  );
-}
-
 function normalizeAppTodo(todo) {
-  const id = String(todo?.id || "");
-  const title = String(todo?.title || todo?.text || "").trim();
-  const category =
-    normalizeTodoLane(todo?.category || todo?.type || todo?.project) || "sats";
-  const createdAt =
-    todo?.createdAt == null ? new Date().toISOString() : String(todo.createdAt);
-  const dueDate =
-    todo?.due_date == null ? "" : String(todo.due_date).slice(0, 10);
-  return {
-    id,
-    text: title,
-    title,
-    project: todo?.project == null ? "Inbox" : String(todo.project),
-    area: todo?.area == null ? "" : String(todo.area),
-    due_date: dueDate,
-    dueDate,
-    priority: Number(todo?.priority || 0),
-    flag: Boolean(todo?.flag || todo?.flagged),
-    done: Boolean(todo?.done || todo?.completed),
-    status: todo?.done || todo?.completed ? "completed" : "pending",
-    type: category,
-    category,
-    owner: todo?.owner == null ? "victor" : String(todo.owner),
-    assignee:
-      todo?.assignee == null
-        ? todo?.owner == null
-          ? "victor"
-          : String(todo.owner)
-        : String(todo.assignee),
-    created_by: "vogel-vault",
-    sync_source: "vogel-vault",
-    createdAt,
-    created: createdAt.slice(0, 10),
-    updated_at:
-      todo?.updated_at == null
-        ? new Date().toISOString()
-        : String(todo.updated_at),
-  };
+  return normalizeTodoRecord(todo, { defaultTimestamps: false });
 }
 
 function isValidAppTodo(todo) {
@@ -304,6 +284,43 @@ function isValidAppTodo(todo) {
 
 function findTodo(todos, appTodo) {
   return todos.find((todo) => String(todo?.id || "") === String(appTodo.id));
+}
+
+function todoUpdatedMs(todo) {
+  const raw = todo?.updated_at ?? todo?.updatedAt ?? todo?.completedAt ?? null;
+  if (raw == null || raw === "") return 0;
+  const ms = new Date(String(raw)).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
+function shouldApplyRemoteTodo(localTodo, remoteTodo) {
+  if (!localTodo) return true;
+  return todoUpdatedMs(remoteTodo) > todoUpdatedMs(localTodo);
+}
+
+function tombstoneDeletedMs(tombstone) {
+  const raw = tombstone?.deletedAt ?? tombstone?.deleted_at ?? null;
+  if (raw == null || raw === "") return 0;
+  if (typeof raw === "number") return raw;
+  const ms = new Date(String(raw)).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
+function isTombstonedNewerThanTodo(tombstone, todo) {
+  if (!tombstone) return false;
+  return tombstoneDeletedMs(tombstone) > todoUpdatedMs(todo);
+}
+
+async function fetchTodoTombstones(client) {
+  try {
+    const tombstones = await client.query(api.dataFiles.listTodoTombstones, {});
+    return Array.isArray(tombstones) ? tombstones : [];
+  } catch (err) {
+    console.warn(
+      `  WARN  todo tombstones unavailable; continuing without delete pull (${err.message})`,
+    );
+    return [];
+  }
 }
 
 function runHelper(scriptName, transaction, payloadOverrides = {}) {
@@ -387,8 +404,13 @@ async function pullAppTransactionsFromConvex(client) {
 }
 
 async function pullAppTodosFromConvex(client) {
-  console.log("Reconciling app-created Convex todos into MC2...");
+  console.log("Reconciling Convex todos into MC2 by id + updated_at LWW...");
   let applied = 0;
+  let removed = 0;
+  const tombstones = await fetchTodoTombstones(client);
+  const tombstoneById = new Map(
+    tombstones.map((tombstone) => [String(tombstone?.id || ""), tombstone]),
+  );
 
   for (const { name, file } of APP_TODO_FILES) {
     const remote = await client.query(api.dataFiles.get, { name });
@@ -400,13 +422,25 @@ async function pullAppTodosFromConvex(client) {
     const localTodos = todoListFromData(localData);
     let changed = false;
 
+    for (let idx = localTodos.length - 1; idx >= 0; idx -= 1) {
+      const localTodo = localTodos[idx];
+      const tombstone = tombstoneById.get(String(localTodo?.id || ""));
+      if (!isTombstonedNewerThanTodo(tombstone, localTodo)) continue;
+
+      localTodos.splice(idx, 1);
+      removed += 1;
+      changed = true;
+      console.log(`  DROP  ${name}:${localTodo.id} ← tombstone`);
+    }
+
     for (const raw of remoteTodos) {
-      if (!isAppCreatedTodo(raw)) continue;
       const todo = normalizeAppTodo(raw);
       if (!isValidAppTodo(todo)) continue;
+      const tombstone = tombstoneById.get(String(todo.id));
+      if (isTombstonedNewerThanTodo(tombstone, todo)) continue;
 
       const existing = findTodo(localTodos, todo);
-      if (existing && canonicalJson(existing) === canonicalJson(todo)) continue;
+      if (!shouldApplyRemoteTodo(existing, todo)) continue;
 
       if (existing) {
         const idx = localTodos.indexOf(existing);
@@ -427,9 +461,13 @@ async function pullAppTodosFromConvex(client) {
     }
   }
 
-  if (applied === 0) console.log("  OK    no app-created todos to pull");
-  else console.log(`  OK    pulled ${applied} app-created todo(s)`);
-  return applied;
+  if (applied === 0 && removed === 0)
+    console.log("  OK    no newer remote todos or tombstones to pull");
+  else
+    console.log(
+      `  OK    pulled ${applied} newer remote todo(s), removed ${removed} tombstoned todo(s)`,
+    );
+  return applied + removed;
 }
 
 async function collectChangedFiles(client) {
@@ -480,8 +518,16 @@ async function runSyncOnce(client) {
 
   console.log(`\nPushing ${filesToSync.length} changed file(s) to Convex...`);
 
+  const token = process.env.CONVEX_SYNC_TOKEN || "";
+  if (!token) {
+    throw new Error(
+      "CONVEX_SYNC_TOKEN is required for Convex syncBatch writes (fail-closed).",
+    );
+  }
+
   const results = await client.mutation(api.dataFiles.syncBatch, {
     files: filesToSync,
+    token,
   });
 
   console.log("\nSync complete:");

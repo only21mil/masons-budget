@@ -1,11 +1,10 @@
 // Mason's Budget App — Unit Tests
 
-import XCTest
-import SwiftUI
 import SwiftData
+import SwiftUI
+import XCTest
 
 final class MasonsBudgetTests: XCTestCase {
-
     // MARK: - Theme & UI
 
     func testAppThemeColorsExist() {
@@ -89,7 +88,7 @@ final class MasonsBudgetTests: XCTestCase {
             merchant: "Costco",
             amount: 45.99,
             category: "Groceries",
-            createdBy: "mason"
+            createdBy: "mason",
         )
         XCTAssertEqual(tx.id, "t-test-001")
         XCTAssertEqual(tx.merchant, "Costco")
@@ -107,12 +106,12 @@ final class MasonsBudgetTests: XCTestCase {
             amount: 90,
             category: "Bitcoin",
             amountSats: 125_000,
-            createdBy: "test"
+            createdBy: "test",
         )
 
         XCTAssertEqual(tx.amount, 90)
         XCTAssertEqual(tx.amountSats, 125_000)
-        XCTAssertEqual(tx.satsValue(btcPrice: 90_000), 125_000)
+        XCTAssertEqual(tx.satsValue(btcPrice: 90000), 125_000)
     }
 
     func testTransactionDerivesSatsFromFiatWhenExplicitSatsMissing() {
@@ -122,18 +121,97 @@ final class MasonsBudgetTests: XCTestCase {
             merchant: "Coffee",
             amount: 90,
             category: "Dining",
-            createdBy: "test"
+            createdBy: "test",
         )
 
         XCTAssertNil(tx.amountSats)
-        XCTAssertEqual(tx.satsValue(btcPrice: 90_000), 100_000)
+        XCTAssertEqual(tx.satsValue(btcPrice: 90000), 100_000)
+    }
+
+    // MARK: - Search
+
+    func testSearchMatcherFindsTransactionAcrossMerchantNoteAmountCategoryAndCard() {
+        let tx = Transaction(
+            id: "t-search-001",
+            date: .now,
+            merchant: "Café São Paulo",
+            amount: -42.75,
+            category: "Dining",
+            amountSats: 45000,
+            card: "lightning",
+            note: "Family dinner",
+            createdBy: "test",
+        )
+
+        XCTAssertTrue(SearchMatcher.matches(transaction: tx, query: "cafe sao"))
+        XCTAssertTrue(SearchMatcher.matches(transaction: tx, query: "family"))
+        XCTAssertTrue(SearchMatcher.matches(transaction: tx, query: "42.75"))
+        XCTAssertTrue(SearchMatcher.matches(transaction: tx, query: "dining"))
+        XCTAssertTrue(SearchMatcher.matches(transaction: tx, query: "45000"))
+        XCTAssertTrue(SearchMatcher.matches(transaction: tx, query: "LIGHTNING"))
+        XCTAssertFalse(SearchMatcher.matches(transaction: tx, query: "groceries"))
+    }
+
+    func testSearchMatcherFindsTodoAcrossTitleProjectAndArea() {
+        let todo = TodoItem(
+            id: "todo-search-001",
+            title: "Call orthodontist",
+            project: "Health Admin",
+            area: "Family",
+            owner: .rachel,
+            createdBy: "mc2",
+        )
+
+        XCTAssertTrue(SearchMatcher.matches(todo: todo, query: "ORTHODONTIST"))
+        XCTAssertTrue(SearchMatcher.matches(todo: todo, query: "health"))
+        XCTAssertTrue(SearchMatcher.matches(todo: todo, query: "family"))
+        XCTAssertFalse(SearchMatcher.matches(todo: todo, query: "mortgage"))
+    }
+
+    @MainActor
+    func testSyncStatusStoreTracksFailureAndRetry() {
+        let store = SyncStatusStore()
+        var didRetry = false
+
+        store.begin("Save transaction")
+        store.complete("Save transaction", success: false, retry: {
+            didRetry = true
+        })
+
+        XCTAssertEqual(store.phase, .failed)
+        XCTAssertEqual(store.pendingCount, 0)
+        XCTAssertEqual(store.lastError, "Save transaction did not sync")
+
+        store.retry()
+
+        XCTAssertTrue(didRetry)
+        XCTAssertEqual(store.phase, .idle)
+        XCTAssertNil(store.lastError)
+    }
+
+    @MainActor
+    func testSyncStatusStoreClearsAfterFinalSuccess() {
+        let store = SyncStatusStore()
+
+        store.begin("Save todo")
+        store.begin("Save transaction")
+        store.complete("Save todo", success: true)
+
+        XCTAssertEqual(store.phase, .syncing)
+        XCTAssertEqual(store.pendingCount, 1)
+
+        store.complete("Save transaction", success: true)
+
+        XCTAssertEqual(store.phase, .idle)
+        XCTAssertEqual(store.pendingCount, 0)
+        XCTAssertNil(store.lastError)
     }
 
     func testBudgetCategoryInit() {
         let cat = BudgetCategory(
             name: "Groceries",
             icon: "cart.fill",
-            monthlyBudget: 800
+            monthlyBudget: 800,
         )
         XCTAssertEqual(cat.name, "Groceries")
         XCTAssertEqual(cat.sortOrder, 0)
@@ -144,7 +222,7 @@ final class MasonsBudgetTests: XCTestCase {
         let category = BudgetCategory(
             name: "Gaming",
             icon: "gamecontroller.fill",
-            monthlyBudget: 100
+            monthlyBudget: 100,
         )
         let masonTransaction = Transaction(
             id: "tx-mason-gaming",
@@ -153,7 +231,7 @@ final class MasonsBudgetTests: XCTestCase {
             amount: 90,
             category: "Gaming",
             owner: .mason,
-            createdBy: "mason"
+            createdBy: "mason",
         )
         let victorTransaction = Transaction(
             id: "tx-victor-gaming",
@@ -162,98 +240,129 @@ final class MasonsBudgetTests: XCTestCase {
             amount: 90,
             category: "Gaming",
             owner: .victor,
-            createdBy: "victor"
+            createdBy: "victor",
         )
 
         let alerts = BudgetNotificationManager.shared.budgetAlerts(
             categories: [category],
             transactions: [masonTransaction, victorTransaction],
-            member: .mason
+            member: .mason,
         )
 
         XCTAssertEqual(alerts.count, 1)
         XCTAssertEqual(alerts.first?.title, "Gaming Almost at Limit")
     }
 
-    func testBTCAccountInit() {
-        let acct = BTCAccount(
+    func testBTCAccountInit() throws {
+        let acct = try BTCAccount(
             key: "strike-victor",
             label: "Strike",
             custody: .exchange,
-            btc: Decimal(string: "0.01001648")!,
-            owner: .victor
+            btc: XCTUnwrap(Decimal(string: "0.01001648")),
+            owner: .victor,
         )
         XCTAssertEqual(acct.key, "strike-victor")
         XCTAssertEqual(acct.custody, .exchange)
         XCTAssertEqual(acct.fiat, 0)
     }
 
-    func testBTCAccountUsesSyncedFiatValue() {
+    func testBTCAccountUsesSyncedFiatValue() throws {
         UserDefaults.standard.removeObject(forKey: BTCPriceService.priceKey)
-        let acct = BTCAccount(
+        let acct = try BTCAccount(
             key: "river-victor",
             label: "River",
             custody: .exchange,
-            btc: Decimal(string: "0.5")!,
+            btc: XCTUnwrap(Decimal(string: "0.5")),
             fiat: 50000,
-            owner: .victor
+            owner: .victor,
         )
 
         XCTAssertEqual(acct.usdValue(), 50000)
     }
 
-    func testBTCAccountUsesLivePriceOverSnapshotFiat() {
-        let acct = BTCAccount(
+    func testBTCAccountUsesLivePriceOverSnapshotFiat() throws {
+        let acct = try BTCAccount(
             key: "river-victor-live",
             label: "River",
             custody: .exchange,
-            btc: Decimal(string: "0.5")!,
+            btc: XCTUnwrap(Decimal(string: "0.5")),
             fiat: 50000,
-            owner: .victor
+            owner: .victor,
         )
 
-        XCTAssertEqual(acct.usdValue(liveBTCPrice: 100000), 50000)
+        XCTAssertEqual(acct.usdValue(liveBTCPrice: 100_000), 50000)
     }
 
-    func testBTCBuyInit() {
-        let buy = BTCBuy(
+    func testBTCBuyInit() throws {
+        let buy = try BTCBuy(
             id: "b-strike-2026-04-30",
             date: .now,
             source: "Strike",
-            amountBTC: Decimal(string: "0.00052")!,
+            amountBTC: XCTUnwrap(Decimal(string: "0.00052")),
             amountSats: 52000,
             priceUSD: 95000,
-            usd: 49.40
+            usd: 49.40,
         )
         XCTAssertEqual(buy.status, "complete")
         XCTAssertEqual(buy.costBasisStatus, "complete")
         XCTAssertNil(buy.archimedesRequestId)
     }
 
-    func testBTCBillPayInit() {
-        let pay = BTCBillPay(
+    func testBTCBuyPayloadPreservesDecimalAndOwnerShape() throws {
+        let buy = try BTCBuy(
+            id: "b-app-test",
+            date: Date(timeIntervalSince1970: 1_777_000_000),
+            source: "River",
+            amountBTC: XCTUnwrap(Decimal(string: "0.00123456")),
+            amountSats: 123_456,
+            priceUSD: XCTUnwrap(Decimal(string: "100000")),
+            usd: XCTUnwrap(Decimal(string: "123.456")),
+            note: "Logged in app",
+            loggedBy: "app",
+            owner: .rachel,
+        )
+
+        let dto = MC2BTCBuy(appBuy: buy)
+        let object = try dto.convexJSONObject()
+
+        XCTAssertEqual(dto.amountBtc, Decimal(string: "0.00123456"))
+        XCTAssertEqual(dto.amountSats, 123_456)
+        XCTAssertEqual(dto.owner, FamilyMember.rachel.rawValue)
+        XCTAssertEqual(object["owner"] as? String, FamilyMember.rachel.rawValue)
+        XCTAssertEqual((object["amount_sats"] as? NSNumber)?.int64Value, 123_456)
+    }
+
+    func testBTCBuyFileRoutingUsesDedicatedMasonFileOnly() {
+        XCTAssertEqual(FamilyMember.victor.mc2BTCBuysFileName, "bitcoin-buys")
+        XCTAssertEqual(FamilyMember.rachel.mc2BTCBuysFileName, "bitcoin-buys")
+        XCTAssertEqual(FamilyMember.mason.mc2BTCBuysFileName, "mason-bitcoin-buys")
+        XCTAssertEqual(FamilyMember.maddox.mc2BTCBuysFileName, "bitcoin-buys")
+    }
+
+    func testBTCBillPayInit() throws {
+        let pay = try BTCBillPay(
             id: "bp-mortgage-2026-04",
             date: .now,
             merchant: "Mortgage",
             category: "Housing",
             amountUSD: 2800,
-            btcSpent: Decimal(string: "0.029")!,
-            btcPrice: 96551
+            btcSpent: XCTUnwrap(Decimal(string: "0.029")),
+            btcPrice: 96551,
         )
         XCTAssertEqual(pay.platform, "Strike")
         XCTAssertNil(pay.feeUSD)
         XCTAssertEqual(pay.ownerMember, .victor)
     }
 
-    func testBTCBillPayHiddenFromKidProfiles() {
-        let pay = BTCBillPay(
+    func testBTCBillPayHiddenFromKidProfiles() throws {
+        let pay = try BTCBillPay(
             id: "bp-victor",
             date: .now,
             merchant: "PENNYMAC",
             category: "Mortgage",
             amountUSD: 3613.79,
-            btcSpent: Decimal(string: "0.054")!,
-            btcPrice: 66612.33
+            btcSpent: XCTUnwrap(Decimal(string: "0.054")),
+            btcPrice: 66612.33,
         )
         XCTAssertTrue(FamilyMember.victor.canSee(dataOwnedBy: pay.ownerMember))
         XCTAssertTrue(FamilyMember.rachel.canSee(dataOwnedBy: pay.ownerMember))
@@ -268,7 +377,7 @@ final class MasonsBudgetTests: XCTestCase {
             dueDate: Date(),
             isFlagged: true,
             owner: .victor,
-            createdBy: "vogel-vault"
+            createdBy: "vogel-vault",
         )
 
         XCTAssertEqual(todo.id, "vv-test-task")
@@ -327,12 +436,53 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertEqual(dtos.first?.completedAt, "1774914863035")
     }
 
+    func testTodoMapperKeepsRecognizedNonVictorOwnersAndDropsUnknownOwners() throws {
+        let json = """
+        [
+          {
+            "id": "rachel-task",
+            "text": "Rachel task",
+            "owner": "rachel"
+          },
+          {
+            "id": "mason-task",
+            "text": "Mason task",
+            "owner": "mason"
+          },
+          {
+            "id": "unknown-owner-task",
+            "text": "Unknown owner task",
+            "owner": "sats"
+          }
+        ]
+        """.data(using: .utf8)!
+
+        let dtos = try JSONDecoder().decode([MC2TodoItem].self, from: json)
+        let todos = MC2Mapper.mapTodos(dtos, viewer: .victor)
+
+        XCTAssertEqual(todos.map(\.id), ["rachel-task", "mason-task"])
+        XCTAssertEqual(todos.map(\.ownerMember), [.rachel, .mason])
+    }
+
+    func testAppTodoPayloadPreservesTodoOwner() {
+        let todo = TodoItem(
+            id: "mason-app-task",
+            title: "Mason app task",
+            owner: .mason,
+            createdBy: "app",
+        )
+
+        let dto = MC2TodoItem(appTodo: todo)
+
+        XCTAssertEqual(dto.owner, FamilyMember.mason.rawValue)
+    }
+
     func testHoldingAccountRelationship() {
         let acct = HoldingAccount(
             name: "401k",
             provider: "Fidelity",
             owner: .victor,
-            totalValue: 773307.46
+            totalValue: 773_307.46,
         )
         XCTAssertTrue(acct.holdings.isEmpty)
         XCTAssertEqual(acct.weeklyContribution, 0)

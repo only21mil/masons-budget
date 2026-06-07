@@ -35,7 +35,7 @@ final class BTCBuy {
         costBasisStatus: String = "complete",
         loggedBy: String? = nil,
         archimedesRequestId: String? = nil,
-        owner: FamilyMember? = nil
+        owner: FamilyMember? = nil,
     ) {
         self.id = id
         self.date = date

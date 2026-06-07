@@ -1,5 +1,5 @@
-import SwiftUI
 import LocalAuthentication
+import SwiftUI
 
 struct ProfileSwitcherView: View {
     @Environment(\.theme) private var theme
@@ -10,7 +10,7 @@ struct ProfileSwitcherView: View {
     @State private var authError: String?
 
     private var appearanceMode: AppearanceMode {
-        get { AppearanceMode(rawValue: appearanceModeRaw) ?? .system }
+        AppearanceMode(rawValue: appearanceModeRaw) ?? .system
     }
 
     private var activeMember: FamilyMember {
@@ -49,14 +49,14 @@ struct ProfileSwitcherView: View {
             .background(theme.bg)
             .navigationTitle("Switch Profile")
             #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
+                .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                        .foregroundStyle(theme.accent)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") { dismiss() }
+                            .foregroundStyle(theme.accent)
+                    }
                 }
-            }
         }
     }
 
@@ -87,7 +87,7 @@ struct ProfileSwitcherView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
-                                .stroke(isSelected ? theme.accent : theme.border, lineWidth: 1)
+                                .stroke(isSelected ? theme.accent : theme.border, lineWidth: 1),
                         )
                     }
                     .buttonStyle(.plain)
@@ -119,7 +119,7 @@ struct ProfileSwitcherView: View {
                     .overlay(
                         Text(String(member.displayName.prefix(1)))
                             .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(isAllowed ? theme.accent : theme.textFaint)
+                            .foregroundStyle(isAllowed ? theme.accent : theme.textFaint),
                     )
 
                 VStack(alignment: .leading, spacing: 2) {

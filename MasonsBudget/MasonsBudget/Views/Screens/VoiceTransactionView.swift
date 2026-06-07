@@ -1,7 +1,7 @@
-import SwiftUI
-import SwiftData
-import Speech
 import AVFoundation
+import Speech
+import SwiftData
+import SwiftUI
 
 struct VoiceTransactionView: View {
     @Environment(\.theme) private var theme
@@ -15,8 +15,13 @@ struct VoiceTransactionView: View {
     @State private var didParse = false
 
     private let parser = VoiceParser()
-    private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
-    private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
+    private var btcPrice: Decimal {
+        BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+    }
+
+    private var activeMember: FamilyMember {
+        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    }
 
     private var canSave: Bool {
         parsed.amount != nil && !(parsed.merchant ?? "").isEmpty
@@ -36,31 +41,31 @@ struct VoiceTransactionView: View {
             .background(theme.bg)
             .navigationTitle("Voice Transaction")
             #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
+                .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        transcriber.stop()
-                        dismiss()
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            transcriber.stop()
+                            dismiss()
+                        }
+                        .foregroundStyle(theme.accent)
                     }
-                    .foregroundStyle(theme.accent)
-                }
 
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { saveTransaction() }
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(canSave ? theme.accent : theme.textFaint)
-                        .disabled(!canSave)
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") { saveTransaction() }
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(canSave ? theme.accent : theme.textFaint)
+                            .disabled(!canSave)
+                    }
                 }
-            }
-            .onChange(of: transcriber.transcript) { _, value in
-                transcript = value
-                parseTranscript()
-            }
-            .onDisappear {
-                transcriber.stop()
-            }
+                .onChange(of: transcriber.transcript) { _, value in
+                    transcript = value
+                    parseTranscript()
+                }
+                .onDisappear {
+                    transcriber.stop()
+                }
         }
     }
 
@@ -185,7 +190,7 @@ struct VoiceTransactionView: View {
             card: method,
             note: parsed.note ?? transcript,
             owner: activeMember,
-            createdBy: "voice"
+            createdBy: "voice",
         )
         modelContext.insert(tx)
         try? modelContext.save()
@@ -246,14 +251,14 @@ final class SpeechTranscriber: ObservableObject {
         task = nil
 
         #if os(iOS)
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.record, mode: .measurement, options: .duckOthers)
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
-        } catch {
-            errorMessage = "Microphone setup failed."
-            return
-        }
+            do {
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.record, mode: .measurement, options: .duckOthers)
+                try session.setActive(true, options: .notifyOthersOnDeactivation)
+            } catch {
+                errorMessage = "Microphone setup failed."
+                return
+            }
         #endif
 
         let request = SFSpeechAudioBufferRecognitionRequest()

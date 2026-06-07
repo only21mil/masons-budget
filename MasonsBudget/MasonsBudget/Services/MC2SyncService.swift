@@ -1,6 +1,6 @@
 import Foundation
-import SwiftData
 import os
+import SwiftData
 
 @MainActor
 final class MC2SyncService {
@@ -26,7 +26,7 @@ final class MC2SyncService {
 
     /// Convenience init using the default Convex client.
     init(context: ModelContext) {
-        self.reader = MC2Reader()
+        reader = MC2Reader()
         self.context = context
     }
 
@@ -56,7 +56,7 @@ final class MC2SyncService {
         } else {
             // Maddox does not have dedicated MC2 finance files yet. Keep his sync
             // limited to shared todos until those data files exist.
-            log.info("No dedicated MC2 finance sync path for \(self.currentMember.rawValue, privacy: .public)")
+            log.info("No dedicated MC2 finance sync path for \(currentMember.rawValue, privacy: .public)")
         }
 
         recordNetWorthSnapshot()
@@ -250,7 +250,7 @@ final class MC2SyncService {
                 mtdIncome: actualIncome.mtd,
                 ytdIncome: actualIncome.ytd,
                 payFrequency: income.payFrequency ?? "weekly",
-                strategyNote: nil
+                strategyNote: nil,
             )
         }
 
@@ -261,7 +261,7 @@ final class MC2SyncService {
             monthlyGross: weeklyAllowance * 4,
             mtdIncome: weeklyAllowance * 4,
             ytdIncome: weeklyAllowance * 4,
-            strategyNote: "Allowance: $\(weeklyAllowance)/week from \(dto.allowance?.source ?? "Parents")"
+            strategyNote: "Allowance: $\(weeklyAllowance)/week from \(dto.allowance?.source ?? "Parents")",
         )
     }
 
@@ -326,7 +326,7 @@ final class MC2SyncService {
                 totalValue: btcValue + holdingsValue,
                 btcValue: btcValue,
                 holdingsValue: holdingsValue,
-                owner: currentMember
+                owner: currentMember,
             )
             context.insert(snapshot)
         } catch {
@@ -388,19 +388,49 @@ final class MC2SyncService {
     }
 
     private func replaceBTCBuys(ownedBy owners: [FamilyMember], with buys: [BTCBuy]) {
+        let existing: [BTCBuy]
         do {
-            let existing = try context.fetch(FetchDescriptor<BTCBuy>())
-            for buy in existing {
-                guard let member = buy.ownerMember, owners.contains(member) else { continue }
-                context.delete(buy)
-            }
+            existing = try context.fetch(FetchDescriptor<BTCBuy>())
         } catch {
-            log.error("Failed to delete BTCBuy slice: \(error.localizedDescription)")
+            log.error("Failed to fetch BTCBuy slice: \(error.localizedDescription)")
+            return
+        }
+
+        let remoteIds = Set(buys.map(\.id))
+        var existingById: [String: BTCBuy] = [:]
+        for buy in existing {
+            existingById[buy.id] = buy
+        }
+
+        for buy in existing {
+            guard let member = buy.ownerMember, owners.contains(member) else { continue }
+            guard !remoteIds.contains(buy.id) else { continue }
+            guard buy.loggedBy != "app" else { continue }
+            context.delete(buy)
         }
 
         for buy in buys {
-            context.insert(buy)
+            if let local = existingById[buy.id] {
+                updateBTCBuy(local, from: buy)
+            } else {
+                context.insert(buy)
+            }
         }
+    }
+
+    private func updateBTCBuy(_ local: BTCBuy, from remote: BTCBuy) {
+        local.date = remote.date
+        local.source = remote.source
+        local.amountBTC = remote.amountBTC
+        local.amountSats = remote.amountSats
+        local.priceUSD = remote.priceUSD
+        local.usd = remote.usd
+        local.note = remote.note
+        local.status = remote.status
+        local.costBasisStatus = remote.costBasisStatus
+        local.loggedBy = remote.loggedBy
+        local.archimedesRequestId = remote.archimedesRequestId
+        local.owner = remote.owner
     }
 
     private func replaceBTCBillPays(ownedBy owners: [FamilyMember], with billPays: [BTCBillPay]) {
@@ -418,7 +448,7 @@ final class MC2SyncService {
         }
     }
 
-    private func replaceTodos(visibleTo viewer: FamilyMember, with remoteTodos: [TodoItem]) {
+    func replaceTodos(visibleTo _: FamilyMember, with remoteTodos: [TodoItem]) {
         let existing: [TodoItem]
         do {
             existing = try context.fetch(FetchDescriptor<TodoItem>())
@@ -427,13 +457,27 @@ final class MC2SyncService {
             return
         }
 
-        // Only touch Victor-owned mc2-sourced todos — other members' app-only todos are untouched
-        let victorMC2Local = existing.filter { $0.ownerMember == .victor && $0.createdBy == "mc2" }
-        let localById = Dictionary(victorMC2Local.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // Reconcile only mc2-sourced todos for owners present in this payload.
+        // App-only todos and owners absent from the payload are untouched.
+        let remoteOwners = Set(remoteTodos.map(\.ownerMember))
+        let scopedMC2Local = existing.filter { $0.createdBy == "mc2" && remoteOwners.contains($0.ownerMember) }
+        // Full id index across ALL existing rows so an insert can never collide with an
+        // existing @Attribute(.unique) id (app-created or out-of-scope owner).
+        let existingById = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let remoteById = Dictionary(remoteTodos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
 
         for remote in remoteTodos {
-            if let local = localById[remote.id] {
+            if let local = existingById[remote.id] {
+                // An app-created row owns this id: never overwrite user-entered data and never
+                // insert a duplicate of the unique id.
+                if local.createdBy == "app" {
+                    log.warning("Skipping mc2 todo \(remote.id): id already owned by app-created row")
+                    continue
+                }
+                guard local.createdBy == "mc2" else {
+                    log.warning("Skipping mc2 todo \(remote.id): id already owned by non-mc2 row")
+                    continue
+                }
                 if remote.updatedAt > local.updatedAt {
                     local.title = remote.title
                     local.project = remote.project
@@ -452,7 +496,7 @@ final class MC2SyncService {
             }
         }
 
-        for local in victorMC2Local {
+        for local in scopedMC2Local {
             if remoteById[local.id] == nil {
                 context.delete(local)
             }
@@ -487,5 +531,4 @@ final class MC2SyncService {
             context.insert(account)
         }
     }
-
 }

@@ -7,17 +7,17 @@ enum CategoryGlyph: String, CaseIterable {
 
     var systemImage: String {
         switch self {
-        case .fork:   "fork.knife"
-        case .home:   "house"
-        case .plane:  "airplane"
-        case .heart:  "heart"
-        case .bolt:   "bolt.fill"
+        case .fork: "fork.knife"
+        case .home: "house"
+        case .plane: "airplane"
+        case .heart: "heart"
+        case .bolt: "bolt.fill"
         case .wrench: "wrench.and.screwdriver"
-        case .gift:   "gift"
-        case .box:    "shippingbox"
-        case .doc:    "doc.text"
-        case .cpu:    "cpu"
-        case .vault:  "lock.shield"
+        case .gift: "gift"
+        case .box: "shippingbox"
+        case .doc: "doc.text"
+        case .cpu: "cpu"
+        case .vault: "lock.shield"
         case .people: "person.2"
         }
     }
@@ -44,7 +44,7 @@ struct CatGlyphView: View {
 
 struct BtcGlyphView: View {
     var size: CGFloat = 20
-    var color: Color = Color(hex: 0xF7931A)
+    var color: Color = .init(hex: 0xF7931A)
     var filled: Bool = false
 
     var body: some View {
@@ -64,7 +64,7 @@ struct BtcGlyphView: View {
 
 struct SatsGlyphView: View {
     var size: CGFloat = 20
-    var color: Color = Color(hex: 0xF7931A)
+    var color: Color = .init(hex: 0xF7931A)
 
     var body: some View {
         Canvas { context, canvasSize in
@@ -76,7 +76,7 @@ struct SatsGlyphView: View {
                 let center = CGPoint(x: cx * scale, y: y)
                 context.fill(Circle().path(in: CGRect(
                     x: center.x - dotR, y: center.y - dotR,
-                    width: dotR * 2, height: dotR * 2
+                    width: dotR * 2, height: dotR * 2,
                 )), with: .color(color))
             }
 
@@ -117,29 +117,29 @@ enum PaymentMethod: String {
 // MARK: - Convenience SF Symbol References
 
 enum AppIcon {
-    static let dashboard  = "bitcoinsign.circle"
-    static let budget     = "chart.bar.fill"
-    static let activity   = "bolt.fill"
+    static let dashboard = "bitcoinsign.circle"
+    static let budget = "chart.bar.fill"
+    static let activity = "bolt.fill"
     static let retirement = "lock.shield.fill"
-    static let netWorth   = "target"
-    static let today      = "checkmark.circle"
-    static let projects   = "tray.fill"
-    static let settings   = "gearshape"
-    static let search     = "magnifyingglass"
-    static let filter     = "line.3.horizontal.decrease"
-    static let plus       = "plus"
-    static let calendar   = "calendar"
-    static let flag       = "flag"
+    static let netWorth = "target"
+    static let today = "checkmark.circle"
+    static let projects = "tray.fill"
+    static let settings = "gearshape"
+    static let search = "magnifyingglass"
+    static let filter = "line.3.horizontal.decrease"
+    static let plus = "plus"
+    static let calendar = "calendar"
+    static let flag = "flag"
     static let flagFilled = "flag.fill"
-    static let inbox      = "tray"
-    static let arrowUp    = "arrow.up"
-    static let arrowDown  = "arrow.down"
+    static let inbox = "tray"
+    static let arrowUp = "arrow.up"
+    static let arrowDown = "arrow.down"
     static let arrowRight = "arrow.right"
-    static let dots       = "ellipsis"
-    static let checkOpen  = "circle"
-    static let checkDone  = "checkmark.circle.fill"
-    static let wallet     = "creditcard"
-    static let vault      = "lock.shield"
-    static let chain      = "link"
-    static let bolt       = "bolt"
+    static let dots = "ellipsis"
+    static let checkOpen = "circle"
+    static let checkDone = "checkmark.circle.fill"
+    static let wallet = "creditcard"
+    static let vault = "lock.shield"
+    static let chain = "link"
+    static let bolt = "bolt"
 }

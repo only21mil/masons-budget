@@ -3,12 +3,11 @@
 // Note: JSON→Decimal decoding goes through Double, so we use assertDecimalClose
 // for fractional values. Integer Decimals (6200, 500) are exact.
 
-import XCTest
-import SwiftData
 import Foundation
+import SwiftData
+import XCTest
 
 final class MC2ReaderTests: XCTestCase {
-
     // Helper: Decimal precision can drift through JSON→Double→Decimal path.
     // Compare to 8 decimal places which is more than enough for financial data.
     func assertDecimalClose(_ actual: Decimal?, _ expected: Decimal, tolerance: Decimal = 0.0001, file: StaticString = #file, line: UInt = #line) {
@@ -30,6 +29,92 @@ final class MC2ReaderTests: XCTestCase {
     func testDateParsingISO8601() {
         let date = MC2Mapper.parseDate("2026-04-30T15:09:48.945031Z")
         XCTAssertNotEqual(date, .distantPast)
+    }
+
+    func testTodayTodoPredicateIncludesOverdueAndTodayOnly() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 6, hour: 12)))
+        let overdue = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 4, hour: 9)))
+        let today = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 6, hour: 23)))
+        let tomorrow = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 7, hour: 8)))
+
+        XCTAssertTrue(TodayView.isDueTodayOrOverdue(overdue, now: now, calendar: calendar))
+        XCTAssertTrue(TodayView.isDueTodayOrOverdue(today, now: now, calendar: calendar))
+        XCTAssertFalse(TodayView.isDueTodayOrOverdue(tomorrow, now: now, calendar: calendar))
+        XCTAssertFalse(TodayView.isDueTodayOrOverdue(nil, now: now, calendar: calendar))
+    }
+
+    @MainActor
+    func testReplaceTodosUpdatesExistingMC2UniqueIDWithoutDuplicate() throws {
+        let context = try makeInMemoryTodoContext()
+        let service = MC2SyncService(context: context)
+
+        context.insert(TodoItem(
+            id: "t1",
+            title: "Original title",
+            owner: .victor,
+            createdBy: "mc2",
+            updatedAt: Date(timeIntervalSince1970: 10),
+        ))
+        try context.save()
+
+        service.replaceTodos(visibleTo: .victor, with: [
+            TodoItem(
+                id: "t1",
+                title: "Remote newer title",
+                owner: .victor,
+                createdBy: "mc2",
+                updatedAt: Date(timeIntervalSince1970: 20),
+            ),
+        ])
+        try context.save()
+
+        let todos = try context.fetch(FetchDescriptor<TodoItem>())
+        XCTAssertEqual(todos.count, 1)
+        XCTAssertEqual(todos.first?.id, "t1")
+        XCTAssertEqual(todos.first?.title, "Remote newer title")
+        XCTAssertEqual(todos.first?.createdBy, "mc2")
+    }
+
+    @MainActor
+    func testReplaceTodosPreservesAppCreatedRowOnRemoteIDCollision() throws {
+        let context = try makeInMemoryTodoContext()
+        let service = MC2SyncService(context: context)
+
+        context.insert(TodoItem(
+            id: "t1",
+            title: "User-entered task",
+            owner: .victor,
+            createdBy: "app",
+            updatedAt: Date(timeIntervalSince1970: 10),
+        ))
+        try context.save()
+
+        service.replaceTodos(visibleTo: .victor, with: [
+            TodoItem(
+                id: "t1",
+                title: "Remote mc2 task",
+                owner: .victor,
+                createdBy: "mc2",
+                updatedAt: Date(timeIntervalSince1970: 20),
+            ),
+        ])
+        try context.save()
+
+        let todos = try context.fetch(FetchDescriptor<TodoItem>())
+        XCTAssertEqual(todos.count, 1)
+        XCTAssertEqual(todos.first?.id, "t1")
+        XCTAssertEqual(todos.first?.title, "User-entered task")
+        XCTAssertEqual(todos.first?.createdBy, "app")
+    }
+
+    @MainActor
+    private func makeInMemoryTodoContext() throws -> ModelContext {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: TodoItem.self, configurations: configuration)
+        return ModelContext(container)
     }
 
     // MARK: - transactions.json
@@ -87,7 +172,7 @@ final class MC2ReaderTests: XCTestCase {
             merchant: "Paycheck",
             amount: 500,
             category: "Income",
-            createdBy: "app"
+            createdBy: "app",
         )
 
         XCTAssertTrue(tx.isIncome)
@@ -104,16 +189,16 @@ final class MC2ReaderTests: XCTestCase {
         components.day = 1
         components.hour = 12
 
-        let transaction = Transaction(
+        let transaction = try Transaction(
             id: "manual-1-abcdef",
-            date: try XCTUnwrap(components.date),
+            date: XCTUnwrap(components.date),
             merchant: "Starbucks",
             amount: 25.00,
             category: "Dining & Drinks",
             card: "Strike",
             note: "Coffee",
             owner: .victor,
-            createdBy: "manual"
+            createdBy: "manual",
         )
 
         let dto = MC2Transaction(appTransaction: transaction)
@@ -143,7 +228,7 @@ final class MC2ReaderTests: XCTestCase {
             category: "Dining & Drinks",
             card: "Aven",
             owner: .victor,
-            createdBy: "app"
+            createdBy: "app",
         )
 
         let dto = MC2Transaction(appTransaction: transaction)
@@ -236,7 +321,7 @@ final class MC2ReaderTests: XCTestCase {
 
         XCTAssertEqual(models.count, 2)
         XCTAssertEqual(models[0].name, "Bills & Utilities")
-        XCTAssertEqual(models[0].monthlyBudget, 6200)  // Integer — exact
+        XCTAssertEqual(models[0].monthlyBudget, 6200) // Integer — exact
         XCTAssertEqual(models[0].sortOrder, 0)
         XCTAssertEqual(models[1].sortOrder, 1)
         XCTAssertFalse(models[0].isIncome)
@@ -319,17 +404,17 @@ final class MC2ReaderTests: XCTestCase {
         let buys = try JSONDecoder().decode([MC2BTCBuy].self, from: json)
         XCTAssertEqual(buys.count, 1)
         XCTAssertEqual(buys[0].id, "b-strike-2026-04-01")
-        XCTAssertEqual(buys[0].amountSats, 732371)
+        XCTAssertEqual(buys[0].amountSats, 732_371)
         assertDecimalClose(buys[0].amountBtc, 0.00732371)
         assertDecimalClose(buys[0].priceUsd, 68271.41)
     }
 
-    func testMapBTCBuy() throws {
+    func testMapBTCBuy() {
         let dto = MC2BTCBuy(
             id: "b-strike-2026-04-01",
             date: "2026-04-01",
             source: "Strike",
-            amountSats: 732371,
+            amountSats: 732_371,
             amountBtc: 0.00732371,
             priceUsd: 68271.41,
             usd: 500.0,
@@ -337,15 +422,38 @@ final class MC2ReaderTests: XCTestCase {
             status: "complete",
             costBasisStatus: "complete",
             loggedBy: "user-screenshot",
-            archimedesRequestId: "arch-001"
+            archimedesRequestId: "arch-001",
         )
 
         let model = MC2Mapper.mapBTCBuy(dto)
         XCTAssertEqual(model.id, "b-strike-2026-04-01")
-        XCTAssertEqual(model.amountSats, 732371)
+        XCTAssertEqual(model.amountSats, 732_371)
         XCTAssertEqual(model.source, "Strike")
         XCTAssertEqual(model.archimedesRequestId, "arch-001")
         XCTAssertNotEqual(model.date, .distantPast)
+    }
+
+    func testMapBTCBuyPreservesExplicitOwner() {
+        let dto = MC2BTCBuy(
+            id: "b-app-rachel",
+            date: "2026-04-01",
+            source: "River",
+            amountSats: 100_000,
+            amountBtc: 0.001,
+            priceUsd: 100_000,
+            usd: 100,
+            note: "App buy",
+            status: "complete",
+            costBasisStatus: "complete",
+            loggedBy: "app",
+            archimedesRequestId: nil,
+            owner: "rachel",
+        )
+
+        let model = MC2Mapper.mapBTCBuy(dto)
+
+        XCTAssertEqual(model.ownerMember, .rachel)
+        XCTAssertEqual(model.amountSats, 100_000)
     }
 
     // MARK: - bitcoin-bill-pays.json
@@ -377,7 +485,7 @@ final class MC2ReaderTests: XCTestCase {
         assertDecimalClose(wrapper.billPays[0].feeUsd, 28.55)
     }
 
-    func testMapBTCBillPay() throws {
+    func testMapBTCBillPay() {
         let dto = MC2BTCBillPay(
             id: "bp005",
             date: "2026-03-01",
@@ -390,7 +498,7 @@ final class MC2ReaderTests: XCTestCase {
             note: "Mortgage",
             feeUsd: 28.55,
             reference: nil,
-            owner: nil
+            owner: nil,
         )
 
         let model = MC2Mapper.mapBTCBillPay(dto)
@@ -400,7 +508,7 @@ final class MC2ReaderTests: XCTestCase {
         XCTAssertEqual(model.ownerMember, .victor)
     }
 
-    func testMapBTCBillPayMasonOwner() throws {
+    func testMapBTCBillPayMasonOwner() {
         let dto = MC2BTCBillPay(
             id: "bp-mason-allowance",
             date: "2026-04-15",
@@ -413,7 +521,7 @@ final class MC2ReaderTests: XCTestCase {
             note: nil,
             feeUsd: nil,
             reference: nil,
-            owner: "mason"
+            owner: "mason",
         )
 
         let model = MC2Mapper.mapBTCBillPay(dto)
@@ -453,7 +561,7 @@ final class MC2ReaderTests: XCTestCase {
 
         let finances = try JSONDecoder().decode(MC2Finances.self, from: json)
         XCTAssertNotNil(finances.retirement.accounts["401k"])
-        assertDecimalClose(finances.retirement.accounts["401k"]?.total, 773307.46)
+        assertDecimalClose(finances.retirement.accounts["401k"]?.total, 773_307.46)
         XCTAssertEqual(finances.retirement.accounts["401k"]?.holdings.count, 1)
     }
 
@@ -539,10 +647,10 @@ final class MC2ReaderTests: XCTestCase {
         let finances = try JSONDecoder().decode(MC2Finances.self, from: json)
         let accounts = MC2Mapper.mapFinances(finances, owner: .victor)
 
-        let k401 = accounts.first(where: { $0.name == "401k" })!
+        let k401 = try XCTUnwrap(accounts.first(where: { $0.name == "401k" }))
         XCTAssertEqual(k401.provider, "Discount Tire 401(k)")
         XCTAssertEqual(k401.ownerMember, .victor)
-        assertDecimalClose(k401.totalValue, 773307.46)
+        assertDecimalClose(k401.totalValue, 773_307.46)
         XCTAssertEqual(k401.holdings.count, 1)
         XCTAssertEqual(k401.holdings[0].ticker, "VOO")
         XCTAssertEqual(k401.holdings[0].lots.count, 1)
@@ -561,7 +669,7 @@ final class MC2ReaderTests: XCTestCase {
         assertDecimalClose(son.coldcard, 0.75072814)
     }
 
-    func testMapSonBalancesCreatesMasonAccounts() throws {
+    func testMapSonBalancesCreatesMasonAccounts() {
         let son = MC2SonBalances(strike: 0.00667, river: 0.02497, coldcard: 0.75072, total: 0.78236, lastUpdated: "2026-04-24")
         let accounts = MC2Mapper.mapSonBalances(son)
 

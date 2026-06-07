@@ -1,5 +1,5 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct ExportView: View {
     @Environment(\.theme) var theme
@@ -13,7 +13,9 @@ struct ExportView: View {
     @State private var showShareSheet = false
     @State private var exportURL: URL?
 
-    private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
+    private var activeMember: FamilyMember {
+        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    }
 
     private var myTransactions: [Transaction] {
         allTransactions.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
@@ -29,21 +31,21 @@ struct ExportView: View {
                         icon: "doc.text",
                         title: "Transactions CSV",
                         subtitle: "\(myTransactions.count) records",
-                        action: exportTransactions
+                        action: exportTransactions,
                     )
                     Hairline(indent: 52)
                     exportRow(
                         icon: "chart.bar.doc.horizontal",
                         title: "Budget Summary CSV",
                         subtitle: "Categories + spending",
-                        action: exportBudgetSummary
+                        action: exportBudgetSummary,
                     )
                     Hairline(indent: 52)
                     exportRow(
                         icon: "target",
                         title: "Net Worth History CSV",
                         subtitle: "Monthly snapshots",
-                        action: exportNetWorth
+                        action: exportNetWorth,
                     )
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
@@ -103,7 +105,7 @@ struct ExportView: View {
                 csvEscape(tx.category),
                 csvEscape(tx.card ?? ""),
                 csvEscape(tx.note ?? ""),
-                tx.owner
+                tx.owner,
             ].joined(separator: ",")
             csv += row + "\n"
         }
@@ -128,7 +130,7 @@ struct ExportView: View {
                 "\(cat.monthlyBudget)",
                 "\(spent)",
                 "\(remaining)",
-                "\(pct)%"
+                "\(pct)%",
             ].joined(separator: ",")
             csv += row + "\n"
         }
@@ -150,7 +152,7 @@ struct ExportView: View {
                 df.string(from: snap.date),
                 "\(snap.totalValue)",
                 "\(snap.btcValue)",
-                "\(snap.holdingsValue)"
+                "\(snap.holdingsValue)",
             ].joined(separator: ",")
             csv += row + "\n"
         }
@@ -182,32 +184,32 @@ struct ShareSheetView: View {
 
     var body: some View {
         #if os(iOS)
-        ShareSheetRepresentable(url: url)
+            ShareSheetRepresentable(url: url)
         #else
-        VStack(spacing: 16) {
-            Text("Export Ready")
-                .font(.headline)
-            Text(url.lastPathComponent)
-                .font(.system(size: 13, design: .monospaced))
-            Button("Reveal in Finder") {
-                NSWorkspace.shared.activateFileViewerSelecting([url])
+            VStack(spacing: 16) {
+                Text("Export Ready")
+                    .font(.headline)
+                Text(url.lastPathComponent)
+                    .font(.system(size: 13, design: .monospaced))
+                Button("Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                }
+                .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.borderedProminent)
-        }
-        .padding(30)
-        .frame(minWidth: 300)
+            .padding(30)
+            .frame(minWidth: 300)
         #endif
     }
 }
 
 #if os(iOS)
-struct ShareSheetRepresentable: UIViewControllerRepresentable {
-    let url: URL
+    struct ShareSheetRepresentable: UIViewControllerRepresentable {
+        let url: URL
 
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        func makeUIViewController(context _: Context) -> UIActivityViewController {
+            UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        }
+
+        func updateUIViewController(_: UIActivityViewController, context _: Context) {}
     }
-
-    func updateUIViewController(_ uvc: UIActivityViewController, context: Context) {}
-}
 #endif

@@ -73,7 +73,8 @@ actor StockPriceService {
         guard let chart = json?["chart"] as? [String: Any],
               let result = (chart["result"] as? [[String: Any]])?.first,
               let meta = result["meta"] as? [String: Any],
-              let price = meta["regularMarketPrice"] as? Double, price > 0 else {
+              let price = meta["regularMarketPrice"] as? Double, price > 0
+        else {
             throw URLError(.cannotParseResponse)
         }
         return Decimal(price)

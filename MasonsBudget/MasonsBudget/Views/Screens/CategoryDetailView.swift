@@ -1,5 +1,5 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct CategoryDetailView: View {
     @Environment(\.theme) private var theme
@@ -16,9 +16,17 @@ struct CategoryDetailView: View {
         _monthlyBudget = State(initialValue: NSDecimalNumber(decimal: category.monthlyBudget).stringValue)
     }
 
-    private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
-    private var unit: DisplayUnit { DisplayUnit(rawValue: displayUnitRaw) ?? .btc }
-    private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
+    private var activeMember: FamilyMember {
+        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    }
+
+    private var unit: DisplayUnit {
+        DisplayUnit(rawValue: displayUnitRaw) ?? .btc
+    }
+
+    private var btcPrice: Decimal {
+        BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+    }
 
     private var categoryTransactions: [Transaction] {
         transactions.filter {
@@ -83,7 +91,7 @@ struct CategoryDetailView: View {
                                     weight: .bold,
                                     showSign: true,
                                     accent: tx.isIncome,
-                                    btcPrice: btcPrice
+                                    btcPrice: btcPrice,
                                 )
                             }
                             .padding(14)
@@ -103,15 +111,15 @@ struct CategoryDetailView: View {
         .background(theme.bg)
         .navigationTitle(category.name)
         #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.inline)
         #endif
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { save() }
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(theme.accent)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(theme.accent)
+                }
             }
-        }
     }
 
     private func save() {

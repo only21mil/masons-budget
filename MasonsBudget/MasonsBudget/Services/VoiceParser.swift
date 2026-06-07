@@ -47,7 +47,7 @@ protocol VoiceParserLLMFallback: AnyObject, Sendable {
 }
 
 final class NoOpLLMFallback: VoiceParserLLMFallback, @unchecked Sendable {
-    func refine(transcript: String, partial: ParsedTransaction) async -> ParsedTransaction {
+    func refine(transcript _: String, partial: ParsedTransaction) async -> ParsedTransaction {
         partial
     }
 }
@@ -101,7 +101,8 @@ final class VoiceParser {
     func parseWithFallback(_ transcript: String, today: Date) async -> ParsedTransaction {
         let result = parse(transcript, today: today)
         guard let fallback = llmFallback,
-              result.confidence.overall < confidenceThreshold else {
+              result.confidence.overall < confidenceThreshold
+        else {
             return result
         }
         return await fallback.refine(transcript: transcript, partial: result)
@@ -122,26 +123,30 @@ final class VoiceParser {
     private func extractAmount(from lower: String) -> Decimal? {
         if let pattern = try? NSRegularExpression(pattern: "\\$(\\d{1,3}(?:,\\d{3})*(?:\\.\\d{2})?)"),
            let match = pattern.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)),
-           let range = Range(match.range(at: 1), in: lower) {
+           let range = Range(match.range(at: 1), in: lower)
+        {
             let raw = String(lower[range]).replacingOccurrences(of: ",", with: "")
             return Decimal(string: raw)
         }
 
         if let pattern = try? NSRegularExpression(pattern: "(\\d+(?:\\.\\d+)?)\\s*dollars"),
            let match = pattern.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)),
-           let range = Range(match.range(at: 1), in: lower) {
+           let range = Range(match.range(at: 1), in: lower)
+        {
             return Decimal(string: String(lower[range]))
         }
 
         if let pattern = try? NSRegularExpression(pattern: "(\\d+(?:\\.\\d+)?)\\s*bucks"),
            let match = pattern.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)),
-           let range = Range(match.range(at: 1), in: lower) {
+           let range = Range(match.range(at: 1), in: lower)
+        {
             return Decimal(string: String(lower[range]))
         }
 
         if let pattern = try? NSRegularExpression(pattern: "(?:spent|paid|spend|pay)(?:\\s+(?:about|roughly|around))?\\s+(\\d+(?:\\.\\d+)?)"),
            let match = pattern.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)),
-           let range = Range(match.range(at: 1), in: lower) {
+           let range = Range(match.range(at: 1), in: lower)
+        {
             return Decimal(string: String(lower[range]))
         }
 
@@ -151,7 +156,8 @@ final class VoiceParser {
 
         if let pattern = try? NSRegularExpression(pattern: "paycheck\\s+(\\d+(?:\\.\\d+)?)"),
            let match = pattern.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)),
-           let range = Range(match.range(at: 1), in: lower) {
+           let range = Range(match.range(at: 1), in: lower)
+        {
             return Decimal(string: String(lower[range]))
         }
 
@@ -165,7 +171,7 @@ final class VoiceParser {
 
         var total: Decimal = 0
         var subtotal: Decimal = 0
-        for w in words[0..<endIdx] {
+        for w in words[0 ..< endIdx] {
             guard let value = wordNumbers[w] else { return nil }
             if value == 100 {
                 subtotal = (subtotal == 0 ? 1 : subtotal) * 100
@@ -196,14 +202,14 @@ final class VoiceParser {
         let words = afterOriginal.split(separator: " ").map(String.init)
         guard !words.isEmpty else { return nil }
 
-        let stopWords: Set<String> = ["for", "yesterday", "today", "on", "with", "last", "the"]
+        let stopWords: Set = ["for", "yesterday", "today", "on", "with", "last", "the"]
         var merchWords: [String] = []
         for w in words {
             let lowerW = w.lowercased()
             if stopWords.contains(lowerW) { break }
             if lowerW.hasPrefix("note:") { break }
             if isDateWord(lowerW) { break }
-            if lowerW.contains("/") && lowerW.rangeOfCharacter(from: CharacterSet.decimalDigits) != nil { break }
+            if lowerW.contains("/"), lowerW.rangeOfCharacter(from: CharacterSet.decimalDigits) != nil { break }
             merchWords.append(w)
         }
         guard !merchWords.isEmpty else { return nil }
@@ -214,12 +220,12 @@ final class VoiceParser {
         guard let range = lower.range(of: " for ") else { return nil }
         let afterOriginal = String(original[range.upperBound...])
         let afterLower = String(lower[range.upperBound...])
-        let serviceWords: Set<String> = ["subscription", "subscriptions", "service", "membership", "icloud"]
+        let serviceWords: Set = ["subscription", "subscriptions", "service", "membership", "icloud"]
         guard afterLower.split(separator: " ").contains(where: { serviceWords.contains(String($0).trimmingCharacters(in: .punctuationCharacters)) }) else { return nil }
 
         var merchWords: [String] = []
-        let skipWords: Set<String> = ["a", "an", "the"]
-        let stopWords: Set<String> = ["subscription", "subscriptions", "service", "membership", "yesterday", "today", "on", "with", "last"]
+        let skipWords: Set = ["a", "an", "the"]
+        let stopWords: Set = ["subscription", "subscriptions", "service", "membership", "yesterday", "today", "on", "with", "last"]
         for w in afterOriginal.split(separator: " ").map(String.init) {
             let lowerW = w.lowercased().trimmingCharacters(in: .punctuationCharacters)
             if skipWords.contains(lowerW) { continue }
@@ -232,7 +238,7 @@ final class VoiceParser {
     }
 
     private func trimTrailingWords(_ input: String) -> String? {
-        let stopWords: Set<String> = ["for", "yesterday", "today", "on", "with", "last"]
+        let stopWords: Set = ["for", "yesterday", "today", "on", "with", "last"]
         var parts = input.split(separator: " ").map(String.init)
         while let last = parts.last?.lowercased(), stopWords.contains(last) {
             parts.removeLast()
@@ -241,9 +247,9 @@ final class VoiceParser {
     }
 
     private func isDateWord(_ word: String) -> Bool {
-        let months: Set<String> = ["january", "february", "march", "april", "may", "june",
-                                   "july", "august", "september", "october", "november", "december"]
-        let days: Set<String> = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        let months: Set = ["january", "february", "march", "april", "may", "june",
+                           "july", "august", "september", "october", "november", "december"]
+        let days: Set = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
         return months.contains(word) || days.contains(word)
     }
 
@@ -372,20 +378,23 @@ final class VoiceParser {
         if let pattern = try? NSRegularExpression(pattern: "last\\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)"),
            let match = pattern.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)),
            let range = Range(match.range(at: 1), in: lower),
-           let target = weekdays[String(lower[range])] {
+           let target = weekdays[String(lower[range])]
+        {
             return cal.nextDate(after: today, matching: DateComponents(weekday: target), matchingPolicy: .previousTimePreservingSmallerComponents, direction: .backward)
         }
 
         if let pattern = try? NSRegularExpression(pattern: "on\\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)"),
            let match = pattern.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)),
            let range = Range(match.range(at: 1), in: lower),
-           let target = weekdays[String(lower[range])] {
+           let target = weekdays[String(lower[range])]
+        {
             return cal.nextDate(after: today, matching: DateComponents(weekday: target), matchingPolicy: .previousTimePreservingSmallerComponents, direction: .backward)
         }
 
         if let pattern = try? NSRegularExpression(pattern: "\\b(20\\d{2})-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])\\b"),
            let match = pattern.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)),
-           let range = Range(match.range(at: 0), in: lower) {
+           let range = Range(match.range(at: 0), in: lower)
+        {
             let ymd = DateFormatter()
             ymd.dateFormat = "yyyy-MM-dd"
             ymd.locale = Locale(identifier: "en_US_POSIX")
@@ -401,7 +410,8 @@ final class VoiceParser {
            let dRange = Range(match.range(at: 2), in: lower),
            let month = Int(lower[mRange]),
            let day = Int(lower[dRange]),
-           (1...12).contains(month), (1...31).contains(day) {
+           (1 ... 12).contains(month), (1 ... 31).contains(day)
+        {
             var comps = cal.dateComponents([.year], from: today)
             comps.month = month
             comps.day = day
@@ -413,7 +423,8 @@ final class VoiceParser {
            let mRange = Range(match.range(at: 1), in: lower),
            let dRange = Range(match.range(at: 2), in: lower),
            let monthNum = monthNames[String(lower[mRange])],
-           let day = Int(lower[dRange]) {
+           let day = Int(lower[dRange])
+        {
             var comps = cal.dateComponents([.year], from: today)
             comps.month = monthNum
             comps.day = day
@@ -433,8 +444,8 @@ final class VoiceParser {
             let after = String(original[range.upperBound...])
             let words = after.split(separator: " ").map(String.init)
             var cardWords: [String] = []
-            let skipWords: Set<String> = ["my"]
-            let stopWords: Set<String> = ["on", "at", "for", "yesterday", "today", "last"]
+            let skipWords: Set = ["my"]
+            let stopWords: Set = ["on", "at", "for", "yesterday", "today", "last"]
             for w in words {
                 if skipWords.contains(w.lowercased()) { continue }
                 if stopWords.contains(w.lowercased()) { break }
@@ -451,7 +462,7 @@ final class VoiceParser {
             guard let first = words.first, !first.contains("/"),
                   !weekdays.keys.contains(first.lowercased()) else { return nil }
             var cardWords: [String] = [first]
-            let stopWords: Set<String> = ["on", "at", "for", "yesterday", "today", "last"]
+            let stopWords: Set = ["on", "at", "for", "yesterday", "today", "last"]
             for w in words.dropFirst() {
                 if stopWords.contains(w.lowercased()) { break }
                 if w.lowercased().hasPrefix("note:") { break }
@@ -469,4 +480,3 @@ final class VoiceParser {
         return after.isEmpty ? nil : after
     }
 }
-

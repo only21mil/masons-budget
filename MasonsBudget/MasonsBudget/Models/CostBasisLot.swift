@@ -16,7 +16,7 @@ final class CostBasisLot {
         sats: Int64,
         basisUsd: Decimal,
         label: String = "",
-        owner: FamilyMember = .victor
+        owner: FamilyMember = .victor,
     ) {
         self.lotId = lotId
         self.date = date

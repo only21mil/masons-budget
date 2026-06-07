@@ -1,9 +1,8 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct DashboardView: View {
     @Environment(\.theme) var theme
-    @Environment(\.modelContext) private var modelContext
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
@@ -15,10 +14,17 @@ struct DashboardView: View {
     @Query(sort: \Transaction.date, order: .reverse) private var allTransactions: [Transaction]
     @Query(sort: \NetWorthSnapshot.date) private var netWorthSnapshots: [NetWorthSnapshot]
 
-    private var unit: DisplayUnit { DisplayUnit(rawValue: displayUnitRaw) ?? .btc }
-    private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
+    private var unit: DisplayUnit {
+        DisplayUnit(rawValue: displayUnitRaw) ?? .btc
+    }
 
-    private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
+    private var activeMember: FamilyMember {
+        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    }
+
+    private var btcPrice: Decimal {
+        BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+    }
 
     private func percent(_ numerator: Decimal, of denominator: Decimal) -> Int {
         guard denominator > 0 else { return 0 }
@@ -38,30 +44,45 @@ struct DashboardView: View {
         holdingAccounts.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
     }
 
-    private var totalBtc: Decimal { visibleAccounts.reduce(Decimal(0)) { $0 + $1.btc } }
-    private var vooPrice: Decimal? { StockPriceService.vooPrice }
-    private var ibitPrice: Decimal? { StockPriceService.ibitPrice }
+    private var totalBtc: Decimal {
+        visibleAccounts.reduce(Decimal(0)) { $0 + $1.btc }
+    }
+
+    private var vooPrice: Decimal? {
+        StockPriceService.vooPrice
+    }
+
+    private var ibitPrice: Decimal? {
+        StockPriceService.ibitPrice
+    }
 
     private var totalRetirementUsd: Decimal {
         myRetirementAccounts.reduce(Decimal(0)) { $0 + $1.liveValue(vooPrice: vooPrice, ibitPrice: ibitPrice) }
     }
+
     private var totalRetirementSats: Decimal {
         guard btcPrice > 0 else { return 0 }
         return (totalRetirementUsd / btcPrice) * 100_000_000
     }
-    private var totalSats: Decimal { (totalBtc * 100_000_000) + totalRetirementSats }
+
+    private var totalSats: Decimal {
+        (totalBtc * 100_000_000) + totalRetirementSats
+    }
 
     private var coldBtc: Decimal {
         visibleAccounts.filter { $0.custody == .selfCustody }.reduce(Decimal(0)) { $0 + $1.btc }
     }
-    private var hotBtc: Decimal { totalBtc - coldBtc }
+
+    private var hotBtc: Decimal {
+        totalBtc - coldBtc
+    }
 
     private var todayTodos: [TodoItem] {
         let cal = Calendar.current
         return allTodos.filter { todo in
             !todo.isDone &&
-            todo.ownerMember == activeMember &&
-            (todo.dueDate.map { cal.isDateInToday($0) } ?? false)
+                activeMember.canSee(dataOwnedBy: todo.ownerMember) &&
+                (todo.dueDate.map { cal.isDateInToday($0) } ?? false)
         }
     }
 
@@ -69,7 +90,7 @@ struct DashboardView: View {
         allTransactions
             .filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
             .prefix(4)
-            .map { $0 }
+            .map(\.self)
     }
 
     private var currentSnapshot: MonthlyBudgetSnapshot? {
@@ -85,6 +106,8 @@ struct DashboardView: View {
             VStack(spacing: 0) {
                 heroBalance
                 statRow
+                incomingSection
+                    .padding(.bottom, AppLayout.cardSpacing)
                 incomeCard
                 spendingCard
                 todaySection
@@ -96,6 +119,16 @@ struct DashboardView: View {
     }
 
     // MARK: - Hero Balance
+
+    private var incomingSection: some View {
+        IncomingEventsSection(
+            activeMember: activeMember,
+            unit: unit,
+            holdingAccounts: holdingAccounts,
+            budgetSnapshots: snapshots,
+            btcPrice: btcPrice,
+        )
+    }
 
     private var heroBalance: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -210,7 +243,7 @@ struct DashboardView: View {
             context.fill(fillPath, with: .linearGradient(
                 Gradient(colors: [theme.accent.opacity(0.3), theme.accent.opacity(0)]),
                 startPoint: .zero,
-                endPoint: CGPoint(x: 0, y: h)
+                endPoint: CGPoint(x: 0, y: h),
             ))
             context.stroke(path, with: .color(theme.accent), lineWidth: 1.6)
 
@@ -233,7 +266,7 @@ struct DashboardView: View {
                 iconColor: theme.plum,
                 iconBg: theme.plumSoft,
                 btc: coldBtc,
-                subtitle: coldPct + " of stack · " + coldLabel
+                subtitle: coldPct + " of stack · " + coldLabel,
             )
             statCard(
                 title: "Spending Wallet",
@@ -241,7 +274,7 @@ struct DashboardView: View {
                 iconColor: theme.info,
                 iconBg: theme.infoSoft,
                 btc: hotBtc,
-                subtitle: hotLabel
+                subtitle: hotLabel,
             )
         }
         .padding(.horizontal, AppLayout.sectionPadding)
@@ -272,7 +305,7 @@ struct DashboardView: View {
                     .overlay(
                         Image(systemName: icon)
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(iconColor)
+                            .foregroundStyle(iconColor),
                     )
                 Text(title.uppercased())
                     .font(.system(size: 11, weight: .bold))
@@ -299,8 +332,8 @@ struct DashboardView: View {
         return allTransactions
             .filter { tx in
                 activeMember.sharesNetWorth(with: tx.ownerMember) &&
-                tx.isSpend &&
-                tx.date >= startOfYear
+                    tx.isSpend &&
+                    tx.date >= startOfYear
             }
             .reduce(Decimal(0)) { $0 + $1.spendAmount }
     }
@@ -379,13 +412,13 @@ struct DashboardView: View {
             let spend = allTransactions
                 .filter { tx in
                     activeMember.sharesNetWorth(with: tx.ownerMember) &&
-                    tx.isSpend &&
-                    cal.isDate(tx.date, equalTo: monthDate, toGranularity: .month)
+                        tx.isSpend &&
+                        cal.isDate(tx.date, equalTo: monthDate, toGranularity: .month)
                 }
                 .reduce(Decimal(0)) { $0 + $1.spendAmount }
             result.append((
                 income: CGFloat(NSDecimalNumber(decimal: income).doubleValue),
-                spend: CGFloat(NSDecimalNumber(decimal: spend).doubleValue)
+                spend: CGFloat(NSDecimalNumber(decimal: spend).doubleValue),
             ))
         }
         return result
@@ -452,8 +485,8 @@ struct DashboardView: View {
         return allTransactions
             .filter { tx in
                 activeMember.sharesNetWorth(with: tx.ownerMember) &&
-                tx.isSpend &&
-                cal.isDate(tx.date, equalTo: now, toGranularity: .month)
+                    tx.isSpend &&
+                    cal.isDate(tx.date, equalTo: now, toGranularity: .month)
             }
             .reduce(Decimal(0)) { $0 + $1.spendAmount }
     }
@@ -495,7 +528,7 @@ struct DashboardView: View {
         return df.string(from: Date()).uppercased()
     }
 
-    private func spendingBar(spent: Decimal, limit: Decimal) -> some View {
+    private func spendingBar(spent _: Decimal, limit: Decimal) -> some View {
         let categoryColors: [Color] = [theme.accent, theme.plum, theme.info, theme.success, theme.warn]
         let totalLimit = limit > 0 ? limit : 1
         return GeometryReader { geo in
@@ -509,7 +542,7 @@ struct DashboardView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .background(
-                RoundedRectangle(cornerRadius: 6).fill(theme.surface2)
+                RoundedRectangle(cornerRadius: 6).fill(theme.surface2),
             )
         }
         .frame(height: 10)
@@ -561,7 +594,7 @@ struct DashboardView: View {
                         .padding(20)
                 } else {
                     ForEach(Array(todayTodos.prefix(4).enumerated()), id: \.element.id) { idx, todo in
-                        todoRow(todo: todo)
+                        TaskRowView(todo: todo)
                         if idx < min(todayTodos.count, 4) - 1 {
                             Hairline(indent: 46)
                         }
@@ -572,45 +605,6 @@ struct DashboardView: View {
         }
         .padding(.horizontal, AppLayout.sectionPadding)
         .padding(.bottom, AppLayout.cardSpacing)
-    }
-
-    private func todoRow(todo: TodoItem) -> some View {
-        Button {
-            todo.isDone.toggle()
-            try? modelContext.save()
-            if todo.ownerMember == .victor {
-                AppWriteSyncService.pushTodo(todo)
-            }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: todo.isDone ? AppIcon.checkDone : AppIcon.checkOpen)
-                    .font(.system(size: 20))
-                    .foregroundStyle(todo.isDone ? theme.accent : theme.borderStrong)
-
-                Text(todo.title)
-                    .font(.system(size: 14))
-                    .foregroundStyle(todo.isDone ? theme.textFaint : theme.text)
-                    .strikethrough(todo.isDone)
-                    .lineLimit(1)
-
-                Spacer()
-
-                if todo.isFlagged {
-                    Image(systemName: AppIcon.flagFilled)
-                        .font(.system(size: 13))
-                        .foregroundStyle(theme.accent)
-                }
-
-                if let project = todo.project {
-                    Text(project)
-                        .font(.system(size: 11))
-                        .foregroundStyle(theme.textFaint)
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Recent Activity
@@ -667,7 +661,7 @@ struct DashboardView: View {
                         } else {
                             CatGlyphView(kind: glyphForCategory(tx.category), size: 16, color: colorForCategory(tx.category))
                         }
-                    }
+                    },
                 )
 
             VStack(alignment: .leading, spacing: 2) {
@@ -694,7 +688,7 @@ struct DashboardView: View {
                 weight: .semibold,
                 showSign: true,
                 accent: isIncome,
-                btcPrice: btcPrice
+                btcPrice: btcPrice,
             )
         }
         .padding(.horizontal, 14)

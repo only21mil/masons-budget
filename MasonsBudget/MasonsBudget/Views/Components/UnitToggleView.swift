@@ -53,7 +53,7 @@ struct UnitToggleView: View {
         .background(theme.surface2)
         .clipShape(Capsule())
         .overlay(
-            Capsule().stroke(theme.border, lineWidth: 1)
+            Capsule().stroke(theme.border, lineWidth: 1),
         )
     }
 }

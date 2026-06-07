@@ -29,7 +29,7 @@ final class BTCAccount {
         btc: Decimal,
         fiat: Decimal = 0,
         owner: FamilyMember,
-        lastUpdated: Date = .now
+        lastUpdated: Date = .now,
     ) {
         self.key = key
         self.label = label

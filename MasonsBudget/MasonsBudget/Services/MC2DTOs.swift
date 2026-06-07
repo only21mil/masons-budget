@@ -19,7 +19,7 @@ extension MC2Transaction {
             amount: transaction.isSpend ? transaction.spendAmount : transaction.displayAmount,
             category: transaction.category,
             card: transaction.card,
-            note: transaction.note
+            note: transaction.note,
         )
     }
 
@@ -136,15 +136,74 @@ struct MC2BTCBuy: Codable {
     let costBasisStatus: String?
     let loggedBy: String?
     let archimedesRequestId: String?
+    let owner: String?
+
+    init(
+        id: String,
+        date: String,
+        source: String,
+        amountSats: Int64,
+        amountBtc: Decimal,
+        priceUsd: Decimal,
+        usd: Decimal,
+        note: String?,
+        status: String?,
+        costBasisStatus: String?,
+        loggedBy: String?,
+        archimedesRequestId: String?,
+        owner: String? = nil,
+    ) {
+        self.id = id
+        self.date = date
+        self.source = source
+        self.amountSats = amountSats
+        self.amountBtc = amountBtc
+        self.priceUsd = priceUsd
+        self.usd = usd
+        self.note = note
+        self.status = status
+        self.costBasisStatus = costBasisStatus
+        self.loggedBy = loggedBy
+        self.archimedesRequestId = archimedesRequestId
+        self.owner = owner
+    }
 
     enum CodingKeys: String, CodingKey {
-        case id, date, source, usd, note, status
+        case id, date, source, usd, note, status, owner
         case amountSats = "amount_sats"
         case amountBtc = "amount_btc"
         case priceUsd = "price_usd"
         case costBasisStatus = "cost_basis_status"
         case loggedBy = "logged_by"
         case archimedesRequestId = "archimedes_request_id"
+    }
+}
+
+extension MC2BTCBuy {
+    init(appBuy buy: BTCBuy) {
+        self.init(
+            id: buy.id,
+            date: MC2Transaction.dateString(from: buy.date),
+            source: buy.source,
+            amountSats: buy.amountSats,
+            amountBtc: buy.amountBTC,
+            priceUsd: buy.priceUSD,
+            usd: buy.usd,
+            note: buy.note,
+            status: buy.status,
+            costBasisStatus: buy.costBasisStatus,
+            loggedBy: buy.loggedBy,
+            archimedesRequestId: buy.archimedesRequestId,
+            owner: buy.owner,
+        )
+    }
+
+    func convexJSONObject() throws -> [String: Any] {
+        let data = try JSONEncoder().encode(self)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw ConvexError.decodeFailed("btcBuy", NSError(domain: "MC2BTCBuy", code: -1))
+        }
+        return object
     }
 }
 
@@ -243,15 +302,16 @@ struct MC2FinancesRetirement: Decodable {
             self.stringValue = stringValue
         }
 
-        init?(intValue: Int) {
-            return nil
+        init?(intValue _: Int) {
+            nil
         }
     }
 
     init(from decoder: Decoder) throws {
         if let container = try? decoder.container(keyedBy: CodingKeys.self),
-           let acc = try? container.decode([String: MC2FinanceAccount].self, forKey: .accounts) {
-            self.accounts = acc
+           let acc = try? container.decode([String: MC2FinanceAccount].self, forKey: .accounts)
+        {
+            accounts = acc
         } else {
             let container = try decoder.container(keyedBy: DynamicKey.self)
             var decoded: [String: MC2FinanceAccount] = [:]
@@ -263,7 +323,7 @@ struct MC2FinancesRetirement: Decodable {
                     print("[MC2] Failed to decode retirement account '\(key.stringValue)': \(error)")
                 }
             }
-            self.accounts = decoded
+            accounts = decoded
         }
     }
 }
@@ -410,8 +470,8 @@ struct MC2TodoItem: Codable {
         case camelDueDate = "dueDate"
         case updatedAt = "updated_at"
         case camelUpdatedAt = "updatedAt"
-        case createdAt = "createdAt"
-        case completedAt = "completedAt"
+        case createdAt
+        case completedAt
     }
 
     init(
@@ -424,31 +484,31 @@ struct MC2TodoItem: Codable {
         flag: Bool = false,
         done: Bool = false,
         owner: String = FamilyMember.victor.rawValue,
-        updatedAt: String? = nil
+        updatedAt: String? = nil,
     ) {
         self.id = id
         self.title = title
-        self.text = nil
+        text = nil
         self.project = project
         self.area = area
-        self.category = "sats"
-        self.type = "sats"
+        category = "sats"
+        type = "sats"
         self.dueDate = dueDate
-        self.due = nil
-        self.date = nil
-        self.deadline = nil
-        self.when = nil
+        due = nil
+        date = nil
+        deadline = nil
+        when = nil
         self.priority = priority
         self.flag = flag
-        self.flagged = nil
+        flagged = nil
         self.done = done
-        self.completed = nil
-        self.status = nil
+        completed = nil
+        status = nil
         self.owner = owner
-        self.assignee = owner
+        assignee = owner
         self.updatedAt = updatedAt
-        self.createdAt = nil
-        self.completedAt = nil
+        createdAt = nil
+        completedAt = nil
     }
 
     init(from decoder: Decoder) throws {
@@ -456,7 +516,7 @@ struct MC2TodoItem: Codable {
         guard let decodedId = Self.decodeFlexibleString(from: container, forKey: .id) else {
             throw DecodingError.keyNotFound(
                 CodingKeys.id,
-                DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Todo id is missing")
+                DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Todo id is missing"),
             )
         }
         id = decodedId
@@ -519,7 +579,7 @@ struct MC2TodoItem: Codable {
             flag: todo.isFlagged,
             done: todo.isDone,
             owner: todo.owner,
-            updatedAt: Self.dateTimeString(todo.updatedAt)
+            updatedAt: Self.dateTimeString(todo.updatedAt),
         )
     }
 
@@ -571,7 +631,7 @@ struct MC2TodoItem: Codable {
 
     static func decodeFlexibleString(
         from container: KeyedDecodingContainer<CodingKeys>,
-        forKey key: CodingKeys
+        forKey key: CodingKeys,
     ) -> String? {
         if let stringValue = try? container.decodeIfPresent(String.self, forKey: key) {
             return stringValue

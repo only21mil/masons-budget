@@ -25,4 +25,13 @@ export default defineSchema({
     version: v.float64(),
     updatedAt: v.float64(),
   }).index("by_name", ["name"]),
+
+  // ── Todo delete tombstones (SAT-1327) ──
+  // A deleted todo is recorded here so the MC2 sync bridge can remove it locally
+  // and a later pull cannot resurrect it. Kept in a SEPARATE table (not in the
+  // todos payload) so the app-facing `get("todos")` response stays clean.
+  todoTombstones: defineTable({
+    id: v.string(), // the deleted todo's id
+    deletedAt: v.float64(), // Unix timestamp (ms) of the delete
+  }).index("by_todo_id", ["id"]),
 });

@@ -1,5 +1,5 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct BudgetView: View {
     @Environment(\.theme) var theme
@@ -12,9 +12,17 @@ struct BudgetView: View {
 
     @State private var selectedMonthOffset: Int = 0
 
-    private var unit: DisplayUnit { .usd }
-    private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
-    private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
+    private var unit: DisplayUnit {
+        .usd
+    }
+
+    private var activeMember: FamilyMember {
+        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    }
+
+    private var btcPrice: Decimal {
+        BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+    }
 
     private var myCategories: [BudgetCategory] {
         categories.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
@@ -28,7 +36,7 @@ struct BudgetView: View {
         let cal = Calendar.current
         return allTransactions.filter { tx in
             activeMember.sharesNetWorth(with: tx.ownerMember) &&
-            cal.isDate(tx.date, equalTo: selectedMonth, toGranularity: .month)
+                cal.isDate(tx.date, equalTo: selectedMonth, toGranularity: .month)
         }
     }
 
@@ -40,15 +48,17 @@ struct BudgetView: View {
         myCategories.reduce(Decimal(0)) { $0 + $1.monthlyBudget }
     }
 
-    private var isCurrent: Bool { selectedMonthOffset == 0 }
+    private var isCurrent: Bool {
+        selectedMonthOffset == 0
+    }
 
     private func spentForOffset(_ offset: Int) -> Decimal {
         let cal = Calendar.current
         let date = cal.date(byAdding: .month, value: -offset, to: Date()) ?? Date()
         return allTransactions.filter { tx in
             activeMember.sharesNetWorth(with: tx.ownerMember) &&
-            cal.isDate(tx.date, equalTo: date, toGranularity: .month) &&
-            tx.isSpend
+                cal.isDate(tx.date, equalTo: date, toGranularity: .month) &&
+                tx.isSpend
         }.reduce(Decimal(0)) { $0 + $1.spendAmount }
     }
 
@@ -77,7 +87,7 @@ struct BudgetView: View {
             VStack(spacing: 0) {
                 ScreenHeader(
                     title: "Budget",
-                    eyebrow: monthEyebrow
+                    eyebrow: monthEyebrow,
                 )
 
                 monthStrip
@@ -111,7 +121,7 @@ struct BudgetView: View {
     private var monthStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                ForEach(0..<6, id: \.self) { offset in
+                ForEach(0 ..< 6, id: \.self) { offset in
                     monthChip(offset: offset)
                 }
             }
@@ -154,7 +164,7 @@ struct BudgetView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(isSelected ? theme.accent : theme.border, lineWidth: 1)
+                    .stroke(isSelected ? theme.accent : theme.border, lineWidth: 1),
             )
         }
         .buttonStyle(.plain)
@@ -303,7 +313,7 @@ struct BudgetView: View {
                 .fill(statusSoft)
                 .frame(width: 38, height: 38)
                 .overlay(
-                    CatGlyphView(kind: cat.icon, size: 18, color: statusColor)
+                    CatGlyphView(kind: cat.icon, size: 18, color: statusColor),
                 )
 
             VStack(alignment: .leading, spacing: 8) {

@@ -33,7 +33,7 @@ final class Transaction {
         owner: FamilyMember = .victor,
         createdBy: String,
         createdAt: Date = .now,
-        sourceFile: String? = nil
+        sourceFile: String? = nil,
     ) {
         self.id = id
         self.date = date

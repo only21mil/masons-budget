@@ -32,7 +32,7 @@ final class BTCBillPay {
         platform: String = "Strike",
         note: String? = nil,
         reference: String? = nil,
-        owner: FamilyMember = .victor
+        owner: FamilyMember = .victor,
     ) {
         self.id = id
         self.date = date

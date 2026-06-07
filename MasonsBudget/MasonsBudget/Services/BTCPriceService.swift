@@ -72,7 +72,7 @@ actor BTCPriceService {
             priceUSD: price,
             change24h: numberDecimal(payload["change24h"]),
             source: "MC2",
-            fetchedAt: Date()
+            fetchedAt: Date(),
         )
     }
 
@@ -80,14 +80,15 @@ actor BTCPriceService {
         let url = URL(string: "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true")!
         let payload = try await fetchJSON(url)
         guard let bitcoin = payload["bitcoin"] as? [String: Any],
-              let price = numberDecimal(bitcoin["usd"]) else {
+              let price = numberDecimal(bitcoin["usd"])
+        else {
             throw PriceError.invalidResponse("CoinGecko price missing")
         }
         return BTCPriceQuote(
             priceUSD: price,
             change24h: numberDecimal(bitcoin["usd_24h_change"]),
             source: "CoinGecko",
-            fetchedAt: Date()
+            fetchedAt: Date(),
         )
     }
 
@@ -95,14 +96,15 @@ actor BTCPriceService {
         let url = URL(string: "https://api.coinbase.com/v2/prices/BTC-USD/spot")!
         let payload = try await fetchJSON(url)
         guard let data = payload["data"] as? [String: Any],
-              let price = numberDecimal(data["amount"]) else {
+              let price = numberDecimal(data["amount"])
+        else {
             throw PriceError.invalidResponse("Coinbase price missing")
         }
         return BTCPriceQuote(
             priceUSD: price,
             change24h: nil,
             source: "Coinbase",
-            fetchedAt: Date()
+            fetchedAt: Date(),
         )
     }
 
@@ -113,7 +115,7 @@ actor BTCPriceService {
         guard let http = response as? HTTPURLResponse else {
             throw PriceError.invalidResponse("No HTTP response")
         }
-        guard (200..<300).contains(http.statusCode) else {
+        guard (200 ..< 300).contains(http.statusCode) else {
             throw PriceError.httpStatus(http.statusCode)
         }
         guard let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -134,8 +136,8 @@ actor BTCPriceService {
 
         var errorDescription: String? {
             switch self {
-            case .httpStatus(let code): return "Price API returned HTTP \(code)"
-            case .invalidResponse(let message): return message
+            case let .httpStatus(code): "Price API returned HTTP \(code)"
+            case let .invalidResponse(message): message
             }
         }
     }

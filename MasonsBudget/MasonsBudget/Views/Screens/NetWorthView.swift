@@ -1,5 +1,5 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct NetWorthView: View {
     @Environment(\.theme) var theme
@@ -10,9 +10,17 @@ struct NetWorthView: View {
     @Query private var holdingAccounts: [HoldingAccount]
     @Query(sort: \NetWorthSnapshot.date, order: .reverse) private var snapshots: [NetWorthSnapshot]
 
-    private var unit: DisplayUnit { DisplayUnit(rawValue: displayUnitRaw) ?? .btc }
-    private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
-    private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
+    private var unit: DisplayUnit {
+        DisplayUnit(rawValue: displayUnitRaw) ?? .btc
+    }
+
+    private var activeMember: FamilyMember {
+        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    }
+
+    private var btcPrice: Decimal {
+        BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+    }
 
     private var myAccounts: [BTCAccount] {
         accounts.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
@@ -22,23 +30,38 @@ struct NetWorthView: View {
         holdingAccounts.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
     }
 
-    private var vooPrice: Decimal? { StockPriceService.vooPrice }
-    private var ibitPrice: Decimal? { StockPriceService.ibitPrice }
+    private var vooPrice: Decimal? {
+        StockPriceService.vooPrice
+    }
 
-    private var totalBtc: Decimal { myAccounts.reduce(Decimal(0)) { $0 + $1.btc } }
+    private var ibitPrice: Decimal? {
+        StockPriceService.ibitPrice
+    }
+
+    private var totalBtc: Decimal {
+        myAccounts.reduce(Decimal(0)) { $0 + $1.btc }
+    }
+
     private var totalRetirementUsd: Decimal {
         myRetirementAccounts.reduce(Decimal(0)) { $0 + $1.liveValue(vooPrice: vooPrice, ibitPrice: ibitPrice) }
     }
+
     private var totalRetirementSats: Decimal {
         guard btcPrice > 0 else { return 0 }
         return (totalRetirementUsd / btcPrice) * 100_000_000
     }
-    private var totalSats: Decimal { (totalBtc * 100_000_000) + totalRetirementSats }
+
+    private var totalSats: Decimal {
+        (totalBtc * 100_000_000) + totalRetirementSats
+    }
 
     private var coldBtc: Decimal {
         myAccounts.filter { $0.custody == .selfCustody }.reduce(Decimal(0)) { $0 + $1.btc }
     }
-    private var hotBtc: Decimal { totalBtc - coldBtc }
+
+    private var hotBtc: Decimal {
+        totalBtc - coldBtc
+    }
 
     private var coldSubtitle: String {
         let labels = myAccounts.filter { $0.custody == .selfCustody }.map(\.label)
@@ -164,7 +187,7 @@ struct NetWorthView: View {
         let now = Date()
         let df = DateFormatter()
         df.dateFormat = "MMM"
-        let labels: [String] = (0..<12).map { offset in
+        let labels: [String] = (0 ..< 12).map { offset in
             let d = cal.date(byAdding: .month, value: offset - 11, to: now) ?? now
             return df.string(from: d)
         }

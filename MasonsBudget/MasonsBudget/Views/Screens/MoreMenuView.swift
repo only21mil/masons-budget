@@ -17,8 +17,6 @@ struct MoreMenuView: View {
                     Hairline(indent: 52)
                     moreRow(icon: "banknote.fill", label: "Bill Pay", destination: BTCBillPayView())
                     Hairline(indent: 52)
-                    moreRow(icon: "tray.fill", label: "Projects", destination: ProjectsView())
-                    Hairline(indent: 52)
                     moreRow(icon: "square.and.arrow.up", label: "Export", destination: ExportView())
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
@@ -29,7 +27,7 @@ struct MoreMenuView: View {
         .background(theme.bg)
     }
 
-    private func moreRow<D: View>(icon: String, label: String, destination: D) -> some View {
+    private func moreRow(icon: String, label: String, destination: some View) -> some View {
         NavigationLink {
             destination
         } label: {

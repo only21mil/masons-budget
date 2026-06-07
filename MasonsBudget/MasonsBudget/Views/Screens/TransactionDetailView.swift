@@ -1,5 +1,5 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct TransactionDetailView: View {
     @Environment(\.theme) private var theme
@@ -14,6 +14,7 @@ struct TransactionDetailView: View {
     @State private var method: String
     @State private var note: String
     @State private var date: Date
+    @State private var showingDeleteConfirmation = false
 
     init(transaction: Transaction) {
         self.transaction = transaction
@@ -78,11 +79,7 @@ struct TransactionDetailView: View {
                 .padding(.horizontal, AppLayout.sectionPadding)
 
                 Button(role: .destructive) {
-                    let owner = transaction.ownerMember
-                    AppWriteSyncService.deleteTransaction(transaction, owner: owner)
-                    modelContext.delete(transaction)
-                    try? modelContext.save()
-                    dismiss()
+                    showingDeleteConfirmation = true
                 } label: {
                     Text("Delete Transaction")
                         .font(.system(size: 14, weight: .bold))
@@ -100,18 +97,35 @@ struct TransactionDetailView: View {
         .background(theme.bg)
         .navigationTitle("Transaction")
         #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.inline)
         #endif
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { save() }
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(theme.accent)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(theme.accent)
+                }
             }
-        }
+            .confirmationDialog(
+                "Delete \(transaction.merchant)?",
+                isPresented: $showingDeleteConfirmation,
+                titleVisibility: .visible,
+            ) {
+                Button("Delete \(deleteAmountLabel)", role: .destructive) {
+                    deleteTransaction()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes the transaction and syncs the delete.")
+            }
     }
 
-    private func editRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+    private var deleteAmountLabel: String {
+        let amount = transaction.amount < 0 ? -transaction.amount : transaction.amount
+        return AppFormatter.formatCurrency(amount)
+    }
+
+    private func editRow(_ label: String, @ViewBuilder content: () -> some View) -> some View {
         HStack(spacing: 12) {
             Text(label)
                 .font(.system(size: 13))
@@ -123,6 +137,14 @@ struct TransactionDetailView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
+    }
+
+    private func deleteTransaction() {
+        let owner = transaction.ownerMember
+        AppWriteSyncService.deleteTransaction(transaction, owner: owner)
+        modelContext.delete(transaction)
+        try? modelContext.save()
+        dismiss()
     }
 
     private func save() {

@@ -1,5 +1,5 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct ProjectsView: View {
     @Environment(\.theme) var theme
@@ -9,29 +9,53 @@ struct ProjectsView: View {
     @Query(sort: \TodoProject.createdAt) private var projects: [TodoProject]
     @Query private var areas: [TodoArea]
 
-    private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
+    @State private var searchText = ""
+
+    private var activeMember: FamilyMember {
+        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    }
+
+    private var trimmedSearch: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var searchableTodos: [TodoItem] {
+        allTodos.filter {
+            activeMember.canSee(dataOwnedBy: $0.ownerMember) &&
+                SearchMatcher.matches(todo: $0, query: searchText)
+        }
+    }
 
     private var inboxCount: Int {
-        allTodos.filter { $0.ownerMember == activeMember && !$0.isDone && $0.project == nil && $0.area == nil }.count
+        allTodos.count(where: {
+            activeMember.canSee(dataOwnedBy: $0.ownerMember) &&
+                !$0.isDone &&
+                $0.project == nil &&
+                $0.area == nil
+        })
     }
 
     private var todayCount: Int {
         let cal = Calendar.current
-        return allTodos.filter { todo in
-            todo.ownerMember == activeMember && !todo.isDone &&
-            (todo.dueDate.map { cal.isDateInToday($0) } ?? false)
-        }.count
+        return allTodos.count(where: { todo in
+            activeMember.canSee(dataOwnedBy: todo.ownerMember) && !todo.isDone &&
+                (todo.dueDate.map { cal.isDateInToday($0) } ?? false)
+        })
     }
 
     private var upcomingCount: Int {
-        allTodos.filter { todo in
-            todo.ownerMember == activeMember && !todo.isDone &&
-            (todo.dueDate.map { $0 > Date() } ?? false)
-        }.count
+        allTodos.count(where: { todo in
+            activeMember.canSee(dataOwnedBy: todo.ownerMember) && !todo.isDone &&
+                (todo.dueDate.map { $0 > Date() } ?? false)
+        })
     }
 
     private var flaggedCount: Int {
-        allTodos.filter { $0.ownerMember == activeMember && !$0.isDone && $0.isFlagged }.count
+        allTodos.count(where: {
+            activeMember.canSee(dataOwnedBy: $0.ownerMember) &&
+                !$0.isDone &&
+                $0.isFlagged
+        })
     }
 
     var body: some View {
@@ -39,18 +63,23 @@ struct ProjectsView: View {
             VStack(spacing: 0) {
                 ScreenHeader(title: "Projects", eyebrow: "Areas of focus")
 
-                shortcutGrid
-                    .padding(.horizontal, AppLayout.sectionPadding)
-                    .padding(.bottom, AppLayout.cardSpacing)
+                if trimmedSearch.isEmpty {
+                    shortcutGrid
+                        .padding(.horizontal, AppLayout.sectionPadding)
+                        .padding(.bottom, AppLayout.cardSpacing)
 
-                projectsList
-                    .padding(.bottom, AppLayout.cardSpacing)
+                    projectsList
+                        .padding(.bottom, AppLayout.cardSpacing)
 
-                areasList
+                    areasList
+                } else {
+                    taskSearchResults
+                }
             }
             .padding(.bottom, 100)
         }
         .background(theme.bg)
+        .searchable(text: $searchText, prompt: "Search tasks")
     }
 
     // MARK: - Shortcut Grid
@@ -72,7 +101,7 @@ struct ProjectsView: View {
                         .overlay(
                             Image(systemName: item.icon)
                                 .font(.system(size: 18))
-                                .foregroundStyle(theme.accent)
+                                .foregroundStyle(theme.accent),
                         )
 
                     Text(item.label)
@@ -128,13 +157,17 @@ struct ProjectsView: View {
     }
 
     private func projectRow(project: TodoProject) -> some View {
-        let count = allTodos.filter { $0.project == project.name && !$0.isDone }.count
+        let count = allTodos.count(where: {
+            activeMember.canSee(dataOwnedBy: $0.ownerMember) &&
+                $0.project == project.name &&
+                !$0.isDone
+        })
         return HStack(spacing: 12) {
             RoundedRectangle(cornerRadius: 9)
                 .fill(project.accentColor.opacity(0.15))
                 .frame(width: 32, height: 32)
                 .overlay(
-                    CatGlyphView(kind: project.icon, size: 16, color: project.accentColor)
+                    CatGlyphView(kind: project.icon, size: 16, color: project.accentColor),
                 )
 
             Text(project.name)
@@ -154,6 +187,39 @@ struct ProjectsView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
+    }
+
+    // MARK: - Search Results
+
+    private var taskSearchResults: some View {
+        LazyVStack(alignment: .leading, spacing: AppLayout.cardSpacing) {
+            Text("TASKS")
+                .font(.system(size: 12, weight: .bold))
+                .tracking(0.72)
+                .foregroundStyle(theme.textMuted)
+                .padding(.horizontal, AppLayout.sectionPadding + 4)
+
+            if searchableTodos.isEmpty {
+                Text("No matching tasks")
+                    .font(.system(size: 13))
+                    .foregroundStyle(theme.textFaint)
+                    .frame(maxWidth: .infinity)
+                    .padding(20)
+                    .glassCard(padding: 0)
+                    .padding(.horizontal, AppLayout.sectionPadding)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(searchableTodos.enumerated()), id: \.element.id) { idx, todo in
+                        TaskRowView(todo: todo)
+                        if idx < searchableTodos.count - 1 {
+                            Hairline(indent: 46)
+                        }
+                    }
+                }
+                .glassCard(padding: 0)
+                .padding(.horizontal, AppLayout.sectionPadding)
+            }
+        }
     }
 
     // MARK: - Areas List
@@ -194,7 +260,7 @@ struct ProjectsView: View {
                 .fill(theme.surface2)
                 .frame(width: 32, height: 32)
                 .overlay(
-                    CatGlyphView(kind: area.icon, size: 16, color: theme.textMuted)
+                    CatGlyphView(kind: area.icon, size: 16, color: theme.textMuted),
                 )
 
             Text(area.name)

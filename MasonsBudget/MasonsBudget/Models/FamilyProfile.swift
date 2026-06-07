@@ -24,9 +24,9 @@ final class FamilyProfile {
         iCloudUserHash: String? = nil,
         canViewOthers: Bool = false,
         canEditOthers: Bool = false,
-        lastSyncedAt: Date? = nil
+        lastSyncedAt: Date? = nil,
     ) {
-        self.memberKey = member.rawValue
+        memberKey = member.rawValue
         self.displayName = displayName
         self.iCloudUserHash = iCloudUserHash
         self.canViewOthers = canViewOthers

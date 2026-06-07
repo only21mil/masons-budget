@@ -41,7 +41,7 @@ final class HoldingAccount {
         owner: FamilyMember,
         totalValue: Decimal,
         weeklyContribution: Decimal = 0,
-        lastUpdated: Date = .now
+        lastUpdated: Date = .now,
     ) {
         self.name = name
         self.provider = provider
@@ -87,7 +87,7 @@ final class Holding {
         avgCost: Decimal,
         currentPricePerShare: Decimal,
         isProxy: Bool = false,
-        proxyNote: String? = nil
+        proxyNote: String? = nil,
     ) {
         self.name = name
         self.category = category
@@ -121,7 +121,7 @@ final class HoldingLot {
         pricePerShare: Decimal,
         shares: Decimal,
         amountInvested: Decimal,
-        note: String? = nil
+        note: String? = nil,
     ) {
         self.date = date
         self.type = type

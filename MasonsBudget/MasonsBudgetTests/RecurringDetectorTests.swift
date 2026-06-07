@@ -1,15 +1,14 @@
-import XCTest
 import Foundation
+import XCTest
 
 final class RecurringDetectorTests: XCTestCase {
-
     private func makeTransaction(
         id: String,
         merchant: String,
         category: String,
         amount: Decimal,
         date: Date,
-        amountSats: Int64? = nil
+        amountSats: Int64? = nil,
     ) -> Transaction {
         Transaction(
             id: id,
@@ -19,7 +18,7 @@ final class RecurringDetectorTests: XCTestCase {
             category: category,
             amountSats: amountSats,
             createdBy: "test",
-            createdAt: date
+            createdAt: date,
         )
     }
 
@@ -86,10 +85,10 @@ final class RecurringDetectorTests: XCTestCase {
 
     func testSatsDeflationUsesExplicitSatsNotFiatAmount() {
         let txs = [
-            makeTransaction(id: "1", merchant: "Rent", category: "Housing", amount: 1_500, date: ymd("2025-03-01"), amountSats: 600_000),
-            makeTransaction(id: "2", merchant: "Rent", category: "Housing", amount: 1_500, date: ymd("2025-04-01"), amountSats: 600_000),
-            makeTransaction(id: "3", merchant: "Rent", category: "Housing", amount: 1_500, date: ymd("2026-03-01"), amountSats: 400_000),
-            makeTransaction(id: "4", merchant: "Rent", category: "Housing", amount: 1_500, date: ymd("2026-04-01"), amountSats: 400_000),
+            makeTransaction(id: "1", merchant: "Rent", category: "Housing", amount: 1500, date: ymd("2025-03-01"), amountSats: 600_000),
+            makeTransaction(id: "2", merchant: "Rent", category: "Housing", amount: 1500, date: ymd("2025-04-01"), amountSats: 600_000),
+            makeTransaction(id: "3", merchant: "Rent", category: "Housing", amount: 1500, date: ymd("2026-03-01"), amountSats: 400_000),
+            makeTransaction(id: "4", merchant: "Rent", category: "Housing", amount: 1500, date: ymd("2026-04-01"), amountSats: 400_000),
         ]
 
         let results = RecurringDetector().detect(from: txs, referenceDate: ymd("2026-05-09"))

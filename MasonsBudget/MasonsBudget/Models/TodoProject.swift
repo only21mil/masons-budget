@@ -17,7 +17,7 @@ final class TodoProject {
         icon: String = "box",
         color: String = "#F7931A",
         owner: FamilyMember = .victor,
-        createdAt: Date = .now
+        createdAt: Date = .now,
     ) {
         self.projectId = projectId
         self.name = name

@@ -44,8 +44,8 @@ final class RecurringDetector {
 
             let sorted = group.sorted(by: { $0.date < $1.date })
             var intervals: [Int] = []
-            for i in 1..<sorted.count {
-                let days = cal.dateComponents([.day], from: sorted[i-1].date, to: sorted[i].date).day ?? 0
+            for i in 1 ..< sorted.count {
+                let days = cal.dateComponents([.day], from: sorted[i - 1].date, to: sorted[i].date).day ?? 0
                 intervals.append(max(days, 1))
             }
             let medianInterval = Self.medianInterval(in: intervals)
@@ -94,7 +94,7 @@ final class RecurringDetector {
                 nextDate: nextDate,
                 confidence: confidence,
                 satsLastYear: satsLastYear,
-                yoyChangePct: yoyChangePct
+                yoyChangePct: yoyChangePct,
             ))
         }
 

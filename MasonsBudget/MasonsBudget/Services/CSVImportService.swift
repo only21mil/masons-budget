@@ -9,7 +9,9 @@ enum ImportSource: String, CaseIterable, Identifiable {
     case selfCustody = "Self-Custody Node"
     case custom = "Custom CSV"
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 }
 
 struct ColumnMapping {
@@ -44,14 +46,13 @@ enum CSVImportError: LocalizedError {
         case .emptyFile: "CSV file is empty"
         case .noHeaderRow: "No header row found"
         case .missingRequiredColumns: "Required columns (date, amount) not found"
-        case .dateParseFailure(let row): "Could not parse date on row \(row)"
-        case .amountParseFailure(let row): "Could not parse amount on row \(row)"
+        case let .dateParseFailure(row): "Could not parse date on row \(row)"
+        case let .amountParseFailure(row): "Could not parse amount on row \(row)"
         }
     }
 }
 
 final class CSVImportService: Sendable {
-
     // MARK: - Public API
 
     func parseCSV(data: Data, source: ImportSource) throws -> [ImportedTransaction] {
@@ -68,18 +69,17 @@ final class CSVImportService: Sendable {
         let headerLine = lines.removeFirst()
         let headers = parseRow(headerLine)
 
-        let mapping: ColumnMapping
-        switch source {
+        let mapping: ColumnMapping = switch source {
         case .strike:
-            mapping = mapStrike(headers: headers)
+            mapStrike(headers: headers)
         case .cashApp:
-            mapping = mapCashApp(headers: headers)
+            mapCashApp(headers: headers)
         case .coinbase:
-            mapping = mapCoinbase(headers: headers)
+            mapCoinbase(headers: headers)
         case .kraken:
-            mapping = mapKraken(headers: headers)
+            mapKraken(headers: headers)
         case .selfCustody, .custom:
-            mapping = autoDetectColumns(headers: headers)
+            autoDetectColumns(headers: headers)
         }
 
         guard mapping.dateIndex != nil, mapping.amountIndex != nil else {
@@ -124,7 +124,7 @@ final class CSVImportService: Sendable {
                 category: category,
                 method: "on-chain",
                 isIncome: isIncome,
-                note: nil
+                note: nil,
             ))
         }
 
@@ -136,15 +136,15 @@ final class CSVImportService: Sendable {
         let lower = headers.map { $0.lowercased() }
 
         for (i, h) in lower.enumerated() {
-            if mapping.dateIndex == nil && (h.contains("date") || h.contains("time")) {
+            if mapping.dateIndex == nil, h.contains("date") || h.contains("time") {
                 mapping.dateIndex = i
-            } else if mapping.amountIndex == nil && (h.contains("amount") || h.contains("qty") || h.contains("quantity") || h.contains("sats") || h.contains("btc")) {
+            } else if mapping.amountIndex == nil, h.contains("amount") || h.contains("qty") || h.contains("quantity") || h.contains("sats") || h.contains("btc") {
                 mapping.amountIndex = i
-            } else if mapping.memoIndex == nil && (h.contains("memo") || h.contains("note") || h.contains("description") || h.contains("merchant") || h.contains("narrative")) {
+            } else if mapping.memoIndex == nil, h.contains("memo") || h.contains("note") || h.contains("description") || h.contains("merchant") || h.contains("narrative") {
                 mapping.memoIndex = i
-            } else if mapping.typeIndex == nil && h.contains("type") {
+            } else if mapping.typeIndex == nil, h.contains("type") {
                 mapping.typeIndex = i
-            } else if mapping.feeIndex == nil && h.contains("fee") {
+            } else if mapping.feeIndex == nil, h.contains("fee") {
                 mapping.feeIndex = i
             }
         }
@@ -193,7 +193,7 @@ final class CSVImportService: Sendable {
 
     func filterDuplicates(
         _ imported: [ImportedTransaction],
-        existing: [Transaction]
+        existing: [Transaction],
     ) -> [ImportedTransaction] {
         let existingKeys = Set(existing.map { duplicateKey(date: $0.date, sats: $0.satsValue(), merchant: $0.merchant) })
         return imported.filter { tx in
@@ -207,7 +207,7 @@ final class CSVImportService: Sendable {
     func toTransactions(
         _ imported: [ImportedTransaction],
         owner: FamilyMember,
-        sourceTag: String
+        sourceTag: String,
     ) -> [Transaction] {
         imported.map { tx in
             Transaction(
@@ -220,7 +220,7 @@ final class CSVImportService: Sendable {
                 note: tx.note,
                 owner: owner,
                 createdBy: "csv_import",
-                sourceFile: sourceTag
+                sourceFile: sourceTag,
             )
         }
     }
@@ -235,7 +235,7 @@ final class CSVImportService: Sendable {
         for char in line {
             if char == "\"" {
                 inQuotes.toggle()
-            } else if char == "," && !inQuotes {
+            } else if char == ",", !inQuotes {
                 fields.append(current.trimmingCharacters(in: .whitespaces))
                 current = ""
             } else {
@@ -304,7 +304,7 @@ final class CSVImportService: Sendable {
             amountIndex: lower.firstIndex(where: { $0.contains("amount") || $0.contains("btc") }),
             memoIndex: lower.firstIndex(where: { $0.contains("memo") || $0.contains("description") }),
             typeIndex: lower.firstIndex(where: { $0.contains("type") }),
-            feeIndex: nil
+            feeIndex: nil,
         )
     }
 
@@ -315,7 +315,7 @@ final class CSVImportService: Sendable {
             amountIndex: lower.firstIndex(where: { $0.contains("asset amount") || $0.contains("amount") }),
             memoIndex: lower.firstIndex(where: { $0.contains("notes") || $0.contains("note") }),
             typeIndex: nil,
-            feeIndex: lower.firstIndex(where: { $0.contains("fee") })
+            feeIndex: lower.firstIndex(where: { $0.contains("fee") }),
         )
     }
 
@@ -326,7 +326,7 @@ final class CSVImportService: Sendable {
             amountIndex: lower.firstIndex(where: { $0.contains("quantity") || $0.contains("amount") }),
             memoIndex: lower.firstIndex(where: { $0.contains("notes") || $0.contains("type") }),
             typeIndex: lower.firstIndex(where: { $0.contains("type") || $0.contains("transaction type") }),
-            feeIndex: lower.firstIndex(where: { $0.contains("fee") })
+            feeIndex: lower.firstIndex(where: { $0.contains("fee") }),
         )
     }
 
@@ -337,7 +337,7 @@ final class CSVImportService: Sendable {
             amountIndex: lower.firstIndex(where: { $0.contains("amount") || $0.contains("vol") }),
             memoIndex: lower.firstIndex(where: { $0.contains("type") }),
             typeIndex: lower.firstIndex(where: { $0.contains("type") }),
-            feeIndex: lower.firstIndex(where: { $0.contains("fee") })
+            feeIndex: lower.firstIndex(where: { $0.contains("fee") }),
         )
     }
 }

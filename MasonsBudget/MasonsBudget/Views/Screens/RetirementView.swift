@@ -1,5 +1,5 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct RetirementView: View {
     @Environment(\.theme) var theme
@@ -14,19 +14,33 @@ struct RetirementView: View {
 
     @State private var projectionHorizon: Int = 10
 
-    private var activeMember: FamilyMember { FamilyMember(rawValue: selectedMemberRaw) ?? .victor }
-    private var btcPrice: Decimal { BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice }
-    private var unit: DisplayUnit { DisplayUnit(rawValue: displayUnitRaw) ?? .btc }
+    private var activeMember: FamilyMember {
+        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    }
+
+    private var btcPrice: Decimal {
+        BTCPriceService.storedPrice ?? AppTheme.fallbackBTCPrice
+    }
+
+    private var unit: DisplayUnit {
+        DisplayUnit(rawValue: displayUnitRaw) ?? .btc
+    }
 
     private var visibleAccounts: [BTCAccount] {
         accounts.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
     }
 
-    private var totalBtc: Decimal { visibleAccounts.reduce(Decimal(0)) { $0 + $1.btc } }
+    private var totalBtc: Decimal {
+        visibleAccounts.reduce(Decimal(0)) { $0 + $1.btc }
+    }
+
     private var coldBtc: Decimal {
         visibleAccounts.filter { $0.custody == .selfCustody }.reduce(Decimal(0)) { $0 + $1.btc }
     }
-    private var hotBtc: Decimal { totalBtc - coldBtc }
+
+    private var hotBtc: Decimal {
+        totalBtc - coldBtc
+    }
 
     private let dcaWeeklySats: Decimal = 2_100_000
 
@@ -108,7 +122,7 @@ struct RetirementView: View {
                 current: totalBtc,
                 target: btcGoal,
                 pct: btcPct,
-                detail: "\(AppFormatter.formatBtc(totalBtc)) / \(AppFormatter.formatBtc(btcGoal))"
+                detail: "\(AppFormatter.formatBtc(totalBtc)) / \(AppFormatter.formatBtc(btcGoal))",
             )
 
             goalRow(
@@ -117,17 +131,17 @@ struct RetirementView: View {
                 current: currentNetWorth,
                 target: netWorthGoal,
                 pct: netWorthPct,
-                detail: "\(AppFormatter.formatCurrency(currentNetWorth)) / \(AppFormatter.formatCurrency(netWorthGoal))"
+                detail: "\(AppFormatter.formatCurrency(currentNetWorth)) / \(AppFormatter.formatCurrency(netWorthGoal))",
             )
         }
         .padding(20)
         .background(
-            LinearGradient(colors: [theme.accent, theme.accentDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
+            LinearGradient(colors: [theme.accent, theme.accentDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
         )
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
-    private func goalRow(icon: String, label: String, current: Decimal, target: Decimal, pct: Double, detail: String) -> some View {
+    private func goalRow(icon: String, label: String, current _: Decimal, target _: Decimal, pct: Double, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
@@ -177,7 +191,7 @@ struct RetirementView: View {
                         title: "Cold Storage · Coldcard Q",
                         subtitle: "Multi-sig · 2-of-3",
                         icon: AppIcon.vault,
-                        btc: coldBtc
+                        btc: coldBtc,
                     )
                 }
                 .buttonStyle(.plain)
@@ -189,7 +203,7 @@ struct RetirementView: View {
                         title: "Spending · Phoenix LN",
                         subtitle: "Self-custodial Lightning",
                         icon: "bolt.fill",
-                        btc: hotBtc
+                        btc: hotBtc,
                     )
                 }
                 .buttonStyle(.plain)
@@ -207,7 +221,7 @@ struct RetirementView: View {
                 .overlay(
                     Image(systemName: icon)
                         .font(.system(size: 20))
-                        .foregroundStyle(theme.accent)
+                        .foregroundStyle(theme.accent),
                 )
 
             VStack(alignment: .leading, spacing: 2) {
@@ -271,7 +285,7 @@ struct RetirementView: View {
                     .overlay(
                         Image(systemName: "chart.line.uptrend.xyaxis")
                             .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(theme.accent)
+                            .foregroundStyle(theme.accent),
                     )
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -305,14 +319,13 @@ struct RetirementView: View {
         let vooPrice = StockPriceService.vooPrice
         let ibitPrice = StockPriceService.ibitPrice
         let ticker = holding.ticker?.uppercased() ?? ""
-        let liveVal: Decimal
-        switch ticker {
+        let liveVal: Decimal = switch ticker {
         case "VOO" where vooPrice != nil:
-            liveVal = (vooPrice ?? 0) * holding.shares
+            (vooPrice ?? 0) * holding.shares
         case "IBIT" where ibitPrice != nil:
-            liveVal = (ibitPrice ?? 0) * holding.shares
+            (ibitPrice ?? 0) * holding.shares
         default:
-            liveVal = holding.value
+            holding.value
         }
         let gainPct = holding.gainPct
         let sats: Decimal = btcPrice > 0 ? (liveVal / btcPrice) * 100_000_000 : 0
@@ -347,7 +360,7 @@ struct RetirementView: View {
     private let btcIbitAnnualReturn: Double = 0.15
     private let vooAnnualReturn: Double = 0.10
     private let matchRate: Decimal = 1.0
-    private let victorAnnualBonuses: Decimal = 97_000
+    private let victorAnnualBonuses: Decimal = 97000
 
     private var weekly401kContribution: Decimal {
         visibleHoldings.reduce(Decimal(0)) { $0 + $1.weeklyContribution }
@@ -414,7 +427,7 @@ struct RetirementView: View {
         let vooFraction: Decimal = totalBalance > 0 ? vooBalance / totalBalance : Decimal(0.5)
         let ibitFraction: Decimal = totalBalance > 0 ? ibitBalance / totalBalance : Decimal(0.5)
 
-        for _ in 0..<quarters {
+        for _ in 0 ..< quarters {
             let vooContrib = quarterlyTotal * vooFraction
             let ibitContrib = quarterlyTotal * ibitFraction
             vooBalance = vooBalance * (1 + vooQuarterlyRate) + vooContrib
@@ -422,7 +435,7 @@ struct RetirementView: View {
         }
 
         let otherRate = Decimal(vooAnnualReturn / 4.0)
-        for _ in 0..<quarters {
+        for _ in 0 ..< quarters {
             otherBalance = otherBalance * (1 + otherRate)
         }
 
@@ -447,14 +460,16 @@ struct RetirementView: View {
         var projectedValue = currentBtcValue
         let monthlyRate = annualAppreciation / 12
 
-        for _ in 0..<(years * 12) {
+        for _ in 0 ..< (years * 12) {
             projectedValue = projectedValue * (1 + monthlyRate) + (monthlyBtc * btcPrice)
         }
 
         return projectedValue / btcPrice
     }
 
-    private var projectionHorizons: [Int] { [5, 10, 15, 20] }
+    private var projectionHorizons: [Int] {
+        [5, 10, 15, 20]
+    }
 
     private var projectionsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -530,14 +545,14 @@ struct RetirementView: View {
                 label: "401(k) + WAP",
                 icon: "chart.line.uptrend.xyaxis",
                 sats: holdingsSats,
-                subtitle: "IBIT 15% · VOO 10% · 100% match"
+                subtitle: "IBIT 15% · VOO 10% · 100% match",
             )
             Divider().background(theme.border)
             projectionAmountRow(
                 label: "Bitcoin",
                 icon: "bitcoinsign.circle.fill",
                 sats: btcSats,
-                subtitle: "\(AppFormatter.formatBtc(btcProjected)) BTC"
+                subtitle: "\(AppFormatter.formatBtc(btcProjected)) BTC",
             )
         }
         .background(theme.surface2)
@@ -579,14 +594,14 @@ struct RetirementView: View {
                 "VOO: 10%/yr growth",
                 "DCA: \(weeklySatsLabel) sats/wk",
                 "Budget surplus: \(surplusLabel)/mo → BTC",
-                "Bonuses: $24k Jul · $24k Dec · $49k Mar → BTC"
+                "Bonuses: $24k Jul · $24k Dec · $49k Mar → BTC",
             ]
         } else {
             return [
                 "401k: \(weeklyLabel)/wk (Fri) + 100% match (quarterly)",
                 "IBIT & BTC: 15%/yr growth",
                 "VOO: 10%/yr growth",
-                "Budget surplus: \(surplusLabel)/mo → BTC"
+                "Budget surplus: \(surplusLabel)/mo → BTC",
             ]
         }
     }
@@ -607,7 +622,6 @@ struct RetirementView: View {
         .background(theme.surface2)
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
-
 
     // MARK: - Cost Basis Lots
 
