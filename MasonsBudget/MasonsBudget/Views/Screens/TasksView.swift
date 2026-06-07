@@ -64,7 +64,7 @@ struct TasksView: View {
         let openCount: Int
         let meta: TodoProject?
 
-        // Composite (owner, name) so same-named projects from different owners stay distinct.
+        /// Composite (owner, name) so same-named projects from different owners stay distinct.
         var id: String {
             "\(owner.rawValue)|\(name)"
         }
