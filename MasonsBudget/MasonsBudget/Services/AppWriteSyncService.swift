@@ -163,7 +163,7 @@ enum AppWriteSyncService {
         deleteTodo(id: todoId, onResult: onResult)
     }
 
-    private static func deleteTodo(
+    static func deleteTodo(
         id todoId: String,
         onResult: (@MainActor @Sendable (Bool) -> Void)? = nil,
     ) {

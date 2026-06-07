@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Edit a single todo (SAT-1335). Todos were previously uneditable — this is the
 /// authoring surface: title, optional due date, project/area, priority, flag, plus
-/// delete-with-confirmation. Saves stamp `updatedAt` and push through the
+/// delete with undo. Saves stamp `updatedAt` and push through the
 /// multi-profile writeback path (sync status is surfaced by AppWriteSyncService).
 struct TaskDetailView: View {
     @Environment(\.theme) var theme
@@ -169,9 +169,7 @@ struct TaskDetailView: View {
     }
 
     private func deleteTask() {
-        modelContext.delete(todo)
-        try? modelContext.save()
-        AppWriteSyncService.deleteTodo(todo)
+        TaskUndoStore.shared.delete(todo, in: modelContext)
         dismiss()
     }
 }

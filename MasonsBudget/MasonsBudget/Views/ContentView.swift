@@ -95,6 +95,7 @@ struct ContentView: View {
 
     @State private var selectedTab: AppTab = .home
     @StateObject private var syncStatus = SyncStatusStore.shared
+    @StateObject private var taskUndoStore = TaskUndoStore.shared
     @State private var showAddTransaction = false
     @State private var showProfileSwitcher = false
     @State private var showVoiceTransaction = false
@@ -131,10 +132,16 @@ struct ContentView: View {
             #endif
         }
         .environmentObject(syncStatus)
+        .environmentObject(taskUndoStore)
         .overlay(alignment: .top) {
             syncFailureBanner
                 .padding(.horizontal, AppLayout.sectionPadding)
                 .padding(.top, 10)
+        }
+        .overlay(alignment: .bottom) {
+            TaskUndoBanner()
+                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.bottom, taskUndoBottomPadding)
         }
         .sheet(isPresented: $showAddTransaction) {
             addTransactionSheet
@@ -530,6 +537,14 @@ struct ContentView: View {
         case .syncing: "arrow.triangle.2.circlepath.circle.fill"
         case .failed: "exclamationmark.triangle.fill"
         }
+    }
+
+    private var taskUndoBottomPadding: CGFloat {
+        #if os(iOS)
+            84
+        #else
+            18
+        #endif
     }
 
     @ViewBuilder

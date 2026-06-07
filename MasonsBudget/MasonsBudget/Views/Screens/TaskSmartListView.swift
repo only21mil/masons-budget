@@ -55,7 +55,6 @@ struct TaskRowView: View {
     let todo: TodoItem
     @Environment(\.theme) var theme
     @Environment(\.modelContext) private var modelContext
-    @State private var showDeleteConfirm = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -88,7 +87,7 @@ struct TaskRowView: View {
                 Label(todo.isFlagged ? "Remove flag" : "Flag", systemImage: AppIcon.flagFilled)
             }
             Button(role: .destructive) {
-                showDeleteConfirm = true
+                deleteSelf()
             } label: {
                 Label("Delete", systemImage: "trash")
             }
@@ -102,7 +101,7 @@ struct TaskRowView: View {
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive) {
-                showDeleteConfirm = true
+                deleteSelf()
             } label: {
                 Label("Delete", systemImage: "trash")
             }
@@ -110,12 +109,6 @@ struct TaskRowView: View {
                 Label(todo.isFlagged ? "Unflag" : "Flag", systemImage: AppIcon.flagFilled)
             }
             .tint(.orange)
-        }
-        .confirmationDialog("Delete this task?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-            Button("Delete task", role: .destructive, action: deleteSelf)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(todo.title)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText)
@@ -183,9 +176,7 @@ struct TaskRowView: View {
     }
 
     private func deleteSelf() {
-        modelContext.delete(todo)
-        try? modelContext.save()
-        AppWriteSyncService.deleteTodo(todo)
+        TaskUndoStore.shared.delete(todo, in: modelContext)
     }
 
     static func isOverdue(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> Bool {
