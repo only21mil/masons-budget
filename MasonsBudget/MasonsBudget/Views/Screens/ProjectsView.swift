@@ -102,23 +102,26 @@ struct ProjectsView: View {
         allTodos.count(where: {
             activeMember.canSee(dataOwnedBy: $0.ownerMember) &&
                 !$0.isDone &&
-                $0.project == nil &&
-                $0.area == nil
+                projectName(for: $0) == nil &&
+                areaName(for: $0) == nil
         })
     }
 
     private var todayCount: Int {
         let cal = Calendar.current
+        let now = Date()
         return allTodos.count(where: { todo in
             activeMember.canSee(dataOwnedBy: todo.ownerMember) && !todo.isDone &&
-                (todo.dueDate.map { cal.isDateInToday($0) } ?? false)
+                SmartListFilter.today.matches(todo, now: now, calendar: cal)
         })
     }
 
     private var upcomingCount: Int {
+        let cal = Calendar.current
+        let now = Date()
         allTodos.count(where: { todo in
             activeMember.canSee(dataOwnedBy: todo.ownerMember) && !todo.isDone &&
-                (todo.dueDate.map { $0 > Date() } ?? false)
+                SmartListFilter.upcoming.matches(todo, now: now, calendar: cal)
         })
     }
 
