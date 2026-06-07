@@ -109,7 +109,7 @@ extension ColorTokens {
         borderStrong: Color(red: 1.0, green: 0.925, blue: 0.784, opacity: 0.14),
         text: Color(hex: 0xF4ECD8),
         textMuted: Color(red: 0.957, green: 0.925, blue: 0.847, opacity: 0.62),
-        textFaint: Color(red: 0.957, green: 0.925, blue: 0.847, opacity: 0.38),
+        textFaint: Color(red: 0.957, green: 0.925, blue: 0.847, opacity: 0.55),
         accent: Color(hex: 0xF7931A),
         accentDeep: Color(hex: 0xFFB347),
         accentSoft: Color(red: 0.969, green: 0.576, blue: 0.102, opacity: 0.16),
@@ -136,7 +136,7 @@ extension ColorTokens {
         borderStrong: Color(red: 0.078, green: 0.063, blue: 0.039, opacity: 0.14),
         text: Color(hex: 0x15110A),
         textMuted: Color(red: 0.082, green: 0.067, blue: 0.039, opacity: 0.58),
-        textFaint: Color(red: 0.082, green: 0.067, blue: 0.039, opacity: 0.38),
+        textFaint: Color(red: 0.082, green: 0.067, blue: 0.039, opacity: 0.55),
         accent: Color(hex: 0xF7931A),
         accentDeep: Color(hex: 0xE07B0E),
         accentSoft: Color(red: 0.969, green: 0.576, blue: 0.102, opacity: 0.12),
@@ -209,36 +209,6 @@ enum AppLayout {
     static let gridSpacing: CGFloat = 10
 
     static let sidebarWidth: CGFloat = 220
-}
-
-// MARK: - Compatibility Facade
-
-enum AppTheme {
-    static let accentColor = ColorTokens.dark.accent
-    static let accentGold = ColorTokens.dark.accentDeep
-    static let secondaryAccent = ColorTokens.dark.accent
-    static let background = ColorTokens.dark.bg
-    static let cardBackground = ColorTokens.dark.surface
-    static let cardBackgroundElevated = ColorTokens.dark.elevated
-    static let primaryText = ColorTokens.dark.text
-    static let secondaryText = ColorTokens.dark.textMuted
-    static let tertiaryText = ColorTokens.dark.textFaint
-    static let cardBorder = ColorTokens.dark.border
-    static let positive = ColorTokens.dark.success
-    static let warning = ColorTokens.dark.warn
-    static let negative = ColorTokens.dark.danger
-
-    static let cornerRadius = AppLayout.radiusMedium
-    static let cardSpacing = AppLayout.cardSpacing
-    static let horizontalPadding = AppLayout.sectionPadding
-
-    static let fallbackBTCPrice: Decimal = 104_000
-
-    static let accentGradient = LinearGradient(
-        colors: [Color(hex: 0xF7931A), Color(hex: 0xE07B0E)],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing,
-    )
 }
 
 func formatCurrency(_ value: Decimal) -> String {
