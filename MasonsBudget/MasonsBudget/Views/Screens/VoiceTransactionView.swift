@@ -252,6 +252,9 @@ final class SpeechTranscriber: ObservableObject {
         task?.cancel()
         task = nil
 
+        // Audio capture is iOS-only. On macOS, accessing audioEngine.inputNode without a
+        // microphone entitlement throws an ObjC exception that the sampleRate guard can't
+        // catch, so guard the whole capture path and fail gracefully instead of crashing.
         #if os(iOS)
             do {
                 let session = AVAudioSession.sharedInstance()
@@ -261,43 +264,45 @@ final class SpeechTranscriber: ObservableObject {
                 errorMessage = "Microphone setup failed."
                 return
             }
-        #endif
 
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.shouldReportPartialResults = true
-        self.request = request
+            let request = SFSpeechAudioBufferRecognitionRequest()
+            request.shouldReportPartialResults = true
+            self.request = request
 
-        let inputNode = audioEngine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
-        guard format.sampleRate > 0 else {
-            errorMessage = "No audio input device available."
-            return
-        }
-        inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak request] buffer, _ in
-            request?.append(buffer)
-        }
+            let inputNode = audioEngine.inputNode
+            let format = inputNode.outputFormat(forBus: 0)
+            guard format.sampleRate > 0 else {
+                errorMessage = "No audio input device available."
+                return
+            }
+            inputNode.removeTap(onBus: 0)
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak request] buffer, _ in
+                request?.append(buffer)
+            }
 
-        audioEngine.prepare()
-        do {
-            try audioEngine.start()
-            isRecording = true
-        } catch {
-            errorMessage = "Microphone recording failed."
-            stop()
-            return
-        }
+            audioEngine.prepare()
+            do {
+                try audioEngine.start()
+                isRecording = true
+            } catch {
+                errorMessage = "Microphone recording failed."
+                stop()
+                return
+            }
 
-        task = recognizer?.recognitionTask(with: request) { [weak self] result, error in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                if let result {
-                    self.transcript = result.bestTranscription.formattedString
-                }
-                if error != nil || result?.isFinal == true {
-                    self.stop()
+            task = recognizer?.recognitionTask(with: request) { [weak self] result, error in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if let result {
+                        self.transcript = result.bestTranscription.formattedString
+                    }
+                    if error != nil || result?.isFinal == true {
+                        self.stop()
+                    }
                 }
             }
-        }
+        #else
+            errorMessage = "Voice capture isn't available on macOS yet."
+        #endif
     }
 }
