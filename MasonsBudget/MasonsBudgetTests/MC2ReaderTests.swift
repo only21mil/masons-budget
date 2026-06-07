@@ -110,6 +110,80 @@ final class MC2ReaderTests: XCTestCase {
         XCTAssertEqual(todos.first?.createdBy, "app")
     }
 
+    /// B1 regression: a single-owner payload must delete missing rows for the owners
+    /// present in that payload, but must NEVER touch rows belonging to other owners.
+    @MainActor
+    func testReplaceTodosMultiOwnerPayloadScopesDeletionToPresentOwners() throws {
+        let context = try makeInMemoryTodoContext()
+        let service = MC2SyncService(context: context)
+
+        // Seed two Victor-owned mc2 rows and two Rachel-owned mc2 rows.
+        context.insert(TodoItem(
+            id: "v1",
+            title: "Victor todo 1",
+            owner: .victor,
+            createdBy: "mc2",
+            updatedAt: Date(timeIntervalSince1970: 10),
+        ))
+        context.insert(TodoItem(
+            id: "v2",
+            title: "Victor todo 2",
+            owner: .victor,
+            createdBy: "mc2",
+            updatedAt: Date(timeIntervalSince1970: 10),
+        ))
+        context.insert(TodoItem(
+            id: "r1",
+            title: "Rachel todo 1 (original)",
+            owner: .rachel,
+            createdBy: "mc2",
+            updatedAt: Date(timeIntervalSince1970: 10),
+        ))
+        context.insert(TodoItem(
+            id: "r2",
+            title: "Rachel todo 2 (will be removed)",
+            owner: .rachel,
+            createdBy: "mc2",
+            updatedAt: Date(timeIntervalSince1970: 10),
+        ))
+        try context.save()
+
+        // Rachel-only payload: r1 is updated, r2 is absent (should be deleted).
+        // Victor rows are entirely absent from this payload (must be untouched).
+        service.replaceTodos(visibleTo: .rachel, with: [
+            TodoItem(
+                id: "r1",
+                title: "Rachel todo 1 (updated)",
+                owner: .rachel,
+                createdBy: "mc2",
+                updatedAt: Date(timeIntervalSince1970: 20),
+            ),
+        ])
+        try context.save()
+
+        let todos = try context.fetch(FetchDescriptor<TodoItem>())
+
+        // Total rows: v1 + v2 (untouched) + r1 (updated) = 3; r2 deleted.
+        XCTAssertEqual(todos.count, 3)
+
+        // r2 must be gone — it belonged to Rachel (present owner) but was absent from payload.
+        XCTAssertNil(todos.first(where: { $0.id == "r2" }), "r2 should have been reconciled away")
+
+        // r1 must survive and carry the updated title.
+        let r1 = todos.first(where: { $0.id == "r1" })
+        XCTAssertNotNil(r1, "r1 should survive")
+        XCTAssertEqual(r1?.title, "Rachel todo 1 (updated)")
+        XCTAssertEqual(r1?.createdBy, "mc2")
+
+        // Victor rows must be completely untouched.
+        XCTAssertNotNil(todos.first(where: { $0.id == "v1" }), "v1 must survive (owner absent from payload)")
+        XCTAssertNotNil(todos.first(where: { $0.id == "v2" }), "v2 must survive (owner absent from payload)")
+
+        let v1 = todos.first(where: { $0.id == "v1" })
+        XCTAssertEqual(v1?.title, "Victor todo 1")
+        XCTAssertEqual(v1?.createdBy, "mc2")
+    }
+
     @MainActor
     private func makeInMemoryTodoContext() throws -> ModelContext {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
