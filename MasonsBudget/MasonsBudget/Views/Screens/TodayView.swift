@@ -210,10 +210,11 @@ struct TodayView: View {
     }
 
     private func addTask() {
-        guard !draftText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
         let todo = TodoItem(
             id: UUID().uuidString,
-            title: draftText,
+            title: trimmed,
             dueDate: nil,
             owner: activeMember,
             createdBy: "app",
