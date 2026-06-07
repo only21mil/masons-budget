@@ -119,7 +119,7 @@ struct ProjectsView: View {
     private var upcomingCount: Int {
         let cal = Calendar.current
         let now = Date()
-        allTodos.count(where: { todo in
+        return allTodos.count(where: { todo in
             activeMember.canSee(dataOwnedBy: todo.ownerMember) && !todo.isDone &&
                 SmartListFilter.upcoming.matches(todo, now: now, calendar: cal)
         })
