@@ -77,10 +77,11 @@ final class TaskUndoStore: ObservableObject {
 
     func delete(_ todo: TodoItem, in modelContext: ModelContext) {
         let snapshot = DeletedTodoSnapshot(todo: todo)
-        commitPendingDelete()
+        clearPending()
         modelContext.delete(todo)
         try? modelContext.save()
         present(snapshot)
+        AppWriteSyncService.deleteTodo(id: snapshot.id)
     }
 
     func restore(in modelContext: ModelContext) {
@@ -100,7 +101,7 @@ final class TaskUndoStore: ObservableObject {
     }
 
     func dismiss() {
-        commitPendingDelete()
+        clearPending()
     }
 
     private func present(_ snapshot: DeletedTodoSnapshot) {
@@ -110,22 +111,16 @@ final class TaskUndoStore: ObservableObject {
             try? await Task.sleep(nanoseconds: 6_000_000_000)
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                self?.commitPendingDelete(matching: snapshot.id)
+                self?.clearPending(matching: snapshot.id)
             }
         }
     }
 
-    private func clearPending() {
+    private func clearPending(matching id: String? = nil) {
+        if let id, pending?.id != id { return }
         expiryTask?.cancel()
         expiryTask = nil
         pending = nil
-    }
-
-    private func commitPendingDelete(matching id: String? = nil) {
-        guard let snapshot = pending else { return }
-        if let id, snapshot.id != id { return }
-        clearPending()
-        AppWriteSyncService.deleteTodo(id: snapshot.id)
     }
 
     private func existingTodo(id: String, in modelContext: ModelContext) -> TodoItem? {
