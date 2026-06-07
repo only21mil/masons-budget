@@ -34,7 +34,7 @@ struct CatGlyphView: View {
 
     var body: some View {
         Image(systemName: glyph.systemImage)
-            .font(.system(size: size * 0.7, weight: .medium))
+            .font(AppFont.icon(size: size * 0.7, weight: .medium))
             .foregroundStyle(color)
             .frame(width: size, height: size)
     }
@@ -50,11 +50,11 @@ struct BtcGlyphView: View {
     var body: some View {
         if filled {
             Image(systemName: "bitcoinsign.circle.fill")
-                .font(.system(size: size))
+                .font(AppFont.icon(size: size))
                 .foregroundStyle(color)
         } else {
             Image(systemName: "bitcoinsign.circle")
-                .font(.system(size: size))
+                .font(AppFont.icon(size: size))
                 .foregroundStyle(color)
         }
     }

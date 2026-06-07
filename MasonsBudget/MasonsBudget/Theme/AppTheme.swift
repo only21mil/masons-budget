@@ -229,6 +229,14 @@ enum AppFont {
     static let heroTracking: CGFloat = 0
     static let largeTracking: CGFloat = 0
     static let sectionTracking: CGFloat = 0
+
+    static func icon(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        Font.system(size: size, weight: weight)
+    }
+
+    static func mono(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        Font.system(size: size, weight: weight, design: .monospaced)
+    }
 }
 
 // MARK: - Layout Constants

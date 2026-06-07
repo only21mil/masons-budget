@@ -43,12 +43,12 @@ struct AmountView: View {
     var body: some View {
         HStack(spacing: 0) {
             Text("\(signPrefix)\(unit.prefix)\(formattedValue)")
-                .font(.system(size: size, weight: weight, design: .monospaced))
+                .font(AppFont.mono(size: size, weight: weight))
                 .foregroundStyle(displayColor)
 
             if !unitSuffix.isEmpty {
                 Text(" \(unitSuffix)")
-                    .font(.system(size: size * 0.62, weight: .medium, design: .monospaced))
+                    .font(AppFont.mono(size: size * 0.62, weight: .medium))
                     .foregroundStyle(displayColor.opacity(0.55))
             }
         }
