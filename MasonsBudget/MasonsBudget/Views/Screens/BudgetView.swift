@@ -143,17 +143,17 @@ struct BudgetView: View {
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(label) '\(String(year).suffix(2))\(offset == 0 ? " · now" : "")")
-                    .font(.system(size: 10, weight: .bold))
-                    .tracking(0.6)
+                    .font(AppFont.microStrong)
+                    .tracking(AppFont.sectionTracking)
                     .textCase(.uppercase)
                     .opacity(isSelected ? 0.85 : 0.55)
 
                 if let rate {
                     Text("\(rate)%")
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .font(AppFont.monoCaptionStrong)
                 } else {
                     Text("--")
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .font(AppFont.monoCaptionStrong)
                 }
             }
             .foregroundStyle(isSelected ? .white : theme.text)
@@ -179,17 +179,16 @@ struct BudgetView: View {
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(isCurrent ? "Spent / Limit" : "Spent / Income")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(AppFont.labelSmall)
                     .foregroundStyle(theme.textMuted)
                 Spacer()
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(AppFormatter.formatCurrency(monthSpent))
-                        .font(.system(size: 20, weight: .bold, design: .monospaced))
-                        .tracking(-0.4)
+                        .font(AppFont.largeNumberMono)
                         .foregroundStyle(theme.text)
                     Text("/ \(AppFormatter.formatCurrency(limit))")
-                        .font(.system(size: 13, design: .monospaced))
-                        .foregroundStyle(theme.textFaint)
+                        .font(AppFont.monoCaption)
+                        .foregroundStyle(theme.textMuted)
                 }
             }
 
@@ -206,12 +205,12 @@ struct BudgetView: View {
 
             HStack {
                 Text("\(Int(pct * 100))% of income spent")
-                    .font(.system(size: 12))
+                    .font(AppFont.labelSmallRegular)
                     .foregroundStyle(theme.textMuted)
                 Spacer()
                 let saved = limit - monthSpent
                 Text("\(AppFormatter.formatCurrency(max(saved, 0))) saved")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(AppFont.labelSmall)
                     .foregroundStyle(theme.success)
             }
         }
@@ -223,8 +222,8 @@ struct BudgetView: View {
     private var budgetVsActualSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("BUDGET vs ACTUAL")
-                .font(.system(size: 12, weight: .bold))
-                .tracking(0.72)
+                .font(AppFont.labelSmallStrong)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -249,12 +248,12 @@ struct BudgetView: View {
         return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(cat.name)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(AppFont.sectionHeaderMedium)
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                 Spacer()
                 Text("\(AppFormatter.formatCurrency(spent)) / \(AppFormatter.formatCurrency(budget))")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(AppFont.monoMicro)
                     .foregroundStyle(over ? theme.danger : theme.textMuted)
             }
             GeometryReader { geo in
@@ -278,8 +277,8 @@ struct BudgetView: View {
     private var categoriesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("CATEGORIES")
-                .font(.system(size: 12, weight: .bold))
-                .tracking(0.72)
+                .font(AppFont.labelSmallStrong)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -320,11 +319,11 @@ struct BudgetView: View {
                 HStack {
                     HStack(spacing: 8) {
                         Text(cat.name)
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(AppFont.bodyStrong)
                             .foregroundStyle(theme.text)
                         Text(statusLabel)
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .tracking(0.54)
+                            .font(AppFont.monoNanoStrong)
+                            .tracking(AppFont.sectionTracking)
                             .foregroundStyle(statusColor)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -333,7 +332,7 @@ struct BudgetView: View {
                     }
                     Spacer()
                     Text(AppFormatter.formatCurrency(spent))
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .font(AppFont.monoCaptionStrong)
                         .foregroundStyle(theme.text)
                 }
 
@@ -349,7 +348,7 @@ struct BudgetView: View {
                     .frame(height: 6)
 
                     Text(over ? "+\(Int((pct - 1) * 100))% over" : "\(remainingPct)% left")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .font(AppFont.monoSmallStrong)
                         .foregroundStyle(statusColor)
                         .frame(minWidth: 76, alignment: .trailing)
                 }

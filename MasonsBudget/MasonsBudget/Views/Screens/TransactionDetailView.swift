@@ -44,11 +44,11 @@ struct TransactionDetailView: View {
                         } label: {
                             HStack {
                                 Text(category.isEmpty ? "Select" : category)
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(category.isEmpty ? theme.textFaint : theme.text)
+                                    .font(AppFont.labelLarge)
+                                    .foregroundStyle(category.isEmpty ? theme.textMuted : theme.text)
                                 Image(systemName: "chevron.up.chevron.down")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(theme.textFaint)
+                                    .font(AppFont.smallRegular)
+                                    .foregroundStyle(theme.textMuted)
                             }
                         }
                     }
@@ -66,7 +66,7 @@ struct TransactionDetailView: View {
                     }
                     Hairline()
                     DatePicker("Date", selection: $date, displayedComponents: .date)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(AppFont.labelLarge)
                         .foregroundStyle(theme.text)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 12)
@@ -82,7 +82,7 @@ struct TransactionDetailView: View {
                     showingDeleteConfirmation = true
                 } label: {
                     Text("Delete Transaction")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(AppFont.labelLargeStrong)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
                 }
@@ -102,7 +102,7 @@ struct TransactionDetailView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .font(.system(size: 15, weight: .bold))
+                        .font(AppFont.bodyBold)
                         .foregroundStyle(theme.accent)
                 }
             }
@@ -128,11 +128,11 @@ struct TransactionDetailView: View {
     private func editRow(_ label: String, @ViewBuilder content: () -> some View) -> some View {
         HStack(spacing: 12) {
             Text(label)
-                .font(.system(size: 13))
+                .font(AppFont.labelRegular)
                 .foregroundStyle(theme.textMuted)
                 .frame(width: 78, alignment: .leading)
             content()
-                .font(.system(size: 14, weight: .semibold))
+                .font(AppFont.labelLarge)
                 .foregroundStyle(theme.text)
         }
         .padding(.horizontal, 14)

@@ -42,11 +42,11 @@ struct CategoryDetailView: View {
                 VStack(spacing: 0) {
                     HStack {
                         Text("Monthly limit")
-                            .font(.system(size: 13))
+                            .font(AppFont.labelRegular)
                             .foregroundStyle(theme.textMuted)
                         Spacer()
                         TextField("Limit", text: $monthlyBudget)
-                            .font(.system(size: 15, weight: .bold, design: .monospaced))
+                            .font(AppFont.monoBodyStrong)
                             .foregroundStyle(theme.text)
                             .multilineTextAlignment(.trailing)
                             .frame(maxWidth: 140)
@@ -57,11 +57,11 @@ struct CategoryDetailView: View {
 
                     HStack {
                         Text("Transactions")
-                            .font(.system(size: 13))
+                            .font(AppFont.labelRegular)
                             .foregroundStyle(theme.textMuted)
                         Spacer()
                         Text("\(categoryTransactions.count)")
-                            .font(.system(size: 15, weight: .bold, design: .monospaced))
+                            .font(AppFont.monoBodyStrong)
                             .foregroundStyle(theme.text)
                     }
                     .padding(14)
@@ -77,11 +77,11 @@ struct CategoryDetailView: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(tx.merchant)
-                                        .font(.system(size: 14, weight: .semibold))
+                                        .font(AppFont.labelLarge)
                                         .foregroundStyle(theme.text)
                                     Text(formatDate(tx.date))
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(theme.textFaint)
+                                        .font(AppFont.smallRegular)
+                                        .foregroundStyle(theme.textMuted)
                                 }
                                 Spacer()
                                 AmountView(
@@ -116,7 +116,7 @@ struct CategoryDetailView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .font(.system(size: 15, weight: .bold))
+                        .font(AppFont.bodyBold)
                         .foregroundStyle(theme.accent)
                 }
             }

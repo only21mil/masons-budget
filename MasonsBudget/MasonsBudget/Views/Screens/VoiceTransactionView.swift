@@ -54,8 +54,8 @@ struct VoiceTransactionView: View {
 
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Save") { saveTransaction() }
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(canSave ? theme.accent : theme.textFaint)
+                            .font(AppFont.bodyBold)
+                            .foregroundStyle(canSave ? theme.accent : theme.textMuted)
                             .disabled(!canSave)
                     }
                 }
@@ -76,28 +76,30 @@ struct VoiceTransactionView: View {
                     toggleRecording()
                 } label: {
                     Image(systemName: transcriber.isRecording ? "stop.fill" : "mic.fill")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(AppFont.iconSmall)
                         .foregroundStyle(transcriber.isRecording ? .white : theme.accent)
                         .frame(width: 44, height: 44)
                         .background(transcriber.isRecording ? theme.danger : theme.accentSoft)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(transcriber.isRecording ? "Stop recording" : "Start recording")
+                .accessibilityHint("Dictates a transaction")
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(transcriber.isRecording ? "Listening" : "Ready")
-                        .font(.system(size: 15, weight: .bold))
+                        .font(AppFont.bodyBold)
                         .foregroundStyle(theme.text)
                     Text("Say the merchant, amount, method, and date")
-                        .font(.system(size: 12))
-                        .foregroundStyle(theme.textFaint)
+                        .font(AppFont.labelSmallRegular)
+                        .foregroundStyle(theme.textMuted)
                 }
 
                 Spacer()
             }
 
             TextEditor(text: $transcript)
-                .font(.system(size: 15, weight: .medium))
+                .font(AppFont.body)
                 .foregroundStyle(theme.text)
                 .frame(minHeight: 120)
                 .scrollContentBackground(.hidden)
@@ -108,7 +110,7 @@ struct VoiceTransactionView: View {
 
             if let error = transcriber.errorMessage {
                 Text(error)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(AppFont.labelSmall)
                     .foregroundStyle(theme.danger)
             }
         }
@@ -136,11 +138,11 @@ struct VoiceTransactionView: View {
     private func parsedRow(label: String, value: String) -> some View {
         HStack {
             Text(label)
-                .font(.system(size: 13))
+                .font(AppFont.labelRegular)
                 .foregroundStyle(theme.textMuted)
                 .frame(width: 86, alignment: .leading)
             Text(value)
-                .font(.system(size: 14, weight: .semibold))
+                .font(AppFont.labelLarge)
                 .foregroundStyle(value == "Missing" ? theme.danger : theme.text)
                 .lineLimit(1)
             Spacer()

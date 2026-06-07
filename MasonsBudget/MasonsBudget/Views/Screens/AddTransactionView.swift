@@ -91,7 +91,7 @@ struct AddTransactionView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { saveTransaction() }
-                        .font(.system(size: 16, weight: .bold))
+                        .font(AppFont.headline)
                         .foregroundStyle(theme.accent)
                 }
             }
@@ -109,7 +109,7 @@ struct AddTransactionView: View {
             ForEach(TxType.allCases, id: \.self) { t in
                 Button { txType = t } label: {
                     Text(t.rawValue)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(AppFont.label)
                         .foregroundStyle(txType == t ? theme.text : theme.textMuted)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 9)
@@ -129,8 +129,8 @@ struct AddTransactionView: View {
     private var amountSection: some View {
         VStack(spacing: 8) {
             Text("AMOUNT")
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(1.1)
+                .font(AppFont.sectionHeaderMedium)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.accent)
 
             unitSelector
@@ -138,16 +138,15 @@ struct AddTransactionView: View {
             HStack(spacing: 8) {
                 if txType == .spend {
                     Text("\u{2212}")
-                        .font(.system(size: 56, weight: .bold, design: .monospaced))
-                        .foregroundStyle(theme.textFaint)
+                        .font(AppFont.heroNumberMono)
+                        .foregroundStyle(theme.textMuted)
                 }
                 Text("\(inputUnit.prefix)\(amount.isEmpty ? "0" : amount)")
-                    .font(.system(size: 56, weight: .bold, design: .monospaced))
-                    .tracking(-1.68)
+                    .font(AppFont.heroNumberMono)
                     .foregroundStyle(theme.text)
                 if inputUnit != .usd {
                     Text(inputUnit.label)
-                        .font(.system(size: 18, weight: .semibold, design: .monospaced))
+                        .font(AppFont.mediumNumberMono)
                         .foregroundStyle(theme.textMuted)
                 }
             }
@@ -156,7 +155,7 @@ struct AddTransactionView: View {
 
             if let amountValidationMessage {
                 Text(amountValidationMessage)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(AppFont.labelSmall)
                     .foregroundStyle(theme.danger)
             }
         }
@@ -168,8 +167,8 @@ struct AddTransactionView: View {
             ForEach(DisplayUnit.allCases) { u in
                 Button { switchUnit(to: u) } label: {
                     Text(u.label)
-                        .font(.system(size: 11, weight: .bold))
-                        .tracking(0.44)
+                        .font(AppFont.sectionHeader)
+                        .tracking(AppFont.sectionTracking)
                         .foregroundStyle(inputUnit == u ? .white : theme.textMuted)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 5)
@@ -200,8 +199,8 @@ struct AddTransactionView: View {
                 Text("≈ \(AppFormatter.formatBtc(btc)) BTC · \(AppFormatter.formatCurrency(usd))")
             }
         }
-        .font(.system(size: 13))
-        .foregroundStyle(amountValidationMessage == nil ? theme.textFaint : theme.danger)
+        .font(AppFont.labelRegular)
+        .foregroundStyle(amountValidationMessage == nil ? theme.textMuted : theme.danger)
     }
 
     private func switchUnit(to newUnit: DisplayUnit) {
@@ -222,7 +221,7 @@ struct AddTransactionView: View {
             if txType == .btcBuy {
                 fieldRow(label: "Price") {
                     TextField(AppFormatter.formatCurrency(btcPrice), text: $btcBuyPrice)
-                        .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                        .font(AppFont.monoCaptionStrong)
                         .foregroundStyle(theme.text)
                 }
 
@@ -230,7 +229,7 @@ struct AddTransactionView: View {
 
                 fieldRow(label: "Account") {
                     TextField("Strike, River...", text: $merchant)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(AppFont.labelLarge)
                         .foregroundStyle(theme.text)
                 }
             } else {
@@ -253,12 +252,12 @@ struct AddTransactionView: View {
                                     .clipShape(RoundedRectangle(cornerRadius: 5))
                             }
                             Text(selectedCategory.isEmpty ? "Select" : selectedCategory)
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(selectedCategory.isEmpty ? theme.textFaint : theme.text)
+                                .font(AppFont.labelLarge)
+                                .foregroundStyle(selectedCategory.isEmpty ? theme.textMuted : theme.text)
                             Spacer()
                             Image(systemName: "chevron.up.chevron.down")
-                                .font(.system(size: 12))
-                                .foregroundStyle(theme.textFaint)
+                                .font(AppFont.labelSmallRegular)
+                                .foregroundStyle(theme.textMuted)
                         }
                     }
                 }
@@ -277,7 +276,7 @@ struct AddTransactionView: View {
 
                 fieldRow(label: "Merchant") {
                     TextField("Where?", text: $merchant)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(AppFont.labelLarge)
                         .foregroundStyle(theme.text)
                 }
             }
@@ -288,7 +287,7 @@ struct AddTransactionView: View {
     private func fieldRow(label: String, @ViewBuilder content: () -> some View) -> some View {
         HStack {
             Text(label)
-                .font(.system(size: 13))
+                .font(AppFont.labelRegular)
                 .foregroundStyle(theme.textMuted)
                 .frame(width: 88, alignment: .leading)
             content()
@@ -302,9 +301,9 @@ struct AddTransactionView: View {
         return Button { method = name } label: {
             HStack(spacing: 5) {
                 Image(systemName: icon)
-                    .font(.system(size: 11))
+                    .font(AppFont.smallRegular)
                 Text(name)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(AppFont.labelSmall)
             }
             .foregroundStyle(isSelected ? theme.accent : theme.text)
             .padding(.horizontal, 10)
@@ -330,12 +329,13 @@ struct AddTransactionView: View {
                             handleKey(key)
                         } label: {
                             Text(key)
-                                .font(.system(size: 26, weight: .medium))
+                                .font(AppFont.iconLarge)
                                 .foregroundStyle(theme.text)
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 56)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(key == "⌫" ? "Delete digit" : key)
                     }
                 }
             }

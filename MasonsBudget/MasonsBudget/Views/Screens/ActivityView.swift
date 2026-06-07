@@ -83,9 +83,9 @@ struct ActivityView: View {
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: "square.and.arrow.down")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(AppFont.labelSmall)
                             Text("Import")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(AppFont.labelSmall)
                         }
                         .foregroundStyle(theme.accent)
                         .padding(.horizontal, 12)
@@ -135,8 +135,8 @@ struct ActivityView: View {
         LazyVStack(spacing: AppLayout.cardSpacing) {
             if grouped.isEmpty {
                 Text(isSearching ? "No matching transactions" : "No transactions yet")
-                    .font(.system(size: 13))
-                    .foregroundStyle(theme.textFaint)
+                    .font(AppFont.labelRegular)
+                    .foregroundStyle(theme.textMuted)
                     .frame(maxWidth: .infinity)
                     .padding(20)
                     .glassCard(padding: 0, radius: AppLayout.radiusMedium)
@@ -144,8 +144,8 @@ struct ActivityView: View {
                 ForEach(grouped, id: \.0) { day, txs in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(day.uppercased())
-                            .font(.system(size: 11, weight: .bold))
-                            .tracking(0.66)
+                            .font(AppFont.sectionHeader)
+                            .tracking(AppFont.sectionTracking)
                             .foregroundStyle(theme.textMuted)
                             .padding(.horizontal, 4)
 
@@ -186,16 +186,16 @@ struct ActivityView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(tx.merchant)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(AppFont.labelLarge)
                         .foregroundStyle(theme.text)
                         .lineLimit(1)
                     HStack(spacing: 5) {
                         Image(systemName: tx.card == "lightning" ? "bolt.fill" : "link")
-                            .font(.system(size: 10))
-                            .foregroundStyle(theme.textFaint)
+                            .font(AppFont.micro)
+                            .foregroundStyle(theme.textMuted)
                         Text(tx.card ?? "On-chain")
-                            .font(.system(size: 11))
-                            .foregroundStyle(theme.textFaint)
+                            .font(AppFont.smallRegular)
+                            .foregroundStyle(theme.textMuted)
                     }
                 }
 
