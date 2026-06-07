@@ -19,14 +19,17 @@
 		0CFAF3E5C73D4E08B671BCD1 /* MC2Mapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7153D63352CB5B58C4F366A /* MC2Mapper.swift */; };
 		0DB81852B8BCA4A88AACB54E /* VoiceTransactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E61832AD53C22BEAF0386F25 /* VoiceTransactionView.swift */; };
 		0F8ED58D169C39B1704B92F1 /* AmountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EAD4E4602D4D4566CD78E35 /* AmountView.swift */; };
+		1287315587BFEF686848BA45 /* TaskSmartListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 859D4699AA8657478F0E4D21 /* TaskSmartListView.swift */; };
 		13554C2A3633B76D998FDCD7 /* CSVImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52815FF83DEA08F99F7B94B6 /* CSVImportService.swift */; };
 		136BCFFC782CCDFBB5ECA092 /* RecurringDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13B457058988A6C86FCA5978 /* RecurringDetector.swift */; };
 		13B0689FDDF4EC812E83272D /* MC2ReaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A32E35D9FF3B8E22B92A21A8 /* MC2ReaderTests.swift */; };
 		13B46090FA129DE2F6714ADB /* AddTransactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BED9DCEAF24F0852B41BEDF2 /* AddTransactionView.swift */; };
 		14611BD57EFBBF83C6BBDA69 /* SyncEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F048D3DB36FA73A8D570960 /* SyncEvent.swift */; };
+		14C6AEEDC863470D493846FD /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DBCCD025DF53FB5AB826594 /* TasksView.swift */; };
 		15B0540F59AE163F088450EC /* CategoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBBF456CA8F45467DE539B3 /* CategoryDetailView.swift */; };
 		167D1E154B72DEFE16A1A9AA /* ActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 355DA4D064A09FC72695758B /* ActivityView.swift */; };
 		16B5DB8412A7E38E35B9104C /* BTCAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC62602DF8D847C5671804D /* BTCAccount.swift */; };
+		1795D79092AEE541FFA41AB8 /* TaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4B3C65C1FD9F1E13141EE7C /* TaskDetailView.swift */; };
 		1798FC8BF60D85845AD1C79D /* ProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E87F8471A5178129ADC32F6 /* ProjectsView.swift */; };
 		17BBEDB466265654289AAE51 /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BCFC0CB64EDE2474B2E5620 /* TransactionDetailView.swift */; };
 		17E881D56B3FC3BB3D6F419F /* MC2SyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F83F4110E2D16CDC2FE7C85A /* MC2SyncService.swift */; };
@@ -34,6 +37,7 @@
 		1A66DF88BA4B309BA08D2EA9 /* BudgetNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7307B6F0A5546DBFB1FE332B /* BudgetNotificationManager.swift */; };
 		1DCAE04D1FD4D959FD8F4048 /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BCFC0CB64EDE2474B2E5620 /* TransactionDetailView.swift */; };
 		1F1C8AF4B264D3CD836DE6E4 /* CostBasisLot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 460FAFA4D544CE62A5974814 /* CostBasisLot.swift */; };
+		1FD655B5F5F84FD9B852D99B /* SearchMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2283F2AE36B94EF55B4AAD6 /* SearchMatcher.swift */; };
 		20134ADD1754A47D210AF2DA /* Transaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28C9AC48788F6BD75F27ADC1 /* Transaction.swift */; };
 		22D2DCF2D99CB0EBD5F13623 /* ProfileSwitcherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6DC67CB4C872B77EB725922 /* ProfileSwitcherView.swift */; };
 		23813E6484FD2C3936A8EBA9 /* TodoProject.swift in Sources */ = {isa = PBXBuildFile; fileRef = 782A3D53AC3B913AC715D707 /* TodoProject.swift */; };
@@ -46,10 +50,12 @@
 		299ED7B254C76D1E92A0220D /* BudgetCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F123D957238EE653A6F6751 /* BudgetCategory.swift */; };
 		2E6BBAB1336B38FD1D9EC8A5 /* BTCBuy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 471D5A1DCF4CD1B4C10217A1 /* BTCBuy.swift */; };
 		2F829E91B66B1C0F4AB2B42F /* ProjectTodoListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2FE9738F0574D3031E44C26 /* ProjectTodoListView.swift */; };
+		3191A061DC23BCA6BF289E65 /* TaskUndoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B76057F6E5D01B646C6C3DE7 /* TaskUndoStore.swift */; };
 		33BBD55C6D82640D4E3554E9 /* SharedEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97885C819FB926B04D0E8D3F /* SharedEnums.swift */; };
 		341A877A04A9BA0788B47DF3 /* BTCBillPayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 273950057898C808021DD99E /* BTCBillPayView.swift */; };
 		343BA3F322C725977C4FD80E /* ExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42CB31DA7B47761B37A90E9C /* ExportView.swift */; };
 		353D0C4ED3F4B00D713E03C8 /* AppWriteSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D424253F2EA585494807458 /* AppWriteSyncService.swift */; };
+		3C2F0D3CBBB8D2A03A23CE1F /* TaskUndoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B76057F6E5D01B646C6C3DE7 /* TaskUndoStore.swift */; };
 		3C32EB91AFCE7AE683B55CA6 /* ConvexClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */; };
 		3C5D681E2D464F77A40D8608 /* CategoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBBF456CA8F45467DE539B3 /* CategoryDetailView.swift */; };
 		3D33AAE7E64E51E6A10F22EB /* CSVImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D264872AB987E5209C0B6A3 /* CSVImportView.swift */; };
@@ -57,6 +63,7 @@
 		3F8A344C3E812E582DBCB399 /* CostBasisLot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 460FAFA4D544CE62A5974814 /* CostBasisLot.swift */; };
 		42CC887EC2077D56C2F0AA2F /* BTCPriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D42E3A9B8292524595DB757 /* BTCPriceService.swift */; };
 		43C1EFDD2AAB66D42EC2F7BE /* UnitToggleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 709F4C2338EDE5D2BBB8C9F8 /* UnitToggleView.swift */; };
+		46A98D5C4C637802AE38400D /* AreaTodoListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A36EDB41C72B5F230F05789 /* AreaTodoListView.swift */; };
 		472A41D28DD9D5D4083D88FD /* FamilyProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05894A6118C6AC44E989181E /* FamilyProfile.swift */; };
 		4791F32E8839FE9E35DB2FCE /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E34240C2E281F20DD41FF8D /* ContentView.swift */; };
 		4883E47A8D6BC35A90E82C1A /* MC2Reader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FED6C930AD774521B536178 /* MC2Reader.swift */; };
@@ -65,41 +72,53 @@
 		4A58601D081D021F3B18B255 /* BTCAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC62602DF8D847C5671804D /* BTCAccount.swift */; };
 		4B346A59BD332EF252AF63A1 /* BudgetNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7307B6F0A5546DBFB1FE332B /* BudgetNotificationManager.swift */; };
 		4B43ABD83280EB7928ED2DE8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 69F495FB3EBA9A3F6B589C2E /* Assets.xcassets */; };
+		4BD1E0F73E843E2217A7FC04 /* TaskSmartListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 859D4699AA8657478F0E4D21 /* TaskSmartListView.swift */; };
 		4C8EAE9F329F12474404F004 /* FamilyProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05894A6118C6AC44E989181E /* FamilyProfile.swift */; };
+		4E6FFCD2EC318BE432592269 /* SyncStatusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D86340D4ABE8A55B4DA49FF6 /* SyncStatusStore.swift */; };
 		4F4EE06226AA41C8AA5523FF /* TodoItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC02E94290076AEE88831C18 /* TodoItem.swift */; };
 		50A640E5700293AAB0B52CCB /* NetWorthSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF559B68DCF5C8C506B2A151 /* NetWorthSnapshot.swift */; };
 		51BEEF51F09DBEE974B679E0 /* ProjectTodoListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2FE9738F0574D3031E44C26 /* ProjectTodoListView.swift */; };
 		5232DFED60E6E8B638751E24 /* Transaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28C9AC48788F6BD75F27ADC1 /* Transaction.swift */; };
 		52B443B199D5AC3640525B0A /* ProjectTodoListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2FE9738F0574D3031E44C26 /* ProjectTodoListView.swift */; };
+		567B39204A65DCCCB473764F /* IncomingEventsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DA02D07A5F77E55C69B00DF /* IncomingEventsSection.swift */; };
 		589F465E417CA8207BB0C71C /* FamilyVisibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AC58C7449FBDB08006CFC23 /* FamilyVisibilityTests.swift */; };
 		58AC51EEA6EDF49B075A3ACD /* UnitToggleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 709F4C2338EDE5D2BBB8C9F8 /* UnitToggleView.swift */; };
 		5AB5EAF56B9C5DD97AD09DCD /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D9D2114CBEC645F03E11CE8 /* AppTheme.swift */; };
 		5B8933B6B7A64817AE2924C3 /* BTCBuysView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B7551DE4A0BB82EF414D999 /* BTCBuysView.swift */; };
 		5C491764B10B9D634D9C8A32 /* BudgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 941AE83F8125080834B45397 /* BudgetView.swift */; };
+		5D301B43723DB13E1F0CF7ED /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DBCCD025DF53FB5AB826594 /* TasksView.swift */; };
 		5EA48A752E0FC8F9CCC3058F /* TodoArea.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEF1482C8EFC171A27117F7 /* TodoArea.swift */; };
 		5EAA31651D7CB8DA2D1CA647 /* ScreenHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59DD3C8ADB2447DA2F2ABEF8 /* ScreenHeader.swift */; };
 		60A2374372574199C9FDA25D /* StockPriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F721A6FC17530024B35A0C6 /* StockPriceService.swift */; };
+		60DB40E2C6E812784A222981 /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DBCCD025DF53FB5AB826594 /* TasksView.swift */; };
 		61BFE7AE76584D8C349D32C1 /* RetirementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ADB184F47423CA415614B24 /* RetirementView.swift */; };
 		627817036F8B1B2C7497C8BB /* NetWorthSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF559B68DCF5C8C506B2A151 /* NetWorthSnapshot.swift */; };
 		64330EAE4BCAA813DD6F194A /* RecurringDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13B457058988A6C86FCA5978 /* RecurringDetector.swift */; };
 		644A9C60B8F4E48663CBB5E8 /* MC2SyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F83F4110E2D16CDC2FE7C85A /* MC2SyncService.swift */; };
+		6511CFB62F4D955953DFDF29 /* TaskUndoBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9217F015BEE5502E0937BDC3 /* TaskUndoBanner.swift */; };
 		66EB6E0D58B325B4F2FD532E /* CostBasisLot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 460FAFA4D544CE62A5974814 /* CostBasisLot.swift */; };
 		6700EF3793D4D70A6F67E0BC /* SharedEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97885C819FB926B04D0E8D3F /* SharedEnums.swift */; };
 		6BD6E79598F2D802012B0E0B /* MC2Reader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FED6C930AD774521B536178 /* MC2Reader.swift */; };
 		6D8FD1A7D21195F90F959E8D /* MasonsBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF5C5935A12805ECA579168B /* MasonsBudgetTests.swift */; };
 		6D9F88BEA980C5F18C00E5D5 /* BTCAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC62602DF8D847C5671804D /* BTCAccount.swift */; };
+		6FCFC09A23B2D4FE242B0E9B /* TaskUndoBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9217F015BEE5502E0937BDC3 /* TaskUndoBanner.swift */; };
 		6FE8B184183F43327912A71A /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2EE11ADEBED01F399DA8F0F /* DashboardView.swift */; };
 		70B97A8C3F140C4A841E0D1D /* BudgetNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7307B6F0A5546DBFB1FE332B /* BudgetNotificationManager.swift */; };
 		713310A2FC852F3ED403DD16 /* AmountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EAD4E4602D4D4566CD78E35 /* AmountView.swift */; };
 		7278CE8F39F5AFB791DE48D4 /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BCFC0CB64EDE2474B2E5620 /* TransactionDetailView.swift */; };
 		727E7F9A70589881AA409AC7 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2EE11ADEBED01F399DA8F0F /* DashboardView.swift */; };
+		72BB45F04434B3A718FE0904 /* AreaTodoListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A36EDB41C72B5F230F05789 /* AreaTodoListView.swift */; };
 		73546E975D23A07500289ECE /* BTCBillPay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DC543643B1F2899DDB38FE5 /* BTCBillPay.swift */; };
+		7429AC04E251756C88D32419 /* TaskUndoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B76057F6E5D01B646C6C3DE7 /* TaskUndoStore.swift */; };
 		7455ECEB00AC386FEC93935D /* AppWriteSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D424253F2EA585494807458 /* AppWriteSyncService.swift */; };
 		7563328AA8BADD5505402EE8 /* SyncEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F048D3DB36FA73A8D570960 /* SyncEvent.swift */; };
 		7605540B201A48941ED794B3 /* RecurringDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6B72C3A66D87A91EEF55223 /* RecurringDetectorTests.swift */; };
+		7726E5908E6D0685AF8573FC /* SyncStatusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D86340D4ABE8A55B4DA49FF6 /* SyncStatusStore.swift */; };
 		777A58FB2F9ED9243F50855A /* ProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E87F8471A5178129ADC32F6 /* ProjectsView.swift */; };
+		78CD410FBB0B0F30FC04C2B5 /* AreaTodoListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A36EDB41C72B5F230F05789 /* AreaTodoListView.swift */; };
 		7A6F4CE5CE7C098A4BEB7835 /* VoiceParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B1E681CE6C03C61153CAE59 /* VoiceParser.swift */; };
 		7D48872896D49FB898A12EC5 /* BitcoinIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF60F6C9AFB730F4A27C9A10 /* BitcoinIcons.swift */; };
+		7EB78B1C7E862DC7C62818C1 /* IncomingEventsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DA02D07A5F77E55C69B00DF /* IncomingEventsSection.swift */; };
 		7F206C7332A7AFA5BB962E49 /* BudgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 941AE83F8125080834B45397 /* BudgetView.swift */; };
 		7F8A473271BB9A5EA21AA6C5 /* AmountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EAD4E4602D4D4566CD78E35 /* AmountView.swift */; };
 		80A637E625F3EF70CF7EF91A /* MC2DTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 130D186945E2F17AE4A79132 /* MC2DTOs.swift */; };
@@ -114,6 +133,7 @@
 		8A41817F4810A032FC16524A /* MC2Mapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7153D63352CB5B58C4F366A /* MC2Mapper.swift */; };
 		8B7D4660455866A0008B1DA6 /* ConvexClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */; };
 		8C727AA1349C02CB941F6BF0 /* BTCBuysView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B7551DE4A0BB82EF414D999 /* BTCBuysView.swift */; };
+		8CC6FEC8882669FA45A4B8B1 /* TaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4B3C65C1FD9F1E13141EE7C /* TaskDetailView.swift */; };
 		8CE5545F13392A9E8895913A /* TodoArea.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEF1482C8EFC171A27117F7 /* TodoArea.swift */; };
 		8CF4139C75810E99221B0692 /* FamilyProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05894A6118C6AC44E989181E /* FamilyProfile.swift */; };
 		8D117BFB9E780625C653B1CF /* RetirementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ADB184F47423CA415614B24 /* RetirementView.swift */; };
@@ -121,11 +141,14 @@
 		8D76986C56C1119C0838190D /* MC2SyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F83F4110E2D16CDC2FE7C85A /* MC2SyncService.swift */; };
 		8DDC0B51C872A1BE1717A7F1 /* CSVImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52815FF83DEA08F99F7B94B6 /* CSVImportService.swift */; };
 		8DF654AA7A8B2269A569CE26 /* ActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 355DA4D064A09FC72695758B /* ActivityView.swift */; };
+		8FA1F5019016A229F4F7FE7B /* IncomingEventsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DA02D07A5F77E55C69B00DF /* IncomingEventsSection.swift */; };
 		92289BEED97E0A6FA4B40D68 /* ScreenHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59DD3C8ADB2447DA2F2ABEF8 /* ScreenHeader.swift */; };
+		92F0489AD93C51D921395285 /* TaskUndoBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9217F015BEE5502E0937BDC3 /* TaskUndoBanner.swift */; };
 		9471CE70E75C895D86D443DA /* TodoProject.swift in Sources */ = {isa = PBXBuildFile; fileRef = 782A3D53AC3B913AC715D707 /* TodoProject.swift */; };
 		95C893AE2DE6A9C76042C9BA /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FBD5FB3989AEA4A2A5A5B9A /* TodayView.swift */; };
 		9A84F97A42F9A7ED4CC5DE86 /* Hairline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 598608F085B0A81286803F0F /* Hairline.swift */; };
 		A0353F71D2174CC8D429E7B9 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5AFC3C821C582B4F9E705206 /* Preview Assets.xcassets */; };
+		A08D8C317D5AF5D62EF1C62D /* TaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4B3C65C1FD9F1E13141EE7C /* TaskDetailView.swift */; };
 		A0E35125250CFD1858931070 /* CSVImportServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 142594BDFC0E0FF626E0E4D7 /* CSVImportServiceTests.swift */; };
 		A14E8E51D94738A7CA25C9CB /* BitcoinIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF60F6C9AFB730F4A27C9A10 /* BitcoinIcons.swift */; };
 		A2757F55A7495EBA3A48C270 /* ConvexClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */; };
@@ -153,6 +176,7 @@
 		C077695E6F3899F7B2262410 /* CSVImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52815FF83DEA08F99F7B94B6 /* CSVImportService.swift */; };
 		C156A53D5E586FF9A67A0545 /* LockScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E117823C6DA6138431AE80C8 /* LockScreenView.swift */; };
 		C196EDE6E90DE6BBB122E90A /* AddTransactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BED9DCEAF24F0852B41BEDF2 /* AddTransactionView.swift */; };
+		C20B3F463C5014BE4D0BC278 /* SearchMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2283F2AE36B94EF55B4AAD6 /* SearchMatcher.swift */; };
 		C20D34C265A1FDA9FF26D0A4 /* PillButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = F77DC014DA99E364F0D6572E /* PillButton.swift */; };
 		C4732154C67A071211508A18 /* MoreMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C4688B09BFCB16C26276040 /* MoreMenuView.swift */; };
 		C4AC630F0736F1FF8E22CB1C /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FBD5FB3989AEA4A2A5A5B9A /* TodayView.swift */; };
@@ -175,10 +199,12 @@
 		E47423E8CDB190F1BB982E95 /* MoreMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C4688B09BFCB16C26276040 /* MoreMenuView.swift */; };
 		E6167BE075D915EAACB5C1B8 /* RecurringDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13B457058988A6C86FCA5978 /* RecurringDetector.swift */; };
 		E678847B04562368D94CD18E /* MC2DTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 130D186945E2F17AE4A79132 /* MC2DTOs.swift */; };
+		E72C1516754CC4B60DCF93C6 /* SyncStatusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D86340D4ABE8A55B4DA49FF6 /* SyncStatusStore.swift */; };
 		E748DE87C77526CF1C9469D0 /* VoiceParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B1E681CE6C03C61153CAE59 /* VoiceParser.swift */; };
 		E7735A84FAB8CCBB3AA04C72 /* VoiceParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B419D48E89A2C2DCD79A7F8 /* VoiceParserTests.swift */; };
 		E7A545B3227D5DE6C136EEBC /* BTCPriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D42E3A9B8292524595DB757 /* BTCPriceService.swift */; };
 		EDA46ADEA2A64402C54F371F /* BTCBillPayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 273950057898C808021DD99E /* BTCBillPayView.swift */; };
+		EFBB7BB8E76452640F44EF64 /* SearchMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2283F2AE36B94EF55B4AAD6 /* SearchMatcher.swift */; };
 		F12B99F5E2C30602F5A71F05 /* MasonsBudgetApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8388ECD356E3E00B77790681 /* MasonsBudgetApp.swift */; };
 		F1CAC198C07A1B0C06A294AE /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2EE11ADEBED01F399DA8F0F /* DashboardView.swift */; };
 		F56EC18C9DF0CB4349162063 /* TodoArea.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEF1482C8EFC171A27117F7 /* TodoArea.swift */; };
@@ -186,6 +212,7 @@
 		F8512C01C795496D2CC7EA3A /* StockPriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F721A6FC17530024B35A0C6 /* StockPriceService.swift */; };
 		F9ABB4FF696573BDEF25CB28 /* NetWorthSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF559B68DCF5C8C506B2A151 /* NetWorthSnapshot.swift */; };
 		F9EAF981A0A2BBC7BF5398C7 /* LockScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E117823C6DA6138431AE80C8 /* LockScreenView.swift */; };
+		F9EC699ACF79979C781CB21A /* TaskSmartListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 859D4699AA8657478F0E4D21 /* TaskSmartListView.swift */; };
 		FBB4AE269CCCEC5D4EEABC02 /* MonthlyBudgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B2D2A739D76D88CF2D981C6 /* MonthlyBudgetSnapshot.swift */; };
 		FF258DF4502036BA0FF85FF6 /* StockPriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F721A6FC17530024B35A0C6 /* StockPriceService.swift */; };
 		FF53E751B802F5EFB8382F76 /* BudgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 941AE83F8125080834B45397 /* BudgetView.swift */; };
@@ -195,6 +222,7 @@
 /* Begin PBXFileReference section */
 		05894A6118C6AC44E989181E /* FamilyProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyProfile.swift; sourceTree = "<group>"; };
 		083F88D8EB4768C9BEDF39F9 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		0DBCCD025DF53FB5AB826594 /* TasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksView.swift; sourceTree = "<group>"; };
 		130D186945E2F17AE4A79132 /* MC2DTOs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MC2DTOs.swift; sourceTree = "<group>"; };
 		13B457058988A6C86FCA5978 /* RecurringDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringDetector.swift; sourceTree = "<group>"; };
 		142594BDFC0E0FF626E0E4D7 /* CSVImportServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSVImportServiceTests.swift; sourceTree = "<group>"; };
@@ -204,7 +232,9 @@
 		2266CE759B0FEC971BEC064D /* MasonsBudgetMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MasonsBudgetMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		273950057898C808021DD99E /* BTCBillPayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BTCBillPayView.swift; sourceTree = "<group>"; };
 		28C9AC48788F6BD75F27ADC1 /* Transaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transaction.swift; sourceTree = "<group>"; };
+		2A36EDB41C72B5F230F05789 /* AreaTodoListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AreaTodoListView.swift; sourceTree = "<group>"; };
 		2AC58C7449FBDB08006CFC23 /* FamilyVisibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyVisibilityTests.swift; sourceTree = "<group>"; };
+		2DA02D07A5F77E55C69B00DF /* IncomingEventsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncomingEventsSection.swift; sourceTree = "<group>"; };
 		310E21BFB1D9D582BCD6A71B /* MasonsBudget.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MasonsBudget.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		355DA4D064A09FC72695758B /* ActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityView.swift; sourceTree = "<group>"; };
 		3D424253F2EA585494807458 /* AppWriteSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppWriteSyncService.swift; sourceTree = "<group>"; };
@@ -236,9 +266,11 @@
 		782A3D53AC3B913AC715D707 /* TodoProject.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoProject.swift; sourceTree = "<group>"; };
 		8388ECD356E3E00B77790681 /* MasonsBudgetApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasonsBudgetApp.swift; sourceTree = "<group>"; };
 		84B5CA78FD69DF5C17B4C334 /* MasonsBudgetTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MasonsBudgetTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		859D4699AA8657478F0E4D21 /* TaskSmartListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSmartListView.swift; sourceTree = "<group>"; };
 		8B1E681CE6C03C61153CAE59 /* VoiceParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceParser.swift; sourceTree = "<group>"; };
 		8B2D2A739D76D88CF2D981C6 /* MonthlyBudgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonthlyBudgetSnapshot.swift; sourceTree = "<group>"; };
 		8FBBF456CA8F45467DE539B3 /* CategoryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryDetailView.swift; sourceTree = "<group>"; };
+		9217F015BEE5502E0937BDC3 /* TaskUndoBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskUndoBanner.swift; sourceTree = "<group>"; };
 		941AE83F8125080834B45397 /* BudgetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetView.swift; sourceTree = "<group>"; };
 		97885C819FB926B04D0E8D3F /* SharedEnums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedEnums.swift; sourceTree = "<group>"; };
 		9C6D1E05743C11803452DA93 /* MasonsBudgetMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MasonsBudgetMac.entitlements; sourceTree = "<group>"; };
@@ -246,17 +278,21 @@
 		9F048D3DB36FA73A8D570960 /* SyncEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEvent.swift; sourceTree = "<group>"; };
 		9FBD5FB3989AEA4A2A5A5B9A /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
 		A32E35D9FF3B8E22B92A21A8 /* MC2ReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MC2ReaderTests.swift; sourceTree = "<group>"; };
+		A4B3C65C1FD9F1E13141EE7C /* TaskDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetailView.swift; sourceTree = "<group>"; };
 		A6B72C3A66D87A91EEF55223 /* RecurringDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringDetectorTests.swift; sourceTree = "<group>"; };
 		A7153D63352CB5B58C4F366A /* MC2Mapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MC2Mapper.swift; sourceTree = "<group>"; };
 		B2FE9738F0574D3031E44C26 /* ProjectTodoListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectTodoListView.swift; sourceTree = "<group>"; };
 		B6DC67CB4C872B77EB725922 /* ProfileSwitcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSwitcherView.swift; sourceTree = "<group>"; };
+		B76057F6E5D01B646C6C3DE7 /* TaskUndoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskUndoStore.swift; sourceTree = "<group>"; };
 		BC02E94290076AEE88831C18 /* TodoItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoItem.swift; sourceTree = "<group>"; };
 		BED9DCEAF24F0852B41BEDF2 /* AddTransactionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTransactionView.swift; sourceTree = "<group>"; };
 		CB39E4E9476D6B0B76703693 /* BTCAccountDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BTCAccountDetailView.swift; sourceTree = "<group>"; };
 		CBEF1482C8EFC171A27117F7 /* TodoArea.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoArea.swift; sourceTree = "<group>"; };
 		CF60F6C9AFB730F4A27C9A10 /* BitcoinIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinIcons.swift; sourceTree = "<group>"; };
 		D2EE11ADEBED01F399DA8F0F /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		D86340D4ABE8A55B4DA49FF6 /* SyncStatusStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStatusStore.swift; sourceTree = "<group>"; };
 		E117823C6DA6138431AE80C8 /* LockScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenView.swift; sourceTree = "<group>"; };
+		E2283F2AE36B94EF55B4AAD6 /* SearchMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchMatcher.swift; sourceTree = "<group>"; };
 		E61832AD53C22BEAF0386F25 /* VoiceTransactionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTransactionView.swift; sourceTree = "<group>"; };
 		EC957E91914A99EF29371CA6 /* NetWorthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetWorthView.swift; sourceTree = "<group>"; };
 		EF559B68DCF5C8C506B2A151 /* NetWorthSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetWorthSnapshot.swift; sourceTree = "<group>"; };
@@ -275,6 +311,7 @@
 				598608F085B0A81286803F0F /* Hairline.swift */,
 				F77DC014DA99E364F0D6572E /* PillButton.swift */,
 				59DD3C8ADB2447DA2F2ABEF8 /* ScreenHeader.swift */,
+				9217F015BEE5502E0937BDC3 /* TaskUndoBanner.swift */,
 				709F4C2338EDE5D2BBB8C9F8 /* UnitToggleView.swift */,
 			);
 			path = Components;
@@ -346,7 +383,10 @@
 				3FED6C930AD774521B536178 /* MC2Reader.swift */,
 				F83F4110E2D16CDC2FE7C85A /* MC2SyncService.swift */,
 				13B457058988A6C86FCA5978 /* RecurringDetector.swift */,
+				E2283F2AE36B94EF55B4AAD6 /* SearchMatcher.swift */,
 				1F721A6FC17530024B35A0C6 /* StockPriceService.swift */,
+				D86340D4ABE8A55B4DA49FF6 /* SyncStatusStore.swift */,
+				B76057F6E5D01B646C6C3DE7 /* TaskUndoStore.swift */,
 				8B1E681CE6C03C61153CAE59 /* VoiceParser.swift */,
 			);
 			path = Services;
@@ -374,6 +414,7 @@
 			children = (
 				355DA4D064A09FC72695758B /* ActivityView.swift */,
 				BED9DCEAF24F0852B41BEDF2 /* AddTransactionView.swift */,
+				2A36EDB41C72B5F230F05789 /* AreaTodoListView.swift */,
 				CB39E4E9476D6B0B76703693 /* BTCAccountDetailView.swift */,
 				273950057898C808021DD99E /* BTCBillPayView.swift */,
 				5B7551DE4A0BB82EF414D999 /* BTCBuysView.swift */,
@@ -382,12 +423,16 @@
 				9D264872AB987E5209C0B6A3 /* CSVImportView.swift */,
 				D2EE11ADEBED01F399DA8F0F /* DashboardView.swift */,
 				42CB31DA7B47761B37A90E9C /* ExportView.swift */,
+				2DA02D07A5F77E55C69B00DF /* IncomingEventsSection.swift */,
 				5C4688B09BFCB16C26276040 /* MoreMenuView.swift */,
 				EC957E91914A99EF29371CA6 /* NetWorthView.swift */,
 				B6DC67CB4C872B77EB725922 /* ProfileSwitcherView.swift */,
 				4E87F8471A5178129ADC32F6 /* ProjectsView.swift */,
 				B2FE9738F0574D3031E44C26 /* ProjectTodoListView.swift */,
 				1ADB184F47423CA415614B24 /* RetirementView.swift */,
+				A4B3C65C1FD9F1E13141EE7C /* TaskDetailView.swift */,
+				859D4699AA8657478F0E4D21 /* TaskSmartListView.swift */,
+				0DBCCD025DF53FB5AB826594 /* TasksView.swift */,
 				9FBD5FB3989AEA4A2A5A5B9A /* TodayView.swift */,
 				4BCFC0CB64EDE2474B2E5620 /* TransactionDetailView.swift */,
 				E61832AD53C22BEAF0386F25 /* VoiceTransactionView.swift */,
@@ -567,6 +612,7 @@
 				713310A2FC852F3ED403DD16 /* AmountView.swift in Sources */,
 				C8AB2C8731BC8ADE20214120 /* AppTheme.swift in Sources */,
 				7455ECEB00AC386FEC93935D /* AppWriteSyncService.swift in Sources */,
+				46A98D5C4C637802AE38400D /* AreaTodoListView.swift in Sources */,
 				4A58601D081D021F3B18B255 /* BTCAccount.swift in Sources */,
 				F7BC632EB189C29BFBD81043 /* BTCAccountDetailView.swift in Sources */,
 				73546E975D23A07500289ECE /* BTCBillPay.swift in Sources */,
@@ -589,6 +635,7 @@
 				8CF4139C75810E99221B0692 /* FamilyProfile.swift in Sources */,
 				A97366A2EB4EA2FFDBA47FA5 /* Hairline.swift in Sources */,
 				4896678F33B0AD12A9247DE2 /* HoldingAccount.swift in Sources */,
+				7EB78B1C7E862DC7C62818C1 /* IncomingEventsSection.swift in Sources */,
 				F9EAF981A0A2BBC7BF5398C7 /* LockScreenView.swift in Sources */,
 				FF848533C741DC91C85E63A6 /* MC2DTOs.swift in Sources */,
 				8A41817F4810A032FC16524A /* MC2Mapper.swift in Sources */,
@@ -607,9 +654,16 @@
 				E6167BE075D915EAACB5C1B8 /* RecurringDetector.swift in Sources */,
 				8D117BFB9E780625C653B1CF /* RetirementView.swift in Sources */,
 				84C14555E924E91D3C73C55E /* ScreenHeader.swift in Sources */,
+				EFBB7BB8E76452640F44EF64 /* SearchMatcher.swift in Sources */,
 				33BBD55C6D82640D4E3554E9 /* SharedEnums.swift in Sources */,
 				60A2374372574199C9FDA25D /* StockPriceService.swift in Sources */,
 				7563328AA8BADD5505402EE8 /* SyncEvent.swift in Sources */,
+				7726E5908E6D0685AF8573FC /* SyncStatusStore.swift in Sources */,
+				1795D79092AEE541FFA41AB8 /* TaskDetailView.swift in Sources */,
+				1287315587BFEF686848BA45 /* TaskSmartListView.swift in Sources */,
+				6FCFC09A23B2D4FE242B0E9B /* TaskUndoBanner.swift in Sources */,
+				7429AC04E251756C88D32419 /* TaskUndoStore.swift in Sources */,
+				5D301B43723DB13E1F0CF7ED /* TasksView.swift in Sources */,
 				C4AC630F0736F1FF8E22CB1C /* TodayView.swift in Sources */,
 				8CE5545F13392A9E8895913A /* TodoArea.swift in Sources */,
 				D1BB8B327A23D4D8D3ABBE63 /* TodoItem.swift in Sources */,
@@ -632,6 +686,7 @@
 				7F8A473271BB9A5EA21AA6C5 /* AmountView.swift in Sources */,
 				5AB5EAF56B9C5DD97AD09DCD /* AppTheme.swift in Sources */,
 				AAEBC48066D2E3E788C9E5AA /* AppWriteSyncService.swift in Sources */,
+				78CD410FBB0B0F30FC04C2B5 /* AreaTodoListView.swift in Sources */,
 				16B5DB8412A7E38E35B9104C /* BTCAccount.swift in Sources */,
 				B348E53CF2F397BC7DA7FE98 /* BTCAccountDetailView.swift in Sources */,
 				CB9BB3C97CAED9728CE9B542 /* BTCBillPay.swift in Sources */,
@@ -654,6 +709,7 @@
 				4C8EAE9F329F12474404F004 /* FamilyProfile.swift in Sources */,
 				1937D7FCF5D407C26B8C83EC /* Hairline.swift in Sources */,
 				AC9DFD3F20A65000ABF54CDC /* HoldingAccount.swift in Sources */,
+				567B39204A65DCCCB473764F /* IncomingEventsSection.swift in Sources */,
 				D1F0030EFC8EF2EF555C9F9B /* LockScreenView.swift in Sources */,
 				80A637E625F3EF70CF7EF91A /* MC2DTOs.swift in Sources */,
 				0CFAF3E5C73D4E08B671BCD1 /* MC2Mapper.swift in Sources */,
@@ -672,9 +728,16 @@
 				64330EAE4BCAA813DD6F194A /* RecurringDetector.swift in Sources */,
 				B32D966284A56194CBB3AC16 /* RetirementView.swift in Sources */,
 				92289BEED97E0A6FA4B40D68 /* ScreenHeader.swift in Sources */,
+				C20B3F463C5014BE4D0BC278 /* SearchMatcher.swift in Sources */,
 				B9BB77FF6FDB83BA802A2564 /* SharedEnums.swift in Sources */,
 				FF258DF4502036BA0FF85FF6 /* StockPriceService.swift in Sources */,
 				AC4B388167FA9DAB45D43515 /* SyncEvent.swift in Sources */,
+				4E6FFCD2EC318BE432592269 /* SyncStatusStore.swift in Sources */,
+				A08D8C317D5AF5D62EF1C62D /* TaskDetailView.swift in Sources */,
+				F9EC699ACF79979C781CB21A /* TaskSmartListView.swift in Sources */,
+				6511CFB62F4D955953DFDF29 /* TaskUndoBanner.swift in Sources */,
+				3191A061DC23BCA6BF289E65 /* TaskUndoStore.swift in Sources */,
+				14C6AEEDC863470D493846FD /* TasksView.swift in Sources */,
 				DA400DF45A592D3A83188DF1 /* TodayView.swift in Sources */,
 				F56EC18C9DF0CB4349162063 /* TodoArea.swift in Sources */,
 				4F4EE06226AA41C8AA5523FF /* TodoItem.swift in Sources */,
@@ -697,6 +760,7 @@
 				0F8ED58D169C39B1704B92F1 /* AmountView.swift in Sources */,
 				064EE72180F8557196303AF4 /* AppTheme.swift in Sources */,
 				353D0C4ED3F4B00D713E03C8 /* AppWriteSyncService.swift in Sources */,
+				72BB45F04434B3A718FE0904 /* AreaTodoListView.swift in Sources */,
 				6D9F88BEA980C5F18C00E5D5 /* BTCAccount.swift in Sources */,
 				ADF07F1500B9EBF914125718 /* BTCAccountDetailView.swift in Sources */,
 				DD95463755A63ABE04964599 /* BTCBillPay.swift in Sources */,
@@ -721,6 +785,7 @@
 				589F465E417CA8207BB0C71C /* FamilyVisibilityTests.swift in Sources */,
 				9A84F97A42F9A7ED4CC5DE86 /* Hairline.swift in Sources */,
 				BCDB4955AE6195145DB25EB0 /* HoldingAccount.swift in Sources */,
+				8FA1F5019016A229F4F7FE7B /* IncomingEventsSection.swift in Sources */,
 				C156A53D5E586FF9A67A0545 /* LockScreenView.swift in Sources */,
 				E678847B04562368D94CD18E /* MC2DTOs.swift in Sources */,
 				E1C04F1716739188C30E08AE /* MC2Mapper.swift in Sources */,
@@ -741,9 +806,16 @@
 				7605540B201A48941ED794B3 /* RecurringDetectorTests.swift in Sources */,
 				61BFE7AE76584D8C349D32C1 /* RetirementView.swift in Sources */,
 				5EAA31651D7CB8DA2D1CA647 /* ScreenHeader.swift in Sources */,
+				1FD655B5F5F84FD9B852D99B /* SearchMatcher.swift in Sources */,
 				6700EF3793D4D70A6F67E0BC /* SharedEnums.swift in Sources */,
 				F8512C01C795496D2CC7EA3A /* StockPriceService.swift in Sources */,
 				14611BD57EFBBF83C6BBDA69 /* SyncEvent.swift in Sources */,
+				E72C1516754CC4B60DCF93C6 /* SyncStatusStore.swift in Sources */,
+				8CC6FEC8882669FA45A4B8B1 /* TaskDetailView.swift in Sources */,
+				4BD1E0F73E843E2217A7FC04 /* TaskSmartListView.swift in Sources */,
+				92F0489AD93C51D921395285 /* TaskUndoBanner.swift in Sources */,
+				3C2F0D3CBBB8D2A03A23CE1F /* TaskUndoStore.swift in Sources */,
+				60DB40E2C6E812784A222981 /* TasksView.swift in Sources */,
 				95C893AE2DE6A9C76042C9BA /* TodayView.swift in Sources */,
 				5EA48A752E0FC8F9CCC3058F /* TodoArea.swift in Sources */,
 				D21FBFEEAD72E5855B86E247 /* TodoItem.swift in Sources */,
