@@ -172,7 +172,7 @@ enum MC2Mapper {
             .flatMap { FamilyMember(rawValue: $0.lowercased()) }
             ?? owner
 
-        BTCBuy(
+        return BTCBuy(
             id: dto.id,
             date: parseDate(dto.date),
             source: dto.source,
