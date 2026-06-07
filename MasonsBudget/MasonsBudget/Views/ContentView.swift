@@ -219,7 +219,7 @@ struct ContentView: View {
                             .font(AppFont.sectionHeader)
                             .tracking(AppFont.sectionTracking)
                             .textCase(.uppercase)
-                            .foregroundStyle(theme.textFaint)
+                            .foregroundStyle(theme.textMuted)
                     }
 
                     Section {
@@ -231,7 +231,7 @@ struct ContentView: View {
                             .font(AppFont.sectionHeader)
                             .tracking(AppFont.sectionTracking)
                             .textCase(.uppercase)
-                            .foregroundStyle(theme.textFaint)
+                            .foregroundStyle(theme.textMuted)
                     }
 
                     Section {
@@ -243,7 +243,7 @@ struct ContentView: View {
                             .font(AppFont.sectionHeader)
                             .tracking(AppFont.sectionTracking)
                             .textCase(.uppercase)
-                            .foregroundStyle(theme.textFaint)
+                            .foregroundStyle(theme.textMuted)
                     }
                 }
                 .listStyle(.sidebar)
@@ -423,7 +423,7 @@ struct ContentView: View {
                     Text("NET WORTH")
                         .font(AppFont.sectionHeader)
                         .tracking(AppFont.sectionTracking)
-                        .foregroundStyle(theme.textFaint)
+                        .foregroundStyle(theme.textMuted)
                         .padding(.horizontal, 6)
 
                     Text(sidebarNetWorth)
