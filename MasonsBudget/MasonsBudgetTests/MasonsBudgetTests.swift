@@ -8,10 +8,13 @@ final class MasonsBudgetTests: XCTestCase {
     // MARK: - Theme & UI
 
     func testAppThemeColorsExist() {
-        _ = AppTheme.accentColor
-        _ = AppTheme.background
-        _ = AppTheme.cardBackground
-        _ = AppTheme.primaryText
+        // The AppTheme facade was retired in SAT-1336 (C4); the design system is now
+        // ColorTokens (.dark/.light). Smoke-check the core tokens still resolve.
+        _ = ColorTokens.dark.accent
+        _ = ColorTokens.dark.bg
+        _ = ColorTokens.dark.surface
+        _ = ColorTokens.dark.text
+        _ = ColorTokens.light.accent
     }
 
     func testAppTabCases() {
