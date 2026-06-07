@@ -3,6 +3,8 @@
 // Replaces the local-file-based MC2 reader with a cloud-native approach.
 
 import Foundation
+import CryptoKit
+import Security
 import os
 
 /// Configuration for the Convex deployment.
@@ -33,6 +35,242 @@ enum ConvexConfig {
     /// default so native writes stay fail-closed (the server rejects an empty/invalid token).
     static var syncToken: String {
         UserDefaults.standard.string(forKey: "convex_sync_token") ?? ""
+    }
+}
+
+enum MC2MobileWritebackConfig {
+    private static let baseURLKey = "mc2_mobile_base_url"
+    private static let deviceIDKey = "mc2_mobile_device_id"
+    private static let deviceTokenKey = "mc2_mobile_device_token"
+
+    static var baseURL: URL? {
+        guard let raw = UserDefaults.standard.string(forKey: baseURLKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !raw.isEmpty
+        else { return nil }
+        return URL(string: raw)
+    }
+
+    static var deviceID: String {
+        UserDefaults.standard.string(forKey: deviceIDKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    static var deviceToken: String {
+        if let token = MC2MobileDeviceTokenStore.read(), !token.isEmpty {
+            return token
+        }
+        let legacyToken = UserDefaults.standard.string(forKey: deviceTokenKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !legacyToken.isEmpty {
+            MC2MobileDeviceTokenStore.save(legacyToken)
+            UserDefaults.standard.removeObject(forKey: deviceTokenKey)
+        }
+        return legacyToken
+    }
+
+    static var isConfigured: Bool {
+        baseURL != nil && !deviceID.isEmpty && !deviceToken.isEmpty
+    }
+
+    static func save(baseURL: String, deviceID: String, deviceToken: String) {
+        UserDefaults.standard.set(baseURL.trimmingCharacters(in: .whitespacesAndNewlines), forKey: baseURLKey)
+        UserDefaults.standard.set(deviceID.trimmingCharacters(in: .whitespacesAndNewlines), forKey: deviceIDKey)
+        MC2MobileDeviceTokenStore.save(deviceToken.trimmingCharacters(in: .whitespacesAndNewlines))
+        UserDefaults.standard.removeObject(forKey: deviceTokenKey)
+    }
+
+    static func clear() {
+        UserDefaults.standard.removeObject(forKey: baseURLKey)
+        UserDefaults.standard.removeObject(forKey: deviceIDKey)
+        UserDefaults.standard.removeObject(forKey: deviceTokenKey)
+        MC2MobileDeviceTokenStore.clear()
+    }
+}
+
+private enum MC2MobileDeviceTokenStore {
+    private static let service = "com.sats21m.vogel-vault.mc2-mobile"
+    private static let account = "device-token"
+
+    static func read() -> String? {
+        var query = baseQuery
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data,
+              let token = String(data: data, encoding: .utf8)
+        else { return nil }
+        return token.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func save(_ token: String) {
+        clear()
+        guard let data = token.data(using: .utf8), !token.isEmpty else { return }
+        var item = baseQuery
+        item[kSecValueData as String] = data
+        SecItemAdd(item as CFDictionary, nil)
+    }
+
+    static func clear() {
+        SecItemDelete(baseQuery as CFDictionary)
+    }
+
+    private static var baseQuery: [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+    }
+}
+
+enum MC2MobileWritebackError: LocalizedError {
+    case notConfigured
+    case invalidBaseURL
+    case invalidPairingURL
+    case httpError(Int)
+    case serverError(String)
+    case unexpectedResponse
+
+    var errorDescription: String? {
+        switch self {
+        case .notConfigured:
+            "MC2 mobile writeback is not configured."
+        case .invalidBaseURL:
+            "MC2 mobile writeback URL is invalid."
+        case .invalidPairingURL:
+            "MC2 pairing URL is invalid or expired."
+        case let .httpError(code):
+            "MC2 mobile writeback returned HTTP \(code)."
+        case let .serverError(message):
+            message
+        case .unexpectedResponse:
+            "MC2 mobile writeback returned an unexpected response."
+        }
+    }
+}
+
+final class MC2MobileWritebackClient: Sendable {
+    private let session: URLSession
+
+    init(session: URLSession = .shared) {
+        self.session = session
+    }
+
+    func claimPairing(pairingURL rawURL: String, deviceName: String) async throws {
+        let trimmed = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed),
+              let scheme = url.scheme,
+              let host = url.host,
+              let pair = Self.pairFragment(from: url)
+        else {
+            throw MC2MobileWritebackError.invalidPairingURL
+        }
+
+        var baseComponents = URLComponents()
+        baseComponents.scheme = scheme
+        baseComponents.host = host
+        baseComponents.port = url.port
+        guard let baseURL = baseComponents.url else {
+            throw MC2MobileWritebackError.invalidPairingURL
+        }
+
+        let endpoint = baseURL
+            .appendingPathComponent("api")
+            .appendingPathComponent("mobile")
+            .appendingPathComponent("pair")
+            .appendingPathComponent("claim")
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "pairId": pair.pairID,
+            "proofHash": pair.proofHash,
+            "deviceName": deviceName,
+        ])
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw MC2MobileWritebackError.httpError(0)
+        }
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        if http.statusCode != 200 {
+            let message = object?["error"] as? String
+            throw MC2MobileWritebackError.serverError(message ?? "MC2 pairing failed.")
+        }
+        guard let deviceID = object?["deviceId"] as? String,
+              let deviceToken = object?["deviceToken"] as? String
+        else {
+            throw MC2MobileWritebackError.unexpectedResponse
+        }
+
+        MC2MobileWritebackConfig.save(
+            baseURL: baseURL.absoluteString,
+            deviceID: deviceID,
+            deviceToken: deviceToken
+        )
+    }
+
+    @discardableResult
+    func completeTodo(id: String, title: String) async throws -> Bool {
+        guard let baseURL = MC2MobileWritebackConfig.baseURL,
+              !MC2MobileWritebackConfig.deviceID.isEmpty,
+              !MC2MobileWritebackConfig.deviceToken.isEmpty
+        else {
+            throw MC2MobileWritebackError.notConfigured
+        }
+
+        let endpoint = baseURL
+            .appendingPathComponent("api")
+            .appendingPathComponent("mobile")
+            .appendingPathComponent("todos")
+            .appendingPathComponent("complete")
+        guard endpoint.scheme == "https" || endpoint.host == "localhost" || endpoint.host == "127.0.0.1" else {
+            throw MC2MobileWritebackError.invalidBaseURL
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(MC2MobileWritebackConfig.deviceID, forHTTPHeaderField: "x-mobile-device-id")
+        request.setValue(MC2MobileWritebackConfig.deviceToken, forHTTPHeaderField: "x-mobile-device-token")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "id": id,
+            "title": title,
+        ])
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw MC2MobileWritebackError.httpError(0)
+        }
+
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        if http.statusCode != 200 {
+            let message = object?["error"] as? String
+            throw MC2MobileWritebackError.serverError(message ?? "MC2 mobile writeback failed.")
+        }
+        guard let object else { throw MC2MobileWritebackError.unexpectedResponse }
+        guard object["ok"] as? Bool == true else {
+            throw MC2MobileWritebackError.serverError((object["error"] as? String) ?? "MC2 rejected todo completion.")
+        }
+        return object["convexSynced"] as? Bool ?? false
+    }
+
+    private static func pairFragment(from url: URL) -> (pairID: String, proofHash: String)? {
+        guard let fragment = url.fragment,
+              let components = URLComponents(string: "mc2://pair?\(fragment)"),
+              let rawPair = components.queryItems?.first(where: { $0.name == "pair" })?.value
+        else { return nil }
+
+        let parts = rawPair.split(separator: ".", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+
+        let digest = SHA256.hash(data: Data(rawPair.utf8))
+        let proofHash = digest.map { String(format: "%02x", $0) }.joined()
+        return (pairID: parts[0], proofHash: proofHash)
     }
 }
 

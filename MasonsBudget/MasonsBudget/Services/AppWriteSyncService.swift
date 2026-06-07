@@ -148,9 +148,20 @@ enum AppWriteSyncService {
         }
 
         Task {
-            let client = makeClient()
-            let ok = await withRetry(label: "push todo \(payload.id)") {
-                _ = try await client.upsertTodo(payload)
+            let ok: Bool
+            if payload.effectiveDone, MC2MobileWritebackConfig.isConfigured {
+                let client = MC2MobileWritebackClient()
+                ok = await withRetry(label: "complete todo via MC2 \(payload.id)") {
+                    let synced = try await client.completeTodo(id: payload.id, title: payload.effectiveTitle)
+                    guard synced else { throw SyncError.unexpectedPayload }
+                }
+            } else if !ConvexConfig.syncToken.isEmpty {
+                let client = makeClient()
+                ok = await withRetry(label: "push todo \(payload.id)") {
+                    _ = try await client.upsertTodo(payload)
+                }
+            } else {
+                ok = false
             }
             reportSyncResult(label: label, success: ok, retry: {
                 pushTodoPayload(payload, onResult: onResult)
