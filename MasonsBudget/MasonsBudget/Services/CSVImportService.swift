@@ -53,6 +53,12 @@ enum CSVImportError: LocalizedError {
 }
 
 final class CSVImportService: Sendable {
+    private let importBTCPrice: Decimal?
+
+    init(importBTCPrice: Decimal? = nil) {
+        self.importBTCPrice = importBTCPrice
+    }
+
     // MARK: - Public API
 
     func parseCSV(data: Data, source: ImportSource) throws -> [ImportedTransaction] {
@@ -262,7 +268,7 @@ final class CSVImportService: Sendable {
     }
 
     private func usdValue(fromSats sats: Int64) -> Decimal {
-        let price = BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
+        let price = importBTCPrice ?? BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
         return (Decimal(sats) / 100_000_000) * price
     }
 

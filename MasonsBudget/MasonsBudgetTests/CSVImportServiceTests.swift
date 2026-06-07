@@ -8,7 +8,7 @@ final class CSVImportServiceTests: XCTestCase {
         2026-05-01,0.01,Strike DCA
         """.data(using: .utf8)!
 
-        let service = CSVImportService()
+        let service = CSVImportService(importBTCPrice: 90000)
         let imported = try service.parseCSV(data: csv, source: .custom)
         let transactions = service.toTransactions(imported, owner: .victor, sourceTag: "test.csv")
 
