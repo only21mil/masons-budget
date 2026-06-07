@@ -398,7 +398,7 @@ struct TasksView: View {
                                     .frame(width: 32, height: 32)
                                     .overlay(
                                         Image(systemName: area.meta?.icon ?? "square.stack.3d.up")
-                                            .font(AppFont.bodyRegular)
+                                            .font(AppFont.iconTiny)
                                             .foregroundStyle(theme.textMuted),
                                     )
                                 Text(area.name)
