@@ -389,26 +389,34 @@ struct TasksView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(derivedAreas.enumerated()), id: \.element.id) { idx, area in
-                        HStack(spacing: 12) {
-                            RoundedRectangle(cornerRadius: 9)
-                                .fill(theme.surface2)
-                                .frame(width: 32, height: 32)
-                                .overlay(
-                                    Image(systemName: area.meta?.icon ?? "square.stack.3d.up")
-                                        .font(AppFont.bodyRegular)
-                                        .foregroundStyle(theme.textMuted),
-                                )
-                            Text(area.name)
-                                .font(AppFont.body)
-                                .foregroundStyle(theme.text)
-                            Spacer()
-                            Text("\(area.openCount)")
-                                .font(AppFont.monoCaption)
-                                .foregroundStyle(theme.textMuted)
-                                .monospacedDigit()
+                        NavigationLink {
+                            AreaTodoListView(areaName: area.name)
+                        } label: {
+                            HStack(spacing: 12) {
+                                RoundedRectangle(cornerRadius: 9)
+                                    .fill(theme.surface2)
+                                    .frame(width: 32, height: 32)
+                                    .overlay(
+                                        Image(systemName: area.meta?.icon ?? "square.stack.3d.up")
+                                            .font(AppFont.bodyRegular)
+                                            .foregroundStyle(theme.textMuted),
+                                    )
+                                Text(area.name)
+                                    .font(AppFont.body)
+                                    .foregroundStyle(theme.text)
+                                Spacer()
+                                Text("\(area.openCount)")
+                                    .font(AppFont.monoCaption)
+                                    .foregroundStyle(theme.textMuted)
+                                    .monospacedDigit()
+                                Image(systemName: AppIcon.arrowRight)
+                                    .font(AppFont.labelSmallRegular)
+                                    .foregroundStyle(theme.textMuted)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
                         }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 12)
+                        .buttonStyle(.plain)
                         if idx < derivedAreas.count - 1 {
                             Hairline(indent: 58)
                         }

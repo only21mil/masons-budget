@@ -345,7 +345,12 @@ struct ProjectsView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(derivedAreas.enumerated()), id: \.element.id) { idx, area in
-                        areaRow(area: area)
+                        NavigationLink {
+                            AreaTodoListView(areaName: area.name)
+                        } label: {
+                            areaRow(area: area)
+                        }
+                        .buttonStyle(.plain)
                         if idx < derivedAreas.count - 1 {
                             Hairline(indent: 58)
                         }
