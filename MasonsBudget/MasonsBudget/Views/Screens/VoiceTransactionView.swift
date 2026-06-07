@@ -179,7 +179,7 @@ struct VoiceTransactionView: View {
             merchant.localizedCaseInsensitiveContains("paycheck") ||
             merchant.localizedCaseInsensitiveContains("salary")
         let signedUsd = isIncome ? abs(amount) : -abs(amount)
-        let signedSats = btcPrice > 0 ? Int64(truncating: ((signedUsd / btcPrice) * 100_000_000) as NSNumber) : nil
+        let signedSats = btcPrice > 0 ? ((signedUsd / btcPrice) * 100_000_000).clampedInt64 : nil
         let method = parsed.card?.localizedCaseInsensitiveContains("on") == true ? "on-chain" : "lightning"
 
         let tx = Transaction(

@@ -114,3 +114,19 @@ enum BTCCustody: String, Codable {
 enum SyncOperation: String, Codable {
     case create, update, delete
 }
+
+extension Decimal {
+    /// Convert to Int64 without trapping on overflow (clamps to Int64 range).
+    /// Use instead of `Int64(truncating: self as NSNumber)` for any user/CSV/voice-supplied amount.
+    var clampedInt64: Int64 {
+        let handler = NSDecimalNumberHandler(
+            roundingMode: .plain,
+            scale: 0,
+            raiseOnExactness: false,
+            raiseOnOverflow: false,
+            raiseOnUnderflow: false,
+            raiseOnDivideByZero: false,
+        )
+        return NSDecimalNumber(decimal: self).rounding(accordingToBehavior: handler).int64Value
+    }
+}
