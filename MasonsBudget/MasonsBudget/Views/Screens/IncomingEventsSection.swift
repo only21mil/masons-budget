@@ -27,9 +27,25 @@ struct IncomingEventsSection: View {
     }
 
     private var weeklyPayAmount: Decimal {
-        if let snapshot = budgetSnapshots.sorted(by: { $0.lastUpdated > $1.lastUpdated }).first {
-            return snapshot.weeklyRiver
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "MMMM yyyy"
+
+        let currentKey = activeMember == .mason ? "mason:\(formatter.string(from: Date()))" : formatter.string(from: Date())
+        let currentSnapshot = budgetSnapshots.first { $0.monthKey == currentKey }
+        if let river = currentSnapshot?.weeklyRiver, river > 0 { return river }
+        if let gross = currentSnapshot?.weeklyGross, gross > 0 { return gross }
+
+        if let latestPositiveRiver = budgetSnapshots
+            .filter({ activeMember == .mason ? $0.monthKey.hasPrefix("mason:") : !$0.monthKey.contains(":") })
+            .sorted(by: { $0.monthKey > $1.monthKey })
+            .first(where: { $0.weeklyRiver > 0 })?.weeklyRiver
+        {
+            return latestPositiveRiver
         }
+
         return 4308.83
     }
 

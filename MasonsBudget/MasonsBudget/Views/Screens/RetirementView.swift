@@ -102,7 +102,7 @@ struct RetirementView: View {
 
                 lotsSection
             }
-            .padding(.bottom, 100)
+            .padding(.bottom, 170)
         }
         .background(theme.bg)
     }
@@ -292,7 +292,7 @@ struct RetirementView: View {
                     Text(account.provider)
                         .font(AppFont.labelLarge)
                         .foregroundStyle(theme.text)
-                    Text(account.name.uppercased())
+                    Text(holdingAccountSubtitle(account))
                         .font(AppFont.small)
                         .foregroundStyle(theme.textMuted)
                 }
@@ -313,6 +313,12 @@ struct RetirementView: View {
                 .padding(.bottom, 10)
             }
         }
+    }
+
+    private func holdingAccountSubtitle(_ account: HoldingAccount) -> String {
+        let label = account.name.uppercased()
+        guard account.weeklyContribution > 0 else { return label }
+        return "\(label) · Fri DCA \(AppFormatter.formatCurrency(account.weeklyContribution))/wk"
     }
 
     private func holdingRow(_ holding: Holding) -> some View {

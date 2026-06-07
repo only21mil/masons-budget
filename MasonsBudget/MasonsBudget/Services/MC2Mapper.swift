@@ -257,6 +257,7 @@ enum MC2Mapper {
             provider: account.provider ?? key,
             owner: accountOwner,
             totalValue: account.total ?? 0,
+            weeklyContribution: account.weeklyContribution ?? 0,
         )
 
         for holding in account.holdings {

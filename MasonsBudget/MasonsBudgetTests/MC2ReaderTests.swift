@@ -685,6 +685,7 @@ final class MC2ReaderTests: XCTestCase {
         XCTAssertEqual(finances.lastUpdated, "2026-04-29")
         XCTAssertEqual(Set(finances.retirement.accounts.keys), ["401k", "wap"])
         XCTAssertNil(finances.retirement.accounts["total"])
+        assertDecimalClose(finances.retirement.accounts["401k"]?.weeklyContribution, 291.6)
         XCTAssertEqual(finances.retirement.accounts["401k"]?.holdings[0].shares, 0)
         XCTAssertEqual(finances.retirement.accounts["wap"]?.holdings[0].category, "Uncategorized")
     }
@@ -696,6 +697,7 @@ final class MC2ReaderTests: XCTestCase {
           "retirement": {
             "401k": {
               "provider": "Discount Tire 401(k)",
+              "weeklyContribution": 291.6,
               "total": 773307.46,
               "holdings": [
                 {
@@ -725,6 +727,7 @@ final class MC2ReaderTests: XCTestCase {
         XCTAssertEqual(k401.provider, "Discount Tire 401(k)")
         XCTAssertEqual(k401.ownerMember, .victor)
         assertDecimalClose(k401.totalValue, 773_307.46)
+        assertDecimalClose(k401.weeklyContribution, 291.6)
         XCTAssertEqual(k401.holdings.count, 1)
         XCTAssertEqual(k401.holdings[0].ticker, "VOO")
         XCTAssertEqual(k401.holdings[0].lots.count, 1)

@@ -23,7 +23,8 @@ struct BTCBuysView: View {
     private var visibleBuys: [BTCBuy] {
         allBuys.filter { buy in
             guard let owner = buy.ownerMember else { return false }
-            return activeMember.sharesNetWorth(with: owner)
+            guard activeMember.sharesNetWorth(with: owner) else { return false }
+            return buy.amountBTC > 0 && buy.usd > 0
         }
     }
 
@@ -57,7 +58,12 @@ struct BTCBuysView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                ScreenHeader(title: "Bitcoin Buys", eyebrow: "DCA Log")
+                #if os(iOS)
+                    Color.clear
+                        .frame(height: AppLayout.cardSpacing)
+                #else
+                    ScreenHeader(title: "Bitcoin Buys", eyebrow: "DCA Log")
+                #endif
 
                 summaryCard
                     .padding(.horizontal, AppLayout.sectionPadding)
@@ -85,12 +91,14 @@ struct BTCBuysView: View {
                     .padding(.bottom, AppLayout.cardSpacing)
                 }
             }
-            .padding(.bottom, 100)
+            .padding(.bottom, 160)
         }
         .background(theme.bg)
         .navigationTitle("Bitcoin Buys")
         #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(theme.bg, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
         #endif
     }
 
