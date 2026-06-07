@@ -133,8 +133,8 @@ struct DashboardView: View {
     private var heroBalance: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("NET WORTH")
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(0.88)
+                .font(AppFont.sectionHeaderMedium)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.accent)
 
             AmountView(sats: totalSats, unit: unit, size: 42, weight: .bold, btcPrice: btcPrice)
@@ -143,14 +143,14 @@ struct DashboardView: View {
                 let isPositive = !change30dFormatted.hasPrefix("-")
                 HStack(spacing: 4) {
                     Image(systemName: isPositive ? AppIcon.arrowUp : "arrow.down.right")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(AppFont.labelSmall)
                         .foregroundStyle(isPositive ? theme.success : theme.danger)
                     Text("\(isPositive ? "+" : "")\(change30dFormatted)%")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(AppFont.labelLarge)
                         .foregroundStyle(isPositive ? theme.success : theme.danger)
                 }
                 Text("past 30 days")
-                    .font(.system(size: 14))
+                    .font(AppFont.labelLarge)
                     .foregroundStyle(theme.textMuted)
 
                 Spacer()
@@ -172,11 +172,11 @@ struct DashboardView: View {
         let athSats: Decimal = btcPrice > 0 ? (athValue / btcPrice) * 100_000_000 : 0
         return HStack(spacing: 5) {
             Text("ATH")
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(AppFont.monoMicroStrong)
             AmountView(sats: athSats, unit: unit, size: 11, weight: .bold, accent: true, btcPrice: btcPrice)
             if drawdown > 1 {
                 Text("· -\(NSDecimalNumber(decimal: drawdown).doubleValue, specifier: "%.1f")%")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(AppFont.sectionHeaderMedium)
                     .opacity(0.7)
             }
         }
@@ -304,20 +304,20 @@ struct DashboardView: View {
                     .frame(width: 18, height: 18)
                     .overlay(
                         Image(systemName: icon)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(AppFont.small)
                             .foregroundStyle(iconColor),
                     )
                 Text(title.uppercased())
-                    .font(.system(size: 11, weight: .bold))
-                    .tracking(0.44)
+                    .font(AppFont.sectionHeader)
+                    .tracking(AppFont.sectionTracking)
                     .foregroundStyle(iconColor)
             }
 
             AmountView(sats: btc * 100_000_000, unit: unit, size: 20, weight: .bold, btcPrice: btcPrice)
 
             Text(subtitle)
-                .font(.system(size: 11))
-                .foregroundStyle(theme.textFaint)
+                .font(AppFont.smallRegular)
+                .foregroundStyle(theme.textMuted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(padding: AppLayout.paddingCompact, radius: AppLayout.radiusMedium)
@@ -373,26 +373,25 @@ struct DashboardView: View {
     private func incomeCell(label: String, amount: Decimal, saved: Decimal, rate: Int) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
-                .font(.system(size: 10, weight: .bold))
-                .tracking(0.8)
+                .font(AppFont.microStrong)
+                .tracking(AppFont.sectionTracking)
                 .foregroundStyle(theme.textMuted)
 
             Text(AppFormatter.formatCurrency(amount))
-                .font(.system(size: 22, weight: .bold, design: .monospaced))
-                .tracking(-0.44)
+                .font(AppFont.titleNumberMono)
                 .foregroundStyle(theme.text)
 
             HStack(spacing: 6) {
                 Text("\(rate)%")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .font(AppFont.monoSmallStrong)
                     .foregroundStyle(rate >= 30 ? theme.accent : theme.textMuted)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(rate >= 30 ? theme.accentSoft2 : theme.surface2)
                     .clipShape(RoundedRectangle(cornerRadius: 5))
                 Text("saved \(AppFormatter.formatCurrency(saved))")
-                    .font(.system(size: 11))
-                    .foregroundStyle(theme.textFaint)
+                    .font(AppFont.smallRegular)
+                    .foregroundStyle(theme.textMuted)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -428,8 +427,8 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("INCOME · SPEND · SAVINGS %")
-                    .font(.system(size: 10, weight: .bold))
-                    .tracking(0.8)
+                    .font(AppFont.microStrong)
+                    .tracking(AppFont.sectionTracking)
                     .foregroundStyle(theme.textMuted)
                 Spacer()
                 HStack(spacing: 10) {
@@ -438,8 +437,8 @@ struct DashboardView: View {
                     HStack(spacing: 4) {
                         Rectangle().fill(theme.success).frame(width: 10, height: 2)
                         Text("Save %")
-                            .font(.system(size: 10))
-                            .foregroundStyle(theme.textFaint)
+                            .font(AppFont.micro)
+                            .foregroundStyle(theme.textMuted)
                     }
                 }
             }
@@ -472,8 +471,8 @@ struct DashboardView: View {
         HStack(spacing: 4) {
             RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 8, height: 8)
             Text(label)
-                .font(.system(size: 10))
-                .foregroundStyle(theme.textFaint)
+                .font(AppFont.micro)
+                .foregroundStyle(theme.textMuted)
         }
     }
 
@@ -500,16 +499,16 @@ struct DashboardView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(monthName + " SPENDING")
-                        .font(.system(size: 11, weight: .semibold))
-                        .tracking(0.44)
+                        .font(AppFont.sectionHeaderMedium)
+                        .tracking(AppFont.sectionTracking)
                         .foregroundStyle(theme.textMuted)
                     Text("\(pct)% of monthly limit")
-                        .font(.system(size: 13))
-                        .foregroundStyle(theme.textFaint)
+                        .font(AppFont.labelRegular)
+                        .foregroundStyle(theme.textMuted)
                 }
                 Spacer()
                 Text(AppFormatter.formatCurrency(spent))
-                    .font(.system(size: 18, weight: .bold, design: .monospaced))
+                    .font(AppFont.mediumNumberMono)
                     .foregroundStyle(theme.text)
             }
 
@@ -558,14 +557,14 @@ struct DashboardView: View {
                         .fill(categoryColors[idx % categoryColors.count])
                         .frame(width: 7, height: 7)
                     Text(cat.name)
-                        .font(.system(size: 12))
+                        .font(AppFont.labelSmallRegular)
                         .foregroundStyle(theme.textMuted)
                 }
             }
             if myCategories.count > 4 {
                 Text("+\(myCategories.count - 4) more")
-                    .font(.system(size: 12))
-                    .foregroundStyle(theme.textFaint)
+                    .font(AppFont.labelSmallRegular)
+                    .foregroundStyle(theme.textMuted)
             }
         }
     }
@@ -576,11 +575,11 @@ struct DashboardView: View {
         VStack(spacing: 8) {
             HStack {
                 Text("Today")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(AppFont.labelStrong)
                     .foregroundStyle(theme.text)
                 Spacer()
                 Text("\(todayTodos.count) tasks")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(AppFont.labelSmall)
                     .foregroundStyle(theme.accent)
             }
             .padding(.horizontal, 4)
@@ -588,8 +587,8 @@ struct DashboardView: View {
             VStack(spacing: 0) {
                 if todayTodos.isEmpty {
                     Text("No tasks due today")
-                        .font(.system(size: 13))
-                        .foregroundStyle(theme.textFaint)
+                        .font(AppFont.labelRegular)
+                        .foregroundStyle(theme.textMuted)
                         .frame(maxWidth: .infinity)
                         .padding(20)
                 } else {
@@ -613,14 +612,14 @@ struct DashboardView: View {
         VStack(spacing: 8) {
             HStack {
                 Text("Recent activity")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(AppFont.labelStrong)
                     .foregroundStyle(theme.text)
                 Spacer()
                 NavigationLink {
                     ActivityView()
                 } label: {
                     Text("See all")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(AppFont.labelSmall)
                         .foregroundStyle(theme.accent)
                 }
             }
@@ -629,8 +628,8 @@ struct DashboardView: View {
             VStack(spacing: 0) {
                 if recentTransactions.isEmpty {
                     Text("No transactions yet")
-                        .font(.system(size: 13))
-                        .foregroundStyle(theme.textFaint)
+                        .font(AppFont.labelRegular)
+                        .foregroundStyle(theme.textMuted)
                         .frame(maxWidth: .infinity)
                         .padding(20)
                 } else {
@@ -666,16 +665,16 @@ struct DashboardView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(tx.merchant)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(AppFont.labelLarge)
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                 HStack(spacing: 5) {
                     Image(systemName: tx.card == "lightning" ? "bolt.fill" : "link")
-                        .font(.system(size: 10))
-                        .foregroundStyle(theme.textFaint)
+                        .font(AppFont.micro)
+                        .foregroundStyle(theme.textMuted)
                     Text(relativeDateString(tx.date))
-                        .font(.system(size: 11))
-                        .foregroundStyle(theme.textFaint)
+                        .font(AppFont.smallRegular)
+                        .foregroundStyle(theme.textMuted)
                 }
             }
 
