@@ -72,6 +72,10 @@ if (!build) {
   console.error("ERROR: --build <n> is required (used in pairId naming).");
   process.exit(2);
 }
+if (!/^\d+$/.test(build)) {
+  console.error("ERROR: --build must be a positive integer build number.");
+  process.exit(2);
+}
 const count = Number(argValue("--count", "8"));
 const days = Number(argValue("--days", "365"));
 const dryRun = args.includes("--dry-run");
