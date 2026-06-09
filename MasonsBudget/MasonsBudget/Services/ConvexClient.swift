@@ -2,10 +2,10 @@
 // Communicates with the Convex backend to fetch and sync financial data.
 // Replaces the local-file-based MC2 reader with a cloud-native approach.
 
-import Foundation
 import CryptoKit
-import Security
+import Foundation
 import os
+import Security
 
 /// Configuration for the Convex deployment.
 enum ConvexConfig {
@@ -71,6 +71,25 @@ enum MC2MobileWritebackConfig {
 
     static var isConfigured: Bool {
         baseURL != nil && !deviceID.isEmpty && !deviceToken.isEmpty
+    }
+
+    static var bundledPairingURLs: [String] {
+        if let encoded = Bundle.main.object(forInfoDictionaryKey: "MC2BundledPairingURLsB64") as? String,
+           !encoded.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let data = Data(base64Encoded: encoded.trimmingCharacters(in: .whitespacesAndNewlines)),
+           let urls = try? JSONDecoder().decode([String].self, from: data)
+        {
+            return urls.filter { URL(string: $0) != nil }
+        }
+
+        if let raw = Bundle.main.object(forInfoDictionaryKey: "MC2BundledPairingURLs") as? String {
+            return raw
+                .components(separatedBy: CharacterSet(charactersIn: "\n,"))
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty && URL(string: $0) != nil }
+        }
+
+        return []
     }
 
     static func save(baseURL: String, deviceID: String, deviceToken: String) {
@@ -177,11 +196,19 @@ final class MC2MobileWritebackClient: Sendable {
             throw MC2MobileWritebackError.invalidPairingURL
         }
 
+        if Self.isConvexBaseURL(baseURL) {
+            try await claimConvexPairing(baseURL: baseURL, pair: pair, deviceName: deviceName)
+            return
+        }
+
         let endpoint = baseURL
             .appendingPathComponent("api")
             .appendingPathComponent("mobile")
             .appendingPathComponent("pair")
             .appendingPathComponent("claim")
+        guard endpoint.scheme == "https" || endpoint.host == "localhost" || endpoint.host == "127.0.0.1" else {
+            throw MC2MobileWritebackError.invalidBaseURL
+        }
 
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
@@ -210,17 +237,58 @@ final class MC2MobileWritebackClient: Sendable {
         MC2MobileWritebackConfig.save(
             baseURL: baseURL.absoluteString,
             deviceID: deviceID,
-            deviceToken: deviceToken
+            deviceToken: deviceToken,
         )
+    }
+
+    func claimBundledPairing(deviceName: String) async throws {
+        if MC2MobileWritebackConfig.isConfigured { return }
+
+        let urls = MC2MobileWritebackConfig.bundledPairingURLs
+        guard !urls.isEmpty else {
+            throw MC2MobileWritebackError.serverError("This build does not include a mobile pairing slot.")
+        }
+
+        var lastError: Error?
+        for url in urls {
+            do {
+                try await claimPairing(pairingURL: url, deviceName: deviceName)
+                return
+            } catch {
+                lastError = error
+            }
+        }
+
+        throw lastError ?? MC2MobileWritebackError.invalidPairingURL
     }
 
     @discardableResult
     func completeTodo(id: String, title: String) async throws -> Bool {
+        try await setTodoDone(id: id, title: title, isDone: true)
+    }
+
+    @discardableResult
+    func setTodoDone(id: String, title: String, isDone: Bool) async throws -> Bool {
+        if !MC2MobileWritebackConfig.isConfigured {
+            #if os(iOS)
+                let deviceName = "Vogel Vault iOS"
+            #else
+                let deviceName = "Vogel Vault macOS"
+            #endif
+            try await claimBundledPairing(deviceName: deviceName)
+        }
+
         guard let baseURL = MC2MobileWritebackConfig.baseURL,
               !MC2MobileWritebackConfig.deviceID.isEmpty,
               !MC2MobileWritebackConfig.deviceToken.isEmpty
-        else {
-            throw MC2MobileWritebackError.notConfigured
+        else { throw MC2MobileWritebackError.notConfigured }
+
+        if Self.isConvexBaseURL(baseURL) {
+            return try await setTodoDoneViaConvex(baseURL: baseURL, id: id, title: title, isDone: isDone)
+        }
+
+        guard isDone else {
+            throw MC2MobileWritebackError.serverError("This mobile writeback endpoint cannot reopen todos.")
         }
 
         let endpoint = baseURL
@@ -256,7 +324,169 @@ final class MC2MobileWritebackClient: Sendable {
         guard object["ok"] as? Bool == true else {
             throw MC2MobileWritebackError.serverError((object["error"] as? String) ?? "MC2 rejected todo completion.")
         }
-        return object["convexSynced"] as? Bool ?? false
+        return true
+    }
+
+    @discardableResult
+    func removeTodo(id: String) async throws -> Bool {
+        if !MC2MobileWritebackConfig.isConfigured {
+            #if os(iOS)
+                let deviceName = "Vogel Vault iOS"
+            #else
+                let deviceName = "Vogel Vault macOS"
+            #endif
+            try await claimBundledPairing(deviceName: deviceName)
+        }
+
+        guard let baseURL = MC2MobileWritebackConfig.baseURL,
+              !MC2MobileWritebackConfig.deviceID.isEmpty,
+              !MC2MobileWritebackConfig.deviceToken.isEmpty
+        else { throw MC2MobileWritebackError.notConfigured }
+
+        guard Self.isConvexBaseURL(baseURL) else {
+            throw MC2MobileWritebackError.serverError("This mobile writeback endpoint cannot delete todos.")
+        }
+
+        return try await removeTodoViaConvex(baseURL: baseURL, id: id)
+    }
+
+    @discardableResult
+    func upsertTodo(_ todo: MC2TodoItem) async throws -> Bool {
+        if !MC2MobileWritebackConfig.isConfigured {
+            #if os(iOS)
+                let deviceName = "Vogel Vault iOS"
+            #else
+                let deviceName = "Vogel Vault macOS"
+            #endif
+            try await claimBundledPairing(deviceName: deviceName)
+        }
+
+        guard let baseURL = MC2MobileWritebackConfig.baseURL,
+              !MC2MobileWritebackConfig.deviceID.isEmpty,
+              !MC2MobileWritebackConfig.deviceToken.isEmpty
+        else { throw MC2MobileWritebackError.notConfigured }
+
+        guard Self.isConvexBaseURL(baseURL) else {
+            throw MC2MobileWritebackError.serverError("This mobile writeback endpoint cannot upsert todos.")
+        }
+
+        return try await upsertTodoViaConvex(baseURL: baseURL, todo: todo)
+    }
+
+    private func claimConvexPairing(
+        baseURL: URL,
+        pair: (pairID: String, proofHash: String),
+        deviceName: String,
+    ) async throws {
+        let deviceID = try Self.randomBase64URL(byteCount: 14)
+        let deviceToken = try Self.randomBase64URL(byteCount: 32)
+        let value = try await convexMutation(baseURL: baseURL, path: "dataFiles:claimMobilePairing", args: [
+            "pairId": pair.pairID,
+            "proofHash": pair.proofHash,
+            "deviceName": deviceName,
+            "deviceId": deviceID,
+            "deviceToken": deviceToken,
+        ])
+        guard let object = value as? [String: Any], object["ok"] as? Bool == true else {
+            throw MC2MobileWritebackError.unexpectedResponse
+        }
+
+        MC2MobileWritebackConfig.save(
+            baseURL: baseURL.absoluteString,
+            deviceID: deviceID,
+            deviceToken: deviceToken,
+        )
+    }
+
+    private func setTodoDoneViaConvex(baseURL: URL, id: String, title: String, isDone: Bool) async throws -> Bool {
+        let value = try await convexMutation(baseURL: baseURL, path: "dataFiles:completeTodoFromMobile", args: [
+            "deviceId": MC2MobileWritebackConfig.deviceID,
+            "deviceToken": MC2MobileWritebackConfig.deviceToken,
+            "id": id,
+            "title": title,
+            "done": isDone,
+        ])
+        guard let object = value as? [String: Any], object["ok"] as? Bool == true else {
+            throw MC2MobileWritebackError.unexpectedResponse
+        }
+        return true
+    }
+
+    private func upsertTodoViaConvex(baseURL: URL, todo: MC2TodoItem) async throws -> Bool {
+        let value = try await convexMutation(baseURL: baseURL, path: "dataFiles:upsertTodoFromMobile", args: [
+            "deviceId": MC2MobileWritebackConfig.deviceID,
+            "deviceToken": MC2MobileWritebackConfig.deviceToken,
+            "todo": todo.convexJSONObject(),
+        ])
+        guard let object = value as? [String: Any], object["ok"] as? Bool == true else {
+            throw MC2MobileWritebackError.unexpectedResponse
+        }
+        return true
+    }
+
+    private func removeTodoViaConvex(baseURL: URL, id: String) async throws -> Bool {
+        let value = try await convexMutation(baseURL: baseURL, path: "dataFiles:removeTodoFromMobile", args: [
+            "deviceId": MC2MobileWritebackConfig.deviceID,
+            "deviceToken": MC2MobileWritebackConfig.deviceToken,
+            "id": id,
+        ])
+        guard let object = value as? [String: Any], object["ok"] as? Bool == true else {
+            throw MC2MobileWritebackError.unexpectedResponse
+        }
+        return true
+    }
+
+    private func convexMutation(baseURL: URL, path: String, args: [String: Any]) async throws -> Any {
+        let endpoint = baseURL
+            .appendingPathComponent("api")
+            .appendingPathComponent("mutation")
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "path": path,
+            "args": args,
+            "format": "json",
+        ])
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw MC2MobileWritebackError.httpError(0)
+        }
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        if http.statusCode != 200 {
+            throw MC2MobileWritebackError.httpError(http.statusCode)
+        }
+        if object?["status"] as? String == "error" {
+            // ConvexError application errors carry the real reason in errorData;
+            // errorMessage is the prod-masked "Server Error" string (SAT-1508).
+            let detail = (object?["errorData"] as? String)
+                ?? (object?["errorMessage"] as? String)
+                ?? "Convex mobile writeback failed."
+            throw MC2MobileWritebackError.serverError(detail)
+        }
+        guard object?["status"] as? String == "success" else {
+            throw MC2MobileWritebackError.unexpectedResponse
+        }
+        return object?["value"] ?? [:]
+    }
+
+    private static func isConvexBaseURL(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return host == "convex.cloud" || host.hasSuffix(".convex.cloud")
+    }
+
+    private static func randomBase64URL(byteCount: Int) throws -> String {
+        var bytes = [UInt8](repeating: 0, count: byteCount)
+        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        guard status == errSecSuccess else {
+            throw MC2MobileWritebackError.unexpectedResponse
+        }
+        return Data(bytes)
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 
     private static func pairFragment(from url: URL) -> (pairID: String, proofHash: String)? {

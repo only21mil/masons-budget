@@ -6,14 +6,12 @@ import SwiftUI
 /// and `TaskSmartListView` so the row/list behaviour stays in one place for SAT-1335.
 struct TasksView: View {
     @Environment(\.theme) var theme
-    @Environment(\.modelContext) private var modelContext
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
     @Query(sort: \TodoItem.priority, order: .reverse) private var allTodos: [TodoItem]
     @Query(sort: \TodoProject.createdAt) private var projects: [TodoProject]
     @Query private var areas: [TodoArea]
 
-    @State private var draftText = ""
     @State private var showingDraft = false
 
     private var activeMember: FamilyMember {
@@ -162,13 +160,23 @@ struct TasksView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                ScreenHeader(title: "Tasks", eyebrow: eyebrow)
+                ScreenHeader(title: "Tasks", eyebrow: eyebrow) {
+                    Button {
+                        showingDraft = true
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(AppFont.iconLarge)
+                            .foregroundStyle(theme.accent)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("New task")
+                }
 
                 shortcutGrid
                     .padding(.horizontal, AppLayout.sectionPadding)
                     .padding(.bottom, AppLayout.cardSpacing)
 
-                addTaskBar
+                InlineAddTaskBar(isExpanded: $showingDraft)
                     .padding(.horizontal, AppLayout.sectionPadding)
                     .padding(.bottom, AppLayout.cardSpacing)
 
@@ -225,68 +233,6 @@ struct TasksView: View {
                 .buttonStyle(.plain)
             }
         }
-    }
-
-    // MARK: - Inline Add
-
-    private var addTaskBar: some View {
-        VStack(spacing: 0) {
-            if showingDraft {
-                HStack(spacing: 10) {
-                    Image(systemName: AppIcon.checkOpen)
-                        .font(AppFont.iconSmall)
-                        .foregroundStyle(theme.borderStrong)
-                    TextField("New task", text: $draftText)
-                        .textFieldStyle(.plain)
-                        .font(AppFont.bodyRegular)
-                        .foregroundStyle(theme.text)
-                        .onSubmit(addTask)
-                    Button("Add", action: addTask)
-                        .font(AppFont.labelStrong)
-                        .foregroundStyle(theme.accent)
-                        .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .glassCard(padding: 0)
-            } else {
-                Button {
-                    showingDraft = true
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(AppFont.iconSmall)
-                            .foregroundStyle(theme.accent)
-                        Text("Add task")
-                            .font(AppFont.body)
-                            .foregroundStyle(theme.textMuted)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private func addTask() {
-        let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        // Inline-created tasks land in Inbox (no due date) per SAT-1335.
-        let todo = TodoItem(
-            id: UUID().uuidString,
-            title: trimmed,
-            dueDate: nil,
-            owner: activeMember,
-            createdBy: "app",
-        )
-        modelContext.insert(todo)
-        try? modelContext.save()
-        AppWriteSyncService.pushTodo(todo)
-        draftText = ""
-        showingDraft = false
     }
 
     // MARK: - Task Section

@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { normalizeTodoRecord, todoUpdatedMs } from "./todoNormalize";
 
@@ -27,6 +27,18 @@ function validateSyncToken(token?: string) {
   }
   if (!token || token !== expected) {
     throw new Error("Unauthorized: invalid sync token");
+  }
+}
+
+function validateConfiguredSyncToken(token?: string) {
+  const expected = process.env.CONVEX_SYNC_TOKEN;
+  if (!expected) {
+    throw new ConvexError(
+      "Unauthorized: CONVEX_SYNC_TOKEN is required for mobile pairing",
+    );
+  }
+  if (!token || token !== expected) {
+    throw new ConvexError("Unauthorized: invalid sync token");
   }
 }
 
@@ -109,6 +121,30 @@ const appTodoValidator = v.object({
   completedAt: v.optional(v.union(v.string(), v.null())),
   completed_by: v.optional(v.union(v.string(), v.null())),
 });
+
+async function sha256Hex(value: string): Promise<string> {
+  const data = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function authenticateMobileDevice(
+  ctx: any,
+  deviceId: string,
+  deviceToken: string,
+) {
+  const device = await ctx.db
+    .query("mobileDevices")
+    .withIndex("by_device_id", (q: any) => q.eq("deviceId", deviceId))
+    .first();
+
+  if (!device || device.revokedAt) return null;
+  const tokenHash = await sha256Hex(deviceToken);
+  if (tokenHash !== device.tokenHash) return null;
+  return device;
+}
 
 async function bumpSyncVersion(
   ctx: any,
@@ -281,7 +317,87 @@ export const appendTransaction = mutation({
   },
 });
 
-/** Upsert one app-created todo into todos.json and bump its version. */
+/**
+ * Shared todo-upsert core used by both the token-authenticated `upsertTodo`
+ * and the device-token `upsertTodoFromMobile` paths (SAT-1508). Same LWW +
+ * normalization semantics regardless of which auth front-door admitted the
+ * write. Upsert one todo into todos.json and bump its version.
+ */
+async function applyTodoUpsert(
+  ctx: any,
+  todo: Record<string, any>,
+  name: string = "todos",
+) {
+  const now = Date.now();
+
+  const existing = await ctx.db
+    .query("dataFiles")
+    .withIndex("by_name", (q: any) => q.eq("name", name))
+    .first();
+
+  const currentData = existing?.data;
+  const currentTodos = Array.isArray(currentData)
+    ? [...currentData]
+    : currentData &&
+        typeof currentData === "object" &&
+        Array.isArray((currentData as any).todos)
+      ? [...(currentData as any).todos]
+      : [];
+
+  const existingIndex = currentTodos.findIndex(
+    (item) =>
+      item && typeof item === "object" && "id" in item && item.id === todo.id,
+  );
+
+  // SAT-1328: normalize via the shared mirror (canonical: mission-control/
+  // lib/todo-normalize.js). Emits the dual-field superset.
+  const normalized = normalizeTodoRecord(todo as Record<string, any>, {
+    now,
+  });
+
+  if (existingIndex >= 0) {
+    // SAT-1326 LWW: incoming applies only when its updated_at is newer (ties
+    // favor the incoming write, which is the freshly stamped server edit).
+    const existingItem = currentTodos[existingIndex] as Record<string, any>;
+    const existingUpdated = todoUpdatedMs(existingItem);
+    const incomingUpdated = todoUpdatedMs(normalized) || now;
+    if (incomingUpdated >= existingUpdated) {
+      currentTodos[existingIndex] = normalized;
+    }
+  } else {
+    currentTodos.push(normalized);
+  }
+
+  const nextData =
+    currentData &&
+    typeof currentData === "object" &&
+    !Array.isArray(currentData) &&
+    Array.isArray((currentData as any).todos)
+      ? { ...(currentData as any), todos: currentTodos }
+      : currentTodos;
+
+  const nextVersion = (existing?.version ?? 0) + 1;
+
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      data: nextData,
+      version: nextVersion,
+      updatedAt: now,
+    });
+  } else {
+    await ctx.db.insert("dataFiles", {
+      name,
+      data: nextData,
+      version: nextVersion,
+      updatedAt: now,
+    });
+  }
+
+  await bumpSyncVersion(ctx, name, nextVersion, now);
+
+  return { name, version: nextVersion, id: todo.id };
+}
+
 export const upsertTodo = mutation({
   args: {
     name: v.optional(v.literal("todos")),
@@ -290,77 +406,272 @@ export const upsertTodo = mutation({
   },
   handler: async (ctx, { name: fileName, todo, token }) => {
     validateSyncToken(token);
-    const name = fileName ?? "todos";
-    const now = Date.now();
+    return await applyTodoUpsert(ctx, todo as Record<string, any>, fileName ?? "todos");
+  },
+});
 
+/** Upsert one todo from a paired public iPhone. */
+export const upsertTodoFromMobile = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    todo: appTodoValidator,
+  },
+  handler: async (ctx, { deviceId, deviceToken, todo }) => {
+    const device = await authenticateMobileDevice(ctx, deviceId, deviceToken);
+    if (!device) throw new ConvexError("Unauthorized mobile device");
+
+    const record: Record<string, any> = {
+      ...(todo as Record<string, any>),
+      sync_source: "vogel-vault",
+    };
+    const result = await applyTodoUpsert(ctx, record, "todos");
+    await ctx.db.patch(device._id, { lastSeenAt: Date.now() });
+    return { ok: true, ...result };
+  },
+});
+
+/** Create a one-time mobile pairing for public iPhone writeback. */
+export const createMobilePairing = mutation({
+  args: {
+    pairId: v.string(),
+    proofHash: v.string(),
+    expiresAt: v.float64(),
+    createdBy: v.optional(v.string()),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { pairId, proofHash, expiresAt, createdBy, token }) => {
+    validateConfiguredSyncToken(token);
+    const now = Date.now();
+    if (!pairId.trim() || !proofHash.trim()) {
+      throw new ConvexError("pairId and proofHash required");
+    }
+    if (!Number.isFinite(expiresAt) || expiresAt <= now) {
+      throw new ConvexError("expiresAt must be in the future");
+    }
+
+    const existing = await ctx.db
+      .query("mobilePairings")
+      .withIndex("by_pair_id", (q) => q.eq("pairId", pairId))
+      .first();
+    const record = {
+      pairId,
+      proofHash,
+      createdAt: now,
+      expiresAt,
+      createdBy: createdBy || "sats",
+      claimedAt: undefined,
+      deviceId: undefined,
+    };
+
+    if (existing) await ctx.db.patch(existing._id, record);
+    else await ctx.db.insert("mobilePairings", record);
+    return { pairId, expiresAt };
+  },
+});
+
+/** Claim a pairing from the app. Public, but requires the one-time proof hash. */
+export const claimMobilePairing = mutation({
+  args: {
+    pairId: v.string(),
+    proofHash: v.string(),
+    deviceName: v.string(),
+    deviceId: v.string(),
+    deviceToken: v.string(),
+  },
+  handler: async (
+    ctx,
+    { pairId, proofHash, deviceName, deviceId, deviceToken },
+  ) => {
+    const now = Date.now();
+    const pairing = await ctx.db
+      .query("mobilePairings")
+      .withIndex("by_pair_id", (q) => q.eq("pairId", pairId))
+      .first();
+
+    if (!pairing) throw new ConvexError("Pairing expired or not found");
+    if (pairing.claimedAt) throw new ConvexError("Pairing already claimed");
+    if (pairing.expiresAt <= now) {
+      throw new ConvexError("Pairing expired or not found");
+    }
+    if (pairing.proofHash !== proofHash) {
+      throw new ConvexError("Invalid pairing proof");
+    }
+    if (!deviceId.trim() || !deviceToken.trim()) {
+      throw new ConvexError("deviceId and deviceToken required");
+    }
+
+    const tokenHash = await sha256Hex(deviceToken);
+    const existingDevice = await ctx.db
+      .query("mobileDevices")
+      .withIndex("by_device_id", (q) => q.eq("deviceId", deviceId))
+      .first();
+
+    const deviceRecord = {
+      deviceId,
+      name: deviceName.trim().slice(0, 80) || "Vogel Vault iPhone",
+      tokenHash,
+      pairedAt: now,
+      lastSeenAt: now,
+      revokedAt: undefined,
+      pairId,
+    };
+
+    if (existingDevice) await ctx.db.patch(existingDevice._id, deviceRecord);
+    else await ctx.db.insert("mobileDevices", deviceRecord);
+
+    await ctx.db.patch(pairing._id, { claimedAt: now, deviceId });
+    return { ok: true, deviceId, pairedAt: now };
+  },
+});
+
+/** Complete or reopen an existing todo from a paired public iPhone. */
+export const completeTodoFromMobile = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    id: v.string(),
+    title: v.optional(v.string()),
+    done: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { deviceId, deviceToken, id, title, done }) => {
+    const device = await authenticateMobileDevice(ctx, deviceId, deviceToken);
+    if (!device) throw new ConvexError("Unauthorized mobile device");
+
+    const name = "todos";
+    const now = Date.now();
+    const updatedAt = new Date(now).toISOString();
+    const isDone = done ?? true;
+    const completedAt = isDone ? updatedAt : null;
     const existing = await ctx.db
       .query("dataFiles")
       .withIndex("by_name", (q) => q.eq("name", name))
       .first();
 
     const currentData = existing?.data;
-    const currentTodos = Array.isArray(currentData)
-      ? [...currentData]
+    const currentTodos: any[] = Array.isArray(currentData)
+      ? currentData
       : currentData &&
           typeof currentData === "object" &&
           Array.isArray((currentData as any).todos)
-        ? [...(currentData as any).todos]
+        ? (currentData as any).todos
         : [];
 
-    const existingIndex = currentTodos.findIndex(
-      (item) =>
-        item && typeof item === "object" && "id" in item && item.id === todo.id,
+    const idx = currentTodos.findIndex(
+      (item) => item && typeof item === "object" && "id" in item && item.id === id,
     );
 
-    // SAT-1328: normalize via the shared mirror (canonical: mission-control/
-    // lib/todo-normalize.js). Emits the dual-field superset.
-    const normalized = normalizeTodoRecord(todo as Record<string, any>, {
-      now,
-    });
+    // SAT-1508: tolerate ids missing from the todos file (e.g. an app-created
+    // todo that never reached MC2) by upserting a fresh record instead of
+    // throwing Not-found — completion is an authoritative user action.
+    const base: Record<string, any> =
+      idx >= 0
+        ? { ...(currentTodos[idx] as Record<string, any>) }
+        : { id, title: title ?? "", created_by: "vogel-vault" };
 
-    if (existingIndex >= 0) {
-      // SAT-1326 LWW: incoming applies only when its updated_at is newer (ties
-      // favor the incoming write, which is the freshly stamped server edit).
-      const existingItem = currentTodos[existingIndex] as Record<string, any>;
-      const existingUpdated = todoUpdatedMs(existingItem);
-      const incomingUpdated = todoUpdatedMs(normalized) || now;
-      if (incomingUpdated >= existingUpdated) {
-        currentTodos[existingIndex] = normalized;
-      }
-    } else {
-      currentTodos.push(normalized);
+    const titleMatched =
+      idx === -1 ||
+      title == null ||
+      !title.trim() ||
+      String(base.title || base.text || "").trim() === title.trim();
+
+    const record: Record<string, any> = {
+      ...base,
+      done: isDone,
+      completed: isDone,
+      status: isDone ? "completed" : "pending",
+      completedAt,
+      updatedAt,
+      updated_at: updatedAt,
+      completed_by: isDone ? "vogel-vault-mobile" : undefined,
+      sync_source: "vogel-vault",
+    };
+    if (!isDone) {
+      delete record.completedAt;
+      delete record.completed_by;
     }
 
-    const nextData =
-      currentData &&
-      typeof currentData === "object" &&
-      !Array.isArray(currentData) &&
-      Array.isArray((currentData as any).todos)
-        ? { ...(currentData as any), todos: currentTodos }
-        : currentTodos;
+    const result = await applyTodoUpsert(ctx, record, name);
+    await ctx.db.patch(device._id, { lastSeenAt: now });
 
-    const nextVersion = (existing?.version ?? 0) + 1;
-
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        data: nextData,
-        version: nextVersion,
-        updatedAt: now,
-      });
-    } else {
-      await ctx.db.insert("dataFiles", {
-        name,
-        data: nextData,
-        version: nextVersion,
-        updatedAt: now,
-      });
-    }
-
-    await bumpSyncVersion(ctx, name, nextVersion, now);
-
-    return { name, version: nextVersion, id: todo.id };
+    return {
+      ok: true,
+      id,
+      done: isDone,
+      completedAt,
+      version: result.version,
+      titleMatched,
+    };
   },
 });
+
+async function removeTodoById(ctx: any, todoId: string) {
+  const name = "todos";
+  const now = Date.now();
+
+  // 1. Upsert the tombstone first (separate table; out of the app payload).
+  const tombstone = await ctx.db
+    .query("todoTombstones")
+    .withIndex("by_todo_id", (q: any) => q.eq("id", todoId))
+    .first();
+  if (tombstone) {
+    await ctx.db.patch(tombstone._id, { deletedAt: now });
+  } else {
+    await ctx.db.insert("todoTombstones", { id: todoId, deletedAt: now });
+  }
+
+  // 2. Remove from the todos payload if present, bumping the version so the
+  //    app re-fetches the cleaned list.
+  const existing = await ctx.db
+    .query("dataFiles")
+    .withIndex("by_name", (q: any) => q.eq("name", name))
+    .first();
+
+  if (!existing) return { name, removed: false };
+
+  const currentData = existing.data;
+  const currentTodos = Array.isArray(currentData)
+    ? [...currentData]
+    : currentData &&
+        typeof currentData === "object" &&
+        Array.isArray((currentData as any).todos)
+      ? [...(currentData as any).todos]
+      : [];
+
+  const beforeCount = currentTodos.length;
+  const filtered = currentTodos.filter(
+    (item) =>
+      !(
+        item &&
+        typeof item === "object" &&
+        "id" in item &&
+        item.id === todoId
+      ),
+  );
+
+  if (filtered.length === beforeCount) {
+    // Tombstone written, but nothing to strip from the payload.
+    return { name, removed: false };
+  }
+
+  const nextData =
+    currentData &&
+    typeof currentData === "object" &&
+    !Array.isArray(currentData) &&
+    Array.isArray((currentData as any).todos)
+      ? { ...(currentData as any), todos: filtered }
+      : filtered;
+
+  const nextVersion = (existing.version ?? 0) + 1;
+  await ctx.db.patch(existing._id, {
+    data: nextData,
+    version: nextVersion,
+    updatedAt: now,
+  });
+
+  await bumpSyncVersion(ctx, name, nextVersion, now);
+  return { name, version: nextVersion, removed: true };
+}
 
 /**
  * Atomically remove a todo by ID from todos AND write a delete tombstone
@@ -376,71 +687,24 @@ export const removeTodo = mutation({
   },
   handler: async (ctx, { todoId, token }) => {
     validateSyncToken(token);
-    const name = "todos";
-    const now = Date.now();
+    return removeTodoById(ctx, todoId);
+  },
+});
 
-    // 1. Upsert the tombstone first (separate table; out of the app payload).
-    const tombstone = await ctx.db
-      .query("todoTombstones")
-      .withIndex("by_todo_id", (q) => q.eq("id", todoId))
-      .first();
-    if (tombstone) {
-      await ctx.db.patch(tombstone._id, { deletedAt: now });
-    } else {
-      await ctx.db.insert("todoTombstones", { id: todoId, deletedAt: now });
-    }
+/** Remove an existing todo from a paired public iPhone. */
+export const removeTodoFromMobile = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    id: v.string(),
+  },
+  handler: async (ctx, { deviceId, deviceToken, id }) => {
+    const device = await authenticateMobileDevice(ctx, deviceId, deviceToken);
+    if (!device) throw new ConvexError("Unauthorized mobile device");
 
-    // 2. Remove from the todos payload if present, bumping the version so the
-    //    app re-fetches the cleaned list.
-    const existing = await ctx.db
-      .query("dataFiles")
-      .withIndex("by_name", (q) => q.eq("name", name))
-      .first();
-
-    if (!existing) return { name, removed: false };
-
-    const currentData = existing.data;
-    const currentTodos = Array.isArray(currentData)
-      ? [...currentData]
-      : currentData &&
-          typeof currentData === "object" &&
-          Array.isArray((currentData as any).todos)
-        ? [...(currentData as any).todos]
-        : [];
-
-    const beforeCount = currentTodos.length;
-    const filtered = currentTodos.filter(
-      (item) =>
-        !(
-          item &&
-          typeof item === "object" &&
-          "id" in item &&
-          item.id === todoId
-        ),
-    );
-
-    if (filtered.length === beforeCount) {
-      // Tombstone written, but nothing to strip from the payload.
-      return { name, removed: false };
-    }
-
-    const nextData =
-      currentData &&
-      typeof currentData === "object" &&
-      !Array.isArray(currentData) &&
-      Array.isArray((currentData as any).todos)
-        ? { ...(currentData as any), todos: filtered }
-        : filtered;
-
-    const nextVersion = (existing.version ?? 0) + 1;
-    await ctx.db.patch(existing._id, {
-      data: nextData,
-      version: nextVersion,
-      updatedAt: now,
-    });
-
-    await bumpSyncVersion(ctx, name, nextVersion, now);
-    return { name, version: nextVersion, removed: true };
+    const result = await removeTodoById(ctx, id);
+    await ctx.db.patch(device._id, { lastSeenAt: Date.now() });
+    return { ok: true, ...result };
   },
 });
 

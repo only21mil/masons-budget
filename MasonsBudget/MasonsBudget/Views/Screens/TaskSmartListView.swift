@@ -62,8 +62,13 @@ struct TaskRowView: View {
     @State private var settledOffset: CGFloat = 0
     @GestureState private var dragOffset: CGFloat = 0
     private static let swipeActionWidth: CGFloat = 72
-    private var revealWidth: CGFloat { Self.swipeActionWidth * 2 }
-    private var swipeOffset: CGFloat { min(0, max(-revealWidth, settledOffset + dragOffset)) }
+    private var revealWidth: CGFloat {
+        Self.swipeActionWidth * 2
+    }
+
+    private var swipeOffset: CGFloat {
+        min(0, max(-revealWidth, settledOffset + dragOffset))
+    }
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -224,7 +229,7 @@ struct TaskRowView: View {
             todo.isDone.toggle()
             todo.updatedAt = .now
             try? modelContext.save()
-            AppWriteSyncService.pushTodo(todo)
+            AppWriteSyncService.setTodoCompletion(todo)
         }
     }
 
@@ -260,6 +265,7 @@ struct TaskSmartListView: View {
     @Environment(\.theme) var theme
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
     @Query(sort: \TodoItem.dueDate) private var allTodos: [TodoItem]
+    @State private var showingDraft = false
 
     private var activeMember: FamilyMember {
         FamilyMember(rawValue: selectedMemberRaw) ?? .victor
@@ -275,10 +281,34 @@ struct TaskSmartListView: View {
         }
     }
 
+    private var defaultDueDate: Date? {
+        let calendar = Calendar.current
+        switch filter {
+        case .today:
+            return calendar.startOfDay(for: Date())
+        case .upcoming:
+            return calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: Date()))
+        case .inbox, .flagged:
+            return nil
+        }
+    }
+
+    private var defaultFlagged: Bool {
+        filter == .flagged
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
                 ScreenHeader(title: filter.title, eyebrow: "Tasks")
+
+                InlineAddTaskBar(
+                    defaultDueDate: defaultDueDate,
+                    defaultFlagged: defaultFlagged,
+                    isExpanded: $showingDraft,
+                )
+                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.bottom, AppLayout.cardSpacing)
 
                 if items.isEmpty {
                     emptyState

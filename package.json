@@ -7,6 +7,7 @@
     "dev": "npx convex dev",
     "deploy": "npx convex deploy",
     "codegen": "node scripts/convex-codegen.mjs",
+    "mobile-pairing:create": "node scripts/mint-mobile-pairing-slots.mjs",
     "sync": "node scripts/mc2-to-convex.mjs",
     "sync:dry-run": "node scripts/mc2-to-convex.mjs --dry-run",
     "sync:watch": "node scripts/mc2-to-convex.mjs --watch"

@@ -846,6 +846,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "The Vogel Vault";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_MC2BundledPairingURLsB64 = "$(MC2_BUNDLED_PAIRING_URLS_B64)";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Unlock The Vogel Vault with Face ID.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone access is needed for voice transaction entry.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Voice input lets you log transactions by speaking.";
@@ -872,6 +873,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "The Vogel Vault";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_MC2BundledPairingURLsB64 = "$(MC2_BUNDLED_PAIRING_URLS_B64)";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Unlock The Vogel Vault with Face ID.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone access is needed for voice transaction entry.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Voice input lets you log transactions by speaking.";
@@ -925,7 +927,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 34;
+				CURRENT_PROJECT_VERSION = 38;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -963,6 +965,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "The Vogel Vault";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_MC2BundledPairingURLsB64 = "$(MC2_BUNDLED_PAIRING_URLS_B64)";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Unlock The Vogel Vault with Face ID.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone access is needed for voice transaction entry.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Voice input lets you log transactions by speaking.";
@@ -1005,6 +1008,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "The Vogel Vault";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_MC2BundledPairingURLsB64 = "$(MC2_BUNDLED_PAIRING_URLS_B64)";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Unlock The Vogel Vault with Face ID.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone access is needed for voice transaction entry.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Voice input lets you log transactions by speaking.";
@@ -1074,7 +1078,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 34;
+				CURRENT_PROJECT_VERSION = 38;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;

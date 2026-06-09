@@ -34,4 +34,29 @@ export default defineSchema({
     id: v.string(), // the deleted todo's id
     deletedAt: v.float64(), // Unix timestamp (ms) of the delete
   }).index("by_todo_id", ["id"]),
+
+  // ── Mobile writeback pairing (SAT-1429) ──
+  // Public iPhones cannot reach DGX/Tailscale, so they complete existing MC2
+  // todos through Convex using per-device tokens. Pairings are one-time secrets
+  // created by an authenticated server/agent flow; devices store only their own
+  // token, and Convex stores only token hashes.
+  mobilePairings: defineTable({
+    pairId: v.string(),
+    proofHash: v.string(),
+    createdAt: v.float64(),
+    expiresAt: v.float64(),
+    createdBy: v.string(),
+    claimedAt: v.optional(v.float64()),
+    deviceId: v.optional(v.string()),
+  }).index("by_pair_id", ["pairId"]),
+
+  mobileDevices: defineTable({
+    deviceId: v.string(),
+    name: v.string(),
+    tokenHash: v.string(),
+    pairedAt: v.float64(),
+    lastSeenAt: v.float64(),
+    revokedAt: v.optional(v.float64()),
+    pairId: v.string(),
+  }).index("by_device_id", ["deviceId"]),
 });

@@ -134,6 +134,11 @@ enum AppWriteSyncService {
         pushTodoPayload(payload, onResult: onResult)
     }
 
+    static func setTodoCompletion(_ todo: TodoItem, onResult: (@MainActor @Sendable (Bool) -> Void)? = nil) {
+        let payload = MC2TodoItem(appTodo: todo)
+        setTodoCompletionPayload(payload, isDone: todo.isDone, onResult: onResult)
+    }
+
     private static func pushTodoPayload(
         _ payload: MC2TodoItem,
         onResult: (@MainActor @Sendable (Bool) -> Void)? = nil,
@@ -149,22 +154,46 @@ enum AppWriteSyncService {
 
         Task {
             let ok: Bool
-            if payload.effectiveDone, MC2MobileWritebackConfig.isConfigured {
-                let client = MC2MobileWritebackClient()
-                ok = await withRetry(label: "complete todo via MC2 \(payload.id)") {
-                    let synced = try await client.completeTodo(id: payload.id, title: payload.effectiveTitle)
-                    guard synced else { throw SyncError.unexpectedPayload }
-                }
-            } else if !ConvexConfig.syncToken.isEmpty {
+            if !ConvexConfig.syncToken.isEmpty {
                 let client = makeClient()
                 ok = await withRetry(label: "push todo \(payload.id)") {
                     _ = try await client.upsertTodo(payload)
                 }
             } else {
-                ok = false
+                let client = MC2MobileWritebackClient()
+                ok = await withRetry(label: "push todo via MC2 \(payload.id)") {
+                    let synced = try await client.upsertTodo(payload)
+                    guard synced else { throw SyncError.unexpectedPayload }
+                }
             }
             reportSyncResult(label: label, success: ok, retry: {
                 pushTodoPayload(payload, onResult: onResult)
+            }, onResult: onResult)
+        }
+    }
+
+    private static func setTodoCompletionPayload(
+        _ payload: MC2TodoItem,
+        isDone: Bool,
+        onResult: (@MainActor @Sendable (Bool) -> Void)? = nil,
+    ) {
+        let label = "Update todo completion"
+        reportSyncStart(label)
+        guard ConvexConfig.isConfigured else {
+            reportSyncResult(label: label, success: false, retry: {
+                setTodoCompletionPayload(payload, isDone: isDone, onResult: onResult)
+            }, onResult: onResult)
+            return
+        }
+
+        Task {
+            let client = MC2MobileWritebackClient()
+            let ok = await withRetry(label: "set todo completion via MC2 \(payload.id)") {
+                let synced = try await client.setTodoDone(id: payload.id, title: payload.effectiveTitle, isDone: isDone)
+                guard synced else { throw SyncError.unexpectedPayload }
+            }
+            reportSyncResult(label: label, success: ok, retry: {
+                setTodoCompletionPayload(payload, isDone: isDone, onResult: onResult)
             }, onResult: onResult)
         }
     }
@@ -188,9 +217,18 @@ enum AppWriteSyncService {
         }
 
         Task {
-            let client = makeClient()
-            let ok = await withRetry(label: "delete todo \(todoId)") {
-                _ = try await client.removeTodo(id: todoId)
+            let ok: Bool
+            if !ConvexConfig.syncToken.isEmpty {
+                let client = makeClient()
+                ok = await withRetry(label: "delete todo \(todoId)") {
+                    _ = try await client.removeTodo(id: todoId)
+                }
+            } else {
+                let client = MC2MobileWritebackClient()
+                ok = await withRetry(label: "delete todo via MC2 \(todoId)") {
+                    let synced = try await client.removeTodo(id: todoId)
+                    guard synced else { throw SyncError.unexpectedPayload }
+                }
             }
             reportSyncResult(label: label, success: ok, retry: {
                 deleteTodo(id: todoId, onResult: onResult)

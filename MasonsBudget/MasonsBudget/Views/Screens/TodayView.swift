@@ -10,10 +10,7 @@ struct TodayView: View {
 
     @Query(sort: \TodoItem.priority, order: .reverse) private var allTodos: [TodoItem]
 
-    @State private var draftText = ""
     @State private var showingDraft = false
-
-    @Environment(\.modelContext) private var modelContext
 
     private var activeMember: FamilyMember {
         FamilyMember(rawValue: selectedMemberRaw) ?? .victor
@@ -177,53 +174,12 @@ struct TodayView: View {
     private var addTaskRow: some View {
         Group {
             Hairline()
-            if showingDraft {
-                HStack(spacing: 12) {
-                    Image(systemName: AppIcon.checkOpen)
-                        .font(AppFont.title)
-                        .foregroundStyle(theme.borderStrong)
-                    TextField("New task", text: $draftText)
-                        .font(AppFont.body)
-                        .foregroundStyle(theme.text)
-                        .onSubmit { addTask() }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-            } else {
-                Button { showingDraft = true } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: AppIcon.plus)
-                            .font(AppFont.iconMedium)
-                            .foregroundStyle(theme.accent)
-                        Text("Add task")
-                            .font(AppFont.bodyStrong)
-                            .foregroundStyle(theme.accent)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
+            InlineAddTaskBar(
+                defaultDueDate: Calendar.current.startOfDay(for: Date()),
+                onResult: Self.reportTodoWriteback,
+                isExpanded: $showingDraft,
+            )
         }
-    }
-
-    private func addTask() {
-        let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let todo = TodoItem(
-            id: UUID().uuidString,
-            title: trimmed,
-            dueDate: nil,
-            owner: activeMember,
-            createdBy: "app",
-        )
-        modelContext.insert(todo)
-        try? modelContext.save()
-        AppWriteSyncService.pushTodo(todo, onResult: Self.reportTodoWriteback)
-        draftText = ""
-        showingDraft = false
     }
 
     @MainActor

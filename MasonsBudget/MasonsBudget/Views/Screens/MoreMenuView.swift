@@ -66,13 +66,14 @@ private struct SyncSetupView: View {
     @State private var isClaiming = false
 
     private var canSave: Bool {
-        URL(string: baseURL.trimmingCharacters(in: .whitespacesAndNewlines)) != nil &&
+        Self.isValidPairingURL(baseURL) &&
             !deviceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             !deviceToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var canClaim: Bool {
-        URL(string: pairingURL.trimmingCharacters(in: .whitespacesAndNewlines)) != nil && !isClaiming
+        let trimmed = pairingURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !isClaiming && (Self.isValidPairingURL(trimmed) || (trimmed.isEmpty && !MC2MobileWritebackConfig.bundledPairingURLs.isEmpty))
     }
 
     var body: some View {
@@ -81,7 +82,7 @@ private struct SyncSetupView: View {
                 ScreenHeader(title: "Sync Setup", eyebrow: "MC2")
 
                 VStack(spacing: 14) {
-                    field("Pairing URL", text: $pairingURL)
+                    field("Pairing URL (optional)", text: $pairingURL)
                     Button {
                         claimPairing()
                     } label: {
@@ -90,7 +91,7 @@ private struct SyncSetupView: View {
                                 ProgressView()
                                     .controlSize(.small)
                             }
-                            Text(isClaiming ? "Pairing" : "Claim Pairing")
+                            Text(isClaiming ? "Pairing" : "Pair This Device")
                         }
                     }
                     .buttonStyle(.borderedProminent)
@@ -120,7 +121,7 @@ private struct SyncSetupView: View {
                         MC2MobileWritebackConfig.save(
                             baseURL: baseURL,
                             deviceID: deviceID,
-                            deviceToken: deviceToken
+                            deviceToken: deviceToken,
                         )
                     }
                     .buttonStyle(.borderedProminent)
@@ -144,6 +145,7 @@ private struct SyncSetupView: View {
         isClaiming = true
         statusMessage = nil
         let rawURL = pairingURL
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         Task {
             do {
                 #if os(iOS)
@@ -151,7 +153,11 @@ private struct SyncSetupView: View {
                 #else
                     let deviceName = "Vogel Vault macOS"
                 #endif
-                try await MC2MobileWritebackClient().claimPairing(pairingURL: rawURL, deviceName: deviceName)
+                if rawURL.isEmpty {
+                    try await MC2MobileWritebackClient().claimBundledPairing(deviceName: deviceName)
+                } else {
+                    try await MC2MobileWritebackClient().claimPairing(pairingURL: rawURL, deviceName: deviceName)
+                }
                 await MainActor.run {
                     baseURL = MC2MobileWritebackConfig.baseURL?.absoluteString ?? ""
                     deviceID = MC2MobileWritebackConfig.deviceID
@@ -171,7 +177,7 @@ private struct SyncSetupView: View {
 
     private func field(
         _ title: String,
-        text: Binding<String>
+        text: Binding<String>,
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
@@ -196,5 +202,14 @@ private struct SyncSetupView: View {
                 .foregroundStyle(theme.text)
                 .textFieldStyle(.roundedBorder)
         }
+    }
+
+    private static func isValidPairingURL(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              let host = url.host?.lowercased()
+        else { return false }
+        return scheme == "https" || host == "localhost" || host == "127.0.0.1"
     }
 }
