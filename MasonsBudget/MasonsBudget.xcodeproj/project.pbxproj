@@ -851,10 +851,10 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				DEVELOPMENT_TEAM = 384ZGKG4GB;
 				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = "Config/Info-macOS-generated.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "The Vogel Vault";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
-				INFOPLIST_KEY_MC2BundledPairingURLsB64 = "$(MC2_BUNDLED_PAIRING_URLS_B64)";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Unlock The Vogel Vault with Face ID.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone access is needed for voice transaction entry.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Voice input lets you log transactions by speaking.";
@@ -878,10 +878,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 384ZGKG4GB;
 				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = "Config/Info-iOS-generated.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "The Vogel Vault";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
-				INFOPLIST_KEY_MC2BundledPairingURLsB64 = "$(MC2_BUNDLED_PAIRING_URLS_B64)";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Unlock The Vogel Vault with Face ID.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone access is needed for voice transaction entry.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Voice input lets you log transactions by speaking.";
@@ -970,10 +970,10 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				DEVELOPMENT_TEAM = 384ZGKG4GB;
 				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = "Config/Info-macOS-generated.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "The Vogel Vault";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
-				INFOPLIST_KEY_MC2BundledPairingURLsB64 = "$(MC2_BUNDLED_PAIRING_URLS_B64)";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Unlock The Vogel Vault with Face ID.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone access is needed for voice transaction entry.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Voice input lets you log transactions by speaking.";
@@ -1013,10 +1013,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 384ZGKG4GB;
 				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = "Config/Info-iOS-generated.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "The Vogel Vault";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
-				INFOPLIST_KEY_MC2BundledPairingURLsB64 = "$(MC2_BUNDLED_PAIRING_URLS_B64)";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Unlock The Vogel Vault with Face ID.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone access is needed for voice transaction entry.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Voice input lets you log transactions by speaking.";

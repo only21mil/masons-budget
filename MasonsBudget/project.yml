@@ -48,7 +48,16 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: YES
         ENABLE_PREVIEWS: YES
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: "NO"
-        INFOPLIST_KEY_MC2BundledPairingURLsB64: "$(MC2_BUNDLED_PAIRING_URLS_B64)"
+    # SAT-1508 — DO NOT replace this info block with INFOPLIST_KEY_MC2BundledPairingURLsB64.
+    # Xcode silently ignores custom (non-allowlisted) INFOPLIST_KEY_* settings; that is the
+    # exact reason build 37 shipped WITHOUT pairing slots. Verified on the build-38 archives:
+    # INFOPLIST_KEY_ variant -> key absent; this info block -> key present (PlistBuddy gate).
+    # Xcode expands $(MC2_BUNDLED_PAIRING_URLS_B64) from the archive CLI and merges the
+    # INFOPLIST_KEY_* values above into the generated file.
+    info:
+      path: Config/Info-iOS-generated.plist
+      properties:
+        MC2BundledPairingURLsB64: "$(MC2_BUNDLED_PAIRING_URLS_B64)"
     dependencies: []
 
   MasonsBudgetMac:
@@ -77,7 +86,11 @@ targets:
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Microphone access is needed for voice transaction entry."
         INFOPLIST_KEY_NSFaceIDUsageDescription: "Unlock The Vogel Vault with Face ID."
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: "NO"
-        INFOPLIST_KEY_MC2BundledPairingURLsB64: "$(MC2_BUNDLED_PAIRING_URLS_B64)"
+    # SAT-1508: see iOS target note — custom keys require the info block, not INFOPLIST_KEY_*.
+    info:
+      path: Config/Info-macOS-generated.plist
+      properties:
+        MC2BundledPairingURLsB64: "$(MC2_BUNDLED_PAIRING_URLS_B64)"
     dependencies: []
 
   MasonsBudgetTests:
