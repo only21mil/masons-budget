@@ -27,8 +27,14 @@ function parseEnvFile(file) {
   const out = {};
   if (!fs.existsSync(file)) return out;
   for (const line of fs.readFileSync(file, "utf8").split("\n")) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (m && !line.trim().startsWith("#")) out[m[1]] = m[2];
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const m = trimmed.match(/^([A-Z0-9_]+)=(.*)$/);
+    if (!m) continue;
+    out[m[1]] = m[2]
+      .replace(/\s+#.*$/, "")
+      .replace(/^["']|["']$/g, "")
+      .trim();
   }
   return out;
 }
