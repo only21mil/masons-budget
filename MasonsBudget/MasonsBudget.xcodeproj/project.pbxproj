@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0079C75072FC413931C2BB2F /* UnitToggleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 709F4C2338EDE5D2BBB8C9F8 /* UnitToggleView.swift */; };
+		012AAE1E5EF54E82BA42EB70 /* InlineAddTaskBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5514024FC5632566C2498B75 /* InlineAddTaskBar.swift */; };
 		0163BE114D91A8E5CC8B83D9 /* MC2Reader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FED6C930AD774521B536178 /* MC2Reader.swift */; };
 		05217F09961107F47A0EA45D /* CategoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBBF456CA8F45467DE539B3 /* CategoryDetailView.swift */; };
 		064EE72180F8557196303AF4 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D9D2114CBEC645F03E11CE8 /* AppTheme.swift */; };
@@ -91,6 +92,7 @@
 		5EAA31651D7CB8DA2D1CA647 /* ScreenHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59DD3C8ADB2447DA2F2ABEF8 /* ScreenHeader.swift */; };
 		60A2374372574199C9FDA25D /* StockPriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F721A6FC17530024B35A0C6 /* StockPriceService.swift */; };
 		60DB40E2C6E812784A222981 /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DBCCD025DF53FB5AB826594 /* TasksView.swift */; };
+		617A5624E857EBB25E55CBA7 /* InlineAddTaskBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5514024FC5632566C2498B75 /* InlineAddTaskBar.swift */; };
 		61BFE7AE76584D8C349D32C1 /* RetirementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ADB184F47423CA415614B24 /* RetirementView.swift */; };
 		627817036F8B1B2C7497C8BB /* NetWorthSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF559B68DCF5C8C506B2A151 /* NetWorthSnapshot.swift */; };
 		64330EAE4BCAA813DD6F194A /* RecurringDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13B457058988A6C86FCA5978 /* RecurringDetector.swift */; };
@@ -187,6 +189,7 @@
 		CB9BB3C97CAED9728CE9B542 /* BTCBillPay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DC543643B1F2899DDB38FE5 /* BTCBillPay.swift */; };
 		CD6E34BC67B813408C710CD1 /* VoiceTransactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E61832AD53C22BEAF0386F25 /* VoiceTransactionView.swift */; };
 		CEF9C4C16AACAB7C0C7AFD75 /* TransactionSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 570F3F5990719F8820C73D57 /* TransactionSource.swift */; };
+		D027098D14027DE06D9B4266 /* InlineAddTaskBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5514024FC5632566C2498B75 /* InlineAddTaskBar.swift */; };
 		D1BB8B327A23D4D8D3ABBE63 /* TodoItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC02E94290076AEE88831C18 /* TodoItem.swift */; };
 		D1F0030EFC8EF2EF555C9F9B /* LockScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E117823C6DA6138431AE80C8 /* LockScreenView.swift */; };
 		D21FBFEEAD72E5855B86E247 /* TodoItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC02E94290076AEE88831C18 /* TodoItem.swift */; };
@@ -248,6 +251,7 @@
 		4E34240C2E281F20DD41FF8D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4E87F8471A5178129ADC32F6 /* ProjectsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectsView.swift; sourceTree = "<group>"; };
 		52815FF83DEA08F99F7B94B6 /* CSVImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSVImportService.swift; sourceTree = "<group>"; };
+		5514024FC5632566C2498B75 /* InlineAddTaskBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineAddTaskBar.swift; sourceTree = "<group>"; };
 		570F3F5990719F8820C73D57 /* TransactionSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionSource.swift; sourceTree = "<group>"; };
 		598608F085B0A81286803F0F /* Hairline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Hairline.swift; sourceTree = "<group>"; };
 		59DD3C8ADB2447DA2F2ABEF8 /* ScreenHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenHeader.swift; sourceTree = "<group>"; };
@@ -309,6 +313,7 @@
 				5EAD4E4602D4D4566CD78E35 /* AmountView.swift */,
 				CF60F6C9AFB730F4A27C9A10 /* BitcoinIcons.swift */,
 				598608F085B0A81286803F0F /* Hairline.swift */,
+				5514024FC5632566C2498B75 /* InlineAddTaskBar.swift */,
 				F77DC014DA99E364F0D6572E /* PillButton.swift */,
 				59DD3C8ADB2447DA2F2ABEF8 /* ScreenHeader.swift */,
 				9217F015BEE5502E0937BDC3 /* TaskUndoBanner.swift */,
@@ -636,6 +641,7 @@
 				A97366A2EB4EA2FFDBA47FA5 /* Hairline.swift in Sources */,
 				4896678F33B0AD12A9247DE2 /* HoldingAccount.swift in Sources */,
 				7EB78B1C7E862DC7C62818C1 /* IncomingEventsSection.swift in Sources */,
+				D027098D14027DE06D9B4266 /* InlineAddTaskBar.swift in Sources */,
 				F9EAF981A0A2BBC7BF5398C7 /* LockScreenView.swift in Sources */,
 				FF848533C741DC91C85E63A6 /* MC2DTOs.swift in Sources */,
 				8A41817F4810A032FC16524A /* MC2Mapper.swift in Sources */,
@@ -710,6 +716,7 @@
 				1937D7FCF5D407C26B8C83EC /* Hairline.swift in Sources */,
 				AC9DFD3F20A65000ABF54CDC /* HoldingAccount.swift in Sources */,
 				567B39204A65DCCCB473764F /* IncomingEventsSection.swift in Sources */,
+				617A5624E857EBB25E55CBA7 /* InlineAddTaskBar.swift in Sources */,
 				D1F0030EFC8EF2EF555C9F9B /* LockScreenView.swift in Sources */,
 				80A637E625F3EF70CF7EF91A /* MC2DTOs.swift in Sources */,
 				0CFAF3E5C73D4E08B671BCD1 /* MC2Mapper.swift in Sources */,
@@ -786,6 +793,7 @@
 				9A84F97A42F9A7ED4CC5DE86 /* Hairline.swift in Sources */,
 				BCDB4955AE6195145DB25EB0 /* HoldingAccount.swift in Sources */,
 				8FA1F5019016A229F4F7FE7B /* IncomingEventsSection.swift in Sources */,
+				012AAE1E5EF54E82BA42EB70 /* InlineAddTaskBar.swift in Sources */,
 				C156A53D5E586FF9A67A0545 /* LockScreenView.swift in Sources */,
 				E678847B04562368D94CD18E /* MC2DTOs.swift in Sources */,
 				E1C04F1716739188C30E08AE /* MC2Mapper.swift in Sources */,
