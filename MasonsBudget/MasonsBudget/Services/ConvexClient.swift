@@ -437,6 +437,10 @@ final class MC2MobileWritebackClient: Sendable {
     }
 
     private func convexMutation(baseURL: URL, path: String, args: [String: Any]) async throws -> Any {
+        guard baseURL.scheme?.lowercased() == "https" else {
+            throw MC2MobileWritebackError.invalidBaseURL
+        }
+
         let endpoint = baseURL
             .appendingPathComponent("api")
             .appendingPathComponent("mutation")

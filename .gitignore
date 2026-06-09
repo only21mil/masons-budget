@@ -18,6 +18,8 @@ xcuserdata/
 build/
 Build/
 Archives/
+runtime-artifacts/
+.cutover-backup/
 *.xcarchive
 *.pkg
 *.dmg
