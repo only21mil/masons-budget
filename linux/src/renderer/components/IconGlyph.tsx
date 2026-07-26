@@ -86,6 +86,9 @@ export function IconGlyph({ name, size = 16, className, label }: IconGlyphProps)
       size={size}
       strokeWidth={1.75}
       className={cx("vv-icon", className)}
+      // An <svg> has no implicit role, so a bare aria-label on it is dropped by
+      // several screen readers. role="img" is what makes the label reachable.
+      role={label ? "img" : undefined}
       aria-hidden={label ? undefined : true}
       aria-label={label}
       focusable="false"

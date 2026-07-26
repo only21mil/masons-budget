@@ -15,6 +15,8 @@ export interface NavItem {
   readonly icon: IconName
   /** Rendered as a count pill, e.g. flagged todos. */
   readonly badge?: number
+  /** What the badge counts, so the pill is not announced as a bare number. */
+  readonly badgeLabel?: string
 }
 
 export interface NavSection {
@@ -46,12 +48,22 @@ export function AppShell({ sections, activeId, onNavigate, topBar, children }: A
               <ul className="vv-navgroup__list">
                 {section.items.map((item) => {
                   const active = item.id === activeId
+                  // Below 1366px the stylesheet sets display:none on the label,
+                  // which removes it from the accessibility tree as well as the
+                  // screen — leaving `title` as the only name, which is the
+                  // weakest source and not exposed by every screen reader. Name
+                  // the button outright so the compact pass cannot silence it.
+                  const badgeName =
+                    item.badge === undefined
+                      ? null
+                      : `${item.badge}${item.badgeLabel ? ` ${item.badgeLabel}` : ""}`
                   return (
                     <li key={item.id}>
                       <button
                         type="button"
                         className={cx("vv-navitem", active && "vv-navitem--active")}
                         aria-current={active ? "page" : undefined}
+                        aria-label={badgeName ? `${item.label}, ${badgeName}` : item.label}
                         onClick={() => onNavigate(item.id)}
                         title={item.label}
                       >
