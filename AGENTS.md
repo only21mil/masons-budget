@@ -121,15 +121,28 @@ in `convex/dataFiles.ts` now gates `get`, `getVersions`, `list` and
 **Deploying enforcement without sequencing locks out every live client**,
 including the TestFlight build already on a phone. Required order:
 
-1. Deploy with `ALLOW_TOKENLESS_READ=true` on the deployment. Permissive —
-   behaves exactly as before, nothing breaks.
+1. Set `ALLOW_TOKENLESS_READ=true` on the deployment, then deploy the gated
+   code. Permissive — behaves exactly as before, nothing breaks.
 2. Set `CONVEX_READ_TOKEN` on the deployment and ship clients that send it. iOS
    reads it from `ConvexConfig.readToken`; the token is injected at runtime and
-   is never bundled, hardcoded or committed.
-3. Confirm clients are sending it, **then** remove `ALLOW_TOKENLESS_READ`.
+   is never bundled, hardcoded or committed. Still permissive — see below.
+3. Confirm clients are sending it, **then** remove `ALLOW_TOKENLESS_READ`. That
+   removal is the enforcement flip; re-setting it is the one-command rollback.
 
-`CONVEX_SYNC_TOKEN` gates mutations under the identical pattern (SAT-1326).
-Neither token belongs in the repo, in source, or in a build artifact.
+**The hatch outranks the token.** `ALLOW_TOKENLESS_READ=true` admits the call
+even when `CONVEX_READ_TOKEN` is set, which is what makes step 2 safe rather
+than the moment everything breaks. The price: ⚠️ **a set token proves nothing.**
+A deployment can show `CONVEX_READ_TOKEN` in `npx convex env list` and still be
+serving the household's finances to anyone with the URL. The only evidence of
+enforcement is `scripts/verify-read-auth.sh` reporting `ENFORCED`; every
+permissive admission also logs a `PERMISSIVE: …` line to the deployment log.
+Never leave a hatch on past its soak.
+
+`CONVEX_SYNC_TOKEN` / `ALLOW_TOKENLESS_SYNC` gate mutations under the identical
+pattern and the identical precedence (SAT-1326). Neither token belongs in the
+repo, in source, or in a build artifact.
+
+Full procedure, blast radius and rollback: `docs/convex-read-auth-cutover.md`.
 
 ## Build, archive, TestFlight
 
