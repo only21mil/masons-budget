@@ -222,14 +222,18 @@ jobs:
         continue-on-error: true
         working-directory: android
         run: |
-          set -uo pipefail
-          APK=$(find app/build/outputs/apk/debug -name '*.apk' | head -1)
-          APKSIGNER=$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -name apksigner | sort | tail -1)
+          # No `set -e`: the runner's shell already has it, and every lookup here
+          # is allowed to come up empty without ending the step.
+          set +e
+          set -u
+          APK=$(find app/build/outputs/apk/debug -name '*.apk' 2>/dev/null | head -1)
+          APKSIGNER=$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -name apksigner 2>/dev/null | sort | tail -1)
           if [ -n "$APK" ] && [ -n "$APKSIGNER" ]; then
             "$APKSIGNER" verify --print-certs "$APK" | grep -i 'digest'
           else
             echo "::notice::apksigner or the APK was not found — skipping the fingerprint report."
           fi
+          exit 0
 
       # Renders Compose to PNG under Robolectric — no emulator, no display.
       # Review artifact, not a pixel-diff gate: behaviour is asserted by the

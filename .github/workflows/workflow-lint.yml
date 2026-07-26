@@ -101,8 +101,11 @@ jobs:
       - name: Preflight reporter smoke test
         run: |
           set -uo pipefail
-          OUT=$(python3 .github/workflows/scripts/report_secret_presence.py 2>&1)
-          RC=$?
+          # The runner's shell is `bash -e`, so a bare `OUT=$(cmd)` that exits
+          # non-zero kills the step before RC can be read. `|| RC=$?` keeps the
+          # failure inspectable, which is the whole point here.
+          RC=0
+          OUT=$(python3 .github/workflows/scripts/report_secret_presence.py 2>&1) || RC=$?
           printf '%s\n' "$OUT"
           if [ "$RC" -ne 1 ] || ! printf '%s' "$OUT" | grep -q 'APPLE_CERTIFICATE_P12'; then
             echo "::error::The preflight reporter did not fail closed on a run with no secrets bound (exit $RC)."
