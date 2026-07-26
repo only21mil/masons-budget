@@ -42,10 +42,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # Must match XCODE_VERSION in swift.yml. If verification and release use
+      # different toolchains, a change can pass CI and fail the release — which
+      # is precisely how 16.4 survived here long after the runner image dropped
+      # it: nothing exercised this path until the first real release attempt.
       - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
-          xcode-version: '16.4'
+          xcode-version: '26.6'
 
       - name: Install XcodeGen
         run: brew install xcodegen
