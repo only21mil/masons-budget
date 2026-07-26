@@ -5,6 +5,8 @@ import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.ReadModel
+import com.sats21m.vogelvault.domain.monthsPresent
+import com.sats21m.vogelvault.domain.visibleTo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,8 +23,52 @@ data class VaultUiState(
     val destination: Destination = Destination.DASHBOARD,
     val data: ReadModel = Fixtures.envelope(FamilyMember.VICTOR),
     val now: Long = Fixtures.NOW_MILLIS,
+    /**
+     * Month the Budget screen opens on, or null to follow the budget file.
+     *
+     * The live selection is remembered by the screen — this is the seed, so the
+     * design packet and previews can render an off-default month without driving
+     * a tap.
+     */
+    val selectedMonth: String? = null,
 ) {
     val switchTargets: List<FamilyMember> get() = activeProfile.allowedSwitchTargets
+
+    /**
+     * Months the Budget screen may scope to, newest first.
+     *
+     * Derived from what this profile may SEE, never from the raw ledger: Mason's
+     * months must not appear because an adult happens to be looking, and Rachel
+     * must get the same list as Victor.
+     */
+    val budgetMonths: List<String>
+        get() {
+            val fromTransactions = data.transactions.value.visibleTo(activeProfile).monthsPresent()
+            val budgetMonth = data.budget.value?.month
+            // The budget's own month is offered even with nothing spent in it. A
+            // month with no transactions is a real answer; an absent month is not.
+            val all = if (budgetMonth != null && budgetMonth !in fromTransactions) {
+                fromTransactions + budgetMonth
+            } else {
+                fromTransactions
+            }
+            return all.sortedDescending()
+        }
+
+    /**
+     * The month the Budget screen should open on, or null when there is nothing
+     * to scope.
+     *
+     * A seeded month that this profile has no data for falls back rather than
+     * rendering an empty screen — a bad seed should look wrong, not look like a
+     * month with no spending.
+     */
+    val activeBudgetMonth: String?
+        get() {
+            val months = budgetMonths
+            val fallback = data.budget.value?.month?.takeIf { it in months } ?: months.firstOrNull()
+            return selectedMonth?.takeIf { it in months } ?: fallback
+        }
 
     private val slices
         get() = listOf(data.transactions.status to data.transactions.updatedAt,
@@ -57,10 +103,12 @@ data class VaultUiState(
             profile: FamilyMember,
             destination: Destination = Destination.DASHBOARD,
             status: Freshness = Freshness.LIVE,
+            selectedMonth: String? = null,
         ): VaultUiState = VaultUiState(
             activeProfile = profile,
             destination = destination,
             data = Fixtures.envelope(profile, status),
+            selectedMonth = selectedMonth,
         )
     }
 }
@@ -92,6 +140,9 @@ class VaultViewModel : ViewModel() {
             current.copy(
                 activeProfile = next,
                 data = Fixtures.envelope(next),
+                // A month picked against one profile's ledger means nothing on the
+                // next one, so the scope goes back to that profile's budget month.
+                selectedMonth = null,
                 destination = if (current.destination in destinations) {
                     current.destination
                 } else {

@@ -1,18 +1,33 @@
 package com.sats21m.vogelvault.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -39,26 +54,42 @@ import com.sats21m.vogelvault.ui.components.StateBlock
 import com.sats21m.vogelvault.ui.components.StatusBanner
 import com.sats21m.vogelvault.ui.components.figure
 import com.sats21m.vogelvault.ui.theme.VaultAccent
+import com.sats21m.vogelvault.ui.theme.VaultAccentDim
 import com.sats21m.vogelvault.ui.theme.VaultCream
+import com.sats21m.vogelvault.ui.theme.VaultLine
 import com.sats21m.vogelvault.ui.theme.VaultNegative
 import com.sats21m.vogelvault.ui.theme.VaultPositive
 import com.sats21m.vogelvault.ui.theme.VaultSpace
+import com.sats21m.vogelvault.ui.theme.VaultSurface
 import com.sats21m.vogelvault.ui.theme.VaultTextDim
 import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 import com.sats21m.vogelvault.ui.theme.VaultWarning
 
 @Composable
 fun ScreenHost(destination: Destination, state: VaultUiState, modifier: Modifier = Modifier) {
+    val months = state.budgetMonths
+    // The Budget screen's month scope. Held here rather than in the ViewModel
+    // because it is view state, and because every row of the list has to agree on
+    // it — the KPI strip, the banners and the categories all read the same month.
+    // Re-seeded when the profile changes or the state names a month, so a preview
+    // or the design packet can render any month without driving a tap.
+    var picked by rememberSaveable(state.activeProfile, state.selectedMonth) {
+        mutableStateOf(state.activeBudgetMonth)
+    }
+    // A refresh can retire the picked month. Fall back rather than render a month
+    // the ledger no longer contains.
+    val month = picked?.takeIf { it in months } ?: state.activeBudgetMonth
+
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(VaultSpace.md),
         verticalArrangement = Arrangement.spacedBy(VaultSpace.md),
     ) {
-        item { ScreenHeader(destination, state) }
+        item { ScreenHeader(destination, state, month) }
         when (destination) {
             Destination.DASHBOARD -> dashboard(state)
             Destination.ACTIVITY -> activity(state)
-            Destination.BUDGET -> budget(state)
+            Destination.BUDGET -> budget(state, month, months) { picked = it }
             Destination.BITCOIN -> bitcoin(state)
             Destination.NET_WORTH -> netWorth(state)
             Destination.TODAY -> today(state)
@@ -69,13 +100,16 @@ fun ScreenHost(destination: Destination, state: VaultUiState, modifier: Modifier
 }
 
 @Composable
-private fun ScreenHeader(destination: Destination, state: VaultUiState) {
+private fun ScreenHeader(destination: Destination, state: VaultUiState, budgetMonth: String?) {
     val subtitle = when (destination) {
         Destination.DASHBOARD ->
             if (state.activeProfile.isAdult) "Household command center"
             else "${state.activeProfile.displayName}'s money"
         Destination.ACTIVITY -> "Transactions visible to this profile"
-        Destination.BUDGET -> state.data.budget.value?.month ?: "No budget"
+        // The month in scope, not the budget file's month: the two differ while an
+        // earlier month is picked, and the header must not contradict the picker.
+        // A profile with no budget file still says so — Maddox has none.
+        Destination.BUDGET -> state.data.budget.value?.let { monthLabel(budgetMonth ?: it.month) } ?: "No budget"
         Destination.BITCOIN -> "Stack and custody"
         Destination.NET_WORTH -> "Household for adults; self only for children"
         Destination.TODAY -> "Due today or overdue"
@@ -195,14 +229,27 @@ private fun TransactionRow(transaction: Transaction) {
 
 // ── Budget ──────────────────────────────────────────────────────────────────
 
-private fun androidx.compose.foundation.lazy.LazyListScope.budget(state: VaultUiState) {
+private fun androidx.compose.foundation.lazy.LazyListScope.budget(
+    state: VaultUiState,
+    month: String?,
+    months: List<String>,
+    onSelectMonth: (String) -> Unit,
+) {
     val slice = state.data.budget
     val budget = slice.value
-    // Spend is DERIVED from this month's transactions, never read from the
+    val scopedMonth = month ?: budget?.month
+
+    // Spend is DERIVED from the scoped month's transactions, never read from the
     // reported category total: a July budget counts only July transactions.
     // Matches what iOS has always done (BudgetView.monthTransactions).
+    //
+    // MC2 publishes one budget file per profile and it carries the current
+    // month's targets, so an earlier month reuses those targets and re-derives
+    // its own actuals. The banner below says so rather than letting the planned
+    // column imply MC2 had a June budget.
     val spend = budget?.let {
-        deriveBudgetSpend(it, state.data.transactions.value.visibleTo(state.activeProfile))
+        val scoped = if (scopedMonth == null || scopedMonth == it.month) it else it.copy(month = scopedMonth)
+        deriveBudgetSpend(scoped, state.data.transactions.value.visibleTo(state.activeProfile))
     }
 
     if (budget == null) {
@@ -223,6 +270,16 @@ private fun androidx.compose.foundation.lazy.LazyListScope.budget(state: VaultUi
     }
 
     val derived = spend ?: return
+
+    // Hidden when the read failed: the month list is derived from the same
+    // transactions the screen has just been told not to trust, so offering a
+    // choice between them would be a control over nothing. One month is not a
+    // choice either — a lone chip reads as a button that does nothing.
+    val pickable = months.size > 1 && !slice.suppressFigures && !state.data.transactions.suppressFigures
+    if (pickable) {
+        item { MonthPicker(months, derived.month, onSelectMonth) }
+    }
+
     item {
         KpiStrip(
             listOf(
@@ -243,6 +300,27 @@ private fun androidx.compose.foundation.lazy.LazyListScope.budget(state: VaultUi
         )
     }
     item { StaleNotice(slice.status) }
+    if (derived.month != budget.month && !slice.suppressFigures) {
+        item {
+            StatusBanner(
+                "Planned figures are ${monthLabel(budget.month)} targets",
+                "MC2 publishes one budget file per profile. The actuals below are " +
+                    "re-derived from ${monthLabel(derived.month)} transactions; the targets are not.",
+                tone = VaultWarning,
+            )
+        }
+    }
+    if (derived.uncategorisedCents > 0L && !slice.suppressFigures) {
+        // Spend that matched no category is surfaced, never dropped: silently
+        // discarding it would make this screen disagree with Activity for no
+        // visible reason, and picking an older month makes that far more likely.
+        item {
+            StatusBanner(
+                "${Money.formatUsd(derived.uncategorisedCents)} spent outside any budget category",
+                "Counted on Activity but not against a category here. Add a category in MC2 to track it.",
+            )
+        }
+    }
     item {
         Panel("Categories", "${slice.source} · ${derived.month} transactions") {
             if (slice.suppressFigures) {
@@ -263,6 +341,77 @@ private fun androidx.compose.foundation.lazy.LazyListScope.budget(state: VaultUi
             }
         }
     }
+}
+
+/**
+ * Month scope control.
+ *
+ * One scrolling row rather than a wrapped grid: folded, the Fold is 411dp wide,
+ * and a year of months either overflows that or pushes the figures off the first
+ * screen. A row that scrolls stays one line tall in both postures, and months are
+ * newest first so the default sits under the thumb rather than off-screen.
+ */
+@Composable
+private fun MonthPicker(months: List<String>, selected: String, onSelect: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
+        Text(
+            "MONTH",
+            style = MaterialTheme.typography.labelSmall,
+            color = VaultTextDim,
+        )
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            months.forEach { month ->
+                MonthChip(month, month == selected) { onSelect(month) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MonthChip(month: String, selected: Boolean, onSelect: () -> Unit) {
+    val shape = RoundedCornerShape(99.dp)
+    Box(
+        Modifier
+            .heightIn(min = 40.dp)
+            .clip(shape)
+            // selectable, not clickable: this is one choice out of a set, and a
+            // screen reader should say so.
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
+            .background(if (selected) VaultAccentDim else VaultSurface, shape)
+            .border(1.dp, if (selected) VaultAccent.copy(alpha = 0.42f) else VaultLine, shape)
+            .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            monthLabel(month),
+            style = MaterialTheme.typography.labelSmall,
+            // Orange marks the selection through the fill and border only. It is
+            // never a text colour — the selected label just goes to full cream.
+            color = if (selected) VaultCream else VaultTextMuted,
+            maxLines = 1,
+        )
+    }
+}
+
+private val MONTH_NAMES =
+    listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+/**
+ * `2026-07` → `Jul 2026`.
+ *
+ * A fixed table rather than a date formatter: MC2 month keys are already
+ * unambiguous, and a locale-dependent format would make the design packet render
+ * differently from the device. Anything unexpected falls through to the raw key
+ * instead of throwing.
+ */
+private fun monthLabel(month: String): String {
+    val parts = month.split("-")
+    val name = parts.getOrNull(1)?.toIntOrNull()?.let { MONTH_NAMES.getOrNull(it - 1) } ?: return month
+    return "$name ${parts[0]}"
 }
 
 // ── Bitcoin ─────────────────────────────────────────────────────────────────
