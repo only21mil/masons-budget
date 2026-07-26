@@ -91,13 +91,13 @@ export const api = {
     "mutation",
     "public",
     { name?: "todos"; todo: TodoPayload; token?: string },
-    { name: string; version: number; id: string }
+    { name: string; version: number; id: string; applied: boolean }
   >,
   removeTodo: "dataFiles:removeTodo" as unknown as FunctionReference<
     "mutation",
     "public",
     { todoId: string; token?: string },
-    { name: string; version?: number; removed: boolean }
+    { name: string; version: number; removed: boolean }
   >,
   remove: "dataFiles:remove" as unknown as FunctionReference<
     "mutation",
@@ -133,7 +133,7 @@ export const api = {
     "mutation",
     "public",
     { deviceId: string; deviceToken: string; todo: TodoPayload },
-    { ok: boolean; name: string; version: number; id: string }
+    { ok: boolean; name: string; version: number; id: string; applied: boolean }
   >,
   completeTodoFromMobile: "dataFiles:completeTodoFromMobile" as unknown as FunctionReference<
     "mutation",
@@ -158,7 +158,7 @@ export const api = {
     "mutation",
     "public",
     { deviceId: string; deviceToken: string; id: string },
-    { ok: boolean; name: string; version?: number; removed: boolean }
+    { ok: boolean; name: string; version: number; removed: boolean }
   >,
 };
 

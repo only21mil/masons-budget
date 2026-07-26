@@ -147,10 +147,10 @@ describe("applyTodoUpsert: last write wins", () => {
     expect((doc?.data as { todos: unknown[] }).todos).toHaveLength(2);
   });
 
-  // ⚠️ Documented current behaviour, NOT endorsed. A rejected write still
-  // rewrites the payload and bumps the version, so every client re-fetches for
-  // a no-op change. Harmless today, wasteful at MC2 sync frequency.
-  it("bumps the version even when last-write-wins discards the write", async () => {
+  // A discarded write moves nothing, so the version must not move either —
+  // every client polls getVersions, and a bump would send all of them back for
+  // a byte-identical file at MC2 sync frequency.
+  it("leaves the version alone when last-write-wins discards the write", async () => {
     await seedDataFile(t, "todos", [STORED], 7);
     const result = await t.mutation(api.upsertTodo, {
       todo: {
@@ -161,10 +161,99 @@ describe("applyTodoUpsert: last write wins", () => {
       token: syncToken,
     });
 
-    expect(result.version).toBe(8);
+    expect(result).toMatchObject({ version: 7, applied: false });
+    const versions = await t.query(api.getVersions, { token: readToken });
+    expect(versions.todos).toBe(7);
+    const doc = await readDataFile(t, "todos");
+    expect(doc?.version).toBe(7);
+  });
+
+  it("reports applied and a bumped version when the write lands", async () => {
+    await seedDataFile(t, "todos", [STORED], 7);
+    const result = await t.mutation(api.upsertTodo, {
+      todo: {
+        id: "todo-1",
+        title: "Newer title",
+        updated_at: "2026-07-11T12:00:00.000Z",
+      },
+      token: syncToken,
+    });
+
+    expect(result).toMatchObject({ version: 8, applied: true });
     const versions = await t.query(api.getVersions, { token: readToken });
     expect(versions.todos).toBe(8);
   });
+
+  it("bumps the version for a todo it has never seen", async () => {
+    await seedDataFile(t, "todos", [STORED], 7);
+    const result = await t.mutation(api.upsertTodo, {
+      todo: { id: "todo-2", title: "Brand new" },
+      token: syncToken,
+    });
+
+    expect(result).toMatchObject({ version: 8, applied: true });
+  });
+
+  it("does not bump the version for a stale write through the mobile door", async () => {
+    const { deviceId, deviceToken } = await pairMobileDevice(t, syncToken);
+    await seedDataFile(t, "todos", [STORED], 7);
+
+    const result = await t.mutation(api.upsertTodoFromMobile, {
+      deviceId,
+      deviceToken,
+      todo: {
+        id: "todo-1",
+        title: "Stale from phone",
+        updated_at: "2026-07-09T12:00:00.000Z",
+      },
+    });
+
+    expect(result).toMatchObject({ ok: true, version: 7, applied: false });
+    const versions = await t.query(api.getVersions, { token: readToken });
+    expect(versions.todos).toBe(7);
+  });
+
+  // The blank-alias fix, exercised end to end: the stored record's real stamp
+  // is behind an empty updated_at, and it must still beat an older write.
+  it("does not let a blank updated_at hand the write to an older record", async () => {
+    await seedDataFile(t, "todos", [
+      {
+        id: "todo-1",
+        title: "Stored title",
+        updated_at: "",
+        updatedAt: "2026-07-10T12:00:00.000Z",
+      },
+    ]);
+
+    await t.mutation(api.upsertTodo, {
+      todo: {
+        id: "todo-1",
+        title: "Stale title",
+        updated_at: "2026-07-09T12:00:00.000Z",
+      },
+      token: syncToken,
+    });
+
+    const [todo] = await readTodos(t);
+    expect(todo.title).toBe("Stored title");
+  });
+
+  it("never stores a todo whose done and status disagree", async () => {
+    await t.mutation(api.upsertTodo, {
+      todo: { id: "todo-1", title: "Checked off", done: true, status: "pending" },
+      token: syncToken,
+    });
+
+    const [todo] = await readTodos(t);
+    expect(todo).toMatchObject({ done: true, status: "completed" });
+  });
+
+  // ⚠️ REAL BUG, documented here rather than fixed (see the PR).
+  // applyTodoUpsert REPLACES the stored todo with the normalized incoming one
+  // instead of merging, and normalizeTodoRecord fills every absent field with a
+  // default. A partial upsert therefore silently destroys notes, project, area,
+  // due date and owner. completeTodoFromMobile dodges this by merging with the
+  // stored record first; upsertTodoFromMobile and upsertTodo do not.
 
   it("shares the same semantics through the mobile front door", async () => {
     const { deviceId, deviceToken } = await pairMobileDevice(t, syncToken);
@@ -540,8 +629,9 @@ describe("removeTodo: tombstones", () => {
       token: syncToken,
     });
 
-    expect(result).toMatchObject({ removed: false });
-    expect(result.version).toBeUndefined();
+    // The version is reported even though nothing moved, so a caller can tell
+    // "tombstone only, you are already current" from "you are behind".
+    expect(result).toMatchObject({ removed: false, version: 3 });
     const doc = await readDataFile(t, "todos");
     expect(doc?.version).toBe(3);
     await expect(
@@ -555,10 +645,25 @@ describe("removeTodo: tombstones", () => {
       token: syncToken,
     });
 
-    expect(result).toMatchObject({ removed: false });
+    // No file is version 0, not an absent field — the caller should not have to
+    // treat "missing version" as a third case.
+    expect(result).toMatchObject({ removed: false, version: 0 });
     await expect(
       t.query(api.listTodoTombstones, { token: readToken }),
     ).resolves.toMatchObject([{ id: "todo-ghost" }]);
+  });
+
+  it("reports the version through the mobile door too", async () => {
+    const { deviceId, deviceToken } = await pairMobileDevice(t, syncToken);
+    await seedDataFile(t, "todos", [{ id: "todo-2", title: "Kept" }], 3);
+
+    const result = await t.mutation(api.removeTodoFromMobile, {
+      deviceId,
+      deviceToken,
+      id: "todo-ghost",
+    });
+
+    expect(result).toMatchObject({ ok: true, removed: false, version: 3 });
   });
 
   it("keeps one tombstone row per id and refreshes deletedAt", async () => {
