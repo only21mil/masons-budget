@@ -3,7 +3,10 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(21)
+    // 17, not 21: the Android app module compiles against Java 17, and a
+    // consumer cannot load classes built for a newer JVM. Mismatching these
+    // throws UnsupportedClassVersionError at test runtime, not at build time.
+    jvmToolchain(17)
 }
 
 // No `repositories` block here on purpose: settings.gradle.kts sets
