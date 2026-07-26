@@ -13,7 +13,14 @@ import {
   visibleTo,
 } from "@vogel-vault/domain/family"
 import { basisPoints, formatBtc, formatSats, formatUsd, satsToUsdCents, sum } from "@vogel-vault/domain/money"
-import type { BTCAccount, Budget, Transaction } from "@vogel-vault/domain/readModel"
+import {
+  type BTCAccount,
+  type CategorySpend,
+  type Transaction,
+  deriveBudgetSpend,
+  monthOf,
+  transactionsInMonth,
+} from "@vogel-vault/domain/readModel"
 
 import { useAppState } from "../../app/AppState.tsx"
 import {
@@ -96,8 +103,12 @@ function DashboardPage() {
   const accounts = netWorthScopeFor(activeProfile, data.btcAccounts.value)
   const todos = visibleTo(activeProfile, data.todos.value).filter((todo) => !todo.done)
 
-  const spend = sum(transactions.map(spendOf))
-  const income = sum(transactions.map(incomeOf))
+  // Scoped to the current month so the headline agrees with the Budget screen.
+  // An all-time total sitting next to a monthly budget is just confusing.
+  const month = data.budget.value?.month ?? monthOf(new Date(data.generatedAt).toISOString().slice(0, 10))
+  const monthTransactions = transactionsInMonth(transactions, month)
+  const spend = sum(monthTransactions.map(spendOf))
+  const income = sum(monthTransactions.map(incomeOf))
   const stackSats = sum(accounts.map((account) => account.sats))
   const stackValue = satsToUsdCents(stackSats, data.btcPriceUsd)
 
@@ -121,7 +132,7 @@ function DashboardPage() {
     <>
       <PageHeader
         title="Dashboard"
-        subtitle={isAdult(activeProfile) ? "Household command center" : `${displayName(activeProfile)}'s money`}
+        subtitle={`${isAdult(activeProfile) ? "Household command center" : `${displayName(activeProfile)}'s money`} · ${month}`}
         actions={<FreshnessTag status={data.transactions.status} updatedAt={data.transactions.updatedAt} />}
       />
       <StaleNotice status={data.transactions.status} />
@@ -130,7 +141,7 @@ function DashboardPage() {
         <Panel title="Recent activity" source={data.transactions.source} flush>
           <DataTable
             columns={recentColumns}
-            rows={transactions.slice(0, 8)}
+            rows={monthTransactions.slice(0, 8)}
             rowKey={(row) => row.id}
             state={tableState(data.transactions.status)}
           />
@@ -180,7 +191,7 @@ const stackColumns: ReadonlyArray<Column<BTCAccount>> = [
 // ── Budget ──────────────────────────────────────────────────────────────────
 
 function BudgetPage() {
-  const { data } = useAppState()
+  const { activeProfile, data } = useAppState()
   const budget = data.budget.value
 
   if (!budget) {
@@ -192,10 +203,11 @@ function BudgetPage() {
     )
   }
 
-  const planned = sum(budget.categories.map((category) => category.budget))
-  const actual = sum(budget.categories.map((category) => category.spent))
-  const remaining = planned - actual
-  const overCount = budget.categories.filter((category) => category.spent > category.budget).length
+  // Spend is DERIVED from this month's transactions, never read from the
+  // reported category total: a July budget must count only July transactions.
+  // This is what the iOS client has always done (BudgetView.monthTransactions).
+  const spend = deriveBudgetSpend(budget, visibleTo(activeProfile, data.transactions.value))
+  const { planned, actual, remaining, overBudgetCount: overCount } = spend
 
   return (
     <>
@@ -223,10 +235,21 @@ function BudgetPage() {
           },
         ]}
       />
-      <Panel title="Categories" source={data.budget.source} flush>
+      {spend.uncategorised > 0n ? (
+        <StatusBanner
+          tone="info"
+          title={`${formatUsd(spend.uncategorised)} spent outside any budget category`}
+          detail="Counted on Activity but not against a category here. Add a category in MC2 to track it."
+        />
+      ) : null}
+      <Panel
+        title="Categories"
+        source={`${data.budget.source} · spend derived from ${budget.month} transactions`}
+        flush
+      >
         <DataTable
           columns={budgetColumns}
-          rows={budget.categories}
+          rows={spend.categories}
           rowKey={(row) => row.name}
           state={tableState(data.budget.status)}
         />
@@ -235,7 +258,7 @@ function BudgetPage() {
   )
 }
 
-const budgetColumns: ReadonlyArray<Column<Budget["categories"][number]>> = [
+const budgetColumns: ReadonlyArray<Column<CategorySpend>> = [
   { key: "name", header: "Category", render: (row) => row.name },
   {
     key: "budget",
@@ -254,9 +277,7 @@ const budgetColumns: ReadonlyArray<Column<Budget["categories"][number]>> = [
     header: "Remaining",
     numeric: true,
     render: (row) => (
-      <span className={row.budget - row.spent < 0n ? "vv-negative" : "vv-muted"}>
-        {formatUsd(row.budget - row.spent)}
-      </span>
+      <span className={row.isOverBudget ? "vv-negative" : "vv-muted"}>{formatUsd(row.remaining)}</span>
     ),
   },
   {

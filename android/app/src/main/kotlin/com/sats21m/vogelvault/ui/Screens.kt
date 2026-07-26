@@ -20,8 +20,11 @@ import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.MC2_FILES
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.Transaction
+import com.sats21m.vogelvault.domain.deriveBudgetSpend
+import com.sats21m.vogelvault.domain.inMonth
 import com.sats21m.vogelvault.domain.incomeAmount
 import com.sats21m.vogelvault.domain.isDueBy
+import com.sats21m.vogelvault.domain.monthsPresent
 import com.sats21m.vogelvault.domain.netWorthScopeFor
 import com.sats21m.vogelvault.domain.spendAmount
 import com.sats21m.vogelvault.domain.visibleTo
@@ -97,7 +100,11 @@ private fun ScreenHeader(destination: Destination, state: VaultUiState) {
 
 private fun androidx.compose.foundation.lazy.LazyListScope.dashboard(state: VaultUiState) {
     val profile = state.activeProfile
-    val transactions = state.data.transactions.value.visibleTo(profile)
+    val visible = state.data.transactions.value.visibleTo(profile)
+    // Scoped to the budget's month so the headline agrees with the Budget
+    // screen. An all-time total beside a monthly budget is just confusing.
+    val month = state.data.budget.value?.month ?: visible.monthsPresent().firstOrNull() ?: ""
+    val transactions = visible.inMonth(month)
     val accounts = state.data.btcAccounts.value.netWorthScopeFor(profile)
     val openTodos = state.data.todos.value.visibleTo(profile).count { !it.done }
 
@@ -191,6 +198,12 @@ private fun TransactionRow(transaction: Transaction) {
 private fun androidx.compose.foundation.lazy.LazyListScope.budget(state: VaultUiState) {
     val slice = state.data.budget
     val budget = slice.value
+    // Spend is DERIVED from this month's transactions, never read from the
+    // reported category total: a July budget counts only July transactions.
+    // Matches what iOS has always done (BudgetView.monthTransactions).
+    val spend = budget?.let {
+        deriveBudgetSpend(it, state.data.transactions.value.visibleTo(state.activeProfile))
+    }
 
     if (budget == null) {
         item {
@@ -209,33 +222,34 @@ private fun androidx.compose.foundation.lazy.LazyListScope.budget(state: VaultUi
         return
     }
 
+    val derived = spend ?: return
     item {
         KpiStrip(
             listOf(
-                Kpi("Planned", figure(slice.suppressFigures) { Money.formatUsd(budget.plannedCents) }, provenance = Provenance.PLANNED),
-                Kpi("Actual", figure(slice.suppressFigures) { Money.formatUsd(budget.actualCents) }),
+                Kpi("Planned", figure(slice.suppressFigures) { Money.formatUsd(derived.plannedCents) }, provenance = Provenance.PLANNED),
+                Kpi("Actual", figure(slice.suppressFigures) { Money.formatUsd(derived.actualCents) }),
                 Kpi(
                     "Remaining",
-                    figure(slice.suppressFigures) { Money.formatUsd(budget.remainingCents) },
-                    tone = if (budget.remainingCents < 0L) VaultNegative else VaultPositive,
+                    figure(slice.suppressFigures) { Money.formatUsd(derived.remainingCents) },
+                    tone = if (derived.remainingCents < 0L) VaultNegative else VaultPositive,
                 ),
                 Kpi(
                     "Over budget",
-                    figure(slice.suppressFigures) { budget.overBudgetCount.toString() },
-                    hint = if (budget.overBudgetCount == 1) "1 category" else "${budget.overBudgetCount} categories",
-                    tone = if (budget.overBudgetCount > 0) VaultNegative else null,
+                    figure(slice.suppressFigures) { derived.overBudgetCount.toString() },
+                    hint = if (derived.overBudgetCount == 1) "1 category" else "${derived.overBudgetCount} categories",
+                    tone = if (derived.overBudgetCount > 0) VaultNegative else null,
                 ),
             ),
         )
     }
     item { StaleNotice(slice.status) }
     item {
-        Panel("Categories", slice.source) {
+        Panel("Categories", "${slice.source} · ${derived.month} transactions") {
             if (slice.suppressFigures) {
                 StateBlock(slice.status)
             } else {
                 Column {
-                    budget.categories.forEachIndexed { index, category ->
+                    derived.categories.forEachIndexed { index, category ->
                         if (index > 0) HorizontalHairline()
                         LedgerRow(
                             primary = category.name,

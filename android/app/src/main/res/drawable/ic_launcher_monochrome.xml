@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Themed-icon layer (Android 13+). The launcher tints this itself, so it must be
+  a single-colour silhouette — any colour here is discarded. Same mark, solid.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108"
+    android:tint="#FFFFFF">
+
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M54,28 A26,26 0 1,1 53.99,28" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M38.6,38.6 L33.2,33.2 M69.4,38.6 L74.8,33.2 M38.6,69.4 L33.2,74.8 M69.4,69.4 L74.8,74.8" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,42 m-7,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M50.5,50 L57.5,50 L59.5,66 L48.5,66 z" />
+</vector>
