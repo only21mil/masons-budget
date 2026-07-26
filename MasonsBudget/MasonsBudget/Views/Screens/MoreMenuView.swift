@@ -65,6 +65,12 @@ private struct SyncSetupView: View {
     @State private var statusMessage: String?
     @State private var isClaiming = false
 
+    // Write-only by design. Never seeded from storage and cleared the moment it is
+    // saved, so the stored read token cannot be read back out of the UI.
+    @State private var readTokenEntry = ""
+    @State private var hasReadToken = !ConvexConfig.readToken.isEmpty
+    @State private var readTokenMessage: String?
+
     private var canSave: Bool {
         Self.isValidPairingURL(baseURL) &&
             !deviceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
@@ -79,7 +85,7 @@ private struct SyncSetupView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
-                ScreenHeader(title: "Sync Setup", eyebrow: "MC2")
+                ScreenHeader(title: "Sync Setup", eyebrow: "MC2 · Convex")
 
                 VStack(spacing: 14) {
                     field("Pairing URL (optional)", text: $pairingURL)
@@ -129,6 +135,10 @@ private struct SyncSetupView: View {
                 }
                 .padding(.horizontal, AppLayout.sectionPadding)
 
+                convexReadTokenCard
+                    .glassCard(padding: 14, radius: AppLayout.radiusMedium)
+                    .padding(.horizontal, AppLayout.sectionPadding)
+
                 if let statusMessage {
                     Text(statusMessage)
                         .font(AppFont.smallRegular)
@@ -173,6 +183,100 @@ private struct SyncSetupView: View {
                 }
             }
         }
+    }
+
+    /// Convex reads are fail-closed as of 2026-07-26, and the token they need lived in a
+    /// UserDefaults key nothing could write — configuring a device meant attaching a
+    /// debugger. This is the entry point. It writes through `ConvexConfig.setReadToken`
+    /// only; the read path in `ConvexClient` is untouched.
+    private var convexReadTokenCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Convex Read Token")
+                    .font(AppFont.headline)
+                    .foregroundStyle(theme.text)
+                // The deployment host, never the token. The host is already public in the
+                // repo; showing it is how you tell which deployment the token is for.
+                Text(ConvexConfig.deploymentURL.host ?? "no deployment host")
+                    .font(AppFont.smallRegular)
+                    .foregroundStyle(theme.textFaint)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(hasReadToken ? theme.success : theme.warn)
+                    .frame(width: 8, height: 8)
+                Text(readTokenStatusText)
+                    .font(AppFont.smallRegular)
+                    .foregroundStyle(theme.textMuted)
+                Spacer(minLength: 0)
+            }
+            .accessibilityElement(children: .combine)
+
+            secureField("Paste read token", text: $readTokenEntry)
+
+            HStack(spacing: 12) {
+                // PasteButton rather than reading the pasteboard ourselves: the app never
+                // touches clipboard contents it was not handed, and iOS raises no paste alert.
+                PasteButton(payloadType: String.self) { pasted in
+                    guard let token = pasted.first else { return }
+                    readTokenEntry = token.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+
+                Spacer(minLength: 0)
+
+                if hasReadToken {
+                    Button("Remove") {
+                        removeReadToken()
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Button("Save") {
+                    saveReadToken()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(readTokenEntry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            if let readTokenMessage {
+                Text(readTokenMessage)
+                    .font(AppFont.smallRegular)
+                    .foregroundStyle(theme.textMuted)
+            }
+        }
+        // The view can be constructed long before it is shown, so re-derive on appear
+        // rather than trusting the value captured at init.
+        .onAppear { hasReadToken = !ConvexConfig.readToken.isEmpty }
+    }
+
+    private var readTokenStatusText: String {
+        hasReadToken
+            ? "A read token is stored on this device."
+            : "No read token. Reads fail once the deployment enforces."
+    }
+
+    private func saveReadToken() {
+        let trimmed = readTokenEntry.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        ConvexConfig.setReadToken(trimmed)
+        readTokenEntry = ""
+        // Re-read the store instead of assuming the write landed, and keep the result a
+        // Bool: the stored token is never held in view state or rendered.
+        hasReadToken = !ConvexConfig.readToken.isEmpty
+        readTokenMessage = hasReadToken
+            ? "Read token saved. It is sent with the next refresh."
+            : "Could not save the read token."
+    }
+
+    private func removeReadToken() {
+        ConvexConfig.setReadToken("")
+        readTokenEntry = ""
+        hasReadToken = !ConvexConfig.readToken.isEmpty
+        readTokenMessage = hasReadToken
+            ? "Could not remove the read token."
+            : "Read token removed from this device."
     }
 
     private func field(
