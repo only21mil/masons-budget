@@ -6,15 +6,21 @@
 // static analysis on purpose — it runs without building or launching the app,
 // so it is safe in CI and on a machine with no display.
 //
-// It also executes electron/csvExport.ts, the one module on the bridge that
-// turns renderer input into bytes on disk. That module deliberately imports no
-// Electron API so it can be run here directly (Node strips the types), and the
-// rules it enforces — strings only, no control characters, no formula, exact
-// money text — are worth proving rather than grepping for.
+// It also executes the two modules on the bridge that do something a grep cannot
+// prove. Both deliberately import no Electron API so they can be run here
+// directly (Node strips the types), with no display, no build and no deployment:
+//
+//   - electron/csvExport.ts turns renderer input into bytes on disk. The rules —
+//     strings only, no control characters, no formula, exact money text — are
+//     worth proving rather than grepping for.
+//   - electron/convexRead.ts holds the deployment URL and the read credential.
+//     "Off by default", "the credential never reaches a log", and "server text
+//     never reaches the renderer" are claims, and claims get executed here.
 
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { inspect } from "node:util"
 
 import {
   CSV_LIMITS,
@@ -22,6 +28,12 @@ import {
   serializeCsv,
   validateCsvRequest,
 } from "../electron/csvExport.ts"
+import {
+  REMOTE_READ_LIMITS,
+  createRemoteReader,
+  parseSnapshotEnvelope,
+  resolveRemoteReadSettings,
+} from "../electron/convexRead.ts"
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 
@@ -39,6 +51,7 @@ function stripComments(source) {
 const mainSource = stripComments(readFileSync(join(root, "electron", "main.ts"), "utf8"))
 const preloadSource = stripComments(readFileSync(join(root, "electron", "preload.ts"), "utf8"))
 const channelSource = stripComments(readFileSync(join(root, "electron", "ipcChannels.ts"), "utf8"))
+const convexReadSource = stripComments(readFileSync(join(root, "electron", "convexRead.ts"), "utf8"))
 const rendererTypes = stripComments(readFileSync(join(root, "src", "types", "vogel-vault.d.ts"), "utf8"))
 
 const failures = []
@@ -113,12 +126,17 @@ require_(
  * The exact method list, by name.
  *
  * Reviewed 2026-07-26: getRuntimeInfo (read-only runtime facts) and exportCsv
- * (rows in, a user-chosen file out). Adding a third name here means widening
- * what an untrusted renderer can ask the main process to do, so it is a
- * deliberate edit to this list and nothing less. Never relax it to a count or a
- * wildcard.
+ * (rows in, a user-chosen file out). Adding a name here means widening what an
+ * untrusted renderer can ask the main process to do, so it is a deliberate edit
+ * to this list and nothing less. Never relax it to a count or a wildcard.
+ *
+ * Reviewed addition, 2026-07-26 — getRemoteSnapshot. It takes no argument and
+ * returns file metadata plus a status; the deployment URL and read credential
+ * stay in the main process, and with the feature off (the default) no request is
+ * made at all. The executed section at the bottom of this file is where that
+ * claim is checked rather than asserted.
  */
-const ALLOWED_BRIDGE_METHODS = ["getRuntimeInfo", "exportCsv"]
+const ALLOWED_BRIDGE_METHODS = ["getRuntimeInfo", "exportCsv", "getRemoteSnapshot"]
 
 const bridgeBody = preloadSource.slice(preloadSource.indexOf("exposeInMainWorld"))
 const exposedMethods = [...bridgeBody.matchAll(/^\s{2}(\w+)[:,\n]/gm)].map((m) => m[1])
@@ -162,8 +180,26 @@ require_(
   `preload: every invoke targets a named channel constant (found: ${invokedChannels.join(", ") || "none"})`,
 )
 
+/**
+ * The exact channel list, by name and order.
+ *
+ * This replaces an earlier "exactly one channel" count. Naming them is stricter,
+ * not looser: a count would have let a second channel appear the moment anyone
+ * bumped the number, whereas a rename or an unreviewed addition fails here.
+ * Same rule as ALLOWED_BRIDGE_METHODS — edit it deliberately or not at all.
+ *
+ * Reviewed 2026-07-26: CSV_EXPORT_CHANNEL (rows in, a user-chosen file out) and
+ * CONVEX_READ_CHANNEL (no argument in, file metadata out).
+ */
+const ALLOWED_CHANNEL_CONSTANTS = ["CSV_EXPORT_CHANNEL", "CONVEX_READ_CHANNEL"]
+
 const declaredChannels = [...channelSource.matchAll(/export const (\w+) = "([^"]+)"/g)]
-require_(declaredChannels.length === 1, `ipcChannels: declares exactly one channel (found: ${declaredChannels.length})`)
+const declaredChannelNames = declaredChannels.map(([, name]) => name)
+require_(
+  declaredChannelNames.length === ALLOWED_CHANNEL_CONSTANTS.length &&
+    ALLOWED_CHANNEL_CONSTANTS.every((name, index) => declaredChannelNames[index] === name),
+  `ipcChannels: declares exactly [${ALLOWED_CHANNEL_CONSTANTS.join(", ")}] (found: ${declaredChannelNames.join(", ") || "none"})`,
+)
 
 for (const [, name] of declaredChannels) {
   require_(preloadSource.includes(name), `preload: uses the declared channel ${name}`)
@@ -181,6 +217,37 @@ require_(
     handledChannels.every((channel) => /^[A-Z][A-Z0-9_]*$/.test(channel)),
   `main: handles only declared channel constants (found: ${handledChannels.join(", ") || "none"})`,
 )
+
+// Every handler checks its own sender. Counted rather than eyeballed: a new
+// handler that forgets the check is the failure this is here to catch.
+const senderChecks = [...mainSource.matchAll(/\bisTrustedSender\(event\)/g)].length
+require_(
+  senderChecks === handledChannels.length,
+  `main: every handler checks its sender (${senderChecks} checks for ${handledChannels.length} handlers)`,
+)
+
+// ── The network side ───────────────────────────────────────────────────────
+//
+// The renderer is network-free by construction: hardenSession cancels every
+// request its session makes. The Convex read therefore lives in main, and the
+// renderer must not be able to learn where it goes or what it sends.
+
+require_(!/\bfetch\s*\(/.test(preloadSource), "preload: does not reach the network")
+require_(!/https?:\/\//.test(preloadSource), "preload: contains no URL")
+require_(!/https?:\/\//.test(rendererTypes), "types: the renderer's view contains no URL")
+
+// The credential and the deployment are configuration, never source. A literal
+// URL here would be a deployment baked into the shipped bundle — the same
+// mistake that left production readable to anyone who read this repo.
+require_(!/https?:\/\//.test(convexReadSource), "convexRead: no deployment URL is hard-coded")
+require_(
+  !/\b(?:const|let|var)\s+\w*(?:token|secret|password)\w*\s*=\s*["'`]/i.test(convexReadSource),
+  "convexRead: no credential is hard-coded",
+)
+
+// A redirect would hand the read credential to whatever host the response named.
+require_(/redirect:\s*"error"/.test(mainSource), "main: the deployment request refuses redirects")
+require_(/AbortSignal\.timeout\(/.test(mainSource), "main: the deployment request is time-bounded")
 
 // ── File writes ────────────────────────────────────────────────────────────
 //
@@ -284,6 +351,276 @@ for (const [input, expected] of fileNameCases) {
   const actual = safeCsvFileName(input)
   require_(actual === expected, `csv: ${JSON.stringify(input)} sanitises to ${expected} (got ${actual})`)
 }
+
+// ── The Convex read path ───────────────────────────────────────────────────
+//
+// Executed, not grepped. Four claims are made about this feature, and each one
+// is the kind that is true right up until someone edits the file:
+//
+//   1. it is off unless the machine's environment turns it on,
+//   2. off means no request, not a request that is thrown away,
+//   3. the credential goes on the wire and nowhere else — not into a log line,
+//   4. nothing the deployment says reaches the renderer verbatim.
+
+/** Obviously fake. A real credential must never appear in a file in this repo. */
+const SAMPLE_CREDENTIAL = "not-a-real-read-credential-0000"
+const SAMPLE_DEPLOYMENT = "https://example.invalid"
+
+const enabledEnv = {
+  VOGEL_VAULT_REMOTE_READ: "1",
+  VOGEL_VAULT_CONVEX_URL: `${SAMPLE_DEPLOYMENT}/`,
+  VOGEL_VAULT_CONVEX_READ_TOKEN: SAMPLE_CREDENTIAL,
+}
+
+// Claim 1 — off by default, and off for anything that is not an explicit yes.
+for (const [value, label] of [
+  [undefined, "unset"],
+  ["", "empty"],
+  ["0", '"0"'],
+  ["false", '"false"'],
+  ["yes", '"yes"'],
+]) {
+  const settings = resolveRemoteReadSettings({ ...enabledEnv, VOGEL_VAULT_REMOTE_READ: value })
+  require_(
+    settings.readiness === "disabled" && settings.endpoint === null && !settings.hasCredential,
+    `convex: the switch is off when it is ${label}`,
+  )
+}
+
+require_(
+  resolveRemoteReadSettings({ ...enabledEnv, VOGEL_VAULT_CONVEX_URL: undefined }).readiness ===
+    "unconfigured",
+  "convex: enabled with no deployment is unconfigured",
+)
+
+// Cleartext would put the credential and the family's finances on the wire in
+// the open. Refused, never downgraded.
+require_(
+  resolveRemoteReadSettings({ ...enabledEnv, VOGEL_VAULT_CONVEX_URL: "http://example.invalid" })
+    .readiness === "insecure-endpoint",
+  "convex: an http deployment is refused",
+)
+
+require_(
+  resolveRemoteReadSettings({ ...enabledEnv, VOGEL_VAULT_CONVEX_READ_TOKEN: undefined })
+    .readiness === "ready-unauthenticated",
+  "convex: enabled without a credential is reported distinctly",
+)
+
+const readySettings = resolveRemoteReadSettings(enabledEnv)
+require_(readySettings.readiness === "ready", "convex: a fully configured environment is ready")
+require_(
+  readySettings.endpoint === `${SAMPLE_DEPLOYMENT}/api/query`,
+  `convex: the endpoint is the deployment's query path (got ${readySettings.endpoint})`,
+)
+
+// Claim 3 — the credential is unreachable through the ordinary accidents. These
+// three are what console.log, a crash report and a JSON dump actually call.
+const rendered = `${JSON.stringify(readySettings)} ${String(readySettings)} ${inspect(readySettings)}`
+require_(!rendered.includes(SAMPLE_CREDENTIAL), "convex: the credential survives no logging path")
+require_(rendered.includes("present"), "convex: presence is reported instead")
+
+/** A reader over a poster that records what it was asked to send. */
+function spyReader(env, respond) {
+  const calls = []
+  const reader = createRemoteReader({
+    settings: () => resolveRemoteReadSettings(env),
+    post: async (endpoint, requestBody) => {
+      calls.push({ endpoint, requestBody })
+      return respond(requestBody)
+    },
+    now: () => new Date("2026-07-26T12:00:00.000Z"),
+  })
+  return { reader, calls }
+}
+
+const okListing = () => ({
+  httpStatus: 200,
+  body: JSON.stringify({
+    status: "success",
+    value: [{ name: "transactions.json", version: 7, updatedAt: 1_769_000_000_000 }],
+  }),
+})
+
+// Claim 2 — off means no socket. Asserted on the transport, not on the answer.
+const offRun = spyReader({}, okListing)
+const offResult = await offRun.reader.snapshot()
+require_(offResult.status === "disabled", `convex: a switched-off read answers disabled (got ${offResult.status})`)
+require_(offRun.calls.length === 0, `convex: a switched-off read opens no socket (${offRun.calls.length} requests)`)
+
+const insecureRun = spyReader({ ...enabledEnv, VOGEL_VAULT_CONVEX_URL: "http://example.invalid" }, okListing)
+const insecureResult = await insecureRun.reader.snapshot()
+require_(insecureResult.status === "unconfigured", "convex: an http deployment is never contacted")
+require_(insecureRun.calls.length === 0, "convex: an http deployment opens no socket")
+
+const authedRun = spyReader(enabledEnv, okListing)
+const authedResult = await authedRun.reader.snapshot()
+const authedRequest = JSON.parse(authedRun.calls[0]?.requestBody ?? "{}")
+require_(
+  authedRequest.path === "dataFiles:list" && authedRequest.format === "json",
+  `convex: the query is the metadata listing (got ${authedRequest.path})`,
+)
+require_(
+  authedRequest.args?.token === SAMPLE_CREDENTIAL,
+  "convex: the credential is attached to the request",
+)
+require_(
+  authedResult.status === "ok" && authedResult.authenticated === true,
+  "convex: a successful authenticated read reports itself as authenticated",
+)
+require_(
+  authedResult.status === "ok" &&
+    authedResult.files.length === 1 &&
+    authedResult.files[0]?.name === "transactions.json",
+  "convex: the listing becomes file metadata",
+)
+
+// Omitted, not blanked. While ALLOW_TOKENLESS_READ is set the server accepts
+// this; the moment the hatch goes it fails closed, which is the signal the
+// cutover needs every client to produce identically.
+const anonRun = spyReader({ ...enabledEnv, VOGEL_VAULT_CONVEX_READ_TOKEN: undefined }, okListing)
+const anonResult = await anonRun.reader.snapshot()
+const anonRequest = JSON.parse(anonRun.calls[0]?.requestBody ?? "{}")
+require_(
+  !("token" in (anonRequest.args ?? {})),
+  "convex: an absent credential is omitted rather than sent empty",
+)
+require_(
+  anonResult.status === "ok" && anonResult.authenticated === false,
+  "convex: an unauthenticated read says so",
+)
+
+// Concurrent invokes must not become concurrent requests. The renderer is
+// untrusted and a loop of calls is not a reason to hammer the family's data.
+const burstRun = spyReader(enabledEnv, () => new Promise((resolve) => setTimeout(() => resolve(okListing()), 5)))
+await Promise.all([burstRun.reader.snapshot(), burstRun.reader.snapshot(), burstRun.reader.snapshot()])
+require_(burstRun.calls.length === 1, `convex: concurrent reads coalesce (${burstRun.calls.length} requests)`)
+
+// Coalescing does nothing about a renderer that awaits each call before making
+// the next, so there is a floor between requests as well.
+const pacedCalls = []
+let fakeClockMs = 0
+const pacedReader = createRemoteReader({
+  settings: () => resolveRemoteReadSettings(enabledEnv),
+  post: async () => {
+    pacedCalls.push(1)
+    return okListing()
+  },
+  now: () => new Date(fakeClockMs),
+})
+await pacedReader.snapshot()
+await pacedReader.snapshot()
+await pacedReader.snapshot()
+require_(pacedCalls.length === 1, `convex: sequential reads are paced (${pacedCalls.length} requests)`)
+
+fakeClockMs = REMOTE_READ_LIMITS.minIntervalMs
+await pacedReader.snapshot()
+require_(pacedCalls.length === 2, "convex: the pacing floor expires rather than caching forever")
+
+// A transport that throws must not leak the thrown text — a fetch error message
+// carries the URL, and a proxy can put anything after it.
+const throwingRun = spyReader(enabledEnv, () => {
+  throw new Error(`connect ECONNREFUSED ${SAMPLE_DEPLOYMENT} ${SAMPLE_CREDENTIAL}`)
+})
+const throwingResult = await throwingRun.reader.snapshot()
+require_(
+  throwingResult.status === "unavailable" && !JSON.stringify(throwingResult).includes(SAMPLE_CREDENTIAL),
+  "convex: a transport failure reports a written reason, not the thrown text",
+)
+
+// Claim 4 — envelope classification, matched to scripts/verify-read-auth.sh so
+// the app and the runbook cannot disagree about what the deployment just said.
+const readAt = "2026-07-26T12:00:00.000Z"
+const envelope = (body, httpStatus = 200, truncated = false) =>
+  parseSnapshotEnvelope({ httpStatus, body, truncated }, readAt, true)
+
+require_(
+  envelope(JSON.stringify({ status: "error", errorMessage: "Unauthorized: invalid read token" })).status ===
+    "unauthorized",
+  "convex: a rejected credential is unauthorized, not a generic failure",
+)
+
+require_(
+  envelope(
+    JSON.stringify({
+      status: "error",
+      errorMessage: "Unauthorized: CONVEX_READ_TOKEN is not configured (fail-closed).",
+    }),
+  ).status === "unauthorized",
+  "convex: the fail-closed rejection is also unauthorized",
+)
+
+// Trap 2 in the runbook: before the gated code is deployed, a `token` argument
+// is an ArgumentValidationError and production answers with a bare Server Error.
+require_(
+  envelope("Server Error", 500).status === "unavailable",
+  "convex: a non-200 is unavailable, not unauthorized",
+)
+
+require_(envelope("<html>nope</html>").status === "unavailable", "convex: a non-JSON answer is unavailable")
+require_(
+  envelope(JSON.stringify({ status: "success", value: { not: "a list" } })).status === "unavailable",
+  "convex: a listing that is not a list is unavailable",
+)
+require_(
+  envelope(JSON.stringify({ status: "success", value: [] }), 200, true).status === "unavailable",
+  "convex: a truncated answer is unavailable",
+)
+
+// Server text is never propagated: a response body from this deployment is the
+// household's financial data, and a reason ends up on screen and in a log.
+const leaky = envelope(
+  JSON.stringify({ status: "error", errorMessage: "balance for victor is 4242.18 at Chase" }),
+)
+require_(
+  leaky.status === "unavailable" && !JSON.stringify(leaky).includes("4242.18"),
+  "convex: server text never reaches the renderer",
+)
+
+// Financial content is not in the read model at all — only the three metadata
+// fields. Anything else the deployment adds is dropped on the floor.
+const extraFields = envelope(
+  JSON.stringify({
+    status: "success",
+    value: [{ name: "budget.json", version: 3, updatedAt: 1, data: { balanceCents: 424_218 } }],
+  }),
+)
+require_(
+  extraFields.status === "ok" && !JSON.stringify(extraFields).includes("424218"),
+  "convex: only name, version and updatedAt survive the read model",
+)
+
+const malformedRows = envelope(
+  JSON.stringify({
+    status: "success",
+    value: [
+      { name: "good.json", version: 1, updatedAt: 2 },
+      { name: "good.json", version: 9, updatedAt: 9 },
+      { name: "", version: 1, updatedAt: 2 },
+      { name: "no-version.json", updatedAt: 2 },
+      "not-an-object",
+    ],
+  }),
+)
+require_(
+  malformedRows.status === "ok" && malformedRows.files.length === 1,
+  `convex: duplicate and malformed entries are dropped (kept ${malformedRows.status === "ok" ? malformedRows.files.length : "n/a"})`,
+)
+
+const oversizedListing = envelope(
+  JSON.stringify({
+    status: "success",
+    value: Array.from({ length: REMOTE_READ_LIMITS.maxFiles + 25 }, (_, index) => ({
+      name: `file-${index}.json`,
+      version: 1,
+      updatedAt: 2,
+    })),
+  }),
+)
+require_(
+  oversizedListing.status === "ok" && oversizedListing.files.length === REMOTE_READ_LIMITS.maxFiles,
+  "convex: an oversized listing is capped",
+)
 
 // ── Report ─────────────────────────────────────────────────────────────────
 if (failures.length > 0) {
