@@ -81,6 +81,7 @@ convex/_generated/
 linux/dist/
 linux/dist-electron/
 linux/release/
+linux/screenshots/
 .vite/
 *.deb
 *.AppImage

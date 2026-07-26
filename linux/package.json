@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The Vogel Vault — Linux desktop client (Graphite Ledger Cockpit)",
+  "description": "The Vogel Vault \u2014 Linux desktop client (Graphite Ledger Cockpit)",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -13,7 +13,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "qa:preload-boundary": "node scripts/qa-preload-boundary.mjs",
-    "package": "node scripts/package-placeholder.mjs"
+    "package": "node scripts/package-placeholder.mjs",
+    "screenshots": "node scripts/capture-screenshots.mjs"
   },
   "dependencies": {
     "@vogel-vault/domain": "*",
@@ -30,6 +31,7 @@
     "eslint": "^9.17.0",
     "eslint-plugin-react-hooks": "^5.1.0",
     "globals": "^15.14.0",
+    "playwright": "^1.49.1",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.1",
     "vite": "^6.0.5",

@@ -5,7 +5,13 @@
 // net worth is a narrower scope than visibility, so a child's stack shows on the
 // child's profile but never rolls into an adult total.
 
-import { canSeeDataOwnedBy, netWorthScopeFor, visibleTo } from "@vogel-vault/domain/family"
+import {
+  canSeeDataOwnedBy,
+  displayName,
+  isAdult,
+  netWorthScopeFor,
+  visibleTo,
+} from "@vogel-vault/domain/family"
 import { basisPoints, formatBtc, formatSats, formatUsd, satsToUsdCents, sum } from "@vogel-vault/domain/money"
 import type { BTCAccount, Budget, Transaction } from "@vogel-vault/domain/readModel"
 
@@ -20,6 +26,7 @@ import {
   PageGrid,
   PageHeader,
   Panel,
+  SUPPRESSED,
   StateBlock,
   StatusBanner,
 } from "../../components/index.ts"
@@ -32,6 +39,19 @@ function tableState(status: string): "normal" | "empty" | "error" | "stale" | "l
   return "normal"
 }
 
+/**
+ * Suppress a figure when the slice it came from did not load.
+ *
+ * Without this a page renders "Could not load" in its table while the KPI strip
+ * above still shows totals computed from whatever was in memory — which is
+ * precisely the "something wrong" the error state promises not to display.
+ * `empty` is different: zero really is the answer, so it renders normally.
+ */
+function figure(status: string, render: () => string): string {
+  if (status === "error" || status === "loading") return SUPPRESSED
+  return render()
+}
+
 function spendOf(transaction: Transaction): bigint {
   if (transaction.category === "Income") return 0n
   return transaction.amount < 0n ? -transaction.amount : transaction.amount
@@ -39,6 +59,22 @@ function spendOf(transaction: Transaction): bigint {
 
 function incomeOf(transaction: Transaction): bigint {
   return transaction.category === "Income" && transaction.amount > 0n ? transaction.amount : 0n
+}
+
+/**
+ * Colour and sign for a transaction row.
+ *
+ * The raw sign is not enough. Adult MC2 files sign spending negative, but the
+ * child files record spending as a POSITIVE magnitude — so keying colour off
+ * `amount < 0` painted Mason's spending green, reading as money coming in.
+ * Route through the same spend/income helpers the totals use.
+ */
+function AmountCell({ transaction }: { transaction: Transaction }) {
+  const spend = spendOf(transaction)
+  if (spend > 0n) {
+    return <span className="vv-negative">-{formatUsd(spend)}</span>
+  }
+  return <span className="vv-positive">{formatUsd(incomeOf(transaction))}</span>
 }
 
 function StaleNotice({ status }: { status: string }) {
@@ -65,18 +101,27 @@ function DashboardPage() {
   const stackSats = sum(accounts.map((account) => account.sats))
   const stackValue = satsToUsdCents(stackSats, data.btcPriceUsd)
 
+  const txStatus = data.transactions.status
+  const btcStatus = data.btcAccounts.status
+  const todoStatus = data.todos.status
+
   const kpis: KPI[] = [
-    { label: "Spend (visible)", value: formatUsd(spend), tone: "negative" },
-    { label: "Income (visible)", value: formatUsd(income), tone: "positive" },
-    { label: "Stack", value: formatBtc(stackSats), tone: "accent", hint: formatUsd(stackValue) },
-    { label: "Open tasks", value: String(todos.length) },
+    { label: "Spend (visible)", value: figure(txStatus, () => formatUsd(spend)), tone: "negative" },
+    { label: "Income (visible)", value: figure(txStatus, () => formatUsd(income)), tone: "positive" },
+    {
+      label: "Stack",
+      value: figure(btcStatus, () => formatBtc(stackSats)),
+      tone: "accent",
+      hint: figure(btcStatus, () => formatUsd(stackValue)),
+    },
+    { label: "Open tasks", value: figure(todoStatus, () => String(todos.length)) },
   ]
 
   return (
     <>
       <PageHeader
         title="Dashboard"
-        subtitle="Household command center"
+        subtitle={isAdult(activeProfile) ? "Household command center" : `${displayName(activeProfile)}'s money`}
         actions={<FreshnessTag status={data.transactions.status} updatedAt={data.transactions.updatedAt} />}
       />
       <StaleNotice status={data.transactions.status} />
@@ -113,9 +158,7 @@ const recentColumns: ReadonlyArray<Column<Transaction>> = [
     key: "amount",
     header: "Amount",
     numeric: true,
-    render: (row) => (
-      <span className={row.amount < 0n ? "vv-negative" : "vv-positive"}>{formatUsd(row.amount)}</span>
-    ),
+    render: (row) => <AmountCell transaction={row} />,
   },
 ]
 
@@ -165,16 +208,16 @@ function BudgetPage() {
       {/* The budget operations strip: planned / actual / remaining / over-budget. */}
       <KPIStrip
         items={[
-          { label: "Planned", value: formatUsd(planned), provenance: "planned" },
-          { label: "Actual", value: formatUsd(actual), provenance: "actual" },
+          { label: "Planned", value: figure(data.budget.status, () => formatUsd(planned)), provenance: "planned" },
+          { label: "Actual", value: figure(data.budget.status, () => formatUsd(actual)), provenance: "actual" },
           {
             label: "Remaining",
-            value: formatUsd(remaining),
+            value: figure(data.budget.status, () => formatUsd(remaining)),
             tone: remaining < 0n ? "negative" : "positive",
           },
           {
             label: "Over budget",
-            value: String(overCount),
+            value: figure(data.budget.status, () => String(overCount)),
             tone: overCount > 0 ? "negative" : "neutral",
             hint: overCount === 1 ? "1 category" : `${overCount} categories`,
           },
@@ -262,9 +305,7 @@ const activityColumns: ReadonlyArray<Column<Transaction>> = [
     key: "amount",
     header: "Amount",
     numeric: true,
-    render: (row) => (
-      <span className={row.amount < 0n ? "vv-negative" : "vv-positive"}>{formatUsd(row.amount)}</span>
-    ),
+    render: (row) => <AmountCell transaction={row} />,
   },
 ]
 
@@ -281,6 +322,8 @@ function BitcoinOverviewPage() {
   )
   const exchange = totalSats - selfCustody
 
+  const status = data.btcAccounts.status
+
   // Adults can see a child's stack but it is not part of their net worth. Say so
   // rather than letting the difference look like a bug.
   const outOfScope = visible.filter((account) => !inScope.includes(account))
@@ -294,14 +337,18 @@ function BitcoinOverviewPage() {
       <StaleNotice status={data.btcAccounts.status} />
       <KPIStrip
         items={[
-          { label: "Total stack", value: formatBtc(totalSats), tone: "accent" },
-          { label: "Value", value: formatUsd(satsToUsdCents(totalSats, data.btcPriceUsd)), provenance: "estimated" },
+          { label: "Total stack", value: figure(status, () => formatBtc(totalSats)), tone: "accent" },
+          {
+            label: "Value",
+            value: figure(status, () => formatUsd(satsToUsdCents(totalSats, data.btcPriceUsd))),
+            provenance: "estimated",
+          },
           {
             label: "Self custody",
-            value: `${(basisPoints(selfCustody, totalSats) / 100).toFixed(1)}%`,
-            hint: formatSats(selfCustody),
+            value: figure(status, () => `${(basisPoints(selfCustody, totalSats) / 100).toFixed(1)}%`),
+            hint: figure(status, () => formatSats(selfCustody)),
           },
-          { label: "On exchange", value: formatSats(exchange) },
+          { label: "On exchange", value: figure(status, () => formatSats(exchange)) },
         ]}
       />
       {outOfScope.length > 0 ? (
@@ -342,11 +389,15 @@ function BitcoinBuysPage() {
       <StaleNotice status={data.btcBuys.status} />
       <KPIStrip
         items={[
-          { label: "Accumulated", value: formatBtc(totalSats), tone: "accent" },
-          { label: "Invested", value: formatUsd(totalUsd) },
+          { label: "Accumulated", value: figure(data.btcBuys.status, () => formatBtc(totalSats)), tone: "accent" },
+          { label: "Invested", value: figure(data.btcBuys.status, () => formatUsd(totalUsd)) },
           {
             label: "Average cost",
-            value: totalSats > 0n ? formatUsd(satsToUsdCents(100_000_000n, (totalUsd * 100_000_000n) / totalSats)) : "—",
+            value: figure(data.btcBuys.status, () =>
+              totalSats > 0n
+                ? formatUsd(satsToUsdCents(100_000_000n, (totalUsd * 100_000_000n) / totalSats))
+                : "—",
+            ),
             provenance: "estimated",
             hint: "per BTC",
           },
@@ -392,9 +443,13 @@ function BillsPage() {
       <StaleNotice status={data.billPays.status} />
       <KPIStrip
         items={[
-          { label: "Paid", value: formatUsd(sum(pays.map((pay) => pay.amountUsd))) },
-          { label: "Sats spent", value: formatSats(sum(pays.map((pay) => pay.btcSpentSats))), tone: "accent" },
-          { label: "Fees", value: formatUsd(sum(pays.map((pay) => pay.feeUsd))) },
+          { label: "Paid", value: figure(data.billPays.status, () => formatUsd(sum(pays.map((pay) => pay.amountUsd)))) },
+          {
+            label: "Sats spent",
+            value: figure(data.billPays.status, () => formatSats(sum(pays.map((pay) => pay.btcSpentSats)))),
+            tone: "accent",
+          },
+          { label: "Fees", value: figure(data.billPays.status, () => formatUsd(sum(pays.map((pay) => pay.feeUsd)))) },
         ]}
       />
       <Panel source={data.billPays.source} flush>
@@ -423,6 +478,8 @@ function BillsPage() {
 function RetirementPage() {
   const { data } = useAppState()
   const budget = data.budget.value
+  // Bound once: figure() defers evaluation, which loses inline narrowing.
+  const income = budget?.income ?? null
 
   return (
     <>
@@ -432,12 +489,24 @@ function RetirementPage() {
         actions={<FreshnessTag status={data.budget.status} updatedAt={data.budget.updatedAt} />}
       />
       <StaleNotice status={data.budget.status} />
-      {budget?.income ? (
+      {income ? (
         <KPIStrip
           items={[
-            { label: "YTD income", value: formatUsd(budget.ytdIncome), provenance: "actual" },
-            { label: "MTD income", value: formatUsd(budget.mtdIncome), provenance: "actual" },
-            { label: "Weekly gross", value: formatUsd(budget.income.weeklyGross), provenance: "planned" },
+            {
+              label: "YTD income",
+              value: figure(data.budget.status, () => formatUsd(income.ytdIncome)),
+              provenance: "actual",
+            },
+            {
+              label: "MTD income",
+              value: figure(data.budget.status, () => formatUsd(income.mtdIncome)),
+              provenance: "actual",
+            },
+            {
+              label: "Weekly gross",
+              value: figure(data.budget.status, () => formatUsd(income.weeklyGross)),
+              provenance: "planned",
+            },
           ]}
         />
       ) : null}
@@ -483,9 +552,14 @@ function NetWorthPage() {
       <StaleNotice status={data.btcAccounts.status} />
       <KPIStrip
         items={[
-          { label: "Bitcoin", value: formatUsd(stackValue), tone: "accent", provenance: "estimated" },
-          { label: "Stack", value: formatBtc(stackSats) },
-          { label: "Accounts", value: String(inScope.length) },
+          {
+            label: "Bitcoin",
+            value: figure(data.btcAccounts.status, () => formatUsd(stackValue)),
+            tone: "accent",
+            provenance: "estimated",
+          },
+          { label: "Stack", value: figure(data.btcAccounts.status, () => formatBtc(stackSats)) },
+          { label: "Accounts", value: figure(data.btcAccounts.status, () => String(inScope.length)) },
         ]}
       />
       <PageGrid>

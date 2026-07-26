@@ -92,6 +92,25 @@ jobs:
             linux/dist-electron
           retention-days: 7
 
+      # Design packet: every page at both widths, plus sampled states and the
+      # child profile. Headless, so it needs no display. Download the artifact to
+      # review the UI without running the app.
+      - name: Install Chromium for screenshots
+        run: npx playwright install --with-deps chromium
+        working-directory: linux
+
+      - name: Capture design packet
+        run: npm run screenshots
+        working-directory: linux
+
+      - name: Upload design packet
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-design-packet
+          path: linux/screenshots
+          retention-days: 30
+
   android-client:
     name: Android client
     if: github.repository == 'only21mil/masons-budget'
