@@ -26,6 +26,7 @@ export {
   Panel,
   Select,
   StatusBanner,
+  SUPPRESSED,
   TextInput,
   Toolbar,
 } from "./primitives.tsx"

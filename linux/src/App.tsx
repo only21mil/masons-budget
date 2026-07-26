@@ -1,8 +1,8 @@
 import { useEffect } from "react"
 
-import { displayName, isAdult } from "@vogel-vault/domain/family"
+import { type FamilyMember, displayName, isAdult } from "@vogel-vault/domain/family"
 
-import { AppStateProvider, useAppState } from "./renderer/app/AppState.tsx"
+import { AppStateProvider, type StateOverride, useAppState } from "./renderer/app/AppState.tsx"
 import {
   AppShell,
   Badge,
@@ -52,6 +52,31 @@ function ProfileControl() {
   )
 }
 
+/**
+ * Global sync indicator.
+ *
+ * Reports the WORST state across every slice, not one arbitrary slice — a single
+ * failed read matters even when the rest are fine. Labelled "Sync" so it reads
+ * as the app-wide indicator rather than duplicating the per-slice badge that
+ * each page header already shows.
+ */
+function GlobalSyncState() {
+  const { data } = useAppState()
+
+  const slices = [data.transactions, data.budget, data.btcAccounts, data.btcBuys, data.billPays, data.todos]
+  const rank = { error: 0, loading: 1, stale: 2, empty: 3, live: 4 } as const
+  const worst = slices.reduce((acc, slice) => (rank[slice.status] < rank[acc.status] ? slice : acc), slices[0]!)
+
+  return (
+    <span className="vv-row">
+      <span className="vv-dim" style={{ fontSize: "var(--vv-text-2xs)", letterSpacing: "0.06em" }}>
+        SYNC
+      </span>
+      <FreshnessTag status={worst.status} updatedAt={worst.updatedAt} />
+    </span>
+  )
+}
+
 function LockOverlay() {
   const { setLocked } = useAppState()
 
@@ -78,7 +103,7 @@ function LockOverlay() {
 }
 
 function Cockpit() {
-  const { activeProfile, route, navigate, data, locked } = useAppState()
+  const { activeProfile, route, navigate, locked } = useAppState()
 
   const sections = navSectionsFor(activeProfile)
   const page = resolvePage(route, activeProfile)
@@ -96,10 +121,7 @@ function Cockpit() {
       activeId={route}
       onNavigate={navigate}
       topBar={
-        <TopBar
-          profileControl={<ProfileControl />}
-          syncState={<FreshnessTag status={data.todos.status} updatedAt={data.todos.updatedAt} />}
-        />
+        <TopBar profileControl={<ProfileControl />} syncState={<GlobalSyncState />} />
       }
     >
       {page ? (
@@ -115,9 +137,24 @@ function Cockpit() {
   )
 }
 
-export default function App() {
+/**
+ * Optional seeds. The app itself never passes these — they exist so the
+ * screenshot harness can render a specific profile/route/state combination
+ * without clicking through the UI. Same mechanism the render-matrix tests use.
+ */
+export interface AppProps {
+  initialProfile?: FamilyMember
+  initialRoute?: string
+  initialStateOverride?: StateOverride
+}
+
+export default function App({ initialProfile, initialRoute, initialStateOverride }: AppProps = {}) {
   return (
-    <AppStateProvider>
+    <AppStateProvider
+      initialProfile={initialProfile}
+      initialRoute={initialRoute}
+      initialStateOverride={initialStateOverride}
+    >
       <Cockpit />
     </AppStateProvider>
   )

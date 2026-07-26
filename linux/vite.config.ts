@@ -57,6 +57,15 @@ export default defineConfig({
     emptyOutDir: true,
     target: "chrome130",
     sourcemap: true,
+    rollupOptions: {
+      input: {
+        // index.html is the app. screenshots.html is a build-time design harness
+        // for the CI screenshot packet — the Electron main process only ever
+        // loads index.html, so shipping it costs one small extra chunk.
+        index: path.join(dirname, "index.html"),
+        screenshots: path.join(dirname, "screenshots.html"),
+      },
+    },
   },
   server: {
     port: 5273,

@@ -127,6 +127,15 @@ export function StatusBanner({ tone = "info", title, detail, action, className }
 
 export type Provenance = "actual" | "planned" | "estimated"
 
+/**
+ * Placeholder for a figure that could not be read.
+ *
+ * Shared rather than a literal so KPIStrip can recognise a suppressed value and
+ * drop its tone and hint. A red or green em dash implies a reading that does not
+ * exist, and a hint like "1 category" leaks the very number being withheld.
+ */
+export const SUPPRESSED = "\u2014"
+
 export interface KPI {
   readonly label: string
   readonly value: string
@@ -143,15 +152,27 @@ export interface KPIStripProps {
 export function KPIStrip({ items, className }: KPIStripProps) {
   return (
     <div className={cx("vv-kpis", className)}>
-      {items.map((item) => (
-        <div key={item.label} className={cx("vv-kpi", item.tone && `vv-kpi--${item.tone}`)}>
-          <span className="vv-kpi__label">{item.label}</span>
-          <span className={cx("vv-kpi__value", "vv-num", `vv-${item.provenance ?? "actual"}`)}>
-            {item.value}
-          </span>
-          {item.hint ? <span className="vv-kpi__hint">{item.hint}</span> : null}
-        </div>
-      ))}
+      {items.map((item) => {
+        const suppressed = item.value === SUPPRESSED
+        return (
+          <div
+            key={item.label}
+            className={cx("vv-kpi", !suppressed && item.tone && `vv-kpi--${item.tone}`)}
+          >
+            <span className="vv-kpi__label">{item.label}</span>
+            <span
+              className={cx(
+                "vv-kpi__value",
+                "vv-num",
+                suppressed ? "vv-dim" : `vv-${item.provenance ?? "actual"}`,
+              )}
+            >
+              {item.value}
+            </span>
+            {!suppressed && item.hint ? <span className="vv-kpi__hint">{item.hint}</span> : null}
+          </div>
+        )
+      })}
     </div>
   )
 }
