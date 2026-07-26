@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   canonicalTodoId,
   isAppCreatedTodo,
+  mergeTodoPayload,
   normalizeTodoLane,
   normalizeTodoRecord,
   resolveTodoLane,
@@ -215,6 +216,121 @@ describe("normalizeTodoRecord: derived fields", () => {
     const record = normalizeTodoRecord(null as unknown as Record<string, unknown>, { now });
     expect(record.title).toBe("");
     expect(record.category).toBe("sats");
+  });
+});
+
+// mergeTodoPayload is Convex-only — the canonical CJS normalizer has
+// no merge step — so nothing upstream pins it. These are its contract.
+describe("mergeTodoPayload", () => {
+  const now = Date.parse("2026-07-26T10:00:00.000Z");
+  const nowIso = "2026-07-26T10:00:00.000Z";
+  const STORED = {
+    id: "todo-1",
+    title: "Buy milk",
+    text: "Buy milk",
+    notes: "semi-skimmed",
+    project: "Errands",
+    owner: "rachel",
+    dueDate: "2026-08-01",
+    due_date: "2026-08-01",
+    updated_at: "2026-07-10T12:00:00.000Z",
+  };
+
+  it("inherits everything the payload does not mention", () => {
+    const merged = mergeTodoPayload(STORED, { id: "todo-1", done: true }, { now });
+    expect(merged).toMatchObject({
+      notes: "semi-skimmed",
+      project: "Errands",
+      owner: "rachel",
+      dueDate: "2026-08-01",
+      done: true,
+    });
+  });
+
+  it("treats an undefined value as absence, not as a clear", () => {
+    // Convex hands an omitted optional to the handler as `undefined`.
+    const merged = mergeTodoPayload(STORED, { id: "todo-1", notes: undefined }, { now });
+    expect(merged.notes).toBe("semi-skimmed");
+  });
+
+  it("passes an explicit null through so the normalizer can clear the field", () => {
+    const merged = mergeTodoPayload(STORED, { id: "todo-1", notes: null }, { now });
+    expect(merged.notes).toBeNull();
+    expect(normalizeTodoRecord(merged, { now }).notes).toBe("");
+  });
+
+  it("drops every alias in a group the payload touched", () => {
+    // Stored `dueDate` is read first by the normalizer, so leaving it in place
+    // would silently veto an incoming `due_date`.
+    const merged = mergeTodoPayload(STORED, { id: "todo-1", due_date: "2026-09-15" }, { now });
+    expect(merged).not.toHaveProperty("dueDate");
+    expect(normalizeTodoRecord(merged, { now }).dueDate).toBe("2026-09-15");
+  });
+
+  it("groups title with text, and done with status and the completion fields", () => {
+    const stored = {
+      ...STORED,
+      status: "completed",
+      done: true,
+      completedAt: "2026-07-10T12:00:00.000Z",
+      completed_by: "vogel-vault-mobile",
+    };
+
+    const reopened = mergeTodoPayload(stored, { id: "todo-1", done: false }, { now });
+    expect(reopened).not.toHaveProperty("status");
+    expect(reopened).not.toHaveProperty("completedAt");
+    expect(reopened).not.toHaveProperty("completed_by");
+
+    const retitled = mergeTodoPayload(stored, { id: "todo-1", text: "Buy oat milk" }, { now });
+    expect(retitled).not.toHaveProperty("title");
+    // An unrelated edit leaves the completion alone.
+    expect(retitled.completedAt).toBe("2026-07-10T12:00:00.000Z");
+  });
+
+  it("leaves `when` alone rather than treating it as a due-date alias", () => {
+    // This normalizer never reads `when`, so grouping it with dueDate would
+    // erase a real due date and put nothing back.
+    const merged = mergeTodoPayload(STORED, { id: "todo-1", when: "anytime" }, { now });
+    expect(merged.dueDate).toBe("2026-08-01");
+  });
+
+  it("drops a stored type that merely mirrors the lane, keeps a custom one", () => {
+    expect(
+      mergeTodoPayload({ ...STORED, category: "personal", type: "personal" }, { id: "todo-1", category: "work" }, { now }),
+    ).not.toHaveProperty("type");
+    expect(
+      mergeTodoPayload({ ...STORED, category: "personal", type: "reminder" }, { id: "todo-1", category: "work" }, { now })
+        .type,
+    ).toBe("reminder");
+  });
+
+  it("stamps the write from the payload, never from the stored record", () => {
+    expect(mergeTodoPayload(STORED, { id: "todo-1", notes: "oat" }, { now }).updated_at).toBe(nowIso);
+    expect(
+      mergeTodoPayload(STORED, { id: "todo-1", updatedAt: "2026-07-11T12:00:00.000Z" }, { now }).updated_at,
+    ).toBe("2026-07-11T12:00:00.000Z");
+    // A blank stamp is not a stamp; it would lose every future LWW comparison.
+    expect(mergeTodoPayload(STORED, { id: "todo-1", updated_at: "" }, { now }).updated_at).toBe(nowIso);
+    // Completing carries its own instant.
+    expect(
+      mergeTodoPayload(STORED, { id: "todo-1", completedAt: "2026-07-12T12:00:00.000Z" }, { now }).updated_at,
+    ).toBe("2026-07-12T12:00:00.000Z");
+  });
+
+  it("writes both spellings of the stamp so no stored fallback can shadow it", () => {
+    const merged = mergeTodoPayload({ ...STORED, completedAt: "2030-01-01T00:00:00.000Z" }, { id: "todo-1", notes: "oat" }, { now });
+    expect(merged.updated_at).toBe(nowIso);
+    expect(merged.updatedAt).toBe(nowIso);
+    expect(normalizeTodoRecord(merged, { now }).updatedAt).toBe(nowIso);
+  });
+
+  it("survives a missing or non-object stored record", () => {
+    expect(mergeTodoPayload(null, { id: "todo-1", title: "New" }, { now })).toMatchObject({
+      id: "todo-1",
+      title: "New",
+      updated_at: nowIso,
+    });
+    expect(mergeTodoPayload(STORED, null, { now }).notes).toBe("semi-skimmed");
   });
 });
 
