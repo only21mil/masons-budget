@@ -1,0 +1,176 @@
+package com.sats21m.vogelvault.domain
+
+/**
+ * The Vogel Vault — MC2 read model, Kotlin mirror.
+ *
+ * Mirrors `shared/domain/src/readModel.ts` and, behind that,
+ * `MasonsBudget/MasonsBudget/Services/MC2DTOs.swift`.
+ *
+ * Money is held as integer minor units — USD cents and satoshis — never as a
+ * `Double`. See [Money].
+ */
+
+/** Every MC2 file the clients read. */
+val MC2_FILES: List<String> = listOf(
+    "transactions",
+    "budget",
+    "bitcoin-buys",
+    "bitcoin-bill-pays",
+    "btc-balance-snapshot",
+    "finances",
+    "todos",
+    "mason-transactions",
+    "mason-budget",
+    "mason-bitcoin-buys",
+    "maddox-transactions",
+    "son-balances",
+)
+
+/** Freshness of a slice of the read model, surfaced explicitly in the UI. */
+enum class Freshness { LIVE, STALE, ERROR, EMPTY, LOADING }
+
+/**
+ * A slice of the read model plus where it came from and how much to trust it.
+ *
+ * The UI never renders a figure without also being able to say how fresh it is.
+ */
+data class Slice<T>(
+    val status: Freshness,
+    val value: T,
+    /** Unix ms of the MC2 write this came from; null when never loaded. */
+    val updatedAt: Long?,
+    val source: String,
+) {
+    /**
+     * True when a figure derived from this slice must not be shown.
+     *
+     * `EMPTY` is deliberately excluded: zero really is the answer. `ERROR` and
+     * `LOADING` are not — displaying a total computed from a failed read next to
+     * a "could not load" message is exactly the wrong thing, and the Linux client
+     * shipped that bug before a screenshot caught it.
+     */
+    val suppressFigures: Boolean
+        get() = status == Freshness.ERROR || status == Freshness.LOADING
+}
+
+// ── Transactions ────────────────────────────────────────────────────────────
+
+data class Transaction(
+    val id: String,
+    val date: String,
+    val merchant: String,
+    /** Signed as MC2 reports it. See [spendAmount] before using this directly. */
+    val amount: Long,
+    val category: String,
+    val card: String? = null,
+    val note: String? = null,
+    override val owner: FamilyMember,
+) : Owned
+
+/**
+ * Spend magnitude in cents.
+ *
+ * Adult MC2 files sign spending negative and income positive. The child files
+ * record spending as a POSITIVE magnitude — so keying off the sign alone renders
+ * a child's spending as income. Taking the magnitude of anything that is not an
+ * Income row reproduces the Swift behaviour on both shapes.
+ */
+val Transaction.spendAmount: Long
+    get() = if (category == "Income") 0L else kotlin.math.abs(amount)
+
+val Transaction.incomeAmount: Long
+    get() = if (category == "Income" && amount > 0L) amount else 0L
+
+val Transaction.isSpend: Boolean
+    get() = spendAmount > 0L
+
+// ── Budget ──────────────────────────────────────────────────────────────────
+
+data class BudgetCategory(
+    val name: String,
+    val budgetCents: Long,
+    val spentCents: Long,
+) {
+    val remainingCents: Long get() = budgetCents - spentCents
+    val isOverBudget: Boolean get() = spentCents > budgetCents
+}
+
+data class BudgetIncome(
+    val weeklyGrossCents: Long,
+    val monthlyGrossCents: Long,
+    val mtdIncomeCents: Long,
+    val ytdIncomeCents: Long,
+    val payFrequency: String? = null,
+)
+
+data class Budget(
+    val month: String,
+    val categories: List<BudgetCategory>,
+    val income: BudgetIncome? = null,
+    val strategyNote: String? = null,
+    override val owner: FamilyMember,
+) : Owned {
+    val plannedCents: Long get() = categories.sumOf { it.budgetCents }
+    val actualCents: Long get() = categories.sumOf { it.spentCents }
+    val remainingCents: Long get() = plannedCents - actualCents
+    val overBudgetCount: Int get() = categories.count { it.isOverBudget }
+}
+
+// ── Bitcoin ─────────────────────────────────────────────────────────────────
+
+enum class Custody(val key: String) {
+    EXCHANGE("exchange"),
+    SELF_CUSTODY("self_custody");
+
+    val label: String get() = if (this == SELF_CUSTODY) "Self custody" else "Exchange"
+}
+
+data class BtcAccount(
+    val key: String,
+    val label: String,
+    val custody: Custody,
+    val sats: Long,
+    val fiatCents: Long,
+    override val owner: FamilyMember,
+) : Owned
+
+data class BtcBuy(
+    val id: String,
+    val date: String,
+    val source: String,
+    val sats: Long,
+    val priceUsdCents: Long,
+    val usdCents: Long,
+    val costBasisStatus: String? = null,
+    override val owner: FamilyMember,
+) : Owned
+
+// ── Todos ───────────────────────────────────────────────────────────────────
+
+data class TodoItem(
+    val id: String,
+    val title: String,
+    val done: Boolean = false,
+    val project: String? = null,
+    val area: String? = null,
+    val due: String? = null,
+    val flagged: Boolean = false,
+    override val owner: FamilyMember,
+) : Owned
+
+// ── Aggregate ───────────────────────────────────────────────────────────────
+
+/**
+ * Everything a screen can read, unfiltered and tagged with canonical owners.
+ *
+ * Screens apply [visibleTo] / [netWorthScopeFor] themselves. Handing pre-filtered
+ * data to the UI would hide a missing filter instead of exposing it.
+ */
+data class ReadModel(
+    val transactions: Slice<List<Transaction>>,
+    val budget: Slice<Budget?>,
+    val btcAccounts: Slice<List<BtcAccount>>,
+    val btcBuys: Slice<List<BtcBuy>>,
+    val todos: Slice<List<TodoItem>>,
+    val btcPriceCents: Long,
+)

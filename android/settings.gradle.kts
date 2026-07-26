@@ -1,9 +1,10 @@
 // The Vogel Vault — Android client.
 //
-// The `domain` module is a plain Kotlin/JVM library on purpose: it holds the
-// family/visibility contract and money maths, needs no Android SDK, and can be
-// tested on any runner with just a JDK. The Android app module lands on top of
-// it once this is green.
+// `domain` is a plain Kotlin/JVM library on purpose: it holds the
+// family/visibility contract, money maths and read model, needs no Android SDK,
+// and can be tested on any runner with just a JDK.
+//
+// `app` is the Compose application for the Pixel Fold and needs the SDK.
 
 pluginManagement {
     repositories {
@@ -24,3 +25,4 @@ dependencyResolutionManagement {
 rootProject.name = "vogel-vault-android"
 
 include(":domain")
+include(":app")

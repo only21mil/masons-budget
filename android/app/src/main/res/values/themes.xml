@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      True-black splash so launch does not flash white into a dark UI.
+      Compose owns everything after that.
+    -->
+    <style name="Theme.VogelVault" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FF050505</item>
+        <item name="android:statusBarColor">#FF050505</item>
+        <item name="android:navigationBarColor">#FF050505</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>
