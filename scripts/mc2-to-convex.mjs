@@ -21,6 +21,9 @@
  * Safety:
  *   - CONVEX_URL must match the app's production deployment unless
  *     --allow-target-mismatch is explicitly passed.
+ *   - Convex reads are token-gated (SAT-READ-AUTH). Set CONVEX_READ_TOKEN in
+ *     the environment (or .env.local, which is gitignored) to the same value
+ *     the deployment uses. Never a literal in this file, never logged.
  *   - Adult app transactions are written through MC2's log_transaction.py.
  *   - Mason app transactions are written through MC2's log_mason_transaction.py.
  *   - App todos are reconciled into todos.json by id + updated_at LWW.
@@ -135,6 +138,13 @@ if (fs.existsSync(envLocalPath)) {
   }
 }
 
+// SAT-READ-AUTH: every Convex query is token-gated. The token stays optional on
+// the wire only while the deployment still runs ALLOW_TOKENLESS_READ=true; the
+// moment that hatch is removed a tokenless read is rejected. So send it
+// whenever the operator has one, and explain the rejection when we don't.
+// Environment only — never a literal, never a default, never logged.
+const readToken = process.env.CONVEX_READ_TOKEN || "";
+
 const convexUrl = process.env.CONVEX_URL || APP_CONVEX_URL;
 const expectedConvexUrl = process.env.EXPECTED_CONVEX_URL || APP_CONVEX_URL;
 if (convexUrl !== expectedConvexUrl && !options.allowTargetMismatch) {
@@ -176,6 +186,73 @@ const APP_TRANSACTION_FILES = [
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ── Convex reads ──
+
+/** Thrown for a read the deployment refused on auth grounds, so main() can
+ *  print guidance instead of a stack trace nobody can act on. */
+class ConvexReadAuthError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ConvexReadAuthError";
+  }
+}
+
+/** A ConvexError surfaces its payload on `.data`; a plain Error only has a
+ *  message. Check both so the classification survives either shape. */
+function errorText(err) {
+  const data = typeof err?.data === "string" ? err.data : "";
+  return `${err?.message ?? ""}\n${data}`;
+}
+
+// The second half of the test is what keeps a sync-token failure from being
+// mislabelled — and mis-explained — as a read-token problem.
+function isReadAuthError(err) {
+  const text = errorText(err);
+  return (
+    /unauthorized/i.test(text) && /read token|CONVEX_READ_TOKEN/i.test(text)
+  );
+}
+
+function readAuthGuidance(err) {
+  if (/not configured/i.test(errorText(err))) {
+    return [
+      "The deployment has no CONVEX_READ_TOKEN set and ALLOW_TOKENLESS_READ is off,",
+      "so it rejects every read regardless of what this script sends.",
+      "Fix on the deployment: set CONVEX_READ_TOKEN (Convex dashboard → Settings →",
+      "Environment Variables), or restore ALLOW_TOKENLESS_READ=true until the cutover finishes.",
+    ].join("\n");
+  }
+  if (!readToken) {
+    return [
+      "This environment has no CONVEX_READ_TOKEN and the deployment now enforces one.",
+      "Fix: export CONVEX_READ_TOKEN, or add it to .env.local (gitignored), matching",
+      "the value set on the deployment, then re-run.",
+    ].join("\n");
+  }
+  return [
+    "CONVEX_READ_TOKEN is set here but the deployment rejected it, so the two values differ.",
+    "Fix: re-copy the deployment's CONVEX_READ_TOKEN into this environment — never into a",
+    "committed file — then re-run.",
+  ].join("\n");
+}
+
+/** Run a Convex query with the read token attached, converting an auth refusal
+ *  into an actionable error. Omits `token` entirely when unset: the arg is
+ *  optional, and an explicit empty string would read as a wrong token. */
+async function readQuery(client, reference, args, label) {
+  try {
+    return await client.query(
+      reference,
+      readToken ? { ...args, token: readToken } : args,
+    );
+  } catch (err) {
+    if (!isReadAuthError(err)) throw err;
+    throw new ConvexReadAuthError(
+      `Convex refused the read for ${label}.\n${readAuthGuidance(err)}`,
+    );
+  }
 }
 
 function readJson(filePath, fallback) {
@@ -313,9 +390,18 @@ function isTombstonedNewerThanTodo(tombstone, todo) {
 
 async function fetchTodoTombstones(client) {
   try {
-    const tombstones = await client.query(api.dataFiles.listTodoTombstones, {});
+    const tombstones = await readQuery(
+      client,
+      api.dataFiles.listTodoTombstones,
+      {},
+      "todo tombstones",
+    );
     return Array.isArray(tombstones) ? tombstones : [];
   } catch (err) {
+    // An auth refusal is not a "tombstones unavailable" condition — degrading
+    // here would silently skip delete propagation and then fail on the next
+    // read anyway, with a worse message.
+    if (err instanceof ConvexReadAuthError) throw err;
     console.warn(
       `  WARN  todo tombstones unavailable; continuing without delete pull (${err.message})`,
     );
@@ -369,7 +455,7 @@ async function pullAppTransactionsFromConvex(client) {
   let applied = 0;
 
   for (const { name, file, owner } of APP_TRANSACTION_FILES) {
-    const remote = await client.query(api.dataFiles.get, { name });
+    const remote = await readQuery(client, api.dataFiles.get, { name }, name);
     if (!Array.isArray(remote)) continue;
 
     const localPath = path.join(mc2Path, file);
@@ -413,7 +499,7 @@ async function pullAppTodosFromConvex(client) {
   );
 
   for (const { name, file } of APP_TODO_FILES) {
-    const remote = await client.query(api.dataFiles.get, { name });
+    const remote = await readQuery(client, api.dataFiles.get, { name }, name);
     const remoteTodos = todoListFromData(remote);
     if (remoteTodos.length === 0) continue;
 
@@ -484,7 +570,7 @@ async function collectChangedFiles(client) {
     try {
       const raw = fs.readFileSync(filePath, "utf-8");
       const data = JSON.parse(raw);
-      const remote = await client.query(api.dataFiles.get, { name });
+      const remote = await readQuery(client, api.dataFiles.get, { name }, name);
       if (canonicalJson(remote) === canonicalJson(data)) {
         console.log(`  SAME  ${file}`);
       } else {
@@ -543,9 +629,18 @@ async function main() {
   console.log(`MC2 ↔ Convex Sync`);
   console.log(`Source: ${mc2Path}`);
   console.log(`Target: ${convexUrl}`);
+  // Presence only. The value never reaches a log, a file or an argv.
+  console.log(`Read token: ${readToken ? "present" : "absent"}`);
   if (options.watch)
     console.log(`Mode: watch/poll every ${options.pollIntervalMs}ms`);
   if (dryRun) console.log("Mode: dry-run");
+  if (!readToken) {
+    console.warn(
+      "  WARN  CONVEX_READ_TOKEN is not set. Reads succeed only while the deployment\n" +
+        "        still allows tokenless reads (ALLOW_TOKENLESS_READ=true) and will fail\n" +
+        "        the moment that cutover hatch is removed.",
+    );
+  }
   console.log();
 
   if (!fs.existsSync(mc2Path)) {
@@ -566,6 +661,10 @@ async function main() {
     try {
       await runSyncOnce(client);
     } catch (err) {
+      // A read-auth refusal cannot resolve itself: the token is read once at
+      // startup, so every subsequent poll would fail identically. Stop instead
+      // of burying the fix instructions under a repeating error every 30s.
+      if (err instanceof ConvexReadAuthError) throw err;
       console.error(`\nSync poll failed: ${err.message}`);
     }
     await sleep(options.pollIntervalMs);
@@ -573,6 +672,10 @@ async function main() {
 }
 
 main().catch((err) => {
+  if (err instanceof ConvexReadAuthError) {
+    console.error(`\n${err.message}`);
+    process.exit(1);
+  }
   console.error(err);
   process.exit(1);
 });

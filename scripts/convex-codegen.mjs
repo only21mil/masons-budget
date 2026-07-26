@@ -4,6 +4,10 @@ import fs from "fs";
 import path from "path";
 import { spawnSync } from "child_process";
 
+// SAT-READ-AUTH: no CONVEX_READ_TOKEN is threaded here on purpose. `convex
+// codegen` generates types from the local convex/ sources and never calls a
+// data query, so read auth does not apply to it. Checked when the read gate
+// landed, so the next person tightening the gate does not re-derive it.
 const APP_CONVEX_URL = "https://keen-elephant-452.convex.cloud";
 
 function loadEnvFile(filePath) {
