@@ -65,6 +65,21 @@ class DesignPacketFoldedTest {
         }
     }
 
+    /**
+     * The Budget screen on a month that is not the budget file's own.
+     *
+     * The chip's selected state and the "planned figures are Jul 2026 targets"
+     * banner only exist off the default month, so no other capture in the packet
+     * puts either in front of a reviewer.
+     */
+    @Test
+    fun budgetOnAnEarlierMonth() {
+        capture(
+            "folded-budget-victor-2026-06",
+            VaultUiState.of(FamilyMember.VICTOR, Destination.BUDGET, selectedMonth = "2026-06"),
+        )
+    }
+
     /** Maddox has no dedicated MC2 budget file, so his budget is genuinely empty. */
     @Test
     fun maddoxBudgetIsEmpty() {
@@ -118,6 +133,15 @@ class DesignPacketUnfoldedTest {
         capture(
             "unfolded-dashboard-mason-normal",
             VaultUiState.of(FamilyMember.MASON, Destination.DASHBOARD),
+        )
+    }
+
+    /** The month row has far more width to lay out against beside the rail. */
+    @Test
+    fun budgetOnAnEarlierMonth() {
+        capture(
+            "unfolded-budget-victor-2026-06",
+            VaultUiState.of(FamilyMember.VICTOR, Destination.BUDGET, selectedMonth = "2026-06"),
         )
     }
 }
