@@ -1,43 +1,65 @@
-# Mason's Budget App
+# The Vogel Vault
 
-A voice-first, Bitcoin-native budget tracker for the family. iOS native (SwiftUI), integrated with the MC2 Mission Control financial data system.
+A voice-first, Bitcoin-native budget tracker for the family, fed by the MC2
+Mission Control financial data system. Internal repo name is still
+"Mason's Budget App".
 
-## Architecture
+## Clients
 
-| Layer | Choice |
-|---|---|
-| Platform | iOS 17+ (SwiftUI) |
-| Language | Swift 5.9 |
-| Data | SwiftData (local) + iCloud Drive (MC2 sync) |
-| Voice | SFSpeechRecognizer (on-device) |
-| Sync | iCloud Drive append-only files + NSMetadataQuery watching |
-| Backend | None — no servers, no databases, no Plaid |
+| Client | Path | Stack |
+|---|---|---|
+| iOS / macOS | `MasonsBudget/` | SwiftUI, SwiftData, SFSpeechRecognizer on-device voice |
+| Linux desktop | `linux/` | Electron + React + TypeScript + Vite |
+| Android (Pixel Fold) | `android/` | Kotlin |
+| Backend | `convex/` | Convex — MC2 pushes JSON via `dataFiles:sync`, clients read it |
 
-## Quick Start
+The family/visibility contract lives in `shared/domain` and mirrors
+`MasonsBudget/MasonsBudget/Models/SharedEnums.swift`, which is authoritative.
+`shared/domain/fixtures/visibility-cases.json` pins TypeScript and Kotlin to the
+same vectors as the Swift tests — change the Swift rules and the fixture changes
+in the same commit.
+
+No Plaid, no third-party financial aggregator, no data broker.
+
+## Working on this
+
+Tracking, review and builds are on GitHub. Nothing is kept on a workstation:
+clone where you need it, push a branch, delete the checkout. See `AGENTS.md`.
 
 ```bash
-# Clone
-git clone <repo-url>
-cd "Mason's Budget App/MasonsBudget"
+git clone https://github.com/only21mil/masons-budget.git
+cd masons-budget
+npm ci        # workspaces: convex backend, shared/domain, linux client
+```
 
-# Install xcodegen if needed
-brew install xcodegen
+Linux client and shared contract:
 
-# Generate Xcode project
-xcodegen generate
+```bash
+npm run test --workspace @vogel-vault/domain   # visibility + money parity
+cd linux && npm run typecheck && npm run lint && npm run test && npm run dev
+```
 
-# Build
-xcodebuild -project MasonsBudget.xcodeproj -scheme MasonsBudget \
-  -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+Android domain module — plain Kotlin/JVM, needs no Android SDK:
 
-# Test
+```bash
+cd android && gradle :domain:test
+```
+
+Apple targets need macOS and Xcode:
+
+```bash
+cd MasonsBudget && xcodegen generate --spec project.yml
 xcodebuild -project MasonsBudget.xcodeproj -scheme MasonsBudget \
   -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
 
-## DGX Preflight
+`MasonsBudget/project.yml` is the source of truth; the `.xcodeproj` is generated.
+Never hand-edit the pbxproj. Releases run through
+`.github/workflows/deploy.yml` and need Victor's approval.
 
-On DGX Spark, run the safe static preflight before asking the Mac build host to
+## Linux preflight
+
+On a Linux machine, run the safe static preflight before asking a Mac build host to
 compile:
 
 ```bash
@@ -51,9 +73,9 @@ smoke, serialized SwiftPM core tests, a `Package.resolved` mutation guard, and
 a redacted gitleaks scan over tracked/unignored working-tree files.
 
 For Apple SDK builds, use the approval-gated Mac bridge documented in
-`docs/dgx-apple-build-boundary.md`.
+`docs/linux-apple-build-boundary.md`.
 
-If SourceKit-LSP feels stale on DGX, use:
+If SourceKit-LSP feels stale, use:
 
 ```bash
 scripts/vv-swift-lsp-reset.sh status

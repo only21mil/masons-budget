@@ -4,14 +4,18 @@
 #
 # Approval-gated Mac build bridge for Vogel Vault.
 #
-# DGX Linux cannot run Xcode or Apple SDK builds. This script keeps DGX as the
-# orchestrator while the Mac build host performs Apple-only commands. It refuses
-# to run xcodebuild unless an explicit approval flag and approval note are
-# provided at invocation time.
+# Linux cannot run Xcode or Apple SDK builds. This script lets a Linux machine
+# stay the orchestrator while a Mac build host performs the Apple-only commands.
+# It refuses to run xcodebuild unless an explicit approval flag and approval note
+# are provided at invocation time.
+#
+# There is no default host or repo path: nothing is kept at a fixed location on
+# any machine, so both must be supplied. Prefer the GitHub Actions release
+# workflow (.github/workflows/deploy.yml) over this bridge where it applies.
 
 set -euo pipefail
 
-REMOTE_HOST="${VV_MAC_HOST:-victor@100.101.153.103}"
+REMOTE_HOST="${VV_MAC_HOST:-}"
 REMOTE_REPO="${VV_MAC_REPO:-}"
 ACTION="status"
 APPROVED=0
@@ -29,7 +33,7 @@ Actions:
   mac-build    Run approved macOS build on the Mac.
 
 Options:
-  --host <user@host>       SSH target. Default: VV_MAC_HOST or victor@100.101.153.103.
+  --host <user@host>       SSH target. Required, or set VV_MAC_HOST.
   --repo <path>            Remote repo path. Or set VV_MAC_REPO.
   --approved               Required for any xcodebuild action.
   --approval-note <text>   Required for any xcodebuild action.
@@ -74,12 +78,23 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ -z "$REMOTE_HOST" ]]; then
+  cat >&2 <<'EOF'
+ERROR: missing Mac SSH target.
+
+There is no default host — machines and addresses change. Set VV_MAC_HOST or
+pass --host, for example:
+  VV_MAC_HOST=victor@my-mac VV_MAC_REPO=~/checkouts/masons-budget scripts/vv-remote-build.sh status
+EOF
+  exit 2
+fi
+
 if [[ -z "$REMOTE_REPO" ]]; then
   cat >&2 <<'EOF'
 ERROR: missing remote repo path.
 
 Set VV_MAC_REPO or pass --repo, for example:
-  VV_MAC_REPO="/Users/victor/dgxprojects/Mason's Budget App" scripts/vv-remote-build.sh status
+  VV_MAC_HOST=victor@my-mac VV_MAC_REPO=~/checkouts/masons-budget scripts/vv-remote-build.sh status
 EOF
   exit 2
 fi

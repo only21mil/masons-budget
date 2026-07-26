@@ -1,11 +1,15 @@
-# DGX Apple-Build Boundary Reduction
+# Linux Apple-Build Boundary Reduction
 
-DGX cannot become a native Xcode host: Apple SDK app builds, simulator runs,
-signing, archive/export, and TestFlight still belong on macOS with Xcode.
-The practical goal is to make DGX catch as much as possible before the Mac is
-asked to compile.
+A Linux machine cannot become a native Xcode host: Apple SDK app builds,
+simulator runs, signing, archive/export, and TestFlight all belong on macOS with
+Xcode. The practical goal is to catch as much as possible on Linux before macOS
+is asked to compile.
 
-## DGX Preflight
+Releases themselves run in GitHub Actions on a `macos-latest` runner — see
+`.github/workflows/deploy.yml`. This document covers the checks that can happen
+before that point, on any machine.
+
+## Linux preflight
 
 Run from the repo root:
 
@@ -13,7 +17,7 @@ Run from the repo root:
 scripts/vv-swift-check.sh
 ```
 
-The preflight is DGX-safe. It runs no `xcodebuild`, simulator, signing,
+The preflight is Linux-safe. It runs no `xcodebuild`, simulator, signing,
 archive, upload, or app-target test commands. It checks:
 
 - required Swift tooling on PATH
@@ -31,7 +35,7 @@ Use `--quick` for a shorter pass while iterating.
 
 ## SwiftPM and SourceKit-LSP Hygiene
 
-The repo pins the DGX Swift toolchain with `.swift-version`.
+The repo pins the Swift toolchain with `.swift-version`.
 
 Use the helper when SourceKit-LSP diagnostics, hover, or indexing feel stale:
 
@@ -50,17 +54,22 @@ scripts/vv-swift-lsp-reset.sh reset
 ```
 
 SwiftPM dependency resolution should not run concurrently against the same
-working tree or cache. The DGX preflight uses a repo-local lock file and fails
-if any non-`.build` `Package.resolved` file changes during the run.
+working tree or cache. The preflight uses a repo-local lock file and fails if any
+non-`.build` `Package.resolved` file changes during the run.
 
 ## Remote Mac Bridge
 
-DGX can orchestrate the Mac build host without pretending Linux can run Xcode:
+A Linux machine can orchestrate a Mac build host without pretending Linux can
+run Xcode. There is no default host or path — nothing lives at a fixed location,
+so both must be supplied:
 
 ```bash
-VV_MAC_REPO="/Users/victor/path/to/Mason's Budget App" \
+VV_MAC_HOST=victor@my-mac VV_MAC_REPO=~/checkouts/masons-budget \
   scripts/vv-remote-build.sh status
 ```
+
+Prefer the GitHub Actions release workflow where it applies; this bridge is for
+iterating against a Mac you already have in front of you.
 
 Read-only/non-build actions:
 
@@ -70,9 +79,9 @@ Read-only/non-build actions:
 Build actions refuse to run unless invoked with an explicit approval note:
 
 ```bash
-VV_MAC_REPO="/Users/victor/path/to/Mason's Budget App" \
+VV_MAC_HOST=victor@my-mac VV_MAC_REPO=~/checkouts/masons-budget \
   scripts/vv-remote-build.sh --approved \
-  --approval-note "Victor approved local iOS build for SAT-#### on YYYY-MM-DD" \
+  --approval-note "Victor approved iOS build for <issue> on YYYY-MM-DD" \
   ios-build
 ```
 
@@ -82,7 +91,7 @@ approval process.
 
 ## SwiftPM Extraction
 
-DGX can compile and test pure Swift packages. The best long-term boundary
+Linux can compile and test pure Swift packages. The best long-term boundary
 reduction is to move platform-neutral logic behind a Swift Package target and
 keep SwiftUI/SwiftData/Xcode-specific wiring in the app target.
 
@@ -91,7 +100,7 @@ The first package surface is now the root `Package.swift`:
 - product: `VogelVaultCore`
 - current source: existing `MasonsBudget/MasonsBudget/Services/VoiceParser.swift`
 - current tests: `Tests/VogelVaultCoreTests`
-- DGX command: `swift test --package-path .`
+- command: `swift test --package-path .` (runs on Linux)
 
 Recommended next candidates:
 
@@ -110,6 +119,11 @@ Avoid extracting:
 - services that depend on Apple platform APIs, Keychain, LocalAuthentication,
   app lifecycle, or Convex runtime wiring
 
-The first package should target Linux and macOS, run with `swift test` on DGX,
+The first package should target Linux and macOS, run with `swift test` on Linux,
 and be imported back into the app from XcodeGen once the Mac build path is
 approved.
+
+Note the shared cross-client contract in `shared/domain` is a separate thing:
+it is the TypeScript/Kotlin mirror of `SharedEnums.swift` for the Linux and
+Android clients. `VogelVaultCore` is the Swift-side extraction. Both trace back
+to the same Swift source of truth.

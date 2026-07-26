@@ -1,6 +1,19 @@
 # Mason's Budget App — Plan
 
-> Living document. Captures decisions, open questions, and architecture as scoping progresses. Mirrors Linear project [Mason's Budget App](https://linear.app/sats21m/project/masons-budget-app-0c5a8656081e).
+> **ARCHIVAL — historical snapshot, not current guidance (marked 2026-07-26).**
+>
+> This document records scoping decisions from around 2026-04-30. It is kept for
+> the reasoning it captures, not as instructions.
+>
+> Do not act on anything below without checking it first. Specifically:
+> - Every `~/.openclaw/...` path, inode number, symlink and cron reference
+>   describes a machine setup that no longer exists. They are left unedited
+>   because rewriting them would falsify the record.
+> - Tracking has moved to GitHub; the Linear references here are dead.
+> - Nothing is kept on a workstation now, and builds run in GitHub Actions.
+>
+> For current rules read `AGENTS.md`. For the Apple build boundary read
+> `docs/linux-apple-build-boundary.md`.
 
 ## Lane status — 2026-04-30 (snapshot)
 
