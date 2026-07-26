@@ -12,8 +12,17 @@
 //     renderer must not be able to read one even indirectly.
 //   - Every addition here needs a boundary review; scripts/qa-preload-boundary.mjs
 //     fails the build if this file grows a forbidden pattern.
+//
+// Reviewed addition, 2026-07-26 — CSV export. `ipcRenderer` is used here but is
+// NOT handed to the renderer: the bridge exposes a named function that invokes
+// one hard-coded channel and returns a plain object. The renderer cannot pick a
+// channel, cannot listen, and cannot send. Everything it can influence is the
+// serialisable payload, which the main process re-validates before it writes.
 
-import { contextBridge } from "electron"
+import { contextBridge, ipcRenderer } from "electron"
+
+import { CSV_EXPORT_CHANNEL } from "./ipcChannels.ts"
+import type { CsvExportRequest, CsvExportResult } from "./csvExport.ts"
 
 declare const __APP_VERSION__: string
 
@@ -40,6 +49,18 @@ const runtimeInfo: RuntimeInfo = {
   isDev: !("resourcesPath" in process) || String(process.resourcesPath).includes("node_modules"),
 }
 
+/**
+ * Ask the main process to write a CSV.
+ *
+ * The renderer sends rows and a suggested file NAME. It never sends a path: the
+ * destination comes from the OS save dialog the main process opens, so the only
+ * writes that can happen are ones the user picked in a native dialog.
+ */
+function exportCsv(request: CsvExportRequest): Promise<CsvExportResult> {
+  return ipcRenderer.invoke(CSV_EXPORT_CHANNEL, request) as Promise<CsvExportResult>
+}
+
 contextBridge.exposeInMainWorld("vogelVault", {
   getRuntimeInfo: (): RuntimeInfo => runtimeInfo,
+  exportCsv,
 })
