@@ -43,8 +43,15 @@ const DEFAULTS: Record<BlockState, { icon: IconName; title: string; detail: stri
 
 export function StateBlock({ state, title, detail, onRetry, className }: StateBlockProps) {
   const fallback = DEFAULTS[state]
+  // A failed read is the one state worth interrupting for; polite would queue it
+  // behind whatever the user is already reading.
+  const urgent = state === "error"
   return (
-    <div className={cx("vv-state", `vv-state--${state}`, className)} role="status" aria-live="polite">
+    <div
+      className={cx("vv-state", `vv-state--${state}`, className)}
+      role={urgent ? "alert" : "status"}
+      aria-live={urgent ? "assertive" : "polite"}
+    >
       <IconGlyph
         name={fallback.icon}
         size={22}
@@ -85,7 +92,14 @@ export function FreshnessTag({
   updatedAt: number | null
 }) {
   if (status === "live") {
-    return <Badge tone="positive" icon="check">{formatWhen(updatedAt)}</Badge>
+    // The live tag shows a bare timestamp; that it means "synced" is carried by
+    // the green pill and the tick, neither of which a screen reader reports.
+    return (
+      <Badge tone="positive" icon="check">
+        <span className="vv-sr-only">Synced</span>
+        {formatWhen(updatedAt)}
+      </Badge>
+    )
   }
   if (status === "stale") {
     return <Badge tone="warning" icon="circle-alert">Stale · {formatWhen(updatedAt)}</Badge>

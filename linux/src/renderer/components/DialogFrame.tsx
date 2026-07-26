@@ -1,7 +1,7 @@
 // Modal frame built on <dialog>, so focus trapping, Escape, and the top layer
 // come from the platform rather than a hand-rolled focus manager.
 
-import { useEffect, useRef } from "react"
+import { useEffect, useId, useRef } from "react"
 import type { ReactNode } from "react"
 
 import { Button } from "./primitives.tsx"
@@ -27,6 +27,11 @@ export function DialogFrame({
   className,
 }: DialogFrameProps) {
   const ref = useRef<HTMLDialogElement>(null)
+  // Point at the rendered heading rather than stringifying the title: aria-label
+  // only worked for a string title, so any ReactNode title left the dialog with
+  // no accessible name whatsoever.
+  const titleId = useId()
+  const descriptionId = useId()
 
   useEffect(() => {
     const dialog = ref.current
@@ -51,7 +56,8 @@ export function DialogFrame({
     <dialog
       ref={ref}
       className={cx("vv-dialog", className)}
-      aria-label={typeof title === "string" ? title : undefined}
+      aria-labelledby={titleId}
+      aria-describedby={description ? descriptionId : undefined}
       onClick={(event) => {
         // Backdrop clicks land on the dialog element itself.
         if (event.target === ref.current) onClose()
@@ -60,8 +66,14 @@ export function DialogFrame({
       <div className="vv-dialog__inner">
         <header className="vv-dialog__head">
           <div>
-            <h2 className="vv-dialog__title">{title}</h2>
-            {description ? <p className="vv-dialog__description">{description}</p> : null}
+            <h2 className="vv-dialog__title" id={titleId}>
+              {title}
+            </h2>
+            {description ? (
+              <p className="vv-dialog__description" id={descriptionId}>
+                {description}
+              </p>
+            ) : null}
           </div>
           <Button variant="ghost" icon="x" iconOnly onClick={onClose}>
             Close

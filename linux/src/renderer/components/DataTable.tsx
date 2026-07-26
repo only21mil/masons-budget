@@ -25,6 +25,12 @@ export interface DataTableProps<Row> {
   rows: readonly Row[]
   rowKey: (row: Row, index: number) => string
   state?: "normal" | "empty" | "error" | "stale" | "loading"
+  /**
+   * Names the table for a screen reader. Visually hidden — the surrounding Panel
+   * title carries it on screen, but that title is not programmatically attached
+   * to the table, so without this the table announces as "table" and nothing else.
+   */
+  caption?: string
   emptyTitle?: string
   emptyDetail?: string
   onRetry?: () => void
@@ -38,6 +44,7 @@ export function DataTable<Row>({
   rows,
   rowKey,
   state = "normal",
+  caption,
   emptyTitle,
   emptyDetail,
   onRetry,
@@ -53,6 +60,7 @@ export function DataTable<Row>({
   return (
     <div className={cx("vv-table-wrap", "vv-scroll", className)}>
       <table className="vv-table">
+        {caption ? <caption className="vv-sr-only">{caption}</caption> : null}
         <thead>
           <tr>
             {columns.map((column) => (

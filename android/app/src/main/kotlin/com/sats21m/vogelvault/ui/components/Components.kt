@@ -29,6 +29,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -71,6 +78,16 @@ data class Kpi(
 fun figure(suppress: Boolean, render: () -> String): String =
     if (suppress) SUPPRESSED else render()
 
+/**
+ * How a figure should be spoken.
+ *
+ * TalkBack announces an em dash as nothing at all, so a suppressed figure would
+ * be indistinguishable from a blank one. Suppression exists to say "unknown",
+ * and unknown is not zero — that distinction has to survive into speech.
+ */
+private fun spokenFigure(value: String): String =
+    if (value == SUPPRESSED) "unavailable" else value
+
 @Composable
 fun KpiStrip(items: List<Kpi>, modifier: Modifier = Modifier) {
     Column(
@@ -97,11 +114,37 @@ fun KpiStrip(items: List<Kpi>, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * One announcement per cell, in reading order.
+ *
+ * Split across three Text nodes a cell costs three swipes and still never says
+ * whether the number is settled: provenance is drawn in colour only (planned is
+ * muted, estimated is dim), which is nothing to a screen reader.
+ */
+private fun Kpi.spoken(): String = buildString {
+    append(label)
+    append(", ")
+    append(spokenFigure(value))
+    // Nothing after this point describes a figure that was not read.
+    if (value == SUPPRESSED) return@buildString
+    when (provenance) {
+        Provenance.PLANNED -> append(", planned figure")
+        Provenance.ESTIMATED -> append(", estimated figure")
+        Provenance.ACTUAL -> Unit
+    }
+    hint?.let {
+        append(", ")
+        append(it)
+    }
+}
+
 @Composable
 private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
     val suppressed = item.value == SUPPRESSED
+    val spoken = item.spoken()
     Column(
         modifier = modifier
+            .clearAndSetSemantics { contentDescription = spoken }
             .background(VaultSurface)
             .padding(horizontal = VaultSpace.md, vertical = VaultSpace.md),
     ) {
@@ -154,7 +197,14 @@ fun Panel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.titleSmall, color = VaultCream)
+                    // Marked as a heading so TalkBack's heading navigation can jump
+                    // panel to panel; a long ledger screen is unusable swipe by swipe.
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = VaultCream,
+                        modifier = Modifier.semantics { heading() },
+                    )
                     if (source != null) {
                         Text(source, style = MaterialTheme.typography.labelSmall, color = VaultTextDim)
                     }
@@ -187,9 +237,25 @@ fun LedgerRow(
     badge: String? = null,
     badgeAccented: Boolean = false,
 ) {
+    // One stop per row rather than four, and the figure keeps the label that gives
+    // it meaning — a bare "-412.30" swiped in isolation says nothing.
+    val spoken = buildString {
+        append(primary)
+        secondary?.let {
+            append(", ")
+            append(it)
+        }
+        badge?.let {
+            append(", ")
+            append(it)
+        }
+        append(", ")
+        append(spokenFigure(figure))
+    }
     Row(
         Modifier
             .fillMaxWidth()
+            .clearAndSetSemantics { contentDescription = spoken }
             .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -213,11 +279,20 @@ fun Badge(
     accented: Boolean = false,
     tone: Color? = null,
     onClick: (() -> Unit)? = null,
+    /** What the pill means, when the visible text is not the whole story. */
+    spoken: String = text,
 ) {
     val border = tone ?: if (accented) VaultAccent.copy(alpha = 0.42f) else VaultLine
     Box(
         Modifier
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            // role = Role.Button: a bare clickable() announces as static text with
+            // no hint that it can be tapped, and these pills switch profile.
+            .then(
+                if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick)
+                else Modifier,
+            )
+            // Merged rather than cleared so the click action above survives.
+            .semantics(mergeDescendants = true) { contentDescription = spoken }
             .border(1.dp, border, RoundedCornerShape(99.dp))
             .background(
                 if (accented) VaultAccent.copy(alpha = 0.16f) else VaultSurfaceSunken,
@@ -232,14 +307,22 @@ fun Badge(
 /** Freshness marker. A figure is never shown without saying how much to trust it. */
 @Composable
 fun FreshnessTag(status: Freshness, updatedAt: Long?, now: Long) {
+    val age = relativeTime(updatedAt, now)
     val (label, tone) = when (status) {
-        Freshness.LIVE -> relativeTime(updatedAt, now) to VaultPositive
-        Freshness.STALE -> "Stale · ${relativeTime(updatedAt, now)}" to VaultWarning
+        Freshness.LIVE -> age to VaultPositive
+        Freshness.STALE -> "Stale · $age" to VaultWarning
         Freshness.ERROR -> "Read failed" to VaultNegative
         Freshness.LOADING -> "Loading" to VaultInfo
         Freshness.EMPTY -> "No data" to VaultTextMuted
     }
-    Badge(label, tone = tone)
+    // A live tag shows only a timestamp; that it means "synced" rides on the green
+    // pill alone. The middot in the stale label reads as noise, so spell it out.
+    val spoken = when (status) {
+        Freshness.LIVE -> "Synced $age"
+        Freshness.STALE -> "Stale, updated $age"
+        else -> label
+    }
+    Badge(label, tone = tone, spoken = spoken)
 }
 
 private fun relativeTime(updatedAt: Long?, now: Long): String {
@@ -298,6 +381,9 @@ fun StateBlock(
     Column(
         Modifier
             .fillMaxWidth()
+            // A screen swapping to "could not load" is a state change a sighted user
+            // sees instantly; announce it rather than leaving it to be discovered.
+            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
             .padding(vertical = VaultSpace.xxl, horizontal = VaultSpace.lg),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(VaultSpace.xs),
@@ -323,6 +409,7 @@ fun StatusBanner(text: String, detail: String? = null, tone: Color = VaultInfo) 
     Row(
         Modifier
             .fillMaxWidth()
+            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
             .border(1.dp, VaultLine, RoundedCornerShape(6.dp))
             .background(VaultSurface, RoundedCornerShape(6.dp))
             .padding(VaultSpace.md),
@@ -345,6 +432,13 @@ fun SectionLabel(text: String) {
         text.uppercase(),
         style = MaterialTheme.typography.labelSmall,
         color = VaultTextDim,
-        modifier = Modifier.padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
+        modifier = Modifier
+            .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm)
+            // Speak the original casing: TalkBack spells short all-caps strings out
+            // letter by letter, so "BTC" and "CASH" arrive as initialisms.
+            .clearAndSetSemantics {
+                contentDescription = text
+                heading()
+            },
     )
 }

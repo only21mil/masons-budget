@@ -4,6 +4,7 @@
 // because they share one visual contract and are meaningless apart. Larger
 // primitives (DataTable, StateBlock, DialogFrame, AppShell) have their own files.
 
+import { createContext, useContext, useId } from "react"
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react"
 
 import { IconGlyph, type IconName } from "./IconGlyph.tsx"
@@ -110,12 +111,31 @@ const BANNER_ICON: Record<BannerTone, IconName> = {
   positive: "check",
 }
 
+/**
+ * Warning and negative share one glyph and differ only in colour, so a screen
+ * reader gets no severity at all. Spoken, not drawn — the visual design stands.
+ */
+const BANNER_TONE_WORD: Record<BannerTone, string> = {
+  info: "Note",
+  warning: "Warning",
+  negative: "Error",
+  positive: "Success",
+}
+
 export function StatusBanner({ tone = "info", title, detail, action, className }: StatusBannerProps) {
+  const urgent = tone === "negative"
   return (
-    <div className={cx("vv-banner", `vv-banner--${tone}`, className)} role="status">
+    <div
+      className={cx("vv-banner", `vv-banner--${tone}`, className)}
+      role={urgent ? "alert" : "status"}
+      aria-live={urgent ? "assertive" : "polite"}
+    >
       <IconGlyph name={BANNER_ICON[tone]} size={15} className="vv-banner__icon" />
       <div className="vv-banner__text">
-        <span className="vv-banner__title">{title}</span>
+        <span className="vv-banner__title">
+          <span className="vv-sr-only">{BANNER_TONE_WORD[tone]}</span>
+          {title}
+        </span>
         {detail ? <span className="vv-banner__detail">{detail}</span> : null}
       </div>
       {action ? <div className="vv-banner__action">{action}</div> : null}
@@ -149,11 +169,22 @@ export interface KPIStripProps {
   className?: string
 }
 
+/**
+ * Provenance is carried by colour alone (planned is muted, estimated is dim plus
+ * a dashed rule). Say it out loud too, or an estimate reads as a settled figure.
+ */
+const PROVENANCE_WORD: Record<Provenance, string | null> = {
+  actual: null,
+  planned: "Planned figure",
+  estimated: "Estimated figure",
+}
+
 export function KPIStrip({ items, className }: KPIStripProps) {
   return (
     <div className={cx("vv-kpis", className)}>
       {items.map((item) => {
         const suppressed = item.value === SUPPRESSED
+        const provenanceWord = suppressed ? null : PROVENANCE_WORD[item.provenance ?? "actual"]
         return (
           <div
             key={item.label}
@@ -167,8 +198,19 @@ export function KPIStrip({ items, className }: KPIStripProps) {
                 suppressed ? "vv-dim" : `vv-${item.provenance ?? "actual"}`,
               )}
             >
-              {item.value}
+              {suppressed ? (
+                <>
+                  {/* An em dash is announced as nothing by most screen readers, so a
+                      withheld figure would be indistinguishable from a blank cell.
+                      Suppression exists to say "unknown", never "zero". */}
+                  <span aria-hidden="true">{SUPPRESSED}</span>
+                  <span className="vv-sr-only">Unavailable</span>
+                </>
+              ) : (
+                item.value
+              )}
             </span>
+            {provenanceWord ? <span className="vv-sr-only">{provenanceWord}</span> : null}
             {!suppressed && item.hint ? <span className="vv-kpi__hint">{item.hint}</span> : null}
           </div>
         )
@@ -187,30 +229,89 @@ export interface FieldProps {
   children: ReactNode
 }
 
+interface FieldContextValue {
+  readonly controlId: string
+  readonly describedBy?: string
+  readonly invalid: boolean
+}
+
+/**
+ * Field hands its generated id down instead of relying on the caller.
+ *
+ * `htmlFor` was optional and no page passed it, so every <label> pointed at
+ * nothing and the control it sits above had no accessible name — the children
+ * are siblings of the label, not descendants, so the implicit-wrapping fallback
+ * never applied either.
+ */
+const FieldContext = createContext<FieldContextValue | null>(null)
+
 export function Field({ label, hint, error, htmlFor, children }: FieldProps) {
+  const generatedId = useId()
+  const controlId = htmlFor ?? generatedId
+  const messageId = `${controlId}-message`
   // Boolean() because `error` is a ReactNode — a bare `&&` would leak 0 or "".
+  const invalid = Boolean(error)
+  const message = error ?? hint
+
   return (
-    <div className={cx("vv-field", Boolean(error) && "vv-field--error")}>
-      <label className="vv-field__label" htmlFor={htmlFor}>
+    <div className={cx("vv-field", invalid && "vv-field--error")}>
+      <label className="vv-field__label" htmlFor={controlId}>
         {label}
       </label>
-      {children}
+      <FieldContext.Provider
+        value={{ controlId, describedBy: message ? messageId : undefined, invalid }}
+      >
+        {children}
+      </FieldContext.Provider>
       {error ? (
-        <p className="vv-field__error">{error}</p>
+        <p className="vv-field__error" id={messageId}>
+          {error}
+        </p>
       ) : hint ? (
-        <p className="vv-field__hint">{hint}</p>
+        <p className="vv-field__hint" id={messageId}>
+          {hint}
+        </p>
       ) : null}
     </div>
   )
 }
 
-export function TextInput({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={cx("vv-input", className)} {...rest} />
+export function TextInput({
+  className,
+  id,
+  "aria-describedby": describedBy,
+  "aria-invalid": invalid,
+  ...rest
+}: InputHTMLAttributes<HTMLInputElement>) {
+  const field = useContext(FieldContext)
+  return (
+    <input
+      className={cx("vv-input", className)}
+      id={id ?? field?.controlId}
+      aria-describedby={describedBy ?? field?.describedBy}
+      aria-invalid={invalid ?? (field?.invalid || undefined)}
+      {...rest}
+    />
+  )
 }
 
-export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
+export function Select({
+  className,
+  children,
+  id,
+  "aria-describedby": describedBy,
+  "aria-invalid": invalid,
+  ...rest
+}: SelectHTMLAttributes<HTMLSelectElement>) {
+  const field = useContext(FieldContext)
   return (
-    <select className={cx("vv-input", "vv-select", className)} {...rest}>
+    <select
+      className={cx("vv-input", "vv-select", className)}
+      id={id ?? field?.controlId}
+      aria-describedby={describedBy ?? field?.describedBy}
+      aria-invalid={invalid ?? (field?.invalid || undefined)}
+      {...rest}
+    >
       {children}
     </select>
   )
