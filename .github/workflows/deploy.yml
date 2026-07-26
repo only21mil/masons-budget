@@ -1,5 +1,17 @@
 name: Deploy to TestFlight (manual trigger only)
 
+# Runs entirely on a GitHub macOS runner — no workstation of Victor's is needed.
+#
+# Triggering this workflow IS the app-build approval gate described in AGENTS.md.
+# It never runs automatically.
+#
+# Signing: the runner has no Apple ID, so CODE_SIGN_STYLE=Automatic cannot work.
+# The certificate is imported into a throwaway keychain and the provisioning
+# profile installed, then archive/export run against it. Upload uses the App
+# Store Connect API key rather than an Apple ID username/password — the previous
+# version of this workflow referenced APPSTORE_USERNAME/APPSTORE_PASSWORD
+# secrets that do not exist in this repository.
+
 on:
   workflow_dispatch:
     inputs:
@@ -20,34 +32,149 @@ jobs:
     if: github.repository == 'only21mil/masons-budget'
     runs-on: macos-latest
     strategy:
+      # Never parallel: two jobs uploading builds that share a build number
+      # would race in App Store Connect.
+      max-parallel: 1
       matrix:
         platform: ${{ fromJSON(github.event.inputs.platform == 'both' && '["ios", "macos"]' || format('["{0}"]', github.event.inputs.platform)) }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
+
       - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
           xcode-version: '16.4'
+
       - name: Install XcodeGen
         run: brew install xcodegen
+
       - name: Generate Xcode project
         working-directory: MasonsBudget
         run: xcodegen generate --spec project.yml
-      - name: Build and Archive
-        working-directory: MasonsBudget
+
+      # A throwaway keychain, deleted in cleanup below. Nothing is written to the
+      # runner's default keychain and no secret is echoed.
+      - name: Import signing certificate and provisioning profile
+        env:
+          CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
         run: |
-          if [ "$PLATFORM" = "ios" ]; then
-            xcodebuild archive -project MasonsBudget.xcodeproj -scheme MasonsBudget -destination "generic/platform=iOS" -archivePath build/MasonsBudget.xcarchive CODE_SIGN_STYLE=Automatic
-            xcodebuild -exportArchive -archivePath build/MasonsBudget.xcarchive -exportPath build/ios -exportOptionsPlist ../ExportOptions.plist
-            xcrun altool --upload-app -f build/ios/MasonsBudget.ipa -t ios -u "$APPSTORE_USERNAME" -p "$APPSTORE_PASSWORD"
-          else
-            xcodebuild archive -project MasonsBudget.xcodeproj -scheme MasonsBudgetMac -destination "generic/platform=macOS" -archivePath build/MasonsBudgetMac.xcarchive CODE_SIGN_STYLE=Automatic
-            xcodebuild -exportArchive -archivePath build/MasonsBudgetMac.xcarchive -exportPath build/macos -exportOptionsPlist ../ExportOptions.plist
-            xcrun altool --upload-app -f build/macos/MasonsBudget.pkg -t osx -u "$APPSTORE_USERNAME" -p "$APPSTORE_PASSWORD"
+          set -euo pipefail
+          if [ -z "$CERTIFICATE_P12" ] || [ -z "$PROVISIONING_PROFILE" ]; then
+            echo "::error::Signing secrets missing. Required: APPLE_CERTIFICATE_P12, APPLE_CERTIFICATE_PASSWORD, APPLE_PROVISIONING_PROFILE."
+            exit 1
           fi
+
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "$CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" \
+            -k "$KEYCHAIN_PATH" -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          # Without this, codesign blocks on an interactive keychain prompt that
+          # nobody is there to answer, and the job hangs until timeout.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+          PROFILE_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILE_DIR"
+          echo "$PROVISIONING_PROFILE" | base64 --decode > "$PROFILE_DIR/build.mobileprovision"
+
+          echo "Signing identities available:"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | sed 's/[A-F0-9]\{40\}/<redacted>/'
+
+      - name: Write App Store Connect API key
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ASC_API_KEY_P8" ] || [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ]; then
+            echo "::error::App Store Connect secrets missing. Required: ASC_API_KEY_P8, ASC_KEY_ID, ASC_ISSUER_ID."
+            exit 1
+          fi
+          # altool looks for the key by convention in this directory.
+          mkdir -p "$HOME/private_keys"
+          echo "$ASC_API_KEY_P8" | base64 --decode > "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+          chmod 600 "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+
+      - name: Archive
+        working-directory: MasonsBudget
         env:
           PLATFORM: ${{ matrix.platform }}
-          APPSTORE_USERNAME: ${{ secrets.APPSTORE_USERNAME }}
-          APPSTORE_PASSWORD: ${{ secrets.APPSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ "$PLATFORM" = "ios" ]; then
+            SCHEME=MasonsBudget
+            DESTINATION="generic/platform=iOS"
+            ARCHIVE=build/MasonsBudget.xcarchive
+          else
+            SCHEME=MasonsBudgetMac
+            DESTINATION="generic/platform=macOS"
+            ARCHIVE=build/MasonsBudgetMac.xcarchive
+          fi
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+          xcodebuild archive \
+            -project MasonsBudget.xcodeproj \
+            -scheme "$SCHEME" \
+            -destination "$DESTINATION" \
+            -archivePath "$ARCHIVE" \
+            -allowProvisioningUpdates \
+            OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_PATH"
+
+      - name: Export
+        working-directory: MasonsBudget
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          EXPORT_DIR="build/${PLATFORM}"
+          echo "EXPORT_DIR=$EXPORT_DIR" >> "$GITHUB_ENV"
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE" \
+            -exportPath "$EXPORT_DIR" \
+            -exportOptionsPlist ../ExportOptions.plist \
+            -allowProvisioningUpdates
+
+      - name: Upload to TestFlight
+        working-directory: MasonsBudget
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          if [ "$PLATFORM" = "ios" ]; then
+            ARTIFACT=$(find "$EXPORT_DIR" -name "*.ipa" | head -1)
+            TYPE=ios
+          else
+            ARTIFACT=$(find "$EXPORT_DIR" -name "*.pkg" | head -1)
+            TYPE=osx
+          fi
+          if [ -z "$ARTIFACT" ]; then
+            echo "::error::Export produced no artifact for $PLATFORM."
+            exit 1
+          fi
+          echo "Uploading $(basename "$ARTIFACT")"
+          xcrun altool --upload-app -f "$ARTIFACT" -t "$TYPE" \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+
+      - name: Clean up signing material
+        if: always()
+        run: |
+          security delete-keychain "${KEYCHAIN_PATH:-}" 2>/dev/null || true
+          rm -rf "$HOME/private_keys"
+          rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/build.mobileprovision"
