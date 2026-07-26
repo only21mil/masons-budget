@@ -15,10 +15,16 @@
     "sync": "node scripts/mc2-to-convex.mjs",
     "sync:dry-run": "node scripts/mc2-to-convex.mjs --dry-run",
     "sync:watch": "node scripts/mc2-to-convex.mjs --watch",
+    "convex:test": "vitest run --config convex/vitest.config.ts",
     "domain:test": "npm run test --workspace @vogel-vault/domain",
     "domain:typecheck": "npm run typecheck --workspace @vogel-vault/domain"
   },
   "dependencies": {
     "convex": "^1.17.0"
+  },
+  "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
+    "convex-test": "^0.0.54",
+    "vitest": "^4.1.10"
   }
 }
