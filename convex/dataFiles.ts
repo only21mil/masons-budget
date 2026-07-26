@@ -30,6 +30,37 @@ function validateSyncToken(token?: string) {
   }
 }
 
+// SAT-READ-AUTH: reads were entirely unauthenticated until 2026-07-26. Anyone
+// who knew the deployment URL — which is committed in this repo and baked into
+// every shipped client binary — could read the family's full financial history.
+// Confirmed live against production before this change.
+//
+// Fail-closed like validateSyncToken, with the same escape hatch so the cutover
+// cannot lock out live clients.
+//
+// ⚠️ CUTOVER SEQUENCING — deploying this straight to enforcement breaks every
+// client that does not yet send a read token, including the TestFlight build
+// already on Victor's phone. Required order:
+//   (1) deploy with ALLOW_TOKENLESS_READ=true on the deployment (permissive:
+//       behaves exactly as today, nothing breaks),
+//   (2) set CONVEX_READ_TOKEN on the deployment and ship clients that send it,
+//   (3) confirm clients are sending it, THEN remove ALLOW_TOKENLESS_READ.
+// This mirrors the SAT-1326 mutation cutover above, for the same reason.
+function validateReadToken(token?: string) {
+  const expected = process.env.CONVEX_READ_TOKEN;
+  if (!expected) {
+    if (process.env.ALLOW_TOKENLESS_READ === "true") return;
+    throw new ConvexError(
+      "Unauthorized: CONVEX_READ_TOKEN is not configured (fail-closed). " +
+        "Set the token on the deployment, or set ALLOW_TOKENLESS_READ=true to " +
+        "explicitly allow unauthenticated reads during cutover.",
+    );
+  }
+  if (!token || token !== expected) {
+    throw new ConvexError("Unauthorized: invalid read token");
+  }
+}
+
 function validateConfiguredSyncToken(token?: string) {
   const expected = process.env.CONVEX_SYNC_TOKEN;
   if (!expected) {
@@ -46,8 +77,9 @@ function validateConfiguredSyncToken(token?: string) {
 
 /** Fetch a single data file by name. Returns the raw JSON data. */
 export const get = query({
-  args: { name: v.string() },
-  handler: async (ctx, { name }) => {
+  args: { name: v.string(), token: v.optional(v.string()) },
+  handler: async (ctx, { name, token }) => {
+    validateReadToken(token);
     const doc = await ctx.db
       .query("dataFiles")
       .withIndex("by_name", (q) => q.eq("name", name))
@@ -58,8 +90,9 @@ export const get = query({
 
 /** Fetch current versions of all data files — lightweight check for changes. */
 export const getVersions = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.optional(v.string()) },
+  handler: async (ctx, { token }) => {
+    validateReadToken(token);
     const docs = await ctx.db.query("syncVersions").collect();
     return Object.fromEntries(docs.map((d) => [d.name, d.version]));
   },
@@ -67,8 +100,9 @@ export const getVersions = query({
 
 /** List all available data file names. */
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.optional(v.string()) },
+  handler: async (ctx, { token }) => {
+    validateReadToken(token);
     const docs = await ctx.db.query("dataFiles").collect();
     return docs.map((d) => ({
       name: d.name,
@@ -714,8 +748,9 @@ export const removeTodoFromMobile = mutation({
  * its local updated_at.
  */
 export const listTodoTombstones = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.optional(v.string()) },
+  handler: async (ctx, { token }) => {
+    validateReadToken(token);
     const docs = await ctx.db.query("todoTombstones").collect();
     return docs.map((d) => ({ id: d.id, deletedAt: d.deletedAt }));
   },

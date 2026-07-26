@@ -36,6 +36,29 @@ enum ConvexConfig {
     static var syncToken: String {
         UserDefaults.standard.string(forKey: "convex_sync_token") ?? ""
     }
+
+    /// Optional read token.
+    ///
+    /// Reads were unauthenticated until 2026-07-26 — the deployment URL alone was
+    /// enough to pull the household's entire financial history. The server is now
+    /// fail-closed on reads too.
+    ///
+    /// Same rules as `syncToken`: never hardcode it, never bundle it in the app,
+    /// never commit it. Injected at runtime and empty by default, so a build that
+    /// has not been configured fails closed against an enforcing deployment rather
+    /// than silently carrying a secret.
+    static var readToken: String {
+        UserDefaults.standard.string(forKey: "convex_read_token") ?? ""
+    }
+
+    static func setReadToken(_ token: String) {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            UserDefaults.standard.removeObject(forKey: "convex_read_token")
+        } else {
+            UserDefaults.standard.set(trimmed, forKey: "convex_read_token")
+        }
+    }
 }
 
 enum MC2MobileWritebackConfig {
@@ -695,9 +718,16 @@ final class ConvexClient: Sendable {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        // Attached centrally so every read and write path is covered; a new call
+        // site cannot forget its token.
         var finalArgs = args
         if endpoint == "api/mutation" {
             let token = ConvexConfig.syncToken
+            if !token.isEmpty {
+                finalArgs["token"] = token
+            }
+        } else if endpoint == "api/query" {
+            let token = ConvexConfig.readToken
             if !token.isEmpty {
                 finalArgs["token"] = token
             }

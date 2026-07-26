@@ -108,6 +108,29 @@ Stop and ask Victor before:
 - exporting an `.ipa`, `.app`, `.pkg`, `.dmg`, or other release artifact
 - uploading to TestFlight/App Store Connect or any distribution channel
 
+## Convex authentication — READ THIS BEFORE DEPLOYING
+
+Both reads and writes are fail-closed, and **both have a cutover hazard**.
+
+Until 2026-07-26 every Convex *query* was unauthenticated: the deployment URL
+alone — which is committed in this repo and baked into every shipped client —
+was enough to read the household's entire financial history. `validateReadToken`
+in `convex/dataFiles.ts` now gates `get`, `getVersions`, `list` and
+`listTodoTombstones`.
+
+**Deploying enforcement without sequencing locks out every live client**,
+including the TestFlight build already on a phone. Required order:
+
+1. Deploy with `ALLOW_TOKENLESS_READ=true` on the deployment. Permissive —
+   behaves exactly as before, nothing breaks.
+2. Set `CONVEX_READ_TOKEN` on the deployment and ship clients that send it. iOS
+   reads it from `ConvexConfig.readToken`; the token is injected at runtime and
+   is never bundled, hardcoded or committed.
+3. Confirm clients are sending it, **then** remove `ALLOW_TOKENLESS_READ`.
+
+`CONVEX_SYNC_TOKEN` gates mutations under the identical pattern (SAT-1326).
+Neither token belongs in the repo, in source, or in a build artifact.
+
 ## Build, archive, TestFlight
 
 **Releases run in GitHub Actions, not on a workstation.**
