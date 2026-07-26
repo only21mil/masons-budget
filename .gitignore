@@ -76,3 +76,21 @@ credentials.json
 node_modules/
 .convex/
 convex/_generated/
+
+# Linux client (Electron + Vite) build output
+linux/dist/
+linux/dist-electron/
+linux/release/
+.vite/
+*.deb
+*.AppImage
+
+# Android client build output
+android/build/
+android/*/build/
+android/.gradle/
+android/local.properties
+*.apk
+*.aab
+*.keystore
+*.jks

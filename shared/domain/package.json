@@ -1,0 +1,21 @@
+{
+  "name": "@vogel-vault/domain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared family/visibility contract and MC2 read model for the Vogel Vault clients",
+  "exports": {
+    ".": "./src/index.ts",
+    "./family": "./src/family.ts",
+    "./money": "./src/money.ts",
+    "./readModel": "./src/readModel.ts",
+    "./fixtures/visibility-cases.json": "./fixtures/visibility-cases.json"
+  },
+  "scripts": {
+    "test": "node --test 'test/**/*.test.ts'",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

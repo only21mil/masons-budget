@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "shared/domain",
+    "linux"
+  ],
   "scripts": {
     "dev": "npx convex dev",
     "deploy": "npx convex deploy",
@@ -10,7 +14,9 @@
     "mobile-pairing:create": "node scripts/mint-mobile-pairing-slots.mjs",
     "sync": "node scripts/mc2-to-convex.mjs",
     "sync:dry-run": "node scripts/mc2-to-convex.mjs --dry-run",
-    "sync:watch": "node scripts/mc2-to-convex.mjs --watch"
+    "sync:watch": "node scripts/mc2-to-convex.mjs --watch",
+    "domain:test": "npm run test --workspace @vogel-vault/domain",
+    "domain:typecheck": "npm run typecheck --workspace @vogel-vault/domain"
   },
   "dependencies": {
     "convex": "^1.17.0"

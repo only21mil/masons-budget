@@ -1,0 +1,807 @@
+/* Graphite Ledger Cockpit — component styles. Tokens live in tokens.css. */
+
+/* ── Shell ─────────────────────────────────────────────────────────────── */
+
+.vv-shell {
+  display: grid;
+  grid-template-columns: var(--vv-sidebar-width) 1fr;
+  height: 100%;
+  background: var(--vv-bg);
+}
+
+.vv-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--vv-line);
+  background: var(--vv-surface-sunken);
+}
+
+.vv-sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--vv-space-2);
+  height: var(--vv-topbar-height);
+  padding: 0 var(--vv-space-4);
+  border-bottom: 1px solid var(--vv-line);
+  flex: 0 0 auto;
+}
+
+.vv-sidebar__mark {
+  color: var(--vv-accent);
+  flex: 0 0 auto;
+}
+
+.vv-sidebar__wordmark {
+  font-size: var(--vv-text-sm);
+  font-weight: var(--vv-weight-semibold);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.vv-sidebar__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--vv-space-3) var(--vv-space-2) var(--vv-space-6);
+}
+
+.vv-navgroup + .vv-navgroup {
+  margin-top: var(--vv-space-5);
+}
+
+.vv-navgroup__label {
+  margin: 0 0 var(--vv-space-2);
+  padding: 0 var(--vv-space-3);
+  font-size: var(--vv-text-2xs);
+  font-weight: var(--vv-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vv-text-dim);
+}
+
+.vv-navgroup__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.vv-navitem {
+  display: flex;
+  align-items: center;
+  gap: var(--vv-space-3);
+  width: 100%;
+  padding: var(--vv-space-2) var(--vv-space-3);
+  border: 0;
+  border-radius: var(--vv-radius);
+  background: transparent;
+  color: var(--vv-text-muted);
+  font: inherit;
+  font-size: var(--vv-text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--vv-transition), color var(--vv-transition);
+}
+
+.vv-navitem:hover {
+  background: var(--vv-surface-raised);
+  color: var(--vv-text);
+}
+
+/* Active nav is one of the few places orange is allowed — as a marker, not text. */
+.vv-navitem--active {
+  background: var(--vv-accent-dim);
+  color: var(--vv-text);
+  box-shadow: inset 2px 0 0 var(--vv-accent);
+}
+
+.vv-navitem__label {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vv-navitem__badge {
+  flex: 0 0 auto;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 99px;
+  background: var(--vv-surface-raised);
+  color: var(--vv-text-muted);
+  font-family: var(--vv-font-mono);
+  font-size: var(--vv-text-2xs);
+  text-align: center;
+}
+
+.vv-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.vv-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vv-space-4);
+  height: var(--vv-topbar-height);
+  flex: 0 0 auto;
+  padding: 0 var(--vv-space-5);
+  border-bottom: 1px solid var(--vv-line);
+  background: var(--vv-surface-sunken);
+}
+
+.vv-topbar__left,
+.vv-topbar__right {
+  display: flex;
+  align-items: center;
+  gap: var(--vv-space-3);
+}
+
+.vv-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--vv-space-6);
+}
+
+.vv-content > * {
+  max-width: var(--vv-content-max);
+}
+
+/* Compact pass: sidebar collapses to icons. */
+@media (max-width: 1365px) {
+  .vv-sidebar__wordmark,
+  .vv-navitem__label,
+  .vv-navgroup__label {
+    display: none;
+  }
+
+  .vv-navitem {
+    justify-content: center;
+  }
+
+  .vv-sidebar__brand {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .vv-content {
+    padding: var(--vv-space-4);
+  }
+}
+
+/* ── Page ──────────────────────────────────────────────────────────────── */
+
+.vv-page__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--vv-space-4);
+  margin-bottom: var(--vv-space-5);
+}
+
+.vv-page__title {
+  margin: 0;
+  font-size: var(--vv-text-2xl);
+  font-weight: var(--vv-weight-semibold);
+  letter-spacing: -0.015em;
+}
+
+.vv-page__subtitle {
+  margin: var(--vv-space-1) 0 0;
+  font-size: var(--vv-text-sm);
+  color: var(--vv-text-muted);
+}
+
+.vv-page__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--vv-space-2);
+  flex: 0 0 auto;
+}
+
+.vv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: var(--vv-space-4);
+  align-items: start;
+}
+
+.vv-grid > .vv-span-2 {
+  grid-column: span 2;
+}
+
+@media (max-width: 1365px) {
+  .vv-grid > .vv-span-2 {
+    grid-column: span 1;
+  }
+}
+
+/* ── Panel ─────────────────────────────────────────────────────────────── */
+
+.vv-panel {
+  border: 1px solid var(--vv-line);
+  border-radius: var(--vv-radius-lg);
+  background: var(--vv-surface);
+  overflow: hidden;
+}
+
+.vv-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--vv-space-3);
+  padding: var(--vv-space-3) var(--vv-space-4);
+  border-bottom: 1px solid var(--vv-line);
+}
+
+.vv-panel__title {
+  margin: 0;
+  font-size: var(--vv-text-sm);
+  font-weight: var(--vv-weight-semibold);
+  letter-spacing: 0.01em;
+}
+
+.vv-panel__source {
+  margin: 2px 0 0;
+  font-size: var(--vv-text-2xs);
+  color: var(--vv-text-dim);
+}
+
+.vv-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--vv-space-2);
+  flex: 0 0 auto;
+}
+
+.vv-panel__body {
+  padding: var(--vv-space-4);
+}
+
+.vv-panel__body--flush {
+  padding: 0;
+}
+
+/* ── Badge ─────────────────────────────────────────────────────────────── */
+
+.vv-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid transparent;
+  border-radius: 99px;
+  font-size: var(--vv-text-2xs);
+  font-weight: var(--vv-weight-medium);
+  white-space: nowrap;
+}
+
+.vv-badge--neutral {
+  background: var(--vv-surface-raised);
+  border-color: var(--vv-line);
+  color: var(--vv-text-muted);
+}
+
+.vv-badge--accent {
+  background: var(--vv-accent-dim);
+  border-color: var(--vv-accent-line);
+  color: var(--vv-text);
+}
+
+.vv-badge--positive {
+  background: var(--vv-positive-dim);
+  color: var(--vv-positive);
+}
+
+.vv-badge--negative {
+  background: var(--vv-negative-dim);
+  color: var(--vv-negative);
+}
+
+.vv-badge--warning {
+  background: var(--vv-warning-dim);
+  color: var(--vv-warning);
+}
+
+.vv-badge--info {
+  background: var(--vv-info-dim);
+  color: var(--vv-info);
+}
+
+/* ── Button ────────────────────────────────────────────────────────────── */
+
+.vv-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--vv-space-2);
+  padding: 5px var(--vv-space-3);
+  border: 1px solid var(--vv-line-strong);
+  border-radius: var(--vv-radius);
+  background: var(--vv-surface-raised);
+  color: var(--vv-text);
+  font: inherit;
+  font-size: var(--vv-text-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--vv-transition), border-color var(--vv-transition);
+}
+
+.vv-button:hover:not(:disabled) {
+  border-color: var(--vv-text-dim);
+}
+
+.vv-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Primary uses the orange as a border/fill accent, keeping the label cream. */
+.vv-button--primary {
+  background: var(--vv-accent-dim);
+  border-color: var(--vv-accent-line);
+}
+
+.vv-button--primary:hover:not(:disabled) {
+  border-color: var(--vv-accent);
+}
+
+.vv-button--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--vv-text-muted);
+}
+
+.vv-button--ghost:hover:not(:disabled) {
+  background: var(--vv-surface-raised);
+  color: var(--vv-text);
+}
+
+.vv-button--danger {
+  background: var(--vv-negative-dim);
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.vv-button--icon {
+  padding: 5px;
+  min-width: 28px;
+}
+
+/* ── Banner ────────────────────────────────────────────────────────────── */
+
+.vv-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--vv-space-3);
+  padding: var(--vv-space-3) var(--vv-space-4);
+  border: 1px solid var(--vv-line);
+  border-radius: var(--vv-radius);
+  background: var(--vv-surface);
+  margin-bottom: var(--vv-space-4);
+}
+
+.vv-banner__icon {
+  flex: 0 0 auto;
+}
+
+.vv-banner__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.vv-banner__title {
+  font-size: var(--vv-text-sm);
+  font-weight: var(--vv-weight-medium);
+}
+
+.vv-banner__detail {
+  font-size: var(--vv-text-xs);
+  color: var(--vv-text-muted);
+}
+
+.vv-banner__action {
+  flex: 0 0 auto;
+}
+
+.vv-banner--info {
+  border-left: 2px solid var(--vv-info);
+}
+.vv-banner--info .vv-banner__icon {
+  color: var(--vv-info);
+}
+
+.vv-banner--warning {
+  border-left: 2px solid var(--vv-warning);
+}
+.vv-banner--warning .vv-banner__icon {
+  color: var(--vv-warning);
+}
+
+.vv-banner--negative {
+  border-left: 2px solid var(--vv-negative);
+}
+.vv-banner--negative .vv-banner__icon {
+  color: var(--vv-negative);
+}
+
+.vv-banner--positive {
+  border-left: 2px solid var(--vv-positive);
+}
+.vv-banner--positive .vv-banner__icon {
+  color: var(--vv-positive);
+}
+
+/* ── KPI strip ─────────────────────────────────────────────────────────── */
+
+.vv-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 1px;
+  background: var(--vv-line);
+  border: 1px solid var(--vv-line);
+  border-radius: var(--vv-radius-lg);
+  overflow: hidden;
+  margin-bottom: var(--vv-space-4);
+}
+
+.vv-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--vv-space-3) var(--vv-space-4);
+  background: var(--vv-surface);
+}
+
+.vv-kpi__label {
+  font-size: var(--vv-text-2xs);
+  font-weight: var(--vv-weight-medium);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vv-text-dim);
+}
+
+.vv-kpi__value {
+  font-size: var(--vv-text-xl);
+  font-weight: var(--vv-weight-medium);
+  letter-spacing: -0.01em;
+}
+
+.vv-kpi__hint {
+  font-size: var(--vv-text-2xs);
+  color: var(--vv-text-muted);
+}
+
+.vv-kpi--positive .vv-kpi__value {
+  color: var(--vv-positive);
+}
+
+.vv-kpi--negative .vv-kpi__value {
+  color: var(--vv-negative);
+}
+
+.vv-kpi--accent {
+  box-shadow: inset 0 2px 0 var(--vv-accent);
+}
+
+/* ── Table ─────────────────────────────────────────────────────────────── */
+
+.vv-table-wrap {
+  max-height: 560px;
+}
+
+.vv-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--vv-text-sm);
+}
+
+.vv-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--vv-space-2) var(--vv-space-4);
+  background: var(--vv-surface-sunken);
+  border-bottom: 1px solid var(--vv-line);
+  font-size: var(--vv-text-2xs);
+  font-weight: var(--vv-weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vv-text-dim);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.vv-table td {
+  padding: var(--vv-space-2) var(--vv-space-4);
+  border-bottom: 1px solid var(--vv-line);
+  vertical-align: baseline;
+}
+
+.vv-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.vv-table tbody tr:hover td {
+  background: var(--vv-surface-raised);
+}
+
+.vv-table__cell--num {
+  text-align: right;
+}
+
+.vv-table__footer {
+  padding: var(--vv-space-2) var(--vv-space-4);
+  border-top: 1px solid var(--vv-line);
+  background: var(--vv-surface-sunken);
+  font-size: var(--vv-text-xs);
+  color: var(--vv-text-muted);
+}
+
+@media (max-width: 1365px) {
+  .vv-table__cell--secondary {
+    display: none;
+  }
+}
+
+/* ── States ────────────────────────────────────────────────────────────── */
+
+.vv-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--vv-space-2);
+  padding: var(--vv-space-10) var(--vv-space-6);
+  text-align: center;
+}
+
+.vv-state__icon {
+  color: var(--vv-text-dim);
+}
+
+.vv-state--error .vv-state__icon {
+  color: var(--vv-negative);
+}
+
+.vv-state--stale .vv-state__icon {
+  color: var(--vv-warning);
+}
+
+.vv-state__icon--spin {
+  animation: vv-spin 900ms linear infinite;
+}
+
+@keyframes vv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.vv-state__title {
+  margin: 0;
+  font-size: var(--vv-text-base);
+  font-weight: var(--vv-weight-medium);
+}
+
+.vv-state__detail {
+  margin: 0;
+  max-width: 46ch;
+  font-size: var(--vv-text-xs);
+  color: var(--vv-text-muted);
+}
+
+.vv-loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vv-space-2);
+  padding: var(--vv-space-4);
+}
+
+.vv-loading__row {
+  height: 14px;
+  border-radius: var(--vv-radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--vv-surface-raised) 0%,
+    var(--vv-line) 50%,
+    var(--vv-surface-raised) 100%
+  );
+  background-size: 200% 100%;
+  animation: vv-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes vv-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vv-state__icon--spin,
+  .vv-loading__row {
+    animation: none;
+  }
+}
+
+/* ── Form ──────────────────────────────────────────────────────────────── */
+
+.vv-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vv-space-1);
+}
+
+.vv-field__label {
+  font-size: var(--vv-text-xs);
+  font-weight: var(--vv-weight-medium);
+  color: var(--vv-text-muted);
+}
+
+.vv-field__hint {
+  margin: 0;
+  font-size: var(--vv-text-2xs);
+  color: var(--vv-text-dim);
+}
+
+.vv-field__error {
+  margin: 0;
+  font-size: var(--vv-text-2xs);
+  color: var(--vv-negative);
+}
+
+.vv-input {
+  padding: 5px var(--vv-space-3);
+  border: 1px solid var(--vv-line-strong);
+  border-radius: var(--vv-radius);
+  background: var(--vv-surface-sunken);
+  color: var(--vv-text);
+  font: inherit;
+  font-size: var(--vv-text-sm);
+  width: 100%;
+}
+
+.vv-input::placeholder {
+  color: var(--vv-text-dim);
+}
+
+.vv-input:focus-visible {
+  border-color: var(--vv-accent-line);
+}
+
+.vv-field--error .vv-input {
+  border-color: var(--vv-negative);
+}
+
+.vv-select {
+  cursor: pointer;
+}
+
+.vv-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--vv-space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--vv-space-4);
+}
+
+/* ── Dialog ────────────────────────────────────────────────────────────── */
+
+.vv-dialog {
+  padding: 0;
+  border: 1px solid var(--vv-line-strong);
+  border-radius: var(--vv-radius-lg);
+  background: var(--vv-surface);
+  color: var(--vv-text);
+  max-width: 560px;
+  width: calc(100vw - 4rem);
+}
+
+.vv-dialog::backdrop {
+  background: var(--vv-overlay);
+}
+
+.vv-dialog__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--vv-space-3);
+  padding: var(--vv-space-4);
+  border-bottom: 1px solid var(--vv-line);
+}
+
+.vv-dialog__title {
+  margin: 0;
+  font-size: var(--vv-text-lg);
+  font-weight: var(--vv-weight-semibold);
+}
+
+.vv-dialog__description {
+  margin: var(--vv-space-1) 0 0;
+  font-size: var(--vv-text-xs);
+  color: var(--vv-text-muted);
+}
+
+.vv-dialog__body {
+  padding: var(--vv-space-4);
+  max-height: 60vh;
+}
+
+.vv-dialog__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--vv-space-2);
+  padding: var(--vv-space-3) var(--vv-space-4);
+  border-top: 1px solid var(--vv-line);
+  background: var(--vv-surface-sunken);
+}
+
+/* ── Lock overlay ──────────────────────────────────────────────────────── */
+
+.vv-lock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--vv-space-3);
+  height: 100%;
+  background: var(--vv-bg);
+  text-align: center;
+}
+
+.vv-lock > .vv-icon {
+  color: var(--vv-accent);
+}
+
+.vv-lock__title {
+  margin: 0;
+  font-size: var(--vv-text-lg);
+  font-weight: var(--vv-weight-medium);
+}
+
+.vv-lock__detail {
+  margin: 0;
+  max-width: 44ch;
+  font-size: var(--vv-text-xs);
+  color: var(--vv-text-muted);
+}
+
+/* ── Misc ──────────────────────────────────────────────────────────────── */
+
+.vv-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vv-space-3);
+}
+
+.vv-row {
+  display: flex;
+  align-items: center;
+  gap: var(--vv-space-2);
+}
+
+.vv-spacer {
+  flex: 1 1 auto;
+}
+
+.vv-muted {
+  color: var(--vv-text-muted);
+}
+
+.vv-dim {
+  color: var(--vv-text-dim);
+}
+
+.vv-positive {
+  color: var(--vv-positive);
+}
+
+.vv-negative {
+  color: var(--vv-negative);
+}

@@ -1,0 +1,39 @@
+{
+  "name": "@vogel-vault/linux",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The Vogel Vault — Linux desktop client (Graphite Ledger Cockpit)",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b tsconfig.build.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "qa:preload-boundary": "node scripts/qa-preload-boundary.mjs",
+    "package": "node scripts/package-placeholder.mjs"
+  },
+  "dependencies": {
+    "@vogel-vault/domain": "*",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.1",
+    "eslint": "^9.17.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "globals": "^15.14.0",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.1",
+    "vite": "^6.0.5",
+    "vite-plugin-electron": "^0.29.0",
+    "vitest": "^4.1.10"
+  }
+}
