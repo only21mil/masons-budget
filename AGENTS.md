@@ -2,18 +2,16 @@
 
 **If you're an AI agent about to modify this iOS app — read this first.** Companion to `~/.openclaw/workspace-mc2/mission-control/AGENTS.md` (the MC2 data backend). Read both if you're touching the data flow.
 
-## Linear — HARD RULE (non-negotiable)
+## Tracking — GitHub only (2026-07-26)
 
-**Every meaningful change must be reflected in Linear in real time.** This is not optional and Victor should never have to remind you.
+**Do not use Linear for this repo.** Tracking, review, and history live on GitHub.
 
-- Before starting work, ensure a Linear issue exists for it. If not, create one.
-- Move the issue to In Progress immediately when you start.
-- Add comments as you make progress, hit decisions, or uncover findings.
-- When done, add a closing comment with what was done and how it was verified, then move to Done.
-- If you find a bug or a new item that needs work, create a new issue — don't batch it silently into the current task. Other lanes may pick it up.
-- Check the project's issue list at the START of every task to avoid duplicating work another lane already started.
-- Projects: "Vogel Vault v0.3 — Mason's Money Setup" (id `35b49d8a-...`) and "Vogel Vault v0.2 Bug Fixes" (id `4ad37721-...`).
-- Use the configured Linear MCP server (`mcp__linear__`) first for listing, searching, commenting, status updates, and issue/project writes. If MCP tools are not initially visible, use `tool_search` to expose them, especially `save_issue` for create/update/state changes and `save_comment` for progress notes. Use `linear.sh` from `~/.openclaw/workspace-sats-daily-ops/tools/` only as a fallback/support path when MCP listing/search is blocked.
+- Work happens on a branch, reviewed via a pull request. Never commit to `main`.
+- File a GitHub issue for a bug or follow-up rather than batching it silently into the current change.
+- Check open issues and PRs at the start of a task so lanes do not duplicate work.
+- Builds run on GitHub Actions (`.github/workflows/clients.yml`), not on an installed local toolchain.
+
+Superseded: this file previously mandated mirroring every change into Linear. That rule no longer applies.
 
 This is **The Vogel Vault** (internal repo name still "Mason's Budget App"). SwiftUI iOS + macOS app, multi-profile family Bitcoin + budget dashboard. Backend is Convex (`keen-elephant-452.convex.cloud`); MC2 pushes JSON files there via `dataFiles:sync`, the app reads them.
 
@@ -35,10 +33,18 @@ The visibility primitive lives in `Models/SharedEnums.swift`:
 
 ```swift
 extension FamilyMember {
+    /// Adults can see the household AND the kids. Kids see only their own data.
     func canSee(dataOwnedBy owner: FamilyMember) -> Bool {
         if self == owner { return true }
-        if isAdult && owner.isAdult { return true }   // household sharing
+        if isAdult { return true }
         return false
+    }
+
+    /// Narrower than `canSee`: an adult can see Mason's balance, but it must not
+    /// roll into adult net-worth totals.
+    func sharesNetWorth(with owner: FamilyMember) -> Bool {
+        if self == owner { return true }
+        return isAdult && owner.isAdult
     }
 }
 ```
@@ -47,7 +53,7 @@ extension FamilyMember {
 
 Records persisted to SwiftData are tagged with the **canonical** owner from the JSON (adults → `.victor`, mason_401k → `.mason`). Visibility is then resolved at query time via `canSee`. Don't tag records with the active member just because that member triggered the sync.
 
-Profile switching is in `Views/Components/ProfileSwitcherView.swift`. Kids cannot switch into adult profiles; the picker uses `FamilyMember.allowedSwitchTargets` (returns `[self]` for kids). Adults switching profiles must pass Face ID via `LocalAuthentication` — see `requiresAuthToSwitch`.
+Profile switching is in `Views/Screens/ProfileSwitcherView.swift`. Kids cannot switch into adult profiles; the picker uses `FamilyMember.allowedSwitchTargets` (returns `[self]` for kids). Adults switching profiles must pass Face ID via `LocalAuthentication` — see `requiresAuthToSwitch`.
 
 ---
 
@@ -82,7 +88,7 @@ Sync entry points in `MC2SyncService.syncAll()` are split by member. Mason path:
 
 **Do not start a new distributable build without Victor's explicit approval.**
 
-This app is often worked by Codex, OpenCode, Claude, and Sats lanes. All of them may keep fixing bugs, creating/updating Linear issues, moving to the next issue, editing code, and running static/non-app-artifact checks automatically.
+This app is often worked by Codex, OpenCode, Claude, and Sats lanes. All of them may keep fixing bugs, filing GitHub issues, moving to the next item, editing code, and running static/non-app-artifact checks automatically.
 
 Stop and ask Victor before:
 - bumping `CURRENT_PROJECT_VERSION` for distribution
@@ -113,20 +119,27 @@ Build pipeline reference: `/tmp/vogel-vault-build.sh` (1) creates a temp keychai
 
 ---
 
-## Linear
+## Clients
 
-Team: **Sats21m** (key `SAT`). Active project for this app:
+Three clients share one family/visibility contract and one Convex read model:
 
-- "Vogel Vault v0.3 — Mason's Money Setup" (id `35b49d8a-3703-4fbf-b853-3fb07b8d9422`) — Mason's income/spending/retirement, profile lockdown, V+R household share.
-- v0.2 sprint (`Vogel Vault v0.2 Bug Fixes`, id `4ad37721...`) — fully Done.
+| Client | Path | Notes |
+|---|---|---|
+| iOS / macOS | `MasonsBudget/` | SwiftUI. Source of truth for the visibility rules. |
+| Linux | `linux/` | Electron + React + TypeScript. Graphite Ledger Cockpit. |
+| Android (Fold) | `android/` | Kotlin. `domain` is plain JVM and needs no Android SDK. |
 
-Comment on issues as slices land. Don't let Linear go stale.
+The contract lives in `shared/domain` (`@vogel-vault/domain`) and mirrors
+`MasonsBudget/MasonsBudget/Models/SharedEnums.swift`, which stays authoritative.
+`shared/domain/fixtures/visibility-cases.json` is language-neutral and is loaded
+by both the TypeScript and Kotlin parity suites — **when the Swift rules change,
+update the fixture in the same commit** so all three clients move together.
 
 ---
 
 ## Multi-agent coordination
 
-Multiple agents work this project (Claude Code, OpenCode, Codex, Sats workers). Before risky operations (archive + upload, force-push, schema changes), check Linear and confirm with Victor whether another lane is mid-flight. Pausing costs nothing; racing a TestFlight upload while another agent is mid-edit costs a broken build.
+Multiple agents work this project (Claude Code, OpenCode, Codex, Sats workers). Before risky operations (archive + upload, force-push, schema changes), check open GitHub issues and PRs and confirm with Victor whether another lane is mid-flight. Pausing costs nothing; racing a TestFlight upload while another agent is mid-edit costs a broken build.
 
 ---
 
