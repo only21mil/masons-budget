@@ -1,13 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  No permissions are declared, deliberately.
+  Exactly one permission is declared, deliberately.
 
-  This build reads sanitized fixtures and has no network, storage, camera,
-  microphone or location access. Adding a permission here is a review event, not
-  a convenience: the app handles family financial data and its attack surface
-  should stay at zero until a feature genuinely needs one.
+  Adding a permission here is a review event, not a convenience: the app handles
+  family financial data and its attack surface should stay at zero until a
+  feature genuinely needs one. Still no storage, camera, microphone, location,
+  contacts or background access, and nothing that prompts the user.
+
+  INTERNET is justified now because the Convex read-token cutover needs an
+  Android client that can send the token (see data/ConvexConfig.kt). The read
+  path is disabled by default and unwired, so this build still renders only the
+  sanitized fixtures — but HttpURLConnection throws SecurityException without
+  this line, which would make the plumbing impossible to exercise on a device,
+  and burying the permission inside a later UI change would hide precisely the
+  review event this comment exists to force.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"
