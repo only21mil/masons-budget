@@ -1,0 +1,114 @@
+name: Workflow lint
+
+# The gate that would have caught the broken TestFlight workflow.
+#
+# deploy.yml referenced secrets.APPSTORE_USERNAME and secrets.APPSTORE_PASSWORD
+# for months. Neither secret has ever existed in this repository, and nothing
+# noticed, because a missing secret expands to an empty string instead of
+# failing — so the workflow stayed syntactically perfect and functionally dead
+# until someone actually tried to ship.
+#
+# Two checks, because neither alone is enough:
+#   * actionlint  — syntax, expression contexts, action inputs, runner labels,
+#                   and shellcheck over every `run:` body.
+#   * inventory   — actionlint treats `secrets` as an open map, so it accepts any
+#                   name at all. secrets-inventory.json declares the names that
+#                   are allowed to appear, and the cross-check fails the build on
+#                   an undeclared reference or a stale declaration.
+#
+# Not gated on `github.repository`: this is twenty seconds of CPU and it is
+# exactly the check a fork most wants to keep working.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workflow-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned by version and verified by checksum rather than piped from an install
+  # script, so a compromised release cannot silently execute here.
+  ACTIONLINT_VERSION: 1.7.12
+  ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+
+jobs:
+  lint:
+    name: actionlint + secret inventory
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      # Installed under RUNNER_TEMP rather than /usr/local/bin so the step needs
+      # no privilege at all.
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          TARBALL="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 \
+            -o "$TARBALL" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${TARBALL}"
+          echo "${ACTIONLINT_SHA256}  ${TARBALL}" | sha256sum --check --strict -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar xzf "$TARBALL" -C "$RUNNER_TEMP/bin" actionlint
+          chmod 0755 "$RUNNER_TEMP/bin/actionlint"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/bin/actionlint" --version
+
+      # shellcheck is preinstalled on ubuntu-latest and actionlint picks it up
+      # automatically, which is how the `run:` bodies get linted too.
+      - name: actionlint
+        run: |
+          set -euo pipefail
+
+          # Unpiped: `| head` can SIGPIPE the writer, and pipefail would then
+          # kill the step over a banner. Also a hard check that shellcheck really
+          # is on this image — silently losing `run:` linting is the failure mode
+          # this whole job exists to prevent.
+          shellcheck --version
+
+          # Two passes on purpose. The first emits workflow commands, which the
+          # runner consumes into inline PR annotations and never prints, so on its
+          # own it would fail the job with an empty-looking log. The second prints
+          # the report with source context and is what gates the step.
+          #
+          # The template dodges two traps. A `$err` template variable inside
+          # single quotes reads as a shell variable and trips SC2016, so actionlint
+          # fails itself; and actionlint cannot parse a `{{"\n"}}` literal, so the
+          # separator is a real newline carried in a variable.
+          NL=$'\n'
+          actionlint -format "{{range .}}::error file={{.Filepath}},line={{.Line}},col={{.Column}}::{{.Message}}${NL}{{end}}" || true
+          actionlint -color
+
+      - name: Secret inventory cross-check
+        run: python3 .github/workflows/scripts/check_secret_inventory.py
+
+      # The reporter is the only thing standing between Victor and a release that
+      # dies at the signing step, so it gets exercised here rather than debugged
+      # on a macOS runner ten minutes into an archive. This job binds no secrets,
+      # so everything reports ABSENT and exit 1 is the correct answer — asserting
+      # both the code and the table rules out a traceback that happens to exit 1.
+      - name: Preflight reporter smoke test
+        run: |
+          set -uo pipefail
+          # The runner's shell is `bash -e`, so a bare `OUT=$(cmd)` that exits
+          # non-zero kills the step before RC can be read. `|| RC=$?` keeps the
+          # failure inspectable, which is the whole point here.
+          RC=0
+          OUT=$(python3 .github/workflows/scripts/report_secret_presence.py 2>&1) || RC=$?
+          printf '%s\n' "$OUT"
+          if [ "$RC" -ne 1 ] || ! printf '%s' "$OUT" | grep -q 'APPLE_CERTIFICATE_P12'; then
+            echo "::error::The preflight reporter did not fail closed on a run with no secrets bound (exit $RC)."
+            exit 1
+          fi
+          echo "Reporter renders its table and fails closed when required secrets are unset."
