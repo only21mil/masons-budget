@@ -157,10 +157,79 @@ jobs:
         run: gradle :domain:test --no-daemon
         working-directory: android
 
+      # A signing identity that survives between runs. Gradle otherwise generates
+      # a throwaway ~/.android/debug.keystore on each fresh runner, so every CI
+      # APK is signed by a different certificate and installing a new one over
+      # the last on the Fold fails with INSTALL_FAILED_UPDATE_INCOMPATIBLE —
+      # uninstall-first every time, losing the app's state.
+      #
+      # Optional on purpose. With no secret set the step is a no-op, the build
+      # falls back to the generated keystore, and forks stay green.
+      #
+      # To create one (these are the published Android debug defaults, which
+      # android/app/build.gradle.kts also defaults to, so the keystore secret is
+      # the only one you need):
+      #   keytool -genkeypair -v -keystore vogel-debug.keystore -storetype PKCS12 \
+      #     -alias androiddebugkey -storepass android -keypass android \
+      #     -keyalg RSA -keysize 2048 -validity 10950 \
+      #     -dname "CN=Android Debug,O=Android,C=US"
+      #   base64 -w0 vogel-debug.keystore | gh secret set ANDROID_DEBUG_KEYSTORE_BASE64
+      #
+      # Only the decoded file's path is exported to a later step; the encoded
+      # value and the passwords stay bound to the single step that needs them.
+      - name: Materialise the stable debug keystore
+        id: debug_keystore
+        if: steps.probe.outputs.app == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "path=" >> "$GITHUB_OUTPUT"
+            echo "::notice::ANDROID_DEBUG_KEYSTORE_BASE64 is not set. Using Gradle's generated debug keystore, so this APK will not install over an earlier CI build."
+            exit 0
+          fi
+          KEYSTORE_PATH="$RUNNER_TEMP/vogel-debug.keystore"
+          if ! printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"; then
+            echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 is not valid base64. Re-encode it with: base64 -w0 vogel-debug.keystore"
+            exit 1
+          fi
+          chmod 600 "$KEYSTORE_PATH"
+          if [ ! -s "$KEYSTORE_PATH" ]; then
+            echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 decoded to an empty file. Re-encode it with base64 -w0."
+            exit 1
+          fi
+          echo "path=$KEYSTORE_PATH" >> "$GITHUB_OUTPUT"
+          echo "Signing debug builds with the repository debug keystore."
+
       - name: Assemble debug APK
         if: steps.probe.outputs.app == 'true'
+        env:
+          # Empty when the secret is absent, which build.gradle.kts treats as
+          # "leave the debug signing config alone".
+          VOGEL_DEBUG_KEYSTORE: ${{ steps.debug_keystore.outputs.path }}
+          VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
+          VOGEL_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
+          VOGEL_DEBUG_KEY_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEY_PASSWORD }}
         run: gradle :app:assembleDebug :app:lintDebug --no-daemon
         working-directory: android
+
+      # The certificate digest ships inside every APK, so printing it leaks
+      # nothing and is the only way to confirm from here that two runs share an
+      # identity. Diagnostic, never a gate.
+      - name: Report the debug signing certificate
+        if: steps.probe.outputs.app == 'true'
+        continue-on-error: true
+        working-directory: android
+        run: |
+          set -uo pipefail
+          APK=$(find app/build/outputs/apk/debug -name '*.apk' | head -1)
+          APKSIGNER=$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -name apksigner | sort | tail -1)
+          if [ -n "$APK" ] && [ -n "$APKSIGNER" ]; then
+            "$APKSIGNER" verify --print-certs "$APK" | grep -i 'digest'
+          else
+            echo "::notice::apksigner or the APK was not found — skipping the fingerprint report."
+          fi
 
       # Renders Compose to PNG under Robolectric — no emulator, no display.
       # Review artifact, not a pixel-diff gate: behaviour is asserted by the
@@ -195,3 +264,9 @@ jobs:
           name: android-test-report
           path: android/**/build/reports/tests/**
           retention-days: 7
+
+      # Hosted runners are discarded anyway; this is the same discipline deploy.yml
+      # applies to Apple signing material, and it costs nothing.
+      - name: Remove the debug keystore from the runner
+        if: always()
+        run: rm -f "$RUNNER_TEMP/vogel-debug.keystore"
