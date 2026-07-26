@@ -10,8 +10,11 @@ name: Clients CI
 # trigger.
 
 on:
+  # main is included deliberately: it was previously excluded to avoid duplicate
+  # push+PR runs, which meant the default branch was never verified after a
+  # merge. Concurrency below handles the duplication instead.
   push:
-    branches-ignore:
+    branches:
       - main
   pull_request:
   workflow_dispatch:
