@@ -1,6 +1,10 @@
 import { ConvexError, v } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { normalizeTodoRecord, todoUpdatedMs } from "./todoNormalize";
+import {
+  mergeTodoPayload,
+  normalizeTodoRecord,
+  todoUpdatedMs,
+} from "./todoNormalize";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -385,21 +389,26 @@ async function applyTodoUpsert(
 
   // SAT-1328: normalize via the shared mirror (canonical: mission-control/
   // lib/todo-normalize.js). Emits the dual-field superset.
-  const normalized = normalizeTodoRecord(todo as Record<string, any>, {
-    now,
-  });
-
   if (existingIndex >= 0) {
     // SAT-1326 LWW: incoming applies only when its updated_at is newer (ties
     // favor the incoming write, which is the freshly stamped server edit).
+    // Judged on the RAW payload, before the merge, so a timestamp inherited
+    // from the stored record can never help a stale write win its own contest.
     const existingItem = currentTodos[existingIndex] as Record<string, any>;
     const existingUpdated = todoUpdatedMs(existingItem);
-    const incomingUpdated = todoUpdatedMs(normalized) || now;
+    const incomingUpdated = todoUpdatedMs(todo) || now;
     if (incomingUpdated >= existingUpdated) {
-      currentTodos[existingIndex] = normalized;
+      // merge into the stored record instead of replacing it.
+      // normalizeTodoRecord defaults every absent field, so normalizing a
+      // partial payload on its own wiped notes, project, area, due date and
+      // owner — a phone toggling `done` silently destroyed the rest of the todo.
+      currentTodos[existingIndex] = normalizeTodoRecord(
+        mergeTodoPayload(existingItem, todo as Record<string, any>, { now }),
+        { now },
+      );
     }
   } else {
-    currentTodos.push(normalized);
+    currentTodos.push(normalizeTodoRecord(todo as Record<string, any>, { now }));
   }
 
   const nextData =
