@@ -26,6 +26,39 @@ import type { PageManifest } from "../types.ts"
 
 const TODAY = "2026-07-26"
 
+/**
+ * MC2's project for a todo nobody filed.
+ *
+ * normalizeTodoRecord defaults `project` to this string, mirroring the Convex
+ * emitter, so the read model never hands us a null project. "Inbox" therefore
+ * means the absence of a filing, not a project a human created — and a view that
+ * treats it as one buries every unfiled task under a fake project heading.
+ * Spelled out here rather than re-derived per view: one interpretation, one
+ * place, same as the contract itself.
+ */
+export const MC2_DEFAULT_PROJECT = "Inbox"
+
+/** Where a todo is filed: its project, else its area, else nowhere. */
+export function filingOf(todo: TodoItem): string | null {
+  const project = todo.project === MC2_DEFAULT_PROJECT ? null : todo.project
+  return project ?? todo.area
+}
+
+/**
+ * The task views, as predicates over the read model.
+ *
+ * Exported so linux/test/todo-dialects.test.ts can prove that the same todo
+ * spelled in different MC2 dialects lands in the same views. A dialect that
+ * routes differently is invisible to the shared parity fixture, which pins the
+ * normaliser rather than the screens.
+ */
+export const taskFilters = {
+  today: (todo: TodoItem) => !todo.done && todo.due !== null && todo.due <= TODAY,
+  inbox: (todo: TodoItem) => !todo.done && filingOf(todo) === null,
+  upcoming: (todo: TodoItem) => !todo.done && todo.due !== null && todo.due > TODAY,
+  flagged: (todo: TodoItem) => todo.flagged && !todo.done,
+} satisfies Record<string, (todo: TodoItem) => boolean>
+
 function useVisibleTodos(): readonly TodoItem[] {
   const { activeProfile, data } = useAppState()
   return useMemo(() => visibleTo(activeProfile, data.todos.value), [activeProfile, data.todos.value])
@@ -36,7 +69,7 @@ function tableState(status: string): "normal" | "empty" | "error" | "stale" | "l
   return "normal"
 }
 
-const todoColumns: ReadonlyArray<Column<TodoItem>> = [
+export const todoColumns: ReadonlyArray<Column<TodoItem>> = [
   {
     key: "done",
     header: "",
@@ -64,7 +97,7 @@ const todoColumns: ReadonlyArray<Column<TodoItem>> = [
       </span>
     ),
   },
-  { key: "project", header: "Project", render: (row) => row.project ?? row.area ?? "—", secondary: true },
+  { key: "project", header: "Project", render: (row) => filingOf(row) ?? "—", secondary: true },
   { key: "due", header: "Due", render: (row) => row.due ?? "—", width: "112px" },
   { key: "owner", header: "Owner", render: (row) => <Badge>{row.owner}</Badge>, secondary: true },
 ]
@@ -136,7 +169,7 @@ function TodayPage() {
     <TodoListPage
       title="Today"
       subtitle="Due today or overdue"
-      filter={(todo) => !todo.done && todo.due !== null && todo.due <= TODAY}
+      filter={taskFilters.today}
       emptyTitle="Nothing due today"
       emptyDetail="No open tasks are due on or before today for this profile."
       showComposer
@@ -148,8 +181,8 @@ function InboxPage() {
   return (
     <TodoListPage
       title="Inbox"
-      subtitle="Unsorted — no project, no area"
-      filter={(todo) => !todo.done && todo.project === null && todo.area === null}
+      subtitle="Unsorted — still in the MC2 inbox"
+      filter={taskFilters.inbox}
       emptyTitle="Inbox is clear"
       emptyDetail="Every open task has been filed under a project or area."
       showComposer
@@ -162,7 +195,7 @@ function UpcomingPage() {
     <TodoListPage
       title="Upcoming"
       subtitle="Scheduled beyond today"
-      filter={(todo) => !todo.done && todo.due !== null && todo.due > TODAY}
+      filter={taskFilters.upcoming}
       emptyTitle="Nothing scheduled"
       emptyDetail="No open tasks have a due date after today."
     />
@@ -174,7 +207,7 @@ function FlaggedPage() {
     <TodoListPage
       title="Flagged"
       subtitle="Marked for attention"
-      filter={(todo) => todo.flagged && !todo.done}
+      filter={taskFilters.flagged}
       emptyTitle="Nothing flagged"
       emptyDetail="No open tasks are currently flagged for this profile."
     />
@@ -188,7 +221,7 @@ function ProjectsPage() {
   const groups = useMemo(() => {
     const byProject = new Map<string, TodoItem[]>()
     for (const todo of todos) {
-      const key = todo.project ?? todo.area ?? "Unfiled"
+      const key = filingOf(todo) ?? "Unfiled"
       const bucket = byProject.get(key)
       if (bucket) bucket.push(todo)
       else byProject.set(key, [todo])

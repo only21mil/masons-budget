@@ -23,6 +23,7 @@ import type {
   TodoItem,
   Transaction,
 } from "@vogel-vault/domain/readModel"
+import { type RawTodo, normalizeTodoRecord, toTodoItem } from "@vogel-vault/domain/todo"
 
 const NOW = Date.UTC(2026, 6, 26, 14, 30, 0)
 const MINUTE = 60_000
@@ -231,36 +232,55 @@ const BILL_PAYS: readonly BTCBillPay[] = [
 
 // ── Todos ───────────────────────────────────────────────────────────────────
 
-const TODOS: readonly TodoItem[] = [
-  todo("todo-0001", "Reconcile July statements", "victor", { area: "Finance", due: daysAgo(-1), flagged: true }),
-  todo("todo-0002", "Review insurance renewal", "victor", { area: "Home", due: daysAgo(-4) }),
-  todo("todo-0003", "Schedule annual checkup", "rachel", { area: "Health", due: daysAgo(-2) }),
-  todo("todo-0004", "Plan birthday weekend", "rachel", { project: "Family Calendar" }),
-  todo("todo-0005", "Export Q2 records", "victor", { project: "Tax Prep", flagged: true }),
-  todo("todo-0006", "File receipts", "victor", { project: "Tax Prep", done: true }),
-  todo("todo-0007", "Finish reading assignment", "mason", { area: "School", due: daysAgo(-1) }),
-  todo("todo-0008", "Tidy room", "mason", { area: "Home", done: true }),
-  todo("todo-0009", "Practice piano", "maddox", { area: "Music", due: daysAgo(0) }),
+/**
+ * Todos, written the way MC2 actually emits them.
+ *
+ * Unlike every other slice here, these are NOT hand-built read-model records.
+ * MC2 sends todos as a dual-field superset — done/completed, due_date/dueDate/
+ * due/date/deadline/when, flag/flagged, title/text, owner/assignee — and the one
+ * place that is allowed to interpret it is normalizeTodoRecord in the shared
+ * contract. Handing the pages pre-digested TodoItems would mean the client's
+ * real interpretation lived here, in sample data, where nothing tests it.
+ *
+ * So the dialects below are deliberately mixed: every record spells its fields
+ * differently on purpose, and the fixture is only correct if the normaliser
+ * flattens all of them to the same read model. linux/test/todo-dialects.test.ts
+ * pins that.
+ */
+const RAW_TODOS: readonly RawTodo[] = [
+  // flag + due_date, the snake-case spellings the Convex emitter writes.
+  {
+    id: "todo-0001",
+    title: "Reconcile July statements",
+    area: "Finance",
+    due_date: daysAgo(-1),
+    flag: true,
+    owner: "victor",
+  },
+  // `text` with no `title` — the Things alias.
+  { id: "todo-0002", text: "Review insurance renewal", area: "Home", dueDate: daysAgo(-4), owner: "victor" },
+  // No `owner` at all. Ownership falls to `assignee`, which is the whole reason
+  // the contract follows Swift here: a strict owner read would file this on
+  // Victor and quietly drop it out of Rachel's list.
+  { id: "todo-0003", title: "Schedule annual checkup", area: "Health", due: daysAgo(-2), assignee: "rachel" },
+  // `when` is a Things bucket word, not a date. It must not reach a due chip.
+  { id: "todo-0004", title: "Plan birthday weekend", project: "Family Calendar", when: "anytime", owner: "rachel" },
+  { id: "todo-0005", title: "Export Q2 records", project: "Tax Prep", flagged: true, owner: "victor" },
+  // `completed` with no `done`.
+  { id: "todo-0006", title: "File receipts", project: "Tax Prep", completed: true, owner: "victor" },
+  { id: "todo-0007", text: "Finish reading assignment", area: "School", deadline: daysAgo(-1), owner: "mason" },
+  // Done expressed only as a status string.
+  { id: "todo-0008", title: "Tidy room", area: "Home", status: "completed", owner: "mason" },
+  // A wall-clock stamp where a calendar day belongs; the contract slices it.
+  { id: "todo-0009", title: "Practice piano", area: "Music", date: `${daysAgo(0)} 09:00`, owner: "maddox" },
+  // Neither project nor area, so the Inbox view has something to show. MC2 files
+  // this under its default "Inbox" project rather than leaving the field unset.
+  { id: "todo-0010", title: "Sort out the garage shelving", owner: "victor" },
 ]
 
-function todo(
-  id: string,
-  title: string,
-  owner: FamilyMember,
-  extra: { project?: string; area?: string; due?: string; flagged?: boolean; done?: boolean } = {},
-): TodoItem {
-  return {
-    id,
-    title,
-    done: extra.done ?? false,
-    project: extra.project ?? null,
-    area: extra.area ?? null,
-    due: extra.due ?? null,
-    flagged: extra.flagged ?? false,
-    notes: null,
-    owner,
-  }
-}
+const TODOS: readonly TodoItem[] = RAW_TODOS.map((raw) =>
+  toTodoItem(normalizeTodoRecord(raw, { nowMillis: NOW })),
+)
 
 // ── Envelope ────────────────────────────────────────────────────────────────
 

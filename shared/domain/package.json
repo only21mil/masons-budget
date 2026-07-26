@@ -9,6 +9,7 @@
     "./family": "./src/family.ts",
     "./money": "./src/money.ts",
     "./readModel": "./src/readModel.ts",
+    "./todo": "./src/todo.ts",
     "./fixtures/visibility-cases.json": "./fixtures/visibility-cases.json"
   },
   "scripts": {

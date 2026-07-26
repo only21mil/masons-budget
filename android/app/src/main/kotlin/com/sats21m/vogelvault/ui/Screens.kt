@@ -34,6 +34,7 @@ import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.MC2_FILES
 import com.sats21m.vogelvault.domain.Money
+import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.domain.Transaction
 import com.sats21m.vogelvault.domain.deriveBudgetSpend
 import com.sats21m.vogelvault.domain.inMonth
@@ -540,8 +541,27 @@ private fun AccountList(accounts: List<BtcAccount>, status: Freshness) {
 
 private const val TODAY_DATE = "2026-07-26"
 
+/**
+ * MC2's project for a todo nobody filed.
+ *
+ * `Todo.normalize` defaults `project` to this string, mirroring the Convex
+ * emitter, so once the todo boundary is wired through the contract the read
+ * model will never hand this screen a null project. "Inbox" means the absence of
+ * a filing, not a project a human made, and a row that prints it verbatim reads
+ * as though every unsorted task were filed. See DOMAIN_ADOPTION.md in this app's
+ * package root for where the interpretation is allowed to live.
+ */
+private const val MC2_DEFAULT_PROJECT = "Inbox"
+
+/** Where a todo is filed: its project, else its area, else nowhere. */
+private fun filing(todo: TodoItem): String? =
+    todo.project?.takeIf { it != MC2_DEFAULT_PROJECT } ?: todo.area
+
 private fun androidx.compose.foundation.lazy.LazyListScope.today(state: VaultUiState) {
     val slice = state.data.todos
+    // isDueBy is the contract's own open-and-due rule, not a re-reading of the
+    // done/due fields here. This screen deliberately knows nothing about MC2's
+    // field aliases — that is Todo.normalize's job, once and at the boundary.
     val todos = slice.value.visibleTo(state.activeProfile)
         .filter { it.isDueBy(TODAY_DATE) }
 
@@ -558,7 +578,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.today(state: VaultUiS
                         if (index > 0) HorizontalHairline()
                         LedgerRow(
                             primary = todo.title,
-                            secondary = listOfNotNull(todo.project ?: todo.area, todo.due).joinToString(" · "),
+                            secondary = listOfNotNull(filing(todo), todo.due).joinToString(" · "),
                             figure = "",
                             badge = if (todo.flagged) "flagged" else null,
                         )
