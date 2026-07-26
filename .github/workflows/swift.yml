@@ -1,0 +1,196 @@
+name: Swift CI
+
+# The Apple client compiled nowhere. PRs #10 (month-scoping tests) and #11
+# (read-token entry) merged on a green tick from workflows that only build the
+# Linux and Android clients, so 75 Swift files and seven XCTest classes have
+# never been through a compiler in CI and the tests have never run.
+#
+# This workflow closes that hole and stops there. It builds and tests. It does
+# not sign, archive, export or upload — that is deploy.yml's job, behind its
+# manual trigger, which is the app-build approval gate. Nothing here may become a
+# second route to a shipped build, which is why every xcodebuild call below
+# disables signing outright rather than merely skipping the upload step.
+#
+# Xcode setup mirrors deploy.yml deliberately: same pinned setup-xcode action,
+# same 16.4, same `xcodegen generate --spec project.yml`. project.yml is the
+# source of truth; the .xcodeproj is generated output and is never hand-edited.
+# If the two workflows drift, a change can pass here and fail during a release.
+#
+# Cost: macos-latest bills at 10x the Linux rate on a private repository
+# ($0.08/min vs $0.008/min), so this is gated three ways — a paths filter to
+# Swift-touching changes, a repository check so forks never spend it, and
+# cancel-in-progress concurrency. See the PR for the per-run estimate.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'MasonsBudget/**'
+      - 'Package.swift'
+      - 'Tests/**'
+      - '.github/workflows/swift.yml'
+  pull_request:
+    paths:
+      - 'MasonsBudget/**'
+      - 'Package.swift'
+      - 'Tests/**'
+      - '.github/workflows/swift.yml'
+  # The escape hatch: paths filters do not apply to a manual run, so a Swift
+  # build can still be forced on a branch that only touched, say, a fixture.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: swift-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # brew's auto-update pulls a few hundred megabytes and a minute of wall clock
+  # before it installs anything, and this runner is billed by the minute.
+  HOMEBREW_NO_AUTO_UPDATE: 1
+  HOMEBREW_NO_INSTALL_CLEANUP: 1
+
+jobs:
+  swift:
+    name: Build and test the Apple client
+    # One job, not three. Xcode selection, the brew install and project
+    # generation cost the same few minutes whichever leg needs them, and on a
+    # 10x runner paying for that setup once beats parallelism.
+    if: github.repository == 'only21mil/masons-budget'
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: '16.4'
+
+      # Printed because the runner image moves under us: when this workflow
+      # starts failing on a build that has not changed, the first question is
+      # which Xcode and which SDK it got today.
+      - name: Report the toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+          xcodebuild -showsdks | grep -iE 'ios|macos' || true
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        working-directory: MasonsBudget
+        run: xcodegen generate --spec project.yml
+
+      # Cheapest signal first. VogelVaultCore is a plain SwiftPM library with no
+      # simulator, no signing and no app bundle, so a syntax-level break in
+      # VoiceParser surfaces here in under a minute instead of eight minutes into
+      # an app build.
+      - name: SwiftPM package tests
+        run: swift test
+
+      # Hardcoding "iPhone 16" would rot the first time the runner image ships a
+      # different device set, and the failure reads as an unhelpful "Unable to
+      # find a destination". Any available iPhone runs a unit-test bundle, so
+      # flatten every iPhone across the image's iOS runtimes and take the last —
+      # newest runtime, newest model. iPhone-less runtimes fall out of the list
+      # rather than winning the sort and yielding nothing.
+      - name: Choose an iOS simulator
+        id: simulator
+        run: |
+          set -euo pipefail
+          UDID=$(xcrun simctl list devices available --json | jq -r '
+            [ .devices
+              | to_entries[]
+              | select(.key | contains("SimRuntime.iOS"))
+              | . as $runtime
+              | .value[]
+              | select(.name | startswith("iPhone"))
+              | {runtime: $runtime.key, udid: .udid}
+            ]
+            | sort_by(.runtime)
+            | last
+            | .udid // empty
+          ')
+          if [ -z "$UDID" ]; then
+            echo "::error::No iOS simulator is available on this runner image."
+            xcrun simctl list runtimes
+            xcrun simctl list devices available
+            exit 1
+          fi
+          NAME=$(xcrun simctl list devices available --json \
+            | jq -r --arg udid "$UDID" '[.devices[][] | select(.udid == $udid)] | first | .name')
+          echo "Testing on $NAME ($UDID)"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      # Booting explicitly rather than letting xcodebuild do it lazily: a slow
+      # first boot otherwise shows up as a timeout inside the test action, which
+      # reads like a test failure and is not one.
+      - name: Boot the simulator
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          set -euo pipefail
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+
+      # Signing is disabled three ways because one is not enough: the project
+      # sets CODE_SIGN_STYLE=Automatic with a DEVELOPMENT_TEAM, and a runner has
+      # no Apple ID to resolve a profile with. The simulator does not verify
+      # signatures, so an unsigned bundle installs and the tests run.
+      #
+      # This is also the structural reason this workflow cannot produce a
+      # shippable artifact even by accident.
+      - name: iOS unit tests
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+        working-directory: MasonsBudget
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -project MasonsBudget.xcodeproj \
+            -scheme MasonsBudget \
+            -destination "id=$UDID" \
+            -resultBundlePath "$RUNNER_TEMP/MasonsBudget-iOS.xcresult" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      # Build only: the MasonsBudgetMac scheme has no test targets, and the two
+      # app targets compile the same sources for different platforms, so this
+      # exists to catch an iOS-only API landing in shared code. deploy.yml offers
+      # a macos platform, so a Mac build that has silently rotted is a release
+      # that fails at the archive step.
+      - name: macOS build
+        working-directory: MasonsBudget
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project MasonsBudget.xcodeproj \
+            -scheme MasonsBudgetMac \
+            -destination "platform=macOS" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      # Only on failure. The xcresult carries the per-test failure detail that
+      # the raw xcodebuild log buries, and on a green run it is dead weight
+      # nobody opens.
+      - name: Upload the test result bundle
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: masonsbudget-ios-xcresult
+          path: ${{ runner.temp }}/MasonsBudget-iOS.xcresult
+          retention-days: 7
+          if-no-files-found: ignore
