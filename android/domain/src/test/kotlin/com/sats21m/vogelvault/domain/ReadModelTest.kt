@@ -173,3 +173,36 @@ class ReadModelTest {
         assertTrue(stamp < Fixtures.NOW_MILLIS, "a slice was read in the past, not the future")
     }
 }
+
+/** Due-date predicates. ISO dates compare lexically, which is why they are ISO. */
+class TodoDueTest {
+
+    private fun todo(due: String?, done: Boolean = false) =
+        TodoItem(id = "t", title = "t", done = done, due = due, owner = FamilyMember.VICTOR)
+
+    @Test
+    fun `undated todos are never due`() {
+        assertFalse(todo(null).isDueOnOrBefore("2026-07-26"))
+        assertFalse(todo(null).isDueBy("2026-07-26"))
+    }
+
+    @Test
+    fun `due today and overdue both count, future does not`() {
+        assertTrue(todo("2026-07-26").isDueBy("2026-07-26"))
+        assertTrue(todo("2026-07-01").isDueBy("2026-07-26"))
+        assertFalse(todo("2026-07-27").isDueBy("2026-07-26"))
+    }
+
+    @Test
+    fun `a completed todo is not due even when overdue`() {
+        assertTrue(todo("2026-07-01").isDueOnOrBefore("2026-07-26"))
+        assertFalse(todo("2026-07-01", done = true).isDueBy("2026-07-26"))
+    }
+
+    @Test
+    fun `lexical comparison holds across month and year boundaries`() {
+        assertTrue(todo("2025-12-31").isDueBy("2026-01-01"))
+        assertFalse(todo("2026-01-02").isDueBy("2026-01-01"))
+        assertTrue(todo("2026-09-01").isDueBy("2026-10-01"))
+    }
+}

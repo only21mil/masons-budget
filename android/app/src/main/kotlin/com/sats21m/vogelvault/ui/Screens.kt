@@ -21,6 +21,7 @@ import com.sats21m.vogelvault.domain.MC2_FILES
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.Transaction
 import com.sats21m.vogelvault.domain.incomeAmount
+import com.sats21m.vogelvault.domain.isDueBy
 import com.sats21m.vogelvault.domain.netWorthScopeFor
 import com.sats21m.vogelvault.domain.spendAmount
 import com.sats21m.vogelvault.domain.visibleTo
@@ -379,7 +380,7 @@ private const val TODAY_DATE = "2026-07-26"
 private fun androidx.compose.foundation.lazy.LazyListScope.today(state: VaultUiState) {
     val slice = state.data.todos
     val todos = slice.value.visibleTo(state.activeProfile)
-        .filter { !it.done && it.due != null && it.due <= TODAY_DATE }
+        .filter { it.isDueBy(TODAY_DATE) }
 
     item { StaleNotice(slice.status) }
     item {

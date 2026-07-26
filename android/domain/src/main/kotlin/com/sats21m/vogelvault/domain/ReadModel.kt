@@ -158,6 +158,20 @@ data class TodoItem(
     override val owner: FamilyMember,
 ) : Owned
 
+/**
+ * Due on or before [date], comparing ISO `yyyy-MM-dd` strings lexically.
+ *
+ * Lives here rather than at the call site: a consumer module cannot smart-cast
+ * `due` across the module boundary, and this is a domain rule regardless.
+ */
+fun TodoItem.isDueOnOrBefore(date: String): Boolean {
+    val dueDate = due ?: return false
+    return dueDate <= date
+}
+
+/** Open and due — the Today list. */
+fun TodoItem.isDueBy(date: String): Boolean = !done && isDueOnOrBefore(date)
+
 // ── Aggregate ───────────────────────────────────────────────────────────────
 
 /**
