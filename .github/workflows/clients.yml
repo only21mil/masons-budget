@@ -1,0 +1,145 @@
+name: Clients CI
+
+# Builds and verifies the Linux and Android clients on GitHub runners so no
+# toolchain has to be installed on a workstation. The Ubuntu runner ships the
+# Android SDK with licences already accepted, which is why the Android job needs
+# no interactive gate.
+#
+# This workflow never touches the live Convex deployment, never signs anything,
+# and never publishes. Apple builds stay in deploy.yml behind their own manual
+# trigger.
+
+on:
+  push:
+    branches-ignore:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clients-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shared-domain:
+    name: Shared domain contract
+    if: github.repository == 'only21mil/masons-budget'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck --workspace @vogel-vault/domain
+
+      - name: Parity tests against the Swift contract
+        run: npm run test --workspace @vogel-vault/domain
+
+  linux-client:
+    name: Linux client
+    if: github.repository == 'only21mil/masons-budget'
+    runs-on: ubuntu-latest
+    needs: shared-domain
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck renderer
+        run: npx tsc --noEmit -p tsconfig.json
+        working-directory: linux
+
+      - name: Typecheck electron main/preload
+        run: npx tsc --noEmit -p tsconfig.electron.json
+        working-directory: linux
+
+      - name: Lint
+        run: npx eslint .
+        working-directory: linux
+
+      - name: Preload boundary guard
+        run: node scripts/qa-preload-boundary.mjs
+        working-directory: linux
+
+      - name: Render matrix (20 routes x profiles x states)
+        run: npx vitest run
+        working-directory: linux
+
+      - name: Build
+        run: npx vite build
+        working-directory: linux
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-client-dist
+          path: |
+            linux/dist
+            linux/dist-electron
+          retention-days: 7
+
+  android-client:
+    name: Android client
+    if: github.repository == 'only21mil/masons-budget'
+    runs-on: ubuntu-latest
+    needs: shared-domain
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip when the Android module does not exist yet
+        id: probe
+        run: |
+          if [ -f android/settings.gradle.kts ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::android/ not scaffolded yet — skipping."
+          fi
+
+      - uses: actions/setup-java@v4
+        if: steps.probe.outputs.present == 'true'
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.probe.outputs.present == 'true'
+
+      - name: Unit tests
+        if: steps.probe.outputs.present == 'true'
+        run: ./gradlew testDebugUnitTest
+        working-directory: android
+
+      - name: Lint
+        if: steps.probe.outputs.present == 'true'
+        run: ./gradlew lintDebug
+        working-directory: android
+
+      - name: Assemble debug APK
+        if: steps.probe.outputs.present == 'true'
+        run: ./gradlew assembleDebug
+        working-directory: android
+
+      # Debug-signed only — this is a sideload artifact for the Fold, never a
+      # release build. Release signing stays out of CI.
+      - name: Upload debug APK
+        if: steps.probe.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vogel-vault-debug-apk
+          path: android/**/build/outputs/apk/debug/*.apk
+          retention-days: 7
