@@ -37,12 +37,47 @@ export type VogelVaultCsvExportResult =
   | { readonly status: "cancelled" }
   | { readonly status: "rejected"; readonly reason: string }
 
+/** One remote data file, metadata only. No financial content crosses in this. */
+export interface VogelVaultRemoteDataFile {
+  readonly name: string
+  readonly version: number
+  /** Epoch milliseconds. */
+  readonly updatedAt: number
+}
+
+/**
+ * What the renderer may learn about the remote deployment.
+ *
+ * Note what is not here: no URL, no host, no credential, no server-authored
+ * text. Every `reason` is a sentence the main process wrote. The renderer cannot
+ * reach the deployment and cannot be told how to.
+ *
+ * `disabled` is the shipped default and means no request was made at all — the
+ * app renders the sanitized fixtures exactly as it did before this existed.
+ * `authenticated` reports whether the read carried a credential, which is the
+ * client-side confirmation step 4 of docs/convex-read-auth-cutover.md asks for.
+ */
+export type VogelVaultRemoteSnapshot =
+  | {
+      readonly status: "ok"
+      /** ISO 8601, when main received the answer. */
+      readonly readAt: string
+      readonly authenticated: boolean
+      readonly files: readonly VogelVaultRemoteDataFile[]
+    }
+  | { readonly status: "disabled" }
+  | { readonly status: "unconfigured"; readonly reason: string }
+  | { readonly status: "unauthorized" }
+  | { readonly status: "unavailable"; readonly reason: string }
+
 declare global {
   interface Window {
     /** Absent when running outside Electron (plain `vite dev` in a browser). */
     readonly vogelVault?: {
       getRuntimeInfo(): VogelVaultRuntimeInfo
       exportCsv(request: VogelVaultCsvExportRequest): Promise<VogelVaultCsvExportResult>
+      /** Takes no argument: there is nothing here for the renderer to choose. */
+      getRemoteSnapshot(): Promise<VogelVaultRemoteSnapshot>
     }
   }
 }

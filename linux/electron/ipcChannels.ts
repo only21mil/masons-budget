@@ -6,3 +6,12 @@
 
 /** Renderer → main, invoke/handle. Writes a CSV the user chooses a path for. */
 export const CSV_EXPORT_CHANNEL = "vogel-vault:export-csv"
+
+/**
+ * Renderer → main, invoke/handle. Returns a metadata-only snapshot of the
+ * Convex deployment, or a status saying why there is none.
+ *
+ * The renderer takes no argument here and gets no endpoint back. The deployment
+ * URL and the read credential live in the main process; see electron/convexRead.ts.
+ */
+export const CONVEX_READ_CHANNEL = "vogel-vault:read-remote-snapshot"

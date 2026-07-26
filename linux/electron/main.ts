@@ -21,7 +21,14 @@ import {
   serializeCsv,
   validateCsvRequest,
 } from "./csvExport.ts"
-import { CSV_EXPORT_CHANNEL } from "./ipcChannels.ts"
+import {
+  type JsonPostResponse,
+  type RemoteSnapshotResult,
+  REMOTE_READ_LIMITS,
+  createRemoteReader,
+  resolveRemoteReadSettings,
+} from "./convexRead.ts"
+import { CONVEX_READ_CHANNEL, CSV_EXPORT_CHANNEL } from "./ipcChannels.ts"
 
 const dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -148,6 +155,86 @@ function registerCsvExport(): void {
   })
 }
 
+// Convex reads. MAIN PROCESS ONLY, and switched off unless this machine's
+// environment says otherwise — see electron/convexRead.ts for the settings and
+// docs/convex-read-auth-cutover.md for why it ships off.
+//
+// Why the fetch is here and not in the renderer: `hardenSession` cancels every
+// request the renderer's session makes, on purpose, and the renderer must never
+// hold the deployment URL or the read credential in the first place. Node's
+// global fetch does not run through Electron's session, so this call is
+// unaffected by that block — which is exactly the asymmetry the boundary wants.
+
+const REMOTE_READ_TIMEOUT_MS = 10_000
+
+async function postJsonToDeployment(endpoint: string, requestBody: string): Promise<JsonPostResponse> {
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: requestBody,
+    // A redirect would hand the read credential to whatever host the response
+    // named. There is no legitimate redirect on a Convex query endpoint.
+    redirect: "error",
+    signal: AbortSignal.timeout(REMOTE_READ_TIMEOUT_MS),
+  })
+
+  const { text, truncated } = await readCappedText(response, REMOTE_READ_LIMITS.maxResponseBytes)
+  return { httpStatus: response.status, body: text, truncated }
+}
+
+/**
+ * Read at most `maxBytes` and stop.
+ *
+ * A metadata listing is a few kilobytes. Buffering an unbounded body from a
+ * misconfigured or hostile endpoint into the process that owns the window is not
+ * something to leave to the endpoint's good manners.
+ */
+async function readCappedText(
+  response: Response,
+  maxBytes: number,
+): Promise<{ text: string; truncated: boolean }> {
+  const stream = response.body
+  if (!stream) return { text: "", truncated: false }
+
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  let received = 0
+  let text = ""
+
+  try {
+    for (;;) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      received += chunk.value.byteLength
+      if (received > maxBytes) {
+        await reader.cancel()
+        return { text, truncated: true }
+      }
+      text += decoder.decode(chunk.value, { stream: true })
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  return { text: text + decoder.decode(), truncated: false }
+}
+
+function registerRemoteSnapshot(): void {
+  // Settings are resolved per call, not captured here, so the switch and the
+  // credential can change under a running app without a restart.
+  const reader = createRemoteReader({
+    settings: () => resolveRemoteReadSettings(process.env),
+    post: postJsonToDeployment,
+  })
+
+  ipcMain.handle(CONVEX_READ_CHANNEL, async (event): Promise<RemoteSnapshotResult> => {
+    if (!isTrustedSender(event)) {
+      return { status: "unavailable", reason: "The request came from an unrecognised frame." }
+    }
+    return reader.snapshot()
+  })
+}
+
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1440,
@@ -218,6 +305,7 @@ if (!app.requestSingleInstanceLock()) {
     // Registered before the first window so no renderer can invoke a channel
     // that is not yet handled.
     registerCsvExport()
+    registerRemoteSnapshot()
     createWindow()
 
     app.on("activate", () => {
