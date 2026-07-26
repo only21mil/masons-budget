@@ -72,8 +72,25 @@ jobs:
           # altool looks for the key by convention in this directory.
           mkdir -p "$HOME/private_keys"
           KEY_PATH="$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8"
-          echo "$ASC_API_KEY_P8" | base64 --decode > "$KEY_PATH"
+
+          # The secret may hold the raw PEM or a base64 wrapper of it, depending
+          # on how it was set. Assuming base64 unconditionally silently wrote
+          # garbage, and xcodebuild reported it four steps later as an opaque
+          # DVTFoundation.JWT.Error.keyPathInvalid. Detect, then verify.
+          if printf '%s' "$ASC_API_KEY_P8" | grep -q "BEGIN PRIVATE KEY"; then
+            printf '%s\n' "$ASC_API_KEY_P8" > "$KEY_PATH"
+          else
+            printf '%s' "$ASC_API_KEY_P8" | base64 --decode > "$KEY_PATH" 2>/dev/null || true
+          fi
           chmod 600 "$KEY_PATH"
+
+          # Fail here, with a sentence that says what to do, rather than letting
+          # a malformed key surface as a JWT error inside xcodebuild.
+          if ! grep -q "BEGIN PRIVATE KEY" "$KEY_PATH"; then
+            echo "::error::ASC_API_KEY_P8 did not yield a valid .p8. Set it to the file contents verbatim: gh secret set ASC_API_KEY_P8 -R only21mil/masons-budget < AuthKey_XXXX.p8"
+            exit 1
+          fi
+          echo "App Store Connect key written and validated."
           # xcodebuild wants an explicit path; altool finds it by convention.
           echo "ASC_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
 
