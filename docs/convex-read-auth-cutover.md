@@ -22,6 +22,11 @@ household's complete financial history. `validateReadToken` in
 out the TestFlight build already on Victor's phone. Same pattern as
 `CONVEX_SYNC_TOKEN` for mutations (SAT-1326).
 
+**The hatch outranks the token** — `ALLOW_TOKENLESS_READ=true` admits every
+caller even once `CONVEX_READ_TOKEN` is set, so *removing the hatch* is the
+enforcement flip, not setting the token. Read Trap 1 before doing anything;
+it also names the hazard that choice buys.
+
 Measured state of the production deployment on 2026-07-26:
 
 ```
@@ -38,35 +43,53 @@ Reads are open right now, and the gated code is not deployed yet.
 
 ## Two traps that change the order
 
-Both were found by probing the live deployment, and both contradict a naive
-reading of the three-step summary in `AGENTS.md`. Read them before touching
+Both were found by probing the live deployment. Read them before touching
 anything.
 
-### Trap 1 — the hatch does not protect you once the token is set
+### Trap 1 — the hatch outranks the token, so a set token can do nothing
 
-Look at the actual control flow in `validateReadToken`:
+`validateReadToken` checks the hatch **first**:
 
 ```
-expected = process.env.CONVEX_READ_TOKEN
-if (!expected) {
-  if (ALLOW_TOKENLESS_READ === "true") return   // hatch consulted ONLY here
-  throw
-}
-if (!token || token !== expected) throw          // hatch never consulted
+if (ALLOW_TOKENLESS_READ === "true") { warn("PERMISSIVE …"); return }
+if (!CONVEX_READ_TOKEN) throw            // fail-closed, nothing configured
+if (!token || token !== CONVEX_READ_TOKEN) throw
 ```
 
-`ALLOW_TOKENLESS_READ` is only consulted when `CONVEX_READ_TOKEN` is **unset**.
-The moment you set `CONVEX_READ_TOKEN` on the deployment, enforcement is live
-and the hatch is irrelevant, whatever its value.
+So `ALLOW_TOKENLESS_READ=true` admits every caller **even when
+`CONVEX_READ_TOKEN` is set**. Setting the token is a preparatory step, not the
+flip. *Removing the hatch is the enforcement flip.*
 
-So *setting `CONVEX_READ_TOKEN` on the deployment is the enforcement flip.* It
-is not a preparatory step. It must happen after every reader already sends the
-token, not before.
+This is deliberate, and it was the opposite until 2026-07-26. The original code
+consulted the hatch only when the token was unset, which meant step 3 below
+started enforcing the moment you pressed enter and locked out every reader that
+did not yet send a token — including the phone. The two designs fail in
+opposite directions:
 
-The upside: because that one variable is the flip, `npx convex env remove
-CONVEX_READ_TOKEN` is a complete, atomic rollback that takes seconds — as long
-as `ALLOW_TOKENLESS_READ=true` is still in place to catch the fall. Keep the
-hatch set through the enforcement flip and remove it only after the soak.
+| | failure mode | who notices |
+| --- | --- | --- |
+| hatch loses (old) | everyone locked out, remotely, immediately | the household, by the app being broken |
+| hatch wins (now) | enforcement quietly did not happen | `verify-read-auth.sh` printing `OPEN`, in one command |
+
+The second is recoverable by someone who is not already locked out. That is the
+whole argument.
+
+> ⚠️ **The hazard this buys, stated plainly: a set `CONVEX_READ_TOKEN` is not
+> evidence of enforcement.** The deployment can list the variable, look
+> configured, and still be serving the family's finances to anyone with the URL.
+> Two things detect it, and nothing else does:
+>
+> - `scripts/verify-read-auth.sh` reports `STATE: OPEN`.
+> - Every permissive admission logs `PERMISSIVE: ALLOW_TOKENLESS_READ=true is
+>   admitting this call and CONVEX_READ_TOKEN is set but IGNORED …` to the
+>   deployment log. Unthrottled, one line per call, on purpose.
+>
+> Never declare the cutover done on the strength of `npx convex env list`. Run
+> the script. The same applies to `ALLOW_TOKENLESS_SYNC` and writes.
+
+The upside is a rollback that stays atomic forever: `npx convex env set
+ALLOW_TOKENLESS_READ true` restores permissive reads in seconds, from any state,
+without touching `CONVEX_READ_TOKEN` and without a redeploy.
 
 ### Trap 2 — clients cannot send the token before the gated code is deployed
 
@@ -131,8 +154,9 @@ matching how `scripts/convex-codegen.mjs` derives the prod deployment.
 ## The cutover
 
 Convex environment variables take effect on the running deployment
-immediately — no redeploy needed. That is what makes steps 5 and 6 reversible
-in seconds, and also why step 5 is dangerous the instant you press enter.
+immediately — no redeploy needed. That is what makes step 5 reversible in
+seconds, and also why step 5 is dangerous the instant you press enter. Steps 1
+through 4 are all permissive: nothing in them can lock a client out.
 
 ### Step 0 — Baseline
 
@@ -179,7 +203,9 @@ CONVEX_READ_TOKEN="$THE_TOKEN" scripts/verify-read-auth.sh
 **Signal:** the unauthenticated probe is still `ACCEPTED` (`STATE: OPEN`), and
 the authenticated probe is now also `ACCEPTED` rather than `Server Error`. Both
 succeeding is the proof that the gated code is live *and* the hatch is holding
-it open — the token argument is now accepted and ignored.
+it open — the token argument is now accepted and ignored. The deployment log
+should show a `PERMISSIVE: ALLOW_TOKENLESS_READ=true …` line for each of those
+probes; its absence means the gated code did not land.
 
 **If the unauthenticated probe comes back `REJECTED` here, you have an
 outage.** The hatch did not take. Go to rollback immediately.
@@ -195,11 +221,21 @@ If that does not restore `OPEN` within a minute, redeploy the previous commit's
 `convex/` directory. Reverting the code is slower than fixing the variable, so
 always try the variable first.
 
-### Step 3 — Distribute the token to every reader (deployment still permissive)
+### Step 3 — Set the token everywhere (deployment still permissive)
 
-Do **not** set `CONVEX_READ_TOKEN` on the deployment yet — see Trap 1.
+Set it on the deployment first. This is inert while the hatch is on — Trap 1 —
+which is exactly why it is safe to do before the readers are ready:
 
-Set it on the readers, one at a time:
+```bash
+env $DEPLOY npx convex env set CONVEX_READ_TOKEN "$THE_TOKEN"
+env $DEPLOY npx convex env list          # presence only; never print the value
+scripts/verify-read-auth.sh --expect open
+```
+
+**Signal:** still `STATE: OPEN`. If this prints `ENFORCED`, the hatch is not in
+place — go to step 1's rollback before doing anything else.
+
+Then set the same value on the readers, one at a time:
 
 - **MC2 sync hosts:** `CONVEX_READ_TOKEN` in the same environment that already
   carries `CONVEX_SYNC_TOKEN`. Requires the read sites in
@@ -224,18 +260,29 @@ configuration, is sending the token.
 
 **Rollback:** unset the variable on that reader. Nothing on the server changed.
 
-### Step 4 — Confirm, and be honest about what you cannot confirm
+### Step 4 — Soak permissively, and be honest about what you cannot confirm
 
 **This is the weakest link in the runbook.** In permissive mode the server
-cannot distinguish a client that sends the token from one that does not — it
-accepts both and logs neither. There is no server-side proof available.
+accepts a correct token, a wrong token and no token alike. It cannot tell you
+which readers are ready, and it cannot tell you whether the value you
+distributed matches the value on the deployment. There is no server-side proof
+available until the flip.
 
-So confirmation is client-side inspection, one reader at a time:
+Soak here — at least 48 hours, and long enough to cover one full MC2 sync
+cycle, one phone session, and one use of each wired desktop client. This is the
+cheap part of the cutover: nothing is enforced, so nothing can break. Spend the
+time here rather than after step 5.
+
+Confirmation is client-side inspection, one reader at a time:
 
 - MC2 hosts: the variable is present in the service environment, and the
   running process was restarted after it was set.
 - iOS: the app was launched after the token was injected and reads succeed.
 - Linux/Android: the code path that attaches the token is the only read path.
+
+Also grep the deployment log for the `PERMISSIVE:` lines. They confirm the
+gated code is live and the hatch is what is holding it open — they do *not*
+tell you anything about which readers are sending a token.
 
 Write down the list of readers you inspected and the ones you could not. The
 ones you could not are the ones that will break in step 5, and step 5's
@@ -247,10 +294,11 @@ Victor is present.
 
 ### Step 5 — The enforcement flip
 
-One command. Enforcement is live the instant it returns.
+Removing the hatch is the flip. One command; enforcement is live the instant it
+returns.
 
 ```bash
-env $DEPLOY npx convex env set CONVEX_READ_TOKEN "$THE_TOKEN"
+env $DEPLOY npx convex env remove ALLOW_TOKENLESS_READ
 ```
 
 **Check, within seconds:**
@@ -263,7 +311,9 @@ CONVEX_READ_TOKEN="$THE_TOKEN" scripts/verify-read-auth.sh
 **Signal:** the unauthenticated probe is `REJECTED` with
 `Unauthorized: invalid read token`, `STATE: ENFORCED`, and the authenticated
 probe is `ACCEPTED`. Both halves matter — `ENFORCED` alone could also mean you
-have locked out everyone including yourself with a typo'd token.
+typo'd the deployment's token in step 3 and have locked out everyone including
+yourself. This is the first moment the token's *value* is verifiable at all;
+until now it was inert.
 
 **Then, in this order, within the first two minutes:**
 
@@ -275,43 +325,40 @@ have locked out everyone including yourself with a typo'd token.
 **ROLLBACK — if any client starts failing:**
 
 ```bash
-env $DEPLOY npx convex env remove CONVEX_READ_TOKEN
+env $DEPLOY npx convex env set ALLOW_TOKENLESS_READ true
 scripts/verify-read-auth.sh --expect open
 ```
 
-That is the whole rollback. It takes seconds, needs no redeploy, and works only
-because `ALLOW_TOKENLESS_READ=true` from step 1 is still in place. Confirm
-`STATE: OPEN` before you go debug anything.
+That is the whole rollback. It takes seconds, needs no redeploy, leaves
+`CONVEX_READ_TOKEN` untouched, and works from any state — that is the payoff for
+the hatch outranking the token. Confirm `STATE: OPEN` before you go debug
+anything.
 
 Do not attempt a partial fix while clients are down. Roll back first, diagnose
 second. The data is exposed again while rolled back — that is a worse state
 than enforced, but a better state than Victor's finances being unreadable with
 no diagnosis, and it is the state that existed for months anyway.
 
-### Step 6 — Soak, then remove the hatch
+### Step 6 — Confirm the hatch is gone and stays gone
 
-Leave `ALLOW_TOKENLESS_READ=true` in place for a soak period — at least 48
-hours, and long enough to cover one full MC2 sync cycle, one phone session, and
-one use of each wired desktop client. During the soak the hatch is inert
-(Trap 1: the token is set, so the hatch is never consulted). It is sitting there
-purely as a one-command rollback.
-
-After the soak:
+There is nothing left to remove: step 5 already removed the only thing standing
+between the deployment and enforcement. What is left is making sure it does not
+quietly come back.
 
 ```bash
-env $DEPLOY npx convex env remove ALLOW_TOKENLESS_READ
+env $DEPLOY npx convex env list          # ALLOW_TOKENLESS_READ must be absent
 scripts/verify-read-auth.sh --expect enforced
 ```
 
-**Signal:** still `ENFORCED`. This step changes no behaviour whatsoever — it
-only removes the ability to roll back with one command. If this step changes
-anything observable, your mental model is wrong; put it back and work out why.
+⚠️ If anyone re-sets `ALLOW_TOKENLESS_READ=true` for a rollback, **it is not a
+temporary state that expires on its own.** The token stays set, the deployment
+keeps looking configured, and reads are wide open until someone removes the
+hatch again. Re-run `scripts/verify-read-auth.sh --expect enforced` after every
+incident, and treat a `PERMISSIVE:` line in the deployment log outside a
+declared cutover window as an open production incident.
 
-**Rollback:** `env $DEPLOY npx convex env set ALLOW_TOKENLESS_READ true`.
-
-After this point, rolling back to permissive requires removing
-`CONVEX_READ_TOKEN` *and* re-adding the hatch — two commands, still fast, but
-no longer atomic.
+Repeat the same check for writes: `ALLOW_TOKENLESS_SYNC` has the identical
+precedence and the identical failure to notice.
 
 ---
 
@@ -331,16 +378,33 @@ Worth knowing before you are staring at one.
 - **MC2 data pull:** an uncaught throw out of `pullAppTransactionsFromConvex`
   and friends; the sync run aborts.
 - **The verify script:** `STATE: ENFORCED` when you expected `OPEN` is an
-  outage in progress.
+  outage in progress. `STATE: OPEN` when you expected `ENFORCED` is the Trap 1
+  hazard: a hatch is still set and the token is being ignored. Nothing is
+  broken, and that is the problem — the data is public and everything looks
+  fine.
+- **The deployment log:** a `PERMISSIVE: …` line outside a declared cutover
+  window means reads (or writes) are open right now. Treat it as an incident,
+  not a warning.
 
 ---
 
 ## Token rotation, later
 
-Rotation has the same shape as the cutover and the same trap. Do not overwrite
-`CONVEX_READ_TOKEN` while clients hold the old one — that is an instant lockout
-with no hatch. Either re-run steps 3 through 6 with the hatch re-armed first, or
-accept a deliberate short outage with the rollback command ready.
+Rotation has the same shape as the cutover. Overwriting `CONVEX_READ_TOKEN`
+while clients still hold the old one is an instant lockout, so re-arm the hatch
+first and the rotation becomes as safe as the original cutover:
+
+1. `npx convex env set ALLOW_TOKENLESS_READ true` — permissive again, and now
+   old-token, new-token and no-token clients all read fine.
+2. Set the new `CONVEX_READ_TOKEN` on the deployment (inert), then roll it out
+   to every reader.
+3. Soak and inspect, exactly as step 4.
+4. `npx convex env remove ALLOW_TOKENLESS_READ` — enforcement back on, with the
+   new value.
+
+Step 1 reopens the data to the internet for the length of the rotation. That is
+a real cost, it needs Victor's approval each time, and it argues for keeping the
+window short rather than for skipping the hatch.
 
 ---
 
@@ -356,6 +420,11 @@ Does:
 - `--expect open|enforced` turns it into a gate: exit 0 on match, 1 on
   mismatch, 2 on indeterminate. Without `--expect` the exit code encodes the
   state: 0 `ENFORCED`, 10 `OPEN`, 2 `UNKNOWN`.
+- Detect the Trap 1 hazard. A deployment with `CONVEX_READ_TOKEN` set and a
+  hatch still on reports `OPEN`, which is the only external signal that a
+  configured-looking deployment is not enforcing. This is the reason the hatch
+  is allowed to outrank the token at all — run it after every cutover step and
+  after every rollback.
 - Runs queries only — no mutation, no write, no side effect — so it is safe to
   run repeatedly against production.
 

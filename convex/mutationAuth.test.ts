@@ -1,5 +1,5 @@
 // SAT-1326 regression suite: every write is fail-closed on the sync token.
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   api,
@@ -150,15 +150,85 @@ describe("mutation auth: ALLOW_TOKENLESS_SYNC cutover hatch", () => {
     }
   });
 
-  // Same precedence hazard as the read hatch — see readAuth.test.ts.
-  it("the hatch is ignored once CONVEX_SYNC_TOKEN is set", async () => {
+  // Same precedence as the read hatch, for the same reason — see the banner in
+  // dataFiles.ts and readAuth.test.ts. Kept identical on purpose: two gates
+  // that behave differently under the same-shaped env vars is how a cutover
+  // operator gets surprised at the worst moment.
+  describe("the hatch outranks a configured CONVEX_SYNC_TOKEN", () => {
+    beforeEach(() => {
+      setDeploymentEnv({
+        CONVEX_SYNC_TOKEN: freshSecret(),
+        ALLOW_TOKENLESS_SYNC: "true",
+      });
+    });
+
+    for (const mutation of TOKEN_GUARDED_MUTATIONS) {
+      it(`${mutation.name} admits a tokenless writer`, async () => {
+        await expect(mutation.call(t)).resolves.not.toThrow();
+      });
+
+      it(`${mutation.name} admits a writer sending the wrong token`, async () => {
+        await expect(mutation.call(t, freshSecret())).resolves.not.toThrow();
+      });
+    }
+  });
+
+  it("setting CONVEX_SYNC_TOKEN is inert until the hatch comes off", async () => {
+    const syncToken = freshSecret();
     setDeploymentEnv({
-      CONVEX_SYNC_TOKEN: freshSecret(),
+      CONVEX_SYNC_TOKEN: syncToken,
       ALLOW_TOKENLESS_SYNC: "true",
     });
     await expect(
       t.mutation(api.sync, { name: "budget", data: { categories: [] } }),
+    ).resolves.toEqual({ name: "budget", version: 1 });
+
+    delete process.env.ALLOW_TOKENLESS_SYNC;
+    await expect(
+      t.mutation(api.sync, { name: "budget", data: { categories: [] } }),
     ).rejects.toThrow(/invalid sync token/);
+    await expect(
+      t.mutation(api.sync, {
+        name: "budget",
+        data: { categories: [] },
+        token: syncToken,
+      }),
+    ).resolves.toEqual({ name: "budget", version: 2 });
+  });
+
+  // ⚠️ A set token is not evidence of enforcement. Say so in the log.
+  it("logs loudly that a set token is being ignored", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      setDeploymentEnv({
+        CONVEX_SYNC_TOKEN: freshSecret(),
+        ALLOW_TOKENLESS_SYNC: "true",
+      });
+      await t.mutation(api.sync, { name: "budget", data: { categories: [] } });
+
+      const logged = warn.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(logged).toMatch(/PERMISSIVE/);
+      expect(logged).toMatch(/CONVEX_SYNC_TOKEN is set but IGNORED/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("says nothing when the gate is actually enforcing", async () => {
+    const syncToken = freshSecret();
+    setDeploymentEnv({ CONVEX_SYNC_TOKEN: syncToken });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await t.mutation(api.sync, {
+        name: "budget",
+        data: { categories: [] },
+        token: syncToken,
+      });
+      const logged = warn.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(logged).not.toMatch(/PERMISSIVE/);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

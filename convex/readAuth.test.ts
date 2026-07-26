@@ -5,7 +5,7 @@
 // shipped client — was the only thing standing between a stranger and the
 // household's full financial history. These tests exist so that can never
 // silently come back: each of the four read entry points is asserted closed.
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   api,
@@ -130,20 +130,105 @@ describe("read auth: ALLOW_TOKENLESS_READ cutover hatch", () => {
     }
   });
 
-  // ⚠️ CUTOVER HAZARD — documented, not a behaviour change.
+  // The hatch outranks the token, and that is the whole design.
   //
-  // The comment above validateReadToken prescribes: (2) set CONVEX_READ_TOKEN
-  // and ship clients that send it, (3) confirm, THEN remove the hatch. But the
-  // hatch is only consulted when CONVEX_READ_TOKEN is UNSET, so step (2) starts
-  // enforcing immediately and every client that does not yet send the token —
-  // including the TestFlight build already on Victor's phone — breaks at that
-  // moment, not at step (3). This test pins the real precedence so the runbook
-  // gets written against the code rather than against the comment.
-  it("the hatch is ignored once CONVEX_READ_TOKEN is set", async () => {
+  // These assertions used to be inverted — they pinned the hatch being ignored
+  // once CONVEX_READ_TOKEN was set, which made the documented cutover order
+  // ("set the token, then ship clients") start enforcing at the wrong step and
+  // lock out every client that did not yet send one. Enforcement now flips when
+  // the hatch is REMOVED, so the sequence in docs/convex-read-auth-cutover.md is
+  // the sequence the code actually implements.
+  describe("the hatch outranks a configured CONVEX_READ_TOKEN", () => {
+    beforeEach(() => {
+      setDeploymentEnv({
+        CONVEX_READ_TOKEN: freshSecret(),
+        ALLOW_TOKENLESS_READ: "true",
+      });
+    });
+
+    for (const entry of READ_ENTRY_POINTS) {
+      it(`${entry.name} admits a tokenless caller`, async () => {
+        await expect(entry.call(t)).resolves.toBeDefined();
+      });
+
+      it(`${entry.name} admits a caller sending the wrong token`, async () => {
+        // Permissive means permissive: while the hatch is on the server cannot
+        // tell a correctly-configured client from a broken one, which is why
+        // step 4 of the runbook is client-side inspection rather than a probe.
+        await expect(entry.call(t, freshSecret())).resolves.toBeDefined();
+      });
+    }
+  });
+
+  it("setting CONVEX_READ_TOKEN is inert until the hatch comes off", async () => {
+    const readToken = freshSecret();
     setDeploymentEnv({
-      CONVEX_READ_TOKEN: freshSecret(),
+      CONVEX_READ_TOKEN: readToken,
       ALLOW_TOKENLESS_READ: "true",
     });
+    await expect(t.query(api.list, {})).resolves.toBeDefined();
+
+    // Removing the hatch is the enforcement flip — one variable, and the only
+    // thing that changes posture.
+    delete process.env.ALLOW_TOKENLESS_READ;
     await expect(t.query(api.list, {})).rejects.toThrow(/invalid read token/);
+    await expect(t.query(api.list, { token: readToken })).resolves.toBeDefined();
+  });
+
+  it("re-setting the hatch is a complete rollback from enforcement", async () => {
+    setDeploymentEnv({ CONVEX_READ_TOKEN: freshSecret() });
+    await expect(t.query(api.list, {})).rejects.toThrow(/invalid read token/);
+
+    setDeploymentEnv({ ALLOW_TOKENLESS_READ: "true" });
+    await expect(t.query(api.list, {})).resolves.toBeDefined();
+  });
+
+  // ⚠️ THE HAZARD THIS DESIGN BUYS. A set CONVEX_READ_TOKEN is not evidence of
+  // enforcement, so the server says so on every permissive admission. That log
+  // line and scripts/verify-read-auth.sh reporting OPEN are the two signals
+  // that catch a deployment everyone believes is closed but is not.
+  it("logs loudly that a set token is being ignored", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      setDeploymentEnv({
+        CONVEX_READ_TOKEN: freshSecret(),
+        ALLOW_TOKENLESS_READ: "true",
+      });
+      await t.query(api.list, {});
+
+      const logged = warn.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(logged).toMatch(/PERMISSIVE/);
+      expect(logged).toMatch(/CONVEX_READ_TOKEN is set but IGNORED/);
+      expect(logged).toMatch(/NOT enforcing auth/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("logs a permissive admission when no token is configured either", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      setDeploymentEnv({ ALLOW_TOKENLESS_READ: "true" });
+      await t.query(api.list, {});
+
+      const logged = warn.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(logged).toMatch(/PERMISSIVE/);
+      expect(logged).toMatch(/not configured/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("says nothing when the gate is actually enforcing", async () => {
+    const readToken = freshSecret();
+    setDeploymentEnv({ CONVEX_READ_TOKEN: readToken });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await t.query(api.list, { token: readToken });
+      const logged = warn.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(logged).not.toMatch(/PERMISSIVE/);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
