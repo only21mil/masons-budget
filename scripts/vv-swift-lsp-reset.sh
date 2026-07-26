@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# DGX-safe SwiftPM / SourceKit-LSP helper for Vogel Vault.
+# Linux-safe SwiftPM / SourceKit-LSP helper for Vogel Vault.
 #
 # This script only touches SwiftPM/SourceKit local caches. It never runs
 # xcodebuild, simulator flows, app-target tests, archive/export/upload, or
@@ -16,7 +16,7 @@ Usage: scripts/vv-swift-lsp-reset.sh <status|prime|reset>
 
 Commands:
   status   Show Swift, SourceKit-LSP, and local SwiftPM cache state.
-  prime    Serialize and run a pure SwiftPM build to refresh DGX indexing.
+  prime    Serialize and run a pure SwiftPM build to refresh local indexing.
   reset    Remove local SwiftPM/SourceKit index caches, then run prime.
 
 Never runs xcodebuild, simulator flows, archive/export/upload, signing changes,

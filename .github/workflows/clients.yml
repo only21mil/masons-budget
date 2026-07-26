@@ -100,46 +100,60 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Skip when the Android module does not exist yet
+      - name: Detect which Android modules exist
         id: probe
         run: |
           if [ -f android/settings.gradle.kts ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "gradle=true" >> "$GITHUB_OUTPUT"
           else
-            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "gradle=false" >> "$GITHUB_OUTPUT"
             echo "::notice::android/ not scaffolded yet — skipping."
+          fi
+          if [ -f android/app/build.gradle.kts ]; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "app=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::android/app not scaffolded yet — domain module only, no APK."
           fi
 
       - uses: actions/setup-java@v4
-        if: steps.probe.outputs.present == 'true'
+        if: steps.probe.outputs.gradle == 'true'
         with:
           distribution: temurin
           java-version: 21
 
+      # Gradle comes from the action rather than a committed wrapper jar, so no
+      # binary blob lives in the repo. The domain module is plain Kotlin/JVM and
+      # needs no Android SDK — only the app module does.
       - uses: gradle/actions/setup-gradle@v4
-        if: steps.probe.outputs.present == 'true'
+        if: steps.probe.outputs.gradle == 'true'
+        with:
+          gradle-version: "8.12"
 
-      - name: Unit tests
-        if: steps.probe.outputs.present == 'true'
-        run: ./gradlew testDebugUnitTest
-        working-directory: android
-
-      - name: Lint
-        if: steps.probe.outputs.present == 'true'
-        run: ./gradlew lintDebug
+      - name: Domain parity tests (shared fixture, no Android SDK)
+        if: steps.probe.outputs.gradle == 'true'
+        run: gradle :domain:test --no-daemon
         working-directory: android
 
       - name: Assemble debug APK
-        if: steps.probe.outputs.present == 'true'
-        run: ./gradlew assembleDebug
+        if: steps.probe.outputs.app == 'true'
+        run: gradle :app:assembleDebug :app:lintDebug --no-daemon
         working-directory: android
 
-      # Debug-signed only — this is a sideload artifact for the Fold, never a
-      # release build. Release signing stays out of CI.
+      # Debug-signed only — a sideload artifact for the Fold, never a release
+      # build. Release signing stays out of CI.
       - name: Upload debug APK
-        if: steps.probe.outputs.present == 'true'
+        if: steps.probe.outputs.app == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: vogel-vault-debug-apk
-          path: android/**/build/outputs/apk/debug/*.apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 7
+
+      - name: Upload test report on failure
+        if: failure() && steps.probe.outputs.gradle == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-report
+          path: android/**/build/reports/tests/**
           retention-days: 7

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# DGX-safe Vogel Vault Swift preflight.
+# Linux-safe Vogel Vault Swift preflight.
 #
 # This script deliberately avoids xcodebuild, simulator actions, archives,
 # signing, uploads, and app-target tests. It is meant to shrink the gap between
-# DGX static cleanup and Mac/Xcode build verification without crossing the app
+# Linux static cleanup and Mac/Xcode build verification without crossing the app
 # build approval gate.
 
 set -uo pipefail
@@ -117,7 +117,7 @@ snapshot_package_resolved() {
 
 cd "$ROOT" || exit 1
 
-log "Vogel Vault DGX Swift preflight"
+log "Vogel Vault Swift preflight"
 log "repo: $ROOT"
 log "artifacts: $ARTIFACT_DIR"
 log "quick: $QUICK"
@@ -180,7 +180,7 @@ fi
 
 run_capture swift-stdin-typecheck bash -lc '
   set -euo pipefail
-  printf "struct VVDGXSwiftProbe { let value: Int }\n" | swiftc -typecheck -
+  printf "struct VVSwiftProbe { let value: Int }\n" | swiftc -typecheck -
 '
 
 if [[ -f "$ROOT/Package.swift" ]]; then

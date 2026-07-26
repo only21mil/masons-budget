@@ -2,7 +2,7 @@ disabled_rules:
   - trailing_comma
   - opening_brace
   - statement_position
-  # Baseline legacy debt so DGX preflight can catch regressions without
+  # Baseline legacy debt so the Linux preflight can catch regressions without
   # requiring a broad app refactor before every code-only lane.
   - cyclomatic_complexity
   - file_length

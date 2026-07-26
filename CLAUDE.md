@@ -1,9 +1,23 @@
 # Vogel Vault coding-agent instructions
 
-Read `AGENTS.md` in this repo before doing any work. It contains the app-specific rules for Codex, OpenCode, Claude, and Sats lanes.
+Read `AGENTS.md` in this repo before doing any work. It carries the app-specific
+rules, the family/visibility contract, and the release path.
+
+Two things to know before you touch anything:
+
+- **Tracking is GitHub only.** Branch, then open a pull request. Do not use
+  Linear. Do not commit to `main`.
+- **Nothing is kept locally.** Clone where you need it, push the branch, delete
+  the checkout. Builds run in GitHub Actions, not on a workstation.
 
 ## App Build Approval Gate
 
-Do not start a new distributable app build without Victor's explicit approval. Keep fixing bugs, creating/updating Linear issues, moving to the next issue, editing code, and running local tests/simulator checks automatically. Stop before build-number bumps for distribution, archive, export, TestFlight/App Store upload, notarization, or release artifact/distribution steps.
+Do not start a distributable app build without Victor's explicit approval.
 
-Also read `/Users/node2m1pro/Obsidian/Victor/Agent-Shared/rules/app-build-deploy-workflow.md` before any approved build/release sequence.
+Freely: fix bugs, file GitHub issues, edit code, run static checks and tests.
+
+Stop and ask before: bumping the build number for distribution, archiving,
+exporting, uploading to TestFlight or the App Store, notarizing, or any other
+release or distribution step. Releases run through
+`.github/workflows/deploy.yml`, which is `workflow_dispatch` only — triggering it
+is the gate.
