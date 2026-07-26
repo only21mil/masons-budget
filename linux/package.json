@@ -14,7 +14,8 @@
     "test": "vitest run",
     "qa:preload-boundary": "node scripts/qa-preload-boundary.mjs",
     "package": "node scripts/package-placeholder.mjs",
-    "screenshots": "node scripts/capture-screenshots.mjs"
+    "screenshots": "node scripts/capture-screenshots.mjs",
+    "smoke": "node scripts/smoke-electron.mjs"
   },
   "dependencies": {
     "@vogel-vault/domain": "*",
