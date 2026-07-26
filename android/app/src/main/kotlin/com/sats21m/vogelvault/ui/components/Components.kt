@@ -2,11 +2,14 @@ package com.sats21m.vogelvault.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -27,7 +30,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.ui.theme.LedgerNumeral
 import com.sats21m.vogelvault.ui.theme.VaultAccent
@@ -75,15 +80,17 @@ fun KpiStrip(items: List<Kpi>, modifier: Modifier = Modifier) {
     ) {
         items.chunked(2).forEachIndexed { rowIndex, row ->
             if (rowIndex > 0) HorizontalHairline()
-            Row(Modifier.fillMaxWidth()) {
+            // IntrinsicSize.Min makes both cells adopt the taller one's height,
+            // so a cell carrying a hint line cannot leave a stub of bare surface
+            // beside its neighbour.
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                 row.forEachIndexed { index, item ->
-                    if (index > 0) VerticalHairline()
-                    KpiCell(item, Modifier.weight(1f))
+                    if (index > 0) VerticalHairline(Modifier.fillMaxHeight())
+                    KpiCell(item, Modifier.weight(1f).fillMaxHeight())
                 }
-                // Keep the grid square when a row has a single item.
                 if (row.size == 1) {
-                    VerticalHairline()
-                    Spacer(Modifier.weight(1f).background(VaultSurface))
+                    VerticalHairline(Modifier.fillMaxHeight())
+                    Spacer(Modifier.weight(1f).fillMaxHeight().background(VaultSurface))
                 }
             }
         }
@@ -106,7 +113,10 @@ private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
         Spacer(Modifier.height(2.dp))
         Text(
             item.value,
-            style = LedgerNumeral.copy(fontSize = MaterialTheme.typography.headlineMedium.fontSize),
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            style = LedgerNumeral.copy(fontSize = 18.sp),
             color = when {
                 suppressed -> VaultTextDim
                 item.tone != null -> item.tone
@@ -164,7 +174,7 @@ fun HorizontalHairline(modifier: Modifier = Modifier) {
 
 @Composable
 fun VerticalHairline(modifier: Modifier = Modifier) {
-    Box(modifier.width(1.dp).height(72.dp).background(VaultLine))
+    Box(modifier.width(1.dp).background(VaultLine))
 }
 
 /** A ledger row: label on the left, monospace figure hard right. */
@@ -198,10 +208,16 @@ fun LedgerRow(
 }
 
 @Composable
-fun Badge(text: String, accented: Boolean = false, tone: Color? = null) {
+fun Badge(
+    text: String,
+    accented: Boolean = false,
+    tone: Color? = null,
+    onClick: (() -> Unit)? = null,
+) {
     val border = tone ?: if (accented) VaultAccent.copy(alpha = 0.42f) else VaultLine
     Box(
         Modifier
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .border(1.dp, border, RoundedCornerShape(99.dp))
             .background(
                 if (accented) VaultAccent.copy(alpha = 0.16f) else VaultSurfaceSunken,

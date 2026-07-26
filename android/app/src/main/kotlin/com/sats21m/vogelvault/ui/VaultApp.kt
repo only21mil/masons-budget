@@ -200,14 +200,16 @@ private fun VaultTopBar(state: VaultUiState, onSwitchProfile: (FamilyMember) -> 
         )
         Spacer(Modifier.width(VaultSpace.sm))
         if (!state.activeProfile.isAdult) {
+            // A child has exactly one switch target — itself. Show a static label
+            // rather than a control implying a door they cannot open.
             Badge("Child profile")
         } else {
-            // Adults can move between profiles; children cannot, so no control is
-            // offered to them at all rather than a disabled one.
+            // Tappable, not decorative: these previously rendered as inert pills
+            // that looked like tabs.
             state.switchTargets
                 .filter { it != state.activeProfile }
                 .forEach { target ->
-                    Badge(target.displayName, accented = false)
+                    Badge(target.displayName, onClick = { onSwitchProfile(target) })
                     Spacer(Modifier.width(VaultSpace.xs))
                 }
         }
