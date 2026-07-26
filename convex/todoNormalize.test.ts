@@ -139,6 +139,35 @@ describe("normalizeTodoRecord: the dual-field superset", () => {
     ).toBe("2026-07-21T09:00:00.000Z");
   });
 
+  it("treats a blank alias as absent and keeps walking the chain", () => {
+    expect(
+      normalizeTodoRecord(
+        { id: "a", updated_at: "", updatedAt: "2026-07-20T09:00:00.000Z" },
+        { now },
+      ).updated_at,
+    ).toBe("2026-07-20T09:00:00.000Z");
+    expect(
+      normalizeTodoRecord(
+        { id: "a", updated_at: "", updatedAt: "", completedAt: "2026-07-21T09:00:00.000Z" },
+        { now },
+      ).updated_at,
+    ).toBe("2026-07-21T09:00:00.000Z");
+  });
+
+  it("stamps now when every update alias is blank", () => {
+    const record = normalizeTodoRecord({ id: "a", updated_at: "", updatedAt: "" }, { now });
+    expect(record.updatedAt).toBe("2026-07-26T10:00:00.000Z");
+    expect(record.updated_at).toBe(record.updatedAt);
+  });
+
+  it("leaves a blank update alias blank when timestamps are not defaulted", () => {
+    const record = normalizeTodoRecord(
+      { id: "a", updated_at: "" },
+      { now, defaultTimestamps: false },
+    );
+    expect(record.updatedAt).toBe("");
+  });
+
   it("defaults missing timestamps to now, and to empty when asked not to", () => {
     const stamped = normalizeTodoRecord({ id: "a" }, { now });
     expect(stamped.updatedAt).toBe("2026-07-26T10:00:00.000Z");
@@ -170,14 +199,48 @@ describe("normalizeTodoRecord: derived fields", () => {
     expect(record.done).toBe(false);
   });
 
-  // Documented asymmetry: an explicit status wins for `status`, but `done` is
-  // still true, so a `{ done: true, status: "pending" }` input round-trips as a
-  // record that disagrees with itself. Faithfully mirrored from the canonical
-  // normalizer; flagged rather than fixed.
-  it("does not reconcile an explicit status against an explicit done", () => {
+  // The emitted record can never contradict itself: whichever of the two
+  // completion signals claims completion wins, so `done` and `status` always
+  // agree by the time anything reads them.
+  it("reconciles an explicit status against an explicit done", () => {
     const record = normalizeTodoRecord({ id: "a", done: true, status: "pending" }, { now });
-    expect(record.status).toBe("pending");
+    expect(record.status).toBe("completed");
     expect(record.done).toBe(true);
+  });
+
+  it("reconciles the completed alias against a contradicting status", () => {
+    const record = normalizeTodoRecord({ id: "a", completed: true, status: "archived" }, { now });
+    expect(record.status).toBe("completed");
+    expect(record.done).toBe(true);
+  });
+
+  it("keeps done and status in step for every input", () => {
+    const inputs: Record<string, unknown>[] = [
+      {},
+      { done: true },
+      { done: false },
+      { completed: true },
+      { status: "pending" },
+      { status: "completed" },
+      { status: "archived" },
+      { done: true, status: "pending" },
+      { done: false, status: "completed" },
+      { done: true, status: "archived" },
+    ];
+    for (const input of inputs) {
+      const record = normalizeTodoRecord({ id: "a", ...input }, { now });
+      expect({ input, agrees: record.done === (record.status === "completed") }).toEqual({
+        input,
+        agrees: true,
+      });
+    }
+  });
+
+  it("treats a blank status as no status at all", () => {
+    expect(normalizeTodoRecord({ id: "a", status: "" }, { now }).status).toBe("pending");
+    expect(normalizeTodoRecord({ id: "a", status: "", done: true }, { now }).status).toBe(
+      "completed",
+    );
   });
 
   it("defaults lane, project, owner and assignee", () => {
@@ -351,11 +414,24 @@ describe("todoUpdatedMs", () => {
     expect(todoUpdatedMs({ updated_at: "not a date" })).toBe(0);
   });
 
-  // Documented sharp edge: the fallback chain uses `??`, so an EMPTY-STRING
-  // updated_at short-circuits the chain and hides a perfectly good updatedAt.
-  // Such a record always loses LWW.
-  it("an empty updated_at masks a valid updatedAt", () => {
-    expect(todoUpdatedMs({ updated_at: "", updatedAt: "2026-07-20T00:00:00.000Z" })).toBe(0);
+  // A blank alias means "unset", so it must not shadow the stamp behind it —
+  // a record whose real time is hidden loses LWW comparisons it should win and
+  // gets silently clobbered by an older write.
+  it("skips a blank alias instead of letting it mask a valid stamp", () => {
+    expect(todoUpdatedMs({ updated_at: "", updatedAt: "2026-07-20T00:00:00.000Z" })).toBe(
+      Date.parse("2026-07-20T00:00:00.000Z"),
+    );
+    expect(
+      todoUpdatedMs({ updated_at: "", updatedAt: "", completedAt: "2026-07-20T00:00:00.000Z" }),
+    ).toBe(Date.parse("2026-07-20T00:00:00.000Z"));
+  });
+
+  // Deliberately NOT the same as blank: a garbage stamp is still a claim about
+  // the time, so it scores 0 rather than borrowing a better one from behind it.
+  it("does not fall through an unparseable stamp to a valid alias", () => {
+    expect(todoUpdatedMs({ updated_at: "yesterday", updatedAt: "2026-07-20T00:00:00.000Z" })).toBe(
+      0,
+    );
   });
 
   it("accepts a date-only string", () => {

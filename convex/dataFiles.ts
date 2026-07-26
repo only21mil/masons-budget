@@ -444,6 +444,11 @@ async function applyTodoUpsert(
 
   // SAT-1328: normalize via the shared mirror (canonical: mission-control/
   // lib/todo-normalize.js). Emits the dual-field superset.
+  // Tracks whether the write actually landed, so a discarded stale write does
+  // not bump the version. No pre-computed `normalized` here: the update path
+  // normalizes the MERGE result and the insert path normalizes the payload, and
+  // sharing one value between them is what caused the data loss.
+  let applied = true;
   if (existingIndex >= 0) {
     // SAT-1326 LWW: incoming applies only when its updated_at is newer (ties
     // favor the incoming write, which is the freshly stamped server edit).
@@ -453,7 +458,7 @@ async function applyTodoUpsert(
     const existingUpdated = todoUpdatedMs(existingItem);
     const incomingUpdated = todoUpdatedMs(todo) || now;
     if (incomingUpdated >= existingUpdated) {
-      // merge into the stored record instead of replacing it.
+      // Merge into the stored record instead of replacing it.
       // normalizeTodoRecord defaults every absent field, so normalizing a
       // partial payload on its own wiped notes, project, area, due date and
       // owner — a phone toggling `done` silently destroyed the rest of the todo.
@@ -461,9 +466,24 @@ async function applyTodoUpsert(
         mergeTodoPayload(existingItem, todo as Record<string, any>, { now }),
         { now },
       );
+    } else {
+      applied = false;
     }
   } else {
     currentTodos.push(normalizeTodoRecord(todo as Record<string, any>, { now }));
+  }
+
+  // A discarded write leaves the payload identical, so bumping the version here
+  // would tell every polling client to re-fetch a file that did not move. At
+  // MC2 sync frequency that is a stampede for nothing. Report the version the
+  // file still has, and say plainly that the write did not land.
+  if (!applied) {
+    return {
+      name,
+      version: existing?.version ?? 0,
+      id: todo.id,
+      applied: false,
+    };
   }
 
   const nextData =
@@ -493,7 +513,7 @@ async function applyTodoUpsert(
 
   await bumpSyncVersion(ctx, name, nextVersion, now);
 
-  return { name, version: nextVersion, id: todo.id };
+  return { name, version: nextVersion, id: todo.id, applied: true };
 }
 
 export const upsertTodo = mutation({
@@ -725,7 +745,11 @@ async function removeTodoById(ctx: any, todoId: string) {
     .withIndex("by_name", (q: any) => q.eq("name", name))
     .first();
 
-  if (!existing) return { name, removed: false };
+  // Every branch below reports the version the todos file now carries, so a
+  // caller can compare it against what it holds instead of having to infer
+  // "unchanged" from a missing field. No file at all is version 0, which is
+  // what getVersions effectively reports for a name it has never seen.
+  if (!existing) return { name, version: 0, removed: false };
 
   const currentData = existing.data;
   const currentTodos = Array.isArray(currentData)
@@ -748,8 +772,9 @@ async function removeTodoById(ctx: any, todoId: string) {
   );
 
   if (filtered.length === beforeCount) {
-    // Tombstone written, but nothing to strip from the payload.
-    return { name, removed: false };
+    // Tombstone written, but nothing to strip from the payload, so the version
+    // stays put — `removed: false` plus an unchanged version is "tombstone only".
+    return { name, version: existing.version ?? 0, removed: false };
   }
 
   const nextData =
@@ -776,7 +801,9 @@ async function removeTodoById(ctx: any, todoId: string) {
  * (SAT-1327) so the MC2 sync bridge removes it locally and a later pull cannot
  * resurrect it. The tombstone always gets (re)written even if the todo was not
  * present in the payload, so a delete for a todo that only exists locally still
- * propagates. Keeps the `{ removed: bool }` return contract.
+ * propagates. Returns `{ removed, version }` on every branch: `removed` says
+ * whether the payload lost a row, `version` says which payload the caller is
+ * now behind.
  */
 export const removeTodo = mutation({
   args: {

@@ -62,6 +62,28 @@ export function isAppCreatedTodo(todo: Record<string, any>): boolean {
   );
 }
 
+/**
+ * First alias that carries an actual value, as a string; null when none does.
+ *
+ * An empty string counts as absent, not as a value. MC2 and both clients write
+ * `updated_at: ""` to mean "no timestamp", and a `??`/`!= null` chain stops
+ * there — hiding a perfectly good `updatedAt` behind the blank alias in front
+ * of it. A record whose real stamp is masked scores 0 and loses every
+ * last-write-wins comparison it should have won.
+ */
+function firstNonEmpty(
+  src: Record<string, any> | null | undefined,
+  keys: string[],
+): string | null {
+  for (const key of keys) {
+    const value = src == null ? null : src[key];
+    if (value == null) continue;
+    const text = String(value);
+    if (text !== "") return text;
+  }
+  return null;
+}
+
 function asIsoNow(now: number | string | null | undefined): string {
   if (now == null) return new Date().toISOString();
   if (typeof now === "number") return new Date(now).toISOString();
@@ -99,13 +121,17 @@ export function normalizeTodoRecord(
   const text = String(src.text != null ? src.text : src.title || "").trim();
 
   const doneFlag = Boolean(src.done || src.completed);
-  const status =
-    src.status != null
-      ? String(src.status)
-      : doneFlag
-        ? "completed"
-        : "pending";
-  const done = doneFlag || status === "completed";
+  const rawStatus = src.status != null ? String(src.status) : "";
+  // `done` and `status` are two spellings of one fact, so the emitted record
+  // must never carry them disagreeing: a screen reading `status` would show a
+  // pending row while a screen reading `done` shows it checked off, and which
+  // one the user sees becomes a coin flip per client. Either signal claiming
+  // completion wins, extending the pre-existing `done` rule to `status` —
+  // dropping a completion the user just made is the worse of the two errors.
+  // A non-completion status ("archived") survives untouched while done is
+  // false, because it contradicts nothing.
+  const done = doneFlag || rawStatus === "completed";
+  const status = done ? "completed" : rawStatus || "pending";
 
   let createdAt: string;
   if (src.createdAt != null) createdAt = String(src.createdAt);
@@ -113,11 +139,12 @@ export function normalizeTodoRecord(
   else createdAt = defaultTimestamps ? nowIso : "";
   const created = createdAt ? createdAt.slice(0, 10) : "";
 
-  let updatedAt: string;
-  if (src.updated_at != null) updatedAt = String(src.updated_at);
-  else if (src.updatedAt != null) updatedAt = String(src.updatedAt);
-  else if (src.completedAt != null) updatedAt = String(src.completedAt);
-  else updatedAt = defaultTimestamps ? nowIso : "";
+  const updatedSource = firstNonEmpty(src, [
+    "updated_at",
+    "updatedAt",
+    "completedAt",
+  ]);
+  const updatedAt = updatedSource ?? (defaultTimestamps ? nowIso : "");
 
   const dueDate =
     src.dueDate != null
@@ -264,10 +291,17 @@ export function mergeTodoPayload(
   return merged;
 }
 
-/** Epoch-ms for an updated_at-ish value; missing/invalid → 0 (LWW honesty). */
+/**
+ * Epoch-ms for an updated_at-ish value; missing/invalid → 0 (LWW honesty).
+ *
+ * A blank alias is skipped, not honoured — see firstNonEmpty. A present but
+ * unparseable stamp still scores 0 rather than falling through: garbage is a
+ * claim about the time, and a record that claims a time it cannot back up must
+ * lose, not borrow a better one from the alias behind it.
+ */
 export function todoUpdatedMs(todo: Record<string, any>): number {
-  const raw = todo?.updated_at ?? todo?.updatedAt ?? todo?.completedAt ?? null;
-  if (raw == null || raw === "") return 0;
-  const ms = new Date(String(raw)).getTime();
+  const raw = firstNonEmpty(todo, ["updated_at", "updatedAt", "completedAt"]);
+  if (raw == null) return 0;
+  const ms = new Date(raw).getTime();
   return Number.isNaN(ms) ? 0 : ms;
 }
