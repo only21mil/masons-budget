@@ -1,9 +1,10 @@
 name: Clients CI
 
-# Builds and verifies the Linux and Android clients on GitHub runners so no
-# toolchain has to be installed on a workstation. The Ubuntu runner ships the
-# Android SDK with licences already accepted, which is why the Android job needs
-# no interactive gate.
+# Builds and verifies the shared domain contract, the Convex backend functions,
+# and the Linux and Android clients on GitHub runners so no toolchain has to be
+# installed on a workstation. The Ubuntu runner ships the Android SDK with
+# licences already accepted, which is why the Android job needs no interactive
+# gate.
 #
 # This workflow never touches the live Convex deployment, never signs anything,
 # and never publishes. Apple builds stay in deploy.yml behind their own manual
@@ -46,6 +47,34 @@ jobs:
 
       - name: Parity tests against the Swift contract
         run: npm run test --workspace @vogel-vault/domain
+
+  # A peer of shared-domain rather than a dependant of it. The Convex functions
+  # import nothing from @vogel-vault/domain, so gating them behind the contract
+  # job would only serialise two runs that have no reason to wait on each other.
+  #
+  # This is the layer that was publicly readable until the read token landed, so
+  # its auth tests are the ones that most need to run on every push — they were
+  # written in #18 but had no job to run in, because this file belonged to
+  # another agent that wave.
+  convex-functions:
+    name: Convex functions
+    if: github.repository == 'only21mil/masons-budget'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # Root install: convex-test, vitest and @edge-runtime/vm are root
+      # devDependencies, and the suite's stub for ./_generated/server means no
+      # codegen and therefore no authenticated deployment is ever needed here.
+      - run: npm ci
+
+      - name: Read/mutation auth and todo LWW tests
+        run: npm run convex:test
 
   linux-client:
     name: Linux client
