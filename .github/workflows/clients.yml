@@ -162,6 +162,22 @@ jobs:
         run: gradle :app:assembleDebug :app:lintDebug --no-daemon
         working-directory: android
 
+      # Renders Compose to PNG under Robolectric — no emulator, no display.
+      # Review artifact, not a pixel-diff gate: behaviour is asserted by the
+      # domain and threshold tests, so a font nudge must not fail the build.
+      - name: App unit tests + design packet
+        if: steps.probe.outputs.app == 'true'
+        run: gradle :app:testDebugUnitTest -Proborazzi.test.record=true --no-daemon
+        working-directory: android
+
+      - name: Upload Android design packet
+        if: always() && steps.probe.outputs.app == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-design-packet
+          path: android/app/build/outputs/roborazzi
+          retention-days: 30
+
       # Debug-signed only — a sideload artifact for the Fold, never a release
       # build. Release signing stays out of CI.
       - name: Upload debug APK
