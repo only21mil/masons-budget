@@ -88,8 +88,13 @@ enum class Destination(
 const val UNFOLDED_MIN_WIDTH_DP = 600
 
 @Composable
-fun VaultApp(state: VaultUiState, onNavigate: (Destination) -> Unit, onSwitchProfile: (FamilyMember) -> Unit) {
-    BoxWithConstraints(Modifier.fillMaxSize().background(VaultBlack)) {
+fun VaultApp(
+    state: VaultUiState,
+    onNavigate: (Destination) -> Unit,
+    onSwitchProfile: (FamilyMember) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(modifier.fillMaxSize().background(VaultBlack)) {
         val unfolded = maxWidth.value >= UNFOLDED_MIN_WIDTH_DP
 
         CompositionLocalProvider(LocalIsUnfolded provides unfolded) {

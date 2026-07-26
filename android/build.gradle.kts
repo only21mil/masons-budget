@@ -4,4 +4,7 @@ plugins {
     kotlin("android") version "2.1.0" apply false
     kotlin("jvm") version "2.1.0" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.1.0" apply false
+    // Renders Compose to PNG under Robolectric, so the design packet needs no
+    // emulator and no display — same review model as the Linux client.
+    id("io.github.takahirom.roborazzi") version "1.36.0" apply false
 }
