@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Vogel Vault mark: a vault door with a keyhole whose stem is a Bitcoin double-bar.
+  Bitcoin maximalist without a slapped-on logo — the reference is structural, not
+  a badge. Orange is the accent and the only saturated colour, matching the app.
+  All artwork sits inside the 72dp adaptive safe zone (18dp inset each side), so
+  no launcher mask can clip it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Vault door ring -->
+    <path
+        android:strokeColor="#FF9F0A"
+        android:strokeWidth="4"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M54,28 A26,26 0 1,1 53.99,28" />
+
+    <!-- Four bolt spokes at the diagonals. Reads as a door, not a coin. -->
+    <path
+        android:strokeColor="#8A5A10"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M38.6,38.6 L33.2,33.2 M69.4,38.6 L74.8,33.2 M38.6,69.4 L33.2,74.8 M69.4,69.4 L74.8,74.8" />
+
+    <!-- Keyhole bowl -->
+    <path
+        android:fillColor="#F5F2EA"
+        android:pathData="M54,42 m-7,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0" />
+
+    <!-- Keyhole stem -->
+    <path
+        android:fillColor="#F5F2EA"
+        android:pathData="M50.5,50 L57.5,50 L59.5,66 L48.5,66 z" />
+
+    <!-- The Bitcoin double-bar, struck through the stem. Small on purpose:
+         obvious once seen, not shouting. -->
+    <path
+        android:strokeColor="#FF9F0A"
+        android:strokeWidth="2.6"
+        android:strokeLineCap="round"
+        android:pathData="M51.6,38 L51.6,70 M56.4,38 L56.4,70" />
+</vector>

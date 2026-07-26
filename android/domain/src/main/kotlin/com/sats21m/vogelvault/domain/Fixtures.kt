@@ -36,6 +36,14 @@ object Fixtures {
         tx("tx-1003", "2026-07-20", "Trading Cards", "9.00", "Entertainment", FamilyMember.MASON, null),
         tx("tx-2001", "2026-07-24", "App Store", "4.99", "Entertainment", FamilyMember.MADDOX, null),
         tx("tx-2002", "2026-07-21", "Ice Cream", "6.25", "Food", FamilyMember.MADDOX, null),
+        // June, so the month filter is demonstrably doing something. A July
+        // budget must not count any of these.
+        tx("tx-0101", "2026-06-24", "Neighborhood Market", "-388.90", "Groceries", FamilyMember.VICTOR, "Debit"),
+        tx("tx-0102", "2026-06-22", "Electric Utility", "-201.40", "Utilities", FamilyMember.VICTOR, "Debit"),
+        tx("tx-0103", "2026-06-20", "Coffee Bar", "-58.15", "Dining", FamilyMember.RACHEL, "Credit"),
+        tx("tx-0104", "2026-06-18", "Payroll Deposit", "2480.00", "Income", FamilyMember.VICTOR, null),
+        tx("tx-0105", "2026-06-15", "Auto Fuel", "-92.60", "Transport", FamilyMember.RACHEL, "Credit"),
+        tx("tx-1101", "2026-06-23", "Book Fair", "18.00", "Entertainment", FamilyMember.MASON, null),
     )
 
     private fun tx(

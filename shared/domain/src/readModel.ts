@@ -376,3 +376,118 @@ function asArray(value: unknown): Record<string, unknown>[] {
   if (!Array.isArray(value)) return []
   return value.filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
 }
+
+// ── Month scoping ───────────────────────────────────────────────────────────
+//
+// A budget is for one month, so its spend must come from that month's
+// transactions and no others. The iOS client has always derived it this way
+// (BudgetView.monthTransactions); these helpers give the other clients the same
+// rule instead of trusting a precomputed total.
+
+/** `yyyy-MM`, e.g. "2026-07". MC2 budget files key on this. */
+export type MonthKey = string
+
+/**
+ * Month a transaction belongs to.
+ *
+ * MC2 dates are ISO `yyyy-MM-dd`, so the month is a prefix — no Date parsing, no
+ * timezone to get wrong. A transaction dated 2026-07-01 belongs to July whatever
+ * timezone the reader is in, which is the behaviour a ledger needs.
+ */
+export function monthOf(date: string): MonthKey {
+  return date.slice(0, 7)
+}
+
+export function isInMonth(transaction: Transaction, month: MonthKey): boolean {
+  return monthOf(transaction.date) === month
+}
+
+export function transactionsInMonth(
+  transactions: readonly Transaction[],
+  month: MonthKey,
+): Transaction[] {
+  return transactions.filter((transaction) => isInMonth(transaction, month))
+}
+
+/** Months present in a set of transactions, newest first. */
+export function monthsPresent(transactions: readonly Transaction[]): MonthKey[] {
+  return [...new Set(transactions.map((transaction) => monthOf(transaction.date)))].sort().reverse()
+}
+
+/** A budget category with spend derived from transactions rather than reported. */
+export interface CategorySpend {
+  readonly name: string
+  readonly icon: string | null
+  readonly budget: Cents
+  /** Derived from this month's transactions in this category. */
+  readonly spent: Cents
+  readonly remaining: Cents
+  readonly isOverBudget: boolean
+}
+
+export interface BudgetSpend {
+  readonly month: MonthKey
+  readonly categories: readonly CategorySpend[]
+  readonly planned: Cents
+  readonly actual: Cents
+  readonly remaining: Cents
+  readonly overBudgetCount: number
+  /**
+   * Spend in this month that matched no budget category.
+   *
+   * Surfaced rather than dropped: silently discarding it would make the totals
+   * disagree with the Activity screen for no visible reason.
+   */
+  readonly uncategorised: Cents
+}
+
+/**
+ * Derive a month's spend for a budget.
+ *
+ * `transactions` should already be filtered to what the viewer may see — this
+ * function does not apply visibility, deliberately, so the two rules stay
+ * separate and testable.
+ */
+export function deriveBudgetSpend(
+  budget: Budget,
+  transactions: readonly Transaction[],
+): BudgetSpend {
+  const inMonth = transactionsInMonth(transactions, budget.month)
+
+  const spentByCategory = new Map<string, Cents>()
+  for (const transaction of inMonth) {
+    const spend = spendAmount(transaction)
+    if (spend === 0n) continue
+    spentByCategory.set(transaction.category, (spentByCategory.get(transaction.category) ?? 0n) + spend)
+  }
+
+  const categories: CategorySpend[] = budget.categories.map((category) => {
+    const spent = spentByCategory.get(category.name) ?? 0n
+    spentByCategory.delete(category.name)
+    return {
+      name: category.name,
+      icon: category.icon,
+      budget: category.budget,
+      spent,
+      remaining: category.budget - spent,
+      isOverBudget: spent > category.budget,
+    }
+  })
+
+  // Whatever is left in the map had no matching budget category.
+  let uncategorised = 0n
+  for (const remainder of spentByCategory.values()) uncategorised += remainder
+
+  const planned = categories.reduce((total, category) => total + category.budget, 0n)
+  const actual = categories.reduce((total, category) => total + category.spent, 0n)
+
+  return {
+    month: budget.month,
+    categories,
+    planned,
+    actual,
+    remaining: planned - actual,
+    overBudgetCount: categories.filter((category) => category.isOverBudget).length,
+    uncategorised,
+  }
+}

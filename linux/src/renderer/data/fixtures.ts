@@ -32,6 +32,9 @@ function daysAgo(count: number): string {
   return new Date(NOW - count * DAY).toISOString().slice(0, 10)
 }
 
+/** The month the fixture budgets are for. Derived, so it cannot drift from the dates. */
+const CURRENT_MONTH = daysAgo(0).slice(0, 7)
+
 // ── Transactions ────────────────────────────────────────────────────────────
 
 const TRANSACTIONS: readonly Transaction[] = [
@@ -53,6 +56,14 @@ const TRANSACTIONS: readonly Transaction[] = [
   tx("tx-1003", 6, "Trading Cards", "9.00", "Entertainment", "mason", null),
   tx("tx-2001", 2, "App Store", "4.99", "Entertainment", "maddox", null),
   tx("tx-2002", 5, "Ice Cream", "6.25", "Food", "maddox", null),
+  // June, so the month filter is demonstrably doing something. A budget for July
+  // must not count any of these.
+  tx("tx-0101", 32, "Neighborhood Market", "-388.90", "Groceries", "victor", "Debit"),
+  tx("tx-0102", 34, "Electric Utility", "-201.40", "Utilities", "victor", "Debit"),
+  tx("tx-0103", 36, "Coffee Bar", "-58.15", "Dining", "rachel", "Credit"),
+  tx("tx-0104", 38, "Payroll Deposit", "2480.00", "Income", "victor", null),
+  tx("tx-0105", 41, "Auto Fuel", "-92.60", "Transport", "rachel", "Credit"),
+  tx("tx-1101", 33, "Book Fair", "18.00", "Entertainment", "mason", null),
 ]
 
 function tx(
@@ -79,7 +90,7 @@ function tx(
 // ── Budget ──────────────────────────────────────────────────────────────────
 
 const ADULT_BUDGET: Budget = {
-  month: "2026-07",
+  month: CURRENT_MONTH,
   coinbaseOneBalance: parseCents("0"),
   categories: [
     { name: "Groceries", icon: "cart", budget: parseCents("900"), spent: parseCents("614.18") },
@@ -118,7 +129,7 @@ const ADULT_BUDGET: Budget = {
 }
 
 const MASON_BUDGET: Budget = {
-  month: "2026-07",
+  month: CURRENT_MONTH,
   coinbaseOneBalance: parseCents("0"),
   categories: [
     { name: "Entertainment", icon: "play", budget: parseCents("40"), spent: parseCents("33.00") },

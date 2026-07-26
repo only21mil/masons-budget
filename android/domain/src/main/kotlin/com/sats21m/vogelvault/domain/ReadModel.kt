@@ -188,3 +188,78 @@ data class ReadModel(
     val todos: Slice<List<TodoItem>>,
     val btcPriceCents: Long,
 )
+
+// ── Month scoping ───────────────────────────────────────────────────────────
+//
+// A budget is for one month, so its spend must come from that month's
+// transactions and no others. iOS has always derived it this way
+// (BudgetView.monthTransactions); this gives Android the same rule instead of
+// trusting the precomputed `spent` field MC2 reports.
+
+/** Month a transaction belongs to, as `yyyy-MM`.
+ *
+ * MC2 dates are ISO `yyyy-MM-dd`, so the month is a prefix — no date parsing and
+ * no timezone to get wrong. A transaction dated the 1st belongs to that month for
+ * every reader, which is what a ledger needs.
+ */
+fun monthOf(date: String): String = date.take(7)
+
+fun Transaction.isInMonth(month: String): Boolean = monthOf(date) == month
+
+fun List<Transaction>.inMonth(month: String): List<Transaction> = filter { it.isInMonth(month) }
+
+/** Distinct months present, newest first. */
+fun List<Transaction>.monthsPresent(): List<String> =
+    map { monthOf(it.date) }.distinct().sortedDescending()
+
+/** A budget category whose spend is derived from transactions, not reported. */
+data class CategorySpend(
+    val name: String,
+    val budgetCents: Long,
+    val spentCents: Long,
+) {
+    val remainingCents: Long get() = budgetCents - spentCents
+    val isOverBudget: Boolean get() = spentCents > budgetCents
+}
+
+data class BudgetSpend(
+    val month: String,
+    val categories: List<CategorySpend>,
+    /**
+     * Spend in this month matching no budget category. Surfaced rather than
+     * dropped — silently discarding it would make the budget disagree with the
+     * Activity screen for no visible reason.
+     */
+    val uncategorisedCents: Long,
+) {
+    val plannedCents: Long get() = categories.sumOf { it.budgetCents }
+    val actualCents: Long get() = categories.sumOf { it.spentCents }
+    val remainingCents: Long get() = plannedCents - actualCents
+    val overBudgetCount: Int get() = categories.count { it.isOverBudget }
+}
+
+/**
+ * Derive a month's spend for [budget] from [transactions].
+ *
+ * [transactions] must already be filtered to what the viewer may see. Visibility
+ * is deliberately not applied here so the two rules stay separate and testable.
+ */
+fun deriveBudgetSpend(budget: Budget, transactions: List<Transaction>): BudgetSpend {
+    val spentByCategory = mutableMapOf<String, Long>()
+    for (transaction in transactions.inMonth(budget.month)) {
+        val spend = transaction.spendAmount
+        if (spend == 0L) continue
+        spentByCategory[transaction.category] = (spentByCategory[transaction.category] ?: 0L) + spend
+    }
+
+    val categories = budget.categories.map { category ->
+        val spent = spentByCategory.remove(category.name) ?: 0L
+        CategorySpend(name = category.name, budgetCents = category.budgetCents, spentCents = spent)
+    }
+
+    return BudgetSpend(
+        month = budget.month,
+        categories = categories,
+        uncategorisedCents = spentByCategory.values.sum(),
+    )
+}
