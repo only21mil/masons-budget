@@ -50,20 +50,26 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # NOT 16.4, which is what deploy.yml and project.yml still say. The first run
-  # of this workflow proved macos-latest no longer carries any Xcode 16: the
-  # image now ships 26.0.1 through 26.6 and setup-xcode fails outright with
-  # "Could not find Xcode version that satisfied version spec: '16.4'". That
-  # makes deploy.yml's archive step dead on arrival too — the whole reason this
-  # workflow exists is that nobody had run either one.
+  # NOT 16.4, which is what deploy.yml and project.yml still say. Run 1 of this
+  # workflow proved macos-latest no longer carries any Xcode 16: the image ships
+  # 26.0.1 through 26.6 and setup-xcode fails outright with "Could not find
+  # Xcode version that satisfied version spec: '16.4'". deploy.yml's archive
+  # step is therefore dead on arrival too — the whole reason this workflow
+  # exists is that nobody had ever run either one.
   #
-  # Pinned to the oldest GM on the image rather than latest-stable: the sources
-  # were written against Xcode 16, so the least new-SDK behaviour is the safest
-  # place to start, and an exact pin fails loudly with a one-line fix when the
-  # image rotates again. A floating version instead fails months later as an
-  # unexplained compile error. When this pin does vanish, setup-xcode prints the
-  # table of what the image has — pick the lowest GM from it.
-  XCODE_VERSION: '26.0.1'
+  # This must track the image's newest Xcode, not the oldest. Run 2 pinned
+  # 26.0.1 on the theory that the least new SDK was safest for sources written
+  # against Xcode 16, and it failed: the simulator runtimes installed on the
+  # image belong to the newest Xcode, so `simctl` happily listed and booted an
+  # iPhone 17 that xcodebuild then rejected, because Xcode 26.0.1's SDK is 26.0
+  # and no eligible iOS Simulator platform existed for it. An older Xcode on
+  # this image has no simulator to test on.
+  #
+  # Still an exact pin rather than latest-stable: when the image rotates, this
+  # fails loudly at setup with a one-line fix and setup-xcode prints the table
+  # of what is available, whereas a floating version turns up months later as an
+  # unexplained compile error. Take the highest GM from that table.
+  XCODE_VERSION: '26.6'
   # brew's auto-update pulls a few hundred megabytes and a minute of wall clock
   # before it installs anything, and this runner is billed by the minute.
   HOMEBREW_NO_AUTO_UPDATE: 1
@@ -113,38 +119,48 @@ jobs:
       - name: SwiftPM package tests
         run: swift test
 
-      # Hardcoding "iPhone 16" would rot the first time the runner image ships a
-      # different device set, and the failure reads as an unhelpful "Unable to
-      # find a destination". Any available iPhone runs a unit-test bundle, so
-      # flatten every iPhone across the image's iOS runtimes and take the last —
-      # newest runtime, newest model. iPhone-less runtimes fall out of the list
-      # rather than winning the sort and yielding nothing.
+      # Ask xcodebuild, not simctl. Run 2 chose the device from `simctl list
+      # devices available`, which reports the shared CoreSimulator device set —
+      # every runtime on the machine, whichever Xcode installed it. The chosen
+      # iPhone booted fine and xcodebuild then refused it, because a device
+      # simctl calls available is not necessarily a destination this Xcode has
+      # an eligible platform for.
+      #
+      # -showdestinations is the same resolver that will consume the answer, and
+      # it lists only what this scheme can actually run on. Reading the last
+      # eligible iPhone out of it cannot disagree with the test step.
+      #
+      # Hardcoding a model name would rot the first time the image ships a
+      # different device set, and any iPhone runs a unit-test bundle equally well.
       - name: Choose an iOS simulator
         id: simulator
+        working-directory: MasonsBudget
         run: |
           set -euo pipefail
-          UDID=$(xcrun simctl list devices available --json | jq -r '
-            [ .devices
-              | to_entries[]
-              | select(.key | contains("SimRuntime.iOS"))
-              | . as $runtime
-              | .value[]
-              | select(.name | startswith("iPhone"))
-              | {runtime: $runtime.key, udid: .udid}
-            ]
-            | sort_by(.runtime)
-            | last
-            | .udid // empty
-          ')
+          DESTINATIONS=$(xcodebuild -showdestinations \
+            -project MasonsBudget.xcodeproj -scheme MasonsBudget 2>&1 || true)
+          printf '%s\n' "$DESTINATIONS"
+
+          # Only the eligible block: the ineligible one lists real ids too, and
+          # picking from it is exactly the mistake run 2 made.
+          UDID=$(printf '%s\n' "$DESTINATIONS" \
+            | awk '/Available destinations/{ok=1; next} /Ineligible destinations/{ok=0} ok' \
+            | grep 'platform:iOS Simulator' \
+            | grep -v 'placeholder' \
+            | grep 'name:iPhone' \
+            | tail -1 \
+            | sed -n 's/.*[[:space:]]id:\([^,]*\),.*/\1/p' \
+            | tr -d '[:space:]' || true)
+          # `|| true` above is load-bearing: with pipefail set, a grep that
+          # matches nothing would kill this step outright and the explanatory
+          # error below — the whole point of the step — would never print.
+
           if [ -z "$UDID" ]; then
-            echo "::error::No iOS simulator is available on this runner image."
+            echo "::error::xcodebuild lists no eligible iPhone simulator destination for this scheme. The destination dump above is the diagnosis; check that the pinned Xcode owns an installed iOS simulator runtime."
             xcrun simctl list runtimes
-            xcrun simctl list devices available
             exit 1
           fi
-          NAME=$(xcrun simctl list devices available --json \
-            | jq -r --arg udid "$UDID" '[.devices[][] | select(.udid == $udid)] | first | .name')
-          echo "Testing on $NAME ($UDID)"
+          echo "Testing on simulator $UDID"
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
 
       # Booting explicitly rather than letting xcodebuild do it lazily: a slow
@@ -174,7 +190,7 @@ jobs:
           xcodebuild test \
             -project MasonsBudget.xcodeproj \
             -scheme MasonsBudget \
-            -destination "id=$UDID" \
+            -destination "platform=iOS Simulator,id=$UDID" \
             -resultBundlePath "$RUNNER_TEMP/MasonsBudget-iOS.xcresult" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
