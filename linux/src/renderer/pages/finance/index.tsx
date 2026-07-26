@@ -16,9 +16,11 @@ import { basisPoints, formatBtc, formatSats, formatUsd, satsToUsdCents, sum } fr
 import {
   type BTCAccount,
   type CategorySpend,
+  type MonthKey,
   type Transaction,
   deriveBudgetSpend,
   monthOf,
+  monthsPresent,
   transactionsInMonth,
 } from "@vogel-vault/domain/readModel"
 
@@ -34,6 +36,7 @@ import {
   PageHeader,
   Panel,
   SUPPRESSED,
+  Select,
   StateBlock,
   StatusBanner,
 } from "../../components/index.ts"
@@ -84,6 +87,78 @@ function AmountCell({ transaction }: { transaction: Transaction }) {
   return <span className="vv-positive">{formatUsd(incomeOf(transaction))}</span>
 }
 
+// ── Month scoping ───────────────────────────────────────────────────────────
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+]
+
+/**
+ * "2026-06" → "June 2026".
+ *
+ * Indexed rather than parsed. Handing `yyyy-MM` to Date yields UTC midnight,
+ * which renders as the *previous* month for anyone west of Greenwich — the
+ * exact class of off-by-one a ledger cannot afford.
+ */
+function monthLabel(month: MonthKey): string {
+  const [year, index] = month.split("-")
+  const name = MONTH_NAMES[Number(index) - 1]
+  return name && year ? `${name} ${year}` : month
+}
+
+interface MonthScope {
+  /** The month to report on. */
+  readonly month: MonthKey
+  /** Months the picker offers, newest first. */
+  readonly options: readonly MonthKey[]
+}
+
+/**
+ * Resolve the month both money screens report on.
+ *
+ * A selection is honoured only when the visible transactions actually contain
+ * it. Anything else falls back to the data's own month: the selection is shared
+ * app-wide, so a month that exists only for another profile can be left behind
+ * by a switch, and silently reporting an empty month reads as a broken screen
+ * rather than as a filter.
+ *
+ * The fallback is always offered even when it holds no transactions — a budget
+ * with nothing spent against it yet is a real month, and dropping it from the
+ * list would leave the picker showing no selection at all.
+ */
+function resolveMonthScope(
+  selected: MonthKey | null,
+  transactions: readonly Transaction[],
+  fallback: MonthKey,
+): MonthScope {
+  const present = monthsPresent(transactions)
+  return {
+    month: selected && present.includes(selected) ? selected : fallback,
+    options: [...new Set([fallback, ...present])].sort().reverse(),
+  }
+}
+
+function MonthPicker({ scope, label }: { scope: MonthScope; label: string }) {
+  const { selectMonth } = useAppState()
+  return (
+    <Select
+      aria-label={label}
+      value={scope.month}
+      onChange={(event) => selectMonth(event.target.value)}
+      // .vv-input is width:100%, sized for a form column. In the page header it
+      // is one control in a flex row, so let it take its own intrinsic width.
+      style={{ width: "auto" }}
+    >
+      {scope.options.map((option) => (
+        <option key={option} value={option}>
+          {monthLabel(option)}
+        </option>
+      ))}
+    </Select>
+  )
+}
+
 function StaleNotice({ status }: { status: string }) {
   if (status !== "stale") return null
   return (
@@ -98,14 +173,16 @@ function StaleNotice({ status }: { status: string }) {
 // ── Dashboard ───────────────────────────────────────────────────────────────
 
 function DashboardPage() {
-  const { activeProfile, data } = useAppState()
+  const { activeProfile, data, selectedMonth } = useAppState()
   const transactions = visibleTo(activeProfile, data.transactions.value)
   const accounts = netWorthScopeFor(activeProfile, data.btcAccounts.value)
   const todos = visibleTo(activeProfile, data.todos.value).filter((todo) => !todo.done)
 
-  // Scoped to the current month so the headline agrees with the Budget screen.
-  // An all-time total sitting next to a monthly budget is just confusing.
-  const month = data.budget.value?.month ?? monthOf(new Date(data.generatedAt).toISOString().slice(0, 10))
+  // Scoped to one month so the headline agrees with the Budget screen — an
+  // all-time total sitting next to a monthly budget is just confusing — and to
+  // the SAME month, so picking June on Budget moves this headline with it.
+  const defaultMonth = data.budget.value?.month ?? monthOf(new Date(data.generatedAt).toISOString().slice(0, 10))
+  const { month } = resolveMonthScope(selectedMonth, transactions, defaultMonth)
   const monthTransactions = transactionsInMonth(transactions, month)
   const spend = sum(monthTransactions.map(spendOf))
   const income = sum(monthTransactions.map(incomeOf))
@@ -132,7 +209,7 @@ function DashboardPage() {
     <>
       <PageHeader
         title="Dashboard"
-        subtitle={`${isAdult(activeProfile) ? "Household command center" : `${displayName(activeProfile)}'s money`} · ${month}`}
+        subtitle={`${isAdult(activeProfile) ? "Household command center" : `${displayName(activeProfile)}'s money`} · ${monthLabel(month)}`}
         actions={<FreshnessTag status={data.transactions.status} updatedAt={data.transactions.updatedAt} />}
       />
       <StaleNotice status={data.transactions.status} />
@@ -191,7 +268,7 @@ const stackColumns: ReadonlyArray<Column<BTCAccount>> = [
 // ── Budget ──────────────────────────────────────────────────────────────────
 
 function BudgetPage() {
-  const { activeProfile, data } = useAppState()
+  const { activeProfile, data, selectedMonth } = useAppState()
   const budget = data.budget.value
 
   if (!budget) {
@@ -203,20 +280,41 @@ function BudgetPage() {
     )
   }
 
-  // Spend is DERIVED from this month's transactions, never read from the
-  // reported category total: a July budget must count only July transactions.
-  // This is what the iOS client has always done (BudgetView.monthTransactions).
-  const spend = deriveBudgetSpend(budget, visibleTo(activeProfile, data.transactions.value))
+  const transactions = visibleTo(activeProfile, data.transactions.value)
+  const scope = resolveMonthScope(selectedMonth, transactions, budget.month)
+
+  // Spend is DERIVED from the reported month's transactions, never read from
+  // the reported category total: a July budget must count only July
+  // transactions. This is what the iOS client has always done
+  // (BudgetView.monthTransactions).
+  //
+  // The month is overridden on the budget rather than passed alongside it
+  // because deriveBudgetSpend reads its month from the budget — one source of
+  // truth for the filter, so the categories, the totals and the panel caption
+  // cannot drift apart.
+  const spend = deriveBudgetSpend({ ...budget, month: scope.month }, transactions)
   const { planned, actual, remaining, overBudgetCount: overCount } = spend
 
   return (
     <>
       <PageHeader
         title="Budget"
-        subtitle={budget.month}
-        actions={<FreshnessTag status={data.budget.status} updatedAt={data.budget.updatedAt} />}
+        subtitle={monthLabel(scope.month)}
+        actions={
+          <>
+            <MonthPicker scope={scope} label="Budget month" />
+            <FreshnessTag status={data.budget.status} updatedAt={data.budget.updatedAt} />
+          </>
+        }
       />
       <StaleNotice status={data.budget.status} />
+      {scope.month === budget.month ? null : (
+        <StatusBanner
+          tone="info"
+          title={`Planned amounts are from the ${monthLabel(budget.month)} budget`}
+          detail="MC2 publishes one budget file at a time, so the actuals below are this month's while the planned column is not. Compare with that in mind."
+        />
+      )}
       {/* The budget operations strip: planned / actual / remaining / over-budget. */}
       <KPIStrip
         items={[
@@ -244,7 +342,7 @@ function BudgetPage() {
       ) : null}
       <Panel
         title="Categories"
-        source={`${data.budget.source} · spend derived from ${budget.month} transactions`}
+        source={`${data.budget.source} · spend derived from ${scope.month} transactions`}
         flush
       >
         <DataTable
