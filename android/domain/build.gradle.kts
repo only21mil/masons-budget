@@ -6,9 +6,9 @@ kotlin {
     jvmToolchain(21)
 }
 
-repositories {
-    mavenCentral()
-}
+// No `repositories` block here on purpose: settings.gradle.kts sets
+// RepositoriesMode.FAIL_ON_PROJECT_REPOS, so repositories are declared once,
+// centrally. Adding them per-module fails the build.
 
 dependencies {
     testImplementation(kotlin("test"))
