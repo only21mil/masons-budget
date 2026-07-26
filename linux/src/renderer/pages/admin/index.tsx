@@ -5,7 +5,7 @@
 // has no live Convex connection and no write path, and every surface that would
 // mutate real data says so instead of offering a control that quietly no-ops.
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 
 import {
   FAMILY_MEMBERS,
@@ -16,23 +16,28 @@ import {
   mc2BTCBuysFileName,
   mc2TransactionsFileName,
   profileDescription,
+  sharesNetWorthWith,
   showsFullBudget,
+  visibleTo,
 } from "@vogel-vault/domain/family"
-import { MC2_FILES } from "@vogel-vault/domain/readModel"
+import { formatMinorUnits } from "@vogel-vault/domain/money"
+import { type Freshness, MC2_FILES, type Transaction, spendAmount } from "@vogel-vault/domain/readModel"
 
 import { useAppState } from "../../app/AppState.tsx"
+import type { FixtureEnvelope } from "../../data/fixtures.ts"
 import {
   Badge,
+  type BannerTone,
   Button,
   type Column,
   DataTable,
-  DialogFrame,
   Field,
   FreshnessTag,
   IconGlyph,
   PageGrid,
   PageHeader,
   Panel,
+  SUPPRESSED,
   Select,
   StateBlock,
   StatusBanner,
@@ -232,51 +237,308 @@ function SyncHealthPage() {
 
 // ── Export ──────────────────────────────────────────────────────────────────
 
+export const EXPORT_DATASET_IDS = [
+  "transactions",
+  "bitcoin-buys",
+  "bitcoin-accounts",
+  "bill-pays",
+  "todos",
+] as const
+
+type ExportDatasetId = (typeof EXPORT_DATASET_IDS)[number]
+
+const EXPORT_PREVIEW_ROWS = 6
+
+interface ExportDataset {
+  readonly label: string
+  readonly source: string
+  readonly status: Freshness
+  readonly columns: readonly string[]
+  readonly rows: readonly (readonly string[])[]
+}
+
+/** Exact decimal text for integer minor units. Never Number, never toFixed. */
+function usdCell(cents: bigint): string {
+  return formatMinorUnits(cents, 2)
+}
+
+function btcCell(sats: bigint): string {
+  return formatMinorUnits(sats, 8)
+}
+
+function boolCell(value: boolean): string {
+  return value ? "yes" : "no"
+}
+
+function incomeOf(transaction: Transaction): bigint {
+  return transaction.category === "Income" && transaction.amount > 0n ? transaction.amount : 0n
+}
+
+/**
+ * Build every exportable data set for the active profile.
+ *
+ * Rows are filtered through the same visibility helpers the rest of the app
+ * uses, in the renderer, before anything crosses the bridge — the main process
+ * writes bytes and never learns who is logged in. An export that leaked here
+ * would leak in the file, where nobody would ever notice it again.
+ */
+export function buildExportDatasets(
+  viewer: FamilyMember,
+  data: FixtureEnvelope,
+): Record<ExportDatasetId, ExportDataset> {
+  return {
+    transactions: {
+      label: "Transactions",
+      source: data.transactions.source,
+      status: data.transactions.status,
+      columns: ["id", "date", "merchant", "category", "card", "owner", "amount_usd", "direction", "signed_usd"],
+      // amount_usd is exactly what MC2 stores. signed_usd is normalised, and
+      // both are emitted on purpose: the child files record spending as a
+      // POSITIVE magnitude, so a spreadsheet summing the raw column would read
+      // Mason's spending as income. Faithful column, plus a summable one.
+      rows: visibleTo(viewer, data.transactions.value).map((row) => {
+        const spend = spendAmount(row)
+        return [
+          row.id,
+          row.date,
+          row.merchant,
+          row.category,
+          row.card ?? "",
+          row.owner,
+          usdCell(row.amount),
+          spend > 0n ? "spend" : "income",
+          usdCell(spend > 0n ? -spend : incomeOf(row)),
+        ]
+      }),
+    },
+    "bitcoin-buys": {
+      label: "Bitcoin buys",
+      source: data.btcBuys.source,
+      status: data.btcBuys.status,
+      columns: ["id", "date", "source", "owner", "sats", "btc", "price_usd", "cost_usd", "status"],
+      rows: visibleTo(viewer, data.btcBuys.value).map((row) => [
+        row.id,
+        row.date,
+        row.source,
+        row.owner,
+        String(row.sats),
+        btcCell(row.sats),
+        usdCell(row.priceUsd),
+        usdCell(row.usd),
+        row.status ?? "",
+      ]),
+    },
+    "bitcoin-accounts": {
+      label: "Bitcoin accounts",
+      source: data.btcAccounts.source,
+      status: data.btcAccounts.status,
+      columns: ["key", "label", "custody", "owner", "sats", "btc", "fiat_usd", "in_net_worth"],
+      // Visibility is wider than the net-worth scope, so an adult's export does
+      // contain a child's stack. The in_net_worth column says which rows belong
+      // in a total, rather than leaving a reader to assume they all do.
+      rows: visibleTo(viewer, data.btcAccounts.value).map((row) => [
+        row.key,
+        row.label,
+        row.custody,
+        row.owner,
+        String(row.sats),
+        btcCell(row.sats),
+        usdCell(row.fiat),
+        boolCell(sharesNetWorthWith(viewer, row.owner)),
+      ]),
+    },
+    "bill-pays": {
+      label: "Bitcoin bill pays",
+      source: data.billPays.source,
+      status: data.billPays.status,
+      columns: ["id", "date", "merchant", "category", "owner", "amount_usd", "fee_usd", "btc_spent_sats", "btc_price_usd", "platform"],
+      rows: visibleTo(viewer, data.billPays.value).map((row) => [
+        row.id,
+        row.date,
+        row.merchant,
+        row.category,
+        row.owner,
+        usdCell(row.amountUsd),
+        usdCell(row.feeUsd),
+        String(row.btcSpentSats),
+        usdCell(row.btcPrice),
+        row.platform ?? "",
+      ]),
+    },
+    todos: {
+      label: "Tasks",
+      source: data.todos.source,
+      status: data.todos.status,
+      columns: ["id", "title", "owner", "project", "area", "due", "flagged", "done"],
+      rows: visibleTo(viewer, data.todos.value).map((row) => [
+        row.id,
+        row.title,
+        row.owner,
+        row.project ?? "",
+        row.area ?? "",
+        row.due ?? "",
+        boolCell(row.flagged),
+        boolCell(row.done),
+      ]),
+    },
+  }
+}
+
+/** Dated from the envelope, not the clock, so the same data exports the same name. */
+function exportFileName(dataset: ExportDatasetId, viewer: FamilyMember, generatedAt: number): string {
+  return `vogel-vault-${dataset}-${viewer}-${new Date(generatedAt).toISOString().slice(0, 10)}.csv`
+}
+
+interface ExportOutcome {
+  readonly tone: BannerTone
+  readonly title: string
+  readonly detail: string
+}
+
 function ExportPage() {
-  const { activeProfile } = useAppState()
-  const [confirmOpen, setConfirmOpen] = useState(false)
+  const { activeProfile, data } = useAppState()
+  const [datasetId, setDatasetId] = useState<ExportDatasetId>("transactions")
+  const [busy, setBusy] = useState(false)
+  const [outcome, setOutcome] = useState<ExportOutcome | null>(null)
+
+  const datasets = useMemo(() => buildExportDatasets(activeProfile, data), [activeProfile, data])
+  const dataset = datasets[datasetId]
+
+  // Matches the Settings page: the bridge is absent under plain `vite dev` in a
+  // browser and in the headless render tests, and the page has to say so rather
+  // than offer a button that throws.
+  const bridge = typeof window !== "undefined" ? window.vogelVault : undefined
+
+  // Suppression rule, applied to a file instead of a figure: a slice that
+  // errored or is still loading must not be written, because the rows in memory
+  // are not an answer. `empty` is different — zero rows is a real answer, and a
+  // header-only CSV is the honest export of it.
+  const unreadable = dataset.status === "error" || dataset.status === "loading"
+  const rowCount = unreadable ? SUPPRESSED : String(dataset.rows.length)
+
+  async function runExport() {
+    const exporter = window.vogelVault?.exportCsv
+    if (!exporter) return
+    setBusy(true)
+    setOutcome(null)
+    try {
+      const result = await exporter({
+        suggestedFileName: exportFileName(datasetId, activeProfile, data.generatedAt),
+        columns: dataset.columns,
+        rows: dataset.rows,
+      })
+      if (result.status === "written") {
+        setOutcome({
+          tone: "positive",
+          title: `Wrote ${result.fileName}`,
+          detail: `${result.rowCount} ${result.rowCount === 1 ? "row" : "rows"}, scoped to what ${displayName(activeProfile)} can see.`,
+        })
+      } else if (result.status === "cancelled") {
+        setOutcome({ tone: "info", title: "Export cancelled", detail: "Nothing was written." })
+      } else {
+        setOutcome({ tone: "negative", title: "Export refused", detail: result.reason })
+      }
+    } catch {
+      setOutcome({
+        tone: "negative",
+        title: "Export failed",
+        detail: "The main process did not complete the write. Nothing was saved.",
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <>
       <PageHeader title="Export" subtitle="Take your records out" />
-      <StatusBanner
-        tone="info"
-        title="Export writes a file to disk"
-        detail="Exports are scoped to what the active profile can see. Writing to disk is gated until the file path is reviewed."
-      />
-      <Panel title="Scope">
+      {bridge ? (
+        <StatusBanner
+          tone="info"
+          title="Export writes a CSV you pick a location for"
+          detail="Rows are scoped to what the active profile can see. The app suggests a file name; the folder is yours to choose in the system dialog."
+        />
+      ) : (
+        <StatusBanner
+          tone="warning"
+          title="Export needs the desktop app"
+          detail="window.vogelVault is absent, so there is no write path. This is expected outside Electron."
+        />
+      )}
+      {outcome ? (
+        <StatusBanner tone={outcome.tone} title={outcome.title} detail={outcome.detail} />
+      ) : null}
+      <Panel title="Scope" source={`${rowCount} rows in scope`}>
         <div className="vv-stack">
           <Field label="Profile" hint="Exports never include records this profile cannot see.">
             <TextInput value={displayName(activeProfile)} readOnly />
           </Field>
-          <Field label="Format">
+          <Field label="Data set" hint={dataset.source}>
+            <Select
+              value={datasetId}
+              onChange={(event) => {
+                setDatasetId(event.target.value as ExportDatasetId)
+                setOutcome(null)
+              }}
+            >
+              {EXPORT_DATASET_IDS.map((id) => (
+                <option key={id} value={id}>
+                  {datasets[id].label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field
+            label="Format"
+            hint="RFC 4180, UTF-8, one record per line. Amounts are exact decimal text, never rounded."
+          >
             <Select defaultValue="csv">
               <option value="csv">CSV</option>
-              <option value="json">JSON</option>
+              {/* Honest about the surface: the reviewed channel writes CSV only. */}
+              <option value="json" disabled>
+                JSON (not wired)
+              </option>
             </Select>
           </Field>
           <Toolbar>
-            <Button variant="primary" icon="download" onClick={() => setConfirmOpen(true)}>
-              Export
+            <Button
+              variant="primary"
+              icon="download"
+              disabled={!bridge || unreadable || busy}
+              onClick={() => void runExport()}
+              title={unreadable ? "This data set did not load; there is nothing safe to write." : undefined}
+            >
+              {busy ? "Exporting…" : "Export CSV"}
             </Button>
           </Toolbar>
         </div>
       </Panel>
-      <DialogFrame
-        open={confirmOpen}
-        title="Export is not enabled"
-        description="This build has no filesystem write path."
-        onClose={() => setConfirmOpen(false)}
-        footer={<Button onClick={() => setConfirmOpen(false)}>Close</Button>}
+      <Panel
+        title="Preview"
+        source={
+          unreadable
+            ? "Suppressed until this data set loads"
+            : `${Math.min(EXPORT_PREVIEW_ROWS, dataset.rows.length)} of ${dataset.rows.length} rows · ${dataset.columns.length} columns`
+        }
+        flush
       >
-        <p className="vv-muted">
-          Writing files from the renderer would require widening the preload bridge, which is a
-          reviewed boundary. Export lands once that surface is designed and approved.
-        </p>
-      </DialogFrame>
+        <DataTable
+          columns={dataset.columns.map((name, index) => ({
+            key: name,
+            header: name,
+            render: (row: readonly string[]) => row[index] ?? "",
+          }))}
+          rows={dataset.rows.slice(0, EXPORT_PREVIEW_ROWS)}
+          rowKey={(_row, index) => String(index)}
+          state={dataset.status === "error" || dataset.status === "loading" ? dataset.status : "normal"}
+          emptyTitle="Nothing to export"
+          emptyDetail="This profile has no rows in this data set. Exporting writes the header row only."
+        />
+      </Panel>
     </>
   )
 }
+
 
 // ── CSV Import ──────────────────────────────────────────────────────────────
 

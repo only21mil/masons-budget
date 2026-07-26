@@ -8,10 +8,20 @@
 //
 // This mirrors the boundary the previous Linux client shipped with (SAT-1572).
 
+import { writeFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import path from "node:path"
 
-import { BrowserWindow, app, session, shell } from "electron"
+import { BrowserWindow, app, dialog, ipcMain, session, shell } from "electron"
+import type { IpcMainInvokeEvent } from "electron"
+
+import {
+  type CsvExportResult,
+  safeCsvFileName,
+  serializeCsv,
+  validateCsvRequest,
+} from "./csvExport.ts"
+import { CSV_EXPORT_CHANNEL } from "./ipcChannels.ts"
 
 const dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -60,6 +70,81 @@ function hardenSession(): void {
       return
     }
     callback({ cancel: !isAllowedRendererUrl(url) })
+  })
+}
+
+/**
+ * Only the app's own top-level frame may call into main.
+ *
+ * `will-navigate` and the window-open handler already keep the renderer on the
+ * app shell, but an IPC handler is reachable from any frame that exists, so it
+ * checks for itself rather than inheriting someone else's guarantee.
+ */
+function isTrustedSender(event: IpcMainInvokeEvent): boolean {
+  const frame = event.senderFrame
+  if (!frame || frame !== event.sender.mainFrame) return false
+  return isAllowedRendererUrl(frame.url)
+}
+
+/**
+ * CSV export. The renderer owns *what* is in the file; the main process owns
+ * *where* it goes and *what bytes* are written.
+ *
+ * The renderer never supplies a path. It supplies rows and a suggested name;
+ * the name is reduced to a bare, allowlisted file name and offered as the
+ * default in a native save dialog, so the destination is always something the
+ * user picked. The payload is re-validated here even though the renderer built
+ * it — a compromised renderer is exactly the case this boundary exists for.
+ */
+let exportInFlight = false
+
+function registerCsvExport(): void {
+  ipcMain.handle(CSV_EXPORT_CHANNEL, async (event, payload: unknown): Promise<CsvExportResult> => {
+    if (!isTrustedSender(event)) return { status: "rejected", reason: "Export came from an unrecognised frame." }
+
+    // One dialog at a time. The renderer disables its own button while a write
+    // runs, but main must not depend on the renderer behaving: a loop of
+    // invokes would otherwise stack modal dialogs on the user's window.
+    if (exportInFlight) return { status: "rejected", reason: "An export is already in progress." }
+
+    const validation = validateCsvRequest(payload)
+    if (!validation.ok) return { status: "rejected", reason: validation.reason }
+
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (!window) return { status: "rejected", reason: "There is no window to attach a save dialog to." }
+
+    exportInFlight = true
+    try {
+      const choice = await dialog.showSaveDialog(window, {
+        title: "Export CSV",
+        defaultPath: safeCsvFileName(validation.request.suggestedFileName),
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+        // dontAddToRecent: an export is named after a family member and a data
+        // set; it does not belong in a shared recent-documents list.
+        properties: ["createDirectory", "showOverwriteConfirmation", "dontAddToRecent"],
+      })
+      if (choice.canceled || !choice.filePath) return { status: "cancelled" }
+
+      const body = serializeCsv(validation.request.columns, validation.request.rows)
+      // 0600: household financial records, readable by this user only. The mode
+      // applies on create; an existing file keeps whatever the user set.
+      await writeFile(choice.filePath, body, { encoding: "utf8", mode: 0o600 })
+
+      // Only the base name goes back. The renderer has no business learning the
+      // directory layout of the machine it is running on.
+      return {
+        status: "written",
+        fileName: path.basename(choice.filePath),
+        rowCount: validation.request.rows.length,
+      }
+    } catch (error) {
+      // The reason goes to the main-process log, not to the renderer: an fs
+      // error message carries the absolute path the user just chose.
+      console.error("csv export failed", error)
+      return { status: "rejected", reason: "The file could not be written." }
+    } finally {
+      exportInFlight = false
+    }
   })
 }
 
@@ -130,6 +215,9 @@ if (!app.requestSingleInstanceLock()) {
 
   void app.whenReady().then(() => {
     hardenSession()
+    // Registered before the first window so no renderer can invoke a channel
+    // that is not yet handled.
+    registerCsvExport()
     createWindow()
 
     app.on("activate", () => {
