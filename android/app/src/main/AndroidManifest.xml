@@ -9,8 +9,9 @@
 
   INTERNET is justified now because the Convex read-token cutover needs an
   Android client that can send the token (see data/ConvexConfig.kt). The read
-  path is disabled by default and unwired, so this build still renders only the
-  sanitized fixtures — but HttpURLConnection throws SecurityException without
+  path is wired through the Room cache but disabled by default, so an
+  unconfigured build still renders only sanitized fixtures — but
+  HttpURLConnection throws SecurityException without
   this line, which would make the plumbing impossible to exercise on a device,
   and burying the permission inside a later UI change would hide precisely the
   review event this comment exists to force.

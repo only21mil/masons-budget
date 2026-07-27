@@ -41,6 +41,7 @@ import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.ui.components.Badge
 import com.sats21m.vogelvault.ui.components.FreshnessTag
 import com.sats21m.vogelvault.ui.components.HorizontalHairline
+import com.sats21m.vogelvault.ui.components.StatusBanner
 import com.sats21m.vogelvault.ui.theme.LocalIsUnfolded
 import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultAccentDim
@@ -110,6 +111,7 @@ fun VaultApp(
                     Column(Modifier.weight(1f)) {
                         VaultTopBar(state, onSwitchProfile)
                         HorizontalHairline()
+                        AuthorizationNotice(state)
                         ScreenHost(current, state, onEnableRemoteRows, Modifier.weight(1f))
                     }
                 }
@@ -117,6 +119,7 @@ fun VaultApp(
                 Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                     VaultTopBar(state, onSwitchProfile)
                     HorizontalHairline()
+                    AuthorizationNotice(state)
                     ScreenHost(current, state, onEnableRemoteRows, Modifier.weight(1f))
                     HorizontalHairline()
                     VaultBottomBar(destinations, current, onNavigate)
@@ -124,6 +127,16 @@ fun VaultApp(
             }
         }
     }
+}
+
+@Composable
+private fun AuthorizationNotice(state: VaultUiState) {
+    if (!state.staleAuthorization) return
+    StatusBanner(
+        text = "Cached figures hidden",
+        detail = "Convex rejected this device's read token. The previous snapshot is stale and is not shown.",
+        tone = com.sats21m.vogelvault.ui.theme.VaultWarning,
+    )
 }
 
 @Composable

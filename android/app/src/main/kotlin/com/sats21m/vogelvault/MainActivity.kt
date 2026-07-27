@@ -16,17 +16,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val app = application as VaultApplication
-        val loader = app.rowReadModelLoader()
-        val remoteInitiallyEnabled = app.convexConfigSource.current().allowsRemoteRead
         setContent {
             VogelVaultTheme {
-                val model: VaultViewModel = viewModel(
-                    factory = VaultViewModel.factory(
-                        loader = loader,
-                        remoteInitiallyEnabled = remoteInitiallyEnabled,
-                        enableRemote = app::enableRemoteRows,
-                    ),
-                )
+                val model: VaultViewModel = viewModel(factory = app.viewModelFactory)
                 val state by model.state.collectAsStateWithLifecycle()
                 VaultApp(
                     state = state,

@@ -3,9 +3,9 @@ package com.sats21m.vogelvault.domain
 /**
  * Sanitized fixture envelope.
  *
- * The client is not wired to the live Convex deployment — that is approval-gated.
- * Everything here is invented sample data with the same shape MC2 emits, mirroring
- * `linux/src/renderer/data/fixtures.ts` so the two clients show the same thing.
+ * Remote reads remain disabled until runtime configuration enables them.
+ * Everything here is invented sample data with the same shape MC2 emits and is
+ * used by unconfigured builds, previews and screenshots.
  *
  * Two rules:
  *   1. No real balances, account numbers, merchants or identifiers. Ever.
