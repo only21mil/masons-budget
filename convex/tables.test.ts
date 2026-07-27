@@ -71,6 +71,9 @@ const fn = {
         month: string;
         merchant: string;
         amountCents: bigint;
+        spendAmount: bigint;
+        displaySpendAmount: bigint;
+        hasOppositeSpendSign: boolean;
         category: string;
         card?: string;
         note?: string;
@@ -773,10 +776,74 @@ describe("money is integer minor units", () => {
     await migrateAll(t);
   });
 
+  it("projects signed spend, display magnitude, and ambiguous opposite signs", async () => {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("transactions", {
+        txId: "adult-refund",
+        owner: "victor",
+        date: "2026-07-21",
+        month: "2026-07",
+        merchant: "Grocer refund",
+        amountCents: 2500n,
+        category: "Groceries",
+        sourceFile: "transactions",
+        updatedAtMs: 1,
+      });
+      await ctx.db.insert("transactions", {
+        txId: "adult-corrupt-wrong-sign",
+        owner: "victor",
+        date: "2026-07-22",
+        month: "2026-07",
+        merchant: "Legacy wrong sign",
+        amountCents: 900n,
+        category: "Fun",
+        sourceFile: "transactions",
+        updatedAtMs: 1,
+      });
+    });
+
+    const byId = new Map(
+      (await queryRows(fn.listTransactions, { viewer: "victor" })).map((row) => [
+        row.txId,
+        row,
+      ]),
+    );
+
+    expect(byId.get("t-1")).toMatchObject({
+      spendAmount: 8427n,
+      displaySpendAmount: 8427n,
+      hasOppositeSpendSign: false,
+    });
+    expect(byId.get("m-1")).toMatchObject({
+      spendAmount: 6000n,
+      displaySpendAmount: 6000n,
+      hasOppositeSpendSign: false,
+    });
+    expect(byId.get("t-2")).toMatchObject({
+      spendAmount: 0n,
+      displaySpendAmount: 0n,
+      hasOppositeSpendSign: false,
+    });
+    expect(byId.get("adult-refund")).toMatchObject({
+      spendAmount: -2500n,
+      displaySpendAmount: 2500n,
+      hasOppositeSpendSign: true,
+    });
+    // No persisted `kind` exists on legacy rows, so a corrupt adult spend with
+    // the refund sign must project the same signal as the valid refund above.
+    expect(byId.get("adult-corrupt-wrong-sign")).toMatchObject({
+      spendAmount: -900n,
+      displaySpendAmount: 900n,
+      hasOppositeSpendSign: true,
+    });
+  });
+
   it("stores cents as bigint, never a float", async () => {
     const rows = await queryRows(fn.listTransactions, { viewer: "victor" });
     for (const row of rows) {
       expect(typeof row.amountCents).toBe("bigint");
+      expect(typeof row.spendAmount).toBe("bigint");
+      expect(typeof row.displaySpendAmount).toBe("bigint");
     }
   });
 

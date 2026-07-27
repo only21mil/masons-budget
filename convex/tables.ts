@@ -370,6 +370,21 @@ function projectTransaction(row: {
   note?: string;
   updatedAtMs: number;
 }) {
+  // CANONICAL SOURCE: shared/domain/src/readModel.ts (spendAmount,
+  // displaySpendAmount, hasOppositeSpendSign), mirrored by
+  // MasonsBudget/MasonsBudget/Models/Transaction.swift.
+  //
+  // Legacy rows have no write-side `kind`, so a valid credit and a corrupt row
+  // with the opposite sign are intentionally indistinguishable on read.
+  const spendAmount =
+    row.category === "Income"
+      ? 0n
+      : isAdult(row.owner)
+        ? -row.amountCents
+        : row.amountCents;
+  const displaySpendAmount =
+    spendAmount < 0n ? -spendAmount : spendAmount;
+
   return {
     txId: row.txId,
     owner: row.owner,
@@ -377,6 +392,9 @@ function projectTransaction(row: {
     month: row.month,
     merchant: row.merchant,
     amountCents: row.amountCents,
+    spendAmount,
+    displaySpendAmount,
+    hasOppositeSpendSign: spendAmount < 0n,
     category: row.category,
     card: row.card,
     note: row.note,
