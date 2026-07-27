@@ -465,7 +465,7 @@ internal object PublicBudgetDocumentDto {
             month = row.rowStringAllowEmpty("month") ?: return null,
             incomeCents = row.rowInt64("incomeCents") ?: return null,
             expensesCents = row.rowInt64("expensesCents") ?: return null,
-            savingsBps = row.requiredLong("savingsBps") ?: return null,
+            savingsBps = row.rowInt64("savingsBps") ?: return null,
         )
     }
 }

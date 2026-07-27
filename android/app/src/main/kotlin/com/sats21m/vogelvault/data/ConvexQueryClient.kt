@@ -61,7 +61,7 @@ internal class ConvexQueryClient(
             linkedMapOf(
                 "path" to JsonPrimitive(query.path),
                 "args" to args,
-                "format" to JsonPrimitive("json"),
+                "format" to JsonPrimitive(CONVEX_RESPONSE_FORMAT),
             ),
         )
         return JSON.encodeToString(JsonElement.serializer(), request)
@@ -113,6 +113,7 @@ internal class ConvexQueryClient(
 
     private companion object {
         const val HTTP_OK = 200
+        const val CONVEX_RESPONSE_FORMAT = "convex_encoded_json"
         val JSON = Json {
             isLenient = false
             allowSpecialFloatingPointValues = false

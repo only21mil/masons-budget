@@ -35,7 +35,7 @@ class ConvexEnvelopeTest {
     }
 
     @Test
-    fun `the request names the query and asks for json`() {
+    fun `the request names the query and asks for convex encoded json`() {
         val poster = RecordingPoster(success("[]"))
         val repository = repositoryWith(poster, testToken())
 
@@ -43,7 +43,7 @@ class ConvexEnvelopeTest {
 
         val body = sentBody(poster)
         assertEquals("dataFiles:list", body["path"]?.jsonPrimitive?.content)
-        assertEquals("json", body["format"]?.jsonPrimitive?.content)
+        assertEquals("convex_encoded_json", body["format"]?.jsonPrimitive?.content)
         assertEquals("$DEPLOYMENT/api/query", poster.urls.single())
     }
 
@@ -161,6 +161,21 @@ class ConvexEnvelopeTest {
         val result = runBlocking { repository.versions() }
         val versions = (result as? ConvexResult.Ok)?.value ?: fail("expected Ok, got $result")
         assertEquals(mapOf("transactions" to 42L, "budget" to 7L), versions)
+    }
+
+    @Test
+    fun `plain float64 integral fields preserve exact longs and reject fractions`() {
+        assertEquals(0L, Json.parseToJsonElement("0.0").strictLongOrNull())
+        assertEquals(
+            1_784_388_713_216L,
+            Json.parseToJsonElement("1784388713216.0").strictLongOrNull(),
+        )
+        assertEquals(null, Json.parseToJsonElement("1.5").strictLongOrNull())
+        assertEquals(null, Json.parseToJsonElement("\"1.0\"").strictLongOrNull())
+        assertEquals(
+            null,
+            Json.parseToJsonElement("""{"${'$'}integer":"AQAAAAAAAAA="}""").strictLongOrNull(),
+        )
     }
 
     @Test
