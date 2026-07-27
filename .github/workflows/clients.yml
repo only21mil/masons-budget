@@ -28,6 +28,64 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Which trees actually changed. Added 2026-07-27 after a session of ~30 PRs
+  # exhausted the account's Actions minutes: every PR ran all four jobs, so a
+  # docs-only change still assembled an APK, installed Chromium and captured a
+  # design packet. Cost is not the only reason — a job that cannot be affected
+  # by a diff tells you nothing when it passes.
+  #
+  # A push to main always reports every tree as changed. The default branch must
+  # be verified whole after a merge, which is the property the trigger comment
+  # above is protecting; scoping must not quietly undo it.
+  changes:
+    name: Detect changed trees
+    if: github.repository == 'only21mil/masons-budget'
+    runs-on: ubuntu-latest
+    outputs:
+      linux: ${{ steps.filter.outputs.linux }}
+      android: ${{ steps.filter.outputs.android }}
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compare against the merge base
+        id: filter
+        env:
+          IS_MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+
+          if [ "$IS_MAIN_PUSH" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Verifying every tree (main push or manual dispatch)."
+            for t in linux android backend; do echo "$t=true" >> "$GITHUB_OUTPUT"; done
+            exit 0
+          fi
+
+          base="origin/${BASE_REF:-main}"
+          git fetch -q origin "${BASE_REF:-main}"
+          files="$(git diff --name-only "$(git merge-base HEAD "$base")" HEAD)"
+          printf '%s\n' "$files" | sed 's/^/  /'
+
+          # shared/, convex/ and the workflow itself reach every client, so they
+          # mark all three. Erring toward running a job is the safe direction:
+          # a needless run costs minutes, a skipped one costs a regression.
+          wide=false
+          printf '%s\n' "$files" | grep -qE '^(shared/|convex/|package(-lock)?\.json|\.github/workflows/clients\.yml)' && wide=true
+
+          for t in linux android; do
+            if [ "$wide" = true ] || printf '%s\n' "$files" | grep -q "^$t/"; then
+              echo "$t=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$t=false" >> "$GITHUB_OUTPUT"
+            fi
+          done
+          # The contract and Convex suites are cheap and guard the money rules;
+          # they run whenever anything at all changed.
+          echo "backend=true" >> "$GITHUB_OUTPUT"
+
   shared-domain:
     name: Shared domain contract
     if: github.repository == 'only21mil/masons-budget'
@@ -78,7 +136,8 @@ jobs:
 
   linux-client:
     name: Linux client
-    if: github.repository == 'only21mil/masons-budget'
+    needs: changes
+    if: github.repository == 'only21mil/masons-budget' && needs.changes.outputs.linux == 'true'
     runs-on: ubuntu-latest
     needs: shared-domain
     steps:
@@ -116,6 +175,7 @@ jobs:
         working-directory: linux
 
       - name: Upload build output
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: linux-client-dist
@@ -128,15 +188,17 @@ jobs:
       # child profile. Headless, so it needs no display. Download the artifact to
       # review the UI without running the app.
       - name: Install Chromium for screenshots
+        if: github.event_name != 'pull_request'
         run: npx playwright install --with-deps chromium
         working-directory: linux
 
       - name: Capture design packet
+        if: github.event_name != 'pull_request'
         run: npm run screenshots
         working-directory: linux
 
       - name: Upload design packet
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: linux-design-packet
@@ -145,7 +207,8 @@ jobs:
 
   android-client:
     name: Android client
-    if: github.repository == 'only21mil/masons-budget'
+    needs: changes
+    if: github.repository == 'only21mil/masons-budget' && needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     needs: shared-domain
     steps:
@@ -264,7 +327,7 @@ jobs:
         working-directory: android
 
       - name: Upload Android design packet
-        if: always() && steps.probe.outputs.app == 'true'
+        if: always() && steps.probe.outputs.app == 'true' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: android-design-packet
@@ -274,7 +337,7 @@ jobs:
       # Debug-signed only — a sideload artifact for the Fold, never a release
       # build. Release signing stays out of CI.
       - name: Upload debug APK
-        if: steps.probe.outputs.app == 'true'
+        if: steps.probe.outputs.app == 'true' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: vogel-vault-debug-apk

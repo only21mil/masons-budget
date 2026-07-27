@@ -61,6 +61,12 @@ on:
 permissions:
   contents: read
 
+# The only workflow that lacked one. Two overlapping dispatches both ran to
+# completion and reported against the same secrets.
+concurrency:
+  group: release-preflight-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   preflight:
     name: Report release secret presence
