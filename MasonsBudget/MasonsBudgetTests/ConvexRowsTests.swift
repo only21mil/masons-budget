@@ -44,6 +44,33 @@ final class ConvexRowsTests: XCTestCase {
         XCTAssertEqual(child.owner, .mason)
     }
 
+    func testUnexpectedResponseFieldsAreIgnoredButKnownFieldsStayValidated() throws {
+        var row = transactionRow(owner: "victor", amount: "OTAAAAAAAAA=")
+        row["spendAmount"] = int64("x8////////8=")
+        row["displaySpendAmount"] = int64("OTAAAAAAAAA=")
+        row["hasOppositeSpendSign"] = true
+        row["futureTransactionField"] = ["nested": true]
+
+        let envelope: ConvexRowEnvelope<ConvexTransactionRow> = try decodeTaggedJSON([
+            "complete": true,
+            "rows": [row],
+            "futureEnvelopeField": "ignored",
+        ])
+
+        // The server's rendering projection must not replace the signed source
+        // amount used by Transaction's owner-aware spend semantics.
+        let transaction = try XCTUnwrap(envelope.completeRows().first?.legacyDTO())
+        XCTAssertEqual(transaction.amount, Decimal(string: "123.45")!)
+
+        row["amountCents"] = "not-an-int64"
+        XCTAssertThrowsError(
+            try decodeTaggedJSON([
+                "complete": true,
+                "rows": [row],
+            ]) as ConvexRowEnvelope<ConvexTransactionRow>,
+        )
+    }
+
     func testBothInt64LimitsRemainExactThroughTypedMoneyRows() throws {
         let maximum: ConvexRowEnvelope<ConvexTransactionRow> = try decodeTaggedJSON([
             "complete": true,
