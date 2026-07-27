@@ -70,18 +70,76 @@ env:
   # of what is available, whereas a floating version turns up months later as an
   # unexplained compile error. Take the highest GM from that table.
   XCODE_VERSION: '26.6'
+  # Linux builds this exact release from its checksummed source archive. The
+  # Homebrew formula is macOS-only, despite Homebrew itself supporting Linux.
+  # Pinning makes a generator release an explicit reviewable change instead of
+  # letting a formula update rewrite the committed project unexpectedly.
+  XCODEGEN_VERSION: '2.46.0'
+  XCODEGEN_SHA256: c83c7bd70255b0ddf4116dadce16bdf0e5939165b43a544e124de294ec84aa27
   # brew's auto-update pulls a few hundred megabytes and a minute of wall clock
   # before it installs anything, and this runner is billed by the minute.
   HOMEBREW_NO_AUTO_UPDATE: 1
   HOMEBREW_NO_INSTALL_CLEANUP: 1
 
 jobs:
+  project-consistency:
+    name: Verify committed Xcode project
+    if: github.repository == 'only21mil/masons-budget'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      # ubuntu-latest already carries Swift. XcodeGen's Homebrew formula is
+      # macOS-only, but the upstream Swift package builds and runs on Linux.
+      - name: Install pinned XcodeGen
+        run: |
+          set -euo pipefail
+          ARCHIVE="$RUNNER_TEMP/xcodegen.tar.gz"
+          SOURCE_DIR="$RUNNER_TEMP/xcodegen-source"
+          curl --fail --silent --show-error --location --retry 3 \
+            -o "$ARCHIVE" \
+            "https://github.com/yonaskolb/XcodeGen/archive/refs/tags/${XCODEGEN_VERSION}.tar.gz"
+          echo "${XCODEGEN_SHA256}  ${ARCHIVE}" | sha256sum --check --strict -
+          mkdir -p "$SOURCE_DIR"
+          tar xzf "$ARCHIVE" -C "$SOURCE_DIR" --strip-components=1
+          swift build \
+            --package-path "$SOURCE_DIR" \
+            --configuration release \
+            --product xcodegen
+          echo "$SOURCE_DIR/.build/release" >> "$GITHUB_PATH"
+
+      # This is deliberately a prerequisite of the billed macOS job. A stale
+      # committed project fails here before any 10x runner starts.
+      - name: Require the generated project to be committed
+        working-directory: MasonsBudget
+        run: |
+          set -euo pipefail
+          # XcodeGen's Linux build cannot replace an existing workspace bundle,
+          # so move the committed output aside and generate a clean one. Git's
+          # index still provides the comparison baseline.
+          mv MasonsBudget.xcodeproj "$RUNNER_TEMP/committed-MasonsBudget.xcodeproj"
+          xcodegen generate --spec project.yml --quiet
+          UNTRACKED_PROJECT_FILES=$(git ls-files --others --exclude-standard -- MasonsBudget.xcodeproj)
+          if git diff --quiet --exit-code -- MasonsBudget.xcodeproj && [ -z "$UNTRACKED_PROJECT_FILES" ]; then
+            echo "PASS: MasonsBudget.xcodeproj matches project.yml."
+          else
+            git diff --stat -- MasonsBudget.xcodeproj
+            printf '%s\n' "$UNTRACKED_PROJECT_FILES"
+            echo "FAIL: MasonsBudget.xcodeproj is stale. Run 'cd MasonsBudget && xcodegen generate --spec project.yml' and commit the result."
+            exit 1
+          fi
+
   swift:
     name: Build and test the Apple client
     # One job, not three. Xcode selection, the brew install and project
     # generation cost the same few minutes whichever leg needs them, and on a
     # 10x runner paying for that setup once beats parallelism.
     if: github.repository == 'only21mil/masons-budget'
+    needs: project-consistency
     runs-on: macos-latest
     timeout-minutes: 45
 
