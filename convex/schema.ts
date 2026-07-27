@@ -161,6 +161,7 @@ export default defineSchema({
   })
     .index("by_source_tx_id", ["sourceFile", "txId"]) // upsert / dedupe
     .index("by_owner_month", ["owner", "month"]) // budget month, one owner
+    .index("by_owner_month_date", ["owner", "month", "date"])
     .index("by_owner_date", ["owner", "date"]) // activity feed, one owner
     .index("by_month", ["month"]) // budget month, whole household
     .index("by_date", ["date"]), // activity feed, whole household
@@ -223,6 +224,7 @@ export default defineSchema({
     .index("by_source_buy_id", ["sourceFile", "buyId"])
     .index("by_owner_date", ["owner", "date"])
     .index("by_owner_month", ["owner", "month"])
+    .index("by_owner_month_date", ["owner", "month", "date"])
     .index("by_date", ["date"]),
 
   // ── Bitcoin bill payments ──
@@ -250,6 +252,7 @@ export default defineSchema({
     .index("by_source_bill_pay_id", ["sourceFile", "billPayId"])
     .index("by_owner_date", ["owner", "date"])
     .index("by_owner_month", ["owner", "month"])
+    .index("by_owner_month_date", ["owner", "month", "date"])
     .index("by_date", ["date"]),
 
   // ── Bitcoin accounts (balance snapshot) ──
