@@ -5,32 +5,60 @@
 import Foundation
 import os
 
+struct MC2ReadBatch<Value> {
+    let value: Value
+    /// Nil means the legacy payload does not prove absence for unrepresented owners.
+    let replacementOwners: Set<FamilyMember>?
+}
+
 /// Reads MC2 data from the Convex cloud backend.
 ///
 /// Usage:
 /// ```swift
 /// let reader = MC2Reader()
-/// let transactions = try await reader.readTransactions()
-/// let budget = try await reader.readBudget()
+/// let transactions = try await reader.readTransactions(viewer: .rachel)
+/// let budget = try await reader.readBudget(viewer: .rachel)
 /// ```
 actor MC2Reader {
     private let client: ConvexClient
+    private let rowReader: ConvexRowReader
+    private let rowReadsEnabled: () -> Bool
     private let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "MC2Reader")
 
-    init(client: ConvexClient? = nil) {
-        self.client = client ?? ConvexClient(deploymentURL: ConvexConfig.deploymentURL)
+    init(
+        client: ConvexClient? = nil,
+        rowReadsEnabled: @escaping () -> Bool = { ConvexConfig.rowReadsEnabled },
+    ) {
+        let resolvedClient = client ?? ConvexClient(deploymentURL: ConvexConfig.deploymentURL)
+        self.client = resolvedClient
+        rowReader = ConvexRowReader(client: resolvedClient)
+        self.rowReadsEnabled = rowReadsEnabled
     }
 
     // MARK: - Public API
 
     /// Read all transactions from Convex.
-    func readTransactions() async throws -> [MC2Transaction] {
-        try await client.fetchFile("transactions", as: [MC2Transaction].self)
+    func readTransactions(viewer: FamilyMember) async throws -> MC2ReadBatch<[MC2Transaction]> {
+        if rowReadsEnabled() {
+            do {
+                let rows = try await rowReader.transactions(viewer: viewer)
+                let owners = Set(FamilyMember.allCases.filter { viewer.canSee(dataOwnedBy: $0) })
+                return MC2ReadBatch(value: rows, replacementOwners: owners)
+            } catch let error as ConvexError where error.isRowAPIUnavailable {
+                log.notice("Public row API is not deployed; reading authenticated transactions blob")
+            }
+        }
+
+        let blob = try await client.fetchFile("transactions", as: [MC2Transaction].self)
+        return MC2ReadBatch(value: blob, replacementOwners: nil)
     }
 
     /// Read the current budget from Convex.
-    func readBudget() async throws -> MC2Budget {
-        try await client.fetchFile("budget", as: MC2Budget.self)
+    func readBudget(viewer: FamilyMember) async throws -> MC2Budget {
+        try await rowOrBlob(
+            { try await rowReader.budget(viewer: viewer).adultBudgetDTO() },
+            blob: { try await client.fetchFile("budget", as: MC2Budget.self) },
+        )
     }
 
     /// Read the BTC balance snapshot from Convex.
@@ -39,14 +67,25 @@ actor MC2Reader {
     }
 
     /// Read all BTC buy records from Convex.
-    func readBTCBuys() async throws -> [MC2BTCBuy] {
-        try await client.fetchFile("bitcoin-buys", as: [MC2BTCBuy].self)
+    func readBTCBuys(viewer: FamilyMember) async throws -> [MC2BTCBuy] {
+        try await rowOrBlob(
+            { try await rowReader.btcBuys(viewer: viewer, scope: .netWorth) },
+            blob: { try await client.fetchFile("bitcoin-buys", as: [MC2BTCBuy].self) },
+        )
     }
 
     /// Read all BTC bill pay records from Convex.
-    func readBTCBillPays() async throws -> [MC2BTCBillPay] {
-        let wrapper = try await client.fetchFile("bitcoin-bill-pays", as: MC2BillPaysWrapper.self)
-        return wrapper.billPays
+    func readBTCBillPays(viewer: FamilyMember) async throws -> [MC2BTCBillPay] {
+        try await rowOrBlob(
+            { try await rowReader.btcBillPays(viewer: viewer, scope: .netWorth) },
+            blob: {
+                let wrapper = try await client.fetchFile(
+                    "bitcoin-bill-pays",
+                    as: MC2BillPaysWrapper.self,
+                )
+                return wrapper.billPays
+            },
+        )
     }
 
     /// Read retirement/brokerage data from Convex.
@@ -60,22 +99,51 @@ actor MC2Reader {
     }
 
     /// Read Mason's budget from Convex.
-    func readMasonBudget() async throws -> MC2MasonBudget {
-        try await client.fetchFile("mason-budget", as: MC2MasonBudget.self)
+    func readMasonBudget(viewer: FamilyMember) async throws -> MC2MasonBudget {
+        try await rowOrBlob(
+            { try await rowReader.budget(viewer: viewer).childBudgetDTO() },
+            blob: { try await client.fetchFile("mason-budget", as: MC2MasonBudget.self) },
+        )
     }
 
     /// Read Mason's transactions from Convex.
-    func readMasonTransactions() async throws -> [MC2Transaction] {
-        try await client.fetchFile("mason-transactions", as: [MC2Transaction].self)
+    func readMasonTransactions(viewer: FamilyMember) async throws -> [MC2Transaction] {
+        try await rowOrBlob(
+            { try await rowReader.transactions(viewer: viewer) },
+            blob: {
+                try await client.fetchFile(
+                    "mason-transactions",
+                    as: [MC2Transaction].self,
+                )
+            },
+        )
     }
 
     /// Read Mason's BTC buys from Convex.
-    func readMasonBTCBuys() async throws -> [MC2BTCBuy] {
-        try await client.fetchFile("mason-bitcoin-buys", as: [MC2BTCBuy].self)
+    func readMasonBTCBuys(viewer: FamilyMember) async throws -> [MC2BTCBuy] {
+        try await rowOrBlob(
+            { try await rowReader.btcBuys(viewer: viewer, scope: .netWorth) },
+            blob: {
+                try await client.fetchFile(
+                    "mason-bitcoin-buys",
+                    as: [MC2BTCBuy].self,
+                )
+            },
+        )
     }
 
     /// Read MC2 todos. Supports either a raw array or `{ "todos": [...] }`.
-    func readTodos() async throws -> [MC2TodoItem] {
+    func readTodos(viewer: FamilyMember) async throws -> MC2ReadBatch<[MC2TodoItem]> {
+        if rowReadsEnabled() {
+            do {
+                let rows = try await rowReader.todos(viewer: viewer)
+                let owners = Set(FamilyMember.allCases.filter { viewer.canSee(dataOwnedBy: $0) })
+                return MC2ReadBatch(value: rows, replacementOwners: owners)
+            } catch let error as ConvexError where error.isRowAPIUnavailable {
+                log.notice("Public row API is not deployed; reading authenticated todos blob")
+            }
+        }
+
         let raw = try await client.fetchFileValue("todos")
         let rawTodos: [Any]
         if let array = raw as? [Any] {
@@ -83,10 +151,10 @@ actor MC2Reader {
         } else if let wrapper = raw as? [String: Any], let array = wrapper["todos"] as? [Any] {
             rawTodos = array
         } else {
-            return []
+            return MC2ReadBatch(value: [], replacementOwners: nil)
         }
 
-        return rawTodos.compactMap { item in
+        let todos = rawTodos.compactMap { item in
             guard JSONSerialization.isValidJSONObject(item),
                   let data = try? JSONSerialization.data(withJSONObject: item)
             else {
@@ -101,10 +169,27 @@ actor MC2Reader {
                 return nil
             }
         }
+        return MC2ReadBatch(value: todos, replacementOwners: nil)
     }
 
     /// Check current data versions (lightweight — for change detection).
     func checkVersions() async throws -> [String: Double] {
         try await client.fetchVersions()
+    }
+
+    private func rowOrBlob<T>(
+        _ rows: () async throws -> T,
+        blob: () async throws -> T,
+    ) async throws -> T {
+        guard rowReadsEnabled() else {
+            return try await blob()
+        }
+
+        do {
+            return try await rows()
+        } catch let error as ConvexError where error.isRowAPIUnavailable {
+            log.notice("Public row API is not deployed; reading authenticated legacy blob")
+            return try await blob()
+        }
     }
 }
