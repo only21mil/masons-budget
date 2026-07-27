@@ -1,22 +1,58 @@
 #!/usr/bin/env bash
 #
-# Report whether Convex reads are OPEN (unauthenticated queries succeed) or
-# ENFORCED (unauthenticated queries are rejected).
+# Report whether Convex reads are OPEN (unauthenticated queries succeed),
+# ENFORCED (rejected by the auth gate) — or whether the deployment is simply
+# broken, which is a different thing and used to be indistinguishable.
 #
 # This is the observable signal for every step of the read-auth cutover —
 # see docs/convex-read-auth-cutover.md. It is a pure read probe: it issues
 # Convex *queries* only, never a mutation, so it is safe to run repeatedly and
 # safe to run against production.
 #
-# Metadata only, deliberately. The probe calls `dataFiles:list`, which returns
-# file names, versions and timestamps. It never calls `dataFiles:get` and never
-# touches a payload, so no balance, transaction, merchant or todo text can be
-# printed by this script even when reads are wide open.
+# ── Why there is a CONTROL probe ─────────────────────────────────────────────
+#
+# A single unauthenticated probe cannot tell "correctly rejected" from "server
+# is on fire". It proved that the moment enforcement went live: production
+# redacts a thrown error's `errorMessage` to a bare "[Request ID: …] Server
+# Error", so the script printed INDETERMINATE / STATE: UNKNOWN while the door
+# was, in fact, correctly shut. A checker that returns UNKNOWN exactly when it
+# is needed is not a checker — and this script is the *only* automated
+# detector of the hazard the "hatch outranks the token" design knowingly buys
+# (a set CONVEX_READ_TOKEN silently doing nothing).
+#
+# So every run sends a second, deliberately-wrong credential, and — when
+# CONVEX_READ_TOKEN is in the environment — a third, known-good one. The pair
+# is what makes the answer falsifiable:
+#
+#   good ACCEPTED + wrong REJECTED  → ENFORCED. The gate is running AND the
+#                                     token we hold is the token it holds.
+#   good REJECTED + wrong REJECTED  → OUTAGE. Everything is failing; that is
+#                                     not enforcement, it is a lockout.
+#   wrong ACCEPTED                  → OPEN. The gate is not comparing tokens at
+#                                     all (hatch on, or gate not deployed) —
+#                                     the Trap 1 hazard, caught without needing
+#                                     the real token.
+#
+# Without CONVEX_READ_TOKEN there is no known-good control, so the script can
+# still prove OPEN vs not-OPEN and can still recognise the gate's own
+# `Unauthorized:` payload — but it says out loud that it has not verified the
+# token's value. It never guesses.
+#
+# ── Safety properties, unchanged and non-negotiable ──────────────────────────
+#
+# Metadata only, deliberately. Every probe calls `dataFiles:list`, which
+# returns file names, versions and timestamps. It never calls `dataFiles:get`
+# and never touches a payload, so no balance, transaction, merchant or todo
+# text can be printed by this script even when reads are wide open. The probe
+# path is hardcoded, not a parameter, so it cannot be pointed at a
+# payload-returning function by accident.
 #
 # Tokens are read from the environment and are never echoed, logged, written to
-# a file, or passed in argv — the request body is assembled in a mode-0600
-# temp file so the token cannot leak into `ps` output. The script reports a
-# token as present/absent and accepted/rejected, never its value.
+# a file, or passed in argv — every request body is assembled in a mode-0600
+# temp file so no token can leak into `ps` output. The script reports a token as
+# present/absent and accepted/rejected, never by value. The control credential
+# is generated fresh per run from the CSPRNG, is never persisted, and is not a
+# secret: it is a string the deployment is *supposed* to refuse.
 
 set -euo pipefail
 
@@ -35,9 +71,10 @@ usage() {
   cat <<'EOF'
 Usage: scripts/verify-read-auth.sh [options]
 
-Reports the read-authentication state of a Convex deployment by issuing one
-unauthenticated metadata query (dataFiles:list) and observing whether it is
-rejected.
+Reports the read-authentication state of a Convex deployment. Sends an
+unauthenticated metadata query (dataFiles:list), the same query with a
+deliberately wrong credential, and — if CONVEX_READ_TOKEN is set — the same
+query with that credential, then classifies the deployment from the pair.
 
 Options:
   --url URL          Deployment URL (default: the committed app deployment;
@@ -46,22 +83,37 @@ Options:
                      1 on mismatch. Use this to gate a cutover step.
   --timeout SECONDS  Per-request timeout (default 20, env
                      VERIFY_READ_AUTH_TIMEOUT)
-  --verbose          Also print file names/versions/timestamps returned by the
-                     metadata query. Still never prints file contents.
+  --verbose          Also print file names/versions/timestamps returned by a
+                     successful metadata query. Still never prints file
+                     contents.
   -h, --help         This text.
 
 Environment:
   CONVEX_URL         Deployment URL override.
-  CONVEX_READ_TOKEN  If set and non-empty, a second probe is sent WITH the
-                     token to confirm the deployment accepts it. The value is
-                     never printed.
+  CONVEX_READ_TOKEN  If set and non-empty, the known-good control probe runs.
+                     This is what upgrades "the door seems shut" to "the door
+                     is shut and my key opens it". The value is never printed.
+
+States:
+  OPEN                 unauthenticated reads succeed.
+  ENFORCED             the gate is running and a valid credential is accepted.
+  OUTAGE               reads are failing for everyone, including a caller
+                       holding CONVEX_READ_TOKEN. Not enforcement — a lockout.
+  CLOSED-UNCONFIRMED   reads are definitely not open, but with no known-good
+                       credential to compare against, a shut door and a broken
+                       server look the same. Re-run with CONVEX_READ_TOKEN.
+  UNKNOWN              could not probe (network, non-200, unparseable answer),
+                       or the probes contradict each other.
 
 Exit codes (without --expect, the code encodes the state, not success):
-  0   ENFORCED  - unauthenticated reads are rejected
-  10  OPEN      - unauthenticated reads succeed
-  2   UNKNOWN   - could not determine (network, unexpected response shape,
-                  or an error that is not an authorization error)
-With --expect: 0 = state matched, 1 = state did not match, 2 = UNKNOWN.
+  0   ENFORCED
+  10  OPEN
+  11  OUTAGE
+  12  CLOSED-UNCONFIRMED
+  2   UNKNOWN
+With --expect: 0 = state matched, 1 = state did not match, 2 = indeterminate.
+Note that --expect enforced deliberately FAILS on OUTAGE: "nobody can read,
+including me" is the step-5 rollback trigger, not a successful cutover.
 EOF
 }
 
@@ -113,6 +165,20 @@ workdir="$(mktemp -d "${TMPDIR:-/tmp}/verify-read-auth.XXXXXX")"
 cleanup() { rm -rf "$workdir"; }
 trap cleanup EXIT INT TERM
 
+# The control credential. Generated per run from the CSPRNG so it cannot
+# collide with the real token, and prefixed so anyone who later finds it in a
+# deployment log can see at a glance what it was. Held in a variable that is
+# never printed — not because this string is a secret (the deployment is
+# supposed to refuse it) but because the next person to copy this function may
+# be handling one that is. Read out of the environment by the probe body,
+# never passed in argv.
+VERIFY_READ_AUTH_CONTROL_TOKEN="verify-read-auth-control-$(node -e '
+  import("node:crypto").then((c) => {
+    process.stdout.write(c.randomBytes(16).toString("hex"));
+  });
+')"
+export VERIFY_READ_AUTH_CONTROL_TOKEN
+
 # Classifier runs in node (already required by the repo) so the response is
 # parsed as JSON rather than grepped. It reads from files, never argv.
 cat >"$workdir/classify.mjs" <<'NODE'
@@ -130,7 +196,9 @@ function emit(fields) {
 }
 
 if (httpCode !== "200") {
-  emit({ outcome: "unknown", detail: `HTTP ${httpCode}` });
+  // A rejected query still answers 200 — the envelope carries the error. A
+  // non-200 is the platform failing, so it says nothing either way about auth.
+  emit({ outcome: "unknown", unconfigured: "no", detail: `HTTP ${httpCode}` });
   process.exit(0);
 }
 
@@ -138,7 +206,7 @@ let json;
 try {
   json = JSON.parse(raw);
 } catch {
-  emit({ outcome: "unknown", detail: "response was not JSON" });
+  emit({ outcome: "unknown", unconfigured: "no", detail: "response was not JSON" });
   process.exit(0);
 }
 
@@ -155,6 +223,7 @@ if (json?.status === "success") {
   }));
   emit({
     outcome: "success",
+    unconfigured: "no",
     count: rows.length,
     rows: JSON.stringify(rows),
   });
@@ -162,32 +231,72 @@ if (json?.status === "success") {
 }
 
 if (json?.status === "error") {
-  const message = String(json.errorMessage ?? json.errorData ?? "unknown error");
-  // validateReadToken throws ConvexError("Unauthorized: ...") for both the
-  // fail-closed case and the wrong-token case.
-  const isAuth = /unauthorized/i.test(message);
+  // ORDER MATTERS HERE, and having it backwards is what broke this script.
+  //
+  // A production deployment REDACTS `errorMessage`: every thrown error becomes
+  // "[Request ID: …] Server Error", auth or not. `errorData` carries the
+  // ConvexError payload through untouched — that is the entire point of
+  // ConvexError over Error. Reading errorMessage first meant the gate's own
+  // "Unauthorized: invalid read token" was masked by the redaction sitting in
+  // front of it, and a correctly closed door read as INDETERMINATE. errorData
+  // wins; errorMessage is the fallback for a dev deployment, which does not
+  // redact, and for a plain Error, which has no errorData at all.
+  const data = json.errorData;
+  const dataText =
+    data === undefined || data === null
+      ? ""
+      : typeof data === "string"
+        ? data
+        : JSON.stringify(data);
+  const messageText =
+    typeof json.errorMessage === "string" ? json.errorMessage : "";
+
+  // validateReadToken throws ConvexError("Unauthorized: …") for both the
+  // fail-closed case and the wrong-token case. An error carrying that word is
+  // the gate speaking. Anything else is a rejection we cannot attribute, and
+  // saying so plainly is the honest answer.
+  const isAuth =
+    /unauthorized/i.test(dataText) || /unauthorized/i.test(messageText);
+
   emit({
-    outcome: isAuth ? "rejected" : "unknown",
-    detail: message.slice(0, 300),
+    outcome: isAuth ? "rejected_auth" : "rejected_other",
+    // "not configured" means the deployment holds no CONVEX_READ_TOKEN at all,
+    // so it is refusing every reader on earth, not just this one.
+    unconfigured:
+      /not configured/i.test(dataText) || /not configured/i.test(messageText)
+        ? "yes"
+        : "no",
+    detail: (dataText || messageText || "unknown error").slice(0, 300),
   });
   process.exit(0);
 }
 
-emit({ outcome: "unknown", detail: "unrecognized Convex response envelope" });
+emit({
+  outcome: "unknown",
+  unconfigured: "no",
+  detail: "unrecognized Convex response envelope",
+});
 NODE
 
-# $1 = "anonymous" | "token"; writes classifier output to $workdir/out.<label>
+# probe <label> [token-env-var-name]
+#
+# With no env var name the query is sent as `args: {}` — the shape iOS, Android
+# and the MC2 bridge send when they have no credential. With one, the token is
+# read from that variable *inside* node, so it never appears in argv nor in
+# this script's own expansions. Writes classifier output to out.<label>.
 probe() {
   local label="$1"
+  local token_var="${2:-}"
   local req="$workdir/req.$label"
   local resp="$workdir/resp.$label"
   local code_file="$workdir/code.$label"
 
   : >"$req"
   chmod 600 "$req"
-  if [ "$label" = "token" ]; then
-    CONVEX_PROBE_PATH="$PROBE_PATH" node -e '
-      const token = process.env.CONVEX_READ_TOKEN ?? "";
+  if [ -n "$token_var" ]; then
+    CONVEX_PROBE_PATH="$PROBE_PATH" CONVEX_PROBE_TOKEN_VAR="$token_var" node -e '
+      const name = process.env.CONVEX_PROBE_TOKEN_VAR;
+      const token = process.env[name] ?? "";
       process.stdout.write(JSON.stringify({
         path: process.env.CONVEX_PROBE_PATH,
         args: { token },
@@ -214,7 +323,7 @@ probe() {
     "$url/api/query" >"$code_file" 2>"$workdir/curl.err.$label" || rc=$?
 
   if [ "$rc" -ne 0 ]; then
-    printf 'outcome=unknown\ndetail=curl failed (exit %s): %s\n' \
+    printf 'outcome=unknown\nunconfigured=no\ndetail=curl failed (exit %s): %s\n' \
       "$rc" "$(tr '\n' ' ' <"$workdir/curl.err.$label")" >"$workdir/out.$label"
     return 0
   fi
@@ -227,80 +336,185 @@ field() {
   sed -n "s/^$2=//p" "$workdir/out.$1" | head -n 1
 }
 
+print_rows() {
+  # print_rows <label> — metadata only; the classifier already discarded
+  # everything except name/version/updatedAt.
+  # shellcheck disable=SC2016  # node source, not shell expansion
+  METADATA_ROWS="$(field "$1" rows)" node -e '
+    const rows = JSON.parse(process.env.METADATA_ROWS || "[]");
+    for (const r of rows) {
+      console.log(`    - ${r.name}  v${r.version}  ${r.updatedAt}`);
+    }
+  '
+}
+
+describe() {
+  # describe <label> <human prefix> — one line per probe, in the same
+  # vocabulary for all three, so the three answers can be read against each
+  # other rather than one at a time.
+  local label="$1" prefix="$2"
+  case "$(field "$label" outcome)" in
+    success)
+      echo "  $prefix: ACCEPTED ($(field "$label" count) data files visible)"
+      if [ "$verbose" -eq 1 ]; then print_rows "$label"; fi
+      ;;
+    rejected_auth)
+      echo "  $prefix: REJECTED by the auth gate — $(field "$label" detail)" ;;
+    rejected_other)
+      echo "  $prefix: REJECTED, reason not attributable to auth — $(field "$label" detail)" ;;
+    *)
+      echo "  $prefix: NO ANSWER — $(field "$label" detail)" ;;
+  esac
+}
+
 echo "verify-read-auth: $url"
 echo "  probe: $PROBE_PATH (metadata only — never dataFiles:get)"
 
 probe anonymous
-anon_outcome="$(field anonymous outcome)"
+probe control VERIFY_READ_AUTH_CONTROL_TOKEN
+anon="$(field anonymous outcome)"
+ctl="$(field control outcome)"
 
+have_token=0
+good="absent"
+if [ -n "${CONVEX_READ_TOKEN:-}" ]; then
+  have_token=1
+  probe token CONVEX_READ_TOKEN
+  good="$(field token outcome)"
+fi
+
+describe anonymous "unauthenticated query"
+describe control "control query (deliberately wrong token)"
+if [ "$have_token" -eq 1 ]; then
+  echo "  CONVEX_READ_TOKEN in this shell: present"
+  describe token "known-good token query"
+else
+  echo "  CONVEX_READ_TOKEN in this shell: absent"
+fi
+
+# ── Classification ───────────────────────────────────────────────────────────
+#
+# Read it as: what did the deployment do with callers who differ *only* in the
+# credential they presented?
 state="UNKNOWN"
-case "$anon_outcome" in
+case "$anon" in
   success)
+    # Whatever else is true, an anonymous caller just read the household's file
+    # listing. That is OPEN, and no other probe can talk us out of it.
     state="OPEN"
-    echo "  unauthenticated query: ACCEPTED ($(field anonymous count) data files visible)"
-    if [ "$verbose" -eq 1 ]; then
-      # shellcheck disable=SC2016  # node source, not shell expansion
-      METADATA_ROWS="$(field anonymous rows)" node -e '
-        const rows = JSON.parse(process.env.METADATA_ROWS || "[]");
-        for (const r of rows) {
-          console.log(`    - ${r.name}  v${r.version}  ${r.updatedAt}`);
-        }
-      '
+    ;;
+  rejected_auth|rejected_other)
+    if [ "$ctl" = "success" ]; then
+      # No credential refused, a garbage credential admitted. validateReadToken
+      # cannot produce that ordering, so something other than the gate we think
+      # we deployed is answering — and whatever it is just handed the file
+      # listing to a caller holding a random string. Refuse to classify rather
+      # than pick the flattering reading; UNKNOWN fails every --expect.
+      state="UNKNOWN"
+    elif [ "$have_token" -eq 1 ]; then
+      if [ "$good" = "success" ]; then
+        state="ENFORCED"
+      else
+        # The caller holding the real token cannot read either. Enforcement is
+        # not the story here; a lockout is.
+        state="OUTAGE"
+      fi
+    elif [ "$anon" = "rejected_auth" ] || [ "$ctl" = "rejected_auth" ]; then
+      # No control pair, but the deployment volunteered an `Unauthorized:`
+      # payload and only validateReadToken emits that, so the gate is running.
+      # What stays unproven is whether the token any reader holds still matches.
+      state="ENFORCED"
+    else
+      state="CLOSED-UNCONFIRMED"
     fi
     ;;
-  rejected)
-    state="ENFORCED"
-    echo "  unauthenticated query: REJECTED — $(field anonymous detail)"
-    ;;
   *)
-    echo "  unauthenticated query: INDETERMINATE — $(field anonymous detail)"
+    state="UNKNOWN"
     ;;
 esac
 
-if [ -n "${CONVEX_READ_TOKEN:-}" ]; then
-  echo "  CONVEX_READ_TOKEN in this shell: present"
-  probe token
-  token_detail="$(field token detail)"
-  case "$(field token outcome)" in
-    success) echo "  authenticated query: ACCEPTED ($(field token count) data files visible)" ;;
-    rejected) echo "  authenticated query: REJECTED — $token_detail" ;;
-    *)
-      echo "  authenticated query: INDETERMINATE — $token_detail"
-      # A pre-gate deployment has no `token` argument in its validator, so the
-      # extra arg is an ArgumentValidationError, which production reports as a
-      # bare "Server Error". That is the signal that step 2 of the cutover
-      # (deploying the gated code) has not happened yet — and the reason
-      # clients must not start sending the token before it does.
-      if [ "$state" = "OPEN" ] && printf '%s' "$token_detail" |
-        grep -qiE 'server error|argumentvalidationerror'; then
-        echo "  hint: the deployment appears to reject a 'token' argument, so the"
-        echo "        gated code is probably not deployed yet. Do not ship clients"
-        echo "        that send a read token until it is."
-      fi
-      ;;
-  esac
-else
-  echo "  CONVEX_READ_TOKEN in this shell: absent (skipping the authenticated probe)"
+# ── Findings that deserve a line of their own ────────────────────────────────
+
+if [ "$state" = "OPEN" ] && [ "$ctl" = "success" ]; then
+  echo "  ⚠️  a deliberately WRONG token was ACCEPTED: this deployment is not"
+  echo "      comparing tokens at all. Either ALLOW_TOKENLESS_READ=true (Trap 1 —"
+  echo "      a set CONVEX_READ_TOKEN is being ignored) or the gated code is not"
+  echo "      deployed. Either way the data is readable by anyone with the URL."
+fi
+
+if [ "$state" = "OPEN" ] && [ "$ctl" != "success" ] && [ "$ctl" != "rejected_auth" ]; then
+  echo "  hint: reads are open, but the deployment refuses a 'token' argument, so"
+  echo "        the gated code is probably not deployed yet (Trap 2). Do not ship"
+  echo "        clients that send a read token until it is."
+fi
+
+if [ "$state" = "ENFORCED" ] && [ "$have_token" -eq 0 ]; then
+  echo "  note: no known-good control probe ran, so enforcement is read off the"
+  echo "        gate's own Unauthorized payload. The deployment's token VALUE is"
+  echo "        unverified from here — re-run with CONVEX_READ_TOKEN set to prove"
+  echo "        a legitimate reader can still get in."
+fi
+
+if [ "$state" = "OUTAGE" ]; then
+  echo "  ⚠️  the known-good token was refused as well: nobody can read, this"
+  echo "      shell or the phone. That is a lockout, not a cutover. Roll back"
+  echo "      with 'npx convex env set ALLOW_TOKENLESS_READ true', then diagnose."
+fi
+
+if [ "$(field anonymous unconfigured)" = "yes" ] ||
+  [ "$(field control unconfigured)" = "yes" ]; then
+  echo "  ⚠️  the gate reports CONVEX_READ_TOKEN is NOT CONFIGURED on the"
+  echo "      deployment. Reads are shut the way a jammed lock is shut — no"
+  echo "      reader can get in, because there is no key to hold."
+fi
+
+if [ "$state" = "CLOSED-UNCONFIRMED" ]; then
+  echo "  note: reads are NOT open — but the rejection carries no authorization"
+  echo "        payload, so a shut door and a broken deployment look identical"
+  echo "        from here. Re-run with CONVEX_READ_TOKEN set; a control pair is"
+  echo "        the only thing that settles it."
+fi
+
+if [ "$state" = "UNKNOWN" ] && [ "$ctl" = "success" ]; then
+  echo "  ⚠️  the probes contradict each other: no credential was REFUSED but a"
+  echo "      deliberately wrong one was ACCEPTED. validateReadToken cannot do"
+  echo "      that, so something else is answering — and it just served the file"
+  echo "      listing to a random string. Treat this as reads being reachable."
 fi
 
 echo "STATE: $state"
 
 if [ -n "$expect" ]; then
   want="$(printf '%s' "$expect" | tr '[:lower:]' '[:upper:]')"
-  if [ "$state" = "UNKNOWN" ]; then
-    echo "EXPECT $want: INDETERMINATE" >&2
-    exit 2
-  fi
   if [ "$state" = "$want" ]; then
     echo "EXPECT $want: OK"
     exit 0
   fi
-  echo "EXPECT $want: MISMATCH (actual $state)" >&2
-  exit 1
+  case "$state" in
+    UNKNOWN)
+      echo "EXPECT $want: INDETERMINATE" >&2
+      exit 2 ;;
+    CLOSED-UNCONFIRMED)
+      if [ "$want" = "OPEN" ]; then
+        # Not open is not open; that much is settled without a control.
+        echo "EXPECT OPEN: MISMATCH (actual $state)" >&2
+        exit 1
+      fi
+      # Refusing to certify ENFORCED without a control probe is the whole fix.
+      echo "EXPECT $want: INDETERMINATE (set CONVEX_READ_TOKEN to confirm)" >&2
+      exit 2 ;;
+    *)
+      # OUTAGE lands here against --expect enforced, on purpose: a deployment
+      # that refuses the real token has not been cut over, it has been broken.
+      echo "EXPECT $want: MISMATCH (actual $state)" >&2
+      exit 1 ;;
+  esac
 fi
 
 case "$state" in
   ENFORCED) exit 0 ;;
   OPEN) exit 10 ;;
+  OUTAGE) exit 11 ;;
+  CLOSED-UNCONFIRMED) exit 12 ;;
   *) exit 2 ;;
 esac
