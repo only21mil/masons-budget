@@ -1,0 +1,111 @@
+{
+  "valid": [
+    {
+      "name": "zero",
+      "wire": { "$integer": "AAAAAAAAAAA=" },
+      "decimal": "0"
+    },
+    {
+      "name": "one",
+      "wire": { "$integer": "AQAAAAAAAAA=" },
+      "decimal": "1"
+    },
+    {
+      "name": "negative one",
+      "wire": { "$integer": "//////////8=" },
+      "decimal": "-1"
+    },
+    {
+      "name": "above JavaScript safe integer",
+      "wire": { "$integer": "AAAAAAAAIAA=" },
+      "decimal": "9007199254740992"
+    },
+    {
+      "name": "below JavaScript safe integer",
+      "wire": { "$integer": "AAAAAAAA4P8=" },
+      "decimal": "-9007199254740992"
+    },
+    {
+      "name": "positive arbitrary 64-bit value",
+      "wire": { "$integer": "FYHpffQQIhE=" },
+      "decimal": "1234567890123456789"
+    },
+    {
+      "name": "negative arbitrary 64-bit value",
+      "wire": { "$integer": "634Wggvv3e4=" },
+      "decimal": "-1234567890123456789"
+    },
+    {
+      "name": "signed int64 maximum",
+      "wire": { "$integer": "/////////38=" },
+      "decimal": "9223372036854775807"
+    },
+    {
+      "name": "signed int64 minimum",
+      "wire": { "$integer": "AAAAAAAAAIA=" },
+      "decimal": "-9223372036854775808"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "null fallback",
+      "wire": null
+    },
+    {
+      "name": "numeric fallback",
+      "wire": 1
+    },
+    {
+      "name": "decimal string fallback",
+      "wire": "1"
+    },
+    {
+      "name": "array shape",
+      "wire": [{ "$integer": "AQAAAAAAAAA=" }]
+    },
+    {
+      "name": "missing tagged key",
+      "wire": {}
+    },
+    {
+      "name": "alias key",
+      "wire": { "$int64": "AQAAAAAAAAA=" }
+    },
+    {
+      "name": "extra key",
+      "wire": { "$integer": "AQAAAAAAAAA=", "value": "1" }
+    },
+    {
+      "name": "numeric tagged fallback",
+      "wire": { "$integer": 1 }
+    },
+    {
+      "name": "decimal tagged fallback",
+      "wire": { "$integer": "1" }
+    },
+    {
+      "name": "URL-safe alphabet",
+      "wire": { "$integer": "__________8=" }
+    },
+    {
+      "name": "invalid alphabet",
+      "wire": { "$integer": "AAAAAAAAAA!=" }
+    },
+    {
+      "name": "missing padding",
+      "wire": { "$integer": "AQAAAAAAAAA" }
+    },
+    {
+      "name": "non-canonical padding bits",
+      "wire": { "$integer": "AAAAAAAAAAB=" }
+    },
+    {
+      "name": "seven-byte payload",
+      "wire": { "$integer": "AAAAAAAAAA==" }
+    },
+    {
+      "name": "nine-byte payload",
+      "wire": { "$integer": "AAAAAAAAAAAA" }
+    }
+  ]
+}
