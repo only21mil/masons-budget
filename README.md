@@ -1,8 +1,17 @@
 # The Vogel Vault
 
-A voice-first, Bitcoin-native budget tracker for the family, fed by the MC2
-Mission Control financial data system. Internal repo name is still
-"Mason's Budget App".
+A voice-first, Bitcoin-native budget tracker for the family. Internal repo name is
+still "Mason's Budget App".
+
+> **Start here: [`docs/HANDOFF.md`](docs/HANDOFF.md)** — the goal, current state,
+> what is done, and what is left. Read it before acting on anything else in this
+> repo, including the rest of this README.
+>
+> **MC2 is gone.** It was a Python service on the DGX Spark, the Spark was wiped,
+> and it was never pushed anywhere. Convex is now the system of record, not a
+> projection. Sections below that describe MC2 as a live upstream — notably
+> "MC2 Integration" and parts of "Data Flow" — are stale and are being corrected;
+> the handoff is authoritative where they disagree.
 
 ## Clients
 
