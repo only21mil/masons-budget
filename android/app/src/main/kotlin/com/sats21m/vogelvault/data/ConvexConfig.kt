@@ -14,10 +14,13 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * Three rules this type exists to enforce:
  *
- *  1. **The token is never a constant.** It is not in source, not in a resource,
- *     not in `BuildConfig`, not in the APK. It arrives at runtime through a
- *     [ConvexConfigSource] and lives in memory only. A shipped binary that is
- *     never configured simply cannot read anything remote.
+ *  1. **The token is never committed.** Debug builds may receive it through the
+ *     `CONVEX_READ_TOKEN` build environment and carry it in `BuildConfig`/the APK.
+ *     This narrowly scoped exception exists so the family Android app can read
+ *     real data after reinstall without manually transferring a desktop secret
+ *     to a phone. Source, resources, tracked properties and fixtures must never
+ *     contain the value; builds without the environment variable remain
+ *     unconfigured.
  *  2. **Off by default.** [remoteReadEnabled] defaults to `false`, so wiring this
  *     package into the app changes nothing observable: the UI keeps rendering
  *     the sanitized fixtures in `:domain`.
@@ -29,7 +32,7 @@ class ConvexConfig(
     deploymentUrl: String? = null,
     readToken: String? = null,
     /**
-     * The kill switch, and the reason this whole package is inert today.
+     * The kill switch that keeps secretless builds inert.
      *
      * Deliberately separate from "is it configured": a build that happens to
      * have a URL and a token must still not start talking to the deployment
@@ -116,7 +119,7 @@ class ConvexConfig(
 
 /** Why a build can or cannot read from Convex. Carries no secret material. */
 enum class ReadReadiness {
-    /** The kill switch is off. The default, and today's shipped state. */
+    /** The kill switch is off. The default for builds without configuration. */
     DISABLED,
 
     /** Enabled, but nothing to point at. */
@@ -147,7 +150,7 @@ interface ConvexConfigSource {
 }
 
 /**
- * The app's default source: permanently unconfigured, permanently off.
+ * An explicit source that is permanently unconfigured and off.
  *
  * A real object rather than a null, so the "no remote reads" state is something
  * you can wire, inject and assert on instead of a branch every call site has to
@@ -160,9 +163,9 @@ object DisabledConvexConfigSource : ConvexConfigSource {
 /**
  * In-memory configuration, replaceable at runtime.
  *
- * Deliberately not persisted — the token dies with the process. That is the
- * conservative default for an unwired feature; a later lane that adds a settings
- * screen can add durable, encrypted storage behind this same interface.
+ * Deliberately not persisted itself: the application uses this as its effective
+ * source for a build-time token, while manual entry is durably encrypted by
+ * [SecureConvexConfigSource] before replacing this value for the running process.
  *
  * [AtomicReference] because the config is read from whatever thread a fetch
  * happens on and written from the main thread.

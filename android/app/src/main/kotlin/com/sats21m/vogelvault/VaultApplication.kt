@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.sats21m.vogelvault.data.ConvexConfig
+import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.data.RowQueryRepositories
 import com.sats21m.vogelvault.data.SecureConvexConfigSource
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
@@ -22,8 +23,25 @@ class VaultApplication : Application() {
         VaultDatabase.create(this)
     }
 
-    val convexConfigSource: SecureConvexConfigSource by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+    private val storedConvexConfigSource: SecureConvexConfigSource by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         SecureConvexConfigSource(this)
+    }
+
+    /**
+     * The baked debug credential is an in-memory startup override, not another
+     * plaintext or ciphertext copy on disk. Manual entry can still replace it
+     * for this process and persists through the existing encrypted source.
+     */
+    val convexConfigSource: MutableConvexConfigSource by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        val buildTime = buildTimeConvexConfig(BuildConfig.CONVEX_READ_TOKEN)
+        MutableConvexConfigSource(
+            initial =
+                if (buildTime.allowsRemoteRead) {
+                    buildTime
+                } else {
+                    storedConvexConfigSource.current()
+                },
+        )
     }
 
     private val rowDataSource: CachedRowDataSource by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -50,17 +68,29 @@ class VaultApplication : Application() {
         }
 
     private fun enableRemoteRows(readToken: String) {
-        convexConfigSource.update(
+        val next =
             ConvexConfig(
                 deploymentUrl = PRODUCTION_DEPLOYMENT,
                 readToken = readToken,
                 remoteReadEnabled = true,
-            ),
-        )
-    }
-
-    private companion object {
-        // Public routing configuration, not a credential.
-        const val PRODUCTION_DEPLOYMENT = "https://keen-elephant-452.convex.cloud"
+            )
+        storedConvexConfigSource.update(next)
+        convexConfigSource.update(next)
     }
 }
+
+// Public routing configuration, not a credential.
+internal const val PRODUCTION_DEPLOYMENT = "https://keen-elephant-452.convex.cloud"
+
+/**
+ * Turns the debug BuildConfig field into a fail-closed runtime configuration.
+ *
+ * Blank (including whitespace-only) build input is deliberately indistinguishable
+ * from the pre-injection build: remote reads remain disabled and fixtures render.
+ */
+internal fun buildTimeConvexConfig(readToken: String): ConvexConfig =
+    ConvexConfig(
+        deploymentUrl = PRODUCTION_DEPLOYMENT,
+        readToken = readToken,
+        remoteReadEnabled = readToken.isNotBlank(),
+    )

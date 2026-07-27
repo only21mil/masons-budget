@@ -673,6 +673,15 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settings(
             )
         }
     }
+    state.remoteConfigurationError?.let { detail ->
+        item {
+            StatusBanner(
+                "Could not enable Convex row reads",
+                detail,
+                tone = VaultWarning,
+            )
+        }
+    }
     item { RemoteRowsConfiguration(onEnableRemoteRows) }
     item {
         Panel("Slices") {
