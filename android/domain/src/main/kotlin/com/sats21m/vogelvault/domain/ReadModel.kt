@@ -27,7 +27,7 @@ val MC2_FILES: List<String> = listOf(
 )
 
 /** Freshness of a slice of the read model, surfaced explicitly in the UI. */
-enum class Freshness { LIVE, STALE, ERROR, EMPTY, LOADING }
+enum class Freshness { DEMO, LIVE, STALE, ERROR, EMPTY, LOADING }
 
 /**
  * A slice of the read model plus where it came from and how much to trust it.
@@ -37,17 +37,18 @@ enum class Freshness { LIVE, STALE, ERROR, EMPTY, LOADING }
 data class Slice<T>(
     val status: Freshness,
     val value: T,
-    /** Unix ms of the MC2 write this came from; null when never loaded. */
+    /** Unix ms of the remote write this came from; null for demo or never-loaded data. */
     val updatedAt: Long?,
     val source: String,
 ) {
     /**
      * True when a figure derived from this slice must not be shown.
      *
-     * `EMPTY` is deliberately excluded: zero really is the answer. `ERROR` and
-     * `LOADING` are not — displaying a total computed from a failed read next to
-     * a "could not load" message is exactly the wrong thing, and the Linux client
-     * shipped that bug before a screenshot caught it.
+     * `DEMO` is deliberately visible but unmistakably labelled, and `EMPTY` is
+     * deliberately excluded because zero really is the answer. `ERROR` and
+     * `LOADING` are suppressed — displaying a total computed from a failed read
+     * next to a "could not load" message is exactly the wrong thing, and the
+     * Linux client shipped that bug before a screenshot caught it.
      */
     val suppressFigures: Boolean
         get() = status == Freshness.ERROR || status == Freshness.LOADING

@@ -39,7 +39,7 @@ export const MC2_FILES = [
 export type MC2FileName = (typeof MC2_FILES)[number]
 
 /** Freshness of a slice of the read model, surfaced explicitly in the UI. */
-export type Freshness = "live" | "stale" | "error" | "empty" | "loading"
+export type Freshness = "demo" | "live" | "stale" | "error" | "empty" | "loading"
 
 export interface DataFileEnvelope<T> {
   readonly name: string
@@ -51,7 +51,7 @@ export interface DataFileEnvelope<T> {
 export interface SliceState<T> {
   readonly status: Freshness
   readonly value: T
-  /** Unix ms of the MC2 write this slice came from; null when never loaded. */
+  /** Unix ms of the remote write this slice came from; null for demo or never-loaded data. */
   readonly updatedAt: number | null
   readonly source: string
   readonly error?: string

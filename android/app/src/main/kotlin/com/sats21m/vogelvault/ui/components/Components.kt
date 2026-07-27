@@ -309,6 +309,7 @@ fun Badge(
 fun FreshnessTag(status: Freshness, updatedAt: Long?, now: Long) {
     val age = relativeTime(updatedAt, now)
     val (label, tone) = when (status) {
+        Freshness.DEMO -> "DEMO DATA" to VaultInfo
         Freshness.LIVE -> age to VaultPositive
         Freshness.STALE -> "Stale · $age" to VaultWarning
         Freshness.ERROR -> "Read failed" to VaultNegative
@@ -318,6 +319,7 @@ fun FreshnessTag(status: Freshness, updatedAt: Long?, now: Long) {
     // A live tag shows only a timestamp; that it means "synced" rides on the green
     // pill alone. The middot in the stale label reads as noise, so spell it out.
     val spoken = when (status) {
+        Freshness.DEMO -> "Demo sample data, not synced"
         Freshness.LIVE -> "Synced $age"
         Freshness.STALE -> "Stale, updated $age"
         else -> label
@@ -337,8 +339,8 @@ private fun relativeTime(updatedAt: Long?, now: Long): String {
 }
 
 /**
- * The four non-normal states. Rendered identically everywhere so a half-loaded
- * screen can never be mistaken for a complete one.
+ * Non-live states rendered consistently so incomplete or sample data cannot be
+ * mistaken for a successful remote read.
  */
 @Composable
 fun StateBlock(
@@ -352,6 +354,12 @@ fun StateBlock(
     val tint: Color
 
     when (status) {
+        Freshness.DEMO -> {
+            icon = Icons.Filled.WarningAmber
+            fallbackTitle = "Demo data"
+            fallbackDetail = "These are sample figures for preview only. They have never been synced."
+            tint = VaultInfo
+        }
         Freshness.ERROR -> {
             icon = Icons.Filled.ErrorOutline
             fallbackTitle = "Could not load"

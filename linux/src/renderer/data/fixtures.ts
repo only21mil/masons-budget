@@ -299,7 +299,7 @@ function slice<T>(value: T, status: Freshness, ageMinutes: number, source: strin
   return {
     status,
     value,
-    updatedAt: status === "empty" ? null : NOW - ageMinutes * MINUTE,
+    updatedAt: status === "demo" || status === "empty" ? null : NOW - ageMinutes * MINUTE,
     source,
   }
 }
@@ -327,12 +327,12 @@ export function buildSanitizedFixtureEnvelope(
       : null
 
   return {
-    transactions: slice(TRANSACTIONS, overrides.transactions ?? "live", 4, "MC2 · transactions"),
-    budget: slice(budgetForProfile, overrides.budget ?? "live", 4, "MC2 · budget"),
-    btcAccounts: slice(BTC_ACCOUNTS, overrides.btcAccounts ?? "live", 11, "MC2 · btc-balance-snapshot"),
-    btcBuys: slice(BTC_BUYS, overrides.btcBuys ?? "live", 11, "MC2 · bitcoin-buys"),
-    billPays: slice(BILL_PAYS, overrides.billPays ?? "live", 11, "MC2 · bitcoin-bill-pays"),
-    todos: slice(TODOS, overrides.todos ?? "live", 2, "MC2 · todos"),
+    transactions: slice(TRANSACTIONS, overrides.transactions ?? "demo", 4, "Demo fixtures · transactions"),
+    budget: slice(budgetForProfile, overrides.budget ?? "demo", 4, "Demo fixtures · budget"),
+    btcAccounts: slice(BTC_ACCOUNTS, overrides.btcAccounts ?? "demo", 11, "Demo fixtures · btc-balance-snapshot"),
+    btcBuys: slice(BTC_BUYS, overrides.btcBuys ?? "demo", 11, "Demo fixtures · bitcoin-buys"),
+    billPays: slice(BILL_PAYS, overrides.billPays ?? "demo", 11, "Demo fixtures · bitcoin-bill-pays"),
+    todos: slice(TODOS, overrides.todos ?? "demo", 2, "Demo fixtures · todos"),
     btcPriceUsd: parseCents("93500.00"),
     generatedAt: NOW,
   }

@@ -181,7 +181,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dashboard(state: Vaul
     item { StaleNotice(state.data.transactions.status) }
     item {
         Panel("Recent activity", state.data.transactions.source) {
-            if (state.data.transactions.status != Freshness.LIVE && state.data.transactions.status != Freshness.STALE) {
+            if (state.data.transactions.suppressFigures || state.data.transactions.status == Freshness.EMPTY) {
                 StateBlock(state.data.transactions.status)
             } else if (activity.isEmpty()) {
                 StateBlock(Freshness.EMPTY)
@@ -270,13 +270,16 @@ private fun androidx.compose.foundation.lazy.LazyListScope.budget(
     }
 
     if (budget == null) {
+        val readable = slice.status == Freshness.LIVE || slice.status == Freshness.DEMO
         item {
             Panel {
                 StateBlock(
-                    if (slice.status == Freshness.LIVE) Freshness.EMPTY else slice.status,
-                    title = if (slice.status == Freshness.LIVE) "No budget for this profile" else null,
-                    detail = if (slice.status == Freshness.LIVE) {
-                        "This profile has no dedicated budget file in MC2."
+                    if (readable) Freshness.EMPTY else slice.status,
+                    title = if (readable) "No budget for this profile" else null,
+                    detail = if (slice.status == Freshness.DEMO) {
+                        "This demo profile has no sample budget."
+                    } else if (slice.status == Freshness.LIVE) {
+                        "This profile has no dedicated budget file in the remote data."
                     } else {
                         null
                     },

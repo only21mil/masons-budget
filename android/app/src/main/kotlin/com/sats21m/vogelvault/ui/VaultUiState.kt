@@ -85,8 +85,9 @@ data class VaultUiState(
         Freshness.ERROR -> 0
         Freshness.LOADING -> 1
         Freshness.STALE -> 2
-        Freshness.EMPTY -> 3
-        Freshness.LIVE -> 4
+        Freshness.DEMO -> 3
+        Freshness.EMPTY -> 4
+        Freshness.LIVE -> 5
     }
 
     companion object {
