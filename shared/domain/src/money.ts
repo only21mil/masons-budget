@@ -11,19 +11,21 @@ export type Cents = bigint
 export type Sats = bigint
 
 export const SATS_PER_BTC = 100_000_000n
+const MAX_SAFE_MINOR_UNITS = BigInt(Number.MAX_SAFE_INTEGER)
 
 /**
  * Parse a decimal value into integer minor units without going through Number.
  *
- * Accepts a string, a number, or null/undefined. Numbers are stringified first —
- * for values MC2 actually emits (2-dp USD, 8-dp BTC) the shortest round-trip
- * representation is exact, so this is lossless in practice and never silently
- * accumulates float error the way `value * 100` does.
+ * Accepts a string, a number, or null/undefined. JSON numbers are delegated to
+ * jsonNumberToMinorUnits, which has stricter safety checks than lexical strings.
  */
 export function parseMinorUnits(value: unknown, scale: number): bigint {
   if (value === null || value === undefined || value === "") return 0n
+  if (typeof value === "number") return jsonNumberToMinorUnits(value, scale)
 
-  const raw = typeof value === "number" ? numberToDecimalString(value) : String(value).trim()
+  assertScale(scale)
+
+  const raw = String(value).trim()
   if (raw === "") return 0n
 
   const match = /^(-)?(\d*)(?:\.(\d*))?$/.exec(raw)
@@ -43,11 +45,64 @@ export function parseMinorUnits(value: unknown, scale: number): bigint {
   return sign === "-" ? -result : result
 }
 
-function numberToDecimalString(value: number): string {
+function assertScale(scale: number): void {
+  if (!Number.isSafeInteger(scale) || scale < 0 || scale > 100) {
+    throw new RangeError(`Minor-unit scale must be an integer from 0 through 100: ${scale}`)
+  }
+}
+
+/**
+ * Convert an already-parsed JSON number to integer minor units.
+ *
+ * `Number#toString()` is specified to return a shortest decimal representation
+ * that round-trips to the same IEEE-754 double. We parse those decimal digits
+ * directly with BigInt; the number is never multiplied by 10**scale.
+ *
+ * Decimal digits beyond `scale` round half away from zero. Non-finite inputs,
+ * invalid scales, and results outside JavaScript's safe-integer magnitude are
+ * refused with RangeError. The last rule prevents a source double from silently
+ * choosing between minor-unit integers that it can no longer distinguish.
+ */
+export function jsonNumberToMinorUnits(value: number, scale: number): bigint {
   if (!Number.isFinite(value)) throw new RangeError(`Not a finite number: ${value}`)
-  // Avoid exponential notation for the magnitudes MC2 uses.
-  if (Math.abs(value) < 1e21) return value.toFixed(20).replace(/0+$/, "").replace(/\.$/, "")
-  return String(value)
+  assertScale(scale)
+
+  const shortestDecimal = value.toString()
+  const match = /^(-)?(\d+)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(shortestDecimal)
+  if (!match) {
+    throw new RangeError(`Number has no decimal representation: ${shortestDecimal}`)
+  }
+
+  const [, sign, whole = "", fraction = "", exponentLexical = "0"] = match
+  const coefficient = BigInt(`${whole}${fraction}`)
+  const exponent = Number(exponentLexical)
+  const minorUnitExponent = exponent - fraction.length + scale
+
+  let magnitude: bigint
+  if (minorUnitExponent >= 0) {
+    magnitude = coefficient * 10n ** BigInt(minorUnitExponent)
+  } else {
+    const divisor = 10n ** BigInt(-minorUnitExponent)
+    const quotient = coefficient / divisor
+    const remainder = coefficient % divisor
+    magnitude = quotient + (remainder * 2n >= divisor ? 1n : 0n)
+  }
+
+  if (magnitude > MAX_SAFE_MINOR_UNITS) {
+    throw new RangeError(
+      `Rounded minor units exceed Number.MAX_SAFE_INTEGER: ${shortestDecimal} at scale ${scale}`,
+    )
+  }
+
+  return sign === "-" ? -magnitude : magnitude
+}
+
+export function jsonNumberToCents(value: number): Cents {
+  return jsonNumberToMinorUnits(value, 2)
+}
+
+export function jsonNumberToSats(value: number): Sats {
+  return jsonNumberToMinorUnits(value, 8)
 }
 
 export function parseCents(value: unknown): Cents {
