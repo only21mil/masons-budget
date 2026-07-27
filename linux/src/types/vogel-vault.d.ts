@@ -7,6 +7,8 @@
 // scripts/qa-preload-boundary.mjs checks that the method names declared here
 // match the ones the preload actually exposes.
 
+import type { VogelVaultRowRequest, VogelVaultRowResult } from "../../shared/ipc.ts"
+
 export interface VogelVaultRuntimeInfo {
   readonly appName: string
   readonly appVersion: string
@@ -78,6 +80,8 @@ declare global {
       exportCsv(request: VogelVaultCsvExportRequest): Promise<VogelVaultCsvExportResult>
       /** Takes no argument: there is nothing here for the renderer to choose. */
       getRemoteSnapshot(): Promise<VogelVaultRemoteSnapshot>
+      /** Closed row/document request union; main re-validates every field. */
+      queryConvexRows(request: VogelVaultRowRequest): Promise<VogelVaultRowResult>
     }
   }
 }
