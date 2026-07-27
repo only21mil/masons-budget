@@ -131,6 +131,12 @@ jobs:
       # codegen and therefore no authenticated deployment is ever needed here.
       - run: npm ci
 
+      - name: Typecheck deployable Convex functions
+        run: npx tsc --noEmit -p convex/tsconfig.json
+
+      - name: Typecheck Convex tests
+        run: npx tsc --noEmit -p convex/tsconfig.test.json
+
       - name: Read/mutation auth and todo LWW tests
         run: npm run convex:test
 
