@@ -93,13 +93,24 @@ test("selecting June changes the Budget totals strip", () => {
   const july = render("budget", "victor", JULY)
   const june = render("budget", "victor", JUNE)
 
-  // Actual: July 711.45 across the eight categories, June 759.05.
-  assert.ok(july.includes("$711.45"), "July actual missing")
-  assert.ok(june.includes("$759.05"), "June actual missing")
+  // Adult budget totals use adult household scope. Child rows remain visible on
+  // Activity but do not roll into Victor/Rachel's actuals.
+  assert.ok(july.includes("$673.46"), "July adult actual missing")
+  assert.ok(june.includes("$741.05"), "June adult actual missing")
 
   // Planned is the budget file's, so it does not move; remaining must.
-  assert.ok(july.includes("$1,958.55"), "July remaining missing")
-  assert.ok(june.includes("$1,910.95"), "June remaining missing")
+  assert.ok(july.includes("$1,996.54"), "July remaining missing")
+  assert.ok(june.includes("$1,928.95"), "June remaining missing")
+})
+
+test("adult oversight keeps child rows visible without adding them to budget spend", () => {
+  const budget = render("budget", "victor", JULY)
+  const activity = render("activity", "victor", JULY)
+
+  assert.ok(budget.includes("$673.46"), "adult July actual should exclude child spend")
+  assert.ok(!budget.includes("$711.45"), "child spend rolled into the adult budget")
+  assert.ok(activity.includes("Game Store"), "Mason's row should remain visible for adult oversight")
+  assert.ok(activity.includes("App Store"), "Maddox's row should remain visible for adult oversight")
 })
 
 test("viewing a month other than the budget's own says where planned came from", () => {
@@ -121,9 +132,9 @@ test("the Dashboard headline moves with the Budget month", () => {
   assert.ok(july.includes("July 2026"), "Dashboard should name the month it is reporting")
   assert.ok(june.includes("June 2026"), "Dashboard did not follow the selection")
 
-  // Spend: the same 759.05 the Budget screen derives for June.
-  assert.ok(june.includes("$759.05"), "Dashboard June spend disagrees with the Budget screen")
-  assert.ok(!june.includes("$711.45"), "Dashboard is still totalling July")
+  // Spend: the same adult-only 741.05 the Budget screen derives for June.
+  assert.ok(june.includes("$741.05"), "Dashboard June spend disagrees with the Budget screen")
+  assert.ok(!june.includes("$673.46"), "Dashboard is still totalling July")
 
   // Income: two July paycheques, one in June.
   assert.ok(july.includes("$4,960.00"), "July income missing")

@@ -30,12 +30,12 @@ Companion script: `scripts/verify-read-auth.sh`.
 To establish current evidence in an approved operational session, run:
 
 ```bash
-scripts/verify-read-auth.sh --expect enforced
-CONVEX_READ_TOKEN="$THE_TOKEN" scripts/verify-read-auth.sh
+CONVEX_READ_TOKEN="$THE_TOKEN" scripts/verify-read-auth.sh --expect enforced
 ```
 
-Both halves matter. An unauthenticated rejection without a known-good success can
-also mean outage or a mismatched token.
+The token and `--expect enforced` must be on the same invocation. The script
+certifies `ENFORCED` only when the anonymous and deliberately wrong credentials
+are rejected and that supplied known-good credential succeeds.
 
 ---
 
@@ -80,8 +80,8 @@ The observable signals are:
 
 - `scripts/verify-read-auth.sh` reports `STATE: OPEN` when tokenless reads work.
 - A permissive admission writes a `PERMISSIVE:` line to the deployment log.
-- `scripts/verify-read-auth.sh --expect enforced`, followed by a known-good-token
-  probe, is the required enforcement check.
+- `CONVEX_READ_TOKEN="$THE_TOKEN" scripts/verify-read-auth.sh --expect enforced`
+  is the required enforcement check.
 
 Never leave the hatch enabled after an incident or token rotation.
 
@@ -114,8 +114,7 @@ Then restore enforcement:
 
 ```bash
 env $DEPLOY npx convex env remove ALLOW_TOKENLESS_READ
-scripts/verify-read-auth.sh --expect enforced
-CONVEX_READ_TOKEN="$THE_TOKEN" scripts/verify-read-auth.sh
+CONVEX_READ_TOKEN="$THE_TOKEN" scripts/verify-read-auth.sh --expect enforced
 ```
 
 Afterward, exercise the affected client and confirm
@@ -153,9 +152,11 @@ short and supervised.
   legacy blob compatibility, not a live MC2 service.
 - **Linux/Android:** any production row/blob reader must attach the runtime token
   on every query and must not fall back to fixtures after an auth failure.
-- **Verify script:** `ENFORCED` without a known-good success is not enough;
-  `OPEN` when enforcement is expected means the hatch is admitting tokenless
-  calls; `OUTAGE` is a rollback trigger.
+- **Verify script:** `CLOSED-UNCONFIRMED` means the rejecting gate has not been
+  validated with a known-good credential; `OPEN` when enforcement is expected
+  means an anonymous or deliberately wrong credential was admitted; `OUTAGE`,
+  `TOKEN-UNCONFIGURED`, and `WRONG-KNOWN-GOOD` are rollback or diagnosis
+  triggers, not evidence of enforcement.
 - **Deployment log:** a `PERMISSIVE:` line outside an approved incident/rotation
   window means reads are open and requires immediate reconciliation.
 
@@ -172,7 +173,18 @@ It does:
   payloads with `dataFiles:get`.
 - Compare unauthenticated, deliberately wrong-token, and optional known-good
   behavior.
-- Classify `OPEN`, `ENFORCED`, `OUTAGE`, `CLOSED-UNCONFIRMED`, or `UNKNOWN`.
+- Classify seven states:
+  - `OPEN`: an anonymous or deliberately wrong credential succeeded.
+  - `ENFORCED`: anonymous and wrong credentials were rejected by the auth gate,
+    and the supplied known-good credential succeeded.
+  - `TOKEN-UNCONFIGURED`: the auth gate reported that the deployment token is
+    not configured.
+  - `WRONG-KNOWN-GOOD`: the auth gate rejected the supplied known-good
+    credential.
+  - `OUTAGE`: a probe failed for a non-auth or transport reason.
+  - `CLOSED-UNCONFIRMED`: anonymous and wrong credentials were rejected, but no
+    known-good credential was supplied.
+  - `UNKNOWN`: the probe results contradicted the expected gate behavior.
 - Support `--expect open|enforced` as an operational gate.
 - Keep token values out of argv and remove its mode-0600 request temp directory.
 

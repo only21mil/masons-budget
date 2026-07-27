@@ -1,0 +1,22 @@
+name: App Store Connect visibility preflight (manual, read-only)
+
+# Dedicated manual entry point for the release preflight. It only performs
+# credential shape checks plus two GET requests to App Store Connect. It never
+# archives, signs, uploads, mutates App Store Connect, or writes a key to disk.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-store-connect-preflight
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Verify exact bundle visibility and latest build
+    if: github.repository == 'only21mil/masons-budget'
+    uses: ./.github/workflows/release-preflight.yml
+    secrets: inherit

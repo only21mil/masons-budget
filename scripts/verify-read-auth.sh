@@ -17,6 +17,11 @@ url="${CONVEX_URL:-$DEFAULT_URL}"
 timeout="${VERIFY_READ_AUTH_TIMEOUT:-20}"
 expect=""
 curl_bin="${VERIFY_READ_AUTH_CURL:-curl}"
+# Copy the credential into a shell-only variable, then remove its exported
+# source before usage(), command discovery, mktemp, chmod, or any other child
+# process can inherit it.
+known_good_token="${CONVEX_READ_TOKEN:-}"
+unset CONVEX_READ_TOKEN
 
 usage() {
   cat <<'EOF'
@@ -153,23 +158,19 @@ case "$url" in
 esac
 
 umask 077
-# Strip the inherited token from mktemp's environment; after the secure copy
-# below, every later child process runs with the variable unset as well.
-workdir="$(CONVEX_READ_TOKEN='' mktemp -d "${TMPDIR:-/tmp}/verify-read-auth.XXXXXX")"
+workdir="$(mktemp -d "${TMPDIR:-/tmp}/verify-read-auth.XXXXXX")"
 # shellcheck disable=SC2329  # invoked by trap
 cleanup() { rm -rf "$workdir"; }
 trap cleanup EXIT INT TERM
 
 have_token=0
 known_good_file="$workdir/known-good-token"
-if [ -n "${CONVEX_READ_TOKEN:-}" ]; then
-  printf '%s' "$CONVEX_READ_TOKEN" >"$known_good_file"
+if [ -n "$known_good_token" ]; then
+  printf '%s' "$known_good_token" >"$known_good_file"
+  known_good_token=""
   chmod 600 "$known_good_file"
   have_token=1
 fi
-# Do not expose the credential to node, curl, or an injected deterministic test
-# command through their inherited environment.
-unset CONVEX_READ_TOKEN
 
 control_file="$workdir/control-token"
 # shellcheck disable=SC2016  # JavaScript template literal, not shell expansion

@@ -106,6 +106,8 @@ targets:
           - "Preview Content/**"
           - "Resources/**"
           - "**/.DS_Store"
+      - path: ../shared/domain/fixtures
+        buildPhase: resources
     dependencies: []
     settings:
       base:

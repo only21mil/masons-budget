@@ -6,6 +6,7 @@
 // child's profile but never rolls into an adult total.
 
 import {
+  type FamilyMember,
   canSeeDataOwnedBy,
   displayName,
   isAdult,
@@ -18,9 +19,11 @@ import {
   type CategorySpend,
   type MonthKey,
   type Transaction,
+  budgetMonthsFor,
+  budgetTransactionsFor,
   deriveBudgetSpend,
   monthOf,
-  monthsPresent,
+  resolveBudgetMonth,
   transactionsInMonth,
 } from "@vogel-vault/domain/readModel"
 
@@ -137,25 +140,27 @@ interface MonthScope {
 /**
  * Resolve the month both money screens report on.
  *
- * A selection is honoured only when the visible transactions actually contain
- * it. Anything else falls back to the data's own month: the selection is shared
- * app-wide, so a month that exists only for another profile can be left behind
- * by a switch, and silently reporting an empty month reads as a broken screen
- * rather than as a filter.
+ * A selection is honoured only when the budget-scoped transactions contain it.
+ * Adults may still see child rows on Activity, but child-only months are not adult
+ * budget choices. Anything else falls back to the data's own month: the selection
+ * is shared app-wide, so a month that exists only for another profile can be left
+ * behind by a switch, and silently reporting an empty month reads as a broken
+ * screen rather than as a filter.
  *
  * The fallback is always offered even when it holds no transactions — a budget
  * with nothing spent against it yet is a real month, and dropping it from the
  * list would leave the picker showing no selection at all.
  */
 function resolveMonthScope(
+  viewer: FamilyMember,
   selected: MonthKey | null,
   transactions: readonly Transaction[],
   fallback: MonthKey,
 ): MonthScope {
-  const present = monthsPresent(transactions)
+  const options = budgetMonthsFor(viewer, transactions, fallback)
   return {
-    month: selected && present.includes(selected) ? selected : fallback,
-    options: [...new Set([fallback, ...present])].sort().reverse(),
+    month: resolveBudgetMonth(selected, options, fallback) ?? fallback,
+    options,
   }
 }
 
@@ -194,18 +199,20 @@ function StaleNotice({ status }: { status: string }) {
 
 function DashboardPage() {
   const { activeProfile, data, selectedMonth } = useAppState()
-  const transactions = visibleTo(activeProfile, data.transactions.value)
+  const visibleTransactions = visibleTo(activeProfile, data.transactions.value)
+  const budgetTransactions = budgetTransactionsFor(activeProfile, data.transactions.value)
   const accounts = netWorthScopeFor(activeProfile, data.btcAccounts.value)
   const todos = visibleTo(activeProfile, data.todos.value).filter((todo) => !todo.done)
 
-  // Scoped to one month so the headline agrees with the Budget screen — an
-  // all-time total sitting next to a monthly budget is just confusing — and to
-  // the SAME month, so picking June on Budget moves this headline with it.
+  // The headline follows budget scope: adults share only adult-owned rows while
+  // retaining child rows in Recent activity for oversight. Children remain
+  // self-only. Both lists use the same selected month.
   const defaultMonth = data.budget.value?.month ?? monthOf(new Date(data.generatedAt).toISOString().slice(0, 10))
-  const { month } = resolveMonthScope(selectedMonth, transactions, defaultMonth)
-  const monthTransactions = transactionsInMonth(transactions, month)
-  const spend = sum(monthTransactions.map(spendOf))
-  const income = sum(monthTransactions.map(incomeOf))
+  const { month } = resolveMonthScope(activeProfile, selectedMonth, data.transactions.value, defaultMonth)
+  const budgetMonthTransactions = transactionsInMonth(budgetTransactions, month)
+  const activityMonthTransactions = transactionsInMonth(visibleTransactions, month)
+  const spend = sum(budgetMonthTransactions.map(spendOf))
+  const income = sum(budgetMonthTransactions.map(incomeOf))
   const stackSats = sum(accounts.map((account) => account.sats))
   const stackValue = satsToUsdCents(stackSats, data.btcPriceUsd)
 
@@ -238,7 +245,7 @@ function DashboardPage() {
         <Panel title="Recent activity" source={data.transactions.source} flush>
           <DataTable
             columns={recentColumns}
-            rows={monthTransactions.slice(0, 8)}
+            rows={activityMonthTransactions.slice(0, 8)}
             rowKey={(row) => row.id}
             state={tableState(data.transactions.status)}
           />
@@ -300,8 +307,8 @@ function BudgetPage() {
     )
   }
 
-  const transactions = visibleTo(activeProfile, data.transactions.value)
-  const scope = resolveMonthScope(selectedMonth, transactions, budget.month)
+  const transactions = budgetTransactionsFor(activeProfile, data.transactions.value)
+  const scope = resolveMonthScope(activeProfile, selectedMonth, data.transactions.value, budget.month)
 
   // Spend is DERIVED from the reported month's transactions, never read from
   // the reported category total: a July budget must count only July

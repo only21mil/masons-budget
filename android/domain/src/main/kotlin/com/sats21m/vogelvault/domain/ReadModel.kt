@@ -209,6 +209,28 @@ data class ReadModel(
 // (BudgetView.monthTransactions); this gives Android the same rule instead of
 // trusting the precomputed `spent` field MC2 reports.
 
+/**
+ * Transactions that contribute to [viewer]'s budget.
+ *
+ * Adults retain wide visibility for oversight, but their household budget follows
+ * the narrower net-worth-sharing rule: Victor and Rachel share one budget while
+ * child spending stays out of their totals. A child budget remains self-only.
+ */
+fun List<Transaction>.budgetTransactionsFor(viewer: FamilyMember): List<Transaction> =
+    if (viewer.isAdult) netWorthScopeFor(viewer) else visibleTo(viewer)
+
+/** Months that can contribute to [viewer]'s budget, newest first. */
+fun List<Transaction>.budgetMonthsFor(viewer: FamilyMember, budgetMonth: String?): List<String> {
+    val present = budgetTransactionsFor(viewer).monthsPresent()
+    return (listOfNotNull(budgetMonth) + present).distinct().sortedDescending()
+}
+
+/** Resolve a persisted selection against the months still valid for this budget. */
+fun resolveBudgetMonth(selected: String?, months: List<String>, budgetMonth: String?): String? =
+    selected?.takeIf { it in months }
+        ?: budgetMonth?.takeIf { it in months }
+        ?: months.firstOrNull()
+
 /** Month a transaction belongs to, as `yyyy-MM`.
  *
  * MC2 dates are ISO `yyyy-MM-dd`, so the month is a prefix — no date parsing and

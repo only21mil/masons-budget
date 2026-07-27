@@ -224,15 +224,25 @@ jobs:
         run: gradle :domain:test --no-daemon
         working-directory: android
 
-      - name: Assemble debug APK
-        if: steps.probe.outputs.app == 'true'
+      - name: Assemble stable-signed debug APK
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          steps.debug_keystore.outputs.stable == 'true'
         env:
-          # The materialisation step is skipped on pull requests, leaving this
-          # empty so build.gradle.kts preserves AGP's generated signing config.
           VOGEL_DEBUG_KEYSTORE: ${{ steps.debug_keystore.outputs.path }}
           VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
           VOGEL_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
           VOGEL_DEBUG_KEY_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEY_PASSWORD }}
+        run: gradle :app:assembleDebug :app:lintDebug --no-daemon
+        working-directory: android
+
+      # Pull requests cannot reach the secret-bearing step above: their
+      # materialisation step is skipped, so `stable` is never true. Running
+      # Gradle without any signing env preserves AGP's generated debug key.
+      - name: Assemble debug APK with ephemeral signing
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          steps.debug_keystore.outputs.stable != 'true'
         run: gradle :app:assembleDebug :app:lintDebug --no-daemon
         working-directory: android
 

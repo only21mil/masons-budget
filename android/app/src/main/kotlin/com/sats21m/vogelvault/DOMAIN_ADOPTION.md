@@ -36,10 +36,16 @@ Boundary shape, in one line:
   data never exercises the normaliser. The Linux fixtures now author raw MC2
   dialects and route them through `normalizeTodoRecord`; this is the same change
   in Kotlin, and it belongs to whoever owns `android/domain` next.
-- **The Convex read path (B6, behind a flag)** — not yet, and this is the one
-  that matters. When it starts returning todos, the rows arrive as raw maps.
-  They must go through `Todo.normalize(...).toTodoItem()` and nothing else. Do
-  not add a per-field read in the repository or the view model.
+- **The legacy Convex blob path** — still raw. A todo map decoded from the
+  `dataFiles` blob must go through `Todo.normalize(...).toTodoItem()` and
+  nothing else. Do not add a second alias reader in a repository or view model.
+- **The public Convex row path (`tables:listTodos`)** — adopted by the transport.
+  The server projects the already-canonical row schema (`todoId`, `title`,
+  `done`, and the single canonical spelling of every optional field), so
+  `RowQueryRepository` validates that projection directly and maps it to
+  `TodoItem`. It must not run the canonical row back through the raw MC2 alias
+  normalizer. Unknown owners or any malformed row reject the whole envelope;
+  the transport never drops a bad todo and presents a plausible partial list.
 - **Writeback** — not wired. When it is, it sends `Todo.normalizeWire(...)`, and
   merges use `mergeTodos`/`reconcileTodos` rather than a local last-write-wins.
 

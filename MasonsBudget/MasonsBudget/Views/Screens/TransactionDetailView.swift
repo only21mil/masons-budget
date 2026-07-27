@@ -17,6 +17,10 @@ struct TransactionDetailView: View {
     @State private var showingDeleteConfirmation = false
 
     init(transaction: Transaction) {
+        _categories = Query(
+            filter: Self.categoryPredicate(for: transaction.ownerMember),
+            sort: \BudgetCategory.sortOrder,
+        )
         self.transaction = transaction
         _merchant = State(initialValue: transaction.merchant)
         _category = State(initialValue: transaction.category)
@@ -24,6 +28,16 @@ struct TransactionDetailView: View {
         _method = State(initialValue: transaction.card ?? "on-chain")
         _note = State(initialValue: transaction.note ?? "")
         _date = State(initialValue: transaction.date)
+    }
+
+    static func categoryPredicate(for owner: FamilyMember) -> Predicate<BudgetCategory> {
+        let ownerRaw = owner.rawValue
+        if owner.isAdult {
+            let victorRaw = FamilyMember.victor.rawValue
+            let rachelRaw = FamilyMember.rachel.rawValue
+            return #Predicate { $0.owner == victorRaw || $0.owner == rachelRaw }
+        }
+        return #Predicate { $0.owner == ownerRaw }
     }
 
     var body: some View {

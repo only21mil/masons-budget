@@ -6,11 +6,6 @@ still "Mason's Budget App".
 > **Start here: [`docs/HANDOFF.md`](docs/HANDOFF.md)** — the goal, current state,
 > what is done, and what is left. Read it before acting on anything else in this
 > repo, including the rest of this README.
->
-> **MC2 is gone.** It was a Python service on the DGX Spark, the Spark was wiped,
-> and it was never pushed anywhere. Convex is now the system of record, not a
-> projection. `MC2`-named Swift types remain only to preserve compatibility with
-> the surviving JSON blob schema while clients move to row queries.
 
 ## Clients
 
@@ -108,21 +103,30 @@ scripts/vv-swift-lsp-reset.sh prime
 
 ## Data flow
 
-Convex is authoritative. The production deployment still stores the original
-JSON documents in `dataFiles`, and every shipped client must keep that blob path
-working during the row-table migration.
+Convex is authoritative; there is no service upstream of it. Nothing has written
+to Convex since 2026-07-18. MC2 disappeared when its DGX Spark host was wiped,
+and its source was never pushed anywhere, so it cannot be restored.
+
+Production still has only the original blob tables. Every shipped client reads
+the JSON documents in `dataFiles`; `syncVersions` and `todoTombstones` support
+that contract. The row schema, internal backfill, row queries, and validating
+write path exist in this repository but have not been deployed.
 
 ```
-Convex system of record
-    ↓  dataFiles legacy JSON blobs (current shipped-client contract)
-ConvexClient → MC2Reader → compatibility DTOs → MC2Mapper
-    ↓
-SwiftData models → SwiftUI views
+CURRENT PRODUCTION
+Convex system of record (`dataFiles`)
+    ├── iOS/macOS: ConvexClient → MC2Reader → compatibility DTOs → MC2Mapper
+    ├── Linux:     Convex transport → legacy JSON read model
+    └── Android:   Convex transport → legacy JSON read model
+
+APPROVAL-GATED CUTOVER — NOT DEPLOYED
+unchanged `dataFiles` ──internal backfill──> row tables ──row queries──> clients
 ```
 
-The `MC2` names are historical compatibility names, not evidence of a running
-MC2 service. Row tables, public projections, client cutover, and the production
-backfill are tracked in [umbrella issue #46](https://github.com/only21mil/masons-budget/issues/46).
+The backfill must leave `dataFiles`, `syncVersions`, and `todoTombstones`
+byte-identical so existing clients continue to work throughout the cutover.
+Deployment and client cutover are coordinated under
+[umbrella issue #46](https://github.com/only21mil/masons-budget/issues/46).
 
 ## Voice Input
 
@@ -132,13 +136,19 @@ The voice flow works in three stages:
 2. **Parse** — `VoiceParser` extracts amount ($45, "five dollars"), merchant (at/from/to prepositions), category (merchant mapping + keywords), date (today/yesterday/weekdays/ISO), card (on/with), and note (note: prefix).
 3. **Confirm** — Review parsed result with Edit/Save buttons. Saves directly to SwiftData.
 
-## Legacy blob compatibility
+## MC2 history and blob compatibility
+
+MC2 (mission-control) was the Python service that originally owned the family
+finance JSON and pushed projections into Convex. It is gone, but its file names,
+field names, record shapes, and adult-versus-child conventions survive in the
+only remaining copy of the data and therefore throughout the code.
 
 The Swift client reads Convex `dataFiles` documents including `budget`,
 `transactions`, `bitcoin-buys`, `bitcoin-bill-pays`, `btc-balance-snapshot`,
 `finances`, `son-balances`, and the Mason-specific files. `MC2DTOs`, `MC2Mapper`,
-`MC2Reader`, and `MC2SyncService` intentionally retain their old names so the
-existing JSON decoding and SwiftData mapping remain stable during cutover.
+`MC2Reader`, and `MC2SyncService` are historical compatibility names: these
+types now read from Convex, not from an MC2 process. Keeping the names and shapes
+stable protects existing JSON decoding and SwiftData mapping during cutover.
 
 Do not delete the blob path, alter `syncVersions`/`todoTombstones`, or break old
 JSON decoding when adding row reads. Production migration and client cutover are

@@ -7,15 +7,10 @@ import java.util.concurrent.atomic.AtomicReference
 /**
  * The Vogel Vault — Android Convex read configuration.
  *
- * Reads were entirely unauthenticated until 2026-07-26: the deployment URL alone
- * — committed in this repo and baked into every shipped client — was enough to
- * pull the household's whole financial history. `validateReadToken` in
- * `convex/dataFiles.ts` now gates `get`, `getVersions`, `list` and
- * `listTodoTombstones`, fail-closed, behind an `ALLOW_TOKENLESS_READ` escape
- * hatch that exists purely so the cutover does not lock out live clients.
- *
- * This file is the Android half of step (2) of that cutover — "ship clients that
- * send the token" — landed early so Android is not the thing blocking step (3).
+ * Production reads are fail-closed. The deployment URL is public configuration;
+ * the runtime read token is what authorizes access to the household's data.
+ * Android therefore refuses to open a socket unless the feature is enabled, the
+ * endpoint is HTTPS, and a non-blank token is present.
  *
  * Three rules this type exists to enforce:
  *
@@ -72,25 +67,22 @@ class ConvexConfig(
     }
 
     /**
-     * What a cutover check should be told about this build.
+     * Why a remote read can or cannot start.
      *
-     * Named states rather than a boolean because the runbook has to distinguish
-     * "we are not configured" from "we are configured but sending no token" —
-     * the second reads fine against a permissive deployment and dies the moment
-     * `ALLOW_TOKENLESS_READ` is removed, which is exactly the failure the staged
-     * cutover exists to avoid.
+     * Named states keep a missing URL, insecure endpoint, and missing credential
+     * distinguishable while all three still fail closed before network I/O.
      */
     val readiness: ReadReadiness
         get() = when {
             !remoteReadEnabled -> ReadReadiness.DISABLED
             deploymentUrl == null -> ReadReadiness.NO_DEPLOYMENT_URL
             !isSecureDeployment(deploymentUrl) -> ReadReadiness.INSECURE_DEPLOYMENT_URL
-            !hasReadToken -> ReadReadiness.READY_WITHOUT_TOKEN
+            !hasReadToken -> ReadReadiness.NO_READ_TOKEN
             else -> ReadReadiness.READY
         }
 
     val allowsRemoteRead: Boolean
-        get() = readiness == ReadReadiness.READY || readiness == ReadReadiness.READY_WITHOUT_TOKEN
+        get() = readiness == ReadReadiness.READY
 
     /**
      * Redacted on purpose.
@@ -133,17 +125,10 @@ enum class ReadReadiness {
     /** Enabled with a non-HTTPS deployment URL. Refused rather than downgraded. */
     INSECURE_DEPLOYMENT_URL,
 
-    /**
-     * Enabled and pointed somewhere, but no token to send.
-     *
-     * Works only while `ALLOW_TOKENLESS_READ=true` is still set on the
-     * deployment. Treated as usable — matching the iOS client, which omits an
-     * empty token and lets the server decide — but reported distinctly so the
-     * cutover can spot it before enforcement lands.
-     */
-    READY_WITHOUT_TOKEN,
+    /** Enabled and pointed at HTTPS, but no credential is present. No socket may open. */
+    NO_READ_TOKEN,
 
-    /** Enabled, HTTPS, and a token is present. What step (3) requires. */
+    /** Enabled, HTTPS, and a token is present. */
     READY,
 }
 

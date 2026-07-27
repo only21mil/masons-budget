@@ -99,9 +99,8 @@ export class RemoteReadSettings {
   }
 
   /**
-   * The only way to the credential, and it has exactly one caller: the request
-   * builder below. Nothing exports it, nothing else in the app can reach it, and
-   * it never crosses the preload bridge.
+   * The only way to the credential. Main-process request builders call it only
+   * while serialising a fixed Convex query; it never crosses the preload bridge.
    */
   credentialOrNull(): string | null {
     return this.#credential
@@ -183,6 +182,43 @@ export function resolveRemoteReadSettings(env: ReadEnvironment): RemoteReadSetti
   )
 }
 
+export interface RemoteReadConfiguration {
+  readonly generation: number
+  readonly settings: RemoteReadSettings
+}
+
+/**
+ * Resolve runtime configuration while assigning a local generation.
+ *
+ * The raw values stay in this closure only. Consumers key caches with the numeric
+ * generation, so changing the switch, endpoint, or credential invalidates every
+ * prior answer without putting configuration material in a key or a result.
+ */
+export function createRemoteReadConfigurationProvider(
+  readEnvironment: () => ReadEnvironment,
+): () => RemoteReadConfiguration {
+  let generation = 0
+  let previous: readonly (string | undefined)[] | null = null
+
+  return () => {
+    const env = readEnvironment()
+    const current = [
+      env[READ_ENV_KEYS.enabled],
+      env[READ_ENV_KEYS.deploymentUrl],
+      env[READ_ENV_KEYS.credential],
+    ] as const
+    if (
+      previous === null ||
+      current.length !== previous.length ||
+      current.some((value, index) => value !== previous?.[index])
+    ) {
+      generation += 1
+      previous = current
+    }
+    return { generation, settings: resolveRemoteReadSettings(env) }
+  }
+}
+
 /** One data file, metadata only. There is no financial content in this type. */
 export interface RemoteDataFileSummary {
   readonly name: string
@@ -230,7 +266,11 @@ export interface JsonPostResponse {
   readonly truncated?: boolean
 }
 
-export type JsonPoster = (endpoint: string, requestBody: string) => Promise<JsonPostResponse>
+export type JsonPoster = (
+  endpoint: string,
+  requestBody: string,
+  maxResponseBytes?: number,
+) => Promise<JsonPostResponse>
 
 /**
  * The one query this client makes: `dataFiles:list`, metadata only.

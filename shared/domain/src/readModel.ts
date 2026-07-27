@@ -11,7 +11,13 @@
 //   - Optional in the DTO means "may be absent in JSON". Default in the
 //     normalizer, never in the type.
 
-import { type FamilyMember, coerceOwner, isAdult } from "./family.ts"
+import {
+  type FamilyMember,
+  coerceOwner,
+  isAdult,
+  netWorthScopeFor,
+  visibleTo,
+} from "./family.ts"
 import { type Cents, type Sats, parseBtcToSats, parseCents } from "./money.ts"
 
 /** Every MC2 file the clients read. Mirrors MC2Reader / MC2SyncService. */
@@ -404,6 +410,43 @@ function asArray(value: unknown): Record<string, unknown>[] {
 
 /** `yyyy-MM`, e.g. "2026-07". MC2 budget files key on this. */
 export type MonthKey = string
+
+/**
+ * Transactions that contribute to a profile's budget.
+ *
+ * Adults retain wide visibility for oversight, but their household budget follows
+ * the narrower net-worth-sharing rule: Victor and Rachel share one budget while
+ * child spending stays out of their totals. A child budget remains self-only.
+ */
+export function budgetTransactionsFor(
+  viewer: FamilyMember,
+  transactions: readonly Transaction[],
+): Transaction[] {
+  return isAdult(viewer)
+    ? netWorthScopeFor(viewer, transactions)
+    : visibleTo(viewer, transactions)
+}
+
+/** Months that can contribute to a profile's budget, newest first. */
+export function budgetMonthsFor(
+  viewer: FamilyMember,
+  transactions: readonly Transaction[],
+  budgetMonth: MonthKey | null,
+): MonthKey[] {
+  const present = monthsPresent(budgetTransactionsFor(viewer, transactions))
+  return [...new Set(budgetMonth ? [budgetMonth, ...present] : present)].sort().reverse()
+}
+
+/** Resolve a persisted selection against the months still valid for this budget. */
+export function resolveBudgetMonth(
+  selected: MonthKey | null,
+  months: readonly MonthKey[],
+  budgetMonth: MonthKey | null,
+): MonthKey | null {
+  if (selected && months.includes(selected)) return selected
+  if (budgetMonth && months.includes(budgetMonth)) return budgetMonth
+  return months[0] ?? null
+}
 
 /**
  * Month a transaction belongs to.

@@ -27,13 +27,39 @@ on:
 permissions:
   contents: read
 
+# One release run at a time across every ref. Matrix serialization only protects
+# jobs inside one run; without workflow-level concurrency, two manual runs can
+# still upload the same project build number concurrently.
+concurrency:
+  group: deploy-testflight-only21mil-masons-budget
+  cancel-in-progress: false
+
 jobs:
+  preflight:
+    name: Verify App Store Connect visibility
+    if: github.repository == 'only21mil/masons-budget'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Probe exact bundle and latest build
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_BUNDLE_ID: com.sats21m.masonsbudget
+        run: node .github/workflows/scripts/app_store_connect_preflight.mjs
+
   build:
+    needs: preflight
     if: github.repository == 'only21mil/masons-budget'
     runs-on: macos-latest
     strategy:
-      # Never parallel: two jobs uploading builds that share a build number
-      # would race in App Store Connect.
+      # Finish both platform jobs so one failure does not hide the other result.
+      # Keep uploads serial because both platforms share a project build number.
+      fail-fast: false
       max-parallel: 1
       matrix:
         platform: ${{ fromJSON(github.event.inputs.platform == 'both' && '["ios", "macos"]' || format('["{0}"]', github.event.inputs.platform)) }}
@@ -156,9 +182,9 @@ jobs:
       # outage and has to be recreated to retry.
       - name: Preserve the signed artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ios-release-${{ github.run_number }}
+          name: ${{ matrix.platform }}-release-${{ github.run_number }}
           path: |
             MasonsBudget/build/*/*.ipa
             MasonsBudget/build/*/*.pkg

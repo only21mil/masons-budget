@@ -5,8 +5,8 @@ import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.ReadModel
-import com.sats21m.vogelvault.domain.monthsPresent
-import com.sats21m.vogelvault.domain.visibleTo
+import com.sats21m.vogelvault.domain.budgetMonthsFor
+import com.sats21m.vogelvault.domain.resolveBudgetMonth
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,23 +37,12 @@ data class VaultUiState(
     /**
      * Months the Budget screen may scope to, newest first.
      *
-     * Derived from what this profile may SEE, never from the raw ledger: Mason's
-     * months must not appear because an adult happens to be looking, and Rachel
-     * must get the same list as Victor.
+     * Derived from this profile's narrow budget scope, never from the wider
+     * oversight ledger: Mason's months must not appear because an adult happens
+     * to be looking, and Rachel must get the same list as Victor.
      */
     val budgetMonths: List<String>
-        get() {
-            val fromTransactions = data.transactions.value.visibleTo(activeProfile).monthsPresent()
-            val budgetMonth = data.budget.value?.month
-            // The budget's own month is offered even with nothing spent in it. A
-            // month with no transactions is a real answer; an absent month is not.
-            val all = if (budgetMonth != null && budgetMonth !in fromTransactions) {
-                fromTransactions + budgetMonth
-            } else {
-                fromTransactions
-            }
-            return all.sortedDescending()
-        }
+        get() = data.transactions.value.budgetMonthsFor(activeProfile, data.budget.value?.month)
 
     /**
      * The month the Budget screen should open on, or null when there is nothing
@@ -64,11 +53,7 @@ data class VaultUiState(
      * month with no spending.
      */
     val activeBudgetMonth: String?
-        get() {
-            val months = budgetMonths
-            val fallback = data.budget.value?.month?.takeIf { it in months } ?: months.firstOrNull()
-            return selectedMonth?.takeIf { it in months } ?: fallback
-        }
+        get() = resolveBudgetMonth(selectedMonth, budgetMonths, data.budget.value?.month)
 
     private val slices
         get() = listOf(data.transactions.status to data.transactions.updatedAt,

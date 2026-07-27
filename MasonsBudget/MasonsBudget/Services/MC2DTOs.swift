@@ -10,13 +10,54 @@ struct MC2Transaction: Codable {
     let note: String?
 }
 
+enum MC2TransactionWriteError: LocalizedError, Equatable {
+    case ownerMismatch(transactionOwner: String, targetOwner: FamilyMember)
+    case adultSpendMustBeNegative(owner: FamilyMember)
+    case childSpendMustBePositive(owner: FamilyMember)
+    case incomeMustBePositive(owner: FamilyMember)
+
+    var errorDescription: String? {
+        switch self {
+        case let .ownerMismatch(transactionOwner, targetOwner):
+            "Rejected transaction write: owner '\(transactionOwner)' does not match target owner '\(targetOwner.rawValue)'."
+        case let .adultSpendMustBeNegative(owner):
+            "Rejected transaction write for \(owner.rawValue): adult spending must be negative."
+        case let .childSpendMustBePositive(owner):
+            "Rejected transaction write for \(owner.rawValue): child spending must be positive."
+        case let .incomeMustBePositive(owner):
+            "Rejected transaction write for \(owner.rawValue): income must be positive."
+        }
+    }
+}
+
 extension MC2Transaction {
-    init(appTransaction transaction: Transaction) {
+    init(appTransaction transaction: Transaction, owner: FamilyMember) throws {
+        guard transaction.owner == owner.rawValue else {
+            throw MC2TransactionWriteError.ownerMismatch(
+                transactionOwner: transaction.owner,
+                targetOwner: owner,
+            )
+        }
+
+        if transaction.isIncome {
+            guard transaction.amount > 0 else {
+                throw MC2TransactionWriteError.incomeMustBePositive(owner: owner)
+            }
+        } else if owner.isAdult {
+            guard transaction.amount < 0 else {
+                throw MC2TransactionWriteError.adultSpendMustBeNegative(owner: owner)
+            }
+        } else {
+            guard transaction.amount > 0 else {
+                throw MC2TransactionWriteError.childSpendMustBePositive(owner: owner)
+            }
+        }
+
         self.init(
             id: transaction.id,
             date: Self.dateString(from: transaction.date),
             merchant: transaction.merchant,
-            amount: transaction.isSpend ? transaction.spendAmount : transaction.displayAmount,
+            amount: transaction.amount,
             category: transaction.category,
             card: transaction.card,
             note: transaction.note,

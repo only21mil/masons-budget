@@ -5,9 +5,21 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 subject="$repo_root/scripts/verify-read-auth.sh"
 test_dir="$(mktemp -d "${TMPDIR:-/tmp}/verify-read-auth-test.XXXXXX")"
+real_chmod="$(command -v chmod)"
 # shellcheck disable=SC2329  # invoked by trap
 cleanup() { rm -rf "$test_dir"; }
 trap cleanup EXIT INT TERM
+
+mkdir "$test_dir/bin"
+cat >"$test_dir/bin/chmod" <<STUB
+#!/usr/bin/env bash
+set -euo pipefail
+
+# No child process, including chmod, may briefly inherit the known-good token.
+[ -z "\${CONVEX_READ_TOKEN:-}" ] || exit 98
+exec "$real_chmod" "\$@"
+STUB
+"$real_chmod" 700 "$test_dir/bin/chmod"
 
 stub="$test_dir/curl-stub"
 cat >"$stub" <<'STUB'
@@ -132,6 +144,7 @@ run_case() {
       CONVEX_READ_TOKEN='known-good-test-token-DO-NOT-PRINT' \
       VERIFY_READ_AUTH_CURL="$stub" \
       VERIFY_READ_AUTH_TEST_SCENARIO="$scenario" \
+      PATH="$test_dir/bin:$PATH" \
       "$subject" "${args[@]}" 2>&1
     )"
     rc=$?
@@ -140,6 +153,7 @@ run_case() {
       env -u CONVEX_READ_TOKEN \
         VERIFY_READ_AUTH_CURL="$stub" \
         VERIFY_READ_AUTH_TEST_SCENARIO="$scenario" \
+        PATH="$test_dir/bin:$PATH" \
         "$subject" "${args[@]}" 2>&1
     )"
     rc=$?
