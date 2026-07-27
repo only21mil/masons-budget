@@ -1,4 +1,8 @@
 {
+  "strictParserScope": {
+    "format": "convex_encoded_json",
+    "fieldClass": "v.int64"
+  },
   "valid": [
     {
       "name": "zero",
@@ -52,6 +56,7 @@
       "format": "json",
       "fieldClass": "v.int64",
       "wire": "1",
+      "validForFormat": true,
       "decimal": "1"
     },
     {
@@ -59,25 +64,50 @@
       "format": "convex_encoded_json",
       "fieldClass": "v.int64",
       "wire": { "$integer": "AQAAAAAAAAA=" },
+      "validForFormat": true,
       "decimal": "1"
     },
     {
       "name": "json v.float64 plain number",
       "format": "json",
       "fieldClass": "v.float64",
-      "wire": 1
+      "wire": 1,
+      "validForFormat": true
     },
     {
       "name": "convex encoded JSON v.float64 plain number",
       "format": "convex_encoded_json",
       "fieldClass": "v.float64",
-      "wire": 1
+      "wire": 1,
+      "validForFormat": true
+    },
+    {
+      "name": "convex encoded JSON v.int64 raw-number fallback",
+      "format": "convex_encoded_json",
+      "fieldClass": "v.int64",
+      "wire": 1,
+      "validForFormat": false
+    },
+    {
+      "name": "convex encoded JSON v.int64 decimal-string fallback",
+      "format": "convex_encoded_json",
+      "fieldClass": "v.int64",
+      "wire": "1",
+      "validForFormat": false
     }
   ],
   "invalid": [
     {
       "name": "null fallback",
       "wire": null
+    },
+    {
+      "name": "convex_encoded_json v.int64 raw-number fallback",
+      "wire": 1
+    },
+    {
+      "name": "convex_encoded_json v.int64 decimal-string fallback",
+      "wire": "1"
     },
     {
       "name": "array shape",
@@ -120,11 +150,11 @@
       "wire": { "$integer": "AAAAAAAAAAB=" }
     },
     {
-      "name": "seven-byte payload",
+      "name": "over-padded seven-byte payload",
       "wire": { "$integer": "AAAAAAAAAA==" }
     },
     {
-      "name": "nine-byte payload",
+      "name": "over-long nine-byte payload",
       "wire": { "$integer": "AAAAAAAAAAAA" }
     }
   ]

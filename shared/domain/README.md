@@ -35,9 +35,12 @@ The rule does not make closed values open:
 - The surviving blob path and its stored bytes remain unchanged.
 
 `fixtures/convex-int64-wire-cases.json` records both HTTP formats under
-`formatCases`. Its `valid` and `invalid` arrays are specifically vectors for the
-strict tagged-scalar parser used with `convex_encoded_json`; plain JSON numbers
-and `format: "json"` decimal strings are therefore not malformed-tag vectors.
+`formatCases`, and the contract test executes each case according to its
+`validForFormat` value. A decimal string is valid for a `v.int64()` only with
+`format: "json"`; raw numbers and decimal strings are invalid for that field
+with `format: "convex_encoded_json"`. The fixture's `strictParserScope` makes
+explicit that its `valid` and `invalid` arrays exercise the strict tagged-scalar
+parser for a `v.int64()` under `convex_encoded_json`.
 
 `serverResponseCompatibility` in the shared fixture contains row-count and
 transaction-envelope responses with deliberate unknown members at multiple

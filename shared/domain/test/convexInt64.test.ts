@@ -22,13 +22,20 @@ interface FormatCase {
   format: "json" | "convex_encoded_json"
   fieldClass: "v.int64" | "v.float64"
   wire: unknown
+  validForFormat: boolean
   decimal?: string
+}
+
+interface StrictParserScope {
+  format: "convex_encoded_json"
+  fieldClass: "v.int64"
 }
 
 interface Fixtures {
   formatCases: FormatCase[]
   valid: ValidCase[]
   invalid: InvalidCase[]
+  strictParserScope: StrictParserScope
 }
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -42,11 +49,19 @@ test("decodes canonical signed little-endian Convex int64 fixtures", () => {
   }
 })
 
-test("production format cases are observations, never invalid vectors", () => {
-  const invalidWires = new Set(fixtures.invalid.map((testCase) => JSON.stringify(testCase.wire)))
-
+test("production format cases enforce format-specific int64 behavior", async (context) => {
+  assert.deepEqual(fixtures.strictParserScope, {
+    format: "convex_encoded_json",
+    fieldClass: "v.int64",
+  })
   assert.deepEqual(
-    fixtures.formatCases.map(({ format, fieldClass }) => `${format}:${fieldClass}`).sort(),
+    [
+      ...new Set(
+        fixtures.formatCases
+          .filter((testCase) => testCase.validForFormat)
+          .map(({ format, fieldClass }) => `${format}:${fieldClass}`),
+      ),
+    ].sort(),
     [
       "convex_encoded_json:v.float64",
       "convex_encoded_json:v.int64",
@@ -54,12 +69,43 @@ test("production format cases are observations, never invalid vectors", () => {
       "json:v.int64",
     ],
   )
+
+  assert.deepEqual(
+    fixtures.formatCases
+      .filter((testCase) => !testCase.validForFormat)
+      .map((testCase) => JSON.stringify(testCase.wire))
+      .sort(),
+    ['"1"', "1"],
+  )
+
   for (const testCase of fixtures.formatCases) {
-    assert.equal(
-      invalidWires.has(JSON.stringify(testCase.wire)),
-      false,
-      `${testCase.name} must not also be asserted invalid`,
-    )
+    await context.test(testCase.name, () => {
+      if (!testCase.validForFormat) {
+        assert.equal(testCase.format, "convex_encoded_json")
+        assert.equal(testCase.fieldClass, "v.int64")
+        assert.throws(() => decodeConvexInt64(testCase.wire), Error)
+        return
+      }
+
+      if (testCase.fieldClass === "v.float64") {
+        assert.equal(typeof testCase.wire, "number")
+        return
+      }
+
+      const expectedDecimal = testCase.decimal
+      if (expectedDecimal === undefined) {
+        assert.fail(`${testCase.name} must declare its exact decimal value`)
+      }
+      if (testCase.format === "convex_encoded_json") {
+        assert.equal(decodeConvexInt64(testCase.wire), BigInt(expectedDecimal))
+        return
+      }
+
+      assert.equal(typeof testCase.wire, "string")
+      assert.match(testCase.wire as string, /^-?(?:0|[1-9]\d*)$/)
+      assert.equal(BigInt(testCase.wire as string), BigInt(expectedDecimal))
+      assert.throws(() => decodeConvexInt64(testCase.wire), Error)
+    })
   }
 })
 
@@ -77,8 +123,10 @@ test("preserves values beyond the JavaScript safe integer range", () => {
   assert.equal(typeof positive, "bigint")
 })
 
-test("rejects aliases, fallback values, malformed Base64, and wrong lengths", () => {
+test("rejects aliases, fallback values, malformed Base64, and wrong lengths", async (context) => {
   for (const testCase of fixtures.invalid) {
-    assert.throws(() => decodeConvexInt64(testCase.wire), Error, testCase.name)
+    await context.test(testCase.name, () => {
+      assert.throws(() => decodeConvexInt64(testCase.wire), Error)
+    })
   }
 })
