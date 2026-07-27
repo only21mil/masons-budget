@@ -1,4 +1,32 @@
 {
+  "formatCases": [
+    {
+      "name": "json v.int64 decimal string",
+      "format": "json",
+      "fieldClass": "v.int64",
+      "wire": "1",
+      "decimal": "1"
+    },
+    {
+      "name": "convex encoded JSON v.int64 tag",
+      "format": "convex_encoded_json",
+      "fieldClass": "v.int64",
+      "wire": { "$integer": "AQAAAAAAAAA=" },
+      "decimal": "1"
+    },
+    {
+      "name": "json v.float64 plain number",
+      "format": "json",
+      "fieldClass": "v.float64",
+      "wire": 1
+    },
+    {
+      "name": "convex encoded JSON v.float64 plain number",
+      "format": "convex_encoded_json",
+      "fieldClass": "v.float64",
+      "wire": 1
+    }
+  ],
   "valid": [
     {
       "name": "zero",
@@ -50,14 +78,6 @@
     {
       "name": "null fallback",
       "wire": null
-    },
-    {
-      "name": "numeric fallback",
-      "wire": 1
-    },
-    {
-      "name": "decimal string fallback",
-      "wire": "1"
     },
     {
       "name": "array shape",

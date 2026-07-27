@@ -190,6 +190,14 @@ function optionalInt64(record: Record<string, unknown>, key: string): bigint | u
   return int64(record, key)
 }
 
+function safeInt64Number(record: Record<string, unknown>, key: string): number {
+  const value = int64(record, key)
+  if (value < BigInt(Number.MIN_SAFE_INTEGER) || value > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new InvalidValue()
+  }
+  return Number(value)
+}
+
 function optionalField<T>(key: string, value: T | undefined): { readonly [name: string]: T } | Record<string, never> {
   return value === undefined ? {} : { [key]: value }
 }
@@ -418,7 +426,7 @@ function budgetHistory(value: unknown): VogelVaultBudgetHistoryEntry {
     month: monthValue(row),
     incomeCents: int64(row, "incomeCents"),
     expensesCents: int64(row, "expensesCents"),
-    savingsBps: integerValue(row, "savingsBps"),
+    savingsBps: safeInt64Number(row, "savingsBps"),
   }
 }
 
@@ -834,7 +842,7 @@ export function createConvexRowRepository(options: ConvexRowRepositoryOptions): 
       const body = JSON.stringify({
         path: ROW_QUERY_PATHS[request.kind],
         args: requestArgs(request, configuration.settings.credentialOrNull()),
-        format: "json",
+        format: "convex_encoded_json",
       })
       const started = options
         .post(endpoint, body, CONVEX_ROW_LIMITS.maxResponseBytes)

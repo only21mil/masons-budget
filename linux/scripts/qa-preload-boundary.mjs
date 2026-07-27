@@ -478,7 +478,7 @@ const authedRun = spyReader(enabledEnv, okListing)
 const authedResult = await authedRun.reader.snapshot()
 const authedRequest = JSON.parse(authedRun.calls[0]?.requestBody ?? "{}")
 require_(
-  authedRequest.path === "dataFiles:list" && authedRequest.format === "json",
+  authedRequest.path === "dataFiles:list" && authedRequest.format === "convex_encoded_json",
   `convex: the query is the metadata listing (got ${authedRequest.path})`,
 )
 require_(

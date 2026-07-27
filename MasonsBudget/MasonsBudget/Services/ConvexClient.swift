@@ -485,7 +485,7 @@ final class MC2MobileWritebackClient: Sendable {
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "path": path,
             "args": args,
-            "format": "json",
+            "format": "convex_encoded_json",
         ])
 
         let (data, response) = try await session.data(for: request)
@@ -847,7 +847,7 @@ final class ConvexClient: Sendable {
         let body: [String: Any] = [
             "path": path,
             "args": finalArgs,
-            "format": "json",
+            "format": "convex_encoded_json",
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
