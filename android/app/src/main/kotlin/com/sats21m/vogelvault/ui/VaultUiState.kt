@@ -2,6 +2,7 @@ package com.sats21m.vogelvault.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sats21m.vogelvault.data.cache.CachedReadModel
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
@@ -105,15 +106,28 @@ data class VaultUiState(
 }
 
 class VaultViewModel(
-    private val cachedRows: CachedRowDataSource? = null,
+    private val rowSource: CachedRowDataSource? = null,
+    remoteInitiallyEnabled: Boolean = rowSource != null,
+    private val enableRemote: ((String) -> Unit)? = null,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(VaultUiState())
+    private val _state = MutableStateFlow(
+        if (!remoteInitiallyEnabled) {
+            VaultUiState()
+        } else {
+            VaultUiState(data = loadingModel(FamilyMember.VICTOR))
+        },
+    )
     val state: StateFlow<VaultUiState> = _state.asStateFlow()
     private var rowJob: Job? = null
+    private var remoteEnabled = remoteInitiallyEnabled
+    private var cachedModel: CachedReadModel? = null
+    private var liveModel: ReadModel? = null
+    private var liveUnauthorized = false
 
     init {
-        cachedRows?.let { connectRows(_state.value.activeProfile, it) }
+        if (rowSource != null && remoteInitiallyEnabled) connectRows(FamilyMember.VICTOR)
     }
 
     fun navigate(destination: Destination) {
@@ -137,12 +151,7 @@ class VaultViewModel(
             val destinations = Destination.visibleTo(next)
             current.copy(
                 activeProfile = next,
-                data =
-                    if (cachedRows == null) {
-                        Fixtures.envelope(next)
-                    } else {
-                        Fixtures.envelope(next, Freshness.LOADING)
-                    },
+                data = if (!remoteEnabled) Fixtures.envelope(next) else loadingModel(next),
                 staleAuthorization = false,
                 // A month picked against one profile's ledger means nothing on the
                 // next one, so the scope goes back to that profile's budget month.
@@ -154,35 +163,98 @@ class VaultViewModel(
                 },
             )
         }
-        if (_state.value.activeProfile == next) {
-            cachedRows?.let { connectRows(next, it) }
-        }
+        if (remoteEnabled && rowSource != null && _state.value.activeProfile == next) connectRows(next)
     }
 
     fun simulate(status: Freshness) {
         _state.update { it.copy(data = Fixtures.envelope(it.activeProfile, status)) }
     }
 
-    private fun connectRows(
-        profile: FamilyMember,
-        source: CachedRowDataSource,
-    ) {
+    fun enableRemoteRows(readToken: String) {
+        if (readToken.isBlank()) return
+        val configure = enableRemote ?: return
+        runCatching { configure(readToken) }.getOrElse { return }
+        remoteEnabled = true
+        val profile = _state.value.activeProfile
+        _state.update { it.copy(data = loadingModel(profile)) }
+        connectRows(profile)
+    }
+
+    private fun connectRows(profile: FamilyMember) {
+        val source = rowSource ?: return
         rowJob?.cancel()
+        cachedModel = null
+        liveModel = null
+        liveUnauthorized = false
         rowJob =
             viewModelScope.launch {
                 launch {
                     source.observe(profile).collect { cached ->
+                        cachedModel = cached
                         _state.update { current ->
-                            if (current.activeProfile != profile) current else {
+                            if (current.activeProfile != profile) {
+                                current
+                            } else {
+                                val unauthorized = liveUnauthorized || cached.staleAuthorization
+                                val live = liveModel
                                 current.copy(
-                                    data = cached.data,
-                                    staleAuthorization = cached.staleAuthorization,
+                                    data =
+                                        when {
+                                            live == null -> cached.data
+                                            unauthorized -> live
+                                            else -> live.withCacheFallback(cached.data)
+                                        },
+                                    staleAuthorization = unauthorized,
                                 )
                             }
                         }
                     }
                 }
-                source.refresh(profile)
+                val loaded = source.load(profile)
+                liveModel = loaded.data
+                liveUnauthorized = loaded.unauthorized
+                _state.update { current ->
+                    if (current.activeProfile != profile) {
+                        current
+                    } else {
+                        val cached = cachedModel?.takeUnless { loaded.unauthorized }
+                        current.copy(
+                            data = loaded.data.withCacheFallback(cached?.data),
+                            staleAuthorization = loaded.unauthorized,
+                            now = clock(),
+                        )
+                    }
+                }
             }
     }
+}
+
+private fun loadingModel(profile: FamilyMember): ReadModel {
+    val empty = Fixtures.envelope(profile, Freshness.EMPTY)
+    fun <T> loading(slice: com.sats21m.vogelvault.domain.Slice<T>) =
+        slice.copy(status = Freshness.LOADING, source = "Convex rows", updatedAt = null)
+    return empty.copy(
+        transactions = loading(empty.transactions),
+        budget = loading(empty.budget),
+        btcAccounts = loading(empty.btcAccounts),
+        btcBuys = loading(empty.btcBuys),
+        todos = loading(empty.todos),
+        btcPriceCents = 0L,
+    )
+}
+
+private fun ReadModel.withCacheFallback(cached: ReadModel?): ReadModel {
+    if (cached == null) return this
+
+    fun <T> com.sats21m.vogelvault.domain.Slice<T>.fallbackTo(
+        fallback: com.sats21m.vogelvault.domain.Slice<T>,
+    ) = if (status == Freshness.ERROR && fallback.status == Freshness.STALE) fallback else this
+
+    return copy(
+        transactions = transactions.fallbackTo(cached.transactions),
+        budget = budget.fallbackTo(cached.budget),
+        btcAccounts = btcAccounts.fallbackTo(cached.btcAccounts),
+        btcBuys = btcBuys.fallbackTo(cached.btcBuys),
+        todos = todos.fallbackTo(cached.todos),
+    )
 }

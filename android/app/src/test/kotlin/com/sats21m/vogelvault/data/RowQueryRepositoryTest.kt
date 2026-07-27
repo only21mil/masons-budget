@@ -18,7 +18,7 @@ class RowQueryRepositoryTest {
     fun `transaction rows decode exact int64 money and preserve completeness`() {
         val poster = RecordingPoster(
             rowSuccess(
-                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":${int64(-14218)},"category":"Food","card":"visa","note":"lunch","updatedAtMs":1785000000000}]""",
+                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":${int64(-14218)},"spendAmount":${int64(14218)},"displaySpendAmount":${int64(14218)},"hasOppositeSpendSign":false,"category":"Food","card":"visa","note":"lunch","updatedAtMs":1785000000000}]""",
             ),
         )
         val repository = repositoryWith(poster)
@@ -27,6 +27,8 @@ class RowQueryRepositoryTest {
         val snapshot = (result as? ConvexResult.Ok)?.value ?: fail("expected Ok, got $result")
 
         assertEquals(-14_218L, snapshot.rows.single().amount)
+        assertEquals(14_218L, snapshot.rows.single().signedSpendContribution)
+        assertEquals(14_218L, snapshot.rows.single().rowDisplaySpendAmount)
         assertEquals(FamilyMember.VICTOR, snapshot.rows.single().owner)
         assertEquals(true, snapshot.complete)
         val args = sentArgs(poster)
@@ -95,6 +97,35 @@ class RowQueryRepositoryTest {
                     ${transaction("tx-1", "victor", int64(-500))},
                     ${transaction("tx-2", "mason", "900")}
                 ]""".trimIndent(),
+            ),
+        )
+
+        assertEquals(
+            ConvexResult.Failed("unexpected payload shape"),
+            runBlocking { repositoryWith(poster).listTransactions(FamilyMember.VICTOR) },
+        )
+    }
+
+    @Test
+    fun `negative signed refund decodes with opposite spend sign`() {
+        val poster = RecordingPoster(
+            rowSuccess(
+                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Refund","amountCents":${int64(500)},"spendAmount":${int64(-500)},"displaySpendAmount":${int64(500)},"hasOppositeSpendSign":true,"category":"Food","updatedAtMs":1785000000000}]""",
+            ),
+        )
+
+        val result = runBlocking { repositoryWith(poster).listTransactions(FamilyMember.VICTOR) }
+        val row = (result as? ConvexResult.Ok)?.value?.rows?.single() ?: fail("expected refund row")
+
+        assertEquals(-500L, row.signedSpendContribution)
+        assertEquals(500L, row.rowDisplaySpendAmount)
+    }
+
+    @Test
+    fun `mismatched opposite spend sign rejects the entire transaction envelope`() {
+        val poster = RecordingPoster(
+            rowSuccess(
+                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":${int64(-500)},"spendAmount":${int64(500)},"displaySpendAmount":${int64(500)},"hasOppositeSpendSign":true,"category":"Food","updatedAtMs":1785000000000}]""",
             ),
         )
 
@@ -262,7 +293,7 @@ class RowQueryRepositoryTest {
         Json.parseToJsonElement(poster.bodies.single()).jsonObject["path"]!!.jsonPrimitive.content
 
     private fun transaction(id: String, owner: String, amount: String): String =
-        """{"txId":"$id","owner":"$owner","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":$amount,"category":"Food","updatedAtMs":1785000000000}"""
+        """{"txId":"$id","owner":"$owner","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":$amount,"spendAmount":${int64(500)},"displaySpendAmount":${int64(500)},"hasOppositeSpendSign":false,"category":"Food","updatedAtMs":1785000000000}"""
 
     private fun account(key: String, owner: String, custody: String, sats: Long): String =
         """{"key":"$key","owner":"$owner","label":"$key","custody":"$custody","sats":${int64(sats)},"fiatCents":${int64(20)},"asOf":"2026-07-18T12:00:00Z","schemaVersion":${int64(2)},"updatedAtMs":1785000000000}"""

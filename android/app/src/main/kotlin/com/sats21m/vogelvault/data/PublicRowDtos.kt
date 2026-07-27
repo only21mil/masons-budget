@@ -122,6 +122,8 @@ internal data class PublicTransactionDto(
     val month: String,
     val merchant: String,
     val amountCents: Long,
+    val spendAmount: Long,
+    val displaySpendAmount: Long,
     val category: String,
     val card: String?,
     val note: String?,
@@ -136,6 +138,8 @@ internal data class PublicTransactionDto(
         card = card,
         note = note,
         owner = owner,
+        signedSpendContribution = spendAmount,
+        rowDisplaySpendAmount = displaySpendAmount,
     )
 
     companion object {
@@ -150,11 +154,16 @@ internal data class PublicTransactionDto(
                 month = row.rowString("month") ?: return null,
                 merchant = row.rowStringAllowEmpty("merchant") ?: return null,
                 amountCents = row.rowInt64("amountCents") ?: return null,
+                spendAmount = row.rowInt64("spendAmount") ?: return null,
+                displaySpendAmount = row.rowInt64("displaySpendAmount") ?: return null,
                 category = row.rowStringAllowEmpty("category") ?: return null,
                 card = card.value,
                 note = note.value,
                 updatedAtMs = row.requiredLong("updatedAtMs") ?: return null,
-            )
+            ).takeUnless {
+                row.requiredBoolean("hasOppositeSpendSign") != (it.spendAmount < 0L) ||
+                    it.displaySpendAmount < 0L
+            }
         }
     }
 }

@@ -1,7 +1,13 @@
 package com.sats21m.vogelvault.data.cache
 
 import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.BtcBillPayRow
+import com.sats21m.vogelvault.data.BtcSnapshotMetadataRow
+import com.sats21m.vogelvault.data.BudgetDocumentSnapshot
+import com.sats21m.vogelvault.data.BudgetQueryScope
+import com.sats21m.vogelvault.data.RowCounts
 import com.sats21m.vogelvault.data.RowQueryRepository
+import com.sats21m.vogelvault.data.RowReadModelLoader
 import com.sats21m.vogelvault.data.RowSnapshot
 import com.sats21m.vogelvault.data.RowVisibilityScope
 import com.sats21m.vogelvault.domain.BtcAccount
@@ -13,6 +19,7 @@ import com.sats21m.vogelvault.domain.ReadModel
 import com.sats21m.vogelvault.domain.Slice
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.domain.Transaction
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 
@@ -21,12 +28,19 @@ data class CachedReadModel(
     val staleAuthorization: Boolean,
 )
 
+data class LoadedReadModel(
+    val data: ReadModel,
+    val unauthorized: Boolean,
+)
+
 /**
- * The single integration boundary between typed Convex rows and Room snapshots.
+ * Composes the direct row loader with stale-tolerant Room snapshots.
  *
- * Queries remain unbounded here: an explicitly bounded response is incomplete
- * and must never replace a complete generation. Tokens are absent from every
- * cache key.
+ * The loader receives the original Convex results and therefore remains the
+ * live source of truth. Its repository decorator stores each complete success
+ * and invalidates the matching Room generation on authorization rejection.
+ * Room observations are always marked stale because they are only a fallback,
+ * never proof that a network read just succeeded.
  */
 class CachedRowDataSource(
     private val remote: RowQueryRepository,
@@ -67,30 +81,49 @@ class CachedRowDataSource(
             CachedReadModel(
                 data =
                     ReadModel(
-                        transactions = tx,
+                        transactions = tx.slice,
                         budget = Slice(Freshness.EMPTY, null, null, "Convex rows · budget not cached"),
-                        btcAccounts = accounts,
-                        btcBuys = buys,
-                        todos = task,
+                        btcAccounts = accounts.slice,
+                        btcBuys = buys.slice,
+                        todos = task.slice,
                         // Snapshot metadata/price is outside the Room cache landed in #58.
                         btcPriceCents = 0L,
                     ),
-                staleAuthorization = slices.any { it.status == Freshness.STALE },
+                staleAuthorization = slices.any { it.unauthorized },
             )
         }
     }
 
-    suspend fun refresh(viewer: FamilyMember) {
-        refreshTransactions(viewer)
-        refreshTodos(viewer)
-        refreshBtcBuys(viewer)
-        refreshBtcAccounts(viewer)
+    suspend fun load(viewer: FamilyMember): LoadedReadModel {
+        val unauthorized = AtomicBoolean(false)
+        val cachingRepository =
+            CachingRowQueryRepository(
+                remote = remote,
+                dao = dao,
+                clock = clock,
+                onUnauthorized = { unauthorized.set(true) },
+            )
+        val data = RowReadModelLoader(cachingRepository, clock).load(viewer)
+        return LoadedReadModel(data, unauthorized.get())
     }
+}
 
-    private suspend fun refreshTransactions(viewer: FamilyMember) {
+private class CachingRowQueryRepository(
+    private val remote: RowQueryRepository,
+    private val dao: VaultCacheDao,
+    private val clock: () -> Long,
+    private val onUnauthorized: () -> Unit,
+) : RowQueryRepository {
+    override suspend fun listTransactions(
+        viewer: FamilyMember,
+        month: String?,
+        limit: Int?,
+    ): ConvexResult<RowSnapshot<Transaction>> {
+        val result = remote.listTransactions(viewer, month, limit)
         val key = CacheQueryKeys.transactions(viewer.key)
-        when (val result = remote.listTransactions(viewer)) {
-            is ConvexResult.Ok ->
+        when (result) {
+            is ConvexResult.Ok -> {
+                val stamp = clock()
                 dao.replaceTransactions(
                     queryKey = key,
                     rows =
@@ -106,22 +139,30 @@ class CachedRowDataSource(
                                 category = it.category,
                                 card = it.card,
                                 note = it.note,
-                                updatedAtMs = clock(),
+                                updatedAtMs = stamp,
                             )
                         },
-                    fetchedAtMs = clock(),
+                    fetchedAtMs = stamp,
                     expectedRowCount = result.value.expectedCount(),
                     receivedComplete = result.value.complete,
                 )
-            ConvexResult.Unauthorized -> dao.markUnauthorized(key, clock())
+            }
+            ConvexResult.Unauthorized -> markUnauthorized(key)
             else -> Unit
         }
+        return result
     }
 
-    private suspend fun refreshTodos(viewer: FamilyMember) {
+    override suspend fun listTodos(
+        viewer: FamilyMember,
+        done: Boolean?,
+        limit: Int?,
+    ): ConvexResult<RowSnapshot<TodoItem>> {
+        val result = remote.listTodos(viewer, done, limit)
         val key = CacheQueryKeys.todos(viewer.key)
-        when (val result = remote.listTodos(viewer)) {
-            is ConvexResult.Ok ->
+        when (result) {
+            is ConvexResult.Ok -> {
+                val stamp = clock()
                 dao.replaceTodos(
                     queryKey = key,
                     rows =
@@ -135,23 +176,32 @@ class CachedRowDataSource(
                                 project = it.project,
                                 area = it.area,
                                 due = it.due,
-                                updatedAtMs = clock(),
+                                updatedAtMs = stamp,
                                 sourceFile = it.owner.key,
                             )
                         },
-                    fetchedAtMs = clock(),
+                    fetchedAtMs = stamp,
                     expectedRowCount = result.value.expectedCount(),
                     receivedComplete = result.value.complete,
                 )
-            ConvexResult.Unauthorized -> dao.markUnauthorized(key, clock())
+            }
+            ConvexResult.Unauthorized -> markUnauthorized(key)
             else -> Unit
         }
+        return result
     }
 
-    private suspend fun refreshBtcBuys(viewer: FamilyMember) {
-        val key = CacheQueryKeys.btcBuys(viewer.key, RowVisibilityScope.VISIBLE.cacheKey)
-        when (val result = remote.listBtcBuys(viewer, RowVisibilityScope.VISIBLE)) {
-            is ConvexResult.Ok ->
+    override suspend fun listBtcBuys(
+        viewer: FamilyMember,
+        scope: RowVisibilityScope,
+        month: String?,
+        limit: Int?,
+    ): ConvexResult<RowSnapshot<BtcBuy>> {
+        val result = remote.listBtcBuys(viewer, scope, month, limit)
+        val key = CacheQueryKeys.btcBuys(viewer.key, scope.cacheKey)
+        when (result) {
+            is ConvexResult.Ok -> {
+                val stamp = clock()
                 dao.replaceBtcBuys(
                     queryKey = key,
                     rows =
@@ -167,22 +217,30 @@ class CachedRowDataSource(
                                 priceUsdCents = it.priceUsdCents,
                                 usdCents = it.usdCents,
                                 costBasisStatus = it.costBasisStatus,
-                                updatedAtMs = clock(),
+                                updatedAtMs = stamp,
                             )
                         },
-                    fetchedAtMs = clock(),
+                    fetchedAtMs = stamp,
                     expectedRowCount = result.value.expectedCount(),
                     receivedComplete = result.value.complete,
                 )
-            ConvexResult.Unauthorized -> dao.markUnauthorized(key, clock())
+            }
+            ConvexResult.Unauthorized -> markUnauthorized(key)
             else -> Unit
         }
+        return result
     }
 
-    private suspend fun refreshBtcAccounts(viewer: FamilyMember) {
-        val key = CacheQueryKeys.btcAccounts(viewer.key, RowVisibilityScope.VISIBLE.cacheKey)
-        when (val result = remote.listBtcAccounts(viewer, RowVisibilityScope.VISIBLE)) {
-            is ConvexResult.Ok ->
+    override suspend fun listBtcAccounts(
+        viewer: FamilyMember,
+        scope: RowVisibilityScope,
+        limit: Int?,
+    ): ConvexResult<RowSnapshot<BtcAccount>> {
+        val result = remote.listBtcAccounts(viewer, scope, limit)
+        val key = CacheQueryKeys.btcAccounts(viewer.key, scope.cacheKey)
+        when (result) {
+            is ConvexResult.Ok -> {
+                val stamp = clock()
                 dao.replaceBtcAccounts(
                     queryKey = key,
                     rows =
@@ -197,16 +255,44 @@ class CachedRowDataSource(
                                 asOf = "",
                                 schemaVersion = 0L,
                                 sourceFile = it.owner.key,
-                                updatedAtMs = clock(),
+                                updatedAtMs = stamp,
                             )
                         },
-                    fetchedAtMs = clock(),
+                    fetchedAtMs = stamp,
                     expectedRowCount = result.value.expectedCount(),
                     receivedComplete = result.value.complete,
                 )
-            ConvexResult.Unauthorized -> dao.markUnauthorized(key, clock())
+            }
+            ConvexResult.Unauthorized -> markUnauthorized(key)
             else -> Unit
         }
+        return result
+    }
+
+    override suspend fun listBtcBillPays(
+        viewer: FamilyMember,
+        scope: RowVisibilityScope,
+        month: String?,
+        limit: Int?,
+    ): ConvexResult<RowSnapshot<BtcBillPayRow>> =
+        remote.listBtcBillPays(viewer, scope, month, limit)
+
+    override suspend fun getBudgetDocument(
+        viewer: FamilyMember,
+        scope: BudgetQueryScope,
+    ): ConvexResult<BudgetDocumentSnapshot> = remote.getBudgetDocument(viewer, scope)
+
+    override suspend fun getBtcSnapshotMetadata(
+        viewer: FamilyMember,
+        scope: RowVisibilityScope,
+    ): ConvexResult<RowSnapshot<BtcSnapshotMetadataRow>> =
+        remote.getBtcSnapshotMetadata(viewer, scope)
+
+    override suspend fun rowCounts(): ConvexResult<RowCounts> = remote.rowCounts()
+
+    private suspend fun markUnauthorized(queryKey: String) {
+        onUnauthorized()
+        dao.markUnauthorized(queryKey, clock())
     }
 }
 
@@ -219,19 +305,28 @@ private val RowVisibilityScope.cacheKey: String
 
 private fun RowSnapshot<*>.expectedCount(): Long? = if (complete) rows.size.toLong() else null
 
+private data class CachedSlice<T>(
+    val slice: Slice<List<T>>,
+    val unauthorized: Boolean,
+)
+
 private fun <T> cachedSlice(
     rows: List<T>,
     snapshot: QuerySnapshotEntity?,
     source: String,
-): Slice<List<T>> {
+): CachedSlice<T> {
+    val unauthorized =
+        snapshot?.authorization == SnapshotAuthorization.UNAUTHORIZED ||
+            snapshot?.freshness == SnapshotFreshness.STALE_AUTH
     val freshness =
         when {
             snapshot == null -> Freshness.EMPTY
-            snapshot.authorization == SnapshotAuthorization.UNAUTHORIZED ||
-                snapshot.freshness == SnapshotFreshness.STALE_AUTH -> Freshness.STALE
-            else -> Freshness.LIVE
+            else -> Freshness.STALE
         }
-    return Slice(freshness, rows, snapshot?.activatedAtMs, source)
+    return CachedSlice(
+        slice = Slice(freshness, rows, snapshot?.activatedAtMs, "$source · cached"),
+        unauthorized = unauthorized,
+    )
 }
 
 private fun CachedTransactionEntity.toDomain() =

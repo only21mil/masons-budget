@@ -54,40 +54,52 @@ class CachedRowDataSourceTest {
     }
 
     @Test
-    fun `authorized snapshot becomes current unauthorized hides it and authorized recovery replaces it`() =
+    fun `live read populates Room and remains the current UI source`() =
+        runBlocking {
+            val remote =
+                FakeRows().apply {
+                    transactions =
+                        ConvexResult.Ok(
+                            RowSnapshot(
+                                rows = listOf(transaction("authorized", Long.MIN_VALUE)),
+                                complete = true,
+                            ),
+                        )
+                }
+            val source = CachedRowDataSource(remote, dao) { 100L }
+            val viewer = FamilyMember.VICTOR
+            val key = CacheQueryKeys.transactions(viewer.key)
+
+            val loaded = source.load(viewer)
+
+            assertFalse(loaded.unauthorized)
+            assertEquals(Freshness.LIVE, loaded.data.transactions.status)
+            assertEquals(listOf("authorized"), loaded.data.transactions.value.map { it.id })
+            assertEquals(Long.MIN_VALUE, loaded.data.transactions.value.single().amount)
+            assertEquals(listOf("authorized"), dao.observeTransactions(key).first().map { it.transactionId })
+            assertTrue(dao.observeActiveSnapshot(key).first() != null)
+        }
+
+    @Test
+    fun `unauthorized read invalidates current observers and hides the cached snapshot`() =
         runBlocking {
             var now = 100L
             val remote = FakeRows()
             val source = CachedRowDataSource(remote, dao) { now }
             val viewer = FamilyMember.VICTOR
             val key = CacheQueryKeys.transactions(viewer.key)
-
-            remote.transactions =
-                ConvexResult.Ok(
-                    RowSnapshot(
-                        rows = listOf(transaction("authorized", Long.MIN_VALUE)),
-                        complete = true,
-                    ),
-                )
-            source.refresh(viewer)
-
-            val current =
-                source.observe(viewer).first {
-                    it.data.transactions.status == Freshness.LIVE
-                }
-            assertFalse(current.staleAuthorization)
-            assertEquals(listOf("authorized"), current.data.transactions.value.map { it.id })
-            assertEquals(Long.MIN_VALUE, current.data.transactions.value.single().amount)
-            assertEquals(listOf("authorized"), dao.observeTransactions(key).first().map { it.transactionId })
+            remote.transactions = ConvexResult.Ok(RowSnapshot(listOf(transaction("old", 1L)), true))
+            source.load(viewer)
 
             now = 200L
             remote.unauthorized = true
-            source.refresh(viewer)
+            val loaded = source.load(viewer)
 
             val rejected =
                 source.observe(viewer).first {
                     it.staleAuthorization
                 }
+            assertTrue(loaded.unauthorized)
             assertEquals(Freshness.STALE, rejected.data.transactions.status)
             assertTrue(rejected.data.transactions.value.isEmpty())
             assertTrue(dao.observeTransactions(key).first().isEmpty())
@@ -96,6 +108,43 @@ class CachedRowDataSourceTest {
                 SnapshotAuthorization.UNAUTHORIZED,
                 dao.snapshots(key).single().authorization,
             )
+        }
+
+    @Test
+    fun `offline read serves the authorized Room snapshot clearly marked stale`() =
+        runBlocking {
+            val remote = FakeRows()
+            val source = CachedRowDataSource(remote, dao) { 100L }
+            val viewer = FamilyMember.VICTOR
+            remote.transactions = ConvexResult.Ok(RowSnapshot(listOf(transaction("cached", 42L)), true))
+            source.load(viewer)
+
+            remote.offline = true
+            val loaded = source.load(viewer)
+            val cached =
+                source.observe(viewer).first {
+                    it.data.transactions.value.singleOrNull()?.id == "cached"
+                }
+
+            assertEquals(Freshness.ERROR, loaded.data.transactions.status)
+            assertFalse(loaded.unauthorized)
+            assertFalse(cached.staleAuthorization)
+            assertEquals(Freshness.STALE, cached.data.transactions.status)
+            assertTrue(cached.data.transactions.source.contains("cached"))
+        }
+
+    @Test
+    fun `later authorized read recovers from an unauthorized generation`() =
+        runBlocking {
+            var now = 100L
+            val remote = FakeRows()
+            val source = CachedRowDataSource(remote, dao) { now }
+            val viewer = FamilyMember.VICTOR
+            val key = CacheQueryKeys.transactions(viewer.key)
+            remote.transactions = ConvexResult.Ok(RowSnapshot(listOf(transaction("old", 1L)), true))
+            source.load(viewer)
+            remote.unauthorized = true
+            source.load(viewer)
 
             now = 300L
             remote.unauthorized = false
@@ -106,13 +155,15 @@ class CachedRowDataSourceTest {
                         complete = true,
                     ),
                 )
-            source.refresh(viewer)
+            val loaded = source.load(viewer)
 
             val recovered =
                 source.observe(viewer).first {
-                    it.data.transactions.status == Freshness.LIVE &&
+                    it.data.transactions.status == Freshness.STALE &&
                         it.data.transactions.value.singleOrNull()?.id == "recovered"
                 }
+            assertFalse(loaded.unauthorized)
+            assertEquals(Freshness.LIVE, loaded.data.transactions.status)
             assertFalse(recovered.staleAuthorization)
             assertEquals(Long.MAX_VALUE, recovered.data.transactions.value.single().amount)
             assertEquals(listOf("recovered"), dao.observeTransactions(key).first().map { it.transactionId })
@@ -133,20 +184,30 @@ class CachedRowDataSourceTest {
 
 private class FakeRows : RowQueryRepository {
     var unauthorized = false
+    var offline = false
     var transactions: ConvexResult<RowSnapshot<Transaction>> = ConvexResult.Ok(RowSnapshot(emptyList(), true))
 
     override suspend fun listTransactions(
         viewer: FamilyMember,
         month: String?,
         limit: Int?,
-    ): ConvexResult<RowSnapshot<Transaction>> = if (unauthorized) ConvexResult.Unauthorized else transactions
+    ): ConvexResult<RowSnapshot<Transaction>> =
+        when {
+            unauthorized -> ConvexResult.Unauthorized
+            offline -> ConvexResult.Failed("transport failure")
+            else -> transactions
+        }
 
     override suspend fun listTodos(
         viewer: FamilyMember,
         done: Boolean?,
         limit: Int?,
     ): ConvexResult<RowSnapshot<TodoItem>> =
-        if (unauthorized) ConvexResult.Unauthorized else ConvexResult.Ok(RowSnapshot(emptyList(), true))
+        when {
+            unauthorized -> ConvexResult.Unauthorized
+            offline -> ConvexResult.Failed("transport failure")
+            else -> ConvexResult.Ok(RowSnapshot(emptyList(), true))
+        }
 
     override suspend fun listBtcBuys(
         viewer: FamilyMember,
@@ -154,7 +215,11 @@ private class FakeRows : RowQueryRepository {
         month: String?,
         limit: Int?,
     ): ConvexResult<RowSnapshot<BtcBuy>> =
-        if (unauthorized) ConvexResult.Unauthorized else ConvexResult.Ok(RowSnapshot(emptyList(), true))
+        when {
+            unauthorized -> ConvexResult.Unauthorized
+            offline -> ConvexResult.Failed("transport failure")
+            else -> ConvexResult.Ok(RowSnapshot(emptyList(), true))
+        }
 
     override suspend fun listBtcBillPays(
         viewer: FamilyMember,
@@ -170,6 +235,8 @@ private class FakeRows : RowQueryRepository {
     ): ConvexResult<RowSnapshot<BtcAccount>> =
         if (unauthorized) {
             ConvexResult.Unauthorized
+        } else if (offline) {
+            ConvexResult.Failed("transport failure")
         } else {
             ConvexResult.Ok(
                 RowSnapshot(
