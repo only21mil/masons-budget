@@ -105,6 +105,24 @@ abstract class VaultCacheDao {
     )
     abstract fun observeActiveSnapshot(queryKey: String): Flow<QuerySnapshotEntity?>
 
+    /**
+     * Snapshot state for UI trust decisions.
+     *
+     * Prefer the active generation even when authorization has made it stale.
+     * A newer incomplete attempt must not hide the last complete generation's
+     * trust state.
+     */
+    @Query(
+        """
+        SELECT * FROM query_snapshots
+        WHERE query_key = :queryKey
+          AND is_complete = 1
+        ORDER BY is_active DESC, generation DESC
+        LIMIT 1
+        """,
+    )
+    abstract fun observeSnapshotState(queryKey: String): Flow<QuerySnapshotEntity?>
+
     @Query(
         """
         SELECT * FROM query_snapshots

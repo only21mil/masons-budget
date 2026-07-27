@@ -17,7 +17,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             VogelVaultTheme {
-                val model: VaultViewModel = viewModel()
+                val model: VaultViewModel =
+                    viewModel(factory = (application as VaultApplication).viewModelFactory)
                 val state by model.state.collectAsStateWithLifecycle()
                 VaultApp(
                     state = state,
