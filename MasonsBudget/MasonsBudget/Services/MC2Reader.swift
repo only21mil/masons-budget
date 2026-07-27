@@ -154,7 +154,7 @@ actor MC2Reader {
             return MC2ReadBatch(value: [], replacementOwners: nil)
         }
 
-        let todos = rawTodos.compactMap { item in
+        let todos: [MC2TodoItem] = rawTodos.compactMap { item in
             guard JSONSerialization.isValidJSONObject(item),
                   let data = try? JSONSerialization.data(withJSONObject: item)
             else {
