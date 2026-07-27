@@ -226,6 +226,7 @@ final class MasonsBudgetTests: XCTestCase {
             name: "Gaming",
             icon: "gamecontroller.fill",
             monthlyBudget: 100,
+            owner: .mason,
         )
         let masonTransaction = Transaction(
             id: "tx-mason-gaming",
