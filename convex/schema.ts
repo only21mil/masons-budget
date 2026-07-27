@@ -69,6 +69,24 @@ export const custodyValidator = v.union(
   v.literal("self_custody"),
 );
 
+const balanceAmountsSatsValidator = v.object({
+  cashAppSats: v.optional(v.int64()),
+  coldcardSats: v.optional(v.int64()),
+  riverSats: v.optional(v.int64()),
+  strikeSats: v.optional(v.int64()),
+  zeusSats: v.optional(v.int64()),
+  totalSats: v.optional(v.int64()),
+});
+
+const btcSyncValidator = v.object({
+  anchorBalancesSats: balanceAmountsSatsValidator,
+  anchorDate: v.optional(v.string()),
+  anchorSource: v.optional(v.string()),
+  notes: v.optional(v.any()),
+  reconciledAt: v.optional(v.string()),
+  reconciledFromEvents: v.optional(v.any()),
+});
+
 const budgetCategoryValidator = v.object({
   name: v.string(),
   icon: v.optional(v.string()),
@@ -243,6 +261,32 @@ export default defineSchema({
     .index("by_month", ["month"]) // budget month, whole household
     .index("by_date", ["date"]), // activity feed, whole household
 
+  // ── Income ──
+  // The legacy `income` blob is a row collection, not a budget document. Its
+  // records use the same source-key/provenance treatment as transactions while
+  // keeping USD as integer cents.
+  income: defineTable({
+    sourceKey: v.string(),
+    incomeId: v.string(),
+    owner: familyMemberValidator,
+    date: v.string(),
+    month: v.string(),
+    amountCents: v.int64(),
+    source: v.string(),
+    loggedBy: v.optional(v.string()),
+    note: v.optional(v.string()),
+    archimedesRequestId: v.optional(v.string()),
+    sourceFile: v.literal("income"),
+    updatedAtMs: v.float64(),
+    // Required, not optional: this is the canonical round-trip proof.
+    raw: v.any(),
+    migrationSourceIndex: v.float64(),
+  })
+    .index("by_source_key", ["sourceFile", "sourceKey"])
+    .index("by_owner_month", ["owner", "month"])
+    .index("by_owner_date", ["owner", "date"])
+    .index("by_date", ["date"]),
+
   // ── Todos ──
   todos: defineTable({
     // Globally unique: there is one todos file, unlike the per-member
@@ -352,6 +396,36 @@ export default defineSchema({
     .index("by_owner_key", ["owner", "key"]) // upsert / dedupe
     .index("by_owner_custody", ["owner", "custody"])
     .index("by_key", ["key"]),
+
+  // ── Legacy balances document ──
+  // Unlike btcAccounts, `balances` is one adult-household document with
+  // reconciliation state. The indexed owner is the visibility boundary: adult
+  // viewers share it, while child rows (if a separate source is ever modelled)
+  // cannot enter an adult net-worth query.
+  balanceDocuments: defineTable({
+    sourceFile: v.literal("balances"),
+    owner: familyMemberValidator,
+    cashAppSats: v.int64(),
+    coldcardSats: v.int64(),
+    riverSats: v.int64(),
+    strikeSats: v.int64(),
+    zeusSats: v.int64(),
+    totalSats: v.int64(),
+    cashAppFiatCents: v.optional(v.int64()),
+    coldcardFiatCents: v.optional(v.int64()),
+    riverFiatCents: v.optional(v.int64()),
+    strikeFiatCents: v.optional(v.int64()),
+    zeusFiatCents: v.optional(v.int64()),
+    totalFiatCents: v.optional(v.int64()),
+    lastRefreshed: v.string(),
+    btcSync: btcSyncValidator,
+    updatedAtMs: v.float64(),
+    // Carries every source field byte-for-byte at the decoded JSON boundary.
+    raw: v.any(),
+    migrationSourceIndex: v.float64(),
+  })
+    .index("by_source_file", ["sourceFile"])
+    .index("by_owner", ["owner"]),
 
   // ── Atomic budget documents ──
   // `budget` and `mason-budget` are single objects, not row collections. One
