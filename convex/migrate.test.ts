@@ -33,6 +33,7 @@ import {
   resolveOwner,
   sha256,
   sourceKeyFor,
+  writeProjectedDocument,
 } from "./migrate";
 
 // The domain parser, imported for real rather than re-implemented, so the
@@ -696,6 +697,17 @@ describe("blob shapes", () => {
 // ─── Dry run ─────────────────────────────────────────────────────────────────
 
 describe("dry run", () => {
+  test("refuses an unhandled migration table at the write boundary", async () => {
+    await expect(
+      writeProjectedDocument(
+        {} as never,
+        { ...MIGRATION_SOURCES[0], table: "seventhTable" } as never,
+        {},
+        undefined,
+      ),
+    ).rejects.toThrow("Unhandled migration table: seventhTable");
+  });
+
   test("reports the full plan and writes nothing", async () => {
     const t = harness();
     await seedAll(t);
