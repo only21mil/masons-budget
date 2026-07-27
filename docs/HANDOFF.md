@@ -1,8 +1,9 @@
 # The Vogel Vault — build handoff
 
-**Written 2026-07-26 against `main` at `beeb6aa`.** Supersedes `PLAN.md`, which is
-archival. If you are picking this up cold, read this file first and trust it over
-anything in `PLAN.md` or the older wiki entries.
+**Updated 2026-07-26 against `build/finish-vogel-vault` at `3d4c80b`.** Supersedes
+`PLAN.md`, which is archival. If you are picking this up cold, read this file
+first and trust it over anything in `PLAN.md` or older wiki entries. Remaining
+integration work is tracked by [umbrella issue #46](https://github.com/only21mil/masons-budget/issues/46).
 
 ---
 
@@ -58,10 +59,12 @@ exist there yet. Do not assume otherwise.
 - `dataFiles` — 13 JSON blob documents, the family's entire financial record
 - `syncVersions`, `todoTombstones` — the blob path's bookkeeping
 - `mobilePairings`, `mobileDevices` — device pairing, predates this work
-- **Read authentication is ENFORCED.** Verified four ways on 2026-07-26: no token
-  blocked, wrong token blocked, correct token returns 13 files, `dataFiles:get`
-  blocked without a token. Before that day the data was publicly readable.
-- The `ALLOW_TOKENLESS_READ` escape hatch has been **removed** from production.
+- **Read authentication was recorded as ENFORCED on 2026-07-26.** That cutover
+  verified no-token and wrong-token rejection, a correct-token list of 13 files,
+  and rejection of tokenless `dataFiles:get`. Before that day the data was
+  publicly readable.
+- The same cutover recorded `ALLOW_TOKENLESS_READ` as removed. This documentation
+  update did **not** re-probe production; do not present it as fresh runtime evidence.
 
 ### What MC2 was, and why it is gone
 
@@ -126,14 +129,17 @@ again in Swift. They are not style preferences.
   `btcAccounts`, `btcBillPays`, plus the closed owner union and indexes
 - `convex/tables.ts` — runtime queries and upsert mutations
 - `convex/migrate.ts` — the **sole** blob→row migration. `internalMutation`, so it
-  is unreachable over HTTP. `apply` defaults to `false`. Verified three ways: row
-  count, exact summed money per column, canonical-JSON round-trip. Idempotent via a
-  deterministic `sourceKey`.
+  is unreachable over HTTP. `apply` defaults to `false`, and writes are idempotent
+  via a deterministic `sourceKey`. Post-write verification checks row count, exact
+  summed money per column, and canonical-JSON round-trip.
 - `convex/writeback.ts` — validating write path (`createTransaction`,
   `editTransaction`, `createTodo`, `editTodo`). Rejects, never coerces. Keeps an
   append-only audit of what an edit replaced.
 - `convex/dataFiles.ts` — the blob path, now behind fail-closed read/sync auth
-- `scripts/convex-migrate.mjs` — migration driver, dry run by default
+- `scripts/convex-migrate.mjs` — migration driver, dry run by default. The current
+  dry run reports the projected writes but explicitly defers verification because
+  it writes nothing. The reviewable three-way **pre-write** proof and plan binding
+  are being implemented under [issue #46](https://github.com/only21mil/masons-budget/issues/46); do not claim they are live yet.
 - `scripts/verify-read-auth.sh` — reports ENFORCED / OPEN / OUTAGE /
   CLOSED-UNCONFIRMED / UNKNOWN with a control probe, so "shut" is distinguishable
   from "broken"
@@ -157,8 +163,9 @@ again in Swift. They are not style preferences.
 
 - CI (`clients.yml`) builds and tests domain, Linux and Android, and produces design
   packets for visual review
-- `deploy.yml` signs with an App Store Connect API key (the old p12 path is retired)
-  and preserves the signed `.ipa` as an artifact even when upload fails
+- `deploy.yml` signs as team `384ZGKG4GB` with App Store Connect API-key secrets
+  `ASC_API_KEY_P8`, `ASC_KEY_ID`, and `ASC_ISSUER_ID`; the Apple-ID password and
+  `.p12` paths are retired. It preserves the signed `.ipa`/`.pkg` before upload.
 - `workflow-lint.yml` runs actionlint plus a secret-inventory cross-check that fails
   the build if a declaration outlives its use
 - Fleet sync is Syncthing (whole folder, no allowlist), replacing the Spark's Python
@@ -175,27 +182,36 @@ Ordered. Each item names its gate.
 The largest remaining piece and the riskiest, because it operates on the only copy
 of the family's financial record.
 
-1. Deploy the schema to `keen-elephant-452` (the tables do not exist there yet)
-2. `node scripts/convex-migrate.mjs` — dry run, the default
-3. Read the three-way verification output: row count, summed money per column,
-   canonical round-trip. All three must agree.
-4. `node scripts/convex-migrate.mjs --apply --prod --confirm-production`
-5. Re-run `scripts/verify-read-auth.sh --expect enforced` afterwards
+1. Finish and review the pre-write proof/plan-binding work in
+   [umbrella issue #46](https://github.com/only21mil/masons-budget/issues/46).
+2. Deploy the reviewed schema to `keen-elephant-452` (the row tables do not exist
+   there yet).
+3. `node scripts/convex-migrate.mjs --prod` — production-targeted dry run. Without
+   `--prod`, the command targets the configured development deployment.
+4. Inspect the machine-readable pre-write evidence once that implementation has
+   landed: projected row counts, exact summed money per column, canonical round
+   trip, unique keys, and the legacy-world fingerprint must all agree.
+5. Apply only the exact reviewed plan with
+   `node scripts/convex-migrate.mjs --apply --prod --confirm-production` and any
+   additional plan-binding argument introduced by the reviewed implementation.
+6. Re-run `scripts/verify-read-auth.sh --expect enforced` afterwards.
 
-Do not skip step 3. The dry run is the same code path as the writer, stopped one
-line short of `db.insert`, so what it reports is what will happen.
+The current branch does **not** yet provide step 4 as a genuine no-write proof:
+today's dry run projects inserts/updates and says verification is deferred. Do
+not perform or approve the production backfill until the issue #46 implementation
+and review replace this warning with a bound pre-write proof.
 
 ### B. Cut the clients over to the new tables
 
 Currently every client reads `dataFiles` blobs. Once the rows exist:
 
-- Wire Linux and Android to the row queries (task #7)
-- Send the read token from both clients (task #14) — they cannot read production
-  without it now
+- Wire Linux and Android to complete, typed row queries and send the runtime read
+  token; they cannot read production without it. Track the coordinated cutover in
+  [umbrella issue #46](https://github.com/only21mil/masons-budget/issues/46).
 - **Known trap:** Convex encodes `v.int64()` over HTTP as
   `{"$integer": "<base64>"}`. Swift's client handles this; the Linux and Android
   HTTP readers need a decoder before they can read a single money column.
-- Add Room persistence to Android (task #10)
+- Add the reviewed Room query-snapshot cache to Android (tracked in issue #46).
 
 ### C. TestFlight — **Victor's approval required**
 
@@ -209,11 +225,15 @@ Cannot determine the Apple ID from Bundle ID 'com.sats21m.masonsbudget'
 Before retrying, confirm an app record for `com.sats21m.masonsbudget` **exists in
 App Store Connect** and the API key's role can see it. TestFlight lives inside App
 Store Connect, so even a testers-only build needs that record — it is a container,
-not a store listing. Five consecutive 500s over hours is long for a transient
-outage, so rule the record out before assuming Apple is simply down.
+not a store listing. The workflow signs as team `384ZGKG4GB` and requires exactly
+`ASC_API_KEY_P8`, `ASC_KEY_ID`, and `ASC_ISSUER_ID`. Do not restore the retired
+`APPSTORE_USERNAME`/`APPSTORE_PASSWORD` or `.p12` route.
 
-A retry is now cheap either way: the run preserves the signed `.ipa` as an artifact,
-so a failed upload still yields something you can push through Transporter by hand.
+Five consecutive 500s over hours is long for a transient outage, so rule out app
+record/key visibility before assuming Apple is simply down. App Store visibility
+preflight and remaining deploy hardening are tracked in [issue #46](https://github.com/only21mil/masons-budget/issues/46).
+A retry preserves the signed `.ipa`/`.pkg` as an artifact before upload, so a
+failed upload does not discard the archive/export result.
 
 ### D. Linux packaging — **approval-gated**
 
@@ -229,9 +249,15 @@ row tables exist and the writeback path is deployed, that data goes in through
 
 ### F. Smaller, tracked
 
-- Generalize `install-task-board-nudge`: it wires 1 of 3 hooks on a fresh machine
-- `rowCounts` and the month queries use `.collect()` — fine at 905 rows, revisit
-  well before it is not
+- [Issue #20](https://github.com/only21mil/masons-budget/issues/20) is narrowly the
+  Linux CSV export row-builder unit suite: adult parity, child isolation/signs,
+  net-worth flags, validator acceptance, and exact money strings. It is not the
+  client row-cutover tracker.
+- All production row cutover, client transport, migration proof, release, signing,
+  and packaging work belongs under [umbrella issue #46](https://github.com/only21mil/masons-budget/issues/46).
+- Generalize `install-task-board-nudge`: it wires 1 of 3 hooks on a fresh machine.
+- `rowCounts` and the month queries use `.collect()` — fine at 905 rows; revisit
+  well before it is not.
 
 ---
 
@@ -259,9 +285,11 @@ row tables exist and the writeback path is deployed, that data goes in through
 
 Reads and syncs are fail-closed: no token means rejected, and an unset
 `CONVEX_READ_TOKEN` on the deployment also means rejected rather than open. The
-token is sent as a query argument, never in argv. `scripts/verify-read-auth.sh` is
-the observable signal for every step of a cutover — it probes `dataFiles:list`
-(metadata only, hardcoded, never `dataFiles:get`) with no credential, a wrong
-credential, and if available the real one, and classifies the deployment from the
-pair. `--expect enforced` deliberately fails on OUTAGE, because "nobody can read,
-including me" is a rollback trigger, not a successful cutover.
+token is sent as a query argument, never in argv. `scripts/verify-read-auth.sh`
+probes `dataFiles:list` (metadata only, hardcoded, never `dataFiles:get`) with no
+credential, a wrong credential, and if available the real one, then classifies
+the deployment. `--expect enforced` deliberately fails on OUTAGE, because
+"nobody can read, including me" is a rollback trigger, not a successful cutover.
+The `STATE: OPEN` transcript in `docs/convex-read-auth-cutover.md` records the
+pre-cutover state; it is historical, while its hatch-based rollback mechanics
+remain current. No production probe was run for this documentation update.

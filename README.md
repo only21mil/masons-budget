@@ -9,9 +9,8 @@ still "Mason's Budget App".
 >
 > **MC2 is gone.** It was a Python service on the DGX Spark, the Spark was wiped,
 > and it was never pushed anywhere. Convex is now the system of record, not a
-> projection. Sections below that describe MC2 as a live upstream — notably
-> "MC2 Integration" and parts of "Data Flow" — are stale and are being corrected;
-> the handoff is authoritative where they disagree.
+> projection. `MC2`-named Swift types remain only to preserve compatibility with
+> the surviving JSON blob schema while clients move to row queries.
 
 ## Clients
 
@@ -20,7 +19,7 @@ still "Mason's Budget App".
 | iOS / macOS | `MasonsBudget/` | SwiftUI, SwiftData, SFSpeechRecognizer on-device voice |
 | Linux desktop | `linux/` | Electron + React + TypeScript + Vite |
 | Android (Pixel Fold) | `android/` | Kotlin |
-| Backend | `convex/` | Convex — MC2 pushes JSON via `dataFiles:sync`, clients read it |
+| Backend | `convex/` | Convex — system of record; shipped clients currently read legacy `dataFiles` blobs |
 
 The family/visibility contract lives in `shared/domain` and mirrors
 `MasonsBudget/MasonsBudget/Models/SharedEnums.swift`, which is authoritative.
@@ -63,8 +62,11 @@ xcodebuild -project MasonsBudget.xcodeproj -scheme MasonsBudget \
 ```
 
 `MasonsBudget/project.yml` is the source of truth; the `.xcodeproj` is generated.
-Never hand-edit the pbxproj. Releases run through
-`.github/workflows/deploy.yml` and need Victor's approval.
+Never hand-edit the pbxproj. Releases run through the manually triggered
+`.github/workflows/deploy.yml`, sign as team `384ZGKG4GB`, and use the App Store
+Connect API-key secrets `ASC_API_KEY_P8`, `ASC_KEY_ID`, and `ASC_ISSUER_ID`.
+The old Apple-ID password and `.p12` routes are retired. Every release needs
+Victor's approval.
 
 ## Linux preflight
 
@@ -91,71 +93,36 @@ scripts/vv-swift-lsp-reset.sh status
 scripts/vv-swift-lsp-reset.sh prime
 ```
 
-## Project Structure
+## Project structure
+
+- `convex/` — schema, legacy blob functions, row queries, writeback, migration, tests
+- `shared/domain/` — cross-client visibility, money, and wire-format contracts
+- `linux/` — Electron/React desktop client
+- `android/` — Kotlin/Compose Fold client and plain-JVM domain module
+- `MasonsBudget/project.yml` — XcodeGen source of truth; never hand-edit the generated project
+- `MasonsBudget/MasonsBudget/Models/` — SwiftData models and family visibility rules
+- `MasonsBudget/MasonsBudget/Services/` — Convex transport, legacy blob compatibility,
+  writeback, import, prices, voice, and sync orchestration
+- `MasonsBudget/MasonsBudget/Views/` — shared iOS/macOS screens and components
+- `MasonsBudget/MasonsBudgetTests/` — Swift tests
+
+## Data flow
+
+Convex is authoritative. The production deployment still stores the original
+JSON documents in `dataFiles`, and every shipped client must keep that blob path
+working during the row-table migration.
 
 ```
-MasonsBudget/
-├── MasonsBudget.xcodeproj/       # Generated — don't edit manually
-├── project.yml                   # XcodeGen spec
-├── MasonsBudget/
-│   ├── App/                       # Entry point
-│   │   └── MasonsBudgetApp.swift  # @main, ModelContainer, sync orchestration
-│   ├── Models/                    # SwiftData @Model classes
-│   │   ├── Transaction.swift      # Spending entries
-│   │   ├── BTCAccount.swift        # BTC balances per account
-│   │   ├── BTCBuy.swift           # BTC purchase records
-│   │   ├── BTCBillPay.swift       # Bills paid in BTC
-│   │   ├── BudgetCategory.swift    # Budget categories with icons
-│   │   ├── MonthlyBudgetSnapshot.swift  # Monthly income/surplus
-│   │   ├── HoldingAccount.swift    # 401k / WAP accounts + holdings + lots
-│   │   ├── SyncEvent.swift        # Audit trail
-│   │   ├── FamilyProfile.swift     # Per-user iCloud identity
-│   │   └── SharedEnums.swift      # FamilyMember, BTCCustody
-│   ├── Services/
-│   │   ├── MC2Reader.swift        # Read MC2 JSON files from iCloud
-│   │   ├── MC2Writer.swift        # Write append-only files + atomic snapshots
-│   │   ├── MC2DTOs.swift         # Decodable DTOs matching MC2 JSON shapes
-│   │   ├── MC2Mapper.swift        # DTO → SwiftData model conversion
-│   │   ├── MC2SyncService.swift   # Full sync pipeline
-│   │   ├── MC2FileObserver.swift  # iCloud file change watching
-│   │   ├── MC2FolderManager.swift # Security-scoped folder bookmarks
-│   │   ├── VoiceParser.swift      # Rules-based speech → ParsedTransaction
-│   │   ├── RecurringDetector.swift # Transaction pattern detection
-│   │   └── BudgetNotificationManager.swift  # Budget threshold alerts
-│   ├── Theme/
-│   │   └── AppTheme.swift         # Colors, typography, shared formatters
-│   ├── Views/
-│   │   ├── ContentView.swift      # Tab navigation (Dashboard/Money/Spending/Settings)
-│   │   ├── DashboardTab.swift     # Net Worth, budget, quick actions, voice FAB
-│   │   ├── MoneyTab.swift         # BTC, 401k, income, charts
-│   │   ├── SpendingTab.swift      # Categories, transactions, month nav
-│   │   ├── SettingsTab.swift      # Profile, MC2 folder, sync, categories
-│   │   ├── VoiceCaptureView.swift # Full-screen voice input
-│   │   ├── AddTransactionView.swift  # Manual transaction entry
-│   │   ├── OnboardingView.swift   # First-launch walkthrough
-│   │   ├── CategoryManagementView.swift  # Add/edit/delete categories
-│   │   └── Components/
-│   │       ├── StatCard.swift, QuickActionButton.swift, SectionHeader.swift
-│   │       ├── CategoryRow.swift, TransactionRow.swift
-│   │       ├── SpendingDonutChart.swift, MonthlyTrendChart.swift
-│   │       ├── NetWorthHistoryChart.swift, AssetBreakdownChart.swift
-│   │       ├── SyncBadge.swift, MicFAB.swift, RangePicker.swift
-│   └── Resources/
-│       └── Assets.xcassets/        # App icon, accent color
-└── MasonsBudgetTests/              # 65 unit tests
+Convex system of record
+    ↓  dataFiles legacy JSON blobs (current shipped-client contract)
+ConvexClient → MC2Reader → compatibility DTOs → MC2Mapper
+    ↓
+SwiftData models → SwiftUI views
 ```
 
-## Data Flow
-
-```
-MC2 JSON files (iCloud Drive or local)
-    ↕  MC2Reader / MC2Writer
-MC2 DTOs (Decodable structs)
-    ↕  MC2Mapper
-SwiftData Models (@Model)
-    ↕  @Query / ModelContext
-SwiftUI Views (Dashboard, Money, Spending, Settings)
-```
+The `MC2` names are historical compatibility names, not evidence of a running
+MC2 service. Row tables, public projections, client cutover, and the production
+backfill are tracked in [umbrella issue #46](https://github.com/only21mil/masons-budget/issues/46).
 
 ## Voice Input
 
@@ -165,20 +132,24 @@ The voice flow works in three stages:
 2. **Parse** — `VoiceParser` extracts amount ($45, "five dollars"), merchant (at/from/to prepositions), category (merchant mapping + keywords), date (today/yesterday/weekdays/ISO), card (on/with), and note (note: prefix).
 3. **Confirm** — Review parsed result with Edit/Save buttons. Saves directly to SwiftData.
 
-## MC2 Integration
+## Legacy blob compatibility
 
-The app syncs bidirectionally with the MC2 Mission Control dashboard:
+The Swift client reads Convex `dataFiles` documents including `budget`,
+`transactions`, `bitcoin-buys`, `bitcoin-bill-pays`, `btc-balance-snapshot`,
+`finances`, `son-balances`, and the Mason-specific files. `MC2DTOs`, `MC2Mapper`,
+`MC2Reader`, and `MC2SyncService` intentionally retain their old names so the
+existing JSON decoding and SwiftData mapping remain stable during cutover.
 
-- **Reads**: `budget.json`, `transactions.json`, `bitcoin-buys.json`, `bitcoin-bill-pays.json`, `balances.json`, `btc-balance-snapshot.json`, `finances.json`, `son-balances.json`
-- **Writes**: Append-only files in `transactions/`, `bitcoin-buys/`, `bitcoin-bill-pays/` subdirectories + atomic snapshot writes
-- **Watches**: `NSMetadataQuery` on iCloud folder triggers sync on desktop changes
+Do not delete the blob path, alter `syncVersions`/`todoTombstones`, or break old
+JSON decoding when adding row reads. Production migration and client cutover are
+approval-gated and coordinated under [issue #46](https://github.com/only21mil/masons-budget/issues/46).
 
 ## Configuration
 
 | Key | Value |
 |---|---|
 | Bundle ID | `com.sats21m.masonsbudget` |
-| Team | `8KN6X3FLPZ` |
+| Team | `384ZGKG4GB` |
 | iOS Target | 17.0+ |
 | Swift | 5.9 |
 | Code Sign | Automatic |
@@ -187,8 +158,8 @@ The app syncs bidirectionally with the MC2 Mission Control dashboard:
 
 - No Plaid, no bank linking, no third-party data aggregation
 - Voice processed on-device via Apple's SFSpeechRecognizer
-- All data stored in user's iCloud Drive
-- No backend servers, no analytics, no tracking
+- Convex is the private backend and system of record; clients cache mapped data locally
+- No Plaid-style aggregator, analytics, or tracking
 - Full privacy policy: `PRIVACY.md`
 
 ## License
