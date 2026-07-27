@@ -339,12 +339,37 @@ async function rowsIn(t: Harness, table: "transactions" | "btcBuys" | "btcBillPa
   return await t.run(async (ctx) => await ctx.db.query(table).collect());
 }
 
-async function snapshotDataFiles(t: Harness) {
+/**
+ * Every table the blob path owns, byte-for-byte.
+ *
+ * Deliberately all three, not just `dataFiles`. The migration projects blobs
+ * into rows and must leave the blob world exactly as it found it, because the
+ * shipped iOS, Linux and Android clients still read from it and will keep doing
+ * so until every one of them is cut over. Two of these are easy to get wrong in
+ * a way no other assertion would catch:
+ *
+ *   syncVersions   — a bumped version tells every client the file changed, so
+ *                    all of them re-download the whole thing for nothing.
+ *   todoTombstones — a migration that resurrects a deleted todo, or drops a
+ *                    tombstone, silently un-deletes something the family
+ *                    deleted on purpose.
+ *
+ * The reconciliation of PR #40 and #38 dropped the only test covering these
+ * two along with the API it tested, and the surviving suite narrowed to
+ * `dataFiles` alone. Widened here so all four call sites get the full guard.
+ */
+async function snapshotBlobWorld(t: Harness) {
   return await t.run(async (ctx) => {
-    const docs = await ctx.db.query("dataFiles").collect();
-    return docs
+    const files = (await ctx.db.query("dataFiles").collect())
       .map((doc) => canonicalJson({ name: doc.name, version: doc.version, updatedAt: doc.updatedAt, data: doc.data }))
       .sort();
+    const versions = (await ctx.db.query("syncVersions").collect())
+      .map((doc) => canonicalJson({ name: doc.name, version: doc.version, updatedAt: doc.updatedAt }))
+      .sort();
+    const tombstones = (await ctx.db.query("todoTombstones").collect())
+      .map((doc) => canonicalJson({ id: doc.id, deletedAt: doc.deletedAt }))
+      .sort();
+    return { files, versions, tombstones };
   });
 }
 
@@ -517,7 +542,7 @@ describe("dry run", () => {
   test("reports the full plan and writes nothing", async () => {
     const t = harness();
     await seedAll(t);
-    const before = await snapshotDataFiles(t);
+    const before = await snapshotBlobWorld(t);
 
     const result = await t.mutation(api.migrateFile, { file: "transactions" });
 
@@ -530,7 +555,7 @@ describe("dry run", () => {
     expect(result.verifiedInTransaction).toBe(false);
 
     expect(await rowsIn(t, "transactions")).toHaveLength(0);
-    expect(await snapshotDataFiles(t)).toEqual(before);
+    expect(await snapshotBlobWorld(t)).toEqual(before);
   });
 
   test("apply: false is the default", async () => {
@@ -782,7 +807,7 @@ describe("dataFiles is left alone", () => {
   test("an applied migration changes no blob, version or sync row", async () => {
     const t = harness();
     await seedAll(t);
-    const beforeFiles = await snapshotDataFiles(t);
+    const beforeFiles = await snapshotBlobWorld(t);
     const beforeVersions = await t.run(
       async (ctx) => (await ctx.db.query("syncVersions").collect()).map((doc) => canonicalJson({ n: doc.name, v: doc.version })).sort(),
     );
@@ -791,7 +816,7 @@ describe("dataFiles is left alone", () => {
       await t.mutation(api.migrateFile, { file: source.file, apply: true });
     }
 
-    expect(await snapshotDataFiles(t)).toEqual(beforeFiles);
+    expect(await snapshotBlobWorld(t)).toEqual(beforeFiles);
     expect(
       await t.run(async (ctx) =>
         (await ctx.db.query("syncVersions").collect()).map((doc) => canonicalJson({ n: doc.name, v: doc.version })).sort(),
