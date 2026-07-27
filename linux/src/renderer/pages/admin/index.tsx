@@ -1,9 +1,8 @@
 // Admin / system page slice.
 //
 // These pages describe the app's own state — profiles, sync health, export, and
-// settings. They are deliberately honest about what is not wired yet: this build
-// has no live Convex connection and no write path, and every surface that would
-// mutate real data says so instead of offering a control that quietly no-ops.
+// settings. Row reads are runtime-gated and writeback is absent; every surface
+// that would mutate real data says so instead of offering a control that no-ops.
 
 import { useMemo, useState } from "react"
 
@@ -21,10 +20,11 @@ import {
   visibleTo,
 } from "@vogel-vault/domain/family"
 import { formatMinorUnits } from "@vogel-vault/domain/money"
-import { type Freshness, MC2_FILES, type Transaction, spendAmount } from "@vogel-vault/domain/readModel"
+import { type Freshness, MC2_FILES, type Transaction } from "@vogel-vault/domain/readModel"
 
 import { useAppState } from "../../app/AppState.tsx"
 import type { FixtureEnvelope } from "../../data/fixtures.ts"
+import { spendAmount } from "../../data/transactionAmounts.ts"
 import {
   Badge,
   type BannerTone,
@@ -181,6 +181,7 @@ function VisibilityMatrix() {
 
 function SyncHealthPage() {
   const { data } = useAppState()
+  const readsRows = data.transactions.source.startsWith("Convex row tables")
 
   const slices = [
     { name: "transactions", slice: data.transactions },
@@ -195,9 +196,13 @@ function SyncHealthPage() {
     <>
       <PageHeader title="Sync Health" subtitle="Where every number came from, and when" />
       <StatusBanner
-        tone="warning"
-        title="This build reads sanitized fixtures, not the live deployment"
-        detail="The Convex bridge is approval-gated. Freshness below describes the fixture envelope, not production data."
+        tone={readsRows ? "info" : "warning"}
+        title={readsRows ? "Runtime-gated Convex row reads are active" : "Sanitized fallback data is active"}
+        detail={
+          readsRows
+            ? "Every slice below came through the strict row bridge; credentials remain in the main process."
+            : "Enable and fully configure runtime row reads to replace the sanitized fixture envelope."
+        }
       />
       <Panel title="Slices" flush>
         <DataTable
@@ -306,8 +311,8 @@ export function buildExportDatasets(
           row.card ?? "",
           row.owner,
           usdCell(row.amount),
-          spend > 0n ? "spend" : "income",
-          usdCell(spend > 0n ? -spend : incomeOf(row)),
+          spend > 0n ? "spend" : spend < 0n ? "credit" : "income",
+          usdCell(spend !== 0n ? -spend : incomeOf(row)),
         ]
       }),
     },
@@ -573,8 +578,9 @@ function CSVImportPage() {
 // ── Settings / Admin ────────────────────────────────────────────────────────
 
 function SettingsPage() {
-  const { stateOverride, setStateOverride } = useAppState()
+  const { data, stateOverride, setStateOverride } = useAppState()
   const runtime = typeof window !== "undefined" ? window.vogelVault?.getRuntimeInfo() : undefined
+  const readsRows = data.transactions.source.startsWith("Convex row tables")
 
   return (
     <>
@@ -619,8 +625,10 @@ function SettingsPage() {
       <Panel title="Data boundaries" source="What this client will and will not do">
         <ul className="vv-muted" style={{ margin: 0, paddingLeft: "1.2rem", lineHeight: 1.8 }}>
           <li>The renderer holds no credentials and cannot reach the network directly.</li>
-          <li>Writeback is disabled; MC2 remains the owner of private bulk sync.</li>
-          <li>All figures shown in this build come from sanitized fixtures.</li>
+          <li>Writeback is disabled; this client performs read-only Convex queries.</li>
+          <li>
+            Figures currently come from {readsRows ? "the bounded Convex row API" : "sanitized fallback fixtures"}.
+          </li>
         </ul>
       </Panel>
     </>

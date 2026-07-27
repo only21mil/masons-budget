@@ -678,6 +678,11 @@ for (const malformed of [
 }
 
 require_(
+  validateRowRequest({ kind: "rowCounts" })?.kind === "rowCounts" &&
+    validateRowRequest({ kind: "rowCounts", viewer: "victor" }) === null,
+  "rows: rowCounts is metadata-only and accepts no renderer-selected scope",
+)
+require_(
   validateRowRequest({ kind: "transactions", viewer: "victor" })?.kind === "transactions",
   "rows: accepts a full transaction request with no limit",
 )
@@ -740,6 +745,28 @@ require_(
 require_(
   rowResponses[0]?.path === "tables:listTransactions" && rowResponses[0]?.args?.token === SAMPLE_CREDENTIAL,
   "rows: a fixed path carries the credential only on the wire",
+)
+
+let tokenlessCalls = 0
+const tokenlessRows = createConvexRowRepository({
+  configuration: () => ({
+    generation: 1,
+    settings: resolveRemoteReadSettings({
+      VOGEL_VAULT_REMOTE_READ: "1",
+      VOGEL_VAULT_CONVEX_URL: "https://example.invalid",
+    }),
+  }),
+  post: async () => {
+    tokenlessCalls += 1
+    return { httpStatus: 200, body: "{}" }
+  },
+})
+const tokenlessResult = await tokenlessRows.query({ kind: "rowCounts" })
+require_(
+  tokenlessResult.status === "error" &&
+    tokenlessResult.code === "unauthorized" &&
+    tokenlessCalls === 0,
+  "rows: missing read credentials classify as auth without opening a socket",
 )
 
 await rowRepository.query({ kind: "transactions", viewer: "victor" })

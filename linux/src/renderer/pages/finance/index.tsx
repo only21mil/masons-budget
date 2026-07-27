@@ -21,13 +21,18 @@ import {
   type Transaction,
   budgetMonthsFor,
   budgetTransactionsFor,
-  deriveBudgetSpend,
   monthOf,
   resolveBudgetMonth,
   transactionsInMonth,
 } from "@vogel-vault/domain/readModel"
 
 import { useAppState } from "../../app/AppState.tsx"
+import {
+  deriveBudgetSpend,
+  displaySpendAmount,
+  hasOppositeSpendSign,
+  spendAmount,
+} from "../../data/transactionAmounts.ts"
 import {
   Badge,
   type Column,
@@ -65,24 +70,6 @@ function figure(status: string, render: () => string): string {
   return render()
 }
 
-function spendOf(transaction: Transaction): bigint {
-  if (transaction.category === "Income") return 0n
-  return isAdult(transaction.owner) ? -transaction.amount : transaction.amount
-}
-
-function displaySpendOf(transaction: Transaction): bigint {
-  const spend = spendOf(transaction)
-  return spend < 0n ? -spend : spend
-}
-
-/**
- * A valid credit or a corrupt wrong-sign spend. Legacy rows persist no `kind`,
- * so the renderer surfaces the ambiguity instead of guessing.
- */
-function hasOppositeSpendSign(transaction: Transaction): boolean {
-  return spendOf(transaction) < 0n
-}
-
 function incomeOf(transaction: Transaction): bigint {
   return transaction.category === "Income" && transaction.amount > 0n ? transaction.amount : 0n
 }
@@ -101,7 +88,7 @@ function AmountCell({ transaction }: { transaction: Transaction }) {
     return (
       <span title={oppositeSign ? "Credit/refund, or a stored sign that needs review" : undefined}>
         <span className={oppositeSign ? "vv-positive" : "vv-negative"}>
-          {oppositeSign ? "" : "-"}{formatUsd(displaySpendOf(transaction))}
+          {oppositeSign ? "" : "-"}{formatUsd(displaySpendAmount(transaction))}
         </span>
         {oppositeSign ? <> <Badge tone="warning">credit / check sign</Badge></> : null}
       </span>
@@ -211,7 +198,7 @@ function DashboardPage() {
   const { month } = resolveMonthScope(activeProfile, selectedMonth, data.transactions.value, defaultMonth)
   const budgetMonthTransactions = transactionsInMonth(budgetTransactions, month)
   const activityMonthTransactions = transactionsInMonth(visibleTransactions, month)
-  const spend = sum(budgetMonthTransactions.map(spendOf))
+  const spend = sum(budgetMonthTransactions.map(spendAmount))
   const income = sum(budgetMonthTransactions.map(incomeOf))
   const stackSats = sum(accounts.map((account) => account.sats))
   const stackValue = satsToUsdCents(stackSats, data.btcPriceUsd)

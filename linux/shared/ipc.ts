@@ -138,7 +138,18 @@ export interface VogelVaultBtcSnapshotMeta {
   readonly updatedAtMs: number
 }
 
+export interface VogelVaultRowCounts {
+  readonly transactions: number
+  readonly todos: number
+  readonly btcBuys: number
+  readonly btcBillPays: number
+  readonly btcAccounts: number
+}
+
 export type VogelVaultRowRequest =
+  | {
+      readonly kind: "rowCounts"
+    }
   | {
       readonly kind: "transactions"
       readonly viewer: VogelVaultMember
@@ -182,6 +193,11 @@ export type VogelVaultRowRequest =
     }
 
 export type VogelVaultRowSuccess =
+  | {
+      readonly status: "ok"
+      readonly kind: "rowCounts"
+      readonly value: VogelVaultRowCounts
+    }
   | {
       readonly status: "ok"
       readonly kind: "transactions"

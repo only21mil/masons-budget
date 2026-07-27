@@ -20,6 +20,7 @@ import type {
   VogelVaultBudgetPaycheck,
   VogelVaultMember,
   VogelVaultRowRequest,
+  VogelVaultRowCounts,
   VogelVaultRowResult,
   VogelVaultTodoRow,
   VogelVaultTransactionRow,
@@ -32,6 +33,7 @@ import type {
 
 /** Isolated here so integration can adjust a provisional backend name in one edit. */
 export const ROW_QUERY_PATHS = {
+  rowCounts: "tables:rowCounts",
   transactions: "tables:listTransactions",
   todos: "tables:listTodos",
   btcBuys: "tables:listBtcBuys",
@@ -452,15 +454,41 @@ function positiveLimit(value: unknown, max: number): number {
   return value as number
 }
 
+function rowCounts(value: unknown): VogelVaultRowCounts {
+  const row = exactObject(value, [
+    "transactions",
+    "todos",
+    "btcBuys",
+    "btcBillPays",
+    "btcAccounts",
+  ])
+  return {
+    transactions: nonNegativeInteger(row, "transactions"),
+    todos: nonNegativeInteger(row, "todos"),
+    btcBuys: nonNegativeInteger(row, "btcBuys"),
+    btcBillPays: nonNegativeInteger(row, "btcBillPays"),
+    btcAccounts: nonNegativeInteger(row, "btcAccounts"),
+  }
+}
+
+function nonNegativeInteger(record: Record<string, unknown>, key: string): number {
+  const value = integerValue(record, key)
+  if (value < 0) throw new InvalidValue()
+  return value
+}
+
 /** Rejects prototypes, unknown keys, extra choices, and invalid argument ranges. */
 export function validateRowRequest(value: unknown): VogelVaultRowRequest | null {
   try {
     if (!isRecord(value) || Object.getPrototypeOf(value) !== Object.prototype) throw new InvalidValue()
     const kind = value["kind"]
-    const viewer = member(value, "viewer")
 
     switch (kind) {
+      case "rowCounts":
+        exactObject(value, ["kind"])
+        return { kind }
       case "transactions": {
+        const viewer = member(value, "viewer")
         const row = exactObject(value, ["kind", "viewer"], ["month", "limit"])
         return {
           kind,
@@ -473,6 +501,7 @@ export function validateRowRequest(value: unknown): VogelVaultRowRequest | null 
         }
       }
       case "todos": {
+        const viewer = member(value, "viewer")
         const row = exactObject(value, ["kind", "viewer"], ["done", "limit"])
         const done = Object.hasOwn(row, "done") ? booleanValue(row, "done") : undefined
         return {
@@ -486,6 +515,7 @@ export function validateRowRequest(value: unknown): VogelVaultRowRequest | null 
         }
       }
       case "btcBuys": {
+        const viewer = member(value, "viewer")
         const row = exactObject(value, ["kind", "viewer", "scope"], ["month", "limit"])
         return {
           kind,
@@ -499,10 +529,12 @@ export function validateRowRequest(value: unknown): VogelVaultRowRequest | null 
         }
       }
       case "btcAccounts": {
+        const viewer = member(value, "viewer")
         const row = exactObject(value, ["kind", "viewer", "scope"])
         return { kind, viewer, scope: scopeValue(row["scope"]) }
       }
       case "btcBillPays": {
+        const viewer = member(value, "viewer")
         const row = exactObject(value, ["kind", "viewer", "scope"], ["month", "limit"])
         return {
           kind,
@@ -516,11 +548,13 @@ export function validateRowRequest(value: unknown): VogelVaultRowRequest | null 
         }
       }
       case "budget": {
+        const viewer = member(value, "viewer")
         const row = exactObject(value, ["kind", "viewer", "scope"])
         if (row["scope"] !== "netWorth") throw new InvalidValue()
         return { kind, viewer, scope: "netWorth" }
       }
       case "btcSnapshotMeta": {
+        const viewer = member(value, "viewer")
         const row = exactObject(value, ["kind", "viewer", "scope"])
         return { kind, viewer, scope: scopeValue(row["scope"]) }
       }
@@ -533,31 +567,39 @@ export function validateRowRequest(value: unknown): VogelVaultRowRequest | null 
 }
 
 function requestArgs(request: VogelVaultRowRequest, credential: string | null): Record<string, unknown> {
-  const args: Record<string, unknown> = { viewer: request.viewer }
+  const args: Record<string, unknown> = {}
   switch (request.kind) {
+    case "rowCounts":
+      break
     case "transactions":
+      args.viewer = request.viewer
       if (request.month !== undefined) args.month = request.month
       if (request.limit !== undefined) args.limit = request.limit
       break
     case "btcBillPays":
+      args.viewer = request.viewer
       args.scope = request.scope
       if (request.month !== undefined) args.month = request.month
       if (request.limit !== undefined) args.limit = request.limit
       break
     case "todos":
+      args.viewer = request.viewer
       if (request.done !== undefined) args.done = request.done
       if (request.limit !== undefined) args.limit = request.limit
       break
     case "btcBuys":
+      args.viewer = request.viewer
       args.scope = request.scope
       if (request.month !== undefined) args.month = request.month
       if (request.limit !== undefined) args.limit = request.limit
       break
     case "btcAccounts":
     case "btcSnapshotMeta":
+      args.viewer = request.viewer
       args.scope = request.scope
       break
     case "budget":
+      args.viewer = request.viewer
       args.scope = request.scope
       break
   }
@@ -625,6 +667,8 @@ function parseResponse(
 
   try {
     switch (request.kind) {
+      case "rowCounts":
+        return { status: "ok", kind: request.kind, value: rowCounts(value) }
       case "transactions": {
         const list = parseListEnvelope(
           value,
@@ -732,6 +776,7 @@ export function createConvexRowRepository(options: ConvexRowRepositoryOptions): 
         case "insecure-endpoint":
           return Promise.resolve({ status: "error", code: "unconfigured" })
         case "ready-unauthenticated":
+          return Promise.resolve({ status: "error", code: "unauthorized" })
         case "ready":
           break
       }

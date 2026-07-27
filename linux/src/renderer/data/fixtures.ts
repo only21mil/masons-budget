@@ -1,9 +1,9 @@
 // Sanitized fixture envelope.
 //
-// The client is not wired to the live Convex deployment — that is approval-gated
-// (see the repo AGENTS.md and the plan). Everything here is invented sample data
-// with the same *shape* MC2 emits, so the pages can be built and reviewed
-// without a backend and without any real family financial data on disk.
+// Used when runtime-gated Convex row reads are disabled or when QA selects a
+// forced state. Everything here is invented sample data with the same *shape*
+// the legacy blobs emit, so pages can be reviewed without a backend and without
+// any real family financial data on disk.
 //
 // Two rules for this file:
 //   1. No real balances, account numbers, merchants, or identifiers. Ever.

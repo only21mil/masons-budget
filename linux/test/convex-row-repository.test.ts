@@ -44,6 +44,8 @@ function success(value: unknown) {
 
 describe("row request validation", () => {
   it("accepts only the closed request union", () => {
+    expect(validateRowRequest({ kind: "rowCounts" })).toEqual({ kind: "rowCounts" })
+    expect(validateRowRequest({ kind: "rowCounts", viewer: "victor" })).toBeNull()
     expect(validateRowRequest({ kind: "transactions", viewer: "victor" })).toEqual({
       kind: "transactions",
       viewer: "victor",
@@ -90,6 +92,49 @@ describe("main-process row repository", () => {
       code: "disabled",
     })
     expect(calls).toBe(0)
+  })
+
+  it("classifies a missing read token as auth and opens no socket", async () => {
+    let calls = 0
+    const repository = createConvexRowRepository({
+      configuration: () => ({
+        generation: 1,
+        settings: resolveRemoteReadSettings({
+          VOGEL_VAULT_REMOTE_READ: "1",
+          VOGEL_VAULT_CONVEX_URL: "https://example.invalid",
+        }),
+      }),
+      post: async () => {
+        calls += 1
+        return success({ transactions: 0, todos: 0, btcBuys: 0, btcBillPays: 0, btcAccounts: 0 })
+      },
+    })
+    await expect(repository.query({ kind: "rowCounts" })).resolves.toEqual({
+      status: "error",
+      code: "unauthorized",
+    })
+    expect(calls).toBe(0)
+  })
+
+  it("sends the read token on rowCounts", async () => {
+    let sent: Record<string, unknown> | null = null
+    const repository = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async (_endpoint, body) => {
+        sent = JSON.parse(body) as Record<string, unknown>
+        return success({ transactions: 1, todos: 2, btcBuys: 3, btcBillPays: 4, btcAccounts: 5 })
+      },
+    })
+    await expect(repository.query({ kind: "rowCounts" })).resolves.toEqual({
+      status: "ok",
+      kind: "rowCounts",
+      value: { transactions: 1, todos: 2, btcBuys: 3, btcBillPays: 4, btcAccounts: 5 },
+    })
+    expect(sent).toEqual({
+      path: "tables:rowCounts",
+      args: { token: SECRET },
+      format: "json",
+    })
   })
 
   it("uses a fixed path, carries configuration only on the wire, and decodes bigint", async () => {
@@ -293,7 +338,11 @@ describe("main-process row repository", () => {
       })
       const result = await repository.query(entry.request)
       expect(result).toMatchObject({ status: "ok", rows: [entry.expected], complete: true })
-      expect(requestBody).toMatchObject({ path: entry.path, format: "json" })
+      expect(requestBody).toMatchObject({
+        path: entry.path,
+        args: { token: SECRET },
+        format: "json",
+      })
     }
   })
 

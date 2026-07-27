@@ -2,13 +2,14 @@
 // the money screens are reporting on, and the QA state override that lets every
 // page be inspected in all five states.
 
-import { createContext, useCallback, useContext, useMemo, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 import type { ReactNode } from "react"
 
 import { type FamilyMember, allowedSwitchTargets } from "@vogel-vault/domain/family"
 import type { Freshness, MonthKey } from "@vogel-vault/domain/readModel"
 
 import { type FixtureEnvelope, buildSanitizedFixtureEnvelope, fixtureEnvelopeInState } from "../data/fixtures.ts"
+import { loadConvexRowEnvelope } from "../data/convexRows.ts"
 
 export type StateOverride = Freshness | "normal"
 
@@ -61,6 +62,10 @@ export function AppStateProvider({
   const [locked, setLocked] = useState(false)
   const [stateOverride, setStateOverride] = useState<StateOverride>(initialStateOverride)
   const [selectedMonth, setSelectedMonth] = useState<MonthKey | null>(initialSelectedMonth)
+  const [remoteData, setRemoteData] = useState<{
+    readonly profile: FamilyMember
+    readonly data: FixtureEnvelope
+  } | null>(null)
 
   const switchTargets = useMemo(() => allowedSwitchTargets(activeProfile), [activeProfile])
 
@@ -77,12 +82,40 @@ export function AppStateProvider({
     [],
   )
 
+  useEffect(() => {
+    if (stateOverride !== "normal") return
+    const bridge = window.vogelVault
+    if (!bridge) return
+
+    let current = true
+    setRemoteData(null)
+    void loadConvexRowEnvelope(
+      async (request) => {
+        try {
+          return await bridge.queryConvexRows(request)
+        } catch {
+          return { status: "error", code: "unavailable" }
+        }
+      },
+      activeProfile,
+    ).then((result) => {
+      if (!current) return
+      setRemoteData(result.status === "loaded" ? { profile: activeProfile, data: result.data } : null)
+    })
+
+    return () => {
+      current = false
+    }
+  }, [activeProfile, stateOverride])
+
   const data = useMemo(
     () =>
       stateOverride === "normal"
-        ? buildSanitizedFixtureEnvelope(activeProfile)
+        ? remoteData?.profile === activeProfile
+          ? remoteData.data
+          : buildSanitizedFixtureEnvelope(activeProfile)
         : fixtureEnvelopeInState(activeProfile, stateOverride),
-    [activeProfile, stateOverride],
+    [activeProfile, remoteData, stateOverride],
   )
 
   const value = useMemo(
