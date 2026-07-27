@@ -21,7 +21,9 @@ data class SnapshotWriteResult(
  * Every replacement method is one database transaction: rows are written into a
  * fresh generation, completeness is checked, and only then is that generation
  * activated. Incomplete responses stay inactive, so observers keep receiving the
- * previous complete generation. The newest two complete generations are retained
+ * previous complete generation. An authorization rejection explicitly marks that
+ * generation stale: its rows remain available for recovery, but current-data
+ * observers stop emitting them. The newest two complete generations are retained
  * for last-known-good recovery, plus the latest incomplete attempt for diagnosis.
  */
 @Dao
@@ -35,6 +37,8 @@ abstract class VaultCacheDao {
         WHERE cached.query_key = :queryKey
           AND snapshots.is_active = 1
           AND snapshots.is_complete = 1
+          AND snapshots.authorization = 'authorized'
+          AND snapshots.freshness = 'current'
         ORDER BY cached.date DESC, cached.source_file ASC, cached.transaction_id ASC
         """,
     )
@@ -49,6 +53,8 @@ abstract class VaultCacheDao {
         WHERE cached.query_key = :queryKey
           AND snapshots.is_active = 1
           AND snapshots.is_complete = 1
+          AND snapshots.authorization = 'authorized'
+          AND snapshots.freshness = 'current'
         ORDER BY cached.updated_at_ms DESC, cached.todo_id ASC
         """,
     )
@@ -63,6 +69,8 @@ abstract class VaultCacheDao {
         WHERE cached.query_key = :queryKey
           AND snapshots.is_active = 1
           AND snapshots.is_complete = 1
+          AND snapshots.authorization = 'authorized'
+          AND snapshots.freshness = 'current'
         ORDER BY cached.date DESC, cached.source_file ASC, cached.buy_id ASC
         """,
     )
@@ -77,6 +85,8 @@ abstract class VaultCacheDao {
         WHERE cached.query_key = :queryKey
           AND snapshots.is_active = 1
           AND snapshots.is_complete = 1
+          AND snapshots.authorization = 'authorized'
+          AND snapshots.freshness = 'current'
         ORDER BY cached.owner ASC, cached.account_key ASC
         """,
     )
@@ -85,7 +95,11 @@ abstract class VaultCacheDao {
     @Query(
         """
         SELECT * FROM query_snapshots
-        WHERE query_key = :queryKey AND is_active = 1 AND is_complete = 1
+        WHERE query_key = :queryKey
+          AND is_active = 1
+          AND is_complete = 1
+          AND authorization = 'authorized'
+          AND freshness = 'current'
         LIMIT 1
         """,
     )
@@ -99,6 +113,22 @@ abstract class VaultCacheDao {
         """,
     )
     abstract suspend fun snapshots(queryKey: String): List<QuerySnapshotEntity>
+
+    /**
+     * Records that Convex rejected the read credential for this query.
+     *
+     * The last complete generation remains on disk and active for diagnosis and
+     * recovery, but is no longer current and cannot be emitted by row observers.
+     */
+    @Transaction
+    open suspend fun markUnauthorized(
+        queryKey: String,
+        rejectedAtMs: Long,
+    ): Int {
+        require(queryKey.isNotBlank()) { "queryKey must not be blank" }
+        require(rejectedAtMs >= 0L) { "rejectedAtMs must be non-negative" }
+        return invalidateActiveSnapshotForAuthorization(queryKey, rejectedAtMs)
+    }
 
     @Transaction
     open suspend fun replaceTransactions(
@@ -180,6 +210,9 @@ abstract class VaultCacheDao {
                 completeness = COMPLETENESS_WRITING,
                 isActive = false,
                 activatedAtMs = null,
+                authorization = SnapshotAuthorization.AUTHORIZED,
+                freshness = SnapshotFreshness.CURRENT,
+                invalidatedAtMs = null,
             ),
         )
         return generation
@@ -327,6 +360,22 @@ abstract class VaultCacheDao {
         queryKey: String,
         generation: Long,
         activatedAtMs: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE query_snapshots
+        SET authorization = 'unauthorized',
+            freshness = 'stale_auth',
+            invalidated_at_ms = :rejectedAtMs
+        WHERE query_key = :queryKey
+          AND is_active = 1
+          AND is_complete = 1
+        """,
+    )
+    abstract suspend fun invalidateActiveSnapshotForAuthorization(
+        queryKey: String,
+        rejectedAtMs: Long,
     ): Int
 
     @Query(

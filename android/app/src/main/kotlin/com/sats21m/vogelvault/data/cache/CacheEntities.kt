@@ -4,6 +4,47 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
+import androidx.room.TypeConverter
+import com.sats21m.vogelvault.domain.FamilyMember
+
+enum class SnapshotAuthorization(val key: String) {
+    AUTHORIZED("authorized"),
+    UNAUTHORIZED("unauthorized"),
+}
+
+enum class SnapshotFreshness(val key: String) {
+    CURRENT("current"),
+    STALE_AUTH("stale_auth"),
+}
+
+class CacheTypeConverters {
+    @TypeConverter
+    fun familyMemberToKey(owner: FamilyMember): String = owner.key
+
+    @TypeConverter
+    fun familyMemberFromKey(key: String): FamilyMember =
+        requireNotNull(FamilyMember.fromKeyOrNull(key)) {
+            "Unknown cached owner: $key"
+        }
+
+    @TypeConverter
+    fun snapshotAuthorizationToKey(value: SnapshotAuthorization): String = value.key
+
+    @TypeConverter
+    fun snapshotAuthorizationFromKey(key: String): SnapshotAuthorization =
+        requireNotNull(SnapshotAuthorization.entries.firstOrNull { it.key == key }) {
+            "Unknown snapshot authorization: $key"
+        }
+
+    @TypeConverter
+    fun snapshotFreshnessToKey(value: SnapshotFreshness): String = value.key
+
+    @TypeConverter
+    fun snapshotFreshnessFromKey(key: String): SnapshotFreshness =
+        requireNotNull(SnapshotFreshness.entries.firstOrNull { it.key == key }) {
+            "Unknown snapshot freshness: $key"
+        }
+}
 
 /**
  * One fetch of one logical Convex query.
@@ -34,6 +75,9 @@ data class QuerySnapshotEntity(
     @ColumnInfo(name = "completeness") val completeness: String,
     @ColumnInfo(name = "is_active") val isActive: Boolean,
     @ColumnInfo(name = "activated_at_ms") val activatedAtMs: Long?,
+    val authorization: SnapshotAuthorization,
+    val freshness: SnapshotFreshness,
+    @ColumnInfo(name = "invalidated_at_ms") val invalidatedAtMs: Long?,
 )
 
 @Entity(
@@ -54,7 +98,7 @@ data class CachedTransactionEntity(
     val generation: Long,
     @ColumnInfo(name = "source_file") val sourceFile: String,
     @ColumnInfo(name = "transaction_id") val transactionId: String,
-    val owner: String,
+    val owner: FamilyMember,
     val date: String,
     val month: String,
     val merchant: String,
@@ -82,7 +126,7 @@ data class CachedTodoEntity(
     @ColumnInfo(name = "query_key") val queryKey: String,
     val generation: Long,
     @ColumnInfo(name = "todo_id") val todoId: String,
-    val owner: String,
+    val owner: FamilyMember,
     val title: String,
     val done: Boolean,
     val flagged: Boolean,
@@ -117,7 +161,7 @@ data class CachedBtcBuyEntity(
     val generation: Long,
     @ColumnInfo(name = "source_file") val sourceFile: String,
     @ColumnInfo(name = "buy_id") val buyId: String,
-    val owner: String,
+    val owner: FamilyMember,
     val date: String,
     val month: String,
     val source: String,
@@ -148,7 +192,7 @@ data class CachedBtcBuyEntity(
 data class CachedBtcAccountEntity(
     @ColumnInfo(name = "query_key") val queryKey: String,
     val generation: Long,
-    val owner: String,
+    val owner: FamilyMember,
     @ColumnInfo(name = "account_key") val accountKey: String,
     val label: String,
     val custody: String,
@@ -164,7 +208,7 @@ data class CachedBtcAccountEntity(
 data class TransactionCacheRow(
     val sourceFile: String,
     val transactionId: String,
-    val owner: String,
+    val owner: FamilyMember,
     val date: String,
     val month: String,
     val merchant: String,
@@ -177,7 +221,7 @@ data class TransactionCacheRow(
 
 data class TodoCacheRow(
     val todoId: String,
-    val owner: String,
+    val owner: FamilyMember,
     val title: String,
     val done: Boolean,
     val flagged: Boolean,
@@ -197,7 +241,7 @@ data class TodoCacheRow(
 data class BtcBuyCacheRow(
     val sourceFile: String,
     val buyId: String,
-    val owner: String,
+    val owner: FamilyMember,
     val date: String,
     val month: String,
     val source: String,
@@ -213,7 +257,7 @@ data class BtcBuyCacheRow(
 )
 
 data class BtcAccountCacheRow(
-    val owner: String,
+    val owner: FamilyMember,
     val accountKey: String,
     val label: String,
     val custody: String,
