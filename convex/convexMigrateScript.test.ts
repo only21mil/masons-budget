@@ -16,9 +16,15 @@ import {
   summarise,
 } from "../scripts/convex-migrate.mjs";
 
+const PLAN_FINGERPRINT = `sha256:${"a".repeat(64)}`;
+const DIFFERENT_PLAN_FINGERPRINT = `sha256:${"b".repeat(64)}`;
+
 function verification(overrides: Record<string, unknown> = {}) {
   return {
     ok: true,
+    rowCountMatches: true,
+    moneySumsMatch: true,
+    roundTripRowsMatch: true,
     exactRoundTrip: true,
     problems: [],
     tableRowCount: 2,
@@ -53,9 +59,11 @@ function status(overrides: Record<string, unknown> = {}) {
         blobRowCount: 2,
         blobUnreadable: false,
         migratedRowCount: 0,
+        planFingerprint: `sha256:${"c".repeat(64)}`,
       },
     ],
     skippedDocumentShapedFiles: [],
+    frozenPlanFingerprint: PLAN_FINGERPRINT,
     ...overrides,
   };
 }
@@ -76,6 +84,8 @@ function migrationBatch(overrides: Record<string, unknown> = {}) {
     done: true,
     verifiedInTransaction: false,
     verification: null,
+    planFingerprint: `sha256:${"c".repeat(64)}`,
+    frozenPlanFingerprint: PLAN_FINGERPRINT,
     ...overrides,
   };
 }
@@ -106,9 +116,23 @@ describe("argument matrix", () => {
   test.each([
     { argv: [], expected: { apply: false, prod: false, verifyOnly: false } },
     { argv: ["--prod"], expected: { apply: false, prod: true, verifyOnly: false } },
-    { argv: ["--apply"], expected: { apply: true, prod: false, verifyOnly: false } },
     {
-      argv: ["--apply", "--prod", "--confirm-production"],
+      argv: ["--apply", "--expected-plan-fingerprint", PLAN_FINGERPRINT],
+      expected: {
+        apply: true,
+        prod: false,
+        verifyOnly: false,
+        expectedPlanFingerprint: PLAN_FINGERPRINT,
+      },
+    },
+    {
+      argv: [
+        "--apply",
+        "--expected-plan-fingerprint",
+        PLAN_FINGERPRINT,
+        "--prod",
+        "--confirm-production",
+      ],
       expected: { apply: true, prod: true, confirmProduction: true, verifyOnly: false },
     },
     { argv: ["--verify"], expected: { apply: false, prod: false, verifyOnly: true } },
@@ -119,8 +143,12 @@ describe("argument matrix", () => {
 
   test.each([
     ["--apply", "--prod"],
+    ["--apply"],
+    ["--expected-plan-fingerprint", PLAN_FINGERPRINT],
+    ["--apply", "--expected-plan-fingerprint", "not-a-fingerprint"],
+    ["--apply", "--expected-plan-fingerprint"],
     ["--confirm-production"],
-    ["--verify", "--apply"],
+    ["--verify", "--apply", "--expected-plan-fingerprint", PLAN_FINGERPRINT],
     ["--batch-size", "0"],
     ["--batch-size", "1.5"],
     ["--batch-size", "nope"],
@@ -143,6 +171,15 @@ describe("argument matrix", () => {
       "transactions",
       "todos",
     ]);
+  });
+
+  test("the expected fingerprint accepts both argument spellings", () => {
+    expect(
+      parseArgs([
+        "--apply",
+        `--expected-plan-fingerprint=${PLAN_FINGERPRINT}`,
+      ]).expectedPlanFingerprint,
+    ).toBe(PLAN_FINGERPRINT);
   });
 });
 
@@ -190,6 +227,9 @@ describe("human reporting redaction", () => {
       verification({ problems: ["record secret-id differs by 123.45"] }),
     );
     expect(line).toContain("OK");
+    expect(line).toContain("count OK");
+    expect(line).toContain("sums OK");
+    expect(line).toContain("round-trip rows OK");
     expect(line).toContain("problems=1");
     expect(line).not.toContain("amountCents");
     expect(line).not.toContain("123456.78");
@@ -268,20 +308,37 @@ describe("versioned JSON output", () => {
       version: REPORT_VERSION,
       outcome: "success",
       exitCode: 0,
-      operation: { state: "dry-run" },
+      operation: {
+        state: "dry-run",
+        frozenPlan: {
+          fingerprint: PLAN_FINGERPRINT,
+          fingerprintState: "provided",
+        },
+      },
       execution: { state: "completed", writeSafety: { classification: "none" } },
       files: [{ file: "transactions", state: "dry-run", batches: [{ state: "completed" }] }],
     });
     expect(result.stderr.join("\n")).toContain("Mode: dry-run");
+    expect(result.stderr.join("\n")).toContain(
+      `Plan fingerprint: ${PLAN_FINGERPRINT}`,
+    );
     expect(result.stdout[0]).not.toContain("Target class:");
   });
 
   test("apply binds options to a backend frozen-plan fingerprint", async () => {
-    const result = await invoke(["--apply", "--json", "--batch-size", "50"], (functionName) => {
+    const result = await invoke([
+      "--apply",
+      "--expected-plan-fingerprint",
+      PLAN_FINGERPRINT,
+      "--json",
+      "--batch-size",
+      "50",
+    ], (functionName, args) => {
       if (functionName === "migrate:status") {
-        return status({ frozenPlanFingerprint: "frozen-plan-sha256" });
+        return status();
       }
       if (functionName === "migrate:migrateFile") {
+        expect(args.expectedPlanFingerprint).toBe(PLAN_FINGERPRINT);
         return migrationBatch({
           applied: true,
           verifiedInTransaction: true,
@@ -295,8 +352,9 @@ describe("versioned JSON output", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.document.operation.frozenPlan).toEqual({
-      fingerprint: "frozen-plan-sha256",
+      fingerprint: PLAN_FINGERPRINT,
       fingerprintState: "provided",
+      expectedFingerprintMatched: true,
       applyOptions: {
         state: "apply",
         targetClass: "development",
@@ -365,9 +423,65 @@ describe("versioned JSON output", () => {
 });
 
 describe("failure evidence and exit status", () => {
+  test("a plan change during dry run invalidates the evidence document", async () => {
+    const result = await invoke(["--json"], (functionName) => {
+      if (functionName === "migrate:status") return status();
+      if (functionName === "migrate:migrateFile") {
+        return migrationBatch({
+          frozenPlanFingerprint: DIFFERENT_PLAN_FINGERPRINT,
+        });
+      }
+      throw new Error("unexpected function");
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.document).toMatchObject({
+      outcome: "failure",
+      failure: { code: "PLAN_FINGERPRINT_CHANGED", stage: "plan" },
+      execution: {
+        writeSafety: {
+          classification: "none",
+        },
+      },
+    });
+  });
+
+  test("a changed backend plan is refused before the first apply call", async () => {
+    const calls: string[] = [];
+    const result = await invoke([
+      "--apply",
+      "--expected-plan-fingerprint",
+      DIFFERENT_PLAN_FINGERPRINT,
+      "--json",
+    ], (functionName) => {
+      calls.push(functionName);
+      if (functionName === "migrate:status") return status();
+      throw new Error("apply must not be attempted");
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(calls).toEqual(["migrate:status"]);
+    expect(result.document).toMatchObject({
+      outcome: "failure",
+      failure: { code: "PLAN_FINGERPRINT_MISMATCH", stage: "plan" },
+      execution: {
+        writeSafety: {
+          classification: "none",
+        },
+      },
+    });
+  });
+
   test("preserves completed batch evidence and classifies committed writes", async () => {
     let batch = 0;
-    const result = await invoke(["--apply", "--json", "--batch-size", "1"], (functionName) => {
+    const result = await invoke([
+      "--apply",
+      "--expected-plan-fingerprint",
+      PLAN_FINGERPRINT,
+      "--json",
+      "--batch-size",
+      "1",
+    ], (functionName) => {
       if (functionName === "migrate:status") return status();
       if (functionName === "migrate:migrateFile") {
         batch += 1;
@@ -405,7 +519,12 @@ describe("failure evidence and exit status", () => {
   });
 
   test("classifies an unobservable first apply attempt as possible", async () => {
-    const result = await invoke(["--apply", "--json"], (functionName) => {
+    const result = await invoke([
+      "--apply",
+      "--expected-plan-fingerprint",
+      PLAN_FINGERPRINT,
+      "--json",
+    ], (functionName) => {
       if (functionName === "migrate:status") return status();
       throw new Error("unobservable child failure");
     });
@@ -416,7 +535,12 @@ describe("failure evidence and exit status", () => {
   });
 
   test("verification failure is nonzero and preserves completed file evidence", async () => {
-    const result = await invoke(["--apply", "--json"], (functionName) => {
+    const result = await invoke([
+      "--apply",
+      "--expected-plan-fingerprint",
+      PLAN_FINGERPRINT,
+      "--json",
+    ], (functionName) => {
       if (functionName === "migrate:status") return status();
       if (functionName === "migrate:migrateFile") {
         return migrationBatch({

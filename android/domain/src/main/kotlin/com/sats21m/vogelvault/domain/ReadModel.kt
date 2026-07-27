@@ -68,21 +68,34 @@ data class Transaction(
 ) : Owned
 
 /**
- * Spend magnitude in cents.
+ * Signed contribution to budget spend, in cents.
  *
- * Adult MC2 files sign spending negative and income positive. The child files
- * record spending as a POSITIVE magnitude — so keying off the sign alone renders
- * a child's spending as income. Taking the magnitude of anything that is not an
- * Income row reproduces the Swift behaviour on both shapes.
+ * Adult files sign spend negative; child files store it positive. Reversing the
+ * adult sign puts both valid shapes on the same positive-spend scale while
+ * preserving the opposite sign of a refund/reimbursement so it reduces actual
+ * spend. A corrupt wrong-sign spend has the same stored shape as a credit
+ * because the legacy row has no `kind`; [hasOppositeSpendSign] surfaces that
+ * ambiguity instead of silently hiding it with an absolute value.
  */
 val Transaction.spendAmount: Long
-    get() = if (category == "Income") 0L else kotlin.math.abs(amount)
+    get() = if (category == "Income") 0L else if (owner.isAdult) -amount else amount
+
+/** Stable magnitude for row rendering, including legacy wrong-sign rows. */
+val Transaction.displaySpendAmount: Long
+    get() = kotlin.math.abs(spendAmount)
+
+/**
+ * A valid credit or a corrupt wrong-sign spend; legacy rows cannot distinguish
+ * the two because they do not persist the write-side `kind`.
+ */
+val Transaction.hasOppositeSpendSign: Boolean
+    get() = spendAmount < 0L
 
 val Transaction.incomeAmount: Long
     get() = if (category == "Income" && amount > 0L) amount else 0L
 
 val Transaction.isSpend: Boolean
-    get() = spendAmount > 0L
+    get() = category != "Income" && amount != 0L
 
 // ── Budget ──────────────────────────────────────────────────────────────────
 

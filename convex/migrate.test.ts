@@ -22,15 +22,19 @@ import {
   extractRows,
   formatMinorUnits,
   fnv1a64,
+  jsonNumberToMinorUnits as migrateJsonNumberToMinorUnits,
   parseMinorUnits as migrateParseMinorUnits,
   projectFile,
+  resolveClosedAdultOwner,
   resolveOwner,
+  sha256,
   sourceKeyFor,
 } from "./migrate";
 
 // The domain parser, imported for real rather than re-implemented, so the
 // copy inside convex/migrate.ts is checked against its source of truth.
 import {
+  jsonNumberToMinorUnits as domainJsonNumberToMinorUnits,
   parseCents as domainParseCents,
   parseMinorUnits as domainParseMinorUnits,
 } from "../shared/domain/src/money";
@@ -52,8 +56,11 @@ interface Verification {
   ok: boolean;
   blobRowCount: number;
   tableRowCount: number;
+  rowCountMatches: boolean;
   blobSums: Record<string, string>;
   tableSums: Record<string, string>;
+  moneySumsMatch: boolean;
+  roundTripRowsMatch: boolean;
   exactRoundTrip: boolean;
   firstMismatchIndex: number | null;
   problems: string[];
@@ -74,6 +81,8 @@ interface MigrateResult {
   done: boolean;
   verifiedInTransaction: boolean;
   verification: Verification | null;
+  planFingerprint: string;
+  frozenPlanFingerprint: string;
 }
 
 const api = {
@@ -89,14 +98,22 @@ const api = {
         blobRowCount: number | null;
         blobUnreadable: boolean;
         migratedRowCount: number;
+        planFingerprint: string;
       }[];
       skippedDocumentShapedFiles: string[];
+      frozenPlanFingerprint: string;
     }
   >,
   migrateFile: "migrate:migrateFile" as unknown as FunctionReference<
     "mutation",
     "internal",
-    { file: string; apply?: boolean; cursor?: number; batchSize?: number },
+    {
+      file: string;
+      apply?: boolean;
+      expectedPlanFingerprint?: string;
+      cursor?: number;
+      batchSize?: number;
+    },
     MigrateResult
   >,
   verifyFile: "migrate:verifyFile" as unknown as FunctionReference<
@@ -106,6 +123,27 @@ const api = {
     Verification
   >,
 };
+
+/**
+ * Review the current backend plan immediately before an apply in tests that
+ * exercise another property. Fingerprint-specific tests below deliberately
+ * retain and reuse an older dry-run value instead.
+ */
+async function applyFile(
+  t: Harness,
+  args: { file: string; cursor?: number; batchSize?: number },
+): Promise<MigrateResult> {
+  const plan = await t.mutation(api.migrateFile, {
+    file: args.file,
+    cursor: args.cursor,
+    batchSize: args.batchSize,
+  });
+  return await t.mutation(api.migrateFile, {
+    ...args,
+    apply: true,
+    expectedPlanFingerprint: plan.frozenPlanFingerprint,
+  });
+}
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -319,6 +357,51 @@ const BTC_BUYS = makeBtcBuys();
 const TODOS = makeTodos();
 const MASON_TRANSACTIONS = makeMasonTransactions();
 const BILL_PAYS = makeBillPays();
+const INCOME = Array.from({ length: 16 }, (_, index) => ({
+  id: `income-${String(index + 1).padStart(2, "0")}`,
+  date: `2026-${String(1 + (index % 7)).padStart(2, "0")}-${String(1 + index).padStart(2, "0")}`,
+  amount:
+    index === 0
+      ? 1234.56
+      : index === 1
+        ? "987.65"
+        : Number((800 + index * 17.25).toFixed(2)),
+  source: index % 2 === 0 ? "payroll" : "refund",
+  logged_by: index % 3 === 0 ? "victor" : "archimedes",
+  note: index % 4 === 0 ? "production-shaped income fixture" : null,
+  archimedes_request_id: `income-arch-${index}`,
+}));
+
+const BALANCES = {
+  cashapp: 0,
+  coldcard: 0.12345678,
+  river: 0.87654321,
+  strike: 0,
+  zeus: 0,
+  total: 0.99999999,
+  cashapp_fiat: 0,
+  coldcard_fiat: 12345.67,
+  river_fiat: 87654.32,
+  strike_fiat: 0,
+  zeus_fiat: 0,
+  total_fiat: 99999.99,
+  lastRefreshed: "2026-07-26T23:59:59Z",
+  btc_sync: {
+    anchor_balances: {
+      cashapp: 0,
+      coldcard: 0.12345677,
+      river: 0.8765432,
+      strike: 0,
+      zeus: 0,
+      total: 0.99999997,
+    },
+    anchor_date: "2026-07-20",
+    anchor_source: "reconciliation-ledger",
+    notes: ["coldcard verified", "river event replayed"],
+    reconciled_at: "2026-07-26T23:50:00Z",
+    reconciled_from_events: true,
+  },
+};
 
 async function seedBlob(t: Harness, name: string, data: unknown, version = 7) {
   await t.run(async (ctx) => {
@@ -333,9 +416,26 @@ async function seedAll(t: Harness) {
   await seedBlob(t, "bitcoin-buys", BTC_BUYS);
   await seedBlob(t, "bitcoin-bill-pays", { bill_pays: BILL_PAYS, generated_at: "2026-07-18" });
   await seedBlob(t, "todos", { todos: TODOS });
+  await seedBlob(t, "income", INCOME);
+  await seedBlob(t, "balances", BALANCES);
+  await t.run(async (ctx) => {
+    await ctx.db.insert("todoTombstones", {
+      id: "deleted-before-migration",
+      deletedAt: 1_699_999_999_999,
+    });
+  });
 }
 
-async function rowsIn(t: Harness, table: "transactions" | "btcBuys" | "btcBillPays" | "todos") {
+async function rowsIn(
+  t: Harness,
+  table:
+    | "transactions"
+    | "btcBuys"
+    | "btcBillPays"
+    | "todos"
+    | "income"
+    | "balanceDocuments",
+) {
   return await t.run(async (ctx) => await ctx.db.query(table).collect());
 }
 
@@ -380,6 +480,7 @@ describe("fixtures match the real export", () => {
     expect(TRANSACTIONS).toHaveLength(905);
     expect(BTC_BUYS).toHaveLength(31);
     expect(TODOS).toHaveLength(25);
+    expect(INCOME).toHaveLength(16);
   });
 });
 
@@ -414,6 +515,25 @@ describe("money survives exactly", () => {
     }
   });
 
+  test("the Convex JSON-number converter mirrors the domain safety boundary", () => {
+    const cases: [number, number][] = [
+      [0.1 + 0.2, 2],
+      [1.005, 2],
+      [-1.005, 2],
+      [5e-9, 8],
+      [21_000_000.99999999, 8],
+    ];
+    for (const [value, scale] of cases) {
+      expect(migrateJsonNumberToMinorUnits(value, scale)).toBe(
+        domainJsonNumberToMinorUnits(value, scale),
+      );
+    }
+
+    expect(() =>
+      migrateJsonNumberToMinorUnits(90_071_992.54740992, 8),
+    ).toThrow(RangeError);
+  });
+
   test("the float trap does not reach the ledger", () => {
     // 0.1 + 0.2 is 0.30000000000000004. Multiplying by 100 gives
     // 30.000000000000004; the lexical parse gives exactly 30 cents.
@@ -436,6 +556,8 @@ describe("money survives exactly", () => {
       "bitcoin-buys": BTC_BUYS,
       "bitcoin-bill-pays": { bill_pays: BILL_PAYS },
       todos: { todos: TODOS },
+      income: INCOME,
+      balances: BALANCES,
     };
     for (const source of MIGRATION_SOURCES) {
       const data = blobs[source.file];
@@ -443,10 +565,20 @@ describe("money survives exactly", () => {
       const projected = projectFile(source, data);
       expect(projected).not.toBeNull();
       const bigintColumns = new Set<string>();
-      for (const doc of projected!.docs) {
-        for (const [key, value] of Object.entries(doc)) {
-          if (typeof value === "bigint") bigintColumns.add(key);
+      const collectBigints = (value: unknown, path = "") => {
+        if (typeof value === "bigint") {
+          bigintColumns.add(path);
+          return;
         }
+        if (typeof value !== "object" || value === null || Array.isArray(value)) {
+          return;
+        }
+        for (const [key, nested] of Object.entries(value)) {
+          collectBigints(nested, path === "" ? key : `${path}.${key}`);
+        }
+      };
+      for (const doc of projected!.docs) {
+        collectBigints(doc);
       }
       expect([...bigintColumns].sort()).toEqual([...MONEY_COLUMNS[source.kind]].sort());
     }
@@ -492,7 +624,7 @@ describe("source keys are deterministic and total", () => {
 
 // ─── Owner ───────────────────────────────────────────────────────────────────
 
-describe("owner resolution matches the domain normalizers", () => {
+describe("owner resolution is closed", () => {
   test("absent owner takes the file's fallback", () => {
     expect(resolveOwner(undefined, "mason")).toBe("mason");
     expect(resolveOwner(undefined, "victor")).toBe("victor");
@@ -503,10 +635,8 @@ describe("owner resolution matches the domain normalizers", () => {
     expect(resolveOwner("maddox", "victor")).toBe("maddox");
   });
 
-  test("an unrecognised owner falls back to the source file owner", () => {
-    // E1 is authoritative: a typo in a child file must not promote the row to
-    // the adult household.
-    expect(resolveOwner("nobody", "mason")).toBe("mason");
+  test("an unrecognised owner is refused rather than coerced", () => {
+    expect(() => resolveOwner("nobody", "mason")).toThrow(/closed union/);
   });
 
   test("Mason's rows land on mason and adult rows on victor", async () => {
@@ -514,6 +644,27 @@ describe("owner resolution matches the domain normalizers", () => {
     const adult = MIGRATION_SOURCES.find((source) => source.file === "transactions")!;
     expect(projectFile(mason, MASON_TRANSACTIONS)!.docs.every((doc) => doc.owner === "mason")).toBe(true);
     expect(projectFile(adult, TRANSACTIONS)!.docs.every((doc) => doc.owner === "victor")).toBe(true);
+  });
+
+  test("new adult sources use the closed union and refuse disagreement", () => {
+    expect(resolveClosedAdultOwner(undefined, "victor", "income")).toBe("victor");
+    expect(resolveClosedAdultOwner("rachel", "victor", "income")).toBe("rachel");
+    expect(() =>
+      resolveClosedAdultOwner("Victor", "victor", "income"),
+    ).toThrow(/not a known family member/);
+    expect(() =>
+      resolveClosedAdultOwner("mason", "victor", "income"),
+    ).toThrow(/adult-household source/);
+
+    const incomeSource = MIGRATION_SOURCES.find(
+      (source) => source.file === "income",
+    )!;
+    expect(() =>
+      projectFile(incomeSource, [{ ...INCOME[0], owner: "nobody" }]),
+    ).toThrow(/not a known family member/);
+    expect(() =>
+      projectFile(incomeSource, [{ ...INCOME[0], owner: "mason" }]),
+    ).toThrow(/adult-household source/);
   });
 });
 
@@ -569,23 +720,188 @@ describe("dry run", () => {
     const t = harness();
     await seedAll(t);
     const planned = await t.mutation(api.migrateFile, { file: "transactions", apply: false });
-    const applied = await t.mutation(api.migrateFile, { file: "transactions", apply: true });
+    const applied = await t.mutation(api.migrateFile, {
+      file: "transactions",
+      apply: true,
+      expectedPlanFingerprint: planned.frozenPlanFingerprint,
+    });
     expect(applied.inserted).toBe(planned.inserted);
     expect(applied.updated).toBe(planned.updated);
     expect(applied.unchanged).toBe(planned.unchanged);
+    expect(applied.frozenPlanFingerprint).toBe(planned.frozenPlanFingerprint);
+  });
+});
+
+// ─── Frozen plan binding ─────────────────────────────────────────────────────
+
+describe("frozen plan fingerprint", () => {
+  test.each([
+    [
+      "abc",
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    ],
+    [
+      "Café Grumpy",
+      "2f8153f064a983f7bd75f2f0bfb690bf5c7a5e19cd3ee16961984f22ce2f50ef",
+    ],
+  ])("uses standard SHA-256 bytes for %s", (input, expected) => {
+    expect(sha256(input)).toBe(expected);
+  });
+
+  test("is stable across runs over identical input", async () => {
+    const first = harness();
+    const second = harness();
+    await seedAll(first);
+    await seedAll(second);
+
+    const firstPlan = await first.mutation(api.migrateFile, {
+      file: "transactions",
+    });
+    const firstAgain = await first.mutation(api.migrateFile, {
+      file: "transactions",
+    });
+    const secondPlan = await second.mutation(api.migrateFile, {
+      file: "transactions",
+    });
+
+    expect(firstPlan.frozenPlanFingerprint).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(firstPlan.planFingerprint).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(firstAgain.frozenPlanFingerprint).toBe(
+      firstPlan.frozenPlanFingerprint,
+    );
+    expect(firstAgain.planFingerprint).toBe(firstPlan.planFingerprint);
+    expect(secondPlan.frozenPlanFingerprint).toBe(
+      firstPlan.frozenPlanFingerprint,
+    );
+    expect(secondPlan.planFingerprint).toBe(firstPlan.planFingerprint);
+  });
+
+  test("a matching reviewed fingerprint applies", async () => {
+    const t = harness();
+    await seedAll(t);
+    const dryRun = await t.mutation(api.migrateFile, {
+      file: "transactions",
+    });
+
+    const applied = await t.mutation(api.migrateFile, {
+      file: "transactions",
+      apply: true,
+      expectedPlanFingerprint: dryRun.frozenPlanFingerprint,
+    });
+
+    expect(applied.inserted).toBe(905);
+    expect(applied.frozenPlanFingerprint).toBe(
+      dryRun.frozenPlanFingerprint,
+    );
+    expect(await rowsIn(t, "transactions")).toHaveLength(905);
+  });
+
+  test("a mutated blob between dry run and apply is refused before any write", async () => {
+    const t = harness();
+    await seedAll(t);
+    const dryRun = await t.mutation(api.migrateFile, {
+      file: "transactions",
+    });
+
+    await t.run(async (ctx) => {
+      const blob = await ctx.db
+        .query("dataFiles")
+        .withIndex("by_name", (q) => q.eq("name", "transactions"))
+        .first();
+      const changed = [...(blob!.data as Record<string, unknown>[])];
+      changed[0] = { ...changed[0]!, amount: "-999.99" };
+      await ctx.db.patch(blob!._id, { data: changed, version: 8 });
+    });
+
+    await expect(
+      t.mutation(api.migrateFile, {
+        file: "transactions",
+        apply: true,
+        expectedPlanFingerprint: dryRun.frozenPlanFingerprint,
+      }),
+    ).rejects.toThrow(/fingerprint mismatch/i);
+    expect(await rowsIn(t, "transactions")).toHaveLength(0);
+  });
+
+  test("apply without a reviewed fingerprint is refused", async () => {
+    const t = harness();
+    await seedAll(t);
+    await expect(
+      t.mutation(api.migrateFile, {
+        file: "transactions",
+        apply: true,
+      }),
+    ).rejects.toThrow(/without expectedPlanFingerprint/);
+    expect(await rowsIn(t, "transactions")).toHaveLength(0);
   });
 });
 
 // ─── The migration ───────────────────────────────────────────────────────────
 
 describe("migrating every file", () => {
-  test("905 transactions, 31 buys, 25 todos land and verify in-transaction", async () => {
+  test("the full production-shaped path dry-runs, applies, and preserves every blob byte", async () => {
+    const t = harness();
+    await seedAll(t);
+    const blobBytesBefore = canonicalJson(await snapshotBlobWorld(t));
+
+    const dryRuns: MigrateResult[] = [];
+    for (const source of MIGRATION_SOURCES) {
+      dryRuns.push(await t.mutation(api.migrateFile, { file: source.file }));
+    }
+
+    expect(dryRuns.find((result) => result.file === "transactions")).toMatchObject({
+      applied: false,
+      blobRowCount: 905,
+      inserted: 905,
+      updated: 0,
+      unchanged: 0,
+      verification: null,
+    });
+    expect(dryRuns.find((result) => result.file === "bitcoin-buys")).toMatchObject({
+      blobRowCount: 31,
+      inserted: 31,
+    });
+    expect(dryRuns.find((result) => result.file === "todos")).toMatchObject({
+      blobRowCount: 25,
+      inserted: 25,
+    });
+    expect(await rowsIn(t, "transactions")).toHaveLength(0);
+    expect(await rowsIn(t, "btcBuys")).toHaveLength(0);
+    expect(await rowsIn(t, "btcBillPays")).toHaveLength(0);
+    expect(await rowsIn(t, "todos")).toHaveLength(0);
+    expect(canonicalJson(await snapshotBlobWorld(t))).toBe(blobBytesBefore);
+
+    const applied: MigrateResult[] = [];
+    for (const source of MIGRATION_SOURCES) {
+      applied.push(await applyFile(t, { file: source.file }));
+    }
+
+    for (const result of applied) {
+      if (!result.blobPresent) continue;
+      expect(result.verifiedInTransaction).toBe(true);
+      expect(result.verification).toMatchObject({
+        ok: true,
+        rowCountMatches: true,
+        moneySumsMatch: true,
+        roundTripRowsMatch: true,
+        exactRoundTrip: true,
+        problems: [],
+      });
+    }
+    expect(await rowsIn(t, "transactions")).toHaveLength(908);
+    expect(await rowsIn(t, "btcBuys")).toHaveLength(31);
+    expect(await rowsIn(t, "btcBillPays")).toHaveLength(2);
+    expect(await rowsIn(t, "todos")).toHaveLength(25);
+    expect(canonicalJson(await snapshotBlobWorld(t))).toBe(blobBytesBefore);
+  });
+
+  test("every declared source lands and verifies in-transaction", async () => {
     const t = harness();
     await seedAll(t);
 
     const results: MigrateResult[] = [];
     for (const source of MIGRATION_SOURCES) {
-      results.push(await t.mutation(api.migrateFile, { file: source.file, apply: true }));
+      results.push(await applyFile(t, { file: source.file }));
     }
 
     const byFile = new Map(results.map((result) => [result.file, result]));
@@ -595,6 +911,8 @@ describe("migrating every file", () => {
     expect(byFile.get("todos")!.inserted).toBe(25);
     expect(byFile.get("mason-transactions")!.inserted).toBe(3);
     expect(byFile.get("bitcoin-bill-pays")!.inserted).toBe(2);
+    expect(byFile.get("income")!.inserted).toBe(16);
+    expect(byFile.get("balances")!.inserted).toBe(1);
     // No blob for these two; skipped, not invented.
     expect(byFile.get("maddox-transactions")!.blobPresent).toBe(false);
     expect(byFile.get("mason-bitcoin-buys")!.blobPresent).toBe(false);
@@ -611,12 +929,14 @@ describe("migrating every file", () => {
     expect(await rowsIn(t, "btcBuys")).toHaveLength(31);
     expect(await rowsIn(t, "todos")).toHaveLength(25);
     expect(await rowsIn(t, "btcBillPays")).toHaveLength(2);
+    expect(await rowsIn(t, "income")).toHaveLength(16);
+    expect(await rowsIn(t, "balanceDocuments")).toHaveLength(1);
   });
 
   test("the summed amounts equal the blob, computed independently", async () => {
     const t = harness();
     await seedAll(t);
-    await t.mutation(api.migrateFile, { file: "transactions", apply: true });
+    await applyFile(t, { file: "transactions" });
 
     // Independent expectation: the domain parser over the raw fixture, not the
     // migration's own sum.
@@ -638,7 +958,7 @@ describe("migrating every file", () => {
   test("BTC sats and USD both survive, and amount_sats beats amount_btc", async () => {
     const t = harness();
     await seedAll(t);
-    await t.mutation(api.migrateFile, { file: "bitcoin-buys", apply: true });
+    await applyFile(t, { file: "bitcoin-buys" });
 
     const rows = await rowsIn(t, "btcBuys");
     let sats = 0n;
@@ -652,11 +972,87 @@ describe("migrating every file", () => {
     expect(Object.keys(verification.tableSums).sort()).toEqual(["priceUsdCents", "sats", "usdCents"]);
   });
 
+  test("income and balances preserve exact cents, sats, and reconciliation provenance", async () => {
+    const t = harness();
+    await seedAll(t);
+    await applyFile(t, { file: "income" });
+    await applyFile(t, { file: "balances" });
+
+    const incomeRows = await rowsIn(t, "income");
+    const expectedIncome = INCOME.reduce(
+      (sum, row) => sum + domainParseCents(row.amount),
+      0n,
+    );
+    expect(incomeRows.reduce((sum, row) => sum + row.amountCents, 0n)).toBe(
+      expectedIncome,
+    );
+    expect(new Set(incomeRows.map((row) => row.sourceKey)).size).toBe(16);
+    expect(incomeRows.every((row) => row.owner === "victor")).toBe(true);
+    expect(incomeRows.find((row) => row.incomeId === "income-01")).toMatchObject({
+      month: "2026-01",
+      amountCents: 123456n,
+      source: "payroll",
+      loggedBy: "victor",
+      archimedesRequestId: "income-arch-0",
+    });
+
+    const [balance] = await rowsIn(t, "balanceDocuments");
+    expect(balance).toMatchObject({
+      owner: "victor",
+      coldcardSats: 12_345_678n,
+      riverSats: 87_654_321n,
+      totalSats: 99_999_999n,
+      coldcardFiatCents: 1_234_567n,
+      totalFiatCents: 9_999_999n,
+      btcSync: {
+        anchorBalancesSats: {
+          coldcardSats: 12_345_677n,
+          riverSats: 87_654_320n,
+          totalSats: 99_999_997n,
+        },
+        anchorDate: "2026-07-20",
+        anchorSource: "reconciliation-ledger",
+        notes: ["coldcard verified", "river event replayed"],
+        reconciledAt: "2026-07-26T23:50:00Z",
+        reconciledFromEvents: true,
+      },
+    });
+
+    const incomeVerification = await t.query(api.verifyFile, { file: "income" });
+    expect(incomeVerification).toMatchObject({
+      ok: true,
+      exactRoundTrip: true,
+      blobRowCount: 16,
+      tableRowCount: 16,
+    });
+    expect(incomeVerification.tableSums.amountCents).toBe(
+      formatMinorUnits(expectedIncome, 2),
+    );
+
+    const balanceVerification = await t.query(api.verifyFile, {
+      file: "balances",
+    });
+    expect(balanceVerification).toMatchObject({
+      ok: true,
+      exactRoundTrip: true,
+      blobRowCount: 1,
+      tableRowCount: 1,
+    });
+    expect(balanceVerification.tableSums.coldcardSats).toBe("0.12345678");
+    expect(balanceVerification.tableSums.totalFiatCents).toBe("99999.99");
+    expect(
+      balanceVerification.tableSums[
+        "btcSync.anchorBalancesSats.coldcardSats"
+      ],
+    ).toBe("0.12345677");
+    expect(canonicalJson(balance!.raw)).toBe(canonicalJson(BALANCES));
+  });
+
   test("child files keep their positive spend and adult files keep their negative", async () => {
     const t = harness();
     await seedAll(t);
-    await t.mutation(api.migrateFile, { file: "mason-transactions", apply: true });
-    await t.mutation(api.migrateFile, { file: "transactions", apply: true });
+    await applyFile(t, { file: "mason-transactions" });
+    await applyFile(t, { file: "transactions" });
 
     const rows = await rowsIn(t, "transactions");
     const mason = rows.filter((row) => row.sourceFile === "mason-transactions");
@@ -672,7 +1068,7 @@ describe("migrating every file", () => {
   test("fields no domain type mentions survive in migration provenance", async () => {
     const t = harness();
     await seedAll(t);
-    await t.mutation(api.migrateFile, { file: "bitcoin-buys", apply: true });
+    await applyFile(t, { file: "bitcoin-buys" });
     const rows = await rowsIn(t, "btcBuys");
     for (const row of rows) {
       expect(
@@ -685,7 +1081,7 @@ describe("migrating every file", () => {
   test("both todo dialects normalise and the wrapper is unwrapped", async () => {
     const t = harness();
     await seedAll(t);
-    await t.mutation(api.migrateFile, { file: "todos", apply: true });
+    await applyFile(t, { file: "todos" });
     const rows = await rowsIn(t, "todos");
     expect(rows).toHaveLength(25);
     // Legacy rows use text/completed/flag/due_date.
@@ -702,18 +1098,43 @@ describe("migrating every file", () => {
 // ─── Idempotency ─────────────────────────────────────────────────────────────
 
 describe("running it twice", () => {
+  test("income rows and the balances document insert zero rows on a second run", async () => {
+    const t = harness();
+    await seedAll(t);
+
+    const incomeFirst = await applyFile(t, { file: "income" });
+    const incomeSecond = await applyFile(t, { file: "income" });
+    const balancesFirst = await applyFile(t, { file: "balances" });
+    const balancesSecond = await applyFile(t, { file: "balances" });
+
+    expect(incomeFirst.inserted).toBe(16);
+    expect(incomeSecond).toMatchObject({
+      inserted: 0,
+      updated: 0,
+      unchanged: 16,
+    });
+    expect(balancesFirst.inserted).toBe(1);
+    expect(balancesSecond).toMatchObject({
+      inserted: 0,
+      updated: 0,
+      unchanged: 1,
+    });
+  });
+
   test("does not duplicate 905 transactions", async () => {
     const t = harness();
     await seedAll(t);
 
-    const first = await t.mutation(api.migrateFile, { file: "transactions", apply: true });
-    const second = await t.mutation(api.migrateFile, { file: "transactions", apply: true });
-    const third = await t.mutation(api.migrateFile, { file: "transactions", apply: true });
+    const first = await applyFile(t, { file: "transactions" });
+    const second = await applyFile(t, { file: "transactions" });
+    const third = await applyFile(t, { file: "transactions" });
 
     expect(first.inserted).toBe(905);
     expect(second.inserted).toBe(0);
     expect(second.updated).toBe(0);
     expect(second.unchanged).toBe(905);
+    expect(third.inserted).toBe(0);
+    expect(third.updated).toBe(0);
     expect(third.unchanged).toBe(905);
     expect(await rowsIn(t, "transactions")).toHaveLength(905);
   });
@@ -721,9 +1142,9 @@ describe("running it twice", () => {
   test("a re-run does not rewrite updatedAtMs", async () => {
     const t = harness();
     await seedAll(t);
-    await t.mutation(api.migrateFile, { file: "bitcoin-buys", apply: true });
+    await applyFile(t, { file: "bitcoin-buys" });
     const before = (await rowsIn(t, "btcBuys")).map((row) => row.updatedAtMs);
-    await t.mutation(api.migrateFile, { file: "bitcoin-buys", apply: true });
+    await applyFile(t, { file: "bitcoin-buys" });
     const after = (await rowsIn(t, "btcBuys")).map((row) => row.updatedAtMs);
     expect(after).toEqual(before);
   });
@@ -736,9 +1157,8 @@ describe("running it twice", () => {
     let inserted = 0;
     let batches = 0;
     while (cursor !== null) {
-      const result: MigrateResult = await t.mutation(api.migrateFile, {
+      const result = await applyFile(t, {
         file: "transactions",
-        apply: true,
         cursor,
         batchSize: 100,
       });
@@ -755,7 +1175,7 @@ describe("running it twice", () => {
     expect(await rowsIn(t, "transactions")).toHaveLength(905);
     expect((await t.query(api.verifyFile, { file: "transactions" })).ok).toBe(true);
 
-    const rerun = await t.mutation(api.migrateFile, { file: "transactions", apply: true });
+    const rerun = await applyFile(t, { file: "transactions" });
     expect(rerun.inserted).toBe(0);
     expect(rerun.unchanged).toBe(905);
   });
@@ -764,10 +1184,14 @@ describe("running it twice", () => {
     const t = harness();
     await seedAll(t);
     // Simulate a run that died after the first 300 rows.
-    await t.mutation(api.migrateFile, { file: "transactions", apply: true, cursor: 0, batchSize: 300 });
+    await applyFile(t, {
+      file: "transactions",
+      cursor: 0,
+      batchSize: 300,
+    });
     expect(await rowsIn(t, "transactions")).toHaveLength(300);
 
-    const repair = await t.mutation(api.migrateFile, { file: "transactions", apply: true });
+    const repair = await applyFile(t, { file: "transactions" });
     expect(repair.inserted).toBe(605);
     expect(repair.unchanged).toBe(300);
     expect(await rowsIn(t, "transactions")).toHaveLength(905);
@@ -777,7 +1201,7 @@ describe("running it twice", () => {
   test("an edited blob updates the row in place instead of adding one", async () => {
     const t = harness();
     await seedAll(t);
-    await t.mutation(api.migrateFile, { file: "mason-transactions", apply: true });
+    await applyFile(t, { file: "mason-transactions" });
 
     const edited = MASON_TRANSACTIONS.map((row) =>
       row.id === "m003" ? { ...row, amount: 4.5 } : row,
@@ -790,7 +1214,7 @@ describe("running it twice", () => {
       await ctx.db.patch(doc!._id, { data: edited, version: 8 });
     });
 
-    const result = await t.mutation(api.migrateFile, { file: "mason-transactions", apply: true });
+    const result = await applyFile(t, { file: "mason-transactions" });
     expect(result.inserted).toBe(0);
     expect(result.updated).toBe(1);
     expect(result.unchanged).toBe(2);
@@ -813,7 +1237,7 @@ describe("dataFiles is left alone", () => {
     );
 
     for (const source of MIGRATION_SOURCES) {
-      await t.mutation(api.migrateFile, { file: source.file, apply: true });
+      await applyFile(t, { file: source.file });
     }
 
     expect(await snapshotBlobWorld(t)).toEqual(beforeFiles);
@@ -831,25 +1255,33 @@ describe("verification is a real check, not a formality", () => {
   async function migrated() {
     const t = harness();
     await seedAll(t);
-    await t.mutation(api.migrateFile, { file: "transactions", apply: true });
+    await applyFile(t, { file: "transactions" });
     return t;
   }
 
-  test("a dropped row fails the count check", async () => {
-    const t = await migrated();
+  test("a missing final non-money row is visible to the count check alone", async () => {
+    const t = harness();
+    await seedAll(t);
+    await applyFile(t, { file: "todos" });
     await t.run(async (ctx) => {
-      const rows = await ctx.db.query("transactions").collect();
-      await ctx.db.delete(rows[17]!._id);
+      const rows = await ctx.db.query("todos").collect();
+      const final = rows.find((row) => row.migrationSourceIndex === 24)!;
+      await ctx.db.delete(final._id);
     });
 
-    const verification = await t.query(api.verifyFile, { file: "transactions" });
+    const verification = await t.query(api.verifyFile, { file: "todos" });
     expect(verification.ok).toBe(false);
-    expect(verification.tableRowCount).toBe(904);
-    expect(verification.blobRowCount).toBe(905);
+    expect(verification.tableRowCount).toBe(24);
+    expect(verification.blobRowCount).toBe(25);
+    expect(verification.rowCountMatches).toBe(false);
+    expect(verification.moneySumsMatch).toBe(true);
+    expect(verification.roundTripRowsMatch).toBe(true);
+    expect(verification.exactRoundTrip).toBe(false);
     expect(verification.problems.join(" ")).toContain("row count");
+    expect(verification.problems).toHaveLength(1);
   });
 
-  test("a single altered cent fails the sum check", async () => {
+  test("a single altered cent is visible to the money-sum check alone", async () => {
     const t = await migrated();
     await t.run(async (ctx) => {
       const rows = await ctx.db.query("transactions").collect();
@@ -858,10 +1290,15 @@ describe("verification is a real check, not a formality", () => {
 
     const verification = await t.query(api.verifyFile, { file: "transactions" });
     expect(verification.ok).toBe(false);
+    expect(verification.rowCountMatches).toBe(true);
+    expect(verification.moneySumsMatch).toBe(false);
+    expect(verification.roundTripRowsMatch).toBe(true);
+    expect(verification.exactRoundTrip).toBe(true);
     expect(verification.problems.join(" ")).toContain("summed amountCents");
+    expect(verification.problems).toHaveLength(1);
   });
 
-  test("a corrupted row fails the round-trip check even when counts and sums pass", async () => {
+  test("corrupted provenance is visible to the round-trip check alone", async () => {
     const t = await migrated();
     await t.run(async (ctx) => {
       const rows = await ctx.db.query("transactions").collect();
@@ -878,10 +1315,14 @@ describe("verification is a real check, not a formality", () => {
 
     const verification = await t.query(api.verifyFile, { file: "transactions" });
     expect(verification.ok).toBe(false);
+    expect(verification.rowCountMatches).toBe(true);
+    expect(verification.moneySumsMatch).toBe(true);
+    expect(verification.roundTripRowsMatch).toBe(false);
     expect(verification.exactRoundTrip).toBe(false);
     expect(verification.firstMismatchIndex).toBe(5);
     expect(verification.tableRowCount).toBe(verification.blobRowCount);
     expect(verification.tableSums.amountCents).toBe(verification.blobSums.amountCents);
+    expect(verification.problems).toHaveLength(1);
   });
 
   test("a failing verification rolls the whole file back", async () => {
@@ -907,7 +1348,7 @@ describe("verification is a real check, not a formality", () => {
     });
 
     await expect(
-      t.mutation(api.migrateFile, { file: "transactions", apply: true }),
+      applyFile(t, { file: "transactions" }),
     ).rejects.toThrow(/did not verify/);
 
     // Nothing committed: the ghost is still alone, the 905 rows never landed.
@@ -945,22 +1386,22 @@ describe("refusals", () => {
   test("a shape it does not understand is refused, not guessed at", async () => {
     const t = harness();
     await seedBlob(t, "transactions", { month: "2026-07", total: 1234 });
-    await expect(
-      t.mutation(api.migrateFile, { file: "transactions", apply: true }),
-    ).rejects.toThrow(/not a row collection/);
+    await expect(applyFile(t, { file: "transactions" })).rejects.toThrow(
+      /not a row collection/,
+    );
     expect(await rowsIn(t, "transactions")).toHaveLength(0);
   });
 
   test("an unknown file is refused", async () => {
     const t = harness();
-    await expect(t.mutation(api.migrateFile, { file: "budget", apply: true })).rejects.toThrow(
+    await expect(applyFile(t, { file: "budget" })).rejects.toThrow(
       /Not a migratable file/,
     );
   });
 
   test("a missing blob is reported, not invented", async () => {
     const t = harness();
-    const result = await t.mutation(api.migrateFile, { file: "todos", apply: true });
+    const result = await applyFile(t, { file: "todos" });
     expect(result.blobPresent).toBe(false);
     expect(result.inserted).toBe(0);
     expect(result.done).toBe(true);

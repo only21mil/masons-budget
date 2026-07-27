@@ -225,7 +225,7 @@ final class MC2ReaderTests: XCTestCase {
         XCTAssertNotEqual(models[0].date, .distantPast)
     }
 
-    func testMC2PositiveSpendingClassifiesAsSpend() throws {
+    func testMC2PositiveAdultSpendingIsFlaggedAndReducesBudgetSpend() throws {
         let json = """
         [{"id":"t001","date":"2026-03-02","merchant":"Kroger","amount":76.81,"category":"Groceries","card":"Aven","note":""}]
         """.data(using: .utf8)!
@@ -233,10 +233,17 @@ final class MC2ReaderTests: XCTestCase {
         let dtos = try JSONDecoder().decode([MC2Transaction].self, from: json)
         let tx = try XCTUnwrap(MC2Mapper.mapTransactions(dtos).first)
 
+        // The mapper defaults this legacy adult file to Victor. Adult spend is
+        // stored negative, so a positive non-Income row is either a credit or a
+        // corrupt wrong-sign spend (the legacy shape cannot distinguish them).
+        // Preserve that ambiguity: it must reduce derived budget spend, render
+        // as a positive amount, and remain flagged for review.
         XCTAssertTrue(tx.isSpend)
         XCTAssertFalse(tx.isIncome)
-        assertDecimalClose(tx.spendAmount, 76.81)
-        assertDecimalClose(tx.displayAmount, -76.81)
+        assertDecimalClose(tx.spendAmount, -76.81)
+        assertDecimalClose(tx.displaySpendAmount, 76.81)
+        XCTAssertTrue(tx.hasOppositeSpendSign)
+        assertDecimalClose(tx.displayAmount, 76.81)
     }
 
     func testIncomeCategoryClassifiesAsIncome() {
