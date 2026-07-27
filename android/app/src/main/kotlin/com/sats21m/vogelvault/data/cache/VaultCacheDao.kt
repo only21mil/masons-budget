@@ -28,56 +28,56 @@ data class SnapshotWriteResult(
 abstract class VaultCacheDao {
     @Query(
         """
-        SELECT rows.* FROM cached_transactions AS rows
+        SELECT cached.* FROM cached_transactions AS cached
         INNER JOIN query_snapshots AS snapshots
-          ON snapshots.query_key = rows.query_key
-         AND snapshots.generation = rows.generation
-        WHERE rows.query_key = :queryKey
+          ON snapshots.query_key = cached.query_key
+         AND snapshots.generation = cached.generation
+        WHERE cached.query_key = :queryKey
           AND snapshots.is_active = 1
           AND snapshots.is_complete = 1
-        ORDER BY rows.date DESC, rows.source_file ASC, rows.transaction_id ASC
+        ORDER BY cached.date DESC, cached.source_file ASC, cached.transaction_id ASC
         """,
     )
     abstract fun observeTransactions(queryKey: String): Flow<List<CachedTransactionEntity>>
 
     @Query(
         """
-        SELECT rows.* FROM cached_todos AS rows
+        SELECT cached.* FROM cached_todos AS cached
         INNER JOIN query_snapshots AS snapshots
-          ON snapshots.query_key = rows.query_key
-         AND snapshots.generation = rows.generation
-        WHERE rows.query_key = :queryKey
+          ON snapshots.query_key = cached.query_key
+         AND snapshots.generation = cached.generation
+        WHERE cached.query_key = :queryKey
           AND snapshots.is_active = 1
           AND snapshots.is_complete = 1
-        ORDER BY rows.updated_at_ms DESC, rows.todo_id ASC
+        ORDER BY cached.updated_at_ms DESC, cached.todo_id ASC
         """,
     )
     abstract fun observeTodos(queryKey: String): Flow<List<CachedTodoEntity>>
 
     @Query(
         """
-        SELECT rows.* FROM cached_btc_buys AS rows
+        SELECT cached.* FROM cached_btc_buys AS cached
         INNER JOIN query_snapshots AS snapshots
-          ON snapshots.query_key = rows.query_key
-         AND snapshots.generation = rows.generation
-        WHERE rows.query_key = :queryKey
+          ON snapshots.query_key = cached.query_key
+         AND snapshots.generation = cached.generation
+        WHERE cached.query_key = :queryKey
           AND snapshots.is_active = 1
           AND snapshots.is_complete = 1
-        ORDER BY rows.date DESC, rows.source_file ASC, rows.buy_id ASC
+        ORDER BY cached.date DESC, cached.source_file ASC, cached.buy_id ASC
         """,
     )
     abstract fun observeBtcBuys(queryKey: String): Flow<List<CachedBtcBuyEntity>>
 
     @Query(
         """
-        SELECT rows.* FROM cached_btc_accounts AS rows
+        SELECT cached.* FROM cached_btc_accounts AS cached
         INNER JOIN query_snapshots AS snapshots
-          ON snapshots.query_key = rows.query_key
-         AND snapshots.generation = rows.generation
-        WHERE rows.query_key = :queryKey
+          ON snapshots.query_key = cached.query_key
+         AND snapshots.generation = cached.generation
+        WHERE cached.query_key = :queryKey
           AND snapshots.is_active = 1
           AND snapshots.is_complete = 1
-        ORDER BY rows.owner ASC, rows.account_key ASC
+        ORDER BY cached.owner ASC, cached.account_key ASC
         """,
     )
     abstract fun observeBtcAccounts(queryKey: String): Flow<List<CachedBtcAccountEntity>>
