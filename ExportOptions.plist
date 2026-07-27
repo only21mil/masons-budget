@@ -1,6 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
+<!-- TESTFLIGHT ONLY. This app is not going on the App Store.
+
+     The `method` key below says app-store. That is not a publish
+     instruction and it submits nothing for review. It is the
+     export/signing method for any build destined for App Store Connect;
+     there is no separate "testflight" method. TestFlight distribution
+     happens from inside App Store Connect after upload, and deploy.yml
+     stops at the altool upload step, which contains no submission.
+
+     Do not "fix" this to development or ad-hoc. Either would produce a
+     build TestFlight refuses. -->
 <dict>
     <key>method</key>
     <string>app-store</string>
