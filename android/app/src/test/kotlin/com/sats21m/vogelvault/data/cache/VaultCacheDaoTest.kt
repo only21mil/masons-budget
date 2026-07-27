@@ -23,7 +23,7 @@ class VaultCacheDaoTest {
 
     @BeforeTest
     fun setUp() {
-        val context = RuntimeEnvironment.getApplication<Application>()
+        val context: Application = RuntimeEnvironment.getApplication()
         database =
             Room
                 .inMemoryDatabaseBuilder(context, VaultDatabase::class.java)
