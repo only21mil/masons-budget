@@ -8,6 +8,7 @@ struct MC2Transaction: Codable {
     let category: String
     let card: String?
     let note: String?
+    let owner: FamilyMember?
 }
 
 enum MC2TransactionWriteError: LocalizedError, Equatable {
@@ -61,6 +62,7 @@ extension MC2Transaction {
             category: transaction.category,
             card: transaction.card,
             note: transaction.note,
+            owner: nil,
         )
     }
 
@@ -550,6 +552,46 @@ struct MC2TodoItem: Codable {
         self.updatedAt = updatedAt
         createdAt = nil
         completedAt = nil
+    }
+
+    init(
+        rowId: String,
+        title: String,
+        project: String?,
+        area: String?,
+        due: String?,
+        notes: String?,
+        priority: Int?,
+        flagged: Bool,
+        done: Bool,
+        owner: FamilyMember,
+        createdAt: String?,
+        updatedAt: String?,
+        completedAt: String?,
+    ) {
+        id = rowId
+        self.title = title
+        text = notes
+        self.project = project
+        self.area = area
+        category = nil
+        type = nil
+        dueDate = due
+        self.due = nil
+        date = nil
+        deadline = nil
+        when = nil
+        self.priority = priority
+        flag = nil
+        self.flagged = flagged
+        self.done = done
+        completed = nil
+        status = nil
+        self.owner = owner.rawValue
+        assignee = nil
+        self.updatedAt = updatedAt
+        self.createdAt = createdAt
+        self.completedAt = completedAt
     }
 
     init(from decoder: Decoder) throws {

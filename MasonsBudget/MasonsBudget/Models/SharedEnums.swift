@@ -4,7 +4,7 @@
 import Foundation
 
 /// Family members with access to the app.
-enum FamilyMember: String, Codable, CaseIterable, Identifiable {
+enum FamilyMember: String, Codable, CaseIterable, Identifiable, Sendable {
     case victor
     case rachel
     case mason
