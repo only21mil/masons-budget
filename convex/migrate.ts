@@ -50,7 +50,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { ConvexError, v } from "convex/values";
-import { internalMutation, internalQuery } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
+import {
+  internalMutation,
+  internalQuery,
+  type MutationCtx,
+} from "./_generated/server";
 
 // ─── Contract with convex/schema.ts and convex/tables.ts ───────────────────
 //
@@ -1309,6 +1314,54 @@ async function readMigrated(
 
 const DEFAULT_BATCH_SIZE = 1000;
 
+type MigrationTable = MigrationSource["table"];
+type NewMigrationDocument<Table extends MigrationTable> = Omit<
+  Doc<Table>,
+  "_id" | "_creationTime"
+>;
+type CorrelatedMigrationWrite = {
+  [Table in MigrationTable]: {
+    table: Table;
+    document: NewMigrationDocument<Table>;
+    existingId: Id<Table> | undefined;
+  };
+}[MigrationTable];
+
+async function writeProjectedDocument(
+  ctx: MutationCtx,
+  source: MigrationSource,
+  document: Record<string, unknown>,
+  existing: Record<string, unknown> | undefined,
+): Promise<void> {
+  // `projectFile` projects several table shapes into loose records, so
+  // TypeScript cannot preserve the correlation between `source.table`, the
+  // projected document, and an existing row's id. Assert that correlated
+  // triple once at this boundary. The real safety net is runtime and
+  // transactional: Convex validates every insert (and patch) against the
+  // schema, and the three-way verification — row count, exact summed money per
+  // column, and canonical round-trip — runs against stored rows before the
+  // mutation commits.
+  const write = {
+    table: source.table,
+    document,
+    existingId: existing?._id,
+  } as CorrelatedMigrationWrite;
+
+  switch (write.table) {
+    case TRANSACTIONS_TABLE:
+    case BTC_BUYS_TABLE:
+    case BTC_BILL_PAYS_TABLE:
+    case TODOS_TABLE:
+    case INCOME_TABLE:
+    case BALANCE_DOCUMENTS_TABLE:
+      if (write.existingId === undefined) {
+        await ctx.db.insert(write.table, write.document);
+      } else {
+        await ctx.db.patch(write.existingId, write.document);
+      }
+  }
+}
+
 /**
  * What is here, before anything is written.
  *
@@ -1458,20 +1511,8 @@ export const migrateFile = internalMutation({
 
       if (existing === undefined) {
         inserted += 1;
-        // CORRELATED-UNION CAST, and the only one in this file. `projectFile`
-        // returns Record<string, unknown> because it projects five different
-        // table shapes; TypeScript cannot tie `source.table` to the matching
-        // document type across that union, so it widens to the union of all
-        // five and rejects the call. The shape is NOT unchecked: Convex
-        // validates every insert against the schema at runtime and rejects a
-        // wrong one, and the three-way verification (row count, exact summed
-        // money, canonical round-trip) runs against the stored rows before the
-        // mutation commits. Narrow the cast, never widen it to `any`.
         if (apply) {
-          await ctx.db.insert(
-            source.table,
-            doc as Parameters<typeof ctx.db.insert>[1],
-          );
+          await writeProjectedDocument(ctx, source, doc, undefined);
         }
         continue;
       }
@@ -1482,13 +1523,8 @@ export const migrateFile = internalMutation({
       }
 
       updated += 1;
-      // Same correlated-union limitation as the insert above; `existing` came
-      // from readMigrated, which returns the same loose row shape.
       if (apply) {
-        await ctx.db.patch(
-          existing._id as Parameters<typeof ctx.db.patch>[0],
-          doc as Parameters<typeof ctx.db.patch>[1],
-        );
+        await writeProjectedDocument(ctx, source, doc, existing);
       }
     }
 
