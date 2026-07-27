@@ -36,27 +36,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { ConvexError, v } from "convex/values";
-import { mutation } from "./_generated/server";
+import type { DataModel } from "./_generated/dataModel";
+import { mutation, type MutationCtx } from "./_generated/server";
 import { mergeTodoPayload, normalizeTodoRecord } from "./todoNormalize";
 
 declare const process: { env: Record<string, string | undefined> };
-
-/**
- * Convex's generated types are unavailable in a bare clone (`_generated/` is
- * gitignored and codegen needs an authenticated deployment), so the db handle
- * and its index-query builder have no bound types here. Same reason
- * `dataFiles.ts` types its helpers' `ctx` as `any`. Narrowed to the three
- * methods this file uses so the escape is as small as it can be.
- */
-type IndexQuery = { eq(field: string, value: unknown): unknown };
-interface WritebackCtx {
-  db: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    query(table: string): any;
-    insert(table: string, doc: Record<string, unknown>): Promise<unknown>;
-    patch(id: unknown, fields: Record<string, unknown>): Promise<void>;
-  };
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth
@@ -618,27 +602,20 @@ function withoutStamps(record: Record<string, unknown>): Record<string, unknown>
 // dataFiles plumbing (mirrors the private helpers in dataFiles.ts)
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface DataFileDoc {
-  _id: unknown;
-  name: string;
-  data: unknown;
-  version: number;
-  updatedAt: number;
-}
+type DataFileDoc = DataModel["dataFiles"]["document"];
 
 async function loadDataFile(
-  ctx: WritebackCtx,
+  ctx: MutationCtx,
   name: string,
 ): Promise<DataFileDoc | null> {
-  const doc = await ctx.db
+  return await ctx.db
     .query("dataFiles")
-    .withIndex("by_name", (q: IndexQuery) => q.eq("name", name))
+    .withIndex("by_name", (q) => q.eq("name", name))
     .first();
-  return (doc as DataFileDoc | null) ?? null;
 }
 
 async function writeDataFile(
-  ctx: WritebackCtx,
+  ctx: MutationCtx,
   existing: DataFileDoc | null,
   name: string,
   data: unknown,
@@ -653,10 +630,10 @@ async function writeDataFile(
 
   const versionDoc = await ctx.db
     .query("syncVersions")
-    .withIndex("by_name", (q: IndexQuery) => q.eq("name", name))
+    .withIndex("by_name", (q) => q.eq("name", name))
     .first();
   if (versionDoc) {
-    await ctx.db.patch((versionDoc as { _id: unknown })._id, {
+    await ctx.db.patch(versionDoc._id, {
       version,
       updatedAt: now,
     });
@@ -800,7 +777,7 @@ export function trimAuditLog(log: AuditLog): AuditLog {
  * mutation, so it shares that mutation's transaction.
  */
 async function appendAudit(
-  ctx: WritebackCtx,
+  ctx: MutationCtx,
   now: number,
   entry: Omit<AuditEntry, "seq" | "at" | "atIso">,
 ): Promise<number> {
@@ -908,7 +885,7 @@ export const createTransaction = mutation({
     const card = optionalText(args.card, "card", MAX_MERCHANT) ?? null;
     const note = optionalText(args.note, "note", MAX_NOTE) ?? null;
 
-    const existingFile = await loadDataFile(ctx as WritebackCtx, file);
+    const existingFile = await loadDataFile(ctx, file);
     const rows = asRecordArray(existingFile?.data);
     const known = knownCategories(rows);
     const category = requireCategory(args.category, "category", known);
@@ -954,13 +931,13 @@ export const createTransaction = mutation({
 
     const next = [...rows, record];
     const version = await writeDataFile(
-      ctx as WritebackCtx,
+      ctx,
       existingFile,
       file,
       next,
       now,
     );
-    const auditSeq = await appendAudit(ctx as WritebackCtx, now, {
+    const auditSeq = await appendAudit(ctx, now, {
       op: "create",
       entity: "transaction",
       file,
@@ -1021,7 +998,7 @@ export const editTransaction = mutation({
     const owner = requireFamilyMember(args.owner, "owner");
     const file = transactionsFileFor(owner);
 
-    const existingFile = await loadDataFile(ctx as WritebackCtx, file);
+    const existingFile = await loadDataFile(ctx, file);
     const rows = asRecordArray(existingFile?.data);
     const index = indexOfId(rows, id);
     if (index < 0) {
@@ -1135,13 +1112,13 @@ export const editTransaction = mutation({
     const next = [...rows];
     next[index] = record;
     const version = await writeDataFile(
-      ctx as WritebackCtx,
+      ctx,
       existingFile,
       file,
       next,
       now,
     );
-    const auditSeq = await appendAudit(ctx as WritebackCtx, now, {
+    const auditSeq = await appendAudit(ctx, now, {
       op: "edit",
       entity: "transaction",
       file,
@@ -1241,7 +1218,7 @@ export const createTodo = mutation({
       updated_at: new Date(now).toISOString(),
     };
 
-    const existingFile = await loadDataFile(ctx as WritebackCtx, TODO_FILE);
+    const existingFile = await loadDataFile(ctx, TODO_FILE);
     const rows = readTodoRows(existingFile?.data);
     const record = normalizeTodoRecord(payload, { now });
 
@@ -1271,13 +1248,13 @@ export const createTodo = mutation({
 
     const next = [...rows, record];
     const version = await writeDataFile(
-      ctx as WritebackCtx,
+      ctx,
       existingFile,
       TODO_FILE,
       writeTodoRows(existingFile?.data, next),
       now,
     );
-    const auditSeq = await appendAudit(ctx as WritebackCtx, now, {
+    const auditSeq = await appendAudit(ctx, now, {
       op: "create",
       entity: "todo",
       file: TODO_FILE,
@@ -1324,7 +1301,7 @@ export const editTodo = mutation({
     const id = requireId(args.id, "id");
     const actor = requireActor(args.actor);
 
-    const existingFile = await loadDataFile(ctx as WritebackCtx, TODO_FILE);
+    const existingFile = await loadDataFile(ctx, TODO_FILE);
     const rows = readTodoRows(existingFile?.data);
     const index = indexOfId(rows, id);
     if (index < 0) {
@@ -1397,13 +1374,13 @@ export const editTodo = mutation({
     const next = [...rows];
     next[index] = record;
     const version = await writeDataFile(
-      ctx as WritebackCtx,
+      ctx,
       existingFile,
       TODO_FILE,
       writeTodoRows(existingFile?.data, next),
       now,
     );
-    const auditSeq = await appendAudit(ctx as WritebackCtx, now, {
+    const auditSeq = await appendAudit(ctx, now, {
       op: "edit",
       entity: "todo",
       file: TODO_FILE,

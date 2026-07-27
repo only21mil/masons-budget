@@ -1,5 +1,5 @@
 import { ConvexError, v } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query, mutation, type MutationCtx } from "./_generated/server";
 import {
   mergeTodoPayload,
   normalizeTodoRecord,
@@ -224,7 +224,7 @@ async function sha256Hex(value: string): Promise<string> {
 }
 
 async function authenticateMobileDevice(
-  ctx: any,
+  ctx: MutationCtx,
   deviceId: string,
   deviceToken: string,
 ) {
@@ -240,7 +240,7 @@ async function authenticateMobileDevice(
 }
 
 async function bumpSyncVersion(
-  ctx: any,
+  ctx: MutationCtx,
   name: string,
   version: number,
   updatedAt: number,
@@ -417,7 +417,7 @@ export const appendTransaction = mutation({
  * write. Upsert one todo into todos.json and bump its version.
  */
 async function applyTodoUpsert(
-  ctx: any,
+  ctx: MutationCtx,
   todo: Record<string, any>,
   name: string = "todos",
 ) {
@@ -723,14 +723,14 @@ export const completeTodoFromMobile = mutation({
   },
 });
 
-async function removeTodoById(ctx: any, todoId: string) {
+async function removeTodoById(ctx: MutationCtx, todoId: string) {
   const name = "todos";
   const now = Date.now();
 
   // 1. Upsert the tombstone first (separate table; out of the app payload).
   const tombstone = await ctx.db
     .query("todoTombstones")
-    .withIndex("by_todo_id", (q: any) => q.eq("id", todoId))
+    .withIndex("by_todo_id", (q) => q.eq("id", todoId))
     .first();
   if (tombstone) {
     await ctx.db.patch(tombstone._id, { deletedAt: now });
@@ -742,7 +742,7 @@ async function removeTodoById(ctx: any, todoId: string) {
   //    app re-fetches the cleaned list.
   const existing = await ctx.db
     .query("dataFiles")
-    .withIndex("by_name", (q: any) => q.eq("name", name))
+    .withIndex("by_name", (q) => q.eq("name", name))
     .first();
 
   // Every branch below reports the version the todos file now carries, so a
