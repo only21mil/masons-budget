@@ -364,10 +364,18 @@ final class FamilyVisibilityTests: XCTestCase {
             $0.title == fixture.expectations.rachelSeesVictorTodo && $0.ownerMember == .victor
         })
 
-        for (viewerName, expectedSpend) in fixture.expectations.totalSpend {
+        for (viewerName, expectedSpend) in fixture.expectations.visibleSpend {
             let viewer = try familyMember(viewerName)
             let spend = transactions
                 .filter { viewer.canSee(dataOwnedBy: $0.ownerMember) }
+                .reduce(Decimal(0)) { $0 + $1.spendAmount }
+            XCTAssertEqual(spend, try decimal(expectedSpend))
+        }
+
+        for (viewerName, expectedSpend) in fixture.expectations.budgetSpend {
+            let viewer = try familyMember(viewerName)
+            let spend = transactions
+                .filter { viewer.sharesNetWorth(with: $0.ownerMember) }
                 .reduce(Decimal(0)) { $0 + $1.spendAmount }
             XCTAssertEqual(spend, try decimal(expectedSpend))
         }
@@ -488,5 +496,6 @@ private struct FixtureExpectations: Decodable {
     let visibleTodoCount: [String: Int]
     let visibleTodoTitles: [String: [String]]
     let rachelSeesVictorTodo: String
-    let totalSpend: [String: String]
+    let visibleSpend: [String: String]
+    let budgetSpend: [String: String]
 }

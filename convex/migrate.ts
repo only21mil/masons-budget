@@ -237,34 +237,33 @@ function sourceFor(file: string): MigrationSource {
 // ─── Money ───────────────────────────────────────────────────────────────────
 // Mirror of shared/domain/src/money.ts. See the header for why it is copied.
 
+const MAX_SAFE_MINOR_UNITS = BigInt(Number.MAX_SAFE_INTEGER);
+
 /**
  * Parse a decimal value into integer minor units without going through Number.
  *
- * Accepts a string, a number, a bigint, or null/undefined. Numbers first become
- * their shortest JSON lexical representation, and that lexeme must decode back
- * to the identical IEEE value before it can be used. Conversion after that is
- * string-only: no money value is ever multiplied by 100 or 100,000,000.
+ * Accepts a string, a number, or null/undefined. JSON numbers are delegated to
+ * jsonNumberToMinorUnits, which has stricter safety checks than lexical strings.
  */
 export function parseMinorUnits(value: unknown, scale: number): bigint {
   if (value === null || value === undefined || value === "") return 0n;
-  if (typeof value === "bigint") return value;
+  if (typeof value === "number") return jsonNumberToMinorUnits(value, scale);
 
-  const raw =
-    typeof value === "number"
-      ? numberToDecimalString(value)
-      : String(value).trim();
+  assertScale(scale);
+
+  const raw = String(value).trim();
   if (raw === "") return 0n;
 
   const match = /^(-)?(\d*)(?:\.(\d*))?$/.exec(raw);
   if (!match) {
-    throw new ConvexError(`Not a decimal value: ${JSON.stringify(String(value))}`);
+    throw new RangeError(`Not a decimal value: ${JSON.stringify(value)}`);
   }
 
   const sign = match[1];
   const whole = match[2] ?? "";
   const frac = match[3] ?? "";
   if (whole === "" && frac === "") {
-    throw new ConvexError(`Not a decimal value: ${JSON.stringify(String(value))}`);
+    throw new RangeError(`Not a decimal value: ${JSON.stringify(value)}`);
   }
 
   // Pad or round the fraction to the target scale. Round half away from zero,
@@ -278,48 +277,74 @@ export function parseMinorUnits(value: unknown, scale: number): bigint {
   return sign === "-" ? -result : result;
 }
 
-function numberToDecimalString(value: number): string {
-  if (!Number.isFinite(value)) {
-    throw new ConvexError(`Not a finite number: ${value}`);
-  }
-
-  // JSON.stringify is the ECMAScript shortest-round-trip spelling. Convex has
-  // already decoded dataFiles.data by the time a migration runs, so proving
-  // this round-trip is the boundary that prevents an approximate formatting
-  // operation from becoming the source of an integer ledger value.
-  const lexical = Object.is(value, -0) ? "-0" : JSON.stringify(value);
-  if (lexical === undefined || !Object.is(Number(lexical), value)) {
-    throw new ConvexError(
-      `Number ${String(value)} has no proven round-trip JSON lexical form`,
+function assertScale(scale: number): void {
+  if (!Number.isSafeInteger(scale) || scale < 0 || scale > 100) {
+    throw new RangeError(
+      `Minor-unit scale must be an integer from 0 through 100: ${scale}`,
     );
   }
-
-  const decimal = expandDecimalExponent(lexical);
-  if (!Object.is(Number(decimal), value)) {
-    throw new ConvexError(
-      `Decimal lexical form ${decimal} does not round-trip to ${lexical}`,
-    );
-  }
-  return decimal;
 }
 
-/** Expand JSON exponent notation using only string operations. */
-function expandDecimalExponent(lexical: string): string {
-  const match = /^(-?)(\d+)(?:\.(\d*))?[eE]([+-]?\d+)$/.exec(lexical);
-  if (!match) return lexical;
-
-  const sign = match[1] ?? "";
-  const whole = match[2] ?? "0";
-  const fraction = match[3] ?? "";
-  const exponent = Number(match[4]);
-  const digits = whole + fraction;
-  const point = whole.length + exponent;
-
-  if (point <= 0) return `${sign}0.${"0".repeat(-point)}${digits}`;
-  if (point >= digits.length) {
-    return `${sign}${digits}${"0".repeat(point - digits.length)}`;
+/**
+ * Convert an already-parsed JSON number to integer minor units.
+ *
+ * This is the Convex-local mirror of shared/domain/src/money.ts. Number#toString
+ * supplies the shortest round-trippable decimal, then BigInt parses and rounds
+ * those digits without multiplying the float. Values whose rounded minor units
+ * exceed Number.MAX_SAFE_INTEGER are refused because their source double can no
+ * longer reliably distinguish adjacent ledger units.
+ */
+export function jsonNumberToMinorUnits(
+  value: number,
+  scale: number,
+): bigint {
+  if (!Number.isFinite(value)) {
+    throw new RangeError(`Not a finite number: ${value}`);
   }
-  return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`;
+  assertScale(scale);
+
+  const shortestDecimal = value.toString();
+  const match =
+    /^(-)?(\d+)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(shortestDecimal);
+  if (!match) {
+    throw new RangeError(
+      `Number has no decimal representation: ${shortestDecimal}`,
+    );
+  }
+
+  const sign = match[1];
+  const whole = match[2] ?? "";
+  const fraction = match[3] ?? "";
+  const exponentLexical = match[4] ?? "0";
+  const coefficient = BigInt(`${whole}${fraction}`);
+  const exponent = Number(exponentLexical);
+  const minorUnitExponent = exponent - fraction.length + scale;
+
+  let magnitude: bigint;
+  if (minorUnitExponent >= 0) {
+    magnitude = coefficient * 10n ** BigInt(minorUnitExponent);
+  } else {
+    const divisor = 10n ** BigInt(-minorUnitExponent);
+    const quotient = coefficient / divisor;
+    const remainder = coefficient % divisor;
+    magnitude = quotient + (remainder * 2n >= divisor ? 1n : 0n);
+  }
+
+  if (magnitude > MAX_SAFE_MINOR_UNITS) {
+    throw new RangeError(
+      `Rounded minor units exceed Number.MAX_SAFE_INTEGER: ${shortestDecimal} at scale ${scale}`,
+    );
+  }
+
+  return sign === "-" ? -magnitude : magnitude;
+}
+
+export function jsonNumberToCents(value: number): bigint {
+  return jsonNumberToMinorUnits(value, 2);
+}
+
+export function jsonNumberToSats(value: number): bigint {
+  return jsonNumberToMinorUnits(value, 8);
 }
 
 export function parseCents(value: unknown): bigint {
@@ -914,8 +939,16 @@ export interface VerificationReport {
   ok: boolean;
   blobRowCount: number;
   tableRowCount: number;
+  rowCountMatches: boolean;
   blobSums: Record<string, string>;
   tableSums: Record<string, string>;
+  moneySumsMatch: boolean;
+  /**
+   * Whether every row present on both sides has byte-equivalent canonical
+   * provenance at the same source index. Count is deliberately reported
+   * separately so a missing final row can be diagnosed as a count-only defect.
+   */
+  roundTripRowsMatch: boolean;
   exactRoundTrip: boolean;
   /** Index of the first row that did not round-trip; null when all did. */
   firstMismatchIndex: number | null;
@@ -951,7 +984,8 @@ export function verifyProjection(
       Number(b.migrationSourceIndex ?? 0),
   );
 
-  if (ordered.length !== blobRows.length) {
+  const rowCountMatches = ordered.length === blobRows.length;
+  if (!rowCountMatches) {
     problems.push(
       `row count ${ordered.length} in ${source.table} does not match ` +
         `${blobRows.length} in the ${source.file} blob`,
@@ -960,8 +994,10 @@ export function verifyProjection(
 
   const blobSums = sumMoneyColumns(source.kind, expectedDocs);
   const tableSums = sumMoneyColumns(source.kind, ordered);
+  let moneySumsMatch = true;
   for (const column of MONEY_COLUMNS[source.kind]) {
     if (blobSums[column] !== tableSums[column]) {
+      moneySumsMatch = false;
       problems.push(
         `summed ${column} is ${formatMinorUnits(tableSums[column]!, MONEY_SCALES[column] ?? 0)} ` +
           `in ${source.table} but ${formatMinorUnits(blobSums[column]!, MONEY_SCALES[column] ?? 0)} ` +
@@ -989,8 +1025,8 @@ export function verifyProjection(
     }
   }
 
-  const exactRoundTrip =
-    firstMismatchIndex === null && ordered.length === blobRows.length;
+  const roundTripRowsMatch = firstMismatchIndex === null;
+  const exactRoundTrip = roundTripRowsMatch && rowCountMatches;
 
   return {
     file: source.file,
@@ -998,8 +1034,11 @@ export function verifyProjection(
     ok: problems.length === 0,
     blobRowCount: blobRows.length,
     tableRowCount: ordered.length,
+    rowCountMatches,
     blobSums: formatSums(blobSums),
     tableSums: formatSums(tableSums),
+    moneySumsMatch,
+    roundTripRowsMatch,
     exactRoundTrip,
     firstMismatchIndex,
     problems,
@@ -1251,8 +1290,11 @@ export const verifyFile = internalQuery({
         ok: migrated.size === 0,
         blobRowCount: 0,
         tableRowCount: migrated.size,
+        rowCountMatches: migrated.size === 0,
         blobSums: {},
         tableSums: {},
+        moneySumsMatch: true,
+        roundTripRowsMatch: true,
         exactRoundTrip: migrated.size === 0,
         firstMismatchIndex: null,
         problems:

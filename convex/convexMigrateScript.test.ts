@@ -19,6 +19,9 @@ import {
 function verification(overrides: Record<string, unknown> = {}) {
   return {
     ok: true,
+    rowCountMatches: true,
+    moneySumsMatch: true,
+    roundTripRowsMatch: true,
     exactRoundTrip: true,
     problems: [],
     tableRowCount: 2,
@@ -190,6 +193,9 @@ describe("human reporting redaction", () => {
       verification({ problems: ["record secret-id differs by 123.45"] }),
     );
     expect(line).toContain("OK");
+    expect(line).toContain("count OK");
+    expect(line).toContain("sums OK");
+    expect(line).toContain("round-trip rows OK");
     expect(line).toContain("problems=1");
     expect(line).not.toContain("amountCents");
     expect(line).not.toContain("123456.78");
