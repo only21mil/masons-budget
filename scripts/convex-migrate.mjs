@@ -175,74 +175,39 @@ function safeVerification(verification) {
   };
 }
 
-const REDACTED_EVIDENCE_KEYS = new Set([
-  "argv",
-  "arguments",
-  "command",
-  "commandargs",
-  "stdout",
-  "stderr",
-  "output",
-  "childoutput",
-  "deployment",
-  "deploymentid",
-  "deploymentname",
-  "deploymenturl",
-  "url",
-  "data",
-  "document",
-  "documents",
-  "doc",
-  "docs",
-  "rawrow",
-  "rawrows",
-  "row",
-  "rows",
-  "record",
-  "records",
-  "recordid",
-  "recordids",
-  "sourcekey",
-  "externalid",
-  "key",
-  "keys",
-  "id",
-  "ids",
-  "problem",
-  "problems",
-  "message",
-  "messages",
-  "detail",
-  "details",
-  "mismatch",
-  "mismatches",
-  "sample",
-  "samples",
-  "tablesums",
-  "blobsums",
-  "sums",
-  "monetarytotals",
-  "moneytotals",
-  "amount",
-  "amounts",
-  "total",
-  "totals",
+const PROJECTION_EVIDENCE_SCHEMA = new Map([
+  ["ok", "boolean"],
+  ["exactroundtrip", "boolean"],
+  [
+    "rowcounts",
+    new Map([
+      ["source", "number"],
+      ["projected", "number"],
+    ]),
+  ],
 ]);
 
 function normalizedKey(key) {
   return key.replace(/[^a-z0-9]/gi, "").toLowerCase();
 }
 
-function sanitizeProjectionVerification(value) {
-  if (value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map(sanitizeProjectionVerification);
+function sanitizeProjectionVerification(value, schema = PROJECTION_EVIDENCE_SCHEMA) {
+  if (value === null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) return "[redacted]";
 
   const clean = {};
   for (const [key, entry] of Object.entries(value)) {
-    if (REDACTED_EVIDENCE_KEYS.has(normalizedKey(key))) {
-      clean[key] = "[redacted]";
+    const rule = schema.get(normalizedKey(key));
+    if (rule instanceof Map) {
+      clean[key] = sanitizeProjectionVerification(entry, rule);
+    } else if (rule === "boolean" && typeof entry === "boolean") {
+      clean[key] = entry;
+    } else if (rule === "number" && Number.isFinite(entry)) {
+      clean[key] = entry;
     } else {
-      clean[key] = sanitizeProjectionVerification(entry);
+      // Backend evidence is serialized to stdout. New fields stay private
+      // until their name, type, and nesting are deliberately reviewed here.
+      clean[key] = "[redacted]";
     }
   }
   return clean;
@@ -250,8 +215,9 @@ function sanitizeProjectionVerification(value) {
 
 /**
  * Preserve backend-owned evidence without guessing its schema. Only fingerprint
- * fields and projectionVerification pass through. Sensitive subfields inside a
- * future projectionVerification object are replaced with a redaction marker.
+ * fields and projectionVerification pass through. Within projectionVerification,
+ * only explicitly reviewed structural proof fields pass; every other field is
+ * replaced with a redaction marker by default.
  */
 export function extractBackendEvidence(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
@@ -263,7 +229,7 @@ export function extractBackendEvidence(value) {
       continue;
     }
     if (/fingerprint/i.test(key)) {
-      evidence[key] = sanitizeProjectionVerification(entry);
+      evidence[key] = typeof entry === "string" ? entry : "[redacted]";
       continue;
     }
     if (entry !== null && typeof entry === "object" && !Array.isArray(entry)) {
