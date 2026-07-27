@@ -76,21 +76,39 @@ export interface Transaction {
 }
 
 /**
- * Spend magnitude for budget maths.
+ * Signed contribution to budget spend.
  *
- * Adult MC2 files sign spending negative and income positive. The child files
- * record spending as a positive magnitude, which is why the Swift tests expect
- * Mason's 60 "Game Store" row to count as 60 of spend rather than income. Taking
- * the magnitude of anything that is not an Income row reproduces that on both
- * shapes without needing to know which file it came from.
+ * Adult files sign spend negative; child files store it positive. Reversing the
+ * adult sign puts both valid shapes on the same positive-spend scale while
+ * preserving the opposite sign of a refund/reimbursement so it reduces actual
+ * spend. A corrupt wrong-sign spend has the same stored shape as a credit
+ * because the legacy row has no `kind`; [hasOppositeSpendSign] surfaces that
+ * ambiguity instead of silently hiding it with an absolute value.
  */
 export function spendAmount(transaction: Transaction): Cents {
   if (transaction.category === "Income") return 0n
-  return transaction.amount < 0n ? -transaction.amount : transaction.amount
+  return isAdult(transaction.owner) ? -transaction.amount : transaction.amount
+}
+
+/** Stable magnitude for row rendering, including legacy wrong-sign rows. */
+export function displaySpendAmount(transaction: Transaction): Cents {
+  const spend = spendAmount(transaction)
+  return spend < 0n ? -spend : spend
+}
+
+/**
+ * True when a non-Income row has the opposite of its owner's spend sign.
+ *
+ * This can mean a valid credit or a corrupt wrong-sign spend. The read model
+ * cannot distinguish those without a persisted `kind`, so callers should show
+ * or log the signal rather than guessing.
+ */
+export function hasOppositeSpendSign(transaction: Transaction): boolean {
+  return spendAmount(transaction) < 0n
 }
 
 export function isSpend(transaction: Transaction): boolean {
-  return spendAmount(transaction) > 0n
+  return transaction.category !== "Income" && transaction.amount !== 0n
 }
 
 export function normalizeTransaction(raw: Record<string, unknown>, fallbackOwner?: FamilyMember): Transaction {
