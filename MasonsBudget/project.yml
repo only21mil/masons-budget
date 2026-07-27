@@ -107,6 +107,8 @@ targets:
           - "Resources/**"
           - "**/.DS_Store"
       - path: ../shared/domain/fixtures
+        group: shared/domain
+        createIntermediateGroups: false
         buildPhase: resources
     dependencies: []
     settings:
