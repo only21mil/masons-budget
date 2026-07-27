@@ -29,8 +29,6 @@ class ReadModelTest {
                 amount = -10_000L,
                 category = "Groceries",
                 owner = FamilyMember.VICTOR,
-                signedSpendContribution = 10_000L,
-                rowDisplaySpendAmount = 10_000L,
             ),
             Transaction(
                 id = "credit",
@@ -39,12 +37,12 @@ class ReadModelTest {
                 amount = 2_500L,
                 category = "Groceries",
                 owner = FamilyMember.VICTOR,
-                signedSpendContribution = -2_500L,
-                rowDisplaySpendAmount = 2_500L,
             ),
         )
 
-        assertEquals(2_500L, rows.last().spendAmount)
+        assertEquals(-2_500L, rows.last().spendAmount)
+        assertEquals(2_500L, rows.last().displaySpendAmount)
+        assertTrue(rows.last().hasOppositeSpendSign)
         assertEquals(7_500L, deriveBudgetSpend(budget, rows).actualCents)
     }
 
