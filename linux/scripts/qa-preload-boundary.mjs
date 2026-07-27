@@ -535,8 +535,13 @@ const envelope = (body, httpStatus = 200, truncated = false) =>
   parseSnapshotEnvelope({ httpStatus, body, truncated }, readAt, true)
 
 require_(
-  envelope(JSON.stringify({ status: "error", errorMessage: "Unauthorized: invalid read token" })).status ===
-    "unauthorized",
+  envelope(
+    JSON.stringify({
+      status: "error",
+      errorMessage: "[Request ID: test] Server Error",
+      errorData: "Unauthorized: invalid read token",
+    }),
+  ).status === "unauthorized",
   "convex: a rejected credential is unauthorized, not a generic failure",
 )
 
@@ -544,7 +549,8 @@ require_(
   envelope(
     JSON.stringify({
       status: "error",
-      errorMessage: "Unauthorized: CONVEX_READ_TOKEN is not configured (fail-closed).",
+      errorMessage: "[Request ID: test] Server Error",
+      errorData: "Unauthorized: CONVEX_READ_TOKEN is not configured (fail-closed).",
     }),
   ).status === "unauthorized",
   "convex: the fail-closed rejection is also unauthorized",

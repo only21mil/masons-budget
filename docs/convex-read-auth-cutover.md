@@ -100,9 +100,12 @@ a bare `Server Error`:
 ```
 $ CONVEX_READ_TOKEN=… scripts/verify-read-auth.sh
   unauthenticated query: ACCEPTED (13 data files visible)
-  authenticated query: INDETERMINATE — [Request ID: …] Server Error
+  control query (deliberately wrong token): REJECTED, reason not attributable to auth — [Request ID: …] Server Error
+  CONVEX_READ_TOKEN in this shell: present
+  known-good token query: REJECTED, reason not attributable to auth — [Request ID: …] Server Error
   hint: the deployment appears to reject a 'token' argument, so the
         gated code is probably not deployed yet.
+STATE: OPEN
 ```
 
 A client that starts sending a read token today does not degrade gracefully —
@@ -412,14 +415,15 @@ window short rather than for skipping the hatch.
 
 Does:
 
-- Issues one unauthenticated `dataFiles:list` query and classifies the result:
-  `OPEN` (accepted), `ENFORCED` (rejected with an authorization error), or
-  `UNKNOWN`.
-- Optionally issues a second probe with `CONVEX_READ_TOKEN` from the
-  environment to confirm the deployment accepts that token.
+- Issues an unauthenticated `dataFiles:list` query and a deliberately wrong-token
+  control probe, then classifies the result as `OPEN`, `ENFORCED`, `OUTAGE`,
+  `CLOSED-UNCONFIRMED`, or `UNKNOWN`.
+- Optionally issues a third probe with `CONVEX_READ_TOKEN` from the environment
+  to distinguish working enforcement from a lockout.
 - `--expect open|enforced` turns it into a gate: exit 0 on match, 1 on
-  mismatch, 2 on indeterminate. Without `--expect` the exit code encodes the
-  state: 0 `ENFORCED`, 10 `OPEN`, 2 `UNKNOWN`.
+  mismatch, 2 on indeterminate. Without `--expect` the exit code encodes all
+  five states: 0 `ENFORCED`, 10 `OPEN`, 11 `OUTAGE`, 12
+  `CLOSED-UNCONFIRMED`, and 2 `UNKNOWN`.
 - Detect the Trap 1 hazard. A deployment with `CONVEX_READ_TOKEN` set and a
   hatch still on reports `OPEN`, which is the only external signal that a
   configured-looking deployment is not enforcing. This is the reason the hatch

@@ -342,7 +342,11 @@ export function parseSnapshotEnvelope(
     // fail-closed case and the wrong-credential case. Matching on that word is
     // coarse; the alternative is putting server text in a result that is shown
     // to a user and written to a log.
-    const message = fields["errorMessage"] ?? fields["errorData"]
+    // Production redacts `errorMessage` to "[Request ID: …] Server Error",
+    // while `errorData` preserves the ConvexError payload. Match
+    // scripts/verify-read-auth.sh: errorData wins, with errorMessage as the
+    // fallback for dev deployments and plain Error responses.
+    const message = fields["errorData"] ?? fields["errorMessage"]
     if (typeof message === "string" && /unauthorized/i.test(message)) {
       return { status: "unauthorized" }
     }
