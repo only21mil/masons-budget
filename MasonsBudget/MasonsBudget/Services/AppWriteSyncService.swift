@@ -15,8 +15,18 @@ enum AppWriteSyncService {
         owner: FamilyMember,
         onResult: (@MainActor @Sendable (Bool) -> Void)? = nil,
     ) {
+        let label = "Save transaction"
+        let payload: MC2Transaction
+        do {
+            payload = try MC2Transaction(appTransaction: transaction, owner: owner)
+        } catch {
+            log.error("\(error.localizedDescription, privacy: .public)")
+            reportSyncStart(label)
+            reportSyncResult(label: label, success: false, retry: nil, onResult: onResult)
+            return
+        }
+
         let fileName = owner.mc2TransactionsFileName
-        let payload = MC2Transaction(appTransaction: transaction)
         pushTransactionPayload(payload, to: fileName, onResult: onResult)
     }
 
