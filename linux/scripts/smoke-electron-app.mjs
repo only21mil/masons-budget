@@ -46,7 +46,7 @@ const EXPECTED = {
   breakpointHoldsAt: 1366,
   minWidth: 1100,
   minHeight: 700,
-  bridgeKeys: ["exportCsv", "getRemoteSnapshot", "getRuntimeInfo"],
+  bridgeKeys: ["exportCsv", "getRemoteSnapshot", "getRuntimeInfo", "queryConvexRows"],
 }
 
 const checks = []
