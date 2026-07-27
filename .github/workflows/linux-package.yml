@@ -1,0 +1,53 @@
+name: Linux package
+
+# Manual and main-only. Producing a distributable desktop app is approval-gated;
+# opening or merging a pull request must never create one by accident.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-package-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: x86_64 deb + AppImage
+    if: github.repository == 'only21mil/masons-budget' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install package and smoke dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends xauth xvfb
+          npm ci
+
+      - name: Build, package, extract, and validate
+        run: npm run package:linux --workspace @vogel-vault/linux
+
+      - name: Offline smoke from packaged AppImage payload
+        run: npm run smoke:packaged --workspace @vogel-vault/linux
+
+      - name: Upload checksummed Linux packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: vogel-vault-linux-x86_64
+          path: |
+            linux/release/*.deb
+            linux/release/*.AppImage
+            linux/release/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
