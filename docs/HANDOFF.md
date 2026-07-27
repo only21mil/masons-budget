@@ -202,7 +202,7 @@ tree's older absolute-value helper as the intended contract.
   [#82](https://github.com/only21mil/masons-budget/pull/82):** loads the bounded
   row/document API through the hardened Electron bridge when
   `VOGEL_VAULT_REMOTE_READ` is enabled. With the flag off it opens no socket;
-  absent/empty row tables do not touch the blob path and degrade to the client's
+  unavailable/empty row tables do not touch the blob path and degrade to the client's
   sanitized fallback/empty presentation.
 - **Queued Android cutover
   [#83](https://github.com/only21mil/masons-budget/pull/83):** replaces the
@@ -214,13 +214,16 @@ tree's older absolute-value helper as the intended contract.
 - **Queued iOS/macOS cutover
   [#85](https://github.com/only21mil/masons-budget/pull/85):** a default-off
   `convex_row_reads_enabled` flag selects typed row queries for transactions,
-  todos, budgets, BTC buys and bill pays. While the tables/functions are absent,
-  only the specific row-API-unavailable error falls back to authenticated
+  todos, budgets, BTC buys and bill pays. If the row API is unavailable, only
+  the specific row-API-unavailable error falls back to authenticated
   blobs; auth and malformed-money failures remain hard failures. BTC accounts
   and several document-shaped datasets intentionally remain on blobs pending
   owner-preserving models.
-- **Swift does not natively decode Convex tagged integers.** This app uses a
-  custom `URLSession` client, not the native Convex Swift SDK. PR
+- **Swift does not natively decode Convex tagged integers.** The tagged
+  `{"$integer":"<base64>"}` shape is produced when the HTTP request names
+  `format: "convex_encoded_json"`; `format: "json"` instead produces a decimal
+  string such as `"2500"` for `v.int64()`. This app uses a custom `URLSession`
+  client, not the native Convex Swift SDK. PR
   [#53](https://github.com/only21mil/masons-budget/pull/53) added the app's own
   strict recursive decoder for `{"$integer":"<base64>"}` before the queued row
   cutover. This is the Rachel/Mason daily-driver path; never remove or bypass
@@ -261,8 +264,9 @@ of the family's financial record.
    The implementation is queued in
    [#90](https://github.com/only21mil/masons-budget/pull/90); its existence is
    not permission to deploy before review and merge.
-2. Deploy the reviewed schema to `keen-elephant-452` (the row tables do not exist
-   there yet).
+2. The row schema and all 16 public `tables:*` functions are deployed to
+   `keen-elephant-452`; confirm the deployed revision still matches the reviewed
+   tree before any backfill.
 3. Run `node scripts/convex-migrate.mjs --prod --json` for a production-targeted
    dry run. Without `--prod`, the command targets the configured development
    deployment.
@@ -365,25 +369,28 @@ row tables exist and the writeback path is deployed, that data goes in through
 
 ## 7. Things that will bite you
 
-- **Nothing is deployed to Convex.** Said twice on purpose.
+- **The row API is deployed.** The row schema and all 16 public `tables:*`
+  functions are live on `keen-elephant-452`; that does not mean a backfill has
+  been approved or run.
 - **CI is the first compile for Swift and Kotlin.** No workstation in the fleet can
   build them. A green local run proves nothing about those two clients.
 - **The escape hatch outranks the token.** `ALLOW_TOKENLESS_READ=true` admits a call
   even when `CONVEX_READ_TOKEN` is set. That is deliberate and documented, and it is
   why `verify-read-auth.sh` sends a deliberately-wrong control credential: it is the
   only automated way to catch a set token silently doing nothing.
-- **The client cutovers do not imply a backend deploy.** PRs #82/#83/#85 are
-  queued, their live modes are gated, and the row tables still do not exist on
-  `keen-elephant-452`. Their absent-table paths fail, render empty/fallback state,
-  or use authenticated blobs as documented above. Do not mutate `dataFiles`,
-  `syncVersions` or `todoTombstones` from the migration.
+- **A deployed row API does not imply a completed client cutover or backfill.**
+  Client live modes remain gated, and empty row tables still render
+  empty/fallback state or use authenticated blobs as documented above. Do not
+  mutate `dataFiles`, `syncVersions` or `todoTombstones` from the migration.
 - **`spendAmount` is not a display absolute value.** A refund must remain
   negative so it reduces the month's derived spend. Use
   `displaySpendAmount` to render a magnitude and preserve
   `hasOppositeSpendSign` for corrupt/ambiguous legacy rows.
-- **Swift needs the repository's tagged-int64 decoder.** It uses a custom HTTP
-  client; `JSONDecoder` does not natively turn Convex
-  `{"$integer":"<base64>"}` into `Int64`.
+- **Swift needs the repository's tagged-int64 decoder when requests use
+  `format: "convex_encoded_json"`.** It uses a custom HTTP client;
+  `JSONDecoder` does not natively turn Convex `{"$integer":"<base64>"}` into
+  `Int64`, and it also does not coerce the decimal strings produced by
+  `format: "json"` into `Int64`.
 - **Salvage from before the Spark wipe lives in tags, not branches.**
   `archive/ios-redesign-20260509` holds four Swift Charts components and Siri
   Shortcuts that never reached `main` — `main` has no charts and no App Intents at

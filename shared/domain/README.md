@@ -25,10 +25,19 @@ The rule does not make closed values open:
   records.
 - Discriminated unions and enums remain closed unless their own contract says
   otherwise.
-- The Convex `{"$integer":"..."}` wrapper remains byte- and shape-exact. It is a
-  tagged scalar representation, not an extensible response record.
+- With the Convex HTTP API request parameter `format: "convex_encoded_json"`,
+  a `v.int64()` uses the byte- and shape-exact `{"$integer":"..."}` wrapper. It
+  is a tagged scalar representation, not an extensible response record.
+- With `format: "json"`, the same `v.int64()` is a decimal string such as
+  `"2500"`; it is not a malformed tagged value. A `v.float64()` remains a plain
+  JSON number in both formats.
 - Client-authored request objects may stay closed.
 - The surviving blob path and its stored bytes remain unchanged.
+
+`fixtures/convex-int64-wire-cases.json` records both HTTP formats under
+`formatCases`. Its `valid` and `invalid` arrays are specifically vectors for the
+strict tagged-scalar parser used with `convex_encoded_json`; plain JSON numbers
+and `format: "json"` decimal strings are therefore not malformed-tag vectors.
 
 `serverResponseCompatibility` in the shared fixture contains row-count and
 transaction-envelope responses with deliberate unknown members at multiple

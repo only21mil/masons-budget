@@ -301,7 +301,7 @@ const LIST_QUERY_PATH = "dataFiles:list"
 function buildQueryBody(path: string, credential: string | null): string {
   const args: Record<string, string> = {}
   if (credential !== null) args.token = credential
-  return JSON.stringify({ path, args, format: "json" })
+  return JSON.stringify({ path, args, format: "convex_encoded_json" })
 }
 
 function summariseFile(entry: unknown, seen: Set<string>): RemoteDataFileSummary | null {
