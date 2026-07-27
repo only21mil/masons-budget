@@ -200,11 +200,15 @@ Multiple agents work this project (Claude Code, OpenCode, Codex, Sats workers). 
 
 ## Historical MC2 references
 
+MC2 was the Python service that originally owned the family-finance JSON and
+pushed projections into Convex. Its file names, field names, record shapes, and
+adult-versus-child conventions survive in the only remaining copy of the data
+and therefore shape DTOs, mappers, fixtures, and tests throughout this codebase.
 Names such as `MC2DTOs`, `MC2Mapper`, `MC2Reader`, `MC2SyncService`, and legacy
-UserDefaults keys survive in Swift for blob compatibility. They do not imply a
-companion service or repository still exists. Treat Convex and this repository
-as the current data boundary; preserve the old JSON decoding contract while
-shipped clients still consume `dataFiles`.
+UserDefaults keys preserve that blob compatibility; they do not imply a live
+upstream, companion service, or companion repository. Treat Convex and this
+repository as the current data boundary, and preserve the old JSON decoding
+contract while shipped clients still consume `dataFiles`.
 
 ---
 

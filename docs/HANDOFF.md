@@ -1,6 +1,6 @@
 # The Vogel Vault — build handoff
 
-**Updated 2026-07-26 against `build/finish-vogel-vault` at `3d4c80b`.** Supersedes
+**Updated 2026-07-26 against `build/finish-vogel-vault` at `f037d19`.** Supersedes
 `PLAN.md`, which is archival. If you are picking this up cold, read this file
 first and trust it over anything in `PLAN.md` or older wiki entries. Remaining
 integration work is tracked by [umbrella issue #46](https://github.com/only21mil/masons-budget/issues/46).
@@ -140,9 +140,11 @@ again in Swift. They are not style preferences.
   dry run reports the projected writes but explicitly defers verification because
   it writes nothing. The reviewable three-way **pre-write** proof and plan binding
   are being implemented under [issue #46](https://github.com/only21mil/masons-budget/issues/46); do not claim they are live yet.
-- `scripts/verify-read-auth.sh` — reports ENFORCED / OPEN / OUTAGE /
-  CLOSED-UNCONFIRMED / UNKNOWN with a control probe, so "shut" is distinguishable
-  from "broken"
+- `scripts/verify-read-auth.sh` — reports `OPEN`, `ENFORCED`,
+  `TOKEN-UNCONFIGURED`, `WRONG-KNOWN-GOOD`, `OUTAGE`, `CLOSED-UNCONFIRMED`, or
+  `UNKNOWN`. `ENFORCED` requires anonymous and wrong-token rejection plus a
+  successful supplied known-good token, so "shut" is distinguishable from
+  "working"
 - **394 Convex tests, 75 domain tests, all green in CI**
 
 ### Clients
@@ -194,7 +196,9 @@ of the family's financial record.
 5. Apply only the exact reviewed plan with
    `node scripts/convex-migrate.mjs --apply --prod --confirm-production` and any
    additional plan-binding argument introduced by the reviewed implementation.
-6. Re-run `scripts/verify-read-auth.sh --expect enforced` afterwards.
+6. Re-run
+   `CONVEX_READ_TOKEN="$THE_TOKEN" scripts/verify-read-auth.sh --expect enforced`
+   afterwards. The token and expectation must be on the same invocation.
 
 The current branch does **not** yet provide step 4 as a genuine no-write proof:
 today's dry run projects inserts/updates and says verification is deferred. Do
