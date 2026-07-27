@@ -3,6 +3,7 @@
 // tests pin the cases where a naive `value * 100` would drift.
 
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import { test } from "node:test"
 
 import {
@@ -11,11 +12,31 @@ import {
   formatBtc,
   formatSats,
   formatUsd,
+  jsonNumberToCents,
+  jsonNumberToMinorUnits,
+  jsonNumberToSats,
   parseBtcToSats,
   parseCents,
   satsToUsdCents,
   sum,
 } from "../src/money.ts"
+
+interface JsonNumberMoneyCase {
+  label: string
+  value: number
+  expected?: string
+  refuse?: boolean
+}
+
+interface JsonNumberMoneyCases {
+  rounding: string
+  cents: JsonNumberMoneyCase[]
+  sats: JsonNumberMoneyCase[]
+}
+
+const jsonNumberCases = JSON.parse(
+  readFileSync(new URL("../fixtures/json-number-money-cases.json", import.meta.url), "utf8"),
+) as JsonNumberMoneyCases
 
 test("parses plain decimal strings exactly", () => {
   assert.equal(parseCents("0"), 0n)
@@ -33,6 +54,94 @@ test("handles the float-drift cases that break naive multiplication", () => {
   assert.equal(parseCents(0.07), 7n)
   assert.equal(parseCents(29.99), 2999n)
   assert.equal(parseCents(1e6), 100_000_000n)
+})
+
+test("converts adversarial JSON numbers from the shared fixture", () => {
+  assert.equal(jsonNumberCases.rounding, "half away from zero")
+
+  for (const fixture of jsonNumberCases.cents) {
+    if (fixture.refuse === true) {
+      assert.throws(
+        () => jsonNumberToCents(fixture.value),
+        RangeError,
+        `cents fixture should be refused: ${fixture.label}`,
+      )
+    } else {
+      assert.equal(
+        jsonNumberToCents(fixture.value),
+        BigInt(fixture.expected ?? assert.fail(`missing expected value: ${fixture.label}`)),
+        fixture.label,
+      )
+    }
+  }
+
+  for (const fixture of jsonNumberCases.sats) {
+    if (fixture.refuse === true) {
+      assert.throws(
+        () => jsonNumberToSats(fixture.value),
+        RangeError,
+        `sats fixture should be refused: ${fixture.label}`,
+      )
+    } else {
+      assert.equal(
+        jsonNumberToSats(fixture.value),
+        BigInt(fixture.expected ?? assert.fail(`missing expected value: ${fixture.label}`)),
+        fixture.label,
+      )
+    }
+  }
+})
+
+test("exhaustively converts every cent from -$10,000 through $10,000", () => {
+  for (let cents = -1_000_000; cents <= 1_000_000; cents += 1) {
+    const lexical = `${cents < 0 ? "-" : ""}${Math.floor(Math.abs(cents) / 100)}.${String(
+      Math.abs(cents) % 100,
+    ).padStart(2, "0")}`
+    const value = JSON.parse(lexical) as number
+    assert.equal(jsonNumberToCents(value), BigInt(cents), lexical)
+  }
+})
+
+test("exhaustively converts eight-decimal BTC values across a two-million-sat window", () => {
+  for (let sats = -1_000_000; sats <= 1_000_000; sats += 1) {
+    const lexical = `${sats < 0 ? "-" : ""}0.${String(Math.abs(sats)).padStart(8, "0")}`
+    const value = JSON.parse(lexical) as number
+    assert.equal(jsonNumberToSats(value), BigInt(sats), lexical)
+  }
+})
+
+test("converts broad BTC magnitudes without losing the eighth decimal place", () => {
+  const wholeBtcValues = [0, 1, 21, 2_100, 21_000_000]
+  const fractionalSats = [1, 7, 12_345_678, 50_000_001, 99_999_999]
+
+  for (const wholeBtc of wholeBtcValues) {
+    for (const fraction of fractionalSats) {
+      const lexical = `${wholeBtc}.${String(fraction).padStart(8, "0")}`
+      const value = JSON.parse(lexical) as number
+      assert.equal(
+        jsonNumberToSats(value),
+        BigInt(wholeBtc) * SATS_PER_BTC + BigInt(fraction),
+        lexical,
+      )
+    }
+  }
+})
+
+test("rounds halfway values away from zero using decimal digits, not float multiplication", () => {
+  assert.equal(jsonNumberToCents(0.1 + 0.2), 30n)
+  assert.equal(jsonNumberToMinorUnits(1.005, 2), 101n)
+  assert.equal(jsonNumberToMinorUnits(-1.005, 2), -101n)
+  assert.equal(jsonNumberToMinorUnits(0.000000005, 8), 1n)
+  assert.equal(jsonNumberToMinorUnits(-0.000000005, 8), -1n)
+})
+
+test("refuses non-finite numbers, invalid scales, and unsafe minor-unit results", () => {
+  assert.throws(() => jsonNumberToMinorUnits(Number.NaN, 2), RangeError)
+  assert.throws(() => jsonNumberToMinorUnits(Number.POSITIVE_INFINITY, 2), RangeError)
+  assert.throws(() => jsonNumberToMinorUnits(1, -1), RangeError)
+  assert.throws(() => jsonNumberToMinorUnits(1, 1.5), RangeError)
+  assert.throws(() => jsonNumberToSats(90_071_992.54740992), RangeError)
+  assert.throws(() => jsonNumberToSats(-90_071_992.54740992), RangeError)
 })
 
 test("treats absent values as zero rather than NaN", () => {
