@@ -149,6 +149,22 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
 
+      # Keep the signed artifact BEFORE attempting the upload. Archive and export
+      # are the expensive, fragile part; the upload depends on App Store Connect
+      # being healthy, which it was not on 2026-07-26 (six consecutive HTTP 500s
+      # from list-apps). Without this the whole build is thrown away on an
+      # outage and has to be recreated to retry.
+      - name: Preserve the signed artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-release-${{ github.run_number }}
+          path: |
+            MasonsBudget/build/*/*.ipa
+            MasonsBudget/build/*/*.pkg
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Upload to TestFlight
         working-directory: MasonsBudget
         env:
