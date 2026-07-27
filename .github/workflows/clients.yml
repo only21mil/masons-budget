@@ -227,12 +227,14 @@ jobs:
       - name: Assemble debug APK
         if: steps.probe.outputs.app == 'true'
         env:
-          # The materialisation step is skipped on pull requests, leaving this
-          # empty so build.gradle.kts preserves AGP's generated signing config.
+          # The materialisation step is skipped on pull requests, so all four
+          # values resolve empty and PR-controlled Gradle receives no signing
+          # credentials. Trusted runs receive passwords only when a stable
+          # keystore was actually materialised.
           VOGEL_DEBUG_KEYSTORE: ${{ steps.debug_keystore.outputs.path }}
-          VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
-          VOGEL_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
-          VOGEL_DEBUG_KEY_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEY_PASSWORD }}
+          VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ steps.debug_keystore.outputs.stable == 'true' && secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD || '' }}
+          VOGEL_DEBUG_KEY_ALIAS: ${{ steps.debug_keystore.outputs.stable == 'true' && secrets.ANDROID_DEBUG_KEY_ALIAS || '' }}
+          VOGEL_DEBUG_KEY_PASSWORD: ${{ steps.debug_keystore.outputs.stable == 'true' && secrets.ANDROID_DEBUG_KEY_PASSWORD || '' }}
         run: gradle :app:assembleDebug :app:lintDebug --no-daemon
         working-directory: android
 
