@@ -111,11 +111,18 @@ function validateSyncToken(token?: string) {
 // Rejection
 // ─────────────────────────────────────────────────────────────────────────────
 
-export interface WritebackErrorData {
+/**
+ * A TYPE ALIAS, not an interface, and that distinction is load-bearing:
+ * TypeScript gives type aliases an implicit index signature but not interfaces,
+ * so an interface is not assignable to Convex's `Value` and `convex deploy`
+ * rejects it. The suite never caught this because vitest does not run Convex's
+ * own typecheck.
+ */
+export type WritebackErrorData = {
   readonly code: string;
   readonly field: string | null;
   readonly message: string;
-}
+};
 
 /**
  * ConvexError carries structured data to the client, unlike a plain Error whose

@@ -9,11 +9,18 @@
     "noEmit": true,
     "skipLibCheck": true,
     "isolatedModules": true,
+    // shared/domain is module:NodeNext and must write explicit .ts
+    // extensions. Without this, `convex deploy` fails on a module that is
+    // correct for its own build. Legal only alongside noEmit, which is set.
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "paths": {
       "convex/_generated/*": ["./_generated/*"]
     }
   },
   "include": ["./**/*.ts", "./**/*.tsx"],
-  "exclude": ["node_modules"]
+  // Tests are not deployed functions. Excluding them here scopes the deploy
+  // typecheck to what actually ships; convex/tsconfig.test.json still checks
+  // them, wired into CI so they cannot rot silently.
+  "exclude": ["node_modules", "**/*.test.ts", "**/*.test-stub.ts"]
 }

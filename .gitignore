@@ -75,7 +75,6 @@ credentials.json
 # Node / Convex
 node_modules/
 .convex/
-convex/_generated/
 
 # Linux client (Electron + Vite) build output
 linux/dist/
