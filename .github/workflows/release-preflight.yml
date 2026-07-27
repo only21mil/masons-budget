@@ -57,6 +57,8 @@ on:
         required: false
       ANDROID_DEBUG_KEY_PASSWORD:
         required: false
+      CONVEX_READ_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -89,6 +91,7 @@ jobs:
           ANDROID_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
           ANDROID_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
           ANDROID_DEBUG_KEY_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEY_PASSWORD }}
+          CONVEX_READ_TOKEN: ${{ secrets.CONVEX_READ_TOKEN }}
         run: python3 .github/workflows/scripts/report_secret_presence.py
 
       - name: Verify App Store Connect bundle visibility

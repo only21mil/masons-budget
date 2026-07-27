@@ -38,6 +38,8 @@ data class VaultUiState(
     val selectedMonth: String? = null,
     /** A rejected read token invalidated the last complete Room snapshot. */
     val staleAuthorization: Boolean = false,
+    /** Fixed, non-secret explanation when enabling authenticated reads fails. */
+    val remoteConfigurationError: String? = null,
 ) {
     val switchTargets: List<FamilyMember> get() = activeProfile.allowedSwitchTargets
 
@@ -172,11 +174,29 @@ class VaultViewModel(
 
     fun enableRemoteRows(readToken: String) {
         if (readToken.isBlank()) return
-        val configure = enableRemote ?: return
-        runCatching { configure(readToken) }.getOrElse { return }
+        val configure =
+            enableRemote ?: run {
+                _state.update {
+                    it.copy(remoteConfigurationError = REMOTE_CONFIGURATION_ERROR)
+                }
+                return
+            }
+        try {
+            configure(readToken)
+        } catch (_: Exception) {
+            _state.update {
+                it.copy(remoteConfigurationError = REMOTE_CONFIGURATION_ERROR)
+            }
+            return
+        }
         remoteEnabled = true
         val profile = _state.value.activeProfile
-        _state.update { it.copy(data = loadingModel(profile)) }
+        _state.update {
+            it.copy(
+                data = loadingModel(profile),
+                remoteConfigurationError = null,
+            )
+        }
         connectRows(profile)
     }
 
@@ -226,6 +246,11 @@ class VaultViewModel(
                     }
                 }
             }
+    }
+
+    private companion object {
+        const val REMOTE_CONFIGURATION_ERROR =
+            "Authenticated row reads could not be saved securely. Remote reads remain disabled."
     }
 }
 
