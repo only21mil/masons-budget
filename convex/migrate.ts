@@ -6,7 +6,7 @@
 // file. This module projects the row-shaped files into real tables so queries
 // can be indexed, while leaving the blobs untouched.
 //
-// FOUR PROPERTIES THIS FILE EXISTS TO GUARANTEE. Read them before changing it —
+// FIVE PROPERTIES THIS FILE EXISTS TO GUARANTEE. Read them before changing it —
 // this is the only copy of the family's financial record.
 //
 //   1. IDEMPOTENT.  Every projected row gets a deterministic E1 table id.
@@ -19,14 +19,19 @@
 //      that can drift from the writer — it IS the writer, stopped one line
 //      short of `db.insert`.
 //
-//   3. VERIFIED, NOT ASSUMED.  After writing, the rows are read back and
+//   3. REVIEWED PLAN BINDING.  Dry run emits backend SHA-256 fingerprints for
+//      each source and the full source set. Apply requires the reviewed global
+//      fingerprint and recomputes it in the mutation before any write. A blob
+//      change between review and apply is a refusal, never a different write.
+//
+//   4. VERIFIED, NOT ASSUMED.  After writing, the rows are read back and
 //      checked three ways: row count, exact summed money per field, and a
 //      canonical-JSON comparison of the reconstructed array against the source
 //      blob. When a whole file fits in one batch the check runs INSIDE the same
 //      mutation, so a mismatch throws and Convex rolls the entire file back —
 //      all-or-nothing. A migration that silently drops rows is worse than none.
 //
-//   4. THE BLOB IS NEVER TOUCHED.  Nothing here writes to, patches or deletes
+//   5. THE BLOB IS NEVER TOUCHED.  Nothing here writes to, patches or deletes
 //      `dataFiles` / `syncVersions`. The blob stays the fallback until every
 //      client has moved off it. Cutover is a separate, later decision.
 //
@@ -287,12 +292,9 @@ type FamilyMember = (typeof FAMILY_MEMBERS)[number];
 /**
  * Resolve a row's owner exactly the way the domain normalizers do.
  *
- * The rule is deliberately odd and is copied rather than improved: an ABSENT
- * owner takes the file's fallback, but a PRESENT-BUT-UNRECOGNISED owner falls
- * back to "victor" even in a child's file. Behavioural parity with
- * normalizeTransaction/normalizeBTCBuy/normalizeTodo matters more here than
- * tidiness — the clients already read the blob this way, and the migrated rows
- * must land on the same owner the app is showing today.
+ * An ABSENT owner takes the file's reviewed fallback. A PRESENT owner must be
+ * one of the four closed-union values. Migration is the point where an unknown
+ * owner would become durable row data, so it is refused rather than coerced.
  *
  * Household note: owner is stored, never compared with strict equality.
  * canSeeDataOwnedBy (adults see everyone) is wider than sharesNetWorthWith
@@ -303,9 +305,20 @@ export function resolveOwner(
   raw: unknown,
   fallbackOwner: string,
 ): FamilyMember {
-  return (FAMILY_MEMBERS as readonly string[]).includes(raw as string)
-    ? (raw as FamilyMember)
-    : (fallbackOwner as FamilyMember);
+  if (raw === undefined || raw === null) {
+    if ((FAMILY_MEMBERS as readonly string[]).includes(fallbackOwner)) {
+      return fallbackOwner as FamilyMember;
+    }
+    throw new ConvexError(
+      `Invalid migration fallback owner: ${JSON.stringify(fallbackOwner)}`,
+    );
+  }
+  if ((FAMILY_MEMBERS as readonly unknown[]).includes(raw)) {
+    return raw as FamilyMember;
+  }
+  throw new ConvexError(
+    `Unknown owner ${JSON.stringify(String(raw))}; owner is a closed union.`,
+  );
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -345,6 +358,109 @@ export function canonicalJson(value: unknown): string {
   return `{${entries
     .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
     .join(",")}}`;
+}
+
+// ─── Frozen plan fingerprint ─────────────────────────────────────────────────
+
+const SHA256_INITIAL = [
+  0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+  0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+] as const;
+
+const SHA256_ROUND = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
+  0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+  0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
+  0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+  0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+  0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
+  0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
+  0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+  0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+] as const;
+
+function rotateRight(value: number, places: number): number {
+  return (value >>> places) | (value << (32 - places));
+}
+
+/**
+ * SHA-256 implemented locally because Convex functions cannot import Node's
+ * crypto module. TextEncoder supplies the specified UTF-8 byte representation.
+ */
+export function sha256(text: string): string {
+  const input = new TextEncoder().encode(text);
+  const bitLength = BigInt(input.length) * 8n;
+  const paddedLength = Math.ceil((input.length + 9) / 64) * 64;
+  const bytes = new Uint8Array(paddedLength);
+  bytes.set(input);
+  bytes[input.length] = 0x80;
+  for (let index = 0; index < 8; index += 1) {
+    bytes[paddedLength - 1 - index] = Number(
+      (bitLength >> BigInt(index * 8)) & 0xffn,
+    );
+  }
+
+  const hash: number[] = [...SHA256_INITIAL];
+  const words = new Uint32Array(64);
+  for (let offset = 0; offset < bytes.length; offset += 64) {
+    for (let index = 0; index < 16; index += 1) {
+      const start = offset + index * 4;
+      words[index] =
+        ((bytes[start]! << 24) |
+          (bytes[start + 1]! << 16) |
+          (bytes[start + 2]! << 8) |
+          bytes[start + 3]!) >>> 0;
+    }
+    for (let index = 16; index < 64; index += 1) {
+      const a = words[index - 15]!;
+      const b = words[index - 2]!;
+      const sigma0 =
+        rotateRight(a, 7) ^ rotateRight(a, 18) ^ (a >>> 3);
+      const sigma1 =
+        rotateRight(b, 17) ^ rotateRight(b, 19) ^ (b >>> 10);
+      words[index] =
+        (words[index - 16]! + sigma0 + words[index - 7]! + sigma1) >>> 0;
+    }
+
+    let [a, b, c, d, e, f, g, h] = hash;
+    for (let index = 0; index < 64; index += 1) {
+      const sum1 =
+        rotateRight(e!, 6) ^ rotateRight(e!, 11) ^ rotateRight(e!, 25);
+      const choose = (e! & f!) ^ (~e! & g!);
+      const temp1 =
+        (h! + sum1 + choose + SHA256_ROUND[index]! + words[index]!) >>> 0;
+      const sum0 =
+        rotateRight(a!, 2) ^ rotateRight(a!, 13) ^ rotateRight(a!, 22);
+      const majority = (a! & b!) ^ (a! & c!) ^ (b! & c!);
+      const temp2 = (sum0 + majority) >>> 0;
+      h = g;
+      g = f;
+      f = e;
+      e = (d! + temp1) >>> 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (temp1 + temp2) >>> 0;
+    }
+
+    hash[0] = (hash[0]! + a!) >>> 0;
+    hash[1] = (hash[1]! + b!) >>> 0;
+    hash[2] = (hash[2]! + c!) >>> 0;
+    hash[3] = (hash[3]! + d!) >>> 0;
+    hash[4] = (hash[4]! + e!) >>> 0;
+    hash[5] = (hash[5]! + f!) >>> 0;
+    hash[6] = (hash[6]! + g!) >>> 0;
+    hash[7] = (hash[7]! + h!) >>> 0;
+  }
+
+  return hash.map((word) => word.toString(16).padStart(8, "0")).join("");
 }
 
 const FNV_OFFSET_64 = 0xcbf29ce484222325n;
@@ -759,6 +875,104 @@ function rowKey(source: MigrationSource, doc: Record<string, unknown>): string {
   }
 }
 
+/**
+ * The frozen plan hashes every application field of every projected document.
+ *
+ * The only excluded field is `migratedAt`: if a future schema adds that
+ * execution-time wall-clock timestamp, it cannot be known during dry run and
+ * would make identical inputs hash differently. No current projection writes
+ * it. In particular, deterministic source timestamps such as `updatedAtMs`,
+ * row ids/keys, owners, integer-minor-unit money values, and `migrationRaw` are
+ * all included. Convex `_id` and `_creationTime` are not exclusions: they do
+ * not exist on a pre-insert projected document and therefore are never part of
+ * the plan in the first place.
+ */
+const PLAN_NONDETERMINISTIC_FIELDS = new Set(["migratedAt"]);
+
+function frozenPlanDocument(
+  doc: Record<string, unknown>,
+): Record<string, unknown> {
+  const stable: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(doc)) {
+    if (!PLAN_NONDETERMINISTIC_FIELDS.has(key)) stable[key] = value;
+  }
+  return stable;
+}
+
+interface FrozenSourcePlan {
+  file: string;
+  table: string;
+  state: "missing" | "unreadable" | "projected";
+  rows?: { key: string; document: Record<string, unknown> }[];
+  unreadableBlob?: unknown;
+}
+
+function frozenSourcePlan(
+  source: MigrationSource,
+  data: unknown | undefined,
+): FrozenSourcePlan {
+  if (data === undefined) {
+    return { file: source.file, table: source.table, state: "missing", rows: [] };
+  }
+
+  const projected = projectFile(source, data);
+  if (projected === null) {
+    // An unreadable source can never be applied, but hashing its exact value
+    // keeps a change elsewhere in the source set from evading the global bind.
+    return {
+      file: source.file,
+      table: source.table,
+      state: "unreadable",
+      unreadableBlob: data,
+    };
+  }
+
+  return {
+    file: source.file,
+    table: source.table,
+    state: "projected",
+    rows: projected.docs.map((doc) => ({
+      key: rowKey(source, doc),
+      document: frozenPlanDocument(doc),
+    })),
+  };
+}
+
+function fingerprintSourcePlan(plan: FrozenSourcePlan): string {
+  return `sha256:${sha256(canonicalJson(plan))}`;
+}
+
+interface FrozenPlan {
+  frozenPlanFingerprint: string;
+  sourceFingerprints: Map<string, string>;
+  dataByFile: Map<string, unknown | undefined>;
+}
+
+async function buildFrozenPlan(ctx: any): Promise<FrozenPlan> {
+  const plans: FrozenSourcePlan[] = [];
+  const sourceFingerprints = new Map<string, string>();
+  const dataByFile = new Map<string, unknown | undefined>();
+
+  for (const source of MIGRATION_SOURCES) {
+    const data = await readBlob(ctx, source.file);
+    const plan = frozenSourcePlan(source, data);
+    plans.push(plan);
+    dataByFile.set(source.file, data);
+    sourceFingerprints.set(source.file, fingerprintSourcePlan(plan));
+  }
+
+  const envelope = {
+    schema: "vogel-vault.convex-migration-plan",
+    version: 1,
+    sources: plans,
+  };
+  return {
+    frozenPlanFingerprint: `sha256:${sha256(canonicalJson(envelope))}`,
+    sourceFingerprints,
+    dataByFile,
+  };
+}
+
 /** Every already-migrated row for one source file, keyed by E1's row id. */
 async function readMigrated(
   ctx: any,
@@ -786,9 +1000,10 @@ const DEFAULT_BATCH_SIZE = 1000;
 export const status = internalQuery({
   args: {},
   handler: async (ctx) => {
+    const plan = await buildFrozenPlan(ctx);
     const files = [];
     for (const source of MIGRATION_SOURCES) {
-      const data = await readBlob(ctx, source.file);
+      const data = plan.dataByFile.get(source.file);
       const rows = data === undefined ? null : extractRows(data, source.container);
       const migrated = await readMigrated(ctx, source);
       files.push({
@@ -798,6 +1013,7 @@ export const status = internalQuery({
         blobRowCount: rows === null ? null : rows.length,
         blobUnreadable: data !== undefined && rows === null,
         migratedRowCount: migrated.size,
+        planFingerprint: plan.sourceFingerprints.get(source.file)!,
       });
     }
 
@@ -814,7 +1030,11 @@ export const status = internalQuery({
       if (data !== undefined) skipped.push(name);
     }
 
-    return { files, skippedDocumentShapedFiles: skipped };
+    return {
+      files,
+      skippedDocumentShapedFiles: skipped,
+      frozenPlanFingerprint: plan.frozenPlanFingerprint,
+    };
   },
 });
 
@@ -834,6 +1054,7 @@ export const migrateFile = internalMutation({
   args: {
     file: v.string(),
     apply: v.optional(v.boolean()),
+    expectedPlanFingerprint: v.optional(v.string()),
     cursor: v.optional(v.float64()),
     batchSize: v.optional(v.float64()),
   },
@@ -850,7 +1071,22 @@ export const migrateFile = internalMutation({
       throw new ConvexError(`batchSize must be a positive integer, got ${batchSize}`);
     }
 
-    const data = await readBlob(ctx, source.file);
+    const plan = await buildFrozenPlan(ctx);
+    if (apply) {
+      if (args.expectedPlanFingerprint === undefined) {
+        throw new ConvexError(
+          "Refusing to apply without expectedPlanFingerprint from a reviewed dry run.",
+        );
+      }
+      if (args.expectedPlanFingerprint !== plan.frozenPlanFingerprint) {
+        throw new ConvexError(
+          "Plan fingerprint mismatch. The source blobs no longer match the reviewed dry run; refusing this write.",
+        );
+      }
+    }
+
+    const data = plan.dataByFile.get(source.file);
+    const planFingerprint = plan.sourceFingerprints.get(source.file)!;
     if (data === undefined) {
       return {
         file: source.file,
@@ -867,6 +1103,8 @@ export const migrateFile = internalMutation({
         done: true,
         verifiedInTransaction: false,
         verification: null as VerificationReport | null,
+        planFingerprint,
+        frozenPlanFingerprint: plan.frozenPlanFingerprint,
       };
     }
 
@@ -938,6 +1176,8 @@ export const migrateFile = internalMutation({
       done,
       verifiedInTransaction: verification !== null,
       verification,
+      planFingerprint,
+      frozenPlanFingerprint: plan.frozenPlanFingerprint,
     };
   },
 });

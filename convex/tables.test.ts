@@ -266,7 +266,13 @@ const fn = {
   migrateFile: "migrate:migrateFile" as unknown as FunctionReference<
     "mutation",
     "internal",
-    { file: string; apply?: boolean; cursor?: number; batchSize?: number },
+    {
+      file: string;
+      apply?: boolean;
+      expectedPlanFingerprint?: string;
+      cursor?: number;
+      batchSize?: number;
+    },
     unknown
   >,
   upsertTransaction: "tables:upsertTransaction" as unknown as FunctionReference<
@@ -589,7 +595,14 @@ async function migrateAll(t: T) {
     "bitcoin-bill-pays",
     "todos",
   ]) {
-    await t.mutation(fn.migrateFile, { file: name, apply: true });
+    const reviewed = await t.mutation(fn.migrateFile, { file: name }) as {
+      frozenPlanFingerprint: string;
+    };
+    await t.mutation(fn.migrateFile, {
+      file: name,
+      apply: true,
+      expectedPlanFingerprint: reviewed.frozenPlanFingerprint,
+    });
   }
 
   // btcAccounts is part of E1's runtime API but deliberately has no E2
@@ -975,25 +988,18 @@ describe("owner is first class, and the two visibility rules keep their widths",
     expect(mason.find((a) => a.key === "son-strike-mason")?.sats).toBe(400000n);
   });
 
-  it("a garbage owner string in a CHILD file falls back to the child, not to an adult", async () => {
-    // coerceOwner in the domain layer maps anything unrecognised to "victor",
-    // an ADULT. Doing that to a row out of mason-transactions.json would put a
-    // child's spending into the adult household view and into adult net worth.
+  it("refuses a garbage owner string in a child file instead of coercing it", async () => {
     await seedDataFile(t, "maddox-transactions", [
       { id: "x-1", date: "2026-07-08", merchant: "Sweets", amount: 5, category: "Fun", owner: "Maddox " },
     ]);
-    await t.mutation(fn.migrateFile, {
-      file: "maddox-transactions",
-      apply: true,
-    });
-
-    const row = (await queryRows(fn.listTransactions, { viewer: "victor" })).find(
-      (candidate) => candidate.txId === "x-1",
-    );
-    expect(row?.owner).toBe("maddox");
-
-    const maddox = await queryRows(fn.listTransactions, { viewer: "maddox" });
-    expect(maddox.map((candidate) => candidate.txId)).toEqual(["x-1"]);
+    await expect(
+      t.mutation(fn.migrateFile, { file: "maddox-transactions" }),
+    ).rejects.toThrow(/closed union/);
+    expect(
+      (await queryRows(fn.listTransactions, { viewer: "victor" })).some(
+        (candidate) => candidate.txId === "x-1",
+      ),
+    ).toBe(false);
   });
 
   it("a recognised owner inside a file still wins over the file's default", async () => {
