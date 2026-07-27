@@ -214,6 +214,11 @@ describe("backend evidence passthrough", () => {
         tableSums: { amountCents: "123.45" },
         rawRows: [{ id: "secret-record" }],
         deploymentId: "secret-deployment",
+        readToken: "READ-TOKEN-SENTINEL",
+        token: "TOKEN-SENTINEL",
+        amountCents: "AMOUNT-CENTS-SENTINEL",
+        usdCents: "USD-CENTS-SENTINEL",
+        sats: "SATS-SENTINEL",
       },
       argv: ["--secret"],
       stdout: "secret child output",
@@ -229,11 +234,22 @@ describe("backend evidence passthrough", () => {
         tableSums: "[redacted]",
         rawRows: "[redacted]",
         deploymentId: "[redacted]",
+        readToken: "[redacted]",
+        token: "[redacted]",
+        amountCents: "[redacted]",
+        usdCents: "[redacted]",
+        sats: "[redacted]",
       },
     });
-    expect(JSON.stringify(evidence)).not.toContain("secret-record");
-    expect(JSON.stringify(evidence)).not.toContain("secret child output");
-    expect(JSON.stringify(evidence)).not.toContain("123.45");
+    const serialized = JSON.stringify(evidence);
+    expect(serialized).not.toContain("secret-record");
+    expect(serialized).not.toContain("secret child output");
+    expect(serialized).not.toContain("123.45");
+    expect(serialized).not.toContain("READ-TOKEN-SENTINEL");
+    expect(serialized).not.toContain("TOKEN-SENTINEL");
+    expect(serialized).not.toContain("AMOUNT-CENTS-SENTINEL");
+    expect(serialized).not.toContain("USD-CENTS-SENTINEL");
+    expect(serialized).not.toContain("SATS-SENTINEL");
   });
 });
 
