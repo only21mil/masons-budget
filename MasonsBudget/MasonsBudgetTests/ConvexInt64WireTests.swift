@@ -20,17 +20,17 @@ final class ConvexInt64WireTests: XCTestCase {
         }
     }
 
-    func testCompleteSharedConvexFixtureWhenAvailable() throws {
+    func testCompleteSharedConvexFixture() throws {
         let bundle = Bundle(for: ConvexInt64WireTests.self)
-        guard let url = bundle.url(forResource: "convex-int64-wire-cases", withExtension: "json")
+        let url = try XCTUnwrap(
+            bundle.url(forResource: "convex-int64-wire-cases", withExtension: "json")
             ?? bundle.url(
                 forResource: "convex-int64-wire-cases",
                 withExtension: "json",
                 subdirectory: "fixtures",
-            )
-        else {
-            throw XCTSkip("Shared int64 fixture is supplied by the prerequisite shared-domain change.")
-        }
+            ),
+            "The shared Convex int64 fixture must be bundled into the Swift test target.",
+        )
 
         let root = try XCTUnwrap(
             JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any],
@@ -74,6 +74,20 @@ final class ConvexInt64WireTests: XCTestCase {
         XCTAssertEqual(sats, 2_100_000_000_000_000)
         XCTAssertFalse(decoded["amountCents"] is Double)
         XCTAssertFalse(decoded["sats"] is Double)
+    }
+
+    func testDecodedValuesRoundTripIntoTypedRowsWithoutLosingPrecision() throws {
+        let wire: [String: Any] = [
+            "amountCents": ["$integer": "AQAAAAAAIAA="],
+            "sats": ["$integer": "AEAHWvB1BwA="],
+        ]
+
+        let decoded = try ConvexTaggedInt64Decoder.decode(wire)
+        let data = try JSONSerialization.data(withJSONObject: decoded)
+        let row = try JSONDecoder().decode(Int64Row.self, from: data)
+
+        XCTAssertEqual(row.amountCents, 9_007_199_254_740_993)
+        XCTAssertEqual(row.sats, 2_100_000_000_000_000)
     }
 
     func testDecoderRecursesWithoutChangingOrdinaryBlobValues() throws {
@@ -134,4 +148,9 @@ final class ConvexInt64WireTests: XCTestCase {
             }
         }
     }
+}
+
+private struct Int64Row: Decodable {
+    let amountCents: Int64
+    let sats: Int64
 }
