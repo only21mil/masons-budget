@@ -61,7 +61,9 @@ describe("real Convex wire values", () => {
       }),
       "listTransactions",
     )
-    expect(result.kind).toBe("transactions")
+    if (result.kind !== "transactions") {
+      throw new Error(`production golden listTransactions decoded as ${result.kind}`)
+    }
     const row = result.rows[0] as VogelVaultTransactionRow
     expect(row.txId).toBe("t1784233824245")
     expect(row.amountCents).toBe(27_918n)
@@ -79,7 +81,9 @@ describe("real Convex wire values", () => {
       }),
       "listTodos",
     )
-    expect(result.kind).toBe("todos")
+    if (result.kind !== "todos") {
+      throw new Error(`production golden listTodos decoded as ${result.kind}`)
+    }
     const row = result.rows[0] as VogelVaultTodoRow
     expect(row.todoId).toBe("8A56A12C-DB12-4766-96BF-6E3AE7D1EFC9")
     expect(row.priority).toBe(0n)
@@ -96,7 +100,9 @@ describe("real Convex wire values", () => {
       }),
       "listBtcBuys",
     )
-    expect(result.kind).toBe("btcBuys")
+    if (result.kind !== "btcBuys") {
+      throw new Error(`production golden listBtcBuys decoded as ${result.kind}`)
+    }
     const row = result.rows[0] as VogelVaultBtcBuyRow
     expect(row.buyId).toBe("b1784166358832")
     expect(row.sats).toBe(148_033n)
@@ -114,7 +120,9 @@ describe("real Convex wire values", () => {
       }),
       "listBtcBillPays",
     )
-    expect(result.kind).toBe("btcBillPays")
+    if (result.kind !== "btcBillPays") {
+      throw new Error(`production golden listBtcBillPays decoded as ${result.kind}`)
+    }
     const row = result.rows[0] as VogelVaultBtcBillPayRow
     expect(row.billPayId).toBe("bp030")
     expect(row.amountUsdCents).toBe(30_673n)
@@ -128,7 +136,9 @@ describe("real Convex wire values", () => {
       await repository.query({ kind: "rowCounts" }),
       "rowCounts",
     )
-    expect(result.kind).toBe("rowCounts")
+    if (result.kind !== "rowCounts") {
+      throw new Error(`production golden rowCounts decoded as ${result.kind}`)
+    }
     expect(result.value).toEqual({
       transactions: 911,
       todos: 25,
@@ -152,7 +162,9 @@ describe("real Convex wire values", () => {
       }),
       "getBudgetDocument",
     )
-    expect(result.kind).toBe("budget")
+    if (result.kind !== "budget") {
+      throw new Error(`production golden getBudgetDocument decoded as ${result.kind}`)
+    }
     expect(result.value).toBeNull()
   })
 
