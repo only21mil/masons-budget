@@ -169,7 +169,7 @@ class RowQueryRepositoryTest {
     }
 
     @Test
-    fun `bill pay money and row counts decode strictly`() {
+    fun `bill pay money and current row counts decode while ignoring future fields`() {
         val billPoster = RecordingPoster(
             rowSuccess(
                 """[{"billPayId":"bp-1","owner":"victor","date":"2026-07-20","month":"2026-07","merchant":"Utility","category":"Bills","amountUsdCents":${int64(12500)},"btcSpentSats":${int64(13000)},"btcPriceCents":${int64(9600000)},"feeUsdCents":${int64(25)},"updatedAtMs":1785000000000}]""",
@@ -188,10 +188,26 @@ class RowQueryRepositoryTest {
         assertEquals("visible", sentArgs(billPoster)["scope"]?.jsonPrimitive?.content)
 
         val countPoster = RecordingPoster(
-            success("""{"transactions":905,"todos":25,"btcBuys":31,"btcBillPays":4,"btcAccounts":7}"""),
+            success(
+                """{"transactions":905,"todos":25,"btcBuys":31,"btcBillPays":4,"btcAccounts":7,"income":12,"balanceDocuments":2,"budgetDocuments":2,"btcBalanceDocuments":2,"financeDocuments":1,"futureProjectionCount":99}""",
+            ),
         )
         val countResult = runBlocking { repositoryWith(countPoster).rowCounts() }
-        assertEquals(RowCounts(905, 25, 31, 4, 7), (countResult as ConvexResult.Ok).value)
+        assertEquals(
+            RowCounts(
+                transactions = 905,
+                todos = 25,
+                btcBuys = 31,
+                btcBillPays = 4,
+                btcAccounts = 7,
+                income = 12,
+                balanceDocuments = 2,
+                budgetDocuments = 2,
+                btcBalanceDocuments = 2,
+                financeDocuments = 1,
+            ),
+            (countResult as ConvexResult.Ok).value,
+        )
     }
 
     @Test

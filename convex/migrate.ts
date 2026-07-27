@@ -6,7 +6,7 @@
 // file. This module projects the row-shaped files into real tables so queries
 // can be indexed, while leaving the blobs untouched.
 //
-// FOUR PROPERTIES THIS FILE EXISTS TO GUARANTEE. Read them before changing it —
+// FIVE PROPERTIES THIS FILE EXISTS TO GUARANTEE. Read them before changing it —
 // this is the only copy of the family's financial record.
 //
 //   1. IDEMPOTENT.  Every projected row gets a deterministic E1 table id.
@@ -19,14 +19,19 @@
 //      that can drift from the writer — it IS the writer, stopped one line
 //      short of `db.insert`.
 //
-//   3. VERIFIED, NOT ASSUMED.  After writing, the rows are read back and
+//   3. REVIEWED PLAN BINDING.  Dry run emits backend SHA-256 fingerprints for
+//      each source and the full source set. Apply requires the reviewed global
+//      fingerprint and recomputes it in the mutation before any write. A blob
+//      change between review and apply is a refusal, never a different write.
+//
+//   4. VERIFIED, NOT ASSUMED.  After writing, the rows are read back and
 //      checked three ways: row count, exact summed money per field, and a
 //      canonical-JSON comparison of the reconstructed array against the source
 //      blob. When a whole file fits in one batch the check runs INSIDE the same
 //      mutation, so a mismatch throws and Convex rolls the entire file back —
 //      all-or-nothing. A migration that silently drops rows is worse than none.
 //
-//   4. THE BLOB IS NEVER TOUCHED.  Nothing here writes to, patches or deletes
+//   5. THE BLOB IS NEVER TOUCHED.  Nothing here writes to, patches or deletes
 //      `dataFiles` / `syncVersions`. The blob stays the fallback until every
 //      client has moved off it. Cutover is a separate, later decision.
 //
@@ -67,6 +72,8 @@ const TRANSACTIONS_TABLE = "transactions";
 const BTC_BUYS_TABLE = "btcBuys";
 const BTC_BILL_PAYS_TABLE = "btcBillPays";
 const TODOS_TABLE = "todos";
+const INCOME_TABLE = "income";
+const BALANCE_DOCUMENTS_TABLE = "balanceDocuments";
 
 /**
  * Which MC2 files this migration owns, and what each becomes.
@@ -75,11 +82,9 @@ const TODOS_TABLE = "todos";
  * take: MC2 tags untagged adult records as "victor", and the child files carry
  * no owner at all, so the file name is what tells you whose row it is.
  *
- * Document-shaped files (budget, mason-budget, btc-balance-snapshot, finances,
- * son-balances) are deliberately NOT here. They are single objects, not row
- * collections; their table shape is a modelling judgement that belongs with the
- * schema, and unlike a ledger they cannot silently lose rows. They stay in
- * `dataFiles` and are reported as `skipped` rather than quietly ignored.
+ * Most document-shaped files are modelled by the document projection lane.
+ * `balances` is included here because it was absent from that declared source
+ * list and otherwise had no migration path at all.
  */
 export const MIGRATION_SOURCES = [
   {
@@ -133,6 +138,20 @@ export const MIGRATION_SOURCES = [
     // MC2TodosWrapper is `{ todos: [...] }`; older exports are a bare array.
     container: "todos",
   },
+  {
+    file: "income",
+    table: INCOME_TABLE,
+    kind: "income",
+    fallbackOwner: "victor",
+    container: null,
+  },
+  {
+    file: "balances",
+    table: BALANCE_DOCUMENTS_TABLE,
+    kind: "balanceDocument",
+    fallbackOwner: "victor",
+    container: null,
+  },
 ] as const;
 
 export type MigrationSource = (typeof MIGRATION_SOURCES)[number];
@@ -157,6 +176,27 @@ export const MONEY_COLUMNS: Record<MigrationKind, readonly string[]> = {
     "feeUsdCents",
   ],
   todo: [],
+  income: ["amountCents"],
+  balanceDocument: [
+    "cashAppSats",
+    "coldcardSats",
+    "riverSats",
+    "strikeSats",
+    "zeusSats",
+    "totalSats",
+    "cashAppFiatCents",
+    "coldcardFiatCents",
+    "riverFiatCents",
+    "strikeFiatCents",
+    "zeusFiatCents",
+    "totalFiatCents",
+    "btcSync.anchorBalancesSats.cashAppSats",
+    "btcSync.anchorBalancesSats.coldcardSats",
+    "btcSync.anchorBalancesSats.riverSats",
+    "btcSync.anchorBalancesSats.strikeSats",
+    "btcSync.anchorBalancesSats.zeusSats",
+    "btcSync.anchorBalancesSats.totalSats",
+  ],
 };
 
 /** Scale of each money column, so sums can be reported as exact decimal text. */
@@ -169,6 +209,24 @@ export const MONEY_SCALES: Record<string, number> = {
   feeUsdCents: 2,
   sats: 8,
   btcSpentSats: 8,
+  cashAppSats: 8,
+  coldcardSats: 8,
+  riverSats: 8,
+  strikeSats: 8,
+  zeusSats: 8,
+  totalSats: 8,
+  cashAppFiatCents: 2,
+  coldcardFiatCents: 2,
+  riverFiatCents: 2,
+  strikeFiatCents: 2,
+  zeusFiatCents: 2,
+  totalFiatCents: 2,
+  "btcSync.anchorBalancesSats.cashAppSats": 8,
+  "btcSync.anchorBalancesSats.coldcardSats": 8,
+  "btcSync.anchorBalancesSats.riverSats": 8,
+  "btcSync.anchorBalancesSats.strikeSats": 8,
+  "btcSync.anchorBalancesSats.zeusSats": 8,
+  "btcSync.anchorBalancesSats.totalSats": 8,
 };
 
 function sourceFor(file: string): MigrationSource {
@@ -184,34 +242,33 @@ function sourceFor(file: string): MigrationSource {
 // ─── Money ───────────────────────────────────────────────────────────────────
 // Mirror of shared/domain/src/money.ts. See the header for why it is copied.
 
+const MAX_SAFE_MINOR_UNITS = BigInt(Number.MAX_SAFE_INTEGER);
+
 /**
  * Parse a decimal value into integer minor units without going through Number.
  *
- * Accepts a string, a number, a bigint, or null/undefined. Numbers are
- * stringified first — for the values MC2 actually emits (2-dp USD, 8-dp BTC)
- * the shortest round-trip representation is exact, so this is lossless and
- * never accumulates the error that `value * 100` does.
+ * Accepts a string, a number, or null/undefined. JSON numbers are delegated to
+ * jsonNumberToMinorUnits, which has stricter safety checks than lexical strings.
  */
 export function parseMinorUnits(value: unknown, scale: number): bigint {
   if (value === null || value === undefined || value === "") return 0n;
-  if (typeof value === "bigint") return value;
+  if (typeof value === "number") return jsonNumberToMinorUnits(value, scale);
 
-  const raw =
-    typeof value === "number"
-      ? numberToDecimalString(value)
-      : String(value).trim();
+  assertScale(scale);
+
+  const raw = String(value).trim();
   if (raw === "") return 0n;
 
   const match = /^(-)?(\d*)(?:\.(\d*))?$/.exec(raw);
   if (!match) {
-    throw new ConvexError(`Not a decimal value: ${JSON.stringify(String(value))}`);
+    throw new RangeError(`Not a decimal value: ${JSON.stringify(value)}`);
   }
 
   const sign = match[1];
   const whole = match[2] ?? "";
   const frac = match[3] ?? "";
   if (whole === "" && frac === "") {
-    throw new ConvexError(`Not a decimal value: ${JSON.stringify(String(value))}`);
+    throw new RangeError(`Not a decimal value: ${JSON.stringify(value)}`);
   }
 
   // Pad or round the fraction to the target scale. Round half away from zero,
@@ -225,14 +282,74 @@ export function parseMinorUnits(value: unknown, scale: number): bigint {
   return sign === "-" ? -result : result;
 }
 
-function numberToDecimalString(value: number): string {
+function assertScale(scale: number): void {
+  if (!Number.isSafeInteger(scale) || scale < 0 || scale > 100) {
+    throw new RangeError(
+      `Minor-unit scale must be an integer from 0 through 100: ${scale}`,
+    );
+  }
+}
+
+/**
+ * Convert an already-parsed JSON number to integer minor units.
+ *
+ * This is the Convex-local mirror of shared/domain/src/money.ts. Number#toString
+ * supplies the shortest round-trippable decimal, then BigInt parses and rounds
+ * those digits without multiplying the float. Values whose rounded minor units
+ * exceed Number.MAX_SAFE_INTEGER are refused because their source double can no
+ * longer reliably distinguish adjacent ledger units.
+ */
+export function jsonNumberToMinorUnits(
+  value: number,
+  scale: number,
+): bigint {
   if (!Number.isFinite(value)) {
-    throw new ConvexError(`Not a finite number: ${value}`);
+    throw new RangeError(`Not a finite number: ${value}`);
   }
-  if (Math.abs(value) < 1e21) {
-    return value.toFixed(20).replace(/0+$/, "").replace(/\.$/, "");
+  assertScale(scale);
+
+  const shortestDecimal = value.toString();
+  const match =
+    /^(-)?(\d+)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(shortestDecimal);
+  if (!match) {
+    throw new RangeError(
+      `Number has no decimal representation: ${shortestDecimal}`,
+    );
   }
-  return String(value);
+
+  const sign = match[1];
+  const whole = match[2] ?? "";
+  const fraction = match[3] ?? "";
+  const exponentLexical = match[4] ?? "0";
+  const coefficient = BigInt(`${whole}${fraction}`);
+  const exponent = Number(exponentLexical);
+  const minorUnitExponent = exponent - fraction.length + scale;
+
+  let magnitude: bigint;
+  if (minorUnitExponent >= 0) {
+    magnitude = coefficient * 10n ** BigInt(minorUnitExponent);
+  } else {
+    const divisor = 10n ** BigInt(-minorUnitExponent);
+    const quotient = coefficient / divisor;
+    const remainder = coefficient % divisor;
+    magnitude = quotient + (remainder * 2n >= divisor ? 1n : 0n);
+  }
+
+  if (magnitude > MAX_SAFE_MINOR_UNITS) {
+    throw new RangeError(
+      `Rounded minor units exceed Number.MAX_SAFE_INTEGER: ${shortestDecimal} at scale ${scale}`,
+    );
+  }
+
+  return sign === "-" ? -magnitude : magnitude;
+}
+
+export function jsonNumberToCents(value: number): bigint {
+  return jsonNumberToMinorUnits(value, 2);
+}
+
+export function jsonNumberToSats(value: number): bigint {
+  return jsonNumberToMinorUnits(value, 8);
 }
 
 export function parseCents(value: unknown): bigint {
@@ -287,12 +404,9 @@ type FamilyMember = (typeof FAMILY_MEMBERS)[number];
 /**
  * Resolve a row's owner exactly the way the domain normalizers do.
  *
- * The rule is deliberately odd and is copied rather than improved: an ABSENT
- * owner takes the file's fallback, but a PRESENT-BUT-UNRECOGNISED owner falls
- * back to "victor" even in a child's file. Behavioural parity with
- * normalizeTransaction/normalizeBTCBuy/normalizeTodo matters more here than
- * tidiness — the clients already read the blob this way, and the migrated rows
- * must land on the same owner the app is showing today.
+ * An ABSENT owner takes the file's reviewed fallback. A PRESENT owner must be
+ * one of the four closed-union values. Migration is the point where an unknown
+ * owner would become durable row data, so it is refused rather than coerced.
  *
  * Household note: owner is stored, never compared with strict equality.
  * canSeeDataOwnedBy (adults see everyone) is wider than sharesNetWorthWith
@@ -303,9 +417,48 @@ export function resolveOwner(
   raw: unknown,
   fallbackOwner: string,
 ): FamilyMember {
-  return (FAMILY_MEMBERS as readonly string[]).includes(raw as string)
-    ? (raw as FamilyMember)
-    : (fallbackOwner as FamilyMember);
+  if (raw === undefined || raw === null) {
+    if ((FAMILY_MEMBERS as readonly string[]).includes(fallbackOwner)) {
+      return fallbackOwner as FamilyMember;
+    }
+    throw new ConvexError(
+      `Invalid migration fallback owner: ${JSON.stringify(fallbackOwner)}`,
+    );
+  }
+  if ((FAMILY_MEMBERS as readonly unknown[]).includes(raw)) {
+    return raw as FamilyMember;
+  }
+  throw new ConvexError(
+    `Unknown owner ${JSON.stringify(String(raw))}; owner is a closed union.`,
+  );
+}
+
+/**
+ * Closed owner resolution for newly discovered sources.
+ *
+ * Absence uses the source's canonical owner. A present value must be a member
+ * of the closed family union and, for adult-household files, must be an adult.
+ * Unknown values and child/adult source disagreements are refused, never
+ * rewritten to a more privileged owner.
+ */
+export function resolveClosedAdultOwner(
+  raw: unknown,
+  fallbackOwner: FamilyMember,
+  sourceFile: string,
+): FamilyMember {
+  if (raw === null || raw === undefined || raw === "") return fallbackOwner;
+  if (!(FAMILY_MEMBERS as readonly unknown[]).includes(raw)) {
+    throw new ConvexError(
+      `${sourceFile}.owner is not a known family member: ${JSON.stringify(raw)}`,
+    );
+  }
+  const owner = raw as FamilyMember;
+  if (owner !== "victor" && owner !== "rachel") {
+    throw new ConvexError(
+      `${sourceFile} is an adult-household source but record owner is ${owner}`,
+    );
+  }
+  return owner;
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -322,6 +475,39 @@ function sourceTimestamp(value: unknown): number {
   if (value === null || value === undefined || value === "") return 0;
   const parsed = Date.parse(String(value));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function asRecord(value: unknown, path: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new ConvexError(`${path} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function requiredString(value: unknown, path: string): string {
+  if (typeof value !== "string" || value === "") {
+    throw new ConvexError(`${path} must be a non-empty string`);
+  }
+  return value;
+}
+
+function requiredMoney(
+  value: unknown,
+  scale: number,
+  path: string,
+): bigint {
+  if (value === null || value === undefined || value === "") {
+    throw new ConvexError(`${path} is required`);
+  }
+  return parseMinorUnits(value, scale);
+}
+
+function optionalMoney(
+  value: unknown,
+  scale: number,
+): bigint | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  return parseMinorUnits(value, scale);
 }
 
 // ─── Canonical JSON ──────────────────────────────────────────────────────────
@@ -345,6 +531,109 @@ export function canonicalJson(value: unknown): string {
   return `{${entries
     .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
     .join(",")}}`;
+}
+
+// ─── Frozen plan fingerprint ─────────────────────────────────────────────────
+
+const SHA256_INITIAL = [
+  0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+  0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+] as const;
+
+const SHA256_ROUND = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
+  0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+  0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
+  0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+  0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+  0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
+  0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
+  0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+  0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+] as const;
+
+function rotateRight(value: number, places: number): number {
+  return (value >>> places) | (value << (32 - places));
+}
+
+/**
+ * SHA-256 implemented locally because Convex functions cannot import Node's
+ * crypto module. TextEncoder supplies the specified UTF-8 byte representation.
+ */
+export function sha256(text: string): string {
+  const input = new TextEncoder().encode(text);
+  const bitLength = BigInt(input.length) * 8n;
+  const paddedLength = Math.ceil((input.length + 9) / 64) * 64;
+  const bytes = new Uint8Array(paddedLength);
+  bytes.set(input);
+  bytes[input.length] = 0x80;
+  for (let index = 0; index < 8; index += 1) {
+    bytes[paddedLength - 1 - index] = Number(
+      (bitLength >> BigInt(index * 8)) & 0xffn,
+    );
+  }
+
+  const hash: number[] = [...SHA256_INITIAL];
+  const words = new Uint32Array(64);
+  for (let offset = 0; offset < bytes.length; offset += 64) {
+    for (let index = 0; index < 16; index += 1) {
+      const start = offset + index * 4;
+      words[index] =
+        ((bytes[start]! << 24) |
+          (bytes[start + 1]! << 16) |
+          (bytes[start + 2]! << 8) |
+          bytes[start + 3]!) >>> 0;
+    }
+    for (let index = 16; index < 64; index += 1) {
+      const a = words[index - 15]!;
+      const b = words[index - 2]!;
+      const sigma0 =
+        rotateRight(a, 7) ^ rotateRight(a, 18) ^ (a >>> 3);
+      const sigma1 =
+        rotateRight(b, 17) ^ rotateRight(b, 19) ^ (b >>> 10);
+      words[index] =
+        (words[index - 16]! + sigma0 + words[index - 7]! + sigma1) >>> 0;
+    }
+
+    let [a, b, c, d, e, f, g, h] = hash;
+    for (let index = 0; index < 64; index += 1) {
+      const sum1 =
+        rotateRight(e!, 6) ^ rotateRight(e!, 11) ^ rotateRight(e!, 25);
+      const choose = (e! & f!) ^ (~e! & g!);
+      const temp1 =
+        (h! + sum1 + choose + SHA256_ROUND[index]! + words[index]!) >>> 0;
+      const sum0 =
+        rotateRight(a!, 2) ^ rotateRight(a!, 13) ^ rotateRight(a!, 22);
+      const majority = (a! & b!) ^ (a! & c!) ^ (b! & c!);
+      const temp2 = (sum0 + majority) >>> 0;
+      h = g;
+      g = f;
+      f = e;
+      e = (d! + temp1) >>> 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (temp1 + temp2) >>> 0;
+    }
+
+    hash[0] = (hash[0]! + a!) >>> 0;
+    hash[1] = (hash[1]! + b!) >>> 0;
+    hash[2] = (hash[2]! + c!) >>> 0;
+    hash[3] = (hash[3]! + d!) >>> 0;
+    hash[4] = (hash[4]! + e!) >>> 0;
+    hash[5] = (hash[5]! + f!) >>> 0;
+    hash[6] = (hash[6]! + g!) >>> 0;
+    hash[7] = (hash[7]! + h!) >>> 0;
+  }
+
+  return hash.map((word) => word.toString(16).padStart(8, "0")).join("");
 }
 
 const FNV_OFFSET_64 = 0xcbf29ce484222325n;
@@ -430,6 +719,98 @@ export function extractRows(
   return rows as Record<string, unknown>[];
 }
 
+const BALANCE_KEYS = [
+  "cashapp",
+  "coldcard",
+  "river",
+  "strike",
+  "zeus",
+  "total",
+] as const;
+
+function projectBalanceSats(
+  raw: Record<string, unknown>,
+  path: string,
+): Record<string, bigint | undefined> {
+  const allowed = new Set<string>(BALANCE_KEYS);
+  for (const key of Object.keys(raw)) {
+    if (!allowed.has(key)) {
+      throw new ConvexError(
+        `${path} contains unknown BTC balance key ${JSON.stringify(key)}`,
+      );
+    }
+  }
+  return {
+    cashAppSats: optionalMoney(raw.cashapp, 8),
+    coldcardSats: optionalMoney(raw.coldcard, 8),
+    riverSats: optionalMoney(raw.river, 8),
+    strikeSats: optionalMoney(raw.strike, 8),
+    zeusSats: optionalMoney(raw.zeus, 8),
+    totalSats: optionalMoney(raw.total, 8),
+  };
+}
+
+function projectBalanceDocument(
+  raw: Record<string, unknown>,
+  context: {
+    sourceFile: string;
+    sourceIndex: number;
+    fallbackOwner: string;
+  },
+): Record<string, unknown> {
+  const btcSync = asRecord(raw.btc_sync, "balances.btc_sync");
+  const anchorBalances = asRecord(
+    btcSync.anchor_balances,
+    "balances.btc_sync.anchor_balances",
+  );
+
+  return {
+    sourceFile: "balances",
+    owner: resolveClosedAdultOwner(
+      raw.owner,
+      context.fallbackOwner as FamilyMember,
+      "balances",
+    ),
+    cashAppSats: requiredMoney(raw.cashapp, 8, "balances.cashapp"),
+    coldcardSats: requiredMoney(raw.coldcard, 8, "balances.coldcard"),
+    riverSats: requiredMoney(raw.river, 8, "balances.river"),
+    strikeSats: requiredMoney(raw.strike, 8, "balances.strike"),
+    zeusSats: requiredMoney(raw.zeus, 8, "balances.zeus"),
+    totalSats: requiredMoney(raw.total, 8, "balances.total"),
+    cashAppFiatCents: optionalMoney(raw.cashapp_fiat, 2),
+    coldcardFiatCents: optionalMoney(raw.coldcard_fiat, 2),
+    riverFiatCents: optionalMoney(raw.river_fiat, 2),
+    strikeFiatCents: optionalMoney(raw.strike_fiat, 2),
+    zeusFiatCents: optionalMoney(raw.zeus_fiat, 2),
+    totalFiatCents: optionalMoney(raw.total_fiat, 2),
+    lastRefreshed: requiredString(
+      raw.lastRefreshed,
+      "balances.lastRefreshed",
+    ),
+    btcSync: {
+      anchorBalancesSats: projectBalanceSats(
+        anchorBalances,
+        "balances.btc_sync.anchor_balances",
+      ),
+      anchorDate: optionalString(btcSync.anchor_date),
+      anchorSource: optionalString(btcSync.anchor_source),
+      notes:
+        btcSync.notes === null || btcSync.notes === undefined
+          ? undefined
+          : btcSync.notes,
+      reconciledAt: optionalString(btcSync.reconciled_at),
+      reconciledFromEvents:
+        btcSync.reconciled_from_events === null ||
+        btcSync.reconciled_from_events === undefined
+          ? undefined
+          : btcSync.reconciled_from_events,
+    },
+    updatedAtMs: 0,
+    raw,
+    migrationSourceIndex: context.sourceIndex,
+  };
+}
+
 /**
  * Project one source row into its target document.
  *
@@ -457,11 +838,23 @@ export function projectRow(
     fallbackOwner: string;
   },
 ): Record<string, unknown> {
+  if (kind === "balanceDocument") {
+    return projectBalanceDocument(raw, context);
+  }
+
+  const owner =
+    kind === "income"
+      ? resolveClosedAdultOwner(
+          raw.owner,
+          context.fallbackOwner as FamilyMember,
+          context.sourceFile,
+        )
+      : resolveOwner(raw.owner, context.fallbackOwner);
   const base = {
     sourceFile: context.sourceFile,
-    owner: resolveOwner(raw.owner, context.fallbackOwner),
+    owner,
     updatedAtMs: 0,
-    migrationRaw: raw,
+    ...(kind === "income" ? { raw } : { migrationRaw: raw }),
     migrationSourceIndex: context.sourceIndex,
   };
   const id =
@@ -552,6 +945,22 @@ export function projectRow(
         ),
         updatedAtMs: sourceTimestamp(raw.updated_at ?? raw.updatedAt),
       };
+
+    case "income": {
+      const date = requiredString(raw.date, "income.date");
+      return {
+        ...base,
+        sourceKey: context.sourceKey,
+        incomeId: id,
+        date,
+        month: monthOf(date),
+        amountCents: requiredMoney(raw.amount, 2, "income.amount"),
+        source: requiredString(raw.source, "income.source"),
+        loggedBy: optionalString(raw.logged_by),
+        note: optionalString(raw.note),
+        archimedesRequestId: optionalString(raw.archimedes_request_id),
+      };
+    }
   }
 }
 
@@ -563,7 +972,12 @@ export function projectFile(
   source: MigrationSource,
   data: unknown,
 ): { rows: Record<string, unknown>[]; docs: Record<string, unknown>[] } | null {
-  const rows = extractRows(data, source.container);
+  const rows =
+    source.kind === "balanceDocument"
+      ? typeof data === "object" && data !== null && !Array.isArray(data)
+        ? [data as Record<string, unknown>]
+        : null
+      : extractRows(data, source.container);
   if (rows === null) return null;
 
   const seen = new Map<string, number>();
@@ -605,7 +1019,20 @@ export function sumMoneyColumns(
   const totals: Record<string, bigint> = {};
   for (const column of MONEY_COLUMNS[kind]) {
     let total = 0n;
-    for (const doc of docs) total += decodeMoney(doc[column], column);
+    for (const doc of docs) {
+      const value = column
+        .split(".")
+        .reduce<unknown>(
+          (current, part) =>
+            typeof current === "object" && current !== null
+              ? (current as Record<string, unknown>)[part]
+              : undefined,
+          doc,
+        );
+      // Optional document fields contribute zero when absent. Their presence is
+      // still proved independently by the canonical raw round-trip.
+      if (value !== undefined) total += decodeMoney(value, column);
+    }
     totals[column] = total;
   }
   return totals;
@@ -628,8 +1055,16 @@ export interface VerificationReport {
   ok: boolean;
   blobRowCount: number;
   tableRowCount: number;
+  rowCountMatches: boolean;
   blobSums: Record<string, string>;
   tableSums: Record<string, string>;
+  moneySumsMatch: boolean;
+  /**
+   * Whether every row present on both sides has byte-equivalent canonical
+   * provenance at the same source index. Count is deliberately reported
+   * separately so a missing final row can be diagnosed as a count-only defect.
+   */
+  roundTripRowsMatch: boolean;
   exactRoundTrip: boolean;
   /** Index of the first row that did not round-trip; null when all did. */
   firstMismatchIndex: number | null;
@@ -665,7 +1100,8 @@ export function verifyProjection(
       Number(b.migrationSourceIndex ?? 0),
   );
 
-  if (ordered.length !== blobRows.length) {
+  const rowCountMatches = ordered.length === blobRows.length;
+  if (!rowCountMatches) {
     problems.push(
       `row count ${ordered.length} in ${source.table} does not match ` +
         `${blobRows.length} in the ${source.file} blob`,
@@ -674,8 +1110,10 @@ export function verifyProjection(
 
   const blobSums = sumMoneyColumns(source.kind, expectedDocs);
   const tableSums = sumMoneyColumns(source.kind, ordered);
+  let moneySumsMatch = true;
   for (const column of MONEY_COLUMNS[source.kind]) {
     if (blobSums[column] !== tableSums[column]) {
+      moneySumsMatch = false;
       problems.push(
         `summed ${column} is ${formatMinorUnits(tableSums[column]!, MONEY_SCALES[column] ?? 0)} ` +
           `in ${source.table} but ${formatMinorUnits(blobSums[column]!, MONEY_SCALES[column] ?? 0)} ` +
@@ -687,9 +1125,12 @@ export function verifyProjection(
   let firstMismatchIndex: number | null = null;
   const compared = Math.min(ordered.length, blobRows.length);
   for (let index = 0; index < compared; index += 1) {
+    const storedRaw =
+      source.kind === "income" || source.kind === "balanceDocument"
+        ? ordered[index]!.raw
+        : ordered[index]!.migrationRaw;
     if (
-      canonicalJson(ordered[index]!.migrationRaw) !==
-      canonicalJson(blobRows[index]!)
+      canonicalJson(storedRaw) !== canonicalJson(blobRows[index]!)
     ) {
       firstMismatchIndex = index;
       problems.push(
@@ -700,8 +1141,8 @@ export function verifyProjection(
     }
   }
 
-  const exactRoundTrip =
-    firstMismatchIndex === null && ordered.length === blobRows.length;
+  const roundTripRowsMatch = firstMismatchIndex === null;
+  const exactRoundTrip = roundTripRowsMatch && rowCountMatches;
 
   return {
     file: source.file,
@@ -709,8 +1150,11 @@ export function verifyProjection(
     ok: problems.length === 0,
     blobRowCount: blobRows.length,
     tableRowCount: ordered.length,
+    rowCountMatches,
     blobSums: formatSums(blobSums),
     tableSums: formatSums(tableSums),
+    moneySumsMatch,
+    roundTripRowsMatch,
     exactRoundTrip,
     firstMismatchIndex,
     problems,
@@ -742,7 +1186,109 @@ function rowKey(source: MigrationSource, doc: Record<string, unknown>): string {
       return String(doc.billPayId);
     case "todo":
       return String(doc.todoId);
+    case "income":
+      return String(doc.sourceKey);
+    case "balanceDocument":
+      return String(doc.sourceFile);
   }
+}
+
+/**
+ * The frozen plan hashes every application field of every projected document.
+ *
+ * The only excluded field is `migratedAt`: if a future schema adds that
+ * execution-time wall-clock timestamp, it cannot be known during dry run and
+ * would make identical inputs hash differently. No current projection writes
+ * it. In particular, deterministic source timestamps such as `updatedAtMs`,
+ * row ids/keys, owners, integer-minor-unit money values, and `migrationRaw` are
+ * all included. Convex `_id` and `_creationTime` are not exclusions: they do
+ * not exist on a pre-insert projected document and therefore are never part of
+ * the plan in the first place.
+ */
+const PLAN_NONDETERMINISTIC_FIELDS = new Set(["migratedAt"]);
+
+function frozenPlanDocument(
+  doc: Record<string, unknown>,
+): Record<string, unknown> {
+  const stable: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(doc)) {
+    if (!PLAN_NONDETERMINISTIC_FIELDS.has(key)) stable[key] = value;
+  }
+  return stable;
+}
+
+interface FrozenSourcePlan {
+  file: string;
+  table: string;
+  state: "missing" | "unreadable" | "projected";
+  rows?: { key: string; document: Record<string, unknown> }[];
+  unreadableBlob?: unknown;
+}
+
+function frozenSourcePlan(
+  source: MigrationSource,
+  data: unknown | undefined,
+): FrozenSourcePlan {
+  if (data === undefined) {
+    return { file: source.file, table: source.table, state: "missing", rows: [] };
+  }
+
+  const projected = projectFile(source, data);
+  if (projected === null) {
+    // An unreadable source can never be applied, but hashing its exact value
+    // keeps a change elsewhere in the source set from evading the global bind.
+    return {
+      file: source.file,
+      table: source.table,
+      state: "unreadable",
+      unreadableBlob: data,
+    };
+  }
+
+  return {
+    file: source.file,
+    table: source.table,
+    state: "projected",
+    rows: projected.docs.map((doc) => ({
+      key: rowKey(source, doc),
+      document: frozenPlanDocument(doc),
+    })),
+  };
+}
+
+function fingerprintSourcePlan(plan: FrozenSourcePlan): string {
+  return `sha256:${sha256(canonicalJson(plan))}`;
+}
+
+interface FrozenPlan {
+  frozenPlanFingerprint: string;
+  sourceFingerprints: Map<string, string>;
+  dataByFile: Map<string, unknown | undefined>;
+}
+
+async function buildFrozenPlan(ctx: any): Promise<FrozenPlan> {
+  const plans: FrozenSourcePlan[] = [];
+  const sourceFingerprints = new Map<string, string>();
+  const dataByFile = new Map<string, unknown | undefined>();
+
+  for (const source of MIGRATION_SOURCES) {
+    const data = await readBlob(ctx, source.file);
+    const plan = frozenSourcePlan(source, data);
+    plans.push(plan);
+    dataByFile.set(source.file, data);
+    sourceFingerprints.set(source.file, fingerprintSourcePlan(plan));
+  }
+
+  const envelope = {
+    schema: "vogel-vault.convex-migration-plan",
+    version: 1,
+    sources: plans,
+  };
+  return {
+    frozenPlanFingerprint: `sha256:${sha256(canonicalJson(envelope))}`,
+    sourceFingerprints,
+    dataByFile,
+  };
 }
 
 /** Every already-migrated row for one source file, keyed by E1's row id. */
@@ -772,18 +1318,21 @@ const DEFAULT_BATCH_SIZE = 1000;
 export const status = internalQuery({
   args: {},
   handler: async (ctx) => {
+    const plan = await buildFrozenPlan(ctx);
     const files = [];
     for (const source of MIGRATION_SOURCES) {
-      const data = await readBlob(ctx, source.file);
-      const rows = data === undefined ? null : extractRows(data, source.container);
+      const data = plan.dataByFile.get(source.file);
+      const projected =
+        data === undefined ? null : projectFile(source, data);
       const migrated = await readMigrated(ctx, source);
       files.push({
         file: source.file,
         table: source.table,
         blobPresent: data !== undefined,
-        blobRowCount: rows === null ? null : rows.length,
-        blobUnreadable: data !== undefined && rows === null,
+        blobRowCount: projected === null ? null : projected.rows.length,
+        blobUnreadable: data !== undefined && projected === null,
         migratedRowCount: migrated.size,
+        planFingerprint: plan.sourceFingerprints.get(source.file)!,
       });
     }
 
@@ -800,7 +1349,11 @@ export const status = internalQuery({
       if (data !== undefined) skipped.push(name);
     }
 
-    return { files, skippedDocumentShapedFiles: skipped };
+    return {
+      files,
+      skippedDocumentShapedFiles: skipped,
+      frozenPlanFingerprint: plan.frozenPlanFingerprint,
+    };
   },
 });
 
@@ -820,6 +1373,7 @@ export const migrateFile = internalMutation({
   args: {
     file: v.string(),
     apply: v.optional(v.boolean()),
+    expectedPlanFingerprint: v.optional(v.string()),
     cursor: v.optional(v.float64()),
     batchSize: v.optional(v.float64()),
   },
@@ -836,7 +1390,22 @@ export const migrateFile = internalMutation({
       throw new ConvexError(`batchSize must be a positive integer, got ${batchSize}`);
     }
 
-    const data = await readBlob(ctx, source.file);
+    const plan = await buildFrozenPlan(ctx);
+    if (apply) {
+      if (args.expectedPlanFingerprint === undefined) {
+        throw new ConvexError(
+          "Refusing to apply without expectedPlanFingerprint from a reviewed dry run.",
+        );
+      }
+      if (args.expectedPlanFingerprint !== plan.frozenPlanFingerprint) {
+        throw new ConvexError(
+          "Plan fingerprint mismatch. The source blobs no longer match the reviewed dry run; refusing this write.",
+        );
+      }
+    }
+
+    const data = plan.dataByFile.get(source.file);
+    const planFingerprint = plan.sourceFingerprints.get(source.file)!;
     if (data === undefined) {
       return {
         file: source.file,
@@ -853,14 +1422,24 @@ export const migrateFile = internalMutation({
         done: true,
         verifiedInTransaction: false,
         verification: null as VerificationReport | null,
+        planFingerprint,
+        frozenPlanFingerprint: plan.frozenPlanFingerprint,
       };
     }
 
     const projected = projectFile(source, data);
     if (projected === null) {
       throw new ConvexError(
-        `The ${source.file} blob is not a row collection` +
-          (source.container ? ` (expected an array or { ${source.container}: [...] })` : " (expected an array)") +
+        `The ${source.file} blob ${
+          source.kind === "balanceDocument"
+            ? "is not a document"
+            : "is not a row collection"
+        }` +
+          (source.kind === "balanceDocument"
+            ? " (expected an object)"
+            : source.container
+              ? ` (expected an array or { ${source.container}: [...] })`
+              : " (expected an array)") +
           ". Refusing to migrate a shape this migration does not understand.",
       );
     }
@@ -924,6 +1503,8 @@ export const migrateFile = internalMutation({
       done,
       verifiedInTransaction: verification !== null,
       verification,
+      planFingerprint,
+      frozenPlanFingerprint: plan.frozenPlanFingerprint,
     };
   },
 });
@@ -949,8 +1530,11 @@ export const verifyFile = internalQuery({
         ok: migrated.size === 0,
         blobRowCount: 0,
         tableRowCount: migrated.size,
+        rowCountMatches: migrated.size === 0,
         blobSums: {},
         tableSums: {},
+        moneySumsMatch: true,
+        roundTripRowsMatch: true,
         exactRoundTrip: migrated.size === 0,
         firstMismatchIndex: null,
         problems:

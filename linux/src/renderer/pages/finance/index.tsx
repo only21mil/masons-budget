@@ -67,7 +67,20 @@ function figure(status: string, render: () => string): string {
 
 function spendOf(transaction: Transaction): bigint {
   if (transaction.category === "Income") return 0n
-  return transaction.amount < 0n ? -transaction.amount : transaction.amount
+  return isAdult(transaction.owner) ? -transaction.amount : transaction.amount
+}
+
+function displaySpendOf(transaction: Transaction): bigint {
+  const spend = spendOf(transaction)
+  return spend < 0n ? -spend : spend
+}
+
+/**
+ * A valid credit or a corrupt wrong-sign spend. Legacy rows persist no `kind`,
+ * so the renderer surfaces the ambiguity instead of guessing.
+ */
+function hasOppositeSpendSign(transaction: Transaction): boolean {
+  return spendOf(transaction) < 0n
 }
 
 function incomeOf(transaction: Transaction): bigint {
@@ -83,9 +96,16 @@ function incomeOf(transaction: Transaction): bigint {
  * Route through the same spend/income helpers the totals use.
  */
 function AmountCell({ transaction }: { transaction: Transaction }) {
-  const spend = spendOf(transaction)
-  if (spend > 0n) {
-    return <span className="vv-negative">-{formatUsd(spend)}</span>
+  if (transaction.category !== "Income" && transaction.amount !== 0n) {
+    const oppositeSign = hasOppositeSpendSign(transaction)
+    return (
+      <span title={oppositeSign ? "Credit/refund, or a stored sign that needs review" : undefined}>
+        <span className={oppositeSign ? "vv-positive" : "vv-negative"}>
+          {oppositeSign ? "" : "-"}{formatUsd(displaySpendOf(transaction))}
+        </span>
+        {oppositeSign ? <> <Badge tone="warning">credit / check sign</Badge></> : null}
+      </span>
+    )
   }
   return <span className="vv-positive">{formatUsd(incomeOf(transaction))}</span>
 }

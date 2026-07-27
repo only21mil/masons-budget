@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
  */
 class ReadModelTest {
     @Test
-    fun `row credits reduce derived budget spend while rendering as a magnitude`() {
+    fun `row credits remain spend rows while reducing budget spend and rendering as a magnitude`() {
         val budget = Budget(
             month = "2026-07",
             categories = listOf(BudgetCategory("Groceries", 50_000L, 0L)),
@@ -46,7 +46,7 @@ class ReadModelTest {
 
         assertEquals(-2_500L, rows.last().spendAmount)
         assertEquals(2_500L, rows.last().displaySpendAmount)
-        assertFalse(rows.last().isSpend)
+        assertTrue(rows.last().isSpend)
         assertEquals(7_500L, deriveBudgetSpend(budget, rows).actualCents)
     }
 

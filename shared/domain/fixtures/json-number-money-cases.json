@@ -1,0 +1,27 @@
+{
+  "rounding": "half away from zero",
+  "cents": [
+    { "label": "zero", "value": 0, "expected": "0" },
+    { "label": "negative zero", "value": -0, "expected": "0" },
+    { "label": "positive cent", "value": 0.01, "expected": "1" },
+    { "label": "negative cent", "value": -0.01, "expected": "-1" },
+    { "label": "binary sum residue", "value": 0.30000000000000004, "expected": "30" },
+    { "label": "positive halfway", "value": 1.005, "expected": "101" },
+    { "label": "negative halfway", "value": -1.005, "expected": "-101" },
+    { "label": "classic 2.675 case", "value": 2.675, "expected": "268" },
+    { "label": "small exponent form", "value": 1e-7, "expected": "0" },
+    { "label": "large exponent form", "value": 1e20, "refuse": true }
+  ],
+  "sats": [
+    { "label": "zero", "value": 0, "expected": "0" },
+    { "label": "one satoshi", "value": 0.00000001, "expected": "1" },
+    { "label": "negative satoshi", "value": -0.00000001, "expected": "-1" },
+    { "label": "multiplication underflows by one satoshi", "value": 0.00000003, "expected": "3" },
+    { "label": "eight decimal places", "value": 0.12345678, "expected": "12345678" },
+    { "label": "negative eight decimal places", "value": -0.12345678, "expected": "-12345678" },
+    { "label": "positive half satoshi", "value": 0.000000005, "expected": "1" },
+    { "label": "negative half satoshi", "value": -0.000000005, "expected": "-1" },
+    { "label": "binary sum residue", "value": 0.30000000000000004, "expected": "30000000" },
+    { "label": "above safe integer sats", "value": 90071992.54740992, "refuse": true }
+  ]
+}

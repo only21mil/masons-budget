@@ -78,11 +78,13 @@ data class Transaction(
 ) : Owned
 
 /**
- * Signed budget contribution in cents.
+ * Signed contribution to budget spend, in cents.
  *
- * Positive values are spend and negative values are credits/refunds. Adult MC2
- * files use the opposite raw sign from child files, so legacy rows derive this
- * contribution from both owner and amount.
+ * Row responses supply this value directly. Legacy fixtures and blobs derive it
+ * from their owner-specific raw sign: adult spend is negative and child spend
+ * is positive. Positive values are spend and negative values are either valid
+ * credits/refunds or corrupt wrong-sign legacy rows; the read shape cannot
+ * distinguish those cases.
  */
 val Transaction.spendAmount: Long
     get() = signedSpendContribution
@@ -92,10 +94,16 @@ val Transaction.spendAmount: Long
             else -> amount
         }
 
-/** Rendering magnitude in cents; never used for budget maths. */
+/** Stable non-negative magnitude for rendering; never used for budget maths. */
 val Transaction.displaySpendAmount: Long
-    get() = rowDisplaySpendAmount
-        ?: if (category == "Income") 0L else kotlin.math.abs(amount)
+    get() = rowDisplaySpendAmount ?: kotlin.math.abs(spendAmount)
+
+/**
+ * A valid credit or a corrupt wrong-sign spend; legacy rows cannot distinguish
+ * the two because they do not persist the write-side `kind`.
+ */
+val Transaction.hasOppositeSpendSign: Boolean
+    get() = spendAmount < 0L
 
 /** Compatibility name for call sites that explicitly describe budget maths. */
 val Transaction.budgetSpendContribution: Long
@@ -105,7 +113,7 @@ val Transaction.incomeAmount: Long
     get() = if (category == "Income" && amount > 0L) amount else 0L
 
 val Transaction.isSpend: Boolean
-    get() = spendAmount > 0L
+    get() = category != "Income" && amount != 0L
 
 // ── Budget ──────────────────────────────────────────────────────────────────
 

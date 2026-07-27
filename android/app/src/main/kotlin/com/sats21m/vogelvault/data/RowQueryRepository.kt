@@ -15,6 +15,11 @@ data class RowCounts(
     val btcBuys: Long,
     val btcBillPays: Long,
     val btcAccounts: Long,
+    val income: Long,
+    val balanceDocuments: Long,
+    val budgetDocuments: Long,
+    val btcBalanceDocuments: Long,
+    val financeDocuments: Long,
 )
 
 /** Row/document API, deliberately separate from the legacy whole-file repository. */
@@ -191,6 +196,11 @@ internal class ConvexRowQueryRepository(
                 btcBuys = counts.requiredLong("btcBuys") ?: return@decode null,
                 btcBillPays = counts.requiredLong("btcBillPays") ?: return@decode null,
                 btcAccounts = counts.requiredLong("btcAccounts") ?: return@decode null,
+                income = counts.requiredLong("income") ?: return@decode null,
+                balanceDocuments = counts.requiredLong("balanceDocuments") ?: return@decode null,
+                budgetDocuments = counts.requiredLong("budgetDocuments") ?: return@decode null,
+                btcBalanceDocuments = counts.requiredLong("btcBalanceDocuments") ?: return@decode null,
+                financeDocuments = counts.requiredLong("financeDocuments") ?: return@decode null,
             )
         }
 }
