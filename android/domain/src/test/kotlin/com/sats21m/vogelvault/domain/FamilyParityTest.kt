@@ -87,6 +87,11 @@ class FamilyParityTest {
     }
 
     @Test
+    fun `every viewer and owner net-worth pair is covered`() {
+        assertEquals(members.size * members.size, pairCases("sharesNetWorth").size)
+    }
+
+    @Test
     fun `sharesNetWorth is strictly narrower than canSee`() {
         for (viewer in members) {
             for (owner in members) {
@@ -244,13 +249,44 @@ class FamilyParityTest {
     }
 
     @Test
-    fun `spend totals match the Swift budget tests`() {
-        val totals = expectations().getAsJsonObject("totalSpend")
+    fun `visible spend retains child rows for adult oversight`() {
+        val totals = expectations().getAsJsonObject("visibleSpend")
         for (viewer in members) {
             assertEquals(
                 Money.parseCents(totals[viewer.key].asString),
                 transactions().visibleTo(viewer).sumOf { it.spendAmount },
-                "${viewer.key} total spend",
+                "${viewer.key} visible spend",
+            )
+        }
+    }
+
+    @Test
+    fun `budget spend uses adult household scope and child self scope`() {
+        val rows = fixtures.getAsJsonArray("sampleTransactions").map {
+            val obj = it.asJsonObject
+            Transaction(
+                id = obj["id"].asString,
+                date = "2026-07-01",
+                merchant = obj["merchant"].asString,
+                amount = Money.parseCents(obj["amount"].asString),
+                category = obj["category"].asString,
+                owner = member(obj["owner"].asString),
+            )
+        }
+        val totals = expectations().getAsJsonObject("budgetSpend")
+        val owners = expectations().getAsJsonObject("budgetOwners")
+
+        for (viewer in members) {
+            val scoped = rows.budgetTransactionsFor(viewer)
+            assertEquals(
+                owners.getAsJsonArray(viewer.key).map { member(it.asString) },
+                scoped.map { it.owner }.distinct(),
+                "${viewer.key} budget owners",
+            )
+            assertEquals(
+                Money.parseCents(totals[viewer.key].asString),
+                scoped.sumOf { it.spendAmount },
+                "${viewer.key} budget spend",
             )
         }
     }

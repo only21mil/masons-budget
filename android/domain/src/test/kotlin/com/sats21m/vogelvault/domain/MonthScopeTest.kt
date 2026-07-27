@@ -1,5 +1,8 @@
 package com.sats21m.vogelvault.domain
 
+import com.google.gson.Gson
+import com.google.gson.JsonObject
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -14,6 +17,35 @@ import kotlin.test.assertTrue
  * Mirrors shared/domain/test/month.test.ts so Android and Linux cannot drift.
  */
 class MonthScopeTest {
+
+    private val monthFixtures: JsonObject = loadMonthFixtures()
+
+    private fun loadMonthFixtures(): JsonObject {
+        var dir: File? = File(System.getProperty("user.dir"))
+        while (dir != null) {
+            val candidate = File(dir, "shared/domain/fixtures/month-cases.json")
+            if (candidate.isFile) return Gson().fromJson(candidate.readText(), JsonObject::class.java)
+            dir = dir.parentFile
+        }
+        error("Could not locate shared/domain/fixtures/month-cases.json from ${System.getProperty("user.dir")}")
+    }
+
+    private fun member(key: String): FamilyMember =
+        FamilyMember.fromKeyOrNull(key) ?: error("Unknown member in fixture: $key")
+
+    private val ownerTransactions: List<Transaction> by lazy {
+        monthFixtures.getAsJsonArray("transactions").map {
+            val row = it.asJsonObject
+            Transaction(
+                id = row["id"].asString,
+                date = row["date"].asString,
+                merchant = row["merchant"].asString,
+                amount = Money.parseCents(row["amount"].asString),
+                category = row["category"].asString,
+                owner = member(row["owner"].asString),
+            )
+        }
+    }
 
     private fun tx(date: String, category: String, amount: String, owner: FamilyMember = FamilyMember.VICTOR) =
         Transaction(
@@ -80,6 +112,48 @@ class MonthScopeTest {
     @Test
     fun `monthsPresent lists distinct months newest first`() {
         assertEquals(listOf("2026-08", "2026-07", "2026-06", "2026-05"), mixed.monthsPresent())
+    }
+
+    @Test
+    fun `shared owner vectors define which transactions contribute to each budget`() {
+        for (entry in monthFixtures.getAsJsonArray("profiles")) {
+            val profile = entry.asJsonObject
+            val viewer = member(profile["viewer"].asString)
+            val expected = profile.getAsJsonArray("expectedOwners").map { member(it.asString) }
+            assertEquals(
+                expected,
+                ownerTransactions.budgetTransactionsFor(viewer).map { it.owner }.distinct(),
+                "${viewer.key} budget owners",
+            )
+        }
+    }
+
+    @Test
+    fun `shared month vectors exclude child-only months from adult budget choices`() {
+        for (entry in monthFixtures.getAsJsonArray("profiles")) {
+            val profile = entry.asJsonObject
+            val viewer = member(profile["viewer"].asString)
+            val budgetMonth = profile["budgetMonth"].takeUnless { it.isJsonNull }?.asString
+            val expected = profile.getAsJsonArray("expectedMonths").map { it.asString }
+            assertEquals(
+                expected,
+                ownerTransactions.budgetMonthsFor(viewer, budgetMonth),
+                "${viewer.key} budget months",
+            )
+        }
+    }
+
+    @Test
+    fun `shared month vectors preserve month derivation inside each owner scope`() {
+        for (entry in monthFixtures.getAsJsonArray("profiles")) {
+            val profile = entry.asJsonObject
+            val viewer = member(profile["viewer"].asString)
+            val scoped = ownerTransactions.budgetTransactionsFor(viewer)
+            for ((month, expected) in profile.getAsJsonObject("spendByMonth").entrySet()) {
+                val result = deriveBudgetSpend(budget(month, listOf("Spending" to "1000")), scoped)
+                assertEquals(Money.parseCents(expected.asString), result.actualCents, "${viewer.key} $month spend")
+            }
+        }
     }
 
     @Test
