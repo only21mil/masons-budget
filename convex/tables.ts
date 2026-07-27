@@ -613,7 +613,7 @@ export const listTransactions = query({
               .withIndex("by_owner_month", (q) =>
                 q.eq("owner", owner).eq("month", month),
               )
-              .take(cap)
+              .collect()
           : ctx.db
               .query("transactions")
               .withIndex("by_owner_date", (q) => q.eq("owner", owner))
@@ -701,7 +701,7 @@ export const listBtcBuys = query({
               .withIndex("by_owner_month", (q) =>
                 q.eq("owner", owner).eq("month", month),
               )
-              .take(cap)
+              .collect()
           : ctx.db
               .query("btcBuys")
               .withIndex("by_owner_date", (q) => q.eq("owner", owner))
@@ -742,7 +742,7 @@ export const listBtcBillPays = query({
               .withIndex("by_owner_month", (q) =>
                 q.eq("owner", owner).eq("month", month),
               )
-              .take(cap)
+              .collect()
           : ctx.db
               .query("btcBillPays")
               .withIndex("by_owner_date", (q) => q.eq("owner", owner))
@@ -1086,11 +1086,49 @@ async function upsertBtcAccountRow(ctx: any, row: any): Promise<UpsertOutcome> {
 // accept only integer minor units.
 // ─────────────────────────────────────────────────────────────────────────────
 
+const transactionKindValidator = v.union(
+  v.literal("spend"),
+  v.literal("credit"),
+);
+
+function requireSignAgrees(
+  minor: bigint,
+  owner: FamilyMember,
+  kind: "spend" | "credit",
+  category: string,
+) {
+  if (minor === 0n) {
+    throw new ConvexError(
+      "upsertTransaction: amountCents must not be zero — a zero-value " +
+        "transaction has no sign to check.",
+    );
+  }
+  if (category === "Income" && kind !== "credit") {
+    throw new ConvexError(
+      'upsertTransaction: a transaction categorised "Income" must be sent ' +
+        'with kind "credit".',
+    );
+  }
+
+  const spendIsNegative = isAdult(owner);
+  const expectedNegative = kind === "spend" ? spendIsNegative : !spendIsNegative;
+  if ((minor < 0n) !== expectedNegative) {
+    const sourceFile = isAdult(owner) ? "transactions" : `${owner}-transactions`;
+    throw new ConvexError(
+      `upsertTransaction: a ${kind} for ${owner} must be ` +
+        `${expectedNegative ? "negative" : "positive"} in ${sourceFile} ` +
+        `(${isAdult(owner) ? "adult files sign spend negative" : "child files store spend as a positive magnitude"}), ` +
+        `got ${minor}. The sign is not corrected here on purpose.`,
+    );
+  }
+}
+
 const transactionInput = v.object({
   id: v.string(),
   date: v.string(),
   merchant: v.string(),
   amountCents: v.int64(),
+  kind: v.optional(transactionKindValidator),
   category: v.string(),
   card: v.optional(v.string()),
   note: v.optional(v.string()),
@@ -1110,9 +1148,16 @@ export const upsertTransaction = mutation({
     const file = sourceFile ?? "transactions";
     const fileOwner = ownerForSourceFile(file, "transactions");
     const date = transaction.date;
+    const owner = resolveOwner(transaction.owner, fileOwner);
+    requireSignAgrees(
+      transaction.amountCents,
+      owner,
+      transaction.kind ?? "spend",
+      transaction.category,
+    );
     const row = {
       txId: transaction.id,
-      owner: resolveOwner(transaction.owner, fileOwner),
+      owner,
       date,
       month: monthOf(date),
       merchant: transaction.merchant,
@@ -1138,6 +1183,15 @@ export const upsertTodo = mutation({
     validateSyncToken(token);
     const raw = asRecord(todo);
     if (!raw) throw new ConvexError("upsertTodo: todo must be an object");
+    if (
+      Object.prototype.hasOwnProperty.call(raw, "owner") &&
+      !isFamilyMember(raw.owner)
+    ) {
+      throw new ConvexError(
+        `upsertTodo: owner must be one of ${FAMILY_MEMBERS.join(", ")}, got ` +
+          `${JSON.stringify(raw.owner)}.`,
+      );
+    }
     const row = buildTodoRow(raw, DEFAULT_OWNER, "todos", Date.now());
     const outcome = await upsertTodoRow(ctx, row);
     return { todoId: row.todoId, owner: row.owner, done: row.done, outcome };
@@ -1231,10 +1285,18 @@ export const upsertBtcAccount = mutation({
   },
   handler: async (ctx, { account, sourceFile, token }) => {
     validateSyncToken(token);
+    const file = sourceFile ?? "btc-balance-snapshot";
+    const fileOwner = ownerForSourceFile(file, "btcAccounts");
+    if (account.owner !== fileOwner) {
+      throw new ConvexError(
+        `upsertBtcAccount: source file "${file}" belongs to ${fileOwner}, ` +
+          `not ${account.owner}.`,
+      );
+    }
     const row = {
       ...account,
       schemaVersion: account.schemaVersion ?? 0n,
-      sourceFile: sourceFile ?? "btc-balance-snapshot",
+      sourceFile: file,
       updatedAtMs: Date.now(),
     };
     const outcome = await upsertBtcAccountRow(ctx, row);

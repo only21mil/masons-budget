@@ -209,6 +209,7 @@ const fn = {
         card?: string;
         note?: string;
         owner?: Member;
+        kind?: "spend" | "credit";
       };
       sourceFile?: string;
       token?: string;
@@ -526,7 +527,11 @@ async function migrateAll(t: T) {
       asOf: SON_BALANCES.lastUpdated,
     },
   ]) {
-    await t.mutation(fn.upsertBtcAccount, { account });
+    await t.mutation(fn.upsertBtcAccount, {
+      account,
+      sourceFile:
+        account.owner === "mason" ? "son-balances" : "btc-balance-snapshot",
+    });
   }
 }
 
@@ -810,6 +815,81 @@ describe("indexed month and date", () => {
     expect(rows.map((row) => row.date)).toEqual(["2026-07-19", "2026-07-04"]);
   });
 
+  it("applies a month limit after date ordering for every month-indexed table", async () => {
+    // These rows are inserted after the migrated July rows. by_owner_month
+    // contains only (owner, month), so taking one row from that range before
+    // sorting by date returns an older creation-order row.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("transactions", {
+        txId: "month-newest-transaction",
+        owner: "victor",
+        date: "2026-07-31",
+        month: "2026-07",
+        merchant: "Newest transaction",
+        amountCents: -1n,
+        category: "Other",
+        sourceFile: "transactions",
+        updatedAtMs: 1,
+      });
+      await ctx.db.insert("btcBuys", {
+        buyId: "month-newest-buy",
+        owner: "victor",
+        date: "2026-07-31",
+        month: "2026-07",
+        source: "strike",
+        sats: 1n,
+        priceUsdCents: 1n,
+        usdCents: 1n,
+        sourceFile: "bitcoin-buys",
+        updatedAtMs: 1,
+      });
+      await ctx.db.insert("btcBillPays", {
+        billPayId: "month-newest-bill-pay",
+        owner: "victor",
+        date: "2026-07-31",
+        month: "2026-07",
+        merchant: "Newest bill pay",
+        category: "Utilities",
+        amountUsdCents: 1n,
+        btcSpentSats: 1n,
+        btcPriceCents: 1n,
+        feeUsdCents: 0n,
+        sourceFile: "bitcoin-bill-pays",
+        updatedAtMs: 1,
+      });
+    });
+
+    expect(
+      (
+        await queryRows(fn.listTransactions, {
+          viewer: "victor",
+          month: "2026-07",
+          limit: 1,
+        })
+      ).map((row) => row.txId),
+    ).toEqual(["month-newest-transaction"]);
+    expect(
+      (
+        await queryRows(fn.listBtcBuys, {
+          viewer: "victor",
+          scope: "visible",
+          month: "2026-07",
+          limit: 1,
+        })
+      ).map((row) => row.buyId),
+    ).toEqual(["month-newest-buy"]);
+    expect(
+      (
+        await queryRows(fn.listBtcBillPays, {
+          viewer: "victor",
+          scope: "visible",
+          month: "2026-07",
+          limit: 1,
+        })
+      ).map((row) => row.billPayId),
+    ).toEqual(["month-newest-bill-pay"]);
+  });
+
   it("a limit returns the newest overall, not the newest of one bucket", async () => {
     // listTodos reads by_owner_done, which orders by (owner, done, updatedAtMs).
     // Taking N from an owner-only range would hand back N *done* todos and no
@@ -907,6 +987,15 @@ describe("public Linux/Android read contract", () => {
     await expect(
       t.query(fn.listTransactions, { viewer: "victor", limit: 2001 }),
     ).rejects.toThrow(/integer from 1 to 2000/);
+  });
+
+  it("requires callers to choose BTC visibility scope explicitly", async () => {
+    await expect(
+      t.query(fn.listBtcBuys as any, { viewer: "victor" }),
+    ).rejects.toThrow();
+    await expect(
+      t.query(fn.listBtcAccounts as any, { viewer: "victor" }),
+    ).rejects.toThrow();
   });
 
   it("fails closed when a full replacement snapshot exceeds the hard maximum", async () => {
@@ -1063,6 +1152,33 @@ describe("row mutations", () => {
     expect(mason.map((row) => row.txId)).toEqual(["app-m1"]);
   });
 
+  it("rejects transaction signs that disagree with the owner file convention", async () => {
+    await expect(
+      t.mutation(fn.upsertTransaction, {
+        transaction: {
+          id: "adult-wrong-sign",
+          date: "2026-07-22",
+          merchant: "Adult spend",
+          amountCents: 900n,
+          category: "Fun",
+        },
+      }),
+    ).rejects.toThrow(/adult files sign spend negative/);
+
+    await expect(
+      t.mutation(fn.upsertTransaction, {
+        sourceFile: "mason-transactions",
+        transaction: {
+          id: "child-wrong-sign",
+          date: "2026-07-22",
+          merchant: "Child spend",
+          amountCents: -900n,
+          category: "Fun",
+        },
+      }),
+    ).rejects.toThrow(/child files store spend as a positive magnitude/);
+  });
+
   it("upserts a btc buy and a btc account idempotently", async () => {
     const inserted = await t.mutation(fn.upsertBtcBuy, {
       buy: {
@@ -1138,6 +1254,35 @@ describe("row mutations", () => {
         },
       }),
     ).rejects.toThrow(/holds todos, not transactions/);
+  });
+
+  it("refuses a BTC account whose owner disagrees with its source file", async () => {
+    await expect(
+      t.mutation(fn.upsertBtcAccount, {
+        sourceFile: "son-balances",
+        account: {
+          key: "child-stack-as-adult",
+          owner: "victor",
+          label: "Must not reach adult net worth",
+          custody: "self_custody",
+          sats: 1n,
+          fiatCents: 1n,
+          asOf: "2026-07-26T00:00:00Z",
+        },
+      }),
+    ).rejects.toThrow(/belongs to mason, not victor/);
+  });
+
+  it("refuses an unknown todo owner instead of defaulting it to an adult", async () => {
+    await expect(
+      t.mutation(fn.upsertTodo, {
+        todo: {
+          id: "bad-owner-todo",
+          title: "Must not become Victor's",
+          owner: "Mason ",
+        },
+      }),
+    ).rejects.toThrow(/owner must be one of victor, rachel, mason, maddox/);
   });
 
   it("rejects an owner outside the closed set", async () => {
@@ -1346,6 +1491,9 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
       await expect(
         t.mutation(fn.dataFilesSync, { name: "probe", data: [] }),
       ).resolves.toBeDefined();
+      for (const entry of writeEntryPoints) {
+        await expect(entry.call()).resolves.toBeDefined();
+      }
     });
 
     it("both files fail closed identically with neither hatch nor token", async () => {
