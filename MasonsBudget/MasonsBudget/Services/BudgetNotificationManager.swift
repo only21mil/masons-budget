@@ -35,16 +35,17 @@ final class BudgetNotificationManager {
     ) -> [BudgetAlert] {
         let cal = Calendar.current
         let thisMonth = transactions.filter {
-            member.canSee(dataOwnedBy: $0.ownerMember) && cal.isDate($0.date, equalTo: now, toGranularity: .month)
+            member.sharesNetWorth(with: $0.ownerMember) &&
+                cal.isDate($0.date, equalTo: now, toGranularity: .month)
         }
 
         var spentByCategory: [String: Decimal] = [:]
         for tx in thisMonth {
-            spentByCategory[tx.category, default: 0] += tx.amount
+            spentByCategory[tx.category, default: 0] += tx.spendAmount
         }
 
         var alerts: [BudgetAlert] = []
-        for cat in categories {
+        for cat in categories where member.sharesNetWorth(with: cat.ownerMember) {
             let catKey = cat.name.contains(":") ? String(cat.name.split(separator: ":").last ?? "") : cat.name
             let spent = spentByCategory[catKey] ?? 0
             guard cat.monthlyBudget > 0 else { continue }
