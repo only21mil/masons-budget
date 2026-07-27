@@ -267,7 +267,7 @@ final class MC2ReaderTests: XCTestCase {
             id: "manual-1-abcdef",
             date: XCTUnwrap(components.date),
             merchant: "Starbucks",
-            amount: 25.00,
+            amount: -25.00,
             category: "Dining & Drinks",
             card: "Strike",
             note: "Coffee",
@@ -275,7 +275,7 @@ final class MC2ReaderTests: XCTestCase {
             createdBy: "manual",
         )
 
-        let dto = MC2Transaction(appTransaction: transaction)
+        let dto = try MC2Transaction(appTransaction: transaction, owner: .victor)
         XCTAssertEqual(dto.id, "manual-1-abcdef")
         XCTAssertEqual(dto.date, "2026-05-01")
         XCTAssertEqual(dto.merchant, "Starbucks")
@@ -290,10 +290,10 @@ final class MC2ReaderTests: XCTestCase {
         XCTAssertEqual(payload["category"] as? String, "Dining & Drinks")
         XCTAssertEqual(payload["card"] as? String, "Strike")
         XCTAssertEqual(payload["note"] as? String, "Coffee")
-        XCTAssertEqual(payload["amount"] as? Double, 25.0)
+        assertDecimalClose(try XCTUnwrap(payload["amount"] as? NSNumber).decimalValue, -25)
     }
 
-    func testAppSpendPayloadUsesPositiveMC2Amount() throws {
+    func testAppAdultSpendPayloadPreservesNegativeAmount() throws {
         let transaction = Transaction(
             id: "manual-spend",
             date: .now,
@@ -305,11 +305,89 @@ final class MC2ReaderTests: XCTestCase {
             createdBy: "app",
         )
 
-        let dto = MC2Transaction(appTransaction: transaction)
-        assertDecimalClose(dto.amount, 32.45)
+        let dto = try MC2Transaction(appTransaction: transaction, owner: .victor)
+        assertDecimalClose(dto.amount, -32.45)
 
         let payload = try dto.convexJSONObject()
-        XCTAssertEqual(payload["amount"] as? Double, 32.45)
+        assertDecimalClose(try XCTUnwrap(payload["amount"] as? NSNumber).decimalValue, -32.45)
+    }
+
+    func testAppChildSpendPayloadPreservesPositiveMagnitude() throws {
+        let transaction = Transaction(
+            id: "mason-spend",
+            date: .now,
+            merchant: "Game Store",
+            amount: 24,
+            category: "Entertainment",
+            owner: .mason,
+            createdBy: "app",
+        )
+
+        let dto = try MC2Transaction(appTransaction: transaction, owner: .mason)
+        assertDecimalClose(dto.amount, 24)
+
+        let payload = try dto.convexJSONObject()
+        assertDecimalClose(try XCTUnwrap(payload["amount"] as? NSNumber).decimalValue, 24)
+    }
+
+    func testAppIncomePayloadPreservesPositiveAmount() throws {
+        let transaction = Transaction(
+            id: "income",
+            date: .now,
+            merchant: "Paycheck",
+            amount: 500,
+            category: "Income",
+            owner: .victor,
+            createdBy: "app",
+        )
+
+        let dto = try MC2Transaction(appTransaction: transaction, owner: .victor)
+        assertDecimalClose(dto.amount, 500)
+
+        let payload = try dto.convexJSONObject()
+        assertDecimalClose(try XCTUnwrap(payload["amount"] as? NSNumber).decimalValue, 500)
+    }
+
+    func testAppSpendPayloadRejectsSignsInconsistentWithOwner() {
+        let invalidAdultSpend = Transaction(
+            id: "adult-wrong-sign",
+            date: .now,
+            merchant: "Grocer",
+            amount: 25,
+            category: "Groceries",
+            owner: .victor,
+            createdBy: "app",
+        )
+        let invalidChildSpend = Transaction(
+            id: "child-wrong-sign",
+            date: .now,
+            merchant: "Game Store",
+            amount: -24,
+            category: "Entertainment",
+            owner: .mason,
+            createdBy: "app",
+        )
+
+        XCTAssertThrowsError(try MC2Transaction(appTransaction: invalidAdultSpend, owner: .victor)) { error in
+            XCTAssertEqual(
+                error as? MC2TransactionWriteError,
+                .adultSpendMustBeNegative(owner: .victor),
+            )
+            XCTAssertEqual(
+                error.localizedDescription,
+                "Rejected transaction write for victor: adult spending must be negative.",
+            )
+        }
+        XCTAssertThrowsError(try MC2Transaction(appTransaction: invalidChildSpend, owner: .mason)) { error in
+            XCTAssertEqual(
+                error as? MC2TransactionWriteError,
+                .childSpendMustBePositive(owner: .mason),
+            )
+            XCTAssertEqual(
+                error.localizedDescription,
+                "Rejected transaction write for mason: child spending must be positive.",
+            )
+        }
     }
 
     // MARK: - budget.json
