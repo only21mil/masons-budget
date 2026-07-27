@@ -95,6 +95,18 @@ final class BudgetMonthScopingTests: XCTestCase {
         XCTAssertFalse(july.contains { $0.id == "aug-01-groceries" }, "August 1 leaked into July")
     }
 
+    func testCategoryDetailShowsOnlySelectedMonthTransactions() throws {
+        let juneGroceries = CategoryDetailView.transactions(
+            try sampleTransactions(),
+            visibleTo: .victor,
+            category: "Groceries",
+            selectedMonth: try monthAnchor(2026, 6),
+            calendar: calendar,
+        )
+
+        XCTAssertEqual(juneGroceries.map(\.id), ["jun-30-groceries"])
+    }
+
     func testFirstAndLastInstantOfTheMonthBelongToIt() throws {
         let firstMoment = try XCTUnwrap(
             calendar.date(from: DateComponents(year: 2026, month: 7, day: 1, hour: 0, minute: 0, second: 0)),
