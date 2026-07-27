@@ -255,16 +255,17 @@ jobs:
         with:
           gradle-version: "8.12"
 
-      # Pull requests and other untrusted events deliberately stay on AGP's
-      # per-run debug key. Repository key material may exist only on a push to
-      # main or an explicitly dispatched run, where secrets are intentionally
-      # available. A missing secret still falls back to AGP signing.
+      # Pull requests and other untrusted refs deliberately stay on AGP's
+      # per-run debug key. Repository key material may exist only when the
+      # default branch itself is built by a push or an explicit dispatch.
+      # Missing key material is a hard failure there: a default-branch artifact
+      # must never silently fall back to an ephemeral signing identity.
       - name: Materialise and validate the stable debug keystore
         id: debug_keystore
         if: >-
           steps.probe.outputs.app == 'true' &&
-          (github.event_name == 'workflow_dispatch' ||
-          (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
           VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
@@ -274,10 +275,8 @@ jobs:
           set -euo pipefail
 
           if [ -z "${KEYSTORE_BASE64:-}" ]; then
-            echo "path=" >> "$GITHUB_OUTPUT"
-            echo "stable=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Stable Android debug signing is not configured; using AGP's ephemeral debug key."
-            exit 0
+            echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 is required for default-branch Android APK builds."
+            exit 1
           fi
 
           KEYSTORE_PATH="$RUNNER_TEMP/vogel-debug.keystore"
@@ -310,13 +309,13 @@ jobs:
         run: gradle :app:assembleDebug :app:lintDebug --no-daemon
         working-directory: android
 
-      # Pull requests cannot reach the secret-bearing step above: their
-      # materialisation step is skipped, so `stable` is never true. Running
-      # Gradle without any signing env preserves AGP's generated debug key.
+      # The event check is intentionally explicit: pull requests cannot reach
+      # either secret-bearing step, and no other ref gets an APK build. Running
+      # PR-controlled Gradle without signing env preserves AGP's generated key.
       - name: Assemble debug APK with ephemeral signing
         if: >-
           steps.probe.outputs.app == 'true' &&
-          steps.debug_keystore.outputs.stable != 'true'
+          github.event_name == 'pull_request'
         run: gradle :app:assembleDebug :app:lintDebug --no-daemon
         working-directory: android
 
@@ -347,8 +346,10 @@ jobs:
 
       # Debug-signed only — a sideload artifact for the Fold, never a release
       # build. Release signing stays out of CI.
-      - name: Upload debug APK
-        if: steps.probe.outputs.app == 'true' && github.event_name != 'pull_request'
+      - name: Upload stable-signed debug APK
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          steps.debug_keystore.outputs.stable == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: vogel-vault-debug-apk
