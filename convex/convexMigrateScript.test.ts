@@ -112,6 +112,25 @@ async function invoke(
   };
 }
 
+function invokeSuccessfulApply() {
+  return invoke([
+    "--apply",
+    "--expected-plan-fingerprint",
+    PLAN_FINGERPRINT,
+    "--json",
+  ], (functionName) => {
+    if (functionName === "migrate:status") return status();
+    if (functionName === "migrate:migrateFile") {
+      return migrationBatch({
+        applied: true,
+        verifiedInTransaction: true,
+        verification: verification(),
+      });
+    }
+    throw new Error("unexpected function");
+  });
+}
+
 describe("argument matrix", () => {
   test.each([
     { argv: [], expected: { apply: false, prod: false, verifyOnly: false } },
@@ -373,6 +392,23 @@ describe("versioned JSON output", () => {
     expect(result.stdout[0]).not.toContain("123.45");
   });
 
+  test("a successful apply with committed writes has a success classification", async () => {
+    const result = await invokeSuccessfulApply();
+
+    expect(result.exitCode).toBe(0);
+    expect(result.document).toMatchObject({
+      outcome: "success",
+      execution: {
+        state: "completed",
+        writeSafety: {
+          classification: "writes-completed",
+          reason: "one or more completed batches reported committed inserts or updates",
+        },
+      },
+      summary: { inserted: 2, updated: 0 },
+    });
+  });
+
   test("verify and skipped files have distinct states", async () => {
     const verified = await invoke(["--verify", "--json"], (functionName) => {
       if (functionName === "migrate:status") return status();
@@ -516,6 +552,44 @@ describe("failure evidence and exit status", () => {
     });
     expect(result.stdout[0]).not.toContain("secret-123");
     expect(result.stdout[0]).not.toContain("999.99");
+  });
+
+  test("an error gate distinguishes committed writes before failure from successful writes", async () => {
+    const successful = await invokeSuccessfulApply();
+    let batch = 0;
+    const failed = await invoke([
+      "--apply",
+      "--expected-plan-fingerprint",
+      PLAN_FINGERPRINT,
+      "--json",
+      "--batch-size",
+      "1",
+    ], (functionName) => {
+      if (functionName === "migrate:status") return status();
+      if (functionName === "migrate:migrateFile") {
+        batch += 1;
+        if (batch === 1) {
+          return migrationBatch({
+            applied: true,
+            scanned: 1,
+            inserted: 1,
+            nextCursor: 1,
+            done: false,
+          });
+        }
+        throw new Error("failure after a committed batch");
+      }
+      throw new Error("unexpected function");
+    });
+
+    expect(failed.exitCode).toBe(1);
+    expect({
+      successful: successful.document.execution.writeSafety.classification,
+      failed: failed.document.execution.writeSafety.classification,
+    }).toEqual({
+      successful: "writes-completed",
+      failed: "writes-completed-before-failure",
+    });
   });
 
   test("classifies an unobservable first apply attempt as possible", async () => {

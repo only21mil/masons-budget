@@ -4,6 +4,8 @@
 
 import type { ReactNode } from "react"
 
+import type { Freshness } from "@vogel-vault/domain/readModel"
+
 import { IconGlyph, type IconName } from "./IconGlyph.tsx"
 import { Badge, Button } from "./primitives.tsx"
 import { cx } from "./cx.ts"
@@ -88,9 +90,12 @@ export function FreshnessTag({
   status,
   updatedAt,
 }: {
-  status: "live" | "stale" | "error" | "empty" | "loading"
+  status: Freshness
   updatedAt: number | null
 }) {
+  if (status === "demo") {
+    return <Badge tone="info" icon="circle-alert">DEMO DATA</Badge>
+  }
   if (status === "live") {
     // The live tag shows a bare timestamp; that it means "synced" is carried by
     // the green pill and the tick, neither of which a screen reader reports.

@@ -1,6 +1,7 @@
 import { useEffect } from "react"
 
 import { type FamilyMember, displayName, isAdult } from "@vogel-vault/domain/family"
+import type { Freshness } from "@vogel-vault/domain/readModel"
 
 import { AppStateProvider, type StateOverride, useAppState } from "./renderer/app/AppState.tsx"
 import {
@@ -64,7 +65,14 @@ function GlobalSyncState() {
   const { data } = useAppState()
 
   const slices = [data.transactions, data.budget, data.btcAccounts, data.btcBuys, data.billPays, data.todos]
-  const rank = { error: 0, loading: 1, stale: 2, empty: 3, live: 4 } as const
+  const rank: Record<Freshness, number> = {
+    error: 0,
+    loading: 1,
+    stale: 2,
+    demo: 3,
+    empty: 4,
+    live: 5,
+  }
   const worst = slices.reduce((acc, slice) => (rank[slice.status] < rank[acc.status] ? slice : acc), slices[0]!)
 
   return (

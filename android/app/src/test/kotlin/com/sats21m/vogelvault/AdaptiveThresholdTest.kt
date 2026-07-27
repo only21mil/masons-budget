@@ -5,9 +5,11 @@ import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.ui.Destination
 import com.sats21m.vogelvault.ui.UNFOLDED_MIN_WIDTH_DP
 import com.sats21m.vogelvault.ui.VaultUiState
+import com.sats21m.vogelvault.ui.VaultViewModel
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -41,6 +43,30 @@ class AdaptiveThresholdTest {
 
 /** Destination visibility and the ViewModel's refusal to open a forbidden screen. */
 class DestinationVisibilityTest {
+
+    @Test
+    fun `remote-disabled fixtures never claim to be live or synced`() {
+        val state = VaultViewModel(remoteInitiallyEnabled = false).state.value
+
+        assertEquals(Freshness.DEMO, state.worstStatus)
+        assertFalse(state.worstStatus == Freshness.LIVE)
+        assertNull(state.worstUpdatedAt)
+        assertTrue(
+            listOf(
+                state.data.transactions,
+                state.data.btcAccounts,
+                state.data.btcBuys,
+                state.data.todos,
+            ).all {
+                it.status == Freshness.DEMO &&
+                    it.status != Freshness.LIVE &&
+                    it.updatedAt == null
+            },
+        )
+        assertEquals(Freshness.DEMO, state.data.budget.status)
+        assertFalse(state.data.budget.status == Freshness.LIVE)
+        assertNull(state.data.budget.updatedAt)
+    }
 
     @Test
     fun `children see no fewer destinations than exist and no adult-only ones`() {

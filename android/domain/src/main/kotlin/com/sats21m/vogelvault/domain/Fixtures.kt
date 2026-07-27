@@ -167,7 +167,7 @@ object Fixtures {
      */
     fun envelope(
         activeProfile: FamilyMember,
-        status: Freshness = Freshness.LIVE,
+        status: Freshness = Freshness.DEMO,
     ): ReadModel {
         val budget = when {
             activeProfile.isAdult -> ADULT_BUDGET
@@ -175,14 +175,14 @@ object Fixtures {
             else -> null
         }
         val empty = status == Freshness.EMPTY
-        val stamp = if (status == Freshness.EMPTY) null else NOW_MILLIS - 4 * MINUTE
+        val stamp = if (status == Freshness.DEMO || status == Freshness.EMPTY) null else NOW_MILLIS - 4 * MINUTE
 
         return ReadModel(
-            transactions = Slice(status, if (empty) emptyList() else TRANSACTIONS, stamp, "MC2 · transactions"),
-            budget = Slice(status, if (empty) null else budget, stamp, "MC2 · budget"),
-            btcAccounts = Slice(status, if (empty) emptyList() else BTC_ACCOUNTS, stamp, "MC2 · btc-balance-snapshot"),
-            btcBuys = Slice(status, if (empty) emptyList() else BTC_BUYS, stamp, "MC2 · bitcoin-buys"),
-            todos = Slice(status, if (empty) emptyList() else TODOS, stamp, "MC2 · todos"),
+            transactions = Slice(status, if (empty) emptyList() else TRANSACTIONS, stamp, "Demo fixtures · transactions"),
+            budget = Slice(status, if (empty) null else budget, stamp, "Demo fixtures · budget"),
+            btcAccounts = Slice(status, if (empty) emptyList() else BTC_ACCOUNTS, stamp, "Demo fixtures · btc-balance-snapshot"),
+            btcBuys = Slice(status, if (empty) emptyList() else BTC_BUYS, stamp, "Demo fixtures · bitcoin-buys"),
+            todos = Slice(status, if (empty) emptyList() else TODOS, stamp, "Demo fixtures · todos"),
             btcPriceCents = Money.parseCents("93500.00"),
         )
     }
