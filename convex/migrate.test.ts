@@ -27,6 +27,7 @@ import {
   projectFile,
   resolveClosedAdultOwner,
   resolveOwner,
+  sha256,
   sourceKeyFor,
 } from "./migrate";
 
@@ -80,6 +81,8 @@ interface MigrateResult {
   done: boolean;
   verifiedInTransaction: boolean;
   verification: Verification | null;
+  planFingerprint: string;
+  frozenPlanFingerprint: string;
 }
 
 const api = {
@@ -95,14 +98,22 @@ const api = {
         blobRowCount: number | null;
         blobUnreadable: boolean;
         migratedRowCount: number;
+        planFingerprint: string;
       }[];
       skippedDocumentShapedFiles: string[];
+      frozenPlanFingerprint: string;
     }
   >,
   migrateFile: "migrate:migrateFile" as unknown as FunctionReference<
     "mutation",
     "internal",
-    { file: string; apply?: boolean; cursor?: number; batchSize?: number },
+    {
+      file: string;
+      apply?: boolean;
+      expectedPlanFingerprint?: string;
+      cursor?: number;
+      batchSize?: number;
+    },
     MigrateResult
   >,
   verifyFile: "migrate:verifyFile" as unknown as FunctionReference<
@@ -112,6 +123,27 @@ const api = {
     Verification
   >,
 };
+
+/**
+ * Review the current backend plan immediately before an apply in tests that
+ * exercise another property. Fingerprint-specific tests below deliberately
+ * retain and reuse an older dry-run value instead.
+ */
+async function applyFile(
+  t: Harness,
+  args: { file: string; cursor?: number; batchSize?: number },
+): Promise<MigrateResult> {
+  const plan = await t.mutation(api.migrateFile, {
+    file: args.file,
+    cursor: args.cursor,
+    batchSize: args.batchSize,
+  });
+  return await t.mutation(api.migrateFile, {
+    ...args,
+    apply: true,
+    expectedPlanFingerprint: plan.frozenPlanFingerprint,
+  });
+}
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -592,7 +624,7 @@ describe("source keys are deterministic and total", () => {
 
 // ─── Owner ───────────────────────────────────────────────────────────────────
 
-describe("owner resolution matches the domain normalizers", () => {
+describe("owner resolution is closed", () => {
   test("absent owner takes the file's fallback", () => {
     expect(resolveOwner(undefined, "mason")).toBe("mason");
     expect(resolveOwner(undefined, "victor")).toBe("victor");
@@ -603,10 +635,8 @@ describe("owner resolution matches the domain normalizers", () => {
     expect(resolveOwner("maddox", "victor")).toBe("maddox");
   });
 
-  test("an unrecognised owner falls back to the source file owner", () => {
-    // E1 is authoritative: a typo in a child file must not promote the row to
-    // the adult household.
-    expect(resolveOwner("nobody", "mason")).toBe("mason");
+  test("an unrecognised owner is refused rather than coerced", () => {
+    expect(() => resolveOwner("nobody", "mason")).toThrow(/closed union/);
   });
 
   test("Mason's rows land on mason and adult rows on victor", async () => {
@@ -690,10 +720,119 @@ describe("dry run", () => {
     const t = harness();
     await seedAll(t);
     const planned = await t.mutation(api.migrateFile, { file: "transactions", apply: false });
-    const applied = await t.mutation(api.migrateFile, { file: "transactions", apply: true });
+    const applied = await t.mutation(api.migrateFile, {
+      file: "transactions",
+      apply: true,
+      expectedPlanFingerprint: planned.frozenPlanFingerprint,
+    });
     expect(applied.inserted).toBe(planned.inserted);
     expect(applied.updated).toBe(planned.updated);
     expect(applied.unchanged).toBe(planned.unchanged);
+    expect(applied.frozenPlanFingerprint).toBe(planned.frozenPlanFingerprint);
+  });
+});
+
+// ─── Frozen plan binding ─────────────────────────────────────────────────────
+
+describe("frozen plan fingerprint", () => {
+  test.each([
+    [
+      "abc",
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    ],
+    [
+      "Café Grumpy",
+      "2f8153f064a983f7bd75f2f0bfb690bf5c7a5e19cd3ee16961984f22ce2f50ef",
+    ],
+  ])("uses standard SHA-256 bytes for %s", (input, expected) => {
+    expect(sha256(input)).toBe(expected);
+  });
+
+  test("is stable across runs over identical input", async () => {
+    const first = harness();
+    const second = harness();
+    await seedAll(first);
+    await seedAll(second);
+
+    const firstPlan = await first.mutation(api.migrateFile, {
+      file: "transactions",
+    });
+    const firstAgain = await first.mutation(api.migrateFile, {
+      file: "transactions",
+    });
+    const secondPlan = await second.mutation(api.migrateFile, {
+      file: "transactions",
+    });
+
+    expect(firstPlan.frozenPlanFingerprint).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(firstPlan.planFingerprint).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(firstAgain.frozenPlanFingerprint).toBe(
+      firstPlan.frozenPlanFingerprint,
+    );
+    expect(firstAgain.planFingerprint).toBe(firstPlan.planFingerprint);
+    expect(secondPlan.frozenPlanFingerprint).toBe(
+      firstPlan.frozenPlanFingerprint,
+    );
+    expect(secondPlan.planFingerprint).toBe(firstPlan.planFingerprint);
+  });
+
+  test("a matching reviewed fingerprint applies", async () => {
+    const t = harness();
+    await seedAll(t);
+    const dryRun = await t.mutation(api.migrateFile, {
+      file: "transactions",
+    });
+
+    const applied = await t.mutation(api.migrateFile, {
+      file: "transactions",
+      apply: true,
+      expectedPlanFingerprint: dryRun.frozenPlanFingerprint,
+    });
+
+    expect(applied.inserted).toBe(905);
+    expect(applied.frozenPlanFingerprint).toBe(
+      dryRun.frozenPlanFingerprint,
+    );
+    expect(await rowsIn(t, "transactions")).toHaveLength(905);
+  });
+
+  test("a mutated blob between dry run and apply is refused before any write", async () => {
+    const t = harness();
+    await seedAll(t);
+    const dryRun = await t.mutation(api.migrateFile, {
+      file: "transactions",
+    });
+
+    await t.run(async (ctx) => {
+      const blob = await ctx.db
+        .query("dataFiles")
+        .withIndex("by_name", (q) => q.eq("name", "transactions"))
+        .first();
+      const changed = [...(blob!.data as Record<string, unknown>[])];
+      changed[0] = { ...changed[0]!, amount: "-999.99" };
+      await ctx.db.patch(blob!._id, { data: changed, version: 8 });
+    });
+
+    await expect(
+      t.mutation(api.migrateFile, {
+        file: "transactions",
+        apply: true,
+        expectedPlanFingerprint: dryRun.frozenPlanFingerprint,
+      }),
+    ).rejects.toThrow(/fingerprint mismatch/i);
+    expect(await rowsIn(t, "transactions")).toHaveLength(0);
+  });
+
+  test("apply without a reviewed fingerprint is refused", async () => {
+    const t = harness();
+    await seedAll(t);
+    await expect(
+      t.mutation(api.migrateFile, {
+        file: "transactions",
+        apply: true,
+      }),
+    ).rejects.toThrow(/without expectedPlanFingerprint/);
+    expect(await rowsIn(t, "transactions")).toHaveLength(0);
   });
 });
 
@@ -734,7 +873,7 @@ describe("migrating every file", () => {
 
     const applied: MigrateResult[] = [];
     for (const source of MIGRATION_SOURCES) {
-      applied.push(await t.mutation(api.migrateFile, { file: source.file, apply: true }));
+      applied.push(await applyFile(t, { file: source.file }));
     }
 
     for (const result of applied) {
@@ -762,7 +901,7 @@ describe("migrating every file", () => {
 
     const results: MigrateResult[] = [];
     for (const source of MIGRATION_SOURCES) {
-      results.push(await t.mutation(api.migrateFile, { file: source.file, apply: true }));
+      results.push(await applyFile(t, { file: source.file }));
     }
 
     const byFile = new Map(results.map((result) => [result.file, result]));
@@ -797,7 +936,7 @@ describe("migrating every file", () => {
   test("the summed amounts equal the blob, computed independently", async () => {
     const t = harness();
     await seedAll(t);
-    await t.mutation(api.migrateFile, { file: "transactions", apply: true });
+    await applyFile(t, { file: "transactions" });
 
     // Independent expectation: the domain parser over the raw fixture, not the
     // migration's own sum.
@@ -819,7 +958,7 @@ describe("migrating every file", () => {
   test("BTC sats and USD both survive, and amount_sats beats amount_btc", async () => {
     const t = harness();
     await seedAll(t);
-    await t.mutation(api.migrateFile, { file: "bitcoin-buys", apply: true });
+    await applyFile(t, { file: "bitcoin-buys" });
 
     const rows = await rowsIn(t, "btcBuys");
     let sats = 0n;
@@ -836,8 +975,8 @@ describe("migrating every file", () => {
   test("income and balances preserve exact cents, sats, and reconciliation provenance", async () => {
     const t = harness();
     await seedAll(t);
-    await t.mutation(api.migrateFile, { file: "income", apply: true });
-    await t.mutation(api.migrateFile, { file: "balances", apply: true });
+    await applyFile(t, { file: "income" });
+    await applyFile(t, { file: "balances" });
 
     const incomeRows = await rowsIn(t, "income");
     const expectedIncome = INCOME.reduce(
@@ -912,8 +1051,8 @@ describe("migrating every file", () => {
   test("child files keep their positive spend and adult files keep their negative", async () => {
     const t = harness();
     await seedAll(t);
-    await t.mutation(api.migrateFile, { file: "mason-transactions", apply: true });
-    await t.mutation(api.migrateFile, { file: "transactions", apply: true });
+    await applyFile(t, { file: "mason-transactions" });
+    await applyFile(t, { file: "transactions" });
 
     const rows = await rowsIn(t, "transactions");
     const mason = rows.filter((row) => row.sourceFile === "mason-transactions");
@@ -929,7 +1068,7 @@ describe("migrating every file", () => {
   test("fields no domain type mentions survive in migration provenance", async () => {
     const t = harness();
     await seedAll(t);
-    await t.mutation(api.migrateFile, { file: "bitcoin-buys", apply: true });
+    await applyFile(t, { file: "bitcoin-buys" });
     const rows = await rowsIn(t, "btcBuys");
     for (const row of rows) {
       expect(
@@ -942,7 +1081,7 @@ describe("migrating every file", () => {
   test("both todo dialects normalise and the wrapper is unwrapped", async () => {
     const t = harness();
     await seedAll(t);
-    await t.mutation(api.migrateFile, { file: "todos", apply: true });
+    await applyFile(t, { file: "todos" });
     const rows = await rowsIn(t, "todos");
     expect(rows).toHaveLength(25);
     // Legacy rows use text/completed/flag/due_date.
@@ -963,22 +1102,10 @@ describe("running it twice", () => {
     const t = harness();
     await seedAll(t);
 
-    const incomeFirst = await t.mutation(api.migrateFile, {
-      file: "income",
-      apply: true,
-    });
-    const incomeSecond = await t.mutation(api.migrateFile, {
-      file: "income",
-      apply: true,
-    });
-    const balancesFirst = await t.mutation(api.migrateFile, {
-      file: "balances",
-      apply: true,
-    });
-    const balancesSecond = await t.mutation(api.migrateFile, {
-      file: "balances",
-      apply: true,
-    });
+    const incomeFirst = await applyFile(t, { file: "income" });
+    const incomeSecond = await applyFile(t, { file: "income" });
+    const balancesFirst = await applyFile(t, { file: "balances" });
+    const balancesSecond = await applyFile(t, { file: "balances" });
 
     expect(incomeFirst.inserted).toBe(16);
     expect(incomeSecond).toMatchObject({
@@ -998,9 +1125,9 @@ describe("running it twice", () => {
     const t = harness();
     await seedAll(t);
 
-    const first = await t.mutation(api.migrateFile, { file: "transactions", apply: true });
-    const second = await t.mutation(api.migrateFile, { file: "transactions", apply: true });
-    const third = await t.mutation(api.migrateFile, { file: "transactions", apply: true });
+    const first = await applyFile(t, { file: "transactions" });
+    const second = await applyFile(t, { file: "transactions" });
+    const third = await applyFile(t, { file: "transactions" });
 
     expect(first.inserted).toBe(905);
     expect(second.inserted).toBe(0);
@@ -1015,9 +1142,9 @@ describe("running it twice", () => {
   test("a re-run does not rewrite updatedAtMs", async () => {
     const t = harness();
     await seedAll(t);
-    await t.mutation(api.migrateFile, { file: "bitcoin-buys", apply: true });
+    await applyFile(t, { file: "bitcoin-buys" });
     const before = (await rowsIn(t, "btcBuys")).map((row) => row.updatedAtMs);
-    await t.mutation(api.migrateFile, { file: "bitcoin-buys", apply: true });
+    await applyFile(t, { file: "bitcoin-buys" });
     const after = (await rowsIn(t, "btcBuys")).map((row) => row.updatedAtMs);
     expect(after).toEqual(before);
   });
@@ -1030,9 +1157,8 @@ describe("running it twice", () => {
     let inserted = 0;
     let batches = 0;
     while (cursor !== null) {
-      const result: MigrateResult = await t.mutation(api.migrateFile, {
+      const result = await applyFile(t, {
         file: "transactions",
-        apply: true,
         cursor,
         batchSize: 100,
       });
@@ -1049,7 +1175,7 @@ describe("running it twice", () => {
     expect(await rowsIn(t, "transactions")).toHaveLength(905);
     expect((await t.query(api.verifyFile, { file: "transactions" })).ok).toBe(true);
 
-    const rerun = await t.mutation(api.migrateFile, { file: "transactions", apply: true });
+    const rerun = await applyFile(t, { file: "transactions" });
     expect(rerun.inserted).toBe(0);
     expect(rerun.unchanged).toBe(905);
   });
@@ -1058,10 +1184,14 @@ describe("running it twice", () => {
     const t = harness();
     await seedAll(t);
     // Simulate a run that died after the first 300 rows.
-    await t.mutation(api.migrateFile, { file: "transactions", apply: true, cursor: 0, batchSize: 300 });
+    await applyFile(t, {
+      file: "transactions",
+      cursor: 0,
+      batchSize: 300,
+    });
     expect(await rowsIn(t, "transactions")).toHaveLength(300);
 
-    const repair = await t.mutation(api.migrateFile, { file: "transactions", apply: true });
+    const repair = await applyFile(t, { file: "transactions" });
     expect(repair.inserted).toBe(605);
     expect(repair.unchanged).toBe(300);
     expect(await rowsIn(t, "transactions")).toHaveLength(905);
@@ -1071,7 +1201,7 @@ describe("running it twice", () => {
   test("an edited blob updates the row in place instead of adding one", async () => {
     const t = harness();
     await seedAll(t);
-    await t.mutation(api.migrateFile, { file: "mason-transactions", apply: true });
+    await applyFile(t, { file: "mason-transactions" });
 
     const edited = MASON_TRANSACTIONS.map((row) =>
       row.id === "m003" ? { ...row, amount: 4.5 } : row,
@@ -1084,7 +1214,7 @@ describe("running it twice", () => {
       await ctx.db.patch(doc!._id, { data: edited, version: 8 });
     });
 
-    const result = await t.mutation(api.migrateFile, { file: "mason-transactions", apply: true });
+    const result = await applyFile(t, { file: "mason-transactions" });
     expect(result.inserted).toBe(0);
     expect(result.updated).toBe(1);
     expect(result.unchanged).toBe(2);
@@ -1107,7 +1237,7 @@ describe("dataFiles is left alone", () => {
     );
 
     for (const source of MIGRATION_SOURCES) {
-      await t.mutation(api.migrateFile, { file: source.file, apply: true });
+      await applyFile(t, { file: source.file });
     }
 
     expect(await snapshotBlobWorld(t)).toEqual(beforeFiles);
@@ -1125,14 +1255,14 @@ describe("verification is a real check, not a formality", () => {
   async function migrated() {
     const t = harness();
     await seedAll(t);
-    await t.mutation(api.migrateFile, { file: "transactions", apply: true });
+    await applyFile(t, { file: "transactions" });
     return t;
   }
 
   test("a missing final non-money row is visible to the count check alone", async () => {
     const t = harness();
     await seedAll(t);
-    await t.mutation(api.migrateFile, { file: "todos", apply: true });
+    await applyFile(t, { file: "todos" });
     await t.run(async (ctx) => {
       const rows = await ctx.db.query("todos").collect();
       const final = rows.find((row) => row.migrationSourceIndex === 24)!;
@@ -1218,7 +1348,7 @@ describe("verification is a real check, not a formality", () => {
     });
 
     await expect(
-      t.mutation(api.migrateFile, { file: "transactions", apply: true }),
+      applyFile(t, { file: "transactions" }),
     ).rejects.toThrow(/did not verify/);
 
     // Nothing committed: the ghost is still alone, the 905 rows never landed.
@@ -1256,22 +1386,22 @@ describe("refusals", () => {
   test("a shape it does not understand is refused, not guessed at", async () => {
     const t = harness();
     await seedBlob(t, "transactions", { month: "2026-07", total: 1234 });
-    await expect(
-      t.mutation(api.migrateFile, { file: "transactions", apply: true }),
-    ).rejects.toThrow(/not a row collection/);
+    await expect(applyFile(t, { file: "transactions" })).rejects.toThrow(
+      /not a row collection/,
+    );
     expect(await rowsIn(t, "transactions")).toHaveLength(0);
   });
 
   test("an unknown file is refused", async () => {
     const t = harness();
-    await expect(t.mutation(api.migrateFile, { file: "budget", apply: true })).rejects.toThrow(
+    await expect(applyFile(t, { file: "budget" })).rejects.toThrow(
       /Not a migratable file/,
     );
   });
 
   test("a missing blob is reported, not invented", async () => {
     const t = harness();
-    const result = await t.mutation(api.migrateFile, { file: "todos", apply: true });
+    const result = await applyFile(t, { file: "todos" });
     expect(result.blobPresent).toBe(false);
     expect(result.inserted).toBe(0);
     expect(result.done).toBe(true);

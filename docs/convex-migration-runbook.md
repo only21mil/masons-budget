@@ -12,32 +12,43 @@ The recorded production payload has 905 adult transactions, 31 BTC buys, and
 the runbook was tested with `convex-test` only. No `convex deploy`, `dev`, `env`,
 or `run` command was executed while preparing it.
 
-## Current stop condition
+## Plan-binding safety gate
 
-Do not run the production apply from the currently reviewed implementation.
-
-The dry run uses the same projection and diff as apply and writes nothing, but
-it cannot read back hypothetical rows. Its expected message is:
+The dry run uses the same projection and diff as apply and writes nothing. It
+cannot read back hypothetical rows, so its expected verification message is:
 
 ```text
 verification: deferred — a dry run writes nothing to verify
 ```
 
-Its JSON evidence also currently reports:
+The backend now also computes a frozen plan fingerprint. Good JSON evidence
+reports:
 
 ```json
 {
-  "fingerprint": null,
-  "fingerprintState": "not-provided-by-backend"
+  "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "fingerprintState": "provided"
 }
 ```
 
-That is an honest plan, not a three-way pre-write proof and not a plan bound to
-the later apply. Issue #46 tracks that missing production gate. Continue past
-step 5 only after a reviewed commit replaces the deferred result with a
-canonical pre-write proof, supplies a frozen-plan fingerprint, and documents
-the exact argument that binds apply to that fingerprint. Do not infer or invent
-that future argument.
+The fingerprint is SHA-256 over the complete ordered projection for every
+migratable source file. Each row's deterministic id/key, closed-union owner,
+every integer-minor-unit money value, all other projected application fields,
+and migration provenance participate. Per-file fingerprints are also emitted;
+the global fingerprint binds the whole source set, including missing files.
+`migratedAt` is the only reserved exclusion because it would be an
+execution-time wall-clock value; no current projection writes it. Convex `_id`
+and `_creationTime` are not projected fields and therefore never enter a
+pre-insert plan.
+
+Apply requires `--expected-plan-fingerprint`. The CLI compares it with the
+current backend status before invoking a mutation, and every backend apply
+mutation independently recomputes and compares the full plan again before its
+first insert or patch. A blob change after dry run therefore refuses the apply
+instead of silently applying a different projection. Deferred dry-run
+verification remains honest: the three-way count, exact-money-sum, and
+canonical round-trip verification still runs against stored rows during apply
+and again in the post-apply query.
 
 There is a second deploy gate: confirm in the Convex dashboard that
 `ALLOW_TOKENLESS_SYNC` is absent. The repository has no recorded observation of
@@ -50,8 +61,8 @@ Victor must explicitly approve this production session. Before opening a
 terminal, confirm all of the following:
 
 - Both encrypted backups still have their independently verified hashes.
-- The migration PR, the production deploy-preflight PR, and the pre-write
-  proof/plan-binding change are merged into `build/finish-vogel-vault`.
+- The migration PR, the production deploy-preflight PR, and the frozen-plan
+  binding change are merged into `build/finish-vogel-vault`.
 - No other lane is deploying Convex or writing the ledger.
 - The exact reviewed merge commit has been recorded as `REVIEWED_SHA`.
 - In the Convex dashboard for `keen-elephant-452`,
@@ -154,7 +165,7 @@ node scripts/convex-migrate.mjs \
   > "$run_dir/migration-dry-run.json"
 ```
 
-Good under the current implementation:
+Good:
 
 - The command exits 0 and says `Target class: production`, `Mode: dry-run`,
   and `Dry run complete. Nothing was written.`
@@ -165,53 +176,61 @@ Good under the current implementation:
   they were skipped rather than invented.
 - Every file says verification is deferred because this command wrote nothing.
 - The JSON document has `outcome: "success"`,
-  `execution.writeSafety.classification: "none"`, and no raw rows, record IDs,
-  monetary totals, token, or deployment identifier.
+  `version: 2`, `execution.writeSafety.classification: "none"`,
+  `operation.frozenPlan.fingerprintState: "provided"`, a valid
+  `sha256:` fingerprint, and no raw rows, record IDs, monetary totals, token,
+  or deployment identifier.
 
 Bad: a production count differs from the recorded source, a blob is unreadable,
 an expected blob is absent, a row is unexpectedly already present or changed,
-the target class is not production, child output leaks into the JSON, or the
-command exits nonzero. Stop and investigate the blob/read-only status; do not
-apply.
+the target class is not production, the fingerprint is missing or malformed,
+child output leaks into the JSON, or the command exits nonzero. Stop and
+investigate the blob/read-only status; do not apply.
 
-Under the current implementation, stop here even when the plan looks good. A
-good current dry run still has deferred verification and
-`fingerprintState: "not-provided-by-backend"`.
+## 6. Review, copy the fingerprint, and apply the frozen plan
 
-## 6. Review and bind the future pre-write proof
-
-This step becomes executable only after the stop condition at the top of this
-runbook is resolved.
-
-The reviewed future dry-run evidence must prove, before any write:
-
-- source and projected row counts agree for every file;
-- every money-column sum agrees exactly in integer minor units;
-- every source row canonical-JSON round-trips through the projection;
-- source keys are unique;
-- the legacy blob-world fingerprint is captured;
-- one frozen-plan fingerprint binds the reviewed evidence to apply.
-
-Two people should review `"$run_dir/migration-dry-run.json"` and record the
-fingerprint without recording raw financial data. If any proof flag is false,
-missing, or redacted, stop.
-
-The current CLI has no safe plan-binding argument, so this runbook deliberately
-does not fabricate the final apply command. When the reviewed implementation
-lands, replace this paragraph with its exact fingerprint argument before
-approving production use.
-
-For reference, the unbound command that exists today is:
+Two people must review `"$run_dir/migration-dry-run.json"`. Require the counts
+and plan states listed in step 5, then copy the global backend fingerprint from
+the reviewed evidence without recording raw financial data:
 
 ```bash
-# DO NOT RUN until a reviewed plan-binding argument is implemented and added.
+plan_fingerprint="$(
+  jq -er '
+    .operation.frozenPlan
+    | select(.fingerprintState == "provided")
+    | .fingerprint
+    | select(test("^sha256:[0-9a-f]{64}$"))
+  ' "$run_dir/migration-dry-run.json"
+)"
+test -n "$plan_fingerprint"
+```
+
+Do not type, infer, truncate, or regenerate the value. Use that exact shell
+variable in the approved apply:
+
+```bash
 node scripts/convex-migrate.mjs \
   --apply \
   --prod \
   --confirm-production \
+  --expected-plan-fingerprint "$plan_fingerprint" \
   --json \
   > "$run_dir/migration-apply.json"
 ```
+
+Good: the command reaches migration, exits 0, and the apply evidence reports
+`expectedFingerprintMatched: true` with the same fingerprint as the reviewed
+dry run. Continue with the applied verification checks below.
+
+If the CLI reports `PLAN_FINGERPRINT_MISMATCH`, or the backend refuses a batch
+for a plan fingerprint mismatch, stop immediately. Do not replace
+`plan_fingerprint` with the newly observed value and do not retry apply. Preserve
+the reviewed dry-run evidence, determine which `dataFiles` blob changed and
+why using read-only inspection, then take a completely new dry run. Both
+reviewers must review and approve that new plan before its new fingerprint can
+be used. Rows from any earlier fully completed file may still exist if a source
+changed during a multi-file apply; leave them in place and follow the
+apply-failure procedure below. The authoritative blob path remains untouched.
 
 ## 7. Required applied and post-apply evidence
 
