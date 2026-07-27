@@ -10,10 +10,8 @@ import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.ReadModel
 import com.sats21m.vogelvault.domain.Slice
 import com.sats21m.vogelvault.domain.Transaction
-import com.sats21m.vogelvault.domain.budgetMonthsFor
 import com.sats21m.vogelvault.domain.budgetTransactionsFor
 import com.sats21m.vogelvault.domain.deriveBudgetSpend
-import com.sats21m.vogelvault.domain.resolveBudgetMonth
 import com.sats21m.vogelvault.domain.visibleTo
 import com.sats21m.vogelvault.ui.Destination
 import com.sats21m.vogelvault.ui.VaultUiState
@@ -30,8 +28,9 @@ import kotlin.test.assertTrue
  * The Budget month picker.
  *
  * Plain JVM — no Robolectric. Everything the picker decides lives in
- * the shared budget month helpers, which are pure functions of the envelope, so
- * these run in milliseconds and always run.
+ * [VaultUiState.budgetMonths] and [VaultUiState.activeBudgetMonth], which
+ * delegate to the shared budget month helpers and are pure functions of the
+ * envelope, so these run in milliseconds and always run.
  *
  * The Android twin of `linux/test/month-picker.test.ts`. Same fixtures, same
  * derivation rule, so the two clients cannot answer the same question
@@ -54,10 +53,10 @@ class BudgetMonthPickerTest {
     ) = VaultUiState.of(profile, Destination.BUDGET, status, selectedMonth)
 
     private fun months(state: VaultUiState): List<String> =
-        state.data.transactions.value.budgetMonthsFor(state.activeProfile, state.data.budget.value?.month)
+        state.budgetMonths
 
     private fun activeMonth(state: VaultUiState): String? =
-        resolveBudgetMonth(state.selectedMonth, months(state), state.data.budget.value?.month)
+        state.activeBudgetMonth
 
     /**
      * The Budget screen's derivation, mirrored from `Screens.kt`'s `budget()`.
@@ -175,7 +174,8 @@ class BudgetMonthPickerTest {
         )
         val victor = VaultUiState(FamilyMember.VICTOR, Destination.BUDGET, data)
 
-        assertEquals(listOf(july), months(victor))
+        assertEquals(listOf(july), victor.budgetMonths)
+        assertEquals(july, victor.activeBudgetMonth)
         assertTrue(data.transactions.value.visibleTo(FamilyMember.VICTOR).any { it.owner == FamilyMember.MASON })
         assertEquals(0L, derive(victor, "2026-04")!!.actualCents)
     }

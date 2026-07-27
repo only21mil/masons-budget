@@ -36,7 +36,6 @@ import com.sats21m.vogelvault.domain.MC2_FILES
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.domain.Transaction
-import com.sats21m.vogelvault.domain.budgetMonthsFor
 import com.sats21m.vogelvault.domain.budgetTransactionsFor
 import com.sats21m.vogelvault.domain.deriveBudgetSpend
 import com.sats21m.vogelvault.domain.inMonth
@@ -71,14 +70,14 @@ import com.sats21m.vogelvault.ui.theme.VaultWarning
 @Composable
 fun ScreenHost(destination: Destination, state: VaultUiState, modifier: Modifier = Modifier) {
     val budgetMonth = state.data.budget.value?.month
-    val months = state.data.transactions.value.budgetMonthsFor(state.activeProfile, budgetMonth)
+    val months = state.budgetMonths
     // The Budget screen's month scope. Held here rather than in the ViewModel
     // because it is view state, and because every row of the list has to agree on
     // it — the KPI strip, the banners and the categories all read the same month.
     // Re-seeded when the profile changes or the state names a month, so a preview
     // or the design packet can render any month without driving a tap.
     var picked by rememberSaveable(state.activeProfile, state.selectedMonth) {
-        mutableStateOf(resolveBudgetMonth(state.selectedMonth, months, budgetMonth))
+        mutableStateOf(state.activeBudgetMonth)
     }
     // A refresh can retire the picked month. Fall back rather than render a month
     // the ledger no longer contains.
