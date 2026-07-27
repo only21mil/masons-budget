@@ -628,8 +628,16 @@ export interface VerificationReport {
   ok: boolean;
   blobRowCount: number;
   tableRowCount: number;
+  rowCountMatches: boolean;
   blobSums: Record<string, string>;
   tableSums: Record<string, string>;
+  moneySumsMatch: boolean;
+  /**
+   * Whether every row present on both sides has byte-equivalent canonical
+   * provenance at the same source index. Count is deliberately reported
+   * separately so a missing final row can be diagnosed as a count-only defect.
+   */
+  roundTripRowsMatch: boolean;
   exactRoundTrip: boolean;
   /** Index of the first row that did not round-trip; null when all did. */
   firstMismatchIndex: number | null;
@@ -665,7 +673,8 @@ export function verifyProjection(
       Number(b.migrationSourceIndex ?? 0),
   );
 
-  if (ordered.length !== blobRows.length) {
+  const rowCountMatches = ordered.length === blobRows.length;
+  if (!rowCountMatches) {
     problems.push(
       `row count ${ordered.length} in ${source.table} does not match ` +
         `${blobRows.length} in the ${source.file} blob`,
@@ -674,8 +683,10 @@ export function verifyProjection(
 
   const blobSums = sumMoneyColumns(source.kind, expectedDocs);
   const tableSums = sumMoneyColumns(source.kind, ordered);
+  let moneySumsMatch = true;
   for (const column of MONEY_COLUMNS[source.kind]) {
     if (blobSums[column] !== tableSums[column]) {
+      moneySumsMatch = false;
       problems.push(
         `summed ${column} is ${formatMinorUnits(tableSums[column]!, MONEY_SCALES[column] ?? 0)} ` +
           `in ${source.table} but ${formatMinorUnits(blobSums[column]!, MONEY_SCALES[column] ?? 0)} ` +
@@ -700,8 +711,8 @@ export function verifyProjection(
     }
   }
 
-  const exactRoundTrip =
-    firstMismatchIndex === null && ordered.length === blobRows.length;
+  const roundTripRowsMatch = firstMismatchIndex === null;
+  const exactRoundTrip = roundTripRowsMatch && rowCountMatches;
 
   return {
     file: source.file,
@@ -709,8 +720,11 @@ export function verifyProjection(
     ok: problems.length === 0,
     blobRowCount: blobRows.length,
     tableRowCount: ordered.length,
+    rowCountMatches,
     blobSums: formatSums(blobSums),
     tableSums: formatSums(tableSums),
+    moneySumsMatch,
+    roundTripRowsMatch,
     exactRoundTrip,
     firstMismatchIndex,
     problems,
@@ -949,8 +963,11 @@ export const verifyFile = internalQuery({
         ok: migrated.size === 0,
         blobRowCount: 0,
         tableRowCount: migrated.size,
+        rowCountMatches: migrated.size === 0,
         blobSums: {},
         tableSums: {},
+        moneySumsMatch: true,
+        roundTripRowsMatch: true,
         exactRoundTrip: migrated.size === 0,
         firstMismatchIndex: null,
         problems:

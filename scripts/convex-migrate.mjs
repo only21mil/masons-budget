@@ -136,10 +136,19 @@ export function formatVerificationLine(verification, dryRun = false) {
       : "    verification: NOT RUN";
   }
   const problemCount = Array.isArray(verification.problems) ? verification.problems.length : 0;
+  const countOk =
+    verification.rowCountMatches ??
+    verification.tableRowCount === verification.blobRowCount;
+  const sumsOk = verification.moneySumsMatch ?? false;
+  const rowsOk =
+    verification.roundTripRowsMatch ??
+    verification.exactRoundTrip;
   return (
     `    verification: ${verification.ok ? "OK" : "FAILED"}  ` +
-    `${verification.tableRowCount}/${verification.blobRowCount} rows  ` +
-    `round-trip ${verification.exactRoundTrip ? "exact" : "BROKEN"}` +
+    `count ${countOk ? "OK" : "FAILED"} (${verification.tableRowCount}/${verification.blobRowCount})  ` +
+    `sums ${sumsOk ? "OK" : "FAILED"}  ` +
+    `round-trip rows ${rowsOk ? "OK" : "FAILED"}  ` +
+    `exact ${verification.exactRoundTrip ? "YES" : "NO"}` +
     (problemCount > 0 ? `  problems=${problemCount}` : "")
   );
 }
@@ -168,6 +177,9 @@ function safeVerification(verification) {
   if (!verification || typeof verification !== "object") return null;
   return {
     ok: verification.ok === true,
+    rowCountMatches: verification.rowCountMatches === true,
+    moneySumsMatch: verification.moneySumsMatch === true,
+    roundTripRowsMatch: verification.roundTripRowsMatch === true,
     exactRoundTrip: verification.exactRoundTrip === true,
     blobRowCount: Number.isFinite(verification.blobRowCount) ? verification.blobRowCount : null,
     tableRowCount: Number.isFinite(verification.tableRowCount) ? verification.tableRowCount : null,

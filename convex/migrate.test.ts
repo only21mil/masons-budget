@@ -52,8 +52,11 @@ interface Verification {
   ok: boolean;
   blobRowCount: number;
   tableRowCount: number;
+  rowCountMatches: boolean;
   blobSums: Record<string, string>;
   tableSums: Record<string, string>;
+  moneySumsMatch: boolean;
+  roundTripRowsMatch: boolean;
   exactRoundTrip: boolean;
   firstMismatchIndex: number | null;
   problems: string[];
@@ -333,6 +336,12 @@ async function seedAll(t: Harness) {
   await seedBlob(t, "bitcoin-buys", BTC_BUYS);
   await seedBlob(t, "bitcoin-bill-pays", { bill_pays: BILL_PAYS, generated_at: "2026-07-18" });
   await seedBlob(t, "todos", { todos: TODOS });
+  await t.run(async (ctx) => {
+    await ctx.db.insert("todoTombstones", {
+      id: "deleted-before-migration",
+      deletedAt: 1_699_999_999_999,
+    });
+  });
 }
 
 async function rowsIn(t: Harness, table: "transactions" | "btcBuys" | "btcBillPays" | "todos") {
@@ -579,6 +588,62 @@ describe("dry run", () => {
 // ─── The migration ───────────────────────────────────────────────────────────
 
 describe("migrating every file", () => {
+  test("the full production-shaped path dry-runs, applies, and preserves every blob byte", async () => {
+    const t = harness();
+    await seedAll(t);
+    const blobBytesBefore = canonicalJson(await snapshotBlobWorld(t));
+
+    const dryRuns: MigrateResult[] = [];
+    for (const source of MIGRATION_SOURCES) {
+      dryRuns.push(await t.mutation(api.migrateFile, { file: source.file }));
+    }
+
+    expect(dryRuns.find((result) => result.file === "transactions")).toMatchObject({
+      applied: false,
+      blobRowCount: 905,
+      inserted: 905,
+      updated: 0,
+      unchanged: 0,
+      verification: null,
+    });
+    expect(dryRuns.find((result) => result.file === "bitcoin-buys")).toMatchObject({
+      blobRowCount: 31,
+      inserted: 31,
+    });
+    expect(dryRuns.find((result) => result.file === "todos")).toMatchObject({
+      blobRowCount: 25,
+      inserted: 25,
+    });
+    expect(await rowsIn(t, "transactions")).toHaveLength(0);
+    expect(await rowsIn(t, "btcBuys")).toHaveLength(0);
+    expect(await rowsIn(t, "btcBillPays")).toHaveLength(0);
+    expect(await rowsIn(t, "todos")).toHaveLength(0);
+    expect(canonicalJson(await snapshotBlobWorld(t))).toBe(blobBytesBefore);
+
+    const applied: MigrateResult[] = [];
+    for (const source of MIGRATION_SOURCES) {
+      applied.push(await t.mutation(api.migrateFile, { file: source.file, apply: true }));
+    }
+
+    for (const result of applied) {
+      if (!result.blobPresent) continue;
+      expect(result.verifiedInTransaction).toBe(true);
+      expect(result.verification).toMatchObject({
+        ok: true,
+        rowCountMatches: true,
+        moneySumsMatch: true,
+        roundTripRowsMatch: true,
+        exactRoundTrip: true,
+        problems: [],
+      });
+    }
+    expect(await rowsIn(t, "transactions")).toHaveLength(908);
+    expect(await rowsIn(t, "btcBuys")).toHaveLength(31);
+    expect(await rowsIn(t, "btcBillPays")).toHaveLength(2);
+    expect(await rowsIn(t, "todos")).toHaveLength(25);
+    expect(canonicalJson(await snapshotBlobWorld(t))).toBe(blobBytesBefore);
+  });
+
   test("905 transactions, 31 buys, 25 todos land and verify in-transaction", async () => {
     const t = harness();
     await seedAll(t);
@@ -714,6 +779,8 @@ describe("running it twice", () => {
     expect(second.inserted).toBe(0);
     expect(second.updated).toBe(0);
     expect(second.unchanged).toBe(905);
+    expect(third.inserted).toBe(0);
+    expect(third.updated).toBe(0);
     expect(third.unchanged).toBe(905);
     expect(await rowsIn(t, "transactions")).toHaveLength(905);
   });
@@ -835,21 +902,29 @@ describe("verification is a real check, not a formality", () => {
     return t;
   }
 
-  test("a dropped row fails the count check", async () => {
-    const t = await migrated();
+  test("a missing final non-money row is visible to the count check alone", async () => {
+    const t = harness();
+    await seedAll(t);
+    await t.mutation(api.migrateFile, { file: "todos", apply: true });
     await t.run(async (ctx) => {
-      const rows = await ctx.db.query("transactions").collect();
-      await ctx.db.delete(rows[17]!._id);
+      const rows = await ctx.db.query("todos").collect();
+      const final = rows.find((row) => row.migrationSourceIndex === 24)!;
+      await ctx.db.delete(final._id);
     });
 
-    const verification = await t.query(api.verifyFile, { file: "transactions" });
+    const verification = await t.query(api.verifyFile, { file: "todos" });
     expect(verification.ok).toBe(false);
-    expect(verification.tableRowCount).toBe(904);
-    expect(verification.blobRowCount).toBe(905);
+    expect(verification.tableRowCount).toBe(24);
+    expect(verification.blobRowCount).toBe(25);
+    expect(verification.rowCountMatches).toBe(false);
+    expect(verification.moneySumsMatch).toBe(true);
+    expect(verification.roundTripRowsMatch).toBe(true);
+    expect(verification.exactRoundTrip).toBe(false);
     expect(verification.problems.join(" ")).toContain("row count");
+    expect(verification.problems).toHaveLength(1);
   });
 
-  test("a single altered cent fails the sum check", async () => {
+  test("a single altered cent is visible to the money-sum check alone", async () => {
     const t = await migrated();
     await t.run(async (ctx) => {
       const rows = await ctx.db.query("transactions").collect();
@@ -858,10 +933,15 @@ describe("verification is a real check, not a formality", () => {
 
     const verification = await t.query(api.verifyFile, { file: "transactions" });
     expect(verification.ok).toBe(false);
+    expect(verification.rowCountMatches).toBe(true);
+    expect(verification.moneySumsMatch).toBe(false);
+    expect(verification.roundTripRowsMatch).toBe(true);
+    expect(verification.exactRoundTrip).toBe(true);
     expect(verification.problems.join(" ")).toContain("summed amountCents");
+    expect(verification.problems).toHaveLength(1);
   });
 
-  test("a corrupted row fails the round-trip check even when counts and sums pass", async () => {
+  test("corrupted provenance is visible to the round-trip check alone", async () => {
     const t = await migrated();
     await t.run(async (ctx) => {
       const rows = await ctx.db.query("transactions").collect();
@@ -878,10 +958,14 @@ describe("verification is a real check, not a formality", () => {
 
     const verification = await t.query(api.verifyFile, { file: "transactions" });
     expect(verification.ok).toBe(false);
+    expect(verification.rowCountMatches).toBe(true);
+    expect(verification.moneySumsMatch).toBe(true);
+    expect(verification.roundTripRowsMatch).toBe(false);
     expect(verification.exactRoundTrip).toBe(false);
     expect(verification.firstMismatchIndex).toBe(5);
     expect(verification.tableRowCount).toBe(verification.blobRowCount);
     expect(verification.tableSums.amountCents).toBe(verification.blobSums.amountCents);
+    expect(verification.problems).toHaveLength(1);
   });
 
   test("a failing verification rolls the whole file back", async () => {
