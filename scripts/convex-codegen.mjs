@@ -3,6 +3,7 @@
 import fs from "fs";
 import path from "path";
 import { spawnSync } from "child_process";
+import { createHash } from "crypto";
 
 // SAT-READ-AUTH: no CONVEX_READ_TOKEN is threaded here on purpose. `convex
 // codegen` generates types from the local convex/ sources and never calls a
@@ -61,4 +62,22 @@ const result = spawnSync(
   },
 );
 
-process.exit(result.status ?? 1);
+if (result.status !== 0) {
+  process.exit(result.status ?? 1);
+}
+
+// Convex's declarations can stay byte-identical across schema changes because
+// dataModel.d.ts imports schema.ts by type. Record the exact schema content only
+// after authenticated codegen succeeds so CI has a credential-free attestation
+// to validate. This is still convention, not cryptographic proof of who ran it.
+const schemaPath = path.join(process.cwd(), "convex", "schema.ts");
+const attestationPath = path.join(
+  process.cwd(),
+  "convex",
+  "_generated",
+  "schema.sha256",
+);
+const schemaDigest = createHash("sha256")
+  .update(fs.readFileSync(schemaPath))
+  .digest("hex");
+fs.writeFileSync(attestationPath, `${schemaDigest}  convex/schema.ts\n`);
