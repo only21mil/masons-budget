@@ -65,6 +65,16 @@ data class Transaction(
     val card: String? = null,
     val note: String? = null,
     override val owner: FamilyMember,
+    /**
+     * Signed contribution to budget actuals from the row API.
+     *
+     * Positive values are spend and negative values are credits. Null is only
+     * for the legacy fixture/blob shape, where the contribution is derived from
+     * [amount] and [owner].
+     */
+    val signedSpendContribution: Long? = null,
+    /** Rendering magnitude supplied by the row API; never used for budget maths. */
+    val rowDisplaySpendAmount: Long? = null,
 ) : Owned
 
 /**
@@ -78,11 +88,12 @@ data class Transaction(
  * ambiguity instead of silently hiding it with an absolute value.
  */
 val Transaction.spendAmount: Long
-    get() = if (category == "Income") 0L else if (owner.isAdult) -amount else amount
+    get() = signedSpendContribution
+        ?: if (category == "Income") 0L else if (owner.isAdult) -amount else amount
 
 /** Stable magnitude for row rendering, including legacy wrong-sign rows. */
 val Transaction.displaySpendAmount: Long
-    get() = kotlin.math.abs(spendAmount)
+    get() = rowDisplaySpendAmount ?: kotlin.math.abs(spendAmount)
 
 /**
  * A valid credit or a corrupt wrong-sign spend; legacy rows cannot distinguish
@@ -90,6 +101,10 @@ val Transaction.displaySpendAmount: Long
  */
 val Transaction.hasOppositeSpendSign: Boolean
     get() = spendAmount < 0L
+
+/** Signed budget contribution. Credits reduce actual spend instead of disappearing. */
+val Transaction.budgetSpendContribution: Long
+    get() = spendAmount
 
 val Transaction.incomeAmount: Long
     get() = if (category == "Income" && amount > 0L) amount else 0L
@@ -282,9 +297,10 @@ data class BudgetSpend(
 fun deriveBudgetSpend(budget: Budget, transactions: List<Transaction>): BudgetSpend {
     val spentByCategory = mutableMapOf<String, Long>()
     for (transaction in transactions.inMonth(budget.month)) {
-        val spend = transaction.spendAmount
-        if (spend == 0L) continue
-        spentByCategory[transaction.category] = (spentByCategory[transaction.category] ?: 0L) + spend
+        val contribution = transaction.budgetSpendContribution
+        if (contribution == 0L) continue
+        spentByCategory[transaction.category] =
+            (spentByCategory[transaction.category] ?: 0L) + contribution
     }
 
     val categories = budget.categories.map { category ->

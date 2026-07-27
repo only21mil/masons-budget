@@ -18,16 +18,20 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -68,7 +72,12 @@ import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 import com.sats21m.vogelvault.ui.theme.VaultWarning
 
 @Composable
-fun ScreenHost(destination: Destination, state: VaultUiState, modifier: Modifier = Modifier) {
+fun ScreenHost(
+    destination: Destination,
+    state: VaultUiState,
+    onEnableRemoteRows: (String) -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
     val budgetMonth = state.data.budget.value?.month
     val months = state.budgetMonths
     // The Budget screen's month scope. Held here rather than in the ViewModel
@@ -97,7 +106,7 @@ fun ScreenHost(destination: Destination, state: VaultUiState, modifier: Modifier
             Destination.NET_WORTH -> netWorth(state)
             Destination.TODAY -> today(state)
             Destination.FAMILY -> family(state)
-            Destination.SETTINGS -> settings(state)
+            Destination.SETTINGS -> settings(state, onEnableRemoteRows)
         }
     }
 }
@@ -639,14 +648,27 @@ private fun androidx.compose.foundation.lazy.LazyListScope.family(state: VaultUi
 
 // ── Settings ────────────────────────────────────────────────────────────────
 
-private fun androidx.compose.foundation.lazy.LazyListScope.settings(state: VaultUiState) {
+private fun androidx.compose.foundation.lazy.LazyListScope.settings(
+    state: VaultUiState,
+    onEnableRemoteRows: (String) -> Unit,
+) {
+    val readsConvexRows = state.data.transactions.source.startsWith("Convex")
     item {
-        StatusBanner(
-            "This build reads sanitized fixtures",
-            "No live Convex connection, no writeback, no network permission. Figures are sample data.",
-            tone = VaultWarning,
-        )
+        if (readsConvexRows) {
+            StatusBanner(
+                "Convex row reads are enabled",
+                "Every query is authenticated. This client remains read-only.",
+                tone = VaultTextMuted,
+            )
+        } else {
+            StatusBanner(
+                "This build reads sanitized fixtures",
+                "Remote reads are disabled or not configured. Figures are sample data.",
+                tone = VaultWarning,
+            )
+        }
     }
+    item { RemoteRowsConfiguration(onEnableRemoteRows) }
     item {
         Panel("Slices") {
             Column {
@@ -679,6 +701,36 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settings(state: Vault
         }
     }
     item { Spacer(Modifier.height(VaultSpace.lg)) }
+}
+
+@Composable
+private fun RemoteRowsConfiguration(onEnable: (String) -> Unit) {
+    // Deliberately not saveable: the plaintext token must not enter saved
+    // instance state. Submission immediately hands it to encrypted storage.
+    var token by remember { mutableStateOf("") }
+    Panel("Configure authenticated row reads") {
+        Column(
+            Modifier.padding(VaultSpace.md),
+            verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
+        ) {
+            OutlinedTextField(
+                value = token,
+                onValueChange = { token = it },
+                label = { Text("Convex read token") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+            )
+            Button(
+                enabled = token.isNotBlank(),
+                onClick = {
+                    onEnable(token)
+                    token = ""
+                },
+            ) {
+                Text("Save and refresh")
+            }
+        }
+    }
 }
 
 // ── shared ──────────────────────────────────────────────────────────────────

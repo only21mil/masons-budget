@@ -92,6 +92,7 @@ fun VaultApp(
     state: VaultUiState,
     onNavigate: (Destination) -> Unit,
     onSwitchProfile: (FamilyMember) -> Unit,
+    onEnableRemoteRows: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier.fillMaxSize().background(VaultBlack)) {
@@ -109,14 +110,14 @@ fun VaultApp(
                     Column(Modifier.weight(1f)) {
                         VaultTopBar(state, onSwitchProfile)
                         HorizontalHairline()
-                        ScreenHost(current, state, Modifier.weight(1f))
+                        ScreenHost(current, state, onEnableRemoteRows, Modifier.weight(1f))
                     }
                 }
             } else {
                 Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                     VaultTopBar(state, onSwitchProfile)
                     HorizontalHairline()
-                    ScreenHost(current, state, Modifier.weight(1f))
+                    ScreenHost(current, state, onEnableRemoteRows, Modifier.weight(1f))
                     HorizontalHairline()
                     VaultBottomBar(destinations, current, onNavigate)
                 }
