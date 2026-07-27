@@ -103,7 +103,12 @@ internal data class PublicRowEnvelope<Dto>(
     val complete: Boolean,
 )
 
-/** Reject the entire response if one financial row is malformed. */
+/**
+ * Reject the entire response if one financial row is malformed.
+ *
+ * Only required contract fields are read. Unknown envelope and row fields are
+ * deliberately ignored so additive backend changes remain forward-compatible.
+ */
 internal fun <T> JsonElement.decodeRowEnvelope(decoder: (JsonElement) -> T?): PublicRowEnvelope<T>? {
     val envelope = this as? JsonObject ?: return null
     val complete = envelope.requiredBoolean("complete") ?: return null
@@ -122,6 +127,9 @@ internal data class PublicTransactionDto(
     val month: String,
     val merchant: String,
     val amountCents: Long,
+    val spendAmount: Long,
+    val displaySpendAmount: Long,
+    val hasOppositeSpendSign: Boolean,
     val category: String,
     val card: String?,
     val note: String?,
@@ -136,6 +144,8 @@ internal data class PublicTransactionDto(
         card = card,
         note = note,
         owner = owner,
+        spendAmount = spendAmount,
+        displaySpendAmount = displaySpendAmount,
     )
 
     companion object {
@@ -143,6 +153,8 @@ internal data class PublicTransactionDto(
             val row = element as? JsonObject ?: return null
             val card = row.decodedOptionalString("card") ?: return null
             val note = row.decodedOptionalString("note") ?: return null
+            val hasOppositeSpendSign =
+                row.requiredBoolean("hasOppositeSpendSign") ?: return null
             return PublicTransactionDto(
                 txId = row.rowString("txId") ?: return null,
                 owner = row.rowOwner() ?: return null,
@@ -150,11 +162,17 @@ internal data class PublicTransactionDto(
                 month = row.rowString("month") ?: return null,
                 merchant = row.rowStringAllowEmpty("merchant") ?: return null,
                 amountCents = row.rowInt64("amountCents") ?: return null,
+                spendAmount = row.rowInt64("spendAmount") ?: return null,
+                displaySpendAmount = row.rowInt64("displaySpendAmount") ?: return null,
+                hasOppositeSpendSign = hasOppositeSpendSign,
                 category = row.rowStringAllowEmpty("category") ?: return null,
                 card = card.value,
                 note = note.value,
                 updatedAtMs = row.requiredLong("updatedAtMs") ?: return null,
-            )
+            ).takeUnless {
+                it.displaySpendAmount < 0L ||
+                    it.hasOppositeSpendSign != (it.spendAmount < 0L)
+            }
         }
     }
 }

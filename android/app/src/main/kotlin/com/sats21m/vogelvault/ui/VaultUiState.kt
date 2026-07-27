@@ -1,6 +1,9 @@
 package com.sats21m.vogelvault.ui
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.sats21m.vogelvault.data.RowReadModelLoader
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
@@ -11,6 +14,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 /**
  * Everything the UI reads.
@@ -98,10 +103,27 @@ data class VaultUiState(
     }
 }
 
-class VaultViewModel : ViewModel() {
+class VaultViewModel(
+    private val rowLoader: RowReadModelLoader? = null,
+    private val enableRemote: ((String) -> Unit)? = null,
+    remoteInitiallyEnabled: Boolean = rowLoader != null,
+    private val clock: () -> Long = System::currentTimeMillis,
+) : ViewModel() {
 
-    private val _state = MutableStateFlow(VaultUiState())
+    private val _state = MutableStateFlow(
+        if (!remoteInitiallyEnabled) {
+            VaultUiState()
+        } else {
+            VaultUiState(data = loadingModel(FamilyMember.VICTOR))
+        },
+    )
     val state: StateFlow<VaultUiState> = _state.asStateFlow()
+    private var loadJob: Job? = null
+    private var remoteEnabled = remoteInitiallyEnabled
+
+    init {
+        if (rowLoader != null && remoteInitiallyEnabled) load(FamilyMember.VICTOR)
+    }
 
     fun navigate(destination: Destination) {
         _state.update { current ->
@@ -124,7 +146,7 @@ class VaultViewModel : ViewModel() {
             val destinations = Destination.visibleTo(next)
             current.copy(
                 activeProfile = next,
-                data = Fixtures.envelope(next),
+                data = if (!remoteEnabled) Fixtures.envelope(next) else loadingModel(next),
                 // A month picked against one profile's ledger means nothing on the
                 // next one, so the scope goes back to that profile's budget month.
                 selectedMonth = null,
@@ -135,9 +157,64 @@ class VaultViewModel : ViewModel() {
                 },
             )
         }
+        if (remoteEnabled && rowLoader != null && _state.value.activeProfile == next) load(next)
     }
 
     fun simulate(status: Freshness) {
         _state.update { it.copy(data = Fixtures.envelope(it.activeProfile, status)) }
     }
+
+    fun enableRemoteRows(readToken: String) {
+        if (readToken.isBlank()) return
+        val configure = enableRemote ?: return
+        runCatching { configure(readToken) }.getOrElse { return }
+        remoteEnabled = true
+        val profile = _state.value.activeProfile
+        _state.update { it.copy(data = loadingModel(profile)) }
+        load(profile)
+    }
+
+    private fun load(profile: FamilyMember) {
+        val loader = rowLoader ?: return
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            val loaded = loader.load(profile)
+            _state.update { current ->
+                if (current.activeProfile == profile) {
+                    current.copy(data = loaded, now = clock())
+                } else {
+                    current
+                }
+            }
+        }
+    }
+
+    companion object {
+        fun factory(
+            loader: RowReadModelLoader?,
+            remoteInitiallyEnabled: Boolean = loader != null,
+            enableRemote: ((String) -> Unit)? = null,
+        ): ViewModelProvider.Factory =
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    require(modelClass.isAssignableFrom(VaultViewModel::class.java))
+                    return VaultViewModel(loader, enableRemote, remoteInitiallyEnabled) as T
+                }
+            }
+    }
+}
+
+private fun loadingModel(profile: FamilyMember): ReadModel {
+    val empty = Fixtures.envelope(profile, Freshness.EMPTY)
+    fun <T> loading(slice: com.sats21m.vogelvault.domain.Slice<T>) =
+        slice.copy(status = Freshness.LOADING, source = "Convex rows", updatedAt = null)
+    return empty.copy(
+        transactions = loading(empty.transactions),
+        budget = loading(empty.budget),
+        btcAccounts = loading(empty.btcAccounts),
+        btcBuys = loading(empty.btcBuys),
+        todos = loading(empty.todos),
+        btcPriceCents = 0L,
+    )
 }

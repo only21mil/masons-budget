@@ -18,7 +18,7 @@ class RowQueryRepositoryTest {
     fun `transaction rows decode exact int64 money and preserve completeness`() {
         val poster = RecordingPoster(
             rowSuccess(
-                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":${int64(-14218)},"category":"Food","card":"visa","note":"lunch","updatedAtMs":1785000000000}]""",
+                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":${int64(-14218)},"spendAmount":${int64(14218)},"displaySpendAmount":${int64(14218)},"hasOppositeSpendSign":false,"category":"Food","card":"visa","note":"lunch","updatedAtMs":1785000000000}]""",
             ),
         )
         val repository = repositoryWith(poster)
@@ -27,6 +27,9 @@ class RowQueryRepositoryTest {
         val snapshot = (result as? ConvexResult.Ok)?.value ?: fail("expected Ok, got $result")
 
         assertEquals(-14_218L, snapshot.rows.single().amount)
+        assertEquals(14_218L, snapshot.rows.single().spendAmount)
+        assertEquals(14_218L, snapshot.rows.single().displaySpendAmount)
+        assertFalse(snapshot.rows.single().hasOppositeSpendSign)
         assertEquals(FamilyMember.VICTOR, snapshot.rows.single().owner)
         assertEquals(true, snapshot.complete)
         val args = sentArgs(poster)
@@ -44,6 +47,46 @@ class RowQueryRepositoryTest {
 
         assertFalse(snapshot.complete)
         assertEquals(emptyList(), snapshot.rows)
+    }
+
+    @Test
+    fun `unknown response envelope and row fields are ignored`() {
+        val poster = RecordingPoster(
+            HttpTextResponse(
+                200,
+                """{
+                    "status":"success",
+                    "value":{
+                        "rows":[{
+                            "txId":"tx-1",
+                            "owner":"victor",
+                            "date":"2026-07-25",
+                            "month":"2026-07",
+                            "merchant":"Cafe",
+                            "amountCents":${int64(-500)},
+                            "spendAmount":${int64(500)},
+                            "displaySpendAmount":${int64(500)},
+                            "hasOppositeSpendSign":false,
+                            "category":"Food",
+                            "updatedAtMs":1785000000000,
+                            "futureRowField":{"nested":true}
+                        }],
+                        "complete":true,
+                        "futureEnvelopeField":"ignored"
+                    },
+                    "futureResponseField":42
+                }""".trimIndent(),
+            ),
+        )
+
+        val result = runBlocking {
+            repositoryWith(poster).listTransactions(FamilyMember.VICTOR)
+        }
+        val transaction = (result as? ConvexResult.Ok)?.value?.rows?.single()
+            ?: fail("expected forward-compatible row, got $result")
+
+        assertEquals("tx-1", transaction.id)
+        assertEquals(500L, transaction.spendAmount)
     }
 
     @Test
@@ -105,6 +148,25 @@ class RowQueryRepositoryTest {
     }
 
     @Test
+    fun `opposite spend sign flag accepts a refund and preserves its display magnitude`() {
+        val poster = RecordingPoster(
+            rowSuccess(
+                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Refund","amountCents":${int64(500)},"spendAmount":${int64(-500)},"displaySpendAmount":${int64(500)},"hasOppositeSpendSign":true,"category":"Food","updatedAtMs":1785000000000}]""",
+            ),
+        )
+
+        val result = runBlocking {
+            repositoryWith(poster).listTransactions(FamilyMember.VICTOR)
+        }
+        val refund = (result as? ConvexResult.Ok)?.value?.rows?.single()
+            ?: fail("expected refund row, got $result")
+
+        assertEquals(-500L, refund.spendAmount)
+        assertEquals(500L, refund.displaySpendAmount)
+        assertEquals(true, refund.hasOppositeSpendSign)
+    }
+
+    @Test
     fun `unknown custody rejects every account atomically`() {
         val poster = RecordingPoster(
             rowSuccess(
@@ -157,10 +219,26 @@ class RowQueryRepositoryTest {
         assertEquals("visible", sentArgs(billPoster)["scope"]?.jsonPrimitive?.content)
 
         val countPoster = RecordingPoster(
-            success("""{"transactions":905,"todos":25,"btcBuys":31,"btcBillPays":4,"btcAccounts":7}"""),
+            success(
+                """{"transactions":905,"todos":25,"btcBuys":31,"btcBillPays":4,"btcAccounts":7,"income":16,"balanceDocuments":1,"budgetDocuments":2,"btcBalanceDocuments":2,"financeDocuments":1,"futureTable":99}""",
+            ),
         )
         val countResult = runBlocking { repositoryWith(countPoster).rowCounts() }
-        assertEquals(RowCounts(905, 25, 31, 4, 7), (countResult as ConvexResult.Ok).value)
+        assertEquals(
+            RowCounts(
+                transactions = 905,
+                todos = 25,
+                btcBuys = 31,
+                btcBillPays = 4,
+                btcAccounts = 7,
+                income = 16,
+                balanceDocuments = 1,
+                budgetDocuments = 2,
+                btcBalanceDocuments = 2,
+                financeDocuments = 1,
+            ),
+            (countResult as ConvexResult.Ok).value,
+        )
     }
 
     @Test
@@ -262,7 +340,7 @@ class RowQueryRepositoryTest {
         Json.parseToJsonElement(poster.bodies.single()).jsonObject["path"]!!.jsonPrimitive.content
 
     private fun transaction(id: String, owner: String, amount: String): String =
-        """{"txId":"$id","owner":"$owner","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":$amount,"category":"Food","updatedAtMs":1785000000000}"""
+        """{"txId":"$id","owner":"$owner","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":$amount,"spendAmount":${int64(500)},"displaySpendAmount":${int64(500)},"hasOppositeSpendSign":false,"category":"Food","updatedAtMs":1785000000000}"""
 
     private fun account(key: String, owner: String, custody: String, sats: Long): String =
         """{"key":"$key","owner":"$owner","label":"$key","custody":"$custody","sats":${int64(sats)},"fiatCents":${int64(20)},"asOf":"2026-07-18T12:00:00Z","schemaVersion":${int64(2)},"updatedAtMs":1785000000000}"""
