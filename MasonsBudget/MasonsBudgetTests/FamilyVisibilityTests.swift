@@ -204,7 +204,191 @@ final class FamilyVisibilityTests: XCTestCase {
         XCTAssertFalse(FamilyMember.maddox.showsFullBudget)
     }
 
+    // MARK: - Shared Cross-Client Fixture
+
+    func testCompleteSharedVisibilityFixture() throws {
+        let fixture = try loadVisibilityFixture()
+        let members = FamilyMember.allCases.map(\.rawValue)
+
+        XCTAssertEqual(fixture.members, members)
+        XCTAssertEqual(fixture.adults, FamilyMember.allCases.filter(\.isAdult).map(\.rawValue))
+        XCTAssertEqual(fixture.defaultOwner, FamilyMember.victor.rawValue)
+
+        for testCase in fixture.canSee {
+            let viewer = try familyMember(testCase.viewer)
+            let owner = try familyMember(testCase.owner)
+            XCTAssertEqual(
+                viewer.canSee(dataOwnedBy: owner),
+                testCase.expected,
+                "Fixture mismatch for \(viewer).canSee(dataOwnedBy: \(owner))",
+            )
+        }
+
+        for testCase in fixture.sharesNetWorth {
+            let viewer = try familyMember(testCase.viewer)
+            let owner = try familyMember(testCase.owner)
+            XCTAssertEqual(
+                viewer.sharesNetWorth(with: owner),
+                testCase.expected,
+                "Fixture mismatch for \(viewer).sharesNetWorth(with: \(owner))",
+            )
+        }
+
+        for testCase in fixture.allowedSwitchTargets {
+            XCTAssertEqual(
+                try familyMember(testCase.member).allowedSwitchTargets.map(\.rawValue),
+                testCase.expected,
+            )
+        }
+
+        for testCase in fixture.showsFullBudget {
+            XCTAssertEqual(try familyMember(testCase.member).showsFullBudget, testCase.expected)
+        }
+
+        for testCase in fixture.mc2TransactionsFileName {
+            XCTAssertEqual(try familyMember(testCase.member).mc2TransactionsFileName, testCase.expected)
+        }
+
+        for testCase in fixture.mc2BTCBuysFileName {
+            XCTAssertEqual(try familyMember(testCase.member).mc2BTCBuysFileName, testCase.expected)
+        }
+
+        for testCase in fixture.hasDedicatedMC2ChildFinanceFiles {
+            XCTAssertEqual(
+                try familyMember(testCase.member).hasDedicatedMC2ChildFinanceFiles,
+                testCase.expected,
+            )
+        }
+
+        let transactions = try fixture.sampleTransactions.map { sample -> Transaction in
+            let amount = try decimal(sample.amount)
+            let transaction = Transaction(
+                id: sample.id,
+                date: .now,
+                merchant: sample.merchant,
+                amount: amount,
+                category: sample.category,
+                owner: try familyMember(sample.owner),
+                createdBy: "fixture",
+            )
+            XCTAssertEqual(transaction.spendAmount, try decimal(sample.spendAmount))
+            return transaction
+        }
+
+        let accounts = try fixture.sampleAccounts.map { sample -> BTCAccount in
+            let custody = try XCTUnwrap(BTCCustody(rawValue: sample.custody))
+            return BTCAccount(
+                key: sample.key,
+                label: sample.label,
+                custody: custody,
+                btc: try decimal(sample.btc),
+                owner: try familyMember(sample.owner),
+            )
+        }
+
+        let todos = try fixture.sampleTodos.map { sample in
+            TodoItem(
+                id: sample.id,
+                title: sample.title,
+                owner: try familyMember(sample.owner),
+                createdBy: "fixture",
+            )
+        }
+
+        for (viewerName, expectedCount) in fixture.expectations.visibleTransactionCount {
+            let viewer = try familyMember(viewerName)
+            XCTAssertEqual(
+                transactions.filter { viewer.canSee(dataOwnedBy: $0.ownerMember) }.count,
+                expectedCount,
+            )
+        }
+
+        for (viewerName, expectedMerchants) in fixture.expectations.visibleTransactionMerchants {
+            let viewer = try familyMember(viewerName)
+            XCTAssertEqual(
+                transactions
+                    .filter { viewer.canSee(dataOwnedBy: $0.ownerMember) }
+                    .map(\.merchant),
+                expectedMerchants,
+            )
+        }
+
+        for (viewerName, expectedCount) in fixture.expectations.visibleAccountCount {
+            let viewer = try familyMember(viewerName)
+            XCTAssertEqual(
+                accounts.filter { viewer.canSee(dataOwnedBy: $0.ownerMember) }.count,
+                expectedCount,
+            )
+        }
+
+        for (viewerName, expectedLabels) in fixture.expectations.visibleAccountLabels {
+            let viewer = try familyMember(viewerName)
+            XCTAssertEqual(
+                accounts
+                    .filter { viewer.canSee(dataOwnedBy: $0.ownerMember) }
+                    .map(\.label),
+                expectedLabels,
+            )
+        }
+
+        for (viewerName, expectedLabels) in fixture.expectations.netWorthAccountLabels {
+            let viewer = try familyMember(viewerName)
+            XCTAssertEqual(
+                accounts
+                    .filter { viewer.sharesNetWorth(with: $0.ownerMember) }
+                    .map(\.label),
+                expectedLabels,
+            )
+        }
+
+        for (viewerName, expectedCount) in fixture.expectations.visibleTodoCount {
+            let viewer = try familyMember(viewerName)
+            XCTAssertEqual(
+                todos.filter { viewer.canSee(dataOwnedBy: $0.ownerMember) }.count,
+                expectedCount,
+            )
+        }
+
+        for (viewerName, expectedTitles) in fixture.expectations.visibleTodoTitles {
+            let viewer = try familyMember(viewerName)
+            XCTAssertEqual(
+                todos
+                    .filter { viewer.canSee(dataOwnedBy: $0.ownerMember) }
+                    .map(\.title),
+                expectedTitles,
+            )
+        }
+
+        let rachelVisibleTodos = todos.filter { FamilyMember.rachel.canSee(dataOwnedBy: $0.ownerMember) }
+        XCTAssertTrue(rachelVisibleTodos.contains {
+            $0.title == fixture.expectations.rachelSeesVictorTodo && $0.ownerMember == .victor
+        })
+
+        for (viewerName, expectedSpend) in fixture.expectations.totalSpend {
+            let viewer = try familyMember(viewerName)
+            let spend = transactions
+                .filter { viewer.canSee(dataOwnedBy: $0.ownerMember) }
+                .reduce(Decimal(0)) { $0 + $1.spendAmount }
+            XCTAssertEqual(spend, try decimal(expectedSpend))
+        }
+    }
+
     // MARK: - Helpers
+
+    private func loadVisibilityFixture() throws -> VisibilityFixture {
+        let bundle = Bundle(for: FamilyVisibilityTests.self)
+        let url = bundle.url(forResource: "visibility-cases", withExtension: "json")
+            ?? bundle.url(forResource: "visibility-cases", withExtension: "json", subdirectory: "fixtures")
+        return try JSONDecoder().decode(VisibilityFixture.self, from: Data(contentsOf: try XCTUnwrap(url)))
+    }
+
+    private func familyMember(_ rawValue: String) throws -> FamilyMember {
+        try XCTUnwrap(FamilyMember(rawValue: rawValue), "Unknown fixture family member: \(rawValue)")
+    }
+
+    private func decimal(_ rawValue: String) throws -> Decimal {
+        try XCTUnwrap(Decimal(string: rawValue, locale: Locale(identifier: "en_US_POSIX")))
+    }
 
     private func sampleTransactions() -> [Transaction] {
         [
@@ -232,4 +416,77 @@ final class FamilyVisibilityTests: XCTestCase {
             TodoItem(id: "todo-4", title: "Pack lunch", owner: .maddox, createdBy: "mc2"),
         ]
     }
+}
+
+private struct VisibilityFixture: Decodable {
+    let members: [String]
+    let adults: [String]
+    let defaultOwner: String
+    let canSee: [ViewerOwnerExpectation]
+    let sharesNetWorth: [ViewerOwnerExpectation]
+    let allowedSwitchTargets: [MemberListExpectation]
+    let showsFullBudget: [MemberBoolExpectation]
+    let mc2TransactionsFileName: [MemberStringExpectation]
+    let mc2BTCBuysFileName: [MemberStringExpectation]
+    let hasDedicatedMC2ChildFinanceFiles: [MemberBoolExpectation]
+    let sampleTransactions: [FixtureTransaction]
+    let sampleAccounts: [FixtureAccount]
+    let sampleTodos: [FixtureTodo]
+    let expectations: FixtureExpectations
+}
+
+private struct ViewerOwnerExpectation: Decodable {
+    let viewer: String
+    let owner: String
+    let expected: Bool
+}
+
+private struct MemberListExpectation: Decodable {
+    let member: String
+    let expected: [String]
+}
+
+private struct MemberBoolExpectation: Decodable {
+    let member: String
+    let expected: Bool
+}
+
+private struct MemberStringExpectation: Decodable {
+    let member: String
+    let expected: String
+}
+
+private struct FixtureTransaction: Decodable {
+    let id: String
+    let merchant: String
+    let amount: String
+    let category: String
+    let owner: String
+    let spendAmount: String
+}
+
+private struct FixtureAccount: Decodable {
+    let key: String
+    let label: String
+    let custody: String
+    let btc: String
+    let owner: String
+}
+
+private struct FixtureTodo: Decodable {
+    let id: String
+    let title: String
+    let owner: String
+}
+
+private struct FixtureExpectations: Decodable {
+    let visibleTransactionCount: [String: Int]
+    let visibleTransactionMerchants: [String: [String]]
+    let visibleAccountCount: [String: Int]
+    let visibleAccountLabels: [String: [String]]
+    let netWorthAccountLabels: [String: [String]]
+    let visibleTodoCount: [String: Int]
+    let visibleTodoTitles: [String: [String]]
+    let rachelSeesVictorTodo: String
+    let totalSpend: [String: String]
 }

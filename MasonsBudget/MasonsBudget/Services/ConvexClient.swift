@@ -562,6 +562,68 @@ private struct ConvexQueryResponse: Decodable {
     let errorMessage: String?
 }
 
+/// Strictly converts Convex's tagged int64 wire values into Swift `Int64` values.
+///
+/// Convex serializes `v.int64()` as an object containing one `$integer` key whose
+/// value is the canonical base64 encoding of eight little-endian bytes. Any object
+/// that attempts to use that reserved key but does not match the exact shape is
+/// rejected instead of being treated as ordinary JSON.
+enum ConvexTaggedInt64Decoder {
+    enum DecodeError: LocalizedError, Equatable {
+        case malformedTag
+        case malformedPayload
+
+        var errorDescription: String? {
+            switch self {
+            case .malformedTag:
+                "Convex int64 tags must contain only a string-valued $integer field."
+            case .malformedPayload:
+                "Convex int64 payloads must be canonical base64 containing exactly eight bytes."
+            }
+        }
+    }
+
+    static func decode(_ value: Any) throws -> Any {
+        if let object = value as? [String: Any] {
+            if object.keys.contains("$integer") {
+                return try decodeTaggedValue(object)
+            }
+            return try object.mapValues(decode)
+        }
+
+        if let array = value as? [Any] {
+            return try array.map(decode)
+        }
+
+        return value
+    }
+
+    static func decodeTaggedValue(_ value: Any) throws -> Int64 {
+        guard let object = value as? [String: Any],
+              object.count == 1,
+              let encoded = object["$integer"] as? String
+        else {
+            throw DecodeError.malformedTag
+        }
+        return try decodePayload(encoded)
+    }
+
+    static func decodePayload(_ encoded: String) throws -> Int64 {
+        guard let bytes = Data(base64Encoded: encoded),
+              bytes.count == MemoryLayout<Int64>.size,
+              bytes.base64EncodedString() == encoded
+        else {
+            throw DecodeError.malformedPayload
+        }
+
+        var bits: UInt64 = 0
+        for (index, byte) in bytes.enumerated() {
+            bits |= UInt64(byte) << (index * 8)
+        }
+        return Int64(bitPattern: bits)
+    }
+}
+
 /// Type-erased Codable wrapper for Convex responses.
 struct AnyCodable: Decodable {
     let value: Any
@@ -773,6 +835,10 @@ final class ConvexClient: Sendable {
             throw ConvexError.noData(path)
         }
 
-        return value
+        do {
+            return try ConvexTaggedInt64Decoder.decode(value)
+        } catch {
+            throw ConvexError.decodeFailed(path, error)
+        }
     }
 }
