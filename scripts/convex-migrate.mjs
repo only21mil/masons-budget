@@ -350,7 +350,8 @@ function classifyWriteSafety(options, files, error) {
   if (!options?.apply) {
     return { classification: "none", reason: "the selected mode does not write" };
   }
-  if (completedWriteCount(files) > 0) {
+  const completedWrites = completedWriteCount(files);
+  if (error && completedWrites > 0) {
     return {
       classification: "writes-completed-before-failure",
       reason: "one or more completed batches reported committed inserts or updates before failure",
@@ -360,6 +361,12 @@ function classifyWriteSafety(options, files, error) {
     return {
       classification: "possible",
       reason: "an apply transaction was attempted but its outcome was not observable",
+    };
+  }
+  if (completedWrites > 0) {
+    return {
+      classification: "writes-completed",
+      reason: "one or more completed batches reported committed inserts or updates",
     };
   }
   return { classification: "none", reason: "no completed batch reported a write" };
