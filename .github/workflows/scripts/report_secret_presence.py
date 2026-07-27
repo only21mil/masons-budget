@@ -56,7 +56,12 @@ def main() -> int:
 
         if not value:
             status = "ABSENT"
-            note = "" if required else "optional — falls back to a built-in default"
+            # A retired secret has no fallback — it is simply unused — so the
+            # default note would be a lie in the one table read before a release.
+            # Entries may override it with `absent_note`.
+            note = "" if required else entry.get(
+                "absent_note", "optional — falls back to a built-in default"
+            )
             if required:
                 failures.append(f"{name} is required for a release and is not set")
         else:
