@@ -1,13 +1,15 @@
-name: Release secrets preflight (manual, reports presence only)
+name: Release and App Store Connect preflight (manual, read-only)
 
-# Answers "would a TestFlight run get past signing today?" without archiving,
-# signing, exporting, uploading, or touching App Store Connect at all. Run this
-# before Deploy to TestFlight rather than discovering a missing secret ten
-# minutes into a macOS archive.
+# Answers "would a TestFlight run get past signing and see the exact app today?"
+# without archiving, signing, exporting, uploading, or writing to App Store
+# Connect. The REST probe performs two bounded read-only requests: exact bundle
+# visibility, then the latest visible build. Run this before Deploy to TestFlight
+# rather than discovering a missing secret or invisible app after an archive.
 #
-# Nothing here prints a secret. The report is booleans only: set or not, and for
-# the base64 ones whether the paste actually decodes. Not even a length — the
-# length of an App Store Connect key id would narrow it considerably.
+# Nothing here prints a secret. The report is booleans and fixed classifications
+# only: set or not, whether encoded values decode, whether the API key is an
+# in-memory ES256/P-256 key, exact bundle visibility, and latest-build presence.
+# Not even a length — the length of an App Store Connect key id would narrow it.
 #
 # THE SUBTLE PART, since getting this wrong is the usual way presence checks are
 # written: the `secrets` context is NOT available in any `if:`. Neither
@@ -33,6 +35,28 @@ name: Release secrets preflight (manual, reports presence only)
 
 on:
   workflow_dispatch:
+  workflow_call:
+    secrets:
+      APPLE_CERTIFICATE_P12:
+        required: false
+      APPLE_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_PROVISIONING_PROFILE:
+        required: false
+      ASC_API_KEY_P8:
+        required: false
+      ASC_KEY_ID:
+        required: false
+      ASC_ISSUER_ID:
+        required: false
+      ANDROID_DEBUG_KEYSTORE_BASE64:
+        required: false
+      ANDROID_DEBUG_KEYSTORE_PASSWORD:
+        required: false
+      ANDROID_DEBUG_KEY_ALIAS:
+        required: false
+      ANDROID_DEBUG_KEY_PASSWORD:
+        required: false
 
 permissions:
   contents: read
@@ -60,3 +84,11 @@ jobs:
           ANDROID_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
           ANDROID_DEBUG_KEY_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEY_PASSWORD }}
         run: python3 .github/workflows/scripts/report_secret_presence.py
+
+      - name: Verify App Store Connect bundle visibility
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_BUNDLE_ID: com.sats21m.masonsbudget
+        run: node .github/workflows/scripts/app_store_connect_preflight.mjs

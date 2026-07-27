@@ -4,10 +4,11 @@
 Reads each declared secret from the environment (the calling workflow binds them
 one per env key) and emits PRESENT/ABSENT plus a cheap well-formedness verdict.
 
-The only things this program is ever allowed to emit about a secret are booleans:
-present or not, decodes as base64 or not, has stray surrounding whitespace or not.
-No value, no prefix, no length, no hash. Length alone is enough to fingerprint a
-short id, so it is not reported either.
+The only things this program is ever allowed to emit about a secret are fixed
+classifications: present or not, decodes as base64 or not, has a private-key PEM
+envelope or not, has stray surrounding whitespace or not. No value, no prefix,
+no length, no hash. Length alone is enough to fingerprint a short id, so it is
+not reported either.
 
 Exits non-zero when a secret marked required_for_release is absent or malformed,
 so a red run means "a release would fail today" — established without running,
@@ -26,8 +27,39 @@ from pathlib import Path
 INVENTORY = Path(__file__).resolve().parent.parent / "secrets-inventory.json"
 
 
-def well_formed(value: str, encoding: str) -> tuple[bool, str]:
-    """Return (ok, note). The note never derives from the secret's content."""
+def private_key_pem_well_formed(value: str) -> tuple[bool, str]:
+    """Accept a raw or strictly base64-wrapped PKCS#8 PEM without exposing it."""
+    if "-----BEGIN PRIVATE KEY-----" in value:
+        candidate = value
+    else:
+        compact = "".join(value.split())
+        try:
+            decoded = base64.b64decode(compact, validate=True)
+            candidate = decoded.decode("ascii")
+        except (binascii.Error, UnicodeDecodeError, ValueError):
+            return False, "is neither a raw nor base64-wrapped private-key PEM"
+
+    lines = candidate.strip().splitlines()
+    if (
+        len(lines) < 3
+        or lines[0] != "-----BEGIN PRIVATE KEY-----"
+        or lines[-1] != "-----END PRIVATE KEY-----"
+    ):
+        return False, "is neither a raw nor base64-wrapped private-key PEM"
+
+    try:
+        der = base64.b64decode("".join(lines[1:-1]), validate=True)
+    except (binascii.Error, ValueError):
+        return False, "contains a malformed private-key PEM"
+    if not der:
+        return False, "contains an empty private-key PEM"
+    return True, "contains a private-key PEM; the REST probe validates ES256/P-256"
+
+
+def well_formed(name: str, value: str, encoding: str) -> tuple[bool, str]:
+    """Return (ok, note). The note never includes secret-derived material."""
+    if name == "ASC_API_KEY_P8":
+        return private_key_pem_well_formed(value)
     if encoding == "base64":
         compact = "".join(value.split())
         try:
@@ -66,7 +98,7 @@ def main() -> int:
                 failures.append(f"{name} is required for a release and is not set")
         else:
             present_count += 1
-            ok, note = well_formed(value, entry["encoding"])
+            ok, note = well_formed(name, value, entry["encoding"])
             status = "PRESENT" if ok else "PRESENT but MALFORMED"
             if not ok and required:
                 failures.append(f"{name} is set but {note}")
