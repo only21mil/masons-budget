@@ -167,6 +167,20 @@ class RowQueryRepositoryTest {
     }
 
     @Test
+    fun `mismatched opposite spend sign rejects the entire transaction envelope`() {
+        val poster = RecordingPoster(
+            rowSuccess(
+                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":${int64(-500)},"spendAmount":${int64(500)},"displaySpendAmount":${int64(500)},"hasOppositeSpendSign":true,"category":"Food","updatedAtMs":1785000000000}]""",
+            ),
+        )
+
+        assertEquals(
+            ConvexResult.Failed("unexpected payload shape"),
+            runBlocking { repositoryWith(poster).listTransactions(FamilyMember.VICTOR) },
+        )
+    }
+
+    @Test
     fun `unknown custody rejects every account atomically`() {
         val poster = RecordingPoster(
             rowSuccess(
