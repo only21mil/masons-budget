@@ -17,7 +17,16 @@ interface InvalidCase {
   wire: unknown
 }
 
+interface FormatCase {
+  name: string
+  format: "json" | "convex_encoded_json"
+  fieldClass: "v.int64" | "v.float64"
+  wire: unknown
+  decimal?: string
+}
+
 interface Fixtures {
+  formatCases: FormatCase[]
   valid: ValidCase[]
   invalid: InvalidCase[]
 }
@@ -30,6 +39,27 @@ const fixtures = JSON.parse(
 test("decodes canonical signed little-endian Convex int64 fixtures", () => {
   for (const testCase of fixtures.valid) {
     assert.equal(decodeConvexInt64(testCase.wire), BigInt(testCase.decimal), testCase.name)
+  }
+})
+
+test("production format cases are observations, never invalid vectors", () => {
+  const invalidWires = new Set(fixtures.invalid.map((testCase) => JSON.stringify(testCase.wire)))
+
+  assert.deepEqual(
+    fixtures.formatCases.map(({ format, fieldClass }) => `${format}:${fieldClass}`).sort(),
+    [
+      "convex_encoded_json:v.float64",
+      "convex_encoded_json:v.int64",
+      "json:v.float64",
+      "json:v.int64",
+    ],
+  )
+  for (const testCase of fixtures.formatCases) {
+    assert.equal(
+      invalidWires.has(JSON.stringify(testCase.wire)),
+      false,
+      `${testCase.name} must not also be asserted invalid`,
+    )
   }
 })
 

@@ -1,0 +1,166 @@
+import { readFileSync } from "node:fs"
+
+import { describe, expect, it } from "vitest"
+
+import { resolveRemoteReadSettings } from "../electron/convexRead.ts"
+import { createConvexRowRepository } from "../electron/convexRows.ts"
+import type {
+  VogelVaultBtcBillPayRow,
+  VogelVaultBtcBuyRow,
+  VogelVaultRowResult,
+  VogelVaultTodoRow,
+  VogelVaultTransactionRow,
+} from "../shared/ipc.ts"
+
+const GOLDEN_ROOT = new URL("../../shared/domain/fixtures/convex-wire-golden/", import.meta.url)
+const QUERY_NAMES = new Map<string, string>([
+  ["tables:rowCounts", "rowCounts"],
+  ["tables:listTransactions", "listTransactions"],
+  ["tables:listTodos", "listTodos"],
+  ["tables:listBtcBuys", "listBtcBuys"],
+  ["tables:listBtcAccounts", "listBtcAccounts"],
+  ["tables:listBtcBillPays", "listBtcBillPays"],
+  ["tables:getBudgetDocument", "getBudgetDocument"],
+])
+const settings = resolveRemoteReadSettings({
+  VOGEL_VAULT_REMOTE_READ: "1",
+  VOGEL_VAULT_CONVEX_URL: "https://example.invalid",
+  VOGEL_VAULT_CONVEX_READ_TOKEN: "fixture-only-token",
+})
+
+const repository = createConvexRowRepository({
+  configuration: () => ({ generation: 1, settings }),
+  post: async (_endpoint, body) => {
+    const request = JSON.parse(body) as { path: string; format: string }
+    const query = QUERY_NAMES.get(request.path)
+    if (query === undefined) throw new Error(`no committed production golden for ${request.path}`)
+    return {
+      httpStatus: 200,
+      body: readFileSync(new URL(`${query}.${request.format}.json`, GOLDEN_ROOT), "utf8"),
+    }
+  },
+})
+
+function requireOk(
+  result: VogelVaultRowResult,
+  query: string,
+): Extract<VogelVaultRowResult, { status: "ok" }> {
+  if (result.status !== "ok") {
+    throw new Error(`production golden ${query} did not decode: ${result.status}/${result.code}`)
+  }
+  return result
+}
+
+describe("real Convex wire values", () => {
+  it("decodes transaction money through the production repository", async () => {
+    const result = requireOk(
+      await repository.query({
+        kind: "transactions",
+        viewer: "victor",
+        limit: 3,
+      }),
+      "listTransactions",
+    )
+    expect(result.kind).toBe("transactions")
+    const row = result.rows[0] as VogelVaultTransactionRow
+    expect(row.txId).toBe("t1784233824245")
+    expect(row.amountCents).toBe(27_918n)
+    expect(row.spendAmount).toBe(-27_918n)
+    expect(row.displaySpendAmount).toBe(27_918n)
+    expect(row.updatedAtMs).toBe(0)
+  })
+
+  it("decodes todo priority through the production repository", async () => {
+    const result = requireOk(
+      await repository.query({
+        kind: "todos",
+        viewer: "victor",
+        limit: 3,
+      }),
+      "listTodos",
+    )
+    expect(result.kind).toBe("todos")
+    const row = result.rows[0] as VogelVaultTodoRow
+    expect(row.todoId).toBe("8A56A12C-DB12-4766-96BF-6E3AE7D1EFC9")
+    expect(row.priority).toBe(0n)
+    expect(row.updatedAtMs).toBe(1_784_388_713_216)
+  })
+
+  it("decodes BTC buy values through the production repository", async () => {
+    const result = requireOk(
+      await repository.query({
+        kind: "btcBuys",
+        viewer: "victor",
+        scope: "visible",
+        limit: 3,
+      }),
+      "listBtcBuys",
+    )
+    expect(result.kind).toBe("btcBuys")
+    const row = result.rows[0] as VogelVaultBtcBuyRow
+    expect(row.buyId).toBe("b1784166358832")
+    expect(row.sats).toBe(148_033n)
+    expect(row.priceUsdCents).toBe(6_563_401n)
+    expect(row.usdCents).toBe(9_813n)
+  })
+
+  it("decodes BTC bill-pay values through the production repository", async () => {
+    const result = requireOk(
+      await repository.query({
+        kind: "btcBillPays",
+        viewer: "victor",
+        scope: "visible",
+        limit: 3,
+      }),
+      "listBtcBillPays",
+    )
+    expect(result.kind).toBe("btcBillPays")
+    const row = result.rows[0] as VogelVaultBtcBillPayRow
+    expect(row.billPayId).toBe("bp030")
+    expect(row.amountUsdCents).toBe(30_673n)
+    expect(row.btcSpentSats).toBe(481_122n)
+    expect(row.btcPriceCents).toBe(6_375_306n)
+    expect(row.feeUsdCents).toBe(0n)
+  })
+
+  it("decodes the production row counts", async () => {
+    const result = requireOk(
+      await repository.query({ kind: "rowCounts" }),
+      "rowCounts",
+    )
+    expect(result.kind).toBe("rowCounts")
+    expect(result.value).toEqual({
+      transactions: 911,
+      todos: 25,
+      btcBuys: 33,
+      btcBillPays: 31,
+      btcAccounts: 0,
+      income: 16,
+      balanceDocuments: 1,
+      budgetDocuments: 0,
+      btcBalanceDocuments: 0,
+      financeDocuments: 0,
+    })
+  })
+
+  it("decodes the captured null budget document", async () => {
+    const result = requireOk(
+      await repository.query({
+        kind: "budget",
+        viewer: "victor",
+        scope: "netWorth",
+      }),
+      "getBudgetDocument",
+    )
+    expect(result.kind).toBe("budget")
+    expect(result.value).toBeNull()
+  })
+
+  it("retains the bounded empty BTC-account signal", async () => {
+    await expect(repository.query({
+      kind: "btcAccounts",
+      viewer: "victor",
+      scope: "visible",
+    })).resolves.toEqual({ status: "error", code: "incomplete-response" })
+  })
+})
