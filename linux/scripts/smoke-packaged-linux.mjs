@@ -79,13 +79,14 @@ try {
   await mkdir(outDir)
   const reportPath = path.join(outDir, "smoke-report.json")
   const harness = path.join(root, "scripts", "smoke-electron-app.mjs")
+  // Keep Chromium's OS sandbox enabled: this smoke exists to exercise the
+  // packaged preload in the same sandboxed renderer boundary users receive.
   const args = [
     "-a",
     "--server-args=-screen 0 1920x1200x24",
     electronBinary,
     harness,
     `--user-data-dir=${profileDir}`,
-    "--no-sandbox",
   ]
   const environment = {
     ...process.env,

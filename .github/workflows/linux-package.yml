@@ -23,7 +23,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: npm
@@ -35,6 +35,9 @@ jobs:
           sudo apt-get install --yes --no-install-recommends xauth xvfb
           npm ci
 
+      - name: Hardened preload boundary
+        run: npm run qa:preload-boundary --workspace @vogel-vault/linux
+
       - name: Build, package, extract, and validate
         run: npm run package:linux --workspace @vogel-vault/linux
 
@@ -42,7 +45,7 @@ jobs:
         run: npm run smoke:packaged --workspace @vogel-vault/linux
 
       - name: Upload checksummed Linux packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: vogel-vault-linux-x86_64
           path: |
