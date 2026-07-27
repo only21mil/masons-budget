@@ -25,10 +25,16 @@ import {
   type JsonPostResponse,
   type RemoteSnapshotResult,
   REMOTE_READ_LIMITS,
+  createRemoteReadConfigurationProvider,
   createRemoteReader,
-  resolveRemoteReadSettings,
 } from "./convexRead.ts"
-import { CONVEX_READ_CHANNEL, CSV_EXPORT_CHANNEL } from "./ipcChannels.ts"
+import { createConvexRowRepository } from "./convexRows.ts"
+import {
+  CONVEX_READ_CHANNEL,
+  CONVEX_ROWS_CHANNEL,
+  CSV_EXPORT_CHANNEL,
+} from "./ipcChannels.ts"
+import type { VogelVaultRowResult } from "../shared/ipc.ts"
 
 const dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -167,7 +173,11 @@ function registerCsvExport(): void {
 
 const REMOTE_READ_TIMEOUT_MS = 10_000
 
-async function postJsonToDeployment(endpoint: string, requestBody: string): Promise<JsonPostResponse> {
+async function postJsonToDeployment(
+  endpoint: string,
+  requestBody: string,
+  maxResponseBytes: number = REMOTE_READ_LIMITS.maxResponseBytes,
+): Promise<JsonPostResponse> {
   const response = await fetch(endpoint, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -178,7 +188,7 @@ async function postJsonToDeployment(endpoint: string, requestBody: string): Prom
     signal: AbortSignal.timeout(REMOTE_READ_TIMEOUT_MS),
   })
 
-  const { text, truncated } = await readCappedText(response, REMOTE_READ_LIMITS.maxResponseBytes)
+  const { text, truncated } = await readCappedText(response, maxResponseBytes)
   return { httpStatus: response.status, body: text, truncated }
 }
 
@@ -219,11 +229,13 @@ async function readCappedText(
   return { text: text + decoder.decode(), truncated: false }
 }
 
+const remoteReadConfiguration = createRemoteReadConfigurationProvider(() => process.env)
+
 function registerRemoteSnapshot(): void {
-  // Settings are resolved per call, not captured here, so the switch and the
-  // credential can change under a running app without a restart.
+  // Configuration is resolved per call, so disabling reads or rotating the
+  // credential takes effect without a restart.
   const reader = createRemoteReader({
-    settings: () => resolveRemoteReadSettings(process.env),
+    settings: () => remoteReadConfiguration().settings,
     post: postJsonToDeployment,
   })
 
@@ -233,6 +245,21 @@ function registerRemoteSnapshot(): void {
     }
     return reader.snapshot()
   })
+}
+
+function registerConvexRows(): void {
+  const repository = createConvexRowRepository({
+    configuration: remoteReadConfiguration,
+    post: postJsonToDeployment,
+  })
+
+  ipcMain.handle(
+    CONVEX_ROWS_CHANNEL,
+    async (event, request: unknown): Promise<VogelVaultRowResult> => {
+      if (!isTrustedSender(event)) return { status: "error", code: "invalid-request" }
+      return repository.query(request)
+    },
+  )
 }
 
 function createWindow(): BrowserWindow {
@@ -306,6 +333,7 @@ if (!app.requestSingleInstanceLock()) {
     // that is not yet handled.
     registerCsvExport()
     registerRemoteSnapshot()
+    registerConvexRows()
     createWindow()
 
     app.on("activate", () => {

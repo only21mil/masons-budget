@@ -6,8 +6,8 @@
 // static analysis on purpose — it runs without building or launching the app,
 // so it is safe in CI and on a machine with no display.
 //
-// It also executes the two modules on the bridge that do something a grep cannot
-// prove. Both deliberately import no Electron API so they can be run here
+// It also executes the three modules on the bridge that do something a grep cannot
+// prove. They deliberately import no Electron API so they can be run here
 // directly (Node strips the types), with no display, no build and no deployment:
 //
 //   - electron/csvExport.ts turns renderer input into bytes on disk. The rules —
@@ -16,6 +16,8 @@
 //   - electron/convexRead.ts holds the deployment URL and the read credential.
 //     "Off by default", "the credential never reaches a log", and "server text
 //     never reaches the renderer" are claims, and claims get executed here.
+//   - electron/convexRows.ts validates the closed request union and projects only
+//     public row DTOs, with canonical int64 decoding and local-only failures.
 
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -34,6 +36,11 @@ import {
   parseSnapshotEnvelope,
   resolveRemoteReadSettings,
 } from "../electron/convexRead.ts"
+import {
+  createConvexRowRepository,
+  decodeConvexInt64,
+  validateRowRequest,
+} from "../electron/convexRows.ts"
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 
@@ -52,6 +59,8 @@ const mainSource = stripComments(readFileSync(join(root, "electron", "main.ts"),
 const preloadSource = stripComments(readFileSync(join(root, "electron", "preload.ts"), "utf8"))
 const channelSource = stripComments(readFileSync(join(root, "electron", "ipcChannels.ts"), "utf8"))
 const convexReadSource = stripComments(readFileSync(join(root, "electron", "convexRead.ts"), "utf8"))
+const convexRowsSource = stripComments(readFileSync(join(root, "electron", "convexRows.ts"), "utf8"))
+const sharedIpcSource = stripComments(readFileSync(join(root, "shared", "ipc.ts"), "utf8"))
 const rendererTypes = stripComments(readFileSync(join(root, "src", "types", "vogel-vault.d.ts"), "utf8"))
 
 const failures = []
@@ -136,7 +145,7 @@ require_(
  * made at all. The executed section at the bottom of this file is where that
  * claim is checked rather than asserted.
  */
-const ALLOWED_BRIDGE_METHODS = ["getRuntimeInfo", "exportCsv", "getRemoteSnapshot"]
+const ALLOWED_BRIDGE_METHODS = ["getRuntimeInfo", "exportCsv", "getRemoteSnapshot", "queryConvexRows"]
 
 const bridgeBody = preloadSource.slice(preloadSource.indexOf("exposeInMainWorld"))
 const exposedMethods = [...bridgeBody.matchAll(/^\s{2}(\w+)[:,\n]/gm)].map((m) => m[1])
@@ -191,7 +200,7 @@ require_(
  * Reviewed 2026-07-26: CSV_EXPORT_CHANNEL (rows in, a user-chosen file out) and
  * CONVEX_READ_CHANNEL (no argument in, file metadata out).
  */
-const ALLOWED_CHANNEL_CONSTANTS = ["CSV_EXPORT_CHANNEL", "CONVEX_READ_CHANNEL"]
+const ALLOWED_CHANNEL_CONSTANTS = ["CSV_EXPORT_CHANNEL", "CONVEX_READ_CHANNEL", "CONVEX_ROWS_CHANNEL"]
 
 const declaredChannels = [...channelSource.matchAll(/export const (\w+) = "([^"]+)"/g)]
 const declaredChannelNames = declaredChannels.map(([, name]) => name)
@@ -244,6 +253,18 @@ require_(
   !/\b(?:const|let|var)\s+\w*(?:token|secret|password)\w*\s*=\s*["'`]/i.test(convexReadSource),
   "convexRead: no credential is hard-coded",
 )
+require_(!/https?:\/\//.test(convexRowsSource), "convexRows: no deployment URL is hard-coded")
+
+for (const [pattern, label] of [
+  [/\btoken\b/i, "credential field"],
+  [/\b(?:url|endpoint)\b/i, "network location field"],
+  [/\b(?:path|filePath)\b/, "arbitrary path field"],
+  [/\b(?:rawBody|responseBody|serverText)\b/, "remote body or text field"],
+  [/\b(?:_id|_creationTime|migrationRaw|migrationSourceIndex)\b/, "private Convex or migration field"],
+]) {
+  require_(!pattern.test(sharedIpcSource), `shared IPC: no ${label}`)
+  require_(!pattern.test(rendererTypes), `types: no ${label}`)
+}
 
 // A redirect would hand the read credential to whatever host the response named.
 require_(/redirect:\s*"error"/.test(mainSource), "main: the deployment request refuses redirects")
@@ -626,6 +647,144 @@ const oversizedListing = envelope(
 require_(
   oversizedListing.status === "ok" && oversizedListing.files.length === REMOTE_READ_LIMITS.maxFiles,
   "convex: an oversized listing is capped",
+)
+
+// ── Convex row repository ──────────────────────────────────────────────────
+
+for (const [encoded, expected] of [
+  ["AAAAAAAAAIA=", -(1n << 63n)],
+  ["//////////8=", -1n],
+  ["AAAAAAAAAAA=", 0n],
+  ["AQAAAAAAAAA=", 1n],
+  ["AAEAAAAAAAA=", 256n],
+  ["/////////38=", (1n << 63n) - 1n],
+]) {
+  require_(decodeConvexInt64({ $integer: encoded }) === expected, `rows: decodes canonical int64 ${expected}`)
+}
+
+for (const malformed of [
+  { $integer: "AQAAAAAAAAA" },
+  { $integer: "AQAAAAAAAAA_" },
+  { $integer: "AQAAAAAAAAA=", extra: true },
+  { $integer: "AQAAAAA=" },
+]) {
+  let rejected = false
+  try {
+    decodeConvexInt64(malformed)
+  } catch {
+    rejected = true
+  }
+  require_(rejected, `rows: rejects malformed int64 ${JSON.stringify(malformed)}`)
+}
+
+require_(
+  validateRowRequest({ kind: "transactions", viewer: "victor" })?.kind === "transactions",
+  "rows: accepts a full transaction request with no limit",
+)
+require_(
+  validateRowRequest({ kind: "btcAccounts", viewer: "victor" }) === null &&
+    validateRowRequest({ kind: "btcBillPays", viewer: "victor" }) === null &&
+    validateRowRequest({ kind: "budget", viewer: "victor" }) === null &&
+    validateRowRequest({ kind: "budget", viewer: "victor", scope: "netWorth" })?.kind === "budget",
+  "rows: BTC and budget scopes are explicit",
+)
+require_(
+  validateRowRequest({ kind: "transactions", viewer: "victor", path: "dataFiles:get" }) === null,
+  "rows: rejects an extra request field",
+)
+require_(
+  validateRowRequest({ kind: "transactions", viewer: "Mason" }) === null,
+  "rows: rejects a viewer outside the closed family union",
+)
+
+const rowResponses = []
+let rowGeneration = 1
+const rowRepository = createConvexRowRepository({
+  configuration: () => ({ generation: rowGeneration, settings: readySettings }),
+  post: async (_endpoint, requestBody) => {
+    rowResponses.push(JSON.parse(requestBody))
+    return {
+      httpStatus: 200,
+      body: JSON.stringify({
+        status: "success",
+        value: {
+          complete: true,
+          rows: [
+            {
+              txId: "test-1",
+              owner: "victor",
+              date: "2026-07-26",
+              month: "2026-07",
+              merchant: "Test merchant",
+              amountCents: { $integer: "//////////8=" },
+              category: "Other",
+              updatedAtMs: 1,
+            },
+          ],
+        },
+      }),
+    }
+  },
+  now: () => 1,
+})
+
+const rowResult = await rowRepository.query({ kind: "transactions", viewer: "victor" })
+require_(
+  rowResult.status === "ok" && rowResult.kind === "transactions" && rowResult.rows[0]?.amountCents === -1n,
+  "rows: a strict public transaction DTO crosses with bigint money",
+)
+require_(
+  rowResult.status === "ok" && !JSON.stringify(rowResult, (_key, value) => typeof value === "bigint" ? value.toString() : value).includes(SAMPLE_CREDENTIAL),
+  "rows: configuration never reaches a result",
+)
+require_(
+  rowResponses[0]?.path === "tables:listTransactions" && rowResponses[0]?.args?.token === SAMPLE_CREDENTIAL,
+  "rows: a fixed path carries the credential only on the wire",
+)
+
+await rowRepository.query({ kind: "transactions", viewer: "victor" })
+require_(rowResponses.length === 1, "rows: an identical request is cached within one config generation")
+rowGeneration = 2
+await rowRepository.query({ kind: "transactions", viewer: "victor" })
+require_(rowResponses.length === 2, "rows: a new config generation cannot reuse the old cache")
+
+const rowFailure = async (value, request = { kind: "transactions", viewer: "victor" }) => {
+  const repository = createConvexRowRepository({
+    configuration: () => ({ generation: 1, settings: readySettings }),
+    post: async () => ({
+      httpStatus: 200,
+      body: JSON.stringify({ status: "success", value }),
+    }),
+  })
+  return repository.query(request)
+}
+
+require_(
+  (await rowFailure({ complete: false, rows: [] })).status === "error" &&
+    (await rowFailure({ complete: false, rows: [] })).code === "incomplete-response",
+  "rows: a full request fails closed when the server says it is incomplete",
+)
+require_(
+  (await rowFailure({
+    complete: true,
+    rows: [{
+      txId: "private-1", owner: "victor", date: "2026-07-26", month: "2026-07",
+      merchant: "Nope", amountCents: { $integer: "AAAAAAAAAAA=" }, category: "Other",
+      updatedAtMs: 1, migrationRaw: { secret: true },
+    }],
+  })).status === "error",
+  "rows: an unallowlisted migration field rejects the response",
+)
+require_(
+  (await rowFailure({
+    complete: true,
+    rows: [{
+      txId: "hidden-1", owner: "victor", date: "2026-07-26", month: "2026-07",
+      merchant: "Nope", amountCents: { $integer: "AAAAAAAAAAA=" }, category: "Other",
+      updatedAtMs: 1,
+    }],
+  }, { kind: "transactions", viewer: "mason" })).status === "error",
+  "rows: main asserts row visibility instead of trusting the server",
 )
 
 // ── Report ─────────────────────────────────────────────────────────────────
