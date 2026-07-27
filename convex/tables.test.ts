@@ -21,6 +21,11 @@ import {
   setDeploymentEnv,
   useIsolatedDeploymentEnv,
 } from "./harness.test-utils";
+import {
+  projectBtcBalanceDocument,
+  projectBudgetDocument,
+  projectFinanceDocument,
+} from "./documentProjection";
 
 // A local module map rather than the shared one in harness.test-utils.ts:
 // tables.ts is new and other lanes are editing that file right now, so this
@@ -41,65 +46,237 @@ type T = ReturnType<typeof testTables>;
 type Member = "victor" | "rachel" | "mason" | "maddox";
 type Scope = "visible" | "netWorth";
 
+type RowEnvelope<Row> = { rows: Row[]; complete: boolean };
+
+async function queryRows<
+  Args extends Record<string, unknown>,
+  Row,
+>(
+  reference: FunctionReference<"query", "public", Args, RowEnvelope<Row>>,
+  args: Args,
+): Promise<Row[]> {
+  return (await t.query(reference, args)).rows;
+}
+
 const fn = {
   listTransactions: "tables:listTransactions" as unknown as FunctionReference<
     "query",
     "public",
     { viewer: Member; month?: string; limit?: number; token?: string },
-    Array<{
-      txId: string;
-      owner: Member;
-      date: string;
-      month: string;
-      merchant: string;
-      amountCents: bigint;
-      category: string;
-      card?: string;
-      note?: string;
-      sourceFile: string;
-    }>
+    {
+      rows: Array<{
+        txId: string;
+        owner: Member;
+        date: string;
+        month: string;
+        merchant: string;
+        amountCents: bigint;
+        spendAmount: bigint;
+        displaySpendAmount: bigint;
+        hasOppositeSpendSign: boolean;
+        category: string;
+        card?: string;
+        note?: string;
+        updatedAtMs: number;
+      }>;
+      complete: boolean;
+    }
   >,
   listTodos: "tables:listTodos" as unknown as FunctionReference<
     "query",
     "public",
     { viewer: Member; done?: boolean; limit?: number; token?: string },
-    Array<{
-      todoId: string;
-      owner: Member;
-      title: string;
-      done: boolean;
-      flagged: boolean;
-      due?: string;
-      updatedAtMs: number;
-    }>
+    {
+      rows: Array<{
+        todoId: string;
+        owner: Member;
+        title: string;
+        done: boolean;
+        flagged: boolean;
+        due?: string;
+        updatedAtMs: number;
+      }>;
+      complete: boolean;
+    }
   >,
   listBtcBuys: "tables:listBtcBuys" as unknown as FunctionReference<
     "query",
     "public",
-    { viewer: Member; scope?: Scope; month?: string; token?: string },
-    Array<{
-      buyId: string;
-      owner: Member;
-      date: string;
-      sats: bigint;
-      priceUsdCents: bigint;
-      usdCents: bigint;
-      sourceFile: string;
-    }>
+    { viewer: Member; scope: Scope; month?: string; limit?: number; token?: string },
+    {
+      rows: Array<{
+        buyId: string;
+        owner: Member;
+        date: string;
+        sats: bigint;
+        priceUsdCents: bigint;
+        usdCents: bigint;
+        updatedAtMs: number;
+      }>;
+      complete: boolean;
+    }
+  >,
+  listBtcBillPays: "tables:listBtcBillPays" as unknown as FunctionReference<
+    "query",
+    "public",
+    { viewer: Member; scope: Scope; month?: string; limit?: number; token?: string },
+    {
+      rows: Array<{
+        billPayId: string;
+        owner: Member;
+        date: string;
+        amountUsdCents: bigint;
+        btcSpentSats: bigint;
+        btcPriceCents: bigint;
+        feeUsdCents: bigint;
+        updatedAtMs: number;
+      }>;
+      complete: boolean;
+    }
   >,
   listBtcAccounts: "tables:listBtcAccounts" as unknown as FunctionReference<
     "query",
     "public",
-    { viewer: Member; scope?: Scope; token?: string },
-    Array<{
-      key: string;
-      owner: Member;
-      label: string;
-      custody: "exchange" | "self_custody";
-      sats: bigint;
-      fiatCents: bigint;
-    }>
+    { viewer: Member; scope: Scope; limit?: number; token?: string },
+    {
+      rows: Array<{
+        key: string;
+        owner: Member;
+        label: string;
+        custody: "exchange" | "self_custody";
+        sats: bigint;
+        fiatCents: bigint;
+        asOf: string;
+        schemaVersion: bigint;
+        updatedAtMs: number;
+      }>;
+      complete: boolean;
+    }
   >,
+  listBalanceDocuments:
+    "tables:listBalanceDocuments" as unknown as FunctionReference<
+      "query",
+      "public",
+      { viewer: Member; scope: Scope; token?: string },
+      {
+        rows: Array<{
+          owner: Member;
+          cashAppSats: bigint;
+          coldcardSats: bigint;
+          riverSats: bigint;
+          strikeSats: bigint;
+          zeusSats: bigint;
+          totalSats: bigint;
+          totalFiatCents?: bigint;
+          lastRefreshed: string;
+          btcSync: {
+            anchorBalancesSats: Record<string, bigint | undefined>;
+            anchorDate?: string;
+            anchorSource?: string;
+            notes?: unknown;
+            reconciledAt?: string;
+            reconciledFromEvents?: unknown;
+          };
+          updatedAtMs: number;
+        }>;
+        complete: boolean;
+      }
+    >,
+  getBudgetDocument: "tables:getBudgetDocument" as unknown as FunctionReference<
+    "query",
+    "public",
+    { viewer: Member; scope: "netWorth"; token?: string },
+    {
+      document: null | {
+        owner: Member;
+        month: string;
+        coinbaseOneBalanceCents: bigint;
+        categories: Array<{ name: string; icon?: string; budgetCents: bigint }>;
+        income?: {
+          weeklyGrossCents: bigint;
+          weeklyStrikeCents: bigint;
+          weeklyRiverCents: bigint;
+          monthlyGrossCents: bigint;
+          mtdIncomeCents: bigint;
+          ytdIncomeCents: bigint;
+        };
+        monthlyHistory: Array<{
+          month: string;
+          incomeCents: bigint;
+          expensesCents: bigint;
+          savingsBps: bigint;
+        }>;
+        updatedAtMs: number;
+      };
+      complete: boolean;
+    }
+  >,
+  getBtcSnapshotMetadata:
+    "tables:getBtcSnapshotMetadata" as unknown as FunctionReference<
+      "query",
+      "public",
+      { viewer: Member; scope: Scope; token?: string },
+      {
+        rows: Array<{
+          owner: Member;
+          schemaVersion: bigint;
+          asOf: string;
+          source?: string;
+          basis?: string;
+          confidence?: string;
+          updatedAtMs: number;
+        }>;
+        complete: boolean;
+      }
+    >,
+  listBtcBalanceDocuments:
+    "tables:listBtcBalanceDocuments" as unknown as FunctionReference<
+      "query",
+      "public",
+      { viewer: Member; scope: Scope; token?: string },
+      {
+        rows: Array<{
+          owner: Member;
+          schemaVersion: bigint;
+          asOf: string;
+          accounts: Array<{
+            key: string;
+            label: string;
+            custody: "exchange" | "self_custody";
+            sats: bigint;
+            fiatCents: bigint;
+          }>;
+          totals: {
+            sats: bigint;
+            fiatCents: bigint;
+            exchangeSats: bigint;
+            selfCustodySats: bigint;
+          };
+          updatedAtMs: number;
+        }>;
+        complete: boolean;
+      }
+    >,
+  getFinanceDocument:
+    "tables:getFinanceDocument" as unknown as FunctionReference<
+      "query",
+      "public",
+      { viewer: Member; scope: Scope; token?: string },
+      {
+        document: null | {
+          lastUpdated: string;
+          retirementTotalCents?: bigint;
+          accounts: Array<{
+            key: string;
+            owner: Member;
+            totalValueCents: bigint;
+            weeklyContributionCents: bigint;
+          }>;
+          updatedAtMs: number;
+        };
+        complete: boolean;
+      }
+    >,
   rowCounts: "tables:rowCounts" as unknown as FunctionReference<
     "query",
     "public",
@@ -108,13 +285,25 @@ const fn = {
       transactions: number;
       todos: number;
       btcBuys: number;
+      btcBillPays: number;
       btcAccounts: number;
+      income: number;
+      balanceDocuments: number;
+      budgetDocuments: number;
+      btcBalanceDocuments: number;
+      financeDocuments: number;
     }
   >,
   migrateFile: "migrate:migrateFile" as unknown as FunctionReference<
     "mutation",
     "internal",
-    { file: string; apply?: boolean; cursor?: number; batchSize?: number },
+    {
+      file: string;
+      apply?: boolean;
+      expectedPlanFingerprint?: string;
+      cursor?: number;
+      batchSize?: number;
+    },
     unknown
   >,
   upsertTransaction: "tables:upsertTransaction" as unknown as FunctionReference<
@@ -130,6 +319,7 @@ const fn = {
         card?: string;
         note?: string;
         owner?: Member;
+        kind?: "spend" | "credit";
       };
       sourceFile?: string;
       token?: string;
@@ -278,6 +468,63 @@ const MASON_BUYS = [
   },
 ];
 
+const BILL_PAYS = {
+  bill_pays: [
+    {
+      id: "bp-1",
+      date: "2026-07-17",
+      merchant: "Electric Utility",
+      category: "Utilities",
+      amount_usd: 186.55,
+      btc_spent: 0.002,
+      btc_price: 93275,
+      platform: "river",
+      fee_usd: 0.95,
+      reference: "invoice-1",
+    },
+  ],
+};
+
+const ADULT_BUDGET = {
+  month: "2026-07",
+  coinbase_one_balance: 125.5,
+  categories: [
+    { name: "Groceries", icon: "cart", budget: 900, spent: 123.45 },
+    { name: "Utilities", icon: "zap", budget: 400, spent: 186.55 },
+  ],
+  strategy: { effective_apr: "4.5%", strategy_note: "Synthetic fixture" },
+  income: {
+    weekly_gross: 1200,
+    weekly_strike: 100,
+    weekly_river: 50,
+    pay_frequency: "weekly",
+    monthly_gross: 4800,
+    mtd_income: 2500,
+    ytd_income: 30000,
+    paychecks: [
+      {
+        date: "2026-07-19",
+        platform: "direct",
+        source: "employer",
+        amount: 2500,
+        net: 2500,
+      },
+    ],
+  },
+  mtd_income: 2500,
+  ytd_income: 30000,
+  monthly_history: [
+    { month: "2026-06", income: 4800, expenses: 3200, savings_pct: 33.33 },
+  ],
+};
+
+const MASON_BUDGET = {
+  month: "2026-07",
+  categories: [{ name: "Fun", icon: "game", budget: 75, spent: 60 }],
+  mtd_income: 0,
+  ytd_income: 0,
+};
+
 const SNAPSHOT = {
   schemaVersion: 2,
   asOf: "2026-07-18T12:00:00Z",
@@ -286,6 +533,11 @@ const SNAPSHOT = {
     coldcard: { btc: 1.5, fiat: 147000, label: "Coldcard", custody: "self_custody" },
   },
   totals: { btc: 1.85, fiat: 181300.55 },
+  metadata: {
+    source: "synthetic",
+    basis: "spot",
+    confidence: "verified",
+  },
 };
 
 const SON_BALANCES = {
@@ -294,6 +546,89 @@ const SON_BALANCES = {
   coldcard: 0.01,
   total: 0.016,
   lastUpdated: "2026-07-18T12:00:00Z",
+};
+
+const INCOME_ROWS = [
+  {
+    id: "income-1",
+    date: "2026-07-01",
+    amount: 2500.55,
+    source: "payroll",
+    logged_by: "victor",
+    note: "shared household",
+    archimedes_request_id: "income-arch-1",
+  },
+];
+
+const LEGACY_BALANCES = {
+  cashapp: 0,
+  coldcard: 0.12345678,
+  river: 0.25,
+  strike: 0,
+  zeus: 0,
+  total: 0.37345678,
+  cashapp_fiat: 0,
+  coldcard_fiat: 12345.67,
+  river_fiat: 25000,
+  strike_fiat: 0,
+  zeus_fiat: 0,
+  total_fiat: 37345.67,
+  lastRefreshed: "2026-07-26T23:59:59Z",
+  btc_sync: {
+    anchor_balances: {
+      coldcard: 0.12345677,
+      river: 0.25,
+      total: 0.37345677,
+    },
+    anchor_date: "2026-07-20",
+    anchor_source: "event-reconciliation",
+    notes: "provenance retained",
+    reconciled_at: "2026-07-26T23:50:00Z",
+    reconciled_from_events: true,
+  },
+};
+
+const FINANCES = {
+  retirement: {
+    total: 125000.55,
+    accounts: {
+      victor_401k: {
+        provider: "Adult Provider",
+        total: 125000.55,
+        weeklyContribution: 250,
+        holdings: [
+          {
+            name: "Index Fund",
+            category: "Equity",
+            ticker: "INDEX",
+            value: 125000.55,
+            costBasis: 100000,
+            gainPct: 25.0005,
+            shares: 321.125,
+            avgCost: 311.4,
+            currentPricePerShare: 389.21,
+            lots: [
+              {
+                date: "2026-01-15",
+                type: "buy",
+                pricePerShare: 300.25,
+                shares: 10.5,
+                amountInvested: 3152.625,
+              },
+            ],
+          },
+        ],
+      },
+    },
+  },
+  mason_401k: {
+    provider: "Child Provider",
+    total: 1500.25,
+    weeklyContribution: 25,
+    owner: "mason",
+    holdings: [],
+  },
+  last_updated: "2026-07-18T12:00:00Z",
 };
 
 const TODOS = [
@@ -313,9 +648,15 @@ async function seedAll(t: T) {
   await seedDataFile(t, "mason-transactions", MASON_TRANSACTIONS);
   await seedDataFile(t, "bitcoin-buys", ADULT_BUYS);
   await seedDataFile(t, "mason-bitcoin-buys", MASON_BUYS);
+  await seedDataFile(t, "bitcoin-bill-pays", BILL_PAYS);
+  await seedDataFile(t, "budget", ADULT_BUDGET);
+  await seedDataFile(t, "mason-budget", MASON_BUDGET);
   await seedDataFile(t, "btc-balance-snapshot", SNAPSHOT);
   await seedDataFile(t, "son-balances", SON_BALANCES);
+  await seedDataFile(t, "finances", FINANCES);
   await seedDataFile(t, "todos", TODOS);
+  await seedDataFile(t, "income", INCOME_ROWS);
+  await seedDataFile(t, "balances", LEGACY_BALANCES);
 }
 
 async function migrateAll(t: T) {
@@ -324,9 +665,19 @@ async function migrateAll(t: T) {
     "mason-transactions",
     "bitcoin-buys",
     "mason-bitcoin-buys",
+    "bitcoin-bill-pays",
     "todos",
+    "income",
+    "balances",
   ]) {
-    await t.mutation(fn.migrateFile, { file: name, apply: true });
+    const reviewed = await t.mutation(fn.migrateFile, { file: name }) as {
+      frozenPlanFingerprint: string;
+    };
+    await t.mutation(fn.migrateFile, {
+      file: name,
+      apply: true,
+      expectedPlanFingerprint: reviewed.frozenPlanFingerprint,
+    });
   }
 
   // btcAccounts is part of E1's runtime API but deliberately has no E2
@@ -381,8 +732,46 @@ async function migrateAll(t: T) {
       asOf: SON_BALANCES.lastUpdated,
     },
   ]) {
-    await t.mutation(fn.upsertBtcAccount, { account });
+    await t.mutation(fn.upsertBtcAccount, {
+      account,
+      sourceFile:
+        account.owner === "mason" ? "son-balances" : "btc-balance-snapshot",
+    });
   }
+
+  // The document migration is owned by a separate lane. Seed its exact typed
+  // projection here so this suite tests the schema and public queries without
+  // modifying convex/migrate.ts or inventing a blob-backed runtime fallback.
+  await t.run(async (ctx) => {
+    await ctx.db.insert(
+      "budgetDocuments",
+      projectBudgetDocument(JSON.stringify(ADULT_BUDGET), "budget", 1000),
+    );
+    await ctx.db.insert(
+      "budgetDocuments",
+      projectBudgetDocument(JSON.stringify(MASON_BUDGET), "mason-budget", 1001),
+    );
+    await ctx.db.insert(
+      "btcBalanceDocuments",
+      projectBtcBalanceDocument(
+        JSON.stringify(SNAPSHOT),
+        "btc-balance-snapshot",
+        1002,
+      ),
+    );
+    await ctx.db.insert(
+      "btcBalanceDocuments",
+      projectBtcBalanceDocument(
+        JSON.stringify(SON_BALANCES),
+        "son-balances",
+        1003,
+      ),
+    );
+    await ctx.db.insert(
+      "financeDocuments",
+      projectFinanceDocument(JSON.stringify(FINANCES), 1004),
+    );
+  });
 }
 
 /**
@@ -458,9 +847,15 @@ describe("the blob path is untouched", () => {
       ctx.db.query("todoTombstones").collect(),
     );
     expect(tombstones).toHaveLength(0);
-    expect(await t.query(fn.listTodos, { viewer: "victor" })).not.toContainEqual(
+    expect(await queryRows(fn.listTodos, { viewer: "victor" })).not.toContainEqual(
       expect.objectContaining({ todoId: "todo-1" }),
     );
+  });
+
+  it("typed document projection and inserts leave all blob tables byte-identical", async () => {
+    const before = await blobWorldSnapshot(t);
+    await migrateAll(t);
+    expect(await blobWorldSnapshot(t)).toEqual(before);
   });
 });
 
@@ -469,10 +864,74 @@ describe("money is integer minor units", () => {
     await migrateAll(t);
   });
 
+  it("projects signed spend, display magnitude, and ambiguous opposite signs", async () => {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("transactions", {
+        txId: "adult-refund",
+        owner: "victor",
+        date: "2026-07-21",
+        month: "2026-07",
+        merchant: "Grocer refund",
+        amountCents: 2500n,
+        category: "Groceries",
+        sourceFile: "transactions",
+        updatedAtMs: 1,
+      });
+      await ctx.db.insert("transactions", {
+        txId: "adult-corrupt-wrong-sign",
+        owner: "victor",
+        date: "2026-07-22",
+        month: "2026-07",
+        merchant: "Legacy wrong sign",
+        amountCents: 900n,
+        category: "Fun",
+        sourceFile: "transactions",
+        updatedAtMs: 1,
+      });
+    });
+
+    const byId = new Map(
+      (await queryRows(fn.listTransactions, { viewer: "victor" })).map((row) => [
+        row.txId,
+        row,
+      ]),
+    );
+
+    expect(byId.get("t-1")).toMatchObject({
+      spendAmount: 8427n,
+      displaySpendAmount: 8427n,
+      hasOppositeSpendSign: false,
+    });
+    expect(byId.get("m-1")).toMatchObject({
+      spendAmount: 6000n,
+      displaySpendAmount: 6000n,
+      hasOppositeSpendSign: false,
+    });
+    expect(byId.get("t-2")).toMatchObject({
+      spendAmount: 0n,
+      displaySpendAmount: 0n,
+      hasOppositeSpendSign: false,
+    });
+    expect(byId.get("adult-refund")).toMatchObject({
+      spendAmount: -2500n,
+      displaySpendAmount: 2500n,
+      hasOppositeSpendSign: true,
+    });
+    // No persisted `kind` exists on legacy rows, so a corrupt adult spend with
+    // the refund sign must project the same signal as the valid refund above.
+    expect(byId.get("adult-corrupt-wrong-sign")).toMatchObject({
+      spendAmount: -900n,
+      displaySpendAmount: 900n,
+      hasOppositeSpendSign: true,
+    });
+  });
+
   it("stores cents as bigint, never a float", async () => {
-    const rows = await t.query(fn.listTransactions, { viewer: "victor" });
+    const rows = await queryRows(fn.listTransactions, { viewer: "victor" });
     for (const row of rows) {
       expect(typeof row.amountCents).toBe("bigint");
+      expect(typeof row.spendAmount).toBe("bigint");
+      expect(typeof row.displaySpendAmount).toBe("bigint");
     }
   });
 
@@ -485,27 +944,27 @@ describe("money is integer minor units", () => {
     // every value (checked exhaustively over the realistic range). The lexical
     // parser is here for robustness and for the string-valued amounts the
     // v.any() blob permits, not because the two disagree on this fixture.
-    const rows = await t.query(fn.listTransactions, { viewer: "victor" });
+    const rows = await queryRows(fn.listTransactions, { viewer: "victor" });
     const hardware = rows.find((row) => row.txId === "t-3");
     expect(hardware?.amountCents).toBe(-115n);
   });
 
   it("keeps the sign the source file used", async () => {
-    const rows = await t.query(fn.listTransactions, { viewer: "victor" });
+    const rows = await queryRows(fn.listTransactions, { viewer: "victor" });
     const adultSpend = rows.find((row) => row.txId === "t-1");
     const childSpend = rows.find((row) => row.txId === "m-1");
 
     // Adult files sign spending negative…
     expect(adultSpend?.amountCents).toBe(-8427n);
-    expect(adultSpend?.sourceFile).toBe("transactions");
-    // …child files record it as a positive magnitude. Both survive verbatim,
-    // and sourceFile is what makes the convention recoverable per row.
+    // …child files record it as a positive magnitude. Both survive verbatim.
+    // sourceFile remains internal migration provenance and is not public.
     expect(childSpend?.amountCents).toBe(6000n);
-    expect(childSpend?.sourceFile).toBe("mason-transactions");
+    expect(adultSpend).not.toHaveProperty("sourceFile");
+    expect(childSpend).not.toHaveProperty("sourceFile");
   });
 
   it("prefers amount_sats over the lossy amount_btc mirror", async () => {
-    const buys = await t.query(fn.listBtcBuys, { viewer: "victor" });
+    const buys = await queryRows(fn.listBtcBuys, { viewer: "victor", scope: "visible" });
     const adult = buys.find((buy) => buy.buyId === "b-1");
     expect(adult?.sats).toBe(250000n);
     expect(adult?.priceUsdCents).toBe(9800050n);
@@ -517,7 +976,7 @@ describe("money is integer minor units", () => {
   });
 
   it("converts snapshot balances to sats and cents", async () => {
-    const accounts = await t.query(fn.listBtcAccounts, { viewer: "victor" });
+    const accounts = await queryRows(fn.listBtcAccounts, { viewer: "victor", scope: "visible" });
     const strike = accounts.find(
       (account) => account.key === "strike" && account.owner === "victor",
     );
@@ -534,8 +993,8 @@ describe("owner is first class, and the two visibility rules keep their widths",
   it("adult records default to victor and Rachel still sees all of them", async () => {
     // The v0.3 bug: adult records carry owner "victor", so a strict
     // `owner === viewer` check leaves Rachel with empty screens.
-    const victorRows = await t.query(fn.listTransactions, { viewer: "victor" });
-    const rachelRows = await t.query(fn.listTransactions, { viewer: "rachel" });
+    const victorRows = await queryRows(fn.listTransactions, { viewer: "victor" });
+    const rachelRows = await queryRows(fn.listTransactions, { viewer: "rachel" });
 
     expect(victorRows.map((row) => row.txId).sort()).toEqual(
       rachelRows.map((row) => row.txId).sort(),
@@ -545,22 +1004,22 @@ describe("owner is first class, and the two visibility rules keep their widths",
   });
 
   it("adults see the kids; kids see only themselves", async () => {
-    const adult = await t.query(fn.listTransactions, { viewer: "rachel" });
+    const adult = await queryRows(fn.listTransactions, { viewer: "rachel" });
     expect(adult.map((row) => row.owner)).toContain("mason");
 
-    const mason = await t.query(fn.listTransactions, { viewer: "mason" });
+    const mason = await queryRows(fn.listTransactions, { viewer: "mason" });
     expect(mason.map((row) => row.owner)).toEqual(["mason"]);
 
-    const maddox = await t.query(fn.listTransactions, { viewer: "maddox" });
+    const maddox = await queryRows(fn.listTransactions, { viewer: "maddox" });
     expect(maddox).toEqual([]);
   });
 
   it("canSee is WIDER than sharesNetWorth, on the same data, for the same adult", async () => {
-    const visible = await t.query(fn.listBtcAccounts, {
+    const visible = await queryRows(fn.listBtcAccounts, {
       viewer: "victor",
       scope: "visible",
     });
-    const netWorth = await t.query(fn.listBtcAccounts, {
+    const netWorth = await queryRows(fn.listBtcAccounts, {
       viewer: "victor",
       scope: "netWorth",
     });
@@ -578,11 +1037,11 @@ describe("owner is first class, and the two visibility rules keep their widths",
   });
 
   it("the same widths hold for btcBuys", async () => {
-    const visible = await t.query(fn.listBtcBuys, {
+    const visible = await queryRows(fn.listBtcBuys, {
       viewer: "victor",
       scope: "visible",
     });
-    const netWorth = await t.query(fn.listBtcBuys, {
+    const netWorth = await queryRows(fn.listBtcBuys, {
       viewer: "victor",
       scope: "netWorth",
     });
@@ -590,11 +1049,38 @@ describe("owner is first class, and the two visibility rules keep their widths",
     expect(netWorth.map((b) => b.buyId)).not.toContain("mb-1");
   });
 
+  it("keeps the adult balances document behind its indexed owner boundary", async () => {
+    const rachelVisible = await queryRows(fn.listBalanceDocuments, {
+      viewer: "rachel",
+      scope: "visible",
+    });
+    const rachelNetWorth = await queryRows(fn.listBalanceDocuments, {
+      viewer: "rachel",
+      scope: "netWorth",
+    });
+    const masonVisible = await queryRows(fn.listBalanceDocuments, {
+      viewer: "mason",
+      scope: "visible",
+    });
+
+    expect(rachelVisible).toHaveLength(1);
+    expect(rachelVisible[0]).toMatchObject({
+      owner: "victor",
+      coldcardSats: 12_345_678n,
+      totalSats: 37_345_678n,
+      totalFiatCents: 3_734_567n,
+    });
+    expect(rachelNetWorth).toEqual(rachelVisible);
+    expect(masonVisible).toEqual([]);
+    expect(rachelVisible[0]).not.toHaveProperty("raw");
+    expect(rachelVisible[0]).not.toHaveProperty("sourceFile");
+  });
+
   it("a child sharing an account key with an adult stays a separate row", async () => {
     // Both the adults and Mason have a "strike" account. Identity is
     // (owner, key); merging on key alone would put a child's stack in the
     // adult total.
-    const accounts = await t.query(fn.listBtcAccounts, { viewer: "victor" });
+    const accounts = await queryRows(fn.listBtcAccounts, { viewer: "victor", scope: "visible" });
     const mason = accounts.filter((account) => account.owner === "mason");
     expect(mason.map((account) => account.key).sort()).toEqual([
       "son-coldcard-mason",
@@ -604,25 +1090,18 @@ describe("owner is first class, and the two visibility rules keep their widths",
     expect(mason.find((a) => a.key === "son-strike-mason")?.sats).toBe(400000n);
   });
 
-  it("a garbage owner string in a CHILD file falls back to the child, not to an adult", async () => {
-    // coerceOwner in the domain layer maps anything unrecognised to "victor",
-    // an ADULT. Doing that to a row out of mason-transactions.json would put a
-    // child's spending into the adult household view and into adult net worth.
+  it("refuses a garbage owner string in a child file instead of coercing it", async () => {
     await seedDataFile(t, "maddox-transactions", [
       { id: "x-1", date: "2026-07-08", merchant: "Sweets", amount: 5, category: "Fun", owner: "Maddox " },
     ]);
-    await t.mutation(fn.migrateFile, {
-      file: "maddox-transactions",
-      apply: true,
-    });
-
-    const row = (await t.query(fn.listTransactions, { viewer: "victor" })).find(
-      (candidate) => candidate.txId === "x-1",
-    );
-    expect(row?.owner).toBe("maddox");
-
-    const maddox = await t.query(fn.listTransactions, { viewer: "maddox" });
-    expect(maddox.map((candidate) => candidate.txId)).toEqual(["x-1"]);
+    await expect(
+      t.mutation(fn.migrateFile, { file: "maddox-transactions" }),
+    ).rejects.toThrow(/closed union/);
+    expect(
+      (await queryRows(fn.listTransactions, { viewer: "victor" })).some(
+        (candidate) => candidate.txId === "x-1",
+      ),
+    ).toBe(false);
   });
 
   it("a recognised owner inside a file still wins over the file's default", async () => {
@@ -635,7 +1114,7 @@ describe("owner is first class, and the two visibility rules keep their widths",
       },
     });
 
-    const mason = await t.query(fn.listTodos, { viewer: "mason" });
+    const mason = await queryRows(fn.listTodos, { viewer: "mason" });
     expect(mason.map((todo) => todo.todoId)).toContain("todo-3");
   });
 });
@@ -646,14 +1125,14 @@ describe("indexed month and date", () => {
   });
 
   it("derives month from date as a prefix, with no timezone in the way", async () => {
-    const july = await t.query(fn.listTransactions, {
+    const july = await queryRows(fn.listTransactions, {
       viewer: "victor",
       month: "2026-07",
     });
     expect(july.map((row) => row.txId).sort()).toEqual(["m-1", "t-1", "t-2"]);
     expect(july.every((row) => row.month === "2026-07")).toBe(true);
 
-    const june = await t.query(fn.listTransactions, {
+    const june = await queryRows(fn.listTransactions, {
       viewer: "victor",
       month: "2026-06",
     });
@@ -661,8 +1140,83 @@ describe("indexed month and date", () => {
   });
 
   it("returns newest first and honours limit", async () => {
-    const rows = await t.query(fn.listTransactions, { viewer: "victor", limit: 2 });
+    const rows = await queryRows(fn.listTransactions, { viewer: "victor", limit: 2 });
     expect(rows.map((row) => row.date)).toEqual(["2026-07-19", "2026-07-04"]);
+  });
+
+  it("applies a month limit after date ordering for every month-indexed table", async () => {
+    // These rows are inserted after the migrated July rows. by_owner_month
+    // contains only (owner, month), so taking one row from that range before
+    // sorting by date returns an older creation-order row.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("transactions", {
+        txId: "month-newest-transaction",
+        owner: "victor",
+        date: "2026-07-31",
+        month: "2026-07",
+        merchant: "Newest transaction",
+        amountCents: -1n,
+        category: "Other",
+        sourceFile: "transactions",
+        updatedAtMs: 1,
+      });
+      await ctx.db.insert("btcBuys", {
+        buyId: "month-newest-buy",
+        owner: "victor",
+        date: "2026-07-31",
+        month: "2026-07",
+        source: "strike",
+        sats: 1n,
+        priceUsdCents: 1n,
+        usdCents: 1n,
+        sourceFile: "bitcoin-buys",
+        updatedAtMs: 1,
+      });
+      await ctx.db.insert("btcBillPays", {
+        billPayId: "month-newest-bill-pay",
+        owner: "victor",
+        date: "2026-07-31",
+        month: "2026-07",
+        merchant: "Newest bill pay",
+        category: "Utilities",
+        amountUsdCents: 1n,
+        btcSpentSats: 1n,
+        btcPriceCents: 1n,
+        feeUsdCents: 0n,
+        sourceFile: "bitcoin-bill-pays",
+        updatedAtMs: 1,
+      });
+    });
+
+    expect(
+      (
+        await queryRows(fn.listTransactions, {
+          viewer: "victor",
+          month: "2026-07",
+          limit: 1,
+        })
+      ).map((row) => row.txId),
+    ).toEqual(["month-newest-transaction"]);
+    expect(
+      (
+        await queryRows(fn.listBtcBuys, {
+          viewer: "victor",
+          scope: "visible",
+          month: "2026-07",
+          limit: 1,
+        })
+      ).map((row) => row.buyId),
+    ).toEqual(["month-newest-buy"]);
+    expect(
+      (
+        await queryRows(fn.listBtcBillPays, {
+          viewer: "victor",
+          scope: "visible",
+          month: "2026-07",
+          limit: 1,
+        })
+      ).map((row) => row.billPayId),
+    ).toEqual(["month-newest-bill-pay"]);
   });
 
   it("a limit returns the newest overall, not the newest of one bucket", async () => {
@@ -689,16 +1243,286 @@ describe("indexed month and date", () => {
       },
     });
 
-    const newest = await t.query(fn.listTodos, { viewer: "victor", limit: 1 });
+    const newest = await queryRows(fn.listTodos, { viewer: "victor", limit: 1 });
     expect(newest.map((todo) => todo.todoId)).toEqual(["recent-open"]);
   });
 
   it("scopes a month query to one owner for a child viewer", async () => {
-    const rows = await t.query(fn.listTransactions, {
+    const rows = await queryRows(fn.listTransactions, {
       viewer: "mason",
       month: "2026-07",
     });
     expect(rows.map((row) => row.txId)).toEqual(["m-1"]);
+  });
+});
+
+describe("public Linux/Android read contract", () => {
+  beforeEach(async () => {
+    await migrateAll(t);
+  });
+
+  it("returns allowlisted projections, never Convex internals or migration provenance", async () => {
+    const responses = [
+      await t.query(fn.listTransactions, { viewer: "victor" }),
+      await t.query(fn.listTodos, { viewer: "victor" }),
+      await t.query(fn.listBtcBuys, { viewer: "victor", scope: "visible" }),
+      await t.query(fn.listBtcBillPays, {
+        viewer: "victor",
+        scope: "visible",
+      }),
+      await t.query(fn.listBtcAccounts, {
+        viewer: "victor",
+        scope: "visible",
+      }),
+      await t.query(fn.listBalanceDocuments, {
+        viewer: "victor",
+        scope: "visible",
+      }),
+    ];
+
+    for (const response of responses) {
+      expect(response.complete).toBe(true);
+      expect(response.rows.length).toBeGreaterThan(0);
+      for (const row of response.rows) {
+        expect(row).not.toHaveProperty("_id");
+        expect(row).not.toHaveProperty("_creationTime");
+        expect(row).not.toHaveProperty("migrationRaw");
+        expect(row).not.toHaveProperty("migrationSourceIndex");
+        expect(row).not.toHaveProperty("sourceFile");
+      }
+    }
+  });
+
+  it("marks every explicitly bounded response incomplete", async () => {
+    const transactions = await t.query(fn.listTransactions, {
+      viewer: "victor",
+      limit: 2,
+    });
+    expect(transactions).toMatchObject({ complete: false });
+    expect(transactions.rows).toHaveLength(2);
+
+    const accounts = await t.query(fn.listBtcAccounts, {
+      viewer: "victor",
+      scope: "netWorth",
+      limit: 20,
+    });
+    expect(accounts.complete).toBe(false);
+    expect(accounts.rows.length).toBeGreaterThan(0);
+  });
+
+  it("rejects invalid limits instead of interpreting them loosely", async () => {
+    await expect(
+      t.query(fn.listTransactions, { viewer: "victor", limit: 0 }),
+    ).rejects.toThrow(/integer from 1 to 2000/);
+    await expect(
+      t.query(fn.listTransactions, { viewer: "victor", limit: 1.5 }),
+    ).rejects.toThrow(/integer from 1 to 2000/);
+    await expect(
+      t.query(fn.listTransactions, { viewer: "victor", limit: 2001 }),
+    ).rejects.toThrow(/integer from 1 to 2000/);
+  });
+
+  it("requires callers to choose BTC visibility scope explicitly", async () => {
+    await expect(
+      t.query(fn.listBtcBuys as any, { viewer: "victor" }),
+    ).rejects.toThrow();
+    await expect(
+      t.query(fn.listBtcAccounts as any, { viewer: "victor" }),
+    ).rejects.toThrow();
+    await expect(
+      t.query(fn.listBalanceDocuments as any, { viewer: "victor" }),
+    ).rejects.toThrow();
+  });
+
+  it("fails closed when a full replacement snapshot exceeds the hard maximum", async () => {
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 2001; index += 1) {
+        await ctx.db.insert("transactions", {
+          txId: `overflow-${index}`,
+          owner: "maddox",
+          date: "2026-07-31",
+          month: "2026-07",
+          merchant: "Synthetic overflow",
+          amountCents: 1n,
+          category: "Other",
+          sourceFile: "maddox-transactions",
+          updatedAtMs: index,
+        });
+      }
+    });
+
+    await expect(
+      t.query(fn.listTransactions, { viewer: "maddox" }),
+    ).rejects.toThrow(/complete snapshot exceeds the hard maximum of 2000 rows/);
+
+    const bounded = await t.query(fn.listTransactions, {
+      viewer: "maddox",
+      limit: 1,
+    });
+    expect(bounded).toMatchObject({ complete: false });
+    expect(bounded.rows).toHaveLength(1);
+  });
+
+  it("returns typed budget documents without reported category spend", async () => {
+    const adult = await t.query(fn.getBudgetDocument, {
+      viewer: "rachel",
+      scope: "netWorth",
+    });
+    expect(adult.complete).toBe(true);
+    expect(adult.document).toMatchObject({
+      owner: "victor",
+      month: "2026-07",
+      coinbaseOneBalanceCents: 12550n,
+    });
+    expect(adult.document?.categories[0]).toEqual({
+      name: "Groceries",
+      icon: "cart",
+      budgetCents: 90000n,
+    });
+    expect(adult.document?.categories[0]).not.toHaveProperty("spent");
+    expect(adult.document?.categories[0]).not.toHaveProperty("spentCents");
+    expect(adult.document?.income).toMatchObject({
+      weeklyGrossCents: 120000n,
+      monthlyGrossCents: 480000n,
+      mtdIncomeCents: 250000n,
+      ytdIncomeCents: 3000000n,
+    });
+    expect(adult.document?.monthlyHistory[0]).toEqual({
+      month: "2026-06",
+      incomeCents: 480000n,
+      expensesCents: 320000n,
+      savingsBps: 3333n,
+    });
+
+    const mason = await t.query(fn.getBudgetDocument, {
+      viewer: "mason",
+      scope: "netWorth",
+    });
+    expect(mason.document).toMatchObject({ owner: "mason", month: "2026-07" });
+    expect(mason.document?.categories.map((category) => category.name)).toEqual([
+      "Fun",
+    ]);
+  });
+
+  it("returns complete BTC documents while keeping son-balances out of adult net worth", async () => {
+    const visible = await t.query(fn.listBtcBalanceDocuments, {
+      viewer: "rachel",
+      scope: "visible",
+    });
+    expect(visible.complete).toBe(true);
+    expect(visible.rows.map((row) => row.owner)).toEqual(["mason", "victor"]);
+    expect(
+      visible.rows.find((row) => row.owner === "mason")?.totals.sats,
+    ).toBe(1600000n);
+
+    const netWorth = await t.query(fn.listBtcBalanceDocuments, {
+      viewer: "rachel",
+      scope: "netWorth",
+    });
+    expect(netWorth.rows.map((row) => row.owner)).toEqual(["victor"]);
+    expect(
+      netWorth.rows.flatMap((row) => row.accounts).some(
+        (account) => account.key === "strike" && account.sats === 400000n,
+      ),
+    ).toBe(false);
+
+    const mason = await t.query(fn.listBtcBalanceDocuments, {
+      viewer: "mason",
+      scope: "netWorth",
+    });
+    expect(mason.rows.map((row) => row.owner)).toEqual(["mason"]);
+  });
+
+  it("returns scoped BTC snapshot metadata without exposing the raw snapshot", async () => {
+    const visible = await t.query(fn.getBtcSnapshotMetadata, {
+      viewer: "victor",
+      scope: "visible",
+    });
+    expect(visible.complete).toBe(true);
+    expect(visible.rows).toEqual([
+      expect.objectContaining({
+        owner: "mason",
+        schemaVersion: 0n,
+        asOf: SON_BALANCES.lastUpdated,
+      }),
+      expect.objectContaining({
+        owner: "victor",
+        schemaVersion: 2n,
+        asOf: SNAPSHOT.asOf,
+        source: "synthetic",
+        basis: "spot",
+        confidence: "verified",
+      }),
+    ]);
+
+    const netWorth = await t.query(fn.getBtcSnapshotMetadata, {
+      viewer: "victor",
+      scope: "netWorth",
+    });
+    expect(netWorth.rows.map((row) => row.owner)).toEqual(["victor"]);
+  });
+
+  it("filters nested finance accounts before returning visible and net-worth documents", async () => {
+    const visible = await t.query(fn.getFinanceDocument, {
+      viewer: "victor",
+      scope: "visible",
+    });
+    expect(visible.complete).toBe(true);
+    expect(visible.document?.accounts.map((account) => account.owner)).toEqual([
+      "victor",
+      "mason",
+    ]);
+    expect(
+      visible.document?.accounts.find((account) => account.owner === "victor"),
+    ).toMatchObject({
+      key: "victor_401k",
+      totalValueCents: 12500055n,
+      weeklyContributionCents: 25000n,
+    });
+    expect(visible.document?.retirementTotalCents).toBe(12500055n);
+
+    const netWorth = await t.query(fn.getFinanceDocument, {
+      viewer: "victor",
+      scope: "netWorth",
+    });
+    expect(netWorth.document?.accounts.map((account) => account.owner)).toEqual([
+      "victor",
+    ]);
+
+    const mason = await t.query(fn.getFinanceDocument, {
+      viewer: "mason",
+      scope: "visible",
+    });
+    expect(mason.document?.accounts.map((account) => account.owner)).toEqual([
+      "mason",
+    ]);
+    expect(mason.document?.retirementTotalCents).toBeUndefined();
+  });
+
+  it("lists Bitcoin bill payments and includes them in row counts", async () => {
+    const response = await t.query(fn.listBtcBillPays, {
+      viewer: "victor",
+      scope: "netWorth",
+    });
+    expect(response).toMatchObject({ complete: true });
+    expect(response.rows).toEqual([
+      expect.objectContaining({
+        billPayId: "bp-1",
+        owner: "victor",
+        amountUsdCents: 18655n,
+        btcSpentSats: 200000n,
+        btcPriceCents: 9327500n,
+        feeUsdCents: 95n,
+      }),
+    ]);
+    expect(await t.query(fn.rowCounts, {})).toMatchObject({
+      btcBillPays: 1,
+      income: 1,
+      balanceDocuments: 1,
+      budgetDocuments: 2,
+      btcBalanceDocuments: 2,
+      financeDocuments: 1,
+    });
   });
 });
 
@@ -728,7 +1552,7 @@ describe("row mutations", () => {
     });
     expect(second.outcome).toBe("updated");
 
-    const rows = await t.query(fn.listTransactions, { viewer: "victor" });
+    const rows = await queryRows(fn.listTransactions, { viewer: "victor" });
     expect(rows.filter((row) => row.txId === "app-1")).toHaveLength(1);
     expect(rows.find((row) => row.txId === "app-1")?.amountCents).toBe(-500n);
     expect((await t.query(fn.rowCounts, {})).transactions).toBe(5);
@@ -745,8 +1569,35 @@ describe("row mutations", () => {
         category: "Fun",
       },
     });
-    const mason = await t.query(fn.listTransactions, { viewer: "mason" });
+    const mason = await queryRows(fn.listTransactions, { viewer: "mason" });
     expect(mason.map((row) => row.txId)).toEqual(["app-m1"]);
+  });
+
+  it("rejects transaction signs that disagree with the owner file convention", async () => {
+    await expect(
+      t.mutation(fn.upsertTransaction, {
+        transaction: {
+          id: "adult-wrong-sign",
+          date: "2026-07-22",
+          merchant: "Adult spend",
+          amountCents: 900n,
+          category: "Fun",
+        },
+      }),
+    ).rejects.toThrow(/adult files sign spend negative/);
+
+    await expect(
+      t.mutation(fn.upsertTransaction, {
+        sourceFile: "mason-transactions",
+        transaction: {
+          id: "child-wrong-sign",
+          date: "2026-07-22",
+          merchant: "Child spend",
+          amountCents: -900n,
+          category: "Fun",
+        },
+      }),
+    ).rejects.toThrow(/child files store spend as a positive magnitude/);
   });
 
   it("upserts a btc buy and a btc account idempotently", async () => {
@@ -803,7 +1654,7 @@ describe("row mutations", () => {
       ).outcome,
     ).toBe("updated");
 
-    const accounts = await t.query(fn.listBtcAccounts, { viewer: "victor" });
+    const accounts = await queryRows(fn.listBtcAccounts, { viewer: "victor", scope: "visible" });
     expect(accounts.filter((a) => a.key === "strike")).toHaveLength(1);
     expect(accounts.find((a) => a.key === "strike")?.sats).toBe(36000000n);
   });
@@ -826,6 +1677,35 @@ describe("row mutations", () => {
     ).rejects.toThrow(/holds todos, not transactions/);
   });
 
+  it("refuses a BTC account whose owner disagrees with its source file", async () => {
+    await expect(
+      t.mutation(fn.upsertBtcAccount, {
+        sourceFile: "son-balances",
+        account: {
+          key: "child-stack-as-adult",
+          owner: "victor",
+          label: "Must not reach adult net worth",
+          custody: "self_custody",
+          sats: 1n,
+          fiatCents: 1n,
+          asOf: "2026-07-26T00:00:00Z",
+        },
+      }),
+    ).rejects.toThrow(/belongs to mason, not victor/);
+  });
+
+  it("refuses an unknown todo owner instead of defaulting it to an adult", async () => {
+    await expect(
+      t.mutation(fn.upsertTodo, {
+        todo: {
+          id: "bad-owner-todo",
+          title: "Must not become Victor's",
+          owner: "Mason ",
+        },
+      }),
+    ).rejects.toThrow(/owner must be one of victor, rachel, mason, maddox/);
+  });
+
   it("rejects an owner outside the closed set", async () => {
     await expect(
       t.mutation(fn.upsertTransaction, {
@@ -842,16 +1722,104 @@ describe("row mutations", () => {
       }),
     ).rejects.toThrow();
   });
+
+  it("the finance schema rejects an unknown nested account owner", async () => {
+    await expect(
+      t.run(async (ctx) => {
+        await ctx.db.insert("financeDocuments", {
+          sourceFile: "finances",
+          lastUpdated: "2026-07-26",
+          accounts: [
+            {
+              key: "bad-owner",
+              owner: "Mason ",
+              provider: "Nope",
+              totalValueCents: 1n,
+              weeklyContributionCents: 0n,
+              holdings: [],
+            },
+          ],
+          updatedAtMs: 0,
+        } as any);
+      }),
+    ).rejects.toThrow();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
   const readEntryPoints = [
-    { name: "listTransactions", call: (token?: string) => t.query(fn.listTransactions, { viewer: "victor", token }) },
-    { name: "listTodos", call: (token?: string) => t.query(fn.listTodos, { viewer: "victor", token }) },
-    { name: "listBtcBuys", call: (token?: string) => t.query(fn.listBtcBuys, { viewer: "victor", token }) },
-    { name: "listBtcAccounts", call: (token?: string) => t.query(fn.listBtcAccounts, { viewer: "victor", token }) },
+    { name: "listTransactions", call: (token?: string) => queryRows(fn.listTransactions, { viewer: "victor", token }) },
+    { name: "listTodos", call: (token?: string) => queryRows(fn.listTodos, { viewer: "victor", token }) },
+    {
+      name: "listBtcBuys",
+      call: (token?: string) =>
+        queryRows(fn.listBtcBuys, { viewer: "victor", scope: "visible", token }),
+    },
+    {
+      name: "listBtcBillPays",
+      call: (token?: string) =>
+        queryRows(fn.listBtcBillPays, {
+          viewer: "victor",
+          scope: "visible",
+          token,
+        }),
+    },
+    {
+      name: "listBtcAccounts",
+      call: (token?: string) =>
+        queryRows(fn.listBtcAccounts, {
+          viewer: "victor",
+          scope: "visible",
+          token,
+        }),
+    },
+    {
+      name: "listBalanceDocuments",
+      call: (token?: string) =>
+        queryRows(fn.listBalanceDocuments, {
+          viewer: "victor",
+          scope: "visible",
+          token,
+        }),
+    },
+    {
+      name: "getBudgetDocument",
+      call: (token?: string) =>
+        t.query(fn.getBudgetDocument, {
+          viewer: "victor",
+          scope: "netWorth",
+          token,
+        }),
+    },
+    {
+      name: "getBtcSnapshotMetadata",
+      call: (token?: string) =>
+        t.query(fn.getBtcSnapshotMetadata, {
+          viewer: "victor",
+          scope: "visible",
+          token,
+        }),
+    },
+    {
+      name: "listBtcBalanceDocuments",
+      call: (token?: string) =>
+        t.query(fn.listBtcBalanceDocuments, {
+          viewer: "victor",
+          scope: "visible",
+          token,
+        }),
+    },
+    {
+      name: "getFinanceDocument",
+      call: (token?: string) =>
+        t.query(fn.getFinanceDocument, {
+          viewer: "victor",
+          scope: "visible",
+          token,
+        }),
+    },
     { name: "rowCounts", call: (token?: string) => t.query(fn.rowCounts, { token }) },
   ] as const;
 
@@ -981,7 +1949,7 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
       // Same env, same answer from both files. That equality is the contract.
       await expect(t.query(fn.dataFilesGet, { name: "todos" })).resolves.toBeDefined();
       await expect(
-        t.query(fn.listTransactions, { viewer: "victor" }),
+        queryRows(fn.listTransactions, { viewer: "victor" }),
       ).resolves.toBeDefined();
     });
 
@@ -993,6 +1961,9 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
       await expect(
         t.mutation(fn.dataFilesSync, { name: "probe", data: [] }),
       ).resolves.toBeDefined();
+      for (const entry of writeEntryPoints) {
+        await expect(entry.call()).resolves.toBeDefined();
+      }
     });
 
     it("both files fail closed identically with neither hatch nor token", async () => {
@@ -1000,7 +1971,7 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
         /CONVEX_READ_TOKEN is not configured/,
       );
       await expect(
-        t.query(fn.listTransactions, { viewer: "victor" }),
+        queryRows(fn.listTransactions, { viewer: "victor" }),
       ).rejects.toThrow(/CONVEX_READ_TOKEN is not configured/);
 
       await expect(

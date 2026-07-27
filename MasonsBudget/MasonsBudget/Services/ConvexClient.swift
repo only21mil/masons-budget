@@ -9,6 +9,8 @@ import Security
 
 /// Configuration for the Convex deployment.
 enum ConvexConfig {
+    private static let rowReadsEnabledKey = "convex_row_reads_enabled"
+
     /// The Convex deployment URL. Updated after `npx convex deploy`.
     /// Store in UserDefaults so it can be changed without an app update.
     static var deploymentURL: URL {
@@ -58,6 +60,16 @@ enum ConvexConfig {
         } else {
             UserDefaults.standard.set(trimmed, forKey: "convex_read_token")
         }
+    }
+
+    /// Runtime gate for the public row API. Default-off until the row schema and
+    /// backfill exist in production.
+    static var rowReadsEnabled: Bool {
+        UserDefaults.standard.bool(forKey: rowReadsEnabledKey)
+    }
+
+    static func setRowReadsEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: rowReadsEnabledKey)
     }
 }
 
@@ -538,6 +550,9 @@ enum ConvexError: LocalizedError {
     case httpError(Int)
     case decodeFailed(String, Error)
     case noData(String)
+    case serverError(path: String)
+    case unauthorized(path: String)
+    case rowAPIUnavailable(path: String)
 
     var errorDescription: String? {
         switch self {
@@ -551,7 +566,22 @@ enum ConvexError: LocalizedError {
             "Failed to decode \(name): \(error.localizedDescription)"
         case let .noData(name):
             "No data found for '\(name)'"
+        case let .serverError(path):
+            "Convex query '\(path)' failed."
+        case let .unauthorized(path):
+            "Convex query '\(path)' was unauthorized."
+        case let .rowAPIUnavailable(path):
+            "Convex row query '\(path)' is not deployed."
         }
+    }
+
+    /// The only row-query failure that may fall back to the legacy blob path.
+    ///
+    /// Auth failures and invalid financial rows are deliberately excluded. A
+    /// fallback for either would hide a security or data-integrity defect.
+    var isRowAPIUnavailable: Bool {
+        if case .rowAPIUnavailable = self { return true }
+        return false
     }
 }
 
@@ -560,6 +590,68 @@ private struct ConvexQueryResponse: Decodable {
     let status: String
     let value: AnyCodable?
     let errorMessage: String?
+}
+
+/// Strictly converts Convex's tagged int64 wire values into Swift `Int64` values.
+///
+/// Convex serializes `v.int64()` as an object containing one `$integer` key whose
+/// value is the canonical base64 encoding of eight little-endian bytes. Any object
+/// that attempts to use that reserved key but does not match the exact shape is
+/// rejected instead of being treated as ordinary JSON.
+enum ConvexTaggedInt64Decoder {
+    enum DecodeError: LocalizedError, Equatable {
+        case malformedTag
+        case malformedPayload
+
+        var errorDescription: String? {
+            switch self {
+            case .malformedTag:
+                "Convex int64 tags must contain only a string-valued $integer field."
+            case .malformedPayload:
+                "Convex int64 payloads must be canonical base64 containing exactly eight bytes."
+            }
+        }
+    }
+
+    static func decode(_ value: Any) throws -> Any {
+        if let object = value as? [String: Any] {
+            if object.keys.contains("$integer") {
+                return try decodeTaggedValue(object)
+            }
+            return try object.mapValues(decode)
+        }
+
+        if let array = value as? [Any] {
+            return try array.map(decode)
+        }
+
+        return value
+    }
+
+    static func decodeTaggedValue(_ value: Any) throws -> Int64 {
+        guard let object = value as? [String: Any],
+              object.count == 1,
+              let encoded = object["$integer"] as? String
+        else {
+            throw DecodeError.malformedTag
+        }
+        return try decodePayload(encoded)
+    }
+
+    static func decodePayload(_ encoded: String) throws -> Int64 {
+        guard let bytes = Data(base64Encoded: encoded),
+              bytes.count == MemoryLayout<Int64>.size,
+              bytes.base64EncodedString() == encoded
+        else {
+            throw DecodeError.malformedPayload
+        }
+
+        var bits: UInt64 = 0
+        for (index, byte) in bytes.enumerated() {
+            bits |= UInt64(byte) << (index * 8)
+        }
+        return Int64(bitPattern: bits)
+    }
 }
 
 /// Type-erased Codable wrapper for Convex responses.
@@ -597,12 +689,16 @@ final class ConvexClient: Sendable {
     private let session: URLSession
     private let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "Convex")
 
-    init(deploymentURL: URL) {
+    init(deploymentURL: URL, session: URLSession? = nil) {
         self.deploymentURL = deploymentURL
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 60
-        session = URLSession(configuration: config)
+        if let session {
+            self.session = session
+        } else {
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = 30
+            config.timeoutIntervalForResource = 60
+            self.session = URLSession(configuration: config)
+        }
     }
 
     /// Fetch a data file from Convex and decode it as the given type.
@@ -622,6 +718,27 @@ final class ConvexClient: Sendable {
     /// Fetch a data file without decoding it so callers can handle legacy or mixed schemas.
     func fetchFileValue(_ name: String) async throws -> Any {
         try await query("dataFiles:get", args: ["name": name])
+    }
+
+    /// Execute one member of the closed public row-query catalogue.
+    func fetchRows<T: Decodable>(_ request: ConvexRowQuery, as type: T.Type) async throws -> T {
+        let raw = try await query(request.path, args: request.arguments)
+        guard JSONSerialization.isValidJSONObject(raw) else {
+            throw ConvexError.decodeFailed(
+                request.path,
+                NSError(
+                    domain: "ConvexRows",
+                    code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "Response is not valid JSON."],
+                ),
+            )
+        }
+        do {
+            let data = try JSONSerialization.data(withJSONObject: raw)
+            return try JSONDecoder().decode(type, from: data)
+        } catch {
+            throw ConvexError.decodeFailed(request.path, error)
+        }
     }
 
     /// Fetch current data file versions (lightweight change detection).
@@ -720,18 +837,12 @@ final class ConvexClient: Sendable {
 
         // Attached centrally so every read and write path is covered; a new call
         // site cannot forget its token.
-        var finalArgs = args
-        if endpoint == "api/mutation" {
-            let token = ConvexConfig.syncToken
-            if !token.isEmpty {
-                finalArgs["token"] = token
-            }
-        } else if endpoint == "api/query" {
-            let token = ConvexConfig.readToken
-            if !token.isEmpty {
-                finalArgs["token"] = token
-            }
-        }
+        let finalArgs = Self.authenticatedArguments(
+            endpoint: endpoint,
+            args: args,
+            syncToken: ConvexConfig.syncToken,
+            readToken: ConvexConfig.readToken,
+        )
 
         let body: [String: Any] = [
             "path": path,
@@ -758,10 +869,17 @@ final class ConvexClient: Sendable {
 
         if status == "error" {
             let msg = json?["errorMessage"] as? String ?? "Unknown error"
-            log.error("Convex call error: \(msg)")
-            throw ConvexError.decodeFailed(path, NSError(domain: "Convex", code: -1, userInfo: [
-                NSLocalizedDescriptionKey: msg,
-            ]))
+            let diagnostic = json?["errorData"] as? String ?? msg
+            log.error("Convex call failed for \(path, privacy: .public)")
+            if path.hasPrefix("tables:"), Self.isMissingRowAPIDiagnostic(diagnostic) {
+                // `errorData` can contain server-side values. It is used only
+                // for classification and is never stored, logged or surfaced.
+                throw ConvexError.rowAPIUnavailable(path: path)
+            }
+            if diagnostic.localizedCaseInsensitiveContains("unauthorized") {
+                throw ConvexError.unauthorized(path: path)
+            }
+            throw ConvexError.serverError(path: path)
         }
 
         guard let value = json?["value"] else {
@@ -773,6 +891,48 @@ final class ConvexClient: Sendable {
             throw ConvexError.noData(path)
         }
 
-        return value
+        do {
+            return try ConvexTaggedInt64Decoder.decode(value)
+        } catch {
+            throw ConvexError.decodeFailed(path, error)
+        }
+    }
+
+    /// Pure request-boundary helper kept visible to tests so every row request
+    /// can prove it uses the same enforced read credential as legacy reads.
+    static func authenticatedArguments(
+        endpoint: String,
+        args: [String: Any],
+        syncToken: String,
+        readToken: String,
+    ) -> [String: Any] {
+        var finalArgs = args
+        let token: String?
+        switch endpoint {
+        case "api/mutation":
+            token = syncToken
+        case "api/query":
+            token = readToken
+        default:
+            token = nil
+        }
+        if let token, !token.isEmpty {
+            finalArgs["token"] = token
+        }
+        return finalArgs
+    }
+
+    static func isMissingRowAPIDiagnostic(_ diagnostic: String) -> Bool {
+        let normalized = diagnostic.lowercased()
+        let missingFunction =
+            normalized.contains("could not find public function")
+                || normalized.contains("public function not found")
+                || normalized.contains("no public function")
+        let missingTable =
+            normalized.contains("table")
+                && (normalized.contains("does not exist")
+                    || normalized.contains("not found")
+                    || normalized.contains("unknown table"))
+        return missingFunction || missingTable
     }
 }

@@ -28,6 +28,64 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Which trees actually changed. Added 2026-07-27 after a session of ~30 PRs
+  # exhausted the account's Actions minutes: every PR ran all four jobs, so a
+  # docs-only change still assembled an APK, installed Chromium and captured a
+  # design packet. Cost is not the only reason — a job that cannot be affected
+  # by a diff tells you nothing when it passes.
+  #
+  # A push to main always reports every tree as changed. The default branch must
+  # be verified whole after a merge, which is the property the trigger comment
+  # above is protecting; scoping must not quietly undo it.
+  changes:
+    name: Detect changed trees
+    if: github.repository == 'only21mil/masons-budget'
+    runs-on: ubuntu-latest
+    outputs:
+      linux: ${{ steps.filter.outputs.linux }}
+      android: ${{ steps.filter.outputs.android }}
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compare against the merge base
+        id: filter
+        env:
+          IS_MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+
+          if [ "$IS_MAIN_PUSH" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Verifying every tree (main push or manual dispatch)."
+            for t in linux android backend; do echo "$t=true" >> "$GITHUB_OUTPUT"; done
+            exit 0
+          fi
+
+          base="origin/${BASE_REF:-main}"
+          git fetch -q origin "${BASE_REF:-main}"
+          files="$(git diff --name-only "$(git merge-base HEAD "$base")" HEAD)"
+          printf '%s\n' "$files" | sed 's/^/  /'
+
+          # shared/, convex/ and the workflow itself reach every client, so they
+          # mark all three. Erring toward running a job is the safe direction:
+          # a needless run costs minutes, a skipped one costs a regression.
+          wide=false
+          printf '%s\n' "$files" | grep -qE '^(shared/|convex/|package(-lock)?\.json|\.github/workflows/clients\.yml)' && wide=true
+
+          for t in linux android; do
+            if [ "$wide" = true ] || printf '%s\n' "$files" | grep -q "^$t/"; then
+              echo "$t=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$t=false" >> "$GITHUB_OUTPUT"
+            fi
+          done
+          # The contract and Convex suites are cheap and guard the money rules;
+          # they run whenever anything at all changed.
+          echo "backend=true" >> "$GITHUB_OUTPUT"
+
   shared-domain:
     name: Shared domain contract
     if: github.repository == 'only21mil/masons-budget'
@@ -78,9 +136,9 @@ jobs:
 
   linux-client:
     name: Linux client
-    if: github.repository == 'only21mil/masons-budget'
+    needs: [shared-domain, changes]
+    if: github.repository == 'only21mil/masons-budget' && needs.changes.outputs.linux == 'true'
     runs-on: ubuntu-latest
-    needs: shared-domain
     steps:
       - uses: actions/checkout@v4
 
@@ -116,6 +174,7 @@ jobs:
         working-directory: linux
 
       - name: Upload build output
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: linux-client-dist
@@ -128,15 +187,17 @@ jobs:
       # child profile. Headless, so it needs no display. Download the artifact to
       # review the UI without running the app.
       - name: Install Chromium for screenshots
+        if: github.event_name != 'pull_request'
         run: npx playwright install --with-deps chromium
         working-directory: linux
 
       - name: Capture design packet
+        if: github.event_name != 'pull_request'
         run: npm run screenshots
         working-directory: linux
 
       - name: Upload design packet
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: linux-design-packet
@@ -145,9 +206,9 @@ jobs:
 
   android-client:
     name: Android client
-    if: github.repository == 'only21mil/masons-budget'
+    needs: [shared-domain, changes]
+    if: github.repository == 'only21mil/masons-budget' && needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
-    needs: shared-domain
     steps:
       - uses: actions/checkout@v4
 
@@ -181,61 +242,54 @@ jobs:
         with:
           gradle-version: "8.12"
 
+      # Pull requests and other untrusted events deliberately stay on AGP's
+      # per-run debug key. Repository key material may exist only on a push to
+      # main or an explicitly dispatched run, where secrets are intentionally
+      # available. A missing secret still falls back to AGP signing.
+      - name: Materialise and validate the stable debug keystore
+        id: debug_keystore
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          (github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+          VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
+          VOGEL_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
+          VOGEL_DEBUG_KEY_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "path=" >> "$GITHUB_OUTPUT"
+            echo "stable=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Stable Android debug signing is not configured; using AGP's ephemeral debug key."
+            exit 0
+          fi
+
+          KEYSTORE_PATH="$RUNNER_TEMP/vogel-debug.keystore"
+          if ! printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"; then
+            echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 is not valid base64."
+            exit 1
+          fi
+          chmod 600 "$KEYSTORE_PATH"
+
+          KEYSTORE_PATH="$KEYSTORE_PATH" \
+            .github/workflows/scripts/validate_android_debug_keystore.sh
+
+          echo "path=$KEYSTORE_PATH" >> "$GITHUB_OUTPUT"
+          echo "stable=true" >> "$GITHUB_OUTPUT"
+
       - name: Domain parity tests (shared fixture, no Android SDK)
         if: steps.probe.outputs.gradle == 'true'
         run: gradle :domain:test --no-daemon
         working-directory: android
 
-      # A signing identity that survives between runs. Gradle otherwise generates
-      # a throwaway ~/.android/debug.keystore on each fresh runner, so every CI
-      # APK is signed by a different certificate and installing a new one over
-      # the last on the Fold fails with INSTALL_FAILED_UPDATE_INCOMPATIBLE —
-      # uninstall-first every time, losing the app's state.
-      #
-      # Optional on purpose. With no secret set the step is a no-op, the build
-      # falls back to the generated keystore, and forks stay green.
-      #
-      # To create one (these are the published Android debug defaults, which
-      # android/app/build.gradle.kts also defaults to, so the keystore secret is
-      # the only one you need):
-      #   keytool -genkeypair -v -keystore vogel-debug.keystore -storetype PKCS12 \
-      #     -alias androiddebugkey -storepass android -keypass android \
-      #     -keyalg RSA -keysize 2048 -validity 10950 \
-      #     -dname "CN=Android Debug,O=Android,C=US"
-      #   base64 -w0 vogel-debug.keystore | gh secret set ANDROID_DEBUG_KEYSTORE_BASE64
-      #
-      # Only the decoded file's path is exported to a later step; the encoded
-      # value and the passwords stay bound to the single step that needs them.
-      - name: Materialise the stable debug keystore
-        id: debug_keystore
-        if: steps.probe.outputs.app == 'true'
+      - name: Assemble stable-signed debug APK
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          steps.debug_keystore.outputs.stable == 'true'
         env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
-        run: |
-          set -euo pipefail
-          if [ -z "${KEYSTORE_BASE64:-}" ]; then
-            echo "path=" >> "$GITHUB_OUTPUT"
-            echo "::notice::ANDROID_DEBUG_KEYSTORE_BASE64 is not set. Using Gradle's generated debug keystore, so this APK will not install over an earlier CI build."
-            exit 0
-          fi
-          KEYSTORE_PATH="$RUNNER_TEMP/vogel-debug.keystore"
-          if ! printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"; then
-            echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 is not valid base64. Re-encode it with: base64 -w0 vogel-debug.keystore"
-            exit 1
-          fi
-          chmod 600 "$KEYSTORE_PATH"
-          if [ ! -s "$KEYSTORE_PATH" ]; then
-            echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 decoded to an empty file. Re-encode it with base64 -w0."
-            exit 1
-          fi
-          echo "path=$KEYSTORE_PATH" >> "$GITHUB_OUTPUT"
-          echo "Signing debug builds with the repository debug keystore."
-
-      - name: Assemble debug APK
-        if: steps.probe.outputs.app == 'true'
-        env:
-          # Empty when the secret is absent, which build.gradle.kts treats as
-          # "leave the debug signing config alone".
           VOGEL_DEBUG_KEYSTORE: ${{ steps.debug_keystore.outputs.path }}
           VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
           VOGEL_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
@@ -243,26 +297,24 @@ jobs:
         run: gradle :app:assembleDebug :app:lintDebug --no-daemon
         working-directory: android
 
-      # The certificate digest ships inside every APK, so printing it leaks
-      # nothing and is the only way to confirm from here that two runs share an
-      # identity. Diagnostic, never a gate.
+      # Pull requests cannot reach the secret-bearing step above: their
+      # materialisation step is skipped, so `stable` is never true. Running
+      # Gradle without any signing env preserves AGP's generated debug key.
+      - name: Assemble debug APK with ephemeral signing
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          steps.debug_keystore.outputs.stable != 'true'
+        run: gradle :app:assembleDebug :app:lintDebug --no-daemon
+        working-directory: android
+
+      # The digest is public certificate metadata already embedded in the APK.
+      # The reporter emits exactly one normalized SHA-256 line. A stable-signing
+      # run must produce it; ephemeral PR builds remain best-effort diagnostics.
       - name: Report the debug signing certificate
         if: steps.probe.outputs.app == 'true'
-        continue-on-error: true
-        working-directory: android
-        run: |
-          # No `set -e`: the runner's shell already has it, and every lookup here
-          # is allowed to come up empty without ending the step.
-          set +e
-          set -u
-          APK=$(find app/build/outputs/apk/debug -name '*.apk' 2>/dev/null | head -1)
-          APKSIGNER=$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -name apksigner 2>/dev/null | sort | tail -1)
-          if [ -n "$APK" ] && [ -n "$APKSIGNER" ]; then
-            "$APKSIGNER" verify --print-certs "$APK" | grep -i 'digest'
-          else
-            echo "::notice::apksigner or the APK was not found — skipping the fingerprint report."
-          fi
-          exit 0
+        env:
+          STABLE_SIGNING: ${{ steps.debug_keystore.outputs.stable || 'false' }}
+        run: .github/workflows/scripts/report_android_debug_signing.sh
 
       # Renders Compose to PNG under Robolectric — no emulator, no display.
       # Review artifact, not a pixel-diff gate: behaviour is asserted by the
@@ -273,7 +325,7 @@ jobs:
         working-directory: android
 
       - name: Upload Android design packet
-        if: always() && steps.probe.outputs.app == 'true'
+        if: always() && steps.probe.outputs.app == 'true' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: android-design-packet
@@ -283,7 +335,7 @@ jobs:
       # Debug-signed only — a sideload artifact for the Fold, never a release
       # build. Release signing stays out of CI.
       - name: Upload debug APK
-        if: steps.probe.outputs.app == 'true'
+        if: steps.probe.outputs.app == 'true' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: vogel-vault-debug-apk
@@ -298,8 +350,15 @@ jobs:
           path: android/**/build/reports/tests/**
           retention-days: 7
 
-      # Hosted runners are discarded anyway; this is the same discipline deploy.yml
-      # applies to Apple signing material, and it costs nothing.
-      - name: Remove the debug keystore from the runner
+      # Hosted runners are discarded anyway; still delete repository key material
+      # explicitly and prove that cleanup completed before the job can pass.
+      - name: Remove and verify cleanup of the debug keystore
         if: always()
-        run: rm -f "$RUNNER_TEMP/vogel-debug.keystore"
+        run: |
+          set -euo pipefail
+          KEYSTORE_PATH="$RUNNER_TEMP/vogel-debug.keystore"
+          rm -f "$KEYSTORE_PATH"
+          if [ -e "$KEYSTORE_PATH" ]; then
+            echo "::error::The Android debug keystore remained on the runner after cleanup."
+            exit 1
+          fi

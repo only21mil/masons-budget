@@ -8,18 +8,61 @@ struct MC2Transaction: Codable {
     let category: String
     let card: String?
     let note: String?
+    let owner: FamilyMember?
+}
+
+enum MC2TransactionWriteError: LocalizedError, Equatable {
+    case ownerMismatch(transactionOwner: String, targetOwner: FamilyMember)
+    case adultSpendMustBeNegative(owner: FamilyMember)
+    case childSpendMustBePositive(owner: FamilyMember)
+    case incomeMustBePositive(owner: FamilyMember)
+
+    var errorDescription: String? {
+        switch self {
+        case let .ownerMismatch(transactionOwner, targetOwner):
+            "Rejected transaction write: owner '\(transactionOwner)' does not match target owner '\(targetOwner.rawValue)'."
+        case let .adultSpendMustBeNegative(owner):
+            "Rejected transaction write for \(owner.rawValue): adult spending must be negative."
+        case let .childSpendMustBePositive(owner):
+            "Rejected transaction write for \(owner.rawValue): child spending must be positive."
+        case let .incomeMustBePositive(owner):
+            "Rejected transaction write for \(owner.rawValue): income must be positive."
+        }
+    }
 }
 
 extension MC2Transaction {
-    init(appTransaction transaction: Transaction) {
+    init(appTransaction transaction: Transaction, owner: FamilyMember) throws {
+        guard transaction.owner == owner.rawValue else {
+            throw MC2TransactionWriteError.ownerMismatch(
+                transactionOwner: transaction.owner,
+                targetOwner: owner,
+            )
+        }
+
+        if transaction.isIncome {
+            guard transaction.amount > 0 else {
+                throw MC2TransactionWriteError.incomeMustBePositive(owner: owner)
+            }
+        } else if owner.isAdult {
+            guard transaction.amount < 0 else {
+                throw MC2TransactionWriteError.adultSpendMustBeNegative(owner: owner)
+            }
+        } else {
+            guard transaction.amount > 0 else {
+                throw MC2TransactionWriteError.childSpendMustBePositive(owner: owner)
+            }
+        }
+
         self.init(
             id: transaction.id,
             date: Self.dateString(from: transaction.date),
             merchant: transaction.merchant,
-            amount: transaction.isSpend ? transaction.spendAmount : transaction.displayAmount,
+            amount: transaction.amount,
             category: transaction.category,
             card: transaction.card,
             note: transaction.note,
+            owner: nil,
         )
     }
 
@@ -509,6 +552,46 @@ struct MC2TodoItem: Codable {
         self.updatedAt = updatedAt
         createdAt = nil
         completedAt = nil
+    }
+
+    init(
+        rowId: String,
+        title: String,
+        project: String?,
+        area: String?,
+        due: String?,
+        notes: String?,
+        priority: Int?,
+        flagged: Bool,
+        done: Bool,
+        owner: FamilyMember,
+        createdAt: String?,
+        updatedAt: String?,
+        completedAt: String?,
+    ) {
+        id = rowId
+        self.title = title
+        text = notes
+        self.project = project
+        self.area = area
+        category = nil
+        type = nil
+        dueDate = due
+        self.due = nil
+        date = nil
+        deadline = nil
+        when = nil
+        self.priority = priority
+        flag = nil
+        self.flagged = flagged
+        self.done = done
+        completed = nil
+        status = nil
+        self.owner = owner.rawValue
+        assignee = nil
+        self.updatedAt = updatedAt
+        self.createdAt = createdAt
+        self.completedAt = completedAt
     }
 
     init(from decoder: Decoder) throws {

@@ -9,10 +9,12 @@ struct CategoryDetailView: View {
     @Bindable var category: BudgetCategory
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
 
+    let selectedMonth: Date
     @State private var monthlyBudget: String
 
-    init(category: BudgetCategory) {
+    init(category: BudgetCategory, selectedMonth: Date) {
         self.category = category
+        self.selectedMonth = selectedMonth
         _monthlyBudget = State(initialValue: NSDecimalNumber(decimal: category.monthlyBudget).stringValue)
     }
 
@@ -29,8 +31,25 @@ struct CategoryDetailView: View {
     }
 
     private var categoryTransactions: [Transaction] {
+        Self.transactions(
+            transactions,
+            visibleTo: activeMember,
+            category: category.name,
+            selectedMonth: selectedMonth,
+        )
+    }
+
+    static func transactions(
+        _ transactions: [Transaction],
+        visibleTo member: FamilyMember,
+        category: String,
+        selectedMonth: Date,
+        calendar: Calendar = .current,
+    ) -> [Transaction] {
         transactions.filter {
-            activeMember.sharesNetWorth(with: $0.ownerMember) && $0.category == category.name
+            member.sharesNetWorth(with: $0.ownerMember) &&
+                $0.category == category &&
+                calendar.isDate($0.date, equalTo: selectedMonth, toGranularity: .month)
         }
     }
 

@@ -71,20 +71,35 @@ final class Transaction {
         !isIncome && amount != 0
     }
 
+    /// Signed budget contribution: spend is positive and credits reduce spend.
     var spendAmount: Decimal {
-        isSpend ? abs(amount) : 0
+        guard isSpend else { return 0 }
+        return ownerMember.isAdult ? -amount : amount
+    }
+
+    /// Stable magnitude for rendering legacy rows, regardless of stored sign.
+    var displaySpendAmount: Decimal {
+        isSpend ? abs(spendAmount) : 0
+    }
+
+    /// A valid credit or a corrupt wrong-sign spend; legacy rows store no `kind`.
+    var hasOppositeSpendSign: Bool {
+        spendAmount < 0
     }
 
     var displayAmount: Decimal {
-        isSpend ? -abs(amount) : abs(amount)
+        if isIncome { return abs(amount) }
+        return spendAmount < 0 ? displaySpendAmount : -displaySpendAmount
     }
 
     func displaySatsValue(btcPrice: Decimal = BTCPriceService.fallbackPriceUSD) -> Decimal {
         let sats = abs(satsValue(btcPrice: btcPrice))
-        return isSpend ? -sats : sats
+        return isSpend && !hasOppositeSpendSign ? -sats : sats
     }
 
     func spendSatsValue(btcPrice: Decimal = BTCPriceService.fallbackPriceUSD) -> Decimal {
-        isSpend ? abs(satsValue(btcPrice: btcPrice)) : 0
+        guard isSpend else { return 0 }
+        let sats = satsValue(btcPrice: btcPrice)
+        return ownerMember.isAdult ? -sats : sats
     }
 }

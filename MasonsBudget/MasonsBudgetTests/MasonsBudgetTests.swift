@@ -226,6 +226,7 @@ final class MasonsBudgetTests: XCTestCase {
             name: "Gaming",
             icon: "gamecontroller.fill",
             monthlyBudget: 100,
+            owner: .mason,
         )
         let masonTransaction = Transaction(
             id: "tx-mason-gaming",
@@ -254,6 +255,96 @@ final class MasonsBudgetTests: XCTestCase {
 
         XCTAssertEqual(alerts.count, 1)
         XCTAssertEqual(alerts.first?.title, "Gaming Almost at Limit")
+    }
+
+    func testBudgetNotificationsUseNarrowScopeAndAbsoluteSpend() {
+        let adultCategory = BudgetCategory(
+            name: "Gaming",
+            icon: "gamecontroller.fill",
+            monthlyBudget: 100,
+            owner: .victor,
+        )
+        let childCategory = BudgetCategory(
+            name: "Mason:Gaming",
+            icon: "gamecontroller.fill",
+            monthlyBudget: 50,
+            owner: .mason,
+        )
+        let adultSpend = Transaction(
+            id: "tx-victor-signed-spend",
+            date: Date(),
+            merchant: "Console Store",
+            amount: -90,
+            category: "Gaming",
+            owner: .victor,
+            createdBy: "victor",
+        )
+        let childSpend = Transaction(
+            id: "tx-mason-positive-spend",
+            date: Date(),
+            merchant: "Game Store",
+            amount: 60,
+            category: "Gaming",
+            owner: .mason,
+            createdBy: "mason",
+        )
+
+        let alerts = BudgetNotificationManager.shared.budgetAlerts(
+            categories: [adultCategory, childCategory],
+            transactions: [adultSpend, childSpend],
+            member: .victor,
+        )
+
+        XCTAssertEqual(alerts.count, 1)
+        XCTAssertEqual(alerts.first?.title, "Gaming Almost at Limit")
+    }
+
+    func testTransactionsExportUsesWideRecordVisibility() {
+        let adult = Transaction(
+            id: "tx-export-adult",
+            date: Date(),
+            merchant: "Grocer",
+            amount: -10,
+            category: "Groceries",
+            owner: .victor,
+            createdBy: "victor",
+        )
+        let child = Transaction(
+            id: "tx-export-child",
+            date: Date(),
+            merchant: "Game Store",
+            amount: 10,
+            category: "Gaming",
+            owner: .mason,
+            createdBy: "mason",
+        )
+
+        let adultExport = ExportView.transactionsVisible(to: .victor, in: [adult, child])
+        let childExport = ExportView.transactionsVisible(to: .mason, in: [adult, child])
+
+        XCTAssertEqual(adultExport.map(\.id), [adult.id, child.id])
+        XCTAssertEqual(childExport.map(\.id), [child.id])
+    }
+
+    @MainActor
+    func testTransactionDetailCategoryQueryUsesTransactionBudgetScope() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: BudgetCategory.self, configurations: configuration)
+        let context = container.mainContext
+        context.insert(BudgetCategory(name: "Adult", icon: "house", monthlyBudget: 100, owner: .victor))
+        context.insert(BudgetCategory(name: "Spouse", icon: "house", monthlyBudget: 100, owner: .rachel))
+        context.insert(BudgetCategory(name: "Child", icon: "gamecontroller", monthlyBudget: 100, owner: .mason))
+        try context.save()
+
+        let adultCategories = try context.fetch(FetchDescriptor(
+            predicate: TransactionDetailView.categoryPredicate(for: .victor),
+        ))
+        let childCategories = try context.fetch(FetchDescriptor(
+            predicate: TransactionDetailView.categoryPredicate(for: .mason),
+        ))
+
+        XCTAssertEqual(Set(adultCategories.map(\.ownerMember)), Set([.victor, .rachel]))
+        XCTAssertEqual(childCategories.map(\.ownerMember), [.mason])
     }
 
     func testBTCAccountInit() throws {

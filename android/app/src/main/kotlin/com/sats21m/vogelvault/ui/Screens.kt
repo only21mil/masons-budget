@@ -18,16 +18,20 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -36,13 +40,14 @@ import com.sats21m.vogelvault.domain.MC2_FILES
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.domain.Transaction
+import com.sats21m.vogelvault.domain.budgetTransactionsFor
 import com.sats21m.vogelvault.domain.deriveBudgetSpend
 import com.sats21m.vogelvault.domain.inMonth
 import com.sats21m.vogelvault.domain.incomeAmount
 import com.sats21m.vogelvault.domain.isDueBy
-import com.sats21m.vogelvault.domain.monthsPresent
+import com.sats21m.vogelvault.domain.isSpend
 import com.sats21m.vogelvault.domain.netWorthScopeFor
-import com.sats21m.vogelvault.domain.spendAmount
+import com.sats21m.vogelvault.domain.resolveBudgetMonth
 import com.sats21m.vogelvault.domain.visibleTo
 import com.sats21m.vogelvault.ui.components.FreshnessTag
 import com.sats21m.vogelvault.ui.components.HorizontalHairline
@@ -67,7 +72,13 @@ import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 import com.sats21m.vogelvault.ui.theme.VaultWarning
 
 @Composable
-fun ScreenHost(destination: Destination, state: VaultUiState, modifier: Modifier = Modifier) {
+fun ScreenHost(
+    destination: Destination,
+    state: VaultUiState,
+    onEnableRemoteRows: (String) -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
+    val budgetMonth = state.data.budget.value?.month
     val months = state.budgetMonths
     // The Budget screen's month scope. Held here rather than in the ViewModel
     // because it is view state, and because every row of the list has to agree on
@@ -79,7 +90,7 @@ fun ScreenHost(destination: Destination, state: VaultUiState, modifier: Modifier
     }
     // A refresh can retire the picked month. Fall back rather than render a month
     // the ledger no longer contains.
-    val month = picked?.takeIf { it in months } ?: state.activeBudgetMonth
+    val month = resolveBudgetMonth(picked, months, budgetMonth)
 
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
@@ -88,14 +99,14 @@ fun ScreenHost(destination: Destination, state: VaultUiState, modifier: Modifier
     ) {
         item { ScreenHeader(destination, state, month) }
         when (destination) {
-            Destination.DASHBOARD -> dashboard(state)
+            Destination.DASHBOARD -> dashboard(state, month)
             Destination.ACTIVITY -> activity(state)
             Destination.BUDGET -> budget(state, month, months) { picked = it }
             Destination.BITCOIN -> bitcoin(state)
             Destination.NET_WORTH -> netWorth(state)
             Destination.TODAY -> today(state)
             Destination.FAMILY -> family(state)
-            Destination.SETTINGS -> settings(state)
+            Destination.SETTINGS -> settings(state, onEnableRemoteRows)
         }
     }
 }
@@ -133,13 +144,16 @@ private fun ScreenHeader(destination: Destination, state: VaultUiState, budgetMo
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
 
-private fun androidx.compose.foundation.lazy.LazyListScope.dashboard(state: VaultUiState) {
+private fun androidx.compose.foundation.lazy.LazyListScope.dashboard(state: VaultUiState, selectedMonth: String?) {
     val profile = state.activeProfile
     val visible = state.data.transactions.value.visibleTo(profile)
-    // Scoped to the budget's month so the headline agrees with the Budget
-    // screen. An all-time total beside a monthly budget is just confusing.
-    val month = state.data.budget.value?.month ?: visible.monthsPresent().firstOrNull() ?: ""
-    val transactions = visible.inMonth(month)
+    val budgetTransactions = state.data.transactions.value.budgetTransactionsFor(profile)
+    // The headline follows the Budget screen's selected month and narrower budget
+    // scope. Adults still see child rows in Recent activity for oversight, but
+    // those rows never enter Victor/Rachel's spend or income totals.
+    val month = selectedMonth ?: ""
+    val transactions = budgetTransactions.inMonth(month)
+    val activity = visible.inMonth(month)
     val accounts = state.data.btcAccounts.value.netWorthScopeFor(profile)
     val openTodos = state.data.todos.value.visibleTo(profile).count { !it.done }
 
@@ -169,11 +183,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dashboard(state: Vaul
         Panel("Recent activity", state.data.transactions.source) {
             if (state.data.transactions.status != Freshness.LIVE && state.data.transactions.status != Freshness.STALE) {
                 StateBlock(state.data.transactions.status)
-            } else if (transactions.isEmpty()) {
+            } else if (activity.isEmpty()) {
                 StateBlock(Freshness.EMPTY)
             } else {
                 Column {
-                    transactions.take(6).forEachIndexed { index, transaction ->
+                    activity.take(6).forEachIndexed { index, transaction ->
                         if (index > 0) HorizontalHairline()
                         TransactionRow(transaction)
                     }
@@ -215,16 +229,18 @@ private fun androidx.compose.foundation.lazy.LazyListScope.activity(state: Vault
 
 @Composable
 private fun TransactionRow(transaction: Transaction) {
-    // Colour by spend/income semantics, never by the raw sign: adult files sign
-    // spending negative, child files store a positive magnitude, so the sign alone
-    // renders a child's spending as income.
-    val spend = transaction.spendAmount
-    val isSpend = spend > 0L
+    val isSpend = transaction.isSpend
+    val isCreditOrWrongSign = transaction.hasOppositeSpendSign
+    val displaySpend = transaction.displaySpendAmount
     LedgerRow(
         primary = transaction.merchant,
         secondary = "${transaction.date} · ${transaction.category}",
-        figure = if (isSpend) "-${Money.formatUsd(spend)}" else Money.formatUsd(transaction.incomeAmount),
-        figureColor = if (isSpend) VaultNegative else VaultPositive,
+        figure = when {
+            !isSpend -> Money.formatUsd(transaction.incomeAmount)
+            isCreditOrWrongSign -> Money.formatUsd(displaySpend)
+            else -> "-${Money.formatUsd(displaySpend)}"
+        },
+        figureColor = if (isSpend && !isCreditOrWrongSign) VaultNegative else VaultPositive,
     )
 }
 
@@ -250,7 +266,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.budget(
     // column imply MC2 had a June budget.
     val spend = budget?.let {
         val scoped = if (scopedMonth == null || scopedMonth == it.month) it else it.copy(month = scopedMonth)
-        deriveBudgetSpend(scoped, state.data.transactions.value.visibleTo(state.activeProfile))
+        deriveBudgetSpend(scoped, state.data.transactions.value.budgetTransactionsFor(state.activeProfile))
     }
 
     if (budget == null) {
@@ -634,14 +650,27 @@ private fun androidx.compose.foundation.lazy.LazyListScope.family(state: VaultUi
 
 // ── Settings ────────────────────────────────────────────────────────────────
 
-private fun androidx.compose.foundation.lazy.LazyListScope.settings(state: VaultUiState) {
+private fun androidx.compose.foundation.lazy.LazyListScope.settings(
+    state: VaultUiState,
+    onEnableRemoteRows: (String) -> Unit,
+) {
+    val readsConvexRows = state.data.transactions.source.startsWith("Convex")
     item {
-        StatusBanner(
-            "This build reads sanitized fixtures",
-            "No live Convex connection, no writeback, no network permission. Figures are sample data.",
-            tone = VaultWarning,
-        )
+        if (readsConvexRows) {
+            StatusBanner(
+                "Convex row reads are enabled",
+                "Every query is authenticated. This client remains read-only.",
+                tone = VaultTextMuted,
+            )
+        } else {
+            StatusBanner(
+                "This build reads sanitized fixtures",
+                "Remote reads are disabled or not configured. Figures are sample data.",
+                tone = VaultWarning,
+            )
+        }
     }
+    item { RemoteRowsConfiguration(onEnableRemoteRows) }
     item {
         Panel("Slices") {
             Column {
@@ -674,6 +703,36 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settings(state: Vault
         }
     }
     item { Spacer(Modifier.height(VaultSpace.lg)) }
+}
+
+@Composable
+private fun RemoteRowsConfiguration(onEnable: (String) -> Unit) {
+    // Deliberately not saveable: the plaintext token must not enter saved
+    // instance state. Submission immediately hands it to encrypted storage.
+    var token by remember { mutableStateOf("") }
+    Panel("Configure authenticated row reads") {
+        Column(
+            Modifier.padding(VaultSpace.md),
+            verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
+        ) {
+            OutlinedTextField(
+                value = token,
+                onValueChange = { token = it },
+                label = { Text("Convex read token") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+            )
+            Button(
+                enabled = token.isNotBlank(),
+                onClick = {
+                    onEnable(token)
+                    token = ""
+                },
+            ) {
+                Text("Save and refresh")
+            }
+        }
+    }
 }
 
 // ── shared ──────────────────────────────────────────────────────────────────

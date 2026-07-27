@@ -82,6 +82,8 @@ linux/dist/
 linux/dist-electron/
 linux/release/
 linux/screenshots/
+!linux/build/
+!linux/build/icon.png
 .vite/
 *.deb
 *.AppImage

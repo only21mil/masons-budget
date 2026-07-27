@@ -1,16 +1,21 @@
 package com.sats21m.vogelvault.ui
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.sats21m.vogelvault.data.cache.CachedReadModel
+import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.ReadModel
-import com.sats21m.vogelvault.domain.monthsPresent
-import com.sats21m.vogelvault.domain.visibleTo
+import com.sats21m.vogelvault.domain.budgetMonthsFor
+import com.sats21m.vogelvault.domain.resolveBudgetMonth
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 /**
  * Everything the UI reads.
@@ -31,29 +36,20 @@ data class VaultUiState(
      * a tap.
      */
     val selectedMonth: String? = null,
+    /** A rejected read token invalidated the last complete Room snapshot. */
+    val staleAuthorization: Boolean = false,
 ) {
     val switchTargets: List<FamilyMember> get() = activeProfile.allowedSwitchTargets
 
     /**
      * Months the Budget screen may scope to, newest first.
      *
-     * Derived from what this profile may SEE, never from the raw ledger: Mason's
-     * months must not appear because an adult happens to be looking, and Rachel
-     * must get the same list as Victor.
+     * Derived from this profile's narrow budget scope, never from the wider
+     * oversight ledger: Mason's months must not appear because an adult happens
+     * to be looking, and Rachel must get the same list as Victor.
      */
     val budgetMonths: List<String>
-        get() {
-            val fromTransactions = data.transactions.value.visibleTo(activeProfile).monthsPresent()
-            val budgetMonth = data.budget.value?.month
-            // The budget's own month is offered even with nothing spent in it. A
-            // month with no transactions is a real answer; an absent month is not.
-            val all = if (budgetMonth != null && budgetMonth !in fromTransactions) {
-                fromTransactions + budgetMonth
-            } else {
-                fromTransactions
-            }
-            return all.sortedDescending()
-        }
+        get() = data.transactions.value.budgetMonthsFor(activeProfile, data.budget.value?.month)
 
     /**
      * The month the Budget screen should open on, or null when there is nothing
@@ -64,11 +60,7 @@ data class VaultUiState(
      * month with no spending.
      */
     val activeBudgetMonth: String?
-        get() {
-            val months = budgetMonths
-            val fallback = data.budget.value?.month?.takeIf { it in months } ?: months.firstOrNull()
-            return selectedMonth?.takeIf { it in months } ?: fallback
-        }
+        get() = resolveBudgetMonth(selectedMonth, budgetMonths, data.budget.value?.month)
 
     private val slices
         get() = listOf(data.transactions.status to data.transactions.updatedAt,
@@ -113,10 +105,30 @@ data class VaultUiState(
     }
 }
 
-class VaultViewModel : ViewModel() {
+class VaultViewModel(
+    private val rowSource: CachedRowDataSource? = null,
+    remoteInitiallyEnabled: Boolean = rowSource != null,
+    private val enableRemote: ((String) -> Unit)? = null,
+    private val clock: () -> Long = System::currentTimeMillis,
+) : ViewModel() {
 
-    private val _state = MutableStateFlow(VaultUiState())
+    private val _state = MutableStateFlow(
+        if (!remoteInitiallyEnabled) {
+            VaultUiState()
+        } else {
+            VaultUiState(data = loadingModel(FamilyMember.VICTOR))
+        },
+    )
     val state: StateFlow<VaultUiState> = _state.asStateFlow()
+    private var rowJob: Job? = null
+    private var remoteEnabled = remoteInitiallyEnabled
+    private var cachedModel: CachedReadModel? = null
+    private var liveModel: ReadModel? = null
+    private var liveUnauthorized = false
+
+    init {
+        if (rowSource != null && remoteInitiallyEnabled) connectRows(FamilyMember.VICTOR)
+    }
 
     fun navigate(destination: Destination) {
         _state.update { current ->
@@ -139,7 +151,8 @@ class VaultViewModel : ViewModel() {
             val destinations = Destination.visibleTo(next)
             current.copy(
                 activeProfile = next,
-                data = Fixtures.envelope(next),
+                data = if (!remoteEnabled) Fixtures.envelope(next) else loadingModel(next),
+                staleAuthorization = false,
                 // A month picked against one profile's ledger means nothing on the
                 // next one, so the scope goes back to that profile's budget month.
                 selectedMonth = null,
@@ -150,9 +163,98 @@ class VaultViewModel : ViewModel() {
                 },
             )
         }
+        if (remoteEnabled && rowSource != null && _state.value.activeProfile == next) connectRows(next)
     }
 
     fun simulate(status: Freshness) {
         _state.update { it.copy(data = Fixtures.envelope(it.activeProfile, status)) }
     }
+
+    fun enableRemoteRows(readToken: String) {
+        if (readToken.isBlank()) return
+        val configure = enableRemote ?: return
+        runCatching { configure(readToken) }.getOrElse { return }
+        remoteEnabled = true
+        val profile = _state.value.activeProfile
+        _state.update { it.copy(data = loadingModel(profile)) }
+        connectRows(profile)
+    }
+
+    private fun connectRows(profile: FamilyMember) {
+        val source = rowSource ?: return
+        rowJob?.cancel()
+        cachedModel = null
+        liveModel = null
+        liveUnauthorized = false
+        rowJob =
+            viewModelScope.launch {
+                launch {
+                    source.observe(profile).collect { cached ->
+                        cachedModel = cached
+                        _state.update { current ->
+                            if (current.activeProfile != profile) {
+                                current
+                            } else {
+                                val unauthorized = liveUnauthorized || cached.staleAuthorization
+                                val live = liveModel
+                                current.copy(
+                                    data =
+                                        when {
+                                            live == null -> cached.data
+                                            unauthorized -> live
+                                            else -> live.withCacheFallback(cached.data)
+                                        },
+                                    staleAuthorization = unauthorized,
+                                )
+                            }
+                        }
+                    }
+                }
+                val loaded = source.load(profile)
+                liveModel = loaded.data
+                liveUnauthorized = loaded.unauthorized
+                _state.update { current ->
+                    if (current.activeProfile != profile) {
+                        current
+                    } else {
+                        val cached = cachedModel?.takeUnless { loaded.unauthorized }
+                        current.copy(
+                            data = loaded.data.withCacheFallback(cached?.data),
+                            staleAuthorization = loaded.unauthorized,
+                            now = clock(),
+                        )
+                    }
+                }
+            }
+    }
+}
+
+private fun loadingModel(profile: FamilyMember): ReadModel {
+    val empty = Fixtures.envelope(profile, Freshness.EMPTY)
+    fun <T> loading(slice: com.sats21m.vogelvault.domain.Slice<T>) =
+        slice.copy(status = Freshness.LOADING, source = "Convex rows", updatedAt = null)
+    return empty.copy(
+        transactions = loading(empty.transactions),
+        budget = loading(empty.budget),
+        btcAccounts = loading(empty.btcAccounts),
+        btcBuys = loading(empty.btcBuys),
+        todos = loading(empty.todos),
+        btcPriceCents = 0L,
+    )
+}
+
+private fun ReadModel.withCacheFallback(cached: ReadModel?): ReadModel {
+    if (cached == null) return this
+
+    fun <T> com.sats21m.vogelvault.domain.Slice<T>.fallbackTo(
+        fallback: com.sats21m.vogelvault.domain.Slice<T>,
+    ) = if (status == Freshness.ERROR && fallback.status == Freshness.STALE) fallback else this
+
+    return copy(
+        transactions = transactions.fallbackTo(cached.transactions),
+        budget = budget.fallbackTo(cached.budget),
+        btcAccounts = btcAccounts.fallbackTo(cached.btcAccounts),
+        btcBuys = btcBuys.fallbackTo(cached.btcBuys),
+        todos = todos.fallbackTo(cached.todos),
+    )
 }

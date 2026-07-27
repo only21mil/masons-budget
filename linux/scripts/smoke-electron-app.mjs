@@ -21,8 +21,11 @@ import { app } from "electron"
 
 // fileURLToPath, not URL.pathname: a checkout under a path with a space would
 // otherwise resolve to a percent-encoded directory that does not exist.
-const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
-const mainEntry = path.join(root, "dist-electron", "main.js")
+const harnessRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
+// The normal smoke imports the current build. The packaged smoke points this at
+// an app.asar extracted from the AppImage, so the exact shipped payload runs.
+const appRoot = process.env.VV_SMOKE_APP_ROOT ? path.resolve(process.env.VV_SMOKE_APP_ROOT) : harnessRoot
+const mainEntry = path.join(appRoot, "dist-electron", "main.js")
 
 const reportPath = process.env.VV_SMOKE_REPORT
 const outDir = process.env.VV_SMOKE_OUT_DIR
@@ -43,13 +46,25 @@ const EXPECTED = {
   breakpointHoldsAt: 1366,
   minWidth: 1100,
   minHeight: 700,
-  bridgeKeys: ["exportCsv", "getRuntimeInfo"],
+  bridgeKeys: ["exportCsv", "getRemoteSnapshot", "getRuntimeInfo", "queryConvexRows"],
 }
 
 const checks = []
 const rendererConsoleErrors = []
 const mainProcessErrors = []
+const networkAttempts = []
 const artifacts = []
+
+// Packaged smoke is intentionally offline. The renderer already has every
+// request denied by main.ts; this trap covers the main process's only network
+// primitive and turns any attempted Convex read into a named failed check.
+if (process.env.VV_SMOKE_DENY_NETWORK === "1") {
+  globalThis.fetch = async (input) => {
+    const target = typeof input === "string" ? input : (input?.url ?? String(input))
+    networkAttempts.push(target)
+    throw new Error(`packaged smoke blocked network access to ${target}`)
+  }
+}
 
 function record(name, ok, detail) {
   checks.push({ name, ok, detail })
@@ -362,6 +377,13 @@ async function finish() {
   finishing = true
   clearTimeout(watchdog)
 
+  if (process.env.VV_SMOKE_DENY_NETWORK === "1") {
+    record(
+      "packaged smoke made no main-process network requests",
+      networkAttempts.length === 0,
+      networkAttempts.slice(0, 3).join(" | "),
+    )
+  }
   record("no renderer console errors", rendererConsoleErrors.length === 0, rendererConsoleErrors.slice(0, 3).join(" | "))
   record("no main-process errors", mainProcessErrors.length === 0, mainProcessErrors.slice(0, 2).join(" | "))
 
@@ -374,6 +396,7 @@ async function finish() {
     checks,
     rendererConsoleErrors,
     mainProcessErrors,
+    networkAttempts,
     artifacts,
     runtime: {
       electron: process.versions.electron,

@@ -8,7 +8,7 @@ struct AddTransactionView: View {
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
-    @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
+    @Query private var categories: [BudgetCategory]
 
     @State private var txType: TxType = .spend
     @State private var inputUnit: DisplayUnit = .usd
@@ -23,8 +23,40 @@ struct AddTransactionView: View {
         BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
     }
 
-    private var activeMember: FamilyMember {
-        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    init() {
+        let storedOwner = UserDefaults.standard.string(forKey: "selected_family_member")
+            ?? FamilyMember.victor.rawValue
+
+        if let member = FamilyMember(rawValue: storedOwner), member.isAdult {
+            let victor = FamilyMember.victor.rawValue
+            let rachel = FamilyMember.rachel.rawValue
+            _categories = Query(
+                filter: #Predicate<BudgetCategory> { category in
+                    category.owner == victor || category.owner == rachel
+                },
+                sort: [SortDescriptor(\BudgetCategory.sortOrder)],
+            )
+        } else {
+            let owner = FamilyMember(rawValue: storedOwner)?.rawValue ?? "__invalid_owner__"
+            _categories = Query(
+                filter: #Predicate<BudgetCategory> { category in
+                    category.owner == owner
+                },
+                sort: [SortDescriptor(\BudgetCategory.sortOrder)],
+            )
+        }
+    }
+
+    private var activeMember: FamilyMember? {
+        FamilyMember(rawValue: selectedMemberRaw)
+    }
+
+    private var scopedCategories: [BudgetCategory] {
+        guard let activeMember else { return [] }
+        return categories.filter { category in
+            guard let categoryOwner = FamilyMember(rawValue: category.owner) else { return false }
+            return activeMember.sharesNetWorth(with: categoryOwner)
+        }
     }
 
     enum TxType: String, CaseIterable {
@@ -107,7 +139,12 @@ struct AddTransactionView: View {
     private var typeSegment: some View {
         HStack(spacing: 0) {
             ForEach(TxType.allCases, id: \.self) { t in
-                Button { txType = t } label: {
+                Button {
+                    if txType != t {
+                        txType = t
+                        selectedCategory = ""
+                    }
+                } label: {
                     Text(t.rawValue)
                         .font(AppFont.label)
                         .foregroundStyle(txType == t ? theme.text : theme.textMuted)
@@ -235,7 +272,10 @@ struct AddTransactionView: View {
             } else {
                 fieldRow(label: "Category") {
                     Menu {
-                        ForEach(categories.filter { !$0.isIncome }, id: \.name) { cat in
+                        ForEach(
+                            scopedCategories.filter { txType == .income ? $0.isIncome : !$0.isIncome },
+                            id: \.name,
+                        ) { cat in
                             Button {
                                 selectedCategory = cat.name
                             } label: {
@@ -245,7 +285,7 @@ struct AddTransactionView: View {
                     } label: {
                         HStack(spacing: 8) {
                             if !selectedCategory.isEmpty {
-                                let cat = categories.first(where: { $0.name == selectedCategory })
+                                let cat = scopedCategories.first(where: { $0.name == selectedCategory })
                                 CatGlyphView(kind: cat?.icon ?? "wrench", size: 11, color: .white)
                                     .frame(width: 18, height: 18)
                                     .background(theme.accent)
@@ -360,8 +400,13 @@ struct AddTransactionView: View {
     // MARK: - Save
 
     private func saveTransaction() {
+        guard let activeMember else {
+            amountValidationMessage = "Select a valid family profile"
+            return
+        }
+
         if txType == .btcBuy {
-            saveBTCBuy()
+            saveBTCBuy(owner: activeMember)
             return
         }
 
@@ -371,16 +416,19 @@ struct AddTransactionView: View {
             return
         }
 
-        let signedSatsDecimal = txType == .spend ? -abs(sats) : abs(sats)
+        let isIncome = txType == .income
+        let spendSign: Decimal = activeMember.isAdult ? -1 : 1
+        let signedSatsDecimal = isIncome ? abs(sats) : spendSign * abs(sats)
         let signedSats = signedSatsDecimal.clampedInt64
         let signedUsd = (Decimal(signedSats) / 100_000_000) * btcPrice
+        let transactionCategory = selectedCategory.isEmpty ? (isIncome ? "Income" : "Other") : selectedCategory
 
         let tx = Transaction(
             id: UUID().uuidString,
             date: Date(),
-            merchant: merchant.isEmpty ? (txType == .income ? "Income" : "Expense") : merchant,
+            merchant: merchant.isEmpty ? (isIncome ? "Income" : "Expense") : merchant,
             amount: signedUsd,
-            category: selectedCategory.isEmpty ? "Other" : selectedCategory,
+            category: transactionCategory,
             amountSats: signedSats,
             card: method == "Lightning" ? "lightning" : "on-chain",
             owner: activeMember,
@@ -392,7 +440,7 @@ struct AddTransactionView: View {
         dismiss()
     }
 
-    private func saveBTCBuy() {
+    private func saveBTCBuy(owner activeMember: FamilyMember) {
         let sats = roundedSats(from: abs(computedSats))
         guard sats > 0 else {
             amountValidationMessage = "Enter an amount"

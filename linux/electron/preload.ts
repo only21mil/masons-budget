@@ -27,9 +27,14 @@
 
 import { contextBridge, ipcRenderer } from "electron"
 
-import { CONVEX_READ_CHANNEL, CSV_EXPORT_CHANNEL } from "./ipcChannels.ts"
+import {
+  CONVEX_READ_CHANNEL,
+  CONVEX_ROWS_CHANNEL,
+  CSV_EXPORT_CHANNEL,
+} from "./ipcChannels.ts"
 import type { CsvExportRequest, CsvExportResult } from "./csvExport.ts"
 import type { RemoteSnapshotResult } from "./convexRead.ts"
+import type { VogelVaultRowRequest, VogelVaultRowResult } from "../shared/ipc.ts"
 
 declare const __APP_VERSION__: string
 
@@ -79,8 +84,14 @@ function getRemoteSnapshot(): Promise<RemoteSnapshotResult> {
   return ipcRenderer.invoke(CONVEX_READ_CHANNEL) as Promise<RemoteSnapshotResult>
 }
 
+/** One closed request union; main validates it again before any network use. */
+function queryConvexRows(request: VogelVaultRowRequest): Promise<VogelVaultRowResult> {
+  return ipcRenderer.invoke(CONVEX_ROWS_CHANNEL, request) as Promise<VogelVaultRowResult>
+}
+
 contextBridge.exposeInMainWorld("vogelVault", {
   getRuntimeInfo: (): RuntimeInfo => runtimeInfo,
   exportCsv,
   getRemoteSnapshot,
+  queryConvexRows,
 })

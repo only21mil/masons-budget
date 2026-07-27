@@ -110,9 +110,10 @@ final class MC2SyncService {
 
     private func syncTransactions(_ errors: inout [String]) async -> Int {
         do {
-            let dtos = try await reader.readTransactions()
-            let models = MC2Mapper.mapTransactions(dtos)
-            replaceTransactions(ownedBy: [.victor, .rachel], with: models)
+            let batch = try await reader.readTransactions(viewer: currentMember)
+            let models = MC2Mapper.mapTransactions(batch.value)
+            let owners = batch.replacementOwners.map { Array($0) } ?? [.victor, .rachel]
+            replaceTransactions(ownedBy: owners, with: models)
             return models.count
         } catch {
             log.error("Transactions sync failed: \(error.localizedDescription)")
@@ -123,7 +124,7 @@ final class MC2SyncService {
 
     private func syncBudget(_ errors: inout [String]) async -> Int {
         do {
-            let dto = try await reader.readBudget()
+            let dto = try await reader.readBudget(viewer: currentMember)
             let currentSnapshot = MC2Mapper.mapBudgetSnapshot(dto)
             let historicalSnapshots = MC2Mapper.mapMonthlyHistory(dto.monthlyHistory)
             let categories = MC2Mapper.mapBudgetCategories(dto.categories)
@@ -156,7 +157,7 @@ final class MC2SyncService {
 
     private func syncBTCBuys(_ errors: inout [String]) async -> Int {
         do {
-            let dtos = try await reader.readBTCBuys()
+            let dtos = try await reader.readBTCBuys(viewer: currentMember)
             let models = dtos.map { MC2Mapper.mapBTCBuy($0) }
             replaceBTCBuys(ownedBy: [.victor, .rachel], with: models)
             return models.count
@@ -169,7 +170,7 @@ final class MC2SyncService {
 
     private func syncBTCBillPays(_ errors: inout [String]) async -> Int {
         do {
-            let dtos = try await reader.readBTCBillPays()
+            let dtos = try await reader.readBTCBillPays(viewer: currentMember)
             let models = dtos.map { MC2Mapper.mapBTCBillPay($0) }
             replaceBTCBillPays(ownedBy: [.victor, .rachel], with: models)
             return models.count
@@ -182,9 +183,13 @@ final class MC2SyncService {
 
     private func syncTodos(_ errors: inout [String]) async -> Int {
         do {
-            let dtos = try await reader.readTodos()
-            let models = MC2Mapper.mapTodos(dtos, viewer: currentMember)
-            replaceTodos(visibleTo: currentMember, with: models)
+            let batch = try await reader.readTodos(viewer: currentMember)
+            let models = MC2Mapper.mapTodos(batch.value, viewer: currentMember)
+            replaceTodos(
+                visibleTo: currentMember,
+                with: models,
+                replacementOwners: batch.replacementOwners,
+            )
             return models.count
         } catch {
             log.error("Todos sync failed: \(error.localizedDescription)")
@@ -221,7 +226,7 @@ final class MC2SyncService {
 
     private func syncMasonBudget(_ errors: inout [String]) async -> Int {
         do {
-            let dto = try await reader.readMasonBudget()
+            let dto = try await reader.readMasonBudget(viewer: currentMember)
             let categories = MC2Mapper.mapBudgetCategories(dto.categories, owner: .mason)
             let snapshot = makeMasonSnapshot(from: dto)
 
@@ -268,7 +273,7 @@ final class MC2SyncService {
 
     private func syncMasonTransactions(_ errors: inout [String]) async -> Int {
         do {
-            let dtos = try await reader.readMasonTransactions()
+            let dtos = try await reader.readMasonTransactions(viewer: currentMember)
             let models = MC2Mapper.mapTransactions(dtos, owner: .mason)
             replaceTransactions(ownedBy: [.mason], with: models)
             return models.count
@@ -281,7 +286,7 @@ final class MC2SyncService {
 
     private func syncMasonBTCBuys(_ errors: inout [String]) async -> Int {
         do {
-            let dtos = try await reader.readMasonBTCBuys()
+            let dtos = try await reader.readMasonBTCBuys(viewer: currentMember)
             let models = dtos.map { MC2Mapper.mapBTCBuy($0, owner: .mason) }
             replaceBTCBuys(ownedBy: [.mason], with: models)
             return models.count
@@ -292,7 +297,7 @@ final class MC2SyncService {
         }
     }
 
-    private func recordNetWorthSnapshot() {
+    func recordNetWorthSnapshot() {
         do {
             // Only record one snapshot per day per member to avoid unbounded growth
             let cal = Calendar.current
@@ -315,12 +320,12 @@ final class MC2SyncService {
             let holdingAccounts = try context.fetch(FetchDescriptor<HoldingAccount>())
 
             let btcValue = btcAccounts
-                .filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
+                .filter { currentMember.sharesNetWorth(with: $0.ownerMember) }
                 .reduce(Decimal(0)) { $0 + $1.usdValue() }
             let vooPrice = StockPriceService.vooPrice
             let ibitPrice = StockPriceService.ibitPrice
             let holdingsValue = holdingAccounts
-                .filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
+                .filter { currentMember.sharesNetWorth(with: $0.ownerMember) }
                 .reduce(Decimal(0)) { $0 + $1.liveValue(vooPrice: vooPrice, ibitPrice: ibitPrice) }
 
             let snapshot = NetWorthSnapshot(
@@ -579,7 +584,11 @@ final class MC2SyncService {
         local.owner = remote.owner
     }
 
-    func replaceTodos(visibleTo _: FamilyMember, with remoteTodos: [TodoItem]) {
+    func replaceTodos(
+        visibleTo _: FamilyMember,
+        with remoteTodos: [TodoItem],
+        replacementOwners: Set<FamilyMember>? = nil,
+    ) {
         let existing: [TodoItem]
         do {
             existing = try context.fetch(FetchDescriptor<TodoItem>())
@@ -588,9 +597,11 @@ final class MC2SyncService {
             return
         }
 
-        // Reconcile only mc2-sourced todos for owners present in this payload.
-        // App-only todos and owners absent from the payload are untouched.
-        let remoteOwners = Set(remoteTodos.map(\.ownerMember))
+        // A complete row snapshot explicitly names its replacement scope, even
+        // when one owner currently has zero rows. Legacy payloads can only prove
+        // absence for owners actually present in the payload. App-only todos are
+        // untouched in either mode.
+        let remoteOwners = replacementOwners ?? Set(remoteTodos.map(\.ownerMember))
         let scopedMC2Local = existing.filter { $0.createdBy == "mc2" && remoteOwners.contains($0.ownerMember) }
         // Full id index across ALL existing rows so an insert can never collide with an
         // existing @Attribute(.unique) id (app-created or out-of-scope owner).

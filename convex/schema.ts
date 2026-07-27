@@ -69,6 +69,101 @@ export const custodyValidator = v.union(
   v.literal("self_custody"),
 );
 
+const balanceAmountsSatsValidator = v.object({
+  cashAppSats: v.optional(v.int64()),
+  coldcardSats: v.optional(v.int64()),
+  riverSats: v.optional(v.int64()),
+  strikeSats: v.optional(v.int64()),
+  zeusSats: v.optional(v.int64()),
+  totalSats: v.optional(v.int64()),
+});
+
+const btcSyncValidator = v.object({
+  anchorBalancesSats: balanceAmountsSatsValidator,
+  anchorDate: v.optional(v.string()),
+  anchorSource: v.optional(v.string()),
+  notes: v.optional(v.any()),
+  reconciledAt: v.optional(v.string()),
+  reconciledFromEvents: v.optional(v.any()),
+});
+
+const budgetCategoryValidator = v.object({
+  name: v.string(),
+  icon: v.optional(v.string()),
+  budgetCents: v.int64(),
+});
+
+const paycheckValidator = v.object({
+  date: v.string(),
+  platform: v.optional(v.string()),
+  source: v.optional(v.string()),
+  amountCents: v.int64(),
+  netCents: v.int64(),
+  note: v.optional(v.string()),
+});
+
+const budgetIncomeValidator = v.object({
+  weeklyGrossCents: v.int64(),
+  weeklyStrikeCents: v.int64(),
+  weeklyRiverCents: v.int64(),
+  payFrequency: v.optional(v.string()),
+  monthlyGrossCents: v.int64(),
+  mtdIncomeCents: v.int64(),
+  ytdIncomeCents: v.int64(),
+  paychecks: v.array(paycheckValidator),
+});
+
+const monthlyHistoryValidator = v.object({
+  month: v.string(),
+  incomeCents: v.int64(),
+  expensesCents: v.int64(),
+  savingsBps: v.int64(),
+});
+
+const btcBalanceAccountValidator = v.object({
+  key: v.string(),
+  label: v.string(),
+  custody: custodyValidator,
+  sats: v.int64(),
+  fiatCents: v.int64(),
+});
+
+const financeLotValidator = v.object({
+  date: v.string(),
+  type: v.string(),
+  pricePerShareCents: v.int64(),
+  // Shares are an exact quantity, not money. A decimal string preserves their
+  // lexical precision without introducing a floating-point field.
+  sharesDecimal: v.string(),
+  amountInvestedCents: v.int64(),
+  note: v.optional(v.string()),
+});
+
+const financeHoldingValidator = v.object({
+  name: v.string(),
+  category: v.string(),
+  ticker: v.optional(v.string()),
+  valueCents: v.int64(),
+  costBasisCents: v.int64(),
+  gainBps: v.int64(),
+  sharesDecimal: v.string(),
+  avgCostCents: v.int64(),
+  currentPricePerShareCents: v.int64(),
+  isProxy: v.boolean(),
+  proxyNote: v.optional(v.string()),
+  lots: v.array(financeLotValidator),
+});
+
+const financeAccountValidator = v.object({
+  key: v.string(),
+  owner: familyMemberValidator,
+  provider: v.string(),
+  totalValueCents: v.int64(),
+  weeklyContributionCents: v.int64(),
+  weeklyContributionDay: v.optional(v.string()),
+  holdings: v.array(financeHoldingValidator),
+});
+
 export default defineSchema({
   // ── Core data store ──
   // Each MC2 JSON file maps to one document.
@@ -161,9 +256,36 @@ export default defineSchema({
   })
     .index("by_source_tx_id", ["sourceFile", "txId"]) // upsert / dedupe
     .index("by_owner_month", ["owner", "month"]) // budget month, one owner
+    .index("by_owner_month_date", ["owner", "month", "date"])
     .index("by_owner_date", ["owner", "date"]) // activity feed, one owner
     .index("by_month", ["month"]) // budget month, whole household
     .index("by_date", ["date"]), // activity feed, whole household
+
+  // ── Income ──
+  // The legacy `income` blob is a row collection, not a budget document. Its
+  // records use the same source-key/provenance treatment as transactions while
+  // keeping USD as integer cents.
+  income: defineTable({
+    sourceKey: v.string(),
+    incomeId: v.string(),
+    owner: familyMemberValidator,
+    date: v.string(),
+    month: v.string(),
+    amountCents: v.int64(),
+    source: v.string(),
+    loggedBy: v.optional(v.string()),
+    note: v.optional(v.string()),
+    archimedesRequestId: v.optional(v.string()),
+    sourceFile: v.literal("income"),
+    updatedAtMs: v.float64(),
+    // Required, not optional: this is the canonical round-trip proof.
+    raw: v.any(),
+    migrationSourceIndex: v.float64(),
+  })
+    .index("by_source_key", ["sourceFile", "sourceKey"])
+    .index("by_owner_month", ["owner", "month"])
+    .index("by_owner_date", ["owner", "date"])
+    .index("by_date", ["date"]),
 
   // ── Todos ──
   todos: defineTable({
@@ -223,6 +345,7 @@ export default defineSchema({
     .index("by_source_buy_id", ["sourceFile", "buyId"])
     .index("by_owner_date", ["owner", "date"])
     .index("by_owner_month", ["owner", "month"])
+    .index("by_owner_month_date", ["owner", "month", "date"])
     .index("by_date", ["date"]),
 
   // ── Bitcoin bill payments ──
@@ -250,6 +373,7 @@ export default defineSchema({
     .index("by_source_bill_pay_id", ["sourceFile", "billPayId"])
     .index("by_owner_date", ["owner", "date"])
     .index("by_owner_month", ["owner", "month"])
+    .index("by_owner_month_date", ["owner", "month", "date"])
     .index("by_date", ["date"]),
 
   // ── Bitcoin accounts (balance snapshot) ──
@@ -272,4 +396,102 @@ export default defineSchema({
     .index("by_owner_key", ["owner", "key"]) // upsert / dedupe
     .index("by_owner_custody", ["owner", "custody"])
     .index("by_key", ["key"]),
+
+  // ── Legacy balances document ──
+  // Unlike btcAccounts, `balances` is one adult-household document with
+  // reconciliation state. The indexed owner is the visibility boundary: adult
+  // viewers share it, while child rows (if a separate source is ever modelled)
+  // cannot enter an adult net-worth query.
+  balanceDocuments: defineTable({
+    sourceFile: v.literal("balances"),
+    owner: familyMemberValidator,
+    cashAppSats: v.int64(),
+    coldcardSats: v.int64(),
+    riverSats: v.int64(),
+    strikeSats: v.int64(),
+    zeusSats: v.int64(),
+    totalSats: v.int64(),
+    cashAppFiatCents: v.optional(v.int64()),
+    coldcardFiatCents: v.optional(v.int64()),
+    riverFiatCents: v.optional(v.int64()),
+    strikeFiatCents: v.optional(v.int64()),
+    zeusFiatCents: v.optional(v.int64()),
+    totalFiatCents: v.optional(v.int64()),
+    lastRefreshed: v.string(),
+    btcSync: btcSyncValidator,
+    updatedAtMs: v.float64(),
+    // Carries every source field byte-for-byte at the decoded JSON boundary.
+    raw: v.any(),
+    migrationSourceIndex: v.float64(),
+  })
+    .index("by_source_file", ["sourceFile"])
+    .index("by_owner", ["owner"]),
+
+  // ── Atomic budget documents ──
+  // `budget` and `mason-budget` are single objects, not row collections. One
+  // typed table row therefore replaces one complete source object. Reported
+  // category spend is intentionally absent: spend is derived from the matching
+  // month's transaction rows.
+  budgetDocuments: defineTable({
+    sourceFile: v.union(v.literal("budget"), v.literal("mason-budget")),
+    owner: familyMemberValidator,
+    month: v.string(),
+    coinbaseOneBalanceCents: v.int64(),
+    categories: v.array(budgetCategoryValidator),
+    effectiveApr: v.optional(v.string()),
+    strategyNote: v.optional(v.string()),
+    income: v.optional(budgetIncomeValidator),
+    mtdIncomeCents: v.int64(),
+    ytdIncomeCents: v.int64(),
+    monthlyHistory: v.array(monthlyHistoryValidator),
+    allowance: v.optional(
+      v.object({
+        weeklyCents: v.int64(),
+        source: v.string(),
+      }),
+    ),
+    updatedAtMs: v.float64(),
+  })
+    .index("by_source_file", ["sourceFile"])
+    .index("by_owner", ["owner"]),
+
+  // ── Atomic BTC balance documents ──
+  // The adult snapshot and Mason's son-balances object share one normalized
+  // typed shape, but remain separate rows with closed owners. Query scope can
+  // therefore make Mason visible to adults without ever including him in an
+  // adult net-worth response.
+  btcBalanceDocuments: defineTable({
+    sourceFile: v.union(
+      v.literal("btc-balance-snapshot"),
+      v.literal("son-balances"),
+    ),
+    owner: familyMemberValidator,
+    schemaVersion: v.int64(),
+    asOf: v.string(),
+    accounts: v.array(btcBalanceAccountValidator),
+    totals: v.object({
+      sats: v.int64(),
+      fiatCents: v.int64(),
+      exchangeSats: v.int64(),
+      selfCustodySats: v.int64(),
+    }),
+    source: v.optional(v.string()),
+    basis: v.optional(v.string()),
+    confidence: v.optional(v.string()),
+    updatedAtMs: v.float64(),
+  })
+    .index("by_source_file", ["sourceFile"])
+    .index("by_owner", ["owner"]),
+
+  // ── Atomic finances document ──
+  // `finances` is one source object containing accounts owned by more than one
+  // family member. Owners stay on the nested accounts as the closed union; the
+  // public query filters those accounts before returning the document.
+  financeDocuments: defineTable({
+    sourceFile: v.literal("finances"),
+    lastUpdated: v.string(),
+    retirementTotalCents: v.optional(v.int64()),
+    accounts: v.array(financeAccountValidator),
+    updatedAtMs: v.float64(),
+  }).index("by_source_file", ["sourceFile"]),
 });

@@ -65,24 +65,33 @@ data class Transaction(
     val card: String? = null,
     val note: String? = null,
     override val owner: FamilyMember,
-) : Owned
-
-/**
- * Spend magnitude in cents.
- *
- * Adult MC2 files sign spending negative and income positive. The child files
- * record spending as a POSITIVE magnitude — so keying off the sign alone renders
- * a child's spending as income. Taking the magnitude of anything that is not an
- * Income row reproduces the Swift behaviour on both shapes.
- */
-val Transaction.spendAmount: Long
-    get() = if (category == "Income") 0L else kotlin.math.abs(amount)
+    /**
+     * Signed contribution to budget actuals.
+     *
+     * Income contributes zero; adult rows negate [amount], while child rows use
+     * [amount] directly. Positive values are spend and negative values are
+     * credits. Row responses provide this value directly; legacy fixtures derive
+     * the same contract from [amount] and [owner].
+     */
+    val spendAmount: Long =
+        if (category == "Income") 0L else if (owner.isAdult) -amount else amount,
+    /** Stable rendering magnitude; never used for budget maths. */
+    val displaySpendAmount: Long = kotlin.math.abs(spendAmount),
+) : Owned {
+    /**
+     * A valid refund or a corrupt wrong-sign legacy row. Reads cannot
+     * distinguish those cases because legacy rows do not persist write-side
+     * kind.
+     */
+    val hasOppositeSpendSign: Boolean
+        get() = spendAmount < 0L
+}
 
 val Transaction.incomeAmount: Long
     get() = if (category == "Income" && amount > 0L) amount else 0L
 
 val Transaction.isSpend: Boolean
-    get() = spendAmount > 0L
+    get() = category != "Income" && amount != 0L
 
 // ── Budget ──────────────────────────────────────────────────────────────────
 
@@ -196,6 +205,28 @@ data class ReadModel(
 // (BudgetView.monthTransactions); this gives Android the same rule instead of
 // trusting the precomputed `spent` field MC2 reports.
 
+/**
+ * Transactions that contribute to [viewer]'s budget.
+ *
+ * Adults retain wide visibility for oversight, but their household budget follows
+ * the narrower net-worth-sharing rule: Victor and Rachel share one budget while
+ * child spending stays out of their totals. A child budget remains self-only.
+ */
+fun List<Transaction>.budgetTransactionsFor(viewer: FamilyMember): List<Transaction> =
+    if (viewer.isAdult) netWorthScopeFor(viewer) else visibleTo(viewer)
+
+/** Months that can contribute to [viewer]'s budget, newest first. */
+fun List<Transaction>.budgetMonthsFor(viewer: FamilyMember, budgetMonth: String?): List<String> {
+    val present = budgetTransactionsFor(viewer).monthsPresent()
+    return (listOfNotNull(budgetMonth) + present).distinct().sortedDescending()
+}
+
+/** Resolve a persisted selection against the months still valid for this budget. */
+fun resolveBudgetMonth(selected: String?, months: List<String>, budgetMonth: String?): String? =
+    selected?.takeIf { it in months }
+        ?: budgetMonth?.takeIf { it in months }
+        ?: months.firstOrNull()
+
 /** Month a transaction belongs to, as `yyyy-MM`.
  *
  * MC2 dates are ISO `yyyy-MM-dd`, so the month is a prefix — no date parsing and
@@ -247,9 +278,10 @@ data class BudgetSpend(
 fun deriveBudgetSpend(budget: Budget, transactions: List<Transaction>): BudgetSpend {
     val spentByCategory = mutableMapOf<String, Long>()
     for (transaction in transactions.inMonth(budget.month)) {
-        val spend = transaction.spendAmount
-        if (spend == 0L) continue
-        spentByCategory[transaction.category] = (spentByCategory[transaction.category] ?: 0L) + spend
+        val contribution = transaction.spendAmount
+        if (contribution == 0L) continue
+        spentByCategory[transaction.category] =
+            (spentByCategory[transaction.category] ?: 0L) + contribution
     }
 
     val categories = budget.categories.map { category ->

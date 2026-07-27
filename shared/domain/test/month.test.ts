@@ -6,12 +6,18 @@
 // for the shared contract so the Linux and Android clients cannot drift from it.
 
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
 import { test } from "node:test"
+import { fileURLToPath } from "node:url"
 
+import type { FamilyMember } from "../src/family.ts"
 import { parseCents } from "../src/money.ts"
 import {
   type Budget,
   type Transaction,
+  budgetMonthsFor,
+  budgetTransactionsFor,
   deriveBudgetSpend,
   isInMonth,
   monthOf,
@@ -52,6 +58,39 @@ function budget(month: string, categories: Array<[string, string]>): Budget {
     owner: "victor",
   }
 }
+
+interface MonthFixtureTransaction {
+  id: string
+  date: string
+  merchant: string
+  amount: string
+  category: string
+  owner: FamilyMember
+}
+
+interface MonthProfileCase {
+  viewer: FamilyMember
+  budgetMonth: string | null
+  expectedOwners: FamilyMember[]
+  expectedMonths: string[]
+  spendByMonth: Record<string, string>
+}
+
+interface MonthFixtures {
+  transactions: MonthFixtureTransaction[]
+  profiles: MonthProfileCase[]
+}
+
+const here = dirname(fileURLToPath(import.meta.url))
+const monthFixtures = JSON.parse(
+  readFileSync(join(here, "..", "fixtures", "month-cases.json"), "utf8"),
+) as MonthFixtures
+const ownerTransactions: Transaction[] = monthFixtures.transactions.map((transaction) => ({
+  ...transaction,
+  amount: parseCents(transaction.amount),
+  card: null,
+  note: null,
+}))
 
 // ── monthOf ─────────────────────────────────────────────────────────────────
 
@@ -109,6 +148,37 @@ test("isInMonth agrees with transactionsInMonth", () => {
 test("monthsPresent lists distinct months newest first", () => {
   assert.deepEqual(monthsPresent(MIXED), ["2026-08", "2026-07", "2026-06", "2026-05"])
   assert.deepEqual(monthsPresent([]), [])
+})
+
+test("shared owner vectors define which transactions contribute to each budget", () => {
+  for (const profile of monthFixtures.profiles) {
+    const scoped = budgetTransactionsFor(profile.viewer, ownerTransactions)
+    assert.deepEqual(
+      [...new Set(scoped.map((transaction) => transaction.owner))],
+      profile.expectedOwners,
+      `${profile.viewer} budget owners`,
+    )
+  }
+})
+
+test("shared month vectors exclude child-only months from adult budget choices", () => {
+  for (const profile of monthFixtures.profiles) {
+    assert.deepEqual(
+      budgetMonthsFor(profile.viewer, ownerTransactions, profile.budgetMonth),
+      profile.expectedMonths,
+      `${profile.viewer} budget months`,
+    )
+  }
+})
+
+test("shared month vectors preserve month derivation inside each owner scope", () => {
+  for (const profile of monthFixtures.profiles) {
+    const scoped = budgetTransactionsFor(profile.viewer, ownerTransactions)
+    for (const [month, expected] of Object.entries(profile.spendByMonth)) {
+      const result = deriveBudgetSpend(budget(month, [["Spending", "1000"]]), scoped)
+      assert.equal(result.actual, parseCents(expected), `${profile.viewer} ${month} spend`)
+    }
+  }
 })
 
 // ── deriveBudgetSpend ───────────────────────────────────────────────────────
