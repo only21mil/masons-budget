@@ -1458,7 +1458,21 @@ export const migrateFile = internalMutation({
 
       if (existing === undefined) {
         inserted += 1;
-        if (apply) await ctx.db.insert(source.table, doc);
+        // CORRELATED-UNION CAST, and the only one in this file. `projectFile`
+        // returns Record<string, unknown> because it projects five different
+        // table shapes; TypeScript cannot tie `source.table` to the matching
+        // document type across that union, so it widens to the union of all
+        // five and rejects the call. The shape is NOT unchecked: Convex
+        // validates every insert against the schema at runtime and rejects a
+        // wrong one, and the three-way verification (row count, exact summed
+        // money, canonical round-trip) runs against the stored rows before the
+        // mutation commits. Narrow the cast, never widen it to `any`.
+        if (apply) {
+          await ctx.db.insert(
+            source.table,
+            doc as Parameters<typeof ctx.db.insert>[1],
+          );
+        }
         continue;
       }
 
@@ -1468,7 +1482,14 @@ export const migrateFile = internalMutation({
       }
 
       updated += 1;
-      if (apply) await ctx.db.patch(existing._id, doc);
+      // Same correlated-union limitation as the insert above; `existing` came
+      // from readMigrated, which returns the same loose row shape.
+      if (apply) {
+        await ctx.db.patch(
+          existing._id as Parameters<typeof ctx.db.patch>[0],
+          doc as Parameters<typeof ctx.db.patch>[1],
+        );
+      }
     }
 
     const done = end >= docs.length;
