@@ -13,9 +13,12 @@
 //   - whole-file replace means no per-record history on what is now the only
 //     copy of the family's financial record.
 //
-// This file is the row-shaped runtime API: queries and mutations over
-// `transactions`, `todos`, `btcBuys` and `btcAccounts`. The one-shot backfill
-// lives separately in convex/migrate.ts as an internal-only, dry-run-first path.
+// This file is the typed runtime API: queries and mutations over row collections
+// (`transactions`, `todos`, `btcBuys`, `btcAccounts`) plus read queries over the
+// atomic budget, BTC-balance and finance document tables. The one-shot backfill
+// lives separately in convex/migrate.ts as an internal-only, dry-run-first path;
+// document-shaped projection logic lives in convex/documentProjection.ts so the
+// migration lane can wire it without colliding with this file.
 //
 // WHAT THIS FILE DELIBERATELY DOES NOT DO
 //
@@ -296,14 +299,6 @@ function optionalText(value: unknown): string | undefined {
   return text === "" ? undefined : text;
 }
 
-function asRecordArray(value: unknown): Record<string, unknown>[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter(
-    (entry): entry is Record<string, unknown> =>
-      typeof entry === "object" && entry !== null && !Array.isArray(entry),
-  );
-}
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -517,63 +512,208 @@ function projectBtcAccount(row: {
   };
 }
 
-function projectBudgetDocument(
-  raw: Record<string, unknown>,
-  owner: FamilyMember,
-  updatedAtMs: number,
-) {
-  const strategy = asRecord(raw.strategy);
-  const income = asRecord(raw.income);
+function publicBudgetDocument(row: {
+  owner: FamilyMember;
+  month: string;
+  coinbaseOneBalanceCents: bigint;
+  categories: Array<{
+    name: string;
+    icon?: string;
+    budgetCents: bigint;
+  }>;
+  effectiveApr?: string;
+  strategyNote?: string;
+  income?: {
+    weeklyGrossCents: bigint;
+    weeklyStrikeCents: bigint;
+    weeklyRiverCents: bigint;
+    payFrequency?: string;
+    monthlyGrossCents: bigint;
+    mtdIncomeCents: bigint;
+    ytdIncomeCents: bigint;
+    paychecks: Array<{
+      date: string;
+      platform?: string;
+      source?: string;
+      amountCents: bigint;
+      netCents: bigint;
+      note?: string;
+    }>;
+  };
+  mtdIncomeCents: bigint;
+  ytdIncomeCents: bigint;
+  monthlyHistory: Array<{
+    month: string;
+    incomeCents: bigint;
+    expensesCents: bigint;
+    savingsBps: bigint;
+  }>;
+  allowance?: {
+    weeklyCents: bigint;
+    source: string;
+  };
+  updatedAtMs: number;
+}) {
   return {
-    owner,
-    month: String(raw.month ?? ""),
-    coinbaseOneBalanceCents: parseCents(raw.coinbase_one_balance),
-    // Reported category spend is deliberately not public. Budget spend is
-    // derived from the month-scoped transaction snapshot in every client.
-    categories: asRecordArray(raw.categories).map((entry) => ({
-      name: String(entry.name ?? ""),
-      icon: optionalText(entry.icon),
-      budgetCents: parseCents(entry.budget),
+    owner: row.owner,
+    month: row.month,
+    coinbaseOneBalanceCents: row.coinbaseOneBalanceCents,
+    categories: row.categories.map((category) => ({
+      name: category.name,
+      icon: category.icon,
+      budgetCents: category.budgetCents,
     })),
-    effectiveApr: strategy ? optionalText(strategy.effective_apr) : undefined,
-    strategyNote: strategy ? optionalText(strategy.strategy_note) : undefined,
-    income: income
+    effectiveApr: row.effectiveApr,
+    strategyNote: row.strategyNote,
+    income: row.income
       ? {
-          weeklyGrossCents: parseCents(income.weekly_gross),
-          weeklyStrikeCents: parseCents(income.weekly_strike),
-          weeklyRiverCents: parseCents(income.weekly_river),
-          payFrequency: optionalText(income.pay_frequency),
-          monthlyGrossCents: parseCents(income.monthly_gross),
-          mtdIncomeCents: parseCents(income.mtd_income),
-          ytdIncomeCents: parseCents(income.ytd_income),
-          paychecks: asRecordArray(income.paychecks).map((entry) => ({
-            date: String(entry.date ?? ""),
-            platform: optionalText(entry.platform),
-            source: optionalText(entry.source),
-            amountCents: parseCents(entry.amount),
-            netCents: parseCents(entry.net),
-            note: optionalText(entry.note),
+          weeklyGrossCents: row.income.weeklyGrossCents,
+          weeklyStrikeCents: row.income.weeklyStrikeCents,
+          weeklyRiverCents: row.income.weeklyRiverCents,
+          payFrequency: row.income.payFrequency,
+          monthlyGrossCents: row.income.monthlyGrossCents,
+          mtdIncomeCents: row.income.mtdIncomeCents,
+          ytdIncomeCents: row.income.ytdIncomeCents,
+          paychecks: row.income.paychecks.map((paycheck) => ({
+            date: paycheck.date,
+            platform: paycheck.platform,
+            source: paycheck.source,
+            amountCents: paycheck.amountCents,
+            netCents: paycheck.netCents,
+            note: paycheck.note,
           })),
         }
       : undefined,
-    mtdIncomeCents: parseCents(raw.mtd_income),
-    ytdIncomeCents: parseCents(raw.ytd_income),
-    monthlyHistory: asRecordArray(raw.monthly_history).map((entry) => ({
-      month: String(entry.month ?? ""),
-      incomeCents: parseCents(entry.income),
-      expensesCents: parseCents(entry.expenses),
-      savingsBps: Number(parseCents(entry.savings_pct)),
+    mtdIncomeCents: row.mtdIncomeCents,
+    ytdIncomeCents: row.ytdIncomeCents,
+    monthlyHistory: row.monthlyHistory.map((entry) => ({
+      month: entry.month,
+      incomeCents: entry.incomeCents,
+      expensesCents: entry.expensesCents,
+      savingsBps: entry.savingsBps,
     })),
-    updatedAtMs,
+    allowance: row.allowance
+      ? {
+          weeklyCents: row.allowance.weeklyCents,
+          source: row.allowance.source,
+        }
+      : undefined,
+    updatedAtMs: row.updatedAtMs,
   };
 }
 
-function budgetSourceFor(viewer: FamilyMember): {
-  name: string;
+function publicBtcBalanceDocument(row: {
   owner: FamilyMember;
-} {
-  if (isAdult(viewer)) return { name: "budget", owner: DEFAULT_OWNER };
-  return { name: `${viewer}-budget`, owner: viewer };
+  schemaVersion: bigint;
+  asOf: string;
+  accounts: Array<{
+    key: string;
+    label: string;
+    custody: "exchange" | "self_custody";
+    sats: bigint;
+    fiatCents: bigint;
+  }>;
+  totals: {
+    sats: bigint;
+    fiatCents: bigint;
+    exchangeSats: bigint;
+    selfCustodySats: bigint;
+  };
+  source?: string;
+  basis?: string;
+  confidence?: string;
+  updatedAtMs: number;
+}) {
+  return {
+    owner: row.owner,
+    schemaVersion: row.schemaVersion,
+    asOf: row.asOf,
+    accounts: row.accounts.map((account) => ({
+      key: account.key,
+      label: account.label,
+      custody: account.custody,
+      sats: account.sats,
+      fiatCents: account.fiatCents,
+    })),
+    totals: {
+      sats: row.totals.sats,
+      fiatCents: row.totals.fiatCents,
+      exchangeSats: row.totals.exchangeSats,
+      selfCustodySats: row.totals.selfCustodySats,
+    },
+    source: row.source,
+    basis: row.basis,
+    confidence: row.confidence,
+    updatedAtMs: row.updatedAtMs,
+  };
+}
+
+function publicFinanceAccount(row: {
+  key: string;
+  owner: FamilyMember;
+  provider: string;
+  totalValueCents: bigint;
+  weeklyContributionCents: bigint;
+  weeklyContributionDay?: string;
+  holdings: Array<{
+    name: string;
+    category: string;
+    ticker?: string;
+    valueCents: bigint;
+    costBasisCents: bigint;
+    gainBps: bigint;
+    sharesDecimal: string;
+    avgCostCents: bigint;
+    currentPricePerShareCents: bigint;
+    isProxy: boolean;
+    proxyNote?: string;
+    lots: Array<{
+      date: string;
+      type: string;
+      pricePerShareCents: bigint;
+      sharesDecimal: string;
+      amountInvestedCents: bigint;
+      note?: string;
+    }>;
+  }>;
+}) {
+  return {
+    key: row.key,
+    owner: row.owner,
+    provider: row.provider,
+    totalValueCents: row.totalValueCents,
+    weeklyContributionCents: row.weeklyContributionCents,
+    weeklyContributionDay: row.weeklyContributionDay,
+    holdings: row.holdings.map((holding) => ({
+      name: holding.name,
+      category: holding.category,
+      ticker: holding.ticker,
+      valueCents: holding.valueCents,
+      costBasisCents: holding.costBasisCents,
+      gainBps: holding.gainBps,
+      sharesDecimal: holding.sharesDecimal,
+      avgCostCents: holding.avgCostCents,
+      currentPricePerShareCents: holding.currentPricePerShareCents,
+      isProxy: holding.isProxy,
+      proxyNote: holding.proxyNote,
+      lots: holding.lots.map((lot) => ({
+        date: lot.date,
+        type: lot.type,
+        pricePerShareCents: lot.pricePerShareCents,
+        sharesDecimal: lot.sharesDecimal,
+        amountInvestedCents: lot.amountInvestedCents,
+        note: lot.note,
+      })),
+    })),
+  };
+}
+
+function budgetSourceFor(
+  viewer: FamilyMember,
+): "budget" | "mason-budget" | null {
+  if (isAdult(viewer)) return "budget";
+  if (viewer === "mason") return "mason-budget";
+  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -802,7 +942,7 @@ export const listBtcAccounts = query({
 });
 
 /**
- * Typed budget document from the still-authoritative document-shaped blob.
+ * Typed budget document from the atomic typed table.
  *
  * Budget is a net-worth concern, so callers must pass the literal `netWorth` at
  * the call site. Adults receive the shared household document (canonically owned
@@ -818,24 +958,51 @@ export const getBudgetDocument = query({
   handler: async (ctx, { viewer, token }) => {
     validateReadToken(token);
     const source = budgetSourceFor(viewer);
+    if (source === null) return { document: null, complete: true };
     const doc = await ctx.db
-      .query("dataFiles")
-      .withIndex("by_name", (q) => q.eq("name", source.name))
-      .first();
-    const raw = doc ? asRecord(doc.data) : null;
+      .query("budgetDocuments")
+      .withIndex("by_source_file", (q) => q.eq("sourceFile", source))
+      .unique();
     return {
-      document: raw
-        ? projectBudgetDocument(raw, source.owner, doc?.updatedAt ?? 0)
-        : null,
+      document: doc ? publicBudgetDocument(doc) : null,
       complete: true,
     };
   },
 });
 
 /**
- * Freshness and source metadata for the document-shaped BTC snapshots.
- * Account values remain in listBtcAccounts; this query does not expose the raw
- * blob or its Convex document fields.
+ * Complete typed BTC balance documents, explicitly scoped for visibility or
+ * net worth. An adult visible read includes Mason for oversight; an adult
+ * net-worth read cannot reach Mason's son-balances row.
+ */
+export const listBtcBalanceDocuments = query({
+  args: {
+    viewer: familyMemberValidator,
+    scope: scopeValidator,
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { viewer, scope, token }) => {
+    validateReadToken(token);
+    const owners = ownersInScope(viewer, scope);
+    const rows = (
+      await Promise.all(
+        owners.map((owner) =>
+          ctx.db
+            .query("btcBalanceDocuments")
+            .withIndex("by_owner", (q) => q.eq("owner", owner))
+            .collect(),
+        ),
+      )
+    ).flat();
+
+    rows.sort((a, b) => (a.owner < b.owner ? -1 : a.owner > b.owner ? 1 : 0));
+    return { rows: rows.map(publicBtcBalanceDocument), complete: true };
+  },
+});
+
+/**
+ * Compatibility metadata view over the typed BTC balance documents. It keeps
+ * the existing public API while removing all reads from dataFiles.data.
  */
 export const getBtcSnapshotMetadata = query({
   args: {
@@ -846,48 +1013,75 @@ export const getBtcSnapshotMetadata = query({
   handler: async (ctx, { viewer, scope, token }) => {
     validateReadToken(token);
     const owners = ownersInScope(viewer, scope);
-    const sources: Array<{ name: string; owner: FamilyMember }> = [];
-    if (owners.some(isAdult)) {
-      sources.push({ name: "btc-balance-snapshot", owner: DEFAULT_OWNER });
-    }
-    if (owners.includes("mason")) {
-      sources.push({ name: "son-balances", owner: "mason" });
-    }
-    if (owners.includes("maddox")) {
-      sources.push({ name: "maddox-balances", owner: "maddox" });
-    }
-
     const rows = (
       await Promise.all(
-        sources.map(async ({ name, owner }) => {
-          const doc = await ctx.db
-            .query("dataFiles")
-            .withIndex("by_name", (q) => q.eq("name", name))
-            .first();
-          const raw = doc ? asRecord(doc.data) : null;
-          if (!doc || !raw) return null;
-          const metadata = asRecord(raw.metadata);
-          return {
-            owner,
-            schemaVersion: BigInt(
-              Math.trunc(Number(raw.schemaVersion ?? raw.schema_version ?? 0)),
-            ),
-            asOf: String(raw.asOf ?? raw.as_of ?? raw.lastUpdated ?? ""),
-            source: metadata ? optionalText(metadata.source) : undefined,
-            basis: metadata ? optionalText(metadata.basis) : undefined,
-            confidence: metadata ? optionalText(metadata.confidence) : undefined,
-            updatedAtMs: doc.updatedAt,
-          };
-        }),
+        owners.map((owner) =>
+          ctx.db
+            .query("btcBalanceDocuments")
+            .withIndex("by_owner", (q) => q.eq("owner", owner))
+            .collect(),
+        ),
       )
-    ).filter((row): row is NonNullable<typeof row> => row !== null);
-
+    )
+      .flat()
+      .map((row) => ({
+        owner: row.owner,
+        schemaVersion: row.schemaVersion,
+        asOf: row.asOf,
+        source: row.source,
+        basis: row.basis,
+        confidence: row.confidence,
+        updatedAtMs: row.updatedAtMs,
+      }));
     rows.sort((a, b) => (a.owner < b.owner ? -1 : a.owner > b.owner ? 1 : 0));
     return { rows, complete: true };
   },
 });
 
-/** Row counts per table — metadata only, including Bitcoin bill payments. */
+/**
+ * Typed finances document with account-level scope applied before it leaves
+ * Convex. In particular, `mason_401k` is visible to adults but excluded from
+ * their net-worth response.
+ */
+export const getFinanceDocument = query({
+  args: {
+    viewer: familyMemberValidator,
+    scope: scopeValidator,
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { viewer, scope, token }) => {
+    validateReadToken(token);
+    const doc = await ctx.db
+      .query("financeDocuments")
+      .withIndex("by_source_file", (q) => q.eq("sourceFile", "finances"))
+      .unique();
+    if (!doc) return { document: null, complete: true };
+
+    const rule = scope === "netWorth" ? sharesNetWorthWith : canSeeDataOwnedBy;
+    const accounts = doc.accounts
+      .filter((account) => rule(viewer, account.owner))
+      .map(publicFinanceAccount);
+    if (accounts.length === 0) {
+      return { document: null, complete: true };
+    }
+
+    return {
+      document: {
+        lastUpdated: doc.lastUpdated,
+        retirementTotalCents: accounts.some((account) =>
+          isAdult(account.owner),
+        )
+          ? doc.retirementTotalCents
+          : undefined,
+        accounts,
+        updatedAtMs: doc.updatedAtMs,
+      },
+      complete: true,
+    };
+  },
+});
+
+/** Row counts per table — metadata only, including atomic document tables. */
 export const rowCounts = query({
   args: { token: v.optional(v.string()) },
   handler: async (ctx, { token }) => {
@@ -898,6 +1092,11 @@ export const rowCounts = query({
       btcBuys: (await ctx.db.query("btcBuys").collect()).length,
       btcBillPays: (await ctx.db.query("btcBillPays").collect()).length,
       btcAccounts: (await ctx.db.query("btcAccounts").collect()).length,
+      budgetDocuments: (await ctx.db.query("budgetDocuments").collect()).length,
+      btcBalanceDocuments: (
+        await ctx.db.query("btcBalanceDocuments").collect()
+      ).length,
+      financeDocuments: (await ctx.db.query("financeDocuments").collect()).length,
     };
   },
 });
