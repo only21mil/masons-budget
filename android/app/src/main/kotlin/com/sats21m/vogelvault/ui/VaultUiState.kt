@@ -1,16 +1,20 @@
 package com.sats21m.vogelvault.ui
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.ReadModel
 import com.sats21m.vogelvault.domain.budgetMonthsFor
 import com.sats21m.vogelvault.domain.resolveBudgetMonth
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 /**
  * Everything the UI reads.
@@ -31,6 +35,8 @@ data class VaultUiState(
      * a tap.
      */
     val selectedMonth: String? = null,
+    /** A rejected read token invalidated the last complete Room snapshot. */
+    val staleAuthorization: Boolean = false,
 ) {
     val switchTargets: List<FamilyMember> get() = activeProfile.allowedSwitchTargets
 
@@ -98,10 +104,17 @@ data class VaultUiState(
     }
 }
 
-class VaultViewModel : ViewModel() {
+class VaultViewModel(
+    private val cachedRows: CachedRowDataSource? = null,
+) : ViewModel() {
 
     private val _state = MutableStateFlow(VaultUiState())
     val state: StateFlow<VaultUiState> = _state.asStateFlow()
+    private var rowJob: Job? = null
+
+    init {
+        cachedRows?.let { connectRows(_state.value.activeProfile, it) }
+    }
 
     fun navigate(destination: Destination) {
         _state.update { current ->
@@ -124,7 +137,13 @@ class VaultViewModel : ViewModel() {
             val destinations = Destination.visibleTo(next)
             current.copy(
                 activeProfile = next,
-                data = Fixtures.envelope(next),
+                data =
+                    if (cachedRows == null) {
+                        Fixtures.envelope(next)
+                    } else {
+                        Fixtures.envelope(next, Freshness.LOADING)
+                    },
+                staleAuthorization = false,
                 // A month picked against one profile's ledger means nothing on the
                 // next one, so the scope goes back to that profile's budget month.
                 selectedMonth = null,
@@ -135,9 +154,35 @@ class VaultViewModel : ViewModel() {
                 },
             )
         }
+        if (_state.value.activeProfile == next) {
+            cachedRows?.let { connectRows(next, it) }
+        }
     }
 
     fun simulate(status: Freshness) {
         _state.update { it.copy(data = Fixtures.envelope(it.activeProfile, status)) }
+    }
+
+    private fun connectRows(
+        profile: FamilyMember,
+        source: CachedRowDataSource,
+    ) {
+        rowJob?.cancel()
+        rowJob =
+            viewModelScope.launch {
+                launch {
+                    source.observe(profile).collect { cached ->
+                        _state.update { current ->
+                            if (current.activeProfile != profile) current else {
+                                current.copy(
+                                    data = cached.data,
+                                    staleAuthorization = cached.staleAuthorization,
+                                )
+                            }
+                        }
+                    }
+                }
+                source.refresh(profile)
+            }
     }
 }
