@@ -2,11 +2,11 @@
 
 **If you're an AI agent about to modify this app — read this first.**
 
-The MC2 mission-control data backend is a separate project and is not checked in
-here. It is the upstream source of every JSON file the clients read, so if you
-are changing the data flow, read its own `AGENTS.md` in that repo first. It has
-no fixed path on any machine — ask Victor where it currently lives rather than
-guessing at one.
+MC2 mission-control is gone. It lived only on the wiped DGX Spark, was never
+pushed, and is unrecoverable. **Convex (`keen-elephant-452`) is the system of
+record.** The surviving `dataFiles` JSON blobs are the only authoritative copy
+of the family ledger until the reviewed row migration is approved and applied.
+Never describe MC2 as a live upstream or direct work toward a separate MC2 repo.
 
 ## Tracking — GitHub only (2026-07-26)
 
@@ -19,7 +19,7 @@ guessing at one.
 
 Superseded: this file previously mandated mirroring every change into Linear. That rule no longer applies.
 
-This is **The Vogel Vault** (internal repo name still "Mason's Budget App"). SwiftUI iOS + macOS app, multi-profile family Bitcoin + budget dashboard. Backend is Convex (`keen-elephant-452.convex.cloud`); MC2 pushes JSON files there via `dataFiles:sync`, the app reads them.
+This is **The Vogel Vault** (internal repo name still "Mason's Budget App"). SwiftUI iOS + macOS app, multi-profile family Bitcoin + budget dashboard. Convex (`keen-elephant-452.convex.cloud`) is the backend and system of record. Shipped clients still read the legacy JSON blobs through `dataFiles`; the reviewed row-table cutover is tracked in [umbrella issue #46](https://github.com/only21mil/masons-budget/issues/46).
 
 - **Repo location: GitHub, `only21mil/masons-budget`.** There is no canonical
   local checkout and nothing is kept on a workstation — clone it where you need
@@ -29,14 +29,14 @@ This is **The Vogel Vault** (internal repo name still "Mason's Budget App"). Swi
 - Bundle id: `com.sats21m.masonsbudget` · Team `384ZGKG4GB`
 - Releases go to TestFlight through GitHub Actions. See "Build, archive,
   TestFlight" below. Both schemes ship together.
-- iOS DTOs in `MasonsBudget/MasonsBudget/Services/MC2DTOs.swift` mirror MC2's JSON schemas. If a JSON shape changes in MC2, the DTO + mapper change here.
-- Native app writeback exists through `AppWriteSyncService` for approved app-originated transactions/todos when `ConvexConfig.isConfigured` is true. Do **not** put shared Convex write tokens in Swift source, UserDefaults, or bundled config; app writeback must use the approved configured path only, and MC2/private sync remains the owner of private bulk sync.
+- Swift types retain `MC2` names for compatibility with the surviving blob schema. `MasonsBudget/MasonsBudget/Services/MC2DTOs.swift`, `MC2Mapper.swift`, `MC2Reader.swift`, and `MC2SyncService.swift` remain load-bearing until every shipped client has moved off `dataFiles`; do not rename, remove, or change their decoding contract casually.
+- Native app writeback exists through `AppWriteSyncService` for approved app-originated transactions/todos when `ConvexConfig.isConfigured` is true. Do **not** put shared Convex write tokens in Swift source, UserDefaults, or bundled config; app writeback must use the approved configured path only. Any production write or migration remains approval-gated.
 
 ---
 
 ## Family / household model — HARD RULE
 
-**Victor and Rachel are ONE shared household.** Dual-income, dual-finance. They see identical data — same paychecks, same transactions, same retirement, same BTC. There is exactly one adult dataset in MC2; never propose splitting it into per-adult files (`rachel-budget.json`, etc.). Mirrors MC2's stance.
+**Victor and Rachel are ONE shared household.** Dual-income, dual-finance. They see identical data — same paychecks, same transactions, same retirement, same BTC. The surviving blob schema and the row model use one adult household dataset; never propose splitting it into per-adult files (`rachel-budget.json`, etc.).
 
 **Mason and Maddox are isolated.** Their data lives in parallel files (`mason-budget.json`, `mason-transactions.json`, `mason-bitcoin-buys.json`, `son-balances.json`, plus `mason_401k` as a sibling key inside the shared `finances.json`). Mason's profile in the app sees only Mason's data. Adults can see everyone's; kids see only their own.
 
@@ -60,7 +60,7 @@ extension FamilyMember {
 }
 ```
 
-**Use `canSee(dataOwnedBy:)` everywhere — view filters AND sync mappers. NEVER strict equality.** Strict `==` breaks Rachel's profile because adult records in MC2 default to `owner: "victor"`; an `accountOwner == .rachel` check filters them all out and leaves her tabs empty. We hit this exact bug in v0.3 (see `MC2Mapper.mapFinances`).
+**Use `canSee(dataOwnedBy:)` everywhere — view filters AND sync mappers. NEVER strict equality.** Strict `==` breaks Rachel's profile because canonical adult records use `owner: "victor"`; an `accountOwner == .rachel` check filters them all out and leaves her tabs empty. We hit this exact bug in v0.3 (see `MC2Mapper.mapFinances`).
 
 Records persisted to SwiftData are tagged with the **canonical** owner from the JSON (adults → `.victor`, mason_401k → `.mason`). Visibility is then resolved at query time via `canSee`. Don't tag records with the active member just because that member triggered the sync.
 
@@ -73,11 +73,11 @@ Profile switching is in `Views/Screens/ProfileSwitcherView.swift`. Kids cannot s
 | Area | File |
 |---|---|
 | Family enum + visibility | `Models/SharedEnums.swift` |
-| MC2 DTOs (Codable mirrors of MC2 JSON) | `Services/MC2DTOs.swift` |
-| Map DTO → SwiftData model | `Services/MC2Mapper.swift` |
-| Sync orchestration | `Services/MC2SyncService.swift` |
-| Convex client | `Services/ConvexClient.swift` |
-| Convex reader | `Services/MC2Reader.swift` |
+| Legacy blob DTOs (the `MC2` name is compatibility, not a live service) | `Services/MC2DTOs.swift` |
+| Map blob DTO → SwiftData model | `Services/MC2Mapper.swift` |
+| Convex blob sync orchestration | `Services/MC2SyncService.swift` |
+| Convex HTTP client | `Services/ConvexClient.swift` |
+| Convex `dataFiles` reader | `Services/MC2Reader.swift` |
 | App entry | `App/MasonsBudgetApp.swift` |
 | Screens / tabs | `Views/Screens/*.swift` |
 | Charts | `Views/Components/*.swift` |
@@ -91,7 +91,7 @@ Sync entry points in `MC2SyncService.syncAll()` are split by member. Mason path:
 - JSON uses `snake_case` (`weekly_gross`, `monthly_gross`, `mtd_income`). DTOs use Swift `camelCase` with explicit `CodingKeys`. Always set the `CodingKeys` enum when adding new fields.
 - Money is `Decimal`, never `Double`.
 - Optional in the DTO == may be missing in JSON. Default sensibly in the mapper, not in the DTO.
-- New JSON fields in MC2 → bump the DTO + mapper here AND verify the iOS app still decodes existing data without the field.
+- Changes to a surviving `dataFiles` JSON shape → update the DTO + mapper here AND verify the Swift app still decodes the previous blob shape. Preserve backward compatibility until the blob readers are retired.
 
 ---
 
@@ -110,48 +110,42 @@ Stop and ask Victor before:
 
 ## Convex authentication — READ THIS BEFORE DEPLOYING
 
-Both reads and writes are fail-closed, and **both have a cutover hazard**.
+Reads and writes are fail-closed. The read-auth cutover completed on 2026-07-26:
+the gated code is deployed, production was recorded as `ENFORCED`, and
+`ALLOW_TOKENLESS_READ` was removed. The old `STATE: OPEN` command output in
+`docs/convex-read-auth-cutover.md` is retained only as a historical transcript;
+it is not the current posture and must not be copied into a new status report.
+This documentation update did not re-probe production.
 
-Until 2026-07-26 every Convex *query* was unauthenticated: the deployment URL
-alone — which is committed in this repo and baked into every shipped client —
-was enough to read the household's entire financial history. `validateReadToken`
-in `convex/dataFiles.ts` now gates `get`, `getVersions`, `list` and
-`listTodoTombstones`.
+`validateReadToken` in `convex/dataFiles.ts` gates `get`, `getVersions`, `list`
+and `listTodoTombstones`. Clients send a runtime-injected read token; never
+bundle, hardcode, commit, print, or document its value.
 
-**Deploying enforcement without sequencing locks out every live client**,
-including the TestFlight build already on a phone. Required order:
-
-1. Set `ALLOW_TOKENLESS_READ=true` on the deployment, then deploy the gated
-   code. Permissive — behaves exactly as before, nothing breaks.
-2. Set `CONVEX_READ_TOKEN` on the deployment and ship clients that send it. iOS
-   reads it from `ConvexConfig.readToken`; the token is injected at runtime and
-   is never bundled, hardcoded or committed. Still permissive — see below.
-3. Confirm clients are sending it, **then** remove `ALLOW_TOKENLESS_READ`. That
-   removal is the enforcement flip; re-setting it is the one-command rollback.
-
-**The hatch outranks the token.** `ALLOW_TOKENLESS_READ=true` admits the call
-even when `CONVEX_READ_TOKEN` is set, which is what makes step 2 safe rather
-than the moment everything breaks. The price: ⚠️ **a set token proves nothing.**
-A deployment can show `CONVEX_READ_TOKEN` in `npx convex env list` and still be
-serving the household's finances to anyone with the URL. The only evidence of
-enforcement is `scripts/verify-read-auth.sh` reporting `ENFORCED`; every
-permissive admission also logs a `PERMISSIVE: …` line to the deployment log.
-Never leave a hatch on past its soak.
+**Rollback mechanics remain deliberate:** setting `ALLOW_TOKENLESS_READ=true`
+reopens reads immediately because the hatch outranks the token. Use that only
+for an approved incident rollback, verify `STATE: OPEN`, fix the reader, then
+remove the hatch and verify `STATE: ENFORCED`. A set `CONVEX_READ_TOKEN` does
+not prove enforcement while the hatch exists.
 
 `CONVEX_SYNC_TOKEN` / `ALLOW_TOKENLESS_SYNC` gate mutations under the identical
-pattern and the identical precedence (SAT-1326). Neither token belongs in the
-repo, in source, or in a build artifact.
+pattern and precedence. Neither token belongs in the repo, source, docs, or a
+build artifact.
 
-Full procedure, blast radius and rollback: `docs/convex-read-auth-cutover.md`.
+Current status, historical cutover transcript, blast radius and rollback:
+`docs/convex-read-auth-cutover.md`. Remaining auth hardening is tracked under
+[umbrella issue #46](https://github.com/only21mil/masons-budget/issues/46).
 
 ## Build, archive, TestFlight
 
 **Releases run in GitHub Actions, not on a workstation.**
-`.github/workflows/deploy.yml`, `workflow_dispatch` only, on a `macos-latest`
-runner: XcodeGen, `xcodebuild archive` with `CODE_SIGN_STYLE=Automatic`,
-`-exportArchive` against `ExportOptions.plist`, then `xcrun altool --upload-app`.
-Credentials come from the `APPSTORE_USERNAME` / `APPSTORE_PASSWORD` repository
-secrets. Triggering it is the approval gate above — it is never automatic.
+`.github/workflows/deploy.yml` is `workflow_dispatch` only on `macos-latest`.
+It writes and validates an App Store Connect API key, archives and exports with
+`-allowProvisioningUpdates` plus the API-key path/ID/issuer, preserves the signed
+`.ipa` or `.pkg`, then uploads with `xcrun altool --apiKey/--apiIssuer`.
+The required repository secrets are `ASC_API_KEY_P8`, `ASC_KEY_ID`, and
+`ASC_ISSUER_ID`; the old Apple-ID password and `.p12` paths are retired. Signing
+uses team `384ZGKG4GB`. Triggering the workflow is the approval gate above — it
+is never automatic.
 
 Never put signing material, App Store Connect keys, `.p12` files, provisioning
 profiles, key IDs, or issuer IDs in the repo, in docs, or in a commit. Secrets
@@ -204,14 +198,13 @@ Multiple agents work this project (Claude Code, OpenCode, Codex, Sats workers). 
 
 ---
 
-## Companion repos
+## Historical MC2 references
 
-- **MC2 mission-control** — the data backend: helper scripts and the JSON source
-  of truth that MC2 pushes into Convex. Separate repo, not checked in here, and
-  **no fixed path on any machine** — ask Victor where it currently lives. Read its
-  own `AGENTS.md` for the helper-script lane (`add-paycheck.py`,
-  `add-mason-paycheck.py`, `add-transaction.py`) and file conventions before
-  changing anything that crosses the data boundary.
+Names such as `MC2DTOs`, `MC2Mapper`, `MC2Reader`, `MC2SyncService`, and legacy
+UserDefaults keys survive in Swift for blob compatibility. They do not imply a
+companion service or repository still exists. Treat Convex and this repository
+as the current data boundary; preserve the old JSON decoding contract while
+shipped clients still consume `dataFiles`.
 
 ---
 
