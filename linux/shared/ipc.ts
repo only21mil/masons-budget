@@ -149,6 +149,8 @@ export interface VogelVaultRowCounts {
   readonly btcBuys: number
   readonly btcBillPays: number
   readonly btcAccounts: number
+  readonly income: number
+  readonly balanceDocuments: number
   readonly budgetDocuments: number
   readonly btcBalanceDocuments: number
   readonly financeDocuments: number
