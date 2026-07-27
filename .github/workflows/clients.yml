@@ -127,9 +127,22 @@ jobs:
           cache: npm
 
       # Root install: convex-test, vitest and @edge-runtime/vm are root
-      # devDependencies, and the suite's stub for ./_generated/server means no
-      # codegen and therefore no authenticated deployment is ever needed here.
+      # devDependencies. Generated Convex declarations are committed, so no
+      # codegen or authenticated deployment is needed here.
       - run: npm ci
+
+      - name: Verify committed Convex generated types
+        run: |
+          git ls-files --error-unmatch \
+            convex/_generated/api.d.ts \
+            convex/_generated/dataModel.d.ts \
+            convex/_generated/server.d.ts
+
+      - name: Typecheck deployable Convex functions
+        run: npx tsc --noEmit -p convex/tsconfig.json
+
+      - name: Typecheck Convex tests
+        run: npx tsc --noEmit -p convex/tsconfig.test.json
 
       - name: Read/mutation auth and todo LWW tests
         run: npm run convex:test
