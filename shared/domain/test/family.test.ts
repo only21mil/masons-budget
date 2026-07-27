@@ -27,6 +27,11 @@ import {
   visibleTo,
 } from "../src/family.ts"
 import { parseCents, sum } from "../src/money.ts"
+import {
+  type Transaction,
+  budgetTransactionsFor,
+  spendAmount,
+} from "../src/readModel.ts"
 
 // The fixture file is language-neutral JSON, so it arrives untyped. Describing
 // its shape here keeps the suite type-checked rather than silently `any`, and
@@ -86,7 +91,9 @@ interface Fixtures {
     visibleTodoCount: ByMember<number>
     visibleTodoTitles: Partial<ByMember<string[]>>
     rachelSeesVictorTodo: string
-    totalSpend: ByMember<string>
+    visibleSpend: ByMember<string>
+    budgetSpend: ByMember<string>
+    budgetOwners: ByMember<FamilyMember[]>
   }
 }
 
@@ -128,6 +135,10 @@ test("sharesNetWorthWith keeps child stacks out of adult totals", () => {
       `${testCase.viewer} → ${testCase.owner}`,
     )
   }
+})
+
+test("every viewer/owner net-worth pair is covered", () => {
+  assert.equal(fixtures.sharesNetWorth.length, members.length * members.length)
 })
 
 test("sharesNetWorthWith is strictly narrower than canSeeDataOwnedBy", () => {
@@ -237,15 +248,42 @@ test("Rachel sees Victor-owned todos", () => {
   assert.ok(titles.includes(fixtures.expectations.rachelSeesVictorTodo))
 })
 
-test("spend totals match the Swift budget tests", () => {
+test("visible spend retains child rows for adult oversight", () => {
   for (const member of members) {
     const total = sum(
       visibleTo(member, fixtures.sampleTransactions).map((tx: { spendAmount: string }) => parseCents(tx.spendAmount)),
     )
     assert.equal(
       total,
-      parseCents(fixtures.expectations.totalSpend[member]),
-      `${member} total spend`,
+      parseCents(fixtures.expectations.visibleSpend[member]),
+      `${member} visible spend`,
+    )
+  }
+})
+
+test("budget spend uses adult household scope and child self scope", () => {
+  const transactions: Transaction[] = fixtures.sampleTransactions.map((transaction) => ({
+    id: transaction.id,
+    date: "2026-07-01",
+    merchant: transaction.merchant,
+    amount: parseCents(transaction.amount),
+    category: transaction.category,
+    card: null,
+    note: null,
+    owner: transaction.owner,
+  }))
+
+  for (const member of members) {
+    const scoped = budgetTransactionsFor(member, transactions)
+    assert.deepEqual(
+      [...new Set(scoped.map((transaction) => transaction.owner))],
+      fixtures.expectations.budgetOwners[member],
+      `${member} budget owners`,
+    )
+    assert.equal(
+      sum(scoped.map(spendAmount)),
+      parseCents(fixtures.expectations.budgetSpend[member]),
+      `${member} budget spend`,
     )
   }
 })
