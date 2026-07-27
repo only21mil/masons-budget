@@ -316,7 +316,265 @@ function byDateDescending<T extends { date: string; _id: string }>(a: T, b: T) {
   return a.date < b.date ? 1 : -1;
 }
 
-const DEFAULT_PAGE = 500;
+// A no-limit request means "give me one complete replacement snapshot", not
+// "return a convenient first page". 2,000 is intentionally above today's
+// largest table (905 transactions) while staying below Convex's practical
+// per-function read ceiling. If a table outgrows this, callers must move to a
+// cursor contract rather than silently accepting a partial replacement set.
+export const PUBLIC_SNAPSHOT_HARD_MAX = 2_000;
+
+type PublicEnvelope<T> = {
+  rows: T[];
+  complete: boolean;
+};
+
+function requestedRowCap(limit: number | undefined, queryName: string): number {
+  if (limit === undefined) return PUBLIC_SNAPSHOT_HARD_MAX + 1;
+  if (!Number.isInteger(limit) || limit < 1 || limit > PUBLIC_SNAPSHOT_HARD_MAX) {
+    throw new ConvexError(
+      `${queryName}: limit must be an integer from 1 to ${PUBLIC_SNAPSHOT_HARD_MAX}.`,
+    );
+  }
+  return limit;
+}
+
+function publicEnvelope<T>(
+  rows: T[],
+  limit: number | undefined,
+  queryName: string,
+): PublicEnvelope<T> {
+  if (limit !== undefined) {
+    // A bounded request is intentionally not a replacement snapshot. There is
+    // no cursor in this narrow client contract, so never imply otherwise even
+    // when today's table happens to contain fewer rows than the supplied cap.
+    return { rows: rows.slice(0, limit), complete: false };
+  }
+  if (rows.length > PUBLIC_SNAPSHOT_HARD_MAX) {
+    throw new ConvexError(
+      `${queryName}: complete snapshot exceeds the hard maximum of ` +
+        `${PUBLIC_SNAPSHOT_HARD_MAX} rows. Supply an explicit limit for a ` +
+        `known-incomplete diagnostic read; do not replace a client snapshot.`,
+    );
+  }
+  return { rows, complete: true };
+}
+
+// Public reads never return a Convex document directly. These explicit
+// projections are the API allowlist: `_id`, `_creationTime`, `migrationRaw`,
+// `migrationSourceIndex`, and source-file migration provenance cannot leak by a
+// future schema addition or an object spread.
+function projectTransaction(row: {
+  txId: string;
+  owner: FamilyMember;
+  date: string;
+  month: string;
+  merchant: string;
+  amountCents: bigint;
+  category: string;
+  card?: string;
+  note?: string;
+  updatedAtMs: number;
+}) {
+  return {
+    txId: row.txId,
+    owner: row.owner,
+    date: row.date,
+    month: row.month,
+    merchant: row.merchant,
+    amountCents: row.amountCents,
+    category: row.category,
+    card: row.card,
+    note: row.note,
+    updatedAtMs: row.updatedAtMs,
+  };
+}
+
+function projectTodo(row: {
+  todoId: string;
+  owner: FamilyMember;
+  title: string;
+  done: boolean;
+  flagged: boolean;
+  lane?: string;
+  project?: string;
+  area?: string;
+  due?: string;
+  notes?: string;
+  priority?: bigint;
+  createdAt?: string;
+  updatedAt?: string;
+  completedAt?: string;
+  updatedAtMs: number;
+}) {
+  return {
+    todoId: row.todoId,
+    owner: row.owner,
+    title: row.title,
+    done: row.done,
+    flagged: row.flagged,
+    lane: row.lane,
+    project: row.project,
+    area: row.area,
+    due: row.due,
+    notes: row.notes,
+    priority: row.priority,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    completedAt: row.completedAt,
+    updatedAtMs: row.updatedAtMs,
+  };
+}
+
+function projectBtcBuy(row: {
+  buyId: string;
+  owner: FamilyMember;
+  date: string;
+  month: string;
+  source: string;
+  sats: bigint;
+  priceUsdCents: bigint;
+  usdCents: bigint;
+  note?: string;
+  status?: string;
+  costBasisStatus?: string;
+  loggedBy?: string;
+  archimedesRequestId?: string;
+  updatedAtMs: number;
+}) {
+  return {
+    buyId: row.buyId,
+    owner: row.owner,
+    date: row.date,
+    month: row.month,
+    source: row.source,
+    sats: row.sats,
+    priceUsdCents: row.priceUsdCents,
+    usdCents: row.usdCents,
+    note: row.note,
+    status: row.status,
+    costBasisStatus: row.costBasisStatus,
+    loggedBy: row.loggedBy,
+    archimedesRequestId: row.archimedesRequestId,
+    updatedAtMs: row.updatedAtMs,
+  };
+}
+
+function projectBtcBillPay(row: {
+  billPayId: string;
+  owner: FamilyMember;
+  date: string;
+  month: string;
+  merchant: string;
+  category: string;
+  amountUsdCents: bigint;
+  btcSpentSats: bigint;
+  btcPriceCents: bigint;
+  platform?: string;
+  note?: string;
+  feeUsdCents: bigint;
+  reference?: string;
+  updatedAtMs: number;
+}) {
+  return {
+    billPayId: row.billPayId,
+    owner: row.owner,
+    date: row.date,
+    month: row.month,
+    merchant: row.merchant,
+    category: row.category,
+    amountUsdCents: row.amountUsdCents,
+    btcSpentSats: row.btcSpentSats,
+    btcPriceCents: row.btcPriceCents,
+    platform: row.platform,
+    note: row.note,
+    feeUsdCents: row.feeUsdCents,
+    reference: row.reference,
+    updatedAtMs: row.updatedAtMs,
+  };
+}
+
+function projectBtcAccount(row: {
+  key: string;
+  owner: FamilyMember;
+  label: string;
+  custody: "exchange" | "self_custody";
+  sats: bigint;
+  fiatCents: bigint;
+  asOf: string;
+  schemaVersion: bigint;
+  updatedAtMs: number;
+}) {
+  return {
+    key: row.key,
+    owner: row.owner,
+    label: row.label,
+    custody: row.custody,
+    sats: row.sats,
+    fiatCents: row.fiatCents,
+    asOf: row.asOf,
+    schemaVersion: row.schemaVersion,
+    updatedAtMs: row.updatedAtMs,
+  };
+}
+
+function projectBudgetDocument(
+  raw: Record<string, unknown>,
+  owner: FamilyMember,
+  updatedAtMs: number,
+) {
+  const strategy = asRecord(raw.strategy);
+  const income = asRecord(raw.income);
+  return {
+    owner,
+    month: String(raw.month ?? ""),
+    coinbaseOneBalanceCents: parseCents(raw.coinbase_one_balance),
+    // Reported category spend is deliberately not public. Budget spend is
+    // derived from the month-scoped transaction snapshot in every client.
+    categories: asRecordArray(raw.categories).map((entry) => ({
+      name: String(entry.name ?? ""),
+      icon: optionalText(entry.icon),
+      budgetCents: parseCents(entry.budget),
+    })),
+    effectiveApr: strategy ? optionalText(strategy.effective_apr) : undefined,
+    strategyNote: strategy ? optionalText(strategy.strategy_note) : undefined,
+    income: income
+      ? {
+          weeklyGrossCents: parseCents(income.weekly_gross),
+          weeklyStrikeCents: parseCents(income.weekly_strike),
+          weeklyRiverCents: parseCents(income.weekly_river),
+          payFrequency: optionalText(income.pay_frequency),
+          monthlyGrossCents: parseCents(income.monthly_gross),
+          mtdIncomeCents: parseCents(income.mtd_income),
+          ytdIncomeCents: parseCents(income.ytd_income),
+          paychecks: asRecordArray(income.paychecks).map((entry) => ({
+            date: String(entry.date ?? ""),
+            platform: optionalText(entry.platform),
+            source: optionalText(entry.source),
+            amountCents: parseCents(entry.amount),
+            netCents: parseCents(entry.net),
+            note: optionalText(entry.note),
+          })),
+        }
+      : undefined,
+    mtdIncomeCents: parseCents(raw.mtd_income),
+    ytdIncomeCents: parseCents(raw.ytd_income),
+    monthlyHistory: asRecordArray(raw.monthly_history).map((entry) => ({
+      month: String(entry.month ?? ""),
+      incomeCents: parseCents(entry.income),
+      expensesCents: parseCents(entry.expenses),
+      savingsBps: Number(parseCents(entry.savings_pct)),
+    })),
+    updatedAtMs,
+  };
+}
+
+function budgetSourceFor(viewer: FamilyMember): {
+  name: string;
+  owner: FamilyMember;
+} {
+  if (isAdult(viewer)) return { name: "budget", owner: DEFAULT_OWNER };
+  return { name: `${viewer}-budget`, owner: viewer };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Queries
@@ -331,10 +589,9 @@ const scopeValidator = v.union(v.literal("visible"), v.literal("netWorth"));
 /**
  * Transactions a viewer may see, newest first.
  *
- * `month` ("2026-07") is the budget path: a budget's spend is DERIVED from that
- * month's transactions and never read from a reported total, so this is the
- * query the budget screen lives on. With `month` it is one index range per
- * visible owner; without it, one date-ordered range per visible owner.
+ * Omitting `limit` requests a complete replacement snapshot and fails closed
+ * above PUBLIC_SNAPSHOT_HARD_MAX. Supplying a limit is a deliberately incomplete
+ * diagnostic read and returns `complete: false`.
  */
 export const listTransactions = query({
   args: {
@@ -346,23 +603,18 @@ export const listTransactions = query({
   handler: async (ctx, { viewer, month, limit, token }) => {
     validateReadToken(token);
     const owners = ownersInScope(viewer, "visible");
-    const cap = limit ?? DEFAULT_PAGE;
+    const cap = requestedRowCap(limit, "listTransactions");
 
     const perOwner = await Promise.all(
       owners.map((owner) =>
         month
-          ? // A month is already bounded, so collect it whole.
-            ctx.db
+          ? ctx.db
               .query("transactions")
               .withIndex("by_owner_month", (q) =>
                 q.eq("owner", owner).eq("month", month),
               )
-              .collect()
-          : // Unbounded: take the newest `cap` PER OWNER off the index instead
-            // of reading every row. The global newest `cap` is always inside
-            // the union of the per-owner newest `cap`, so the merge below is
-            // exact, not an approximation.
-            ctx.db
+              .take(cap)
+          : ctx.db
               .query("transactions")
               .withIndex("by_owner_date", (q) => q.eq("owner", owner))
               .order("desc")
@@ -372,16 +624,15 @@ export const listTransactions = query({
 
     const rows = perOwner.flat();
     rows.sort(byDateDescending);
-    return rows.slice(0, cap);
+    return publicEnvelope(
+      rows.slice(0, cap).map(projectTransaction),
+      limit,
+      "listTransactions",
+    );
   },
 });
 
-/**
- * Todos a viewer may see, most recently updated first.
- *
- * `done` is part of the index rather than a filter because "my open todos" is
- * the only query the todo screen makes.
- */
+/** Todos a viewer may see, most recently updated first. */
 export const listTodos = query({
   args: {
     viewer: familyMemberValidator,
@@ -392,14 +643,9 @@ export const listTodos = query({
   handler: async (ctx, { viewer, done, limit, token }) => {
     validateReadToken(token);
     const owners = ownersInScope(viewer, "visible");
-    const cap = limit ?? DEFAULT_PAGE;
-
-    // by_owner_done orders by (owner, done, updatedAtMs), so `done` has to be
-    // pinned before updatedAtMs means anything: taking the newest N from an
-    // owner-only range would hand back N done todos and no open ones. Asking
-    // for both values separately and merging is what makes "newest N overall"
-    // actually the newest N.
+    const cap = requestedRowCap(limit, "listTodos");
     const wanted = done === undefined ? [false, true] : [done];
+
     const perOwner = await Promise.all(
       owners.flatMap((owner) =>
         wanted.map((doneValue) =>
@@ -422,30 +668,30 @@ export const listTodos = query({
           : -1
         : b.updatedAtMs - a.updatedAtMs,
     );
-    return rows.slice(0, cap);
+    return publicEnvelope(
+      rows.slice(0, cap).map(projectTodo),
+      limit,
+      "listTodos",
+    );
   },
 });
 
 /**
- * Bitcoin buys, newest first.
- *
- * `scope` is explicit rather than inferred. "visible" answers "show me the
- * buys" (adults see the kids' too); "netWorth" answers "what is OUR stack",
- * which must exclude a child's buys even from an adult. Naming the two rules at
- * the call site is what stops them being conflated three screens from now.
+ * Bitcoin buys, newest first. `scope` is required so a caller must name whether
+ * it wants the wider viewer-visible set or the narrower net-worth set.
  */
 export const listBtcBuys = query({
   args: {
     viewer: familyMemberValidator,
-    scope: v.optional(scopeValidator),
+    scope: scopeValidator,
     month: v.optional(v.string()),
     limit: v.optional(v.float64()),
     token: v.optional(v.string()),
   },
   handler: async (ctx, { viewer, scope, month, limit, token }) => {
     validateReadToken(token);
-    const owners = ownersInScope(viewer, scope ?? "visible");
-    const cap = limit ?? DEFAULT_PAGE;
+    const owners = ownersInScope(viewer, scope);
+    const cap = requestedRowCap(limit, "listBtcBuys");
 
     const perOwner = await Promise.all(
       owners.map((owner) =>
@@ -455,7 +701,7 @@ export const listBtcBuys = query({
               .withIndex("by_owner_month", (q) =>
                 q.eq("owner", owner).eq("month", month),
               )
-              .collect()
+              .take(cap)
           : ctx.db
               .query("btcBuys")
               .withIndex("by_owner_date", (q) => q.eq("owner", owner))
@@ -466,32 +712,74 @@ export const listBtcBuys = query({
 
     const rows = perOwner.flat();
     rows.sort(byDateDescending);
-    return rows.slice(0, cap);
+    return publicEnvelope(
+      rows.slice(0, cap).map(projectBtcBuy),
+      limit,
+      "listBtcBuys",
+    );
   },
 });
 
-/**
- * Bitcoin accounts. Same explicit `scope` as listBtcBuys, and this is the query
- * where it bites hardest: an adult viewing "visible" sees Mason's Coldcard, and
- * the very same adult viewing "netWorth" must not, because a child's stack is
- * not part of adult net worth.
- */
+/** Bitcoin bill payments with the same explicit visibility/net-worth scope. */
+export const listBtcBillPays = query({
+  args: {
+    viewer: familyMemberValidator,
+    scope: scopeValidator,
+    month: v.optional(v.string()),
+    limit: v.optional(v.float64()),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { viewer, scope, month, limit, token }) => {
+    validateReadToken(token);
+    const owners = ownersInScope(viewer, scope);
+    const cap = requestedRowCap(limit, "listBtcBillPays");
+
+    const perOwner = await Promise.all(
+      owners.map((owner) =>
+        month
+          ? ctx.db
+              .query("btcBillPays")
+              .withIndex("by_owner_month", (q) =>
+                q.eq("owner", owner).eq("month", month),
+              )
+              .take(cap)
+          : ctx.db
+              .query("btcBillPays")
+              .withIndex("by_owner_date", (q) => q.eq("owner", owner))
+              .order("desc")
+              .take(cap),
+      ),
+    );
+
+    const rows = perOwner.flat();
+    rows.sort(byDateDescending);
+    return publicEnvelope(
+      rows.slice(0, cap).map(projectBtcBillPay),
+      limit,
+      "listBtcBillPays",
+    );
+  },
+});
+
+/** Bitcoin accounts with explicit viewer-visible versus net-worth scope. */
 export const listBtcAccounts = query({
   args: {
     viewer: familyMemberValidator,
-    scope: v.optional(scopeValidator),
+    scope: scopeValidator,
+    limit: v.optional(v.float64()),
     token: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, scope, token }) => {
+  handler: async (ctx, { viewer, scope, limit, token }) => {
     validateReadToken(token);
-    const owners = ownersInScope(viewer, scope ?? "visible");
+    const owners = ownersInScope(viewer, scope);
+    const cap = requestedRowCap(limit, "listBtcAccounts");
 
     const perOwner = await Promise.all(
       owners.map((owner) =>
         ctx.db
           .query("btcAccounts")
           .withIndex("by_owner_key", (q) => q.eq("owner", owner))
-          .collect(),
+          .take(cap),
       ),
     );
 
@@ -505,17 +793,101 @@ export const listBtcAccounts = query({
           ? -1
           : 1,
     );
-    return rows;
+    return publicEnvelope(
+      rows.slice(0, cap).map(projectBtcAccount),
+      limit,
+      "listBtcAccounts",
+    );
   },
 });
 
 /**
- * Row counts per table — a compact cutover progress readout.
+ * Typed budget document from the still-authoritative document-shaped blob.
  *
- * Exists so the runbook can compare against the known-good backup (905
- * transactions, 31 BTC buys, 25 todos) without a client and without reading a
- * single financial value out of the deployment.
+ * Budget is a net-worth concern, so callers must pass the literal `netWorth` at
+ * the call site. Adults receive the shared household document (canonically owned
+ * by Victor); children receive only their own document. Reported category spend
+ * is omitted and must be derived from listTransactions for `document.month`.
  */
+export const getBudgetDocument = query({
+  args: {
+    viewer: familyMemberValidator,
+    scope: v.literal("netWorth"),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { viewer, token }) => {
+    validateReadToken(token);
+    const source = budgetSourceFor(viewer);
+    const doc = await ctx.db
+      .query("dataFiles")
+      .withIndex("by_name", (q) => q.eq("name", source.name))
+      .first();
+    const raw = doc ? asRecord(doc.data) : null;
+    return {
+      document: raw
+        ? projectBudgetDocument(raw, source.owner, doc?.updatedAt ?? 0)
+        : null,
+      complete: true,
+    };
+  },
+});
+
+/**
+ * Freshness and source metadata for the document-shaped BTC snapshots.
+ * Account values remain in listBtcAccounts; this query does not expose the raw
+ * blob or its Convex document fields.
+ */
+export const getBtcSnapshotMetadata = query({
+  args: {
+    viewer: familyMemberValidator,
+    scope: scopeValidator,
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { viewer, scope, token }) => {
+    validateReadToken(token);
+    const owners = ownersInScope(viewer, scope);
+    const sources: Array<{ name: string; owner: FamilyMember }> = [];
+    if (owners.some(isAdult)) {
+      sources.push({ name: "btc-balance-snapshot", owner: DEFAULT_OWNER });
+    }
+    if (owners.includes("mason")) {
+      sources.push({ name: "son-balances", owner: "mason" });
+    }
+    if (owners.includes("maddox")) {
+      sources.push({ name: "maddox-balances", owner: "maddox" });
+    }
+
+    const rows = (
+      await Promise.all(
+        sources.map(async ({ name, owner }) => {
+          const doc = await ctx.db
+            .query("dataFiles")
+            .withIndex("by_name", (q) => q.eq("name", name))
+            .first();
+          const raw = doc ? asRecord(doc.data) : null;
+          if (!doc || !raw) return null;
+          const metadata = asRecord(raw.metadata);
+          return {
+            owner,
+            schemaVersion: BigInt(
+              Math.trunc(Number(raw.schemaVersion ?? raw.schema_version ?? 0)),
+            ),
+            asOf: String(raw.asOf ?? raw.as_of ?? raw.lastUpdated ?? ""),
+            source: metadata ? optionalText(metadata.source) : undefined,
+            basis: metadata ? optionalText(metadata.basis) : undefined,
+            confidence: metadata ? optionalText(metadata.confidence) : undefined,
+            updatedAtMs: doc.updatedAt,
+          };
+        }),
+      )
+    ).filter((row): row is NonNullable<typeof row> => row !== null);
+
+    rows.sort((a, b) => (a.owner < b.owner ? -1 : a.owner > b.owner ? 1 : 0));
+    return { rows, complete: true };
+  },
+});
+
+/** Row counts per table — metadata only, including Bitcoin bill payments. */
 export const rowCounts = query({
   args: { token: v.optional(v.string()) },
   handler: async (ctx, { token }) => {
@@ -524,6 +896,7 @@ export const rowCounts = query({
       transactions: (await ctx.db.query("transactions").collect()).length,
       todos: (await ctx.db.query("todos").collect()).length,
       btcBuys: (await ctx.db.query("btcBuys").collect()).length,
+      btcBillPays: (await ctx.db.query("btcBillPays").collect()).length,
       btcAccounts: (await ctx.db.query("btcAccounts").collect()).length,
     };
   },
