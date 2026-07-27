@@ -42,13 +42,12 @@ import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.domain.Transaction
 import com.sats21m.vogelvault.domain.budgetTransactionsFor
 import com.sats21m.vogelvault.domain.deriveBudgetSpend
-import com.sats21m.vogelvault.domain.displaySpendAmount
 import com.sats21m.vogelvault.domain.inMonth
 import com.sats21m.vogelvault.domain.incomeAmount
 import com.sats21m.vogelvault.domain.isDueBy
+import com.sats21m.vogelvault.domain.isSpend
 import com.sats21m.vogelvault.domain.netWorthScopeFor
 import com.sats21m.vogelvault.domain.resolveBudgetMonth
-import com.sats21m.vogelvault.domain.spendAmount
 import com.sats21m.vogelvault.domain.visibleTo
 import com.sats21m.vogelvault.ui.components.FreshnessTag
 import com.sats21m.vogelvault.ui.components.HorizontalHairline
@@ -230,21 +229,18 @@ private fun androidx.compose.foundation.lazy.LazyListScope.activity(state: Vault
 
 @Composable
 private fun TransactionRow(transaction: Transaction) {
-    // Colour by the signed budget contribution, never by the raw file amount:
-    // adult and child files use opposite raw signs. Render with the separate
-    // non-negative magnitude so refunds remain credits without showing "$-".
-    val spend = transaction.spendAmount
-    val display = transaction.displaySpendAmount
+    val isSpend = transaction.isSpend
+    val isCreditOrWrongSign = transaction.hasOppositeSpendSign
+    val displaySpend = transaction.displaySpendAmount
     LedgerRow(
         primary = transaction.merchant,
         secondary = "${transaction.date} · ${transaction.category}",
-        figure =
-            when {
-                spend > 0L -> "-${Money.formatUsd(display)}"
-                spend < 0L -> Money.formatUsd(display, showSign = true)
-                else -> Money.formatUsd(transaction.incomeAmount)
-            },
-        figureColor = if (spend > 0L) VaultNegative else VaultPositive,
+        figure = when {
+            !isSpend -> Money.formatUsd(transaction.incomeAmount)
+            isCreditOrWrongSign -> Money.formatUsd(displaySpend)
+            else -> "-${Money.formatUsd(displaySpend)}"
+        },
+        figureColor = if (isSpend && !isCreditOrWrongSign) VaultNegative else VaultPositive,
     )
 }
 

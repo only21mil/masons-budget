@@ -199,8 +199,10 @@ internal class ConvexRowQueryRepository(
                 income = counts.requiredLong("income") ?: return@decode null,
                 balanceDocuments = counts.requiredLong("balanceDocuments") ?: return@decode null,
                 budgetDocuments = counts.requiredLong("budgetDocuments") ?: return@decode null,
-                btcBalanceDocuments = counts.requiredLong("btcBalanceDocuments") ?: return@decode null,
-                financeDocuments = counts.requiredLong("financeDocuments") ?: return@decode null,
+                btcBalanceDocuments =
+                    counts.requiredLong("btcBalanceDocuments") ?: return@decode null,
+                financeDocuments =
+                    counts.requiredLong("financeDocuments") ?: return@decode null,
             )
         }
 }

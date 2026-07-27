@@ -15,9 +15,8 @@
 //
 // Four rules this module exists to enforce.
 //
-//  1. **Off by default.** Merging and wiring this changes nothing observable.
-//     With the kill switch unset no socket is opened, and the app keeps
-//     rendering the sanitized fixtures in src/renderer/data/fixtures.ts.
+//  1. **Off by default.** With the kill switch unset no socket is opened, and
+//     the app keeps rendering sanitized fallback fixtures.
 //  2. **The credential is never a constant.** Not in source, not in a `define`,
 //     not in the bundle. It arrives through the process environment at launch,
 //     lives in a `#private` field, and has no public accessor.

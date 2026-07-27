@@ -11,6 +11,11 @@ export interface VogelVaultTransactionRow {
   readonly month: string
   readonly merchant: string
   readonly amountCents: bigint
+  /** Signed budget contribution: positive spend, negative credit, zero income. */
+  readonly spendAmount: bigint
+  /** Rendering magnitude of spendAmount. */
+  readonly displaySpendAmount: bigint
+  readonly hasOppositeSpendSign: boolean
   readonly category: string
   readonly card?: string
   readonly note?: string
@@ -138,7 +143,23 @@ export interface VogelVaultBtcSnapshotMeta {
   readonly updatedAtMs: number
 }
 
+export interface VogelVaultRowCounts {
+  readonly transactions: number
+  readonly todos: number
+  readonly btcBuys: number
+  readonly btcBillPays: number
+  readonly btcAccounts: number
+  readonly income: number
+  readonly balanceDocuments: number
+  readonly budgetDocuments: number
+  readonly btcBalanceDocuments: number
+  readonly financeDocuments: number
+}
+
 export type VogelVaultRowRequest =
+  | {
+      readonly kind: "rowCounts"
+    }
   | {
       readonly kind: "transactions"
       readonly viewer: VogelVaultMember
@@ -182,6 +203,11 @@ export type VogelVaultRowRequest =
     }
 
 export type VogelVaultRowSuccess =
+  | {
+      readonly status: "ok"
+      readonly kind: "rowCounts"
+      readonly value: VogelVaultRowCounts
+    }
   | {
       readonly status: "ok"
       readonly kind: "transactions"

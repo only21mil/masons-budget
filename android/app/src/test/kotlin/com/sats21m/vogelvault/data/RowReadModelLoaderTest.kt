@@ -25,8 +25,8 @@ class RowReadModelLoaderTest {
                     amount = 2_500L,
                     category = "Groceries",
                     owner = FamilyMember.VICTOR,
-                    signedSpendContribution = -2_500L,
-                    rowDisplaySpendAmount = 2_500L,
+                    spendAmount = -2_500L,
+                    displaySpendAmount = 2_500L,
                 ),
             ),
             budget = ConvexResult.Ok(
@@ -86,7 +86,9 @@ class RowReadModelLoaderTest {
         )
 
         assertEquals(-2_500L, spend.actualCents)
-        assertEquals(2_500L, model.transactions.value.single().rowDisplaySpendAmount)
+        assertEquals(-2_500L, model.transactions.value.single().spendAmount)
+        assertEquals(2_500L, model.transactions.value.single().displaySpendAmount)
+        assertEquals(true, model.transactions.value.single().hasOppositeSpendSign)
         assertEquals(RowVisibilityScope.VISIBLE, repository.buyScope)
         assertEquals(RowVisibilityScope.VISIBLE, repository.accountScope)
         assertEquals(BudgetQueryScope.NET_WORTH, repository.budgetScope)

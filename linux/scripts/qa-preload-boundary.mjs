@@ -678,6 +678,11 @@ for (const malformed of [
 }
 
 require_(
+  validateRowRequest({ kind: "rowCounts" })?.kind === "rowCounts" &&
+    validateRowRequest({ kind: "rowCounts", viewer: "victor" }) === null,
+  "rows: rowCounts is metadata-only and accepts no renderer-selected scope",
+)
+require_(
   validateRowRequest({ kind: "transactions", viewer: "victor" })?.kind === "transactions",
   "rows: accepts a full transaction request with no limit",
 )
@@ -717,6 +722,9 @@ const rowRepository = createConvexRowRepository({
               month: "2026-07",
               merchant: "Test merchant",
               amountCents: { $integer: "//////////8=" },
+              spendAmount: { $integer: "AQAAAAAAAAA=" },
+              displaySpendAmount: { $integer: "AQAAAAAAAAA=" },
+              hasOppositeSpendSign: false,
               category: "Other",
               updatedAtMs: 1,
             },
@@ -730,7 +738,12 @@ const rowRepository = createConvexRowRepository({
 
 const rowResult = await rowRepository.query({ kind: "transactions", viewer: "victor" })
 require_(
-  rowResult.status === "ok" && rowResult.kind === "transactions" && rowResult.rows[0]?.amountCents === -1n,
+  rowResult.status === "ok" &&
+    rowResult.kind === "transactions" &&
+    rowResult.rows[0]?.amountCents === -1n &&
+    rowResult.rows[0]?.spendAmount === 1n &&
+    rowResult.rows[0]?.displaySpendAmount === 1n &&
+    rowResult.rows[0]?.hasOppositeSpendSign === false,
   "rows: a strict public transaction DTO crosses with bigint money",
 )
 require_(
@@ -740,6 +753,28 @@ require_(
 require_(
   rowResponses[0]?.path === "tables:listTransactions" && rowResponses[0]?.args?.token === SAMPLE_CREDENTIAL,
   "rows: a fixed path carries the credential only on the wire",
+)
+
+let tokenlessCalls = 0
+const tokenlessRows = createConvexRowRepository({
+  configuration: () => ({
+    generation: 1,
+    settings: resolveRemoteReadSettings({
+      VOGEL_VAULT_REMOTE_READ: "1",
+      VOGEL_VAULT_CONVEX_URL: "https://example.invalid",
+    }),
+  }),
+  post: async () => {
+    tokenlessCalls += 1
+    return { httpStatus: 200, body: "{}" }
+  },
+})
+const tokenlessResult = await tokenlessRows.query({ kind: "rowCounts" })
+require_(
+  tokenlessResult.status === "error" &&
+    tokenlessResult.code === "unauthorized" &&
+    tokenlessCalls === 0,
+  "rows: missing read credentials classify as auth without opening a socket",
 )
 
 await rowRepository.query({ kind: "transactions", viewer: "victor" })
@@ -764,23 +799,34 @@ require_(
     (await rowFailure({ complete: false, rows: [] })).code === "incomplete-response",
   "rows: a full request fails closed when the server says it is incomplete",
 )
+const extensibleRowResult = await rowFailure({
+  complete: true,
+  rows: [{
+    txId: "private-1", owner: "victor", date: "2026-07-26", month: "2026-07",
+    merchant: "Nope", amountCents: { $integer: "AAAAAAAAAAA=" },
+    spendAmount: { $integer: "AAAAAAAAAAA=" },
+    displaySpendAmount: { $integer: "AAAAAAAAAAA=" },
+    hasOppositeSpendSign: false, category: "Other",
+    updatedAtMs: 1, migrationRaw: { secret: true },
+  }],
+  futureEnvelopeField: true,
+})
 require_(
-  (await rowFailure({
-    complete: true,
-    rows: [{
-      txId: "private-1", owner: "victor", date: "2026-07-26", month: "2026-07",
-      merchant: "Nope", amountCents: { $integer: "AAAAAAAAAAA=" }, category: "Other",
-      updatedAtMs: 1, migrationRaw: { secret: true },
-    }],
-  })).status === "error",
-  "rows: an unallowlisted migration field rejects the response",
+  extensibleRowResult.status === "ok" &&
+    extensibleRowResult.kind === "transactions" &&
+    !Object.hasOwn(extensibleRowResult, "futureEnvelopeField") &&
+    !Object.hasOwn(extensibleRowResult.rows[0] ?? {}, "migrationRaw"),
+  "rows: unknown server fields are ignored and never cross the public DTO",
 )
 require_(
   (await rowFailure({
     complete: true,
     rows: [{
       txId: "hidden-1", owner: "victor", date: "2026-07-26", month: "2026-07",
-      merchant: "Nope", amountCents: { $integer: "AAAAAAAAAAA=" }, category: "Other",
+      merchant: "Nope", amountCents: { $integer: "AAAAAAAAAAA=" },
+      spendAmount: { $integer: "AAAAAAAAAAA=" },
+      displaySpendAmount: { $integer: "AAAAAAAAAAA=" },
+      hasOppositeSpendSign: false, category: "Other",
       updatedAtMs: 1,
     }],
   }, { kind: "transactions", viewer: "mason" })).status === "error",

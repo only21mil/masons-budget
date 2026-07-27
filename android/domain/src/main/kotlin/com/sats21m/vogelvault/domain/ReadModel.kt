@@ -66,48 +66,26 @@ data class Transaction(
     val note: String? = null,
     override val owner: FamilyMember,
     /**
-     * Signed contribution to budget actuals from the row API.
+     * Signed contribution to budget actuals.
      *
-     * Positive values are spend and negative values are credits. Null is only
-     * for the legacy fixture/blob shape, where the contribution is derived from
-     * [amount] and [owner].
+     * Income contributes zero; adult rows negate [amount], while child rows use
+     * [amount] directly. Positive values are spend and negative values are
+     * credits. Row responses provide this value directly; legacy fixtures derive
+     * the same contract from [amount] and [owner].
      */
-    val signedSpendContribution: Long? = null,
-    /** Rendering magnitude supplied by the row API; never used for budget maths. */
-    val rowDisplaySpendAmount: Long? = null,
-) : Owned
-
-/**
- * Signed contribution to budget spend, in cents.
- *
- * Row responses supply this value directly. Legacy fixtures and blobs derive it
- * from their owner-specific raw sign: adult spend is negative and child spend
- * is positive. Positive values are spend and negative values are either valid
- * credits/refunds or corrupt wrong-sign legacy rows; the read shape cannot
- * distinguish those cases.
- */
-val Transaction.spendAmount: Long
-    get() = signedSpendContribution
-        ?: when {
-            category == "Income" -> 0L
-            owner.isAdult -> -amount
-            else -> amount
-        }
-
-/** Stable non-negative magnitude for rendering; never used for budget maths. */
-val Transaction.displaySpendAmount: Long
-    get() = rowDisplaySpendAmount ?: kotlin.math.abs(spendAmount)
-
-/**
- * A valid credit or a corrupt wrong-sign spend; legacy rows cannot distinguish
- * the two because they do not persist the write-side `kind`.
- */
-val Transaction.hasOppositeSpendSign: Boolean
-    get() = spendAmount < 0L
-
-/** Compatibility name for call sites that explicitly describe budget maths. */
-val Transaction.budgetSpendContribution: Long
-    get() = spendAmount
+    val spendAmount: Long =
+        if (category == "Income") 0L else if (owner.isAdult) -amount else amount,
+    /** Stable rendering magnitude; never used for budget maths. */
+    val displaySpendAmount: Long = kotlin.math.abs(spendAmount),
+) : Owned {
+    /**
+     * A valid refund or a corrupt wrong-sign legacy row. Reads cannot
+     * distinguish those cases because legacy rows do not persist write-side
+     * kind.
+     */
+    val hasOppositeSpendSign: Boolean
+        get() = spendAmount < 0L
+}
 
 val Transaction.incomeAmount: Long
     get() = if (category == "Income" && amount > 0L) amount else 0L
@@ -300,7 +278,7 @@ data class BudgetSpend(
 fun deriveBudgetSpend(budget: Budget, transactions: List<Transaction>): BudgetSpend {
     val spentByCategory = mutableMapOf<String, Long>()
     for (transaction in transactions.inMonth(budget.month)) {
-        val contribution = transaction.budgetSpendContribution
+        val contribution = transaction.spendAmount
         if (contribution == 0L) continue
         spentByCategory[transaction.category] =
             (spentByCategory[transaction.category] ?: 0L) + contribution

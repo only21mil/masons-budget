@@ -27,8 +27,9 @@ class RowQueryRepositoryTest {
         val snapshot = (result as? ConvexResult.Ok)?.value ?: fail("expected Ok, got $result")
 
         assertEquals(-14_218L, snapshot.rows.single().amount)
-        assertEquals(14_218L, snapshot.rows.single().signedSpendContribution)
-        assertEquals(14_218L, snapshot.rows.single().rowDisplaySpendAmount)
+        assertEquals(14_218L, snapshot.rows.single().spendAmount)
+        assertEquals(14_218L, snapshot.rows.single().displaySpendAmount)
+        assertFalse(snapshot.rows.single().hasOppositeSpendSign)
         assertEquals(FamilyMember.VICTOR, snapshot.rows.single().owner)
         assertEquals(true, snapshot.complete)
         val args = sentArgs(poster)
@@ -46,6 +47,46 @@ class RowQueryRepositoryTest {
 
         assertFalse(snapshot.complete)
         assertEquals(emptyList(), snapshot.rows)
+    }
+
+    @Test
+    fun `unknown response envelope and row fields are ignored`() {
+        val poster = RecordingPoster(
+            HttpTextResponse(
+                200,
+                """{
+                    "status":"success",
+                    "value":{
+                        "rows":[{
+                            "txId":"tx-1",
+                            "owner":"victor",
+                            "date":"2026-07-25",
+                            "month":"2026-07",
+                            "merchant":"Cafe",
+                            "amountCents":${int64(-500)},
+                            "spendAmount":${int64(500)},
+                            "displaySpendAmount":${int64(500)},
+                            "hasOppositeSpendSign":false,
+                            "category":"Food",
+                            "updatedAtMs":1785000000000,
+                            "futureRowField":{"nested":true}
+                        }],
+                        "complete":true,
+                        "futureEnvelopeField":"ignored"
+                    },
+                    "futureResponseField":42
+                }""".trimIndent(),
+            ),
+        )
+
+        val result = runBlocking {
+            repositoryWith(poster).listTransactions(FamilyMember.VICTOR)
+        }
+        val transaction = (result as? ConvexResult.Ok)?.value?.rows?.single()
+            ?: fail("expected forward-compatible row, got $result")
+
+        assertEquals("tx-1", transaction.id)
+        assertEquals(500L, transaction.spendAmount)
     }
 
     @Test
@@ -107,32 +148,22 @@ class RowQueryRepositoryTest {
     }
 
     @Test
-    fun `negative signed refund decodes with opposite spend sign`() {
+    fun `opposite spend sign flag accepts a refund and preserves its display magnitude`() {
         val poster = RecordingPoster(
             rowSuccess(
                 """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Refund","amountCents":${int64(500)},"spendAmount":${int64(-500)},"displaySpendAmount":${int64(500)},"hasOppositeSpendSign":true,"category":"Food","updatedAtMs":1785000000000}]""",
             ),
         )
 
-        val result = runBlocking { repositoryWith(poster).listTransactions(FamilyMember.VICTOR) }
-        val row = (result as? ConvexResult.Ok)?.value?.rows?.single() ?: fail("expected refund row")
+        val result = runBlocking {
+            repositoryWith(poster).listTransactions(FamilyMember.VICTOR)
+        }
+        val refund = (result as? ConvexResult.Ok)?.value?.rows?.single()
+            ?: fail("expected refund row, got $result")
 
-        assertEquals(-500L, row.signedSpendContribution)
-        assertEquals(500L, row.rowDisplaySpendAmount)
-    }
-
-    @Test
-    fun `mismatched opposite spend sign rejects the entire transaction envelope`() {
-        val poster = RecordingPoster(
-            rowSuccess(
-                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":${int64(-500)},"spendAmount":${int64(500)},"displaySpendAmount":${int64(500)},"hasOppositeSpendSign":true,"category":"Food","updatedAtMs":1785000000000}]""",
-            ),
-        )
-
-        assertEquals(
-            ConvexResult.Failed("unexpected payload shape"),
-            runBlocking { repositoryWith(poster).listTransactions(FamilyMember.VICTOR) },
-        )
+        assertEquals(-500L, refund.spendAmount)
+        assertEquals(500L, refund.displaySpendAmount)
+        assertEquals(true, refund.hasOppositeSpendSign)
     }
 
     @Test
@@ -169,7 +200,7 @@ class RowQueryRepositoryTest {
     }
 
     @Test
-    fun `bill pay money and current row counts decode while ignoring future fields`() {
+    fun `bill pay money and row counts decode strictly`() {
         val billPoster = RecordingPoster(
             rowSuccess(
                 """[{"billPayId":"bp-1","owner":"victor","date":"2026-07-20","month":"2026-07","merchant":"Utility","category":"Bills","amountUsdCents":${int64(12500)},"btcSpentSats":${int64(13000)},"btcPriceCents":${int64(9600000)},"feeUsdCents":${int64(25)},"updatedAtMs":1785000000000}]""",
@@ -189,7 +220,7 @@ class RowQueryRepositoryTest {
 
         val countPoster = RecordingPoster(
             success(
-                """{"transactions":905,"todos":25,"btcBuys":31,"btcBillPays":4,"btcAccounts":7,"income":12,"balanceDocuments":2,"budgetDocuments":2,"btcBalanceDocuments":2,"financeDocuments":1,"futureProjectionCount":99}""",
+                """{"transactions":905,"todos":25,"btcBuys":31,"btcBillPays":4,"btcAccounts":7,"income":16,"balanceDocuments":1,"budgetDocuments":2,"btcBalanceDocuments":2,"financeDocuments":1,"futureTable":99}""",
             ),
         )
         val countResult = runBlocking { repositoryWith(countPoster).rowCounts() }
@@ -200,8 +231,8 @@ class RowQueryRepositoryTest {
                 btcBuys = 31,
                 btcBillPays = 4,
                 btcAccounts = 7,
-                income = 12,
-                balanceDocuments = 2,
+                income = 16,
+                balanceDocuments = 1,
                 budgetDocuments = 2,
                 btcBalanceDocuments = 2,
                 financeDocuments = 1,
