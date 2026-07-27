@@ -230,7 +230,12 @@ node scripts/convex-migrate.mjs \
 
 Good: the command reaches migration, exits 0, and the apply evidence reports
 `expectedFingerprintMatched: true` with the same fingerprint as the reviewed
-dry run. Continue with the applied verification checks below.
+dry run. When at least one completed batch inserted or updated rows, require
+`outcome: "success"`, `execution.state: "completed"`,
+`execution.writeSafety.classification: "writes-completed"`, and `failure: null`.
+A successful no-op apply with no inserted or updated rows instead reports
+`execution.writeSafety.classification: "none"`. Continue with the applied
+verification checks below.
 
 If the CLI reports `PLAN_FINGERPRINT_MISMATCH`, or the backend refuses a batch
 for a plan fingerprint mismatch, stop immediately. Do not replace
@@ -358,6 +363,10 @@ not been cut over and the authoritative blobs are unchanged.
 
 Preserve `migration-dry-run.json`, `migration-apply.json`, and any
 `migration-post-verify.json` without adding secrets or raw financial records.
+If completed earlier batches reported inserts or updates, the failed apply
+evidence must say
+`execution.writeSafety.classification: "writes-completed-before-failure"`;
+`"possible"` means an attempted apply transaction had an unobservable outcome.
 Use the code-deploy rollback above to remove the new callable surface if
 necessary. Do not attempt ad hoc row cleanup: removing row declarations does not
 necessarily delete stored documents, and cleanup requires its own reviewed,
