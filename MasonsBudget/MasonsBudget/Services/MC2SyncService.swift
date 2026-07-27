@@ -292,7 +292,7 @@ final class MC2SyncService {
         }
     }
 
-    private func recordNetWorthSnapshot() {
+    func recordNetWorthSnapshot() {
         do {
             // Only record one snapshot per day per member to avoid unbounded growth
             let cal = Calendar.current
@@ -315,12 +315,12 @@ final class MC2SyncService {
             let holdingAccounts = try context.fetch(FetchDescriptor<HoldingAccount>())
 
             let btcValue = btcAccounts
-                .filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
+                .filter { currentMember.sharesNetWorth(with: $0.ownerMember) }
                 .reduce(Decimal(0)) { $0 + $1.usdValue() }
             let vooPrice = StockPriceService.vooPrice
             let ibitPrice = StockPriceService.ibitPrice
             let holdingsValue = holdingAccounts
-                .filter { currentMember.canSee(dataOwnedBy: $0.ownerMember) }
+                .filter { currentMember.sharesNetWorth(with: $0.ownerMember) }
                 .reduce(Decimal(0)) { $0 + $1.liveValue(vooPrice: vooPrice, ibitPrice: ibitPrice) }
 
             let snapshot = NetWorthSnapshot(
