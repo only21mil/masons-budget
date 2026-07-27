@@ -16,6 +16,8 @@
 export const USAGE = `Usage: node scripts/convex-migrate.mjs [options]
 
   --apply                write; without it this is a dry run
+  --expected-plan-fingerprint <sha256:...>
+                         required with --apply; copy from the reviewed dry run
   --prod                 target the production deployment
   --confirm-production   required alongside --apply --prod
   --verify               skip migrating, just re-run the verification proof
@@ -27,11 +29,12 @@ export const USAGE = `Usage: node scripts/convex-migrate.mjs [options]
 
 export const DEFAULT_BATCH_SIZE = 1000;
 export const REPORT_SCHEMA = "vogel-vault.convex-migration-evidence";
-export const REPORT_VERSION = 1;
+export const REPORT_VERSION = 2;
 
 export function parseArgs(argv) {
   const options = {
     apply: false,
+    expectedPlanFingerprint: null,
     prod: false,
     confirmProduction: false,
     verifyOnly: false,
@@ -44,7 +47,18 @@ export function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--apply") options.apply = true;
-    else if (arg === "--prod" || arg === "--production") options.prod = true;
+    else if (arg === "--expected-plan-fingerprint") {
+      const value = argv[i + 1];
+      if (value === undefined || value.startsWith("--")) {
+        throw new Error("--expected-plan-fingerprint needs a SHA-256 fingerprint");
+      }
+      options.expectedPlanFingerprint = value;
+      i += 1;
+    } else if (arg.startsWith("--expected-plan-fingerprint=")) {
+      options.expectedPlanFingerprint = arg.slice(
+        "--expected-plan-fingerprint=".length,
+      );
+    } else if (arg === "--prod" || arg === "--production") options.prod = true;
     else if (arg === "--confirm-production") options.confirmProduction = true;
     else if (arg === "--verify" || arg === "--verify-only") options.verifyOnly = true;
     else if (arg === "--json") options.json = true;
@@ -72,6 +86,22 @@ export function parseArgs(argv) {
   }
   if (options.only.some((name) => !name)) {
     throw new Error("--only needs a file name");
+  }
+  if (
+    options.expectedPlanFingerprint !== null &&
+    !/^sha256:[0-9a-f]{64}$/.test(options.expectedPlanFingerprint)
+  ) {
+    throw new Error(
+      "--expected-plan-fingerprint must be sha256: followed by 64 lowercase hex characters",
+    );
+  }
+  if (options.apply && options.expectedPlanFingerprint === null) {
+    throw new Error(
+      "Refusing to apply without --expected-plan-fingerprint from the reviewed dry run.",
+    );
+  }
+  if (!options.apply && options.expectedPlanFingerprint !== null) {
+    throw new Error("--expected-plan-fingerprint is only valid with --apply");
   }
   if (options.apply && options.prod && !options.confirmProduction) {
     throw new Error(
@@ -361,6 +391,10 @@ function reportDocument({ options, outcome, exitCode, files, status, error = nul
       frozenPlan: {
         fingerprint: frozenPlanFingerprint,
         fingerprintState: frozenPlanFingerprint === null ? "not-provided-by-backend" : "provided",
+        expectedFingerprintMatched:
+          options?.apply === true && frozenPlanFingerprint !== null
+            ? options.expectedPlanFingerprint === frozenPlanFingerprint
+            : null,
         applyOptions:
           options?.apply === true
             ? {
@@ -431,14 +465,27 @@ async function convexRun(functionName, args, options) {
   }
 }
 
-async function migrateOneFile(file, options, execute, evidence) {
+async function migrateOneFile(
+  file,
+  options,
+  execute,
+  evidence,
+  frozenPlanFingerprint,
+) {
   let cursor = 0;
   let last = null;
 
   for (;;) {
     const result = await execute(
       "migrate:migrateFile",
-      { file, apply: options.apply, cursor, batchSize: options.batchSize },
+      {
+        file,
+        apply: options.apply,
+        expectedPlanFingerprint:
+          options.apply ? options.expectedPlanFingerprint : undefined,
+        cursor,
+        batchSize: options.batchSize,
+      },
       options,
     );
     if (result === null || typeof result !== "object") {
@@ -446,6 +493,16 @@ async function migrateOneFile(file, options, execute, evidence) {
         stage: "migrate:migrateFile",
         writeOutcomeUnknown: options.apply,
       });
+    }
+    if (result.frozenPlanFingerprint !== frozenPlanFingerprint) {
+      throw controlledError(
+        "PLAN_FINGERPRINT_CHANGED",
+        "The backend plan changed during migration; refusing to continue.",
+        {
+          stage: "plan",
+          writeOutcomeUnknown: options.apply,
+        },
+      );
     }
 
     const batch = completedBatchEvidence(result, evidence.batches.length + 1);
@@ -558,6 +615,27 @@ export async function run(argv, io = {}, dependencies = {}) {
         stage: "migrate:status",
       });
     }
+    if (
+      typeof status.frozenPlanFingerprint !== "string" ||
+      !/^sha256:[0-9a-f]{64}$/.test(status.frozenPlanFingerprint)
+    ) {
+      throw controlledError(
+        "PLAN_FINGERPRINT_MISSING",
+        "The backend did not return a valid frozen plan fingerprint; refusing to continue.",
+        { stage: "plan" },
+      );
+    }
+    err(`Plan fingerprint: ${status.frozenPlanFingerprint}`);
+    if (
+      options.apply &&
+      options.expectedPlanFingerprint !== status.frozenPlanFingerprint
+    ) {
+      throw controlledError(
+        "PLAN_FINGERPRINT_MISMATCH",
+        "The current backend plan does not match the reviewed dry-run fingerprint; no write was attempted.",
+        { stage: "plan" },
+      );
+    }
 
     const files = options.only.length ? options.only : status.files.map((file) => file.file);
     const known = new Set(status.files.map((file) => file.file));
@@ -608,7 +686,15 @@ export async function run(argv, io = {}, dependencies = {}) {
           verification,
         });
       } else {
-        rawResults.push(await migrateOneFile(file, options, execute, evidence));
+        rawResults.push(
+          await migrateOneFile(
+            file,
+            options,
+            execute,
+            evidence,
+            status.frozenPlanFingerprint,
+          ),
+        );
       }
     }
 
