@@ -62,8 +62,17 @@ if ! certificate_output=$("$apksigner" verify --print-certs "$apk" 2>&1); then
   fail_if_stable "apksigner could not verify ${apk}"
 fi
 
+# apksigner labels the line by scheme — "V2 Signer: certificate SHA-256 digest:
+# <hex>" — so splitting on ': ' yields THREE fields and the old `-F': ' {print $2}`
+# returned the literal text "certificate SHA-256 digest" rather than the hex.
+# Strip everything up to and including the label instead of counting fields, so
+# the parse survives any "<scheme> Signer:" prefix apksigner chooses to emit.
 digest=$(printf '%s\n' "$certificate_output" |
-  awk -F': ' '/certificate SHA-256 digest: / { print $2; exit }')
+  awk '/certificate SHA-256 digest: / {
+         sub(/.*certificate SHA-256 digest: /, "")
+         print
+         exit
+       }')
 digest=$(printf '%s' "$digest" | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')
 
 if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
