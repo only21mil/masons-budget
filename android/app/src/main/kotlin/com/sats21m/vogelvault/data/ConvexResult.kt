@@ -8,10 +8,9 @@ package com.sats21m.vogelvault.data
  * throwing for them would push a try/catch into every future call site.
  *
  * The states are split the way the read-token cutover needs them split:
- * [Unauthorized] is not [Failed]. Once the deployment stops allowing tokenless
- * reads, a client that is not sending a valid token gets a specific,
- * recognisable answer instead of disappearing into a generic error — which is
- * the difference between diagnosing the cutover and guessing at it.
+ * [Unauthorized] is not [Failed]. A missing local credential is refused before
+ * network I/O, while a server rejection of an invalid credential produces the
+ * same specific result instead of disappearing into a generic transport error.
  */
 sealed class ConvexResult<out T> {
 

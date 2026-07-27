@@ -99,14 +99,12 @@ class ConvexReadGateTest {
     }
 
     @Test
-    fun `a blank token counts as absent`() {
+    fun `a blank token counts as absent and cannot read`() {
         val config = ConvexConfig(deploymentUrl = DEPLOYMENT, readToken = "   ", remoteReadEnabled = true)
 
         assertFalse(config.hasReadToken)
-        // Usable, because the deployment still allows tokenless reads during the
-        // cutover — but reported distinctly so step (3) can catch it first.
-        assertEquals(ReadReadiness.READY_WITHOUT_TOKEN, config.readiness)
-        assertTrue(config.allowsRemoteRead)
+        assertEquals(ReadReadiness.NO_READ_TOKEN, config.readiness)
+        assertFalse(config.allowsRemoteRead)
     }
 
     @Test
@@ -155,7 +153,7 @@ class ConvexReadGateTest {
      * Calls the client the way the repository does, without needing a JSON
      * runtime: every case here returns before a request is built.
      */
-    private suspend fun ConvexQueryClient.list(): ConvexResult<ConvexValue> = query("dataFiles:list")
+    private suspend fun ConvexQueryClient.list(): ConvexResult<ConvexValue> = query(ConvexQuery.ListDataFiles)
 
     private companion object {
         /**
