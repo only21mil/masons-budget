@@ -18,7 +18,11 @@ struct ExportView: View {
     }
 
     private var myTransactions: [Transaction] {
-        allTransactions.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
+        Self.transactionsVisible(to: activeMember, in: allTransactions)
+    }
+
+    static func transactionsVisible(to member: FamilyMember, in transactions: [Transaction]) -> [Transaction] {
+        transactions.filter { member.canSee(dataOwnedBy: $0.ownerMember) }
     }
 
     var body: some View {
