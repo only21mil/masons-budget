@@ -89,6 +89,50 @@ export const SOURCES = Object.freeze([
     table: "todos",
     moneyColumns: [],
   },
+  {
+    file: "income",
+    table: "income",
+    moneyColumns: ["amountCents"],
+  },
+  {
+    file: "balances",
+    table: "balanceDocuments",
+    moneyColumns: [
+      "cashAppSats",
+      "coldcardSats",
+      "riverSats",
+      "strikeSats",
+      "zeusSats",
+      "totalSats",
+      "cashAppFiatCents",
+      "coldcardFiatCents",
+      "riverFiatCents",
+      "strikeFiatCents",
+      "zeusFiatCents",
+      "totalFiatCents",
+      "btcSync.anchorBalancesSats.cashAppSats",
+      "btcSync.anchorBalancesSats.coldcardSats",
+      "btcSync.anchorBalancesSats.riverSats",
+      "btcSync.anchorBalancesSats.strikeSats",
+      "btcSync.anchorBalancesSats.zeusSats",
+      "btcSync.anchorBalancesSats.totalSats",
+    ],
+  },
+]);
+
+/**
+ * These document-shaped blobs have an explicit preservation-only verification
+ * path: their complete Convex documents, including system and version fields,
+ * participate in the before/after canonical checksum below. They are not
+ * silently ignored. Moving one into a typed table requires moving it into
+ * SOURCES so the verifier also demands a target-table proof.
+ */
+export const PRESERVED_DOCUMENT_FILES = Object.freeze([
+  "budget",
+  "mason-budget",
+  "btc-balance-snapshot",
+  "finances",
+  "son-balances",
 ]);
 
 const USAGE = `Usage: node scripts/verify-migration.mjs
@@ -390,11 +434,19 @@ function tableCoverage(files, publicCounts) {
   if (!isPlainObject(publicCounts)) throw invalid();
   const expected = new Map();
   for (const file of files) {
+    if (file.includeInTableCoverage === false) continue;
     expected.set(file.table, (expected.get(file.table) ?? 0) + file.tableRows);
   }
 
   const checks = [];
-  for (const table of ["transactions", "todos", "btcBuys", "btcBillPays"]) {
+  for (const table of [
+    "transactions",
+    "todos",
+    "btcBuys",
+    "btcBillPays",
+    "income",
+    "balanceDocuments",
+  ]) {
     const actual = publicCounts[table];
     if (!exactIntegerCount(actual)) throw invalid();
     const wanted = expected.get(table) ?? 0;
@@ -403,11 +455,67 @@ function tableCoverage(files, publicCounts) {
   return checks;
 }
 
+export function discoverBlobCoverage(
+  snapshot,
+  sources = SOURCES,
+  preservedFiles = PRESERVED_DOCUMENT_FILES,
+) {
+  if (
+    !isPlainObject(snapshot) ||
+    !isPlainObject(snapshot.value) ||
+    !Array.isArray(snapshot.value.dataFiles)
+  ) {
+    throw invalid();
+  }
+
+  const verificationPaths = new Set();
+  for (const source of sources) {
+    if (
+      !isPlainObject(source) ||
+      typeof source.file !== "string" ||
+      verificationPaths.has(source.file)
+    ) {
+      throw invalid();
+    }
+    verificationPaths.add(source.file);
+  }
+  for (const file of preservedFiles) {
+    if (typeof file !== "string" || verificationPaths.has(file)) {
+      throw invalid();
+    }
+    verificationPaths.add(file);
+  }
+
+  const discovered = new Set();
+  let covered = 0;
+  let unknown = 0;
+  for (const entry of snapshot.value.dataFiles) {
+    if (
+      !isPlainObject(entry) ||
+      typeof entry.name !== "string" ||
+      discovered.has(entry.name)
+    ) {
+      throw invalid();
+    }
+    discovered.add(entry.name);
+    if (verificationPaths.has(entry.name)) covered += 1;
+    else unknown += 1;
+  }
+
+  return {
+    discovered: discovered.size,
+    covered,
+    unknown,
+    passed: unknown === 0 && covered === discovered.size,
+  };
+}
+
 export function buildEvidence({
   before,
   after,
   files,
   publicCounts,
+  blobCoverage = discoverBlobCoverage(before),
   publicMatchesFullBefore = true,
   publicMatchesFullAfter = true,
 }) {
@@ -443,12 +551,14 @@ export function buildEvidence({
       expectedFileCount &&
       publicMatchesFullBefore &&
       publicMatchesFullAfter &&
+      blobCoverage.passed &&
       allSourcesPassed &&
       allTablesCovered
         ? "VERIFIED"
         : "FAILED",
     legacyExact,
     expectedFileCount,
+    blobCoverage,
     publicMatchesFull: publicMatchesFullBefore && publicMatchesFullAfter,
     legacyChecksum: before.checksum,
     legacyCounts: before.counts,
@@ -471,6 +581,7 @@ export function renderEvidence(evidence) {
     `legacy-path ${passWord(evidence.legacyExact)} checksum=${evidence.legacyChecksum}`,
     `public/full ${passWord(evidence.publicMatchesFull)}`,
     `legacy-counts dataFiles=${evidence.legacyCounts.dataFiles} syncVersions=${evidence.legacyCounts.syncVersions} todoTombstones=${evidence.legacyCounts.todoTombstones}`,
+    `blob-coverage ${passWord(evidence.blobCoverage.passed)} discovered=${evidence.blobCoverage.discovered} covered=${evidence.blobCoverage.covered} unknown=${evidence.blobCoverage.unknown}`,
     "",
     `${pad("source file", 26)} ${pad("table", 15)} ${pad("rows(table/blob)", 17)} ${pad("money", 8)} ${pad("roundtrip", 11)} ${pad("blob", 70)} result`,
   ];
@@ -706,7 +817,10 @@ export async function verifyMigration({ query, internalQuery, adminTable }) {
     const sensitiveReport = await internalQuery("migrate:verifyFile", {
       file: source.file,
     });
-    files.push(reduceFileVerification(source, fileStatus, sensitiveReport));
+    files.push({
+      ...reduceFileVerification(source, fileStatus, sensitiveReport),
+      includeInTableCoverage: source.includeInTableCoverage,
+    });
   }
 
   const publicCounts = await query("tables:rowCounts", {});
@@ -718,6 +832,7 @@ export async function verifyMigration({ query, internalQuery, adminTable }) {
     after,
     files,
     publicCounts,
+    blobCoverage: discoverBlobCoverage(before),
     publicMatchesFullBefore,
     publicMatchesFullAfter,
   });
