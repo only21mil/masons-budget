@@ -91,6 +91,12 @@ git switch --detach "$reviewed_sha"
 test -z "$(git status --porcelain)"
 
 npm ci
+
+# This is the only complete generated-type freshness check. It authenticates
+# locally, regenerates from convex/schema.ts, and fails on any committed drift.
+set -a; . "$HOME/.config/sats/secrets.env"; set +a
+scripts/verify-convex-generated-freshness.sh
+
 npm run convex:test
 git diff --check
 ```
@@ -98,12 +104,16 @@ git diff --check
 Good:
 
 - `npm ci` exits 0 without changing tracked files.
+- `scripts/verify-convex-generated-freshness.sh` reports that the committed
+  declarations match authenticated codegen and leaves `convex/_generated`
+  unchanged.
 - `npm run convex:test` reports every test passing.
 - `git diff --check` prints nothing and exits 0.
 - `git status --porcelain` remains empty.
 
-Bad: any nonzero exit, skipped migration suite, tracked-file change, or SHA that
-is not an ancestor of the integration branch. Stop before deployment.
+Bad: any nonzero exit, generated declaration drift, skipped migration suite,
+tracked-file change, or SHA that is not an ancestor of the integration branch.
+Stop before deployment.
 
 ## 3. Reconfirm the authentication gates
 

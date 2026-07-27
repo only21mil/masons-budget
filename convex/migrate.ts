@@ -1327,7 +1327,12 @@ type CorrelatedMigrationWrite = {
   };
 }[MigrationTable];
 
-async function writeProjectedDocument(
+function assertNeverMigrationWrite(write: never): never {
+  const unhandled = write as { table: unknown };
+  throw new Error(`Unhandled migration table: ${String(unhandled.table)}`);
+}
+
+export async function writeProjectedDocument(
   ctx: MutationCtx,
   source: MigrationSource,
   document: Record<string, unknown>,
@@ -1359,6 +1364,9 @@ async function writeProjectedDocument(
       } else {
         await ctx.db.patch(write.existingId, write.document);
       }
+      break;
+    default:
+      assertNeverMigrationWrite(write);
   }
 }
 

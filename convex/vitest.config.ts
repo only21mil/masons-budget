@@ -1,9 +1,8 @@
 import { defineConfig } from "vitest/config";
 
-// `dataFiles.ts` imports `./_generated/server`, which is gitignored and can only
-// be produced by an authenticated `npx convex codegen`. Redirecting that one
-// specifier at resolve time is what lets the suite run on a bare clone and in CI
-// without ever touching the live deployment.
+// Generated declarations are committed and drive typechecking. Tests still
+// redirect the generated server import to a TypeScript runtime entry containing
+// the same generic builders, matching the module maps used by convex-test.
 const generatedServerStub = new URL(
   "./generatedServer.test-stub.ts",
   import.meta.url,

@@ -53,20 +53,38 @@ jobs:
       - name: Compare against the merge base
         id: filter
         env:
+          EVENT_NAME: ${{ github.event_name }}
           IS_MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          BEFORE_SHA: ${{ github.event.before }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
 
-          if [ "$IS_MAIN_PUSH" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          diff_base=""
+          if [ "$IS_MAIN_PUSH" = "true" ]; then
+            if [[ "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ ]] &&
+              [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+              diff_base="$BEFORE_SHA"
+            fi
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            base="origin/${BASE_REF:-main}"
+            git fetch -q origin "${BASE_REF:-main}"
+            diff_base="$(git merge-base HEAD "$base")"
+          fi
+
+          if [ -n "$diff_base" ]; then
+            scripts/check-convex-generated-change.sh "$diff_base" HEAD
+          else
+            echo "No meaningful commit range; skipping the Convex generated-file heuristic."
+          fi
+
+          if [ "$IS_MAIN_PUSH" = "true" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "Verifying every tree (main push or manual dispatch)."
             for t in linux android backend; do echo "$t=true" >> "$GITHUB_OUTPUT"; done
             exit 0
           fi
 
-          base="origin/${BASE_REF:-main}"
-          git fetch -q origin "${BASE_REF:-main}"
-          files="$(git diff --name-only "$(git merge-base HEAD "$base")" HEAD)"
+          files="$(git diff --name-only "$diff_base" HEAD)"
           printf '%s\n' "$files" | sed 's/^/  /'
 
           # shared/, convex/ and the workflow itself reach every client, so they
@@ -136,6 +154,7 @@ jobs:
           git ls-files --error-unmatch \
             convex/_generated/api.d.ts \
             convex/_generated/dataModel.d.ts \
+            convex/_generated/schema.sha256 \
             convex/_generated/server.d.ts
 
       - name: Typecheck deployable Convex functions
@@ -255,16 +274,17 @@ jobs:
         with:
           gradle-version: "8.12"
 
-      # Pull requests and other untrusted events deliberately stay on AGP's
-      # per-run debug key. Repository key material may exist only on a push to
-      # main or an explicitly dispatched run, where secrets are intentionally
-      # available. A missing secret still falls back to AGP signing.
+      # Pull requests and other untrusted refs deliberately stay on AGP's
+      # per-run debug key. Repository key material may exist only when the
+      # default branch itself is built by a push or an explicit dispatch.
+      # Missing key material is a hard failure there: a default-branch artifact
+      # must never silently fall back to an ephemeral signing identity.
       - name: Materialise and validate the stable debug keystore
         id: debug_keystore
         if: >-
           steps.probe.outputs.app == 'true' &&
-          (github.event_name == 'workflow_dispatch' ||
-          (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
           VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
@@ -274,10 +294,8 @@ jobs:
           set -euo pipefail
 
           if [ -z "${KEYSTORE_BASE64:-}" ]; then
-            echo "path=" >> "$GITHUB_OUTPUT"
-            echo "stable=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Stable Android debug signing is not configured; using AGP's ephemeral debug key."
-            exit 0
+            echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 is required for default-branch Android APK builds."
+            exit 1
           fi
 
           KEYSTORE_PATH="$RUNNER_TEMP/vogel-debug.keystore"
@@ -310,13 +328,13 @@ jobs:
         run: gradle :app:assembleDebug :app:lintDebug --no-daemon
         working-directory: android
 
-      # Pull requests cannot reach the secret-bearing step above: their
-      # materialisation step is skipped, so `stable` is never true. Running
-      # Gradle without any signing env preserves AGP's generated debug key.
+      # The event check is intentionally explicit: pull requests cannot reach
+      # either secret-bearing step, and no other ref gets an APK build. Running
+      # PR-controlled Gradle without signing env preserves AGP's generated key.
       - name: Assemble debug APK with ephemeral signing
         if: >-
           steps.probe.outputs.app == 'true' &&
-          steps.debug_keystore.outputs.stable != 'true'
+          github.event_name == 'pull_request'
         run: gradle :app:assembleDebug :app:lintDebug --no-daemon
         working-directory: android
 
@@ -347,8 +365,10 @@ jobs:
 
       # Debug-signed only — a sideload artifact for the Fold, never a release
       # build. Release signing stays out of CI.
-      - name: Upload debug APK
-        if: steps.probe.outputs.app == 'true' && github.event_name != 'pull_request'
+      - name: Upload stable-signed debug APK
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          steps.debug_keystore.outputs.stable == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: vogel-vault-debug-apk
