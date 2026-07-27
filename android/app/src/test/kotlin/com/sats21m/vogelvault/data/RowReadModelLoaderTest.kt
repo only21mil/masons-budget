@@ -201,5 +201,18 @@ private class FakeRows(
         ConvexResult.Ok(RowSnapshot(emptyList(), true))
 
     override suspend fun rowCounts(): ConvexResult<RowCounts> =
-        ConvexResult.Ok(RowCounts(0, 0, 0, 0, 0))
+        ConvexResult.Ok(
+            RowCounts(
+                transactions = 0,
+                todos = 0,
+                btcBuys = 0,
+                btcBillPays = 0,
+                btcAccounts = 0,
+                income = 0,
+                balanceDocuments = 0,
+                budgetDocuments = 0,
+                btcBalanceDocuments = 0,
+                financeDocuments = 0,
+            ),
+        )
 }

@@ -219,10 +219,26 @@ class RowQueryRepositoryTest {
         assertEquals("visible", sentArgs(billPoster)["scope"]?.jsonPrimitive?.content)
 
         val countPoster = RecordingPoster(
-            success("""{"transactions":905,"todos":25,"btcBuys":31,"btcBillPays":4,"btcAccounts":7}"""),
+            success(
+                """{"transactions":905,"todos":25,"btcBuys":31,"btcBillPays":4,"btcAccounts":7,"income":16,"balanceDocuments":1,"budgetDocuments":2,"btcBalanceDocuments":2,"financeDocuments":1,"futureTable":99}""",
+            ),
         )
         val countResult = runBlocking { repositoryWith(countPoster).rowCounts() }
-        assertEquals(RowCounts(905, 25, 31, 4, 7), (countResult as ConvexResult.Ok).value)
+        assertEquals(
+            RowCounts(
+                transactions = 905,
+                todos = 25,
+                btcBuys = 31,
+                btcBillPays = 4,
+                btcAccounts = 7,
+                income = 16,
+                balanceDocuments = 1,
+                budgetDocuments = 2,
+                btcBalanceDocuments = 2,
+                financeDocuments = 1,
+            ),
+            (countResult as ConvexResult.Ok).value,
+        )
     }
 
     @Test
