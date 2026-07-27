@@ -145,6 +145,35 @@ const fn = {
       complete: boolean;
     }
   >,
+  listBalanceDocuments:
+    "tables:listBalanceDocuments" as unknown as FunctionReference<
+      "query",
+      "public",
+      { viewer: Member; scope: Scope; token?: string },
+      {
+        rows: Array<{
+          owner: Member;
+          cashAppSats: bigint;
+          coldcardSats: bigint;
+          riverSats: bigint;
+          strikeSats: bigint;
+          zeusSats: bigint;
+          totalSats: bigint;
+          totalFiatCents?: bigint;
+          lastRefreshed: string;
+          btcSync: {
+            anchorBalancesSats: Record<string, bigint | undefined>;
+            anchorDate?: string;
+            anchorSource?: string;
+            notes?: unknown;
+            reconciledAt?: string;
+            reconciledFromEvents?: unknown;
+          };
+          updatedAtMs: number;
+        }>;
+        complete: boolean;
+      }
+    >,
   getBudgetDocument: "tables:getBudgetDocument" as unknown as FunctionReference<
     "query",
     "public",
@@ -188,6 +217,8 @@ const fn = {
       btcBuys: number;
       btcBillPays: number;
       btcAccounts: number;
+      income: number;
+      balanceDocuments: number;
     }
   >,
   migrateFile: "migrate:migrateFile" as unknown as FunctionReference<
@@ -438,6 +469,46 @@ const SON_BALANCES = {
   lastUpdated: "2026-07-18T12:00:00Z",
 };
 
+const INCOME_ROWS = [
+  {
+    id: "income-1",
+    date: "2026-07-01",
+    amount: 2500.55,
+    source: "payroll",
+    logged_by: "victor",
+    note: "shared household",
+    archimedes_request_id: "income-arch-1",
+  },
+];
+
+const LEGACY_BALANCES = {
+  cashapp: 0,
+  coldcard: 0.12345678,
+  river: 0.25,
+  strike: 0,
+  zeus: 0,
+  total: 0.37345678,
+  cashapp_fiat: 0,
+  coldcard_fiat: 12345.67,
+  river_fiat: 25000,
+  strike_fiat: 0,
+  zeus_fiat: 0,
+  total_fiat: 37345.67,
+  lastRefreshed: "2026-07-26T23:59:59Z",
+  btc_sync: {
+    anchor_balances: {
+      coldcard: 0.12345677,
+      river: 0.25,
+      total: 0.37345677,
+    },
+    anchor_date: "2026-07-20",
+    anchor_source: "event-reconciliation",
+    notes: "provenance retained",
+    reconciled_at: "2026-07-26T23:50:00Z",
+    reconciled_from_events: true,
+  },
+};
+
 const TODOS = [
   { id: "todo-1", title: "Pay the water bill", done: false, updated_at: "2026-07-10T09:00:00Z" },
   {
@@ -461,6 +532,8 @@ async function seedAll(t: T) {
   await seedDataFile(t, "btc-balance-snapshot", SNAPSHOT);
   await seedDataFile(t, "son-balances", SON_BALANCES);
   await seedDataFile(t, "todos", TODOS);
+  await seedDataFile(t, "income", INCOME_ROWS);
+  await seedDataFile(t, "balances", LEGACY_BALANCES);
 }
 
 async function migrateAll(t: T) {
@@ -471,6 +544,8 @@ async function migrateAll(t: T) {
     "mason-bitcoin-buys",
     "bitcoin-bill-pays",
     "todos",
+    "income",
+    "balances",
   ]) {
     await t.mutation(fn.migrateFile, { file: name, apply: true });
   }
@@ -740,6 +815,33 @@ describe("owner is first class, and the two visibility rules keep their widths",
     expect(netWorth.map((b) => b.buyId)).not.toContain("mb-1");
   });
 
+  it("keeps the adult balances document behind its indexed owner boundary", async () => {
+    const rachelVisible = await queryRows(fn.listBalanceDocuments, {
+      viewer: "rachel",
+      scope: "visible",
+    });
+    const rachelNetWorth = await queryRows(fn.listBalanceDocuments, {
+      viewer: "rachel",
+      scope: "netWorth",
+    });
+    const masonVisible = await queryRows(fn.listBalanceDocuments, {
+      viewer: "mason",
+      scope: "visible",
+    });
+
+    expect(rachelVisible).toHaveLength(1);
+    expect(rachelVisible[0]).toMatchObject({
+      owner: "victor",
+      coldcardSats: 12_345_678n,
+      totalSats: 37_345_678n,
+      totalFiatCents: 3_734_567n,
+    });
+    expect(rachelNetWorth).toEqual(rachelVisible);
+    expect(masonVisible).toEqual([]);
+    expect(rachelVisible[0]).not.toHaveProperty("raw");
+    expect(rachelVisible[0]).not.toHaveProperty("sourceFile");
+  });
+
   it("a child sharing an account key with an adult stays a separate row", async () => {
     // Both the adults and Mason have a "strike" account. Identity is
     // (owner, key); merging on key alone would put a child's stack in the
@@ -945,6 +1047,10 @@ describe("public Linux/Android read contract", () => {
         viewer: "victor",
         scope: "visible",
       }),
+      await t.query(fn.listBalanceDocuments, {
+        viewer: "victor",
+        scope: "visible",
+      }),
     ];
 
     for (const response of responses) {
@@ -995,6 +1101,9 @@ describe("public Linux/Android read contract", () => {
     ).rejects.toThrow();
     await expect(
       t.query(fn.listBtcAccounts as any, { viewer: "victor" }),
+    ).rejects.toThrow();
+    await expect(
+      t.query(fn.listBalanceDocuments as any, { viewer: "victor" }),
     ).rejects.toThrow();
   });
 
@@ -1102,6 +1211,8 @@ describe("public Linux/Android read contract", () => {
       }),
     ]);
     expect((await t.query(fn.rowCounts, {})).btcBillPays).toBe(1);
+    expect((await t.query(fn.rowCounts, {})).income).toBe(1);
+    expect((await t.query(fn.rowCounts, {})).balanceDocuments).toBe(1);
   });
 });
 
@@ -1327,6 +1438,15 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
       name: "listBtcAccounts",
       call: (token?: string) =>
         queryRows(fn.listBtcAccounts, {
+          viewer: "victor",
+          scope: "visible",
+          token,
+        }),
+    },
+    {
+      name: "listBalanceDocuments",
+      call: (token?: string) =>
+        queryRows(fn.listBalanceDocuments, {
           viewer: "victor",
           scope: "visible",
           token,

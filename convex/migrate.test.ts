@@ -24,6 +24,7 @@ import {
   fnv1a64,
   parseMinorUnits as migrateParseMinorUnits,
   projectFile,
+  resolveClosedAdultOwner,
   resolveOwner,
   sourceKeyFor,
 } from "./migrate";
@@ -319,6 +320,51 @@ const BTC_BUYS = makeBtcBuys();
 const TODOS = makeTodos();
 const MASON_TRANSACTIONS = makeMasonTransactions();
 const BILL_PAYS = makeBillPays();
+const INCOME = Array.from({ length: 16 }, (_, index) => ({
+  id: `income-${String(index + 1).padStart(2, "0")}`,
+  date: `2026-${String(1 + (index % 7)).padStart(2, "0")}-${String(1 + index).padStart(2, "0")}`,
+  amount:
+    index === 0
+      ? 1234.56
+      : index === 1
+        ? "987.65"
+        : Number((800 + index * 17.25).toFixed(2)),
+  source: index % 2 === 0 ? "payroll" : "refund",
+  logged_by: index % 3 === 0 ? "victor" : "archimedes",
+  note: index % 4 === 0 ? "production-shaped income fixture" : null,
+  archimedes_request_id: `income-arch-${index}`,
+}));
+
+const BALANCES = {
+  cashapp: 0,
+  coldcard: 0.12345678,
+  river: 0.87654321,
+  strike: 0,
+  zeus: 0,
+  total: 0.99999999,
+  cashapp_fiat: 0,
+  coldcard_fiat: 12345.67,
+  river_fiat: 87654.32,
+  strike_fiat: 0,
+  zeus_fiat: 0,
+  total_fiat: 99999.99,
+  lastRefreshed: "2026-07-26T23:59:59Z",
+  btc_sync: {
+    anchor_balances: {
+      cashapp: 0,
+      coldcard: 0.12345677,
+      river: 0.8765432,
+      strike: 0,
+      zeus: 0,
+      total: 0.99999997,
+    },
+    anchor_date: "2026-07-20",
+    anchor_source: "reconciliation-ledger",
+    notes: ["coldcard verified", "river event replayed"],
+    reconciled_at: "2026-07-26T23:50:00Z",
+    reconciled_from_events: true,
+  },
+};
 
 async function seedBlob(t: Harness, name: string, data: unknown, version = 7) {
   await t.run(async (ctx) => {
@@ -333,9 +379,20 @@ async function seedAll(t: Harness) {
   await seedBlob(t, "bitcoin-buys", BTC_BUYS);
   await seedBlob(t, "bitcoin-bill-pays", { bill_pays: BILL_PAYS, generated_at: "2026-07-18" });
   await seedBlob(t, "todos", { todos: TODOS });
+  await seedBlob(t, "income", INCOME);
+  await seedBlob(t, "balances", BALANCES);
 }
 
-async function rowsIn(t: Harness, table: "transactions" | "btcBuys" | "btcBillPays" | "todos") {
+async function rowsIn(
+  t: Harness,
+  table:
+    | "transactions"
+    | "btcBuys"
+    | "btcBillPays"
+    | "todos"
+    | "income"
+    | "balanceDocuments",
+) {
   return await t.run(async (ctx) => await ctx.db.query(table).collect());
 }
 
@@ -380,6 +437,7 @@ describe("fixtures match the real export", () => {
     expect(TRANSACTIONS).toHaveLength(905);
     expect(BTC_BUYS).toHaveLength(31);
     expect(TODOS).toHaveLength(25);
+    expect(INCOME).toHaveLength(16);
   });
 });
 
@@ -436,6 +494,8 @@ describe("money survives exactly", () => {
       "bitcoin-buys": BTC_BUYS,
       "bitcoin-bill-pays": { bill_pays: BILL_PAYS },
       todos: { todos: TODOS },
+      income: INCOME,
+      balances: BALANCES,
     };
     for (const source of MIGRATION_SOURCES) {
       const data = blobs[source.file];
@@ -443,10 +503,20 @@ describe("money survives exactly", () => {
       const projected = projectFile(source, data);
       expect(projected).not.toBeNull();
       const bigintColumns = new Set<string>();
-      for (const doc of projected!.docs) {
-        for (const [key, value] of Object.entries(doc)) {
-          if (typeof value === "bigint") bigintColumns.add(key);
+      const collectBigints = (value: unknown, path = "") => {
+        if (typeof value === "bigint") {
+          bigintColumns.add(path);
+          return;
         }
+        if (typeof value !== "object" || value === null || Array.isArray(value)) {
+          return;
+        }
+        for (const [key, nested] of Object.entries(value)) {
+          collectBigints(nested, path === "" ? key : `${path}.${key}`);
+        }
+      };
+      for (const doc of projected!.docs) {
+        collectBigints(doc);
       }
       expect([...bigintColumns].sort()).toEqual([...MONEY_COLUMNS[source.kind]].sort());
     }
@@ -515,6 +585,27 @@ describe("owner resolution matches the domain normalizers", () => {
     expect(projectFile(mason, MASON_TRANSACTIONS)!.docs.every((doc) => doc.owner === "mason")).toBe(true);
     expect(projectFile(adult, TRANSACTIONS)!.docs.every((doc) => doc.owner === "victor")).toBe(true);
   });
+
+  test("new adult sources use the closed union and refuse disagreement", () => {
+    expect(resolveClosedAdultOwner(undefined, "victor", "income")).toBe("victor");
+    expect(resolveClosedAdultOwner("rachel", "victor", "income")).toBe("rachel");
+    expect(() =>
+      resolveClosedAdultOwner("Victor", "victor", "income"),
+    ).toThrow(/not a known family member/);
+    expect(() =>
+      resolveClosedAdultOwner("mason", "victor", "income"),
+    ).toThrow(/adult-household source/);
+
+    const incomeSource = MIGRATION_SOURCES.find(
+      (source) => source.file === "income",
+    )!;
+    expect(() =>
+      projectFile(incomeSource, [{ ...INCOME[0], owner: "nobody" }]),
+    ).toThrow(/not a known family member/);
+    expect(() =>
+      projectFile(incomeSource, [{ ...INCOME[0], owner: "mason" }]),
+    ).toThrow(/adult-household source/);
+  });
 });
 
 // ─── Blob shapes ─────────────────────────────────────────────────────────────
@@ -579,7 +670,7 @@ describe("dry run", () => {
 // ─── The migration ───────────────────────────────────────────────────────────
 
 describe("migrating every file", () => {
-  test("905 transactions, 31 buys, 25 todos land and verify in-transaction", async () => {
+  test("every declared source lands and verifies in-transaction", async () => {
     const t = harness();
     await seedAll(t);
 
@@ -595,6 +686,8 @@ describe("migrating every file", () => {
     expect(byFile.get("todos")!.inserted).toBe(25);
     expect(byFile.get("mason-transactions")!.inserted).toBe(3);
     expect(byFile.get("bitcoin-bill-pays")!.inserted).toBe(2);
+    expect(byFile.get("income")!.inserted).toBe(16);
+    expect(byFile.get("balances")!.inserted).toBe(1);
     // No blob for these two; skipped, not invented.
     expect(byFile.get("maddox-transactions")!.blobPresent).toBe(false);
     expect(byFile.get("mason-bitcoin-buys")!.blobPresent).toBe(false);
@@ -611,6 +704,8 @@ describe("migrating every file", () => {
     expect(await rowsIn(t, "btcBuys")).toHaveLength(31);
     expect(await rowsIn(t, "todos")).toHaveLength(25);
     expect(await rowsIn(t, "btcBillPays")).toHaveLength(2);
+    expect(await rowsIn(t, "income")).toHaveLength(16);
+    expect(await rowsIn(t, "balanceDocuments")).toHaveLength(1);
   });
 
   test("the summed amounts equal the blob, computed independently", async () => {
@@ -650,6 +745,82 @@ describe("migrating every file", () => {
     const verification = await t.query(api.verifyFile, { file: "bitcoin-buys" });
     expect(verification.ok).toBe(true);
     expect(Object.keys(verification.tableSums).sort()).toEqual(["priceUsdCents", "sats", "usdCents"]);
+  });
+
+  test("income and balances preserve exact cents, sats, and reconciliation provenance", async () => {
+    const t = harness();
+    await seedAll(t);
+    await t.mutation(api.migrateFile, { file: "income", apply: true });
+    await t.mutation(api.migrateFile, { file: "balances", apply: true });
+
+    const incomeRows = await rowsIn(t, "income");
+    const expectedIncome = INCOME.reduce(
+      (sum, row) => sum + domainParseCents(row.amount),
+      0n,
+    );
+    expect(incomeRows.reduce((sum, row) => sum + row.amountCents, 0n)).toBe(
+      expectedIncome,
+    );
+    expect(new Set(incomeRows.map((row) => row.sourceKey)).size).toBe(16);
+    expect(incomeRows.every((row) => row.owner === "victor")).toBe(true);
+    expect(incomeRows.find((row) => row.incomeId === "income-01")).toMatchObject({
+      month: "2026-01",
+      amountCents: 123456n,
+      source: "payroll",
+      loggedBy: "victor",
+      archimedesRequestId: "income-arch-0",
+    });
+
+    const [balance] = await rowsIn(t, "balanceDocuments");
+    expect(balance).toMatchObject({
+      owner: "victor",
+      coldcardSats: 12_345_678n,
+      riverSats: 87_654_321n,
+      totalSats: 99_999_999n,
+      coldcardFiatCents: 1_234_567n,
+      totalFiatCents: 9_999_999n,
+      btcSync: {
+        anchorBalancesSats: {
+          coldcardSats: 12_345_677n,
+          riverSats: 87_654_320n,
+          totalSats: 99_999_997n,
+        },
+        anchorDate: "2026-07-20",
+        anchorSource: "reconciliation-ledger",
+        notes: ["coldcard verified", "river event replayed"],
+        reconciledAt: "2026-07-26T23:50:00Z",
+        reconciledFromEvents: true,
+      },
+    });
+
+    const incomeVerification = await t.query(api.verifyFile, { file: "income" });
+    expect(incomeVerification).toMatchObject({
+      ok: true,
+      exactRoundTrip: true,
+      blobRowCount: 16,
+      tableRowCount: 16,
+    });
+    expect(incomeVerification.tableSums.amountCents).toBe(
+      formatMinorUnits(expectedIncome, 2),
+    );
+
+    const balanceVerification = await t.query(api.verifyFile, {
+      file: "balances",
+    });
+    expect(balanceVerification).toMatchObject({
+      ok: true,
+      exactRoundTrip: true,
+      blobRowCount: 1,
+      tableRowCount: 1,
+    });
+    expect(balanceVerification.tableSums.coldcardSats).toBe("0.12345678");
+    expect(balanceVerification.tableSums.totalFiatCents).toBe("99999.99");
+    expect(
+      balanceVerification.tableSums[
+        "btcSync.anchorBalancesSats.coldcardSats"
+      ],
+    ).toBe("0.12345677");
+    expect(canonicalJson(balance!.raw)).toBe(canonicalJson(BALANCES));
   });
 
   test("child files keep their positive spend and adult files keep their negative", async () => {
@@ -702,6 +873,41 @@ describe("migrating every file", () => {
 // ─── Idempotency ─────────────────────────────────────────────────────────────
 
 describe("running it twice", () => {
+  test("income rows and the balances document insert zero rows on a second run", async () => {
+    const t = harness();
+    await seedAll(t);
+
+    const incomeFirst = await t.mutation(api.migrateFile, {
+      file: "income",
+      apply: true,
+    });
+    const incomeSecond = await t.mutation(api.migrateFile, {
+      file: "income",
+      apply: true,
+    });
+    const balancesFirst = await t.mutation(api.migrateFile, {
+      file: "balances",
+      apply: true,
+    });
+    const balancesSecond = await t.mutation(api.migrateFile, {
+      file: "balances",
+      apply: true,
+    });
+
+    expect(incomeFirst.inserted).toBe(16);
+    expect(incomeSecond).toMatchObject({
+      inserted: 0,
+      updated: 0,
+      unchanged: 16,
+    });
+    expect(balancesFirst.inserted).toBe(1);
+    expect(balancesSecond).toMatchObject({
+      inserted: 0,
+      updated: 0,
+      unchanged: 1,
+    });
+  });
+
   test("does not duplicate 905 transactions", async () => {
     const t = harness();
     await seedAll(t);

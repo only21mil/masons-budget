@@ -802,6 +802,57 @@ export const listBtcAccounts = query({
 });
 
 /**
+ * The stranded `balances` document is adult-household BTC. Scope is applied at
+ * the indexed document owner boundary, matching btcBalanceDocuments: wider
+ * `visible` reads may include child-owned documents, while `netWorth` excludes
+ * them. The current source produces only the canonical adult owner.
+ */
+export const listBalanceDocuments = query({
+  args: {
+    viewer: familyMemberValidator,
+    scope: scopeValidator,
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { viewer, scope, token }) => {
+    validateReadToken(token);
+    const owners = ownersInScope(viewer, scope);
+    const rows = (
+      await Promise.all(
+        owners.map((owner) =>
+          ctx.db
+            .query("balanceDocuments")
+            .withIndex("by_owner", (q) => q.eq("owner", owner))
+            .collect(),
+        ),
+      )
+    ).flat();
+
+    rows.sort((a, b) => (a.owner < b.owner ? -1 : a.owner > b.owner ? 1 : 0));
+    return {
+      rows: rows.map((row) => ({
+        owner: row.owner,
+        cashAppSats: row.cashAppSats,
+        coldcardSats: row.coldcardSats,
+        riverSats: row.riverSats,
+        strikeSats: row.strikeSats,
+        zeusSats: row.zeusSats,
+        totalSats: row.totalSats,
+        cashAppFiatCents: row.cashAppFiatCents,
+        coldcardFiatCents: row.coldcardFiatCents,
+        riverFiatCents: row.riverFiatCents,
+        strikeFiatCents: row.strikeFiatCents,
+        zeusFiatCents: row.zeusFiatCents,
+        totalFiatCents: row.totalFiatCents,
+        lastRefreshed: row.lastRefreshed,
+        btcSync: row.btcSync,
+        updatedAtMs: row.updatedAtMs,
+      })),
+      complete: true,
+    };
+  },
+});
+
+/**
  * Typed budget document from the still-authoritative document-shaped blob.
  *
  * Budget is a net-worth concern, so callers must pass the literal `netWorth` at
@@ -887,7 +938,7 @@ export const getBtcSnapshotMetadata = query({
   },
 });
 
-/** Row counts per table — metadata only, including Bitcoin bill payments. */
+/** Row counts per table — metadata only, including stranded blob projections. */
 export const rowCounts = query({
   args: { token: v.optional(v.string()) },
   handler: async (ctx, { token }) => {
@@ -898,6 +949,8 @@ export const rowCounts = query({
       btcBuys: (await ctx.db.query("btcBuys").collect()).length,
       btcBillPays: (await ctx.db.query("btcBillPays").collect()).length,
       btcAccounts: (await ctx.db.query("btcAccounts").collect()).length,
+      income: (await ctx.db.query("income").collect()).length,
+      balanceDocuments: (await ctx.db.query("balanceDocuments").collect()).length,
     };
   },
 });
