@@ -12,7 +12,7 @@
 //   4. The auth mirror in tables.ts drifting from the gates in dataFiles.ts.
 import { beforeEach, describe, expect, it } from "vitest";
 import { convexTest } from "convex-test";
-import type { FunctionReference } from "convex/server";
+import type { FunctionReference, OptionalRestArgs } from "convex/server";
 
 import schema from "./schema";
 import {
@@ -49,13 +49,15 @@ type Scope = "visible" | "netWorth";
 type RowEnvelope<Row> = { rows: Row[]; complete: boolean };
 
 async function queryRows<
-  Args extends Record<string, unknown>,
+  Args extends { viewer: Member },
   Row,
 >(
   reference: FunctionReference<"query", "public", Args, RowEnvelope<Row>>,
-  args: Args,
+  ...args: OptionalRestArgs<
+    FunctionReference<"query", "public", Args, RowEnvelope<Row>>
+  >
 ): Promise<Row[]> {
-  return (await t.query(reference, args)).rows;
+  return (await t.query(reference, ...args)).rows;
 }
 
 const fn = {

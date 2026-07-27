@@ -66,7 +66,7 @@ function harness() {
 type T = ReturnType<typeof harness>;
 type Row = Record<string, unknown>;
 
-interface CreateTransactionArgs {
+type CreateTransactionArgs = {
   id: string;
   owner: string;
   date: string;
@@ -78,9 +78,9 @@ interface CreateTransactionArgs {
   note?: string | null;
   actor: string;
   token?: string;
-}
+};
 
-interface EditTransactionArgs {
+type EditTransactionArgs = {
   id: string;
   owner: string;
   date?: string;
@@ -92,9 +92,9 @@ interface EditTransactionArgs {
   note?: string | null;
   actor: string;
   token?: string;
-}
+};
 
-interface CreateTodoArgs {
+type CreateTodoArgs = {
   id: string;
   title: string;
   category: string;
@@ -109,9 +109,9 @@ interface CreateTodoArgs {
   done?: boolean;
   actor: string;
   token?: string;
-}
+};
 
-interface EditTodoArgs {
+type EditTodoArgs = {
   id: string;
   title?: string;
   category?: string;
@@ -126,7 +126,7 @@ interface EditTodoArgs {
   done?: boolean;
   actor: string;
   token?: string;
-}
+};
 
 interface WriteResult {
   ok: true;

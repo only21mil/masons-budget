@@ -9,7 +9,11 @@
 // Nothing here touches a deployment: convex-test runs the functions in a mock
 // of the Convex runtime, same as the rest of this suite.
 
-import type { FunctionReference } from "convex/server";
+import type {
+  DataModelFromSchemaDefinition,
+  DocumentByName,
+  FunctionReference,
+} from "convex/server";
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 
@@ -49,6 +53,14 @@ function harness() {
 }
 
 type Harness = ReturnType<typeof harness>;
+type DataModel = DataModelFromSchemaDefinition<typeof schema>;
+type MigratedTableName =
+  | "transactions"
+  | "btcBuys"
+  | "btcBillPays"
+  | "todos"
+  | "income"
+  | "balanceDocuments";
 
 interface Verification {
   file: string;
@@ -426,16 +438,10 @@ async function seedAll(t: Harness) {
   });
 }
 
-async function rowsIn(
+async function rowsIn<TableName extends MigratedTableName>(
   t: Harness,
-  table:
-    | "transactions"
-    | "btcBuys"
-    | "btcBillPays"
-    | "todos"
-    | "income"
-    | "balanceDocuments",
-) {
+  table: TableName,
+): Promise<Array<DocumentByName<DataModel, TableName>>> {
   return await t.run(async (ctx) => await ctx.db.query(table).collect());
 }
 
