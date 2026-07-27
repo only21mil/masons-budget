@@ -23,7 +23,7 @@ enum MC2Mapper {
     static func mapTransactions(_ dtos: [MC2Transaction], owner: FamilyMember = .victor) -> [Transaction] {
         dtos.map { dto in
             let resolvedOwner = dto.owner ?? owner
-            Transaction(
+            return Transaction(
                 id: dto.id,
                 date: parseDate(dto.date),
                 merchant: dto.merchant,
