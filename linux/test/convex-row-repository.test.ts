@@ -29,6 +29,9 @@ function transaction(overrides: Record<string, unknown> = {}): Record<string, un
     month: "2026-07",
     merchant: "Example",
     amountCents: int64(-115n),
+    spendAmount: int64(115n),
+    displaySpendAmount: int64(115n),
+    hasOppositeSpendSign: false,
     category: "Other",
     updatedAtMs: 1,
     ...overrides,
@@ -106,7 +109,16 @@ describe("main-process row repository", () => {
       }),
       post: async () => {
         calls += 1
-        return success({ transactions: 0, todos: 0, btcBuys: 0, btcBillPays: 0, btcAccounts: 0 })
+        return success({
+          transactions: 0,
+          todos: 0,
+          btcBuys: 0,
+          btcBillPays: 0,
+          btcAccounts: 0,
+          budgetDocuments: 0,
+          btcBalanceDocuments: 0,
+          financeDocuments: 0,
+        })
       },
     })
     await expect(repository.query({ kind: "rowCounts" })).resolves.toEqual({
@@ -122,13 +134,31 @@ describe("main-process row repository", () => {
       configuration: () => ({ generation: 1, settings }),
       post: async (_endpoint, body) => {
         sent = JSON.parse(body) as Record<string, unknown>
-        return success({ transactions: 1, todos: 2, btcBuys: 3, btcBillPays: 4, btcAccounts: 5 })
+        return success({
+          transactions: 1,
+          todos: 2,
+          btcBuys: 3,
+          btcBillPays: 4,
+          btcAccounts: 5,
+          budgetDocuments: 6,
+          btcBalanceDocuments: 7,
+          financeDocuments: 8,
+        })
       },
     })
     await expect(repository.query({ kind: "rowCounts" })).resolves.toEqual({
       status: "ok",
       kind: "rowCounts",
-      value: { transactions: 1, todos: 2, btcBuys: 3, btcBillPays: 4, btcAccounts: 5 },
+      value: {
+        transactions: 1,
+        todos: 2,
+        btcBuys: 3,
+        btcBillPays: 4,
+        btcAccounts: 5,
+        budgetDocuments: 6,
+        btcBalanceDocuments: 7,
+        financeDocuments: 8,
+      },
     })
     expect(sent).toEqual({
       path: "tables:rowCounts",
@@ -160,6 +190,9 @@ describe("main-process row repository", () => {
           month: "2026-07",
           merchant: "Example",
           amountCents: -115n,
+          spendAmount: 115n,
+          displaySpendAmount: 115n,
+          hasOppositeSpendSign: false,
           category: "Other",
           updatedAtMs: 1,
         },
@@ -224,23 +257,105 @@ describe("main-process row repository", () => {
     })
   })
 
-  it("rejects Convex internals and migration fields instead of forwarding them", async () => {
-    for (const extra of [
-      { sourceFile: "transactions" },
-      { _id: "hidden" },
-      { _creationTime: 1 },
-      { migrationRaw: { private: true } },
-      { migrationSourceIndex: 1 },
+  it("ignores unexpected response fields while projecting only the public DTO", async () => {
+    const repository = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => success({
+        complete: true,
+        rows: [transaction({
+          sourceFile: "transactions",
+          _id: "hidden",
+          futureServerField: { nested: true },
+        })],
+        futureEnvelopeField: "ignored",
+      }),
+    })
+
+    const result = await repository.query({ kind: "transactions", viewer: "victor" })
+    expect(result).toMatchObject({
+      status: "ok",
+      kind: "transactions",
+      complete: true,
+      rows: [{ txId: "tx-1", spendAmount: 115n }],
+    })
+    expect(result).not.toHaveProperty("futureEnvelopeField")
+    expect(result).not.toHaveProperty("rows.0.sourceFile")
+    expect(result).not.toHaveProperty("rows.0._id")
+    expect(result).not.toHaveProperty("rows.0.futureServerField")
+  })
+
+  it("validates known transaction fields and refuses unknown owners", async () => {
+    for (const invalid of [
+      { spendAmount: 115 },
+      { displaySpendAmount: int64(-115n) },
+      { hasOppositeSpendSign: true },
+      { owner: "future-owner" },
     ]) {
       const repository = createConvexRowRepository({
         configuration: () => ({ generation: 1, settings }),
-        post: async () => success({ complete: true, rows: [transaction(extra)] }),
+        post: async () => success({ complete: true, rows: [transaction(invalid)] }),
       })
       await expect(repository.query({ kind: "transactions", viewer: "victor" })).resolves.toEqual({
         status: "error",
         code: "invalid-response",
       })
     }
+  })
+
+  it("enforces signed contribution, display magnitude, and opposite-sign semantics", async () => {
+    const repository = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => success({
+        complete: true,
+        rows: [
+          transaction({
+            txId: "adult-refund-or-wrong-sign",
+            amountCents: int64(2_500n),
+            spendAmount: int64(-2_500n),
+            displaySpendAmount: int64(2_500n),
+            hasOppositeSpendSign: true,
+          }),
+          transaction({
+            txId: "child-spend",
+            owner: "mason",
+            amountCents: int64(2_000n),
+            spendAmount: int64(2_000n),
+            displaySpendAmount: int64(2_000n),
+          }),
+          transaction({
+            txId: "income",
+            amountCents: int64(10_000n),
+            spendAmount: int64(0n),
+            displaySpendAmount: int64(0n),
+            category: "Income",
+          }),
+        ],
+      }),
+    })
+
+    await expect(repository.query({ kind: "transactions", viewer: "victor" })).resolves.toMatchObject({
+      status: "ok",
+      rows: [
+        {
+          txId: "adult-refund-or-wrong-sign",
+          spendAmount: -2_500n,
+          displaySpendAmount: 2_500n,
+          hasOppositeSpendSign: true,
+        },
+        {
+          txId: "child-spend",
+          spendAmount: 2_000n,
+          displaySpendAmount: 2_000n,
+          hasOppositeSpendSign: false,
+        },
+        {
+          txId: "income",
+          spendAmount: 0n,
+          displaySpendAmount: 0n,
+          hasOppositeSpendSign: false,
+        },
+      ],
+    })
   })
 
   it("asserts visibility locally even if the backend returns the wrong owner", async () => {

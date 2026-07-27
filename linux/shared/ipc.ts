@@ -11,6 +11,11 @@ export interface VogelVaultTransactionRow {
   readonly month: string
   readonly merchant: string
   readonly amountCents: bigint
+  /** Signed budget contribution: positive spend, negative credit, zero income. */
+  readonly spendAmount: bigint
+  /** Rendering magnitude of spendAmount. */
+  readonly displaySpendAmount: bigint
+  readonly hasOppositeSpendSign: boolean
   readonly category: string
   readonly card?: string
   readonly note?: string
@@ -144,6 +149,9 @@ export interface VogelVaultRowCounts {
   readonly btcBuys: number
   readonly btcBillPays: number
   readonly btcAccounts: number
+  readonly budgetDocuments: number
+  readonly btcBalanceDocuments: number
+  readonly financeDocuments: number
 }
 
 export type VogelVaultRowRequest =

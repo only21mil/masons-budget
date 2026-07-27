@@ -86,6 +86,16 @@ function exactObject(
   return value
 }
 
+/** Server objects are extensible: validate fields we consume and ignore the rest. */
+function responseObject(
+  value: unknown,
+  required: readonly string[],
+): Record<string, unknown> {
+  if (!isRecord(value)) throw new InvalidValue()
+  if (required.some((key) => !Object.hasOwn(value, key))) throw new InvalidValue()
+  return value
+}
+
 function text(
   record: Record<string, unknown>,
   key: string,
@@ -204,22 +214,44 @@ function assertBudgetOwner(viewer: VogelVaultMember, owner: VogelVaultMember): v
 }
 
 function transaction(value: unknown, viewer: VogelVaultMember): VogelVaultTransactionRow {
-  const row = exactObject(
+  const row = responseObject(
     value,
-    ["txId", "owner", "date", "month", "merchant", "amountCents", "category", "updatedAtMs"],
-    ["card", "note"],
+    [
+      "txId", "owner", "date", "month", "merchant", "amountCents", "spendAmount",
+      "displaySpendAmount", "hasOppositeSpendSign", "category", "updatedAtMs",
+    ],
   )
   const owner = member(row)
   assertVisible(viewer, owner)
   const { date, month } = dateAndMonth(row)
+  const amountCents = int64(row, "amountCents")
+  const spendAmount = int64(row, "spendAmount")
+  const displaySpendAmount = int64(row, "displaySpendAmount")
+  const hasOppositeSpendSign = booleanValue(row, "hasOppositeSpendSign")
+  const category = text(row, "category")
+  const expectedSpendAmount = category === "Income"
+    ? 0n
+    : ADULTS.has(owner)
+      ? -amountCents
+      : amountCents
+  if (
+    spendAmount !== expectedSpendAmount ||
+    displaySpendAmount !== (spendAmount < 0n ? -spendAmount : spendAmount) ||
+    hasOppositeSpendSign !== (spendAmount < 0n)
+  ) {
+    throw new InvalidValue()
+  }
   return {
     txId: text(row, "txId", 256),
     owner,
     date,
     month,
     merchant: text(row, "merchant"),
-    amountCents: int64(row, "amountCents"),
-    category: text(row, "category"),
+    amountCents,
+    spendAmount,
+    displaySpendAmount,
+    hasOppositeSpendSign,
+    category,
     ...optionalField("card", optionalText(row, "card")),
     ...optionalField("note", optionalText(row, "note")),
     updatedAtMs: timestampValue(row),
@@ -227,10 +259,9 @@ function transaction(value: unknown, viewer: VogelVaultMember): VogelVaultTransa
 }
 
 function todo(value: unknown, viewer: VogelVaultMember): VogelVaultTodoRow {
-  const row = exactObject(
+  const row = responseObject(
     value,
     ["todoId", "owner", "title", "done", "flagged", "updatedAtMs"],
-    ["lane", "project", "area", "due", "notes", "priority", "createdAt", "updatedAt", "completedAt"],
   )
   const owner = member(row)
   assertVisible(viewer, owner)
@@ -254,10 +285,9 @@ function todo(value: unknown, viewer: VogelVaultMember): VogelVaultTodoRow {
 }
 
 function btcBuy(value: unknown, viewer: VogelVaultMember, scope: VogelVaultBtcScope): VogelVaultBtcBuyRow {
-  const row = exactObject(
+  const row = responseObject(
     value,
     ["buyId", "owner", "date", "month", "source", "sats", "priceUsdCents", "usdCents", "updatedAtMs"],
-    ["note", "status", "costBasisStatus", "loggedBy", "archimedesRequestId"],
   )
   const owner = member(row)
   assertVisible(viewer, owner, scope)
@@ -285,7 +315,7 @@ function btcAccount(
   viewer: VogelVaultMember,
   scope: VogelVaultBtcScope,
 ): VogelVaultBtcAccountRow {
-  const row = exactObject(
+  const row = responseObject(
     value,
     ["key", "owner", "label", "custody", "sats", "fiatCents", "asOf", "schemaVersion", "updatedAtMs"],
   )
@@ -311,13 +341,12 @@ function btcBillPay(
   viewer: VogelVaultMember,
   scope: VogelVaultBtcScope,
 ): VogelVaultBtcBillPayRow {
-  const row = exactObject(
+  const row = responseObject(
     value,
     [
       "billPayId", "owner", "date", "month", "merchant", "category", "amountUsdCents",
       "btcSpentSats", "btcPriceCents", "feeUsdCents", "updatedAtMs",
     ],
-    ["platform", "note", "reference"],
   )
   const owner = member(row)
   assertVisible(viewer, owner, scope)
@@ -341,7 +370,7 @@ function btcBillPay(
 }
 
 function budgetCategory(value: unknown): VogelVaultBudgetCategory {
-  const row = exactObject(value, ["name", "budgetCents"], ["icon"])
+  const row = responseObject(value, ["name", "budgetCents"])
   return {
     name: text(row, "name"),
     ...optionalField("icon", optionalText(row, "icon")),
@@ -350,7 +379,7 @@ function budgetCategory(value: unknown): VogelVaultBudgetCategory {
 }
 
 function budgetPaycheck(value: unknown): VogelVaultBudgetPaycheck {
-  const row = exactObject(value, ["date", "amountCents", "netCents"], ["platform", "source", "note"])
+  const row = responseObject(value, ["date", "amountCents", "netCents"])
   return {
     date: text(row, "date"),
     ...optionalField("platform", optionalText(row, "platform")),
@@ -362,13 +391,12 @@ function budgetPaycheck(value: unknown): VogelVaultBudgetPaycheck {
 }
 
 function budgetIncome(value: unknown): VogelVaultBudgetIncome {
-  const row = exactObject(
+  const row = responseObject(
     value,
     [
       "weeklyGrossCents", "weeklyStrikeCents", "weeklyRiverCents", "monthlyGrossCents",
       "mtdIncomeCents", "ytdIncomeCents", "paychecks",
     ],
-    ["payFrequency"],
   )
   const paychecks = row["paychecks"]
   if (!Array.isArray(paychecks) || paychecks.length > CONVEX_ROW_LIMITS.maxBudgetPaychecks) throw new InvalidValue()
@@ -385,7 +413,7 @@ function budgetIncome(value: unknown): VogelVaultBudgetIncome {
 }
 
 function budgetHistory(value: unknown): VogelVaultBudgetHistoryEntry {
-  const row = exactObject(value, ["month", "incomeCents", "expensesCents", "savingsBps"])
+  const row = responseObject(value, ["month", "incomeCents", "expensesCents", "savingsBps"])
   return {
     month: monthValue(row),
     incomeCents: int64(row, "incomeCents"),
@@ -396,13 +424,12 @@ function budgetHistory(value: unknown): VogelVaultBudgetHistoryEntry {
 
 function budgetDocument(value: unknown, viewer: VogelVaultMember): VogelVaultBudgetDocument | null {
   if (value === null) return null
-  const row = exactObject(
+  const row = responseObject(
     value,
     [
       "owner", "month", "coinbaseOneBalanceCents", "categories", "mtdIncomeCents",
       "ytdIncomeCents", "monthlyHistory", "updatedAtMs",
     ],
-    ["effectiveApr", "strategyNote", "income"],
   )
   const owner = member(row)
   assertBudgetOwner(viewer, owner)
@@ -431,10 +458,9 @@ function snapshotMeta(
   viewer: VogelVaultMember,
   scope: VogelVaultBtcScope,
 ): VogelVaultBtcSnapshotMeta {
-  const row = exactObject(
+  const row = responseObject(
     value,
     ["owner", "schemaVersion", "asOf", "updatedAtMs"],
-    ["source", "basis", "confidence"],
   )
   const owner = member(row)
   assertVisible(viewer, owner, scope)
@@ -455,12 +481,15 @@ function positiveLimit(value: unknown, max: number): number {
 }
 
 function rowCounts(value: unknown): VogelVaultRowCounts {
-  const row = exactObject(value, [
+  const row = responseObject(value, [
     "transactions",
     "todos",
     "btcBuys",
     "btcBillPays",
     "btcAccounts",
+    "budgetDocuments",
+    "btcBalanceDocuments",
+    "financeDocuments",
   ])
   return {
     transactions: nonNegativeInteger(row, "transactions"),
@@ -468,6 +497,9 @@ function rowCounts(value: unknown): VogelVaultRowCounts {
     btcBuys: nonNegativeInteger(row, "btcBuys"),
     btcBillPays: nonNegativeInteger(row, "btcBillPays"),
     btcAccounts: nonNegativeInteger(row, "btcAccounts"),
+    budgetDocuments: nonNegativeInteger(row, "budgetDocuments"),
+    btcBalanceDocuments: nonNegativeInteger(row, "btcBalanceDocuments"),
+    financeDocuments: nonNegativeInteger(row, "financeDocuments"),
   }
 }
 
@@ -613,7 +645,7 @@ function parseListEnvelope<T>(
   hardLimit: number,
   parseRow: (row: unknown) => T,
 ): { rows: T[]; complete: boolean } {
-  const envelope = exactObject(value, ["rows", "complete"])
+  const envelope = responseObject(value, ["rows", "complete"])
   const rows = envelope["rows"]
   if (!Array.isArray(rows) || typeof envelope["complete"] !== "boolean") throw new InvalidValue()
   if (rows.length > hardLimit || (requestLimit !== undefined && rows.length > requestLimit)) throw new InvalidValue()
@@ -627,7 +659,7 @@ function parseDocumentEnvelope<T>(
   key: "document",
   parseDocument: (document: unknown) => T | null,
 ): T | null {
-  const envelope = exactObject(value, [key, "complete"])
+  const envelope = responseObject(value, [key, "complete"])
   if (envelope["complete"] !== true) throw new InvalidValue("incomplete")
   return parseDocument(envelope[key])
 }

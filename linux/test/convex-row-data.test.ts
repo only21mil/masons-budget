@@ -12,7 +12,16 @@ function response(request: VogelVaultRowRequest): VogelVaultRowResult {
       return {
         status: "ok",
         kind: "rowCounts",
-        value: { transactions: 1, todos: 1, btcBuys: 1, btcBillPays: 1, btcAccounts: 1 },
+        value: {
+          transactions: 1,
+          todos: 1,
+          btcBuys: 1,
+          btcBillPays: 1,
+          btcAccounts: 1,
+          budgetDocuments: 1,
+          btcBalanceDocuments: 1,
+          financeDocuments: 1,
+        },
       }
     case "transactions":
       return {
@@ -26,6 +35,9 @@ function response(request: VogelVaultRowRequest): VogelVaultRowResult {
           month: "2026-07",
           merchant: "Example",
           amountCents: -123n,
+          spendAmount: 123n,
+          displaySpendAmount: 123n,
+          hasOppositeSpendSign: false,
           category: "Food",
           updatedAtMs: 10,
         }],
@@ -162,7 +174,16 @@ describe("renderer Convex row adapter", () => {
       return {
         status: "ok",
         kind: "rowCounts",
-        value: { transactions: 0, todos: 0, btcBuys: 0, btcBillPays: 0, btcAccounts: 0 },
+        value: {
+          transactions: 0,
+          todos: 0,
+          btcBuys: 0,
+          btcBillPays: 0,
+          btcAccounts: 0,
+          budgetDocuments: 0,
+          btcBalanceDocuments: 0,
+          financeDocuments: 0,
+        },
       }
     }, "victor", () => 123)
 
