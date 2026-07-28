@@ -172,3 +172,46 @@ dependencies {
     testImplementation("io.github.takahirom.roborazzi:roborazzi:1.36.0")
     testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.36.0")
 }
+
+// CI keeps the behavioural app suite in the required PR check while moving the
+// screenshot-producing design packet to a separate default-branch step. The
+// ordinary local task remains unchanged and includes every test.
+//
+// Robolectric normally downloads its 150–200 MB android-all runtime from Maven
+// inside the test JVM. CI prefetches and checksum-verifies those runtimes, then
+// points Robolectric at the warmed directory in offline mode so a Maven outage
+// cannot turn into a test failure after Gradle has already started the suite.
+val designPacketTests = "com.sats21m.vogelvault.DesignPacket*Test"
+val designPacketTestMode = providers.gradleProperty("designPacketTests").orElse("include")
+val robolectricOffline = providers.gradleProperty("robolectricOffline").orElse("false")
+val robolectricDependencyDir = providers.gradleProperty("robolectricDependencyDir")
+
+tasks.withType<Test>().configureEach {
+    if (name != "testDebugUnitTest") return@configureEach
+
+    filter {
+        when (designPacketTestMode.get()) {
+            "include" -> Unit
+            "exclude" -> excludeTestsMatching(designPacketTests)
+            "only" -> includeTestsMatching(designPacketTests)
+            else ->
+                throw GradleException(
+                    "designPacketTests must be one of: include, exclude, only",
+                )
+        }
+    }
+
+    when (robolectricOffline.get()) {
+        "false" -> Unit
+        "true" -> {
+            val dependencyDir =
+                robolectricDependencyDir.orNull?.takeIf { it.isNotBlank() }
+                    ?: throw GradleException(
+                        "robolectricDependencyDir is required when robolectricOffline=true",
+                    )
+            systemProperty("robolectric.offline", "true")
+            systemProperty("robolectric.dependency.dir", dependencyDir)
+        }
+        else -> throw GradleException("robolectricOffline must be true or false")
+    }
+}

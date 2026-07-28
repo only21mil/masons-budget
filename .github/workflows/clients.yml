@@ -261,7 +261,9 @@ jobs:
         working-directory: linux
 
       - name: Upload build output
-        if: github.event_name != 'pull_request'
+        if: >-
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: actions/upload-artifact@v4
         with:
           name: linux-client-dist
@@ -274,17 +276,24 @@ jobs:
       # child profile. Headless, so it needs no display. Download the artifact to
       # review the UI without running the app.
       - name: Install Chromium for screenshots
-        if: github.event_name != 'pull_request'
+        if: >-
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: npx playwright install --with-deps chromium
         working-directory: linux
 
       - name: Capture design packet
-        if: github.event_name != 'pull_request'
+        if: >-
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: npm run screenshots
         working-directory: linux
 
       - name: Upload design packet
-        if: always() && github.event_name != 'pull_request'
+        if: >-
+          always() &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: actions/upload-artifact@v4
         with:
           name: linux-design-packet
@@ -328,6 +337,102 @@ jobs:
         if: steps.probe.outputs.gradle == 'true'
         with:
           gradle-version: "8.12"
+
+      # Robolectric's android-all runtimes are resolved by the test JVM rather
+      # than Gradle. Cache and prefetch them explicitly, then run Robolectric
+      # offline below. A cold runner still needs Maven once, but curl retries
+      # transient faults and SHA-512 verification rejects partial/corrupt files.
+      - name: Restore Robolectric API 35 runtime
+        if: steps.probe.outputs.app == 'true'
+        uses: actions/cache@v4
+        with:
+          path: >-
+            ${{ runner.temp }}/robolectric-dependencies/android-all-instrumented-15-robolectric-12650502-i7.jar
+          key: robolectric-${{ runner.os }}-android-all-instrumented-15-robolectric-12650502-i7
+
+      - name: Prefetch Robolectric API 35 runtime
+        if: steps.probe.outputs.app == 'true'
+        env:
+          ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-dependencies
+          ROBOLECTRIC_RUNTIME: android-all-instrumented-15-robolectric-12650502-i7.jar
+          ROBOLECTRIC_RUNTIME_SHA512: 87bdd0341838f5f630e1ff412ab29cb2f06e0f8cb7751f14679d11b4ee6084873001f8f6a8581ae6e139fa7c9a654b632412827430f984ebecc3c2588674f7e7
+          ROBOLECTRIC_RUNTIME_URL: https://repo.maven.apache.org/maven2/org/robolectric/android-all-instrumented/15-robolectric-12650502-i7/android-all-instrumented-15-robolectric-12650502-i7.jar
+        run: |
+          set -euo pipefail
+          mkdir -p "$ROBOLECTRIC_DEPENDENCY_DIR"
+          runtime_path="$ROBOLECTRIC_DEPENDENCY_DIR/$ROBOLECTRIC_RUNTIME"
+
+          if printf '%s  %s\n' "$ROBOLECTRIC_RUNTIME_SHA512" "$runtime_path" |
+            sha512sum --check --status; then
+            echo "Using checksum-verified cached $ROBOLECTRIC_RUNTIME."
+            exit 0
+          fi
+
+          partial_path="${runtime_path}.partial"
+          rm -f "$partial_path"
+          trap 'rm -f "$partial_path"' EXIT
+          curl \
+            --fail \
+            --location \
+            --retry 5 \
+            --retry-all-errors \
+            --retry-delay 2 \
+            --connect-timeout 15 \
+            --max-time 600 \
+            --output "$partial_path" \
+            "$ROBOLECTRIC_RUNTIME_URL"
+          printf '%s  %s\n' "$ROBOLECTRIC_RUNTIME_SHA512" "$partial_path" |
+            sha512sum --check
+          mv "$partial_path" "$runtime_path"
+
+      - name: Restore Robolectric API 34 design-packet runtime
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/cache@v4
+        with:
+          path: >-
+            ${{ runner.temp }}/robolectric-dependencies/android-all-instrumented-14-robolectric-10818077-i7.jar
+          key: robolectric-${{ runner.os }}-android-all-instrumented-14-robolectric-10818077-i7
+
+      - name: Prefetch Robolectric API 34 design-packet runtime
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-dependencies
+          ROBOLECTRIC_RUNTIME: android-all-instrumented-14-robolectric-10818077-i7.jar
+          ROBOLECTRIC_RUNTIME_SHA512: 7cdc0b1306e7865f1acd25a363073149654caee5b8e278c5ae37ff4724185724eff39f0b0111800b521e640bb28698d9d2e655134a801569a0f07470e7b5f455
+          ROBOLECTRIC_RUNTIME_URL: https://repo.maven.apache.org/maven2/org/robolectric/android-all-instrumented/14-robolectric-10818077-i7/android-all-instrumented-14-robolectric-10818077-i7.jar
+        run: |
+          set -euo pipefail
+          mkdir -p "$ROBOLECTRIC_DEPENDENCY_DIR"
+          runtime_path="$ROBOLECTRIC_DEPENDENCY_DIR/$ROBOLECTRIC_RUNTIME"
+
+          if printf '%s  %s\n' "$ROBOLECTRIC_RUNTIME_SHA512" "$runtime_path" |
+            sha512sum --check --status; then
+            echo "Using checksum-verified cached $ROBOLECTRIC_RUNTIME."
+            exit 0
+          fi
+
+          partial_path="${runtime_path}.partial"
+          rm -f "$partial_path"
+          trap 'rm -f "$partial_path"' EXIT
+          curl \
+            --fail \
+            --location \
+            --retry 5 \
+            --retry-all-errors \
+            --retry-delay 2 \
+            --connect-timeout 15 \
+            --max-time 600 \
+            --output "$partial_path" \
+            "$ROBOLECTRIC_RUNTIME_URL"
+          printf '%s  %s\n' "$ROBOLECTRIC_RUNTIME_SHA512" "$partial_path" |
+            sha512sum --check
+          mv "$partial_path" "$runtime_path"
 
       # Pull requests and other untrusted refs deliberately stay on AGP's
       # per-run debug key. Repository key material may exist only when the
@@ -387,34 +492,67 @@ jobs:
         working-directory: android
 
       # The event check is intentionally explicit: pull requests cannot reach
-      # either secret-bearing step, and no other ref gets an APK build. Running
-      # PR-controlled Gradle without signing env preserves AGP's generated key.
-      - name: Assemble debug APK with ephemeral signing
+      # either secret-bearing step, and no other ref gets an APK build. PRs run
+      # lint directly, without packaging an ephemeral APK.
+      - name: Lint Android app
         if: >-
           steps.probe.outputs.app == 'true' &&
           github.event_name == 'pull_request'
-        run: gradle :app:assembleDebug :app:lintDebug --no-daemon
+        run: gradle :app:lintDebug --no-daemon
         working-directory: android
 
       # The digest is public certificate metadata already embedded in the APK.
-      # The reporter emits exactly one normalized SHA-256 line. A stable-signing
-      # run must produce it; ephemeral PR builds remain best-effort diagnostics.
+      # The reporter emits exactly one normalized SHA-256 line, and the
+      # stable-signing default-branch run must produce it.
       - name: Report the debug signing certificate
-        if: steps.probe.outputs.app == 'true'
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         env:
           STABLE_SIGNING: ${{ steps.debug_keystore.outputs.stable || 'false' }}
         run: .github/workflows/scripts/report_android_debug_signing.sh
 
-      # Renders Compose to PNG under Robolectric — no emulator, no display.
-      # Review artifact, not a pixel-diff gate: behaviour is asserted by the
-      # domain and threshold tests, so a font nudge must not fail the build.
-      - name: App unit tests + design packet
+      # Required PR verification: every app unit test except the screenshot
+      # packet. This includes the real Robolectric cache/config tests and runs
+      # against a prefetched API 35 runtime with network resolution disabled.
+      - name: App unit tests
         if: steps.probe.outputs.app == 'true'
-        run: gradle :app:testDebugUnitTest -Proborazzi.test.record=true --no-daemon
+        env:
+          ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-dependencies
+        run: >-
+          gradle :app:testDebugUnitTest
+          -PdesignPacketTests=exclude
+          -ProbolectricOffline=true
+          -ProbolectricDependencyDir="$ROBOLECTRIC_DEPENDENCY_DIR"
+          --no-daemon
+        working-directory: android
+
+      # Renders Compose to PNG under Robolectric — no emulator, no display.
+      # It remains a genuine default-branch test gate, but its 150 MB API 34
+      # runtime and screenshot recording no longer block pull requests.
+      - name: Design-packet tests
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-dependencies
+        run: >-
+          gradle :app:testDebugUnitTest
+          -PdesignPacketTests=only
+          -Proborazzi.test.record=true
+          -ProbolectricOffline=true
+          -ProbolectricDependencyDir="$ROBOLECTRIC_DEPENDENCY_DIR"
+          --no-daemon
         working-directory: android
 
       - name: Upload Android design packet
-        if: always() && steps.probe.outputs.app == 'true' && github.event_name != 'pull_request'
+        if: >-
+          always() &&
+          steps.probe.outputs.app == 'true' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: actions/upload-artifact@v4
         with:
           name: android-design-packet
@@ -426,7 +564,9 @@ jobs:
       - name: Upload stable-signed debug APK
         if: >-
           steps.probe.outputs.app == 'true' &&
-          steps.debug_keystore.outputs.stable == 'true'
+          steps.debug_keystore.outputs.stable == 'true' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: actions/upload-artifact@v4
         with:
           name: vogel-vault-debug-apk
