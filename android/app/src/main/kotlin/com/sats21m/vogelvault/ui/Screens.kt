@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +33,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.domain.BtcAccount
+import com.sats21m.vogelvault.domain.BtcBuy
+import com.sats21m.vogelvault.domain.BudgetSpend
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
@@ -41,6 +42,7 @@ import com.sats21m.vogelvault.domain.MC2_FILES
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.domain.Transaction
+import com.sats21m.vogelvault.domain.budgetMonthsFor
 import com.sats21m.vogelvault.domain.budgetTransactionsFor
 import com.sats21m.vogelvault.domain.deriveBudgetSpend
 import com.sats21m.vogelvault.domain.inMonth
@@ -59,7 +61,9 @@ import com.sats21m.vogelvault.ui.components.Panel
 import com.sats21m.vogelvault.ui.components.Provenance
 import com.sats21m.vogelvault.ui.components.StateBlock
 import com.sats21m.vogelvault.ui.components.StatusBanner
+import com.sats21m.vogelvault.ui.components.VaultLazyListScope
 import com.sats21m.vogelvault.ui.components.figure
+import com.sats21m.vogelvault.ui.components.vaultContent
 import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultAccentDim
 import com.sats21m.vogelvault.ui.theme.VaultCream
@@ -72,6 +76,37 @@ import com.sats21m.vogelvault.ui.theme.VaultTextDim
 import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 import com.sats21m.vogelvault.ui.theme.VaultWarning
 
+private data class ScreenCollections(
+    val visibleTransactions: List<Transaction>,
+    val budgetTransactions: List<Transaction>,
+    val netWorthAccounts: List<BtcAccount>,
+    val visibleAccounts: List<BtcAccount>,
+    val visibleBuys: List<BtcBuy>,
+    val visibleTodos: List<TodoItem>,
+)
+
+private data class DashboardProjection(
+    val activity: List<Transaction>,
+    val accounts: List<BtcAccount>,
+    val spendCents: Long,
+    val incomeCents: Long,
+    val stackSats: Long,
+    val openTodos: Int,
+)
+
+private data class BitcoinProjection(
+    val accounts: List<BtcAccount>,
+    val buys: List<BtcBuy>,
+    val totalSats: Long,
+    val selfCustodySats: Long,
+)
+
+private data class NetWorthProjection(
+    val accounts: List<BtcAccount>,
+    val excludedAccounts: List<BtcAccount>,
+    val stackSats: Long,
+)
+
 @Composable
 fun ScreenHost(
     destination: Destination,
@@ -82,48 +117,111 @@ fun ScreenHost(
     modifier: Modifier = Modifier,
 ) {
     val budgetMonth = state.data.budget.value?.month
-    val months = state.budgetMonths
+    val profile = state.activeProfile
+    val transactionsInput = state.data.transactions.value
+    val accountsInput = state.data.btcAccounts.value
+    val buysInput = state.data.btcBuys.value
+    val todosInput = state.data.todos.value
+    val months = remember(profile, transactionsInput, budgetMonth) {
+        transactionsInput.budgetMonthsFor(profile, budgetMonth)
+    }
+    val initialMonth = remember(state.selectedMonth, months, budgetMonth) {
+        resolveBudgetMonth(state.selectedMonth, months, budgetMonth)
+    }
     // The Budget screen's month scope. Held here rather than in the ViewModel
     // because it is view state, and because every row of the list has to agree on
     // it — the KPI strip, the banners and the categories all read the same month.
     // Re-seeded when the profile changes or the state names a month, so a preview
     // or the design packet can render any month without driving a tap.
     var picked by rememberSaveable(state.activeProfile, state.selectedMonth) {
-        mutableStateOf(state.activeBudgetMonth)
+        mutableStateOf(initialMonth)
     }
     // A refresh can retire the picked month. Fall back rather than render a month
     // the ledger no longer contains.
     val month = resolveBudgetMonth(picked, months, budgetMonth)
+    val collections = remember(profile, transactionsInput, accountsInput, buysInput, todosInput) {
+        ScreenCollections(
+            visibleTransactions = transactionsInput.visibleTo(profile),
+            budgetTransactions = transactionsInput.budgetTransactionsFor(profile),
+            netWorthAccounts = accountsInput.netWorthScopeFor(profile),
+            visibleAccounts = accountsInput.visibleTo(profile),
+            visibleBuys = buysInput.visibleTo(profile),
+            visibleTodos = todosInput.visibleTo(profile),
+        )
+    }
+    val dashboardProjection = remember(month, collections) {
+        val budgetTransactions = collections.budgetTransactions.inMonth(month ?: "")
+        val activity = collections.visibleTransactions.inMonth(month ?: "").take(6)
+        DashboardProjection(
+            activity = activity,
+            accounts = collections.netWorthAccounts,
+            spendCents = budgetTransactions.sumOf { it.spendAmount },
+            incomeCents = budgetTransactions.sumOf { it.incomeAmount },
+            stackSats = collections.netWorthAccounts.sumOf { it.sats },
+            openTodos = collections.visibleTodos.count { !it.done },
+        )
+    }
+    val budgetSpend = remember(state.data.budget.value, month, collections.budgetTransactions) {
+        state.data.budget.value?.let { budget ->
+            val scoped = if (month == null || month == budget.month) budget else budget.copy(month = month)
+            deriveBudgetSpend(scoped, collections.budgetTransactions)
+        }
+    }
+    val bitcoinProjection = remember(collections.netWorthAccounts, collections.visibleBuys) {
+        BitcoinProjection(
+            accounts = collections.netWorthAccounts,
+            buys = collections.visibleBuys,
+            totalSats = collections.netWorthAccounts.sumOf { it.sats },
+            selfCustodySats = collections.netWorthAccounts
+                .filter { it.custody.key == "self_custody" }
+                .sumOf { it.sats },
+        )
+    }
+    val netWorthProjection = remember(collections.netWorthAccounts, collections.visibleAccounts) {
+        val included = collections.netWorthAccounts
+            .mapTo(mutableSetOf()) { "${it.owner.key}:${it.key}" }
+        NetWorthProjection(
+            accounts = collections.netWorthAccounts,
+            excludedAccounts = collections.visibleAccounts.filterNot {
+                "${it.owner.key}:${it.key}" in included
+            },
+            stackSats = collections.netWorthAccounts.sumOf { it.sats },
+        )
+    }
+    val dueTodos = remember(collections.visibleTodos) {
+        collections.visibleTodos.filter { it.isDueBy(TODAY_DATE) }
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(VaultSpace.md),
-        verticalArrangement = Arrangement.spacedBy(VaultSpace.md),
     ) {
-        item {
-            ScreenHeader(
-                destination,
-                state,
-                month,
-                displayUnit,
-                onDisplayUnitChange,
-            )
-        }
-        if (
-            displayUnit == DisplayUnit.USD &&
-            destination in setOf(Destination.DASHBOARD, Destination.BITCOIN, Destination.NET_WORTH)
-        ) {
-            item { BitcoinFiatNotice(state) }
-        }
-        when (destination) {
-            Destination.DASHBOARD -> dashboard(state, month, displayUnit)
-            Destination.ACTIVITY -> activity(state)
-            Destination.BUDGET -> budget(state, month, months) { picked = it }
-            Destination.BITCOIN -> bitcoin(state, displayUnit)
-            Destination.NET_WORTH -> netWorth(state, displayUnit)
-            Destination.TODAY -> today(state)
-            Destination.FAMILY -> family(state)
-            Destination.SETTINGS -> settings(state, onEnableRemoteRows)
+        vaultContent {
+            item {
+                ScreenHeader(
+                    destination,
+                    state,
+                    month,
+                    displayUnit,
+                    onDisplayUnitChange,
+                )
+            }
+            if (
+                displayUnit == DisplayUnit.USD &&
+                destination in setOf(Destination.DASHBOARD, Destination.BITCOIN, Destination.NET_WORTH)
+            ) {
+                item { BitcoinFiatNotice(state) }
+            }
+            when (destination) {
+                Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit)
+                Destination.ACTIVITY -> activity(state, collections.visibleTransactions)
+                Destination.BUDGET -> budget(state, months, budgetSpend) { picked = it }
+                Destination.BITCOIN -> bitcoin(state, bitcoinProjection, displayUnit)
+                Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
+                Destination.TODAY -> today(state, dueTodos)
+                Destination.FAMILY -> family(state)
+                Destination.SETTINGS -> settings(state, onEnableRemoteRows)
+            }
         }
     }
 }
@@ -217,82 +315,93 @@ private fun BitcoinFiatNotice(state: VaultUiState) {
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
 
-private fun androidx.compose.foundation.lazy.LazyListScope.dashboard(
+private fun VaultLazyListScope.dashboard(
     state: VaultUiState,
-    selectedMonth: String?,
+    projection: DashboardProjection,
     displayUnit: DisplayUnit,
 ) {
-    val profile = state.activeProfile
-    val visible = state.data.transactions.value.visibleTo(profile)
-    val budgetTransactions = state.data.transactions.value.budgetTransactionsFor(profile)
-    // The headline follows the Budget screen's selected month and narrower budget
-    // scope. Adults still see child rows in Recent activity for oversight, but
-    // those rows never enter Victor/Rachel's spend or income totals.
-    val month = selectedMonth ?: ""
-    val transactions = budgetTransactions.inMonth(month)
-    val activity = visible.inMonth(month)
-    val accounts = state.data.btcAccounts.value.netWorthScopeFor(profile)
-    val openTodos = state.data.todos.value.visibleTo(profile).count { !it.done }
-
-    val spend = transactions.sumOf { it.spendAmount }
-    val income = transactions.sumOf { it.incomeAmount }
-    val stackSats = accounts.sumOf { it.sats }
-
     item {
         KpiStrip(
             listOf(
-                Kpi("Spend", figure(state.data.transactions.suppressFigures) { Money.formatUsd(spend) }, tone = VaultNegative),
-                Kpi("Income", figure(state.data.transactions.suppressFigures) { Money.formatUsd(income) }, tone = VaultPositive),
+                Kpi(
+                    "Spend",
+                    figure(state.data.transactions.suppressFigures) {
+                        Money.formatUsd(projection.spendCents)
+                    },
+                    tone = VaultNegative,
+                ),
+                Kpi(
+                    "Income",
+                    figure(state.data.transactions.suppressFigures) {
+                        Money.formatUsd(projection.incomeCents)
+                    },
+                    tone = VaultPositive,
+                ),
                 Kpi(
                     "Stack",
                     figure(state.data.btcAccounts.suppressFigures) {
-                        state.formatBitcoin(stackSats, displayUnit)
+                        state.formatBitcoin(projection.stackSats, displayUnit)
                     },
                     hint = figure(state.data.btcAccounts.suppressFigures) {
                         if (displayUnit == DisplayUnit.USD) {
                             priceBasis(state)
                         } else {
-                            state.formatBitcoin(stackSats, DisplayUnit.USD)
+                            state.formatBitcoin(projection.stackSats, DisplayUnit.USD)
                         }
                     },
                 ),
-                Kpi("Open tasks", figure(state.data.todos.suppressFigures) { openTodos.toString() }),
+                Kpi(
+                    "Open tasks",
+                    figure(state.data.todos.suppressFigures) {
+                        projection.openTodos.toString()
+                    },
+                ),
             ),
         )
     }
     item { StaleNotice(state.data.transactions.status) }
-    item {
-        Panel("Recent activity", state.data.transactions.source) {
-            if (state.data.transactions.suppressFigures || state.data.transactions.status == Freshness.EMPTY) {
+    if (
+        state.data.transactions.suppressFigures ||
+        state.data.transactions.status == Freshness.EMPTY
+    ) {
+        item {
+            Panel("Recent activity", state.data.transactions.source) {
                 StateBlock(state.data.transactions.status)
-            } else if (activity.isEmpty()) {
-                StateBlock(Freshness.EMPTY)
-            } else {
-                Column {
-                    activity.take(6).forEachIndexed { index, transaction ->
-                        if (index > 0) HorizontalHairline()
-                        TransactionRow(transaction)
-                    }
-                }
             }
         }
-    }
-    item {
-        Panel("Bitcoin", state.data.btcAccounts.source) {
-            AccountList(
-                accounts,
-                state.data.btcAccounts.status,
-                displayUnit,
-                state.data.btcPriceCents,
-            )
+    } else if (projection.activity.isEmpty()) {
+        item {
+            Panel("Recent activity", state.data.transactions.source) {
+                StateBlock(Freshness.EMPTY)
+            }
         }
+    } else {
+        keyedPanel(
+            sectionKey = "dashboard-activity",
+            title = "Recent activity",
+            source = state.data.transactions.source,
+            rows = projection.activity,
+            rowKey = Transaction::id,
+            rowContent = { TransactionRow(it) },
+        )
     }
+    accountList(
+        sectionKey = "dashboard-bitcoin",
+        title = "Bitcoin",
+        source = state.data.btcAccounts.source,
+        accounts = projection.accounts,
+        status = state.data.btcAccounts.status,
+        displayUnit = displayUnit,
+        btcPriceCents = state.data.btcPriceCents,
+    )
 }
 
 // ── Activity ────────────────────────────────────────────────────────────────
 
-private fun androidx.compose.foundation.lazy.LazyListScope.activity(state: VaultUiState) {
-    val transactions = state.data.transactions.value.visibleTo(state.activeProfile)
+private fun VaultLazyListScope.activity(
+    state: VaultUiState,
+    transactions: List<Transaction>,
+) {
     item { StaleNotice(state.data.transactions.status) }
     if (state.data.transactions.suppressFigures) {
         item { Panel { StateBlock(state.data.transactions.status) } }
@@ -302,16 +411,14 @@ private fun androidx.compose.foundation.lazy.LazyListScope.activity(state: Vault
         item { Panel { StateBlock(Freshness.EMPTY) } }
         return
     }
-    item {
-        Panel(state.data.transactions.source.let { "${transactions.size} records" }, state.data.transactions.source) {
-            Column {
-                transactions.forEachIndexed { index, transaction ->
-                    if (index > 0) HorizontalHairline()
-                    TransactionRow(transaction)
-                }
-            }
-        }
-    }
+    keyedPanel(
+        sectionKey = "activity-transactions",
+        title = "${transactions.size} records",
+        source = state.data.transactions.source,
+        rows = transactions,
+        rowKey = Transaction::id,
+        rowContent = { TransactionRow(it) },
+    )
 }
 
 @Composable
@@ -333,16 +440,14 @@ private fun TransactionRow(transaction: Transaction) {
 
 // ── Budget ──────────────────────────────────────────────────────────────────
 
-private fun androidx.compose.foundation.lazy.LazyListScope.budget(
+private fun VaultLazyListScope.budget(
     state: VaultUiState,
-    month: String?,
     months: List<String>,
+    spend: BudgetSpend?,
     onSelectMonth: (String) -> Unit,
 ) {
     val slice = state.data.budget
     val budget = slice.value
-    val scopedMonth = month ?: budget?.month
-
     // Spend is DERIVED from the scoped month's transactions, never read from the
     // reported category total: a July budget counts only July transactions.
     // Matches what iOS has always done (BudgetView.monthTransactions).
@@ -351,11 +456,6 @@ private fun androidx.compose.foundation.lazy.LazyListScope.budget(
     // month's targets, so an earlier month reuses those targets and re-derives
     // its own actuals. The banner below says so rather than letting the planned
     // column imply MC2 had a June budget.
-    val spend = budget?.let {
-        val scoped = if (scopedMonth == null || scopedMonth == it.month) it else it.copy(month = scopedMonth)
-        deriveBudgetSpend(scoped, state.data.transactions.value.budgetTransactionsFor(state.activeProfile))
-    }
-
     if (budget == null) {
         val readable = slice.status == Freshness.LIVE || slice.status == Freshness.DEMO
         item {
@@ -428,24 +528,27 @@ private fun androidx.compose.foundation.lazy.LazyListScope.budget(
             )
         }
     }
-    item {
-        Panel("Categories", "${slice.source} · ${derived.month} transactions") {
-            if (slice.suppressFigures) {
+    if (slice.suppressFigures) {
+        item {
+            Panel("Categories", "${slice.source} · ${derived.month} transactions") {
                 StateBlock(slice.status)
-            } else {
-                Column {
-                    derived.categories.forEachIndexed { index, category ->
-                        if (index > 0) HorizontalHairline()
-                        LedgerRow(
-                            primary = category.name,
-                            secondary = "planned ${Money.formatUsd(category.budgetCents)}",
-                            figure = Money.formatUsd(category.spentCents),
-                            figureColor = if (category.isOverBudget) VaultNegative else VaultCream,
-                            badge = if (category.isOverBudget) "over" else null,
-                        )
-                    }
-                }
             }
+        }
+    } else {
+        keyedPanel(
+            sectionKey = "budget-categories",
+            title = "Categories",
+            source = "${slice.source} · ${derived.month} transactions",
+            rows = derived.categories,
+            rowKey = { it.name },
+        ) { category ->
+            LedgerRow(
+                primary = category.name,
+                secondary = "planned ${Money.formatUsd(category.budgetCents)}",
+                figure = Money.formatUsd(category.spentCents),
+                figureColor = if (category.isOverBudget) VaultNegative else VaultCream,
+                badge = if (category.isOverBudget) "over" else null,
+            )
         }
     }
 }
@@ -544,22 +647,21 @@ private fun monthLabel(month: String): String {
 
 // ── Bitcoin ─────────────────────────────────────────────────────────────────
 
-private fun androidx.compose.foundation.lazy.LazyListScope.bitcoin(
+private fun VaultLazyListScope.bitcoin(
     state: VaultUiState,
+    projection: BitcoinProjection,
     displayUnit: DisplayUnit,
 ) {
-    val profile = state.activeProfile
     val slice = state.data.btcAccounts
-    val inScope = slice.value.netWorthScopeFor(profile)
-    val totalSats = inScope.sumOf { it.sats }
-    val selfCustody = inScope.filter { it.custody.key == "self_custody" }.sumOf { it.sats }
 
     item {
         KpiStrip(
             listOf(
                 Kpi(
                     "Total stack",
-                    figure(slice.suppressFigures) { state.formatBitcoin(totalSats, displayUnit) },
+                    figure(slice.suppressFigures) {
+                        state.formatBitcoin(projection.totalSats, displayUnit)
+                    },
                 ),
                 Kpi(
                     "Reference price",
@@ -574,72 +676,86 @@ private fun androidx.compose.foundation.lazy.LazyListScope.bitcoin(
                 ),
                 Kpi(
                     "Self custody",
-                    figure(slice.suppressFigures) { "${Money.basisPoints(selfCustody, totalSats) / 100}%" },
+                    figure(slice.suppressFigures) {
+                        "${Money.basisPoints(projection.selfCustodySats, projection.totalSats) / 100}%"
+                    },
                     hint = figure(slice.suppressFigures) {
-                        state.formatBitcoin(selfCustody, displayUnit)
+                        state.formatBitcoin(projection.selfCustodySats, displayUnit)
                     },
                 ),
-                Kpi("Accounts", figure(slice.suppressFigures) { inScope.size.toString() }),
+                Kpi(
+                    "Accounts",
+                    figure(slice.suppressFigures) { projection.accounts.size.toString() },
+                ),
             ),
         )
     }
     item { StaleNotice(slice.status) }
-    item {
-        Panel("Accounts in net worth", slice.source) {
-            AccountList(inScope, slice.status, displayUnit, state.data.btcPriceCents)
-        }
-    }
-    item {
-        val buys = state.data.btcBuys.value.visibleTo(profile)
-        Panel("Recent buys", state.data.btcBuys.source) {
-            if (state.data.btcBuys.suppressFigures) {
+    accountList(
+        sectionKey = "bitcoin-accounts",
+        title = "Accounts in net worth",
+        source = slice.source,
+        accounts = projection.accounts,
+        status = slice.status,
+        displayUnit = displayUnit,
+        btcPriceCents = state.data.btcPriceCents,
+    )
+    if (state.data.btcBuys.suppressFigures) {
+        item {
+            Panel("Recent buys", state.data.btcBuys.source) {
                 StateBlock(state.data.btcBuys.status)
-            } else if (buys.isEmpty()) {
-                StateBlock(Freshness.EMPTY)
-            } else {
-                Column {
-                    buys.forEachIndexed { index, buy ->
-                        if (index > 0) HorizontalHairline()
-                        LedgerRow(
-                            primary = buy.source,
-                            secondary = "${buy.date} · ${Money.formatUsd(buy.priceUsdCents)}",
-                            figure = Money.formatBitcoin(
-                                buy.sats,
-                                displayUnit,
-                                buy.priceUsdCents,
-                            ),
-                            figureColor = VaultCream,
-                        )
-                    }
-                }
             }
+        }
+    } else if (projection.buys.isEmpty()) {
+        item {
+            Panel("Recent buys", state.data.btcBuys.source) {
+                StateBlock(Freshness.EMPTY)
+            }
+        }
+    } else {
+        keyedPanel(
+            sectionKey = "bitcoin-buys",
+            title = "Recent buys",
+            source = state.data.btcBuys.source,
+            rows = projection.buys,
+            rowKey = BtcBuy::id,
+        ) { buy ->
+            LedgerRow(
+                primary = buy.source,
+                secondary = "${buy.date} · ${Money.formatUsd(buy.priceUsdCents)}",
+                figure = Money.formatBitcoin(
+                    buy.sats,
+                    displayUnit,
+                    buy.priceUsdCents,
+                ),
+                figureColor = VaultCream,
+            )
         }
     }
 }
 
 // ── Net Worth ───────────────────────────────────────────────────────────────
 
-private fun androidx.compose.foundation.lazy.LazyListScope.netWorth(
+private fun VaultLazyListScope.netWorth(
     state: VaultUiState,
+    projection: NetWorthProjection,
     displayUnit: DisplayUnit,
 ) {
-    val profile = state.activeProfile
     val slice = state.data.btcAccounts
-    val inScope = slice.value.netWorthScopeFor(profile)
-    val excluded = slice.value.visibleTo(profile).filterNot { it in inScope }
-    val stackSats = inScope.sumOf { it.sats }
 
     item {
         KpiStrip(
             listOf(
                 Kpi(
                     "Bitcoin",
-                    figure(slice.suppressFigures) { state.formatBitcoin(stackSats, displayUnit) },
+                    figure(slice.suppressFigures) {
+                        state.formatBitcoin(projection.stackSats, displayUnit)
+                    },
                 ),
                 Kpi(
                     "Fiat estimate",
                     figure(slice.suppressFigures) {
-                        state.formatBitcoin(stackSats, DisplayUnit.USD)
+                        state.formatBitcoin(projection.stackSats, DisplayUnit.USD)
                     },
                     hint = figure(slice.suppressFigures) { priceBasis(state) },
                     provenance = Provenance.ESTIMATED,
@@ -648,58 +764,79 @@ private fun androidx.compose.foundation.lazy.LazyListScope.netWorth(
         )
     }
     item { StaleNotice(slice.status) }
-    item {
-        Panel("In scope", slice.source) {
-            AccountList(inScope, slice.status, displayUnit, state.data.btcPriceCents)
-        }
-    }
-    if (excluded.isNotEmpty()) {
+    accountList(
+        sectionKey = "net-worth-in-scope",
+        title = "In scope",
+        source = slice.source,
+        accounts = projection.accounts,
+        status = slice.status,
+        displayUnit = displayUnit,
+        btcPriceCents = state.data.btcPriceCents,
+    )
+    if (projection.excludedAccounts.isNotEmpty()) {
         item {
             StatusBanner(
-                "${excluded.size} account(s) visible but excluded",
+                "${projection.excludedAccounts.size} account(s) visible but excluded",
                 "Children's stacks are shown for oversight but never roll into adult totals.",
                 tone = VaultTextMuted,
             )
         }
-        item {
-            Panel("Visible but excluded") {
-                AccountList(excluded, slice.status, displayUnit, state.data.btcPriceCents)
-            }
-        }
+        accountList(
+            sectionKey = "net-worth-excluded",
+            title = "Visible but excluded",
+            source = null,
+            accounts = projection.excludedAccounts,
+            status = slice.status,
+            displayUnit = displayUnit,
+            btcPriceCents = state.data.btcPriceCents,
+        )
     }
 }
 
-@Composable
-private fun AccountList(
+private fun VaultLazyListScope.accountList(
+    sectionKey: String,
+    title: String,
+    source: String?,
     accounts: List<BtcAccount>,
     status: Freshness,
     displayUnit: DisplayUnit,
     btcPriceCents: Long,
 ) {
     if (status == Freshness.ERROR || status == Freshness.LOADING) {
-        StateBlock(status)
+        item {
+            Panel(title, source) {
+                StateBlock(status)
+            }
+        }
         return
     }
     if (accounts.isEmpty()) {
-        StateBlock(
-            Freshness.EMPTY,
-            title = "No accounts in scope",
-            detail = "This profile has no Bitcoin accounts counting toward its net worth.",
-        )
+        item {
+            Panel(title, source) {
+                StateBlock(
+                    Freshness.EMPTY,
+                    title = "No accounts in scope",
+                    detail = "This profile has no Bitcoin accounts counting toward its net worth.",
+                )
+            }
+        }
         return
     }
-    Column {
-        accounts.forEachIndexed { index, account ->
-            if (index > 0) HorizontalHairline()
-            LedgerRow(
-                primary = account.label,
-                secondary = account.owner.displayName,
-                figure = Money.formatBitcoin(account.sats, displayUnit, btcPriceCents),
-                figureColor = VaultCream,
-                badge = account.custody.label,
-                badgeAccented = account.custody.key == "self_custody",
-            )
-        }
+    keyedPanel(
+        sectionKey = sectionKey,
+        title = title,
+        source = source,
+        rows = accounts,
+        rowKey = { "${it.owner.key}:${it.key}" },
+    ) { account ->
+        LedgerRow(
+            primary = account.label,
+            secondary = account.owner.displayName,
+            figure = Money.formatBitcoin(account.sats, displayUnit, btcPriceCents),
+            figureColor = VaultCream,
+            badge = account.custody.label,
+            badgeAccented = account.custody.key == "self_custody",
+        )
     }
 }
 
@@ -729,41 +866,46 @@ private const val MC2_DEFAULT_PROJECT = "Inbox"
 private fun filing(todo: TodoItem): String? =
     todo.project?.takeIf { it != MC2_DEFAULT_PROJECT } ?: todo.area
 
-private fun androidx.compose.foundation.lazy.LazyListScope.today(state: VaultUiState) {
+private fun VaultLazyListScope.today(
+    state: VaultUiState,
+    todos: List<TodoItem>,
+) {
     val slice = state.data.todos
-    // isDueBy is the contract's own open-and-due rule, not a re-reading of the
-    // done/due fields here. This screen deliberately knows nothing about MC2's
-    // field aliases — that is Todo.normalize's job, once and at the boundary.
-    val todos = slice.value.visibleTo(state.activeProfile)
-        .filter { it.isDueBy(TODAY_DATE) }
 
     item { StaleNotice(slice.status) }
-    item {
-        Panel("Due", slice.source) {
-            if (slice.suppressFigures) {
+    if (slice.suppressFigures) {
+        item {
+            Panel("Due", slice.source) {
                 StateBlock(slice.status)
-            } else if (todos.isEmpty()) {
-                StateBlock(Freshness.EMPTY, title = "Nothing due today")
-            } else {
-                Column {
-                    todos.forEachIndexed { index, todo ->
-                        if (index > 0) HorizontalHairline()
-                        LedgerRow(
-                            primary = todo.title,
-                            secondary = listOfNotNull(filing(todo), todo.due).joinToString(" · "),
-                            figure = "",
-                            badge = if (todo.flagged) "flagged" else null,
-                        )
-                    }
-                }
             }
+        }
+    } else if (todos.isEmpty()) {
+        item {
+            Panel("Due", slice.source) {
+                StateBlock(Freshness.EMPTY, title = "Nothing due today")
+            }
+        }
+    } else {
+        keyedPanel(
+            sectionKey = "today-due",
+            title = "Due",
+            source = slice.source,
+            rows = todos,
+            rowKey = TodoItem::id,
+        ) { todo ->
+            LedgerRow(
+                primary = todo.title,
+                secondary = listOfNotNull(filing(todo), todo.due).joinToString(" · "),
+                figure = "",
+                badge = if (todo.flagged) "flagged" else null,
+            )
         }
     }
 }
 
 // ── Family ──────────────────────────────────────────────────────────────────
 
-private fun androidx.compose.foundation.lazy.LazyListScope.family(state: VaultUiState) {
+private fun VaultLazyListScope.family(state: VaultUiState) {
     item {
         StatusBanner(
             "Victor and Rachel are one household",
@@ -806,7 +948,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.family(state: VaultUi
 
 // ── Settings ────────────────────────────────────────────────────────────────
 
-private fun androidx.compose.foundation.lazy.LazyListScope.settings(
+private fun VaultLazyListScope.settings(
     state: VaultUiState,
     onEnableRemoteRows: (String) -> Unit,
 ) {
