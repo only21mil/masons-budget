@@ -146,6 +146,7 @@ internal data class PublicTransactionDto(
         owner = owner,
         spendAmount = spendAmount,
         displaySpendAmount = displaySpendAmount,
+        hasOppositeSpendSign = hasOppositeSpendSign,
     )
 
     companion object {

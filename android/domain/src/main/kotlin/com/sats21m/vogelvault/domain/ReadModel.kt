@@ -78,15 +78,14 @@ data class Transaction(
         if (category == "Income") 0L else if (owner.isAdult) -amount else amount,
     /** Stable rendering magnitude; never used for budget maths. */
     val displaySpendAmount: Long = kotlin.math.abs(spendAmount),
-) : Owned {
     /**
-     * A valid refund or a corrupt wrong-sign legacy row. Reads cannot
-     * distinguish those cases because legacy rows do not persist write-side
-     * kind.
+     * Whether [spendAmount] has the opposite sign.
+     *
+     * Row responses provide this explicitly. Legacy fixtures derive the same
+     * value only because they do not carry server projection fields.
      */
-    val hasOppositeSpendSign: Boolean
-        get() = spendAmount < 0L
-}
+    val hasOppositeSpendSign: Boolean = spendAmount < 0L,
+) : Owned
 
 val Transaction.incomeAmount: Long
     get() = if (category == "Income" && amount > 0L) amount else 0L

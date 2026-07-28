@@ -155,22 +155,22 @@ class RowQueryRepositoryTest {
     }
 
     @Test
-    fun `opposite spend sign flag accepts a refund and preserves its display magnitude`() {
+    fun `negative projected spend preserves its display magnitude`() {
         val poster = RecordingPoster(
             rowSuccess(
-                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Refund","amountCents":${convexInt64(500)},"spendAmount":${convexInt64(-500)},"displaySpendAmount":${convexInt64(500)},"hasOppositeSpendSign":true,"category":"Food","updatedAtMs":1785000000000.0}]""",
+                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Charge","amountCents":${convexInt64(500)},"spendAmount":${convexInt64(-500)},"displaySpendAmount":${convexInt64(500)},"hasOppositeSpendSign":true,"category":"Food","updatedAtMs":1785000000000.0}]""",
             ),
         )
 
         val result = runBlocking {
             repositoryWith(poster).listTransactions(FamilyMember.VICTOR)
         }
-        val refund = (result as? ConvexResult.Ok)?.value?.rows?.single()
-            ?: fail("expected refund row, got $result")
+        val spend = (result as? ConvexResult.Ok)?.value?.rows?.single()
+            ?: fail("expected spend row, got $result")
 
-        assertEquals(-500L, refund.spendAmount)
-        assertEquals(500L, refund.displaySpendAmount)
-        assertEquals(true, refund.hasOppositeSpendSign)
+        assertEquals(-500L, spend.spendAmount)
+        assertEquals(500L, spend.displaySpendAmount)
+        assertEquals(true, spend.hasOppositeSpendSign)
     }
 
     @Test

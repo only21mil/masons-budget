@@ -15,13 +15,13 @@ import kotlinx.coroutines.runBlocking
 
 class RowReadModelLoaderTest {
     @Test
-    fun `loader names visible BTC scope and uses signed spend contribution`() = runBlocking {
+    fun `loader names visible BTC scope and preserves negative projected spend`() = runBlocking {
         val repository = FakeRows(
             transactions = ok(
                 Transaction(
-                    id = "credit",
+                    id = "spend",
                     date = "2026-07-20",
-                    merchant = "Refund",
+                    merchant = "Purchase",
                     amount = 2_500L,
                     category = "Groceries",
                     owner = FamilyMember.VICTOR,

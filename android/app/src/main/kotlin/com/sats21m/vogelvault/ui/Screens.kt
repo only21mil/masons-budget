@@ -45,7 +45,6 @@ import com.sats21m.vogelvault.domain.deriveBudgetSpend
 import com.sats21m.vogelvault.domain.inMonth
 import com.sats21m.vogelvault.domain.incomeAmount
 import com.sats21m.vogelvault.domain.isDueBy
-import com.sats21m.vogelvault.domain.isSpend
 import com.sats21m.vogelvault.domain.netWorthScopeFor
 import com.sats21m.vogelvault.domain.resolveBudgetMonth
 import com.sats21m.vogelvault.domain.visibleTo
@@ -229,18 +228,52 @@ private fun androidx.compose.foundation.lazy.LazyListScope.activity(state: Vault
 
 @Composable
 private fun TransactionRow(transaction: Transaction) {
-    val isSpend = transaction.isSpend
-    val isCreditOrWrongSign = transaction.hasOppositeSpendSign
-    val displaySpend = transaction.displaySpendAmount
+    val presentation = transactionPresentation(transaction)
     LedgerRow(
         primary = transaction.merchant,
         secondary = "${transaction.date} · ${transaction.category}",
-        figure = when {
-            !isSpend -> Money.formatUsd(transaction.incomeAmount)
-            isCreditOrWrongSign -> Money.formatUsd(displaySpend)
-            else -> "-${Money.formatUsd(displaySpend)}"
+        figure = presentation.figure,
+        figureColor = when (presentation.tone) {
+            TransactionFigureTone.NEGATIVE -> VaultNegative
+            TransactionFigureTone.POSITIVE -> VaultPositive
         },
-        figureColor = if (isSpend && !isCreditOrWrongSign) VaultNegative else VaultPositive,
+    )
+}
+
+internal enum class TransactionFigureTone {
+    NEGATIVE,
+    POSITIVE,
+}
+
+internal data class TransactionPresentation(
+    val figure: String,
+    val tone: TransactionFigureTone,
+)
+
+internal fun transactionPresentation(transaction: Transaction): TransactionPresentation {
+    if (transaction.category == "Income") {
+        val income = transaction.incomeAmount
+        return TransactionPresentation(
+            figure = Money.formatUsd(income, showSign = income > 0L),
+            tone = TransactionFigureTone.POSITIVE,
+        )
+    }
+
+    // The row decoder has already checked all three server fields agree:
+    // displaySpendAmount is the magnitude and hasOppositeSpendSign mirrors the
+    // sign of spendAmount. Do not infer presentation again from amountCents.
+    val isMoneyLeaving = transaction.hasOppositeSpendSign
+    return TransactionPresentation(
+        figure = if (isMoneyLeaving) {
+            "-${Money.formatUsd(transaction.displaySpendAmount)}"
+        } else {
+            Money.formatUsd(transaction.displaySpendAmount, showSign = true)
+        },
+        tone = if (isMoneyLeaving) {
+            TransactionFigureTone.NEGATIVE
+        } else {
+            TransactionFigureTone.POSITIVE
+        },
     )
 }
 

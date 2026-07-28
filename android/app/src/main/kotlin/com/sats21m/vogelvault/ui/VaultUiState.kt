@@ -71,6 +71,28 @@ data class VaultUiState(
             data.btcBuys.status to data.btcBuys.updatedAt,
             data.todos.status to data.todos.updatedAt)
 
+    private val hasArrivedData: Boolean
+        get() =
+            data.transactions.value.isNotEmpty() ||
+                data.budget.value != null ||
+                data.btcAccounts.value.isNotEmpty() ||
+                data.btcBuys.value.isNotEmpty() ||
+                data.todos.value.isNotEmpty()
+
+    /**
+     * Empty slices do not disown rows that arrived in another slice.
+     *
+     * In particular, migrated rows may legitimately carry updatedAtMs = 0. The
+     * global pill is based on actual values, never on a positive timestamp.
+     */
+    private val statusSlices
+        get() =
+            if (hasArrivedData) {
+                slices.filterNot { it.first == Freshness.EMPTY }
+            } else {
+                slices
+            }
+
     /**
      * Worst status across every slice, for the global SYNC indicator.
      *
@@ -78,10 +100,10 @@ data class VaultUiState(
      * worst rather than an arbitrary slice.
      */
     val worstStatus: Freshness
-        get() = slices.minByOrNull { severity(it.first) }?.first ?: Freshness.EMPTY
+        get() = statusSlices.minByOrNull { severity(it.first) }?.first ?: Freshness.EMPTY
 
     val worstUpdatedAt: Long?
-        get() = slices.minByOrNull { severity(it.first) }?.second
+        get() = statusSlices.minByOrNull { severity(it.first) }?.second
 
     private fun severity(status: Freshness): Int = when (status) {
         Freshness.ERROR -> 0
