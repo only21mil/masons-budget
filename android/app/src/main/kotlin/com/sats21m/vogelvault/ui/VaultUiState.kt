@@ -117,9 +117,9 @@ class VaultViewModel(
 
     private val _state = MutableStateFlow(
         if (!remoteInitiallyEnabled) {
-            VaultUiState()
+            VaultUiState(now = clock())
         } else {
-            VaultUiState(data = loadingModel(FamilyMember.VICTOR))
+            VaultUiState(data = loadingModel(FamilyMember.VICTOR), now = clock())
         },
     )
     val state: StateFlow<VaultUiState> = _state.asStateFlow()
