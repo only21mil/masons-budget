@@ -26,6 +26,7 @@ import {
   projectBudgetDocument,
   projectFinanceDocument,
 } from "./documentProjection";
+import { PUBLIC_QUERY_INDEX_PLAN } from "./tables";
 
 // A local module map rather than the shared one in harness.test-utils.ts:
 // tables.ts is new and other lanes are editing that file right now, so this
@@ -79,6 +80,26 @@ const fn = {
         category: string;
         card?: string;
         note?: string;
+        updatedAtMs: number;
+      }>;
+      complete: boolean;
+    }
+  >,
+  listIncome: "tables:listIncome" as unknown as FunctionReference<
+    "query",
+    "public",
+    { viewer: Member; month?: string; limit?: number; token?: string },
+    {
+      rows: Array<{
+        incomeId: string;
+        owner: Member;
+        date: string;
+        month: string;
+        amountCents: bigint;
+        source: string;
+        loggedBy?: string;
+        note?: string;
+        archimedesRequestId?: string;
         updatedAtMs: number;
       }>;
       complete: boolean;
@@ -1180,6 +1201,102 @@ describe("indexed month and date", () => {
     await migrateAll(t);
   });
 
+  it("defines every index used by the executable public query plan", () => {
+    const tables = (
+      schema as unknown as {
+        tables: Record<
+          string,
+          { indexes: Array<{ indexDescriptor: string; fields: string[] }> }
+        >;
+      }
+    ).tables;
+    const indexes = (table: string) =>
+      new Map(
+        tables[table].indexes.map(({ indexDescriptor, fields }) => [
+          indexDescriptor,
+          fields,
+        ]),
+      );
+
+    for (const plan of Object.values(PUBLIC_QUERY_INDEX_PLAN)) {
+      for (const branch of Object.values(plan)) {
+        if (typeof branch === "string") continue;
+        expect(
+          indexes(plan.table).get(branch.name),
+          `${plan.table}.${branch.name}`,
+        ).toEqual(branch.fields);
+      }
+    }
+    expect(PUBLIC_QUERY_INDEX_PLAN.listIncome).toEqual({
+      table: "income",
+      all: {
+        name: "by_owner_date_income_id",
+        fields: ["owner", "date", "incomeId"],
+      },
+      month: {
+        name: "by_owner_month_date_income_id",
+        fields: ["owner", "month", "date", "incomeId"],
+      },
+    });
+  });
+
+  it("reads the dedicated income ledger by indexed owner and month", async () => {
+    const rachel = await t.query(fn.listIncome, { viewer: "rachel" });
+    expect(rachel).toMatchObject({ complete: true });
+    expect(rachel.rows).toEqual([
+      expect.objectContaining({
+        incomeId: "income-1",
+        owner: "victor",
+        month: "2026-07",
+        amountCents: 250055n,
+        source: "payroll",
+      }),
+    ]);
+    expect(rachel.rows[0]).not.toHaveProperty("raw");
+    expect(rachel.rows[0]).not.toHaveProperty("sourceFile");
+    expect(
+      await queryRows(fn.listIncome, {
+        viewer: "rachel",
+        month: "2026-07",
+      }),
+    ).toHaveLength(1);
+    expect(
+      await queryRows(fn.listIncome, {
+        viewer: "rachel",
+        month: "2026-06",
+      }),
+    ).toEqual([]);
+    expect(await queryRows(fn.listIncome, { viewer: "mason" })).toEqual([]);
+  });
+
+  it("bounds tied income rows by the same stable income-id order it returns", async () => {
+    await t.run(async (ctx) => {
+      for (const incomeId of ["income-z", "income-a"]) {
+        await ctx.db.insert("income", {
+          sourceKey: `income:${incomeId}`,
+          incomeId,
+          owner: "victor",
+          date: "2026-07-31",
+          month: "2026-07",
+          amountCents: 1n,
+          source: "test",
+          sourceFile: "income",
+          updatedAtMs: 1,
+          raw: { id: incomeId },
+          migrationSourceIndex: 1,
+        });
+      }
+    });
+
+    const response = await t.query(fn.listIncome, {
+      viewer: "victor",
+      month: "2026-07",
+      limit: 1,
+    });
+    expect(response.complete).toBe(false);
+    expect(response.rows.map((row) => row.incomeId)).toEqual(["income-z"]);
+  });
+
   it("derives month from date as a prefix, with no timezone in the way", async () => {
     const july = await queryRows(fn.listTransactions, {
       viewer: "victor",
@@ -1819,6 +1936,14 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
         queryRows(fn.listBtcBillPays, {
           viewer: "victor",
           scope: "visible",
+          token,
+        }),
+    },
+    {
+      name: "listIncome",
+      call: (token?: string) =>
+        queryRows(fn.listIncome, {
+          viewer: "victor",
           token,
         }),
     },

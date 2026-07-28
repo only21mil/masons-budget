@@ -376,13 +376,14 @@ jobs:
       # than Gradle. Cache and prefetch them explicitly, then run Robolectric
       # offline below. A cold runner still needs Maven once, but curl retries
       # transient faults and SHA-512 verification rejects partial/corrupt files.
-      - name: Restore Robolectric API 35 runtime
+      - name: Restore Robolectric API 34 and 35 runtimes
         if: steps.probe.outputs.app == 'true'
         uses: actions/cache@v4
         with:
-          path: >-
+          path: |
             ${{ runner.temp }}/robolectric-dependencies/android-all-instrumented-15-robolectric-12650502-i7.jar
-          key: robolectric-${{ runner.os }}-android-all-instrumented-15-robolectric-12650502-i7
+            ${{ runner.temp }}/robolectric-dependencies/android-all-instrumented-14-robolectric-10818077-i7.jar
+          key: robolectric-${{ runner.os }}-android-all-instrumented-15-robolectric-12650502-i7-android-all-instrumented-14-robolectric-10818077-i7
 
       - name: Prefetch Robolectric API 35 runtime
         if: steps.probe.outputs.app == 'true'
@@ -419,22 +420,8 @@ jobs:
             sha512sum --check
           mv "$partial_path" "$runtime_path"
 
-      - name: Restore Robolectric API 34 design-packet runtime
-        if: >-
-          steps.probe.outputs.app == 'true' &&
-          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
-          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: actions/cache@v4
-        with:
-          path: >-
-            ${{ runner.temp }}/robolectric-dependencies/android-all-instrumented-14-robolectric-10818077-i7.jar
-          key: robolectric-${{ runner.os }}-android-all-instrumented-14-robolectric-10818077-i7
-
-      - name: Prefetch Robolectric API 34 design-packet runtime
-        if: >-
-          steps.probe.outputs.app == 'true' &&
-          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
-          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      - name: Prefetch Robolectric API 34 runtime
+        if: steps.probe.outputs.app == 'true'
         env:
           ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-dependencies
           ROBOLECTRIC_RUNTIME: android-all-instrumented-14-robolectric-10818077-i7.jar
@@ -549,7 +536,58 @@ jobs:
 
       # Required PR verification: every app unit test except the screenshot
       # packet. This includes the real Robolectric cache/config tests and runs
-      # against a prefetched API 35 runtime with network resolution disabled.
+      # against prefetched API 34 and 35 runtimes with network resolution
+      # disabled.
+      - name: Verify declared Robolectric SDK runtimes are prefetched
+        if: steps.probe.outputs.app == 'true'
+        env:
+          ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-dependencies
+        run: |
+          set -euo pipefail
+          declare -A runtime_by_sdk=(
+            [34]='android-all-instrumented-14-robolectric-10818077-i7.jar'
+            [35]='android-all-instrumented-15-robolectric-12650502-i7.jar'
+          )
+
+          # grep, not ripgrep: GitHub-hosted runners do not ship rg, and an
+          # absent tool made this guard exit 127 and fail the build spuriously.
+          scan_status=0
+          sdk_declarations="$(
+            grep -rhoE \
+              'sdk[[:space:]]*=[[:space:]]*\[[^]]+\]' \
+              android/app/src/test
+          )" || scan_status=$?
+          if [ "$scan_status" -gt 1 ]; then
+            echo "::error::Could not scan app tests for Robolectric SDK declarations."
+            exit "$scan_status"
+          fi
+
+          mapfile -t declared_sdks < <(
+            printf '%s\n' "$sdk_declarations" |
+              sed -E 's/^[^[]*\[([^]]+)\].*$/\1/' |
+              tr ',' '\n' |
+              sed -E 's/^[[:space:]]+|[[:space:]]+$//g' |
+              sed '/^$/d' |
+              sort -u
+          )
+
+          for sdk in "${declared_sdks[@]}"; do
+            if [[ ! "$sdk" =~ ^[0-9]+$ ]]; then
+              echo "::error::Cannot verify non-numeric Robolectric SDK declaration '$sdk'; add an explicit warmed runtime mapping."
+              exit 1
+            fi
+
+            runtime="${runtime_by_sdk[$sdk]:-}"
+            if [ -z "$runtime" ]; then
+              echo "::error::Robolectric SDK $sdk is declared by app tests, but no warmed runtime is configured."
+              exit 1
+            fi
+            if [ ! -f "$ROBOLECTRIC_DEPENDENCY_DIR/$runtime" ]; then
+              echo "::error::Robolectric SDK $sdk requires missing warmed runtime $runtime."
+              exit 1
+            fi
+          done
+
       - name: App unit tests
         if: steps.probe.outputs.app == 'true'
         env:
@@ -563,8 +601,8 @@ jobs:
         working-directory: android
 
       # Renders Compose to PNG under Robolectric — no emulator, no display.
-      # It remains a genuine default-branch test gate, but its 150 MB API 34
-      # runtime and screenshot recording no longer block pull requests.
+      # It remains a genuine default-branch test gate; pull requests warm the
+      # same API 34 runtime because ordinary app tests also declare that SDK.
       - name: Design-packet tests
         if: >-
           steps.probe.outputs.app == 'true' &&

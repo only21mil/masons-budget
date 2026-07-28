@@ -36,7 +36,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.ui.components.Badge
@@ -150,8 +152,8 @@ fun VaultApp(
 private fun AuthorizationNotice(state: VaultUiState) {
     if (!state.staleAuthorization) return
     StatusBanner(
-        text = "Cached figures hidden",
-        detail = "Convex rejected this device's read token. The previous snapshot is stale and is not shown.",
+        text = stringResource(R.string.convex_auth_error_title),
+        detail = stringResource(R.string.convex_auth_error_detail),
         tone = com.sats21m.vogelvault.ui.theme.VaultWarning,
     )
 }

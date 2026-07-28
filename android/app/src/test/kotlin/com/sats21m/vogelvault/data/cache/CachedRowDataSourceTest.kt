@@ -134,6 +134,79 @@ class CachedRowDataSourceTest {
         }
 
     @Test
+    fun `version one disk cache does not serve old projected spend sign after reopen`() =
+        runBlocking {
+            val context: Application = RuntimeEnvironment.getApplication()
+            val databaseName = "spend-sign-upgrade-test.db"
+            context.deleteDatabase(databaseName)
+            val remote =
+                FakeRows().apply {
+                    transactions =
+                        ConvexResult.Ok(
+                            RowSnapshot(
+                                rows =
+                                    listOf(
+                                        transaction("old-convention", 3_750L).copy(
+                                            spendAmount = -3_750L,
+                                        ),
+                                    ),
+                                complete = true,
+                            ),
+                        )
+                }
+
+            val oldDatabase =
+                Room
+                    .databaseBuilder(context, VaultDatabase::class.java, databaseName)
+                    .build()
+            try {
+                CachedRowDataSource(remote, oldDatabase.cacheDao()) { 100L }
+                    .load(FamilyMember.VICTOR)
+
+                val columns =
+                    oldDatabase.openHelper.readableDatabase
+                        .query("PRAGMA table_info(`cached_transactions`)")
+                        .use { cursor ->
+                            buildSet {
+                                val nameIndex = cursor.getColumnIndexOrThrow("name")
+                                while (cursor.moveToNext()) {
+                                    add(cursor.getString(nameIndex))
+                                }
+                            }
+                        }
+                assertEquals(1, oldDatabase.openHelper.readableDatabase.version)
+                assertTrue("amount_cents" in columns)
+                assertFalse("spend_amount" in columns)
+                assertFalse("display_spend_amount" in columns)
+            } finally {
+                oldDatabase.close()
+            }
+
+            val reopenedDatabase =
+                Room
+                    .databaseBuilder(context, VaultDatabase::class.java, databaseName)
+                    .build()
+            try {
+                val cached =
+                    CachedRowDataSource(remote, reopenedDatabase.cacheDao())
+                        .observe(FamilyMember.VICTOR)
+                        .first {
+                            it.data.transactions.value.singleOrNull()?.id == "old-convention"
+                        }
+                val transaction = cached.data.transactions.value.single()
+
+                assertEquals(1, reopenedDatabase.openHelper.readableDatabase.version)
+                assertEquals(3_750L, transaction.amount)
+                assertEquals(3_750L, transaction.spendAmount)
+                assertEquals(3_750L, transaction.displaySpendAmount)
+                assertFalse(transaction.hasOppositeSpendSign)
+            } finally {
+                reopenedDatabase.close()
+                context.deleteDatabase(databaseName)
+            }
+        }
+
+    @Test
     fun `later authorized read recovers from an unauthorized generation`() =
         runBlocking {
             var now = 100L
