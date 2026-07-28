@@ -15,6 +15,7 @@ enum ConvexRowQuery: Sendable {
     case btcBuys(viewer: FamilyMember, scope: ConvexRowScope)
     case btcBillPays(viewer: FamilyMember, scope: ConvexRowScope)
     case btcAccounts(viewer: FamilyMember, scope: ConvexRowScope)
+    case btcBalanceDocuments(viewer: FamilyMember, scope: ConvexRowScope)
     case budget(viewer: FamilyMember)
     case btcSnapshotMetadata(viewer: FamilyMember, scope: ConvexRowScope)
     case rowCounts
@@ -26,6 +27,7 @@ enum ConvexRowQuery: Sendable {
         case .btcBuys: "tables:listBtcBuys"
         case .btcBillPays: "tables:listBtcBillPays"
         case .btcAccounts: "tables:listBtcAccounts"
+        case .btcBalanceDocuments: "tables:listBtcBalanceDocuments"
         case .budget: "tables:getBudgetDocument"
         case .btcSnapshotMetadata: "tables:getBtcSnapshotMetadata"
         case .rowCounts: "tables:rowCounts"
@@ -39,6 +41,7 @@ enum ConvexRowQuery: Sendable {
         case let .btcBuys(viewer, scope),
              let .btcBillPays(viewer, scope),
              let .btcAccounts(viewer, scope),
+             let .btcBalanceDocuments(viewer, scope),
              let .btcSnapshotMetadata(viewer, scope):
             ["viewer": viewer.rawValue, "scope": scope.rawValue]
         case let .budget(viewer):
@@ -53,6 +56,7 @@ enum ConvexRowDecodeError: LocalizedError, Equatable {
     case incompleteSnapshot
     case inconsistentMonth
     case invalidPriority
+    case ambiguousDocument
     case missingDocument
     case ownerOutOfScope
 
@@ -64,6 +68,8 @@ enum ConvexRowDecodeError: LocalizedError, Equatable {
             "A row month does not match its date."
         case .invalidPriority:
             "A todo priority does not fit Swift Int."
+        case .ambiguousDocument:
+            "A required financial source returned more than one document."
         case .missingDocument:
             "The requested row document does not exist."
         case .ownerOutOfScope:
@@ -230,6 +236,32 @@ struct ConvexBTCAccountRow: Decodable {
     let fiatCents: Int64
     let asOf: String
     let schemaVersion: Int64
+}
+
+struct ConvexBTCBalanceDocumentRow: Decodable, Sendable {
+    struct Account: Decodable, Sendable {
+        let key: String
+        let label: String
+        let custody: BTCCustody
+        let sats: Int64
+        let fiatCents: Int64
+    }
+
+    struct Totals: Decodable, Sendable {
+        let sats: Int64
+        let fiatCents: Int64
+        let exchangeSats: Int64
+        let selfCustodySats: Int64
+    }
+
+    let owner: FamilyMember
+    let schemaVersion: Int64
+    let asOf: String
+    let accounts: [Account]
+    let totals: Totals
+    let source: String?
+    let basis: String?
+    let confidence: String?
 }
 
 struct ConvexBTCSnapshotMetadataRow: Decodable {
@@ -445,6 +477,36 @@ struct ConvexRowReader: Sendable {
             throw ConvexRowDecodeError.ownerOutOfScope
         }
         return try rows.map { try $0.legacyDTO() }
+    }
+
+    func canonicalBTCBalance(
+        viewer: FamilyMember,
+        scope: ConvexRowScope,
+    ) async throws -> RequiredFinancialSource<CanonicalBTCBalance> {
+        let envelope = try await client.fetchRows(
+            .btcBalanceDocuments(viewer: viewer, scope: scope),
+            as: ConvexRowEnvelope<ConvexBTCBalanceDocumentRow>.self,
+        )
+        let rows = try envelope.completeRows()
+        guard rows.allSatisfy({ ownerIsVisible($0.owner, to: viewer, scope: scope) }) else {
+            throw ConvexRowDecodeError.ownerOutOfScope
+        }
+        return try CanonicalFinancialProjection.btcBalance(documents: rows)
+    }
+
+    func canonicalBTCBillPayLedger(
+        viewer: FamilyMember,
+        scope: ConvexRowScope,
+    ) async throws -> RequiredFinancialSource<CanonicalBTCBillPayLedger> {
+        let envelope = try await client.fetchRows(
+            .btcBillPays(viewer: viewer, scope: scope),
+            as: ConvexRowEnvelope<ConvexBTCBillPayRow>.self,
+        )
+        let rows = try envelope.completeRows()
+        guard rows.allSatisfy({ ownerIsVisible($0.owner, to: viewer, scope: scope) }) else {
+            throw ConvexRowDecodeError.ownerOutOfScope
+        }
+        return CanonicalFinancialProjection.btcBillPays(rows: rows)
     }
 
     func budget(viewer: FamilyMember) async throws -> ConvexBudgetDocumentRow {

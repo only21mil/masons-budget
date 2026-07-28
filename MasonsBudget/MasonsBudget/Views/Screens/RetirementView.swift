@@ -3,13 +3,12 @@ import SwiftUI
 
 struct RetirementView: View {
     @Environment(\.theme) var theme
+    @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
-    @Query private var accounts: [BTCAccount]
     @Query private var holdingAccounts: [HoldingAccount]
     @Query private var lots: [CostBasisLot]
-    @Query private var budgetSnapshots: [MonthlyBudgetSnapshot]
     @Query(sort: \BudgetCategory.sortOrder) private var budgetCategories: [BudgetCategory]
 
     @State private var projectionHorizon: Int = 10
@@ -26,16 +25,18 @@ struct RetirementView: View {
         DisplayUnit(rawValue: displayUnitRaw) ?? .btc
     }
 
-    private var visibleAccounts: [BTCAccount] {
-        accounts.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
+    private var canonicalBTC: CanonicalBTCBalance? {
+        canonicalFinancials.btcBalance.value
     }
 
     private var totalBtc: Decimal {
-        visibleAccounts.reduce(Decimal(0)) { $0 + $1.btc }
+        guard let canonicalBTC else { return 0 }
+        return decimalMinorUnits(canonicalBTC.totalSats, scale: 8)
     }
 
     private var coldBtc: Decimal {
-        visibleAccounts.filter { $0.custody == .selfCustody }.reduce(Decimal(0)) { $0 + $1.btc }
+        guard let canonicalBTC else { return 0 }
+        return decimalMinorUnits(canonicalBTC.selfCustodySats, scale: 8)
     }
 
     private var hotBtc: Decimal {
@@ -85,20 +86,38 @@ struct RetirementView: View {
             VStack(spacing: 0) {
                 ScreenHeader(title: "Retirement", eyebrow: "The Long Stack")
 
-                goalsCard
+                if canonicalBTC != nil {
+                    goalsCard
+                        .padding(.horizontal, AppLayout.sectionPadding)
+                        .padding(.bottom, AppLayout.cardSpacing)
+
+                    storageSection
+                        .padding(.bottom, AppLayout.cardSpacing)
+                } else {
+                    RequiredFinancialSourceView(
+                        title: "Bitcoin Retirement Balance",
+                        message: "The required Bitcoin balance document is empty or unavailable.",
+                    )
                     .padding(.horizontal, AppLayout.sectionPadding)
                     .padding(.bottom, AppLayout.cardSpacing)
-
-                storageSection
-                    .padding(.bottom, AppLayout.cardSpacing)
+                }
 
                 if !visibleHoldings.isEmpty {
                     holdingsSection
                         .padding(.bottom, AppLayout.cardSpacing)
                 }
 
-                projectionsSection
+                if canonicalBTC != nil, currentIncomeCents != nil {
+                    projectionsSection
+                        .padding(.bottom, AppLayout.cardSpacing)
+                } else {
+                    RequiredFinancialSourceView(
+                        title: "Retirement Projection",
+                        message: "A projection requires both canonical Bitcoin and income sources.",
+                    )
+                    .padding(.horizontal, AppLayout.sectionPadding)
                     .padding(.bottom, AppLayout.cardSpacing)
+                }
 
                 lotsSection
             }
@@ -384,12 +403,18 @@ struct RetirementView: View {
             .reduce(Decimal(0)) { $0 + $1.monthlyBudget }
     }
 
+    private var currentIncomeCents: Int64? {
+        guard let income = canonicalFinancials.income.value else { return nil }
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM"
+        return income.cents(forMonth: formatter.string(from: Date()))
+    }
+
     private var monthlyIncomeNet: Decimal {
-        let df = DateFormatter()
-        df.dateFormat = "MMMM yyyy"
-        let key = df.string(from: Date())
-        guard let snapshot = budgetSnapshots.first(where: { $0.monthKey == key }) else { return 0 }
-        return snapshot.mtdIncome > 0 ? snapshot.mtdIncome : snapshot.monthlyGross
+        guard let currentIncomeCents else { return 0 }
+        return decimalMinorUnits(currentIncomeCents, scale: 2)
     }
 
     private var monthlySurplusForBtc: Decimal {

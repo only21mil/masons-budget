@@ -90,10 +90,10 @@ struct ContentView: View {
     @AppStorage("appearance_mode") private var appearanceModeRaw = AppearanceMode.system.rawValue
     @Environment(\.theme) var theme
 
-    @Query private var btcAccounts: [BTCAccount]
     @Query private var holdingAccounts: [HoldingAccount]
 
     @State private var selectedTab: AppTab = .home
+    @State private var canonicalFinancials = CanonicalFinancialSourceStore()
     @StateObject private var syncStatus = SyncStatusStore.shared
     @StateObject private var taskUndoStore = TaskUndoStore.shared
     @State private var showAddTransaction = false
@@ -131,8 +131,12 @@ struct ContentView: View {
                 macOSBody
             #endif
         }
+        .environment(canonicalFinancials)
         .environmentObject(syncStatus)
         .environmentObject(taskUndoStore)
+        .task(id: activeMember) {
+            await canonicalFinancials.load(viewer: activeMember)
+        }
         .overlay(alignment: .top) {
             syncFailureBanner
                 .padding(.horizontal, AppLayout.sectionPadding)
@@ -408,16 +412,17 @@ struct ContentView: View {
         }
 
         private var sidebarNetWorth: String {
+            guard let btcBalance = canonicalFinancials.btcBalance.value else {
+                return "Unavailable"
+            }
             let btcPrice = BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
-            let totalBtc = btcAccounts
-                .filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
-                .reduce(Decimal(0)) { $0 + $1.btc }
             let vooPrice = StockPriceService.vooPrice
             let ibitPrice = StockPriceService.ibitPrice
             let holdingsUsd = holdingAccounts
                 .filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
                 .reduce(Decimal(0)) { $0 + $1.liveValue(vooPrice: vooPrice, ibitPrice: ibitPrice) }
-            let totalSats = (totalBtc * 100_000_000) + (btcPrice > 0 ? (holdingsUsd / btcPrice) * 100_000_000 : 0)
+            let totalSats = Decimal(btcBalance.totalSats) +
+                (btcPrice > 0 ? (holdingsUsd / btcPrice) * 100_000_000 : 0)
             return AppFormatter.formatAmount(sats: totalSats, unit: unit, btcPrice: btcPrice)
         }
 

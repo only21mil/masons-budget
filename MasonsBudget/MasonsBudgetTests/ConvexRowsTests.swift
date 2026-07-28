@@ -81,8 +81,8 @@ final class ConvexRowsTests: XCTestCase {
     }
 
     func testClosedCatalogueRequiresScopeAndReadTokenIsAttached() throws {
-        let request = ConvexRowQuery.btcAccounts(viewer: .rachel, scope: .netWorth)
-        XCTAssertEqual(request.path, "tables:listBtcAccounts")
+        let request = ConvexRowQuery.btcBalanceDocuments(viewer: .rachel, scope: .netWorth)
+        XCTAssertEqual(request.path, "tables:listBtcBalanceDocuments")
         XCTAssertEqual(request.arguments["viewer"] as? String, "rachel")
         XCTAssertEqual(request.arguments["scope"] as? String, "netWorth")
 
@@ -270,6 +270,140 @@ final class ConvexRowsTests: XCTestCase {
         try context.save()
 
         XCTAssertTrue(try context.fetch(FetchDescriptor<TodoItem>()).isEmpty)
+    }
+
+    func testCanonicalBTCUsesOneDocumentTotalWithoutSummingAccounts() throws {
+        let document = ConvexBTCBalanceDocumentRow(
+            owner: .victor,
+            schemaVersion: 1,
+            asOf: "2026-07-16T00:00:00Z",
+            accounts: [
+                .init(
+                    key: "coldcard",
+                    label: "Coldcard",
+                    custody: .selfCustody,
+                    sats: 100_000_000,
+                    fiatCents: 1,
+                ),
+                .init(
+                    key: "river",
+                    label: "River",
+                    custody: .exchange,
+                    sats: 200_000_000,
+                    fiatCents: 2,
+                ),
+            ],
+            totals: .init(
+                sats: 541_782_856,
+                fiatCents: 35_000_000,
+                exchangeSats: 141_782_856,
+                selfCustodySats: 400_000_000,
+            ),
+            source: "btc-balance-snapshot",
+            basis: "authoritative",
+            confidence: "verified",
+        )
+
+        let balance = try XCTUnwrap(
+            CanonicalFinancialProjection.btcBalance(documents: [document]).value,
+        )
+        XCTAssertEqual(balance.totalSats, 541_782_856)
+        XCTAssertEqual(balance.exchangeSats, 141_782_856)
+        XCTAssertEqual(balance.selfCustodySats, 400_000_000)
+        XCTAssertNotEqual(
+            balance.totalSats,
+            document.accounts.reduce(Int64(0)) { $0 + $1.sats },
+            "The authoritative document total must not be recomputed from another projection.",
+        )
+    }
+
+    func testEmptyAndAmbiguousRequiredBTCSourceNeverBecomeZero() throws {
+        XCTAssertNil(try CanonicalFinancialProjection.btcBalance(documents: []).value)
+
+        let document = ConvexBTCBalanceDocumentRow(
+            owner: .victor,
+            schemaVersion: 1,
+            asOf: "2026-07-16",
+            accounts: [],
+            totals: .init(
+                sats: 0,
+                fiatCents: 0,
+                exchangeSats: 0,
+                selfCustodySats: 0,
+            ),
+            source: nil,
+            basis: nil,
+            confidence: nil,
+        )
+        XCTAssertThrowsError(
+            try CanonicalFinancialProjection.btcBalance(documents: [document, document]),
+        ) { error in
+            XCTAssertEqual(error as? ConvexRowDecodeError, .ambiguousDocument)
+        }
+    }
+
+    func testDedicatedIncomeRowsAreTheOnlyIncomeProjection() throws {
+        let rows = [
+            ConvexIncomeRow(
+                sourceKey: "income-1",
+                incomeId: "income-1",
+                owner: .victor,
+                date: "2026-07-01",
+                month: "2026-07",
+                amountCents: 1_234,
+                source: "River",
+                loggedBy: nil,
+                note: nil,
+                archimedesRequestId: nil,
+            ),
+            ConvexIncomeRow(
+                sourceKey: "income-2",
+                incomeId: "income-2",
+                owner: .victor,
+                date: "2026-07-15",
+                month: "2026-07",
+                amountCents: 5_678,
+                source: "Strike",
+                loggedBy: nil,
+                note: nil,
+                archimedesRequestId: nil,
+            ),
+        ]
+
+        let summary = try XCTUnwrap(
+            CanonicalFinancialProjection.income(rows: rows, complete: true).value,
+        )
+        XCTAssertEqual(summary.cents(forMonth: "2026-07"), 6_912)
+        XCTAssertEqual(summary.cents(forYear: 2026), 6_912)
+        XCTAssertNil(
+            try CanonicalFinancialProjection.income(rows: [], complete: true).value,
+            "An empty required income source is unavailable, not a zero-dollar month.",
+        )
+    }
+
+    func testBTCBillPaysStayASeparateRequiredLedger() throws {
+        let rows = [
+            ConvexBTCBillPayRow(
+                billPayId: "bp-1",
+                owner: .victor,
+                date: "2026-07-01",
+                month: "2026-07",
+                merchant: "Mortgage",
+                category: "Housing",
+                amountUsdCents: 250_000,
+                btcSpentSats: 3_800_000,
+                btcPriceCents: 6_578_947,
+                platform: "River",
+                note: nil,
+                feeUsdCents: 0,
+                reference: nil,
+            ),
+        ]
+        let ledger = try XCTUnwrap(CanonicalFinancialProjection.btcBillPays(rows: rows).value)
+        XCTAssertEqual(ledger.count, 1)
+        XCTAssertEqual(ledger.totalUSDCents, 250_000)
+        XCTAssertEqual(ledger.totalSpentSats, 3_800_000)
+        XCTAssertNil(CanonicalFinancialProjection.btcBillPays(rows: []).value)
     }
 
     private func transactionRow(owner: String, amount: String) -> [String: Any] {
