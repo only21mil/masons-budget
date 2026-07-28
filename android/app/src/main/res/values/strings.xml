@@ -1,4 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Vogel Vault</string>
+    <string name="convex_read_error_title">Convex row data unavailable</string>
+    <string name="convex_read_error_detail">Convex row tables over HTTP did not return usable data. This state combines request rejection, network failure, malformed or incomplete responses, and row decode failure.</string>
+    <string name="convex_read_stale_title">Showing stale data</string>
+    <string name="convex_read_stale_detail">The last successful Convex row response is old. Treat these figures as out of date.</string>
+    <string name="convex_read_loading_title">Loading Convex rows</string>
+    <string name="convex_read_loading_detail">Requesting Convex row tables over HTTP.</string>
+    <string name="convex_read_empty_title">No rows returned</string>
+    <string name="convex_read_empty_detail">Convex returned an authoritative empty result for this view.</string>
+    <string name="convex_auth_error_title">Convex read token not accepted</string>
+    <string name="convex_auth_error_detail">Convex could not authorize row reads. This state combines a missing read token with a token the server rejected. Cached financial figures are hidden.</string>
+    <string name="convex_rows_inactive_title">Convex row reads are not active</string>
+    <string name="convex_rows_inactive_detail">No read token is configured, or remote reads are disabled; this screen cannot distinguish those states. Figures are sample data.</string>
+    <string name="convex_budget_period_mismatch_detail">Convex returned targets for %1$s. Actuals were re-derived from %2$s transaction rows; the targets were not.</string>
+    <string name="convex_uncategorized_spend_detail">The Convex transaction rows have no matching budget category, so this spend is counted on Activity only.</string>
+    <string name="legacy_compatibility_keys_title">Legacy compatibility keys</string>
+    <string name="legacy_compatibility_keys_hint">%1$d blob-era names are still recognized by the read model</string>
 </resources>

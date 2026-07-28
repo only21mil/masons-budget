@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -40,6 +41,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.ui.theme.LedgerNumeral
 import com.sats21m.vogelvault.ui.theme.VaultAccent
@@ -362,26 +364,26 @@ fun StateBlock(
         }
         Freshness.ERROR -> {
             icon = Icons.Filled.ErrorOutline
-            fallbackTitle = "Could not load"
-            fallbackDetail = "The last read from MC2 failed. Showing nothing rather than something wrong."
+            fallbackTitle = stringResource(R.string.convex_read_error_title)
+            fallbackDetail = stringResource(R.string.convex_read_error_detail)
             tint = VaultNegative
         }
         Freshness.STALE -> {
             icon = Icons.Filled.WarningAmber
-            fallbackTitle = "Showing stale data"
-            fallbackDetail = "The bridge has not refreshed recently. Treat these figures as out of date."
+            fallbackTitle = stringResource(R.string.convex_read_stale_title)
+            fallbackDetail = stringResource(R.string.convex_read_stale_detail)
             tint = VaultWarning
         }
         Freshness.LOADING -> {
             icon = Icons.Filled.HourglassEmpty
-            fallbackTitle = "Loading"
-            fallbackDetail = "Reading from the local bridge."
+            fallbackTitle = stringResource(R.string.convex_read_loading_title)
+            fallbackDetail = stringResource(R.string.convex_read_loading_detail)
             tint = VaultTextDim
         }
         else -> {
             icon = Icons.Filled.Inbox
-            fallbackTitle = "Nothing here yet"
-            fallbackDetail = "No records have synced into this view."
+            fallbackTitle = stringResource(R.string.convex_read_empty_title)
+            fallbackDetail = stringResource(R.string.convex_read_empty_detail)
             tint = VaultTextDim
         }
     }
