@@ -31,12 +31,16 @@ on:
       - 'MasonsBudget/**'
       - 'Package.swift'
       - 'Tests/**'
+      - 'shared/domain/convex-wire-golden-provenance.json'
+      - 'shared/domain/fixtures/convex-wire-golden/**'
       - '.github/workflows/swift.yml'
   pull_request:
     paths:
       - 'MasonsBudget/**'
       - 'Package.swift'
       - 'Tests/**'
+      - 'shared/domain/convex-wire-golden-provenance.json'
+      - 'shared/domain/fixtures/convex-wire-golden/**'
       - '.github/workflows/swift.yml'
   # The escape hatch: paths filters do not apply to a manual run, so a Swift
   # build can still be forced on a branch that only touched, say, a fixture.

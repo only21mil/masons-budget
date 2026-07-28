@@ -3,6 +3,83 @@ import SwiftData
 import XCTest
 
 final class ConvexRowsTests: XCTestCase {
+    func testProductionWireGoldensUseRequestSelectedFormatAndDecodeExactly() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ConvexWireGoldenURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+
+        let deploymentURL = try XCTUnwrap(URL(string: "https://golden.invalid"))
+        let client = ConvexClient(deploymentURL: deploymentURL, session: session)
+
+        let transactions: ConvexRowEnvelope<ConvexTransactionRow> = try await client.fetchRows(
+            .transactions(viewer: .victor),
+            as: ConvexRowEnvelope<ConvexTransactionRow>.self,
+        )
+        XCTAssertFalse(transactions.complete)
+        XCTAssertEqual(transactions.rows.count, 3)
+        XCTAssertEqual(transactions.rows[0].txId, "t1784233824245")
+        XCTAssertEqual(transactions.rows[0].amountCents, 27_918)
+
+        let todos: ConvexRowEnvelope<ConvexTodoRow> = try await client.fetchRows(
+            .todos(viewer: .victor),
+            as: ConvexRowEnvelope<ConvexTodoRow>.self,
+        )
+        XCTAssertFalse(todos.complete)
+        XCTAssertEqual(todos.rows.count, 3)
+        XCTAssertEqual(todos.rows[0].todoId, "8A56A12C-DB12-4766-96BF-6E3AE7D1EFC9")
+        XCTAssertEqual(todos.rows[0].priority, 0)
+
+        let buys: ConvexRowEnvelope<ConvexBTCBuyRow> = try await client.fetchRows(
+            .btcBuys(viewer: .victor, scope: .visible),
+            as: ConvexRowEnvelope<ConvexBTCBuyRow>.self,
+        )
+        XCTAssertFalse(buys.complete)
+        XCTAssertEqual(buys.rows.count, 3)
+        XCTAssertEqual(buys.rows[0].buyId, "b1784166358832")
+        XCTAssertEqual(buys.rows[0].sats, 148_033)
+        XCTAssertEqual(buys.rows[0].priceUsdCents, 6_563_401)
+        XCTAssertEqual(buys.rows[0].usdCents, 9_813)
+
+        let billPays: ConvexRowEnvelope<ConvexBTCBillPayRow> = try await client.fetchRows(
+            .btcBillPays(viewer: .victor, scope: .visible),
+            as: ConvexRowEnvelope<ConvexBTCBillPayRow>.self,
+        )
+        XCTAssertFalse(billPays.complete)
+        XCTAssertEqual(billPays.rows.count, 3)
+        XCTAssertEqual(billPays.rows[0].billPayId, "bp030")
+        XCTAssertEqual(billPays.rows[0].amountUsdCents, 30_673)
+        XCTAssertEqual(billPays.rows[0].btcSpentSats, 481_122)
+        XCTAssertEqual(billPays.rows[0].btcPriceCents, 6_375_306)
+        XCTAssertEqual(billPays.rows[0].feeUsdCents, 0)
+
+        let accounts: ConvexRowEnvelope<ConvexBTCAccountRow> = try await client.fetchRows(
+            .btcAccounts(viewer: .victor, scope: .visible),
+            as: ConvexRowEnvelope<ConvexBTCAccountRow>.self,
+        )
+        XCTAssertFalse(accounts.complete)
+        XCTAssertTrue(accounts.rows.isEmpty)
+
+        let budget: ConvexBudgetDocumentEnvelope = try await client.fetchRows(
+            .budget(viewer: .victor),
+            as: ConvexBudgetDocumentEnvelope.self,
+        )
+        XCTAssertTrue(budget.complete)
+        XCTAssertNil(budget.document)
+
+        let counts = try await client.fetchRows(.rowCounts, as: ConvexRowCounts.self)
+        XCTAssertEqual(
+            counts,
+            ConvexRowCounts(
+                transactions: 911,
+                todos: 25,
+                btcBuys: 33,
+                btcBillPays: 31,
+                btcAccounts: 0,
+            ),
+        )
+    }
+
     func testClosedCatalogueRequiresScopeAndReadTokenIsAttached() throws {
         let request = ConvexRowQuery.btcAccounts(viewer: .rachel, scope: .netWorth)
         XCTAssertEqual(request.path, "tables:listBtcAccounts")
@@ -216,5 +293,86 @@ final class ConvexRowsTests: XCTestCase {
         let decoded = try ConvexTaggedInt64Decoder.decode(object)
         let data = try JSONSerialization.data(withJSONObject: decoded)
         return try JSONDecoder().decode(T.self, from: data)
+    }
+}
+
+/// Credential-free transport replay for the shipped request and decode boundary.
+///
+/// The response filename is chosen from the request's actual `format` value. A
+/// production change from `convex_encoded_json` to `json` therefore replays the
+/// real decimal-string capture and fails typed `Int64` decoding.
+private final class ConvexWireGoldenURLProtocol: URLProtocol {
+    private static let queryNames = [
+        "tables:rowCounts": "rowCounts",
+        "tables:listTransactions": "listTransactions",
+        "tables:listTodos": "listTodos",
+        "tables:listBtcBuys": "listBtcBuys",
+        "tables:listBtcAccounts": "listBtcAccounts",
+        "tables:listBtcBillPays": "listBtcBillPays",
+        "tables:getBudgetDocument": "getBudgetDocument",
+    ]
+
+    override class func canInit(with _: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        do {
+            guard let body = request.httpBody,
+                  let object = try JSONSerialization.jsonObject(with: body) as? [String: Any],
+                  let path = object["path"] as? String,
+                  let format = object["format"] as? String
+            else {
+                throw ReplayError.invalidRequest("Golden request must have path, format and a JSON body.")
+            }
+            guard let queryName = Self.queryNames[path] else {
+                throw ReplayError.invalidRequest("No golden capture for \(path).")
+            }
+            let filename = "\(queryName).\(format).json"
+            let bundle = Bundle(for: ConvexRowsTests.self)
+            let fixtureURL =
+                bundle.urls(forResourcesWithExtension: "json", subdirectory: nil)?
+                    .first(where: { $0.lastPathComponent == filename })
+                ?? bundle.url(
+                    forResource: queryName,
+                    withExtension: "\(format).json",
+                    subdirectory: "convex-wire-golden",
+                )
+            guard let fixtureURL else {
+                throw ReplayError.invalidRequest("Missing request-selected golden fixture \(filename).")
+            }
+            let data = try Data(contentsOf: fixtureURL)
+            guard let requestURL = request.url,
+                  let response = HTTPURLResponse(
+                      url: requestURL,
+                      statusCode: 200,
+                      httpVersion: "HTTP/1.1",
+                      headerFields: ["Content-Type": "application/json"],
+                  )
+            else {
+                throw ReplayError.invalidRequest("Golden request has no valid URL.")
+            }
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+
+    private enum ReplayError: LocalizedError {
+        case invalidRequest(String)
+
+        var errorDescription: String? {
+            switch self {
+            case let .invalidRequest(message): message
+            }
+        }
     }
 }
