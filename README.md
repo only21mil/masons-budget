@@ -103,30 +103,61 @@ scripts/vv-swift-lsp-reset.sh prime
 
 ## Data flow
 
-Convex is authoritative; there is no service upstream of it. Nothing has written
-to Convex since 2026-07-18. MC2 disappeared when its DGX Spark host was wiped,
-and its source was never pushed anywhere, so it cannot be restored.
+Convex is authoritative; there is no service upstream of it. MC2 disappeared
+when its DGX Spark host was wiped, and its source was never pushed anywhere, so
+it cannot be restored. The approved row migration has since populated Convex's
+typed tables from the retained blobs.
 
-Production still has only the original blob tables. Every shipped client reads
-the JSON documents in `dataFiles`; `syncVersions` and `todoTombstones` support
-that contract. The row schema, internal backfill, row queries, and validating
-write path exist in this repository but have not been deployed.
+The production row schema and public row API are deployed, and the row migration
+has been applied. That includes the five formerly skipped document sources:
+`budget`, `mason-budget`, `btc-balance-snapshot`, `finances`, and
+`son-balances`. The original JSON documents remain in `dataFiles`;
+`syncVersions` and `todoTombstones` still support compatible blob readers and
+must not be altered by row work.
 
 ```
-CURRENT PRODUCTION
-Convex system of record (`dataFiles`)
-    ├── iOS/macOS: ConvexClient → MC2Reader → compatibility DTOs → MC2Mapper
-    ├── Linux:     Convex transport → legacy JSON read model
-    └── Android:   Convex transport → legacy JSON read model
-
-APPROVAL-GATED CUTOVER — NOT DEPLOYED
-unchanged `dataFiles` ──internal backfill──> row tables ──row queries──> clients
+Convex system of record
+    ├── unchanged `dataFiles` blobs (compatibility/fallback)
+    └── migrated typed rows/documents ──authenticated row API──> clients
 ```
 
-The backfill must leave `dataFiles`, `syncVersions`, and `todoTombstones`
-byte-identical so existing clients continue to work throughout the cutover.
-Deployment and client cutover are coordinated under
+Verify this state rather than inferring it from a successful request: make an
+authenticated `tables:rowCounts` request, inspect the typed document queries,
+and compare their values with the source blobs. The HTTP request must explicitly
+set `format: "convex_encoded_json"`. Under that format, every `v.int64()` is
+`{"$integer":"<base64>"}` containing exactly eight little-endian two's-complement
+bytes. Plain `format: "json"` returns decimal strings and is not a compatible
+substitute for the clients' strict row decoders.
+
+The migration leaves `dataFiles`, `syncVersions`, and `todoTombstones`
+byte-identical. Deployment and client cutover remain coordinated under
 [umbrella issue #46](https://github.com/only21mil/masons-budget/issues/46).
+
+### Measured financial contract
+
+- Purchases are positive for every owner, refunds are negative, and
+  `category == "Income"` contributes zero to `spendAmount`. Verify a real
+  `tables:listTransactions` response: every non-Income row must have
+  `spendAmount == amountCents`; every Income row must have `spendAmount == 0`.
+- Adult BTC net worth uses exactly one adult `btcBalanceDocuments` total. The
+  authoritative production snapshot is **5.41782856 BTC as of 2026-07-16**.
+  Do not sum it with overlapping `btcAccounts` or the older
+  `balanceDocuments` observation of 4.87970749 BTC.
+- Income uses the dedicated `income` table only: **16 rows, $34,893.47** in the
+  measured production snapshot. Transaction rows categorized as Income are
+  mirrors and contribute zero.
+- `btcBillPays` is its own ledger section: **31 rows, $25,634.05**. It is not an
+  input to an existing balance or net-worth total because those balances already
+  reflect the spend.
+- An empty required financial source is **unavailable**, not zero. A zero is
+  authoritative only when the required source exists and explicitly reports
+  zero. This rule does not apply to non-financial collections such as open todos.
+
+**Release order is load-bearing:** deploy and verify the corrected Convex
+transaction projection before building any client that enforces the corrected
+sign contract. Such a client rejects a row when `spendAmount != amountCents`
+(except Income), and one rejected row discards the entire response. Shipping the
+client first recreates a total read outage.
 
 ## Voice Input
 

@@ -1,16 +1,13 @@
 # The Vogel Vault — build handoff
 
-**Updated 2026-07-27 against `build/finish-vogel-vault` at `e2d0781`.** Supersedes
+**Updated 2026-07-27 against `integration/lane-ba-be` at `3054fb9`.** Supersedes
 `PLAN.md`, which is archival. If you are picking this up cold, read this file
 first and trust it over anything in `PLAN.md` or older wiki entries. Remaining
 integration work is tracked by [umbrella issue #46](https://github.com/only21mil/masons-budget/issues/46).
 
-This handoff distinguishes the integration tree from its review queue. Sixteen
-PRs merged after the previous `f037d19` handoff snapshot. The twelve-PR queue
-recorded at the start of this refresh was #72, #74 and #77–#86; #87, #88 and #90
-joined it during verification. The queue is live, so inspect GitHub rather than
-copying this count. A queued implementation is described as queued until it
-lands, even when its implementation code already exists.
+This is a measured integration-boundary snapshot, not a durable list of queued
+PRs. Inspect GitHub issues and PRs before starting work; do not copy counts from
+this handoff into a new status report.
 
 ---
 
@@ -73,17 +70,20 @@ those controls.
 
 ### The single most important fact
 
-**Nothing has been deployed to Convex.** The row schema, backfill migration,
-public row API and writeback path are present on this integration branch and
-tested, but
-`keen-elephant-452` still has only the original blob tables. The new tables do not
-exist there yet. Do not assume otherwise.
+**The row schema and public row API are deployed, and the row migration has been
+applied.** The five formerly skipped document blobs (`budget`, `mason-budget`,
+`btc-balance-snapshot`, `finances`, and `son-balances`) are migrated too.
+`dataFiles` remains the retained compatibility copy and must stay byte-identical
+until every shipped blob reader is retired.
 
 ### What is live in production right now
 
 - `dataFiles` — 13 JSON blob documents, the family's entire financial record
 - `syncVersions`, `todoTombstones` — the blob path's bookkeeping
 - `mobilePairings`, `mobileDevices` — device pairing, predates this work
+- Typed row/document tables and the authenticated `tables:*` query surface. Do
+  not equate "the query returned" with "the required table is populated": verify
+  `tables:rowCounts` and the corresponding typed query together.
 - **Read authentication was recorded as ENFORCED on 2026-07-26.** That cutover
   verified no-token and wrong-token rejection, a correct-token list of 13 files,
   and rejection of tokenless `dataFiles:get`. Before that day the data was
@@ -95,9 +95,9 @@ exist there yet. Do not assume otherwise.
 
 MC2 (mission-control) was a Python service on the DGX Spark that owned the data and
 pushed it into Convex. **The Spark was wiped. MC2 was never pushed anywhere and is
-unrecoverable.** Nothing has written to Convex since 2026-07-18. That is why Convex
-became the system of record rather than a projection — there is no longer anything
-upstream of it.
+unrecoverable.** Convex became the system of record because there is no longer
+anything upstream of it. Approved migration writes have since populated the
+typed tables from the retained blobs.
 
 Consequence: **the Convex data is the only copy.** It has been backed up to two LUKS
 volumes with independently re-verified sha256. Treat every migration and every write
@@ -105,20 +105,24 @@ path as operating on irreplaceable data.
 
 ### Data volumes (real production counts)
 
-905 transactions · 31 BTC buys · 25 todos. The test fixtures use these exact counts
-and the real MC2 field shapes, deliberately — a migration exercised over six rows
-would not have caught the batching, the duplicate ids or the sums.
+905 Victor transactions plus 6 Mason transactions · 31 BTC buys · 31 BTC bill
+pays · 16 income rows · 25 todos. The five document sources named above are
+migrated as 2 `budgetDocuments`, 2 `btcBalanceDocuments`, and 1
+`financeDocuments` row; `btc-balance-snapshot` and `son-balances` also project
+their account rows.
+
+These numbers were measured before this docs-only update; this change did not
+re-probe production. Re-verify with an authenticated `tables:rowCounts` request
+using `format: "convex_encoded_json"`, then read each typed table/document. A
+count alone does not prove money or ownership is correct.
 
 ---
 
 ## 4. Domain invariants — break these and you corrupt the ledger
 
 These are the cross-client contract, not style preferences. The integration tree
-enforces the existing rules in `shared/domain` (TypeScript), `android/domain`
-(Kotlin), language-neutral fixtures and Swift. The signed-spend refinement in
-item 4 is implemented across those surfaces in queued PR
-[#72](https://github.com/only21mil/masons-budget/pull/72); do not use the base
-tree's older absolute-value helper as the intended contract.
+enforces the rules in `shared/domain` (TypeScript), `android/domain` (Kotlin),
+language-neutral fixtures and Swift.
 
 1. **Money is integer minor units.** `bigint` in TS, `Long` in Kotlin, `v.int64()`
    in Convex. USD is cents, BTC is satoshis. Never a float, never `x * 100` — parse
@@ -131,8 +135,10 @@ tree's older absolute-value helper as the intended contract.
    at the call site.
 
 3. **Adult and child files both store purchases as POSITIVE amounts.**
-   Refunds are negative. The write path rejects contradictory intent rather than
-   correcting a sign, because silently flipping money corrupts the ledger.
+   Refunds are negative, and Income contributes zero. Production measurement
+   found 888 positive purchases and 16 genuine negative refunds among Victor's
+   905 rows; Mason's 6 rows are positive. Verify this against a real
+   `tables:listTransactions` response, not only a fixture.
 
 4. **`spendAmount` is a signed budget contribution.** Positive means spent;
    negative means a credit or refund and reduces derived spend. Use
@@ -152,6 +158,21 @@ tree's older absolute-value helper as the intended contract.
    blob reader re-download everything; a touched `todoTombstones` row can
    resurrect a deleted todo. `snapshotBlobWorld` in `convex/migrate.test.ts`
    guards `dataFiles`, `syncVersions`, and `todoTombstones`.
+
+8. **Canonical totals have exactly one source.** Adult BTC net worth uses one
+   adult `btcBalanceDocuments` total: 5.41782856 BTC as of 2026-07-16. Never add
+   overlapping `btcAccounts` or the older 4.87970749 BTC
+   `balanceDocuments` observation. Income uses only the 16-row `income` table
+   ($34,893.47); transaction Income mirrors add zero. The 31-row
+   `btcBillPays` ledger ($25,634.05) is displayed separately and adds to no
+   existing total because balances already reflect it. Verify each rule by
+   reading the named production source and tracing the client aggregator.
+
+9. **An empty required financial source is unavailable, not zero.** Render a
+   confident zero only when the authoritative source is present and explicitly
+   reports zero. Empty non-financial collections are different: zero open todos
+   is a valid result. Verify both the source-presence flag/count and the rendered
+   state; a numeric assertion alone cannot distinguish missing from zero.
 
 ---
 
@@ -174,11 +195,8 @@ tree's older absolute-value helper as the intended contract.
   append-only audit of what an edit replaced.
 - `convex/dataFiles.ts` — the blob path, now behind fail-closed read/sync auth
 - `scripts/convex-migrate.mjs` — migration driver, dry run by default, with
-  versioned/redacted JSON evidence. The CLI can carry a backend
-  `frozenPlanFingerprint`, but the current backend `migrate:status` does not
-  produce one. A production deploy/backfill therefore remains blocked until a
-  reviewed dry run emits a frozen-plan fingerprint and apply is demonstrably
-  bound to that exact fingerprint.
+  versioned/redacted JSON evidence and a backend-generated frozen-plan
+  fingerprint. Apply is bound to the reviewed fingerprint.
 - `scripts/verify-read-auth.sh` — reports `OPEN`, `ENFORCED`,
   `TOKEN-UNCONFIGURED`, `WRONG-KNOWN-GOOD`, `OUTAGE`, `CLOSED-UNCONFIRMED`, or
   `UNKNOWN`. `ENFORCED` requires anonymous and wrong-token rejection plus a
@@ -187,41 +205,23 @@ tree's older absolute-value helper as the intended contract.
 - The verifier has **seven states**, not five. The list above is copied from the
   script's `usage()` contract; do not collapse an outage, missing deployment
   token, wrong known-good token, or unconfirmed closure into "closed".
-- At this snapshot, the integration tree's local deterministic suites report
-  **429 Convex tests and 84 shared-domain tests passing**. Client PR check state
-  is separate and can change; inspect GitHub before merging queued work.
+- Do not copy a test count from this handoff. Run the commands in `AGENTS.md`,
+  require nonzero discovered-test counts, and inspect current GitHub checks.
 
 ### Clients
 
-- **Integration tree at `e2d0781`:** Linux and Android have strict authenticated
-  row transports and tagged-int64 decoders, but their screen-level cutovers have
-  not landed here. Swift has authenticated blob reads and its own strict
-  `ConvexTaggedInt64Decoder`.
-- **Queued Linux cutover
-  [#82](https://github.com/only21mil/masons-budget/pull/82):** loads the bounded
-  row/document API through the hardened Electron bridge when
-  `VOGEL_VAULT_REMOTE_READ` is enabled. With the flag off it opens no socket;
-  unavailable/empty row tables do not touch the blob path and degrade to the client's
-  sanitized fallback/empty presentation.
-- **Queued Android cutover
-  [#83](https://github.com/only21mil/masons-budget/pull/83):** replaces the
-  production fixture ViewModel path with authenticated row snapshots when
-  remote rows are enabled. Missing/unavailable tables become explicit
-  `ERROR`/`EMPTY` state rather than fabricated live figures or a blob fallback.
-  Its signed transaction projection dependency is queued separately in
-  [#88](https://github.com/only21mil/masons-budget/pull/88).
-- **Queued iOS/macOS cutover
-  [#85](https://github.com/only21mil/masons-budget/pull/85):** a default-off
-  `convex_row_reads_enabled` flag selects typed row queries for transactions,
-  todos, budgets, BTC buys and bill pays. If the row API is unavailable, only
-  the specific row-API-unavailable error falls back to authenticated
-  blobs; auth and malformed-money failures remain hard failures. BTC accounts
-  and several document-shaped datasets intentionally remain on blobs pending
-  owner-preserving models.
+- Linux, Android, and Swift contain authenticated row transports, strict tagged
+  int64 decoding, and screen-level row-read paths. Runtime gates and compatible
+  blob paths remain; inspect the actual release configuration rather than
+  assuming source presence means a shipped client has enabled rows.
+- A required financial row source that is absent or empty must surface as
+  unavailable/error, never as a fabricated `$0.00`. This does not apply to
+  genuinely empty non-financial collections.
 - **Swift does not natively decode Convex tagged integers.** The tagged
   `{"$integer":"<base64>"}` shape is produced when the HTTP request names
   `format: "convex_encoded_json"`; `format: "json"` instead produces a decimal
-  string such as `"2500"` for `v.int64()`. This app uses a custom `URLSession`
+  string such as `"2500"` for `v.int64()`. The tag contains exactly eight
+  little-endian two's-complement bytes. This app uses a custom `URLSession`
   client, not the native Convex Swift SDK. PR
   [#53](https://github.com/only21mil/masons-budget/pull/53) added the app's own
   strict recursive decoder for `{"$integer":"<base64>"}` before the queued row
@@ -251,59 +251,37 @@ tree's older absolute-value helper as the intended contract.
 
 Ordered. Each item names its gate.
 
-### A. Deploy Convex and run the backfill — **Victor's approval required**
+### A. Deploy the corrected transaction projection — **Victor's approval required**
 
-The largest remaining piece and the riskiest, because it operates on the only copy
-of the family's financial record.
+The schema, row API, and migration are already live. The next release sequence
+has a strict order:
 
-1. Finish and review the pre-write proof/plan-binding work in
-   [umbrella issue #46](https://github.com/only21mil/masons-budget/issues/46).
-   **A frozen-plan fingerprint is a deploy/backfill precondition, not optional
-   evidence.** The current backend does not emit one, so stop here today.
-   The implementation is queued in
-   [#90](https://github.com/only21mil/masons-budget/pull/90); its existence is
-   not permission to deploy before review and merge.
-2. The row schema and all 16 public `tables:*` functions are deployed to
-   `keen-elephant-452`; confirm the deployed revision still matches the reviewed
-   tree before any backfill.
-3. Run `node scripts/convex-migrate.mjs --prod --json` for a production-targeted
-   dry run. Without `--prod`, the command targets the configured development
-   deployment.
-4. Inspect the machine-readable pre-write evidence: projected row counts, exact
-   summed money per column, canonical round trip, unique keys, legacy-world
-   fingerprint and frozen-plan fingerprint must all agree. Freeze that exact
-   evidence for review.
-5. Apply only if the reviewed implementation requires and verifies the exact
-   frozen-plan fingerprint. `--apply --prod --confirm-production` by itself is
-   not sufficient plan binding in the current tree.
-6. Run the read-only post-deploy verifier after its queued implementation
-   [#84](https://github.com/only21mil/masons-budget/pull/84) lands.
-7. Re-run
-   `CONVEX_READ_TOKEN="$THE_TOKEN" scripts/verify-read-auth.sh --expect enforced`
-   afterwards. The token and expectation must be on the same invocation.
+1. Review and deploy the Convex bundle containing the corrected transaction
+   projection.
+2. Send an authenticated `tables:listTransactions` request with
+   `format: "convex_encoded_json"`.
+3. Measure the response: every non-Income row has
+   `spendAmount == amountCents`, every Income row has `spendAmount == 0`, refunds
+   remain negative, and the response is complete.
+4. Re-run read-auth verification and require `STATE: ENFORCED`.
+5. Only after those checks pass may any client build containing the corrected
+   strict projection contract start.
 
-The current branch's dry run projects inserts/updates and its ordinary
-verification remains deferred because it writes nothing. The CLI evidence schema
-can report a backend fingerprint, but that is not the same as the backend
-producing a frozen plan or apply requiring it. Do not perform or approve the
-production backfill until both halves are present and reviewed.
+This order is load-bearing. The fixed client rejects any contradictory row, and
+one rejected row discards the whole response. Building or shipping the client
+before the backend is verified reproduces the 100% read outage.
 
-### B. Land and enable the client row cutovers
+### B. Verify client row cutovers before enabling or releasing them
 
-The three screen-level cutovers are implemented in queued PRs
-[#82](https://github.com/only21mil/masons-budget/pull/82),
-[#83](https://github.com/only21mil/masons-budget/pull/83), and
-[#85](https://github.com/only21mil/masons-budget/pull/85). Review and land them
-against integration; do not enable their runtime flags in production until the
-row schema/API and backfill exist and verification passes.
+Linux, Android, and Swift already contain screen-level row-read paths. Verify the
+runtime gates and actual release configuration; source code existing in a branch
+does not prove a shipped build uses it.
 
-All three HTTP paths require an explicit strict decoder for Convex
-`{"$integer":"<base64>"}` values. Linux and Android have theirs in the
-integration tree. Swift has its own decoder from PR #53; it does **not** get
-this behavior natively from `JSONDecoder` or from a Convex SDK.
-
-Android's Room DAO/schema landed in PR #58. The ViewModel/cache wiring remains
-queued in [#74](https://github.com/only21mil/masons-budget/pull/74).
+All three HTTP paths must explicitly request `format: "convex_encoded_json"` and
+strictly decode `{"$integer":"<base64>"}` as eight little-endian two's-complement
+bytes. A request capture plus a real decoded response is the verification; a
+unit test that only feeds a hand-written tagged object does not prove the request
+selected the tagged wire format.
 
 ### C. TestFlight — **Victor's approval required**
 
@@ -337,7 +315,7 @@ update did not run it and therefore does not claim a produced installer.
 ### E. Backfill the missing transactions
 
 Victor is reconstructing transaction history by hand and will hand it over. Once the
-row tables exist and the writeback path is deployed, that data goes in through
+reviewed writeback path is approved for production use, that data goes in through
 `convex/writeback.ts`, which validates rather than trusts.
 
 ### F. Smaller, tracked
@@ -358,29 +336,29 @@ row tables exist and the writeback path is deployed, that data goes in through
   [#77](https://github.com/only21mil/masons-budget/pull/77); review that PR before
   repeating the old blanket claim that every row query still relies on
   unbounded `.collect()`.
-- Production escape-hatch state is still unverified. The read-only attempt
-  recorded in [#87](https://github.com/only21mil/masons-budget/pull/87) stopped
-  before production because the checkout had no deployment binding. Fresh
-  authorized evidence that `ALLOW_TOKENLESS_SYNC` is absent is a deploy
-  precondition.
+- Do not infer current escape-hatch state from an old PR or transcript. Fresh
+  authorized evidence that `ALLOW_TOKENLESS_READ` and `ALLOW_TOKENLESS_SYNC`
+  are absent is a deploy precondition.
 
 ---
 
 ## 7. Things that will bite you
 
-- **The row API is deployed.** The row schema and all 16 public `tables:*`
-  functions are live on `keen-elephant-452`; that does not mean a backfill has
-  been approved or run.
-- **CI is the first compile for Swift and Kotlin.** No workstation in the fleet can
-  build them. A green local run proves nothing about those two clients.
+- **The row API is deployed and populated.** The row schema and authenticated
+  `tables:*` functions are live on `keen-elephant-452`; verify counts and
+  contents independently.
+- **Swift app builds require CI/macOS and approval.** Android's domain and
+  configured unit/lint checks can run with the pinned Gradle path in `AGENTS.md`;
+  neither local result substitutes for current GitHub checks.
 - **The escape hatch outranks the token.** `ALLOW_TOKENLESS_READ=true` admits a call
   even when `CONVEX_READ_TOKEN` is set. That is deliberate and documented, and it is
   why `verify-read-auth.sh` sends a deliberately-wrong control credential: it is the
   only automated way to catch a set token silently doing nothing.
-- **A deployed row API does not imply a completed client cutover or backfill.**
-  Client live modes remain gated, and empty row tables still render
-  empty/fallback state or use authenticated blobs as documented above. Do not
-  mutate `dataFiles`, `syncVersions` or `todoTombstones` from the migration.
+- **A deployed row API does not prove a completed client cutover.**
+  In this production deployment the backfill is complete, but client live modes
+  can still be gated. Verify the release configuration independently. Never
+  interpret an empty required financial table as a confident zero, and do not
+  mutate `dataFiles`, `syncVersions` or `todoTombstones`.
 - **`spendAmount` is not a display absolute value.** A refund must remain
   negative so it reduces the month's derived spend. Use
   `displaySpendAmount` to render a magnitude and preserve
@@ -390,6 +368,9 @@ row tables exist and the writeback path is deployed, that data goes in through
   `JSONDecoder` does not natively turn Convex `{"$integer":"<base64>"}` into
   `Int64`, and it also does not coerce the decimal strings produced by
   `format: "json"` into `Int64`.
+- **Convex deploy comes before the corrected client build.** Verify a real
+  response satisfies the corrected spend invariant first. The client rejects one
+  bad projection row by discarding the whole response.
 - **Salvage from before the Spark wipe lives in tags, not branches.**
   `archive/ios-redesign-20260509` holds four Swift Charts components and Siri
   Shortcuts that never reached `main` — `main` has no charts and no App Intents at
