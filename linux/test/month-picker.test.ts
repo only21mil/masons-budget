@@ -137,8 +137,8 @@ test("the Dashboard headline moves with the Budget month", () => {
   assert.ok(!june.includes("$673.46"), "Dashboard is still totalling July")
 
   // Income: two July paycheques, one in June.
-  assert.ok(july.includes("$4,960.00"), "July income missing")
-  assert.ok(june.includes("$2,480.00"), "June income missing")
+  assert.ok(july.includes("$7,777.77"), "July canonical income missing")
+  assert.ok(june.includes("$3,333.33"), "June canonical income missing")
 })
 
 test("the Dashboard activity list is scoped to the selected month", () => {

@@ -12,11 +12,12 @@
 //      being handed pre-filtered data.
 
 import { type FamilyMember, hasDedicatedMC2ChildFinanceFiles, isAdult } from "@vogel-vault/domain/family"
-import { parseBtcToSats, parseCents } from "@vogel-vault/domain/money"
+import { parseBtcToSats, parseCents, type Cents } from "@vogel-vault/domain/money"
 import type {
   BTCAccount,
   BTCBillPay,
   BTCBuy,
+  BTCSnapshot,
   Budget,
   Freshness,
   SliceState,
@@ -24,8 +25,6 @@ import type {
   Transaction,
 } from "@vogel-vault/domain/readModel"
 import { type RawTodo, normalizeTodoRecord, toTodoItem } from "@vogel-vault/domain/todo"
-
-import { newestVisibleBuyPrice } from "./bitcoinDisplay.ts"
 
 const NOW = Date.UTC(2026, 6, 26, 14, 30, 0)
 const MINUTE = 60_000
@@ -148,6 +147,45 @@ const MASON_BUDGET: Budget = {
   owner: "mason",
 }
 
+// ── Income ──────────────────────────────────────────────────────────────────
+
+export interface IncomeRecord {
+  readonly id: string
+  readonly date: string
+  readonly month: string
+  readonly amount: Cents
+  readonly source: string
+  readonly loggedBy: string | null
+  readonly note: string | null
+  readonly owner: FamilyMember
+}
+
+const INCOME: readonly IncomeRecord[] = [
+  income("income-0001", 1, "4444.44", "Payroll", "victor"),
+  income("income-0002", 7, "3333.33", "Payroll", "victor"),
+  income("income-0003", 38, "3333.33", "Payroll", "victor"),
+]
+
+function income(
+  id: string,
+  agoDays: number,
+  amount: string,
+  source: string,
+  owner: FamilyMember,
+): IncomeRecord {
+  const date = daysAgo(agoDays)
+  return {
+    id,
+    date,
+    month: date.slice(0, 7),
+    amount: parseCents(amount),
+    source,
+    loggedBy: "fixture",
+    note: null,
+    owner,
+  }
+}
+
 // ── Bitcoin ─────────────────────────────────────────────────────────────────
 
 const BTC_ACCOUNTS: readonly BTCAccount[] = [
@@ -157,6 +195,46 @@ const BTC_ACCOUNTS: readonly BTCAccount[] = [
   account("mason-stack", "Mason Stack", "exchange", "0.00120000", "112.20", "mason"),
   account("maddox-stack", "Maddox Stack", "exchange", "0.00045000", "42.08", "maddox"),
 ]
+
+const ADULT_BTC_BALANCE_DOCUMENT: BTCSnapshot = {
+  schemaVersion: 1,
+  asOf: "2026-07-16",
+  accounts: [
+    account("canonical-cold", "Canonical Cold Storage", "self_custody", "1.00000000", "100000.00", "victor"),
+    account("canonical-exchange", "Canonical Exchange", "exchange", "0.23456789", "20000.00", "victor"),
+  ],
+  totals: {
+    sats: parseBtcToSats("1.23456789"),
+    fiat: parseCents("120000.00"),
+    exchangeSats: parseBtcToSats("0.23456789"),
+    selfCustodySats: parseBtcToSats("1.00000000"),
+  },
+  source: "Demo fixtures · canonical BTC balance document",
+  basis: "fixture",
+  confidence: "fixture",
+}
+
+function btcBalanceDocumentFor(profile: FamilyMember): BTCSnapshot {
+  if (isAdult(profile)) return ADULT_BTC_BALANCE_DOCUMENT
+  const accountRow = BTC_ACCOUNTS.find((candidate) => candidate.owner === profile)
+  const accounts = accountRow ? [accountRow] : []
+  const sats = accountRow?.sats ?? 0n
+  const fiat = accountRow?.fiat ?? 0n
+  return {
+    schemaVersion: 1,
+    asOf: "2026-07-16",
+    accounts,
+    totals: {
+      sats,
+      fiat,
+      exchangeSats: accountRow?.custody === "exchange" ? sats : 0n,
+      selfCustodySats: accountRow?.custody === "self_custody" ? sats : 0n,
+    },
+    source: "Demo fixtures · canonical BTC balance document",
+    basis: "fixture",
+    confidence: "fixture",
+  }
+}
 
 function account(
   key: string,
@@ -288,7 +366,9 @@ const TODOS: readonly TodoItem[] = RAW_TODOS.map((raw) =>
 
 export interface FixtureEnvelope {
   readonly transactions: SliceState<readonly Transaction[]>
+  readonly income: SliceState<readonly IncomeRecord[]>
   readonly budget: SliceState<Budget | null>
+  readonly btcBalanceDocument: SliceState<BTCSnapshot | null>
   readonly btcAccounts: SliceState<readonly BTCAccount[]>
   readonly btcBuys: SliceState<readonly BTCBuy[]>
   readonly billPays: SliceState<readonly BTCBillPay[]>
@@ -327,15 +407,26 @@ export function buildSanitizedFixtureEnvelope(
     : hasDedicatedMC2ChildFinanceFiles(activeProfile)
       ? MASON_BUDGET
       : null
+  const btcBalanceDocument = btcBalanceDocumentFor(activeProfile)
 
   return {
     transactions: slice(TRANSACTIONS, overrides.transactions ?? "demo", 4, "Demo fixtures · transactions"),
+    income: slice(INCOME, overrides.income ?? "demo", 4, "Demo fixtures · income rows"),
     budget: slice(budgetForProfile, overrides.budget ?? "demo", 4, "Demo fixtures · budget"),
+    btcBalanceDocument: slice(
+      btcBalanceDocument,
+      overrides.btcBalanceDocument ?? "demo",
+      11,
+      "Demo fixtures · canonical BTC balance document",
+    ),
     btcAccounts: slice(BTC_ACCOUNTS, overrides.btcAccounts ?? "demo", 11, "Demo fixtures · btc-balance-snapshot"),
     btcBuys: slice(BTC_BUYS, overrides.btcBuys ?? "demo", 11, "Demo fixtures · bitcoin-buys"),
     billPays: slice(BILL_PAYS, overrides.billPays ?? "demo", 11, "Demo fixtures · bitcoin-bill-pays"),
     todos: slice(TODOS, overrides.todos ?? "demo", 2, "Demo fixtures · todos"),
-    btcPriceUsd: newestVisibleBuyPrice(activeProfile, BTC_BUYS)?.cents ?? 0n,
+    btcPriceUsd:
+      btcBalanceDocument.totals.sats > 0n
+        ? (btcBalanceDocument.totals.fiat * 100_000_000n) / btcBalanceDocument.totals.sats
+        : 0n,
     generatedAt: NOW,
   }
 }
@@ -348,7 +439,9 @@ export function fixtureEnvelopeInState(
   const empty = status === "empty"
   const base = buildSanitizedFixtureEnvelope(activeProfile, {
     transactions: status,
+    income: status,
     budget: status,
+    btcBalanceDocument: status,
     btcAccounts: status,
     btcBuys: status,
     billPays: status,
@@ -358,7 +451,9 @@ export function fixtureEnvelopeInState(
   return {
     ...base,
     transactions: { ...base.transactions, value: [] },
+    income: { ...base.income, value: [] },
     budget: { ...base.budget, value: null },
+    btcBalanceDocument: { ...base.btcBalanceDocument, value: null },
     btcAccounts: { ...base.btcAccounts, value: [] },
     btcBuys: { ...base.btcBuys, value: [] },
     billPays: { ...base.billPays, value: [] },

@@ -229,6 +229,50 @@ test("a child's stack never appears in an adult net-worth total", () => {
   assert.ok(markup.includes("Mason Stack"), "Mason's stack should still be visible to an adult")
 })
 
+test("required empty financial sources render unavailable instead of confident zeroes", () => {
+  for (const pageId of ["dashboard", "bitcoin", "net-worth"]) {
+    const page = ALL_PAGES.find((candidate) => candidate.id === pageId)
+    assert.ok(page, `${pageId} not found`)
+    const markup = renderPage(page, "victor", "empty")
+
+    assert.ok(
+      !markup.includes("$0.00"),
+      `${pageId} rendered $0.00 from an empty required financial source`,
+    )
+    assert.ok(
+      !markup.includes("0.00000000 BTC"),
+      `${pageId} rendered 0.00000000 BTC from an empty required financial source`,
+    )
+  }
+})
+
+test("dashboard and net worth use canonical income and BTC document totals", () => {
+  const dashboard = ALL_PAGES.find((candidate) => candidate.id === "dashboard")
+  const netWorth = ALL_PAGES.find((candidate) => candidate.id === "net-worth")
+  assert.ok(dashboard)
+  assert.ok(netWorth)
+
+  const dashboardMarkup = renderPage(dashboard, "victor", "normal")
+  assert.ok(
+    dashboardMarkup.includes("$7,777.77"),
+    "dashboard did not render the dedicated income-table total",
+  )
+  assert.ok(
+    dashboardMarkup.includes("1.23456789 BTC"),
+    "dashboard did not render the canonical BTC balance document total",
+  )
+
+  const netWorthMarkup = renderPage(netWorth, "victor", "normal")
+  assert.ok(
+    netWorthMarkup.includes("$120,000.00"),
+    "net worth did not render the canonical BTC balance document fiat total",
+  )
+  assert.ok(
+    netWorthMarkup.includes("1.23456789 BTC"),
+    "net worth did not render the canonical BTC balance document sats total",
+  )
+})
+
 test("adults and children get different budget surfaces", () => {
   const budget = ALL_PAGES.find((page) => page.id === "budget")
   assert.ok(budget)
