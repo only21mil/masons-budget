@@ -214,6 +214,38 @@ final class FamilyVisibilityTests: XCTestCase {
         XCTAssertEqual(fixture.adults, FamilyMember.allCases.filter(\.isAdult).map(\.rawValue))
         XCTAssertEqual(fixture.defaultOwner, FamilyMember.victor.rawValue)
 
+        let expectedMembers = Set(members)
+        let expectedViewerOwnerPairs = Set(members.flatMap { viewer in
+            members.map { owner in "\(viewer):\(owner)" }
+        })
+        XCTAssertEqual(fixture.canSee.count, expectedViewerOwnerPairs.count)
+        XCTAssertEqual(
+            Set(fixture.canSee.map { "\($0.viewer):\($0.owner)" }),
+            expectedViewerOwnerPairs,
+        )
+        XCTAssertEqual(fixture.sharesNetWorth.count, expectedViewerOwnerPairs.count)
+        XCTAssertEqual(
+            Set(fixture.sharesNetWorth.map { "\($0.viewer):\($0.owner)" }),
+            expectedViewerOwnerPairs,
+        )
+
+        XCTAssertEqual(Set(fixture.allowedSwitchTargets.map(\.member)), expectedMembers)
+        XCTAssertEqual(Set(fixture.showsFullBudget.map(\.member)), expectedMembers)
+        XCTAssertEqual(Set(fixture.mc2TransactionsFileName.map(\.member)), expectedMembers)
+        XCTAssertEqual(Set(fixture.mc2BTCBuysFileName.map(\.member)), expectedMembers)
+        XCTAssertEqual(Set(fixture.hasDedicatedMC2ChildFinanceFiles.map(\.member)), expectedMembers)
+
+        XCTAssertEqual(fixture.sampleTransactions.count, 9)
+        XCTAssertEqual(fixture.sampleAccounts.count, 3)
+        XCTAssertEqual(fixture.sampleTodos.count, 4)
+
+        XCTAssertEqual(Set(fixture.expectations.visibleTransactionCount.keys), expectedMembers)
+        XCTAssertEqual(Set(fixture.expectations.visibleAccountCount.keys), expectedMembers)
+        XCTAssertEqual(Set(fixture.expectations.netWorthAccountLabels.keys), expectedMembers)
+        XCTAssertEqual(Set(fixture.expectations.visibleTodoCount.keys), expectedMembers)
+        XCTAssertEqual(Set(fixture.expectations.visibleSpend.keys), expectedMembers)
+        XCTAssertEqual(Set(fixture.expectations.budgetSpend.keys), expectedMembers)
+
         for testCase in fixture.canSee {
             let viewer = try familyMember(testCase.viewer)
             let owner = try familyMember(testCase.owner)

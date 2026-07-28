@@ -8,13 +8,15 @@ final class MasonsBudgetTests: XCTestCase {
     // MARK: - Theme & UI
 
     func testAppThemeColorsExist() {
-        // The AppTheme facade was retired in SAT-1336 (C4); the design system is now
-        // ColorTokens (.dark/.light). Smoke-check the core tokens still resolve.
-        _ = ColorTokens.dark.accent
-        _ = ColorTokens.dark.bg
-        _ = ColorTokens.dark.surface
-        _ = ColorTokens.dark.text
-        _ = ColorTokens.light.accent
+        XCTAssertEqual(ColorTokens.dark.accent, Color(hex: 0xF7931A))
+        XCTAssertEqual(ColorTokens.dark.bg, Color(hex: 0x0B0907))
+        XCTAssertEqual(ColorTokens.dark.surface, Color(hex: 0x15120E))
+        XCTAssertEqual(ColorTokens.dark.text, Color(hex: 0xF4ECD8))
+
+        XCTAssertEqual(ColorTokens.light.accent, Color(hex: 0xF7931A))
+        XCTAssertEqual(ColorTokens.light.bg, Color(hex: 0xFAF8F4))
+        XCTAssertEqual(ColorTokens.light.surface, .white)
+        XCTAssertEqual(ColorTokens.light.text, Color(hex: 0x15110A))
     }
 
     func testAppTabCases() {
@@ -32,7 +34,14 @@ final class MasonsBudgetTests: XCTestCase {
 
     func testColorHexInit() {
         let btcOrange = Color(hex: 0xF7931A)
-        XCTAssertNotNil(btcOrange)
+        XCTAssertEqual(
+            btcOrange,
+            Color(
+                red: 247.0 / 255.0,
+                green: 147.0 / 255.0,
+                blue: 26.0 / 255.0,
+            ),
+        )
     }
 
     // MARK: - Enums
