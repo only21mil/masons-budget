@@ -3,10 +3,10 @@ import SwiftUI
 
 struct NetWorthView: View {
     @Environment(\.theme) var theme
+    @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
-    @Query private var accounts: [BTCAccount]
     @Query private var holdingAccounts: [HoldingAccount]
     @Query(sort: \NetWorthSnapshot.date, order: .reverse) private var snapshots: [NetWorthSnapshot]
 
@@ -22,8 +22,8 @@ struct NetWorthView: View {
         BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
     }
 
-    private var myAccounts: [BTCAccount] {
-        accounts.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
+    private var canonicalBTC: CanonicalBTCBalance? {
+        canonicalFinancials.btcBalance.value
     }
 
     private var myRetirementAccounts: [HoldingAccount] {
@@ -39,7 +39,8 @@ struct NetWorthView: View {
     }
 
     private var totalBtc: Decimal {
-        myAccounts.reduce(Decimal(0)) { $0 + $1.btc }
+        guard let canonicalBTC else { return 0 }
+        return decimalMinorUnits(canonicalBTC.totalSats, scale: 8)
     }
 
     private var totalRetirementUsd: Decimal {
@@ -56,7 +57,8 @@ struct NetWorthView: View {
     }
 
     private var coldBtc: Decimal {
-        myAccounts.filter { $0.custody == .selfCustody }.reduce(Decimal(0)) { $0 + $1.btc }
+        guard let canonicalBTC else { return 0 }
+        return decimalMinorUnits(canonicalBTC.selfCustodySats, scale: 8)
     }
 
     private var hotBtc: Decimal {
@@ -64,12 +66,12 @@ struct NetWorthView: View {
     }
 
     private var coldSubtitle: String {
-        let labels = myAccounts.filter { $0.custody == .selfCustody }.map(\.label)
+        let labels = canonicalBTC?.accounts.filter { $0.custody == .selfCustody }.map(\.label) ?? []
         return labels.isEmpty ? "Self-custody" : labels.prefix(2).joined(separator: " · ")
     }
 
     private var hotSubtitle: String {
-        let labels = myAccounts.filter { $0.custody == .exchange }.map(\.label)
+        let labels = canonicalBTC?.accounts.filter { $0.custody == .exchange }.map(\.label) ?? []
         return labels.isEmpty ? "Exchange" : labels.prefix(2).joined(separator: " · ")
     }
 
@@ -78,14 +80,22 @@ struct NetWorthView: View {
             VStack(spacing: 0) {
                 ScreenHeader(title: "Net Worth", eyebrow: "12-month view")
 
-                totalCard
+                if canonicalBTC != nil {
+                    totalCard
+                        .padding(.horizontal, AppLayout.sectionPadding)
+                        .padding(.bottom, AppLayout.cardSpacing)
+
+                    timelineSection
+                        .padding(.bottom, AppLayout.cardSpacing)
+
+                    holdingsSection
+                } else {
+                    RequiredFinancialSourceView(
+                        title: "Net Worth",
+                        message: "The required Bitcoin balance document is empty or unavailable.",
+                    )
                     .padding(.horizontal, AppLayout.sectionPadding)
-                    .padding(.bottom, AppLayout.cardSpacing)
-
-                timelineSection
-                    .padding(.bottom, AppLayout.cardSpacing)
-
-                holdingsSection
+                }
 
                 if !myRetirementAccounts.isEmpty {
                     retirementSection

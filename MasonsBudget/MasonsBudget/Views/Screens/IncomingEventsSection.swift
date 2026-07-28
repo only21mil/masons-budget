@@ -7,7 +7,6 @@ struct IncomingEventsSection: View {
     let activeMember: FamilyMember
     let unit: DisplayUnit
     let holdingAccounts: [HoldingAccount]
-    let budgetSnapshots: [MonthlyBudgetSnapshot]
     let btcPrice: Decimal
 
     private struct IncomingEvent: Identifiable {
@@ -26,29 +25,6 @@ struct IncomingEventsSection: View {
         return (0 ..< 7).compactMap { calendar.date(byAdding: .day, value: $0, to: today) }
     }
 
-    private var weeklyPayAmount: Decimal {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "MMMM yyyy"
-
-        let currentKey = activeMember == .mason ? "mason:\(formatter.string(from: Date()))" : formatter.string(from: Date())
-        let currentSnapshot = budgetSnapshots.first { $0.monthKey == currentKey }
-        if let river = currentSnapshot?.weeklyRiver, river > 0 { return river }
-        if let gross = currentSnapshot?.weeklyGross, gross > 0 { return gross }
-
-        if let latestPositiveRiver = budgetSnapshots
-            .filter({ activeMember == .mason ? $0.monthKey.hasPrefix("mason:") : !$0.monthKey.contains(":") })
-            .sorted(by: { $0.monthKey > $1.monthKey })
-            .first(where: { $0.weeklyRiver > 0 })?.weeklyRiver
-        {
-            return latestPositiveRiver
-        }
-
-        return 4308.83
-    }
-
     private var memberAccounts: [HoldingAccount] {
         holdingAccounts.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
     }
@@ -65,17 +41,6 @@ struct IncomingEventsSection: View {
             let weekday = calendar.component(.weekday, from: day)
 
             if weekday == 6 {
-                if activeMember == .victor || activeMember == .rachel {
-                    events.append(IncomingEvent(
-                        date: day,
-                        icon: "arrow.down.circle.fill",
-                        title: "Payday -> River",
-                        subtitle: "Weekly DCA to BTC",
-                        amountUSD: weeklyPayAmount,
-                        color: theme.success,
-                    ))
-                }
-
                 if weekly401kAmount > 0 {
                     events.append(IncomingEvent(
                         date: day,

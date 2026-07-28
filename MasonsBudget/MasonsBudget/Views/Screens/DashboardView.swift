@@ -3,12 +3,11 @@ import SwiftUI
 
 struct DashboardView: View {
     @Environment(\.theme) var theme
+    @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
-    @Query private var accounts: [BTCAccount]
     @Query private var holdingAccounts: [HoldingAccount]
-    @Query private var snapshots: [MonthlyBudgetSnapshot]
     @Query private var categories: [BudgetCategory]
     @Query(sort: \TodoItem.dueDate) private var allTodos: [TodoItem]
     @Query(sort: \Transaction.date, order: .reverse) private var allTransactions: [Transaction]
@@ -36,8 +35,8 @@ struct DashboardView: View {
         categories.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
     }
 
-    private var visibleAccounts: [BTCAccount] {
-        accounts.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
+    private var canonicalBTC: CanonicalBTCBalance? {
+        canonicalFinancials.btcBalance.value
     }
 
     private var myRetirementAccounts: [HoldingAccount] {
@@ -45,7 +44,8 @@ struct DashboardView: View {
     }
 
     private var totalBtc: Decimal {
-        visibleAccounts.reduce(Decimal(0)) { $0 + $1.btc }
+        guard let canonicalBTC else { return 0 }
+        return decimalMinorUnits(canonicalBTC.totalSats, scale: 8)
     }
 
     private var vooPrice: Decimal? {
@@ -70,7 +70,8 @@ struct DashboardView: View {
     }
 
     private var coldBtc: Decimal {
-        visibleAccounts.filter { $0.custody == .selfCustody }.reduce(Decimal(0)) { $0 + $1.btc }
+        guard let canonicalBTC else { return 0 }
+        return decimalMinorUnits(canonicalBTC.selfCustodySats, scale: 8)
     }
 
     private var hotBtc: Decimal {
@@ -93,19 +94,20 @@ struct DashboardView: View {
             .map(\.self)
     }
 
-    private var currentSnapshot: MonthlyBudgetSnapshot? {
-        let df = DateFormatter()
-        df.dateFormat = "MMMM yyyy"
-        let baseKey = df.string(from: Date())
-        let key = activeMember.isAdult ? baseKey : "\(activeMember.rawValue):\(baseKey)"
-        return snapshots.first(where: { $0.monthKey == key })
-    }
-
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                heroBalance
-                statRow
+                if canonicalBTC != nil {
+                    heroBalance
+                    statRow
+                } else {
+                    RequiredFinancialSourceView(
+                        title: "Net Worth",
+                        message: "The required Bitcoin balance document is empty or unavailable.",
+                    )
+                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.bottom, AppLayout.cardSpacing)
+                }
                 incomingSection
                     .padding(.bottom, AppLayout.cardSpacing)
                 incomeCard
@@ -125,7 +127,6 @@ struct DashboardView: View {
             activeMember: activeMember,
             unit: unit,
             holdingAccounts: holdingAccounts,
-            budgetSnapshots: snapshots,
             btcPrice: btcPrice,
         )
     }
@@ -287,12 +288,12 @@ struct DashboardView: View {
     }
 
     private var coldLabel: String {
-        let labels = visibleAccounts.filter { $0.custody == .selfCustody }.map(\.label)
+        let labels = canonicalBTC?.accounts.filter { $0.custody == .selfCustody }.map(\.label) ?? []
         return labels.first ?? "self-custody"
     }
 
     private var hotLabel: String {
-        let labels = visibleAccounts.filter { $0.custody == .exchange }.map(\.label)
+        let labels = canonicalBTC?.accounts.filter { $0.custody == .exchange }.map(\.label) ?? []
         return labels.isEmpty ? "Lightning" : labels.prefix(2).joined(separator: " · ")
     }
 
@@ -338,17 +339,25 @@ struct DashboardView: View {
             .reduce(Decimal(0)) { $0 + $1.spendAmount }
     }
 
+    @ViewBuilder
     private var incomeCard: some View {
-        let mtdIncome = currentSnapshot?.mtdIncome ?? 0
-        let ytdIncome = currentSnapshot?.ytdIncome ?? 0
-        let mtdSpend = monthlySpending
-        let ytdSpend = ytdSpending
-        let mtdSaved = mtdIncome - mtdSpend
-        let ytdSaved = ytdIncome - ytdSpend
-        let mtdRate = percent(mtdIncome - mtdSpend, of: mtdIncome)
-        let ytdRate = percent(ytdIncome - ytdSpend, of: ytdIncome)
+        let now = Date()
+        let calendar = Calendar.current
+        let monthKey = canonicalMonthKey(for: now)
+        let year = calendar.component(.year, from: now)
+        if let summary = canonicalFinancials.income.value,
+           let mtdCents = summary.cents(forMonth: monthKey),
+           let ytdCents = summary.cents(forYear: year)
+        {
+            let mtdIncome = decimalMinorUnits(mtdCents, scale: 2)
+            let ytdIncome = decimalMinorUnits(ytdCents, scale: 2)
+            let mtdSpend = monthlySpending
+            let ytdSpend = ytdSpending
+            let mtdSaved = mtdIncome - mtdSpend
+            let ytdSaved = ytdIncome - ytdSpend
+            let mtdRate = percent(mtdSaved, of: mtdIncome)
+            let ytdRate = percent(ytdSaved, of: ytdIncome)
 
-        return VStack(spacing: 0) {
             HStack(spacing: 0) {
                 incomeCell(label: "INCOME MTD", amount: mtdIncome, saved: mtdSaved, rate: mtdRate)
                 Rectangle()
@@ -357,17 +366,19 @@ struct DashboardView: View {
                     .padding(.vertical, 12)
                 incomeCell(label: "INCOME YTD", amount: ytdIncome, saved: ytdSaved, rate: ytdRate)
             }
-
-            Hairline(indent: 0)
-
-            incomeChart
-                .padding(14)
+            .background(theme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: AppLayout.radiusLarge, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: AppLayout.radiusLarge, style: .continuous).stroke(theme.border, lineWidth: 1))
+            .padding(.horizontal, AppLayout.sectionPadding)
+            .padding(.bottom, AppLayout.cardSpacing)
+        } else {
+            RequiredFinancialSourceView(
+                title: "Income",
+                message: "The required income ledger is empty or unavailable.",
+            )
+            .padding(.horizontal, AppLayout.sectionPadding)
+            .padding(.bottom, AppLayout.cardSpacing)
         }
-        .background(theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: AppLayout.radiusLarge, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: AppLayout.radiusLarge, style: .continuous).stroke(theme.border, lineWidth: 1))
-        .padding(.horizontal, AppLayout.sectionPadding)
-        .padding(.bottom, AppLayout.cardSpacing)
     }
 
     private func incomeCell(label: String, amount: Decimal, saved: Decimal, rate: Int) -> some View {
@@ -398,82 +409,12 @@ struct DashboardView: View {
         .padding(14)
     }
 
-    private var recentMonthlyData: [(income: CGFloat, spend: CGFloat)] {
-        let cal = Calendar.current
-        let now = Date()
-        var result: [(income: CGFloat, spend: CGFloat)] = []
-        for offset in stride(from: -5, through: 0, by: 1) {
-            guard let monthDate = cal.date(byAdding: .month, value: offset, to: now) else { continue }
-            let df = DateFormatter()
-            df.dateFormat = "MMMM yyyy"
-            let key = df.string(from: monthDate)
-            let income = snapshots.first(where: { $0.monthKey == key })?.mtdIncome ?? 0
-            let spend = allTransactions
-                .filter { tx in
-                    activeMember.sharesNetWorth(with: tx.ownerMember) &&
-                        tx.isSpend &&
-                        cal.isDate(tx.date, equalTo: monthDate, toGranularity: .month)
-                }
-                .reduce(Decimal(0)) { $0 + $1.spendAmount }
-            result.append((
-                income: CGFloat(NSDecimalNumber(decimal: income).doubleValue),
-                spend: CGFloat(NSDecimalNumber(decimal: spend).doubleValue),
-            ))
-        }
-        return result
-    }
-
-    private var incomeChart: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("INCOME · SPEND · SAVINGS %")
-                    .font(AppFont.microStrong)
-                    .tracking(AppFont.sectionTracking)
-                    .foregroundStyle(theme.textMuted)
-                Spacer()
-                HStack(spacing: 10) {
-                    legendDot(color: theme.accent, label: "Income")
-                    legendDot(color: theme.borderStrong, label: "Spend")
-                    HStack(spacing: 4) {
-                        Rectangle().fill(theme.success).frame(width: 10, height: 2)
-                        Text("Save %")
-                            .font(AppFont.micro)
-                            .foregroundStyle(theme.textMuted)
-                    }
-                }
-            }
-
-            Canvas { context, size in
-                let monthData = recentMonthlyData
-                let months = monthData.count
-                guard months > 0 else { return }
-                let barWidth = size.width / CGFloat(months) * 0.32
-                let maxAmt = max(monthData.map(\.income).max() ?? 1, monthData.map(\.spend).max() ?? 1, 1)
-
-                for (i, data) in monthData.enumerated() {
-                    let slot = size.width / CGFloat(months)
-                    let cx = CGFloat(i) * slot + slot / 2
-                    let incH = data.income / maxAmt * size.height * 0.86
-                    let spdH = data.spend / maxAmt * size.height * 0.86
-
-                    let incRect = CGRect(x: cx - barWidth - 0.4, y: size.height - incH, width: barWidth, height: incH)
-                    let spdRect = CGRect(x: cx + 0.4, y: size.height - spdH, width: barWidth, height: spdH)
-
-                    context.fill(RoundedRectangle(cornerRadius: 1).path(in: incRect), with: .color(theme.accent.opacity(i == months - 1 ? 1 : 0.4)))
-                    context.fill(RoundedRectangle(cornerRadius: 1).path(in: spdRect), with: .color(theme.borderStrong))
-                }
-            }
-            .frame(height: 64)
-        }
-    }
-
-    private func legendDot(color: Color, label: String) -> some View {
-        HStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 8, height: 8)
-            Text(label)
-                .font(AppFont.micro)
-                .foregroundStyle(theme.textMuted)
-        }
+    private func canonicalMonthKey(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM"
+        return formatter.string(from: date)
     }
 
     // MARK: - Monthly Spending Card
