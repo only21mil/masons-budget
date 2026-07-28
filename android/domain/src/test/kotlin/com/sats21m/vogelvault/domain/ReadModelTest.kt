@@ -161,6 +161,9 @@ class ReadModelTest {
 
         val empty = Fixtures.envelope(FamilyMember.VICTOR, Freshness.EMPTY)
         assertTrue(empty.budget.requiredProjectionUnavailable)
+        assertTrue(empty.incomeFiguresUnavailable)
+        assertTrue(empty.netWorthFiguresUnavailable)
+        assertTrue(empty.billPayLedgerUnavailable)
         assertFalse(empty.todos.suppressFigures, "zero open todos remains a real zero")
         assertFalse(Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE).budget.suppressFigures)
         assertFalse(Fixtures.envelope(FamilyMember.VICTOR, Freshness.STALE).budget.suppressFigures)

@@ -246,13 +246,13 @@ data class ReadModel(
         Slice(Freshness.EMPTY, emptyList(), null, "Convex rows · bitcoin bill pays"),
 ) {
     val incomeFiguresUnavailable: Boolean
-        get() = income.requiredProjectionUnavailable
+        get() = income.requiredProjectionUnavailable || income.value.isEmpty()
 
     val netWorthFiguresUnavailable: Boolean
         get() = btcBalance.requiredProjectionUnavailable || btcBalance.value == null
 
     val billPayLedgerUnavailable: Boolean
-        get() = btcBillPays.requiredProjectionUnavailable
+        get() = btcBillPays.requiredProjectionUnavailable || btcBillPays.value.isEmpty()
 }
 
 // ── Month scoping ───────────────────────────────────────────────────────────

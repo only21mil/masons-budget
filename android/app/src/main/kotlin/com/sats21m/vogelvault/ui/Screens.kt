@@ -40,6 +40,7 @@ import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.MC2_FILES
 import com.sats21m.vogelvault.domain.Money
+import com.sats21m.vogelvault.domain.ReadModel
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.domain.Transaction
 import com.sats21m.vogelvault.domain.budgetTransactionsFor
@@ -72,6 +73,17 @@ import com.sats21m.vogelvault.ui.theme.VaultSurface
 import com.sats21m.vogelvault.ui.theme.VaultTextDim
 import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 import com.sats21m.vogelvault.ui.theme.VaultWarning
+
+internal fun ReadModel.dashboardIncomeCents(viewer: FamilyMember): Long? {
+    val rows = income.value.netWorthScopeFor(viewer)
+    return if (incomeFiguresUnavailable || rows.isEmpty()) null else rows.sumOf { it.amountCents }
+}
+
+internal fun ReadModel.netWorthBalanceForDisplay(): BtcBalance? =
+    btcBalance.value?.takeUnless { netWorthFiguresUnavailable }
+
+internal fun ReadModel.billPaysAvailableTo(viewer: FamilyMember): Boolean =
+    !billPayLedgerUnavailable && btcBillPays.value.visibleTo(viewer).isNotEmpty()
 
 @Composable
 fun ScreenHost(
@@ -233,17 +245,18 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dashboard(
     val transactions = budgetTransactions.inMonth(month)
     val activity = visible.inMonth(month)
     val incomeRows = state.data.income.value.netWorthScopeFor(profile)
-    val balance = state.data.btcBalance.value
+    val income = state.data.dashboardIncomeCents(profile)
+    val incomeUnavailable = income == null
+    val balance = state.data.netWorthBalanceForDisplay()
     val openTodos = state.data.todos.value.visibleTo(profile).count { !it.done }
 
     val spend = transactions.sumOf { it.spendAmount }
-    val income = incomeRows.sumOf { it.amountCents }
 
     item {
         KpiStrip(
             listOf(
                 Kpi("Spend", figure(state.data.transactions.suppressFigures) { Money.formatUsd(spend) }, tone = VaultNegative),
-                Kpi("Income", figure(state.data.incomeFiguresUnavailable) { Money.formatUsd(income) }, tone = VaultPositive),
+                Kpi("Income", figure(incomeUnavailable) { Money.formatUsd(requireNotNull(income)) }, tone = VaultPositive),
                 Kpi(
                     "Stack",
                     figure(state.data.netWorthFiguresUnavailable) {
@@ -280,7 +293,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dashboard(
     }
     item {
         Panel("Income", state.data.income.source) {
-            if (state.data.incomeFiguresUnavailable) {
+            if (incomeUnavailable) {
                 StateBlock(state.data.income.status)
             } else {
                 Column {
@@ -570,11 +583,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.bitcoin(
 ) {
     val profile = state.activeProfile
     val slice = state.data.btcBalance
-    val balance = slice.value
+    val balance = state.data.netWorthBalanceForDisplay()
     val inScope = balance?.accounts.orEmpty()
     val totalSats = balance?.totalSats ?: 0L
     val selfCustody = balance?.selfCustodySats ?: 0L
-    val unavailable = state.data.netWorthFiguresUnavailable
+    val unavailable = balance == null
 
     item {
         KpiStrip(
@@ -641,8 +654,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.bitcoin(
     }
     item {
         val billPays = state.data.btcBillPays.value.visibleTo(profile)
+        val unavailableBillPays = !state.data.billPaysAvailableTo(profile)
         Panel("Bitcoin bill pays", state.data.btcBillPays.source) {
-            if (state.data.billPayLedgerUnavailable) {
+            if (unavailableBillPays) {
                 StateBlock(state.data.btcBillPays.status)
             } else {
                 Column {
@@ -670,12 +684,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.netWorth(
 ) {
     val profile = state.activeProfile
     val slice = state.data.btcBalance
-    val balance = slice.value
+    val balance = state.data.netWorthBalanceForDisplay()
     val inScope = balance?.accounts.orEmpty()
     val excluded = state.data.btcAccounts.value.visibleTo(profile).filterNot {
         profile.sharesNetWorth(it.owner)
     }
-    val unavailable = state.data.netWorthFiguresUnavailable
+    val unavailable = balance == null
 
     item {
         KpiStrip(
