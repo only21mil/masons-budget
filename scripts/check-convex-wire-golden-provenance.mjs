@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url"
 
 import {
   CAPTURE_DEPLOYMENT,
+  CAPTURE_CONTRACT_LIMITATIONS,
+  CAPTURE_CONTRACT_SCOPE,
   CAPTURE_ENDPOINT,
   CAPTURE_FORMATS,
   CAPTURE_QUERIES,
@@ -91,6 +93,13 @@ if (
 }
 if (JSON.stringify(provenance.contract?.sources) !== JSON.stringify(contract.sources)) {
   failures.push("capture contract source declaration list differs from the reviewed scope")
+}
+if (
+  provenance.contract?.scopeNote !== CAPTURE_CONTRACT_SCOPE
+  || JSON.stringify(provenance.contract?.knownLimitations)
+    !== JSON.stringify(CAPTURE_CONTRACT_LIMITATIONS)
+) {
+  failures.push("capture contract scope or known limitations differ from the reviewed text")
 }
 if (provenance.contract?.sha256 !== contract.sha256) {
   failures.push(

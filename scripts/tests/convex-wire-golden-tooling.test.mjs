@@ -71,6 +71,8 @@ test("capture requests every query in both formats and writes no credential", as
   const provenance = JSON.parse(provenanceText)
   assert.equal(provenance.version, 2)
   assert.equal(provenance.capturedDate, "2026-07-28")
+  assert.match(provenance.contract.scopeNote, /unrelated schema declarations are excluded/)
+  assert.equal(provenance.contract.knownLimitations.length, 3)
 
   for (const filename of captureFiles) {
     const bytes = await readFile(path.join(goldenRoot, filename))

@@ -11,6 +11,17 @@ import path from "node:path"
 export const CAPTURE_ENDPOINT = "https://keen-elephant-452.convex.cloud/api/query"
 export const CAPTURE_DEPLOYMENT = "prod:keen-elephant-452"
 export const CAPTURE_FORMATS = Object.freeze(["json", "convex_encoded_json"])
+export const CAPTURE_CONTRACT_SCOPE =
+  "Binds the capture matrix to selected query declarations, response projectors, "
+  + "envelope helpers, and backing validators for the seven captured queries; "
+  + "unrelated schema declarations are excluded."
+export const CAPTURE_CONTRACT_LIMITATIONS = Object.freeze([
+  "The selected-declaration extractor cannot detect behavior changes hidden in a "
+    + "transitive helper that is not listed.",
+  "The digest cannot prove that the deployed production code matches this checkout "
+    + "or that the HTTP response actually came from the named deployment.",
+  "Checksums cannot prevent a reviewer from falsely replacing captures and provenance together.",
+])
 export const CAPTURE_QUERIES = Object.freeze([
   { name: "getBudgetDocument", path: "tables:getBudgetDocument", args: {
     viewer: "victor",
@@ -248,7 +259,23 @@ export async function captureContractDigest(repoRoot) {
 }
 
 export function assertPayloadCredentialSafe(bytes, token, captureName) {
-  if (bytes.includes(Buffer.from(token))) {
+  let decoded
+  try {
+    decoded = JSON.parse(bytes.toString("utf8"))
+  } catch {
+    decoded = null
+  }
+  const containsCredential = (value) => {
+    if (typeof value === "string") return value.includes(token)
+    if (Array.isArray(value)) return value.some(containsCredential)
+    if (typeof value === "object" && value !== null) {
+      return Object.entries(value).some(
+        ([key, nested]) => key.includes(token) || containsCredential(nested),
+      )
+    }
+    return false
+  }
+  if (bytes.includes(Buffer.from(token)) || containsCredential(decoded)) {
     throw new Error(`${captureName} contains the read credential; refusing to write captures`)
   }
   const text = bytes.toString("utf8")
@@ -381,6 +408,8 @@ export async function captureWireGoldens({
       extractor: "selected-typescript-declarations-v1",
       sha256: contract.sha256,
       sources: contract.sources,
+      scopeNote: CAPTURE_CONTRACT_SCOPE,
+      knownLimitations: [...CAPTURE_CONTRACT_LIMITATIONS],
     },
     freshness,
     captures: Object.fromEntries(
