@@ -291,16 +291,19 @@ describe("main-process row repository", () => {
     expect(result).not.toHaveProperty("rows.0.futureServerField")
   })
 
-  it("validates known transaction fields and refuses unknown owners", async () => {
+  it("keeps canonical transaction fields fail-closed", async () => {
+    const missingAmount = transaction()
+    delete missingAmount["amountCents"]
+
     for (const invalid of [
-      { spendAmount: 115 },
-      { displaySpendAmount: int64(-115n) },
-      { hasOppositeSpendSign: true },
-      { owner: "future-owner" },
+      transaction({ amountCents: 115 }),
+      missingAmount,
+      transaction({ owner: "future-owner" }),
+      transaction({ date: "2026-08-26", month: "2026-07" }),
     ]) {
       const repository = createConvexRowRepository({
         configuration: () => ({ generation: 1, settings }),
-        post: async () => success({ complete: true, rows: [transaction(invalid)] }),
+        post: async () => success({ complete: true, rows: [invalid] }),
       })
       await expect(repository.query({ kind: "transactions", viewer: "victor" })).resolves.toEqual({
         status: "error",
@@ -309,31 +312,33 @@ describe("main-process row repository", () => {
     }
   })
 
-  it("enforces signed contribution, display magnitude, and opposite-sign semantics", async () => {
+  it("accepts disagreeing server projections and derives all spend values from amountCents", async () => {
     const repository = createConvexRowRepository({
       configuration: () => ({ generation: 1, settings }),
       post: async () => success({
         complete: true,
         rows: [
           transaction({
-            txId: "adult-refund-or-wrong-sign",
+            txId: "adult-refund",
             amountCents: int64(-2_500n),
-            spendAmount: int64(-2_500n),
-            displaySpendAmount: int64(2_500n),
-            hasOppositeSpendSign: true,
+            spendAmount: int64(2_500n),
+            displaySpendAmount: int64(-2_500n),
+            hasOppositeSpendSign: false,
           }),
           transaction({
             txId: "child-spend",
             owner: "mason",
             amountCents: int64(2_000n),
-            spendAmount: int64(2_000n),
-            displaySpendAmount: int64(2_000n),
+            spendAmount: 2_000,
+            displaySpendAmount: "wrong",
+            hasOppositeSpendSign: true,
           }),
           transaction({
             txId: "income",
             amountCents: int64(10_000n),
-            spendAmount: int64(0n),
-            displaySpendAmount: int64(0n),
+            spendAmount: int64(10_000n),
+            displaySpendAmount: int64(10_000n),
+            hasOppositeSpendSign: true,
             category: "Income",
           }),
         ],
@@ -344,7 +349,7 @@ describe("main-process row repository", () => {
       status: "ok",
       rows: [
         {
-          txId: "adult-refund-or-wrong-sign",
+          txId: "adult-refund",
           spendAmount: -2_500n,
           displaySpendAmount: 2_500n,
           hasOppositeSpendSign: true,
