@@ -1148,8 +1148,8 @@ export const editTransaction = mutation({
 // existing path. Only the read-merge-write plumbing is duplicated, because
 // `applyTodoUpsert` is module-private in a file this change does not own.
 //
-// Unlike `upsertTodo` there is no last-write-wins branch. LWW is there to make
-// out-of-order MC2 bridge replays safe; these mutations are direct edits that
+// Unlike `upsertTodo` there is no last-write-wins branch. LWW makes out-of-order
+// legacy blob replays safe; these mutations are direct edits that
 // the server stamps itself, and a client-supplied `updated_at` deciding who wins
 // a ledger conflict is a clock nobody controls. Neither mutation declares a
 // timestamp argument, and Convex refuses any argument its validator does not

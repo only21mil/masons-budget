@@ -85,7 +85,7 @@ private struct SyncSetupView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
-                ScreenHeader(title: "Sync Setup", eyebrow: "MC2 · Convex")
+                ScreenHeader(title: "Sync Setup", eyebrow: "Convex Writeback")
 
                 VStack(spacing: 14) {
                     field("Pairing URL (optional)", text: $pairingURL)
@@ -107,7 +107,7 @@ private struct SyncSetupView: View {
                 .padding(.horizontal, AppLayout.sectionPadding)
 
                 VStack(spacing: 14) {
-                    field("MC2 URL", text: $baseURL)
+                    field("Writeback URL", text: $baseURL)
                     field("Device ID", text: $deviceID)
                     secureField("Device Token", text: $deviceToken)
                 }
@@ -173,7 +173,7 @@ private struct SyncSetupView: View {
                     deviceID = MC2MobileWritebackConfig.deviceID
                     deviceToken = MC2MobileWritebackConfig.deviceToken
                     pairingURL = ""
-                    statusMessage = "MC2 pairing saved."
+                    statusMessage = "Device pairing saved."
                     isClaiming = false
                 }
             } catch {

@@ -12,9 +12,6 @@
     "deploy": "npx convex deploy",
     "codegen": "node scripts/convex-codegen.mjs",
     "mobile-pairing:create": "node scripts/mint-mobile-pairing-slots.mjs",
-    "sync": "node scripts/mc2-to-convex.mjs",
-    "sync:dry-run": "node scripts/mc2-to-convex.mjs --dry-run",
-    "sync:watch": "node scripts/mc2-to-convex.mjs --watch",
     "convex:test": "vitest run --config convex/vitest.config.ts",
     "domain:test": "npm run test --workspace @vogel-vault/domain",
     "domain:typecheck": "npm run typecheck --workspace @vogel-vault/domain"

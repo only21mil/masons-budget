@@ -58,21 +58,21 @@ actor BTCPriceService {
     }
 
     func fetchLivePrice() async throws -> BTCPriceQuote {
-        if let quote = try? await fetchMC2Price() { return quote }
+        if let quote = try? await fetchVogelVaultPrice() { return quote }
         if let quote = try? await fetchCoinGeckoPrice() { return quote }
         return try await fetchCoinbasePrice()
     }
 
-    private func fetchMC2Price() async throws -> BTCPriceQuote {
+    private func fetchVogelVaultPrice() async throws -> BTCPriceQuote {
         let url = URL(string: "https://sats21m.com/api/price/btc")!
         let payload = try await fetchJSON(url)
         guard let price = numberDecimal(payload["price"]) else {
-            throw PriceError.invalidResponse("MC2 price missing")
+            throw PriceError.invalidResponse("Vogel Vault price response is missing a price")
         }
         return BTCPriceQuote(
             priceUSD: price,
             change24h: numberDecimal(payload["change24h"]),
-            source: "MC2",
+            source: "Vogel Vault",
             fetchedAt: Date(),
         )
     }

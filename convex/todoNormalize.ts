@@ -1,17 +1,12 @@
-// ── Convex MIRROR of the canonical todo normalizer (SAT-1328) ──
+// ── Convex normalizer for the legacy dataFiles todo shape (SAT-1328) ──
 //
-// CANONICAL SOURCE: mission-control/lib/todo-normalize.js
-//   (in this repo's sibling checkout, loaded by server.js + the MC2 sync bridge).
-//
-// Convex functions cannot import from outside the convex/ directory, so this is a
-// DELIBERATE hand-synced copy of the minimal normalize/default logic used by
-// dataFiles.ts:upsertTodo. If you change normalization in the canonical CJS
-// source you MUST mirror the change here. A parity probe guards the dual-field
+// The retired service is unavailable. MC2TodoItem in the Apple client remains
+// the compatibility authority while shipped clients consume dataFiles. A parity
+// probe guards the dual-field
 // emission (dueDate↔due_date, updatedAt↔updated_at, flag↔flagged, createdAt↔created).
 //
-// One export is NOT mirrored and has no canonical counterpart: mergeTodoPayload.
-// MC2 rewrites whole files, so it never needs a merge; Convex accepts one-field
-// edits from a phone, so it does. Do not delete it during a re-sync.
+// mergeTodoPayload is Convex-specific: legacy blobs represent whole documents,
+// while Convex accepts one-field edits from a phone and must merge them.
 
 const VALID_TODO_LANES = ["work", "personal", "sats"];
 
@@ -233,9 +228,8 @@ const TODO_UPDATE_STAMP_KEYS = ["updated_at", "updatedAt", "completedAt"];
  * Build the normalization source for an upsert over an EXISTING todo: the
  * stored record with the incoming payload laid over it.
  *
- * NOT part of the mission-control mirror — the canonical CJS normalizer has no
- * merge step, because MC2 owns whole files. Convex takes single-field edits from
- * a phone, so it needs one.
+ * Not part of the legacy blob decoder. Convex takes single-field edits from a
+ * phone, so it needs a merge step.
  *
  * Absence and clearing are different intents and both are honoured:
  *   - a key missing from `incoming` (or present as `undefined`, which is how an
@@ -279,8 +273,8 @@ export function mergeTodoPayload(
   for (const key of touched) merged[key] = src[key];
 
   // The write stamp is the writer's, never the stored record's. An edit that
-  // leaves updated_at where it was is invisible to the MC2 bridge, which pulls
-  // on a strictly-newer comparison — the edit would apply here and never travel.
+  // leaves updated_at where it was is invisible to a strictly-newer merge — the
+  // edit would apply here but lose to the unchanged timestamp later.
   // Set both spellings so the fallback chain cannot reach a stored completedAt.
   const stamp = TODO_UPDATE_STAMP_KEYS.map((key) => src[key]).find(
     (value) => value != null && String(value) !== "",
