@@ -3,7 +3,7 @@
 // Every case is driven by ../fixtures/todo-cases.json, which is the same file
 // the Android (Kotlin) suite loads. The fixture is pinned to the server
 // semantics in convex/todoNormalize.ts + convex/dataFiles.ts and to the alias
-// and ownership rules in MasonsBudget/.../MC2DTOs.swift. If either changes,
+// and ownership rules in the legacy Swift compatibility DTO. If either changes,
 // update the fixture in the same commit and both clients move together.
 
 import assert from "node:assert/strict"
@@ -256,7 +256,7 @@ test("an untagged todo is owned by the household default, never dropped", () => 
  */
 const SERVER_DIVERGENCES: ReadonlySet<string> = new Set([
   "owner", // Swift's effectiveOwner (owner ?? assignee), coerced to a FamilyMember
-  "priority", // the server yields NaN for MC2's word priorities
+  "priority", // the server yields NaN for retained word priorities
   "dueDate", // extra Swift aliases, and the result must be a real calendar day
   "due_date",
 ])
@@ -419,7 +419,7 @@ test("empty collections do not throw", () => {
   assert.deepEqual(visibleTo("mason", []), [])
 })
 
-// ── Read-model bridge ───────────────────────────────────────────────────────
+// ── Read-model projection ───────────────────────────────────────────────────
 
 test("due-by is open-and-on-or-before, comparing ISO strings lexically", () => {
   for (const testCase of fixtures.dueBy) {

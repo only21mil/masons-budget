@@ -164,7 +164,7 @@ test("showsFullBudget tracks adulthood", () => {
   }
 })
 
-test("MC2 file routing matches the Swift enum", () => {
+test("legacy blob-name routing matches the Swift enum", () => {
   for (const testCase of fixtures.mc2TransactionsFileName) {
     assert.equal(mc2TransactionsFileName(testCase.member), testCase.expected)
   }

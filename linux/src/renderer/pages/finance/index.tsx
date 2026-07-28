@@ -175,7 +175,7 @@ function StaleNotice({ status }: { status: string }) {
     <StatusBanner
       tone="warning"
       title="These figures are stale"
-      detail="The bridge has not refreshed recently. Do not act on these numbers until sync is healthy."
+      detail="The Convex row-table read has not refreshed recently. Do not act on these numbers until sync is healthy."
     />
   )
 }
@@ -324,7 +324,7 @@ function BudgetPage() {
         <StatusBanner
           tone="info"
           title={`Planned amounts are from the ${monthLabel(budget.month)} budget`}
-          detail="MC2 publishes one budget file at a time, so the actuals below are this month's while the planned column is not. Compare with that in mind."
+          detail="The current budget projection carries one planned month at a time, so the actuals below are this month's while the planned column is not. Compare with that in mind."
         />
       )}
       {/* The budget operations strip: planned / actual / remaining / over-budget. */}
@@ -349,7 +349,7 @@ function BudgetPage() {
         <StatusBanner
           tone="info"
           title={`${formatUsd(spend.uncategorised)} spent outside any budget category`}
-          detail="Counted on Activity but not against a category here. Add a category in MC2 to track it."
+          detail="Counted on Activity but not against a category here. Add a category through an approved write path to track it."
         />
       ) : null}
       <Panel
@@ -643,7 +643,7 @@ function RetirementPage() {
       ) : null}
       <Panel
         title="Retirement accounts"
-        source="MC2 · finances"
+        source="Unavailable in this client"
         flush
       >
         {/*
@@ -654,7 +654,7 @@ function RetirementPage() {
         <StateBlock
           state="empty"
           title="Not wired to the live read yet"
-          detail="Retirement accounts come from the finances.json slice, which arrives with the Convex bridge. No placeholder figures are shown on purpose."
+          detail="Retirement rows are not wired into this client yet. No placeholder figures are shown on purpose."
         />
       </Panel>
     </>

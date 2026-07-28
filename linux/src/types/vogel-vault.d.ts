@@ -1,4 +1,4 @@
-// The renderer's view of the preload bridge. This must stay in sync with
+// The renderer's view of the preload API. This must stay in sync with
 // electron/preload.ts — and it must stay this small.
 //
 // The two sides cannot share one file: the renderer and the Electron layer are
@@ -24,7 +24,7 @@ export interface VogelVaultRuntimeInfo {
  *
  * Money is integer minor units everywhere in this app (bigint cents, bigint
  * sats), formatted to exact decimal text before it goes into a cell. It never
- * crosses this bridge as a number, because a number is a float and a float is
+ * crosses this process boundary as a number, because a number is a float and a float is
  * not money. The main process rejects a non-string cell.
  */
 export interface VogelVaultCsvExportRequest {

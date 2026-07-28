@@ -27,7 +27,7 @@ import type { PageManifest } from "../types.ts"
 const TODAY = "2026-07-26"
 
 /**
- * MC2's project for a todo nobody filed.
+ * The retained default project for a todo nobody filed.
  *
  * normalizeTodoRecord defaults `project` to this string, mirroring the Convex
  * emitter, so the read model never hands us a null project. "Inbox" therefore
@@ -48,7 +48,7 @@ export function filingOf(todo: TodoItem): string | null {
  * The task views, as predicates over the read model.
  *
  * Exported so linux/test/todo-dialects.test.ts can prove that the same todo
- * spelled in different MC2 dialects lands in the same views. A dialect that
+ * spelled in different legacy wire dialects lands in the same views. A dialect that
  * routes differently is invisible to the shared parity fixture, which pins the
  * normaliser rather than the screens.
  */
@@ -181,7 +181,7 @@ function InboxPage() {
   return (
     <TodoListPage
       title="Inbox"
-      subtitle="Unsorted — still in the MC2 inbox"
+      subtitle="Unsorted — still in the default Inbox"
       filter={taskFilters.inbox}
       emptyTitle="Inbox is clear"
       emptyDetail="Every open task has been filed under a project or area."

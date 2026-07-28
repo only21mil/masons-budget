@@ -1,33 +1,31 @@
 // The Vogel Vault — shared todo contract.
 //
-// Todos are the one MC2 collection that is *written* by the clients as well as
-// read, so unlike transactions or budgets they need three things the read model
-// alone cannot give them: a canonical normaliser for the dual-field superset MC2
-// emits, a last-write-wins merge, and tombstone application. Those rules already
-// exist on the server in convex/todoNormalize.ts + convex/dataFiles.ts (which is
-// itself a hand-synced mirror of mission-control/lib/todo-normalize.js). This
-// file is the client-side half of the same contract, and it is pinned against
-// the server semantics by ../fixtures/todo-cases.json, which the TypeScript and
-// Kotlin suites both load.
+// Todos are written by approved clients as well as read from Convex row tables.
+// Unlike transactions or budgets they need three things the read model alone
+// cannot give them: a canonical normaliser for the retained dual-field wire
+// shape, a last-write-wins merge, and tombstone application. Those rules live on
+// the server in convex/todoNormalize.ts + convex/dataFiles.ts. This file is the
+// client-side half of the same contract, pinned against the server semantics by
+// ../fixtures/todo-cases.json, which the TypeScript and Kotlin suites both load.
 //
 // Field-level truth, in order of authority:
-//   - MC2TodoItem in MasonsBudget/MasonsBudget/Services/MC2DTOs.swift is the
-//     source of truth for which aliases exist and how ownership resolves.
+//   - The legacy Swift DTO `MC2TodoItem` is the compatibility authority for
+//     which aliases exist and how ownership resolves.
 //   - convex/todoNormalize.ts is the source of truth for what gets *emitted*.
 // Where the two disagree, the divergences are enumerated in the fixture's
 // $comment blocks and reproduced deliberately here, never accidentally.
 //
 // HARD RULE (repo AGENTS.md): owner resolution goes through coerceOwner and
-// visibility through canSeeDataOwnedBy. Adult MC2 records default to "victor",
-// so a strict `owner === activeMember` check empties Rachel's todo list. That
-// bug shipped in v0.3.
+// visibility through canSeeDataOwnedBy. Untagged adult records default to
+// "victor", so a strict `owner === activeMember` check empties Rachel's todo
+// list. That bug shipped in v0.3.
 
 import { DEFAULT_OWNER, type FamilyMember, coerceOwner } from "./family.ts"
 import type { TodoItem } from "./readModel.ts"
 
 // ── Lanes ───────────────────────────────────────────────────────────────────
 
-/** The three MC2 todo lanes. Port of VALID_TODO_LANES in convex/todoNormalize.ts. */
+/** The three todo lanes. Port of VALID_TODO_LANES in convex/todoNormalize.ts. */
 export const TODO_LANES = ["work", "personal", "sats"] as const
 
 export type TodoLane = (typeof TODO_LANES)[number]
@@ -44,7 +42,7 @@ export function normalizeTodoLane(value: unknown): TodoLane | null {
 export interface TodoLaneInput {
   readonly category?: unknown
   readonly type?: unknown
-  /** MC2 passes the todo's `project` here; the server calls the argument `list`. */
+  /** Retained records pass `project` here; the server calls the argument `list`. */
   readonly list?: unknown
 }
 
@@ -54,7 +52,7 @@ export function resolveTodoLane(input: TodoLaneInput = {}): TodoLane | null {
   )
 }
 
-// ── Raw MC2 shape ───────────────────────────────────────────────────────────
+// ── Retained raw wire shape ─────────────────────────────────────────────────
 
 /** A todo straight off the wire, before normalization. Keys are the superset. */
 export type RawTodo = Readonly<Record<string, unknown>>
@@ -70,7 +68,7 @@ export type RawTodo = Readonly<Record<string, unknown>>
 export interface CanonicalTodo {
   readonly id: string
   readonly title: string
-  /** MC2's alias for title. Kept because the server round-trips both. */
+  /** Legacy alias for title. Kept because the server round-trips both. */
   readonly text: string
   readonly lane: TodoLane
   /** Raw `type`, which is usually but not always the lane. */
@@ -128,7 +126,7 @@ export function canonicalTodoId(
   return `${lane.charAt(0)}${options.nowMillis}`
 }
 
-/** True when this todo originated in one of our clients rather than in MC2. */
+/** True when this todo originated in one of our clients rather than a legacy import. */
 export function isAppCreatedTodo(raw: RawTodo): boolean {
   const id = String(raw.id ?? "")
   return (
@@ -150,7 +148,7 @@ export function isAppCreatedTodo(raw: RawTodo): boolean {
  */
 const DUE_DATE_KEYS = ["dueDate", "due_date", "due", "date", "deadline", "when"] as const
 
-/** Words MC2 sometimes puts in `priority`. Port of Swift's decodePriority. */
+/** Words retained todo records may put in `priority`. Port of Swift's decodePriority. */
 const PRIORITY_WORDS: Readonly<Record<string, number>> = {
   urgent: 1,
   high: 1,
@@ -197,9 +195,9 @@ export function normalizeTodoRecord(raw: RawTodo, options: NormalizeTodoOptions)
   const flagged = Boolean(raw.flag || raw.flagged)
 
   // Ownership follows Swift's `effectiveOwner`: owner, then assignee, then the
-  // MC2 default. The server only reads `owner`, so an assignee-only todo would
-  // land on Victor there — here it lands on the person it names, which is what
-  // the visibility layer has to act on.
+  // legacy default. The server only reads `owner`, so an assignee-only todo
+  // would land on Victor there — here it lands on the person it names, which is
+  // what the visibility layer has to act on.
   const ownerKey = firstPresent(raw, ["owner", "assignee"])
   const owner = coerceOwner(ownerKey === null ? null : ownerKey.trim().toLowerCase())
 
@@ -411,7 +409,7 @@ export function reconcileTodos(input: {
   )
 }
 
-// ── Read-model bridge ───────────────────────────────────────────────────────
+// ── Read-model projection ───────────────────────────────────────────────────
 
 /**
  * Project a canonical todo onto the read model the screens already render.
@@ -537,8 +535,8 @@ function resolveDueDate(raw: RawTodo): string {
   for (const key of DUE_DATE_KEYS) {
     const value = raw[key]
     if (value === null || value === undefined) continue
-    // Slice first: MC2 sometimes carries "2026-07-27 09:00" or a full instant,
-    // and the due date is a calendar day on every client.
+    // Slice first: retained records may carry "2026-07-27 09:00" or a full
+    // instant, and the due date is a calendar day on every client.
     const candidate = String(value).trim().slice(0, 10)
     // Validated, unlike the server: `when` is a Things bucket ("anytime"), and a
     // non-date rendered into a due chip looks like data rather than noise.

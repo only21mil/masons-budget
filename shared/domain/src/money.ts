@@ -1,9 +1,10 @@
 // The Vogel Vault — decimal-safe money.
 //
 // Repo convention (AGENTS.md): "Money is Decimal, never Double." Swift gets that
-// for free; JavaScript does not. MC2 JSON carries money as JSON numbers, so the
-// only safe move is to parse the *lexical* form into integer minor units before
-// any arithmetic happens, and never let a value transit through float math.
+// for free; JavaScript does not. Surviving legacy blobs carry money as JSON
+// numbers, so the only safe move is to parse the *lexical* form into integer
+// minor units before any arithmetic happens, and never let a value transit
+// through float math.
 //
 // USD is held as bigint cents, BTC as bigint sats. Both are exact.
 
