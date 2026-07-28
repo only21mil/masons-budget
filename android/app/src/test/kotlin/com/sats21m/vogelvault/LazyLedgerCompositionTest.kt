@@ -47,7 +47,9 @@ class LazyLedgerCompositionTest {
 
     @Before
     fun startComposeHost() {
-        activityController = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        activityController = Robolectric.buildActivity(ComponentActivity::class.java)
+        activityController.get().setTheme(R.style.Theme_VogelVault)
+        activityController.setup()
     }
 
     @After
