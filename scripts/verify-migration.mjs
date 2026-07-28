@@ -118,22 +118,101 @@ export const SOURCES = Object.freeze([
       "btcSync.anchorBalancesSats.totalSats",
     ],
   },
+  {
+    file: "budget",
+    table: "budgetDocuments",
+    moneyColumns: [
+      "coinbaseOneBalanceCents",
+      "categories[].budgetCents",
+      "income.weeklyGrossCents",
+      "income.weeklyStrikeCents",
+      "income.weeklyRiverCents",
+      "income.monthlyGrossCents",
+      "income.mtdIncomeCents",
+      "income.ytdIncomeCents",
+      "income.paychecks[].amountCents",
+      "income.paychecks[].netCents",
+      "mtdIncomeCents",
+      "ytdIncomeCents",
+      "monthlyHistory[].incomeCents",
+      "monthlyHistory[].expensesCents",
+      "monthlyHistory[].savingsBps",
+      "allowance.weeklyCents",
+    ],
+  },
+  {
+    file: "mason-budget",
+    table: "budgetDocuments",
+    moneyColumns: [
+      "coinbaseOneBalanceCents",
+      "categories[].budgetCents",
+      "income.weeklyGrossCents",
+      "income.weeklyStrikeCents",
+      "income.weeklyRiverCents",
+      "income.monthlyGrossCents",
+      "income.mtdIncomeCents",
+      "income.ytdIncomeCents",
+      "income.paychecks[].amountCents",
+      "income.paychecks[].netCents",
+      "mtdIncomeCents",
+      "ytdIncomeCents",
+      "monthlyHistory[].incomeCents",
+      "monthlyHistory[].expensesCents",
+      "monthlyHistory[].savingsBps",
+      "allowance.weeklyCents",
+    ],
+  },
+  {
+    file: "btc-balance-snapshot",
+    table: "btcBalanceDocuments",
+    targetTables: ["btcBalanceDocuments", "btcAccounts"],
+    moneyColumns: [
+      "schemaVersion",
+      "accounts[].sats",
+      "accounts[].fiatCents",
+      "totals.sats",
+      "totals.fiatCents",
+      "totals.exchangeSats",
+      "totals.selfCustodySats",
+    ],
+  },
+  {
+    file: "finances",
+    table: "financeDocuments",
+    moneyColumns: [
+      "retirementTotalCents",
+      "accounts[].totalValueCents",
+      "accounts[].weeklyContributionCents",
+      "accounts[].holdings[].valueCents",
+      "accounts[].holdings[].costBasisCents",
+      "accounts[].holdings[].gainBps",
+      "accounts[].holdings[].avgCostCents",
+      "accounts[].holdings[].currentPricePerShareCents",
+      "accounts[].holdings[].lots[].pricePerShareCents",
+      "accounts[].holdings[].lots[].amountInvestedCents",
+    ],
+  },
+  {
+    file: "son-balances",
+    table: "btcBalanceDocuments",
+    targetTables: ["btcBalanceDocuments", "btcAccounts"],
+    moneyColumns: [
+      "schemaVersion",
+      "accounts[].sats",
+      "accounts[].fiatCents",
+      "totals.sats",
+      "totals.fiatCents",
+      "totals.exchangeSats",
+      "totals.selfCustodySats",
+    ],
+  },
 ]);
 
 /**
- * These document-shaped blobs have an explicit preservation-only verification
- * path: their complete Convex documents, including system and version fields,
- * participate in the before/after canonical checksum below. They are not
- * silently ignored. Moving one into a typed table requires moving it into
- * SOURCES so the verifier also demands a target-table proof.
+ * Preservation-only exceptions. Empty now: every authoritative dataFiles blob
+ * is either a typed migration source above or an explicitly absent source.
  */
-export const PRESERVED_DOCUMENT_FILES = Object.freeze([
-  "budget",
-  "mason-budget",
-  "btc-balance-snapshot",
-  "finances",
-  "son-balances",
-]);
+export const PRESERVED_DOCUMENT_FILES = Object.freeze([]);
 
 const USAGE = `Usage: node scripts/verify-migration.mjs
 
@@ -382,6 +461,33 @@ export function reduceFileVerification(source, status, report) {
     throw invalid();
   }
 
+  const expectedTargetTables = source.targetTables ?? [source.table];
+  if (
+    !isPlainObject(report.targetRowCounts) ||
+    Object.keys(report.targetRowCounts).length !== expectedTargetTables.length
+  ) {
+    throw invalid();
+  }
+  const targetRows = {};
+  let targetCountsPassed = true;
+  for (const table of expectedTargetTables) {
+    const target = report.targetRowCounts[table];
+    if (
+      !isPlainObject(target) ||
+      !exactIntegerCount(target.expected) ||
+      !exactIntegerCount(target.stored)
+    ) {
+      throw invalid();
+    }
+    targetRows[table] = target.stored;
+    if (
+      target.expected !== target.stored ||
+      target.matches !== true
+    ) {
+      targetCountsPassed = false;
+    }
+  }
+
   let moneyPassed = 0;
   for (const column of source.moneyColumns) {
     const blobValue = report.blobSums[column];
@@ -412,6 +518,7 @@ export function reduceFileVerification(source, status, report) {
     rowCountPassed &&
     moneyPassed === source.moneyColumns.length &&
     noUnexpectedMoneyColumns &&
+    targetCountsPassed &&
     roundTripPassed &&
     backendPassed;
 
@@ -421,6 +528,8 @@ export function reduceFileVerification(source, status, report) {
     blobPresent: status.blobPresent,
     blobRows: report.blobRowCount,
     tableRows: report.tableRowCount,
+    targetRows,
+    targetCountsPassed,
     moneyPassed,
     moneyExpected: source.moneyColumns.length,
     rowCountPassed,
@@ -435,7 +544,11 @@ function tableCoverage(files, publicCounts) {
   const expected = new Map();
   for (const file of files) {
     if (file.includeInTableCoverage === false) continue;
-    expected.set(file.table, (expected.get(file.table) ?? 0) + file.tableRows);
+    if (!isPlainObject(file.targetRows)) throw invalid();
+    for (const [table, rows] of Object.entries(file.targetRows)) {
+      if (!exactIntegerCount(rows)) throw invalid();
+      expected.set(table, (expected.get(table) ?? 0) + rows);
+    }
   }
 
   const checks = [];
@@ -446,6 +559,10 @@ function tableCoverage(files, publicCounts) {
     "btcBillPays",
     "income",
     "balanceDocuments",
+    "btcAccounts",
+    "budgetDocuments",
+    "btcBalanceDocuments",
+    "financeDocuments",
   ]) {
     const actual = publicCounts[table];
     if (!exactIntegerCount(actual)) throw invalid();

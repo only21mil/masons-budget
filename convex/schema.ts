@@ -392,6 +392,7 @@ export default defineSchema({
     schemaVersion: v.int64(),
     sourceFile: v.string(),
     updatedAtMs: v.float64(),
+    migrationSourceIndex: v.optional(v.float64()),
   })
     .index("by_owner_key", ["owner", "key"]) // upsert / dedupe
     .index("by_owner_custody", ["owner", "custody"])
@@ -451,6 +452,8 @@ export default defineSchema({
       }),
     ),
     updatedAtMs: v.float64(),
+    migrationRawJson: v.optional(v.string()),
+    migrationSourceIndex: v.optional(v.float64()),
   })
     .index("by_source_file", ["sourceFile"])
     .index("by_owner", ["owner"]),
@@ -479,6 +482,8 @@ export default defineSchema({
     basis: v.optional(v.string()),
     confidence: v.optional(v.string()),
     updatedAtMs: v.float64(),
+    migrationRawJson: v.optional(v.string()),
+    migrationSourceIndex: v.optional(v.float64()),
   })
     .index("by_source_file", ["sourceFile"])
     .index("by_owner", ["owner"]),
@@ -493,5 +498,7 @@ export default defineSchema({
     retirementTotalCents: v.optional(v.int64()),
     accounts: v.array(financeAccountValidator),
     updatedAtMs: v.float64(),
+    migrationRawJson: v.optional(v.string()),
+    migrationSourceIndex: v.optional(v.float64()),
   }).index("by_source_file", ["sourceFile"]),
 });
