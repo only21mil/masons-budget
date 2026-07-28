@@ -398,6 +398,32 @@ function projectTransaction(row: {
   };
 }
 
+function projectIncome(row: {
+  incomeId: string;
+  owner: FamilyMember;
+  date: string;
+  month: string;
+  amountCents: bigint;
+  source: string;
+  loggedBy?: string;
+  note?: string;
+  archimedesRequestId?: string;
+  updatedAtMs: number;
+}) {
+  return {
+    incomeId: row.incomeId,
+    owner: row.owner,
+    date: row.date,
+    month: row.month,
+    amountCents: row.amountCents,
+    source: row.source,
+    loggedBy: row.loggedBy,
+    note: row.note,
+    archimedesRequestId: row.archimedesRequestId,
+    updatedAtMs: row.updatedAtMs,
+  };
+}
+
 function projectTodo(row: {
   todoId: string;
   owner: FamilyMember;
@@ -782,6 +808,52 @@ export const listTransactions = query({
       rows.slice(0, cap).map(projectTransaction),
       limit,
       "listTransactions",
+    );
+  },
+});
+
+/**
+ * Canonical income ledger, newest first.
+ *
+ * Income is its own authoritative source. Transaction rows whose category is
+ * "Income" are mirrors and are deliberately not consulted here.
+ */
+export const listIncome = query({
+  args: {
+    viewer: familyMemberValidator,
+    month: v.optional(v.string()),
+    limit: v.optional(v.float64()),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { viewer, month, limit, token }) => {
+    validateReadToken(token);
+    const owners = ownersInScope(viewer, "visible");
+    const cap = requestedRowCap(limit, "listIncome");
+
+    const perOwner = await Promise.all(
+      owners.map((owner) =>
+        month
+          ? ctx.db
+              .query("income")
+              .withIndex("by_owner_month_date", (q) =>
+                q.eq("owner", owner).eq("month", month),
+              )
+              .order("desc")
+              .take(cap)
+          : ctx.db
+              .query("income")
+              .withIndex("by_owner_date", (q) => q.eq("owner", owner))
+              .order("desc")
+              .take(cap),
+      ),
+    );
+
+    const rows = perOwner.flat();
+    rows.sort(byDateDescending);
+    return publicEnvelope(
+      rows.slice(0, cap).map(projectIncome),
+      limit,
+      "listIncome",
     );
   },
 });

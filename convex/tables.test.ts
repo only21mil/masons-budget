@@ -84,6 +84,26 @@ const fn = {
       complete: boolean;
     }
   >,
+  listIncome: "tables:listIncome" as unknown as FunctionReference<
+    "query",
+    "public",
+    { viewer: Member; month?: string; limit?: number; token?: string },
+    {
+      rows: Array<{
+        incomeId: string;
+        owner: Member;
+        date: string;
+        month: string;
+        amountCents: bigint;
+        source: string;
+        loggedBy?: string;
+        note?: string;
+        archimedesRequestId?: string;
+        updatedAtMs: number;
+      }>;
+      complete: boolean;
+    }
+  >,
   listTodos: "tables:listTodos" as unknown as FunctionReference<
     "query",
     "public",
@@ -1180,6 +1200,76 @@ describe("indexed month and date", () => {
     await migrateAll(t);
   });
 
+  it("defines every public financial query index, including bounded month income", () => {
+    const tables = (
+      schema as unknown as {
+        tables: Record<
+          string,
+          { indexes: Array<{ indexDescriptor: string; fields: string[] }> }
+        >;
+      }
+    ).tables;
+    const indexes = (table: string) =>
+      new Map(
+        tables[table].indexes.map(({ indexDescriptor, fields }) => [
+          indexDescriptor,
+          fields,
+        ]),
+      );
+
+    expect(indexes("income").get("by_owner_month_date")).toEqual([
+      "owner",
+      "month",
+      "date",
+    ]);
+    expect(indexes("btcBillPays").get("by_owner_month_date")).toEqual([
+      "owner",
+      "month",
+      "date",
+    ]);
+    expect(indexes("btcAccounts").get("by_owner_key")).toEqual([
+      "owner",
+      "key",
+    ]);
+    expect(indexes("balanceDocuments").get("by_owner")).toEqual(["owner"]);
+    expect(indexes("budgetDocuments").get("by_source_file")).toEqual([
+      "sourceFile",
+    ]);
+    expect(indexes("btcBalanceDocuments").get("by_owner")).toEqual(["owner"]);
+    expect(indexes("financeDocuments").get("by_source_file")).toEqual([
+      "sourceFile",
+    ]);
+  });
+
+  it("reads the dedicated income ledger by indexed owner and month", async () => {
+    const rachel = await t.query(fn.listIncome, { viewer: "rachel" });
+    expect(rachel).toMatchObject({ complete: true });
+    expect(rachel.rows).toEqual([
+      expect.objectContaining({
+        incomeId: "income-1",
+        owner: "victor",
+        month: "2026-07",
+        amountCents: 250055n,
+        source: "payroll",
+      }),
+    ]);
+    expect(rachel.rows[0]).not.toHaveProperty("raw");
+    expect(rachel.rows[0]).not.toHaveProperty("sourceFile");
+    expect(
+      await queryRows(fn.listIncome, {
+        viewer: "rachel",
+        month: "2026-07",
+      }),
+    ).toHaveLength(1);
+    expect(
+      await queryRows(fn.listIncome, {
+        viewer: "rachel",
+        month: "2026-06",
+      }),
+    ).toEqual([]);
+    expect(await queryRows(fn.listIncome, { viewer: "mason" })).toEqual([]);
+  });
+
   it("derives month from date as a prefix, with no timezone in the way", async () => {
     const july = await queryRows(fn.listTransactions, {
       viewer: "victor",
@@ -1819,6 +1909,14 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
         queryRows(fn.listBtcBillPays, {
           viewer: "victor",
           scope: "visible",
+          token,
+        }),
+    },
+    {
+      name: "listIncome",
+      call: (token?: string) =>
+        queryRows(fn.listIncome, {
+          viewer: "victor",
           token,
         }),
     },

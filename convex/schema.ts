@@ -282,6 +282,7 @@ export default defineSchema({
   })
     .index("by_source_key", ["sourceFile", "sourceKey"])
     .index("by_owner_month", ["owner", "month"])
+    .index("by_owner_month_date", ["owner", "month", "date"])
     .index("by_owner_date", ["owner", "date"])
     .index("by_date", ["date"]),
 
