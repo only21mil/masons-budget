@@ -102,6 +102,7 @@ data class CachedTransactionEntity(
     val date: String,
     val month: String,
     val merchant: String,
+    /** Raw signed amount only. Spend projections are derived by the current domain model after reads. */
     @ColumnInfo(name = "amount_cents") val amountCents: Long,
     val category: String,
     val card: String?,
@@ -212,6 +213,7 @@ data class TransactionCacheRow(
     val date: String,
     val month: String,
     val merchant: String,
+    /** Raw signed amount only; never persist spendAmount or displaySpendAmount here. */
     val amountCents: Long,
     val category: String,
     val card: String? = null,

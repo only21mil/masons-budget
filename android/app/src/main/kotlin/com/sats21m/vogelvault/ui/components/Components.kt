@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -25,10 +27,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -40,6 +44,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.ui.theme.LedgerNumeral
 import com.sats21m.vogelvault.ui.theme.VaultAccent
@@ -73,6 +78,138 @@ data class Kpi(
     val tone: Color? = null,
     val provenance: Provenance = Provenance.ACTUAL,
 )
+
+/**
+ * Test-only observation point for measuring how many ledger rows Compose visits.
+ *
+ * The production default is null and therefore costs no callback. Keeping the
+ * observation at the shared row boundary lets a regression test render a real
+ * screen and distinguish a lazy viewport from a Column that eagerly visits all
+ * 911 production-sized rows.
+ */
+internal val LocalLedgerRowCompositionObserver =
+    staticCompositionLocalOf<(() -> Unit)?> { null }
+
+/**
+ * The screen's one vertical lazy list, with spacing between sections but never
+ * between rows inside a ledger panel.
+ *
+ * Keeping the spacing here matters: `Arrangement.spacedBy` applies between
+ * every lazy item, which would put a card-sized gap between all 911 transaction
+ * rows once they become individual items.
+ */
+class VaultLazyListScope internal constructor(
+    private val delegate: LazyListScope,
+) {
+    private var hasContent = false
+    private var gapIndex = 0
+
+    fun item(
+        key: Any? = null,
+        contentType: Any? = null,
+        content: @Composable () -> Unit,
+    ) {
+        separateFromPreviousSection()
+        delegate.item(key = key, contentType = contentType) {
+            content()
+        }
+    }
+
+    /**
+     * A panel whose rows are independent keyed lazy items.
+     *
+     * [sectionKey] is part of every key so the same domain record may safely
+     * appear in Dashboard, Bitcoin, and Net Worth without colliding.
+     */
+    fun <T> keyedPanel(
+        sectionKey: String,
+        title: String,
+        source: String? = null,
+        rows: List<T>,
+        rowKey: (T) -> String,
+        rowContent: @Composable (T) -> Unit,
+    ) {
+        separateFromPreviousSection()
+        delegate.item(
+            key = "$sectionKey:header",
+            contentType = "vault-panel-header",
+        ) {
+            LazyPanelHeader(title, source)
+        }
+        delegate.itemsIndexed(
+            items = rows,
+            key = { _, row -> "$sectionKey:row:${rowKey(row)}" },
+            contentType = { _, _ -> "vault-panel-row:$sectionKey" },
+        ) { index, row ->
+            LazyPanelRow(isLast = index == rows.lastIndex) {
+                rowContent(row)
+            }
+        }
+    }
+
+    private fun separateFromPreviousSection() {
+        if (hasContent) {
+            delegate.item(
+                key = "vault-section-gap:${gapIndex++}",
+                contentType = "vault-section-gap",
+            ) {
+                Spacer(Modifier.height(VaultSpace.md))
+            }
+        } else {
+            hasContent = true
+        }
+    }
+}
+
+/** Build one screen from a single [LazyListScope]. */
+fun LazyListScope.vaultContent(content: VaultLazyListScope.() -> Unit) {
+    VaultLazyListScope(this).content()
+}
+
+@Composable
+private fun LazyPanelHeader(title: String, source: String?) {
+    val shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .border(1.dp, VaultLine, shape)
+            .background(VaultSurface, shape),
+    ) {
+        Column(
+            Modifier.padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                color = VaultCream,
+                modifier = Modifier.semantics { heading() },
+            )
+            if (source != null) {
+                Text(source, style = MaterialTheme.typography.labelSmall, color = VaultTextDim)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LazyPanelRow(
+    isLast: Boolean,
+    content: @Composable () -> Unit,
+) {
+    val shape = if (isLast) {
+        RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp)
+    } else {
+        RoundedCornerShape(0.dp)
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .border(1.dp, VaultLine, shape)
+            .background(VaultSurface, shape),
+    ) {
+        content()
+    }
+}
 
 /** Suppress a figure when the slice it came from did not load. */
 fun figure(suppress: Boolean, render: () -> String): String =
@@ -237,6 +374,7 @@ fun LedgerRow(
     badge: String? = null,
     badgeAccented: Boolean = false,
 ) {
+    LocalLedgerRowCompositionObserver.current?.invoke()
     // One stop per row rather than four, and the figure keeps the label that gives
     // it meaning — a bare "-412.30" swiped in isolation says nothing.
     val spoken = buildString {
@@ -362,26 +500,26 @@ fun StateBlock(
         }
         Freshness.ERROR -> {
             icon = Icons.Filled.ErrorOutline
-            fallbackTitle = "Could not load"
-            fallbackDetail = "The last read from MC2 failed. Showing nothing rather than something wrong."
+            fallbackTitle = stringResource(R.string.convex_read_error_title)
+            fallbackDetail = stringResource(R.string.convex_read_error_detail)
             tint = VaultNegative
         }
         Freshness.STALE -> {
             icon = Icons.Filled.WarningAmber
-            fallbackTitle = "Showing stale data"
-            fallbackDetail = "The bridge has not refreshed recently. Treat these figures as out of date."
+            fallbackTitle = stringResource(R.string.convex_read_stale_title)
+            fallbackDetail = stringResource(R.string.convex_read_stale_detail)
             tint = VaultWarning
         }
         Freshness.LOADING -> {
             icon = Icons.Filled.HourglassEmpty
-            fallbackTitle = "Loading"
-            fallbackDetail = "Reading from the local bridge."
+            fallbackTitle = stringResource(R.string.convex_read_loading_title)
+            fallbackDetail = stringResource(R.string.convex_read_loading_detail)
             tint = VaultTextDim
         }
         else -> {
             icon = Icons.Filled.Inbox
-            fallbackTitle = "Nothing here yet"
-            fallbackDetail = "No records have synced into this view."
+            fallbackTitle = stringResource(R.string.convex_read_empty_title)
+            fallbackDetail = stringResource(R.string.convex_read_empty_detail)
             tint = VaultTextDim
         }
     }
