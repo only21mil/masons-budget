@@ -4,13 +4,13 @@ import XCTest
 
 final class ConvexRowsTests: XCTestCase {
     func testProductionWireGoldensUseRequestSelectedFormatAndDecodeExactly() async throws {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [ConvexWireGoldenURLProtocol.self]
-        let session = URLSession(configuration: configuration)
-        defer { session.invalidateAndCancel() }
-
         let deploymentURL = try XCTUnwrap(URL(string: "https://golden.invalid"))
-        let client = ConvexClient(deploymentURL: deploymentURL, session: session)
+        let client = ConvexClient(
+            deploymentURL: deploymentURL,
+            requestExecutor: { request in
+                try ConvexWireGoldenReplay.response(for: request)
+            },
+        )
 
         let transactions: ConvexRowEnvelope<ConvexTransactionRow> = try await client.fetchRows(
             .transactions(viewer: .victor),
@@ -301,7 +301,7 @@ final class ConvexRowsTests: XCTestCase {
 /// The response filename is chosen from the request's actual `format` value. A
 /// production change from `convex_encoded_json` to `json` therefore replays the
 /// real decimal-string capture and fails typed `Int64` decoding.
-private final class ConvexWireGoldenURLProtocol: URLProtocol {
+private enum ConvexWireGoldenReplay {
     private static let queryNames = [
         "tables:rowCounts": "rowCounts",
         "tables:listTransactions": "listTransactions",
@@ -312,59 +312,117 @@ private final class ConvexWireGoldenURLProtocol: URLProtocol {
         "tables:getBudgetDocument": "getBudgetDocument",
     ]
 
-    override class func canInit(with _: URLRequest) -> Bool {
-        true
-    }
+    static func response(for request: URLRequest) throws -> (Data, URLResponse) {
+        let bundle = Bundle(for: ConvexRowsTests.self)
+        let jsonResources = jsonResources(in: bundle)
+        var context = ReplayContext(
+            requestURL: request.url?.absoluteString ?? "<missing>",
+            bodyByteCount: request.httpBody?.count,
+            hasBodyStream: request.httpBodyStream != nil,
+            path: nil,
+            format: nil,
+            queryName: nil,
+            filename: nil,
+            bundlePath: bundle.bundleURL.path,
+            jsonResourceNames: jsonResources.map(\.lastPathComponent),
+        )
 
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
-        request
-    }
-
-    override func startLoading() {
-        do {
-            guard let body = request.httpBody,
-                  let object = try JSONSerialization.jsonObject(with: body) as? [String: Any],
-                  let path = object["path"] as? String,
-                  let format = object["format"] as? String
-            else {
-                throw ReplayError.invalidRequest("Golden request must have path, format and a JSON body.")
-            }
-            guard let queryName = Self.queryNames[path] else {
-                throw ReplayError.invalidRequest("No golden capture for \(path).")
-            }
-            let filename = "\(queryName).\(format).json"
-            let bundle = Bundle(for: ConvexRowsTests.self)
-            let fixtureURL =
-                bundle.urls(forResourcesWithExtension: "json", subdirectory: nil)?
-                    .first(where: { $0.lastPathComponent == filename })
-                ?? bundle.url(
-                    forResource: queryName,
-                    withExtension: "\(format).json",
-                    subdirectory: "convex-wire-golden",
-                )
-            guard let fixtureURL else {
-                throw ReplayError.invalidRequest("Missing request-selected golden fixture \(filename).")
-            }
-            let data = try Data(contentsOf: fixtureURL)
-            guard let requestURL = request.url,
-                  let response = HTTPURLResponse(
-                      url: requestURL,
-                      statusCode: 200,
-                      httpVersion: "HTTP/1.1",
-                      headerFields: ["Content-Type": "application/json"],
-                  )
-            else {
-                throw ReplayError.invalidRequest("Golden request has no valid URL.")
-            }
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: data)
-            client?.urlProtocolDidFinishLoading(self)
-        } catch {
-            client?.urlProtocol(self, didFailWithError: error)
+        guard let body = request.httpBody else {
+            try fail("Golden request has no readable JSON body.", context: context)
         }
+
+        let object: [String: Any]
+        do {
+            guard let decoded = try JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+                try fail("Golden request body is not a JSON object.", context: context)
+            }
+            object = decoded
+        } catch let error as ReplayError {
+            throw error
+        } catch {
+            try fail("Golden request body is invalid JSON: \(error).", context: context)
+        }
+
+        context.path = object["path"] as? String
+        context.format = object["format"] as? String
+        guard let path = context.path, let format = context.format else {
+            try fail("Golden request body must contain string path and format values.", context: context)
+        }
+
+        context.queryName = queryNames[path]
+        guard let queryName = context.queryName else {
+            try fail("No golden capture is mapped for the request path.", context: context)
+        }
+
+        context.filename = "\(queryName).\(format).json"
+        guard let filename = context.filename,
+              let fixtureURL = jsonResources.first(where: { $0.lastPathComponent == filename })
+        else {
+            try fail("The request-selected golden fixture is absent from the test bundle.", context: context)
+        }
+
+        let data: Data
+        do {
+            data = try Data(contentsOf: fixtureURL)
+        } catch {
+            try fail("The request-selected golden fixture could not be read: \(error).", context: context)
+        }
+
+        guard let requestURL = request.url,
+              let response = HTTPURLResponse(
+                  url: requestURL,
+                  statusCode: 200,
+                  httpVersion: "HTTP/1.1",
+                  headerFields: ["Content-Type": "application/json"],
+              )
+        else {
+            try fail("Golden request has no valid URL.", context: context)
+        }
+        return (data, response)
     }
 
-    override func stopLoading() {}
+    private static func jsonResources(in bundle: Bundle) -> [URL] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: bundle.bundleURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles],
+        ) else {
+            return []
+        }
+        return enumerator.compactMap { $0 as? URL }
+            .filter { $0.pathExtension == "json" }
+            .sorted { $0.path < $1.path }
+    }
+
+    private static func fail(_ reason: String, context: ReplayContext) throws -> Never {
+        let message = """
+        Convex wire-golden replay failed: \(reason)
+        requestURL=\(context.requestURL)
+        httpBodyBytes=\(context.bodyByteCount.map { String($0) } ?? "<missing>")
+        httpBodyStreamPresent=\(context.hasBodyStream)
+        path=\(context.path ?? "<missing>")
+        format=\(context.format ?? "<missing>")
+        queryName=\(context.queryName ?? "<unresolved>")
+        filename=\(context.filename ?? "<unresolved>")
+        bundle=\(context.bundlePath)
+        jsonResources=\(context.jsonResourceNames)
+        """
+        print(message)
+        XCTFail(message)
+        throw ReplayError.invalidRequest(message)
+    }
+
+    private struct ReplayContext {
+        let requestURL: String
+        let bodyByteCount: Int?
+        let hasBodyStream: Bool
+        var path: String?
+        var format: String?
+        var queryName: String?
+        var filename: String?
+        let bundlePath: String
+        let jsonResourceNames: [String]
+    }
 
     private enum ReplayError: LocalizedError {
         case invalidRequest(String)
