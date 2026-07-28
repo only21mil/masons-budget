@@ -469,14 +469,14 @@ describe("money", () => {
     await t.mutation(api.createTransaction, {
       ...BASE_TXN,
       id: "txn-1",
-      amountMinor: -1234,
+      amountMinor: 1234,
       token,
     });
     const [row] = await readRows(t, "transactions");
-    expect(row.amount).toBe(-12.34);
+    expect(row.amount).toBe(12.34);
     // And the read path recovers the exact integer, which is the only property
     // that actually matters.
-    expect(parseCents(row.amount)).toBe(-1234n);
+    expect(parseCents(row.amount)).toBe(1234n);
   });
 
   it("round-trips every cent value in a swept range", () => {
@@ -512,7 +512,7 @@ describe("owner", () => {
       ...BASE_TXN,
       owner: "rachel",
       id: "txn-r",
-      amountMinor: -500,
+      amountMinor: 500,
       token,
     });
     expect(result.file).toBe("transactions");
@@ -527,7 +527,7 @@ describe("owner", () => {
       ...BASE_TXN,
       owner: "mason",
       id: "txn-m",
-      // Child files store spend as a positive magnitude.
+      // Purchases are positive for every owner.
       amountMinor: 6000,
       category: "Games",
       token,
@@ -540,14 +540,14 @@ describe("owner", () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe("sign convention", () => {
-  it("requires an adult spend to be negative", async () => {
+  it("requires an adult spend to be positive", async () => {
     const t = harness();
     const token = authed();
     const error = await rejection(
       t.mutation(api.createTransaction, {
         ...BASE_TXN,
         id: "txn-1",
-        amountMinor: 1234,
+        amountMinor: -1234,
         token,
       }),
     );
@@ -571,7 +571,7 @@ describe("sign convention", () => {
     expect(error.code).toBe("sign_mismatch");
   });
 
-  it("accepts an adult credit as positive", async () => {
+  it("accepts positive Income", async () => {
     const t = harness();
     const token = authed();
     await t.mutation(api.createTransaction, {
@@ -584,6 +584,20 @@ describe("sign convention", () => {
     });
     const [row] = await readRows(t, "transactions");
     expect(row.amount).toBe(2500);
+  });
+
+  it("accepts a negative adult refund", async () => {
+    const t = harness();
+    const token = authed();
+    await t.mutation(api.createTransaction, {
+      ...BASE_TXN,
+      id: "txn-refund",
+      kind: "credit",
+      amountMinor: -123_469,
+      token,
+    });
+    const [row] = await readRows(t, "transactions");
+    expect(row.amount).toBe(-1234.69);
   });
 
   it("refuses an Income row declared as spend", async () => {
@@ -616,9 +630,9 @@ describe("sign convention", () => {
     expect(error.code).toBe("invalid_amount");
   });
 
-  it("matches the domain's own view of which files sign spend which way", () => {
-    expect(spendSignFor("victor")).toBe(-1);
-    expect(spendSignFor("rachel")).toBe(-1);
+  it("matches the domain's positive purchase sign for every owner", () => {
+    expect(spendSignFor("victor")).toBe(1);
+    expect(spendSignFor("rachel")).toBe(1);
     expect(spendSignFor("mason")).toBe(1);
     expect(spendSignFor("maddox")).toBe(1);
   });
@@ -643,7 +657,7 @@ describe("date", () => {
           ...BASE_TXN,
           date: value,
           id: "txn-1",
-          amountMinor: -100,
+          amountMinor: 100,
           token,
         }),
       );
@@ -661,7 +675,7 @@ describe("date", () => {
         ...BASE_TXN,
         date: `${year}-01-01`,
         id: "txn-1",
-        amountMinor: -100,
+        amountMinor: 100,
         token,
       }),
     );
@@ -679,7 +693,7 @@ describe("category", () => {
         ...BASE_TXN,
         category: "",
         id: "txn-1",
-        amountMinor: -100,
+        amountMinor: 100,
         token,
       }),
     );
@@ -692,7 +706,7 @@ describe("category", () => {
     await t.mutation(api.createTransaction, {
       ...BASE_TXN,
       id: "txn-1",
-      amountMinor: -100,
+      amountMinor: 100,
       token,
     });
     const error = await rejection(
@@ -700,7 +714,7 @@ describe("category", () => {
         ...BASE_TXN,
         id: "txn-2",
         category: "groceries",
-        amountMinor: -200,
+        amountMinor: 200,
         token,
       }),
     );
@@ -714,14 +728,14 @@ describe("category", () => {
     await t.mutation(api.createTransaction, {
       ...BASE_TXN,
       id: "txn-1",
-      amountMinor: -100,
+      amountMinor: 100,
       token,
     });
     await t.mutation(api.createTransaction, {
       ...BASE_TXN,
       id: "txn-2",
       category: "Hardware",
-      amountMinor: -200,
+      amountMinor: 200,
       token,
     });
     expect(await readRows(t, "transactions")).toHaveLength(2);
@@ -733,7 +747,7 @@ describe("idempotency", () => {
   it("does not double-enter a transaction when the client retries", async () => {
     const t = harness();
     const token = authed();
-    const args = { ...BASE_TXN, id: "txn-retry", amountMinor: -4599, token };
+    const args = { ...BASE_TXN, id: "txn-retry", amountMinor: 4599, token };
 
     const first = await t.mutation(api.createTransaction, args);
     const second = await t.mutation(api.createTransaction, args);
@@ -755,7 +769,7 @@ describe("idempotency", () => {
     await t.mutation(api.createTransaction, {
       ...BASE_TXN,
       id: "txn-1",
-      amountMinor: -100,
+      amountMinor: 100,
       token,
     });
     const error = await rejection(
@@ -763,14 +777,14 @@ describe("idempotency", () => {
         ...BASE_TXN,
         id: "txn-1",
         merchant: "Somewhere Else",
-        amountMinor: -900,
+        amountMinor: 900,
         token,
       }),
     );
     expect(error.code).toBe("id_conflict");
     const [row] = await readRows(t, "transactions");
     expect(row.merchant).toBe("Costco");
-    expect(row.amount).toBe(-1);
+    expect(row.amount).toBe(1);
   });
 
   it("does not double-enter a todo when the client retries", async () => {
@@ -818,7 +832,7 @@ describe("idempotency", () => {
     await t.mutation(api.createTransaction, {
       ...BASE_TXN,
       id: "txn-1",
-      amountMinor: -100,
+      amountMinor: 100,
       token,
     });
     const first = await t.mutation(api.editTransaction, {
@@ -867,7 +881,7 @@ describe("edit", () => {
       ...BASE_TXN,
       owner: "rachel",
       id: "shared-id",
-      amountMinor: -100,
+      amountMinor: 100,
       token,
     });
     const error = await rejection(
@@ -892,7 +906,7 @@ describe("edit", () => {
           id: "mc2-1",
           date: "2026-06-01",
           merchant: "Legacy",
-          amount: -20,
+          amount: 20,
           category: "Groceries",
           card: null,
           note: null,
@@ -903,13 +917,13 @@ describe("edit", () => {
     const result = await t.mutation(api.editTransaction, {
       id: "mc2-1",
       owner: "victor",
-      amountMinor: -2500,
+      amountMinor: 2500,
       actor: "victor@linux",
       token,
     });
     expect(result.changed).toBe(true);
     const [row] = await readRows(t, "transactions");
-    expect(row.amount).toBe(-25);
+    expect(row.amount).toBe(25);
   });
 
   it("preserves MC2 keys this module does not model", async () => {
@@ -947,7 +961,7 @@ describe("edit", () => {
     await t.mutation(api.createTransaction, {
       ...BASE_TXN,
       id: "txn-1",
-      amountMinor: -100,
+      amountMinor: 100,
       token,
     });
     const error = await rejection(
@@ -963,17 +977,23 @@ describe("edit", () => {
     expect(error.code).toBe("sign_mismatch");
   });
 
-  it("refuses to re-categorise a spend as Income without restating it", async () => {
+  it("refuses to re-categorise a refund as Income without restating it", async () => {
     // The gap this closes: sign and category are one invariant, and a
     // category-only edit used to skip the check entirely, leaving a negative
-    // adult row categorised "Income" — which the read model then scores as
-    // zero spend while the transactions screen still shows a purchase.
+    // refund categorised "Income" even though Income must be positive.
     const t = harness();
     const token = authed();
-    await t.mutation(api.createTransaction, {
-      ...BASE_TXN,
-      id: "txn-1",
-      amountMinor: -100,
+    await t.mutation(api.dataFilesSync, {
+      name: "transactions",
+      data: [
+        {
+          id: "txn-1",
+          date: "2026-06-01",
+          merchant: "Refund",
+          amount: -1,
+          category: "Groceries",
+        },
+      ],
       token,
     });
     const error = await rejection(
@@ -1015,7 +1035,7 @@ describe("edit", () => {
     await t.mutation(api.createTransaction, {
       ...BASE_TXN,
       id: "txn-1",
-      amountMinor: -100,
+      amountMinor: 100,
       token,
     });
     const error = await rejection(
@@ -1180,13 +1200,13 @@ describe("audit log", () => {
     await t.mutation(api.createTransaction, {
       ...BASE_TXN,
       id: "txn-1",
-      amountMinor: -1234,
+      amountMinor: 1234,
       token,
     });
     await t.mutation(api.editTransaction, {
       id: "txn-1",
       owner: "victor",
-      amountMinor: -5678,
+      amountMinor: 5678,
       actor: "rachel@ios",
       token,
     });
@@ -1197,14 +1217,14 @@ describe("audit log", () => {
     const [created, edited] = entries;
     expect(created.op).toBe("create");
     expect(created.before).toBeNull();
-    expect(created.after.amount).toBe(-12.34);
+    expect(created.after.amount).toBe(12.34);
 
     expect(edited.op).toBe("edit");
     expect(edited.actor).toBe("rachel@ios");
     // This is the answer to "whole-file replace gave no history": the prior
     // value is recoverable, byte for byte, from the same deployment.
     expect(edited.before).toEqual(created.after);
-    expect(edited.after.amount).toBe(-56.78);
+    expect(edited.after.amount).toBe(56.78);
     expect(edited.seq).toBe(created.seq + 1);
   });
 
@@ -1232,7 +1252,7 @@ describe("audit log", () => {
     await t.mutation(api.createTransaction, {
       ...BASE_TXN,
       id: "txn-1",
-      amountMinor: -100,
+      amountMinor: 100,
       token: syncToken,
     });
 
@@ -1253,7 +1273,7 @@ describe("audit log", () => {
     await t.mutation(api.createTransaction, {
       ...BASE_TXN,
       id: "txn-1",
-      amountMinor: -100,
+      amountMinor: 100,
       token,
     });
     const versions = await t.run(async (ctx) => {

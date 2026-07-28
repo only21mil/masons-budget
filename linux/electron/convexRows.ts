@@ -239,9 +239,7 @@ function transaction(value: unknown, viewer: VogelVaultMember): VogelVaultTransa
   const category = text(row, "category")
   const expectedSpendAmount = category === "Income"
     ? 0n
-    : ADULTS.has(owner)
-      ? -amountCents
-      : amountCents
+    : amountCents
   if (
     spendAmount !== expectedSpendAmount ||
     displaySpendAmount !== (spendAmount < 0n ? -spendAmount : spendAmount) ||

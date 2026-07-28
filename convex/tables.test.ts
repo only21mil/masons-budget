@@ -415,7 +415,7 @@ const ADULT_TRANSACTIONS = [
     id: "t-1",
     date: "2026-07-03",
     merchant: "Grocer",
-    amount: -84.27,
+    amount: 84.27,
     category: "Groceries",
     card: "amex",
     note: null,
@@ -433,14 +433,12 @@ const ADULT_TRANSACTIONS = [
     id: "t-3",
     date: "2026-06-28",
     merchant: "Hardware",
-    amount: -1.15,
+    amount: 1.15,
     category: "Home",
   },
 ];
 
-// Child files record spend as a POSITIVE magnitude; adult files sign it
-// negative. The row keeps the source's sign and records sourceFile so the
-// convention stays recoverable.
+// Purchases are positive for every owner.
 const MASON_TRANSACTIONS = [
   { id: "m-1", date: "2026-07-04", merchant: "Game Store", amount: 60, category: "Fun" },
 ];
@@ -831,7 +829,7 @@ describe("the blob path is untouched", () => {
         id: "app-1",
         date: "2026-07-20",
         merchant: "Cafe",
-        amountCents: -450n,
+        amountCents: 450n,
         category: "Food",
       },
     });
@@ -866,7 +864,7 @@ describe("money is integer minor units", () => {
     await migrateAll(t);
   });
 
-  it("projects signed spend, display magnitude, and ambiguous opposite signs", async () => {
+  it("projects signed spend, display magnitude, and refund signs", async () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("transactions", {
         txId: "adult-refund",
@@ -874,18 +872,18 @@ describe("money is integer minor units", () => {
         date: "2026-07-21",
         month: "2026-07",
         merchant: "Grocer refund",
-        amountCents: 2500n,
+        amountCents: -2500n,
         category: "Groceries",
         sourceFile: "transactions",
         updatedAtMs: 1,
       });
       await ctx.db.insert("transactions", {
-        txId: "adult-corrupt-wrong-sign",
+        txId: "adult-refund-2",
         owner: "victor",
         date: "2026-07-22",
         month: "2026-07",
-        merchant: "Legacy wrong sign",
-        amountCents: 900n,
+        merchant: "Second refund",
+        amountCents: -900n,
         category: "Fun",
         sourceFile: "transactions",
         updatedAtMs: 1,
@@ -919,12 +917,70 @@ describe("money is integer minor units", () => {
       displaySpendAmount: 2500n,
       hasOppositeSpendSign: true,
     });
-    // No persisted `kind` exists on legacy rows, so a corrupt adult spend with
-    // the refund sign must project the same signal as the valid refund above.
-    expect(byId.get("adult-corrupt-wrong-sign")).toMatchObject({
+    expect(byId.get("adult-refund-2")).toMatchObject({
       spendAmount: -900n,
       displaySpendAmount: 900n,
       hasOppositeSpendSign: true,
+    });
+  });
+
+  it("projects production purchase and refund signs without owner-based inversion", async () => {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("transactions", {
+        txId: "production-adult-purchase",
+        owner: "victor",
+        date: "2026-03-15",
+        month: "2026-03",
+        merchant: "Etsy",
+        amountCents: 3762n,
+        category: "Shopping",
+        sourceFile: "transactions",
+        updatedAtMs: 1,
+      });
+      await ctx.db.insert("transactions", {
+        txId: "production-adult-refund",
+        owner: "victor",
+        date: "2026-03-16",
+        month: "2026-03",
+        merchant: "Paypal *ebay",
+        amountCents: -123469n,
+        category: "Shopping",
+        sourceFile: "transactions",
+        updatedAtMs: 1,
+      });
+      await ctx.db.insert("transactions", {
+        txId: "production-child-purchase",
+        owner: "mason",
+        date: "2026-03-17",
+        month: "2026-03",
+        merchant: "Mason purchase",
+        amountCents: 3762n,
+        category: "Shopping",
+        sourceFile: "mason-transactions",
+        updatedAtMs: 1,
+      });
+    });
+
+    const byId = new Map(
+      (await queryRows(fn.listTransactions, { viewer: "victor" })).map((row) => [
+        row.txId,
+        row,
+      ]),
+    );
+    expect(byId.get("production-adult-purchase")).toMatchObject({
+      spendAmount: 3762n,
+      displaySpendAmount: 3762n,
+      hasOppositeSpendSign: false,
+    });
+    expect(byId.get("production-adult-refund")).toMatchObject({
+      spendAmount: -123469n,
+      displaySpendAmount: 123469n,
+      hasOppositeSpendSign: true,
+    });
+    expect(byId.get("production-child-purchase")).toMatchObject({
+      spendAmount: 3762n,
+      displaySpendAmount: 3762n,
+      hasOppositeSpendSign: false,
     });
   });
 
@@ -948,7 +1004,7 @@ describe("money is integer minor units", () => {
     // v.any() blob permits, not because the two disagree on this fixture.
     const rows = await queryRows(fn.listTransactions, { viewer: "victor" });
     const hardware = rows.find((row) => row.txId === "t-3");
-    expect(hardware?.amountCents).toBe(-115n);
+    expect(hardware?.amountCents).toBe(115n);
   });
 
   it("keeps the sign the source file used", async () => {
@@ -956,9 +1012,7 @@ describe("money is integer minor units", () => {
     const adultSpend = rows.find((row) => row.txId === "t-1");
     const childSpend = rows.find((row) => row.txId === "m-1");
 
-    // Adult files sign spending negative…
-    expect(adultSpend?.amountCents).toBe(-8427n);
-    // …child files record it as a positive magnitude. Both survive verbatim.
+    expect(adultSpend?.amountCents).toBe(8427n);
     // sourceFile remains internal migration provenance and is not public.
     expect(childSpend?.amountCents).toBe(6000n);
     expect(adultSpend).not.toHaveProperty("sourceFile");
@@ -1157,7 +1211,7 @@ describe("indexed month and date", () => {
         date: "2026-07-31",
         month: "2026-07",
         merchant: "Newest transaction",
-        amountCents: -1n,
+        amountCents: 1n,
         category: "Other",
         sourceFile: "transactions",
         updatedAtMs: 1,
@@ -1537,7 +1591,7 @@ describe("row mutations", () => {
         id: "app-1",
         date: "2026-07-21",
         merchant: "Cafe",
-        amountCents: -450n,
+        amountCents: 450n,
         category: "Food",
       },
     });
@@ -1548,7 +1602,7 @@ describe("row mutations", () => {
         id: "app-1",
         date: "2026-07-21",
         merchant: "Cafe",
-        amountCents: -500n,
+        amountCents: 500n,
         category: "Food",
       },
     });
@@ -1556,7 +1610,7 @@ describe("row mutations", () => {
 
     const rows = await queryRows(fn.listTransactions, { viewer: "victor" });
     expect(rows.filter((row) => row.txId === "app-1")).toHaveLength(1);
-    expect(rows.find((row) => row.txId === "app-1")?.amountCents).toBe(-500n);
+    expect(rows.find((row) => row.txId === "app-1")?.amountCents).toBe(500n);
     expect((await t.query(fn.rowCounts, {})).transactions).toBe(5);
   });
 
@@ -1575,18 +1629,18 @@ describe("row mutations", () => {
     expect(mason.map((row) => row.txId)).toEqual(["app-m1"]);
   });
 
-  it("rejects transaction signs that disagree with the owner file convention", async () => {
+  it("rejects negative purchases for adults and children", async () => {
     await expect(
       t.mutation(fn.upsertTransaction, {
         transaction: {
           id: "adult-wrong-sign",
           date: "2026-07-22",
           merchant: "Adult spend",
-          amountCents: 900n,
+          amountCents: -900n,
           category: "Fun",
         },
       }),
-    ).rejects.toThrow(/adult files sign spend negative/);
+    ).rejects.toThrow(/purchases are positive and refunds are negative for every owner/);
 
     await expect(
       t.mutation(fn.upsertTransaction, {
@@ -1599,7 +1653,7 @@ describe("row mutations", () => {
           category: "Fun",
         },
       }),
-    ).rejects.toThrow(/child files store spend as a positive magnitude/);
+    ).rejects.toThrow(/purchases are positive and refunds are negative for every owner/);
   });
 
   it("upserts a btc buy and a btc account idempotently", async () => {
@@ -1672,7 +1726,7 @@ describe("row mutations", () => {
           id: "wrong-1",
           date: "2026-07-24",
           merchant: "Nope",
-          amountCents: -1n,
+          amountCents: 1n,
           category: "Other",
         },
       }),
@@ -1715,7 +1769,7 @@ describe("row mutations", () => {
           id: "bad-1",
           date: "2026-07-24",
           merchant: "Nope",
-          amountCents: -1n,
+          amountCents: 1n,
           category: "Other",
           // The schema's literal union is what stops a typo'd owner becoming
           // "victor" by way of coerceOwner.
@@ -1834,7 +1888,7 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
             id: "auth-1",
             date: "2026-07-25",
             merchant: "Probe",
-            amountCents: -1n,
+            amountCents: 1n,
             category: "Other",
           },
           token,

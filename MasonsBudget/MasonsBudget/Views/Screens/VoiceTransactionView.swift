@@ -178,7 +178,7 @@ struct VoiceTransactionView: View {
         let isIncome = (parsed.category ?? "").localizedCaseInsensitiveContains("income") ||
             merchant.localizedCaseInsensitiveContains("paycheck") ||
             merchant.localizedCaseInsensitiveContains("salary")
-        let signedUsd = isIncome ? abs(amount) : -abs(amount)
+        let signedUsd = abs(amount)
         let signedSats = btcPrice > 0 ? ((signedUsd / btcPrice) * 100_000_000).clampedInt64 : nil
         let method = parsed.card?.localizedCaseInsensitiveContains("on") == true ? "on-chain" : "lightning"
 

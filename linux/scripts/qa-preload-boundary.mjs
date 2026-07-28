@@ -721,7 +721,7 @@ const rowRepository = createConvexRowRepository({
               date: "2026-07-26",
               month: "2026-07",
               merchant: "Test merchant",
-              amountCents: { $integer: "//////////8=" },
+              amountCents: { $integer: "AQAAAAAAAAA=" },
               spendAmount: { $integer: "AQAAAAAAAAA=" },
               displaySpendAmount: { $integer: "AQAAAAAAAAA=" },
               hasOppositeSpendSign: false,
@@ -740,7 +740,7 @@ const rowResult = await rowRepository.query({ kind: "transactions", viewer: "vic
 require_(
   rowResult.status === "ok" &&
     rowResult.kind === "transactions" &&
-    rowResult.rows[0]?.amountCents === -1n &&
+    rowResult.rows[0]?.amountCents === 1n &&
     rowResult.rows[0]?.spendAmount === 1n &&
     rowResult.rows[0]?.displaySpendAmount === 1n &&
     rowResult.rows[0]?.hasOppositeSpendSign === false,

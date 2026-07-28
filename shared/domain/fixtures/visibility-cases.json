@@ -1,5 +1,5 @@
 {
-  "$comment": "Language-neutral parity vectors for the Vogel Vault family/visibility, open server-response, and signed-spend contracts. Ported case-for-case from MasonsBudget/MasonsBudgetTests/FamilyVisibilityTests.swift, which remains the source of truth. TypeScript, Kotlin, and Swift parity suites load this file. Server-authored objects are open to unknown fields; known fields remain validated. spendAmount is the signed budget contribution, displaySpendAmount is a non-negative rendering magnitude, and a refund and corrupt wrong-sign legacy row intentionally remain indistinguishable on read because legacy rows do not persist write-side kind. When the Swift tests change, change this file in the same commit.",
+  "$comment": "Language-neutral parity vectors for the Vogel Vault family/visibility, open server-response, and signed-spend contracts. Ported case-for-case from MasonsBudget/MasonsBudgetTests/FamilyVisibilityTests.swift, which remains the source of truth. TypeScript, Kotlin, and Swift parity suites load this file. Server-authored objects are open to unknown fields; known fields remain validated. spendAmount is the signed budget contribution: purchases are positive for every owner, credits/refunds are negative, and displaySpendAmount is a non-negative rendering magnitude. When the Swift tests change, change this file in the same commit.",
   "members": ["victor", "rachel", "mason", "maddox"],
   "adults": ["victor", "rachel"],
   "defaultOwner": "victor",
@@ -84,15 +84,15 @@
   ],
 
   "sampleTransactions": [
-    { "id": "tx-1", "merchant": "Costco", "amount": "-150", "category": "Groceries", "owner": "victor", "spendAmount": "150", "displaySpendAmount": "150", "hasOppositeSpendSign": false, "_futureServerRowField": { "contract": "unknown server fields must be ignored" } },
+    { "id": "tx-1", "merchant": "Costco", "amount": "150", "category": "Groceries", "owner": "victor", "spendAmount": "150", "displaySpendAmount": "150", "hasOppositeSpendSign": false, "_futureServerRowField": { "contract": "unknown server fields must be ignored" } },
     { "id": "tx-2", "merchant": "Salary", "amount": "5000", "category": "Income", "owner": "victor", "spendAmount": "0", "displaySpendAmount": "0", "hasOppositeSpendSign": false },
-    { "id": "tx-3", "merchant": "Target", "amount": "-95", "category": "Shopping", "owner": "rachel", "spendAmount": "95", "displaySpendAmount": "95", "hasOppositeSpendSign": false },
+    { "id": "tx-3", "merchant": "Target", "amount": "95", "category": "Shopping", "owner": "rachel", "spendAmount": "95", "displaySpendAmount": "95", "hasOppositeSpendSign": false },
     { "id": "tx-4", "merchant": "Game Store", "amount": "60", "category": "Entertainment", "owner": "mason", "spendAmount": "60", "displaySpendAmount": "60", "hasOppositeSpendSign": false },
     { "id": "tx-5", "merchant": "Roblox", "amount": "10", "category": "Entertainment", "owner": "maddox", "spendAmount": "10", "displaySpendAmount": "10", "hasOppositeSpendSign": false },
-    { "id": "tx-6", "merchant": "Costco Refund", "amount": "25", "category": "Groceries", "owner": "victor", "spendAmount": "-25", "displaySpendAmount": "25", "hasOppositeSpendSign": true, "note": "valid adult refund: reduces spend" },
-    { "id": "tx-7", "merchant": "Wrong-sign Adult Spend", "amount": "40", "category": "Shopping", "owner": "rachel", "spendAmount": "-40", "displaySpendAmount": "40", "hasOppositeSpendSign": true, "note": "corrupt adult spend: same legacy shape as a credit, signal must remain visible" },
+    { "id": "tx-6", "merchant": "Costco Refund", "amount": "-25", "category": "Groceries", "owner": "victor", "spendAmount": "-25", "displaySpendAmount": "25", "hasOppositeSpendSign": true, "note": "valid adult refund: reduces spend" },
+    { "id": "tx-7", "merchant": "Rachel Refund", "amount": "-40", "category": "Shopping", "owner": "rachel", "spendAmount": "-40", "displaySpendAmount": "40", "hasOppositeSpendSign": true, "note": "valid adult refund: reduces spend" },
     { "id": "tx-8", "merchant": "Game Refund", "amount": "-8", "category": "Entertainment", "owner": "mason", "spendAmount": "-8", "displaySpendAmount": "8", "hasOppositeSpendSign": true, "note": "valid child refund: reduces spend" },
-    { "id": "tx-9", "merchant": "Wrong-sign Child Spend", "amount": "-3", "category": "Entertainment", "owner": "maddox", "spendAmount": "-3", "displaySpendAmount": "3", "hasOppositeSpendSign": true, "note": "corrupt child spend: same legacy shape as a credit, signal must remain visible" }
+    { "id": "tx-9", "merchant": "Maddox Refund", "amount": "-3", "category": "Entertainment", "owner": "maddox", "spendAmount": "-3", "displaySpendAmount": "3", "hasOppositeSpendSign": true, "note": "valid child refund: reduces spend" }
   ],
 
   "sampleAccounts": [
@@ -144,7 +144,7 @@
               "date": "2026-07-27",
               "month": "2026-07",
               "merchant": "Contract Grocer",
-              "amountCents": { "$integer": "Hvv///////8=" },
+              "amountCents": { "$integer": "4gQAAAAAAAA=" },
               "spendAmount": { "$integer": "4gQAAAAAAAA=" },
               "displaySpendAmount": { "$integer": "4gQAAAAAAAA=" },
               "hasOppositeSpendSign": false,
@@ -161,7 +161,7 @@
       "expectedKnownRow": {
         "txId": "compat-adult-spend",
         "owner": "victor",
-        "amountCents": "-1250",
+        "amountCents": "1250",
         "spendAmount": "1250",
         "displaySpendAmount": "1250",
         "hasOppositeSpendSign": false
@@ -170,19 +170,19 @@
   },
 
   "spendContract": {
-    "$comment": "Money fields are decimal strings so every language parses exact integer minor units. meaning is fixture metadata, not a persisted discriminator: refund and corrupt-wrong-sign inputs intentionally have the same readable sign shape.",
+    "$comment": "Money fields are decimal strings so every language parses exact integer minor units. Production purchases are positive for every owner and refunds are negative.",
     "cases": [
       {
         "name": "adult spend",
         "meaning": "spend",
-        "input": { "amountCents": "-2500", "category": "Groceries", "owner": "victor" },
-        "expected": { "spendAmount": "2500", "displaySpendAmount": "2500", "hasOppositeSpendSign": false }
+        "input": { "amountCents": "3762", "category": "Groceries", "owner": "victor" },
+        "expected": { "spendAmount": "3762", "displaySpendAmount": "3762", "hasOppositeSpendSign": false }
       },
       {
         "name": "child spend",
         "meaning": "spend",
-        "input": { "amountCents": "600", "category": "Entertainment", "owner": "mason" },
-        "expected": { "spendAmount": "600", "displaySpendAmount": "600", "hasOppositeSpendSign": false }
+        "input": { "amountCents": "3762", "category": "Entertainment", "owner": "mason" },
+        "expected": { "spendAmount": "3762", "displaySpendAmount": "3762", "hasOppositeSpendSign": false }
       },
       {
         "name": "income",
@@ -193,14 +193,8 @@
       {
         "name": "adult refund",
         "meaning": "valid-refund",
-        "input": { "amountCents": "2500", "category": "Groceries", "owner": "victor" },
-        "expected": { "spendAmount": "-2500", "displaySpendAmount": "2500", "hasOppositeSpendSign": true }
-      },
-      {
-        "name": "corrupt wrong-sign legacy row",
-        "meaning": "corrupt-wrong-sign",
-        "input": { "amountCents": "900", "category": "Shopping", "owner": "rachel" },
-        "expected": { "spendAmount": "-900", "displaySpendAmount": "900", "hasOppositeSpendSign": true }
+        "input": { "amountCents": "-123469", "category": "Groceries", "owner": "victor" },
+        "expected": { "spendAmount": "-123469", "displaySpendAmount": "123469", "hasOppositeSpendSign": true }
       }
     ]
   },
@@ -209,7 +203,7 @@
     "visibleTransactionCount": { "victor": 9, "rachel": 9, "mason": 2, "maddox": 2 },
     "visibleTransactionMerchants": {
       "mason": ["Game Store", "Game Refund"],
-      "maddox": ["Roblox", "Wrong-sign Child Spend"]
+      "maddox": ["Roblox", "Maddox Refund"]
     },
     "visibleAccountCount": { "victor": 3, "rachel": 3, "mason": 1, "maddox": 0 },
     "visibleAccountLabels": { "mason": ["Mason Strike"] },

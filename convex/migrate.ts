@@ -826,11 +826,9 @@ function projectBalanceDocument(
  * is a query away rather than a data-loss event, and it is what makes the exact
  * round-trip check in `verifyFile` possible at all.
  *
- * SIGNS ARE PRESERVED, NOT NORMALISED. Child MC2 files record spend as a
- * positive magnitude; adult files sign it negative. `spendAmount()` in the
- * domain already handles both by keying off the category, so rewriting signs
- * here would change what every client displays. `sourceFile` keeps the
- * convention recoverable.
+ * SIGNS ARE PRESERVED, NOT NORMALISED. Production purchases are positive for
+ * every owner and refunds are negative. Rewriting stored values here would be
+ * data corruption; the public read projection supplies the budget contract.
  */
 export function projectRow(
   kind: MigrationKind,

@@ -13,18 +13,15 @@ struct MC2Transaction: Codable {
 
 enum MC2TransactionWriteError: LocalizedError, Equatable {
     case ownerMismatch(transactionOwner: String, targetOwner: FamilyMember)
-    case adultSpendMustBeNegative(owner: FamilyMember)
-    case childSpendMustBePositive(owner: FamilyMember)
+    case transactionMustBeNonZero(owner: FamilyMember)
     case incomeMustBePositive(owner: FamilyMember)
 
     var errorDescription: String? {
         switch self {
         case let .ownerMismatch(transactionOwner, targetOwner):
             "Rejected transaction write: owner '\(transactionOwner)' does not match target owner '\(targetOwner.rawValue)'."
-        case let .adultSpendMustBeNegative(owner):
-            "Rejected transaction write for \(owner.rawValue): adult spending must be negative."
-        case let .childSpendMustBePositive(owner):
-            "Rejected transaction write for \(owner.rawValue): child spending must be positive."
+        case let .transactionMustBeNonZero(owner):
+            "Rejected transaction write for \(owner.rawValue): transaction amount must be non-zero."
         case let .incomeMustBePositive(owner):
             "Rejected transaction write for \(owner.rawValue): income must be positive."
         }
@@ -44,13 +41,9 @@ extension MC2Transaction {
             guard transaction.amount > 0 else {
                 throw MC2TransactionWriteError.incomeMustBePositive(owner: owner)
             }
-        } else if owner.isAdult {
-            guard transaction.amount < 0 else {
-                throw MC2TransactionWriteError.adultSpendMustBeNegative(owner: owner)
-            }
         } else {
-            guard transaction.amount > 0 else {
-                throw MC2TransactionWriteError.childSpendMustBePositive(owner: owner)
+            guard transaction.amount != 0 else {
+                throw MC2TransactionWriteError.transactionMustBeNonZero(owner: owner)
             }
         }
 

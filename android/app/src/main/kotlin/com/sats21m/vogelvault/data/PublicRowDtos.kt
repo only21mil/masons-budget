@@ -171,6 +171,7 @@ internal data class PublicTransactionDto(
                 updatedAtMs = row.requiredLong("updatedAtMs") ?: return null,
             ).takeUnless {
                 it.displaySpendAmount < 0L ||
+                    it.spendAmount != (if (it.category == "Income") 0L else it.amountCents) ||
                     it.hasOppositeSpendSign != (it.spendAmount < 0L)
             }
         }

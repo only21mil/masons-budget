@@ -374,14 +374,10 @@ function projectTransaction(row: {
   // displaySpendAmount, hasOppositeSpendSign), mirrored by
   // MasonsBudget/MasonsBudget/Models/Transaction.swift.
   //
-  // Legacy rows have no write-side `kind`, so a valid credit and a corrupt row
-  // with the opposite sign are intentionally indistinguishable on read.
   const spendAmount =
     row.category === "Income"
       ? 0n
-      : isAdult(row.owner)
-        ? -row.amountCents
-        : row.amountCents;
+      : row.amountCents;
   const displaySpendAmount =
     spendAmount < 0n ? -spendAmount : spendAmount;
 
@@ -1380,14 +1376,13 @@ function requireSignAgrees(
     );
   }
 
-  const spendIsNegative = isAdult(owner);
-  const expectedNegative = kind === "spend" ? spendIsNegative : !spendIsNegative;
+  const expectedNegative = category !== "Income" && kind === "credit";
   if ((minor < 0n) !== expectedNegative) {
     const sourceFile = isAdult(owner) ? "transactions" : `${owner}-transactions`;
     throw new ConvexError(
       `upsertTransaction: a ${kind} for ${owner} must be ` +
         `${expectedNegative ? "negative" : "positive"} in ${sourceFile} ` +
-        `(${isAdult(owner) ? "adult files sign spend negative" : "child files store spend as a positive magnitude"}), ` +
+        `(purchases are positive and refunds are negative for every owner), ` +
         `got ${minor}. The sign is not corrected here on purpose.`,
     );
   }

@@ -1,4 +1,3 @@
-import { isAdult } from "@vogel-vault/domain/family"
 import type { Cents } from "@vogel-vault/domain/money"
 import {
   type Budget,
@@ -11,7 +10,7 @@ import {
 /** Signed budget contribution: positive spend, negative credit, zero income. */
 export function spendAmount(transaction: Transaction): Cents {
   if (transaction.category === "Income") return 0n
-  return isAdult(transaction.owner) ? -transaction.amount : transaction.amount
+  return transaction.amount
 }
 
 /** Rendering magnitude; budget arithmetic must use spendAmount instead. */

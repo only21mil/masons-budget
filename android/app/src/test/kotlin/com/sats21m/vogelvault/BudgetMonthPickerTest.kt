@@ -308,9 +308,8 @@ class BudgetMonthPickerTest {
 
     @Test
     fun `income rows never count as spending in either month`() {
-        // Adult files sign spend negative, the child files store a positive
-        // magnitude, and there is a paycheque in both months. Keying off the sign
-        // would turn Mason's spending into income and the paycheque into spend.
+        // Purchases are positive for every owner, and there is a paycheque in
+        // both months. Category, not sign alone, keeps Income out of spend.
         val victor = state(FamilyMember.VICTOR)
         for (month in listOf(july, june)) {
             val derived = derive(victor, month)!!

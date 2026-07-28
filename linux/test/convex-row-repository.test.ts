@@ -28,7 +28,7 @@ function transaction(overrides: Record<string, unknown> = {}): Record<string, un
     date: "2026-07-26",
     month: "2026-07",
     merchant: "Example",
-    amountCents: int64(-115n),
+    amountCents: int64(115n),
     spendAmount: int64(115n),
     displaySpendAmount: int64(115n),
     hasOppositeSpendSign: false,
@@ -196,7 +196,7 @@ describe("main-process row repository", () => {
           date: "2026-07-26",
           month: "2026-07",
           merchant: "Example",
-          amountCents: -115n,
+          amountCents: 115n,
           spendAmount: 115n,
           displaySpendAmount: 115n,
           hasOppositeSpendSign: false,
@@ -317,7 +317,7 @@ describe("main-process row repository", () => {
         rows: [
           transaction({
             txId: "adult-refund-or-wrong-sign",
-            amountCents: int64(2_500n),
+            amountCents: int64(-2_500n),
             spendAmount: int64(-2_500n),
             displaySpendAmount: int64(2_500n),
             hasOppositeSpendSign: true,
