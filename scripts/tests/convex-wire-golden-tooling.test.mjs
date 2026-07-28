@@ -162,4 +162,15 @@ test("contract digest ignores unrelated schema edits but catches captured shape 
     schemaSource: relevantSchemaSource,
   })
   assert.notEqual(relevant.sha256, baseline.sha256)
+
+  const relevantTablesSource = tablesSource.replace(
+    "? 0n\n      : row.amountCents;",
+    "? 0n\n      : -row.amountCents;",
+  )
+  assert.notEqual(relevantTablesSource, tablesSource)
+  const relevantProjection = captureContractDigestFromSources({
+    tablesSource: relevantTablesSource,
+    schemaSource,
+  })
+  assert.notEqual(relevantProjection.sha256, baseline.sha256)
 })

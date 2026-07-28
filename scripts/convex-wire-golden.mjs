@@ -183,7 +183,9 @@ function extractDeclaration(source, kind, name) {
       `\\bfunction\\s+${safeName}(?:\\s*<[^>{}]*>)?\\s*\\(`,
     ).exec(source)
     if (match === null) throw new Error(`capture contract declaration missing: function ${name}`)
-    const bodyStart = source.indexOf("{", match.index + match[0].length)
+    const parametersStart = source.indexOf("(", match.index)
+    const parametersEnd = findBalancedEnd(source, parametersStart, "(", ")")
+    const bodyStart = source.indexOf("{", parametersEnd)
     if (bodyStart < 0) throw new Error(`capture contract function has no body: ${name}`)
     return source.slice(match.index, findBalancedEnd(source, bodyStart, "{", "}"))
   }

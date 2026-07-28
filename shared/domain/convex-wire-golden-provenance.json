@@ -24,7 +24,7 @@
   "contract": {
     "algorithm": "sha256",
     "extractor": "selected-typescript-declarations-v1",
-    "sha256": "7bcdd0d7ef5afce728e1105335d2411a64334933676eaed1f1ea70ef1a636309",
+    "sha256": "bfedb47f29368d20fe655510d83b5bf2bd20b61e48a899702eaa613ecd13b348",
     "sources": [
       {
         "path": "convex/tables.ts",
