@@ -52,6 +52,14 @@ data class Slice<T>(
      */
     val suppressFigures: Boolean
         get() = status == Freshness.ERROR || status == Freshness.LOADING
+
+    /**
+     * Required financial projections cannot turn a successful empty response
+     * into a confident zero. Consumers opt into this stricter rule per metric;
+     * ordinary collections such as todos continue to use [suppressFigures].
+     */
+    val requiredProjectionUnavailable: Boolean
+        get() = suppressFigures || status == Freshness.EMPTY
 }
 
 // ── Transactions ────────────────────────────────────────────────────────────
@@ -152,6 +160,40 @@ data class BtcBuy(
     override val owner: FamilyMember,
 ) : Owned
 
+/** The single scoped BTC balance document that supplies net-worth totals. */
+data class BtcBalance(
+    override val owner: FamilyMember,
+    val asOf: String,
+    val accounts: List<BtcAccount>,
+    val totalSats: Long,
+    val fiatCents: Long,
+    val exchangeSats: Long,
+    val selfCustodySats: Long,
+) : Owned
+
+data class IncomeEntry(
+    val id: String,
+    val date: String,
+    val month: String,
+    val amountCents: Long,
+    val sourceName: String,
+    val note: String?,
+    override val owner: FamilyMember,
+) : Owned
+
+data class BtcBillPay(
+    val id: String,
+    val date: String,
+    val merchant: String,
+    val category: String,
+    val amountUsdCents: Long,
+    val btcSpentSats: Long,
+    val feeUsdCents: Long,
+    val platform: String?,
+    val note: String?,
+    override val owner: FamilyMember,
+) : Owned
+
 // ── Todos ───────────────────────────────────────────────────────────────────
 
 data class TodoItem(
@@ -196,7 +238,22 @@ data class ReadModel(
     val btcPriceCents: Long,
     /** Date of the recorded buy supplying [btcPriceCents]; null means no price. */
     val btcPriceAsOf: String? = null,
-)
+    val income: Slice<List<IncomeEntry>> =
+        Slice(Freshness.EMPTY, emptyList(), null, "Convex rows · income"),
+    val btcBalance: Slice<BtcBalance?> =
+        Slice(Freshness.EMPTY, null, null, "Convex rows · bitcoin balance"),
+    val btcBillPays: Slice<List<BtcBillPay>> =
+        Slice(Freshness.EMPTY, emptyList(), null, "Convex rows · bitcoin bill pays"),
+) {
+    val incomeFiguresUnavailable: Boolean
+        get() = income.requiredProjectionUnavailable || income.value.isEmpty()
+
+    val netWorthFiguresUnavailable: Boolean
+        get() = btcBalance.requiredProjectionUnavailable || btcBalance.value == null
+
+    val billPayLedgerUnavailable: Boolean
+        get() = btcBillPays.requiredProjectionUnavailable || btcBillPays.value.isEmpty()
+}
 
 // ── Month scoping ───────────────────────────────────────────────────────────
 //
