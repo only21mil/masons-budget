@@ -98,20 +98,20 @@ test("a non-positive newest visible buy is unavailable instead of falling back",
   assert.equal(newestVisibleBuyPrice("maddox", buys), null)
 })
 
-test("USD UI labels the recorded buy date and plainly says the price is not live", () => {
+test("USD UI labels the canonical BTC snapshot date and plainly says it is not live", () => {
   const markup = renderPage("dashboard", "victor", "usd")
 
   assert.ok(markup.includes('aria-label="Bitcoin display unit"'))
   assert.ok(markup.includes('aria-pressed="true">USD</button>'))
-  assert.ok(markup.includes("Uses the last recorded Bitcoin buy price from 2026-07-24."))
+  assert.ok(markup.includes("Uses the canonical BTC balance document from 2026-07-16."))
   assert.ok(markup.includes("This is not a live price."))
 })
 
-test("USD UI shows Price unavailable when the required buy source is empty", () => {
+test("USD UI shows Price unavailable when the required BTC document source is empty", () => {
   const markup = renderPage("dashboard", "victor", "usd", "empty")
 
   assert.ok(markup.includes(PRICE_UNAVAILABLE))
-  assert.ok(markup.includes("No recorded Bitcoin buy price is available."))
+  assert.ok(markup.includes("No canonical BTC balance document is available."))
 })
 
 function buy(id: string, date: string, priceUsd: bigint, owner: FamilyMember): BTCBuy {

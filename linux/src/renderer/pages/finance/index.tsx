@@ -16,6 +16,7 @@ import {
 import { basisPoints, formatSats, formatUsd, satsToUsdCents, sum } from "@vogel-vault/domain/money"
 import {
   type BTCAccount,
+  type BTCSnapshot,
   type BTCBuy,
   type CategorySpend,
   type Freshness,
@@ -109,6 +110,33 @@ function BitcoinFiatNotice({ price }: { price: RecordedBitcoinPrice | null }) {
       tone="warning"
       title={PRICE_UNAVAILABLE}
       detail="No recorded Bitcoin buy price is available. BTC and SATS remain exact."
+    />
+  )
+}
+
+function BitcoinSnapshotNotice({
+  status,
+  document,
+}: {
+  status: Freshness
+  document: BTCSnapshot | null
+}) {
+  const available =
+    status !== "error" &&
+    status !== "loading" &&
+    status !== "empty" &&
+    document !== null
+
+  return available ? (
+    <StatusBanner
+      title="USD snapshot"
+      detail={`Uses the canonical BTC balance document from ${document.asOf}. This is not a live price.`}
+    />
+  ) : (
+    <StatusBanner
+      tone="warning"
+      title={PRICE_UNAVAILABLE}
+      detail="No canonical BTC balance document is available. BTC and SATS remain exact."
     />
   )
 }
@@ -294,6 +322,12 @@ function DashboardPage() {
         actions={<FreshnessTag status={data.transactions.status} updatedAt={data.transactions.updatedAt} />}
       />
       <StaleNotice status={data.transactions.status} />
+      {displayUnit === "usd" ? (
+        <BitcoinSnapshotNotice
+          status={data.btcBalanceDocument.status}
+          document={data.btcBalanceDocument.value}
+        />
+      ) : null}
       <KPIStrip items={kpis} />
       <PageGrid>
         <Panel title="Recent activity" source={data.transactions.source} flush>
@@ -548,6 +582,9 @@ function BitcoinOverviewPage() {
         }
       />
       <StaleNotice status={data.btcBalanceDocument.status} />
+      {displayUnit === "usd" ? (
+        <BitcoinSnapshotNotice status={status} document={document} />
+      ) : null}
       <KPIStrip
         items={[
           {
@@ -817,6 +854,12 @@ function NetWorthPage() {
         }
       />
       <StaleNotice status={data.btcBalanceDocument.status} />
+      {displayUnit === "usd" ? (
+        <BitcoinSnapshotNotice
+          status={data.btcBalanceDocument.status}
+          document={document}
+        />
+      ) : null}
       <KPIStrip
         items={[
           {
