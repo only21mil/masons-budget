@@ -23,8 +23,8 @@
   },
   "schema": {
     "path": "convex/schema.ts",
-    "sha256": "aeb2773ebaab6c5dde6f7777ca5e91120a08864aa65f5dbb8fc4db061255b61f",
-    "reattestedNote": "Re-attested for the Lane BA/BB/BD/BE boundary. The captures are unchanged, byte-for-byte production recordings from 2026-07-27. The schema hash moved because #126 adds document tables and #128 corrects the spend-sign projection and its comments; neither alters the shape of the seven captured queries. NOTE: #128 repurposes listTransactions.json.json from an expected-value fixture to a known-stale capture the decoder must REJECT. Once Convex is redeployed these captures no longer describe production and must be re-captured."
+    "sha256": "07deca19e3dec2612f832dbf65ae355bbcdc45a0f38fcd9058f721237f192f78",
+    "reattestedNote": "Re-attested for the Lane BA/BB/BD/BE boundary plus #142. The captures are unchanged, byte-for-byte production recordings from 2026-07-27. The schema hash moved because #126 adds document tables, #128 corrects the spend-sign projection and its comments, and #142 adds income query indexes; none alters the shape of the seven captured queries. NOTE: #128 repurposes listTransactions.json.json from an expected-value fixture to a known-stale capture the decoder must REJECT. Once Convex is redeployed these captures no longer describe production and must be re-captured."
   },
   "freshness": {
     "warningAfterDays": 30,
