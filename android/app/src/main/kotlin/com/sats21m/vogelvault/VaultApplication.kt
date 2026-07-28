@@ -28,19 +28,17 @@ class VaultApplication : Application() {
     }
 
     /**
-     * The baked debug credential is an in-memory startup override, not another
-     * plaintext or ciphertext copy on disk. Manual entry can still replace it
-     * for this process and persists through the existing encrypted source.
+     * A valid manually entered credential wins across restarts. The baked debug
+     * credential remains an in-memory seed for a fresh install or unusable
+     * encrypted state; it is never copied into storage.
      */
     val convexConfigSource: MutableConvexConfigSource by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         val buildTime = buildTimeConvexConfig(BuildConfig.CONVEX_READ_TOKEN)
         MutableConvexConfigSource(
-            initial =
-                if (buildTime.allowsRemoteRead) {
-                    buildTime
-                } else {
-                    storedConvexConfigSource.current()
-                },
+            initial = initialConvexConfig(
+                buildTime = buildTime,
+                stored = storedConvexConfigSource.current(),
+            ),
         )
     }
 
@@ -81,6 +79,16 @@ class VaultApplication : Application() {
 
 // Public routing configuration, not a credential.
 internal const val PRODUCTION_DEPLOYMENT = "https://keen-elephant-452.convex.cloud"
+
+internal fun initialConvexConfig(
+    buildTime: ConvexConfig,
+    stored: ConvexConfig,
+): ConvexConfig =
+    if (stored.allowsRemoteRead) {
+        stored
+    } else {
+        buildTime
+    }
 
 /**
  * Turns the debug BuildConfig field into a fail-closed runtime configuration.
