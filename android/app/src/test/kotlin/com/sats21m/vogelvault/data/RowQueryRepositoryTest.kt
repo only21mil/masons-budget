@@ -170,6 +170,20 @@ class RowQueryRepositoryTest {
     }
 
     @Test
+    fun `minimum int64 canonical transaction amount rejects the entire row envelope`() {
+        val poster = RecordingPoster(
+            rowSuccess(
+                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Refund","amountCents":${convexInt64(Long.MIN_VALUE)},"spendAmount":${convexInt64(Long.MIN_VALUE)},"displaySpendAmount":${convexInt64(Long.MIN_VALUE)},"hasOppositeSpendSign":true,"category":"Food","updatedAtMs":1785000000000.0}]""",
+            ),
+        )
+
+        assertEquals(
+            ConvexResult.Failed("unexpected payload shape"),
+            runBlocking { repositoryWith(poster).listTransactions(FamilyMember.VICTOR) },
+        )
+    }
+
+    @Test
     fun `missing transaction date or month rejects the entire row envelope`() {
         val missingDate =
             """{"txId":"tx-1","owner":"victor","month":"2026-07","merchant":"Cafe","amountCents":${convexInt64(500)},"spendAmount":${convexInt64(500)},"displaySpendAmount":${convexInt64(500)},"hasOppositeSpendSign":false,"category":"Food","updatedAtMs":1785000000000.0}"""
