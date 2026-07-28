@@ -20,16 +20,19 @@ name: Swift CI
 #
 # Cost: macos-latest bills at 10x the Linux rate on a private repository
 # ($0.08/min vs $0.008/min), so an always-on Ubuntu detector gates the actual
-# Apple work, a repository check keeps forks from spending it, and concurrency
-# cancels superseded runs. The workflow itself must start on every PR so its
-# detector check always reports; a workflow-level paths filter reports nothing
-# at all.
+# Apple work, a head-repository check keeps fork PRs from spending it, and
+# concurrency cancels superseded PR and merge-group runs. Main pushes use
+# per-commit groups and are never cancelled so every consecutive push range is
+# verified. The workflow itself must start on every PR so its detector check
+# always reports; a workflow-level paths filter reports nothing at all.
 
 on:
   push:
     branches:
       - main
   pull_request:
+    types: [opened, synchronize, reopened, edited]
+  merge_group:
   # The escape hatch: a manual run verifies Apple regardless of its diff.
   workflow_dispatch:
 
@@ -37,8 +40,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: swift-${{ github.ref }}
-  cancel-in-progress: true
+  # A main push cannot share a pending slot with a later push: GitHub replaces
+  # an older pending run even when cancel-in-progress is false. Per-SHA groups
+  # ensure every main range starts and finishes. PR and merge-group updates keep
+  # a stable ref group and remain cancellable to control runner cost.
+  group: swift-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
 
 env:
   # NOT 16.4, which is what deploy.yml and project.yml still say. Run 1 of this
@@ -93,6 +100,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_REF: ${{ github.ref }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
           PUSH_FORCED: ${{ github.event.forced }}
@@ -157,6 +165,25 @@ jobs:
               run_apple "Pull request range could not be diffed."
               exit 0
             fi
+          elif [ "$EVENT_NAME" = "merge_group" ]; then
+            if [[ ! "$MERGE_GROUP_BASE_SHA" =~ ^[0-9a-f]{40}$ ||
+              ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              run_apple "Merge-group SHAs are missing or malformed."
+              exit 0
+            fi
+            if ! git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" ||
+              ! git cat-file -e "${HEAD_SHA}^{commit}"; then
+              run_apple "Merge-group comparison commit is unavailable in the full checkout."
+              exit 0
+            fi
+            if ! git merge-base --is-ancestor "$MERGE_GROUP_BASE_SHA" "$HEAD_SHA"; then
+              run_apple "Merge-group base SHA is not an ancestor of its head SHA."
+              exit 0
+            fi
+            if ! files="$(git diff --name-only "$MERGE_GROUP_BASE_SHA" "$HEAD_SHA")"; then
+              run_apple "Merge-group range could not be diffed."
+              exit 0
+            fi
           else
             run_apple "Unexpected event $EVENT_NAME; failing closed."
             exit 0
@@ -186,7 +213,9 @@ jobs:
     if: >-
       always() &&
       github.repository == 'only21mil/masons-budget' &&
-      (needs.changes.result != 'success' || needs.changes.outputs.apple == 'true')
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
+      (needs.changes.result != 'success' || needs.changes.outputs.apple != 'false')
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -243,7 +272,9 @@ jobs:
     if: >-
       always() &&
       github.repository == 'only21mil/masons-budget' &&
-      (needs.changes.result != 'success' || needs.changes.outputs.apple == 'true') &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
+      (needs.changes.result != 'success' || needs.changes.outputs.apple != 'false') &&
       needs.project-consistency.result == 'success'
     needs: [changes, project-consistency]
     runs-on: macos-latest
