@@ -93,8 +93,17 @@ jobs:
           wide=false
           printf '%s\n' "$files" | grep -qE '^(shared/|convex/|package(-lock)?\.json|\.github/workflows/clients\.yml)' && wide=true
 
+          # A job's own tooling is part of that job even though it lives outside
+          # the client source tree. Keep this map job-specific: the other
+          # workflow scripts belong to the always-on lint gate or manual release
+          # preflights, so they must not spend Linux or Android client minutes.
+          declare -A job_paths=(
+            [linux]='^linux/'
+            [android]='^(android/|\.github/workflows/scripts/(report_android_debug_signing|validate_android_debug_keystore)\.sh)$'
+          )
+
           for t in linux android; do
-            if [ "$wide" = true ] || printf '%s\n' "$files" | grep -q "^$t/"; then
+            if [ "$wide" = true ] || printf '%s\n' "$files" | grep -qE "${job_paths[$t]}"; then
               echo "$t=true" >> "$GITHUB_OUTPUT"
             else
               echo "$t=false" >> "$GITHUB_OUTPUT"
