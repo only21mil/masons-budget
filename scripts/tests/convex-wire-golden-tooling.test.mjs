@@ -107,22 +107,47 @@ test("capture refuses to run without an environment credential", async () => {
 
 test("capture rejects credential-shaped response data before writing", async () => {
   const root = await temporaryCaptureRepo()
+  let requestCount = 0
 
   await assert.rejects(
     captureWireGoldens({
       env: { CONVEX_READ_TOKEN: token },
-      fetchImpl: async () => new Response(JSON.stringify({
-        status: "success",
-        value: { authorization: "Bearer definitely-a-credential" },
-      })),
+      fetchImpl: async () => {
+        requestCount += 1
+        return new Response(JSON.stringify({
+          status: "success",
+          value: requestCount === 14
+            ? { authorization: "Bearer definitely-a-credential" }
+            : { rows: [], complete: true },
+        }))
+      },
       repoRoot: root,
     }),
     /credential-shaped data/,
   )
 
+  assert.equal(requestCount, 14)
   assert.deepEqual(
     await readdir(path.join(root, "shared/domain/fixtures/convex-wire-golden")),
     [],
+  )
+})
+
+test("capture sanitizes a transport error that contains the credential", async () => {
+  const root = await temporaryCaptureRepo()
+  await assert.rejects(
+    captureWireGoldens({
+      env: { CONVEX_READ_TOKEN: token },
+      fetchImpl: async () => {
+        throw new Error(`transport accidentally included ${token}`)
+      },
+      repoRoot: root,
+    }),
+    (error) => {
+      assert.match(error.message, /request failed/)
+      assert.equal(error.message.includes(token), false)
+      return true
+    },
   )
 })
 
