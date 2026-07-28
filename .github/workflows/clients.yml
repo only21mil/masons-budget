@@ -18,6 +18,7 @@ on:
     branches:
       - main
   pull_request:
+  merge_group:
   workflow_dispatch:
 
 permissions:
@@ -57,10 +58,18 @@ jobs:
           IS_MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           BEFORE_SHA: ${{ github.event.before }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
+          verify_all() {
+            echo "::notice::$1"
+            for t in linux android backend; do echo "$t=true" >> "$GITHUB_OUTPUT"; done
+          }
+
           diff_base=""
+          diff_head=HEAD
           if [ "$IS_MAIN_PUSH" = "true" ]; then
             if [[ "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ ]] &&
               [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
@@ -70,21 +79,40 @@ jobs:
             base="origin/${BASE_REF:-main}"
             git fetch -q origin "${BASE_REF:-main}"
             diff_base="$(git merge-base HEAD "$base")"
+          elif [ "$EVENT_NAME" = "merge_group" ]; then
+            if [[ ! "$MERGE_GROUP_BASE_SHA" =~ ^[0-9a-f]{40}$ ||
+              ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              verify_all "Merge-group SHAs are missing or malformed; verifying every tree."
+              exit 0
+            fi
+            if ! git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" ||
+              ! git cat-file -e "${HEAD_SHA}^{commit}"; then
+              verify_all "Merge-group comparison commit is unavailable; verifying every tree."
+              exit 0
+            fi
+            if ! git merge-base --is-ancestor "$MERGE_GROUP_BASE_SHA" "$HEAD_SHA"; then
+              verify_all "Merge-group base is not an ancestor of its head; verifying every tree."
+              exit 0
+            fi
+            diff_base="$MERGE_GROUP_BASE_SHA"
+            diff_head="$HEAD_SHA"
           fi
 
           if [ -n "$diff_base" ]; then
-            scripts/check-convex-generated-change.sh "$diff_base" HEAD
+            scripts/check-convex-generated-change.sh "$diff_base" "$diff_head"
           else
             echo "No meaningful commit range; skipping the Convex generated-file heuristic."
           fi
 
           if [ "$IS_MAIN_PUSH" = "true" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "Verifying every tree (main push or manual dispatch)."
-            for t in linux android backend; do echo "$t=true" >> "$GITHUB_OUTPUT"; done
+            verify_all "Verifying every tree (main push or manual dispatch)."
             exit 0
           fi
 
-          files="$(git diff --name-only "$diff_base" HEAD)"
+          if ! files="$(git diff --name-only "$diff_base" "$diff_head")"; then
+            verify_all "Comparison range could not be diffed; verifying every tree."
+            exit 0
+          fi
           printf '%s\n' "$files" | sed 's/^/  /'
 
           # shared/, convex/ and the workflow itself reach every client, so they
@@ -160,8 +188,6 @@ jobs:
           java-version: 21
 
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.12"
 
       - run: npm ci
 
@@ -174,7 +200,7 @@ jobs:
 
       - name: Android production decoder
         run: >-
-          gradle :app:testDebugUnitTest
+          ./gradlew :app:testDebugUnitTest
           --tests 'com.sats21m.vogelvault.data.ConvexWireGolden*Test'
           --no-daemon
         working-directory: android
@@ -224,7 +250,12 @@ jobs:
   linux-client:
     name: Linux client
     needs: [shared-domain, changes]
-    if: github.repository == 'only21mil/masons-budget' && needs.changes.outputs.linux == 'true'
+    # A broken detector is not permission to skip a required client check.
+    if: >-
+      always() &&
+      github.repository == 'only21mil/masons-budget' &&
+      needs.shared-domain.result == 'success' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.linux == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -303,7 +334,12 @@ jobs:
   android-client:
     name: Android client
     needs: [shared-domain, changes]
-    if: github.repository == 'only21mil/masons-budget' && needs.changes.outputs.android == 'true'
+    # A broken detector is not permission to skip a required client check.
+    if: >-
+      always() &&
+      github.repository == 'only21mil/masons-budget' &&
+      needs.shared-domain.result == 'success' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.android == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -330,13 +366,11 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      # Gradle comes from the action rather than a committed wrapper jar, so no
-      # binary blob lives in the repo. The domain module is plain Kotlin/JVM and
-      # needs no Android SDK — only the app module does.
+      # setup-gradle configures caching; the committed, checksummed wrapper owns
+      # the Gradle version. The domain module is plain Kotlin/JVM and needs no
+      # Android SDK — only the app module does.
       - uses: gradle/actions/setup-gradle@v4
         if: steps.probe.outputs.gradle == 'true'
-        with:
-          gradle-version: "8.12"
 
       # Robolectric's android-all runtimes are resolved by the test JVM rather
       # than Gradle. Cache and prefetch them explicitly, then run Robolectric
@@ -473,7 +507,7 @@ jobs:
 
       - name: Domain parity tests (shared fixture, no Android SDK)
         if: steps.probe.outputs.gradle == 'true'
-        run: gradle :domain:test --no-daemon
+        run: ./gradlew :domain:test --no-daemon
         working-directory: android
 
       - name: Assemble stable-signed debug APK
@@ -488,7 +522,7 @@ jobs:
           VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
           VOGEL_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
           VOGEL_DEBUG_KEY_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEY_PASSWORD }}
-        run: gradle :app:assembleDebug :app:lintDebug --no-daemon
+        run: ./gradlew :app:assembleDebug :app:lintDebug --no-daemon
         working-directory: android
 
       # The event check is intentionally explicit: pull requests cannot reach
@@ -497,8 +531,8 @@ jobs:
       - name: Lint Android app
         if: >-
           steps.probe.outputs.app == 'true' &&
-          github.event_name == 'pull_request'
-        run: gradle :app:lintDebug --no-daemon
+          (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+        run: ./gradlew :app:lintDebug --no-daemon
         working-directory: android
 
       # The digest is public certificate metadata already embedded in the APK.
@@ -521,7 +555,7 @@ jobs:
         env:
           ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-dependencies
         run: >-
-          gradle :app:testDebugUnitTest
+          ./gradlew :app:testDebugUnitTest
           -PdesignPacketTests=exclude
           -ProbolectricOffline=true
           -ProbolectricDependencyDir="$ROBOLECTRIC_DEPENDENCY_DIR"
@@ -539,7 +573,7 @@ jobs:
         env:
           ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-dependencies
         run: >-
-          gradle :app:testDebugUnitTest
+          ./gradlew :app:testDebugUnitTest
           -PdesignPacketTests=only
           -Proborazzi.test.record=true
           -ProbolectricOffline=true
