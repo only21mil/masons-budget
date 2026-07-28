@@ -19,31 +19,18 @@ name: Swift CI
 # fail during a release.
 #
 # Cost: macos-latest bills at 10x the Linux rate on a private repository
-# ($0.08/min vs $0.008/min), so this is gated three ways — a paths filter to
-# Swift-touching changes, a repository check so forks never spend it, and
-# cancel-in-progress concurrency. See the PR for the per-run estimate.
+# ($0.08/min vs $0.008/min), so an always-on Ubuntu detector gates the actual
+# Apple work, a repository check keeps forks from spending it, and concurrency
+# cancels superseded runs. The workflow itself must start on every PR: job-level
+# skips report conclusions that can safely be required by branch protection,
+# while a workflow-level paths filter reports nothing at all.
 
 on:
   push:
     branches:
       - main
-    paths:
-      - 'MasonsBudget/**'
-      - 'Package.swift'
-      - 'Tests/**'
-      - 'shared/domain/convex-wire-golden-provenance.json'
-      - 'shared/domain/fixtures/convex-wire-golden/**'
-      - '.github/workflows/swift.yml'
   pull_request:
-    paths:
-      - 'MasonsBudget/**'
-      - 'Package.swift'
-      - 'Tests/**'
-      - 'shared/domain/convex-wire-golden-provenance.json'
-      - 'shared/domain/fixtures/convex-wire-golden/**'
-      - '.github/workflows/swift.yml'
-  # The escape hatch: paths filters do not apply to a manual run, so a Swift
-  # build can still be forced on a branch that only touched, say, a fixture.
+  # The escape hatch: a manual run verifies Apple regardless of its diff.
   workflow_dispatch:
 
 permissions:
@@ -86,9 +73,54 @@ env:
   HOMEBREW_NO_INSTALL_CLEANUP: 1
 
 jobs:
+  changes:
+    name: Detect Apple changes
+    runs-on: ubuntu-latest
+    outputs:
+      apple: ${{ steps.filter.outputs.apple }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # This deliberately follows Clients CI's "Detect changed trees" pattern:
+      # main and manual runs verify everything, while PRs compare with their
+      # merge base. Keep detection on a cheap runner and allocation of either
+      # Apple job behind its output.
+      - name: Compare against the merge base
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          IS_MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+
+          if [ "$IS_MAIN_PUSH" = "true" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "Verifying Apple (main push or manual dispatch)."
+            echo "apple=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          base="origin/${BASE_REF:-main}"
+          git fetch -q origin "${BASE_REF:-main}"
+          diff_base="$(git merge-base HEAD "$base")"
+          files="$(git diff --name-only "$diff_base" HEAD)"
+          printf '%s\n' "$files" | sed 's/^/  /'
+
+          if printf '%s\n' "$files" | grep -qE \
+            '^(MasonsBudget/|Package\.swift$|Tests/|shared/domain/convex-wire-golden-provenance\.json$|shared/domain/fixtures/convex-wire-golden/|\.github/workflows/swift\.yml$)'; then
+            echo "apple=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "apple=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No Apple path changed; Apple verification jobs will report skipped without allocating their runners."
+          fi
+
   project-consistency:
     name: Verify committed Xcode project
-    if: github.repository == 'only21mil/masons-budget'
+    needs: changes
+    if: github.repository == 'only21mil/masons-budget' && needs.changes.outputs.apple == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -142,8 +174,12 @@ jobs:
     # One job, not three. Xcode selection, the brew install and project
     # generation cost the same few minutes whichever leg needs them, and on a
     # 10x runner paying for that setup once beats parallelism.
-    if: github.repository == 'only21mil/masons-budget'
-    needs: project-consistency
+    if: >-
+      always() &&
+      github.repository == 'only21mil/masons-budget' &&
+      needs.changes.outputs.apple == 'true' &&
+      needs.project-consistency.result == 'success'
+    needs: [changes, project-consistency]
     runs-on: macos-latest
     timeout-minutes: 45
 
