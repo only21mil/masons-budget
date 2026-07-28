@@ -150,7 +150,6 @@ enum CanonicalFinancialProjection {
 }
 
 /// Shared UI state for sources that must never fall back to an inferred zero.
-/// Income remains unavailable until Convex exports a scoped `income` query.
 @MainActor
 @Observable
 final class CanonicalFinancialSourceStore {
@@ -174,6 +173,12 @@ final class CanonicalFinancialSourceStore {
             btcBalance = try await reader.canonicalBTCBalance(viewer: viewer, scope: .netWorth)
         } catch {
             btcBalance = .unavailable
+        }
+
+        do {
+            income = try await reader.canonicalIncome(viewer: viewer)
+        } catch {
+            income = .unavailable
         }
 
         do {

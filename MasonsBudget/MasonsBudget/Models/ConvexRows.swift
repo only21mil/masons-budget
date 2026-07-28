@@ -11,6 +11,7 @@ enum ConvexRowScope: String, Sendable {
 /// the client boundary, and every Bitcoin case requires an explicit scope.
 enum ConvexRowQuery: Sendable {
     case transactions(viewer: FamilyMember)
+    case income(viewer: FamilyMember, month: String?)
     case todos(viewer: FamilyMember)
     case btcBuys(viewer: FamilyMember, scope: ConvexRowScope)
     case btcBillPays(viewer: FamilyMember, scope: ConvexRowScope)
@@ -23,6 +24,7 @@ enum ConvexRowQuery: Sendable {
     var path: String {
         switch self {
         case .transactions: "tables:listTransactions"
+        case .income: "tables:listIncome"
         case .todos: "tables:listTodos"
         case .btcBuys: "tables:listBtcBuys"
         case .btcBillPays: "tables:listBtcBillPays"
@@ -38,6 +40,12 @@ enum ConvexRowQuery: Sendable {
         switch self {
         case let .transactions(viewer), let .todos(viewer):
             ["viewer": viewer.rawValue]
+        case let .income(viewer, month):
+            if let month {
+                ["viewer": viewer.rawValue, "month": month]
+            } else {
+                ["viewer": viewer.rawValue]
+            }
         case let .btcBuys(viewer, scope),
              let .btcBillPays(viewer, scope),
              let .btcAccounts(viewer, scope),
@@ -453,6 +461,21 @@ struct ConvexRowReader: Sendable {
             throw ConvexRowDecodeError.ownerOutOfScope
         }
         return try rows.map { try $0.legacyDTO() }
+    }
+
+    func canonicalIncome(
+        viewer: FamilyMember,
+    ) async throws -> RequiredFinancialSource<CanonicalIncomeSummary> {
+        let envelope = try await client.fetchRows(
+            .income(viewer: viewer, month: nil),
+            as: ConvexRowEnvelope<ConvexIncomeRow>.self,
+        )
+        let rows = try envelope.completeRows()
+        guard rows.allSatisfy({ viewer.canSee(dataOwnedBy: $0.owner) }) else {
+            throw ConvexRowDecodeError.ownerOutOfScope
+        }
+        let householdRows = rows.filter { viewer.sharesNetWorth(with: $0.owner) }
+        return try CanonicalFinancialProjection.income(rows: householdRows, complete: true)
     }
 
     func btcBuys(viewer: FamilyMember, scope: ConvexRowScope) async throws -> [MC2BTCBuy] {

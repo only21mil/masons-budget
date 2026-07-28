@@ -103,6 +103,16 @@ final class ConvexRowsTests: XCTestCase {
         )
     }
 
+    func testIncomeQueryUsesDedicatedCanonicalLedgerPath() {
+        let allIncome = ConvexRowQuery.income(viewer: .rachel, month: nil)
+        XCTAssertEqual(allIncome.path, "tables:listIncome")
+        XCTAssertEqual(allIncome.arguments["viewer"] as? String, "rachel")
+        XCTAssertNil(allIncome.arguments["month"])
+
+        let july = ConvexRowQuery.income(viewer: .rachel, month: "2026-07")
+        XCTAssertEqual(july.arguments["month"] as? String, "2026-07")
+    }
+
     func testSignedTransactionMoneyAndOwnersArePreservedWithoutDouble() throws {
         let envelope: ConvexRowEnvelope<ConvexTransactionRow> = try decodeTaggedJSON([
             "complete": true,
@@ -350,7 +360,7 @@ final class ConvexRowsTests: XCTestCase {
                 owner: .victor,
                 date: "2026-07-01",
                 month: "2026-07",
-                amountCents: 1_234,
+                amountCents: 2_500_550,
                 source: "River",
                 loggedBy: nil,
                 note: nil,
@@ -362,7 +372,7 @@ final class ConvexRowsTests: XCTestCase {
                 owner: .victor,
                 date: "2026-07-15",
                 month: "2026-07",
-                amountCents: 5_678,
+                amountCents: 988_797,
                 source: "Strike",
                 loggedBy: nil,
                 note: nil,
@@ -373,8 +383,8 @@ final class ConvexRowsTests: XCTestCase {
         let summary = try XCTUnwrap(
             CanonicalFinancialProjection.income(rows: rows, complete: true).value,
         )
-        XCTAssertEqual(summary.cents(forMonth: "2026-07"), 6_912)
-        XCTAssertEqual(summary.cents(forYear: 2026), 6_912)
+        XCTAssertEqual(summary.cents(forMonth: "2026-07"), 3_489_347)
+        XCTAssertEqual(summary.cents(forYear: 2026), 3_489_347)
         XCTAssertNil(
             try CanonicalFinancialProjection.income(rows: [], complete: true).value,
             "An empty required income source is unavailable, not a zero-dollar month.",
@@ -382,27 +392,27 @@ final class ConvexRowsTests: XCTestCase {
     }
 
     func testBTCBillPaysStayASeparateRequiredLedger() throws {
-        let rows = [
+        let rows = (0 ..< 31).map { index in
             ConvexBTCBillPayRow(
-                billPayId: "bp-1",
+                billPayId: "bp-\(index)",
                 owner: .victor,
                 date: "2026-07-01",
                 month: "2026-07",
                 merchant: "Mortgage",
                 category: "Housing",
-                amountUsdCents: 250_000,
-                btcSpentSats: 3_800_000,
+                amountUsdCents: index == 0 ? 2_563_375 : 1,
+                btcSpentSats: 1,
                 btcPriceCents: 6_578_947,
                 platform: "River",
                 note: nil,
                 feeUsdCents: 0,
                 reference: nil,
-            ),
-        ]
+            )
+        }
         let ledger = try XCTUnwrap(CanonicalFinancialProjection.btcBillPays(rows: rows).value)
-        XCTAssertEqual(ledger.count, 1)
-        XCTAssertEqual(ledger.totalUSDCents, 250_000)
-        XCTAssertEqual(ledger.totalSpentSats, 3_800_000)
+        XCTAssertEqual(ledger.count, 31)
+        XCTAssertEqual(ledger.totalUSDCents, 2_563_405)
+        XCTAssertEqual(ledger.totalSpentSats, 31)
         XCTAssertNil(CanonicalFinancialProjection.btcBillPays(rows: []).value)
     }
 
