@@ -38,6 +38,9 @@ final class ConvexInt64WireTests: XCTestCase {
         let valid = try XCTUnwrap(root["valid"] as? [[String: Any]])
         let invalid = try XCTUnwrap(root["invalid"] as? [[String: Any]])
 
+        XCTAssertEqual(valid.count, 9, "The shared fixture must retain every canonical Int64 vector.")
+        XCTAssertEqual(invalid.count, 15, "The shared fixture must retain every malformed Int64 vector.")
+
         for testCase in valid {
             let name = try XCTUnwrap(testCase["name"] as? String)
             let decimal = try XCTUnwrap(testCase["decimal"] as? String)
