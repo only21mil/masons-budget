@@ -13,7 +13,7 @@ const provenancePath = path.join(repoRoot, "shared/domain/convex-wire-golden-pro
 const provenance = JSON.parse(await readFile(provenancePath, "utf8"))
 const failures = []
 
-const queryShapeAlgorithm = "typescript-ast-dependency-closure-v1"
+const queryShapeAlgorithm = "typescript-ast-query-dependency-closure-v1"
 const queryShapeSources = ["convex/schema.ts", "convex/tables.ts"]
 
 function topLevelDeclarations(sourceFile) {
@@ -154,13 +154,11 @@ function queryShapeDigests(root, queryNames) {
         ) {
           const tableName = child.arguments[0].text
           referencedTables.add(tableName)
-          const tableShape = tableShapes.get(tableName)
-          if (!tableShape) {
+          if (!tableShapes.has(tableName)) {
             throw new Error(
               `captured query ${queryName} reads unknown schema table ${tableName}`,
             )
           }
-          enqueue(`table:${tableName}`, tableShape, schemaSource)
         }
 
         if (ts.isIdentifier(child)) {

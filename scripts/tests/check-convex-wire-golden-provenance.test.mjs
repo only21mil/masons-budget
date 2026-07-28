@@ -14,6 +14,7 @@ async function fixtureRepo() {
   await mkdir(path.join(root, "scripts"), { recursive: true })
   await mkdir(path.join(root, "convex"), { recursive: true })
   await mkdir(path.join(root, "shared/domain"), { recursive: true })
+  await cp(path.join(repoRoot, "package.json"), path.join(root, "package.json"))
   await cp(sourceScript, path.join(root, "scripts/check-convex-wire-golden-provenance.mjs"))
   await cp(
     path.join(repoRoot, "convex/schema.ts"),
@@ -61,6 +62,41 @@ test("an unrelated schema table does not invalidate captured query provenance", 
   }),`,
   )
   assert.notEqual(changed, schema, "fixture must add an unrelated table")
+  await writeFile(schemaPath, changed)
+
+  const result = runGate(root)
+
+  assert.equal(result.status, 0, result.stderr)
+})
+
+test("a comment edit inside a captured projection does not invalidate provenance", async (t) => {
+  const root = await fixtureRepo()
+  t.after(() => rm(root, { force: true, recursive: true }))
+  const tablesPath = path.join(root, "convex/tables.ts")
+  const tables = await readFile(tablesPath, "utf8")
+  const changed = tables.replace(
+    "// CANONICAL SOURCE: shared/domain/src/readModel.ts",
+    "// Comment-only edit: projection behavior is unchanged.",
+  )
+  assert.notEqual(changed, tables, "fixture must edit a projection comment")
+  await writeFile(tablesPath, changed)
+
+  const result = runGate(root)
+
+  assert.equal(result.status, 0, result.stderr)
+})
+
+test("an unprojected storage field does not change the public query shape", async (t) => {
+  const root = await fixtureRepo()
+  t.after(() => rm(root, { force: true, recursive: true }))
+  const schemaPath = path.join(root, "convex/schema.ts")
+  const schema = await readFile(schemaPath, "utf8")
+  const changed = schema.replace(
+    "migrationRaw: v.optional(v.any()),",
+    `unprojectedMigrationNote: v.optional(v.string()),
+    migrationRaw: v.optional(v.any()),`,
+  )
+  assert.notEqual(changed, schema, "fixture must add an unprojected transaction field")
   await writeFile(schemaPath, changed)
 
   const result = runGate(root)
