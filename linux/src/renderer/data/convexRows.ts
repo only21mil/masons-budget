@@ -222,9 +222,55 @@ function btcBalanceDocument(document: VogelVaultBtcBalanceDocument): BTCSnapshot
   }
 }
 
-function budget(document: VogelVaultBudgetDocument): Budget {
+const ENGLISH_BUDGET_MONTHS: Readonly<Record<string, string>> = {
+  January: "01",
+  February: "02",
+  March: "03",
+  April: "04",
+  May: "05",
+  June: "06",
+  July: "07",
+  August: "08",
+  September: "09",
+  October: "10",
+  November: "11",
+  December: "12",
+}
+
+/**
+ * Convert the two supported budget wire labels to the transaction month key.
+ *
+ * The legacy label is English by contract. An explicit table avoids both the
+ * host locale and Date/timezone semantics at this financial adapter boundary.
+ */
+function canonicalBudgetMonth(raw: string): string | null {
+  const canonical = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(raw)
+  if (canonical) return canonical[1] === "0000" ? null : raw
+
+  const legacy = /^([A-Za-z]+) (\d{4})$/.exec(raw)
+  if (!legacy || legacy[2] === "0000") return null
+  const month = ENGLISH_BUDGET_MONTHS[legacy[1] ?? ""]
+  return month ? `${legacy[2]}-${month}` : null
+}
+
+function budget(document: VogelVaultBudgetDocument): Budget | null {
+  const month = canonicalBudgetMonth(document.month)
+  if (month === null) return null
+
+  const monthlyHistory: Array<Budget["monthlyHistory"][number]> = []
+  for (const entry of document.monthlyHistory) {
+    const historyMonth = canonicalBudgetMonth(entry.month)
+    if (historyMonth === null) return null
+    monthlyHistory.push({
+      month: historyMonth,
+      income: entry.incomeCents,
+      expenses: entry.expensesCents,
+      savingsBps: entry.savingsBps,
+    })
+  }
+
   return {
-    month: document.month,
+    month,
     coinbaseOneBalance: document.coinbaseOneBalanceCents,
     categories: document.categories.map((category) => ({
       name: category.name,
@@ -256,12 +302,7 @@ function budget(document: VogelVaultBudgetDocument): Budget {
       : null,
     mtdIncome: document.mtdIncomeCents,
     ytdIncome: document.ytdIncomeCents,
-    monthlyHistory: document.monthlyHistory.map((entry) => ({
-      month: entry.month,
-      income: entry.incomeCents,
-      expenses: entry.expensesCents,
-      savingsBps: entry.savingsBps,
-    })),
+    monthlyHistory,
     owner: document.owner,
   }
 }
@@ -386,17 +427,24 @@ export async function loadConvexRowEnvelope(
             updatedAt(billPaysResult.rows),
             `${SOURCE} · BTC bill pays`,
           )
-  const budgetSlice =
-    budgetResult.status === "error"
-      ? errorSlice<Budget | null>(null, budgetResult.code)
-      : budgetResult.kind !== "budget"
-        ? errorSlice<Budget | null>(null, "invalid-response")
-        : populatedSlice(
-            budgetResult.value === null ? null : budget(budgetResult.value),
-            budgetResult.value !== null,
-            budgetResult.value?.updatedAtMs ?? null,
-            `${SOURCE} · budget document`,
-          )
+  let budgetSlice: SliceState<Budget | null>
+  if (budgetResult.status === "error") {
+    budgetSlice = errorSlice<Budget | null>(null, budgetResult.code)
+  } else if (budgetResult.kind !== "budget") {
+    budgetSlice = errorSlice<Budget | null>(null, "invalid-response")
+  } else if (budgetResult.value === null) {
+    budgetSlice = populatedSlice(null, false, null, `${SOURCE} · budget document`)
+  } else {
+    const adaptedBudget = budget(budgetResult.value)
+    budgetSlice = adaptedBudget === null
+      ? errorSlice<Budget | null>(null, "invalid-response")
+      : populatedSlice(
+          adaptedBudget,
+          true,
+          budgetResult.value.updatedAtMs,
+          `${SOURCE} · budget document`,
+        )
+  }
   const btcBalance =
     btcBalanceResult.status === "error"
       ? errorSlice<BTCSnapshot | null>(null, btcBalanceResult.code)

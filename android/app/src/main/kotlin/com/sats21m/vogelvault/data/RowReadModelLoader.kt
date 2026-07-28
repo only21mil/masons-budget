@@ -135,28 +135,67 @@ private fun BtcBalanceDocumentRow.toDomain(): BtcBalance = BtcBalance(
     selfCustodySats = totals.selfCustodySats,
 )
 
-private fun BudgetDocumentRow.toDomain(): Budget = Budget(
-    month = month,
-    categories = categories.map { BudgetCategory(it.name, it.budgetCents, spentCents = 0L) },
-    income = income?.let {
-        BudgetIncome(
-            weeklyGrossCents = it.weeklyGrossCents,
-            monthlyGrossCents = it.monthlyGrossCents,
-            mtdIncomeCents = it.mtdIncomeCents,
-            ytdIncomeCents = it.ytdIncomeCents,
-            payFrequency = it.payFrequency,
-        )
-    },
-    strategyNote = strategyNote,
-    owner = owner,
+private val englishBudgetMonths = mapOf(
+    "January" to "01",
+    "February" to "02",
+    "March" to "03",
+    "April" to "04",
+    "May" to "05",
+    "June" to "06",
+    "July" to "07",
+    "August" to "08",
+    "September" to "09",
+    "October" to "10",
+    "November" to "11",
+    "December" to "12",
 )
+private val canonicalBudgetMonthPattern = Regex("""^(\d{4})-(0[1-9]|1[0-2])$""")
+private val legacyBudgetMonthPattern = Regex("""^([A-Za-z]+) (\d{4})$""")
+
+/**
+ * Normalize the English legacy label without consulting the device locale,
+ * timezone, or a lenient date parser.
+ */
+private fun canonicalBudgetMonth(raw: String): String? {
+    val canonical = canonicalBudgetMonthPattern.matchEntire(raw)
+    if (canonical != null) {
+        return raw.takeUnless { canonical.groupValues[1] == "0000" }
+    }
+
+    val legacy = legacyBudgetMonthPattern.matchEntire(raw) ?: return null
+    val year = legacy.groupValues[2]
+    if (year == "0000") return null
+    val month = englishBudgetMonths[legacy.groupValues[1]] ?: return null
+    return "$year-$month"
+}
+
+private fun BudgetDocumentRow.toDomain(): Budget? {
+    val canonicalMonth = canonicalBudgetMonth(month) ?: return null
+    return Budget(
+        month = canonicalMonth,
+        categories = categories.map { BudgetCategory(it.name, it.budgetCents, spentCents = 0L) },
+        income = income?.let {
+            BudgetIncome(
+                weeklyGrossCents = it.weeklyGrossCents,
+                monthlyGrossCents = it.monthlyGrossCents,
+                mtdIncomeCents = it.mtdIncomeCents,
+                ytdIncomeCents = it.ytdIncomeCents,
+                payFrequency = it.payFrequency,
+            )
+        },
+        strategyNote = strategyNote,
+        owner = owner,
+    )
+}
 
 private fun ConvexResult<BudgetDocumentSnapshot>.toBudgetSlice(stamp: Long): Slice<Budget?> =
     when (this) {
         is ConvexResult.Ok -> when {
             !value.complete -> errorSlice(null, "Convex rows · budget")
             value.document == null -> emptySlice(null, "Convex rows · budget")
-            else -> liveSlice(value.document.toDomain(), "Convex rows · budget", stamp)
+            else -> value.document.toDomain()?.let {
+                liveSlice(it, "Convex rows · budget", stamp)
+            } ?: errorSlice(null, "Convex rows · budget")
         }
         ConvexResult.Missing -> emptySlice(null, "Convex rows · budget")
         else -> errorSlice(null, "Convex rows · budget")

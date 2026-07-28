@@ -11,9 +11,76 @@ import com.sats21m.vogelvault.domain.budgetTransactionsFor
 import com.sats21m.vogelvault.domain.deriveBudgetSpend
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 
 class RowReadModelLoaderTest {
+    @Test
+    fun `English and canonical budget months derive the correct non-zero June actuals`() = runBlocking {
+        for (wireMonth in listOf("June 2026", "2026-06")) {
+            val repository = FakeRows(
+                transactions = ok(
+                    Transaction(
+                        id = "june-spend",
+                        date = "2026-06-18",
+                        merchant = "Grocer",
+                        amount = 12_345L,
+                        category = "Groceries",
+                        owner = FamilyMember.VICTOR,
+                    ),
+                ),
+                budget = ConvexResult.Ok(
+                    BudgetDocumentSnapshot(budgetDocument(wireMonth), complete = true),
+                ),
+            )
+
+            val model = RowReadModelLoader(repository) { 456L }.load(FamilyMember.VICTOR)
+            val adaptedBudget = requireNotNull(model.budget.value)
+            val actual = deriveBudgetSpend(
+                adaptedBudget,
+                model.transactions.value.budgetTransactionsFor(FamilyMember.VICTOR),
+            ).actualCents
+
+            assertEquals(Freshness.LIVE, model.budget.status, wireMonth)
+            assertEquals(12_345L, actual, wireMonth)
+            assertEquals("2026-06", adaptedBudget.month, wireMonth)
+        }
+    }
+
+    @Test
+    fun `unparseable budget month makes required figures unavailable instead of zero`() = runBlocking {
+        val repository = FakeRows(
+            transactions = ok(
+                Transaction(
+                    id = "june-spend",
+                    date = "2026-06-18",
+                    merchant = "Grocer",
+                    amount = 12_345L,
+                    category = "Groceries",
+                    owner = FamilyMember.VICTOR,
+                ),
+            ),
+            budget = ConvexResult.Ok(
+                BudgetDocumentSnapshot(budgetDocument("Juny 2026"), complete = true),
+            ),
+        )
+
+        val model = RowReadModelLoader(repository) { 456L }.load(FamilyMember.VICTOR)
+        assertEquals(Freshness.ERROR, model.budget.status)
+        assertTrue(model.budget.requiredProjectionUnavailable)
+        assertNull(model.budget.value)
+        val actual = model.budget.value?.let {
+            deriveBudgetSpend(
+                it,
+                model.transactions.value.budgetTransactionsFor(FamilyMember.VICTOR),
+            ).actualCents
+        }
+        assertNull(actual)
+        assertNotEquals(0L, actual)
+    }
+
     @Test
     fun `loader reaches every required financial projection`() = runBlocking {
         val repository = FakeRows(
@@ -221,6 +288,20 @@ class RowReadModelLoaderTest {
 
     private fun <T> ok(vararg rows: T): ConvexResult<RowSnapshot<T>> =
         ConvexResult.Ok(RowSnapshot(rows.toList(), complete = true))
+
+    private fun budgetDocument(month: String) = BudgetDocumentRow(
+        owner = FamilyMember.VICTOR,
+        month = month,
+        coinbaseOneBalanceCents = 0L,
+        categories = listOf(BudgetCategoryRow("Groceries", null, 50_000L)),
+        effectiveApr = null,
+        strategyNote = null,
+        income = null,
+        mtdIncomeCents = 0L,
+        ytdIncomeCents = 0L,
+        monthlyHistory = emptyList(),
+        updatedAtMs = 123L,
+    )
 }
 
 private class FakeRows(
