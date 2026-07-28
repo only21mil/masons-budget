@@ -1,5 +1,6 @@
 package com.sats21m.vogelvault
 
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -11,7 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
@@ -23,10 +24,14 @@ import com.sats21m.vogelvault.ui.VaultUiState
 import com.sats21m.vogelvault.ui.components.LocalLedgerRowCompositionObserver
 import com.sats21m.vogelvault.ui.components.vaultContent
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
+import org.junit.After
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertTrue
@@ -36,7 +41,19 @@ import kotlin.test.assertTrue
 class LazyLedgerCompositionTest {
 
     @get:Rule
-    val compose = createAndroidComposeRule<MainActivity>()
+    val compose = createEmptyComposeRule()
+
+    private lateinit var activityController: ActivityController<ComponentActivity>
+
+    @Before
+    fun startComposeHost() {
+        activityController = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+    }
+
+    @After
+    fun stopComposeHost() {
+        activityController.pause().stop().destroy()
+    }
 
     @Test
     fun `activity composes only the visible slice of a production-sized ledger`() {
@@ -64,7 +81,7 @@ class LazyLedgerCompositionTest {
         val composedRows = AtomicInteger()
 
         compose.runOnUiThread {
-            compose.activity.setContent {
+            activityController.get().setContent {
                 VogelVaultTheme {
                     CompositionLocalProvider(
                         LocalLedgerRowCompositionObserver provides composedRows::incrementAndGet,
@@ -95,7 +112,7 @@ class LazyLedgerCompositionTest {
         lateinit var reverseRows: () -> Unit
 
         compose.runOnUiThread {
-            compose.activity.setContent {
+            activityController.get().setContent {
                 var rows by remember { mutableStateOf(listOf("alpha", "bravo", "charlie")) }
                 reverseRows = { rows = rows.reversed() }
                 LazyColumn(Modifier.size(width = 411.dp, height = 640.dp)) {
