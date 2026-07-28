@@ -34,6 +34,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.domain.BtcAccount
+import com.sats21m.vogelvault.domain.BtcBalance
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
@@ -227,32 +228,32 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dashboard(
     val budgetTransactions = state.data.transactions.value.budgetTransactionsFor(profile)
     // The headline follows the Budget screen's selected month and narrower budget
     // scope. Adults still see child rows in Recent activity for oversight, but
-    // those rows never enter Victor/Rachel's spend or income totals.
+    // those rows never enter Victor/Rachel's spend total.
     val month = selectedMonth ?: ""
     val transactions = budgetTransactions.inMonth(month)
     val activity = visible.inMonth(month)
-    val accounts = state.data.btcAccounts.value.netWorthScopeFor(profile)
+    val incomeRows = state.data.income.value.netWorthScopeFor(profile)
+    val balance = state.data.btcBalance.value
     val openTodos = state.data.todos.value.visibleTo(profile).count { !it.done }
 
     val spend = transactions.sumOf { it.spendAmount }
-    val income = transactions.sumOf { it.incomeAmount }
-    val stackSats = accounts.sumOf { it.sats }
+    val income = incomeRows.sumOf { it.amountCents }
 
     item {
         KpiStrip(
             listOf(
                 Kpi("Spend", figure(state.data.transactions.suppressFigures) { Money.formatUsd(spend) }, tone = VaultNegative),
-                Kpi("Income", figure(state.data.transactions.suppressFigures) { Money.formatUsd(income) }, tone = VaultPositive),
+                Kpi("Income", figure(state.data.incomeFiguresUnavailable) { Money.formatUsd(income) }, tone = VaultPositive),
                 Kpi(
                     "Stack",
-                    figure(state.data.btcAccounts.suppressFigures) {
-                        state.formatBitcoin(stackSats, displayUnit)
+                    figure(state.data.netWorthFiguresUnavailable) {
+                        state.formatBalance(requireNotNull(balance), displayUnit)
                     },
-                    hint = figure(state.data.btcAccounts.suppressFigures) {
+                    hint = figure(state.data.netWorthFiguresUnavailable) {
                         if (displayUnit == DisplayUnit.USD) {
-                            priceBasis(state)
+                            balanceSnapshotBasis(requireNotNull(balance))
                         } else {
-                            state.formatBitcoin(stackSats, DisplayUnit.USD)
+                            state.formatBalance(requireNotNull(balance), DisplayUnit.USD)
                         }
                     },
                 ),
@@ -278,10 +279,29 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dashboard(
         }
     }
     item {
-        Panel("Bitcoin", state.data.btcAccounts.source) {
+        Panel("Income", state.data.income.source) {
+            if (state.data.incomeFiguresUnavailable) {
+                StateBlock(state.data.income.status)
+            } else {
+                Column {
+                    incomeRows.take(6).forEachIndexed { index, entry ->
+                        if (index > 0) HorizontalHairline()
+                        LedgerRow(
+                            primary = entry.sourceName,
+                            secondary = entry.date,
+                            figure = Money.formatUsd(entry.amountCents),
+                            figureColor = VaultPositive,
+                        )
+                    }
+                }
+            }
+        }
+    }
+    item {
+        Panel("Bitcoin", state.data.btcBalance.source) {
             AccountList(
-                accounts,
-                state.data.btcAccounts.status,
+                balance?.accounts.orEmpty(),
+                state.data.btcBalance.status,
                 displayUnit,
                 state.data.btcPriceCents,
             )
@@ -549,37 +569,41 @@ private fun androidx.compose.foundation.lazy.LazyListScope.bitcoin(
     displayUnit: DisplayUnit,
 ) {
     val profile = state.activeProfile
-    val slice = state.data.btcAccounts
-    val inScope = slice.value.netWorthScopeFor(profile)
-    val totalSats = inScope.sumOf { it.sats }
-    val selfCustody = inScope.filter { it.custody.key == "self_custody" }.sumOf { it.sats }
+    val slice = state.data.btcBalance
+    val balance = slice.value
+    val inScope = balance?.accounts.orEmpty()
+    val totalSats = balance?.totalSats ?: 0L
+    val selfCustody = balance?.selfCustodySats ?: 0L
+    val unavailable = state.data.netWorthFiguresUnavailable
 
     item {
         KpiStrip(
             listOf(
                 Kpi(
                     "Total stack",
-                    figure(slice.suppressFigures) { state.formatBitcoin(totalSats, displayUnit) },
+                    figure(unavailable) {
+                        state.formatBalance(requireNotNull(balance), displayUnit)
+                    },
                 ),
                 Kpi(
                     "Reference price",
-                    figure(slice.suppressFigures) {
+                    figure(unavailable) {
                         state.data.btcPriceCents
                             .takeIf { it > 0L }
                             ?.let { Money.formatUsd(it) }
                             ?: Money.PRICE_UNAVAILABLE
                     },
-                    hint = figure(slice.suppressFigures) { priceBasis(state) },
+                    hint = figure(unavailable) { priceBasis(state) },
                     provenance = Provenance.ESTIMATED,
                 ),
                 Kpi(
                     "Self custody",
-                    figure(slice.suppressFigures) { "${Money.basisPoints(selfCustody, totalSats) / 100}%" },
-                    hint = figure(slice.suppressFigures) {
+                    figure(unavailable) { "${Money.basisPoints(selfCustody, totalSats) / 100}%" },
+                    hint = figure(unavailable) {
                         state.formatBitcoin(selfCustody, displayUnit)
                     },
                 ),
-                Kpi("Accounts", figure(slice.suppressFigures) { inScope.size.toString() }),
+                Kpi("Accounts", figure(unavailable) { inScope.size.toString() }),
             ),
         )
     }
@@ -615,6 +639,27 @@ private fun androidx.compose.foundation.lazy.LazyListScope.bitcoin(
             }
         }
     }
+    item {
+        val billPays = state.data.btcBillPays.value.visibleTo(profile)
+        Panel("Bitcoin bill pays", state.data.btcBillPays.source) {
+            if (state.data.billPayLedgerUnavailable) {
+                StateBlock(state.data.btcBillPays.status)
+            } else {
+                Column {
+                    billPays.forEachIndexed { index, payment ->
+                        if (index > 0) HorizontalHairline()
+                        LedgerRow(
+                            primary = payment.merchant,
+                            secondary = "${payment.date} · ${payment.category}",
+                            figure = "-${Money.formatUsd(payment.amountUsdCents)}",
+                            figureColor = VaultNegative,
+                            badge = payment.platform,
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ── Net Worth ───────────────────────────────────────────────────────────────
@@ -624,25 +669,31 @@ private fun androidx.compose.foundation.lazy.LazyListScope.netWorth(
     displayUnit: DisplayUnit,
 ) {
     val profile = state.activeProfile
-    val slice = state.data.btcAccounts
-    val inScope = slice.value.netWorthScopeFor(profile)
-    val excluded = slice.value.visibleTo(profile).filterNot { it in inScope }
-    val stackSats = inScope.sumOf { it.sats }
+    val slice = state.data.btcBalance
+    val balance = slice.value
+    val inScope = balance?.accounts.orEmpty()
+    val excluded = state.data.btcAccounts.value.visibleTo(profile).filterNot {
+        profile.sharesNetWorth(it.owner)
+    }
+    val unavailable = state.data.netWorthFiguresUnavailable
 
     item {
         KpiStrip(
             listOf(
                 Kpi(
                     "Bitcoin",
-                    figure(slice.suppressFigures) { state.formatBitcoin(stackSats, displayUnit) },
+                    figure(unavailable) {
+                        state.formatBalance(requireNotNull(balance), displayUnit)
+                    },
                 ),
                 Kpi(
                     "Fiat estimate",
-                    figure(slice.suppressFigures) {
-                        state.formatBitcoin(stackSats, DisplayUnit.USD)
+                    figure(unavailable) {
+                        Money.formatUsd(requireNotNull(balance).fiatCents)
                     },
-                    hint = figure(slice.suppressFigures) { priceBasis(state) },
-                    provenance = Provenance.ESTIMATED,
+                    hint = figure(unavailable) {
+                        balanceSnapshotBasis(requireNotNull(balance))
+                    },
                 ),
             ),
         )
@@ -694,7 +745,11 @@ private fun AccountList(
             LedgerRow(
                 primary = account.label,
                 secondary = account.owner.displayName,
-                figure = Money.formatBitcoin(account.sats, displayUnit, btcPriceCents),
+                figure = if (displayUnit == DisplayUnit.USD) {
+                    Money.formatUsd(account.fiatCents)
+                } else {
+                    Money.formatBitcoin(account.sats, displayUnit, btcPriceCents)
+                },
                 figureColor = VaultCream,
                 badge = account.custody.label,
                 badgeAccented = account.custody.key == "self_custody",
@@ -705,6 +760,15 @@ private fun AccountList(
 
 private fun VaultUiState.formatBitcoin(sats: Long, unit: DisplayUnit): String =
     Money.formatBitcoin(sats, unit, data.btcPriceCents)
+
+private fun VaultUiState.formatBalance(balance: BtcBalance, unit: DisplayUnit): String =
+    if (unit == DisplayUnit.USD) {
+        Money.formatUsd(balance.fiatCents)
+    } else {
+        Money.formatBitcoin(balance.totalSats, unit, data.btcPriceCents)
+    }
+
+private fun balanceSnapshotBasis(balance: BtcBalance): String = "Snapshot · ${balance.asOf}"
 
 private fun priceBasis(state: VaultUiState): String =
     state.data.btcPriceAsOf?.let { "Last buy · $it" } ?: "No recorded price"
