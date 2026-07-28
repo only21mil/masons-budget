@@ -29,12 +29,16 @@ class ConvexWireGoldenValuesTest {
         assertEquals("27918", rawTransactions.getValue("amountCents").jsonPrimitive.content)
         assertEquals("-27918", rawTransactions.getValue("spendAmount").jsonPrimitive.content)
         assertEquals(true, rawTransactions.getValue("hasOppositeSpendSign").jsonPrimitive.boolean)
-        assertEquals(
-            ConvexResult.Failed("unexpected payload shape"),
+        val transactions = requireOk(
             runBlocking {
                 repository.listTransactions(FamilyMember.VICTOR, limit = 3)
             },
+            "listTransactions",
         )
+        assertEquals(27_918L, transactions.rows[0].amount)
+        assertEquals(27_918L, transactions.rows[0].spendAmount)
+        assertEquals(27_918L, transactions.rows[0].displaySpendAmount)
+        assertEquals(false, transactions.rows[0].hasOppositeSpendSign)
 
         val todos = requireOk(
             runBlocking {
