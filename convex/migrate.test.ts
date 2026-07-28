@@ -199,15 +199,19 @@ const CATEGORIES = ["Groceries", "Gas", "Shopping", "Dining", "Utilities", "Inco
  *   - a third-decimal amount that must round half away from zero
  *   - rows with no `id`, including two byte-identical ones
  *   - a duplicated `id`
- *   - positive Income rows among negative spend rows
+ *   - positive purchases and Income rows, plus 16 genuine negative refunds
  */
 function makeTransactions(): Record<string, unknown>[] {
   const random = mulberry32(0x5a75);
   const rows: Record<string, unknown>[] = [];
 
   for (let index = 0; index < 897; index += 1) {
-    const category = CATEGORIES[Math.floor(random() * CATEGORIES.length)]!;
-    const isIncome = category === "Income";
+    const generatedCategory = CATEGORIES[Math.floor(random() * CATEGORIES.length)]!;
+    // Production has 16 refunds among 904 non-zero adult transactions. Fifteen
+    // regular generated rows plus the half-cent edge case below preserve that
+    // measured proportion while keeping every purchase positive.
+    const isRefund = index % 60 === 0;
+    const category = isRefund ? "Shopping" : generatedCategory;
     const dollars = Math.floor(random() * 40000) / 100;
     const month = 1 + Math.floor(random() * 12);
     const day = 1 + Math.floor(random() * 28);
@@ -218,11 +222,17 @@ function makeTransactions(): Record<string, unknown>[] {
       merchant: MERCHANTS[Math.floor(random() * MERCHANTS.length)]!,
       // Half the rows carry the amount lexically, which is how MC2's Python
       // writers emit Decimal values.
-      amount: index % 2 === 0 ? (isIncome ? dollars : -dollars) : `${isIncome ? "" : "-"}${dollars.toFixed(2)}`,
+      amount:
+        index % 2 === 0
+          ? isRefund
+            ? -dollars
+            : dollars
+          : `${isRefund ? "-" : ""}${dollars.toFixed(2)}`,
       category,
     };
     if (index % 3 === 0) row.card = "Amex 1005";
-    if (index % 7 === 0) row.note = "recurring";
+    if (isRefund) row.note = "refund";
+    else if (index % 7 === 0) row.note = "recurring";
     rows.push(row);
   }
 
@@ -231,21 +241,22 @@ function makeTransactions(): Record<string, unknown>[] {
     id: "t-float-trap",
     date: "2026-03-01",
     merchant: "Kroger",
-    amount: -(0.1 + 0.2), // -0.30000000000000004
+    amount: 0.1 + 0.2, // 0.30000000000000004
     category: "Groceries",
   });
   rows.push({
     id: "t-half-up",
     date: "2026-03-02",
-    merchant: "Shell",
+    merchant: "Shell Refund",
     amount: "-0.005", // rounds to -1 cent, half away from zero
     category: "Gas",
+    note: "refund",
   });
   rows.push({
     id: "t-big",
     date: "2026-03-03",
     merchant: "Duke Energy",
-    amount: "-246813.57",
+    amount: "246813.57",
     category: "Utilities",
   });
   rows.push({
@@ -257,11 +268,11 @@ function makeTransactions(): Record<string, unknown>[] {
   });
   // Two byte-identical rows with no id. These are two real transactions
   // (same coffee, same day) and must not collapse into one.
-  rows.push({ date: "2026-03-05", merchant: "Café Grumpy", amount: -4.75, category: "Dining" });
-  rows.push({ date: "2026-03-05", merchant: "Café Grumpy", amount: -4.75, category: "Dining" });
+  rows.push({ date: "2026-03-05", merchant: "Café Grumpy", amount: 4.75, category: "Dining" });
+  rows.push({ date: "2026-03-05", merchant: "Café Grumpy", amount: 4.75, category: "Dining" });
   // A duplicated id — MC2 has shipped these.
-  rows.push({ id: "t-dupe", date: "2026-03-06", merchant: "Shell", amount: -30.0, category: "Gas" });
-  rows.push({ id: "t-dupe", date: "2026-03-06", merchant: "Shell", amount: -31.5, category: "Gas" });
+  rows.push({ id: "t-dupe", date: "2026-03-06", merchant: "Shell", amount: 30.0, category: "Gas" });
+  rows.push({ id: "t-dupe", date: "2026-03-06", merchant: "Shell", amount: 31.5, category: "Gas" });
 
   return rows;
 }
@@ -1423,8 +1434,21 @@ describe("migrating every file", () => {
     expect(mason.find((row) => row.merchant === "Game Store")!.amountCents).toBe(6000n);
     expect(mason.every((row) => row.amountCents >= 0n)).toBe(true);
 
-    const legacyNegative = rows.find((row) => row.txId === "t-big")!;
-    expect(legacyNegative.amountCents).toBe(-24681357n);
+    const adult = rows.filter((row) => row.sourceFile === "transactions");
+    const adultRefunds = adult.filter(
+      (row) =>
+        (row.migrationRaw as Record<string, unknown>).note === "refund",
+    );
+    const positiveAdultRows = adult.filter((row) => row.amountCents > 0n);
+    const zeroAdultRows = adult.filter((row) => row.amountCents === 0n);
+
+    expect(positiveAdultRows).toHaveLength(888);
+    expect(adultRefunds).toHaveLength(16);
+    expect(adultRefunds.every((row) => row.amountCents < 0n)).toBe(true);
+    expect(zeroAdultRows).toHaveLength(1);
+
+    const largePurchase = adult.find((row) => row.txId === "t-big")!;
+    expect(largePurchase.amountCents).toBe(24681357n);
   });
 
   test("fields no domain type mentions survive in migration provenance", async () => {
