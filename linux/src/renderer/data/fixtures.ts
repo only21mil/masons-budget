@@ -407,13 +407,14 @@ export function buildSanitizedFixtureEnvelope(
     : hasDedicatedMC2ChildFinanceFiles(activeProfile)
       ? MASON_BUDGET
       : null
+  const btcBalanceDocument = btcBalanceDocumentFor(activeProfile)
 
   return {
     transactions: slice(TRANSACTIONS, overrides.transactions ?? "demo", 4, "Demo fixtures · transactions"),
     income: slice(INCOME, overrides.income ?? "demo", 4, "Demo fixtures · income rows"),
     budget: slice(budgetForProfile, overrides.budget ?? "demo", 4, "Demo fixtures · budget"),
     btcBalanceDocument: slice(
-      btcBalanceDocumentFor(activeProfile),
+      btcBalanceDocument,
       overrides.btcBalanceDocument ?? "demo",
       11,
       "Demo fixtures · canonical BTC balance document",
@@ -422,7 +423,10 @@ export function buildSanitizedFixtureEnvelope(
     btcBuys: slice(BTC_BUYS, overrides.btcBuys ?? "demo", 11, "Demo fixtures · bitcoin-buys"),
     billPays: slice(BILL_PAYS, overrides.billPays ?? "demo", 11, "Demo fixtures · bitcoin-bill-pays"),
     todos: slice(TODOS, overrides.todos ?? "demo", 2, "Demo fixtures · todos"),
-    btcPriceUsd: parseCents("93500.00"),
+    btcPriceUsd:
+      btcBalanceDocument.totals.sats > 0n
+        ? (btcBalanceDocument.totals.fiat * 100_000_000n) / btcBalanceDocument.totals.sats
+        : 0n,
     generatedAt: NOW,
   }
 }

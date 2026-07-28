@@ -212,7 +212,7 @@ describe("renderer Convex row adapter", () => {
     expect(typeof result.data.transactions.value[0]?.amount).toBe("bigint")
     expect(result.data.btcAccounts.value[0]?.fiat).toBe(9_000_000n)
     expect(result.data.budget.value?.categories[0]?.spent).toBe(0n)
-    expect(result.data.btcPriceUsd).toBe(9_000_000n)
+    expect(result.data.btcPriceUsd).toBe(9_720_000n)
     expect(result.data.generatedAt).toBe(80)
   })
 
