@@ -169,12 +169,16 @@ describe("renderer Convex row adapter", () => {
       { kind: "rowCounts" },
       { kind: "transactions", viewer: "rachel" },
       { kind: "todos", viewer: "rachel" },
+      { kind: "income", viewer: "rachel" },
       { kind: "btcBuys", viewer: "rachel", scope: "visible" },
       { kind: "btcAccounts", viewer: "rachel", scope: "visible" },
       { kind: "btcBillPays", viewer: "rachel", scope: "visible" },
       { kind: "budget", viewer: "rachel", scope: "netWorth" },
       { kind: "btcSnapshotMeta", viewer: "rachel", scope: "visible" },
+      { kind: "btcBalanceDocuments", viewer: "rachel", scope: "netWorth" },
     ])
+    expect("income" in result.data).toBe(true)
+    expect("btcBalanceDocument" in result.data).toBe(true)
     expect(result.data.transactions.value[0]?.amount).toBe(123n)
     expect(typeof result.data.transactions.value[0]?.amount).toBe("bigint")
     expect(result.data.btcAccounts.value[0]?.fiat).toBe(9_000_000n)
@@ -237,5 +241,23 @@ describe("renderer Convex row adapter", () => {
         },
       },
     })
+  })
+
+  it("contains a rejected transaction query to the transaction slice", async () => {
+    const result = await loadConvexRowEnvelope(
+      async (request) =>
+        request.kind === "transactions"
+          ? { status: "error", code: "unavailable" }
+          : response(request),
+      "victor",
+      () => 999,
+    )
+
+    expect(result.status).toBe("loaded")
+    if (result.status !== "loaded") return
+    expect(result.data.transactions.status).toBe("error")
+    expect(result.data.todos.status).toBe("live")
+    expect(result.data.btcBuys.status).toBe("live")
+    expect(result.data.billPays.status).toBe("live")
   })
 })

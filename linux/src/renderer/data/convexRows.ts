@@ -3,6 +3,7 @@ import type {
   BTCAccount,
   BTCBillPay,
   BTCBuy,
+  BTCSnapshot,
   Budget,
   SliceState,
   TodoItem,
@@ -13,14 +14,16 @@ import type {
   VogelVaultBtcAccountRow,
   VogelVaultBtcBillPayRow,
   VogelVaultBtcBuyRow,
+  VogelVaultBtcBalanceDocument,
   VogelVaultBudgetDocument,
+  VogelVaultIncomeRow,
   VogelVaultRowErrorCode,
   VogelVaultRowRequest,
   VogelVaultRowResult,
   VogelVaultTodoRow,
   VogelVaultTransactionRow,
 } from "../../../shared/ipc.ts"
-import type { FixtureEnvelope } from "./fixtures.ts"
+import type { FixtureEnvelope, IncomeRecord } from "./fixtures.ts"
 
 export type QueryConvexRows = (request: VogelVaultRowRequest) => Promise<VogelVaultRowResult>
 
@@ -84,7 +87,9 @@ function errorSlice<T>(value: T, code: VogelVaultRowErrorCode): SliceState<T> {
 function errorEnvelope(code: VogelVaultRowErrorCode, now: number): FixtureEnvelope {
   return {
     transactions: errorSlice([], code),
+    income: errorSlice([], code),
     budget: errorSlice(null, code),
+    btcBalanceDocument: errorSlice(null, code),
     btcAccounts: errorSlice([], code),
     btcBuys: errorSlice([], code),
     billPays: errorSlice([], code),
@@ -97,7 +102,9 @@ function errorEnvelope(code: VogelVaultRowErrorCode, now: number): FixtureEnvelo
 function emptyEnvelope(now: number): FixtureEnvelope {
   return {
     transactions: populatedSlice([], false, null, `${SOURCE} · transactions`),
+    income: populatedSlice([], false, null, `${SOURCE} · income`),
     budget: populatedSlice(null, false, null, `${SOURCE} · budget document`),
+    btcBalanceDocument: populatedSlice(null, false, null, `${SOURCE} · BTC balance document`),
     btcAccounts: populatedSlice([], false, null, `${SOURCE} · BTC accounts`),
     btcBuys: populatedSlice([], false, null, `${SOURCE} · BTC buys`),
     billPays: populatedSlice([], false, null, `${SOURCE} · BTC bill pays`),
@@ -130,6 +137,19 @@ function todo(row: VogelVaultTodoRow): TodoItem {
     due: row.due ?? null,
     flagged: row.flagged,
     notes: row.notes ?? null,
+    owner: row.owner,
+  }
+}
+
+function income(row: VogelVaultIncomeRow): IncomeRecord {
+  return {
+    id: row.incomeId,
+    date: row.date,
+    month: row.month,
+    amount: row.amountCents,
+    source: row.source,
+    loggedBy: row.loggedBy ?? null,
+    note: row.note ?? null,
     owner: row.owner,
   }
 }
@@ -175,6 +195,30 @@ function billPay(row: VogelVaultBtcBillPayRow): BTCBillPay {
     feeUsd: row.feeUsdCents,
     reference: row.reference ?? null,
     owner: row.owner,
+  }
+}
+
+function btcBalanceDocument(document: VogelVaultBtcBalanceDocument): BTCSnapshot {
+  return {
+    schemaVersion: Number(document.schemaVersion),
+    asOf: document.asOf,
+    accounts: document.accounts.map((account) => ({
+      key: account.key,
+      label: account.label,
+      custody: account.custody,
+      sats: account.sats,
+      fiat: account.fiatCents,
+      owner: document.owner,
+    })),
+    totals: {
+      sats: document.totals.sats,
+      fiat: document.totals.fiatCents,
+      exchangeSats: document.totals.exchangeSats,
+      selfCustodySats: document.totals.selfCustodySats,
+    },
+    source: document.source ?? null,
+    basis: document.basis ?? null,
+    confidence: document.confidence ?? null,
   }
 }
 
@@ -236,13 +280,6 @@ function priceFromRows(
   return buys[0]?.priceUsdCents ?? 0n
 }
 
-function firstError(results: readonly VogelVaultRowResult[]): VogelVaultRowErrorCode | null {
-  for (const result of results) {
-    if (result.status === "error") return result.code
-  }
-  return null
-}
-
 export async function loadConvexRowEnvelope(
   query: QueryConvexRows,
   viewer: FamilyMember,
@@ -263,92 +300,153 @@ export async function loadConvexRowEnvelope(
   const results = await Promise.all([
     query({ kind: "transactions", viewer }),
     query({ kind: "todos", viewer }),
+    query({ kind: "income", viewer }),
     query({ kind: "btcBuys", viewer, scope: "visible" }),
     query({ kind: "btcAccounts", viewer, scope: "visible" }),
     query({ kind: "btcBillPays", viewer, scope: "visible" }),
     query({ kind: "budget", viewer, scope: "netWorth" }),
     query({ kind: "btcSnapshotMeta", viewer, scope: "visible" }),
+    query({ kind: "btcBalanceDocuments", viewer, scope: "netWorth" }),
   ])
-  const error = firstError(results)
-  if (error !== null) return { status: "loaded", data: errorEnvelope(error, now()) }
+  const [
+    transactionsResult,
+    todosResult,
+    incomeResult,
+    buysResult,
+    accountsResult,
+    billPaysResult,
+    budgetResult,
+    metaResult,
+    btcBalanceResult,
+  ] = results
 
-  const [transactionsResult, todosResult, buysResult, accountsResult, billPaysResult, budgetResult, metaResult] =
-    results
-  if (
-    transactionsResult.status !== "ok" ||
-    transactionsResult.kind !== "transactions" ||
-    todosResult.status !== "ok" ||
-    todosResult.kind !== "todos" ||
-    buysResult.status !== "ok" ||
-    buysResult.kind !== "btcBuys" ||
-    accountsResult.status !== "ok" ||
-    accountsResult.kind !== "btcAccounts" ||
-    billPaysResult.status !== "ok" ||
-    billPaysResult.kind !== "btcBillPays" ||
-    budgetResult.status !== "ok" ||
-    budgetResult.kind !== "budget" ||
-    metaResult.status !== "ok" ||
-    metaResult.kind !== "btcSnapshotMeta"
-  ) {
-    return { status: "loaded", data: errorEnvelope("invalid-response", now()) }
-  }
+  const transactions =
+    transactionsResult.status === "error"
+      ? errorSlice<readonly Transaction[]>([], transactionsResult.code)
+      : transactionsResult.kind !== "transactions"
+        ? errorSlice<readonly Transaction[]>([], "invalid-response")
+        : populatedSlice(
+            transactionsResult.rows.map(transaction),
+            transactionsResult.rows.length > 0,
+            updatedAt(transactionsResult.rows),
+            `${SOURCE} · transactions`,
+          )
+  const todos =
+    todosResult.status === "error"
+      ? errorSlice<readonly TodoItem[]>([], todosResult.code)
+      : todosResult.kind !== "todos"
+        ? errorSlice<readonly TodoItem[]>([], "invalid-response")
+        : populatedSlice(
+            todosResult.rows.map(todo),
+            todosResult.rows.length > 0,
+            updatedAt(todosResult.rows),
+            `${SOURCE} · todos`,
+          )
+  const incomeRows =
+    incomeResult.status === "error"
+      ? errorSlice<readonly IncomeRecord[]>([], incomeResult.code)
+      : incomeResult.kind !== "income"
+        ? errorSlice<readonly IncomeRecord[]>([], "invalid-response")
+        : populatedSlice(
+            incomeResult.rows.map(income),
+            incomeResult.rows.length > 0,
+            updatedAt(incomeResult.rows),
+            `${SOURCE} · income`,
+          )
+  const btcBuys =
+    buysResult.status === "error"
+      ? errorSlice<readonly BTCBuy[]>([], buysResult.code)
+      : buysResult.kind !== "btcBuys"
+        ? errorSlice<readonly BTCBuy[]>([], "invalid-response")
+        : populatedSlice(
+            buysResult.rows.map(btcBuy),
+            buysResult.rows.length > 0,
+            updatedAt(buysResult.rows),
+            `${SOURCE} · BTC buys`,
+          )
+  const accountTimestamp =
+    accountsResult.status === "ok" && accountsResult.kind === "btcAccounts"
+      ? updatedAt([
+          ...accountsResult.rows,
+          ...(metaResult.status === "ok" && metaResult.kind === "btcSnapshotMeta"
+            ? metaResult.rows
+            : []),
+        ])
+      : null
+  const btcAccounts =
+    accountsResult.status === "error"
+      ? errorSlice<readonly BTCAccount[]>([], accountsResult.code)
+      : accountsResult.kind !== "btcAccounts"
+        ? errorSlice<readonly BTCAccount[]>([], "invalid-response")
+        : populatedSlice(
+            accountsResult.rows.map(btcAccount),
+            accountsResult.rows.length > 0,
+            accountTimestamp,
+            `${SOURCE} · BTC accounts`,
+          )
+  const billPays =
+    billPaysResult.status === "error"
+      ? errorSlice<readonly BTCBillPay[]>([], billPaysResult.code)
+      : billPaysResult.kind !== "btcBillPays"
+        ? errorSlice<readonly BTCBillPay[]>([], "invalid-response")
+        : populatedSlice(
+            billPaysResult.rows.map(billPay),
+            billPaysResult.rows.length > 0,
+            updatedAt(billPaysResult.rows),
+            `${SOURCE} · BTC bill pays`,
+          )
+  const budgetSlice =
+    budgetResult.status === "error"
+      ? errorSlice<Budget | null>(null, budgetResult.code)
+      : budgetResult.kind !== "budget"
+        ? errorSlice<Budget | null>(null, "invalid-response")
+        : populatedSlice(
+            budgetResult.value === null ? null : budget(budgetResult.value),
+            budgetResult.value !== null,
+            budgetResult.value?.updatedAtMs ?? null,
+            `${SOURCE} · budget document`,
+          )
+  const btcBalance =
+    btcBalanceResult.status === "error"
+      ? errorSlice<BTCSnapshot | null>(null, btcBalanceResult.code)
+      : btcBalanceResult.kind !== "btcBalanceDocuments" || btcBalanceResult.rows.length > 1
+        ? errorSlice<BTCSnapshot | null>(null, "invalid-response")
+        : populatedSlice(
+            btcBalanceResult.rows[0] ? btcBalanceDocument(btcBalanceResult.rows[0]) : null,
+            btcBalanceResult.rows.length === 1,
+            updatedAt(btcBalanceResult.rows),
+            `${SOURCE} · canonical BTC balance document`,
+          )
 
-  const transactionRows = transactionsResult.rows
-  const todoRows = todosResult.rows
-  const buyRows = buysResult.rows
-  const accountRows = accountsResult.rows
-  const billPayRows = billPaysResult.rows
-  const document = budgetResult.value
-  const accountTimestamps = [...accountRows, ...metaResult.rows]
   const timestamps = [
-    updatedAt(transactionRows),
-    updatedAt(todoRows),
-    updatedAt(buyRows),
-    updatedAt(accountTimestamps),
-    updatedAt(billPayRows),
-    document?.updatedAtMs ?? null,
+    transactions.updatedAt,
+    todos.updatedAt,
+    incomeRows.updatedAt,
+    btcBuys.updatedAt,
+    btcAccounts.updatedAt,
+    billPays.updatedAt,
+    budgetSlice.updatedAt,
+    btcBalance.updatedAt,
   ].filter((value): value is number => value !== null)
 
   return {
     status: "loaded",
     data: {
-      transactions: populatedSlice(
-        transactionRows.map(transaction),
-        transactionRows.length > 0,
-        updatedAt(transactionRows),
-        `${SOURCE} · transactions`,
-      ),
-      budget: populatedSlice(
-        document === null ? null : budget(document),
-        document !== null,
-        document?.updatedAtMs ?? null,
-        `${SOURCE} · budget document`,
-      ),
-      btcAccounts: populatedSlice(
-        accountRows.map(btcAccount),
-        accountRows.length > 0,
-        updatedAt(accountTimestamps),
-        `${SOURCE} · BTC accounts`,
-      ),
-      btcBuys: populatedSlice(
-        buyRows.map(btcBuy),
-        buyRows.length > 0,
-        updatedAt(buyRows),
-        `${SOURCE} · BTC buys`,
-      ),
-      billPays: populatedSlice(
-        billPayRows.map(billPay),
-        billPayRows.length > 0,
-        updatedAt(billPayRows),
-        `${SOURCE} · BTC bill pays`,
-      ),
-      todos: populatedSlice(
-        todoRows.map(todo),
-        todoRows.length > 0,
-        updatedAt(todoRows),
-        `${SOURCE} · todos`,
-      ),
-      btcPriceUsd: priceFromRows(accountRows, buyRows),
+      transactions,
+      income: incomeRows,
+      budget: budgetSlice,
+      btcBalanceDocument: btcBalance,
+      btcAccounts,
+      btcBuys,
+      billPays,
+      todos,
+      btcPriceUsd:
+        accountsResult.status === "ok" &&
+        accountsResult.kind === "btcAccounts" &&
+        buysResult.status === "ok" &&
+        buysResult.kind === "btcBuys"
+          ? priceFromRows(accountsResult.rows, buysResult.rows)
+          : 0n,
       generatedAt: timestamps.length > 0 ? Math.max(...timestamps) : now(),
     },
   }

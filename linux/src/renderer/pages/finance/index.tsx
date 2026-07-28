@@ -63,10 +63,14 @@ function tableState(status: string): "normal" | "empty" | "error" | "stale" | "l
  * Without this a page renders "Could not load" in its table while the KPI strip
  * above still shows totals computed from whatever was in memory — which is
  * precisely the "something wrong" the error state promises not to display.
- * `empty` is different: zero really is the answer, so it renders normally.
+ * Some collections can be authoritatively empty (for example todos or bill
+ * pays). Required financial snapshots cannot: an empty result means the source
+ * is unavailable, not that the household owns zero.
  */
-function figure(status: string, render: () => string): string {
-  if (status === "error" || status === "loading") return SUPPRESSED
+function figure(status: string, render: () => string, emptyIsUnavailable = false): string {
+  if (status === "error" || status === "loading" || (emptyIsUnavailable && status === "empty")) {
+    return SUPPRESSED
+  }
   return render()
 }
 
@@ -187,6 +191,7 @@ function DashboardPage() {
   const visibleTransactions = visibleTo(activeProfile, data.transactions.value)
   const budgetTransactions = budgetTransactionsFor(activeProfile, data.transactions.value)
   const accounts = netWorthScopeFor(activeProfile, data.btcAccounts.value)
+  const incomeRows = visibleTo(activeProfile, data.income.value)
   const todos = visibleTo(activeProfile, data.todos.value).filter((todo) => !todo.done)
 
   // The headline follows budget scope: adults share only adult-owned rows while
@@ -197,22 +202,31 @@ function DashboardPage() {
   const budgetMonthTransactions = transactionsInMonth(budgetTransactions, month)
   const activityMonthTransactions = transactionsInMonth(visibleTransactions, month)
   const spend = sum(budgetMonthTransactions.map(spendAmount))
-  const income = sum(budgetMonthTransactions.map(incomeOf))
-  const stackSats = sum(accounts.map((account) => account.sats))
-  const stackValue = satsToUsdCents(stackSats, data.btcPriceUsd)
+  const income = sum(incomeRows.filter((row) => row.month === month).map((row) => row.amount))
+  const stackSats = data.btcBalanceDocument.value?.totals.sats ?? 0n
+  const stackValue = data.btcBalanceDocument.value?.totals.fiat ?? 0n
 
   const txStatus = data.transactions.status
-  const btcStatus = data.btcAccounts.status
+  const incomeStatus = data.income.status
+  const btcStatus = data.btcBalanceDocument.status
   const todoStatus = data.todos.status
 
   const kpis: KPI[] = [
-    { label: "Spend (visible)", value: figure(txStatus, () => formatUsd(spend)), tone: "negative" },
-    { label: "Income (visible)", value: figure(txStatus, () => formatUsd(income)), tone: "positive" },
+    {
+      label: "Spend (visible)",
+      value: figure(txStatus, () => formatUsd(spend), true),
+      tone: "negative",
+    },
+    {
+      label: "Income (visible)",
+      value: figure(incomeStatus, () => formatUsd(income), true),
+      tone: "positive",
+    },
     {
       label: "Stack",
-      value: figure(btcStatus, () => formatBtc(stackSats)),
+      value: figure(btcStatus, () => formatBtc(stackSats), true),
       tone: "accent",
-      hint: figure(btcStatus, () => formatUsd(stackValue)),
+      hint: figure(btcStatus, () => formatUsd(stackValue), true),
     },
     { label: "Open tasks", value: figure(todoStatus, () => String(todos.length)) },
   ]
@@ -445,41 +459,53 @@ const activityColumns: ReadonlyArray<Column<Transaction>> = [
 function BitcoinOverviewPage() {
   const { activeProfile, data } = useAppState()
   const visible = visibleTo(activeProfile, data.btcAccounts.value)
-  const inScope = netWorthScopeFor(activeProfile, data.btcAccounts.value)
-
-  const totalSats = sum(inScope.map((account) => account.sats))
-  const selfCustody = sum(
-    inScope.filter((a) => a.custody === "self_custody").map((account) => account.sats),
-  )
-  const exchange = totalSats - selfCustody
-
-  const status = data.btcAccounts.status
+  const projectionInScope = netWorthScopeFor(activeProfile, visible)
+  const document = data.btcBalanceDocument.value
+  const inScope = document?.accounts ?? []
+  const totalSats = document?.totals.sats ?? 0n
+  const totalFiat = document?.totals.fiat ?? 0n
+  const selfCustody = document?.totals.selfCustodySats ?? 0n
+  const exchange = document?.totals.exchangeSats ?? 0n
+  const status = data.btcBalanceDocument.status
 
   // Adults can see a child's stack but it is not part of their net worth. Say so
   // rather than letting the difference look like a bug.
-  const outOfScope = visible.filter((account) => !inScope.includes(account))
+  const outOfScope = visible.filter((account) => !projectionInScope.includes(account))
 
   return (
     <>
       <PageHeader
         title="Bitcoin Overview"
-        actions={<FreshnessTag status={data.btcAccounts.status} updatedAt={data.btcAccounts.updatedAt} />}
+        actions={
+          <FreshnessTag
+            status={data.btcBalanceDocument.status}
+            updatedAt={data.btcBalanceDocument.updatedAt}
+          />
+        }
       />
-      <StaleNotice status={data.btcAccounts.status} />
+      <StaleNotice status={data.btcBalanceDocument.status} />
       <KPIStrip
         items={[
-          { label: "Total stack", value: figure(status, () => formatBtc(totalSats)), tone: "accent" },
+          {
+            label: "Total stack",
+            value: figure(status, () => formatBtc(totalSats), true),
+            tone: "accent",
+          },
           {
             label: "Value",
-            value: figure(status, () => formatUsd(satsToUsdCents(totalSats, data.btcPriceUsd))),
+            value: figure(status, () => formatUsd(totalFiat), true),
             provenance: "estimated",
           },
           {
             label: "Self custody",
-            value: figure(status, () => `${(basisPoints(selfCustody, totalSats) / 100).toFixed(1)}%`),
-            hint: figure(status, () => formatSats(selfCustody)),
+            value: figure(
+              status,
+              () => `${(basisPoints(selfCustody, totalSats) / 100).toFixed(1)}%`,
+              true,
+            ),
+            hint: figure(status, () => formatSats(selfCustody), true),
           },
-          { label: "On exchange", value: figure(status, () => formatSats(exchange)) },
+          { label: "On exchange", value: figure(status, () => formatSats(exchange), true) },
         ]}
       />
       {outOfScope.length > 0 ? (
@@ -490,12 +516,17 @@ function BitcoinOverviewPage() {
         />
       ) : null}
       <PageGrid>
-        <Panel title="Accounts in net worth" source={data.btcAccounts.source} flush className="vv-span-2">
+        <Panel
+          title="Accounts in net worth"
+          source={data.btcBalanceDocument.source}
+          flush
+          className="vv-span-2"
+        >
           <DataTable
             columns={stackColumns}
             rows={inScope}
             rowKey={(row) => row.key}
-            state={tableState(data.btcAccounts.status)}
+            state={tableState(data.btcBalanceDocument.status)}
           />
         </Panel>
       </PageGrid>
@@ -665,12 +696,15 @@ function RetirementPage() {
 
 function NetWorthPage() {
   const { activeProfile, data } = useAppState()
-  const inScope = netWorthScopeFor(activeProfile, data.btcAccounts.value)
-  const stackSats = sum(inScope.map((account) => account.sats))
-  const stackValue = satsToUsdCents(stackSats, data.btcPriceUsd)
+  const document = data.btcBalanceDocument.value
+  const inScope = document?.accounts ?? []
+  const stackSats = document?.totals.sats ?? 0n
+  const stackValue = document?.totals.fiat ?? 0n
 
+  const projectedInScope = netWorthScopeFor(activeProfile, data.btcAccounts.value)
   const excluded = data.btcAccounts.value.filter(
-    (account) => canSeeDataOwnedBy(activeProfile, account.owner) && !inScope.includes(account),
+    (account) =>
+      canSeeDataOwnedBy(activeProfile, account.owner) && !projectedInScope.includes(account),
   )
 
   return (
@@ -678,23 +712,34 @@ function NetWorthPage() {
       <PageHeader
         title="Net Worth"
         subtitle="Household scope for adults; self only for children"
-        actions={<FreshnessTag status={data.btcAccounts.status} updatedAt={data.btcAccounts.updatedAt} />}
+        actions={
+          <FreshnessTag
+            status={data.btcBalanceDocument.status}
+            updatedAt={data.btcBalanceDocument.updatedAt}
+          />
+        }
       />
-      <StaleNotice status={data.btcAccounts.status} />
+      <StaleNotice status={data.btcBalanceDocument.status} />
       <KPIStrip
         items={[
           {
             label: "Bitcoin",
-            value: figure(data.btcAccounts.status, () => formatUsd(stackValue)),
+            value: figure(data.btcBalanceDocument.status, () => formatUsd(stackValue), true),
             tone: "accent",
             provenance: "estimated",
           },
-          { label: "Stack", value: figure(data.btcAccounts.status, () => formatBtc(stackSats)) },
-          { label: "Accounts", value: figure(data.btcAccounts.status, () => String(inScope.length)) },
+          {
+            label: "Stack",
+            value: figure(data.btcBalanceDocument.status, () => formatBtc(stackSats), true),
+          },
+          {
+            label: "Accounts",
+            value: figure(data.btcBalanceDocument.status, () => String(inScope.length), true),
+          },
         ]}
       />
       <PageGrid>
-        <Panel title="In scope" source={data.btcAccounts.source} flush>
+        <Panel title="In scope" source={data.btcBalanceDocument.source} flush>
           <DataTable
             columns={[
               { key: "label", header: "Account", render: (row) => row.label },
@@ -705,13 +750,13 @@ function NetWorthPage() {
                 header: "Value",
                 numeric: true,
                 render: (row) => (
-                  <span className="vv-estimated">{formatUsd(satsToUsdCents(row.sats, data.btcPriceUsd))}</span>
+                  <span className="vv-estimated">{formatUsd(row.fiat)}</span>
                 ),
               },
             ]}
             rows={inScope}
             rowKey={(row) => row.key}
-            state={tableState(data.btcAccounts.status)}
+            state={tableState(data.btcBalanceDocument.status)}
           />
         </Panel>
         <Panel
