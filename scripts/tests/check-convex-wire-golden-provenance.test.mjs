@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url"
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const sourceScript = path.join(repoRoot, "scripts/check-convex-wire-golden-provenance.mjs")
+const toolingModule = path.join(repoRoot, "scripts/convex-wire-golden.mjs")
 
 async function fixtureRepo() {
   const root = await mkdtemp(path.join(os.tmpdir(), "convex-wire-provenance-"))
@@ -15,6 +16,7 @@ async function fixtureRepo() {
   await mkdir(path.join(root, "convex"), { recursive: true })
   await mkdir(path.join(root, "shared/domain"), { recursive: true })
   await cp(sourceScript, path.join(root, "scripts/check-convex-wire-golden-provenance.mjs"))
+  await cp(toolingModule, path.join(root, "scripts/convex-wire-golden.mjs"))
   await cp(
     path.join(repoRoot, "convex/schema.ts"),
     path.join(root, "convex/schema.ts"),
