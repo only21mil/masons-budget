@@ -3,7 +3,13 @@ package com.sats21m.vogelvault
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
@@ -15,6 +21,7 @@ import com.sats21m.vogelvault.ui.Destination
 import com.sats21m.vogelvault.ui.ScreenHost
 import com.sats21m.vogelvault.ui.VaultUiState
 import com.sats21m.vogelvault.ui.components.LocalLedgerRowCompositionObserver
+import com.sats21m.vogelvault.ui.components.vaultContent
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
 import org.junit.Rule
 import org.junit.Test
@@ -74,9 +81,50 @@ class LazyLedgerCompositionTest {
         }
         compose.waitForIdle()
 
+        println("ACTIVITY_LEDGER_COMPOSITIONS=${composedRows.get()} TOTAL_ROWS=${transactions.size}")
         assertTrue(
             composedRows.get() in 1 until 100,
             "A 640dp viewport composed ${composedRows.get()} of 911 rows; the ledger is no longer lazy.",
+        )
+    }
+
+    @Test
+    fun `keyed panel keeps remembered row state with its record after reordering`() {
+        val nextToken = AtomicInteger()
+        val observedTokens = mutableMapOf<String, Int>()
+        lateinit var reverseRows: () -> Unit
+
+        compose.runOnUiThread {
+            compose.activity.setContent {
+                var rows by remember { mutableStateOf(listOf("alpha", "bravo", "charlie")) }
+                reverseRows = { rows = rows.reversed() }
+                LazyColumn(Modifier.size(width = 411.dp, height = 640.dp)) {
+                    vaultContent {
+                        keyedPanel(
+                            sectionKey = "stable-key-measurement",
+                            title = "Measured rows",
+                            rows = rows,
+                            rowKey = { it },
+                        ) { row ->
+                            val token = remember { nextToken.incrementAndGet() }
+                            SideEffect { observedTokens[row] = token }
+                            Box(Modifier.size(width = 411.dp, height = 48.dp))
+                        }
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+        val before = observedTokens.toMap()
+
+        compose.runOnUiThread { reverseRows() }
+        compose.waitForIdle()
+
+        assertTrue(before.isNotEmpty(), "The initial keyed rows did not compose.")
+        assertTrue(
+            observedTokens == before,
+            "Remembered row state moved to a different record after reordering: " +
+                "before=$before after=$observedTokens",
         )
     }
 }
