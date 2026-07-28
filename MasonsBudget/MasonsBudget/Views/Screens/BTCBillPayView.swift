@@ -3,6 +3,7 @@ import SwiftUI
 
 struct BTCBillPayView: View {
     @Environment(\.theme) var theme
+    @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
@@ -22,14 +23,6 @@ struct BTCBillPayView: View {
 
     private var visibleBillPays: [BTCBillPay] {
         allBillPays.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
-    }
-
-    private var totalUsd: Decimal {
-        visibleBillPays.reduce(Decimal(0)) { $0 + $1.amountUSD }
-    }
-
-    private var totalBtcSpent: Decimal {
-        visibleBillPays.reduce(Decimal(0)) { $0 + $1.btcSpent }
     }
 
     private var grouped: [(String, [BTCBillPay])] {
@@ -91,33 +84,39 @@ struct BTCBillPayView: View {
         #endif
     }
 
-    private var totalSats: Decimal {
-        btcPrice > 0 ? (totalUsd / btcPrice) * 100_000_000 : 0
-    }
-
+    @ViewBuilder
     private var summaryCard: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("BILLS PAID")
-                    .font(AppFont.sectionHeader)
-                    .tracking(AppFont.sectionTracking)
-                    .foregroundStyle(.white.opacity(0.7))
-                AmountView(sats: totalSats, unit: unit, size: 22, weight: .bold, color: .white, btcPrice: btcPrice)
+        if let ledger = canonicalFinancials.btcBillPays.value {
+            let totalUSD = decimalMinorUnits(ledger.totalUSDCents, scale: 2)
+            let totalSats = btcPrice > 0 ? (totalUSD / btcPrice) * 100_000_000 : 0
+            HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("BILLS PAID")
+                        .font(AppFont.sectionHeader)
+                        .tracking(AppFont.sectionTracking)
+                        .foregroundStyle(.white.opacity(0.7))
+                    AmountView(sats: totalSats, unit: unit, size: 22, weight: .bold, color: .white, btcPrice: btcPrice)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("BTC SPENT")
+                        .font(AppFont.sectionHeader)
+                        .tracking(AppFont.sectionTracking)
+                        .foregroundStyle(.white.opacity(0.7))
+                    AmountView(sats: Decimal(ledger.totalSpentSats), unit: unit, size: 22, weight: .bold, color: .white, btcPrice: btcPrice)
+                }
             }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 4) {
-                Text("BTC SPENT")
-                    .font(AppFont.sectionHeader)
-                    .tracking(AppFont.sectionTracking)
-                    .foregroundStyle(.white.opacity(0.7))
-                AmountView(sats: totalBtcSpent * 100_000_000, unit: unit, size: 22, weight: .bold, color: .white, btcPrice: btcPrice)
-            }
+            .padding(20)
+            .background(
+                LinearGradient(colors: [theme.plum, theme.plum.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing),
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        } else {
+            RequiredFinancialSourceView(
+                title: "Bill Pay",
+                message: "The required Bitcoin bill-pay ledger is empty or unavailable.",
+            )
         }
-        .padding(20)
-        .background(
-            LinearGradient(colors: [theme.plum, theme.plum.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing),
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     private func billPayRow(_ bp: BTCBillPay) -> some View {

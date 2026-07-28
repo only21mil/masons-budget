@@ -3,11 +3,11 @@ import SwiftUI
 
 struct BudgetView: View {
     @Environment(\.theme) var theme
+    @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
     @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
-    @Query private var snapshots: [MonthlyBudgetSnapshot]
     @Query(sort: \Transaction.date, order: .reverse) private var allTransactions: [Transaction]
 
     @State private var selectedMonthOffset: Int = 0
@@ -62,20 +62,20 @@ struct BudgetView: View {
         }.reduce(Decimal(0)) { $0 + $1.spendAmount }
     }
 
-    private func incomeForOffset(_ offset: Int) -> Decimal {
+    private func incomeForOffset(_ offset: Int) -> Decimal? {
+        guard let income = canonicalFinancials.income.value else { return nil }
         let cal = Calendar.current
         let date = cal.date(byAdding: .month, value: -offset, to: Date()) ?? Date()
         let df = DateFormatter()
-        df.dateFormat = "MMMM yyyy"
-        let baseKey = df.string(from: date)
-        let key = activeMember.isAdult ? baseKey : "\(activeMember.rawValue):\(baseKey)"
-        guard let snapshot = snapshots.first(where: { $0.monthKey == key }) else { return 0 }
-        if snapshot.mtdIncome > 0 { return snapshot.mtdIncome }
-        return max(snapshot.monthlyGross, 0)
+        df.calendar = Calendar(identifier: .gregorian)
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.dateFormat = "yyyy-MM"
+        guard let cents = income.cents(forMonth: df.string(from: date)) else { return nil }
+        return decimalMinorUnits(cents, scale: 2)
     }
 
     private func savingsRateForOffset(_ offset: Int) -> Int? {
-        let income = incomeForOffset(offset)
+        guard let income = incomeForOffset(offset) else { return nil }
         guard income > 0 else { return nil }
         let spent = spentForOffset(offset)
         let saved = income - spent
