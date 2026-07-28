@@ -38,6 +38,57 @@ function transaction(overrides: Record<string, unknown> = {}): Record<string, un
   }
 }
 
+function income(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    incomeId: "income-01",
+    owner: "victor",
+    date: "2026-01-01",
+    month: "2026-01",
+    amountCents: int64(123_456n),
+    source: "payroll",
+    loggedBy: "victor",
+    note: "production-shaped income fixture",
+    archimedesRequestId: "income-arch-0",
+    updatedAtMs: 0,
+    ...overrides,
+  }
+}
+
+function btcBalanceDocument(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    owner: "victor",
+    schemaVersion: int64(2n),
+    asOf: "2026-07-18T12:00:00Z",
+    accounts: [
+      {
+        key: "strike",
+        label: "Strike",
+        custody: "exchange",
+        sats: int64(35_000_000n),
+        fiatCents: int64(3_430_055n),
+      },
+      {
+        key: "coldcard",
+        label: "Coldcard",
+        custody: "self_custody",
+        sats: int64(150_000_000n),
+        fiatCents: int64(14_700_000n),
+      },
+    ],
+    totals: {
+      sats: int64(185_000_000n),
+      fiatCents: int64(18_130_055n),
+      exchangeSats: int64(35_000_000n),
+      selfCustodySats: int64(150_000_000n),
+    },
+    source: "synthetic",
+    basis: "spot",
+    confidence: "verified",
+    updatedAtMs: 0,
+    ...overrides,
+  }
+}
+
 function success(value: unknown) {
   return {
     httpStatus: 200,
@@ -74,6 +125,12 @@ describe("row request validation", () => {
     expect(validateRowRequest({ kind: "budget", viewer: "victor" })).toBeNull()
     expect(validateRowRequest({ kind: "budget", viewer: "victor", scope: "netWorth" })).toEqual({
       kind: "budget",
+      viewer: "victor",
+      scope: "netWorth",
+    })
+    expect(validateRowRequest({ kind: "btcBalanceDocuments", viewer: "victor" })).toBeNull()
+    expect(validateRowRequest({ kind: "btcBalanceDocuments", viewer: "victor", scope: "netWorth" })).toEqual({
+      kind: "btcBalanceDocuments",
       viewer: "victor",
       scope: "netWorth",
     })
@@ -541,6 +598,106 @@ describe("main-process row repository", () => {
         format: "convex_encoded_json",
       },
     ])
+  })
+
+  it("decodes production-shaped income rows and rejects malformed money", async () => {
+    const sent: Array<Record<string, unknown>> = []
+    const repository = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async (_endpoint, body) => {
+        sent.push(JSON.parse(body) as Record<string, unknown>)
+        return success({ complete: true, rows: [income()] })
+      },
+    })
+
+    await expect(
+      repository.query({ kind: "income", viewer: "rachel", month: "2026-01" }),
+    ).resolves.toEqual({
+      status: "ok",
+      kind: "income",
+      complete: true,
+      rows: [{
+        incomeId: "income-01",
+        owner: "victor",
+        date: "2026-01-01",
+        month: "2026-01",
+        amountCents: 123_456n,
+        source: "payroll",
+        loggedBy: "victor",
+        note: "production-shaped income fixture",
+        archimedesRequestId: "income-arch-0",
+        updatedAtMs: 0,
+      }],
+    })
+    expect(sent).toEqual([{
+      path: "tables:listIncome",
+      args: { viewer: "rachel", month: "2026-01", token: SECRET },
+      format: "convex_encoded_json",
+    }])
+
+    const malformed = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => success({ complete: true, rows: [income({ amountCents: "123456" })] }),
+    })
+    await expect(
+      malformed.query({ kind: "income", viewer: "rachel" }),
+    ).resolves.toEqual({ status: "error", code: "invalid-response" })
+  })
+
+  it("decodes production-shaped BTC balance documents and rejects malformed sats", async () => {
+    const sent: Array<Record<string, unknown>> = []
+    const repository = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async (_endpoint, body) => {
+        sent.push(JSON.parse(body) as Record<string, unknown>)
+        return success({ complete: true, rows: [btcBalanceDocument()] })
+      },
+    })
+
+    await expect(
+      repository.query({ kind: "btcBalanceDocuments", viewer: "rachel", scope: "netWorth" }),
+    ).resolves.toMatchObject({
+      status: "ok",
+      kind: "btcBalanceDocuments",
+      complete: true,
+      rows: [{
+        owner: "victor",
+        schemaVersion: 2n,
+        accounts: [
+          { key: "strike", sats: 35_000_000n, fiatCents: 3_430_055n },
+          { key: "coldcard", sats: 150_000_000n, fiatCents: 14_700_000n },
+        ],
+        totals: {
+          sats: 185_000_000n,
+          fiatCents: 18_130_055n,
+          exchangeSats: 35_000_000n,
+          selfCustodySats: 150_000_000n,
+        },
+      }],
+    })
+    expect(sent).toEqual([{
+      path: "tables:listBtcBalanceDocuments",
+      args: { viewer: "rachel", scope: "netWorth", token: SECRET },
+      format: "convex_encoded_json",
+    }])
+
+    const malformed = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => success({
+        complete: true,
+        rows: [btcBalanceDocument({
+          totals: {
+            sats: 1.85,
+            fiatCents: int64(18_130_055n),
+            exchangeSats: int64(35_000_000n),
+            selfCustodySats: int64(150_000_000n),
+          },
+        })],
+      }),
+    })
+    await expect(
+      malformed.query({ kind: "btcBalanceDocuments", viewer: "rachel", scope: "netWorth" }),
+    ).resolves.toEqual({ status: "error", code: "invalid-response" })
   })
 
   it("requires backend budget ownership and scoped bill-pay visibility", async () => {

@@ -35,6 +35,46 @@ data class BtcBillPayRow(
     val updatedAtMs: Long,
 )
 
+data class IncomeRow(
+    val id: String,
+    val owner: FamilyMember,
+    val date: String,
+    val month: String,
+    val amountCents: Long,
+    val source: String,
+    val loggedBy: String?,
+    val note: String?,
+    val archimedesRequestId: String?,
+    val updatedAtMs: Long,
+)
+
+data class BtcBalanceAccountRow(
+    val key: String,
+    val label: String,
+    val custody: Custody,
+    val sats: Long,
+    val fiatCents: Long,
+)
+
+data class BtcBalanceTotalsRow(
+    val sats: Long,
+    val fiatCents: Long,
+    val exchangeSats: Long,
+    val selfCustodySats: Long,
+)
+
+data class BtcBalanceDocumentRow(
+    val owner: FamilyMember,
+    val schemaVersion: Long,
+    val asOf: String,
+    val accounts: List<BtcBalanceAccountRow>,
+    val totals: BtcBalanceTotalsRow,
+    val source: String?,
+    val basis: String?,
+    val confidence: String?,
+    val updatedAtMs: Long,
+)
+
 data class BudgetCategoryRow(
     val name: String,
     val icon: String?,
@@ -389,6 +429,90 @@ internal data class PublicBtcBillPayDto(
                 updatedAtMs = row.requiredLong("updatedAtMs") ?: return null,
             )
         }
+    }
+}
+
+internal data class PublicIncomeDto(
+    val incomeId: String,
+    val owner: FamilyMember,
+    val date: String,
+    val month: String,
+    val amountCents: Long,
+    val source: String,
+    val loggedBy: String?,
+    val note: String?,
+    val archimedesRequestId: String?,
+    val updatedAtMs: Long,
+) {
+    fun toRow(): IncomeRow = IncomeRow(
+        id = incomeId,
+        owner = owner,
+        date = date,
+        month = month,
+        amountCents = amountCents,
+        source = source,
+        loggedBy = loggedBy,
+        note = note,
+        archimedesRequestId = archimedesRequestId,
+        updatedAtMs = updatedAtMs,
+    )
+
+    companion object {
+        fun decode(element: JsonElement): PublicIncomeDto? {
+            val row = element as? JsonObject ?: return null
+            val loggedBy = row.decodedOptionalString("loggedBy") ?: return null
+            val note = row.decodedOptionalString("note") ?: return null
+            val requestId = row.decodedOptionalString("archimedesRequestId") ?: return null
+            return PublicIncomeDto(
+                incomeId = row.rowString("incomeId") ?: return null,
+                owner = row.rowOwner() ?: return null,
+                date = row.rowString("date") ?: return null,
+                month = row.rowString("month") ?: return null,
+                amountCents = row.rowInt64("amountCents") ?: return null,
+                source = row.rowStringAllowEmpty("source") ?: return null,
+                loggedBy = loggedBy.value,
+                note = note.value,
+                archimedesRequestId = requestId.value,
+                updatedAtMs = row.requiredLong("updatedAtMs") ?: return null,
+            )
+        }
+    }
+}
+
+internal object PublicBtcBalanceDocumentDto {
+    fun decode(element: JsonElement): BtcBalanceDocumentRow? {
+        val row = element as? JsonObject ?: return null
+        val source = row.decodedOptionalString("source") ?: return null
+        val basis = row.decodedOptionalString("basis") ?: return null
+        val confidence = row.decodedOptionalString("confidence") ?: return null
+        val totals = row["totals"] as? JsonObject ?: return null
+        return BtcBalanceDocumentRow(
+            owner = row.rowOwner() ?: return null,
+            schemaVersion = row.rowInt64("schemaVersion") ?: return null,
+            asOf = row.rowStringAllowEmpty("asOf") ?: return null,
+            accounts = row.decodeObjectArray("accounts", ::decodeAccount) ?: return null,
+            totals = BtcBalanceTotalsRow(
+                sats = totals.rowInt64("sats") ?: return null,
+                fiatCents = totals.rowInt64("fiatCents") ?: return null,
+                exchangeSats = totals.rowInt64("exchangeSats") ?: return null,
+                selfCustodySats = totals.rowInt64("selfCustodySats") ?: return null,
+            ),
+            source = source.value,
+            basis = basis.value,
+            confidence = confidence.value,
+            updatedAtMs = row.requiredLong("updatedAtMs") ?: return null,
+        )
+    }
+
+    private fun decodeAccount(row: JsonObject): BtcBalanceAccountRow? {
+        val custodyKey = row.rowString("custody") ?: return null
+        return BtcBalanceAccountRow(
+            key = row.rowString("key") ?: return null,
+            label = row.rowStringAllowEmpty("label") ?: return null,
+            custody = Custody.entries.firstOrNull { it.key == custodyKey } ?: return null,
+            sats = row.rowInt64("sats") ?: return null,
+            fiatCents = row.rowInt64("fiatCents") ?: return null,
+        )
     }
 }
 

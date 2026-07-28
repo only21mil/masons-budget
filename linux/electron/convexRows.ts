@@ -9,6 +9,7 @@ import { Buffer } from "node:buffer"
 
 import type {
   VogelVaultBtcAccountRow,
+  VogelVaultBtcBalanceDocument,
   VogelVaultBtcBillPayRow,
   VogelVaultBtcBuyRow,
   VogelVaultBtcScope,
@@ -19,6 +20,7 @@ import type {
   VogelVaultBudgetIncome,
   VogelVaultBudgetPaycheck,
   VogelVaultMember,
+  VogelVaultIncomeRow,
   VogelVaultRowRequest,
   VogelVaultRowCounts,
   VogelVaultRowResult,
@@ -35,21 +37,25 @@ import type {
 export const ROW_QUERY_PATHS = {
   rowCounts: "tables:rowCounts",
   transactions: "tables:listTransactions",
+  income: "tables:listIncome",
   todos: "tables:listTodos",
   btcBuys: "tables:listBtcBuys",
   btcAccounts: "tables:listBtcAccounts",
   btcBillPays: "tables:listBtcBillPays",
   budget: "tables:getBudgetDocument",
   btcSnapshotMeta: "tables:getBtcSnapshotMetadata",
+  btcBalanceDocuments: "tables:listBtcBalanceDocuments",
 } as const
 
 export const CONVEX_ROW_LIMITS = {
   maxResponseBytes: 4 * 1_048_576,
   maxTransactions: 2_000,
+  maxIncome: 2_000,
   maxTodos: 1_000,
   maxBtcBuys: 1_000,
   maxBtcAccounts: 256,
   maxBtcBillPays: 1_000,
+  maxBtcBalanceDocuments: 256,
   maxBudgetCategories: 256,
   maxBudgetPaychecks: 512,
   maxBudgetHistory: 240,
@@ -260,6 +266,28 @@ function transaction(value: unknown, viewer: VogelVaultMember): VogelVaultTransa
     category,
     ...optionalField("card", optionalText(row, "card")),
     ...optionalField("note", optionalText(row, "note")),
+    updatedAtMs: timestampValue(row),
+  }
+}
+
+function income(value: unknown, viewer: VogelVaultMember): VogelVaultIncomeRow {
+  const row = responseObject(
+    value,
+    ["incomeId", "owner", "date", "month", "amountCents", "source", "updatedAtMs"],
+  )
+  const owner = member(row)
+  assertVisible(viewer, owner)
+  const { date, month } = dateAndMonth(row)
+  return {
+    incomeId: text(row, "incomeId", 256),
+    owner,
+    date,
+    month,
+    amountCents: int64(row, "amountCents"),
+    source: text(row, "source"),
+    ...optionalField("loggedBy", optionalText(row, "loggedBy")),
+    ...optionalField("note", optionalText(row, "note")),
+    ...optionalField("archimedesRequestId", optionalText(row, "archimedesRequestId")),
     updatedAtMs: timestampValue(row),
   }
 }
@@ -481,6 +509,56 @@ function snapshotMeta(
   }
 }
 
+function btcBalanceAccount(value: unknown): VogelVaultBtcBalanceDocument["accounts"][number] {
+  const row = responseObject(value, ["key", "label", "custody", "sats", "fiatCents"])
+  const custody = row["custody"]
+  if (custody !== "exchange" && custody !== "self_custody") throw new InvalidValue()
+  return {
+    key: text(row, "key", 256),
+    label: text(row, "label"),
+    custody,
+    sats: int64(row, "sats"),
+    fiatCents: int64(row, "fiatCents"),
+  }
+}
+
+function btcBalanceDocument(
+  value: unknown,
+  viewer: VogelVaultMember,
+  scope: VogelVaultBtcScope,
+): VogelVaultBtcBalanceDocument {
+  const row = responseObject(
+    value,
+    ["owner", "schemaVersion", "asOf", "accounts", "totals", "updatedAtMs"],
+  )
+  const owner = member(row)
+  assertVisible(viewer, owner, scope)
+  const accounts = row["accounts"]
+  if (!Array.isArray(accounts) || accounts.length > CONVEX_ROW_LIMITS.maxBtcAccounts) {
+    throw new InvalidValue()
+  }
+  const totals = responseObject(
+    row["totals"],
+    ["sats", "fiatCents", "exchangeSats", "selfCustodySats"],
+  )
+  return {
+    owner,
+    schemaVersion: int64(row, "schemaVersion"),
+    asOf: text(row, "asOf"),
+    accounts: accounts.map(btcBalanceAccount),
+    totals: {
+      sats: int64(totals, "sats"),
+      fiatCents: int64(totals, "fiatCents"),
+      exchangeSats: int64(totals, "exchangeSats"),
+      selfCustodySats: int64(totals, "selfCustodySats"),
+    },
+    ...optionalField("source", optionalText(row, "source")),
+    ...optionalField("basis", optionalText(row, "basis")),
+    ...optionalField("confidence", optionalText(row, "confidence")),
+    updatedAtMs: timestampValue(row),
+  }
+}
+
 function positiveLimit(value: unknown, max: number): number {
   if (!Number.isSafeInteger(value) || (value as number) < 1 || (value as number) > max) throw new InvalidValue()
   return value as number
@@ -542,6 +620,19 @@ export function validateRowRequest(value: unknown): VogelVaultRowRequest | null 
           ),
         }
       }
+      case "income": {
+        const viewer = member(value, "viewer")
+        const row = exactObject(value, ["kind", "viewer"], ["month", "limit"])
+        return {
+          kind,
+          viewer,
+          ...optionalField("month", Object.hasOwn(row, "month") ? monthValue(row) : undefined),
+          ...optionalField(
+            "limit",
+            Object.hasOwn(row, "limit") ? positiveLimit(row["limit"], CONVEX_ROW_LIMITS.maxIncome) : undefined,
+          ),
+        }
+      }
       case "todos": {
         const viewer = member(value, "viewer")
         const row = exactObject(value, ["kind", "viewer"], ["done", "limit"])
@@ -600,6 +691,11 @@ export function validateRowRequest(value: unknown): VogelVaultRowRequest | null 
         const row = exactObject(value, ["kind", "viewer", "scope"])
         return { kind, viewer, scope: scopeValue(row["scope"]) }
       }
+      case "btcBalanceDocuments": {
+        const viewer = member(value, "viewer")
+        const row = exactObject(value, ["kind", "viewer", "scope"])
+        return { kind, viewer, scope: scopeValue(row["scope"]) }
+      }
       default:
         throw new InvalidValue()
     }
@@ -614,6 +710,7 @@ function requestArgs(request: VogelVaultRowRequest, credential: string | null): 
     case "rowCounts":
       break
     case "transactions":
+    case "income":
       args.viewer = request.viewer
       if (request.month !== undefined) args.month = request.month
       if (request.limit !== undefined) args.limit = request.limit
@@ -637,6 +734,7 @@ function requestArgs(request: VogelVaultRowRequest, credential: string | null): 
       break
     case "btcAccounts":
     case "btcSnapshotMeta":
+    case "btcBalanceDocuments":
       args.viewer = request.viewer
       args.scope = request.scope
       break
@@ -720,6 +818,15 @@ function parseResponse(
         )
         return { status: "ok", kind: request.kind, ...list }
       }
+      case "income": {
+        const list = parseListEnvelope(
+          value,
+          request.limit,
+          CONVEX_ROW_LIMITS.maxIncome,
+          (row) => income(row, request.viewer),
+        )
+        return { status: "ok", kind: request.kind, ...list }
+      }
       case "todos": {
         const list = parseListEnvelope(
           value,
@@ -768,6 +875,15 @@ function parseResponse(
           undefined,
           CONVEX_ROW_LIMITS.maxBtcAccounts,
           (row) => snapshotMeta(row, request.viewer, request.scope),
+        )
+        return { status: "ok", kind: request.kind, ...list }
+      }
+      case "btcBalanceDocuments": {
+        const list = parseListEnvelope(
+          value,
+          undefined,
+          CONVEX_ROW_LIMITS.maxBtcBalanceDocuments,
+          (row) => btcBalanceDocument(row, request.viewer, request.scope),
         )
         return { status: "ok", kind: request.kind, ...list }
       }
