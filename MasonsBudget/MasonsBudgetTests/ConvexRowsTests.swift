@@ -58,14 +58,24 @@ final class ConvexRowsTests: XCTestCase {
             as: ConvexRowEnvelope<ConvexBTCAccountRow>.self,
         )
         XCTAssertFalse(accounts.complete)
-        XCTAssertTrue(accounts.rows.isEmpty)
+        XCTAssertEqual(accounts.rows.count, 3)
+        XCTAssertEqual(accounts.rows[0].key, "son-coldcard-mason")
+        XCTAssertEqual(accounts.rows[0].owner, .mason)
+        XCTAssertEqual(accounts.rows[0].sats, 76_406_392)
 
         let budget: ConvexBudgetDocumentEnvelope = try await client.fetchRows(
             .budget(viewer: .victor),
             as: ConvexBudgetDocumentEnvelope.self,
         )
         XCTAssertTrue(budget.complete)
-        XCTAssertNil(budget.document)
+        let budgetDocument = try XCTUnwrap(budget.document)
+        XCTAssertEqual(budgetDocument.owner, .victor)
+        XCTAssertEqual(budgetDocument.month, "June 2026")
+        XCTAssertEqual(budgetDocument.coinbaseOneBalanceCents, 2_642)
+        XCTAssertEqual(budgetDocument.categories.first?.name, "Bills & Utilities")
+        XCTAssertEqual(budgetDocument.categories.first?.budgetCents, 620_000)
+        XCTAssertEqual(budgetDocument.monthlyHistory.first?.month, "January 2026")
+        XCTAssertEqual(budgetDocument.monthlyHistory.first?.savingsBps, 5_410)
 
         let counts = try await client.fetchRows(.rowCounts, as: ConvexRowCounts.self)
         XCTAssertEqual(
@@ -75,9 +85,21 @@ final class ConvexRowsTests: XCTestCase {
                 todos: 25,
                 btcBuys: 33,
                 btcBillPays: 31,
-                btcAccounts: 0,
+                btcAccounts: 8,
             ),
         )
+    }
+
+    func testBudgetEnvelopeRetainsSyntheticNullDocumentHandling() throws {
+        let envelope: ConvexBudgetDocumentEnvelope = try decodeTaggedJSON([
+            "complete": true,
+            "document": NSNull(),
+        ])
+
+        XCTAssertNil(envelope.document)
+        XCTAssertThrowsError(try envelope.completeDocument()) { error in
+            XCTAssertEqual(error as? ConvexRowDecodeError, .missingDocument)
+        }
     }
 
     func testClosedCatalogueRequiresScopeAndReadTokenIsAttached() throws {

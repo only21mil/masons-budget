@@ -61,9 +61,8 @@ describe("production Convex wire captures", () => {
     for (const request of requests) {
       const result = await repository.query(request)
       if (request.kind === "transactions") {
-        // The immutable production capture contains the pre-fix adult
-        // owner-inverted projection. The client accepts the canonical amount
-        // and replaces that projection with locally derived values.
+        // The client derives presentation fields from the canonical amount,
+        // even though the current production capture now agrees with them.
         expect(result).toMatchObject({ status: "ok", kind: "transactions" })
         if (result.status !== "ok" || result.kind !== "transactions") {
           throw new Error("production transaction capture did not decode")

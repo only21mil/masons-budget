@@ -51,7 +51,7 @@ function requireOk(
 }
 
 describe("real Convex wire values", () => {
-  it("retains the pre-fix production capture but derives its spend projection locally", async () => {
+  it("derives spend projection locally from the current production capture", async () => {
     const capture = JSON.parse(
       readFileSync(new URL("listTransactions.json.json", GOLDEN_ROOT), "utf8"),
     ) as {
@@ -65,11 +65,30 @@ describe("real Convex wire values", () => {
     }
     expect(capture.value.rows[0]).toMatchObject({
       amountCents: "27918",
-      spendAmount: "-27918",
+      spendAmount: "27918",
+      hasOppositeSpendSign: false,
+    })
+    const encodedCapture = JSON.parse(
+      readFileSync(new URL("listTransactions.convex_encoded_json.json", GOLDEN_ROOT), "utf8"),
+    ) as {
+      value: {
+        rows: Array<Record<string, unknown>>
+      }
+    }
+    Object.assign(encodedCapture.value.rows[0] ?? {}, {
+      spendAmount: "must not be trusted",
+      displaySpendAmount: null,
       hasOppositeSpendSign: true,
     })
+    const derivationRepository = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => ({
+        httpStatus: 200,
+        body: JSON.stringify(encodedCapture),
+      }),
+    })
     const result = requireOk(
-      await repository.query({
+      await derivationRepository.query({
         kind: "transactions",
         viewer: "victor",
         limit: 3,
@@ -159,16 +178,16 @@ describe("real Convex wire values", () => {
       todos: 25,
       btcBuys: 33,
       btcBillPays: 31,
-      btcAccounts: 0,
+      btcAccounts: 8,
       income: 16,
       balanceDocuments: 1,
-      budgetDocuments: 0,
-      btcBalanceDocuments: 0,
-      financeDocuments: 0,
+      budgetDocuments: 2,
+      btcBalanceDocuments: 2,
+      financeDocuments: 1,
     })
   })
 
-  it("decodes the captured null budget document", async () => {
+  it("decodes the populated production budget document", async () => {
     const result = requireOk(
       await repository.query({
         kind: "budget",
@@ -179,6 +198,48 @@ describe("real Convex wire values", () => {
     )
     if (result.kind !== "budget") {
       throw new Error(`production golden getBudgetDocument decoded as ${result.kind}`)
+    }
+    expect(result.value).not.toBeNull()
+    if (result.value === null) {
+      throw new Error("production golden getBudgetDocument unexpectedly contained null")
+    }
+    expect(result.value).toMatchObject({
+      owner: "victor",
+      month: "June 2026",
+      coinbaseOneBalanceCents: 2_642n,
+      updatedAtMs: 0,
+    })
+    expect(result.value.categories[0]).toMatchObject({
+      name: "Bills & Utilities",
+      budgetCents: 620_000n,
+    })
+    expect(result.value.monthlyHistory[0]).toMatchObject({
+      month: "January 2026",
+      savingsBps: 5_410,
+    })
+  })
+
+  it("retains null budget document handling with a synthetic response", async () => {
+    const nullRepository = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => ({
+        httpStatus: 200,
+        body: JSON.stringify({
+          status: "success",
+          value: { complete: true, document: null },
+        }),
+      }),
+    })
+    const result = requireOk(
+      await nullRepository.query({
+        kind: "budget",
+        viewer: "victor",
+        scope: "netWorth",
+      }),
+      "synthetic null getBudgetDocument",
+    )
+    if (result.kind !== "budget") {
+      throw new Error(`synthetic null getBudgetDocument decoded as ${result.kind}`)
     }
     expect(result.value).toBeNull()
   })

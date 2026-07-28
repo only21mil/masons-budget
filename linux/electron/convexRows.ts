@@ -68,6 +68,7 @@ export const CONVEX_ROW_LIMITS = {
 const MEMBERS = ["victor", "rachel", "mason", "maddox"] as const
 const ADULTS: ReadonlySet<VogelVaultMember> = new Set(["victor", "rachel"])
 const MONTH = /^\d{4}-(?:0[1-9]|1[0-2])$/
+const BUDGET_MONTH = /^(?:\d{4}-(?:0[1-9]|1[0-2])|(?:January|February|March|April|May|June|July|August|September|October|November|December) \d{4})$/
 const DATE = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/
 const BASE64_INT64 = /^(?:[A-Za-z0-9+/]{4}){2}[A-Za-z0-9+/]{3}=$/
 const TWO_64 = 1n << 64n
@@ -150,6 +151,12 @@ function member(record: Record<string, unknown>, key = "owner"): VogelVaultMembe
 function monthValue(record: Record<string, unknown>, key = "month"): string {
   const value = text(record, key, 7)
   if (!MONTH.test(value)) throw new InvalidValue()
+  return value
+}
+
+function budgetMonthValue(record: Record<string, unknown>, key = "month"): string {
+  const value = text(record, key, 14)
+  if (!BUDGET_MONTH.test(value)) throw new InvalidValue()
   return value
 }
 
@@ -441,7 +448,7 @@ function budgetIncome(value: unknown): VogelVaultBudgetIncome {
 function budgetHistory(value: unknown): VogelVaultBudgetHistoryEntry {
   const row = responseObject(value, ["month", "incomeCents", "expensesCents", "savingsBps"])
   return {
-    month: monthValue(row),
+    month: budgetMonthValue(row),
     incomeCents: int64(row, "incomeCents"),
     expensesCents: int64(row, "expensesCents"),
     savingsBps: safeInt64Number(row, "savingsBps"),
@@ -466,7 +473,7 @@ function budgetDocument(value: unknown, viewer: VogelVaultMember): VogelVaultBud
   const income = Object.hasOwn(row, "income") ? budgetIncome(row["income"]) : undefined
   return {
     owner,
-    month: monthValue(row),
+    month: budgetMonthValue(row),
     coinbaseOneBalanceCents: int64(row, "coinbaseOneBalanceCents"),
     categories: categories.map(budgetCategory),
     ...optionalField("effectiveApr", optionalText(row, "effectiveApr")),
