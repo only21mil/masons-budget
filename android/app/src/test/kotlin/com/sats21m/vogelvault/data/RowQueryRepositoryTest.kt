@@ -404,6 +404,74 @@ class RowQueryRepositoryTest {
     }
 
     @Test
+    fun `income rows decode the production row shape and reject malformed money`() {
+        val valid = RecordingPoster(
+            rowSuccess(
+                """[{"incomeId":"income-01","owner":"victor","date":"2026-01-01","month":"2026-01","amountCents":${convexInt64(123456)},"source":"payroll","loggedBy":"victor","note":"production-shaped income fixture","archimedesRequestId":"income-arch-0","updatedAtMs":0.0}]""",
+            ),
+        )
+        val result = runBlocking {
+            repositoryWith(valid).listIncome(FamilyMember.RACHEL, month = "2026-01")
+        }
+        val row = (result as? ConvexResult.Ok)?.value?.rows?.single()
+            ?: fail("expected production-shaped income row, got $result")
+
+        assertEquals("income-01", row.id)
+        assertEquals(123_456L, row.amountCents)
+        assertEquals(FamilyMember.VICTOR, row.owner)
+        assertEquals("tables:listIncome", sentPath(valid))
+        assertEquals("convex_encoded_json", sentFormat(valid))
+
+        val malformed = RecordingPoster(
+            rowSuccess(
+                """[{"incomeId":"income-01","owner":"victor","date":"2026-01-01","month":"2026-01","amountCents":"123456","source":"payroll","updatedAtMs":0.0}]""",
+            ),
+        )
+        assertEquals(
+            ConvexResult.Failed("unexpected payload shape"),
+            runBlocking { repositoryWith(malformed).listIncome(FamilyMember.RACHEL) },
+        )
+    }
+
+    @Test
+    fun `btc balance documents decode exact totals and reject malformed sats`() {
+        val valid = RecordingPoster(
+            rowSuccess(
+                """[{"owner":"victor","schemaVersion":${convexInt64(2)},"asOf":"2026-07-18T12:00:00Z","accounts":[{"key":"strike","label":"Strike","custody":"exchange","sats":${convexInt64(35000000)},"fiatCents":${convexInt64(3430055)}},{"key":"coldcard","label":"Coldcard","custody":"self_custody","sats":${convexInt64(150000000)},"fiatCents":${convexInt64(14700000)}}],"totals":{"sats":${convexInt64(185000000)},"fiatCents":${convexInt64(18130055)},"exchangeSats":${convexInt64(35000000)},"selfCustodySats":${convexInt64(150000000)}},"source":"synthetic","basis":"spot","confidence":"verified","updatedAtMs":0.0}]""",
+            ),
+        )
+        val result = runBlocking {
+            repositoryWith(valid).listBtcBalanceDocuments(
+                FamilyMember.RACHEL,
+                RowVisibilityScope.NET_WORTH,
+            )
+        }
+        val document = (result as? ConvexResult.Ok)?.value?.rows?.single()
+            ?: fail("expected production-shaped BTC balance document, got $result")
+
+        assertEquals(185_000_000L, document.totals.sats)
+        assertEquals(18_130_055L, document.totals.fiatCents)
+        assertEquals(150_000_000L, document.accounts.last().sats)
+        assertEquals("tables:listBtcBalanceDocuments", sentPath(valid))
+        assertEquals("convex_encoded_json", sentFormat(valid))
+
+        val malformed = RecordingPoster(
+            rowSuccess(
+                """[{"owner":"victor","schemaVersion":${convexInt64(2)},"asOf":"2026-07-18T12:00:00Z","accounts":[],"totals":{"sats":1.85,"fiatCents":${convexInt64(18130055)},"exchangeSats":${convexInt64(35000000)},"selfCustodySats":${convexInt64(150000000)}},"updatedAtMs":0.0}]""",
+            ),
+        )
+        assertEquals(
+            ConvexResult.Failed("unexpected payload shape"),
+            runBlocking {
+                repositoryWith(malformed).listBtcBalanceDocuments(
+                    FamilyMember.RACHEL,
+                    RowVisibilityScope.NET_WORTH,
+                )
+            },
+        )
+    }
+
+    @Test
     fun `disabled row repository never attempts work`() = runBlocking {
         val repository = RowQueryRepositories.disabled()
 
@@ -438,6 +506,9 @@ class RowQueryRepositoryTest {
 
     private fun sentPath(poster: RecordingPoster): String =
         Json.parseToJsonElement(poster.bodies.single()).jsonObject["path"]!!.jsonPrimitive.content
+
+    private fun sentFormat(poster: RecordingPoster): String =
+        Json.parseToJsonElement(poster.bodies.single()).jsonObject["format"]!!.jsonPrimitive.content
 
     private fun transaction(id: String, owner: String, amount: String): String =
         """{"txId":"$id","owner":"$owner","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":$amount,"spendAmount":${convexInt64(500)},"displaySpendAmount":${convexInt64(500)},"hasOppositeSpendSign":false,"category":"Food","updatedAtMs":1785000000000.0}"""
