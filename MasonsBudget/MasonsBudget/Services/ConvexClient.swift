@@ -847,7 +847,7 @@ final class ConvexClient: Sendable {
         let body: [String: Any] = [
             "path": path,
             "args": finalArgs,
-            "format": "convex_encoded_json",
+            "format": "json",
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
