@@ -115,8 +115,8 @@ final class BudgetMonthScopingTests: XCTestCase {
             calendar.date(from: DateComponents(year: 2026, month: 7, day: 31, hour: 23, minute: 59, second: 59)),
         )
         let edges = [
-            transaction(id: "jul-first", date: firstMoment, amount: -1, category: "Groceries"),
-            transaction(id: "jul-last", date: lastMoment, amount: -2, category: "Groceries"),
+            transaction(id: "jul-first", date: firstMoment, amount: 1, category: "Groceries"),
+            transaction(id: "jul-last", date: lastMoment, amount: 2, category: "Groceries"),
         ]
 
         let july = monthTransactions(edges, member: .victor, month: try monthAnchor(2026, 7))
