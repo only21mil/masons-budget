@@ -30,9 +30,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -409,8 +411,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.budget(
         item {
             StatusBanner(
                 "Planned figures are ${monthLabel(budget.month)} targets",
-                "MC2 publishes one budget file per profile. The actuals below are " +
-                    "re-derived from ${monthLabel(derived.month)} transactions; the targets are not.",
+                stringResource(
+                    R.string.convex_budget_period_mismatch_detail,
+                    monthLabel(budget.month),
+                    monthLabel(derived.month),
+                ),
                 tone = VaultWarning,
             )
         }
@@ -422,7 +427,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.budget(
         item {
             StatusBanner(
                 "${Money.formatUsd(derived.uncategorisedCents)} spent outside any budget category",
-                "Counted on Activity but not against a category here. Add a category in MC2 to track it.",
+                stringResource(R.string.convex_uncategorized_spend_detail),
             )
         }
     }
@@ -815,8 +820,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settings(
             )
         } else {
             StatusBanner(
-                "This build reads sanitized fixtures",
-                "Remote reads are disabled or not configured. Figures are sample data.",
+                stringResource(R.string.convex_rows_inactive_title),
+                stringResource(R.string.convex_rows_inactive_detail),
                 tone = VaultWarning,
             )
         }
@@ -890,8 +895,8 @@ private fun RemoteRowsConfiguration(onEnable: (String) -> Unit) {
 private fun StaleNotice(status: Freshness) {
     if (status != Freshness.STALE) return
     StatusBanner(
-        "These figures are stale",
-        "The bridge has not refreshed recently. Do not act on these numbers until sync is healthy.",
+        stringResource(R.string.convex_read_stale_title),
+        stringResource(R.string.convex_read_stale_detail),
         tone = VaultWarning,
     )
 }
