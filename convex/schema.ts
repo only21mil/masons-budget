@@ -184,8 +184,8 @@ export default defineSchema({
   }).index("by_name", ["name"]),
 
   // ── Todo delete tombstones (SAT-1327) ──
-  // A deleted todo is recorded here so a later legacy blob replay cannot restore
-  // it. Kept in a SEPARATE table (not in the
+  // A deleted todo is recorded here so the MC2 sync bridge can remove it locally
+  // and a later pull cannot resurrect it. Kept in a SEPARATE table (not in the
   // todos payload) so the app-facing `get("todos")` response stays clean.
   todoTombstones: defineTable({
     id: v.string(), // the deleted todo's id
