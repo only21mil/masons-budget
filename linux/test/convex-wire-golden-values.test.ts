@@ -51,7 +51,7 @@ function requireOk(
 }
 
 describe("real Convex wire values", () => {
-  it("retains the pre-fix production capture and rejects its inverted projection", async () => {
+  it("retains the pre-fix production capture but derives its spend projection locally", async () => {
     const capture = JSON.parse(
       readFileSync(new URL("listTransactions.json.json", GOLDEN_ROOT), "utf8"),
     ) as {
@@ -68,13 +68,22 @@ describe("real Convex wire values", () => {
       spendAmount: "-27918",
       hasOppositeSpendSign: true,
     })
-    await expect(repository.query({
-      kind: "transactions",
-      viewer: "victor",
-      limit: 3,
-    })).resolves.toEqual({
-      status: "error",
-      code: "invalid-response",
+    const result = requireOk(
+      await repository.query({
+        kind: "transactions",
+        viewer: "victor",
+        limit: 3,
+      }),
+      "listTransactions",
+    )
+    if (result.kind !== "transactions") {
+      throw new Error(`production golden listTransactions decoded as ${result.kind}`)
+    }
+    expect(result.rows[0]).toMatchObject({
+      amountCents: 27_918n,
+      spendAmount: 27_918n,
+      displaySpendAmount: 27_918n,
+      hasOppositeSpendSign: false,
     })
   })
 
