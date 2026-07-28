@@ -329,14 +329,14 @@ final class MC2ReaderTests: XCTestCase {
         XCTAssertEqual(payload["category"] as? String, "Dining & Drinks")
         XCTAssertEqual(payload["card"] as? String, "Strike")
         XCTAssertEqual(payload["note"] as? String, "Coffee")
-        assertDecimalClose(try XCTUnwrap(payload["amount"] as? NSNumber).decimalValue, -25)
+        assertDecimalClose(try XCTUnwrap(payload["amount"] as? NSNumber).decimalValue, 25)
     }
 
-    func testAppAdultSpendPayloadPreservesNegativeAmount() throws {
+    func testAppAdultRefundPayloadPreservesNegativeAmount() throws {
         let transaction = Transaction(
-            id: "manual-spend",
+            id: "manual-refund",
             date: .now,
-            merchant: "Dominos",
+            merchant: "Dominos Refund",
             amount: -32.45,
             category: "Dining & Drinks",
             card: "Aven",
