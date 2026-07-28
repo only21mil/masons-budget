@@ -51,9 +51,10 @@ jobs:
           fi
           echo "Release ref is main."
 
-      # Check the protected contexts themselves at the exact release SHA.
-      # A workflow name or an older successful run is not enough: commit
-      # 0d546d87 had a successful deploy alongside a failed required client job.
+      # Check the protected contexts and the always-reporting Apple detector at
+      # the exact release SHA. A workflow name or an older successful run is not
+      # enough: commit 0d546d87 had a successful deploy alongside a failed
+      # required client job.
       - name: Require green protected checks at the release SHA
         env:
           GH_TOKEN: ${{ github.token }}
@@ -69,6 +70,7 @@ jobs:
             "Convex functions"
             "Linux client"
             "Android client"
+            "Detect Apple changes"
           )
           checks="$(gh api \
             -H "Accept: application/vnd.github+json" \
