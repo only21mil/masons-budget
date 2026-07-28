@@ -7,6 +7,8 @@
 import { createContext, useContext, useId } from "react"
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react"
 
+import { useAppState } from "../app/AppState.tsx"
+import { DISPLAY_UNITS } from "../data/bitcoinDisplay.ts"
 import { IconGlyph, type IconName } from "./IconGlyph.tsx"
 import { cx } from "./cx.ts"
 
@@ -335,13 +337,33 @@ export interface PageHeaderProps {
 }
 
 export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
+  const { displayUnit, setDisplayUnit } = useAppState()
+
   return (
     <header className="vv-page__head">
       <div>
         <h1 className="vv-page__title">{title}</h1>
         {subtitle ? <p className="vv-page__subtitle">{subtitle}</p> : null}
       </div>
-      {actions ? <div className="vv-page__actions">{actions}</div> : null}
+      <div className="vv-page__actions">
+        <div className="vv-unit-toggle" role="group" aria-label="Bitcoin display unit">
+          {DISPLAY_UNITS.map((unit) => (
+            <button
+              key={unit.storageKey}
+              type="button"
+              className={cx(
+                "vv-unit-toggle__option",
+                unit.storageKey === displayUnit && "vv-unit-toggle__option--selected",
+              )}
+              aria-pressed={unit.storageKey === displayUnit}
+              onClick={() => setDisplayUnit(unit.storageKey)}
+            >
+              {unit.label}
+            </button>
+          ))}
+        </div>
+        {actions}
+      </div>
     </header>
   )
 }
