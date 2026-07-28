@@ -1,39 +1,38 @@
-# Privacy Policy — Mason's Budget App
+# Privacy Policy — The Vogel Vault
 
-**Last updated: April 30, 2026**
+**Last updated: July 28, 2026**
 
 ## What We Collect
 
-Mason's Budget App collects **no personal financial data from banks or financial institutions**. There is no Plaid integration, no bank linking, and no third-party data aggregation.
+The Vogel Vault collects **no personal financial data from banks or financial institutions**. There is no Plaid integration, no bank linking, and no third-party data aggregation.
 
 ### Data You Enter
 - **Transactions**: Amounts, merchants, categories, and optional notes that you enter manually or via voice
-- **Voice input**: Audio processed entirely on-device using Apple's SFSpeechRecognizer — no audio leaves your device
+- **Voice input**: Audio submitted to Apple's speech-recognition framework and not retained by the app after recognition
 - **Budget preferences**: Category names, icons, and budget amounts you configure
 
-### Data Read from Your iCloud
-- Financial data stored in your MC2 mission-control folder on iCloud Drive (budgets, transactions, balances, holdings)
+### Data Read from Convex
+- Household financial data stored in the Vogel Vault Convex deployment (budgets, transactions, balances, holdings, and todos)
 
 ## Where Data Lives
 
-All data is stored **exclusively on your device and in your personal iCloud Drive**. There is no backend server, no database, and no third-party data storage. SwiftData persists locally on device. MC2 data syncs through iCloud Drive.
+The app stores a local SwiftData cache on your device. The household ledger's system of record is a private Convex deployment, and the app refreshes its local cache from that backend.
 
 ## Data Sharing
 
-**We do not share, sell, or transmit your financial data to any third party.** The app's only network communication is through Apple's iCloud Drive (for syncing between your devices) and SFSpeechRecognizer (on-device only).
+**We do not sell your financial data.** The app transmits ledger reads and approved writes to the household's Convex deployment. It also requests market prices from the Vogel Vault price endpoint and, when fallbacks are needed, CoinGecko, Coinbase, or Yahoo Finance. Voice entry uses Apple's speech-recognition framework.
 
 ## Permissions
 
-- **Microphone**: Used only for voice transaction entry. Audio is processed on-device and discarded after speech recognition.
-- **iCloud Drive**: Used to read and write your MC2 mission-control financial data. You control which folder is shared.
+- **Microphone and speech recognition**: Used only for voice transaction entry. The app does not retain the recording after recognition.
 
 ## Children
 
-Mason's Budget App is designed for family use. Children's data is stored in the same iCloud Drive account as the parent's. No data is collected from children beyond what the family chooses to enter.
+The Vogel Vault is designed for family use. Children's records are stored in the household's Convex deployment and are visible according to the app's family-profile rules. No data is collected from children beyond what the family chooses to enter.
 
 ## Your Rights
 
-You can delete all app data at any time by removing the app from your device and deleting the MC2 mission-control folder from iCloud Drive.
+Removing the app deletes its local cache from that device. Deleting records from the household backend requires an approved Vogel Vault write or administrative process.
 
 ## Contact
 

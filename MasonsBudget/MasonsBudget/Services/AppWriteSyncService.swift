@@ -171,7 +171,7 @@ enum AppWriteSyncService {
                 }
             } else {
                 let client = MC2MobileWritebackClient()
-                ok = await withRetry(label: "push todo via MC2 \(payload.id)") {
+                ok = await withRetry(label: "push todo via paired writeback \(payload.id)") {
                     let synced = try await client.upsertTodo(payload)
                     guard synced else { throw SyncError.unexpectedPayload }
                 }
@@ -198,7 +198,7 @@ enum AppWriteSyncService {
 
         Task {
             let client = MC2MobileWritebackClient()
-            let ok = await withRetry(label: "set todo completion via MC2 \(payload.id)") {
+            let ok = await withRetry(label: "set todo completion via paired writeback \(payload.id)") {
                 let synced = try await client.setTodoDone(id: payload.id, title: payload.effectiveTitle, isDone: isDone)
                 guard synced else { throw SyncError.unexpectedPayload }
             }
@@ -235,7 +235,7 @@ enum AppWriteSyncService {
                 }
             } else {
                 let client = MC2MobileWritebackClient()
-                ok = await withRetry(label: "delete todo via MC2 \(todoId)") {
+                ok = await withRetry(label: "delete todo via paired writeback \(todoId)") {
                     let synced = try await client.removeTodo(id: todoId)
                     guard synced else { throw SyncError.unexpectedPayload }
                 }

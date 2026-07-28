@@ -44,11 +44,11 @@ actor StockPriceService {
     }
 
     func fetchPrice(_ ticker: String) async throws -> Decimal {
-        if let quote = try? await fetchMC2Price(ticker) { return quote }
+        if let quote = try? await fetchVogelVaultPrice(ticker) { return quote }
         return try await fetchYahooPrice(ticker)
     }
 
-    private func fetchMC2Price(_ ticker: String) async throws -> Decimal {
+    private func fetchVogelVaultPrice(_ ticker: String) async throws -> Decimal {
         let url = URL(string: "https://sats21m.com/api/price/\(ticker)")!
         let (data, response) = try await session.data(from: url)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
