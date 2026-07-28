@@ -685,12 +685,22 @@ struct AnyCodable: Decodable {
 /// HTTP client for the Convex backend.
 /// Handles query and mutation calls via the Convex HTTP API.
 final class ConvexClient: Sendable {
+    /// Optional transport edge for deterministic request-boundary tests. The
+    /// default remains URLSession for every production call site.
+    typealias RequestExecutor = @Sendable (URLRequest) async throws -> (Data, URLResponse)
+
     private let deploymentURL: URL
     private let session: URLSession
+    private let requestExecutor: RequestExecutor?
     private let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "Convex")
 
-    init(deploymentURL: URL, session: URLSession? = nil) {
+    init(
+        deploymentURL: URL,
+        session: URLSession? = nil,
+        requestExecutor: RequestExecutor? = nil,
+    ) {
         self.deploymentURL = deploymentURL
+        self.requestExecutor = requestExecutor
         if let session {
             self.session = session
         } else {
@@ -851,7 +861,13 @@ final class ConvexClient: Sendable {
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await session.data(for: request)
+        let result: (Data, URLResponse)
+        if let requestExecutor {
+            result = try await requestExecutor(request)
+        } else {
+            result = try await session.data(for: request)
+        }
+        let (data, response) = result
 
         guard let http = response as? HTTPURLResponse else {
             throw ConvexError.httpError(0)
