@@ -6,25 +6,43 @@ import path from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
 
+import {
+  CAPTURE_DEPLOYMENT,
+  CAPTURE_ENDPOINT,
+  CAPTURE_FORMATS,
+  CAPTURE_QUERIES,
+  captureContractDigest,
+} from "./convex-wire-golden.mjs"
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const goldenRoot = path.join(repoRoot, "shared/domain/fixtures/convex-wire-golden")
 const provenancePath = path.join(repoRoot, "shared/domain/convex-wire-golden-provenance.json")
 const provenance = JSON.parse(await readFile(provenancePath, "utf8"))
 const failures = []
 
-if (provenance.version !== 1) {
+if (provenance.version !== 2) {
   failures.push(`unsupported provenance version ${String(provenance.version)}`)
 }
 
 const formats = provenance.attestation?.formats
 const queries = provenance.attestation?.queries
+const expectedQueryNames = CAPTURE_QUERIES.map(({ name }) => name)
 if (
   !Array.isArray(formats)
-  || formats.join(",") !== "json,convex_encoded_json"
+  || formats.join(",") !== CAPTURE_FORMATS.join(",")
   || !Array.isArray(queries)
-  || queries.length === 0
+  || queries.join(",") !== expectedQueryNames.join(",")
 ) {
-  failures.push("attestation must name both wire formats and at least one query")
+  failures.push("attestation query/format matrix differs from the capture contract")
+}
+if (provenance.attestation?.credentialEchoChecked !== true) {
+  failures.push("attestation must confirm the credential-echo redaction check")
+}
+if (
+  provenance.deployment !== CAPTURE_DEPLOYMENT
+  || provenance.endpoint !== CAPTURE_ENDPOINT
+) {
+  failures.push("attestation deployment or endpoint differs from the capture target")
 }
 
 const expectedFiles = new Set()
@@ -64,20 +82,21 @@ for (const filename of captureFiles) {
   }
 }
 
-const schemaRelativePath = provenance.schema?.path
+const contract = await captureContractDigest(repoRoot)
 if (
-  typeof schemaRelativePath !== "string"
-  || path.normalize(schemaRelativePath) !== "convex/schema.ts"
+  provenance.contract?.algorithm !== "sha256"
+  || provenance.contract?.extractor !== "selected-typescript-declarations-v1"
 ) {
-  failures.push("schema.path must attest convex/schema.ts")
-} else {
-  const schemaBytes = await readFile(path.join(repoRoot, schemaRelativePath))
-  const actualSchema = createHash("sha256").update(schemaBytes).digest("hex")
-  if (actualSchema !== provenance.schema?.sha256) {
-    failures.push(
-      `schema checksum mismatch: expected ${String(provenance.schema?.sha256)}, received ${actualSchema}`,
-    )
-  }
+  failures.push("capture contract must use the reviewed selective SHA-256 extractor")
+}
+if (JSON.stringify(provenance.contract?.sources) !== JSON.stringify(contract.sources)) {
+  failures.push("capture contract source declaration list differs from the reviewed scope")
+}
+if (provenance.contract?.sha256 !== contract.sha256) {
+  failures.push(
+    `capture contract checksum mismatch: expected ${String(provenance.contract?.sha256)}, `
+      + `received ${contract.sha256}`,
+  )
 }
 
 if (failures.length > 0) {
@@ -133,5 +152,5 @@ if (ageDays >= warningAfterDays) {
 
 console.log(
   `PASS: ${captureFiles.length} production wire captures match their provenance checksums `
-    + `and schema ${provenance.schema.sha256}; age ${ageDays} days.`,
+    + `and capture contract ${provenance.contract.sha256}; age ${ageDays} days.`,
 )

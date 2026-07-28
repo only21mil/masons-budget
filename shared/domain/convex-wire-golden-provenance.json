@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "capturedDate": "2026-07-27",
   "capturedDatePrecision": "day",
   "deployment": "prod:keen-elephant-452",
@@ -21,10 +21,145 @@
       "rowCounts"
     ]
   },
-  "schema": {
-    "path": "convex/schema.ts",
-    "sha256": "aeb2773ebaab6c5dde6f7777ca5e91120a08864aa65f5dbb8fc4db061255b61f",
-    "reattestedNote": "Re-attested for the Lane BA/BB/BD/BE boundary. The captures are unchanged, byte-for-byte production recordings from 2026-07-27. The schema hash moved because #126 adds document tables and #128 corrects the spend-sign projection and its comments; neither alters the shape of the seven captured queries. NOTE: #128 repurposes listTransactions.json.json from an expected-value fixture to a known-stale capture the decoder must REJECT. Once Convex is redeployed these captures no longer describe production and must be re-captured."
+  "contract": {
+    "algorithm": "sha256",
+    "extractor": "selected-typescript-declarations-v1",
+    "sha256": "7bcdd0d7ef5afce728e1105335d2411a64334933676eaed1f1ea70ef1a636309",
+    "sources": [
+      {
+        "path": "convex/tables.ts",
+        "declarations": [
+          {
+            "kind": "variable",
+            "name": "PUBLIC_SNAPSHOT_HARD_MAX"
+          },
+          {
+            "kind": "function",
+            "name": "requestedRowCap"
+          },
+          {
+            "kind": "function",
+            "name": "publicEnvelope"
+          },
+          {
+            "kind": "function",
+            "name": "projectTransaction"
+          },
+          {
+            "kind": "function",
+            "name": "projectTodo"
+          },
+          {
+            "kind": "function",
+            "name": "projectBtcBuy"
+          },
+          {
+            "kind": "function",
+            "name": "projectBtcBillPay"
+          },
+          {
+            "kind": "function",
+            "name": "projectBtcAccount"
+          },
+          {
+            "kind": "function",
+            "name": "publicBudgetDocument"
+          },
+          {
+            "kind": "function",
+            "name": "budgetSourceFor"
+          },
+          {
+            "kind": "variable",
+            "name": "scopeValidator"
+          },
+          {
+            "kind": "variable",
+            "name": "listTransactions"
+          },
+          {
+            "kind": "variable",
+            "name": "listTodos"
+          },
+          {
+            "kind": "variable",
+            "name": "listBtcBuys"
+          },
+          {
+            "kind": "variable",
+            "name": "listBtcBillPays"
+          },
+          {
+            "kind": "variable",
+            "name": "listBtcAccounts"
+          },
+          {
+            "kind": "variable",
+            "name": "getBudgetDocument"
+          },
+          {
+            "kind": "variable",
+            "name": "rowCounts"
+          }
+        ]
+      },
+      {
+        "path": "convex/schema.ts",
+        "declarations": [
+          {
+            "kind": "variable",
+            "name": "familyMemberValidator"
+          },
+          {
+            "kind": "variable",
+            "name": "custodyValidator"
+          },
+          {
+            "kind": "variable",
+            "name": "budgetCategoryValidator"
+          },
+          {
+            "kind": "variable",
+            "name": "budgetIncomeValidator"
+          },
+          {
+            "kind": "variable",
+            "name": "monthlyHistoryValidator"
+          },
+          {
+            "kind": "schemaTable",
+            "name": "transactions"
+          },
+          {
+            "kind": "schemaTable",
+            "name": "todos"
+          },
+          {
+            "kind": "schemaTable",
+            "name": "btcBuys"
+          },
+          {
+            "kind": "schemaTable",
+            "name": "btcBillPays"
+          },
+          {
+            "kind": "schemaTable",
+            "name": "btcAccounts"
+          },
+          {
+            "kind": "schemaTable",
+            "name": "budgetDocuments"
+          }
+        ]
+      }
+    ],
+    "scopeNote": "Binds the capture matrix to selected query declarations, response projectors, envelope helpers, and backing validators for the seven captured queries; unrelated schema declarations are excluded.",
+    "knownLimitations": [
+      "The selected-declaration extractor cannot detect behavior changes hidden in a transitive helper that is not listed.",
+      "The digest cannot prove that the deployed production code matches this checkout or that the HTTP response actually came from the named deployment.",
+      "Checksums cannot prevent a reviewer from falsely replacing captures and provenance together."
+    ],
+    "reattestedNote": "The captures remain unchanged production recordings from 2026-07-27, including the known-stale transaction projection that corrected decoders reject. Re-capture with scripts/capture-convex-wire-golden.mjs only after the corrected Convex code is deployed."
   },
   "freshness": {
     "warningAfterDays": 30,
