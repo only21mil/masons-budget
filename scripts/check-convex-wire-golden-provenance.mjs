@@ -267,7 +267,11 @@ async function queryShapeDigests(root, queryNames) {
             )
           }
         }
-        if (token.type === "identifier") {
+        const isPropertyName = (
+          declaration.tokens[tokenIndex - 1]?.value === "."
+          || declaration.tokens[tokenIndex + 1]?.value === ":"
+        )
+        if (token.type === "identifier" && !isPropertyName) {
           for (const dependency of declarationsByName.get(token.value) ?? []) {
             enqueue(dependency)
           }
@@ -350,10 +354,23 @@ if (
   failures.push(`queryShapes.sources must be ${queryShapeSources.join(", ")}`)
 }
 
+const shapeQueries = (
+  queryShapes?.sha256 !== null
+  && typeof queryShapes?.sha256 === "object"
+  && !Array.isArray(queryShapes.sha256)
+)
+  ? Object.keys(queryShapes.sha256).sort()
+  : []
+for (const query of queries ?? []) {
+  if (!shapeQueries.includes(query)) {
+    failures.push(`captured query is missing a query shape checksum: ${query}`)
+  }
+}
+
 let actualQueryShapeDigests = {}
 try {
-  actualQueryShapeDigests = await queryShapeDigests(repoRoot, queries ?? [])
-  for (const query of queries ?? []) {
+  actualQueryShapeDigests = await queryShapeDigests(repoRoot, shapeQueries)
+  for (const query of shapeQueries) {
     const expected = queryShapes?.sha256?.[query]
     const actual = actualQueryShapeDigests[query]
     if (actual !== expected) {
@@ -425,6 +442,6 @@ if (ageDays >= warningAfterDays) {
 
 console.log(
   `PASS: ${captureFiles.length} production wire captures match their provenance checksums `
-    + `and ${Object.keys(actualQueryShapeDigests).length} captured query shapes; `
+    + `and ${Object.keys(actualQueryShapeDigests).length} attested query shapes; `
     + `age ${ageDays} days.`,
 )

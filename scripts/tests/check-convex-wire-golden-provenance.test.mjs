@@ -119,3 +119,21 @@ test("a captured query response-shape change invalidates provenance", async (t) 
   assert.notEqual(result.status, 0, result.stdout)
   assert.match(result.stderr, /query shape/i)
 })
+
+test("an attested query without a production capture still guards its shape", async (t) => {
+  const root = await fixtureRepo()
+  t.after(() => rm(root, { force: true, recursive: true }))
+  const tablesPath = path.join(root, "convex/tables.ts")
+  const tables = await readFile(tablesPath, "utf8")
+  const changed = tables.replace(
+    "incomeId: row.incomeId,\n    owner: row.owner,",
+    "incomeId: row.incomeId,\n    wireShapeChanged: true,\n    owner: row.owner,",
+  )
+  assert.notEqual(changed, tables, "fixture must change projectIncome")
+  await writeFile(tablesPath, changed)
+
+  const result = runGate(root)
+
+  assert.notEqual(result.status, 0, result.stdout)
+  assert.match(result.stderr, /query shape checksum mismatch for listIncome/)
+})
