@@ -359,7 +359,9 @@ export async function loadConvexRowEnvelope(
         ? errorSlice<readonly Transaction[]>([], "invalid-response")
         : populatedSlice(
             transactionsResult.rows.map(transaction),
-            transactionsResult.rows.length > 0,
+            // A complete successful transaction query is usable even when it
+            // contains no rows: that is an authoritative zero, not missing data.
+            true,
             updatedAt(transactionsResult.rows),
             `${SOURCE} · transactions`,
           )

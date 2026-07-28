@@ -335,6 +335,25 @@ describe("renderer Convex row adapter", () => {
     expect(result.data.billPays.status).toBe("live")
   })
 
+  it("keeps a complete zero-row transaction response usable as a true zero", async () => {
+    const result = await loadConvexRowEnvelope(
+      async (request) => {
+        const base = response(request)
+        return base.status === "ok" && base.kind === "transactions"
+          ? { ...base, rows: [] }
+          : base
+      },
+      "victor",
+      () => 999,
+    )
+
+    expect(result.status).toBe("loaded")
+    if (result.status !== "loaded") return
+    expect(result.data.transactions.status).toBe("live")
+    expect(result.data.transactions.value).toEqual([])
+    expect(result.data.budget.status).toBe("live")
+  })
+
   it("rejects overlapping BTC balance documents instead of combining them", async () => {
     const result = await loadConvexRowEnvelope(
       async (request) => {

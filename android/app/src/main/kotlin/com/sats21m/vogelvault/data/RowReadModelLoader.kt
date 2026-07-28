@@ -48,11 +48,7 @@ class RowReadModelLoader(
         }
 
         val stamp = nowMillis()
-        val transactionSlice = transactions.await().toSlice(
-            emptyList(),
-            "Convex rows · transactions",
-            stamp,
-        )
+        val transactionSlice = transactions.await().toTransactionSlice(stamp)
         val todoSlice = todos.await().toSlice(emptyList(), "Convex rows · todos", stamp)
         val buySlice = btcBuys.await().toSlice(emptyList(), "Convex rows · bitcoin buys", stamp)
         val accountSlice =
@@ -200,6 +196,25 @@ private fun ConvexResult<BudgetDocumentSnapshot>.toBudgetSlice(stamp: Long): Sli
         ConvexResult.Missing -> emptySlice(null, "Convex rows · budget")
         else -> errorSlice(null, "Convex rows · budget")
     }
+
+/**
+ * A complete transaction response with zero rows is an authoritative zero.
+ *
+ * `EMPTY` remains reserved for a query that produced no usable snapshot (for
+ * example `Missing`), so required financial projections can still fail closed.
+ */
+private fun ConvexResult<RowSnapshot<com.sats21m.vogelvault.domain.Transaction>>.toTransactionSlice(
+    stamp: Long,
+): Slice<List<com.sats21m.vogelvault.domain.Transaction>> {
+    val source = "Convex rows · transactions"
+    return when (this) {
+        is ConvexResult.Ok ->
+            if (value.complete) liveSlice(value.rows, source, stamp)
+            else errorSlice(emptyList(), source)
+        ConvexResult.Missing -> emptySlice(emptyList(), source)
+        else -> errorSlice(emptyList(), source)
+    }
+}
 
 private fun <T> ConvexResult<RowSnapshot<T>>.toSlice(
     empty: List<T>,

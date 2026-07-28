@@ -268,6 +268,20 @@ class RowReadModelLoaderTest {
     }
 
     @Test
+    fun `complete empty transaction snapshot is a usable true zero`() = runBlocking {
+        val model = RowReadModelLoader(
+            FakeRows(
+                transactions = ConvexResult.Ok(RowSnapshot(emptyList(), complete = true)),
+            ),
+        ) { 456L }.load(FamilyMember.VICTOR)
+
+        assertEquals(Freshness.LIVE, model.transactions.status)
+        assertEquals(emptyList(), model.transactions.value)
+        assertEquals(false, model.transactions.requiredProjectionUnavailable)
+        assertEquals(456L, model.transactions.updatedAt)
+    }
+
+    @Test
     fun `absent row queries degrade to error slices without fixture figures`() = runBlocking {
         val unavailable = ConvexResult.Failed("convex error")
         val model = RowReadModelLoader(
@@ -306,7 +320,7 @@ class RowReadModelLoaderTest {
 
 private class FakeRows(
     private val transactions: ConvexResult<RowSnapshot<Transaction>> =
-        ConvexResult.Ok(RowSnapshot(emptyList(), true)),
+        ConvexResult.Missing,
     private val todos: ConvexResult<RowSnapshot<TodoItem>> =
         ConvexResult.Ok(RowSnapshot(emptyList(), true)),
     private val buys: ConvexResult<RowSnapshot<BtcBuy>> =
