@@ -1,6 +1,6 @@
 // The Budget month picker.
 //
-// The Budget page used to be pinned to whatever month the MC2 budget file said,
+// The Budget page used to be pinned to whatever month the legacy budget record said,
 // which made June unreachable even though the transactions were sitting right
 // there. These tests hold the fix: the picker offers the months that are
 // actually present, selecting one re-derives the totals from that month, and
@@ -137,8 +137,8 @@ test("the Dashboard headline moves with the Budget month", () => {
   assert.ok(!june.includes("$673.46"), "Dashboard is still totalling July")
 
   // Income: two July paycheques, one in June.
-  assert.ok(july.includes("$4,960.00"), "July income missing")
-  assert.ok(june.includes("$2,480.00"), "June income missing")
+  assert.ok(july.includes("$7,777.77"), "July canonical income missing")
+  assert.ok(june.includes("$3,333.33"), "June canonical income missing")
 })
 
 test("the Dashboard activity list is scoped to the selected month", () => {

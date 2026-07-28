@@ -155,12 +155,41 @@ class ReadModelTest {
     // ── Figure suppression ──────────────────────────────────────────────────
 
     @Test
-    fun `figures are suppressed on error and loading but not on empty`() {
+    fun `required figures are suppressed when a source has no readable value`() {
+        assertTrue(
+            Fixtures.envelope(FamilyMember.VICTOR, Freshness.ERROR)
+                .budget.requiredProjectionUnavailable,
+        )
+        assertTrue(
+            Fixtures.envelope(FamilyMember.VICTOR, Freshness.LOADING)
+                .budget.requiredProjectionUnavailable,
+        )
+        assertTrue(
+            Fixtures.envelope(FamilyMember.VICTOR, Freshness.EMPTY)
+                .budget.requiredProjectionUnavailable,
+        )
+        assertFalse(
+            Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+                .budget.requiredProjectionUnavailable,
+        )
+        assertFalse(
+            Fixtures.envelope(FamilyMember.VICTOR, Freshness.STALE)
+                .budget.requiredProjectionUnavailable,
+        )
+    }
+
+    @Test
+    fun `required financial figures are unavailable on empty without hiding zero todos`() {
         assertTrue(Fixtures.envelope(FamilyMember.VICTOR, Freshness.ERROR).budget.suppressFigures)
         assertTrue(Fixtures.envelope(FamilyMember.VICTOR, Freshness.LOADING).budget.suppressFigures)
 
-        // Empty is a real answer: zero is not the same as unknown.
-        assertFalse(Fixtures.envelope(FamilyMember.VICTOR, Freshness.EMPTY).budget.suppressFigures)
+        val empty = Fixtures.envelope(FamilyMember.VICTOR, Freshness.EMPTY)
+        assertFalse(empty.budget.suppressFigures)
+        assertTrue(empty.budget.requiredProjectionUnavailable)
+        assertTrue(empty.incomeFiguresUnavailable)
+        assertTrue(empty.netWorthFiguresUnavailable)
+        assertTrue(empty.billPayLedgerUnavailable)
+        assertFalse(empty.todos.suppressFigures, "zero open todos remains a real zero")
         assertFalse(Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE).budget.suppressFigures)
         assertFalse(Fixtures.envelope(FamilyMember.VICTOR, Freshness.STALE).budget.suppressFigures)
     }

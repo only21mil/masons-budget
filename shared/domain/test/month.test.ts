@@ -225,7 +225,7 @@ test("income is not spend", () => {
 })
 
 test("child rows count as spend despite a positive amount", () => {
-  // Child MC2 files store spending as a positive magnitude.
+  // Production stores child purchases with the same positive sign as adults.
   const childRow: Transaction = { ...tx("2026-07-10", "Entertainment", "24"), owner: "mason" }
   const result = deriveBudgetSpend(budget("2026-07", [["Entertainment", "40"]]), [childRow])
   assert.equal(result.categories[0]!.spent, parseCents("24"))

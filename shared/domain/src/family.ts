@@ -6,9 +6,10 @@
 // the TypeScript and Kotlin test suites both consume.
 //
 // HARD RULE (repo AGENTS.md): Victor and Rachel are ONE shared household and see
-// identical data. Adult records in MC2 default to owner "victor", so any strict
-// `owner === activeMember` check empties Rachel's tabs. That bug shipped in v0.3.
-// Always route visibility through canSeeDataOwnedBy — never strict equality.
+// identical data. Canonical untagged adult records default to owner "victor",
+// so any strict `owner === activeMember` check empties Rachel's tabs. That bug
+// shipped in v0.3. Always route visibility through canSeeDataOwnedBy — never
+// strict equality.
 
 export const FAMILY_MEMBERS = ["victor", "rachel", "mason", "maddox"] as const
 
@@ -18,7 +19,7 @@ export function isFamilyMember(value: unknown): value is FamilyMember {
   return typeof value === "string" && (FAMILY_MEMBERS as readonly string[]).includes(value)
 }
 
-/** MC2 tags untagged adult records as "victor". Mirrors the Swift default. */
+/** Untagged adult records resolve to "victor", matching the Swift default. */
 export const DEFAULT_OWNER: FamilyMember = "victor"
 
 export function coerceOwner(value: unknown): FamilyMember {
@@ -84,8 +85,9 @@ export function profileDescription(member: FamilyMember): string {
   }
 }
 
-// ── MC2 file routing ────────────────────────────────────────────────────────
-// Port of the mc2*FileName / hasDedicatedMC2ChildFinanceFiles members.
+// ── Legacy blob-name routing ────────────────────────────────────────────────
+// Compatibility port of the Swift blob-name members. Runtime clients read
+// Convex row tables; these names remain part of the cross-client contract.
 
 export function mc2TransactionsFileName(member: FamilyMember): string {
   switch (member) {

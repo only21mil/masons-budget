@@ -1,4 +1,4 @@
-// One todo, every MC2 spelling, one rendering.
+// One todo, every retained wire spelling, one rendering.
 //
 // The shared fixture (shared/domain/fixtures/todo-cases.json) pins the
 // normaliser; it says nothing about the screen. This suite pins the other half:
@@ -68,7 +68,7 @@ const GROUPS: readonly DialectGroup[] = [
         flag: true,
         owner: "victor",
       },
-      "camel case, as MC2 writes it": {
+      "legacy camel-case shape": {
         id: "d-1",
         title: "Reconcile July statements",
         area: "Finance",
@@ -137,7 +137,7 @@ const GROUPS: readonly DialectGroup[] = [
         when: "anytime",
         owner: "victor",
       },
-      "explicit MC2 default project": {
+      "explicit legacy default project": {
         id: "d-3",
         text: "Sort out the garage shelving",
         project: MC2_DEFAULT_PROJECT,

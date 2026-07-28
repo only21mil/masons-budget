@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Shared family/visibility contract and MC2 read model for the Vogel Vault clients",
+  "description": "Shared family, visibility, and Convex row-read contract for the Vogel Vault clients",
   "exports": {
     ".": "./src/index.ts",
     "./family": "./src/family.ts",

@@ -35,8 +35,8 @@ export type ReadEnvironment = Readonly<Record<string, string | undefined>>
  * The three settings, all runtime.
  *
  * Prefixed as one family so they are greppable and so a shell that happens to
- * carry the deployment's own `CONVEX_READ_TOKEN` — a Convex admin's shell, or an
- * MC2 sync host — does not silently configure a desktop app. iOS holds the
+ * carry the deployment's own `CONVEX_READ_TOKEN` — a Convex admin's shell, or a
+ * legacy sync environment — does not silently configure a desktop app. iOS holds the
  * equivalents under the `convex_deployment_url` / `convex_read_token`
  * UserDefaults keys; the deployment itself calls the secret `CONVEX_READ_TOKEN`.
  */
@@ -275,11 +275,11 @@ export type JsonPoster = (
  * The one query this client makes: `dataFiles:list`, metadata only.
  *
  * `dataFiles:get` is deliberately absent. It is gated by the same credential, so
- * omitting it costs the cutover nothing, and there is no decoder yet — MC2 money
- * is decimal, `JSON.parse` turns a decimal into a float, and a float is not
- * money. Pulling the household's balances into this process before anything can
- * correctly read them would be surface with no consumer. The lane that writes
- * the decoder adds the call.
+ * omitting it costs the cutover nothing, and there is no decoder yet — legacy
+ * blob money is decimal, `JSON.parse` turns a decimal into a float, and a float
+ * is not money. Pulling the household's balances into this process before
+ * anything can correctly read them would be surface with no consumer. The lane
+ * that writes the decoder adds the call.
  *
  * It is also the exact probe scripts/verify-read-auth.sh uses, for the same
  * reason it uses it: it proves authorisation without moving any money.

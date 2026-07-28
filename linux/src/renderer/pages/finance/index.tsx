@@ -16,6 +16,7 @@ import {
 import { basisPoints, formatSats, formatUsd, satsToUsdCents, sum } from "@vogel-vault/domain/money"
 import {
   type BTCAccount,
+  type BTCSnapshot,
   type BTCBuy,
   type CategorySpend,
   type Freshness,
@@ -72,10 +73,14 @@ function tableState(status: string): "normal" | "empty" | "error" | "stale" | "l
  * Without this a page renders "Could not load" in its table while the KPI strip
  * above still shows totals computed from whatever was in memory — which is
  * precisely the "something wrong" the error state promises not to display.
- * `empty` is different: zero really is the answer, so it renders normally.
+ * Some collections can be authoritatively empty (for example todos or bill
+ * pays). Required financial snapshots cannot: an empty result means the source
+ * is unavailable, not that the household owns zero.
  */
-function figure(status: string, render: () => string): string {
-  if (status === "error" || status === "loading") return SUPPRESSED
+function figure(status: string, render: () => string, emptyIsUnavailable = false): string {
+  if (status === "error" || status === "loading" || (emptyIsUnavailable && status === "empty")) {
+    return SUPPRESSED
+  }
   return render()
 }
 
@@ -94,10 +99,6 @@ function referencePrice(
   return newestVisibleBuyPrice(viewer, buys)
 }
 
-function priceBasis(price: RecordedBitcoinPrice | null): string {
-  return price ? `Last buy · ${price.date}` : "No recorded price"
-}
-
 function BitcoinFiatNotice({ price }: { price: RecordedBitcoinPrice | null }) {
   return price ? (
     <StatusBanner
@@ -111,6 +112,41 @@ function BitcoinFiatNotice({ price }: { price: RecordedBitcoinPrice | null }) {
       detail="No recorded Bitcoin buy price is available. BTC and SATS remain exact."
     />
   )
+}
+
+function BitcoinSnapshotNotice({
+  status,
+  document,
+}: {
+  status: Freshness
+  document: BTCSnapshot | null
+}) {
+  const available =
+    status !== "error" &&
+    status !== "loading" &&
+    status !== "empty" &&
+    document !== null
+
+  return available ? (
+    <StatusBanner
+      title="USD snapshot"
+      detail={`Uses the canonical BTC balance document from ${document.asOf}. This is not a live price.`}
+    />
+  ) : (
+    <StatusBanner
+      tone="warning"
+      title={PRICE_UNAVAILABLE}
+      detail="No canonical BTC balance document is available. BTC and SATS remain exact."
+    />
+  )
+}
+
+function formatSnapshotBitcoin(
+  sats: bigint,
+  fiatCents: bigint,
+  unit: DisplayUnit,
+): string {
+  return unit === "usd" ? formatUsd(fiatCents) : formatBitcoin(sats, unit)
 }
 
 function incomeOf(transaction: Transaction): bigint {
@@ -218,7 +254,7 @@ function StaleNotice({ status }: { status: string }) {
     <StatusBanner
       tone="warning"
       title="These figures are stale"
-      detail="The bridge has not refreshed recently. Do not act on these numbers until sync is healthy."
+      detail="The Convex row-table read has not refreshed recently. Do not act on these numbers until sync is healthy."
     />
   )
 }
@@ -229,7 +265,8 @@ function DashboardPage() {
   const { activeProfile, data, displayUnit, selectedMonth } = useAppState()
   const visibleTransactions = visibleTo(activeProfile, data.transactions.value)
   const budgetTransactions = budgetTransactionsFor(activeProfile, data.transactions.value)
-  const accounts = netWorthScopeFor(activeProfile, data.btcAccounts.value)
+  const accounts = data.btcBalanceDocument.value?.accounts ?? []
+  const incomeRows = visibleTo(activeProfile, data.income.value)
   const todos = visibleTo(activeProfile, data.todos.value).filter((todo) => !todo.done)
 
   // The headline follows budget scope: adults share only adult-owned rows while
@@ -240,25 +277,38 @@ function DashboardPage() {
   const budgetMonthTransactions = transactionsInMonth(budgetTransactions, month)
   const activityMonthTransactions = transactionsInMonth(visibleTransactions, month)
   const spend = sum(budgetMonthTransactions.map(spendAmount))
-  const income = sum(budgetMonthTransactions.map(incomeOf))
-  const stackSats = sum(accounts.map((account) => account.sats))
-  const price = referencePrice(activeProfile, data.btcBuys.status, data.btcBuys.value)
+  const income = sum(incomeRows.filter((row) => row.month === month).map((row) => row.amount))
+  const stackSats = data.btcBalanceDocument.value?.totals.sats ?? 0n
+  const stackValue = data.btcBalanceDocument.value?.totals.fiat ?? 0n
 
   const txStatus = data.transactions.status
-  const btcStatus = data.btcAccounts.status
+  const incomeStatus = data.income.status
+  const btcStatus = data.btcBalanceDocument.status
   const todoStatus = data.todos.status
 
   const kpis: KPI[] = [
-    { label: "Spend (visible)", value: figure(txStatus, () => formatUsd(spend)), tone: "negative" },
-    { label: "Income (visible)", value: figure(txStatus, () => formatUsd(income)), tone: "positive" },
+    {
+      label: "Spend (visible)",
+      value: figure(txStatus, () => formatUsd(spend), true),
+      tone: "negative",
+    },
+    {
+      label: "Income (visible)",
+      value: figure(incomeStatus, () => formatUsd(income), true),
+      tone: "positive",
+    },
     {
       label: "Stack",
-      value: requiredFigure(btcStatus, () => formatBitcoin(stackSats, displayUnit, price?.cents)),
+      value: requiredFigure(
+        btcStatus,
+        () => formatSnapshotBitcoin(stackSats, stackValue, displayUnit),
+      ),
       tone: "accent",
-      hint: requiredFigure(btcStatus, () =>
-        displayUnit === "usd"
-          ? priceBasis(price)
-          : formatBitcoin(stackSats, "usd", price?.cents),
+      hint: requiredFigure(
+        btcStatus,
+        () => displayUnit === "usd"
+          ? `Canonical snapshot · ${data.btcBalanceDocument.value?.asOf ?? "date unavailable"}`
+          : formatUsd(stackValue),
       ),
     },
     { label: "Open tasks", value: figure(todoStatus, () => String(todos.length)) },
@@ -272,7 +322,12 @@ function DashboardPage() {
         actions={<FreshnessTag status={data.transactions.status} updatedAt={data.transactions.updatedAt} />}
       />
       <StaleNotice status={data.transactions.status} />
-      {displayUnit === "usd" ? <BitcoinFiatNotice price={price} /> : null}
+      {displayUnit === "usd" ? (
+        <BitcoinSnapshotNotice
+          status={data.btcBalanceDocument.status}
+          document={data.btcBalanceDocument.value}
+        />
+      ) : null}
       <KPIStrip items={kpis} />
       <PageGrid>
         <Panel title="Recent activity" source={data.transactions.source} flush>
@@ -283,12 +338,12 @@ function DashboardPage() {
             state={tableState(data.transactions.status)}
           />
         </Panel>
-        <Panel title="Bitcoin" source={data.btcAccounts.source} flush>
+        <Panel title="Bitcoin" source={data.btcBalanceDocument.source} flush>
           <DataTable
-            columns={stackColumns(displayUnit, price)}
+            columns={stackColumns(displayUnit)}
             rows={accounts}
             rowKey={(row) => row.key}
-            state={tableState(data.btcAccounts.status)}
+            state={tableState(data.btcBalanceDocument.status)}
             emptyTitle="No accounts in scope"
             emptyDetail="This profile has no Bitcoin accounts that count toward its net worth."
           />
@@ -312,7 +367,6 @@ const recentColumns: ReadonlyArray<Column<Transaction>> = [
 
 function stackColumns(
   displayUnit: DisplayUnit,
-  price: RecordedBitcoinPrice | null,
 ): ReadonlyArray<Column<BTCAccount>> {
   return [
     { key: "label", header: "Account", render: (row) => row.label },
@@ -330,7 +384,7 @@ function stackColumns(
       key: "amount",
       header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),
       numeric: true,
-      render: (row) => formatBitcoin(row.sats, displayUnit, price?.cents),
+      render: (row) => formatSnapshotBitcoin(row.sats, row.fiat, displayUnit),
     },
   ]
 }
@@ -382,7 +436,7 @@ function BudgetPage() {
         <StatusBanner
           tone="info"
           title={`Planned amounts are from the ${monthLabel(budget.month)} budget`}
-          detail="MC2 publishes one budget file at a time, so the actuals below are this month's while the planned column is not. Compare with that in mind."
+          detail="The current budget projection carries one planned month at a time, so the actuals below are this month's while the planned column is not. Compare with that in mind."
         />
       )}
       {/* The budget operations strip: planned / actual / remaining / over-budget. */}
@@ -407,7 +461,7 @@ function BudgetPage() {
         <StatusBanner
           tone="info"
           title={`${formatUsd(spend.uncategorised)} spent outside any budget category`}
-          detail="Counted on Activity but not against a category here. Add a category in MC2 to track it."
+          detail="Counted on Activity but not against a category here. Add a category through an approved write path to track it."
         />
       ) : null}
       <Panel
@@ -503,50 +557,74 @@ const activityColumns: ReadonlyArray<Column<Transaction>> = [
 function BitcoinOverviewPage() {
   const { activeProfile, data, displayUnit } = useAppState()
   const visible = visibleTo(activeProfile, data.btcAccounts.value)
-  const inScope = netWorthScopeFor(activeProfile, data.btcAccounts.value)
-
-  const totalSats = sum(inScope.map((account) => account.sats))
-  const selfCustody = sum(
-    inScope.filter((a) => a.custody === "self_custody").map((account) => account.sats),
-  )
-  const exchange = totalSats - selfCustody
-
-  const status = data.btcAccounts.status
-  const price = referencePrice(activeProfile, data.btcBuys.status, data.btcBuys.value)
+  const projectionInScope = netWorthScopeFor(activeProfile, visible)
+  const document = data.btcBalanceDocument.value
+  const inScope = document?.accounts ?? []
+  const totalSats = document?.totals.sats ?? 0n
+  const totalFiat = document?.totals.fiat ?? 0n
+  const selfCustody = document?.totals.selfCustodySats ?? 0n
+  const exchange = document?.totals.exchangeSats ?? 0n
+  const status = data.btcBalanceDocument.status
 
   // Adults can see a child's stack but it is not part of their net worth. Say so
   // rather than letting the difference look like a bug.
-  const outOfScope = visible.filter((account) => !inScope.includes(account))
+  const outOfScope = visible.filter((account) => !projectionInScope.includes(account))
 
   return (
     <>
       <PageHeader
         title="Bitcoin Overview"
-        actions={<FreshnessTag status={data.btcAccounts.status} updatedAt={data.btcAccounts.updatedAt} />}
+        actions={
+          <FreshnessTag
+            status={data.btcBalanceDocument.status}
+            updatedAt={data.btcBalanceDocument.updatedAt}
+          />
+        }
       />
-      <StaleNotice status={data.btcAccounts.status} />
-      {displayUnit === "usd" ? <BitcoinFiatNotice price={price} /> : null}
+      <StaleNotice status={data.btcBalanceDocument.status} />
+      {displayUnit === "usd" ? (
+        <BitcoinSnapshotNotice status={status} document={document} />
+      ) : null}
       <KPIStrip
         items={[
           {
             label: "Total stack",
-            value: requiredFigure(status, () => formatBitcoin(totalSats, displayUnit, price?.cents)),
+            value: requiredFigure(
+              status,
+              () => formatSnapshotBitcoin(totalSats, totalFiat, displayUnit),
+            ),
             tone: "accent",
           },
           {
-            label: "Reference price",
-            value: requiredFigure(status, () => price ? formatUsd(price.cents) : PRICE_UNAVAILABLE),
-            hint: requiredFigure(status, () => priceBasis(price)),
+            label: "Value",
+            value: requiredFigure(status, () => formatUsd(totalFiat)),
             provenance: "estimated",
           },
           {
             label: "Self custody",
-            value: requiredFigure(status, () => `${(basisPoints(selfCustody, totalSats) / 100).toFixed(1)}%`),
-            hint: requiredFigure(status, () => formatBitcoin(selfCustody, displayUnit, price?.cents)),
+            value: requiredFigure(
+              status,
+              () => `${(basisPoints(selfCustody, totalSats) / 100).toFixed(1)}%`,
+            ),
+            hint: requiredFigure(
+              status,
+              () => formatSnapshotBitcoin(
+                selfCustody,
+                satsToUsdCents(selfCustody, data.btcPriceUsd),
+                displayUnit,
+              ),
+            ),
           },
           {
             label: "On exchange",
-            value: requiredFigure(status, () => formatBitcoin(exchange, displayUnit, price?.cents)),
+            value: requiredFigure(
+              status,
+              () => formatSnapshotBitcoin(
+                exchange,
+                satsToUsdCents(exchange, data.btcPriceUsd),
+                displayUnit,
+              ),
+            ),
           },
         ]}
       />
@@ -558,12 +636,17 @@ function BitcoinOverviewPage() {
         />
       ) : null}
       <PageGrid>
-        <Panel title="Accounts in net worth" source={data.btcAccounts.source} flush className="vv-span-2">
+        <Panel
+          title="Accounts in net worth"
+          source={data.btcBalanceDocument.source}
+          flush
+          className="vv-span-2"
+        >
           <DataTable
-            columns={stackColumns(displayUnit, price)}
+            columns={stackColumns(displayUnit)}
             rows={inScope}
             rowKey={(row) => row.key}
-            state={tableState(data.btcAccounts.status)}
+            state={tableState(data.btcBalanceDocument.status)}
           />
         </Panel>
       </PageGrid>
@@ -689,54 +772,54 @@ function BillsPage() {
 // ── Retirement ──────────────────────────────────────────────────────────────
 
 function RetirementPage() {
-  const { data } = useAppState()
-  const budget = data.budget.value
-  // Bound once: figure() defers evaluation, which loses inline narrowing.
-  const income = budget?.income ?? null
+  const { activeProfile, data } = useAppState()
+  const incomeRows = visibleTo(activeProfile, data.income.value)
+  const currentMonth =
+    data.budget.value?.month ?? monthOf(new Date(data.generatedAt).toISOString().slice(0, 10))
+  const currentYear = currentMonth.slice(0, 4)
+  const ytdIncome = sum(
+    incomeRows.filter((row) => row.month.startsWith(currentYear)).map((row) => row.amount),
+  )
+  const mtdIncome = sum(
+    incomeRows.filter((row) => row.month === currentMonth).map((row) => row.amount),
+  )
 
   return (
     <>
       <PageHeader
         title="Retirement"
         subtitle="Long-horizon accounts"
-        actions={<FreshnessTag status={data.budget.status} updatedAt={data.budget.updatedAt} />}
+        actions={<FreshnessTag status={data.income.status} updatedAt={data.income.updatedAt} />}
       />
-      <StaleNotice status={data.budget.status} />
-      {income ? (
-        <KPIStrip
-          items={[
-            {
-              label: "YTD income",
-              value: figure(data.budget.status, () => formatUsd(income.ytdIncome)),
-              provenance: "actual",
-            },
-            {
-              label: "MTD income",
-              value: figure(data.budget.status, () => formatUsd(income.mtdIncome)),
-              provenance: "actual",
-            },
-            {
-              label: "Weekly gross",
-              value: figure(data.budget.status, () => formatUsd(income.weeklyGross)),
-              provenance: "planned",
-            },
-          ]}
-        />
-      ) : null}
+      <StaleNotice status={data.income.status} />
+      <KPIStrip
+        items={[
+          {
+            label: "YTD income",
+            value: figure(data.income.status, () => formatUsd(ytdIncome), true),
+            provenance: "actual",
+          },
+          {
+            label: "MTD income",
+            value: figure(data.income.status, () => formatUsd(mtdIncome), true),
+            provenance: "actual",
+          },
+        ]}
+      />
       <Panel
         title="Retirement accounts"
-        source="MC2 · finances"
+        source="Unavailable in this client"
         flush
       >
         {/*
-          The retirement slice of finances.json is not part of the fixture
-          envelope yet — it lands with the live Convex read. Showing an explicit
-          empty state is correct here; inventing numbers would be worse.
+          The retirement account slice is not part of the renderer envelope yet.
+          Showing an explicit unavailable state is correct here; inventing
+          numbers would be worse.
         */}
         <StateBlock
           state="empty"
           title="Not wired to the live read yet"
-          detail="Retirement accounts come from the finances.json slice, which arrives with the Convex bridge. No placeholder figures are shown on purpose."
+          detail="Retirement rows are not wired into this client yet. No placeholder figures are shown on purpose."
         />
       </Panel>
     </>
@@ -747,12 +830,15 @@ function RetirementPage() {
 
 function NetWorthPage() {
   const { activeProfile, data, displayUnit } = useAppState()
-  const inScope = netWorthScopeFor(activeProfile, data.btcAccounts.value)
-  const stackSats = sum(inScope.map((account) => account.sats))
-  const price = referencePrice(activeProfile, data.btcBuys.status, data.btcBuys.value)
+  const document = data.btcBalanceDocument.value
+  const inScope = document?.accounts ?? []
+  const stackSats = document?.totals.sats ?? 0n
+  const stackValue = document?.totals.fiat ?? 0n
 
+  const projectedInScope = netWorthScopeFor(activeProfile, data.btcAccounts.value)
   const excluded = data.btcAccounts.value.filter(
-    (account) => canSeeDataOwnedBy(activeProfile, account.owner) && !inScope.includes(account),
+    (account) =>
+      canSeeDataOwnedBy(activeProfile, account.owner) && !projectedInScope.includes(account),
   )
 
   return (
@@ -760,34 +846,50 @@ function NetWorthPage() {
       <PageHeader
         title="Net Worth"
         subtitle="Household scope for adults; self only for children"
-        actions={<FreshnessTag status={data.btcAccounts.status} updatedAt={data.btcAccounts.updatedAt} />}
+        actions={
+          <FreshnessTag
+            status={data.btcBalanceDocument.status}
+            updatedAt={data.btcBalanceDocument.updatedAt}
+          />
+        }
       />
-      <StaleNotice status={data.btcAccounts.status} />
-      {displayUnit === "usd" ? <BitcoinFiatNotice price={price} /> : null}
+      <StaleNotice status={data.btcBalanceDocument.status} />
+      {displayUnit === "usd" ? (
+        <BitcoinSnapshotNotice
+          status={data.btcBalanceDocument.status}
+          document={document}
+        />
+      ) : null}
       <KPIStrip
         items={[
           {
             label: "Bitcoin",
             value: requiredFigure(
-              data.btcAccounts.status,
-              () => formatBitcoin(stackSats, displayUnit, price?.cents),
+              data.btcBalanceDocument.status,
+              () => formatSnapshotBitcoin(stackSats, stackValue, displayUnit),
             ),
             tone: "accent",
           },
           {
             label: "Fiat estimate",
             value: requiredFigure(
-              data.btcAccounts.status,
-              () => formatBitcoin(stackSats, "usd", price?.cents),
+              data.btcBalanceDocument.status,
+              () => formatUsd(stackValue),
             ),
-            hint: requiredFigure(data.btcAccounts.status, () => priceBasis(price)),
+            hint: requiredFigure(
+              data.btcBalanceDocument.status,
+              () => `Canonical snapshot · ${document?.asOf ?? "date unavailable"}`,
+            ),
             provenance: "estimated",
           },
-          { label: "Accounts", value: requiredFigure(data.btcAccounts.status, () => String(inScope.length)) },
+          {
+            label: "Accounts",
+            value: requiredFigure(data.btcBalanceDocument.status, () => String(inScope.length)),
+          },
         ]}
       />
       <PageGrid>
-        <Panel title="In scope" source={data.btcAccounts.source} flush>
+        <Panel title="In scope" source={data.btcBalanceDocument.source} flush>
           <DataTable
             columns={[
               { key: "label", header: "Account", render: (row) => row.label },
@@ -796,12 +898,12 @@ function NetWorthPage() {
                 key: "amount",
                 header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),
                 numeric: true,
-                render: (row) => formatBitcoin(row.sats, displayUnit, price?.cents),
+                render: (row) => formatSnapshotBitcoin(row.sats, row.fiat, displayUnit),
               },
             ]}
             rows={inScope}
             rowKey={(row) => row.key}
-            state={tableState(data.btcAccounts.status)}
+            state={tableState(data.btcBalanceDocument.status)}
           />
         </Panel>
         <Panel
@@ -817,7 +919,7 @@ function NetWorthPage() {
                 key: "amount",
                 header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),
                 numeric: true,
-                render: (row) => formatBitcoin(row.sats, displayUnit, price?.cents),
+                render: (row) => formatSnapshotBitcoin(row.sats, row.fiat, displayUnit),
               },
             ]}
             rows={excluded}
