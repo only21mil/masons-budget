@@ -37,7 +37,6 @@ import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
-import com.sats21m.vogelvault.domain.MC2_FILES
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.domain.Transaction
@@ -45,7 +44,6 @@ import com.sats21m.vogelvault.domain.budgetTransactionsFor
 import com.sats21m.vogelvault.domain.deriveBudgetSpend
 import com.sats21m.vogelvault.domain.inMonth
 import com.sats21m.vogelvault.domain.incomeAmount
-import com.sats21m.vogelvault.domain.isDueBy
 import com.sats21m.vogelvault.domain.isSpend
 import com.sats21m.vogelvault.domain.netWorthScopeFor
 import com.sats21m.vogelvault.domain.resolveBudgetMonth
@@ -711,8 +709,6 @@ private fun priceBasis(state: VaultUiState): String =
 
 // ── Today ───────────────────────────────────────────────────────────────────
 
-private const val TODAY_DATE = "2026-07-26"
-
 /**
  * MC2's project for a todo nobody filed.
  *
@@ -734,8 +730,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.today(state: VaultUiS
     // isDueBy is the contract's own open-and-due rule, not a re-reading of the
     // done/due fields here. This screen deliberately knows nothing about MC2's
     // field aliases — that is Todo.normalize's job, once and at the boundary.
-    val todos = slice.value.visibleTo(state.activeProfile)
-        .filter { it.isDueBy(TODAY_DATE) }
+    val todos = todosDueToday(state)
 
     item { StaleNotice(slice.status) }
     item {
@@ -853,17 +848,6 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settings(
                         figureColor = VaultTextMuted,
                     )
                 }
-            }
-        }
-    }
-    item {
-        Panel("Known MC2 files", "${MC2_FILES.size} in the read model") {
-            Column(Modifier.padding(VaultSpace.md)) {
-                Text(
-                    MC2_FILES.joinToString(", "),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = VaultTextDim,
-                )
             }
         }
     }
