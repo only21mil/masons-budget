@@ -42,7 +42,6 @@ const PRIVATE = Object.freeze({
 const PRODUCTION_FILE_NAMES = Object.freeze([
   "transactions",
   "mason-transactions",
-  "maddox-transactions",
   "bitcoin-buys",
   "mason-bitcoin-buys",
   "bitcoin-bill-pays",
@@ -51,6 +50,7 @@ const PRODUCTION_FILE_NAMES = Object.freeze([
   "mason-budget",
   "btc-balance-snapshot",
   "finances",
+  "son-balances",
   "income",
   "balances",
 ]);
@@ -215,20 +215,65 @@ function reportFixture(source, overrides = {}) {
   const sums = Object.fromEntries(
     source.moneyColumns.map((column) => [column, PRIVATE.money]),
   );
+  const tableRowCount = overrides.tableRowCount ?? 0;
+  const blobRowCount = overrides.blobRowCount ?? 0;
+  const targetRowCounts = Object.fromEntries(
+    (source.targetTables ?? [source.table]).map((table) => {
+      const rows =
+        table === source.table
+          ? tableRowCount
+          : blobRowCount === 0
+            ? 0
+            : source.file === "btc-balance-snapshot"
+              ? 5
+              : source.file === "son-balances"
+                ? 3
+                : 0;
+      return [
+        table,
+        { expected: rows, stored: rows, matches: true },
+      ];
+    }),
+  );
   return {
     file: source.file,
     table: source.table,
     ok: true,
-    blobRowCount: 0,
-    tableRowCount: 0,
+    blobRowCount,
+    tableRowCount,
     blobSums: sums,
     tableSums: { ...sums },
     exactRoundTrip: true,
     firstMismatchIndex: null,
+    targetRowCounts,
     problems: [],
     ...overrides,
   };
 }
+
+function migratedRowsFor(source) {
+  if (source.file === "income") return 16;
+  if (
+    source.file === "balances" ||
+    source.file === "budget" ||
+    source.file === "mason-budget" ||
+    source.file === "btc-balance-snapshot" ||
+    source.file === "finances" ||
+    source.file === "son-balances"
+  ) {
+    return 1;
+  }
+  return 0;
+}
+
+const DOCUMENT_PUBLIC_COUNTS = Object.freeze({
+  income: 16,
+  balanceDocuments: 1,
+  btcAccounts: 8,
+  budgetDocuments: 2,
+  btcBalanceDocuments: 2,
+  financeDocuments: 1,
+});
 
 test("canonical JSON is stable and keeps integer types distinct", () => {
   assert.equal(
@@ -488,6 +533,59 @@ test("income and balances require every exact integer money proof", () => {
   );
 });
 
+test("the five atomic sources require typed-table and derived-account proof", () => {
+  assert.deepEqual(PRESERVED_DOCUMENT_FILES, []);
+  const atomicFiles = [
+    "budget",
+    "mason-budget",
+    "btc-balance-snapshot",
+    "finances",
+    "son-balances",
+  ];
+  assert.deepEqual(
+    SOURCES.filter((source) => atomicFiles.includes(source.file)).map(
+      (source) => source.file,
+    ),
+    atomicFiles,
+  );
+
+  const snapshot = SOURCES.find(
+    (source) => source.file === "btc-balance-snapshot",
+  );
+  assert.deepEqual(snapshot.targetTables, [
+    "btcBalanceDocuments",
+    "btcAccounts",
+  ]);
+  const report = reportFixture(snapshot, {
+    blobRowCount: 1,
+    tableRowCount: 1,
+  });
+  const passed = reduceFileVerification(
+    snapshot,
+    { blobPresent: true },
+    report,
+  );
+  assert.equal(passed.state, "PASS");
+  assert.deepEqual(passed.targetRows, {
+    btcBalanceDocuments: 1,
+    btcAccounts: 5,
+  });
+
+  report.targetRowCounts.btcAccounts = {
+    expected: 5,
+    stored: 4,
+    matches: false,
+  };
+  assert.equal(
+    reduceFileVerification(
+      snapshot,
+      { blobPresent: true },
+      report,
+    ).state,
+    "FAIL",
+  );
+});
+
 test("blob discovery fails closed without retaining an unknown file name", async () => {
   const fixture = productionFixture();
   const known = await captureFullLegacyWorld(adminTableFor(fixture));
@@ -537,15 +635,14 @@ test("blob discovery fails closed without retaining an unknown file name", async
       );
     }
     const source = SOURCES.find((entry) => entry.file === args.file);
-    const rows =
-      source.file === "income" ? 16 : source.file === "balances" ? 1 : 0;
+    const rows = migratedRowsFor(source);
     return reportFixture(source, {
       blobRowCount: rows,
       tableRowCount: rows,
     });
   };
   const evidence = await verifyMigration({
-    query: queryFor(changedFixture, { income: 16, balanceDocuments: 1 }),
+    query: queryFor(changedFixture, DOCUMENT_PUBLIC_COUNTS),
     internalQuery,
     adminTable: adminTableFor(changedFixture),
   });
@@ -585,7 +682,7 @@ test("evidence requires exactly 13 blobs, unchanged legacy bytes, and full table
   const files = SOURCES.map((source) => ({
     file: source.file,
     table: source.table,
-    blobPresent: true,
+    blobPresent: PRODUCTION_FILE_NAMES.includes(source.file),
     blobRows: 0,
     tableRows: 0,
     moneyPassed: source.moneyColumns.length,
@@ -594,6 +691,9 @@ test("evidence requires exactly 13 blobs, unchanged legacy bytes, and full table
     roundTripPassed: true,
     passed: true,
     state: "PASS",
+    targetRows: Object.fromEntries(
+      (source.targetTables ?? [source.table]).map((table) => [table, 0]),
+    ),
     includeInTableCoverage: source.includeInTableCoverage,
   }));
   const publicCounts = {
@@ -603,6 +703,10 @@ test("evidence requires exactly 13 blobs, unchanged legacy bytes, and full table
     btcBillPays: 0,
     income: 0,
     balanceDocuments: 0,
+    btcAccounts: 0,
+    budgetDocuments: 0,
+    btcBalanceDocuments: 0,
+    financeDocuments: 0,
   };
   assert.equal(
     buildEvidence({
@@ -635,10 +739,10 @@ test("full verifier uses only query functions and never relays sensitive evidenc
   const internalQuery = async (name, args) => {
     calls.push([name, args]);
     if (name === "migrate:status") {
-      return statusFixture(new Set(SOURCES.map((source) => source.file)));
+      return statusFixture(new Set(PRODUCTION_FILE_NAMES));
     }
     const source = SOURCES.find((entry) => entry.file === args.file);
-    const rows = source.file === "income" ? 16 : source.file === "balances" ? 1 : 0;
+    const rows = migratedRowsFor(source);
     return reportFixture(source, {
       blobRowCount: rows,
       tableRowCount: rows,
@@ -651,7 +755,7 @@ test("full verifier uses only query functions and never relays sensitive evidenc
     });
   };
   const evidence = await verifyMigration({
-    query: queryFor(fixture, { income: 16, balanceDocuments: 1 }),
+    query: queryFor(fixture, DOCUMENT_PUBLIC_COUNTS),
     internalQuery,
     adminTable: adminTableFor(fixture),
   });
@@ -681,7 +785,7 @@ test("CLI maps successful and failed evidence to explicit exit codes", async () 
   const query = queryFor(fixture, { balanceDocuments: 0 });
   const internalQuery = async (name, args) => {
     if (name === "migrate:status") {
-      return statusFixture(new Set(SOURCES.map((source) => source.file)));
+      return statusFixture(new Set(PRODUCTION_FILE_NAMES));
     }
     const source = SOURCES.find((entry) => entry.file === args.file);
     return reportFixture(source);
