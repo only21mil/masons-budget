@@ -170,7 +170,7 @@ describe("main-process row repository", () => {
     expect(sent).toEqual({
       path: "tables:rowCounts",
       args: { token: SECRET },
-      format: "json",
+      format: "convex_encoded_json",
     })
   })
 
@@ -209,7 +209,7 @@ describe("main-process row repository", () => {
     expect(sent[0]).toMatchObject({
       path: "tables:listTransactions",
       args: { viewer: "rachel", token: SECRET },
-      format: "json",
+      format: "convex_encoded_json",
     })
     expect(JSON.stringify(result, (_key, value) => typeof value === "bigint" ? value.toString() : value)).not.toContain(SECRET)
     expect(JSON.stringify(result, (_key, value) => typeof value === "bigint" ? value.toString() : value)).not.toContain("example.invalid")
@@ -463,12 +463,12 @@ describe("main-process row repository", () => {
       expect(requestBody).toMatchObject({
         path: entry.path,
         args: { token: SECRET },
-        format: "json",
+        format: "convex_encoded_json",
       })
     }
   })
 
-  it("matches the budget document and BTC snapshot metadata envelopes", async () => {
+  it("decodes tagged budget savingsBps and BTC snapshot metadata envelopes", async () => {
     const sent: Array<Record<string, unknown>> = []
     const responses = [
       success({
@@ -480,7 +480,12 @@ describe("main-process row repository", () => {
           categories: [{ name: "Food", budgetCents: int64(50_000n) }],
           mtdIncomeCents: int64(100_000n),
           ytdIncomeCents: int64(700_000n),
-          monthlyHistory: [],
+          monthlyHistory: [{
+            month: "2026-06",
+            incomeCents: int64(90_000n),
+            expensesCents: int64(60_000n),
+            savingsBps: int64(3_333n),
+          }],
           updatedAtMs: 123,
         },
       }),
@@ -510,7 +515,11 @@ describe("main-process row repository", () => {
     await expect(repository.query({ kind: "budget", viewer: "rachel", scope: "netWorth" })).resolves.toMatchObject({
       status: "ok",
       kind: "budget",
-      value: { owner: "victor", coinbaseOneBalanceCents: 12_345n },
+      value: {
+        owner: "victor",
+        coinbaseOneBalanceCents: 12_345n,
+        monthlyHistory: [{ savingsBps: 3_333 }],
+      },
     })
     await expect(
       repository.query({ kind: "btcSnapshotMeta", viewer: "rachel", scope: "netWorth" }),
@@ -524,12 +533,12 @@ describe("main-process row repository", () => {
       {
         path: "tables:getBudgetDocument",
         args: { viewer: "rachel", scope: "netWorth", token: SECRET },
-        format: "json",
+        format: "convex_encoded_json",
       },
       {
         path: "tables:getBtcSnapshotMetadata",
         args: { viewer: "rachel", scope: "netWorth", token: SECRET },
-        format: "json",
+        format: "convex_encoded_json",
       },
     ])
   })

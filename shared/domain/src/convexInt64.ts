@@ -1,7 +1,7 @@
-// Convex serializes v.int64() values over JSON as an eight-byte signed
-// little-endian integer wrapped in a tagged object. Keep this decoder strict:
-// accepting alternate shapes or Base64 spellings makes malformed wire data look
-// authoritative at the shared domain boundary.
+// With format: "convex_encoded_json", Convex serializes v.int64() values as an
+// eight-byte signed little-endian integer wrapped in a tagged object. Keep this
+// decoder strict: accepting alternate shapes or Base64 spellings makes malformed
+// wire data look authoritative at the shared domain boundary.
 
 export interface ConvexInt64WireValue {
   $integer: string
@@ -12,7 +12,7 @@ const INT64_BYTE_LENGTH = 8
 const SIGN_BIT = 0x80
 const UINT64_MODULUS = 1n << 64n
 
-/** Decode Convex's canonical JSON representation of a signed v.int64(). */
+/** Decode Convex's canonical convex_encoded_json representation of a signed v.int64(). */
 export function decodeConvexInt64(value: unknown): bigint {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError("Convex int64 must be a tagged object")

@@ -1,10 +1,10 @@
 package com.sats21m.vogelvault.data
 
+import java.math.BigDecimal
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.longOrNull
 
 /** One entry from `dataFiles:list`. Metadata only — no financial content. */
 data class DataFileSummary(
@@ -86,7 +86,20 @@ internal fun JsonObject.requiredBoolean(key: String): Boolean? =
 internal fun JsonObject.requiredLong(key: String): Long? = get(key).strictLongOrNull()
 
 internal fun JsonElement?.strictLongOrNull(): Long? =
-    (this as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull
+    (this as? JsonPrimitive)
+        ?.takeUnless { it.isString }
+        ?.content
+        ?.let { content ->
+            try {
+                BigDecimal(content).longValueExact()
+            } catch (error: NumberFormatException) {
+                null
+            } catch (error: ArithmeticException) {
+                // Out-of-range and genuinely fractional float64 values are corrupt
+                // integral fields. Never round or truncate them.
+                null
+            }
+        }
 
 /** Carry every non-success transport state through a typed decoder unchanged. */
 internal fun <T> ConvexResult<ConvexValue>.decode(

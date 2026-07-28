@@ -90,6 +90,25 @@ final class ConvexInt64WireTests: XCTestCase {
         XCTAssertEqual(row.sats, 2_100_000_000_000_000)
     }
 
+    func testJSONFormatDecimalStringsFailTypedInt64Decoding() throws {
+        let jsonFormatWire: [String: Any] = [
+            "amountCents": "2500",
+            "sats": "100000",
+        ]
+
+        let passedThrough = try ConvexTaggedInt64Decoder.decode(jsonFormatWire)
+        let data = try JSONSerialization.data(withJSONObject: passedThrough)
+
+        XCTAssertThrowsError(try JSONDecoder().decode(Int64Row.self, from: data)) { error in
+            guard let decodingError = error as? DecodingError else {
+                return XCTFail("Expected an Int64 type mismatch, received \(error)")
+            }
+            guard case .typeMismatch = decodingError else {
+                return XCTFail("Expected an Int64 type mismatch, received \(error)")
+            }
+        }
+    }
+
     func testDecoderRecursesWithoutChangingOrdinaryBlobValues() throws {
         let wire: [String: Any] = [
             "rows": [

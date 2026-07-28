@@ -124,6 +124,49 @@ jobs:
       - name: Parity tests against the Swift contract
         run: npm run test --workspace @vogel-vault/domain
 
+  # Real response bodies captured from Convex, replayed through the same
+  # repositories the shipped clients call. No socket or credential is involved.
+  # This runs on every PR rather than following client path filters: a committed
+  # capture, transport setting, or shared wire assumption can invalidate both
+  # clients even when neither client tree changed.
+  convex-wire-golden:
+    name: Production wire golden decoders
+    if: github.repository == 'only21mil/masons-budget'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+
+      - run: npm ci
+
+      - name: Linux production decoder
+        run: >-
+          npx vitest run
+          test/convex-wire-golden.test.ts
+          test/convex-wire-golden-values.test.ts
+        working-directory: linux
+
+      - name: Android production decoder
+        run: >-
+          gradle :app:testDebugUnitTest
+          --tests 'com.sats21m.vogelvault.data.ConvexWireGolden*Test'
+          --no-daemon
+        working-directory: android
+
   # A peer of shared-domain rather than a dependant of it. The Convex functions
   # import nothing from @vogel-vault/domain, so gating them behind the contract
   # job would only serialise two runs that have no reason to wait on each other.

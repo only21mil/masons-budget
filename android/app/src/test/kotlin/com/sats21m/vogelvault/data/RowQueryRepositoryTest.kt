@@ -18,7 +18,7 @@ class RowQueryRepositoryTest {
     fun `transaction rows decode exact int64 money and preserve completeness`() {
         val poster = RecordingPoster(
             rowSuccess(
-                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":${int64(-14218)},"spendAmount":${int64(14218)},"displaySpendAmount":${int64(14218)},"hasOppositeSpendSign":false,"category":"Food","card":"visa","note":"lunch","updatedAtMs":1785000000000}]""",
+                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":${convexInt64(-14218)},"spendAmount":${convexInt64(14218)},"displaySpendAmount":${convexInt64(14218)},"hasOppositeSpendSign":false,"category":"Food","card":"visa","note":"lunch","updatedAtMs":1785000000000.0}]""",
             ),
         )
         val repository = repositoryWith(poster)
@@ -63,12 +63,12 @@ class RowQueryRepositoryTest {
                             "date":"2026-07-25",
                             "month":"2026-07",
                             "merchant":"Cafe",
-                            "amountCents":${int64(-500)},
-                            "spendAmount":${int64(500)},
-                            "displaySpendAmount":${int64(500)},
+                            "amountCents":${convexInt64(-500)},
+                            "spendAmount":${convexInt64(500)},
+                            "displaySpendAmount":${convexInt64(500)},
                             "hasOppositeSpendSign":false,
                             "category":"Food",
-                            "updatedAtMs":1785000000000,
+                            "updatedAtMs":1785000000000.0,
                             "futureRowField":{"nested":true}
                         }],
                         "complete":true,
@@ -118,8 +118,8 @@ class RowQueryRepositoryTest {
         val poster = RecordingPoster(
             rowSuccess(
                 """[
-                    ${transaction("tx-1", "victor", int64(-500))},
-                    ${transaction("tx-2", "Mason ", int64(900))}
+                    ${transaction("tx-1", "victor", convexInt64(-500))},
+                    ${transaction("tx-2", "Mason ", convexInt64(900))}
                 ]""".trimIndent(),
             ),
         )
@@ -131,11 +131,11 @@ class RowQueryRepositoryTest {
     }
 
     @Test
-    fun `one numeric int64 fallback rejects the entire row envelope`() {
+    fun `convex encoded rows reject an untagged int64 alias atomically`() {
         val poster = RecordingPoster(
             rowSuccess(
                 """[
-                    ${transaction("tx-1", "victor", int64(-500))},
+                    ${transaction("tx-1", "victor", convexInt64(-500))},
                     ${transaction("tx-2", "mason", "900")}
                 ]""".trimIndent(),
             ),
@@ -145,13 +145,20 @@ class RowQueryRepositoryTest {
             ConvexResult.Failed("unexpected payload shape"),
             runBlocking { repositoryWith(poster).listTransactions(FamilyMember.VICTOR) },
         )
+        assertEquals(
+            "convex_encoded_json",
+            Json.parseToJsonElement(poster.bodies.single())
+                .jsonObject["format"]
+                ?.jsonPrimitive
+                ?.content,
+        )
     }
 
     @Test
     fun `opposite spend sign flag accepts a refund and preserves its display magnitude`() {
         val poster = RecordingPoster(
             rowSuccess(
-                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Refund","amountCents":${int64(500)},"spendAmount":${int64(-500)},"displaySpendAmount":${int64(500)},"hasOppositeSpendSign":true,"category":"Food","updatedAtMs":1785000000000}]""",
+                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Refund","amountCents":${convexInt64(500)},"spendAmount":${convexInt64(-500)},"displaySpendAmount":${convexInt64(500)},"hasOppositeSpendSign":true,"category":"Food","updatedAtMs":1785000000000.0}]""",
             ),
         )
 
@@ -170,7 +177,7 @@ class RowQueryRepositoryTest {
     fun `mismatched opposite spend sign rejects the entire transaction envelope`() {
         val poster = RecordingPoster(
             rowSuccess(
-                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":${int64(-500)},"spendAmount":${int64(500)},"displaySpendAmount":${int64(500)},"hasOppositeSpendSign":true,"category":"Food","updatedAtMs":1785000000000}]""",
+                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":${convexInt64(-500)},"spendAmount":${convexInt64(500)},"displaySpendAmount":${convexInt64(500)},"hasOppositeSpendSign":true,"category":"Food","updatedAtMs":1785000000000.0}]""",
             ),
         )
 
@@ -217,7 +224,7 @@ class RowQueryRepositoryTest {
     fun `bill pay money and row counts decode strictly`() {
         val billPoster = RecordingPoster(
             rowSuccess(
-                """[{"billPayId":"bp-1","owner":"victor","date":"2026-07-20","month":"2026-07","merchant":"Utility","category":"Bills","amountUsdCents":${int64(12500)},"btcSpentSats":${int64(13000)},"btcPriceCents":${int64(9600000)},"feeUsdCents":${int64(25)},"updatedAtMs":1785000000000}]""",
+                """[{"billPayId":"bp-1","owner":"victor","date":"2026-07-20","month":"2026-07","merchant":"Utility","category":"Bills","amountUsdCents":${convexInt64(12500)},"btcSpentSats":${convexInt64(13000)},"btcPriceCents":${convexInt64(9600000)},"feeUsdCents":${convexInt64(25)},"updatedAtMs":1785000000000.0}]""",
             ),
         )
         val billResult = runBlocking {
@@ -256,29 +263,31 @@ class RowQueryRepositoryTest {
     }
 
     @Test
-    fun `budget document decodes tagged money and closed owner`() {
+    fun `budget document decodes tagged money including savings basis points`() {
+        // Production currently returns document:null, so savingsBps can only be
+        // pinned here against the schema's v.int64() contract.
         val response = """{
             "document":{
                 "owner":"victor",
                 "month":"2026-07",
-                "coinbaseOneBalanceCents":${int64(12550)},
-                "categories":[{"name":"Groceries","icon":"cart","budgetCents":${int64(90000)}}],
+                "coinbaseOneBalanceCents":${convexInt64(12550)},
+                "categories":[{"name":"Groceries","icon":"cart","budgetCents":${convexInt64(90000)}}],
                 "effectiveApr":"4.5%",
                 "strategyNote":"Synthetic fixture",
                 "income":{
-                    "weeklyGrossCents":${int64(120000)},
-                    "weeklyStrikeCents":${int64(10000)},
-                    "weeklyRiverCents":${int64(5000)},
+                    "weeklyGrossCents":${convexInt64(120000)},
+                    "weeklyStrikeCents":${convexInt64(10000)},
+                    "weeklyRiverCents":${convexInt64(5000)},
                     "payFrequency":"weekly",
-                    "monthlyGrossCents":${int64(480000)},
-                    "mtdIncomeCents":${int64(250000)},
-                    "ytdIncomeCents":${int64(3000000)},
-                    "paychecks":[{"date":"2026-07-19","platform":"direct","source":"employer","amountCents":${int64(250000)},"netCents":${int64(250000)}}]
+                    "monthlyGrossCents":${convexInt64(480000)},
+                    "mtdIncomeCents":${convexInt64(250000)},
+                    "ytdIncomeCents":${convexInt64(3000000)},
+                    "paychecks":[{"date":"2026-07-19","platform":"direct","source":"employer","amountCents":${convexInt64(250000)},"netCents":${convexInt64(250000)}}]
                 },
-                "mtdIncomeCents":${int64(250000)},
-                "ytdIncomeCents":${int64(3000000)},
-                "monthlyHistory":[{"month":"2026-06","incomeCents":${int64(480000)},"expensesCents":${int64(320000)},"savingsBps":3333}],
-                "updatedAtMs":1785000000000
+                "mtdIncomeCents":${convexInt64(250000)},
+                "ytdIncomeCents":${convexInt64(3000000)},
+                "monthlyHistory":[{"month":"2026-06","incomeCents":${convexInt64(480000)},"expensesCents":${convexInt64(320000)},"savingsBps":${convexInt64(3333)}}],
+                "updatedAtMs":1785000000000.0
             },
             "complete":true
         }""".trimIndent()
@@ -291,6 +300,7 @@ class RowQueryRepositoryTest {
 
         assertEquals(90_000L, snapshot.document?.categories?.single()?.budgetCents)
         assertEquals(250_000L, snapshot.document?.income?.paychecks?.single()?.netCents)
+        assertEquals(3_333L, snapshot.document?.monthlyHistory?.single()?.savingsBps)
         assertEquals("netWorth", sentArgs(poster)["scope"]?.jsonPrimitive?.content)
         assertEquals("tables:getBudgetDocument", sentPath(poster))
     }
@@ -300,8 +310,8 @@ class RowQueryRepositoryTest {
         val poster = RecordingPoster(
             rowSuccess(
                 """[
-                    {"owner":"victor","schemaVersion":${int64(2)},"asOf":"2026-07-18T12:00:00Z","updatedAtMs":1785000000000},
-                    {"owner":"other","schemaVersion":${int64(2)},"asOf":"2026-07-18T12:00:00Z","updatedAtMs":1785000000000}
+                    {"owner":"victor","schemaVersion":${convexInt64(2)},"asOf":"2026-07-18T12:00:00Z","updatedAtMs":1785000000000.0},
+                    {"owner":"other","schemaVersion":${convexInt64(2)},"asOf":"2026-07-18T12:00:00Z","updatedAtMs":1785000000000.0}
                 ]""".trimIndent(),
             ),
         )
@@ -354,12 +364,16 @@ class RowQueryRepositoryTest {
         Json.parseToJsonElement(poster.bodies.single()).jsonObject["path"]!!.jsonPrimitive.content
 
     private fun transaction(id: String, owner: String, amount: String): String =
-        """{"txId":"$id","owner":"$owner","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":$amount,"spendAmount":${int64(500)},"displaySpendAmount":${int64(500)},"hasOppositeSpendSign":false,"category":"Food","updatedAtMs":1785000000000}"""
+        """{"txId":"$id","owner":"$owner","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":$amount,"spendAmount":${convexInt64(500)},"displaySpendAmount":${convexInt64(500)},"hasOppositeSpendSign":false,"category":"Food","updatedAtMs":1785000000000.0}"""
 
     private fun account(key: String, owner: String, custody: String, sats: Long): String =
-        """{"key":"$key","owner":"$owner","label":"$key","custody":"$custody","sats":${int64(sats)},"fiatCents":${int64(20)},"asOf":"2026-07-18T12:00:00Z","schemaVersion":${int64(2)},"updatedAtMs":1785000000000}"""
+        """{"key":"$key","owner":"$owner","label":"$key","custody":"$custody","sats":${convexInt64(sats)},"fiatCents":${convexInt64(20)},"asOf":"2026-07-18T12:00:00Z","schemaVersion":${convexInt64(2)},"updatedAtMs":1785000000000.0}"""
 
-    private fun int64(value: Long): String {
+    /**
+     * Synthetic tagged values are reserved for focused validation cases.
+     * Production wire compatibility is covered by [ConvexWireGoldenTest].
+     */
+    private fun convexInt64(value: Long): String {
         val bytes = ByteArray(Long.SIZE_BYTES)
         for (index in bytes.indices) {
             bytes[index] = ((value ushr (index * 8)) and 0xff).toByte()
