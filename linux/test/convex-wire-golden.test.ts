@@ -33,7 +33,7 @@ const requests: VogelVaultRowRequest[] = [
 ]
 
 describe("production Convex wire captures", () => {
-  it("decodes every captured query through the real repository decoder", async () => {
+  it("validates every captured query through the real repository decoder", async () => {
     const seen = new Set<string>()
     const repository = createConvexRowRepository({
       configuration: () => ({ settings, generation: 1 }),
@@ -60,6 +60,22 @@ describe("production Convex wire captures", () => {
 
     for (const request of requests) {
       const result = await repository.query(request)
+      if (request.kind === "transactions") {
+        // The immutable production capture contains the pre-fix adult
+        // owner-inverted projection. The client accepts the canonical amount
+        // and replaces that projection with locally derived values.
+        expect(result).toMatchObject({ status: "ok", kind: "transactions" })
+        if (result.status !== "ok" || result.kind !== "transactions") {
+          throw new Error("production transaction capture did not decode")
+        }
+        expect(result.rows[0]).toMatchObject({
+          amountCents: 27_918n,
+          spendAmount: 27_918n,
+          displaySpendAmount: 27_918n,
+          hasOppositeSpendSign: false,
+        })
+        continue
+      }
       if (request.kind === "btcAccounts") {
         // The production capture deliberately used a bounded request and is
         // incomplete even though it contains zero rows. This repository's

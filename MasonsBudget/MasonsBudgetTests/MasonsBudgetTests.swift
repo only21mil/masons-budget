@@ -257,7 +257,7 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertEqual(alerts.first?.title, "Gaming Almost at Limit")
     }
 
-    func testBudgetNotificationsUseNarrowScopeAndAbsoluteSpend() {
+    func testBudgetNotificationsUseNarrowScopeAndCanonicalSpend() {
         let adultCategory = BudgetCategory(
             name: "Gaming",
             icon: "gamecontroller.fill",
@@ -271,10 +271,10 @@ final class MasonsBudgetTests: XCTestCase {
             owner: .mason,
         )
         let adultSpend = Transaction(
-            id: "tx-victor-signed-spend",
+            id: "tx-victor-positive-spend",
             date: Date(),
             merchant: "Console Store",
-            amount: -90,
+            amount: 90,
             category: "Gaming",
             owner: .victor,
             createdBy: "victor",

@@ -14,11 +14,9 @@ import kotlinx.coroutines.runBlocking
  */
 class ConvexWireGoldenTest {
     @Test
-    fun `production convex encoded payloads decode through the real row repository`() {
+    fun `production convex encoded payloads validate through the real row repository`() {
         val failures = buildList {
-            verifyOk("listTransactions") {
-                it.listTransactions(FamilyMember.VICTOR)
-            }?.let(::add)
+            verifyStaleTransactionProjectionUsesCanonicalAmount()?.let(::add)
             verifyOk("listTodos") {
                 it.listTodos(FamilyMember.VICTOR)
             }?.let(::add)
@@ -48,10 +46,38 @@ class ConvexWireGoldenTest {
         )
     }
 
+    private fun verifyStaleTransactionProjectionUsesCanonicalAmount(): String? {
+        val repository = repositoryFor("listTransactions")
+        val result = runBlocking {
+            repository.listTransactions(FamilyMember.VICTOR)
+        }
+        val snapshot = (result as? ConvexResult.Ok)?.value
+            ?: return "listTransactions: expected stale production projection to decode, got $result"
+        val transaction = snapshot.rows.firstOrNull()
+            ?: return "listTransactions: production capture decoded with no rows"
+        return when {
+            transaction.amount != 27_918L ->
+                "listTransactions: expected canonical amount 27918, got ${transaction.amount}"
+            transaction.spendAmount != 27_918L ->
+                "listTransactions: expected locally derived spend 27918, got ${transaction.spendAmount}"
+            transaction.displaySpendAmount != 27_918L ->
+                "listTransactions: expected locally derived display spend 27918, got ${transaction.displaySpendAmount}"
+            transaction.hasOppositeSpendSign ->
+                "listTransactions: expected locally derived opposite-sign flag false"
+            else -> null
+        }
+    }
+
     private fun verifyOk(
         query: String,
         execute: suspend (RowQueryRepository) -> ConvexResult<*>,
     ): String? {
+        val repository = repositoryFor(query)
+        val result = runBlocking { execute(repository) }
+        return if (result is ConvexResult.Ok) null else "$query: $result"
+    }
+
+    private fun repositoryFor(query: String): RowQueryRepository {
         val poster = RecordingPoster(
             HttpTextResponse(
                 code = 200,
@@ -64,8 +90,7 @@ class ConvexWireGoldenTest {
             ),
             http = poster,
         )
-        val result = runBlocking { execute(repository) }
-        return if (result is ConvexResult.Ok) null else "$query: $result"
+        return repository
     }
 
     private fun goldenFixture(name: String): File {

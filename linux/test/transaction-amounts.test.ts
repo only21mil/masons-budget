@@ -36,9 +36,28 @@ const budget: Budget = {
 }
 
 describe("Linux signed transaction amounts", () => {
-  it("keeps adult and child spend conventions while preserving credits", () => {
-    const adultSpend = tx("adult-spend", "victor", -5_000n)
-    const adultCredit = tx("adult-credit", "victor", 1_000n)
+  it("keeps production purchases positive and refunds negative in budget actuals", () => {
+    const adultPurchase = tx("Etsy", "victor", 3_762n)
+    const adultRefund = tx("Paypal *ebay", "victor", -123_469n)
+    const childPurchase = tx("Mason purchase", "mason", 3_762n)
+    const result = deriveBudgetSpend(budget, [
+      adultPurchase,
+      tx("Production-sized purchase", "victor", 123_469n),
+      adultRefund,
+    ])
+
+    expect(spendAmount(adultPurchase)).toBe(3_762n)
+    expect(hasOppositeSpendSign(adultPurchase)).toBe(false)
+    expect(spendAmount(adultRefund)).toBe(-123_469n)
+    expect(hasOppositeSpendSign(adultRefund)).toBe(true)
+    expect(spendAmount(childPurchase)).toBe(3_762n)
+    expect(hasOppositeSpendSign(childPurchase)).toBe(false)
+    expect(result.actual).toBe(3_762n)
+  })
+
+  it("uses the same purchase and credit signs for adults and children", () => {
+    const adultSpend = tx("adult-spend", "victor", 5_000n)
+    const adultCredit = tx("adult-credit", "victor", -1_000n)
     const childSpend = tx("child-spend", "mason", 2_000n)
     const childCredit = tx("child-credit", "mason", -500n)
 
@@ -54,9 +73,9 @@ describe("Linux signed transaction amounts", () => {
 
   it("derives budget actuals from the selected month's signed contributions", () => {
     const result = deriveBudgetSpend(budget, [
-      tx("spend", "victor", -5_000n),
-      tx("credit", "victor", 1_000n),
-      { ...tx("old", "victor", -9_000n), date: "2026-06-30" },
+      tx("spend", "victor", 5_000n),
+      tx("credit", "victor", -1_000n),
+      { ...tx("old", "victor", 9_000n), date: "2026-06-30" },
     ])
 
     expect(result.categories[0]).toMatchObject({

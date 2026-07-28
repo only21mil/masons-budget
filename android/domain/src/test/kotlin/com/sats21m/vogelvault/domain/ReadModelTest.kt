@@ -15,6 +15,39 @@ import kotlin.test.assertTrue
  */
 class ReadModelTest {
     @Test
+    fun `production signs keep purchases positive and refunds negative in budget actuals`() {
+        fun row(id: String, owner: FamilyMember, amount: Long) = Transaction(
+            id = id,
+            date = "2026-03-15",
+            merchant = id,
+            amount = amount,
+            category = "Shopping",
+            owner = owner,
+        )
+        val adultPurchase = row("Etsy", FamilyMember.VICTOR, 3_762L)
+        val adultRefund = row("Paypal *ebay", FamilyMember.VICTOR, -123_469L)
+        val childPurchase = row("Mason purchase", FamilyMember.MASON, 3_762L)
+        val budget = Budget(
+            month = "2026-03",
+            categories = listOf(BudgetCategory("Shopping", 200_000L, 0L)),
+            owner = FamilyMember.VICTOR,
+        )
+        val monthRows = listOf(
+            adultPurchase,
+            row("Production-sized purchase", FamilyMember.VICTOR, 123_469L),
+            adultRefund,
+        )
+
+        assertEquals(3_762L, adultPurchase.spendAmount)
+        assertFalse(adultPurchase.hasOppositeSpendSign)
+        assertEquals(-123_469L, adultRefund.spendAmount)
+        assertTrue(adultRefund.hasOppositeSpendSign)
+        assertEquals(3_762L, childPurchase.spendAmount)
+        assertFalse(childPurchase.hasOppositeSpendSign)
+        assertEquals(3_762L, deriveBudgetSpend(budget, monthRows).actualCents)
+    }
+
+    @Test
     fun `row credits reduce derived budget spend while rendering as a magnitude`() {
         val budget = Budget(
             month = "2026-07",
@@ -26,7 +59,7 @@ class ReadModelTest {
                 id = "purchase",
                 date = "2026-07-10",
                 merchant = "Market",
-                amount = -10_000L,
+                amount = 10_000L,
                 category = "Groceries",
                 owner = FamilyMember.VICTOR,
             ),
@@ -34,7 +67,7 @@ class ReadModelTest {
                 id = "credit",
                 date = "2026-07-11",
                 merchant = "Market credit",
-                amount = 2_500L,
+                amount = -2_500L,
                 category = "Groceries",
                 owner = FamilyMember.VICTOR,
             ),
@@ -88,8 +121,8 @@ class ReadModelTest {
 
     @Test
     fun `child spending is spend, not income, despite a positive amount`() {
-        // Adult files sign spending negative; child files store a positive
-        // magnitude. Keying off the sign renders a child's spending as income.
+        // Child purchases are positive, just like adult purchases. Income still
+        // depends on category rather than the raw amount sign.
         val transactions = Fixtures.envelope(FamilyMember.MASON).transactions.value
             .visibleTo(FamilyMember.MASON)
 
@@ -114,7 +147,7 @@ class ReadModelTest {
         }
 
         val groceries = transactions.first { it.merchant == "Neighborhood Market" }
-        assertTrue(groceries.amount < 0L, "adult spend is signed negative")
+        assertTrue(groceries.amount > 0L, "adult spend is stored positive")
         assertEquals(Money.parseCents("142.18"), groceries.spendAmount)
         assertEquals(0L, groceries.incomeAmount)
     }
@@ -200,10 +233,13 @@ class ReadModelTest {
     @Test
     fun `fixture instant is fixed so tests and screenshots are deterministic`() {
         val simulatedLive = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
-        assertEquals(Fixtures.NOW_MILLIS, simulatedLive.let { Fixtures.NOW_MILLIS })
         val stamp = simulatedLive.transactions.updatedAt
         assertNotNull(stamp)
-        assertTrue(stamp < Fixtures.NOW_MILLIS, "a slice was read in the past, not the future")
+        assertEquals(
+            Fixtures.NOW_MILLIS - 4 * 60_000L,
+            stamp,
+            "the simulated live read is pinned to the fixture clock",
+        )
     }
 }
 

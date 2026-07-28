@@ -74,7 +74,7 @@ final class Transaction {
     /// Signed budget contribution: spend is positive and credits reduce spend.
     var spendAmount: Decimal {
         guard isSpend else { return 0 }
-        return ownerMember.isAdult ? -amount : amount
+        return amount
     }
 
     /// Stable magnitude for rendering legacy rows, regardless of stored sign.
@@ -82,7 +82,7 @@ final class Transaction {
         isSpend ? abs(spendAmount) : 0
     }
 
-    /// A valid credit or a corrupt wrong-sign spend; legacy rows store no `kind`.
+    /// A credit/refund that reduces spend.
     var hasOppositeSpendSign: Bool {
         spendAmount < 0
     }
@@ -99,7 +99,6 @@ final class Transaction {
 
     func spendSatsValue(btcPrice: Decimal = BTCPriceService.fallbackPriceUSD) -> Decimal {
         guard isSpend else { return 0 }
-        let sats = satsValue(btcPrice: btcPrice)
-        return ownerMember.isAdult ? -sats : sats
+        return satsValue(btcPrice: btcPrice)
     }
 }

@@ -130,15 +130,14 @@ tree's older absolute-value helper as the intended contract.
    `listBtcBuys`/`listBtcAccounts` take an explicit `scope` so the choice is named
    at the call site.
 
-3. **Child files store spend as a POSITIVE magnitude; adult files sign it negative.**
-   Do not normalise. The write path *rejects* a wrong sign rather than correcting it,
-   because silently flipping a sign turns a child's spend into income.
+3. **Adult and child files both store purchases as POSITIVE amounts.**
+   Refunds are negative. The write path rejects contradictory intent rather than
+   correcting a sign, because silently flipping money corrupts the ledger.
 
 4. **`spendAmount` is a signed budget contribution.** Positive means spent;
    negative means a credit or refund and reduces derived spend. Use
    `displaySpendAmount` only for the rendering magnitude.
-   `hasOppositeSpendSign` flags the ambiguous legacy shape shared by a valid
-   credit and a corrupt wrong-sign row; do not hide it with `abs`.
+   `hasOppositeSpendSign` flags a credit/refund; do not hide it with `abs`.
 
 5. **Budget spend is DERIVED from that month's transactions.** Never a reported
    total. July's budget shows July's transactions only.

@@ -94,6 +94,7 @@ class RowReadModelLoaderTest {
         assertEquals(BudgetQueryScope.NET_WORTH, repository.budgetScope)
         assertEquals(2, model.btcAccounts.value.size, "visible child rows stay available for oversight")
         assertEquals(9_500_000L, model.btcPriceCents)
+        assertEquals("2026-07-19", model.btcPriceAsOf)
     }
 
     @Test
@@ -106,6 +107,7 @@ class RowReadModelLoaderTest {
         assertEquals(emptyList(), model.transactions.value)
         assertEquals(null, model.budget.value)
         assertEquals(0L, model.btcPriceCents)
+        assertEquals(null, model.btcPriceAsOf)
     }
 
     @Test

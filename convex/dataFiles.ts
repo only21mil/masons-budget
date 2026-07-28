@@ -70,10 +70,8 @@ function warnPermissive(hatchVar: string, tokenVar: string, tokenSet: boolean) {
 // silently allowed all mutations (open). Now an unset token rejects every
 // mutation unless ALLOW_TOKENLESS_SYNC === "true".
 //
-// Writers to sequence before removing the hatch: mission-control/server.js and
-// the MC2 bridge (scripts/mc2-to-convex.mjs). Both must be sending
-// CONVEX_SYNC_TOKEN before ALLOW_TOKENLESS_SYNC comes off, or every
-// todo/transaction write locks out.
+// Every approved caller of these mutations must send CONVEX_SYNC_TOKEN before
+// ALLOW_TOKENLESS_SYNC comes off, or its writes lock out.
 function validateSyncToken(token?: string) {
   const expected = process.env.CONVEX_SYNC_TOKEN;
   if (process.env.ALLOW_TOKENLESS_SYNC === "true") {
@@ -798,8 +796,8 @@ async function removeTodoById(ctx: MutationCtx, todoId: string) {
 
 /**
  * Atomically remove a todo by ID from todos AND write a delete tombstone
- * (SAT-1327) so the MC2 sync bridge removes it locally and a later pull cannot
- * resurrect it. The tombstone always gets (re)written even if the todo was not
+ * (SAT-1327) so a later legacy blob replay cannot resurrect it. The tombstone
+ * always gets (re)written even if the todo was not
  * present in the payload, so a delete for a todo that only exists locally still
  * propagates. Returns `{ removed, version }` on every branch: `removed` says
  * whether the payload lost a row, `version` says which payload the caller is
@@ -834,9 +832,8 @@ export const removeTodoFromMobile = mutation({
 });
 
 /**
- * List all todo delete tombstones (SAT-1327). The MC2 sync bridge calls this on
- * every pull to drop locally any todo whose tombstone deletedAt is newer than
- * its local updated_at.
+ * List all todo delete tombstones (SAT-1327). Retained for compatibility
+ * readers that must reject a blob todo whose updated_at predates its tombstone.
  */
 export const listTodoTombstones = query({
   args: { token: v.optional(v.string()) },

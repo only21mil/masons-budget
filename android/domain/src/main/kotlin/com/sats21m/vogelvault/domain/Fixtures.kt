@@ -20,17 +20,17 @@ object Fixtures {
     private const val MINUTE = 60_000L
 
     private val TRANSACTIONS = listOf(
-        tx("tx-0001", "2026-07-26", "Neighborhood Market", "-142.18", "Groceries", FamilyMember.VICTOR, "Debit"),
-        tx("tx-0002", "2026-07-26", "Coffee Bar", "-6.75", "Dining", FamilyMember.RACHEL, "Credit"),
+        tx("tx-0001", "2026-07-26", "Neighborhood Market", "142.18", "Groceries", FamilyMember.VICTOR, "Debit"),
+        tx("tx-0002", "2026-07-26", "Coffee Bar", "6.75", "Dining", FamilyMember.RACHEL, "Credit"),
         tx("tx-0003", "2026-07-25", "Payroll Deposit", "2480.00", "Income", FamilyMember.VICTOR, null),
-        tx("tx-0004", "2026-07-25", "Hardware Store", "-88.40", "Home", FamilyMember.VICTOR, "Debit"),
-        tx("tx-0005", "2026-07-24", "Pharmacy", "-24.10", "Health", FamilyMember.RACHEL, "Credit"),
-        tx("tx-0006", "2026-07-23", "Electric Utility", "-186.55", "Utilities", FamilyMember.VICTOR, "Debit"),
-        tx("tx-0007", "2026-07-22", "Bookshop", "-31.20", "Shopping", FamilyMember.RACHEL, "Credit"),
-        tx("tx-0008", "2026-07-21", "Farmers Market", "-52.00", "Groceries", FamilyMember.VICTOR, "Debit"),
-        tx("tx-0009", "2026-07-20", "Internet Provider", "-79.99", "Utilities", FamilyMember.VICTOR, "Debit"),
+        tx("tx-0004", "2026-07-25", "Hardware Store", "88.40", "Home", FamilyMember.VICTOR, "Debit"),
+        tx("tx-0005", "2026-07-24", "Pharmacy", "24.10", "Health", FamilyMember.RACHEL, "Credit"),
+        tx("tx-0006", "2026-07-23", "Electric Utility", "186.55", "Utilities", FamilyMember.VICTOR, "Debit"),
+        tx("tx-0007", "2026-07-22", "Bookshop", "31.20", "Shopping", FamilyMember.RACHEL, "Credit"),
+        tx("tx-0008", "2026-07-21", "Farmers Market", "52.00", "Groceries", FamilyMember.VICTOR, "Debit"),
+        tx("tx-0009", "2026-07-20", "Internet Provider", "79.99", "Utilities", FamilyMember.VICTOR, "Debit"),
         tx("tx-0010", "2026-07-19", "Payroll Deposit", "2480.00", "Income", FamilyMember.VICTOR, null),
-        // Child rows: the child files record spending as a POSITIVE magnitude.
+        // Purchases are positive for every owner.
         tx("tx-1001", "2026-07-25", "Game Store", "24.00", "Entertainment", FamilyMember.MASON, null),
         tx("tx-1002", "2026-07-22", "School Lunch", "12.50", "Food", FamilyMember.MASON, null),
         tx("tx-1003", "2026-07-20", "Trading Cards", "9.00", "Entertainment", FamilyMember.MASON, null),
@@ -38,11 +38,11 @@ object Fixtures {
         tx("tx-2002", "2026-07-21", "Ice Cream", "6.25", "Food", FamilyMember.MADDOX, null),
         // June, so the month filter is demonstrably doing something. A July
         // budget must not count any of these.
-        tx("tx-0101", "2026-06-24", "Neighborhood Market", "-388.90", "Groceries", FamilyMember.VICTOR, "Debit"),
-        tx("tx-0102", "2026-06-22", "Electric Utility", "-201.40", "Utilities", FamilyMember.VICTOR, "Debit"),
-        tx("tx-0103", "2026-06-20", "Coffee Bar", "-58.15", "Dining", FamilyMember.RACHEL, "Credit"),
+        tx("tx-0101", "2026-06-24", "Neighborhood Market", "388.90", "Groceries", FamilyMember.VICTOR, "Debit"),
+        tx("tx-0102", "2026-06-22", "Electric Utility", "201.40", "Utilities", FamilyMember.VICTOR, "Debit"),
+        tx("tx-0103", "2026-06-20", "Coffee Bar", "58.15", "Dining", FamilyMember.RACHEL, "Credit"),
         tx("tx-0104", "2026-06-18", "Payroll Deposit", "2480.00", "Income", FamilyMember.VICTOR, null),
-        tx("tx-0105", "2026-06-15", "Auto Fuel", "-92.60", "Transport", FamilyMember.RACHEL, "Credit"),
+        tx("tx-0105", "2026-06-15", "Auto Fuel", "92.60", "Transport", FamilyMember.RACHEL, "Credit"),
         tx("tx-1101", "2026-06-23", "Book Fair", "18.00", "Entertainment", FamilyMember.MASON, null),
     )
 
@@ -176,6 +176,9 @@ object Fixtures {
         }
         val empty = status == Freshness.EMPTY
         val stamp = if (status == Freshness.DEMO || status == Freshness.EMPTY) null else NOW_MILLIS - 4 * MINUTE
+        val latestVisibleBuy =
+            if (empty) null
+            else BTC_BUYS.visibleTo(activeProfile).maxByOrNull { it.date }
 
         return ReadModel(
             transactions = Slice(status, if (empty) emptyList() else TRANSACTIONS, stamp, "Demo fixtures · transactions"),
@@ -183,7 +186,8 @@ object Fixtures {
             btcAccounts = Slice(status, if (empty) emptyList() else BTC_ACCOUNTS, stamp, "Demo fixtures · btc-balance-snapshot"),
             btcBuys = Slice(status, if (empty) emptyList() else BTC_BUYS, stamp, "Demo fixtures · bitcoin-buys"),
             todos = Slice(status, if (empty) emptyList() else TODOS, stamp, "Demo fixtures · todos"),
-            btcPriceCents = Money.parseCents("93500.00"),
+            btcPriceCents = latestVisibleBuy?.priceUsdCents ?: 0L,
+            btcPriceAsOf = latestVisibleBuy?.date,
         )
     }
 }

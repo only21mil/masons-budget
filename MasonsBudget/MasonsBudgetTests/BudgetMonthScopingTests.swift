@@ -115,8 +115,8 @@ final class BudgetMonthScopingTests: XCTestCase {
             calendar.date(from: DateComponents(year: 2026, month: 7, day: 31, hour: 23, minute: 59, second: 59)),
         )
         let edges = [
-            transaction(id: "jul-first", date: firstMoment, amount: -1, category: "Groceries"),
-            transaction(id: "jul-last", date: lastMoment, amount: -2, category: "Groceries"),
+            transaction(id: "jul-first", date: firstMoment, amount: 1, category: "Groceries"),
+            transaction(id: "jul-last", date: lastMoment, amount: 2, category: "Groceries"),
         ]
 
         let july = monthTransactions(edges, member: .victor, month: try monthAnchor(2026, 7))
@@ -199,8 +199,8 @@ final class BudgetMonthScopingTests: XCTestCase {
     }
 
     func testChildPositiveMagnitudeRowsStillCountAsSpend() throws {
-        // Child MC2 files store spending as a positive magnitude; adult files sign
-        // it negative. Reading the raw sign would render a kid's spending as income.
+        // Adult and child purchases are both positive; category distinguishes
+        // Income from spending.
         let masonSpend = transaction(
             id: "jul-10-game",
             date: try makeDate(2026, 7, 10),
@@ -288,12 +288,12 @@ final class BudgetMonthScopingTests: XCTestCase {
     /// The same spread as MIXED in shared/domain/test/month.test.ts.
     private func sampleTransactions() throws -> [Transaction] {
         [
-            transaction(id: "jul-26-groceries", date: try makeDate(2026, 7, 26), amount: -100, category: "Groceries"),
-            transaction(id: "jul-02-groceries", date: try makeDate(2026, 7, 2), amount: -50, category: "Groceries"),
-            transaction(id: "jun-30-groceries", date: try makeDate(2026, 6, 30), amount: -999, category: "Groceries"),
-            transaction(id: "jun-01-dining", date: try makeDate(2026, 6, 1), amount: -40, category: "Dining"),
-            transaction(id: "may-15-groceries", date: try makeDate(2026, 5, 15), amount: -777, category: "Groceries"),
-            transaction(id: "aug-01-groceries", date: try makeDate(2026, 8, 1), amount: -888, category: "Groceries"),
+            transaction(id: "jul-26-groceries", date: try makeDate(2026, 7, 26), amount: 100, category: "Groceries"),
+            transaction(id: "jul-02-groceries", date: try makeDate(2026, 7, 2), amount: 50, category: "Groceries"),
+            transaction(id: "jun-30-groceries", date: try makeDate(2026, 6, 30), amount: 999, category: "Groceries"),
+            transaction(id: "jun-01-dining", date: try makeDate(2026, 6, 1), amount: 40, category: "Dining"),
+            transaction(id: "may-15-groceries", date: try makeDate(2026, 5, 15), amount: 777, category: "Groceries"),
+            transaction(id: "aug-01-groceries", date: try makeDate(2026, 8, 1), amount: 888, category: "Groceries"),
         ]
     }
 }

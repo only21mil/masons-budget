@@ -505,7 +505,7 @@ describe("applyTodoUpsert: merges a partial payload", () => {
     expect(todo).not.toHaveProperty("completed_by");
   });
 
-  // An edit that inherits the stored updated_at is invisible to the MC2 bridge,
+  // An edit that inherits the stored updated_at is invisible to a legacy blob replay,
   // which pulls on a strictly-newer comparison. The merge must not make a write
   // look like it never happened.
   it("advances the update stamp even when the payload carries none", async () => {
@@ -713,7 +713,7 @@ describe("removeTodo: tombstones", () => {
     ]);
   });
 
-  // Documented: the tombstone is advisory for the MC2 bridge, it does not fence
+  // Documented: the tombstone is advisory for compatibility readers; it does not fence
   // future writes. A re-upsert of the same id resurrects the todo in Convex.
   it("does not block a later upsert of the same id", async () => {
     await seedDataFile(t, "todos", [{ id: "todo-1", title: "Gone" }]);

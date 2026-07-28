@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.ui.components.Badge
 import com.sats21m.vogelvault.ui.components.FreshnessTag
@@ -94,6 +95,8 @@ fun VaultApp(
     onNavigate: (Destination) -> Unit,
     onSwitchProfile: (FamilyMember) -> Unit,
     onEnableRemoteRows: (String) -> Unit = {},
+    displayUnit: DisplayUnit = DisplayUnit.BTC,
+    onDisplayUnitChange: (DisplayUnit) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier.fillMaxSize().background(VaultBlack)) {
@@ -112,7 +115,14 @@ fun VaultApp(
                         VaultTopBar(state, onSwitchProfile)
                         HorizontalHairline()
                         AuthorizationNotice(state)
-                        ScreenHost(current, state, onEnableRemoteRows, Modifier.weight(1f))
+                        ScreenHost(
+                            current,
+                            state,
+                            onEnableRemoteRows,
+                            displayUnit,
+                            onDisplayUnitChange,
+                            Modifier.weight(1f),
+                        )
                     }
                 }
             } else {
@@ -120,7 +130,14 @@ fun VaultApp(
                     VaultTopBar(state, onSwitchProfile)
                     HorizontalHairline()
                     AuthorizationNotice(state)
-                    ScreenHost(current, state, onEnableRemoteRows, Modifier.weight(1f))
+                    ScreenHost(
+                        current,
+                        state,
+                        onEnableRemoteRows,
+                        displayUnit,
+                        onDisplayUnitChange,
+                        Modifier.weight(1f),
+                    )
                     HorizontalHairline()
                     VaultBottomBar(destinations, current, onNavigate)
                 }

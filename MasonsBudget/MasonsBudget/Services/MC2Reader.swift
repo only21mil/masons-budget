@@ -1,6 +1,6 @@
-// The Vogel Vault — MC2 Reader
-// Reads MC2 data from the Convex backend.
-// Decodes responses into the same DTOs used by MC2Mapper.
+// The Vogel Vault — legacy dataFiles reader
+// Reads legacy blob data from the Convex backend.
+// Decodes responses into the compatibility DTOs used by MC2Mapper.
 
 import Foundation
 import os
@@ -11,7 +11,7 @@ struct MC2ReadBatch<Value> {
     let replacementOwners: Set<FamilyMember>?
 }
 
-/// Reads MC2 data from the Convex cloud backend.
+/// Reads legacy `dataFiles` blob data from the Convex cloud backend.
 ///
 /// Usage:
 /// ```swift

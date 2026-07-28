@@ -1,5 +1,6 @@
 package com.sats21m.vogelvault
 
+import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ReadReadiness
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.ui.VaultViewModel
@@ -9,6 +10,19 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class BuildTimeConvexConfigTest {
+    @Test
+    fun `baked token seeds fresh install without stored configuration`() {
+        val startupConfig =
+            initialConvexConfig(
+                buildTime = buildTimeConvexConfig("dummy-build-token"),
+                stored = ConvexConfig(),
+            )
+
+        assertTrue(startupConfig.hasReadToken)
+        assertTrue(startupConfig.allowsRemoteRead)
+        assertEquals(ReadReadiness.READY, startupConfig.readiness)
+    }
+
     @Test
     fun `non-blank build token enables authenticated production reads`() {
         val config = buildTimeConvexConfig("dummy-build-token")
@@ -21,7 +35,11 @@ class BuildTimeConvexConfigTest {
 
     @Test
     fun `absent build token preserves fixtures with remote reads disabled`() {
-        val config = buildTimeConvexConfig("")
+        val config =
+            initialConvexConfig(
+                buildTime = buildTimeConvexConfig(""),
+                stored = ConvexConfig(),
+            )
         val model = VaultViewModel(remoteInitiallyEnabled = config.allowsRemoteRead)
 
         assertFalse(config.hasReadToken)

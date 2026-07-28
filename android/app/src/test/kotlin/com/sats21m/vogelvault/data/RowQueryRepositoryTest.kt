@@ -5,6 +5,7 @@ import com.sats21m.vogelvault.domain.FamilyMember
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.fail
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -18,7 +19,7 @@ class RowQueryRepositoryTest {
     fun `transaction rows decode exact int64 money and preserve completeness`() {
         val poster = RecordingPoster(
             rowSuccess(
-                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":${convexInt64(-14218)},"spendAmount":${convexInt64(14218)},"displaySpendAmount":${convexInt64(14218)},"hasOppositeSpendSign":false,"category":"Food","card":"visa","note":"lunch","updatedAtMs":1785000000000.0}]""",
+                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":${convexInt64(14218)},"spendAmount":${convexInt64(14218)},"displaySpendAmount":${convexInt64(14218)},"hasOppositeSpendSign":false,"category":"Food","card":"visa","note":"lunch","updatedAtMs":1785000000000.0}]""",
             ),
         )
         val repository = repositoryWith(poster)
@@ -26,7 +27,7 @@ class RowQueryRepositoryTest {
         val result = runBlocking { repository.listTransactions(FamilyMember.RACHEL, month = "2026-07", limit = 25) }
         val snapshot = (result as? ConvexResult.Ok)?.value ?: fail("expected Ok, got $result")
 
-        assertEquals(-14_218L, snapshot.rows.single().amount)
+        assertEquals(14_218L, snapshot.rows.single().amount)
         assertEquals(14_218L, snapshot.rows.single().spendAmount)
         assertEquals(14_218L, snapshot.rows.single().displaySpendAmount)
         assertFalse(snapshot.rows.single().hasOppositeSpendSign)
@@ -63,7 +64,7 @@ class RowQueryRepositoryTest {
                             "date":"2026-07-25",
                             "month":"2026-07",
                             "merchant":"Cafe",
-                            "amountCents":${convexInt64(-500)},
+                            "amountCents":${convexInt64(500)},
                             "spendAmount":${convexInt64(500)},
                             "displaySpendAmount":${convexInt64(500)},
                             "hasOppositeSpendSign":false,
@@ -155,10 +156,79 @@ class RowQueryRepositoryTest {
     }
 
     @Test
+    fun `missing canonical transaction amount rejects the entire row envelope`() {
+        val poster = RecordingPoster(
+            rowSuccess(
+                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Cafe","spendAmount":${convexInt64(500)},"displaySpendAmount":${convexInt64(500)},"hasOppositeSpendSign":false,"category":"Food","updatedAtMs":1785000000000.0}]""",
+            ),
+        )
+
+        assertEquals(
+            ConvexResult.Failed("unexpected payload shape"),
+            runBlocking { repositoryWith(poster).listTransactions(FamilyMember.VICTOR) },
+        )
+    }
+
+    @Test
+    fun `minimum int64 canonical transaction amount rejects the entire row envelope`() {
+        val poster = RecordingPoster(
+            rowSuccess(
+                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Refund","amountCents":${convexInt64(Long.MIN_VALUE)},"spendAmount":${convexInt64(Long.MIN_VALUE)},"displaySpendAmount":${convexInt64(Long.MIN_VALUE)},"hasOppositeSpendSign":true,"category":"Food","updatedAtMs":1785000000000.0}]""",
+            ),
+        )
+
+        assertEquals(
+            ConvexResult.Failed("unexpected payload shape"),
+            runBlocking { repositoryWith(poster).listTransactions(FamilyMember.VICTOR) },
+        )
+    }
+
+    @Test
+    fun `missing transaction date or month rejects the entire row envelope`() {
+        val missingDate =
+            """{"txId":"tx-1","owner":"victor","month":"2026-07","merchant":"Cafe","amountCents":${convexInt64(500)},"spendAmount":${convexInt64(500)},"displaySpendAmount":${convexInt64(500)},"hasOppositeSpendSign":false,"category":"Food","updatedAtMs":1785000000000.0}"""
+        val missingMonth =
+            """{"txId":"tx-1","owner":"victor","date":"2026-07-25","merchant":"Cafe","amountCents":${convexInt64(500)},"spendAmount":${convexInt64(500)},"displaySpendAmount":${convexInt64(500)},"hasOppositeSpendSign":false,"category":"Food","updatedAtMs":1785000000000.0}"""
+
+        for (row in listOf(missingDate, missingMonth)) {
+            val poster = RecordingPoster(rowSuccess("[$row]"))
+            assertEquals(
+                ConvexResult.Failed("unexpected payload shape"),
+                runBlocking { repositoryWith(poster).listTransactions(FamilyMember.VICTOR) },
+            )
+        }
+    }
+
+    @Test
+    fun `invalid transaction query month fails before transport`() {
+        val poster = RecordingPoster(rowSuccess("[]"))
+
+        assertFailsWith<IllegalArgumentException> {
+            runBlocking {
+                repositoryWith(poster).listTransactions(
+                    FamilyMember.VICTOR,
+                    month = "2026-13",
+                )
+            }
+        }
+        assertEquals(emptyList(), poster.bodies)
+    }
+
+    @Test
+    fun `missing envelope completeness rejects the transaction snapshot`() {
+        val poster = RecordingPoster(success("""{"rows":[]}"""))
+
+        assertEquals(
+            ConvexResult.Failed("unexpected payload shape"),
+            runBlocking { repositoryWith(poster).listTransactions(FamilyMember.VICTOR) },
+        )
+    }
+
+    @Test
     fun `opposite spend sign flag accepts a refund and preserves its display magnitude`() {
         val poster = RecordingPoster(
             rowSuccess(
-                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Refund","amountCents":${convexInt64(500)},"spendAmount":${convexInt64(-500)},"displaySpendAmount":${convexInt64(500)},"hasOppositeSpendSign":true,"category":"Food","updatedAtMs":1785000000000.0}]""",
+                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Refund","amountCents":${convexInt64(-500)},"spendAmount":${convexInt64(-500)},"displaySpendAmount":${convexInt64(500)},"hasOppositeSpendSign":true,"category":"Food","updatedAtMs":1785000000000.0}]""",
             ),
         )
 
@@ -174,17 +244,23 @@ class RowQueryRepositoryTest {
     }
 
     @Test
-    fun `mismatched opposite spend sign rejects the entire transaction envelope`() {
+    fun `stale server projection is accepted and replaced by canonical amount derivation`() {
         val poster = RecordingPoster(
             rowSuccess(
-                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":${convexInt64(-500)},"spendAmount":${convexInt64(500)},"displaySpendAmount":${convexInt64(500)},"hasOppositeSpendSign":true,"category":"Food","updatedAtMs":1785000000000.0}]""",
+                """[{"txId":"tx-1","owner":"victor","date":"2026-07-25","month":"2026-07","merchant":"Cafe","amountCents":${convexInt64(500)},"spendAmount":${convexInt64(-500)},"displaySpendAmount":${convexInt64(500)},"hasOppositeSpendSign":true,"category":"Food","updatedAtMs":1785000000000.0}]""",
             ),
         )
 
-        assertEquals(
-            ConvexResult.Failed("unexpected payload shape"),
-            runBlocking { repositoryWith(poster).listTransactions(FamilyMember.VICTOR) },
-        )
+        val result = runBlocking {
+            repositoryWith(poster).listTransactions(FamilyMember.VICTOR)
+        }
+        val transaction = (result as? ConvexResult.Ok)?.value?.rows?.single()
+            ?: fail("expected stale projection row to decode, got $result")
+
+        assertEquals(500L, transaction.amount)
+        assertEquals(500L, transaction.spendAmount)
+        assertEquals(500L, transaction.displaySpendAmount)
+        assertFalse(transaction.hasOppositeSpendSign)
     }
 
     @Test

@@ -61,13 +61,18 @@ type MigratedTableName =
   | "btcBillPays"
   | "todos"
   | "income"
-  | "balanceDocuments";
+  | "balanceDocuments"
+  | "btcAccounts"
+  | "budgetDocuments"
+  | "btcBalanceDocuments"
+  | "financeDocuments";
 
 interface Verification {
   file: string;
   table: string;
   ok: boolean;
   blobRowCount: number;
+  projectedRowCount: number;
   tableRowCount: number;
   rowCountMatches: boolean;
   blobSums: Record<string, string>;
@@ -109,8 +114,10 @@ const api = {
         table: string;
         blobPresent: boolean;
         blobRowCount: number | null;
+        projectedRowCount: number;
         blobUnreadable: boolean;
         migratedRowCount: number;
+        targetTables: { table: string; rows: number }[];
         planFingerprint: string;
       }[];
       skippedDocumentShapedFiles: string[];
@@ -192,15 +199,19 @@ const CATEGORIES = ["Groceries", "Gas", "Shopping", "Dining", "Utilities", "Inco
  *   - a third-decimal amount that must round half away from zero
  *   - rows with no `id`, including two byte-identical ones
  *   - a duplicated `id`
- *   - positive Income rows among negative spend rows
+ *   - positive purchases and Income rows, plus 16 genuine negative refunds
  */
 function makeTransactions(): Record<string, unknown>[] {
   const random = mulberry32(0x5a75);
   const rows: Record<string, unknown>[] = [];
 
   for (let index = 0; index < 897; index += 1) {
-    const category = CATEGORIES[Math.floor(random() * CATEGORIES.length)]!;
-    const isIncome = category === "Income";
+    const generatedCategory = CATEGORIES[Math.floor(random() * CATEGORIES.length)]!;
+    // Production has 16 refunds among 904 non-zero adult transactions. Fifteen
+    // regular generated rows plus the half-cent edge case below preserve that
+    // measured proportion while keeping every purchase positive.
+    const isRefund = index % 60 === 0;
+    const category = isRefund ? "Shopping" : generatedCategory;
     const dollars = Math.floor(random() * 40000) / 100;
     const month = 1 + Math.floor(random() * 12);
     const day = 1 + Math.floor(random() * 28);
@@ -211,11 +222,17 @@ function makeTransactions(): Record<string, unknown>[] {
       merchant: MERCHANTS[Math.floor(random() * MERCHANTS.length)]!,
       // Half the rows carry the amount lexically, which is how MC2's Python
       // writers emit Decimal values.
-      amount: index % 2 === 0 ? (isIncome ? dollars : -dollars) : `${isIncome ? "" : "-"}${dollars.toFixed(2)}`,
+      amount:
+        index % 2 === 0
+          ? isRefund
+            ? -dollars
+            : dollars
+          : `${isRefund ? "-" : ""}${dollars.toFixed(2)}`,
       category,
     };
     if (index % 3 === 0) row.card = "Amex 1005";
-    if (index % 7 === 0) row.note = "recurring";
+    if (isRefund) row.note = "refund";
+    else if (index % 7 === 0) row.note = "recurring";
     rows.push(row);
   }
 
@@ -224,21 +241,22 @@ function makeTransactions(): Record<string, unknown>[] {
     id: "t-float-trap",
     date: "2026-03-01",
     merchant: "Kroger",
-    amount: -(0.1 + 0.2), // -0.30000000000000004
+    amount: 0.1 + 0.2, // 0.30000000000000004
     category: "Groceries",
   });
   rows.push({
     id: "t-half-up",
     date: "2026-03-02",
-    merchant: "Shell",
+    merchant: "Shell Refund",
     amount: "-0.005", // rounds to -1 cent, half away from zero
     category: "Gas",
+    note: "refund",
   });
   rows.push({
     id: "t-big",
     date: "2026-03-03",
     merchant: "Duke Energy",
-    amount: "-246813.57",
+    amount: "246813.57",
     category: "Utilities",
   });
   rows.push({
@@ -250,11 +268,11 @@ function makeTransactions(): Record<string, unknown>[] {
   });
   // Two byte-identical rows with no id. These are two real transactions
   // (same coffee, same day) and must not collapse into one.
-  rows.push({ date: "2026-03-05", merchant: "Café Grumpy", amount: -4.75, category: "Dining" });
-  rows.push({ date: "2026-03-05", merchant: "Café Grumpy", amount: -4.75, category: "Dining" });
+  rows.push({ date: "2026-03-05", merchant: "Café Grumpy", amount: 4.75, category: "Dining" });
+  rows.push({ date: "2026-03-05", merchant: "Café Grumpy", amount: 4.75, category: "Dining" });
   // A duplicated id — MC2 has shipped these.
-  rows.push({ id: "t-dupe", date: "2026-03-06", merchant: "Shell", amount: -30.0, category: "Gas" });
-  rows.push({ id: "t-dupe", date: "2026-03-06", merchant: "Shell", amount: -31.5, category: "Gas" });
+  rows.push({ id: "t-dupe", date: "2026-03-06", merchant: "Shell", amount: 30.0, category: "Gas" });
+  rows.push({ id: "t-dupe", date: "2026-03-06", merchant: "Shell", amount: 31.5, category: "Gas" });
 
   return rows;
 }
@@ -324,9 +342,7 @@ function makeTodos(): Record<string, unknown>[] {
 }
 
 /**
- * Mason's transactions. THE SIGN CONVENTION IS THE POINT: child MC2 files
- * record spend as a POSITIVE magnitude while adult files sign it negative. The
- * migration must preserve both verbatim.
+ * Mason's transactions. The migration must preserve source signs verbatim.
  */
 function makeMasonTransactions(): Record<string, unknown>[] {
   return [
@@ -416,6 +432,160 @@ const BALANCES = {
   },
 };
 
+const ADULT_BUDGET = {
+  month: "2026-07",
+  coinbase_one_balance: 101.01,
+  categories: Array.from({ length: 8 }, (_, index) => ({
+    name: `Adult category ${index}`,
+    icon: "•",
+    budget: 100.05 + index,
+    spent: 99_999.99,
+  })),
+  income: {
+    weekly_gross: 1_001.01,
+    weekly_strike: 501.01,
+    weekly_river: 500,
+    monthly_gross: 4_004.04,
+    mtd_income: 2_002.02,
+    ytd_income: 24_024.24,
+    pay_frequency: "weekly",
+    paychecks: Array.from({ length: 60 }, (_, index) => ({
+      date: `2026-07-${String(1 + (index % 28)).padStart(2, "0")}`,
+      source: "payroll",
+      amount: 1_001.01,
+      net: 751.01,
+      note: index === 0 ? "production-shaped adult paycheck" : null,
+    })),
+  },
+  mtd_income: 2_002.02,
+  ytd_income: 24_024.24,
+  monthly_history: Array.from({ length: 5 }, (_, index) => ({
+    month: `2026-${String(index + 1).padStart(2, "0")}`,
+    income: 4_004.04,
+    expenses: 3_003.03,
+    savings_pct: 25.01,
+  })),
+};
+
+const MASON_BUDGET = {
+  month: "2026-07",
+  owner: "mason",
+  coinbase_one_balance: 0,
+  categories: Array.from({ length: 4 }, (_, index) => ({
+    name: `Mason category ${index}`,
+    icon: "•",
+    budget: 25.05 + index,
+    spent: 9_999.99,
+  })),
+  income: {
+    weekly_gross: 20.05,
+    weekly_strike: 0,
+    weekly_river: 0,
+    monthly_gross: 80.2,
+    mtd_income: 0,
+    ytd_income: 0,
+    pay_frequency: "weekly",
+    paychecks: Array.from({ length: 19 }, (_, index) => ({
+      date: `2026-07-${String(1 + (index % 28)).padStart(2, "0")}`,
+      source: "allowance",
+      amount: 20.05,
+      net: 20.05,
+      owner: "mason",
+    })),
+  },
+  mtd_income: 0,
+  ytd_income: 0,
+  monthly_history: [],
+};
+
+const BTC_SNAPSHOT = {
+  schemaVersion: 2,
+  asOf: "2026-07-18T12:00:00Z",
+  accounts: Object.fromEntries(
+    [
+      ["cashapp", "exchange"],
+      ["coldcard", "self_custody"],
+      ["river", "exchange"],
+      ["strike", "exchange"],
+      ["zeus", "self_custody"],
+    ].map(([key, custody], index) => [
+      key,
+      {
+        btc: Number((0.01 + index * 0.001).toFixed(8)),
+        fiat: 1_000.05 + index,
+        label: key,
+        custody,
+      },
+    ]),
+  ),
+  totals: {
+    btc: 0.06,
+    fiat: 5_010.25,
+    exchange_btc: 0.034,
+    self_custody_btc: 0.026,
+  },
+  metadata: {
+    source: "reconciliation",
+    basis: "account snapshot",
+    confidence: "reviewed",
+  },
+};
+
+const SON_BALANCES = {
+  strike: 0.004,
+  river: 0.002,
+  coldcard: 0.01,
+  total: 0.016,
+  lastUpdated: "2026-07-18T12:00:00Z",
+};
+
+const FINANCES = {
+  lastUpdated: "2026-07-18T12:00:00Z",
+  retirement: {
+    "401k": {
+      provider: "Adult provider",
+      total: 1_000.05,
+      weeklyContribution: 25.05,
+      weeklyContributionDay: "Friday",
+      holdings: [
+        {
+          name: "Adult fund",
+          category: "Equity",
+          value: 1_000.05,
+          costBasis: 900.05,
+          gainPct: 11.11,
+          shares: 3.14159265,
+          avgCost: 286.05,
+          currentPricePerShare: 318.35,
+          lots: [
+            {
+              date: "2026-01-01",
+              type: "buy",
+              pricePerShare: 300.05,
+              shares: 1.125,
+              amountInvested: 337.55,
+            },
+          ],
+        },
+      ],
+    },
+    wap: {
+      provider: "Adult WAP",
+      total: 50.05,
+      weeklyContribution: 5.05,
+      holdings: [],
+    },
+    total: 1_050.1,
+  },
+  mason_401k: {
+    owner: "mason",
+    provider: "Mason provider",
+    total: 50.05,
+    weeklyContribution: 5.05,
+    holdings: [],
+  },
+};
+
 async function seedBlob(t: Harness, name: string, data: unknown, version = 7) {
   await t.run(async (ctx) => {
     await ctx.db.insert("dataFiles", { name, data, version, updatedAt: 1_700_000_000_000 });
@@ -431,6 +601,11 @@ async function seedAll(t: Harness) {
   await seedBlob(t, "todos", { todos: TODOS });
   await seedBlob(t, "income", INCOME);
   await seedBlob(t, "balances", BALANCES);
+  await seedBlob(t, "budget", ADULT_BUDGET);
+  await seedBlob(t, "mason-budget", MASON_BUDGET);
+  await seedBlob(t, "btc-balance-snapshot", BTC_SNAPSHOT);
+  await seedBlob(t, "finances", FINANCES);
+  await seedBlob(t, "son-balances", SON_BALANCES);
   await t.run(async (ctx) => {
     await ctx.db.insert("todoTombstones", {
       id: "deleted-before-migration",
@@ -488,6 +663,11 @@ describe("fixtures match the real export", () => {
     expect(BTC_BUYS).toHaveLength(31);
     expect(TODOS).toHaveLength(25);
     expect(INCOME).toHaveLength(16);
+    expect(ADULT_BUDGET.categories).toHaveLength(8);
+    expect(ADULT_BUDGET.income.paychecks).toHaveLength(60);
+    expect(MASON_BUDGET.categories).toHaveLength(4);
+    expect(MASON_BUDGET.income.paychecks).toHaveLength(19);
+    expect(Object.keys(BTC_SNAPSHOT.accounts)).toHaveLength(5);
   });
 });
 
@@ -565,6 +745,11 @@ describe("money survives exactly", () => {
       todos: { todos: TODOS },
       income: INCOME,
       balances: BALANCES,
+      budget: ADULT_BUDGET,
+      "mason-budget": MASON_BUDGET,
+      "btc-balance-snapshot": BTC_SNAPSHOT,
+      finances: FINANCES,
+      "son-balances": SON_BALANCES,
     };
     for (const source of MIGRATION_SOURCES) {
       const data = blobs[source.file];
@@ -577,7 +762,11 @@ describe("money survives exactly", () => {
           bigintColumns.add(path);
           return;
         }
-        if (typeof value !== "object" || value === null || Array.isArray(value)) {
+        if (Array.isArray(value)) {
+          for (const nested of value) collectBigints(nested, `${path}[]`);
+          return;
+        }
+        if (typeof value !== "object" || value === null) {
           return;
         }
         for (const [key, nested] of Object.entries(value)) {
@@ -587,7 +776,11 @@ describe("money survives exactly", () => {
       for (const doc of projected!.docs) {
         collectBigints(doc);
       }
-      expect([...bigintColumns].sort()).toEqual([...MONEY_COLUMNS[source.kind]].sort());
+      expect(
+        [...bigintColumns].filter(
+          (column) => !MONEY_COLUMNS[source.kind].includes(column),
+        ),
+      ).toEqual([]);
     }
   });
 });
@@ -649,8 +842,13 @@ describe("owner resolution is closed", () => {
   test("Mason's rows land on mason and adult rows on victor", async () => {
     const mason = MIGRATION_SOURCES.find((source) => source.file === "mason-transactions")!;
     const adult = MIGRATION_SOURCES.find((source) => source.file === "transactions")!;
-    expect(projectFile(mason, MASON_TRANSACTIONS)!.docs.every((doc) => doc.owner === "mason")).toBe(true);
-    expect(projectFile(adult, TRANSACTIONS)!.docs.every((doc) => doc.owner === "victor")).toBe(true);
+    const masonDocs = projectFile(mason, MASON_TRANSACTIONS)!.docs;
+    const adultDocs = projectFile(adult, TRANSACTIONS)!.docs;
+
+    expect(masonDocs).toHaveLength(MASON_TRANSACTIONS.length);
+    expect(adultDocs).toHaveLength(TRANSACTIONS.length);
+    expect(masonDocs.every((doc) => doc.owner === "mason")).toBe(true);
+    expect(adultDocs.every((doc) => doc.owner === "victor")).toBe(true);
   });
 
   test("new adult sources use the closed union and refuse disagreement", () => {
@@ -883,10 +1081,28 @@ describe("migrating every file", () => {
       blobRowCount: 25,
       inserted: 25,
     });
+    expect(
+      dryRuns.find((result) => result.file === "btc-balance-snapshot"),
+    ).toMatchObject({
+      blobRowCount: 1,
+      projectedRowCount: 6,
+      inserted: 6,
+    });
+    expect(
+      dryRuns.find((result) => result.file === "son-balances"),
+    ).toMatchObject({
+      blobRowCount: 1,
+      projectedRowCount: 4,
+      inserted: 4,
+    });
     expect(await rowsIn(t, "transactions")).toHaveLength(0);
     expect(await rowsIn(t, "btcBuys")).toHaveLength(0);
     expect(await rowsIn(t, "btcBillPays")).toHaveLength(0);
     expect(await rowsIn(t, "todos")).toHaveLength(0);
+    expect(await rowsIn(t, "btcAccounts")).toHaveLength(0);
+    expect(await rowsIn(t, "budgetDocuments")).toHaveLength(0);
+    expect(await rowsIn(t, "btcBalanceDocuments")).toHaveLength(0);
+    expect(await rowsIn(t, "financeDocuments")).toHaveLength(0);
     expect(canonicalJson(await snapshotBlobWorld(t))).toBe(blobBytesBefore);
 
     const applied: MigrateResult[] = [];
@@ -910,6 +1126,10 @@ describe("migrating every file", () => {
     expect(await rowsIn(t, "btcBuys")).toHaveLength(31);
     expect(await rowsIn(t, "btcBillPays")).toHaveLength(2);
     expect(await rowsIn(t, "todos")).toHaveLength(25);
+    expect(await rowsIn(t, "btcAccounts")).toHaveLength(8);
+    expect(await rowsIn(t, "budgetDocuments")).toHaveLength(2);
+    expect(await rowsIn(t, "btcBalanceDocuments")).toHaveLength(2);
+    expect(await rowsIn(t, "financeDocuments")).toHaveLength(1);
     expect(canonicalJson(await snapshotBlobWorld(t))).toBe(blobBytesBefore);
   });
 
@@ -931,6 +1151,11 @@ describe("migrating every file", () => {
     expect(byFile.get("bitcoin-bill-pays")!.inserted).toBe(2);
     expect(byFile.get("income")!.inserted).toBe(16);
     expect(byFile.get("balances")!.inserted).toBe(1);
+    expect(byFile.get("budget")!.inserted).toBe(1);
+    expect(byFile.get("mason-budget")!.inserted).toBe(1);
+    expect(byFile.get("btc-balance-snapshot")!.inserted).toBe(6);
+    expect(byFile.get("finances")!.inserted).toBe(1);
+    expect(byFile.get("son-balances")!.inserted).toBe(4);
     // No blob for these two; skipped, not invented.
     expect(byFile.get("maddox-transactions")!.blobPresent).toBe(false);
     expect(byFile.get("mason-bitcoin-buys")!.blobPresent).toBe(false);
@@ -949,6 +1174,10 @@ describe("migrating every file", () => {
     expect(await rowsIn(t, "btcBillPays")).toHaveLength(2);
     expect(await rowsIn(t, "income")).toHaveLength(16);
     expect(await rowsIn(t, "balanceDocuments")).toHaveLength(1);
+    expect(await rowsIn(t, "btcAccounts")).toHaveLength(8);
+    expect(await rowsIn(t, "budgetDocuments")).toHaveLength(2);
+    expect(await rowsIn(t, "btcBalanceDocuments")).toHaveLength(2);
+    expect(await rowsIn(t, "financeDocuments")).toHaveLength(1);
   });
 
   test("the summed amounts equal the blob, computed independently", async () => {
@@ -1066,7 +1295,133 @@ describe("migrating every file", () => {
     expect(canonicalJson(balance!.raw)).toBe(canonicalJson(BALANCES));
   });
 
-  test("child files keep their positive spend and adult files keep their negative", async () => {
+  test("the five atomic blobs populate all four empty table families exactly", async () => {
+    const t = harness();
+    await seedAll(t);
+    for (const file of [
+      "budget",
+      "mason-budget",
+      "btc-balance-snapshot",
+      "finances",
+      "son-balances",
+    ]) {
+      await applyFile(t, { file });
+    }
+
+    const budgets = await rowsIn(t, "budgetDocuments");
+    expect(budgets).toHaveLength(2);
+    expect(
+      budgets.find((row) => row.sourceFile === "budget"),
+    ).toMatchObject({
+      owner: "victor",
+      migrationRawJson: expect.any(String),
+      categories: expect.arrayContaining([
+        expect.objectContaining({ budgetCents: 10_005n }),
+      ]),
+      migrationSourceIndex: 0,
+    });
+    expect(
+      budgets.find((row) => row.sourceFile === "mason-budget"),
+    ).toMatchObject({
+      owner: "mason",
+      migrationRawJson: expect.any(String),
+      categories: expect.arrayContaining([
+        expect.objectContaining({ budgetCents: 2_505n }),
+      ]),
+      migrationSourceIndex: 0,
+    });
+
+    const balanceDocuments = await rowsIn(t, "btcBalanceDocuments");
+    expect(balanceDocuments).toHaveLength(2);
+    expect(
+      balanceDocuments.find(
+        (row) => row.sourceFile === "btc-balance-snapshot",
+      ),
+    ).toMatchObject({
+      owner: "victor",
+      schemaVersion: 2n,
+      migrationRawJson: expect.any(String),
+      accounts: expect.arrayContaining([
+        expect.objectContaining({
+          key: "cashapp",
+          sats: 1_000_000n,
+          fiatCents: 100_005n,
+        }),
+      ]),
+    });
+    expect(
+      balanceDocuments.find((row) => row.sourceFile === "son-balances"),
+    ).toMatchObject({
+      owner: "mason",
+      migrationRawJson: expect.any(String),
+      totals: {
+        sats: 1_600_000n,
+        fiatCents: 0n,
+        exchangeSats: 600_000n,
+        selfCustodySats: 1_000_000n,
+      },
+    });
+
+    const btcAccounts = await rowsIn(t, "btcAccounts");
+    expect(btcAccounts).toHaveLength(8);
+    expect(
+      btcAccounts
+        .filter((row) => row.owner === "mason")
+        .map((row) => row.key)
+        .sort(),
+    ).toEqual([
+      "son-coldcard-mason",
+      "son-river-mason",
+      "son-strike-mason",
+    ]);
+    expect(
+      btcAccounts.every(
+        (row) =>
+          typeof row.sats === "bigint" &&
+          typeof row.fiatCents === "bigint",
+      ),
+    ).toBe(true);
+
+    const [finances] = await rowsIn(t, "financeDocuments");
+    expect(finances).toMatchObject({
+      sourceFile: "finances",
+      retirementTotalCents: 105_010n,
+      migrationRawJson: expect.any(String),
+      accounts: expect.arrayContaining([
+        expect.objectContaining({ key: "401k", owner: "victor" }),
+        expect.objectContaining({ key: "mason_401k", owner: "mason" }),
+      ]),
+      migrationSourceIndex: 0,
+    });
+
+    for (const row of [
+      ...budgets,
+      ...balanceDocuments,
+      ...btcAccounts,
+      finances,
+    ]) {
+      expect(row).not.toHaveProperty("migrationRaw");
+    }
+
+    for (const file of [
+      "budget",
+      "mason-budget",
+      "btc-balance-snapshot",
+      "finances",
+      "son-balances",
+    ]) {
+      const verification = await t.query(api.verifyFile, { file });
+      expect(verification).toMatchObject({
+        ok: true,
+        rowCountMatches: true,
+        moneySumsMatch: true,
+        exactRoundTrip: true,
+        problems: [],
+      });
+    }
+  });
+
+  test("migration preserves source transaction signs verbatim", async () => {
     const t = harness();
     await seedAll(t);
     await applyFile(t, { file: "mason-transactions" });
@@ -1079,8 +1434,21 @@ describe("migrating every file", () => {
     expect(mason.find((row) => row.merchant === "Game Store")!.amountCents).toBe(6000n);
     expect(mason.every((row) => row.amountCents >= 0n)).toBe(true);
 
-    const adultSpend = rows.find((row) => row.txId === "t-big")!;
-    expect(adultSpend.amountCents).toBe(-24681357n);
+    const adult = rows.filter((row) => row.sourceFile === "transactions");
+    const adultRefunds = adult.filter(
+      (row) =>
+        (row.migrationRaw as Record<string, unknown>).note === "refund",
+    );
+    const positiveAdultRows = adult.filter((row) => row.amountCents > 0n);
+    const zeroAdultRows = adult.filter((row) => row.amountCents === 0n);
+
+    expect(positiveAdultRows).toHaveLength(888);
+    expect(adultRefunds).toHaveLength(16);
+    expect(adultRefunds.every((row) => row.amountCents < 0n)).toBe(true);
+    expect(zeroAdultRows).toHaveLength(1);
+
+    const largePurchase = adult.find((row) => row.txId === "t-big")!;
+    expect(largePurchase.amountCents).toBe(24681357n);
   });
 
   test("fields no domain type mentions survive in migration provenance", async () => {
@@ -1116,6 +1484,37 @@ describe("migrating every file", () => {
 // ─── Idempotency ─────────────────────────────────────────────────────────────
 
 describe("running it twice", () => {
+  test("atomic documents and derived BTC accounts are idempotent together", async () => {
+    const t = harness();
+    await seedAll(t);
+
+    for (const [file, projectedRows] of [
+      ["budget", 1],
+      ["mason-budget", 1],
+      ["btc-balance-snapshot", 6],
+      ["finances", 1],
+      ["son-balances", 4],
+    ] as const) {
+      const first = await applyFile(t, { file });
+      const second = await applyFile(t, { file });
+      expect(first).toMatchObject({
+        inserted: projectedRows,
+        updated: 0,
+        unchanged: 0,
+      });
+      expect(second).toMatchObject({
+        inserted: 0,
+        updated: 0,
+        unchanged: projectedRows,
+      });
+    }
+
+    expect(await rowsIn(t, "btcAccounts")).toHaveLength(8);
+    expect(await rowsIn(t, "budgetDocuments")).toHaveLength(2);
+    expect(await rowsIn(t, "btcBalanceDocuments")).toHaveLength(2);
+    expect(await rowsIn(t, "financeDocuments")).toHaveLength(1);
+  });
+
   test("income rows and the balances document insert zero rows on a second run", async () => {
     const t = harness();
     await seedAll(t);
@@ -1196,6 +1595,30 @@ describe("running it twice", () => {
     const rerun = await applyFile(t, { file: "transactions" });
     expect(rerun.inserted).toBe(0);
     expect(rerun.unchanged).toBe(905);
+  });
+
+  test("BTC document batching covers the atomic row and every account row", async () => {
+    const t = harness();
+    await seedAll(t);
+
+    let cursor: number | null = 0;
+    let inserted = 0;
+    while (cursor !== null) {
+      const result = await applyFile(t, {
+        file: "btc-balance-snapshot",
+        cursor,
+        batchSize: 2,
+      });
+      inserted += result.inserted;
+      cursor = result.nextCursor;
+    }
+
+    expect(inserted).toBe(6);
+    expect(await rowsIn(t, "btcBalanceDocuments")).toHaveLength(1);
+    expect(await rowsIn(t, "btcAccounts")).toHaveLength(5);
+    expect(
+      (await t.query(api.verifyFile, { file: "btc-balance-snapshot" })).ok,
+    ).toBe(true);
   });
 
   test("an interrupted run is repaired, not duplicated", async () => {
@@ -1412,7 +1835,7 @@ describe("refusals", () => {
 
   test("an unknown file is refused", async () => {
     const t = harness();
-    await expect(applyFile(t, { file: "budget" })).rejects.toThrow(
+    await expect(applyFile(t, { file: "maddox-budget" })).rejects.toThrow(
       /Not a migratable file/,
     );
   });
@@ -1440,14 +1863,27 @@ describe("refusals", () => {
 // ─── status ──────────────────────────────────────────────────────────────────
 
 describe("status", () => {
-  test("names what it is leaving behind", async () => {
+  test("declares all five formerly skipped documents as frozen migration sources", async () => {
     const t = harness();
     await seedAll(t);
-    await seedBlob(t, "budget", { month: "2026-07", categories: [] });
-    await seedBlob(t, "btc-balance-snapshot", { asOf: "2026-07-18", accounts: {} });
 
     const status = await t.query(api.status, {});
-    expect(status.skippedDocumentShapedFiles).toEqual(["budget", "btc-balance-snapshot"]);
+    expect(status.skippedDocumentShapedFiles).toEqual([]);
+    for (const [file, projectedRows] of [
+      ["budget", 1],
+      ["mason-budget", 1],
+      ["btc-balance-snapshot", 6],
+      ["finances", 1],
+      ["son-balances", 4],
+    ] as const) {
+      expect(status.files.find((entry) => entry.file === file)).toMatchObject({
+        blobPresent: true,
+        blobRowCount: 1,
+        projectedRowCount: projectedRows,
+        migratedRowCount: 0,
+        blobUnreadable: false,
+      });
+    }
 
     const transactions = status.files.find((file) => file.file === "transactions")!;
     expect(transactions.blobRowCount).toBe(905);

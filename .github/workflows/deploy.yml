@@ -26,6 +26,7 @@ on:
 
 permissions:
   contents: read
+  checks: read
 
 # One release run at a time across every ref. Matrix serialization only protects
 # jobs inside one run; without workflow-level concurrency, two manual runs can
@@ -35,8 +36,72 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  release-gate:
+    name: Require main and green required CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require an exact main ref
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$RELEASE_REF" != "refs/heads/main" ]; then
+            echo "::error::TestFlight deploys must be dispatched from main; got $RELEASE_REF."
+            exit 1
+          fi
+          echo "Release ref is main."
+
+      # Check the protected contexts and the completed Apple build at the exact
+      # release SHA. A workflow name, detector decision, or older successful run
+      # is not enough: commit 0d546d87 shipped alongside a failed Apple run.
+      # Check runs must also come from GitHub Actions (App ID 15368), matching
+      # branch protection rather than trusting a same-named external check.
+      - name: Require green protected checks at the release SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          required=(
+            "Detect changed trees"
+            "actionlint + secret inventory"
+            "Shared domain contract"
+            "Production wire golden decoders"
+            "Convex functions"
+            "Linux client"
+            "Android client"
+            "Build and test the Apple client"
+          )
+          checks="$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/repos/${GITHUB_REPOSITORY}/commits/${RELEASE_SHA}/check-runs?filter=latest&per_page=100")"
+
+          failed=false
+          for name in "${required[@]}"; do
+            conclusion="$(jq -r --arg name "$name" \
+              '[.check_runs[]
+                | select(.name == $name and .app.id == 15368)]
+               | sort_by(.completed_at // .started_at // .created_at // "")
+               | last
+               | .conclusion // "missing"' <<< "$checks")"
+            if [ "$conclusion" = "success" ]; then
+              printf 'PASS  %s\n' "$name"
+            else
+              printf 'FAIL  %s (%s)\n' "$name" "$conclusion"
+              failed=true
+            fi
+          done
+
+          if [ "$failed" = "true" ]; then
+            echo "::error::The exact main release SHA does not have green required CI."
+            exit 1
+          fi
+
   preflight:
     name: Verify App Store Connect visibility
+    needs: release-gate
     if: github.repository == 'only21mil/masons-budget'
     runs-on: ubuntu-latest
     steps:

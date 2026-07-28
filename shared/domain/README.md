@@ -55,20 +55,17 @@ point.
 
 For every non-Income transaction:
 
-- `spendAmount` is the **signed budget contribution**. Adult rows use
-  `-amountCents`; child rows use `amountCents`. Positive means spent and negative
-  means a credit/refund that reduces spend.
+- `spendAmount` is the **signed budget contribution**. Adult and child rows both
+  use `amountCents`: positive means spent and negative means a credit/refund
+  that reduces spend.
 - `displaySpendAmount` is the rendering magnitude, always non-negative.
 - `hasOppositeSpendSign` is `spendAmount < 0`.
 
-Income contributes zero. A valid refund and a corrupt wrong-sign legacy row are
-indistinguishable on read because the legacy row has no persisted write-side
-kind. Both must retain the negative contribution, positive display magnitude,
-and `hasOppositeSpendSign: true`.
+Income contributes zero. A refund retains its negative contribution, positive
+display magnitude, and `hasOppositeSpendSign: true`.
 
 `spendContract` in the shared fixture pins an adult spend, child spend, income,
-adult refund, and corrupt wrong-sign row. Decoder and domain parity suites must
-run all five cases.
+and adult refund. Decoder and domain parity suites must run all four cases.
 
 ## Related invariants
 

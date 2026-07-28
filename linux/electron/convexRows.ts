@@ -225,30 +225,20 @@ function transaction(value: unknown, viewer: VogelVaultMember): VogelVaultTransa
   const row = responseObject(
     value,
     [
-      "txId", "owner", "date", "month", "merchant", "amountCents", "spendAmount",
-      "displaySpendAmount", "hasOppositeSpendSign", "category", "updatedAtMs",
+      "txId", "owner", "date", "month", "merchant", "amountCents", "category",
+      "updatedAtMs",
     ],
   )
   const owner = member(row)
   assertVisible(viewer, owner)
   const { date, month } = dateAndMonth(row)
   const amountCents = int64(row, "amountCents")
-  const spendAmount = int64(row, "spendAmount")
-  const displaySpendAmount = int64(row, "displaySpendAmount")
-  const hasOppositeSpendSign = booleanValue(row, "hasOppositeSpendSign")
   const category = text(row, "category")
-  const expectedSpendAmount = category === "Income"
+  const spendAmount = category === "Income"
     ? 0n
-    : ADULTS.has(owner)
-      ? -amountCents
-      : amountCents
-  if (
-    spendAmount !== expectedSpendAmount ||
-    displaySpendAmount !== (spendAmount < 0n ? -spendAmount : spendAmount) ||
-    hasOppositeSpendSign !== (spendAmount < 0n)
-  ) {
-    throw new InvalidValue()
-  }
+    : amountCents
+  const displaySpendAmount = spendAmount < 0n ? -spendAmount : spendAmount
+  const hasOppositeSpendSign = spendAmount < 0n
   return {
     txId: text(row, "txId", 256),
     owner,

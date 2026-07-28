@@ -191,17 +191,17 @@ enum MC2MobileWritebackError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notConfigured:
-            "MC2 mobile writeback is not configured."
+            "App writeback is not configured."
         case .invalidBaseURL:
-            "MC2 mobile writeback URL is invalid."
+            "The writeback URL is invalid."
         case .invalidPairingURL:
-            "MC2 pairing URL is invalid or expired."
+            "The device pairing URL is invalid or expired."
         case let .httpError(code):
-            "MC2 mobile writeback returned HTTP \(code)."
+            "The writeback endpoint returned HTTP \(code)."
         case let .serverError(message):
             message
         case .unexpectedResponse:
-            "MC2 mobile writeback returned an unexpected response."
+            "The writeback endpoint returned an unexpected response."
         }
     }
 }
@@ -261,7 +261,7 @@ final class MC2MobileWritebackClient: Sendable {
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         if http.statusCode != 200 {
             let message = object?["error"] as? String
-            throw MC2MobileWritebackError.serverError(message ?? "MC2 pairing failed.")
+            throw MC2MobileWritebackError.serverError(message ?? "Device pairing failed.")
         }
         guard let deviceID = object?["deviceId"] as? String,
               let deviceToken = object?["deviceToken"] as? String
@@ -353,11 +353,11 @@ final class MC2MobileWritebackClient: Sendable {
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         if http.statusCode != 200 {
             let message = object?["error"] as? String
-            throw MC2MobileWritebackError.serverError(message ?? "MC2 mobile writeback failed.")
+            throw MC2MobileWritebackError.serverError(message ?? "App writeback failed.")
         }
         guard let object else { throw MC2MobileWritebackError.unexpectedResponse }
         guard object["ok"] as? Bool == true else {
-            throw MC2MobileWritebackError.serverError((object["error"] as? String) ?? "MC2 rejected todo completion.")
+            throw MC2MobileWritebackError.serverError((object["error"] as? String) ?? "The writeback endpoint rejected todo completion.")
         }
         return true
     }

@@ -34,6 +34,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.domain.BtcAccount
+import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.MC2_FILES
@@ -76,6 +77,8 @@ fun ScreenHost(
     destination: Destination,
     state: VaultUiState,
     onEnableRemoteRows: (String) -> Unit = {},
+    displayUnit: DisplayUnit = DisplayUnit.BTC,
+    onDisplayUnitChange: (DisplayUnit) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val budgetMonth = state.data.budget.value?.month
@@ -97,13 +100,27 @@ fun ScreenHost(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(VaultSpace.md),
         verticalArrangement = Arrangement.spacedBy(VaultSpace.md),
     ) {
-        item { ScreenHeader(destination, state, month) }
+        item {
+            ScreenHeader(
+                destination,
+                state,
+                month,
+                displayUnit,
+                onDisplayUnitChange,
+            )
+        }
+        if (
+            displayUnit == DisplayUnit.USD &&
+            destination in setOf(Destination.DASHBOARD, Destination.BITCOIN, Destination.NET_WORTH)
+        ) {
+            item { BitcoinFiatNotice(state) }
+        }
         when (destination) {
-            Destination.DASHBOARD -> dashboard(state, month)
+            Destination.DASHBOARD -> dashboard(state, month, displayUnit)
             Destination.ACTIVITY -> activity(state)
             Destination.BUDGET -> budget(state, month, months) { picked = it }
-            Destination.BITCOIN -> bitcoin(state)
-            Destination.NET_WORTH -> netWorth(state)
+            Destination.BITCOIN -> bitcoin(state, displayUnit)
+            Destination.NET_WORTH -> netWorth(state, displayUnit)
             Destination.TODAY -> today(state)
             Destination.FAMILY -> family(state)
             Destination.SETTINGS -> settings(state, onEnableRemoteRows)
@@ -112,7 +129,13 @@ fun ScreenHost(
 }
 
 @Composable
-private fun ScreenHeader(destination: Destination, state: VaultUiState, budgetMonth: String?) {
+private fun ScreenHeader(
+    destination: Destination,
+    state: VaultUiState,
+    budgetMonth: String?,
+    displayUnit: DisplayUnit,
+    onDisplayUnitChange: (DisplayUnit) -> Unit,
+) {
     val subtitle = when (destination) {
         Destination.DASHBOARD ->
             if (state.activeProfile.isAdult) "Household command center"
@@ -138,13 +161,67 @@ private fun ScreenHeader(destination: Destination, state: VaultUiState, budgetMo
             )
             FreshnessTag(state.worstStatus, state.worstUpdatedAt, state.now)
         }
-        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = VaultTextMuted)
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = VaultTextMuted,
+                modifier = Modifier.weight(1f),
+            )
+            BitcoinUnitToggle(displayUnit, onDisplayUnitChange)
+        }
+    }
+}
+
+@Composable
+private fun BitcoinUnitToggle(
+    selected: DisplayUnit,
+    onSelect: (DisplayUnit) -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(VaultSpace.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        DisplayUnit.entries.forEach { unit ->
+            SelectionChip(
+                label = unit.label,
+                selected = unit == selected,
+                compact = true,
+                onSelect = { onSelect(unit) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun BitcoinFiatNotice(state: VaultUiState) {
+    val asOf = state.data.btcPriceAsOf
+    if (state.data.btcPriceCents > 0L && asOf != null) {
+        StatusBanner(
+            text = "USD estimate",
+            detail = "Uses the last recorded Bitcoin buy price from $asOf. This is not a live price.",
+            tone = VaultTextMuted,
+        )
+    } else {
+        StatusBanner(
+            text = "USD unavailable",
+            detail = "No recorded Bitcoin buy price is available. BTC and SATS remain exact.",
+            tone = VaultWarning,
+        )
     }
 }
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
 
-private fun androidx.compose.foundation.lazy.LazyListScope.dashboard(state: VaultUiState, selectedMonth: String?) {
+private fun androidx.compose.foundation.lazy.LazyListScope.dashboard(
+    state: VaultUiState,
+    selectedMonth: String?,
+    displayUnit: DisplayUnit,
+) {
     val profile = state.activeProfile
     val visible = state.data.transactions.value.visibleTo(profile)
     val budgetTransactions = state.data.transactions.value.budgetTransactionsFor(profile)
@@ -168,11 +245,16 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dashboard(state: Vaul
                 Kpi("Income", figure(state.data.transactions.suppressFigures) { Money.formatUsd(income) }, tone = VaultPositive),
                 Kpi(
                     "Stack",
-                    figure(state.data.btcAccounts.suppressFigures) { Money.formatBtc(stackSats) },
-                    hint = figure(state.data.btcAccounts.suppressFigures) {
-                        Money.formatUsd(Money.satsToUsdCents(stackSats, state.data.btcPriceCents))
+                    figure(state.data.btcAccounts.suppressFigures) {
+                        state.formatBitcoin(stackSats, displayUnit)
                     },
-                    tone = VaultAccent,
+                    hint = figure(state.data.btcAccounts.suppressFigures) {
+                        if (displayUnit == DisplayUnit.USD) {
+                            priceBasis(state)
+                        } else {
+                            state.formatBitcoin(stackSats, DisplayUnit.USD)
+                        }
+                    },
                 ),
                 Kpi("Open tasks", figure(state.data.todos.suppressFigures) { openTodos.toString() }),
             ),
@@ -197,7 +279,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dashboard(state: Vaul
     }
     item {
         Panel("Bitcoin", state.data.btcAccounts.source) {
-            AccountList(accounts, state.data.btcAccounts.status)
+            AccountList(
+                accounts,
+                state.data.btcAccounts.status,
+                displayUnit,
+                state.data.btcPriceCents,
+            )
         }
     }
 }
@@ -393,21 +480,42 @@ private fun MonthPicker(months: List<String>, selected: String, onSelect: (Strin
 
 @Composable
 private fun MonthChip(month: String, selected: Boolean, onSelect: () -> Unit) {
+    SelectionChip(
+        label = monthLabel(month),
+        selected = selected,
+        onSelect = onSelect,
+    )
+}
+
+/**
+ * Existing ledger choice-chip language shared by month and display-unit
+ * pickers. Orange marks selection only in the border/fill; text stays cream.
+ */
+@Composable
+private fun SelectionChip(
+    label: String,
+    selected: Boolean,
+    compact: Boolean = false,
+    onSelect: () -> Unit,
+) {
     val shape = RoundedCornerShape(99.dp)
     Box(
         Modifier
-            .heightIn(min = 40.dp)
+            .heightIn(min = if (compact) 32.dp else 40.dp)
             .clip(shape)
             // selectable, not clickable: this is one choice out of a set, and a
             // screen reader should say so.
             .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
             .background(if (selected) VaultAccentDim else VaultSurface, shape)
             .border(1.dp, if (selected) VaultAccent.copy(alpha = 0.42f) else VaultLine, shape)
-            .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
+            .padding(
+                horizontal = if (compact) VaultSpace.sm else VaultSpace.md,
+                vertical = if (compact) VaultSpace.xs else VaultSpace.sm,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            monthLabel(month),
+            label,
             style = MaterialTheme.typography.labelSmall,
             // Orange marks the selection through the fill and border only. It is
             // never a text colour — the selected label just goes to full cream.
@@ -436,7 +544,10 @@ private fun monthLabel(month: String): String {
 
 // ── Bitcoin ─────────────────────────────────────────────────────────────────
 
-private fun androidx.compose.foundation.lazy.LazyListScope.bitcoin(state: VaultUiState) {
+private fun androidx.compose.foundation.lazy.LazyListScope.bitcoin(
+    state: VaultUiState,
+    displayUnit: DisplayUnit,
+) {
     val profile = state.activeProfile
     val slice = state.data.btcAccounts
     val inScope = slice.value.netWorthScopeFor(profile)
@@ -446,16 +557,27 @@ private fun androidx.compose.foundation.lazy.LazyListScope.bitcoin(state: VaultU
     item {
         KpiStrip(
             listOf(
-                Kpi("Total stack", figure(slice.suppressFigures) { Money.formatBtc(totalSats) }, tone = VaultAccent),
                 Kpi(
-                    "Value",
-                    figure(slice.suppressFigures) { Money.formatUsd(Money.satsToUsdCents(totalSats, state.data.btcPriceCents)) },
+                    "Total stack",
+                    figure(slice.suppressFigures) { state.formatBitcoin(totalSats, displayUnit) },
+                ),
+                Kpi(
+                    "Reference price",
+                    figure(slice.suppressFigures) {
+                        state.data.btcPriceCents
+                            .takeIf { it > 0L }
+                            ?.let { Money.formatUsd(it) }
+                            ?: Money.PRICE_UNAVAILABLE
+                    },
+                    hint = figure(slice.suppressFigures) { priceBasis(state) },
                     provenance = Provenance.ESTIMATED,
                 ),
                 Kpi(
                     "Self custody",
                     figure(slice.suppressFigures) { "${Money.basisPoints(selfCustody, totalSats) / 100}%" },
-                    hint = figure(slice.suppressFigures) { Money.formatSats(selfCustody) },
+                    hint = figure(slice.suppressFigures) {
+                        state.formatBitcoin(selfCustody, displayUnit)
+                    },
                 ),
                 Kpi("Accounts", figure(slice.suppressFigures) { inScope.size.toString() }),
             ),
@@ -463,7 +585,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.bitcoin(state: VaultU
     }
     item { StaleNotice(slice.status) }
     item {
-        Panel("Accounts in net worth", slice.source) { AccountList(inScope, slice.status) }
+        Panel("Accounts in net worth", slice.source) {
+            AccountList(inScope, slice.status, displayUnit, state.data.btcPriceCents)
+        }
     }
     item {
         val buys = state.data.btcBuys.value.visibleTo(profile)
@@ -479,7 +603,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.bitcoin(state: VaultU
                         LedgerRow(
                             primary = buy.source,
                             secondary = "${buy.date} · ${Money.formatUsd(buy.priceUsdCents)}",
-                            figure = Money.formatSats(buy.sats),
+                            figure = Money.formatBitcoin(
+                                buy.sats,
+                                displayUnit,
+                                buy.priceUsdCents,
+                            ),
                             figureColor = VaultCream,
                         )
                     }
@@ -491,7 +619,10 @@ private fun androidx.compose.foundation.lazy.LazyListScope.bitcoin(state: VaultU
 
 // ── Net Worth ───────────────────────────────────────────────────────────────
 
-private fun androidx.compose.foundation.lazy.LazyListScope.netWorth(state: VaultUiState) {
+private fun androidx.compose.foundation.lazy.LazyListScope.netWorth(
+    state: VaultUiState,
+    displayUnit: DisplayUnit,
+) {
     val profile = state.activeProfile
     val slice = state.data.btcAccounts
     val inScope = slice.value.netWorthScopeFor(profile)
@@ -503,16 +634,25 @@ private fun androidx.compose.foundation.lazy.LazyListScope.netWorth(state: Vault
             listOf(
                 Kpi(
                     "Bitcoin",
-                    figure(slice.suppressFigures) { Money.formatUsd(Money.satsToUsdCents(stackSats, state.data.btcPriceCents)) },
-                    tone = VaultAccent,
+                    figure(slice.suppressFigures) { state.formatBitcoin(stackSats, displayUnit) },
+                ),
+                Kpi(
+                    "Fiat estimate",
+                    figure(slice.suppressFigures) {
+                        state.formatBitcoin(stackSats, DisplayUnit.USD)
+                    },
+                    hint = figure(slice.suppressFigures) { priceBasis(state) },
                     provenance = Provenance.ESTIMATED,
                 ),
-                Kpi("Stack", figure(slice.suppressFigures) { Money.formatBtc(stackSats) }),
             ),
         )
     }
     item { StaleNotice(slice.status) }
-    item { Panel("In scope", slice.source) { AccountList(inScope, slice.status) } }
+    item {
+        Panel("In scope", slice.source) {
+            AccountList(inScope, slice.status, displayUnit, state.data.btcPriceCents)
+        }
+    }
     if (excluded.isNotEmpty()) {
         item {
             StatusBanner(
@@ -522,13 +662,20 @@ private fun androidx.compose.foundation.lazy.LazyListScope.netWorth(state: Vault
             )
         }
         item {
-            Panel("Visible but excluded") { AccountList(excluded, slice.status) }
+            Panel("Visible but excluded") {
+                AccountList(excluded, slice.status, displayUnit, state.data.btcPriceCents)
+            }
         }
     }
 }
 
 @Composable
-private fun AccountList(accounts: List<BtcAccount>, status: Freshness) {
+private fun AccountList(
+    accounts: List<BtcAccount>,
+    status: Freshness,
+    displayUnit: DisplayUnit,
+    btcPriceCents: Long,
+) {
     if (status == Freshness.ERROR || status == Freshness.LOADING) {
         StateBlock(status)
         return
@@ -547,7 +694,7 @@ private fun AccountList(accounts: List<BtcAccount>, status: Freshness) {
             LedgerRow(
                 primary = account.label,
                 secondary = account.owner.displayName,
-                figure = Money.formatSats(account.sats),
+                figure = Money.formatBitcoin(account.sats, displayUnit, btcPriceCents),
                 figureColor = VaultCream,
                 badge = account.custody.label,
                 badgeAccented = account.custody.key == "self_custody",
@@ -555,6 +702,12 @@ private fun AccountList(accounts: List<BtcAccount>, status: Freshness) {
         }
     }
 }
+
+private fun VaultUiState.formatBitcoin(sats: Long, unit: DisplayUnit): String =
+    Money.formatBitcoin(sats, unit, data.btcPriceCents)
+
+private fun priceBasis(state: VaultUiState): String =
+    state.data.btcPriceAsOf?.let { "Last buy · $it" } ?: "No recorded price"
 
 // ── Today ───────────────────────────────────────────────────────────────────
 

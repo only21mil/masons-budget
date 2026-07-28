@@ -153,26 +153,33 @@ internal data class PublicTransactionDto(
             val row = element as? JsonObject ?: return null
             val card = row.decodedOptionalString("card") ?: return null
             val note = row.decodedOptionalString("note") ?: return null
-            val hasOppositeSpendSign =
-                row.requiredBoolean("hasOppositeSpendSign") ?: return null
+            val amountCents = row.rowInt64("amountCents") ?: return null
+            // abs(Long.MIN_VALUE) overflows back to Long.MIN_VALUE, so this
+            // canonical amount cannot produce a nonnegative display magnitude.
+            if (amountCents == Long.MIN_VALUE) return null
+            val category = row.rowStringAllowEmpty("category") ?: return null
+            // These projection fields remain required and strictly typed for
+            // wire-contract completeness, but amountCents is the sole source
+            // of truth. A stale server projection must not reject the ledger.
+            row.rowInt64("spendAmount") ?: return null
+            row.rowInt64("displaySpendAmount") ?: return null
+            row.requiredBoolean("hasOppositeSpendSign") ?: return null
+            val spendAmount = if (category == "Income") 0L else amountCents
             return PublicTransactionDto(
                 txId = row.rowString("txId") ?: return null,
                 owner = row.rowOwner() ?: return null,
                 date = row.rowString("date") ?: return null,
                 month = row.rowString("month") ?: return null,
                 merchant = row.rowStringAllowEmpty("merchant") ?: return null,
-                amountCents = row.rowInt64("amountCents") ?: return null,
-                spendAmount = row.rowInt64("spendAmount") ?: return null,
-                displaySpendAmount = row.rowInt64("displaySpendAmount") ?: return null,
-                hasOppositeSpendSign = hasOppositeSpendSign,
-                category = row.rowStringAllowEmpty("category") ?: return null,
+                amountCents = amountCents,
+                spendAmount = spendAmount,
+                displaySpendAmount = kotlin.math.abs(spendAmount),
+                hasOppositeSpendSign = spendAmount < 0L,
+                category = category,
                 card = card.value,
                 note = note.value,
                 updatedAtMs = row.requiredLong("updatedAtMs") ?: return null,
-            ).takeUnless {
-                it.displaySpendAmount < 0L ||
-                    it.hasOppositeSpendSign != (it.spendAmount < 0L)
-            }
+            )
         }
     }
 }

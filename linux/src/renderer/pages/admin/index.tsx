@@ -297,10 +297,8 @@ export function buildExportDatasets(
       source: data.transactions.source,
       status: data.transactions.status,
       columns: ["id", "date", "merchant", "category", "card", "owner", "amount_usd", "direction", "signed_usd"],
-      // amount_usd is exactly what MC2 stores. signed_usd is normalised, and
-      // both are emitted on purpose: the child files record spending as a
-      // POSITIVE magnitude, so a spreadsheet summing the raw column would read
-      // Mason's spending as income. Faithful column, plus a summable one.
+      // amount_usd is exactly what the source stores. signed_usd uses cash-flow
+      // signs (spend negative, income/refunds positive) for spreadsheet sums.
       rows: visibleTo(viewer, data.transactions.value).map((row) => {
         const spend = spendAmount(row)
         return [

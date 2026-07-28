@@ -56,6 +56,13 @@ import {
   internalQuery,
   type MutationCtx,
 } from "./_generated/server";
+import {
+  DOCUMENT_SOURCE_FILES,
+  projectDocumentFile,
+  type BtcBalanceDocumentRow,
+  type BtcBalanceSourceFile,
+  type DocumentSourceFile,
+} from "./documentProjection";
 
 // ─── Contract with convex/schema.ts and convex/tables.ts ───────────────────
 //
@@ -79,6 +86,10 @@ const BTC_BILL_PAYS_TABLE = "btcBillPays";
 const TODOS_TABLE = "todos";
 const INCOME_TABLE = "income";
 const BALANCE_DOCUMENTS_TABLE = "balanceDocuments";
+const BTC_ACCOUNTS_TABLE = "btcAccounts";
+const BUDGET_DOCUMENTS_TABLE = "budgetDocuments";
+const BTC_BALANCE_DOCUMENTS_TABLE = "btcBalanceDocuments";
+const FINANCE_DOCUMENTS_TABLE = "financeDocuments";
 
 /**
  * Which MC2 files this migration owns, and what each becomes.
@@ -87,9 +98,10 @@ const BALANCE_DOCUMENTS_TABLE = "balanceDocuments";
  * take: MC2 tags untagged adult records as "victor", and the child files carry
  * no owner at all, so the file name is what tells you whose row it is.
  *
- * Most document-shaped files are modelled by the document projection lane.
- * `balances` is included here because it was absent from that declared source
- * list and otherwise had no migration path at all.
+ * The five atomic document sources use the closed projections in
+ * documentProjection.ts. The two BTC documents additionally produce the
+ * per-account rows consumed by listBtcAccounts; their atomic totals and their
+ * indexed account rows are one frozen source plan and one transaction.
  */
 export const MIGRATION_SOURCES = [
   {
@@ -157,6 +169,41 @@ export const MIGRATION_SOURCES = [
     fallbackOwner: "victor",
     container: null,
   },
+  {
+    file: "budget",
+    table: BUDGET_DOCUMENTS_TABLE,
+    kind: "budgetDocument",
+    fallbackOwner: "victor",
+    container: null,
+  },
+  {
+    file: "mason-budget",
+    table: BUDGET_DOCUMENTS_TABLE,
+    kind: "budgetDocument",
+    fallbackOwner: "mason",
+    container: null,
+  },
+  {
+    file: "btc-balance-snapshot",
+    table: BTC_BALANCE_DOCUMENTS_TABLE,
+    kind: "btcBalanceDocument",
+    fallbackOwner: "victor",
+    container: null,
+  },
+  {
+    file: "finances",
+    table: FINANCE_DOCUMENTS_TABLE,
+    kind: "financeDocument",
+    fallbackOwner: "victor",
+    container: null,
+  },
+  {
+    file: "son-balances",
+    table: BTC_BALANCE_DOCUMENTS_TABLE,
+    kind: "btcBalanceDocument",
+    fallbackOwner: "mason",
+    container: null,
+  },
 ] as const;
 
 export type MigrationSource = (typeof MIGRATION_SOURCES)[number];
@@ -202,6 +249,45 @@ export const MONEY_COLUMNS: Record<MigrationKind, readonly string[]> = {
     "btcSync.anchorBalancesSats.zeusSats",
     "btcSync.anchorBalancesSats.totalSats",
   ],
+  budgetDocument: [
+    "coinbaseOneBalanceCents",
+    "categories[].budgetCents",
+    "income.weeklyGrossCents",
+    "income.weeklyStrikeCents",
+    "income.weeklyRiverCents",
+    "income.monthlyGrossCents",
+    "income.mtdIncomeCents",
+    "income.ytdIncomeCents",
+    "income.paychecks[].amountCents",
+    "income.paychecks[].netCents",
+    "mtdIncomeCents",
+    "ytdIncomeCents",
+    "monthlyHistory[].incomeCents",
+    "monthlyHistory[].expensesCents",
+    "monthlyHistory[].savingsBps",
+    "allowance.weeklyCents",
+  ],
+  btcBalanceDocument: [
+    "schemaVersion",
+    "accounts[].sats",
+    "accounts[].fiatCents",
+    "totals.sats",
+    "totals.fiatCents",
+    "totals.exchangeSats",
+    "totals.selfCustodySats",
+  ],
+  financeDocument: [
+    "retirementTotalCents",
+    "accounts[].totalValueCents",
+    "accounts[].weeklyContributionCents",
+    "accounts[].holdings[].valueCents",
+    "accounts[].holdings[].costBasisCents",
+    "accounts[].holdings[].gainBps",
+    "accounts[].holdings[].avgCostCents",
+    "accounts[].holdings[].currentPricePerShareCents",
+    "accounts[].holdings[].lots[].pricePerShareCents",
+    "accounts[].holdings[].lots[].amountInvestedCents",
+  ],
 };
 
 /** Scale of each money column, so sums can be reported as exact decimal text. */
@@ -232,6 +318,39 @@ export const MONEY_SCALES: Record<string, number> = {
   "btcSync.anchorBalancesSats.strikeSats": 8,
   "btcSync.anchorBalancesSats.zeusSats": 8,
   "btcSync.anchorBalancesSats.totalSats": 8,
+  coinbaseOneBalanceCents: 2,
+  "categories[].budgetCents": 2,
+  "income.weeklyGrossCents": 2,
+  "income.weeklyStrikeCents": 2,
+  "income.weeklyRiverCents": 2,
+  "income.monthlyGrossCents": 2,
+  "income.mtdIncomeCents": 2,
+  "income.ytdIncomeCents": 2,
+  "income.paychecks[].amountCents": 2,
+  "income.paychecks[].netCents": 2,
+  mtdIncomeCents: 2,
+  ytdIncomeCents: 2,
+  "monthlyHistory[].incomeCents": 2,
+  "monthlyHistory[].expensesCents": 2,
+  "monthlyHistory[].savingsBps": 2,
+  "allowance.weeklyCents": 2,
+  schemaVersion: 0,
+  "accounts[].sats": 8,
+  "accounts[].fiatCents": 2,
+  "totals.sats": 8,
+  "totals.fiatCents": 2,
+  "totals.exchangeSats": 8,
+  "totals.selfCustodySats": 8,
+  retirementTotalCents: 2,
+  "accounts[].totalValueCents": 2,
+  "accounts[].weeklyContributionCents": 2,
+  "accounts[].holdings[].valueCents": 2,
+  "accounts[].holdings[].costBasisCents": 2,
+  "accounts[].holdings[].gainBps": 2,
+  "accounts[].holdings[].avgCostCents": 2,
+  "accounts[].holdings[].currentPricePerShareCents": 2,
+  "accounts[].holdings[].lots[].pricePerShareCents": 2,
+  "accounts[].holdings[].lots[].amountInvestedCents": 2,
 };
 
 function sourceFor(file: string): MigrationSource {
@@ -826,11 +945,9 @@ function projectBalanceDocument(
  * is a query away rather than a data-loss event, and it is what makes the exact
  * round-trip check in `verifyFile` possible at all.
  *
- * SIGNS ARE PRESERVED, NOT NORMALISED. Child MC2 files record spend as a
- * positive magnitude; adult files sign it negative. `spendAmount()` in the
- * domain already handles both by keying off the category, so rewriting signs
- * here would change what every client displays. `sourceFile` keeps the
- * convention recoverable.
+ * SIGNS ARE PRESERVED, NOT NORMALISED. Production purchases are positive for
+ * every owner and refunds are negative. Rewriting stored values here would be
+ * data corruption; the public read projection supplies the budget contract.
  */
 export function projectRow(
   kind: MigrationKind,
@@ -966,7 +1083,61 @@ export function projectRow(
         archimedesRequestId: optionalString(raw.archimedes_request_id),
       };
     }
+
+    case "budgetDocument":
+    case "btcBalanceDocument":
+    case "financeDocument":
+      throw new ConvexError(
+        `${kind} must be projected atomically through projectDocumentFile`,
+      );
   }
+}
+
+function isAtomicDocumentKind(
+  kind: MigrationKind,
+): kind is "budgetDocument" | "btcBalanceDocument" | "financeDocument" {
+  return (
+    kind === "budgetDocument" ||
+    kind === "btcBalanceDocument" ||
+    kind === "financeDocument"
+  );
+}
+
+function projectAtomicDocument(
+  source: Extract<
+    MigrationSource,
+    {
+      kind: "budgetDocument" | "btcBalanceDocument" | "financeDocument";
+    }
+  >,
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  // dataFiles.data has already crossed Convex's JSON decoder. JSON.stringify
+  // gives each finite number its shortest round-trippable decimal spelling;
+  // documentProjection then quotes those tokens before parsing them, so every
+  // money conversion after this boundary is string/BigInt-only.
+  const rawJson = JSON.stringify(data);
+  if (rawJson === undefined) {
+    throw new ConvexError(`${source.file} could not be serialized as JSON`);
+  }
+  const projected = projectDocumentFile(
+    source.file as DocumentSourceFile,
+    rawJson,
+    0,
+  );
+  if (projected.table !== source.table) {
+    throw new ConvexError(
+      `${source.file} projected to ${projected.table}, expected ${source.table}`,
+    );
+  }
+  return {
+    ...projected.row,
+    // Preserve the complete source for the independent round-trip proof as
+    // text. Storing the decoded object here would put legacy money floats back
+    // inside an otherwise integer-only projected row.
+    migrationRawJson: canonicalJson(data),
+    migrationSourceIndex: 0,
+  };
 }
 
 /**
@@ -977,6 +1148,30 @@ export function projectFile(
   source: MigrationSource,
   data: unknown,
 ): { rows: Record<string, unknown>[]; docs: Record<string, unknown>[] } | null {
+  if (isAtomicDocumentKind(source.kind)) {
+    if (typeof data !== "object" || data === null || Array.isArray(data)) {
+      return null;
+    }
+    const raw = data as Record<string, unknown>;
+    return {
+      rows: [raw],
+      docs: [
+        projectAtomicDocument(
+          source as Extract<
+            MigrationSource,
+            {
+              kind:
+                | "budgetDocument"
+                | "btcBalanceDocument"
+                | "financeDocument";
+            }
+          >,
+          raw,
+        ),
+      ],
+    };
+  }
+
   const rows =
     source.kind === "balanceDocument"
       ? typeof data === "object" && data !== null && !Array.isArray(data)
@@ -1001,6 +1196,33 @@ export function projectFile(
 }
 
 /**
+ * The BTC account tab consumes rows, while the total stack consumes the atomic
+ * document. Both projections come from the same source and are applied under
+ * the same frozen fingerprint.
+ */
+export function projectBtcAccountRows(
+  sourceFile: BtcBalanceSourceFile,
+  document: BtcBalanceDocumentRow,
+): Record<string, unknown>[] {
+  return document.accounts.map((account, sourceIndex) => ({
+    key:
+      sourceFile === "son-balances"
+        ? `son-${account.key}-mason`
+        : account.key,
+    owner: document.owner,
+    label: account.label,
+    custody: account.custody,
+    sats: account.sats,
+    fiatCents: account.fiatCents,
+    asOf: document.asOf,
+    schemaVersion: document.schemaVersion,
+    sourceFile,
+    updatedAtMs: document.updatedAtMs,
+    migrationSourceIndex: sourceIndex,
+  }));
+}
+
+/**
  * Fields excluded from the "has this row changed?" comparison.
  *
  * Convex's system fields are excluded; all application columns participate.
@@ -1017,6 +1239,24 @@ export function contentFingerprint(doc: Record<string, unknown>): string {
 
 // ─── Sums ────────────────────────────────────────────────────────────────────
 
+function valuesAtColumnPath(value: unknown, path: readonly string[]): unknown[] {
+  if (path.length === 0) return [value];
+  if (typeof value !== "object" || value === null) return [];
+
+  const [head, ...tail] = path;
+  if (head!.endsWith("[]")) {
+    const key = head!.slice(0, -2);
+    const entries = (value as Record<string, unknown>)[key];
+    if (!Array.isArray(entries)) return [];
+    return entries.flatMap((entry) => valuesAtColumnPath(entry, tail));
+  }
+
+  return valuesAtColumnPath(
+    (value as Record<string, unknown>)[head!],
+    tail,
+  );
+}
+
 export function sumMoneyColumns(
   kind: MigrationKind,
   docs: readonly Record<string, unknown>[],
@@ -1025,18 +1265,11 @@ export function sumMoneyColumns(
   for (const column of MONEY_COLUMNS[kind]) {
     let total = 0n;
     for (const doc of docs) {
-      const value = column
-        .split(".")
-        .reduce<unknown>(
-          (current, part) =>
-            typeof current === "object" && current !== null
-              ? (current as Record<string, unknown>)[part]
-              : undefined,
-          doc,
-        );
       // Optional document fields contribute zero when absent. Their presence is
       // still proved independently by the canonical raw round-trip.
-      if (value !== undefined) total += decodeMoney(value, column);
+      for (const value of valuesAtColumnPath(doc, column.split("."))) {
+        if (value !== undefined) total += decodeMoney(value, column);
+      }
     }
     totals[column] = total;
   }
@@ -1073,6 +1306,11 @@ export interface VerificationReport {
   exactRoundTrip: boolean;
   /** Index of the first row that did not round-trip; null when all did. */
   firstMismatchIndex: number | null;
+  projectedRowCount?: number;
+  targetRowCounts?: Record<
+    string,
+    { expected: number; stored: number; matches: boolean }
+  >;
   problems: string[];
 }
 
@@ -1130,13 +1368,15 @@ export function verifyProjection(
   let firstMismatchIndex: number | null = null;
   const compared = Math.min(ordered.length, blobRows.length);
   for (let index = 0; index < compared; index += 1) {
-    const storedRaw =
-      source.kind === "income" || source.kind === "balanceDocument"
-        ? ordered[index]!.raw
-        : ordered[index]!.migrationRaw;
-    if (
-      canonicalJson(storedRaw) !== canonicalJson(blobRows[index]!)
-    ) {
+    const storedCanonical =
+      isAtomicDocumentKind(source.kind)
+        ? ordered[index]!.migrationRawJson
+        : canonicalJson(
+            source.kind === "income" || source.kind === "balanceDocument"
+              ? ordered[index]!.raw
+              : ordered[index]!.migrationRaw,
+          );
+    if (storedCanonical !== canonicalJson(blobRows[index]!)) {
       firstMismatchIndex = index;
       problems.push(
         `row ${index} of ${source.file} does not round-trip: the stored copy ` +
@@ -1164,6 +1404,107 @@ export function verifyProjection(
     firstMismatchIndex,
     problems,
   };
+}
+
+function verifyMigrationTargets(
+  source: MigrationSource,
+  projected: NonNullable<ReturnType<typeof projectFile>>,
+  storedByTable: Map<MigrationTargetTable, Map<string, Record<string, unknown>>>,
+): VerificationReport {
+  const primaryStored = [
+    ...(storedByTable.get(source.table)?.values() ?? []),
+  ];
+  const report = verifyProjection(
+    source,
+    projected.rows,
+    projected.docs,
+    primaryStored,
+  );
+  const targets = migrationTargets(source, projected);
+  const expectedByTable = new Map<
+    MigrationTargetTable,
+    Map<string, Record<string, unknown>>
+  >();
+  for (const target of targets) {
+    const rows = expectedByTable.get(target.table) ?? new Map();
+    rows.set(target.key, target.document);
+    expectedByTable.set(target.table, rows);
+  }
+
+  const targetRowCounts: NonNullable<VerificationReport["targetRowCounts"]> =
+    {};
+  for (const [table, expected] of expectedByTable) {
+    const stored = storedByTable.get(table) ?? new Map();
+    const matches = expected.size === stored.size;
+    targetRowCounts[table] = {
+      expected: expected.size,
+      stored: stored.size,
+      matches,
+    };
+    if (!matches && table !== source.table) {
+      report.problems.push(
+        `${table} row count ${stored.size} does not match projected count ${expected.size}`,
+      );
+    }
+  }
+
+  if (source.kind === "btcBalanceDocument") {
+    const expected = expectedByTable.get(BTC_ACCOUNTS_TABLE) ?? new Map();
+    const stored = storedByTable.get(BTC_ACCOUNTS_TABLE) ?? new Map();
+    let expectedSats = 0n;
+    let storedSats = 0n;
+    let expectedFiatCents = 0n;
+    let storedFiatCents = 0n;
+    let accountRowsMatch = expected.size === stored.size;
+
+    for (const [key, document] of expected) {
+      expectedSats += decodeMoney(document.sats, "btcAccounts.sats");
+      expectedFiatCents += decodeMoney(
+        document.fiatCents,
+        "btcAccounts.fiatCents",
+      );
+      const storedDocument = stored.get(key);
+      if (storedDocument === undefined) {
+        accountRowsMatch = false;
+        continue;
+      }
+      storedSats += decodeMoney(storedDocument.sats, "btcAccounts.sats");
+      storedFiatCents += decodeMoney(
+        storedDocument.fiatCents,
+        "btcAccounts.fiatCents",
+      );
+      if (
+        contentFingerprint(document) !== contentFingerprint(storedDocument)
+      ) {
+        accountRowsMatch = false;
+      }
+    }
+
+    const accountSumsMatch =
+      expectedSats === storedSats && expectedFiatCents === storedFiatCents;
+    if (!accountSumsMatch) {
+      report.problems.push(
+        "btcAccounts exact satoshi/cent sums do not match the projected source",
+      );
+    }
+    if (!accountRowsMatch) {
+      report.problems.push(
+        "btcAccounts rows do not exactly match the deterministic source projection",
+      );
+    }
+    report.moneySumsMatch = report.moneySumsMatch && accountSumsMatch;
+    report.roundTripRowsMatch =
+      report.roundTripRowsMatch && accountRowsMatch;
+    report.exactRoundTrip = report.exactRoundTrip && accountRowsMatch;
+  }
+
+  report.projectedRowCount = targets.length;
+  report.targetRowCounts = targetRowCounts;
+  report.rowCountMatches =
+    report.rowCountMatches &&
+    Object.values(targetRowCounts).every((entry) => entry.matches);
+  report.ok = report.problems.length === 0;
+  return report;
 }
 
 // ─── Convex helpers ──────────────────────────────────────────────────────────
@@ -1195,7 +1536,43 @@ function rowKey(source: MigrationSource, doc: Record<string, unknown>): string {
       return String(doc.sourceKey);
     case "balanceDocument":
       return String(doc.sourceFile);
+    case "budgetDocument":
+    case "btcBalanceDocument":
+    case "financeDocument":
+      return String(doc.sourceFile);
   }
+}
+
+type MigrationTargetTable = MigrationSource["table"] | typeof BTC_ACCOUNTS_TABLE;
+
+interface MigrationTarget {
+  table: MigrationTargetTable;
+  key: string;
+  document: Record<string, unknown>;
+}
+
+function migrationTargets(
+  source: MigrationSource,
+  projected: NonNullable<ReturnType<typeof projectFile>>,
+): MigrationTarget[] {
+  const primary: MigrationTarget[] = projected.docs.map((document) => ({
+    table: source.table,
+    key: rowKey(source, document),
+    document,
+  }));
+  if (source.kind !== "btcBalanceDocument") return primary;
+
+  const balanceDocument = projected.docs[0] as unknown as BtcBalanceDocumentRow;
+  const accounts = projectBtcAccountRows(
+    source.file as BtcBalanceSourceFile,
+    balanceDocument,
+  );
+  const auxiliary: MigrationTarget[] = accounts.map((document) => ({
+    table: BTC_ACCOUNTS_TABLE,
+    key: `${String(document.owner)}:${String(document.key)}`,
+    document,
+  }));
+  return [...primary, ...auxiliary];
 }
 
 /**
@@ -1226,7 +1603,11 @@ interface FrozenSourcePlan {
   file: string;
   table: string;
   state: "missing" | "unreadable" | "projected";
-  rows?: { key: string; document: Record<string, unknown> }[];
+  rows?: {
+    table?: string;
+    key: string;
+    document: Record<string, unknown>;
+  }[];
   unreadableBlob?: unknown;
 }
 
@@ -1254,9 +1635,13 @@ function frozenSourcePlan(
     file: source.file,
     table: source.table,
     state: "projected",
-    rows: projected.docs.map((doc) => ({
-      key: rowKey(source, doc),
-      document: frozenPlanDocument(doc),
+    rows: migrationTargets(source, projected).map((target) => ({
+      // Existing sources intentionally omit this property, preserving their
+      // reviewed per-source fingerprint byte-for-byte. Only an auxiliary
+      // target needs to name a table different from source.table.
+      ...(target.table === source.table ? {} : { table: target.table }),
+      key: target.key,
+      document: frozenPlanDocument(target.document),
     })),
   };
 }
@@ -1310,11 +1695,30 @@ async function readMigrated(
   return byKey;
 }
 
+async function readMigratedTarget(
+  ctx: any,
+  source: MigrationSource,
+  table: MigrationTargetTable,
+): Promise<Map<string, Record<string, unknown>>> {
+  if (table === source.table) return readMigrated(ctx, source);
+  if (table !== BTC_ACCOUNTS_TABLE) {
+    throw new Error(`Unsupported auxiliary migration target: ${table}`);
+  }
+
+  const existing = await ctx.db.query(BTC_ACCOUNTS_TABLE).collect();
+  const byKey = new Map<string, Record<string, unknown>>();
+  for (const doc of existing) {
+    if (doc.sourceFile !== source.file) continue;
+    byKey.set(`${String(doc.owner)}:${String(doc.key)}`, doc);
+  }
+  return byKey;
+}
+
 // ─── Internal administrative surface ────────────────────────────────────────
 
 const DEFAULT_BATCH_SIZE = 1000;
 
-type MigrationTable = MigrationSource["table"];
+type MigrationTable = MigrationTargetTable;
 type NewMigrationDocument<Table extends MigrationTable> = Omit<
   Doc<Table>,
   "_id" | "_creationTime"
@@ -1338,6 +1742,20 @@ export async function writeProjectedDocument(
   document: Record<string, unknown>,
   existing: Record<string, unknown> | undefined,
 ): Promise<void> {
+  await writeMigrationTarget(
+    ctx,
+    source.table,
+    document,
+    existing,
+  );
+}
+
+async function writeMigrationTarget(
+  ctx: MutationCtx,
+  table: MigrationTable,
+  document: Record<string, unknown>,
+  existing: Record<string, unknown> | undefined,
+): Promise<void> {
   // `projectFile` projects several table shapes into loose records, so
   // TypeScript cannot preserve the correlation between `source.table`, the
   // projected document, and an existing row's id. Assert that correlated
@@ -1347,7 +1765,7 @@ export async function writeProjectedDocument(
   // column, and canonical round-trip — runs against stored rows before the
   // mutation commits.
   const write = {
-    table: source.table,
+    table,
     document,
     existingId: existing?._id,
   } as CorrelatedMigrationWrite;
@@ -1359,6 +1777,10 @@ export async function writeProjectedDocument(
     case TODOS_TABLE:
     case INCOME_TABLE:
     case BALANCE_DOCUMENTS_TABLE:
+    case BTC_ACCOUNTS_TABLE:
+    case BUDGET_DOCUMENTS_TABLE:
+    case BTC_BALANCE_DOCUMENTS_TABLE:
+    case FINANCE_DOCUMENTS_TABLE:
       if (write.existingId === undefined) {
         await ctx.db.insert(write.table, write.document);
       } else {
@@ -1385,27 +1807,37 @@ export const status = internalQuery({
       const data = plan.dataByFile.get(source.file);
       const projected =
         data === undefined ? null : projectFile(source, data);
-      const migrated = await readMigrated(ctx, source);
+      const targets = projected === null ? [] : migrationTargets(source, projected);
+      const targetTables: MigrationTargetTable[] =
+        source.kind === "btcBalanceDocument"
+          ? [source.table, BTC_ACCOUNTS_TABLE]
+          : [source.table];
+      const migratedByTable = await Promise.all(
+        targetTables.map(async (table) => ({
+          table,
+          rows: (await readMigratedTarget(ctx, source, table)).size,
+        })),
+      );
       files.push({
         file: source.file,
         table: source.table,
         blobPresent: data !== undefined,
         blobRowCount: projected === null ? null : projected.rows.length,
+        projectedRowCount: targets.length,
         blobUnreadable: data !== undefined && projected === null,
-        migratedRowCount: migrated.size,
+        migratedRowCount: migratedByTable.reduce(
+          (total, target) => total + target.rows,
+          0,
+        ),
+        targetTables: migratedByTable,
         planFingerprint: plan.sourceFingerprints.get(source.file)!,
       });
     }
 
     // Named so a reader of the output can see what was left behind on purpose.
     const skipped = [];
-    for (const name of [
-      "budget",
-      "mason-budget",
-      "btc-balance-snapshot",
-      "finances",
-      "son-balances",
-    ]) {
+    for (const name of DOCUMENT_SOURCE_FILES) {
+      if ((MIGRATION_FILES as readonly string[]).includes(name)) continue;
       const data = await readBlob(ctx, name);
       if (data !== undefined) skipped.push(name);
     }
@@ -1474,6 +1906,7 @@ export const migrateFile = internalMutation({
         applied: apply,
         blobPresent: false,
         blobRowCount: 0,
+        projectedRowCount: 0,
         scanned: 0,
         inserted: 0,
         updated: 0,
@@ -1490,13 +1923,12 @@ export const migrateFile = internalMutation({
 
     const projected = projectFile(source, data);
     if (projected === null) {
+      const documentSource =
+        source.kind === "balanceDocument" ||
+        isAtomicDocumentKind(source.kind);
       throw new ConvexError(
-        `The ${source.file} blob ${
-          source.kind === "balanceDocument"
-            ? "is not a document"
-            : "is not a row collection"
-        }` +
-          (source.kind === "balanceDocument"
+        `The ${source.file} blob ${documentSource ? "is not a document" : "is not a row collection"}` +
+          (documentSource
             ? " (expected an object)"
             : source.container
               ? ` (expected an array or { ${source.container}: [...] })`
@@ -1505,46 +1937,79 @@ export const migrateFile = internalMutation({
       );
     }
 
-    const { rows, docs } = projected;
-    const existingByKey = await readMigrated(ctx, source);
+    const { rows } = projected;
+    const targets = migrationTargets(source, projected);
+    const tables = [...new Set(targets.map((target) => target.table))];
+    const existingByTable = new Map<
+      MigrationTargetTable,
+      Map<string, Record<string, unknown>>
+    >();
+    for (const table of tables) {
+      existingByTable.set(
+        table,
+        await readMigratedTarget(ctx, source, table),
+      );
+    }
 
-    const end = Math.min(cursor + batchSize, docs.length);
+    const end = Math.min(cursor + batchSize, targets.length);
     let inserted = 0;
     let updated = 0;
     let unchanged = 0;
 
     for (let index = cursor; index < end; index += 1) {
-      const doc = docs[index]!;
-      const existing = existingByKey.get(rowKey(source, doc));
+      const target = targets[index]!;
+      const existing = existingByTable.get(target.table)?.get(target.key);
 
       if (existing === undefined) {
         inserted += 1;
         if (apply) {
-          await writeProjectedDocument(ctx, source, doc, undefined);
+          await writeMigrationTarget(
+            ctx,
+            target.table,
+            target.document,
+            undefined,
+          );
         }
         continue;
       }
 
-      if (contentFingerprint(existing) === contentFingerprint(doc)) {
+      if (
+        contentFingerprint(existing) ===
+        contentFingerprint(target.document)
+      ) {
         unchanged += 1;
         continue;
       }
 
       updated += 1;
       if (apply) {
-        await writeProjectedDocument(ctx, source, doc, existing);
+        await writeMigrationTarget(
+          ctx,
+          target.table,
+          target.document,
+          existing,
+        );
       }
     }
 
-    const done = end >= docs.length;
+    const done = end >= targets.length;
     const wholeFileInOneBatch = cursor === 0 && done;
 
     let verification: VerificationReport | null = null;
     if (apply && wholeFileInOneBatch) {
       // Read back what we just wrote, in the same transaction. A mismatch
       // throws, Convex rolls the whole file back, and the blob is untouched.
-      const storedByKey = await readMigrated(ctx, source);
-      verification = verifyProjection(source, rows, docs, [...storedByKey.values()]);
+      const storedByTable = new Map<
+        MigrationTargetTable,
+        Map<string, Record<string, unknown>>
+      >();
+      for (const table of tables) {
+        storedByTable.set(
+          table,
+          await readMigratedTarget(ctx, source, table),
+        );
+      }
+      verification = verifyMigrationTargets(source, projected, storedByTable);
       if (!verification.ok) {
         throw new ConvexError(
           `Refusing to commit the ${source.file} migration — it did not verify: ` +
@@ -1558,7 +2023,8 @@ export const migrateFile = internalMutation({
       table: source.table,
       applied: apply,
       blobPresent: true,
-      blobRowCount: docs.length,
+      blobRowCount: rows.length,
+      projectedRowCount: targets.length,
       scanned: end - cursor,
       inserted,
       updated,
@@ -1588,38 +2054,69 @@ export const verifyFile = internalQuery({
 
     const data = await readBlob(ctx, source.file);
     if (data === undefined) {
-      const migrated = await readMigrated(ctx, source);
+      const tables: MigrationTargetTable[] =
+        source.kind === "btcBalanceDocument"
+          ? [source.table, BTC_ACCOUNTS_TABLE]
+          : [source.table];
+      const migratedByTable = await Promise.all(
+        tables.map(async (table) => ({
+          table,
+          rows: (await readMigratedTarget(ctx, source, table)).size,
+        })),
+      );
+      const migrated = migratedByTable.reduce(
+        (total, target) => total + target.rows,
+        0,
+      );
       return {
         file: source.file,
         table: source.table,
-        ok: migrated.size === 0,
+        ok: migrated === 0,
         blobRowCount: 0,
-        tableRowCount: migrated.size,
-        rowCountMatches: migrated.size === 0,
+        tableRowCount: migrated,
+        rowCountMatches: migrated === 0,
         blobSums: {},
         tableSums: {},
         moneySumsMatch: true,
         roundTripRowsMatch: true,
-        exactRoundTrip: migrated.size === 0,
+        exactRoundTrip: migrated === 0,
         firstMismatchIndex: null,
+        projectedRowCount: 0,
+        targetRowCounts: Object.fromEntries(
+          migratedByTable.map(({ table, rows }) => [
+            table,
+            { expected: 0, stored: rows, matches: rows === 0 },
+          ]),
+        ),
         problems:
-          migrated.size === 0
+          migrated === 0
             ? []
-            : [`${migrated.size} rows in ${source.table} have no ${source.file} blob to verify against`],
+            : [
+                `${migrated} projected rows have no ${source.file} blob to verify against`,
+              ],
       } satisfies VerificationReport;
     }
 
     const projected = projectFile(source, data);
     if (projected === null) {
       throw new ConvexError(
-        `The ${source.file} blob is not a row collection; nothing to verify against.`,
+        `The ${source.file} blob has an unsupported shape; nothing to verify against.`,
       );
     }
 
-    const storedByKey = await readMigrated(ctx, source);
-    return verifyProjection(source, projected.rows, projected.docs, [
-      ...storedByKey.values(),
-    ]);
+    const targets = migrationTargets(source, projected);
+    const tables = [...new Set(targets.map((target) => target.table))];
+    const storedByTable = new Map<
+      MigrationTargetTable,
+      Map<string, Record<string, unknown>>
+    >();
+    for (const table of tables) {
+      storedByTable.set(
+        table,
+        await readMigratedTarget(ctx, source, table),
+      );
+    }
+    return verifyMigrationTargets(source, projected, storedByTable);
   },
 });
 
