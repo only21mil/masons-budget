@@ -1410,7 +1410,6 @@ describe("migrating every file", () => {
     }
   });
 
-  test("child files keep their positive spend and adult files keep their negative", async () => {
   test("migration preserves source transaction signs verbatim", async () => {
     const t = harness();
     await seedAll(t);
