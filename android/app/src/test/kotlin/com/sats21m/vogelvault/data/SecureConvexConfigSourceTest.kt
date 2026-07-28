@@ -2,6 +2,8 @@ package com.sats21m.vogelvault.data
 
 import android.app.Application
 import android.content.Context
+import com.sats21m.vogelvault.buildTimeConvexConfig
+import com.sats21m.vogelvault.initialConvexConfig
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -56,6 +58,32 @@ class SecureConvexConfigSourceTest {
             assertNotEquals(token, value)
             assertNotEquals("https://example.convex.cloud", value)
         }
+    }
+
+    @Test
+    fun `manually entered token survives restart when build token is present`() {
+        val manuallyEnteredToken = "vv-manual-${UUID.randomUUID()}"
+        source.update(
+            ConvexConfig(
+                deploymentUrl = "https://example.convex.cloud",
+                readToken = manuallyEnteredToken,
+                remoteReadEnabled = true,
+            ),
+        )
+
+        val restartedSource =
+            SecureConvexConfigSource(
+                preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE),
+                cipher = TestConfigCipher,
+            )
+        val startupConfig =
+            initialConvexConfig(
+                buildTime = buildTimeConvexConfig("vv-baked-${UUID.randomUUID()}"),
+                stored = restartedSource.current(),
+            )
+
+        assertTrue(startupConfig.allowsRemoteRead)
+        assertEquals(manuallyEnteredToken, startupConfig.readTokenOrNull())
     }
 
     @Test
