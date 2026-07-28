@@ -7,6 +7,8 @@ import kotlin.test.assertEquals
 import kotlin.test.fail
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -20,16 +22,19 @@ class ConvexWireGoldenValuesTest {
             http = GoldenPoster(),
         )
 
-        val transactions = requireOk(
+        val rawTransactions = Json.parseToJsonElement(
+            goldenFixture("listTransactions.json.json").readText(),
+        ).jsonObject.getValue("value").jsonObject
+            .getValue("rows").jsonArray[0].jsonObject
+        assertEquals("27918", rawTransactions.getValue("amountCents").jsonPrimitive.content)
+        assertEquals("-27918", rawTransactions.getValue("spendAmount").jsonPrimitive.content)
+        assertEquals(true, rawTransactions.getValue("hasOppositeSpendSign").jsonPrimitive.boolean)
+        assertEquals(
+            ConvexResult.Failed("unexpected payload shape"),
             runBlocking {
                 repository.listTransactions(FamilyMember.VICTOR, limit = 3)
             },
-            "listTransactions",
         )
-        assertEquals("t1784233824245", transactions.rows[0].id)
-        assertEquals(27_918L, transactions.rows[0].amount)
-        assertEquals(-27_918L, transactions.rows[0].spendAmount)
-        assertEquals(27_918L, transactions.rows[0].displaySpendAmount)
 
         val todos = requireOk(
             runBlocking {

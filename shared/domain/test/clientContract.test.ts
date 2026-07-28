@@ -131,7 +131,7 @@ test("transaction envelope vector ignores unknown objects but keeps closed value
   assert.deepEqual(decoded, fixtures.serverResponseCompatibility.transactionEnvelope.expectedKnownRow)
 })
 
-test("signed spend contract is pinned by all five language-neutral vectors", () => {
+test("signed spend contract is pinned by all four language-neutral vectors", () => {
   assert.deepEqual(
     fixtures.spendContract.cases.map((testCase) => testCase.name),
     [
@@ -139,7 +139,6 @@ test("signed spend contract is pinned by all five language-neutral vectors", () 
       "child spend",
       "income",
       "adult refund",
-      "corrupt wrong-sign legacy row",
     ],
   )
 
@@ -169,16 +168,47 @@ test("signed spend contract is pinned by all five language-neutral vectors", () 
   }
 })
 
-test("refund and corrupt wrong-sign meanings stay indistinguishable on read", () => {
-  const cases = fixtures.spendContract.cases
-  const refund = cases.find((entry) => entry.meaning === "valid-refund")
-  const corrupt = cases.find((entry) => entry.meaning === "corrupt-wrong-sign")
+test("refund keeps its negative contribution and opposite-sign signal", () => {
+  const refund = fixtures.spendContract.cases.find((entry) => entry.meaning === "valid-refund")
   assert.ok(refund)
-  assert.ok(corrupt)
+  assert.ok(BigInt(refund.expected.spendAmount) < 0n)
+  assert.ok(BigInt(refund.expected.displaySpendAmount) > 0n)
+  assert.equal(refund.expected.hasOppositeSpendSign, true)
+})
 
-  for (const testCase of [refund, corrupt]) {
-    assert.ok(BigInt(testCase.expected.spendAmount) < 0n)
-    assert.ok(BigInt(testCase.expected.displaySpendAmount) > 0n)
-    assert.equal(testCase.expected.hasOppositeSpendSign, true)
-  }
+test("production signs keep purchases positive and refunds negative in budget actuals", () => {
+  const transaction = (
+    id: string,
+    owner: FamilyMember,
+    amount: bigint,
+  ): Transaction => ({
+    id,
+    date: "2026-03-15",
+    merchant: id,
+    amount,
+    category: "Shopping",
+    card: null,
+    note: null,
+    owner,
+  })
+  const adultPurchase = transaction("Etsy", "victor", 3_762n)
+  const adultRefund = transaction("Paypal *ebay", "victor", -123_469n)
+  const childPurchase = transaction("Mason purchase", "mason", 3_762n)
+  const monthRows = [
+    adultPurchase,
+    transaction("Production-sized purchase", "victor", 123_469n),
+    adultRefund,
+  ]
+
+  assert.equal(spendAmount(adultPurchase), 3_762n)
+  assert.equal(hasOppositeSpendSign(adultPurchase), false)
+  assert.equal(spendAmount(adultRefund), -123_469n)
+  assert.equal(hasOppositeSpendSign(adultRefund), true)
+  assert.equal(spendAmount(childPurchase), 3_762n)
+  assert.equal(hasOppositeSpendSign(childPurchase), false)
+  assert.equal(
+    monthRows.reduce((total, row) => total + spendAmount(row), 0n),
+    3_762n,
+    "monthly actual is purchases minus refunds",
+  )
 })

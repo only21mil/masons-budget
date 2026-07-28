@@ -77,10 +77,8 @@ function incomeOf(transaction: Transaction): bigint {
 /**
  * Colour and sign for a transaction row.
  *
- * The raw sign is not enough. Adult MC2 files sign spending negative, but the
- * child files record spending as a POSITIVE magnitude — so keying colour off
- * `amount < 0` painted Mason's spending green, reading as money coming in.
- * Route through the same spend/income helpers the totals use.
+ * Income is category-based; for non-Income rows, positive is spend and negative
+ * is a credit/refund. Route through the same helpers the totals use.
  */
 function AmountCell({ transaction }: { transaction: Transaction }) {
   if (transaction.category !== "Income" && transaction.amount !== 0n) {

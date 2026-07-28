@@ -400,9 +400,9 @@ final class FamilyVisibilityTests: XCTestCase {
 
     private func sampleTransactions() -> [Transaction] {
         [
-            Transaction(id: "tx-1", date: .now, merchant: "Costco", amount: -150, category: "Groceries", owner: .victor, createdBy: "mc2"),
+            Transaction(id: "tx-1", date: .now, merchant: "Costco", amount: 150, category: "Groceries", owner: .victor, createdBy: "mc2"),
             Transaction(id: "tx-2", date: .now, merchant: "Salary", amount: 5000, category: "Income", owner: .victor, createdBy: "mc2"),
-            Transaction(id: "tx-3", date: .now, merchant: "Target", amount: -95, category: "Shopping", owner: .rachel, createdBy: "mc2"),
+            Transaction(id: "tx-3", date: .now, merchant: "Target", amount: 95, category: "Shopping", owner: .rachel, createdBy: "mc2"),
             Transaction(id: "tx-4", date: .now, merchant: "Game Store", amount: 60, category: "Entertainment", owner: .mason, createdBy: "mc2"),
             Transaction(id: "tx-5", date: .now, merchant: "Roblox", amount: 10, category: "Entertainment", owner: .maddox, createdBy: "mc2"),
         ]

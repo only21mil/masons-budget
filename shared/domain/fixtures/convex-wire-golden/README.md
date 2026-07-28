@@ -5,6 +5,11 @@ wire. **These are observations, not assertions.** Every other fixture in this re
 hand-authored from a written assumption about Convex's encoding, and that assumption was wrong
 — which is how a 100% client read failure shipped past 475 passing tests.
 
+The transaction capture also preserves the pre-fix projection defect: positive
+adult `amountCents` was emitted as negative `spendAmount` and flagged opposite.
+Corrected clients deliberately reject that stale projected shape; the files are
+not rewritten because they remain historical wire evidence.
+
 One file per `tables:*` query per `format` value:
 
     <query>.json.json                 request sent with "format":"json"

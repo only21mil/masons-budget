@@ -14,11 +14,9 @@ import kotlinx.coroutines.runBlocking
  */
 class ConvexWireGoldenTest {
     @Test
-    fun `production convex encoded payloads decode through the real row repository`() {
+    fun `production convex encoded payloads validate through the real row repository`() {
         val failures = buildList {
-            verifyOk("listTransactions") {
-                it.listTransactions(FamilyMember.VICTOR)
-            }?.let(::add)
+            verifyStaleTransactionProjectionIsRejected()?.let(::add)
             verifyOk("listTodos") {
                 it.listTodos(FamilyMember.VICTOR)
             }?.let(::add)
@@ -48,10 +46,28 @@ class ConvexWireGoldenTest {
         )
     }
 
+    private fun verifyStaleTransactionProjectionIsRejected(): String? {
+        val repository = repositoryFor("listTransactions")
+        val result = runBlocking {
+            repository.listTransactions(FamilyMember.VICTOR)
+        }
+        return if (result == ConvexResult.Failed("unexpected payload shape")) {
+            null
+        } else {
+            "listTransactions: expected the historical owner-inverted projection to be rejected, got $result"
+        }
+    }
+
     private fun verifyOk(
         query: String,
         execute: suspend (RowQueryRepository) -> ConvexResult<*>,
     ): String? {
+        val repository = repositoryFor(query)
+        val result = runBlocking { execute(repository) }
+        return if (result is ConvexResult.Ok) null else "$query: $result"
+    }
+
+    private fun repositoryFor(query: String): RowQueryRepository {
         val poster = RecordingPoster(
             HttpTextResponse(
                 code = 200,
@@ -64,8 +80,7 @@ class ConvexWireGoldenTest {
             ),
             http = poster,
         )
-        val result = runBlocking { execute(repository) }
-        return if (result is ConvexResult.Ok) null else "$query: $result"
+        return repository
     }
 
     private fun goldenFixture(name: String): File {

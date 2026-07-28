@@ -39,19 +39,19 @@ const CURRENT_MONTH = daysAgo(0).slice(0, 7)
 // ── Transactions ────────────────────────────────────────────────────────────
 
 const TRANSACTIONS: readonly Transaction[] = [
-  tx("tx-0001", 0, "Neighborhood Market", "-142.18", "Groceries", "victor", "Debit"),
-  tx("tx-0002", 0, "Coffee Bar", "-6.75", "Dining", "rachel", "Credit"),
+  tx("tx-0001", 0, "Neighborhood Market", "142.18", "Groceries", "victor", "Debit"),
+  tx("tx-0002", 0, "Coffee Bar", "6.75", "Dining", "rachel", "Credit"),
   tx("tx-0003", 1, "Payroll Deposit", "2480.00", "Income", "victor", null),
-  tx("tx-0004", 1, "Hardware Store", "-88.40", "Home", "victor", "Debit"),
-  tx("tx-0005", 2, "Pharmacy", "-24.10", "Health", "rachel", "Credit"),
-  tx("tx-0006", 3, "Electric Utility", "-186.55", "Utilities", "victor", "Debit"),
-  tx("tx-0007", 4, "Bookshop", "-31.20", "Shopping", "rachel", "Credit"),
-  tx("tx-0008", 5, "Farmers Market", "-52.00", "Groceries", "victor", "Debit"),
-  tx("tx-0009", 6, "Internet Provider", "-79.99", "Utilities", "victor", "Debit"),
+  tx("tx-0004", 1, "Hardware Store", "88.40", "Home", "victor", "Debit"),
+  tx("tx-0005", 2, "Pharmacy", "24.10", "Health", "rachel", "Credit"),
+  tx("tx-0006", 3, "Electric Utility", "186.55", "Utilities", "victor", "Debit"),
+  tx("tx-0007", 4, "Bookshop", "31.20", "Shopping", "rachel", "Credit"),
+  tx("tx-0008", 5, "Farmers Market", "52.00", "Groceries", "victor", "Debit"),
+  tx("tx-0009", 6, "Internet Provider", "79.99", "Utilities", "victor", "Debit"),
   tx("tx-0010", 7, "Payroll Deposit", "2480.00", "Income", "victor", null),
-  tx("tx-0011", 8, "Auto Fuel", "-46.30", "Transport", "rachel", "Credit"),
-  tx("tx-0012", 9, "Streaming Service", "-15.99", "Entertainment", "victor", "Credit"),
-  // Child-owned rows. The child files record spend as a positive magnitude.
+  tx("tx-0011", 8, "Auto Fuel", "46.30", "Transport", "rachel", "Credit"),
+  tx("tx-0012", 9, "Streaming Service", "15.99", "Entertainment", "victor", "Credit"),
+  // Child-owned rows use the same positive purchase sign as adult rows.
   tx("tx-1001", 1, "Game Store", "24.00", "Entertainment", "mason", null),
   tx("tx-1002", 4, "School Lunch", "12.50", "Food", "mason", null),
   tx("tx-1003", 6, "Trading Cards", "9.00", "Entertainment", "mason", null),
@@ -59,11 +59,11 @@ const TRANSACTIONS: readonly Transaction[] = [
   tx("tx-2002", 5, "Ice Cream", "6.25", "Food", "maddox", null),
   // June, so the month filter is demonstrably doing something. A budget for July
   // must not count any of these.
-  tx("tx-0101", 32, "Neighborhood Market", "-388.90", "Groceries", "victor", "Debit"),
-  tx("tx-0102", 34, "Electric Utility", "-201.40", "Utilities", "victor", "Debit"),
-  tx("tx-0103", 36, "Coffee Bar", "-58.15", "Dining", "rachel", "Credit"),
+  tx("tx-0101", 32, "Neighborhood Market", "388.90", "Groceries", "victor", "Debit"),
+  tx("tx-0102", 34, "Electric Utility", "201.40", "Utilities", "victor", "Debit"),
+  tx("tx-0103", 36, "Coffee Bar", "58.15", "Dining", "rachel", "Credit"),
   tx("tx-0104", 38, "Payroll Deposit", "2480.00", "Income", "victor", null),
-  tx("tx-0105", 41, "Auto Fuel", "-92.60", "Transport", "rachel", "Credit"),
+  tx("tx-0105", 41, "Auto Fuel", "92.60", "Transport", "rachel", "Credit"),
   tx("tx-1101", 33, "Book Fair", "18.00", "Entertainment", "mason", null),
 ]
 

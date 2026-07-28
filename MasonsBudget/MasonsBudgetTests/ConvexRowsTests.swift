@@ -135,7 +135,7 @@ final class ConvexRowsTests: XCTestCase {
         ])
 
         // The server's rendering projection must not replace the signed source
-        // amount used by Transaction's owner-aware spend semantics.
+        // amount used by Transaction's spend semantics.
         let transaction = try XCTUnwrap(envelope.completeRows().first?.legacyDTO())
         XCTAssertEqual(transaction.amount, Decimal(string: "123.45")!)
 

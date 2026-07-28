@@ -160,14 +160,12 @@ export function transactionsFileFor(owner: FamilyMember): string {
 /**
  * Sign a SPEND carries in the file this owner's rows live in.
  *
- * Adult MC2 files sign spending negative and income positive; the child files
- * record spending as a positive magnitude. 905 existing rows already follow
- * this, and the fix for a wrong sign is emphatically NOT to flip it silently —
- * flipping a money value is the corruption this module exists to prevent. The
- * caller states its intent with `kind` and a contradicting sign is rejected.
+ * Purchases are positive for every owner. Refunds are negative and Income is
+ * positive. The caller states its intent with `kind`; a contradicting sign is
+ * rejected rather than silently flipped.
  */
-export function spendSignFor(owner: FamilyMember): 1 | -1 {
-  return isAdult(owner) ? -1 : 1;
+export function spendSignFor(_owner: FamilyMember): 1 {
+  return 1;
 }
 
 function requireFamilyMember(value: string, field: string): FamilyMember {
@@ -802,10 +800,9 @@ async function appendAudit(
 /**
  * `spend` is money leaving; `credit` is money arriving (income, a refund, a
  * reimbursement). It exists so the SIGN can be checked instead of imposed:
- * adult files sign spend negative, child files store it as a positive
- * magnitude, and a caller that gets it backwards is telling us it does not know
- * which file it is writing to. Flipping the number for it would be a coerced
- * money value, which is the one thing this module will not do.
+ * purchases are positive for every owner, refunds are negative, and Income is
+ * positive. Flipping a contradictory number would be a coerced money value,
+ * which is the one thing this module will not do.
  */
 const kindValidator = v.union(v.literal("spend"), v.literal("credit"));
 
@@ -833,7 +830,7 @@ function requireSignAgrees(
       'a transaction categorised "Income" must be sent with kind "credit"',
     );
   }
-  const expected = kind === "spend" ? spendSignFor(owner) : -spendSignFor(owner);
+  const expected = category === "Income" || kind === "spend" ? 1 : -1;
   const actual = minor < 0 ? -1 : 1;
   if (actual !== expected) {
     const file = transactionsFileFor(owner);
@@ -841,7 +838,7 @@ function requireSignAgrees(
       "sign_mismatch",
       "amountMinor",
       `a ${kind} for ${owner} must be ${expected < 0 ? "negative" : "positive"} ` +
-        `in ${file} (${isAdult(owner) ? "adult files sign spend negative" : "child files store spend as a positive magnitude"}), ` +
+        `in ${file} (purchases are positive and refunds are negative for every owner), ` +
         `got ${minor}. The sign is not corrected here on purpose.`,
     );
   }
@@ -1082,7 +1079,9 @@ export const editTransaction = mutation({
       // the sign check then passes trivially and the Income rule is what bites.
       const kind =
         args.kind ??
-        (args.amountMinor === undefined
+        (typeof record.category === "string" && record.category === "Income"
+          ? "credit"
+          : args.amountMinor === undefined
           ? finalMinor < 0 === (spendSignFor(owner) < 0)
             ? "spend"
             : "credit"

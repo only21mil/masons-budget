@@ -417,8 +417,7 @@ struct AddTransactionView: View {
         }
 
         let isIncome = txType == .income
-        let spendSign: Decimal = activeMember.isAdult ? -1 : 1
-        let signedSatsDecimal = isIncome ? abs(sats) : spendSign * abs(sats)
+        let signedSatsDecimal = abs(sats)
         let signedSats = signedSatsDecimal.clampedInt64
         let signedUsd = (Decimal(signedSats) / 100_000_000) * btcPrice
         let transactionCategory = selectedCategory.isEmpty ? (isIncome ? "Income" : "Other") : selectedCategory

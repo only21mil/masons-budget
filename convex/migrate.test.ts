@@ -331,9 +331,7 @@ function makeTodos(): Record<string, unknown>[] {
 }
 
 /**
- * Mason's transactions. THE SIGN CONVENTION IS THE POINT: child MC2 files
- * record spend as a POSITIVE magnitude while adult files sign it negative. The
- * migration must preserve both verbatim.
+ * Mason's transactions. The migration must preserve source signs verbatim.
  */
 function makeMasonTransactions(): Record<string, unknown>[] {
   return [
@@ -1413,6 +1411,7 @@ describe("migrating every file", () => {
   });
 
   test("child files keep their positive spend and adult files keep their negative", async () => {
+  test("migration preserves source transaction signs verbatim", async () => {
     const t = harness();
     await seedAll(t);
     await applyFile(t, { file: "mason-transactions" });
@@ -1425,8 +1424,8 @@ describe("migrating every file", () => {
     expect(mason.find((row) => row.merchant === "Game Store")!.amountCents).toBe(6000n);
     expect(mason.every((row) => row.amountCents >= 0n)).toBe(true);
 
-    const adultSpend = rows.find((row) => row.txId === "t-big")!;
-    expect(adultSpend.amountCents).toBe(-24681357n);
+    const legacyNegative = rows.find((row) => row.txId === "t-big")!;
+    expect(legacyNegative.amountCents).toBe(-24681357n);
   });
 
   test("fields no domain type mentions survive in migration provenance", async () => {

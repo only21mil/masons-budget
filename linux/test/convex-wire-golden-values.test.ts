@@ -9,7 +9,6 @@ import type {
   VogelVaultBtcBuyRow,
   VogelVaultRowResult,
   VogelVaultTodoRow,
-  VogelVaultTransactionRow,
 } from "../shared/ipc.ts"
 
 const GOLDEN_ROOT = new URL("../../shared/domain/fixtures/convex-wire-golden/", import.meta.url)
@@ -52,24 +51,31 @@ function requireOk(
 }
 
 describe("real Convex wire values", () => {
-  it("decodes transaction money through the production repository", async () => {
-    const result = requireOk(
-      await repository.query({
-        kind: "transactions",
-        viewer: "victor",
-        limit: 3,
-      }),
-      "listTransactions",
-    )
-    if (result.kind !== "transactions") {
-      throw new Error(`production golden listTransactions decoded as ${result.kind}`)
+  it("retains the pre-fix production capture and rejects its inverted projection", async () => {
+    const capture = JSON.parse(
+      readFileSync(new URL("listTransactions.json.json", GOLDEN_ROOT), "utf8"),
+    ) as {
+      value: {
+        rows: Array<{
+          amountCents: string
+          spendAmount: string
+          hasOppositeSpendSign: boolean
+        }>
+      }
     }
-    const row = result.rows[0] as VogelVaultTransactionRow
-    expect(row.txId).toBe("t1784233824245")
-    expect(row.amountCents).toBe(27_918n)
-    expect(row.spendAmount).toBe(-27_918n)
-    expect(row.displaySpendAmount).toBe(27_918n)
-    expect(row.updatedAtMs).toBe(0)
+    expect(capture.value.rows[0]).toMatchObject({
+      amountCents: "27918",
+      spendAmount: "-27918",
+      hasOppositeSpendSign: true,
+    })
+    await expect(repository.query({
+      kind: "transactions",
+      viewer: "victor",
+      limit: 3,
+    })).resolves.toEqual({
+      status: "error",
+      code: "invalid-response",
+    })
   })
 
   it("decodes todo priority through the production repository", async () => {

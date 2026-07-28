@@ -111,12 +111,12 @@ test("month boundaries do not shift with timezone", () => {
 // ── Filtering ───────────────────────────────────────────────────────────────
 
 const MIXED: Transaction[] = [
-  tx("2026-07-26", "Groceries", "-100"),
-  tx("2026-07-02", "Groceries", "-50"),
-  tx("2026-06-30", "Groceries", "-999"),
-  tx("2026-06-01", "Dining", "-40"),
-  tx("2026-05-15", "Groceries", "-777"),
-  tx("2026-08-01", "Groceries", "-888"),
+  tx("2026-07-26", "Groceries", "100"),
+  tx("2026-07-02", "Groceries", "50"),
+  tx("2026-06-30", "Groceries", "999"),
+  tx("2026-06-01", "Dining", "40"),
+  tx("2026-05-15", "Groceries", "777"),
+  tx("2026-08-01", "Groceries", "888"),
 ]
 
 test("transactionsInMonth keeps only that month", () => {

@@ -36,7 +36,7 @@ function response(request: VogelVaultRowRequest): VogelVaultRowResult {
           date: "2026-07-26",
           month: "2026-07",
           merchant: "Example",
-          amountCents: -123n,
+          amountCents: 123n,
           spendAmount: 123n,
           displaySpendAmount: 123n,
           hasOppositeSpendSign: false,
@@ -161,7 +161,7 @@ describe("renderer Convex row adapter", () => {
       { kind: "budget", viewer: "rachel", scope: "netWorth" },
       { kind: "btcSnapshotMeta", viewer: "rachel", scope: "visible" },
     ])
-    expect(result.data.transactions.value[0]?.amount).toBe(-123n)
+    expect(result.data.transactions.value[0]?.amount).toBe(123n)
     expect(typeof result.data.transactions.value[0]?.amount).toBe("bigint")
     expect(result.data.btcAccounts.value[0]?.fiat).toBe(9_000_000n)
     expect(result.data.budget.value?.categories[0]?.spent).toBe(0n)

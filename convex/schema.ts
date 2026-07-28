@@ -43,10 +43,9 @@ import { v } from "convex/values";
 //   stack never enters adult net worth). See convex/tables.ts for the mirrors
 //   and the tests that pin the two apart.
 //
-//   `sourceFile` records which MC2 file a row came from. It is not decoration:
-//   adult files sign spending negative while the child files record it as a
-//   positive magnitude, so the sign convention of `amountCents` is only
-//   recoverable from the provenance.
+//   `sourceFile` records which surviving blob a row came from. It is migration
+//   provenance; transaction amounts use one contract for every owner: purchases
+//   positive, refunds negative, and Income positive.
 
 /**
  * The four family members, as a closed set.
@@ -238,8 +237,7 @@ export default defineSchema({
     // that month's transactions, so this is the hot path, not a convenience.
     month: v.string(),
     merchant: v.string(),
-    // SIGNED, in the convention of `sourceFile`: adult files sign spending
-    // negative, child files record it as a positive magnitude.
+    // SIGNED: purchases are positive for every owner; refunds are negative.
     amountCents: v.int64(),
     category: v.string(),
     // Absent rather than null. MC2 writes null and "" interchangeably for

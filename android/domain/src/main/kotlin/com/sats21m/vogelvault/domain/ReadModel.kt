@@ -60,7 +60,7 @@ data class Transaction(
     val id: String,
     val date: String,
     val merchant: String,
-    /** Signed as MC2 reports it. See [spendAmount] before using this directly. */
+    /** Signed stored amount. Positive is money out; negative is a credit/refund. */
     val amount: Long,
     val category: String,
     val card: String? = null,
@@ -69,20 +69,17 @@ data class Transaction(
     /**
      * Signed contribution to budget actuals.
      *
-     * Income contributes zero; adult rows negate [amount], while child rows use
-     * [amount] directly. Positive values are spend and negative values are
-     * credits. Row responses provide this value directly; legacy fixtures derive
-     * the same contract from [amount] and [owner].
+     * Income contributes zero. Adult and child purchases are positive; credits
+     * and refunds are negative. Row responses provide this value directly;
+     * legacy fixtures derive the same contract from [amount].
      */
     val spendAmount: Long =
-        if (category == "Income") 0L else if (owner.isAdult) -amount else amount,
+        if (category == "Income") 0L else amount,
     /** Stable rendering magnitude; never used for budget maths. */
     val displaySpendAmount: Long = kotlin.math.abs(spendAmount),
 ) : Owned {
     /**
-     * A valid refund or a corrupt wrong-sign legacy row. Reads cannot
-     * distinguish those cases because legacy rows do not persist write-side
-     * kind.
+     * A credit/refund that reduces spend.
      */
     val hasOppositeSpendSign: Boolean
         get() = spendAmount < 0L
