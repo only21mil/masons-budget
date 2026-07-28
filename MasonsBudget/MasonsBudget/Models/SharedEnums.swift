@@ -105,7 +105,7 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable, Sendable {
 }
 
 /// Bitcoin custody classification.
-enum BTCCustody: String, Codable {
+enum BTCCustody: String, Codable, Sendable {
     case exchange
     case selfCustody = "self_custody"
 }

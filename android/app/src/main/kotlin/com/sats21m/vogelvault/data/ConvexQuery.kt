@@ -44,6 +44,19 @@ internal sealed class ConvexQuery(val path: String) {
         override fun arguments(): JsonObject = rowArguments(viewer, limit, "month" to month)
     }
 
+    data class ListIncome(
+        val viewer: FamilyMember,
+        val month: String? = null,
+        val limit: Int? = null,
+    ) : ConvexQuery("tables:listIncome") {
+        init {
+            validateMonth(month)
+            validateLimit(limit)
+        }
+
+        override fun arguments(): JsonObject = rowArguments(viewer, limit, "month" to month)
+    }
+
     data class ListTodos(
         val viewer: FamilyMember,
         val done: Boolean? = null,
@@ -118,6 +131,16 @@ internal sealed class ConvexQuery(val path: String) {
         val viewer: FamilyMember,
         val scope: RowVisibilityScope,
     ) : ConvexQuery("tables:getBtcSnapshotMetadata") {
+        override fun arguments(): JsonObject = jsonArguments(
+            "viewer" to JsonPrimitive(viewer.key),
+            "scope" to JsonPrimitive(scope.wireValue),
+        )
+    }
+
+    data class ListBtcBalanceDocuments(
+        val viewer: FamilyMember,
+        val scope: RowVisibilityScope,
+    ) : ConvexQuery("tables:listBtcBalanceDocuments") {
         override fun arguments(): JsonObject = jsonArguments(
             "viewer" to JsonPrimitive(viewer.key),
             "scope" to JsonPrimitive(scope.wireValue),

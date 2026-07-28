@@ -222,18 +222,12 @@ function budget(document: VogelVaultBudgetDocument): Budget {
   }
 }
 
-function priceFromRows(
-  accounts: readonly VogelVaultBtcAccountRow[],
-  buys: readonly VogelVaultBtcBuyRow[],
-): bigint {
-  let sats = 0n
-  let fiatCents = 0n
-  for (const account of accounts) {
-    sats += account.sats
-    fiatCents += account.fiatCents
-  }
-  if (sats > 0n) return (fiatCents * 100_000_000n) / sats
-  return buys[0]?.priceUsdCents ?? 0n
+function priceFromRows(buys: readonly VogelVaultBtcBuyRow[]): bigint {
+  const latest = buys.reduce<VogelVaultBtcBuyRow | null>(
+    (current, buy) => current === null || buy.date > current.date ? buy : current,
+    null,
+  )
+  return latest !== null && latest.priceUsdCents > 0n ? latest.priceUsdCents : 0n
 }
 
 function firstError(results: readonly VogelVaultRowResult[]): VogelVaultRowErrorCode | null {
@@ -348,7 +342,7 @@ export async function loadConvexRowEnvelope(
         updatedAt(todoRows),
         `${SOURCE} · todos`,
       ),
-      btcPriceUsd: priceFromRows(accountRows, buyRows),
+      btcPriceUsd: priceFromRows(buyRows),
       generatedAt: timestamps.length > 0 ? Math.max(...timestamps) : now(),
     },
   }

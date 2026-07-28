@@ -25,6 +25,8 @@ import type {
 } from "@vogel-vault/domain/readModel"
 import { type RawTodo, normalizeTodoRecord, toTodoItem } from "@vogel-vault/domain/todo"
 
+import { newestVisibleBuyPrice } from "./bitcoinDisplay.ts"
+
 const NOW = Date.UTC(2026, 6, 26, 14, 30, 0)
 const MINUTE = 60_000
 const DAY = 24 * 60 * MINUTE
@@ -333,7 +335,7 @@ export function buildSanitizedFixtureEnvelope(
     btcBuys: slice(BTC_BUYS, overrides.btcBuys ?? "demo", 11, "Demo fixtures · bitcoin-buys"),
     billPays: slice(BILL_PAYS, overrides.billPays ?? "demo", 11, "Demo fixtures · bitcoin-bill-pays"),
     todos: slice(TODOS, overrides.todos ?? "demo", 2, "Demo fixtures · todos"),
-    btcPriceUsd: parseCents("93500.00"),
+    btcPriceUsd: newestVisibleBuyPrice(activeProfile, BTC_BUYS)?.cents ?? 0n,
     generatedAt: NOW,
   }
 }
@@ -361,5 +363,6 @@ export function fixtureEnvelopeInState(
     btcBuys: { ...base.btcBuys, value: [] },
     billPays: { ...base.billPays, value: [] },
     todos: { ...base.todos, value: [] },
+    btcPriceUsd: 0n,
   }
 }
