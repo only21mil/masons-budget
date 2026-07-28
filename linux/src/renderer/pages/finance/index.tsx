@@ -90,6 +90,20 @@ function requiredFigure(status: string, render: () => string): string {
   return render()
 }
 
+/**
+ * Budget actuals are a two-slice projection: targets come from the budget, but
+ * spend comes from transactions. The projection is only usable when both reads
+ * are usable.
+ */
+function budgetActualsStatus(budget: Freshness, transactions: Freshness): Freshness {
+  for (const unavailable of ["error", "loading", "empty"] as const) {
+    if (budget === unavailable || transactions === unavailable) return unavailable
+  }
+  if (budget === "stale" || transactions === "stale") return "stale"
+  if (budget === "demo" || transactions === "demo") return "demo"
+  return "live"
+}
+
 function referencePrice(
   viewer: FamilyMember,
   status: Freshness,
@@ -418,6 +432,9 @@ function BudgetPage() {
   // cannot drift apart.
   const spend = deriveBudgetSpend({ ...budget, month: scope.month }, transactions)
   const { planned, actual, remaining, overBudgetCount: overCount } = spend
+  const actualsStatus = budgetActualsStatus(data.budget.status, data.transactions.status)
+  const actualsUnavailable =
+    actualsStatus === "error" || actualsStatus === "loading" || actualsStatus === "empty"
 
   return (
     <>
@@ -426,7 +443,7 @@ function BudgetPage() {
         subtitle={monthLabel(scope.month)}
         actions={
           <>
-            <MonthPicker scope={scope} label="Budget month" />
+            {actualsUnavailable ? null : <MonthPicker scope={scope} label="Budget month" />}
             <FreshnessTag status={data.budget.status} updatedAt={data.budget.updatedAt} />
           </>
         }
@@ -443,21 +460,21 @@ function BudgetPage() {
       <KPIStrip
         items={[
           { label: "Planned", value: figure(data.budget.status, () => formatUsd(planned)), provenance: "planned" },
-          { label: "Actual", value: figure(data.budget.status, () => formatUsd(actual)), provenance: "actual" },
+          { label: "Actual", value: requiredFigure(actualsStatus, () => formatUsd(actual)), provenance: "actual" },
           {
             label: "Remaining",
-            value: figure(data.budget.status, () => formatUsd(remaining)),
+            value: requiredFigure(actualsStatus, () => formatUsd(remaining)),
             tone: remaining < 0n ? "negative" : "positive",
           },
           {
             label: "Over budget",
-            value: figure(data.budget.status, () => String(overCount)),
+            value: requiredFigure(actualsStatus, () => String(overCount)),
             tone: overCount > 0 ? "negative" : "neutral",
             hint: overCount === 1 ? "1 category" : `${overCount} categories`,
           },
         ]}
       />
-      {spend.uncategorised > 0n ? (
+      {spend.uncategorised > 0n && !actualsUnavailable ? (
         <StatusBanner
           tone="info"
           title={`${formatUsd(spend.uncategorised)} spent outside any budget category`}
@@ -473,7 +490,13 @@ function BudgetPage() {
           columns={budgetColumns}
           rows={spend.categories}
           rowKey={(row) => row.name}
-          state={tableState(data.budget.status)}
+          state={
+            actualsStatus === "loading"
+              ? "loading"
+              : actualsUnavailable
+                ? "error"
+                : tableState(actualsStatus)
+          }
         />
       </Panel>
     </>

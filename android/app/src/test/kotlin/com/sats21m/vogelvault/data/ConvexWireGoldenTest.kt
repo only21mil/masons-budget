@@ -16,7 +16,7 @@ class ConvexWireGoldenTest {
     @Test
     fun `production convex encoded payloads validate through the real row repository`() {
         val failures = buildList {
-            verifyStaleTransactionProjectionUsesCanonicalAmount()?.let(::add)
+            verifyCurrentTransactionProjectionUsesCanonicalAmount()?.let(::add)
             verifyOk("listTodos") {
                 it.listTodos(FamilyMember.VICTOR)
             }?.let(::add)
@@ -46,13 +46,13 @@ class ConvexWireGoldenTest {
         )
     }
 
-    private fun verifyStaleTransactionProjectionUsesCanonicalAmount(): String? {
+    private fun verifyCurrentTransactionProjectionUsesCanonicalAmount(): String? {
         val repository = repositoryFor("listTransactions")
         val result = runBlocking {
             repository.listTransactions(FamilyMember.VICTOR)
         }
         val snapshot = (result as? ConvexResult.Ok)?.value
-            ?: return "listTransactions: expected stale production projection to decode, got $result"
+            ?: return "listTransactions: expected current production projection to decode, got $result"
         val transaction = snapshot.rows.firstOrNull()
             ?: return "listTransactions: production capture decoded with no rows"
         return when {

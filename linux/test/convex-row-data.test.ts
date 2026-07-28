@@ -5,8 +5,13 @@ import type {
   VogelVaultRowResult,
 } from "../shared/ipc.ts"
 import { loadConvexRowEnvelope } from "../src/renderer/data/convexRows.ts"
+import { deriveBudgetSpend } from "../src/renderer/data/transactionAmounts.ts"
 
-function response(request: VogelVaultRowRequest): VogelVaultRowResult {
+function response(
+  request: VogelVaultRowRequest,
+  budgetMonth = "2026-07",
+  transactionDate = "2026-07-26",
+): VogelVaultRowResult {
   switch (request.kind) {
     case "rowCounts":
       return {
@@ -33,8 +38,8 @@ function response(request: VogelVaultRowRequest): VogelVaultRowResult {
         rows: [{
           txId: "tx-1",
           owner: "victor",
-          date: "2026-07-26",
-          month: "2026-07",
+          date: transactionDate,
+          month: transactionDate.slice(0, 7),
           merchant: "Example",
           amountCents: 123n,
           spendAmount: 123n,
@@ -132,7 +137,7 @@ function response(request: VogelVaultRowRequest): VogelVaultRowResult {
         kind: "budget",
         value: {
           owner: "victor",
-          month: "2026-07",
+          month: budgetMonth,
           coinbaseOneBalanceCents: 0n,
           categories: [{ name: "Food", budgetCents: 50_000n }],
           mtdIncomeCents: 100_000n,
@@ -182,6 +187,42 @@ function response(request: VogelVaultRowRequest): VogelVaultRowResult {
 }
 
 describe("renderer Convex row adapter", () => {
+  it.each([
+    ["June 2026", "legacy English"],
+    ["2026-06", "canonical"],
+  ])("derives non-zero June actuals from a %s budget month (%s form)", async (budgetMonth) => {
+    const result = await loadConvexRowEnvelope(
+      async (request) => response(request, budgetMonth, "2026-06-18"),
+      "victor",
+    )
+
+    expect(result.status).toBe("loaded")
+    if (result.status !== "loaded") return
+    const adaptedBudget = result.data.budget.value
+    expect(result.data.budget.status).toBe("live")
+    expect(adaptedBudget).not.toBeNull()
+    if (adaptedBudget === null) return
+    expect(deriveBudgetSpend(adaptedBudget, result.data.transactions.value).actual).toBe(123n)
+    expect(adaptedBudget.month).toBe("2026-06")
+  })
+
+  it("marks an unparseable budget month unavailable instead of deriving zero actuals", async () => {
+    const result = await loadConvexRowEnvelope(
+      async (request) => response(request, "Juny 2026", "2026-06-18"),
+      "victor",
+    )
+
+    expect(result.status).toBe("loaded")
+    if (result.status !== "loaded") return
+    expect(result.data.budget.status).toBe("error")
+    expect(result.data.budget.value).toBeNull()
+    const actual = result.data.budget.value === null
+      ? null
+      : deriveBudgetSpend(result.data.budget.value, result.data.transactions.value).actual
+    expect(actual).toBeNull()
+    expect(actual).not.toBe(0n)
+  })
+
   it("loads every bounded table with explicit BTC scopes and preserves bigint money", async () => {
     const requests: VogelVaultRowRequest[] = []
     const result = await loadConvexRowEnvelope(async (request) => {
@@ -292,6 +333,25 @@ describe("renderer Convex row adapter", () => {
     expect(result.data.btcBalanceDocument.status).toBe("live")
     expect(result.data.btcBuys.status).toBe("live")
     expect(result.data.billPays.status).toBe("live")
+  })
+
+  it("keeps a complete zero-row transaction response usable as a true zero", async () => {
+    const result = await loadConvexRowEnvelope(
+      async (request) => {
+        const base = response(request)
+        return base.status === "ok" && base.kind === "transactions"
+          ? { ...base, rows: [] }
+          : base
+      },
+      "victor",
+      () => 999,
+    )
+
+    expect(result.status).toBe("loaded")
+    if (result.status !== "loaded") return
+    expect(result.data.transactions.status).toBe("live")
+    expect(result.data.transactions.value).toEqual([])
+    expect(result.data.budget.status).toBe("live")
   })
 
   it("rejects overlapping BTC balance documents instead of combining them", async () => {

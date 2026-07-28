@@ -200,6 +200,30 @@ class RowQueryRepositoryTest {
     }
 
     @Test
+    fun `malformed or contradictory transaction dates reject the entire row envelope`() {
+        val invalidDateMonthPairs = listOf(
+            "2026-7-25" to "2026-07",
+            "2026-02-30" to "2026-02",
+            "not-a-date" to "2026-07",
+            "2026-07-25" to "2026-06",
+        )
+
+        for ((date, month) in invalidDateMonthPairs) {
+            val poster = RecordingPoster(
+                rowSuccess(
+                    """[{"txId":"tx-1","owner":"victor","date":"$date","month":"$month","merchant":"Cafe","amountCents":${convexInt64(500)},"spendAmount":${convexInt64(500)},"displaySpendAmount":${convexInt64(500)},"hasOppositeSpendSign":false,"category":"Food","updatedAtMs":1785000000000.0}]""",
+                ),
+            )
+
+            assertEquals(
+                ConvexResult.Failed("unexpected payload shape"),
+                runBlocking { repositoryWith(poster).listTransactions(FamilyMember.VICTOR) },
+                "accepted date=$date month=$month",
+            )
+        }
+    }
+
+    @Test
     fun `invalid transaction query month fails before transport`() {
         val poster = RecordingPoster(rowSuccess("[]"))
 

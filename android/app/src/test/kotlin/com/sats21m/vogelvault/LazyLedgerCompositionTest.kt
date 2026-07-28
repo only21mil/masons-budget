@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -104,6 +105,42 @@ class LazyLedgerCompositionTest {
         assertTrue(
             composedRows.get() in 1 until 100,
             "A 640dp viewport composed ${composedRows.get()} of 911 rows; the ledger is no longer lazy.",
+        )
+    }
+
+    @Test
+    fun `budget renders zero for a usable month with no transactions`() {
+        val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+        val state = VaultUiState(
+            activeProfile = FamilyMember.VICTOR,
+            destination = Destination.BUDGET,
+            data = base.copy(
+                transactions = base.transactions.copy(
+                    status = Freshness.LIVE,
+                    value = emptyList(),
+                ),
+            ),
+        )
+
+        compose.runOnUiThread {
+            activityController.get().setContent {
+                VogelVaultTheme {
+                    Box(Modifier.size(width = 411.dp, height = 640.dp)) {
+                        ScreenHost(
+                            destination = Destination.BUDGET,
+                            state = state,
+                        )
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        assertTrue(
+            compose.onAllNodesWithContentDescription("Actual, $0.00", substring = false)
+                .fetchSemanticsNodes()
+                .isNotEmpty(),
+            "a usable empty transaction slice suppressed the true zero",
         )
     }
 

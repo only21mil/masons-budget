@@ -57,6 +57,8 @@ export interface AppStateProviderProps {
   initialStateOverride?: StateOverride
   initialSelectedMonth?: MonthKey | null
   initialDisplayUnit?: DisplayUnit
+  /** Exact envelope for headless financial-state regression tests. */
+  initialData?: FixtureEnvelope
 }
 
 export function AppStateProvider({
@@ -66,6 +68,7 @@ export function AppStateProvider({
   initialStateOverride = "normal",
   initialSelectedMonth = null,
   initialDisplayUnit,
+  initialData,
 }: AppStateProviderProps) {
   const [activeProfile, setActiveProfile] = useState<FamilyMember>(initialProfile)
   const [route, setRoute] = useState(initialRoute)
@@ -78,7 +81,7 @@ export function AppStateProvider({
   const [remoteData, setRemoteData] = useState<{
     readonly profile: FamilyMember
     readonly data: FixtureEnvelope
-  } | null>(null)
+  } | null>(() => initialData ? { profile: initialProfile, data: initialData } : null)
 
   const switchTargets = useMemo(() => allowedSwitchTargets(activeProfile), [activeProfile])
 

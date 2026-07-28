@@ -6,6 +6,8 @@ import com.sats21m.vogelvault.domain.Custody
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.domain.Transaction
+import java.time.LocalDate
+import java.time.format.DateTimeParseException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -205,11 +207,14 @@ internal data class PublicTransactionDto(
             row.rowInt64("displaySpendAmount") ?: return null
             row.requiredBoolean("hasOppositeSpendSign") ?: return null
             val spendAmount = if (category == "Income") 0L else amountCents
+            val date = row.rowString("date") ?: return null
+            val month = row.rowString("month") ?: return null
+            if (!isCanonicalTransactionDate(date, month)) return null
             return PublicTransactionDto(
                 txId = row.rowString("txId") ?: return null,
                 owner = row.rowOwner() ?: return null,
-                date = row.rowString("date") ?: return null,
-                month = row.rowString("month") ?: return null,
+                date = date,
+                month = month,
                 merchant = row.rowStringAllowEmpty("merchant") ?: return null,
                 amountCents = amountCents,
                 spendAmount = spendAmount,
@@ -221,6 +226,26 @@ internal data class PublicTransactionDto(
                 updatedAtMs = row.requiredLong("updatedAtMs") ?: return null,
             )
         }
+    }
+}
+
+private val canonicalTransactionDatePattern =
+    Regex("""^(?!0000)(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$""")
+private val canonicalTransactionMonthPattern =
+    Regex("""^(?!0000)\d{4}-(0[1-9]|1[0-2])$""")
+
+private fun isCanonicalTransactionDate(date: String, month: String): Boolean {
+    if (!canonicalTransactionDatePattern.matches(date) ||
+        !canonicalTransactionMonthPattern.matches(month) ||
+        date.take(7) != month
+    ) {
+        return false
+    }
+    return try {
+        LocalDate.parse(date)
+        true
+    } catch (_: DateTimeParseException) {
+        false
     }
 }
 

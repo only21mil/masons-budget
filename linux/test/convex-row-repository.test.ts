@@ -530,20 +530,20 @@ describe("main-process row repository", () => {
     }
   })
 
-  it("decodes tagged budget savingsBps and BTC snapshot metadata envelopes", async () => {
+  it("decodes legacy budget month labels, tagged savingsBps, and BTC snapshot metadata", async () => {
     const sent: Array<Record<string, unknown>> = []
     const responses = [
       success({
         complete: true,
         document: {
           owner: "victor",
-          month: "2026-07",
+          month: "July 2026",
           coinbaseOneBalanceCents: int64(12_345n),
           categories: [{ name: "Food", budgetCents: int64(50_000n) }],
           mtdIncomeCents: int64(100_000n),
           ytdIncomeCents: int64(700_000n),
           monthlyHistory: [{
-            month: "2026-06",
+            month: "June 2026",
             incomeCents: int64(90_000n),
             expensesCents: int64(60_000n),
             savingsBps: int64(3_333n),
@@ -579,8 +579,9 @@ describe("main-process row repository", () => {
       kind: "budget",
       value: {
         owner: "victor",
+        month: "July 2026",
         coinbaseOneBalanceCents: 12_345n,
-        monthlyHistory: [{ savingsBps: 3_333 }],
+        monthlyHistory: [{ month: "June 2026", savingsBps: 3_333 }],
       },
     })
     await expect(
@@ -603,6 +604,39 @@ describe("main-process row repository", () => {
         format: "convex_encoded_json",
       },
     ])
+  })
+
+  it("rejects malformed budget month labels without weakening row month validation", async () => {
+    const malformedBudget = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => success({
+        complete: true,
+        document: {
+          owner: "victor",
+          month: "June-2026",
+          coinbaseOneBalanceCents: int64(0n),
+          categories: [],
+          mtdIncomeCents: int64(0n),
+          ytdIncomeCents: int64(0n),
+          monthlyHistory: [],
+          updatedAtMs: 0,
+        },
+      }),
+    })
+    await expect(
+      malformedBudget.query({ kind: "budget", viewer: "victor", scope: "netWorth" }),
+    ).resolves.toEqual({ status: "error", code: "invalid-response" })
+
+    const malformedTransaction = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => success({
+        complete: true,
+        rows: [transaction({ month: "June 2026" })],
+      }),
+    })
+    await expect(
+      malformedTransaction.query({ kind: "transactions", viewer: "victor" }),
+    ).resolves.toEqual({ status: "error", code: "invalid-response" })
   })
 
   it("decodes production-shaped income rows and rejects malformed money", async () => {

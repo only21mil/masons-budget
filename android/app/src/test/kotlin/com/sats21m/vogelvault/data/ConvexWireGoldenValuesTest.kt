@@ -27,8 +27,8 @@ class ConvexWireGoldenValuesTest {
         ).jsonObject.getValue("value").jsonObject
             .getValue("rows").jsonArray[0].jsonObject
         assertEquals("27918", rawTransactions.getValue("amountCents").jsonPrimitive.content)
-        assertEquals("-27918", rawTransactions.getValue("spendAmount").jsonPrimitive.content)
-        assertEquals(true, rawTransactions.getValue("hasOppositeSpendSign").jsonPrimitive.boolean)
+        assertEquals("27918", rawTransactions.getValue("spendAmount").jsonPrimitive.content)
+        assertEquals(false, rawTransactions.getValue("hasOppositeSpendSign").jsonPrimitive.boolean)
         val transactions = requireOk(
             runBlocking {
                 repository.listTransactions(FamilyMember.VICTOR, limit = 3)
@@ -89,7 +89,7 @@ class ConvexWireGoldenValuesTest {
         assertEquals(25L, counts.todos)
         assertEquals(33L, counts.btcBuys)
         assertEquals(31L, counts.btcBillPays)
-        assertEquals(0L, counts.btcAccounts)
+        assertEquals(8L, counts.btcAccounts)
 
         val budget = requireOk(
             runBlocking {
@@ -101,7 +101,14 @@ class ConvexWireGoldenValuesTest {
             "getBudgetDocument",
         )
         assertEquals(true, budget.complete)
-        assertEquals(null, budget.document)
+        val budgetDocument = requireNotNull(budget.document)
+        assertEquals(FamilyMember.VICTOR, budgetDocument.owner)
+        assertEquals("June 2026", budgetDocument.month)
+        assertEquals(2_642L, budgetDocument.coinbaseOneBalanceCents)
+        assertEquals("Bills & Utilities", budgetDocument.categories[0].name)
+        assertEquals(620_000L, budgetDocument.categories[0].budgetCents)
+        assertEquals("January 2026", budgetDocument.monthlyHistory[0].month)
+        assertEquals(5_410L, budgetDocument.monthlyHistory[0].savingsBps)
 
         val accounts = requireOk(
             runBlocking {
@@ -113,7 +120,10 @@ class ConvexWireGoldenValuesTest {
             "listBtcAccounts",
         )
         assertEquals(false, accounts.complete)
-        assertEquals(emptyList(), accounts.rows)
+        assertEquals(3, accounts.rows.size)
+        assertEquals("son-coldcard-mason", accounts.rows[0].key)
+        assertEquals(FamilyMember.MASON, accounts.rows[0].owner)
+        assertEquals(76_406_392L, accounts.rows[0].sats)
     }
 
     private fun <T> requireOk(result: ConvexResult<T>, query: String): T =

@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "capturedDate": "2026-07-27",
+  "capturedDate": "2026-07-28",
   "capturedDatePrecision": "day",
   "deployment": "prod:keen-elephant-452",
   "endpoint": "https://keen-elephant-452.convex.cloud/api/query",
@@ -37,26 +37,26 @@
       "listTransactions": "15d87b9275192143b3f47009f1414faeaf4ba5c80180c6a1fb26a39a9d514000",
       "rowCounts": "aa277cbc41bdcfcdab2d2517c6330b51a63f57110a5c659d4ecc7d434316809e"
     },
-    "reattestedNote": "The captures remain the byte-for-byte production recordings from 2026-07-27. Version 2 replaces the whole-file schema hash with per-query, comment-free TypeScript token dependency closures over the seven captured query declarations and their referenced helpers, including imported argument validators. The dependency-free tokenizer lets the gate run before npm install in CI. The queries use explicit output projections, so comments, unrelated schema tables, unprojected storage-only fields, and #142's new indexed listIncome query are deliberately outside the seven existing production captures. NOTE: #128 repurposes listTransactions.json.json from an expected-value fixture to a known-stale capture the decoder must REJECT. Once Convex is redeployed these captures no longer describe production and must be re-captured."
+    "reattestedNote": "Generated alongside this authenticated production capture using comment-free per-query TypeScript token dependency closures. Previously attested queries without wire captures are retained and refreshed."
   },
   "freshness": {
     "warningAfterDays": 30,
     "failAfterDays": 60
   },
   "captures": {
-    "getBudgetDocument.convex_encoded_json.json": "4e06b66878a5390968230cb42f40f5da11d57204fb8ecf0b0d1d4e86ac0ff3d9",
-    "getBudgetDocument.json.json": "4e06b66878a5390968230cb42f40f5da11d57204fb8ecf0b0d1d4e86ac0ff3d9",
-    "listBtcAccounts.convex_encoded_json.json": "6d50f29a6f596052bc9590d3edd05851ecc5e8d9cef082932f77b3a1441c1c06",
-    "listBtcAccounts.json.json": "6d50f29a6f596052bc9590d3edd05851ecc5e8d9cef082932f77b3a1441c1c06",
+    "getBudgetDocument.convex_encoded_json.json": "effd8eb2f95d62e09d4b4d435207f46edcccc56e6ea95e6a6b23956bbd398d7a",
+    "getBudgetDocument.json.json": "6c24f9bb210e4e7b9beafeb94c409cb654ad16cbfccd28273c02a1bd39b4604a",
+    "listBtcAccounts.convex_encoded_json.json": "3c05f70171a93fa231c2633cf820b713c40dcc97b4415a0ace9e4d2d1ca17498",
+    "listBtcAccounts.json.json": "b37f1c35fad5283a671a20accf42f1fb7780c08ac2d6a22fa9e1895422efae5b",
     "listBtcBillPays.convex_encoded_json.json": "a6c3e5f63071a18a9d09fd914a634dd966250d53c4c76e1d4df8c7d05c6723ff",
     "listBtcBillPays.json.json": "480edd3a8a23fb6abfcc07525c7137f7c5179b78704246f7702f1f1163cc974d",
     "listBtcBuys.convex_encoded_json.json": "0f5770e76d3a920017c66710cd291e6535c37fe4da1d08a6dfe4f9a3548e8a81",
     "listBtcBuys.json.json": "f11e6bc7739ef6001ef0ef356e165dc0ec973cc16eb14a333accea05149d6073",
     "listTodos.convex_encoded_json.json": "d85a0e136d29c81c4278e6a943475e309f4802c0165b6339aca3793e0a9dadc1",
     "listTodos.json.json": "2ac76521af95b6f4ce6302f5662fab07d3f43410dbca7bfdc7d9c83005e8033a",
-    "listTransactions.convex_encoded_json.json": "995bc4cf2b4b1568f011ba2a15e50229dac3b620392bc66e0460ce93b9e780d2",
-    "listTransactions.json.json": "696b06e246dbf91a876ac0f845dc4b3d96283c654b51b8a1948afc6c635620da",
-    "rowCounts.convex_encoded_json.json": "28b72c105c9e4a1f42a6e22933aa2b158da72bcc8f9c0f80e852e9f1f17892c1",
-    "rowCounts.json.json": "28b72c105c9e4a1f42a6e22933aa2b158da72bcc8f9c0f80e852e9f1f17892c1"
+    "listTransactions.convex_encoded_json.json": "e9718a7c7c7514ae911933b9e4967e97ad2cfa89224d39e8e502b24e50f1ccd2",
+    "listTransactions.json.json": "1b52cc484a688223fa24f4594ce39789eb1124761430f0ce8df3e555c6fed456",
+    "rowCounts.convex_encoded_json.json": "c7ebf34348382607b80b115b3e987e21eaefac1ec8bab45aae1a65c1174afccc",
+    "rowCounts.json.json": "c7ebf34348382607b80b115b3e987e21eaefac1ec8bab45aae1a65c1174afccc"
   }
 }
