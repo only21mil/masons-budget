@@ -176,6 +176,9 @@ object Fixtures {
         }
         val empty = status == Freshness.EMPTY
         val stamp = if (status == Freshness.DEMO || status == Freshness.EMPTY) null else NOW_MILLIS - 4 * MINUTE
+        val latestVisibleBuy =
+            if (empty) null
+            else BTC_BUYS.visibleTo(activeProfile).maxByOrNull { it.date }
 
         return ReadModel(
             transactions = Slice(status, if (empty) emptyList() else TRANSACTIONS, stamp, "Demo fixtures · transactions"),
@@ -183,7 +186,8 @@ object Fixtures {
             btcAccounts = Slice(status, if (empty) emptyList() else BTC_ACCOUNTS, stamp, "Demo fixtures · btc-balance-snapshot"),
             btcBuys = Slice(status, if (empty) emptyList() else BTC_BUYS, stamp, "Demo fixtures · bitcoin-buys"),
             todos = Slice(status, if (empty) emptyList() else TODOS, stamp, "Demo fixtures · todos"),
-            btcPriceCents = Money.parseCents("93500.00"),
+            btcPriceCents = latestVisibleBuy?.priceUsdCents ?: 0L,
+            btcPriceAsOf = latestVisibleBuy?.date,
         )
     }
 }

@@ -69,6 +69,46 @@ class MoneyTest {
     }
 
     @Test
+    fun `display unit names match the Apple client and survive persistence`() {
+        assertEquals(listOf("btc", "sats", "usd"), DisplayUnit.entries.map { it.storageKey })
+        assertEquals(listOf("BTC", "SATS", "USD"), DisplayUnit.entries.map { it.label })
+        assertEquals(DisplayUnit.SATS, DisplayUnit.fromStorageKey("sats"))
+        assertEquals(DisplayUnit.BTC, DisplayUnit.fromStorageKey("unknown"))
+        assertEquals(DisplayUnit.BTC, DisplayUnit.fromStorageKey(null))
+    }
+
+    @Test
+    fun `formats exact BTC boundaries without precision loss`() {
+        val cases = listOf(
+            1L to "0.00000001 BTC",
+            99_999_999L to "0.99999999 BTC",
+            Money.SATS_PER_BTC to "1.00000000 BTC",
+            2_100_000_000_000_000L to "21000000.00000000 BTC",
+        )
+
+        for ((sats, expected) in cases) {
+            assertEquals(expected, Money.formatBitcoin(sats, DisplayUnit.BTC))
+        }
+    }
+
+    @Test
+    fun `formats each Bitcoin display mode from integer minor units`() {
+        val sats = 123_456_789L
+        val priceCents = 9_500_000L
+
+        assertEquals("1.23456789 BTC", Money.formatBitcoin(sats, DisplayUnit.BTC))
+        assertEquals("123 456 789 sats", Money.formatBitcoin(sats, DisplayUnit.SATS))
+        assertEquals("$117,283.95", Money.formatBitcoin(sats, DisplayUnit.USD, priceCents))
+    }
+
+    @Test
+    fun `fiat display is unavailable without a known positive price`() {
+        assertEquals(Money.PRICE_UNAVAILABLE, Money.formatBitcoin(1L, DisplayUnit.USD))
+        assertEquals(Money.PRICE_UNAVAILABLE, Money.formatBitcoin(1L, DisplayUnit.USD, 0L))
+        assertEquals(Money.PRICE_UNAVAILABLE, Money.formatBitcoin(1L, DisplayUnit.USD, -1L))
+    }
+
+    @Test
     fun `converts sats to USD at a given price`() {
         // 0.05 BTC at $100,000 -> $5,000
         assertEquals(500_000L, Money.satsToUsdCents(5_000_000L, 10_000_000L))

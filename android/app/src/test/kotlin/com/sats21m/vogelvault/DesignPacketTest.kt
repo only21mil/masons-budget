@@ -1,6 +1,7 @@
 package com.sats21m.vogelvault
 
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.ui.Destination
@@ -32,10 +33,19 @@ import org.robolectric.annotation.GraphicsMode
  * ComposeTestRule: the rule form needs a real Activity to launch, which is not
  * declared for unit tests, and it is not needed just to render a tree.
  */
-private fun capture(name: String, state: VaultUiState) {
+private fun capture(
+    name: String,
+    state: VaultUiState,
+    displayUnit: DisplayUnit = DisplayUnit.BTC,
+) {
     captureRoboImage("build/outputs/roborazzi/$name.png") {
         VogelVaultTheme {
-            VaultApp(state = state, onNavigate = {}, onSwitchProfile = {})
+            VaultApp(
+                state = state,
+                onNavigate = {},
+                onSwitchProfile = {},
+                displayUnit = displayUnit,
+            )
         }
     }
 }
@@ -63,6 +73,36 @@ class DesignPacketFoldedTest {
                 VaultUiState.of(FamilyMember.MASON, destination),
             )
         }
+    }
+
+    @Test
+    fun bitcoinDisplayUnits() {
+        for (unit in DisplayUnit.entries) {
+            capture(
+                "folded-bitcoin-victor-${unit.storageKey}",
+                VaultUiState.of(FamilyMember.VICTOR, Destination.BITCOIN),
+                unit,
+            )
+        }
+    }
+
+    @Test
+    fun bitcoinUsdWithoutPrice() {
+        val state = VaultUiState.of(FamilyMember.VICTOR, Destination.BITCOIN)
+        capture(
+            "folded-bitcoin-victor-usd-no-price",
+            state.copy(
+                data = state.data.copy(
+                    btcBuys = state.data.btcBuys.copy(
+                        status = Freshness.EMPTY,
+                        value = emptyList(),
+                    ),
+                    btcPriceCents = 0L,
+                    btcPriceAsOf = null,
+                ),
+            ),
+            DisplayUnit.USD,
+        )
     }
 
     /**
