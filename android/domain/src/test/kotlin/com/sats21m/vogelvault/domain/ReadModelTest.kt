@@ -200,10 +200,13 @@ class ReadModelTest {
     @Test
     fun `fixture instant is fixed so tests and screenshots are deterministic`() {
         val simulatedLive = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
-        assertEquals(Fixtures.NOW_MILLIS, simulatedLive.let { Fixtures.NOW_MILLIS })
         val stamp = simulatedLive.transactions.updatedAt
         assertNotNull(stamp)
-        assertTrue(stamp < Fixtures.NOW_MILLIS, "a slice was read in the past, not the future")
+        assertEquals(
+            Fixtures.NOW_MILLIS - 4 * 60_000L,
+            stamp,
+            "the simulated live read is pinned to the fixture clock",
+        )
     }
 }
 

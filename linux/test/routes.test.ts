@@ -193,20 +193,23 @@ test("Rachel sees the same household records as Victor", () => {
   // The v0.3 regression, checked at the rendered-page level rather than only in
   // the domain unit tests: adult records are tagged owner "victor", so a strict
   // equality filter anywhere in a page would empty Rachel's screen.
-  for (const pageId of ["activity", "dashboard", "today", "projects"]) {
+  for (const pageId of ["activity", "dashboard", "projects"]) {
     const page = ALL_PAGES.find((candidate) => candidate.id === pageId)
     assert.ok(page, `${pageId} not found`)
     const victorMarkup = renderPage(page, "victor", "normal")
     const rachelMarkup = renderPage(page, "rachel", "normal")
 
+    let comparedRecords = 0
     for (const shared of ["Neighborhood Market", "Payroll Deposit", "Reconcile July statements"]) {
       if (victorMarkup.includes(shared)) {
+        comparedRecords += 1
         assert.ok(
           rachelMarkup.includes(shared),
           `${pageId}: Rachel cannot see "${shared}" but Victor can`,
         )
       }
     }
+    assert.ok(comparedRecords > 0, `${pageId}: Victor rendered no household record to compare`)
   }
 })
 

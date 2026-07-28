@@ -833,8 +833,13 @@ describe("owner resolution is closed", () => {
   test("Mason's rows land on mason and adult rows on victor", async () => {
     const mason = MIGRATION_SOURCES.find((source) => source.file === "mason-transactions")!;
     const adult = MIGRATION_SOURCES.find((source) => source.file === "transactions")!;
-    expect(projectFile(mason, MASON_TRANSACTIONS)!.docs.every((doc) => doc.owner === "mason")).toBe(true);
-    expect(projectFile(adult, TRANSACTIONS)!.docs.every((doc) => doc.owner === "victor")).toBe(true);
+    const masonDocs = projectFile(mason, MASON_TRANSACTIONS)!.docs;
+    const adultDocs = projectFile(adult, TRANSACTIONS)!.docs;
+
+    expect(masonDocs).toHaveLength(MASON_TRANSACTIONS.length);
+    expect(adultDocs).toHaveLength(TRANSACTIONS.length);
+    expect(masonDocs.every((doc) => doc.owner === "mason")).toBe(true);
+    expect(adultDocs.every((doc) => doc.owner === "victor")).toBe(true);
   });
 
   test("new adult sources use the closed union and refuse disagreement", () => {
