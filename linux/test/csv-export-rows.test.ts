@@ -30,6 +30,7 @@ test("Rachel exports exactly the same rows as Victor for every dataset", () => {
   const rachel = datasetsFor("rachel")
 
   for (const datasetId of EXPORT_DATASET_IDS) {
+    assert.ok(victor[datasetId].rows.length > 0, `${datasetId} has no Victor control rows`)
     assert.deepEqual(rachel[datasetId].rows, victor[datasetId].rows, datasetId)
   }
 })
