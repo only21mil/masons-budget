@@ -26,6 +26,7 @@ import {
   projectBudgetDocument,
   projectFinanceDocument,
 } from "./documentProjection";
+import { PUBLIC_QUERY_INDEX_PLAN } from "./tables";
 
 // A local module map rather than the shared one in harness.test-utils.ts:
 // tables.ts is new and other lanes are editing that file right now, so this
@@ -1200,7 +1201,7 @@ describe("indexed month and date", () => {
     await migrateAll(t);
   });
 
-  it("defines every public financial query index, including bounded month income", () => {
+  it("defines every index used by the executable public query plan", () => {
     const tables = (
       schema as unknown as {
         tables: Record<
@@ -1217,28 +1218,26 @@ describe("indexed month and date", () => {
         ]),
       );
 
-    expect(indexes("income").get("by_owner_month_date")).toEqual([
-      "owner",
-      "month",
-      "date",
-    ]);
-    expect(indexes("btcBillPays").get("by_owner_month_date")).toEqual([
-      "owner",
-      "month",
-      "date",
-    ]);
-    expect(indexes("btcAccounts").get("by_owner_key")).toEqual([
-      "owner",
-      "key",
-    ]);
-    expect(indexes("balanceDocuments").get("by_owner")).toEqual(["owner"]);
-    expect(indexes("budgetDocuments").get("by_source_file")).toEqual([
-      "sourceFile",
-    ]);
-    expect(indexes("btcBalanceDocuments").get("by_owner")).toEqual(["owner"]);
-    expect(indexes("financeDocuments").get("by_source_file")).toEqual([
-      "sourceFile",
-    ]);
+    for (const plan of Object.values(PUBLIC_QUERY_INDEX_PLAN)) {
+      for (const branch of Object.values(plan)) {
+        if (typeof branch === "string") continue;
+        expect(
+          indexes(plan.table).get(branch.name),
+          `${plan.table}.${branch.name}`,
+        ).toEqual(branch.fields);
+      }
+    }
+    expect(PUBLIC_QUERY_INDEX_PLAN.listIncome).toEqual({
+      table: "income",
+      all: {
+        name: "by_owner_date_income_id",
+        fields: ["owner", "date", "incomeId"],
+      },
+      month: {
+        name: "by_owner_month_date_income_id",
+        fields: ["owner", "month", "date", "incomeId"],
+      },
+    });
   });
 
   it("reads the dedicated income ledger by indexed owner and month", async () => {
@@ -1268,6 +1267,34 @@ describe("indexed month and date", () => {
       }),
     ).toEqual([]);
     expect(await queryRows(fn.listIncome, { viewer: "mason" })).toEqual([]);
+  });
+
+  it("bounds tied income rows by the same stable income-id order it returns", async () => {
+    await t.run(async (ctx) => {
+      for (const incomeId of ["income-z", "income-a"]) {
+        await ctx.db.insert("income", {
+          sourceKey: `income:${incomeId}`,
+          incomeId,
+          owner: "victor",
+          date: "2026-07-31",
+          month: "2026-07",
+          amountCents: 1n,
+          source: "test",
+          sourceFile: "income",
+          updatedAtMs: 1,
+          raw: { id: incomeId },
+          migrationSourceIndex: 1,
+        });
+      }
+    });
+
+    const response = await t.query(fn.listIncome, {
+      viewer: "victor",
+      month: "2026-07",
+      limit: 1,
+    });
+    expect(response.complete).toBe(false);
+    expect(response.rows.map((row) => row.incomeId)).toEqual(["income-z"]);
   });
 
   it("derives month from date as a prefix, with no timezone in the way", async () => {

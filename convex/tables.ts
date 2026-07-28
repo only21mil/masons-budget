@@ -311,6 +311,14 @@ function byDateDescending<T extends { date: string; _id: string }>(a: T, b: T) {
   return a.date < b.date ? 1 : -1;
 }
 
+function byIncomeDateDescending<T extends { date: string; incomeId: string }>(
+  a: T,
+  b: T,
+) {
+  if (a.date === b.date) return a.incomeId < b.incomeId ? 1 : -1;
+  return a.date < b.date ? 1 : -1;
+}
+
 // A no-limit request means "give me one complete replacement snapshot", not
 // "return a convenient first page". 2,000 is intentionally above today's
 // largest table (905 transactions) while staying below Convex's practical
@@ -767,6 +775,83 @@ function budgetSourceFor(
 const scopeValidator = v.union(v.literal("visible"), v.literal("netWorth"));
 
 /**
+ * Executable index audit for public financial reads.
+ *
+ * Query handlers below use these exact descriptors, so the schema test proves
+ * that the audited plan exists rather than merely documenting an intended plan.
+ * `rowCounts` is deliberately absent: exact counts still scan every table and
+ * replacing that with transactionally maintained counters is tracked by #76.
+ */
+export const PUBLIC_QUERY_INDEX_PLAN = {
+  listTransactions: {
+    table: "transactions",
+    all: { name: "by_owner_date", fields: ["owner", "date"] },
+    month: {
+      name: "by_owner_month",
+      fields: ["owner", "month"],
+    },
+  },
+  listIncome: {
+    table: "income",
+    all: {
+      name: "by_owner_date_income_id",
+      fields: ["owner", "date", "incomeId"],
+    },
+    month: {
+      name: "by_owner_month_date_income_id",
+      fields: ["owner", "month", "date", "incomeId"],
+    },
+  },
+  listTodos: {
+    table: "todos",
+    all: {
+      name: "by_owner_done",
+      fields: ["owner", "done", "updatedAtMs"],
+    },
+  },
+  listBtcBuys: {
+    table: "btcBuys",
+    all: { name: "by_owner_date", fields: ["owner", "date"] },
+    month: {
+      name: "by_owner_month",
+      fields: ["owner", "month"],
+    },
+  },
+  listBtcBillPays: {
+    table: "btcBillPays",
+    all: { name: "by_owner_date", fields: ["owner", "date"] },
+    month: {
+      name: "by_owner_month",
+      fields: ["owner", "month"],
+    },
+  },
+  listBtcAccounts: {
+    table: "btcAccounts",
+    all: { name: "by_owner_key", fields: ["owner", "key"] },
+  },
+  listBalanceDocuments: {
+    table: "balanceDocuments",
+    all: { name: "by_owner", fields: ["owner"] },
+  },
+  getBudgetDocument: {
+    table: "budgetDocuments",
+    all: { name: "by_source_file", fields: ["sourceFile"] },
+  },
+  listBtcBalanceDocuments: {
+    table: "btcBalanceDocuments",
+    all: { name: "by_owner", fields: ["owner"] },
+  },
+  getBtcSnapshotMetadata: {
+    table: "btcBalanceDocuments",
+    all: { name: "by_owner", fields: ["owner"] },
+  },
+  getFinanceDocument: {
+    table: "financeDocuments",
+    all: { name: "by_source_file", fields: ["sourceFile"] },
+  },
+} as const;
+
+/**
  * Transactions a viewer may see, newest first.
  *
  * Omitting `limit` requests a complete replacement snapshot and fails closed
@@ -790,13 +875,17 @@ export const listTransactions = query({
         month
           ? ctx.db
               .query("transactions")
-              .withIndex("by_owner_month", (q) =>
-                q.eq("owner", owner).eq("month", month),
+              .withIndex(
+                PUBLIC_QUERY_INDEX_PLAN.listTransactions.month.name,
+                (q) => q.eq("owner", owner).eq("month", month),
               )
               .collect()
           : ctx.db
               .query("transactions")
-              .withIndex("by_owner_date", (q) => q.eq("owner", owner))
+              .withIndex(
+                PUBLIC_QUERY_INDEX_PLAN.listTransactions.all.name,
+                (q) => q.eq("owner", owner),
+              )
               .order("desc")
               .take(cap),
       ),
@@ -835,21 +924,23 @@ export const listIncome = query({
         month
           ? ctx.db
               .query("income")
-              .withIndex("by_owner_month_date", (q) =>
+              .withIndex(PUBLIC_QUERY_INDEX_PLAN.listIncome.month.name, (q) =>
                 q.eq("owner", owner).eq("month", month),
               )
               .order("desc")
               .take(cap)
           : ctx.db
               .query("income")
-              .withIndex("by_owner_date", (q) => q.eq("owner", owner))
+              .withIndex(PUBLIC_QUERY_INDEX_PLAN.listIncome.all.name, (q) =>
+                q.eq("owner", owner),
+              )
               .order("desc")
               .take(cap),
       ),
     );
 
     const rows = perOwner.flat();
-    rows.sort(byDateDescending);
+    rows.sort(byIncomeDateDescending);
     return publicEnvelope(
       rows.slice(0, cap).map(projectIncome),
       limit,
@@ -877,7 +968,7 @@ export const listTodos = query({
         wanted.map((doneValue) =>
           ctx.db
             .query("todos")
-            .withIndex("by_owner_done", (q) =>
+            .withIndex(PUBLIC_QUERY_INDEX_PLAN.listTodos.all.name, (q) =>
               q.eq("owner", owner).eq("done", doneValue),
             )
             .order("desc")
@@ -924,13 +1015,15 @@ export const listBtcBuys = query({
         month
           ? ctx.db
               .query("btcBuys")
-              .withIndex("by_owner_month", (q) =>
+              .withIndex(PUBLIC_QUERY_INDEX_PLAN.listBtcBuys.month.name, (q) =>
                 q.eq("owner", owner).eq("month", month),
               )
               .collect()
           : ctx.db
               .query("btcBuys")
-              .withIndex("by_owner_date", (q) => q.eq("owner", owner))
+              .withIndex(PUBLIC_QUERY_INDEX_PLAN.listBtcBuys.all.name, (q) =>
+                q.eq("owner", owner),
+              )
               .order("desc")
               .take(cap),
       ),
@@ -965,13 +1058,16 @@ export const listBtcBillPays = query({
         month
           ? ctx.db
               .query("btcBillPays")
-              .withIndex("by_owner_month", (q) =>
-                q.eq("owner", owner).eq("month", month),
+              .withIndex(
+                PUBLIC_QUERY_INDEX_PLAN.listBtcBillPays.month.name,
+                (q) => q.eq("owner", owner).eq("month", month),
               )
               .collect()
           : ctx.db
               .query("btcBillPays")
-              .withIndex("by_owner_date", (q) => q.eq("owner", owner))
+              .withIndex(PUBLIC_QUERY_INDEX_PLAN.listBtcBillPays.all.name, (q) =>
+                q.eq("owner", owner),
+              )
               .order("desc")
               .take(cap),
       ),
@@ -1004,7 +1100,9 @@ export const listBtcAccounts = query({
       owners.map((owner) =>
         ctx.db
           .query("btcAccounts")
-          .withIndex("by_owner_key", (q) => q.eq("owner", owner))
+          .withIndex(PUBLIC_QUERY_INDEX_PLAN.listBtcAccounts.all.name, (q) =>
+            q.eq("owner", owner),
+          )
           .take(cap),
       ),
     );
@@ -1047,7 +1145,10 @@ export const listBalanceDocuments = query({
         owners.map((owner) =>
           ctx.db
             .query("balanceDocuments")
-            .withIndex("by_owner", (q) => q.eq("owner", owner))
+            .withIndex(
+              PUBLIC_QUERY_INDEX_PLAN.listBalanceDocuments.all.name,
+              (q) => q.eq("owner", owner),
+            )
             .collect(),
         ),
       )
@@ -1098,7 +1199,9 @@ export const getBudgetDocument = query({
     if (source === null) return { document: null, complete: true };
     const doc = await ctx.db
       .query("budgetDocuments")
-      .withIndex("by_source_file", (q) => q.eq("sourceFile", source))
+      .withIndex(PUBLIC_QUERY_INDEX_PLAN.getBudgetDocument.all.name, (q) =>
+        q.eq("sourceFile", source),
+      )
       .unique();
     return {
       document: doc ? publicBudgetDocument(doc) : null,
@@ -1126,7 +1229,10 @@ export const listBtcBalanceDocuments = query({
         owners.map((owner) =>
           ctx.db
             .query("btcBalanceDocuments")
-            .withIndex("by_owner", (q) => q.eq("owner", owner))
+            .withIndex(
+              PUBLIC_QUERY_INDEX_PLAN.listBtcBalanceDocuments.all.name,
+              (q) => q.eq("owner", owner),
+            )
             .collect(),
         ),
       )
@@ -1155,7 +1261,10 @@ export const getBtcSnapshotMetadata = query({
         owners.map((owner) =>
           ctx.db
             .query("btcBalanceDocuments")
-            .withIndex("by_owner", (q) => q.eq("owner", owner))
+            .withIndex(
+              PUBLIC_QUERY_INDEX_PLAN.getBtcSnapshotMetadata.all.name,
+              (q) => q.eq("owner", owner),
+            )
             .collect(),
         ),
       )
@@ -1190,7 +1299,9 @@ export const getFinanceDocument = query({
     validateReadToken(token);
     const doc = await ctx.db
       .query("financeDocuments")
-      .withIndex("by_source_file", (q) => q.eq("sourceFile", "finances"))
+      .withIndex(PUBLIC_QUERY_INDEX_PLAN.getFinanceDocument.all.name, (q) =>
+        q.eq("sourceFile", "finances"),
+      )
       .unique();
     if (!doc) return { document: null, complete: true };
 
