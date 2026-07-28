@@ -84,6 +84,26 @@ const fn = {
       complete: boolean;
     }
   >,
+  listIncome: "tables:listIncome" as unknown as FunctionReference<
+    "query",
+    "public",
+    { viewer: Member; month?: string; limit?: number; token?: string },
+    {
+      rows: Array<{
+        incomeId: string;
+        owner: Member;
+        date: string;
+        month: string;
+        amountCents: bigint;
+        source: string;
+        loggedBy?: string;
+        note?: string;
+        archimedesRequestId?: string;
+        updatedAtMs: number;
+      }>;
+      complete: boolean;
+    }
+  >,
   listTodos: "tables:listTodos" as unknown as FunctionReference<
     "query",
     "public",
@@ -1059,6 +1079,33 @@ describe("owner is first class, and the two visibility rules keep their widths",
     expect(rachelRows.some((row) => row.owner === "victor")).toBe(true);
   });
 
+  it("returns complete production-shaped income rows to both adults and none to children", async () => {
+    const victor = await t.query(fn.listIncome, { viewer: "victor" });
+    const rachel = await t.query(fn.listIncome, { viewer: "rachel" });
+    const mason = await t.query(fn.listIncome, { viewer: "mason" });
+
+    expect(victor).toEqual(rachel);
+    expect(victor.complete).toBe(true);
+    expect(victor.rows).toEqual([
+      {
+        incomeId: "income-1",
+        owner: "victor",
+        date: "2026-07-01",
+        month: "2026-07",
+        amountCents: 250055n,
+        source: "payroll",
+        loggedBy: "victor",
+        note: "shared household",
+        archimedesRequestId: "income-arch-1",
+        updatedAtMs: 0,
+      },
+    ]);
+    expect(mason).toEqual({ rows: [], complete: true });
+    expect(victor.rows[0]).not.toHaveProperty("sourceKey");
+    expect(victor.rows[0]).not.toHaveProperty("raw");
+    expect(victor.rows[0]).not.toHaveProperty("sourceFile");
+  });
+
   it("adults see the kids; kids see only themselves", async () => {
     const adult = await queryRows(fn.listTransactions, { viewer: "rachel" });
     expect(adult.map((row) => row.owner)).toContain("mason");
@@ -1320,6 +1367,7 @@ describe("public Linux/Android read contract", () => {
   it("returns allowlisted projections, never Convex internals or migration provenance", async () => {
     const responses = [
       await t.query(fn.listTransactions, { viewer: "victor" }),
+      await t.query(fn.listIncome, { viewer: "victor" }),
       await t.query(fn.listTodos, { viewer: "victor" }),
       await t.query(fn.listBtcBuys, { viewer: "victor", scope: "visible" }),
       await t.query(fn.listBtcBillPays, {
@@ -1356,6 +1404,15 @@ describe("public Linux/Android read contract", () => {
     });
     expect(transactions).toMatchObject({ complete: false });
     expect(transactions.rows).toHaveLength(2);
+
+    const income = await t.query(fn.listIncome, {
+      viewer: "victor",
+      limit: 1,
+    });
+    expect(income).toEqual({
+      rows: [expect.objectContaining({ incomeId: "income-1", amountCents: 250055n })],
+      complete: false,
+    });
 
     const accounts = await t.query(fn.listBtcAccounts, {
       viewer: "victor",
@@ -1837,6 +1894,14 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
         queryRows(fn.listBalanceDocuments, {
           viewer: "victor",
           scope: "visible",
+          token,
+        }),
+    },
+    {
+      name: "listIncome",
+      call: (token?: string) =>
+        queryRows(fn.listIncome, {
+          viewer: "victor",
           token,
         }),
     },
