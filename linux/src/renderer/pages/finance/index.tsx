@@ -190,7 +190,7 @@ function DashboardPage() {
   const { activeProfile, data, selectedMonth } = useAppState()
   const visibleTransactions = visibleTo(activeProfile, data.transactions.value)
   const budgetTransactions = budgetTransactionsFor(activeProfile, data.transactions.value)
-  const accounts = netWorthScopeFor(activeProfile, data.btcAccounts.value)
+  const accounts = data.btcBalanceDocument.value?.accounts ?? []
   const incomeRows = visibleTo(activeProfile, data.income.value)
   const todos = visibleTo(activeProfile, data.todos.value).filter((todo) => !todo.done)
 
@@ -249,12 +249,12 @@ function DashboardPage() {
             state={tableState(data.transactions.status)}
           />
         </Panel>
-        <Panel title="Bitcoin" source={data.btcAccounts.source} flush>
+        <Panel title="Bitcoin" source={data.btcBalanceDocument.source} flush>
           <DataTable
             columns={stackColumns}
             rows={accounts}
             rowKey={(row) => row.key}
-            state={tableState(data.btcAccounts.status)}
+            state={tableState(data.btcBalanceDocument.status)}
             emptyTitle="No accounts in scope"
             emptyDetail="This profile has no Bitcoin accounts that count toward its net worth."
           />
@@ -638,54 +638,54 @@ function BillsPage() {
 // ── Retirement ──────────────────────────────────────────────────────────────
 
 function RetirementPage() {
-  const { data } = useAppState()
-  const budget = data.budget.value
-  // Bound once: figure() defers evaluation, which loses inline narrowing.
-  const income = budget?.income ?? null
+  const { activeProfile, data } = useAppState()
+  const incomeRows = visibleTo(activeProfile, data.income.value)
+  const currentMonth =
+    data.budget.value?.month ?? monthOf(new Date(data.generatedAt).toISOString().slice(0, 10))
+  const currentYear = currentMonth.slice(0, 4)
+  const ytdIncome = sum(
+    incomeRows.filter((row) => row.month.startsWith(currentYear)).map((row) => row.amount),
+  )
+  const mtdIncome = sum(
+    incomeRows.filter((row) => row.month === currentMonth).map((row) => row.amount),
+  )
 
   return (
     <>
       <PageHeader
         title="Retirement"
         subtitle="Long-horizon accounts"
-        actions={<FreshnessTag status={data.budget.status} updatedAt={data.budget.updatedAt} />}
+        actions={<FreshnessTag status={data.income.status} updatedAt={data.income.updatedAt} />}
       />
-      <StaleNotice status={data.budget.status} />
-      {income ? (
-        <KPIStrip
-          items={[
-            {
-              label: "YTD income",
-              value: figure(data.budget.status, () => formatUsd(income.ytdIncome)),
-              provenance: "actual",
-            },
-            {
-              label: "MTD income",
-              value: figure(data.budget.status, () => formatUsd(income.mtdIncome)),
-              provenance: "actual",
-            },
-            {
-              label: "Weekly gross",
-              value: figure(data.budget.status, () => formatUsd(income.weeklyGross)),
-              provenance: "planned",
-            },
-          ]}
-        />
-      ) : null}
+      <StaleNotice status={data.income.status} />
+      <KPIStrip
+        items={[
+          {
+            label: "YTD income",
+            value: figure(data.income.status, () => formatUsd(ytdIncome), true),
+            provenance: "actual",
+          },
+          {
+            label: "MTD income",
+            value: figure(data.income.status, () => formatUsd(mtdIncome), true),
+            provenance: "actual",
+          },
+        ]}
+      />
       <Panel
         title="Retirement accounts"
-        source="MC2 · finances"
+        source="Convex rows · finances not wired"
         flush
       >
         {/*
-          The retirement slice of finances.json is not part of the fixture
-          envelope yet — it lands with the live Convex read. Showing an explicit
-          empty state is correct here; inventing numbers would be worse.
+          The retirement account slice is not part of the renderer envelope yet.
+          Showing an explicit unavailable state is correct here; inventing
+          numbers would be worse.
         */}
         <StateBlock
           state="empty"
           title="Not wired to the live read yet"
-          detail="Retirement accounts come from the finances.json slice, which arrives with the Convex bridge. No placeholder figures are shown on purpose."
+          detail="Retirement accounts require the Convex finances row source. No placeholder figures are shown on purpose."
         />
       </Panel>
     </>

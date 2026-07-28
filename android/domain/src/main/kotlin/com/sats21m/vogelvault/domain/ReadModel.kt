@@ -44,14 +44,15 @@ data class Slice<T>(
     /**
      * True when a figure derived from this slice must not be shown.
      *
-     * `DEMO` is deliberately visible but unmistakably labelled, and `EMPTY` is
-     * deliberately excluded because zero really is the answer. `ERROR` and
-     * `LOADING` are suppressed — displaying a total computed from a failed read
-     * next to a "could not load" message is exactly the wrong thing, and the
-     * Linux client shipped that bug before a screenshot caught it.
+     * `DEMO` is deliberately visible but unmistakably labelled. `ERROR`,
+     * `LOADING`, and `EMPTY` are suppressed: an empty required financial source
+     * is unavailable, not proof that the value is zero.
      */
     val suppressFigures: Boolean
-        get() = status == Freshness.ERROR || status == Freshness.LOADING
+        get() =
+            status == Freshness.ERROR ||
+                status == Freshness.LOADING ||
+                status == Freshness.EMPTY
 }
 
 // ── Transactions ────────────────────────────────────────────────────────────

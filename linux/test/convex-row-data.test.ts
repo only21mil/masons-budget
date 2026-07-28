@@ -49,7 +49,15 @@ function response(request: VogelVaultRowRequest): VogelVaultRowResult {
         status: "ok",
         kind: "income",
         complete: true,
-        rows: [],
+        rows: [{
+          incomeId: "income-1",
+          owner: "victor",
+          date: "2026-07-20",
+          month: "2026-07",
+          amountCents: 777_777n,
+          source: "Payroll",
+          updatedAtMs: 75,
+        }],
       }
     case "todos":
       return {
@@ -150,7 +158,25 @@ function response(request: VogelVaultRowRequest): VogelVaultRowResult {
         status: "ok",
         kind: "btcBalanceDocuments",
         complete: true,
-        rows: [],
+        rows: [{
+          owner: "victor",
+          schemaVersion: 1n,
+          asOf: "2026-07-16",
+          accounts: [{
+            key: "canonical-wallet",
+            label: "Canonical Wallet",
+            custody: "self_custody",
+            sats: 123_456_789n,
+            fiatCents: 12_000_000n,
+          }],
+          totals: {
+            sats: 123_456_789n,
+            fiatCents: 12_000_000n,
+            exchangeSats: 0n,
+            selfCustodySats: 123_456_789n,
+          },
+          updatedAtMs: 80,
+        }],
       }
   }
 }
@@ -179,12 +205,15 @@ describe("renderer Convex row adapter", () => {
     ])
     expect("income" in result.data).toBe(true)
     expect("btcBalanceDocument" in result.data).toBe(true)
+    expect(result.data.income.value[0]?.amount).toBe(777_777n)
+    expect(result.data.btcBalanceDocument.value?.totals.sats).toBe(123_456_789n)
+    expect(result.data.btcBalanceDocument.value?.totals.fiat).toBe(12_000_000n)
     expect(result.data.transactions.value[0]?.amount).toBe(123n)
     expect(typeof result.data.transactions.value[0]?.amount).toBe("bigint")
     expect(result.data.btcAccounts.value[0]?.fiat).toBe(9_000_000n)
     expect(result.data.budget.value?.categories[0]?.spent).toBe(0n)
     expect(result.data.btcPriceUsd).toBe(9_000_000n)
-    expect(result.data.generatedAt).toBe(70)
+    expect(result.data.generatedAt).toBe(80)
   })
 
   it("stops at rowCounts and renders an empty state before production is populated", async () => {
@@ -215,6 +244,8 @@ describe("renderer Convex row adapter", () => {
       data: {
         generatedAt: 123,
         transactions: { status: "empty", value: [] },
+        income: { status: "empty", value: [] },
+        btcBalanceDocument: { status: "empty", value: null },
         btcAccounts: { status: "empty", value: [] },
       },
     })
@@ -257,7 +288,28 @@ describe("renderer Convex row adapter", () => {
     if (result.status !== "loaded") return
     expect(result.data.transactions.status).toBe("error")
     expect(result.data.todos.status).toBe("live")
+    expect(result.data.income.status).toBe("live")
+    expect(result.data.btcBalanceDocument.status).toBe("live")
     expect(result.data.btcBuys.status).toBe("live")
     expect(result.data.billPays.status).toBe("live")
+  })
+
+  it("rejects overlapping BTC balance documents instead of combining them", async () => {
+    const result = await loadConvexRowEnvelope(
+      async (request) => {
+        const base = response(request)
+        if (base.status !== "ok" || base.kind !== "btcBalanceDocuments") return base
+        const document = base.rows[0]
+        if (!document) return base
+        return { ...base, rows: [document, document] }
+      },
+      "victor",
+    )
+
+    expect(result.status).toBe("loaded")
+    if (result.status !== "loaded") return
+    expect(result.data.btcBalanceDocument.status).toBe("error")
+    expect(result.data.btcBalanceDocument.value).toBeNull()
+    expect(result.data.btcAccounts.status).toBe("live")
   })
 })
