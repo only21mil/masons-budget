@@ -10,8 +10,14 @@ import type { Freshness, MonthKey } from "@vogel-vault/domain/readModel"
 
 import { type FixtureEnvelope, buildSanitizedFixtureEnvelope, fixtureEnvelopeInState } from "../data/fixtures.ts"
 import { loadConvexRowEnvelope } from "../data/convexRows.ts"
+import {
+  type DisplayUnit,
+  displayUnitFromStorageKey,
+} from "../data/bitcoinDisplay.ts"
 
 export type StateOverride = Freshness | "normal"
+
+const DISPLAY_UNIT_STORAGE_KEY = "vogel-vault.display-unit"
 
 interface AppStateValue {
   readonly activeProfile: FamilyMember
@@ -32,6 +38,8 @@ interface AppStateValue {
   readonly selectMonth: (month: MonthKey | null) => void
   readonly stateOverride: StateOverride
   readonly setStateOverride: (state: StateOverride) => void
+  readonly displayUnit: DisplayUnit
+  readonly setDisplayUnit: (unit: DisplayUnit) => void
   readonly data: FixtureEnvelope
 }
 
@@ -48,6 +56,7 @@ export interface AppStateProviderProps {
   initialRoute?: string
   initialStateOverride?: StateOverride
   initialSelectedMonth?: MonthKey | null
+  initialDisplayUnit?: DisplayUnit
 }
 
 export function AppStateProvider({
@@ -56,18 +65,32 @@ export function AppStateProvider({
   initialRoute = "dashboard",
   initialStateOverride = "normal",
   initialSelectedMonth = null,
+  initialDisplayUnit,
 }: AppStateProviderProps) {
   const [activeProfile, setActiveProfile] = useState<FamilyMember>(initialProfile)
   const [route, setRoute] = useState(initialRoute)
   const [locked, setLocked] = useState(false)
   const [stateOverride, setStateOverride] = useState<StateOverride>(initialStateOverride)
   const [selectedMonth, setSelectedMonth] = useState<MonthKey | null>(initialSelectedMonth)
+  const [displayUnit, setStoredDisplayUnit] = useState<DisplayUnit>(
+    () => initialDisplayUnit ?? readDisplayUnit(),
+  )
   const [remoteData, setRemoteData] = useState<{
     readonly profile: FamilyMember
     readonly data: FixtureEnvelope
   } | null>(null)
 
   const switchTargets = useMemo(() => allowedSwitchTargets(activeProfile), [activeProfile])
+
+  const setDisplayUnit = useCallback((unit: DisplayUnit) => {
+    setStoredDisplayUnit(unit)
+    if (typeof window === "undefined") return
+    try {
+      window.localStorage.setItem(DISPLAY_UNIT_STORAGE_KEY, unit)
+    } catch {
+      // A blocked storage area must not make the display control unusable.
+    }
+  }, [])
 
   const switchProfile = useCallback(
     (next: FamilyMember) => {
@@ -131,9 +154,22 @@ export function AppStateProvider({
       selectMonth: setSelectedMonth,
       stateOverride,
       setStateOverride,
+      displayUnit,
+      setDisplayUnit,
       data,
     }),
-    [activeProfile, switchProfile, switchTargets, route, locked, selectedMonth, stateOverride, data],
+    [
+      activeProfile,
+      switchProfile,
+      switchTargets,
+      route,
+      locked,
+      selectedMonth,
+      stateOverride,
+      displayUnit,
+      setDisplayUnit,
+      data,
+    ],
   )
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>
@@ -143,4 +179,13 @@ export function useAppState(): AppStateValue {
   const value = useContext(AppStateContext)
   if (!value) throw new Error("useAppState must be used inside AppStateProvider")
   return value
+}
+
+function readDisplayUnit(): DisplayUnit {
+  if (typeof window === "undefined") return "btc"
+  try {
+    return displayUnitFromStorageKey(window.localStorage.getItem(DISPLAY_UNIT_STORAGE_KEY))
+  } catch {
+    return "btc"
+  }
 }

@@ -13,10 +13,12 @@ import {
   netWorthScopeFor,
   visibleTo,
 } from "@vogel-vault/domain/family"
-import { basisPoints, formatBtc, formatSats, formatUsd, satsToUsdCents, sum } from "@vogel-vault/domain/money"
+import { basisPoints, formatSats, formatUsd, satsToUsdCents, sum } from "@vogel-vault/domain/money"
 import {
   type BTCAccount,
+  type BTCBuy,
   type CategorySpend,
+  type Freshness,
   type MonthKey,
   type Transaction,
   budgetMonthsFor,
@@ -27,6 +29,13 @@ import {
 } from "@vogel-vault/domain/readModel"
 
 import { useAppState } from "../../app/AppState.tsx"
+import {
+  type DisplayUnit,
+  type RecordedBitcoinPrice,
+  PRICE_UNAVAILABLE,
+  formatBitcoin,
+  newestVisibleBuyPrice,
+} from "../../data/bitcoinDisplay.ts"
 import {
   deriveBudgetSpend,
   displaySpendAmount,
@@ -68,6 +77,40 @@ function tableState(status: string): "normal" | "empty" | "error" | "stale" | "l
 function figure(status: string, render: () => string): string {
   if (status === "error" || status === "loading") return SUPPRESSED
   return render()
+}
+
+/** Required financial sources do not turn an empty projection into zero. */
+function requiredFigure(status: string, render: () => string): string {
+  if (status === "error" || status === "loading" || status === "empty") return SUPPRESSED
+  return render()
+}
+
+function referencePrice(
+  viewer: FamilyMember,
+  status: Freshness,
+  buys: readonly BTCBuy[],
+): RecordedBitcoinPrice | null {
+  if (status === "error" || status === "loading" || status === "empty") return null
+  return newestVisibleBuyPrice(viewer, buys)
+}
+
+function priceBasis(price: RecordedBitcoinPrice | null): string {
+  return price ? `Last buy · ${price.date}` : "No recorded price"
+}
+
+function BitcoinFiatNotice({ price }: { price: RecordedBitcoinPrice | null }) {
+  return price ? (
+    <StatusBanner
+      title="USD estimate"
+      detail={`Uses the last recorded Bitcoin buy price from ${price.date}. This is not a live price.`}
+    />
+  ) : (
+    <StatusBanner
+      tone="warning"
+      title={PRICE_UNAVAILABLE}
+      detail="No recorded Bitcoin buy price is available. BTC and SATS remain exact."
+    />
+  )
 }
 
 function incomeOf(transaction: Transaction): bigint {
@@ -183,7 +226,7 @@ function StaleNotice({ status }: { status: string }) {
 // ── Dashboard ───────────────────────────────────────────────────────────────
 
 function DashboardPage() {
-  const { activeProfile, data, selectedMonth } = useAppState()
+  const { activeProfile, data, displayUnit, selectedMonth } = useAppState()
   const visibleTransactions = visibleTo(activeProfile, data.transactions.value)
   const budgetTransactions = budgetTransactionsFor(activeProfile, data.transactions.value)
   const accounts = netWorthScopeFor(activeProfile, data.btcAccounts.value)
@@ -199,7 +242,7 @@ function DashboardPage() {
   const spend = sum(budgetMonthTransactions.map(spendAmount))
   const income = sum(budgetMonthTransactions.map(incomeOf))
   const stackSats = sum(accounts.map((account) => account.sats))
-  const stackValue = satsToUsdCents(stackSats, data.btcPriceUsd)
+  const price = referencePrice(activeProfile, data.btcBuys.status, data.btcBuys.value)
 
   const txStatus = data.transactions.status
   const btcStatus = data.btcAccounts.status
@@ -210,9 +253,13 @@ function DashboardPage() {
     { label: "Income (visible)", value: figure(txStatus, () => formatUsd(income)), tone: "positive" },
     {
       label: "Stack",
-      value: figure(btcStatus, () => formatBtc(stackSats)),
+      value: requiredFigure(btcStatus, () => formatBitcoin(stackSats, displayUnit, price?.cents)),
       tone: "accent",
-      hint: figure(btcStatus, () => formatUsd(stackValue)),
+      hint: requiredFigure(btcStatus, () =>
+        displayUnit === "usd"
+          ? priceBasis(price)
+          : formatBitcoin(stackSats, "usd", price?.cents),
+      ),
     },
     { label: "Open tasks", value: figure(todoStatus, () => String(todos.length)) },
   ]
@@ -225,6 +272,7 @@ function DashboardPage() {
         actions={<FreshnessTag status={data.transactions.status} updatedAt={data.transactions.updatedAt} />}
       />
       <StaleNotice status={data.transactions.status} />
+      {displayUnit === "usd" ? <BitcoinFiatNotice price={price} /> : null}
       <KPIStrip items={kpis} />
       <PageGrid>
         <Panel title="Recent activity" source={data.transactions.source} flush>
@@ -237,7 +285,7 @@ function DashboardPage() {
         </Panel>
         <Panel title="Bitcoin" source={data.btcAccounts.source} flush>
           <DataTable
-            columns={stackColumns}
+            columns={stackColumns(displayUnit, price)}
             rows={accounts}
             rowKey={(row) => row.key}
             state={tableState(data.btcAccounts.status)}
@@ -262,20 +310,30 @@ const recentColumns: ReadonlyArray<Column<Transaction>> = [
   },
 ]
 
-const stackColumns: ReadonlyArray<Column<BTCAccount>> = [
-  { key: "label", header: "Account", render: (row) => row.label },
-  {
-    key: "custody",
-    header: "Custody",
-    render: (row) => (
-      <Badge tone={row.custody === "self_custody" ? "accent" : "neutral"}>
-        {row.custody === "self_custody" ? "Self custody" : "Exchange"}
-      </Badge>
-    ),
-    secondary: true,
-  },
-  { key: "sats", header: "Sats", numeric: true, render: (row) => formatSats(row.sats) },
-]
+function stackColumns(
+  displayUnit: DisplayUnit,
+  price: RecordedBitcoinPrice | null,
+): ReadonlyArray<Column<BTCAccount>> {
+  return [
+    { key: "label", header: "Account", render: (row) => row.label },
+    {
+      key: "custody",
+      header: "Custody",
+      render: (row) => (
+        <Badge tone={row.custody === "self_custody" ? "accent" : "neutral"}>
+          {row.custody === "self_custody" ? "Self custody" : "Exchange"}
+        </Badge>
+      ),
+      secondary: true,
+    },
+    {
+      key: "amount",
+      header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),
+      numeric: true,
+      render: (row) => formatBitcoin(row.sats, displayUnit, price?.cents),
+    },
+  ]
+}
 
 // ── Budget ──────────────────────────────────────────────────────────────────
 
@@ -443,7 +501,7 @@ const activityColumns: ReadonlyArray<Column<Transaction>> = [
 // ── Bitcoin Overview ────────────────────────────────────────────────────────
 
 function BitcoinOverviewPage() {
-  const { activeProfile, data } = useAppState()
+  const { activeProfile, data, displayUnit } = useAppState()
   const visible = visibleTo(activeProfile, data.btcAccounts.value)
   const inScope = netWorthScopeFor(activeProfile, data.btcAccounts.value)
 
@@ -454,6 +512,7 @@ function BitcoinOverviewPage() {
   const exchange = totalSats - selfCustody
 
   const status = data.btcAccounts.status
+  const price = referencePrice(activeProfile, data.btcBuys.status, data.btcBuys.value)
 
   // Adults can see a child's stack but it is not part of their net worth. Say so
   // rather than letting the difference look like a bug.
@@ -466,20 +525,29 @@ function BitcoinOverviewPage() {
         actions={<FreshnessTag status={data.btcAccounts.status} updatedAt={data.btcAccounts.updatedAt} />}
       />
       <StaleNotice status={data.btcAccounts.status} />
+      {displayUnit === "usd" ? <BitcoinFiatNotice price={price} /> : null}
       <KPIStrip
         items={[
-          { label: "Total stack", value: figure(status, () => formatBtc(totalSats)), tone: "accent" },
           {
-            label: "Value",
-            value: figure(status, () => formatUsd(satsToUsdCents(totalSats, data.btcPriceUsd))),
+            label: "Total stack",
+            value: requiredFigure(status, () => formatBitcoin(totalSats, displayUnit, price?.cents)),
+            tone: "accent",
+          },
+          {
+            label: "Reference price",
+            value: requiredFigure(status, () => price ? formatUsd(price.cents) : PRICE_UNAVAILABLE),
+            hint: requiredFigure(status, () => priceBasis(price)),
             provenance: "estimated",
           },
           {
             label: "Self custody",
-            value: figure(status, () => `${(basisPoints(selfCustody, totalSats) / 100).toFixed(1)}%`),
-            hint: figure(status, () => formatSats(selfCustody)),
+            value: requiredFigure(status, () => `${(basisPoints(selfCustody, totalSats) / 100).toFixed(1)}%`),
+            hint: requiredFigure(status, () => formatBitcoin(selfCustody, displayUnit, price?.cents)),
           },
-          { label: "On exchange", value: figure(status, () => formatSats(exchange)) },
+          {
+            label: "On exchange",
+            value: requiredFigure(status, () => formatBitcoin(exchange, displayUnit, price?.cents)),
+          },
         ]}
       />
       {outOfScope.length > 0 ? (
@@ -492,7 +560,7 @@ function BitcoinOverviewPage() {
       <PageGrid>
         <Panel title="Accounts in net worth" source={data.btcAccounts.source} flush className="vv-span-2">
           <DataTable
-            columns={stackColumns}
+            columns={stackColumns(displayUnit, price)}
             rows={inScope}
             rowKey={(row) => row.key}
             state={tableState(data.btcAccounts.status)}
@@ -506,10 +574,11 @@ function BitcoinOverviewPage() {
 // ── Bitcoin Buys ────────────────────────────────────────────────────────────
 
 function BitcoinBuysPage() {
-  const { activeProfile, data } = useAppState()
+  const { activeProfile, data, displayUnit } = useAppState()
   const buys = visibleTo(activeProfile, data.btcBuys.value)
   const totalSats = sum(buys.map((buy) => buy.sats))
   const totalUsd = sum(buys.map((buy) => buy.usd))
+  const price = referencePrice(activeProfile, data.btcBuys.status, data.btcBuys.value)
 
   return (
     <>
@@ -518,10 +587,18 @@ function BitcoinBuysPage() {
         actions={<FreshnessTag status={data.btcBuys.status} updatedAt={data.btcBuys.updatedAt} />}
       />
       <StaleNotice status={data.btcBuys.status} />
+      {displayUnit === "usd" ? <BitcoinFiatNotice price={price} /> : null}
       <KPIStrip
         items={[
-          { label: "Accumulated", value: figure(data.btcBuys.status, () => formatBtc(totalSats)), tone: "accent" },
-          { label: "Invested", value: figure(data.btcBuys.status, () => formatUsd(totalUsd)) },
+          {
+            label: "Accumulated",
+            value: requiredFigure(
+              data.btcBuys.status,
+              () => formatBitcoin(totalSats, displayUnit, price?.cents),
+            ),
+            tone: "accent",
+          },
+          { label: "Invested", value: requiredFigure(data.btcBuys.status, () => formatUsd(totalUsd)) },
           {
             label: "Average cost",
             value: figure(data.btcBuys.status, () =>
@@ -539,7 +616,12 @@ function BitcoinBuysPage() {
           columns={[
             { key: "date", header: "Date", render: (row) => row.date, width: "104px" },
             { key: "source", header: "Source", render: (row) => row.source },
-            { key: "sats", header: "Sats", numeric: true, render: (row) => formatSats(row.sats) },
+            {
+              key: "amount",
+              header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),
+              numeric: true,
+              render: (row) => formatBitcoin(row.sats, displayUnit, row.priceUsd),
+            },
             { key: "price", header: "Price", numeric: true, render: (row) => formatUsd(row.priceUsd), secondary: true },
             { key: "usd", header: "Cost", numeric: true, render: (row) => formatUsd(row.usd) },
             {
@@ -664,10 +746,10 @@ function RetirementPage() {
 // ── Net Worth ───────────────────────────────────────────────────────────────
 
 function NetWorthPage() {
-  const { activeProfile, data } = useAppState()
+  const { activeProfile, data, displayUnit } = useAppState()
   const inScope = netWorthScopeFor(activeProfile, data.btcAccounts.value)
   const stackSats = sum(inScope.map((account) => account.sats))
-  const stackValue = satsToUsdCents(stackSats, data.btcPriceUsd)
+  const price = referencePrice(activeProfile, data.btcBuys.status, data.btcBuys.value)
 
   const excluded = data.btcAccounts.value.filter(
     (account) => canSeeDataOwnedBy(activeProfile, account.owner) && !inScope.includes(account),
@@ -681,16 +763,27 @@ function NetWorthPage() {
         actions={<FreshnessTag status={data.btcAccounts.status} updatedAt={data.btcAccounts.updatedAt} />}
       />
       <StaleNotice status={data.btcAccounts.status} />
+      {displayUnit === "usd" ? <BitcoinFiatNotice price={price} /> : null}
       <KPIStrip
         items={[
           {
             label: "Bitcoin",
-            value: figure(data.btcAccounts.status, () => formatUsd(stackValue)),
+            value: requiredFigure(
+              data.btcAccounts.status,
+              () => formatBitcoin(stackSats, displayUnit, price?.cents),
+            ),
             tone: "accent",
+          },
+          {
+            label: "Fiat estimate",
+            value: requiredFigure(
+              data.btcAccounts.status,
+              () => formatBitcoin(stackSats, "usd", price?.cents),
+            ),
+            hint: requiredFigure(data.btcAccounts.status, () => priceBasis(price)),
             provenance: "estimated",
           },
-          { label: "Stack", value: figure(data.btcAccounts.status, () => formatBtc(stackSats)) },
-          { label: "Accounts", value: figure(data.btcAccounts.status, () => String(inScope.length)) },
+          { label: "Accounts", value: requiredFigure(data.btcAccounts.status, () => String(inScope.length)) },
         ]}
       />
       <PageGrid>
@@ -699,14 +792,11 @@ function NetWorthPage() {
             columns={[
               { key: "label", header: "Account", render: (row) => row.label },
               { key: "owner", header: "Owner", render: (row) => <Badge>{row.owner}</Badge>, secondary: true },
-              { key: "sats", header: "Sats", numeric: true, render: (row) => formatSats(row.sats) },
               {
-                key: "value",
-                header: "Value",
+                key: "amount",
+                header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),
                 numeric: true,
-                render: (row) => (
-                  <span className="vv-estimated">{formatUsd(satsToUsdCents(row.sats, data.btcPriceUsd))}</span>
-                ),
+                render: (row) => formatBitcoin(row.sats, displayUnit, price?.cents),
               },
             ]}
             rows={inScope}
@@ -723,7 +813,12 @@ function NetWorthPage() {
             columns={[
               { key: "label", header: "Account", render: (row) => row.label },
               { key: "owner", header: "Owner", render: (row) => <Badge>{row.owner}</Badge> },
-              { key: "sats", header: "Sats", numeric: true, render: (row) => formatSats(row.sats) },
+              {
+                key: "amount",
+                header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),
+                numeric: true,
+                render: (row) => formatBitcoin(row.sats, displayUnit, price?.cents),
+              },
             ]}
             rows={excluded}
             rowKey={(row) => row.key}
