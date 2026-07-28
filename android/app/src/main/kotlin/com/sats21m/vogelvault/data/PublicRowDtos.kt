@@ -154,6 +154,9 @@ internal data class PublicTransactionDto(
             val card = row.decodedOptionalString("card") ?: return null
             val note = row.decodedOptionalString("note") ?: return null
             val amountCents = row.rowInt64("amountCents") ?: return null
+            // abs(Long.MIN_VALUE) overflows back to Long.MIN_VALUE, so this
+            // canonical amount cannot produce a nonnegative display magnitude.
+            if (amountCents == Long.MIN_VALUE) return null
             val category = row.rowStringAllowEmpty("category") ?: return null
             // These projection fields remain required and strictly typed for
             // wire-contract completeness, but amountCents is the sole source
