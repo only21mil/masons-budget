@@ -119,8 +119,8 @@ final class CSVImportService: Sendable {
             }()
 
             let sats = convertToSats(amount: amount, source: source)
-            let isIncome = sats > 0
             let category = guessCategory(memo: memo)
+            let isIncome = category.caseInsensitiveCompare("Income") == .orderedSame
 
             results.append(ImportedTransaction(
                 date: date,

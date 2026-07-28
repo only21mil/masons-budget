@@ -2,6 +2,42 @@ import Foundation
 import XCTest
 
 final class CSVImportServiceTests: XCTestCase {
+    func testPositivePurchaseIsNotClassifiedAsIncome() throws {
+        let csv = """
+        date,amount,memo
+        2026-05-01,500,Costco
+        """.data(using: .utf8)!
+
+        let imported = try CSVImportService().parseCSV(data: csv, source: .custom)
+
+        XCTAssertEqual(imported.count, 1)
+        XCTAssertEqual(imported[0].sats, 500)
+        XCTAssertEqual(imported[0].category, "Groceries")
+        XCTAssertFalse(imported[0].isIncome)
+    }
+
+    func testNegativeRefundKeepsItsSignAndIsNotClassifiedAsIncome() throws {
+        let csv = """
+        date,amount,memo
+        2026-05-01,-500,Costco refund
+        """.data(using: .utf8)!
+
+        let service = CSVImportService(importBTCPrice: 100_000)
+        let imported = try service.parseCSV(data: csv, source: .custom)
+        let transactions = service.toTransactions(imported, owner: .victor, sourceTag: "test.csv")
+
+        XCTAssertEqual(imported.count, 1)
+        XCTAssertEqual(imported[0].sats, -500)
+        XCTAssertEqual(imported[0].category, "Groceries")
+        XCTAssertFalse(imported[0].isIncome)
+
+        XCTAssertEqual(transactions.count, 1)
+        XCTAssertEqual(transactions[0].amount, -0.5)
+        XCTAssertEqual(transactions[0].amountSats, -500)
+        XCTAssertTrue(transactions[0].hasOppositeSpendSign)
+        XCTAssertFalse(transactions[0].isIncome)
+    }
+
     func testImportedBitcoinRowKeepsFiatAndSatsSeparate() throws {
         let csv = """
         date,amount,memo
