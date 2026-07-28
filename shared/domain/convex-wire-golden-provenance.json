@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "capturedDate": "2026-07-27",
+  "capturedDatePrecision": "day",
+  "deployment": "prod:keen-elephant-452",
+  "endpoint": "https://keen-elephant-452.convex.cloud/api/query",
+  "attestation": {
+    "method": "authenticated production HTTP capture",
+    "credentialEchoChecked": true,
+    "formats": [
+      "json",
+      "convex_encoded_json"
+    ],
+    "queries": [
+      "getBudgetDocument",
+      "listBtcAccounts",
+      "listBtcBillPays",
+      "listBtcBuys",
+      "listTodos",
+      "listTransactions",
+      "rowCounts"
+    ]
+  },
+  "schema": {
+    "path": "convex/schema.ts",
+    "sha256": "16bff2d835d4a340970b403e977ebcf46c88d247330995a66fd57e60b9b78b47"
+  },
+  "freshness": {
+    "warningAfterDays": 30,
+    "failAfterDays": 60
+  },
+  "captures": {
+    "getBudgetDocument.convex_encoded_json.json": "4e06b66878a5390968230cb42f40f5da11d57204fb8ecf0b0d1d4e86ac0ff3d9",
+    "getBudgetDocument.json.json": "4e06b66878a5390968230cb42f40f5da11d57204fb8ecf0b0d1d4e86ac0ff3d9",
+    "listBtcAccounts.convex_encoded_json.json": "6d50f29a6f596052bc9590d3edd05851ecc5e8d9cef082932f77b3a1441c1c06",
+    "listBtcAccounts.json.json": "6d50f29a6f596052bc9590d3edd05851ecc5e8d9cef082932f77b3a1441c1c06",
+    "listBtcBillPays.convex_encoded_json.json": "a6c3e5f63071a18a9d09fd914a634dd966250d53c4c76e1d4df8c7d05c6723ff",
+    "listBtcBillPays.json.json": "480edd3a8a23fb6abfcc07525c7137f7c5179b78704246f7702f1f1163cc974d",
+    "listBtcBuys.convex_encoded_json.json": "0f5770e76d3a920017c66710cd291e6535c37fe4da1d08a6dfe4f9a3548e8a81",
+    "listBtcBuys.json.json": "f11e6bc7739ef6001ef0ef356e165dc0ec973cc16eb14a333accea05149d6073",
+    "listTodos.convex_encoded_json.json": "d85a0e136d29c81c4278e6a943475e309f4802c0165b6339aca3793e0a9dadc1",
+    "listTodos.json.json": "2ac76521af95b6f4ce6302f5662fab07d3f43410dbca7bfdc7d9c83005e8033a",
+    "listTransactions.convex_encoded_json.json": "995bc4cf2b4b1568f011ba2a15e50229dac3b620392bc66e0460ce93b9e780d2",
+    "listTransactions.json.json": "696b06e246dbf91a876ac0f845dc4b3d96283c654b51b8a1948afc6c635620da",
+    "rowCounts.convex_encoded_json.json": "28b72c105c9e4a1f42a6e22933aa2b158da72bcc8f9c0f80e852e9f1f17892c1",
+    "rowCounts.json.json": "28b72c105c9e4a1f42a6e22933aa2b158da72bcc8f9c0f80e852e9f1f17892c1"
+  }
+}
