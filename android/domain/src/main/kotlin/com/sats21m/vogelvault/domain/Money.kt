@@ -4,6 +4,24 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 
 /**
+ * Bitcoin display choices, matching the Apple client's `DisplayUnit` names and
+ * persisted raw values.
+ */
+enum class DisplayUnit(
+    val storageKey: String,
+    val label: String,
+) {
+    BTC("btc", "BTC"),
+    SATS("sats", "SATS"),
+    USD("usd", "USD");
+
+    companion object {
+        fun fromStorageKey(value: String?): DisplayUnit =
+            entries.firstOrNull { it.storageKey == value } ?: BTC
+    }
+}
+
+/**
  * The Vogel Vault — decimal-safe money, Kotlin mirror.
  *
  * Repo convention (AGENTS.md): "Money is Decimal, never Double." Kotlin has
@@ -16,6 +34,7 @@ import java.math.RoundingMode
 object Money {
 
     const val SATS_PER_BTC: Long = 100_000_000L
+    const val PRICE_UNAVAILABLE = "Price unavailable"
 
     private const val USD_SCALE = 2
     private const val BTC_SCALE = 8
@@ -65,6 +84,25 @@ object Money {
 
     /** Sats as BTC with 8 dp, trailing zeros kept — ledger convention. */
     fun formatBtc(sats: Long): String = formatMinorUnits(sats, BTC_SCALE) + " BTC"
+
+    /**
+     * Format one integer satoshi value in the selected presentation unit.
+     *
+     * USD needs an explicitly supplied integer-cent price. Zero, a negative
+     * value, or no price is unknown rather than "$0.00".
+     */
+    fun formatBitcoin(
+        sats: Long,
+        unit: DisplayUnit,
+        btcPriceCents: Long? = null,
+    ): String = when (unit) {
+        DisplayUnit.BTC -> formatBtc(sats)
+        DisplayUnit.SATS -> formatSats(sats)
+        DisplayUnit.USD -> btcPriceCents
+            ?.takeIf { it > 0L }
+            ?.let { formatUsd(satsToUsdCents(sats, it)) }
+            ?: PRICE_UNAVAILABLE
+    }
 
     /** Convert sats to USD cents at a given BTC price (also in cents). */
     fun satsToUsdCents(sats: Long, btcPriceCents: Long): Long {

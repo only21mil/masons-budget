@@ -47,6 +47,7 @@ class RowReadModelLoader(
         val accountSlice =
             btcAccounts.await().toSlice(emptyList(), "Convex rows · bitcoin accounts", stamp)
         val budgetSlice = budget.await().toBudgetSlice(stamp)
+        val latestBuy = buySlice.value.maxByOrNull { it.date }
 
         ReadModel(
             transactions = transactionSlice,
@@ -56,9 +57,11 @@ class RowReadModelLoader(
             todos = todoSlice,
             // Public account rows already carry their exact fiat valuation, but
             // the current ReadModel asks for a price. The newest buy is the only
-            // exact integer-cent price exposed by this API; zero is the honest
+            // exact integer-cent price exposed by this API. It is explicitly
+            // dated so the UI cannot present it as live; zero is the honest
             // answer when there are no buys.
-            btcPriceCents = buySlice.value.maxByOrNull { it.date }?.priceUsdCents ?: 0L,
+            btcPriceCents = latestBuy?.priceUsdCents ?: 0L,
+            btcPriceAsOf = latestBuy?.date,
         )
     }
 }

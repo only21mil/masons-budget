@@ -5,8 +5,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.ui.VaultApp
 import com.sats21m.vogelvault.ui.VaultViewModel
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
@@ -16,17 +20,38 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val app = application as VaultApplication
+        val displayPreferences =
+            getSharedPreferences(DISPLAY_PREFERENCES, MODE_PRIVATE)
         setContent {
             VogelVaultTheme {
                 val model: VaultViewModel = viewModel(factory = app.viewModelFactory)
                 val state by model.state.collectAsStateWithLifecycle()
+                var displayUnit by remember {
+                    mutableStateOf(
+                        DisplayUnit.fromStorageKey(
+                            displayPreferences.getString(DISPLAY_UNIT_KEY, null),
+                        ),
+                    )
+                }
                 VaultApp(
                     state = state,
                     onNavigate = model::navigate,
                     onSwitchProfile = model::switchProfile,
                     onEnableRemoteRows = model::enableRemoteRows,
+                    displayUnit = displayUnit,
+                    onDisplayUnitChange = { next ->
+                        displayUnit = next
+                        displayPreferences.edit()
+                            .putString(DISPLAY_UNIT_KEY, next.storageKey)
+                            .apply()
+                    },
                 )
             }
         }
+    }
+
+    private companion object {
+        const val DISPLAY_PREFERENCES = "display_preferences"
+        const val DISPLAY_UNIT_KEY = "display_unit"
     }
 }

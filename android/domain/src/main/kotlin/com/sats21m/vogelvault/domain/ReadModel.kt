@@ -197,6 +197,8 @@ data class ReadModel(
     val btcBuys: Slice<List<BtcBuy>>,
     val todos: Slice<List<TodoItem>>,
     val btcPriceCents: Long,
+    /** Date of the recorded buy supplying [btcPriceCents]; null means no price. */
+    val btcPriceAsOf: String? = null,
 )
 
 // ── Month scoping ───────────────────────────────────────────────────────────
