@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "capturedDate": "2026-07-27",
   "capturedDatePrecision": "day",
   "deployment": "prod:keen-elephant-452",
@@ -21,10 +21,22 @@
       "rowCounts"
     ]
   },
-  "schema": {
-    "path": "convex/schema.ts",
-    "sha256": "aeb2773ebaab6c5dde6f7777ca5e91120a08864aa65f5dbb8fc4db061255b61f",
-    "reattestedNote": "Re-attested for the Lane BA/BB/BD/BE boundary. The captures are unchanged, byte-for-byte production recordings from 2026-07-27. The schema hash moved because #126 adds document tables and #128 corrects the spend-sign projection and its comments; neither alters the shape of the seven captured queries. NOTE: #128 repurposes listTransactions.json.json from an expected-value fixture to a known-stale capture the decoder must REJECT. Once Convex is redeployed these captures no longer describe production and must be re-captured."
+  "queryShapes": {
+    "algorithm": "typescript-token-query-dependency-closure-v1",
+    "sources": [
+      "convex/schema.ts",
+      "convex/tables.ts"
+    ],
+    "sha256": {
+      "getBudgetDocument": "f57520bcf40d71ec9332092906586b9e49c1e1f9a9b3d0a6b7c95dfc7423e744",
+      "listBtcAccounts": "0ba8ce2e2de96709c7cd795a461b00550495381b223adebfddfa99b8a518c27b",
+      "listBtcBillPays": "2d964af90295eac4727c0d2fcba4227263ddbdf17026e565068d061d6a7bf22c",
+      "listBtcBuys": "7db80cc8a0ad7a1f196bac9366432d8f94c131b0ffee7ef4bf1cac132ff8fb8c",
+      "listTodos": "252f37192cb84ba7e291f9a6261c2c6af840d9fc2bc07f1caf5d523af1b8cce0",
+      "listTransactions": "96e01f43a7c4c714215ccbcbcc915660f1ff3e34ad5d25b6cd25a9f8bb1abbdb",
+      "rowCounts": "aa277cbc41bdcfcdab2d2517c6330b51a63f57110a5c659d4ecc7d434316809e"
+    },
+    "reattestedNote": "The captures remain the byte-for-byte production recordings from 2026-07-27. Version 2 replaces the whole-file schema hash with per-query, comment-free TypeScript token dependency closures over the seven captured query declarations and their referenced helpers, including imported argument validators. The dependency-free tokenizer lets the gate run before npm install in CI. The queries use explicit output projections, so comments, unrelated schema tables, and unprojected storage-only fields are deliberately outside the attestation. NOTE: #128 repurposes listTransactions.json.json from an expected-value fixture to a known-stale capture the decoder must REJECT. Once Convex is redeployed these captures no longer describe production and must be re-captured."
   },
   "freshness": {
     "warningAfterDays": 30,
