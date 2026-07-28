@@ -1,6 +1,6 @@
 // The Budget month picker.
 //
-// The Budget page used to be pinned to whatever month the MC2 budget file said,
+// The Budget page used to be pinned to whatever month the legacy budget record said,
 // which made June unreachable even though the transactions were sitting right
 // there. These tests hold the fix: the picker offers the months that are
 // actually present, selecting one re-derives the totals from that month, and

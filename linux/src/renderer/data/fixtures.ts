@@ -7,9 +7,9 @@
 //
 // Two rules for this file:
 //   1. No real balances, account numbers, merchants, or identifiers. Ever.
-//   2. Records carry canonical owners exactly as MC2 tags them — adults default
-//      to "victor" — so the visibility layer is exercised honestly rather than
-//      being handed pre-filtered data.
+//   2. Records carry canonical owners exactly as the retained contract does —
+//      adults default to "victor" — so the visibility layer is exercised
+//      honestly rather than being handed pre-filtered data.
 
 import { type FamilyMember, hasDedicatedMC2ChildFinanceFiles, isAdult } from "@vogel-vault/domain/family"
 import { parseBtcToSats, parseCents, type Cents } from "@vogel-vault/domain/money"
@@ -313,10 +313,10 @@ const BILL_PAYS: readonly BTCBillPay[] = [
 // ── Todos ───────────────────────────────────────────────────────────────────
 
 /**
- * Todos, written the way MC2 actually emits them.
+ * Todos, written in the retained server wire shape.
  *
  * Unlike every other slice here, these are NOT hand-built read-model records.
- * MC2 sends todos as a dual-field superset — done/completed, due_date/dueDate/
+ * The wire shape is a dual-field superset — done/completed, due_date/dueDate/
  * due/date/deadline/when, flag/flagged, title/text, owner/assignee — and the one
  * place that is allowed to interpret it is normalizeTodoRecord in the shared
  * contract. Handing the pages pre-digested TodoItems would mean the client's
@@ -353,8 +353,8 @@ const RAW_TODOS: readonly RawTodo[] = [
   { id: "todo-0008", title: "Tidy room", area: "Home", status: "completed", owner: "mason" },
   // A wall-clock stamp where a calendar day belongs; the contract slices it.
   { id: "todo-0009", title: "Practice piano", area: "Music", date: `${daysAgo(0)} 09:00`, owner: "maddox" },
-  // Neither project nor area, so the Inbox view has something to show. MC2 files
-  // this under its default "Inbox" project rather than leaving the field unset.
+  // Neither project nor area, so the Inbox view has something to show. The
+  // retained normalizer files this under its default "Inbox" project.
   { id: "todo-0010", title: "Sort out the garage shelving", owner: "victor" },
 ]
 
@@ -399,9 +399,9 @@ export function buildSanitizedFixtureEnvelope(
   overrides: Partial<Record<keyof FixtureEnvelope, Freshness>> = {},
 ): FixtureEnvelope {
   // Budget is per-owner, and there is no "default to the adult budget" case:
-  // adults share the household budget, Mason has dedicated MC2 child finance
-  // files, and Maddox has none — so his budget slice is genuinely empty. Falling
-  // back to the adult budget here leaked household categories to Maddox.
+  // adults share the household budget, Mason has dedicated legacy child finance
+  // records, and Maddox has none — so his budget slice is genuinely empty.
+  // Falling back to the adult budget here leaked household categories to Maddox.
   const budgetForProfile = isAdult(activeProfile)
     ? ADULT_BUDGET
     : hasDedicatedMC2ChildFinanceFiles(activeProfile)

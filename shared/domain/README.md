@@ -5,6 +5,13 @@ Client authors must read this file before adding or replacing a server-response
 decoder. The executable vectors live in
 [`fixtures/visibility-cases.json`](fixtures/visibility-cases.json).
 
+## Current data boundary
+
+Convex is the system of record. Shipped clients read the Convex row tables over
+the HTTP API with a runtime-injected read token. The shared types still include
+legacy blob-shaped names while that decoding contract remains load-bearing, but
+those names do not identify a live upstream service or a separate sync system.
+
 ## Server responses are open objects
 
 A server response carrying fields that a client does not know about **must
@@ -56,8 +63,8 @@ point.
 For every non-Income transaction:
 
 - `spendAmount` is the **signed budget contribution**. Adult and child rows both
-  use `amountCents`: positive means spent and negative means a credit/refund
-  that reduces spend.
+  use the production storage convention: purchases are positive and
+  credits/refunds are negative.
 - `displaySpendAmount` is the rendering magnitude, always non-negative.
 - `hasOppositeSpendSign` is `spendAmount < 0`.
 

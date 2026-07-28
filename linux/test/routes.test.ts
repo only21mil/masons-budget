@@ -104,7 +104,7 @@ test("every page renders for every profile in every state", () => {
 })
 
 /**
- * Pages that render no synced MC2 data, and so have no loading/stale/error
+ * Pages that render no synced financial data, and so have no loading/stale/error
  * state to show. These are configuration and system surfaces derived from the
  * domain contract or the runtime bridge, not from the read model.
  */

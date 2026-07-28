@@ -1,9 +1,9 @@
 {
-  "$comment": "Language-neutral parity vectors for the Vogel Vault todo contract (shared/domain/src/todo.ts and android/domain/.../Todo.kt). The TypeScript and Kotlin suites both load this file so the two normalizers cannot drift. Semantics are pinned to convex/todoNormalize.ts + convex/dataFiles.ts (the emitter) and MC2TodoItem in MasonsBudget/MasonsBudget/Services/MC2DTOs.swift (the alias/ownership authority). When either of those changes, change this file in the same commit.",
+  "$comment": "Language-neutral parity vectors for the Vogel Vault todo contract (shared/domain/src/todo.ts and android/domain/.../Todo.kt). The TypeScript and Kotlin suites both load this file so the two normalizers cannot drift. Semantics are pinned to convex/todoNormalize.ts + convex/dataFiles.ts (the emitter) and the legacy Swift compatibility DTO (the alias/ownership authority). When either of those changes, change this file in the same commit.",
 
   "$divergences": [
     "owner: Swift resolves owner ?? assignee; convex reads only `owner` and defaults to victor. The contract follows Swift, because owner is a visibility field and an assignee-only todo must land on the person it names.",
-    "priority: convex does Number(priority || 0), which yields NaN for the word priorities MC2 emits. The contract maps urgent/high=1, medium/normal=2, low=3 per Swift's decodePriority, then falls back to 0.",
+    "priority: convex does Number(priority || 0), which yields NaN for retained word priorities. The contract maps urgent/high=1, medium/normal=2, low=3 per Swift's decodePriority, then falls back to 0.",
     "dueDate: convex reads dueDate then due_date. The contract keeps that order and appends Swift's remaining chain (due, date, deadline, when) below it, then requires the result to be a real ISO calendar day — `when` is a Things bucket word, not a date.",
     "dueDate precedence: Swift prefers due_date over dueDate; convex prefers dueDate. They only differ when both are present AND disagree, which the emitter never produces because it writes both from one value. The contract follows convex.",
     "timestamps: convex uses new Date(str), which reads a zoneless datetime as LOCAL time. The contract parses strictly and treats a missing zone as UTC, so last-write-wins resolves identically on every device.",
@@ -35,7 +35,7 @@
 
   "canonicalId": [
     { "todo": { "id": "vv-123" }, "expected": "vv-123" },
-    { "todo": { "id": 42 }, "expected": "42", "note": "MC2 has emitted numeric ids" },
+    { "todo": { "id": 42 }, "expected": "42", "note": "Legacy records include numeric ids" },
     { "todo": { "id": "   " }, "expected": "s1785076200000", "note": "blank is not an id" },
     { "todo": {}, "expected": "s1785076200000" },
     { "todo": { "category": "work" }, "expected": "w1785076200000" },
@@ -63,7 +63,7 @@
     { "value": "2026-07-26T09:30:00-05:00", "expected": 1785076200000 },
     { "value": "2026-07-26T17:30:00+0300", "expected": 1785076200000 },
     { "value": "2026-07-26T14:30:00.250Z", "expected": 1785076200250 },
-    { "value": "2026-07-26 14:30:00Z", "expected": 1785076200000, "note": "MC2 sometimes uses a space" },
+    { "value": "2026-07-26 14:30:00Z", "expected": 1785076200000, "note": "Legacy records sometimes use a space" },
     { "value": "2026-07-26", "expected": 1785024000000 },
     { "value": "1970-01-01", "expected": 0 },
     { "value": "2026-02-30", "expected": 0, "note": "not a real day; must not roll forward to March" },
@@ -88,7 +88,7 @@
 
   "normalize": [
     {
-      "name": "an MC2 snake_case todo becomes the dual-field superset",
+      "name": "a legacy snake_case todo becomes the dual-field superset",
       "input": {
         "id": "mc2-1",
         "text": "Reconcile July statements",

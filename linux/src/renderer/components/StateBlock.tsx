@@ -29,17 +29,17 @@ const DEFAULTS: Record<BlockState, { icon: IconName; title: string; detail: stri
   error: {
     icon: "alert",
     title: "Could not load",
-    detail: "The last read from MC2 failed. Showing nothing rather than something wrong.",
+    detail: "The last Convex row-table read failed. Showing nothing rather than something wrong.",
   },
   stale: {
     icon: "circle-alert",
     title: "Showing stale data",
-    detail: "The bridge has not refreshed recently. Treat these figures as out of date.",
+    detail: "The Convex row-table read has not refreshed recently. Treat these figures as out of date.",
   },
   loading: {
     icon: "refresh",
     title: "Loading",
-    detail: "Reading from the local bridge.",
+    detail: "Reading Convex row tables over authenticated HTTP.",
   },
 }
 

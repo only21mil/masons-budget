@@ -200,14 +200,14 @@ function SyncHealthPage() {
         title={readsRows ? "Runtime-gated Convex row reads are active" : "Sanitized fallback data is active"}
         detail={
           readsRows
-            ? "Every slice below came through the strict row bridge; credentials remain in the main process."
+            ? "Every slice below came from Convex row tables over authenticated HTTP; the read token remains in the main process."
             : "Enable and fully configure runtime row reads to replace the sanitized fixture envelope."
         }
       />
       <Panel title="Slices" flush>
         <DataTable
           columns={[
-            { key: "name", header: "MC2 file", render: (row) => row.name },
+            { key: "name", header: "Row projection", render: (row) => row.name },
             { key: "source", header: "Source", render: (row) => row.slice.source, secondary: true },
             {
               key: "status",
@@ -219,7 +219,11 @@ function SyncHealthPage() {
           rowKey={(row) => row.name}
         />
       </Panel>
-      <Panel title="Known MC2 files" source={`${MC2_FILES.length} files in the read model`} flush>
+      <Panel
+        title="Legacy blob compatibility names"
+        source={`${MC2_FILES.length} retained schema names`}
+        flush
+      >
         <DataTable
           columns={[
             { key: "file", header: "File", render: (row: { file: string }) => row.file },
@@ -283,8 +287,8 @@ function incomeOf(transaction: Transaction): bigint {
  * Build every exportable data set for the active profile.
  *
  * Rows are filtered through the same visibility helpers the rest of the app
- * uses, in the renderer, before anything crosses the bridge — the main process
- * writes bytes and never learns who is logged in. An export that leaked here
+ * uses, in the renderer, before anything reaches the preload API — the main
+ * process writes bytes and never learns who is logged in. An export that leaked here
  * would leak in the file, where nobody would ever notice it again.
  */
 export function buildExportDatasets(
@@ -297,8 +301,9 @@ export function buildExportDatasets(
       source: data.transactions.source,
       status: data.transactions.status,
       columns: ["id", "date", "merchant", "category", "card", "owner", "amount_usd", "direction", "signed_usd"],
-      // amount_usd is exactly what the source stores. signed_usd uses cash-flow
-      // signs (spend negative, income/refunds positive) for spreadsheet sums.
+      // amount_usd preserves production storage: purchases positive, refunds
+      // negative. signed_usd deliberately inverts non-Income cash flow so
+      // spreadsheet totals treat spend as outflow and refunds as inflow.
       rows: visibleTo(viewer, data.transactions.value).map((row) => {
         const spend = spendAmount(row)
         return [
@@ -407,9 +412,9 @@ function ExportPage() {
   const datasets = useMemo(() => buildExportDatasets(activeProfile, data), [activeProfile, data])
   const dataset = datasets[datasetId]
 
-  // Matches the Settings page: the bridge is absent under plain `vite dev` in a
-  // browser and in the headless render tests, and the page has to say so rather
-  // than offer a button that throws.
+  // Matches the Settings page: the preload API is absent under plain `vite dev`
+  // in a browser and in the headless render tests, and the page has to say so
+  // rather than offer a button that throws.
   const bridge = typeof window !== "undefined" ? window.vogelVault : undefined
 
   // Suppression rule, applied to a file instead of a figure: a slice that
@@ -552,7 +557,7 @@ function CSVImportPage() {
       <StatusBanner
         tone="warning"
         title="Import is a write path and is not enabled"
-        detail="Imports mutate MC2 data. That path is owned by the approved writeback lane, not the desktop client."
+        detail="Imports would mutate Convex row tables. That path is owned by the approved writeback lane, not the desktop client."
       />
       <Panel title="How import will work">
         <ol className="vv-muted" style={{ margin: 0, paddingLeft: "1.2rem", lineHeight: 1.8 }}>
@@ -584,7 +589,7 @@ function SettingsPage() {
     <>
       <PageHeader title="Settings" subtitle="Runtime and diagnostics" />
       <PageGrid>
-        <Panel title="Runtime" source="Read through the preload bridge">
+        <Panel title="Runtime" source="Desktop main process">
           {runtime ? (
             <dl className="vv-stack" style={{ margin: 0 }}>
               <RuntimeRow label="App" value={`${runtime.appName} ${runtime.appVersion}`} />
@@ -597,7 +602,7 @@ function SettingsPage() {
           ) : (
             <StateBlock
               state="empty"
-              title="Runtime bridge unavailable"
+              title="Desktop runtime unavailable"
               detail="window.vogelVault is absent. This is expected outside Electron."
             />
           )}

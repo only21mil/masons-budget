@@ -1,11 +1,13 @@
-// The Vogel Vault — MC2 read model.
+// The Vogel Vault — shared financial read model.
 //
-// Convex stores each MC2 JSON file verbatim in `dataFiles` (name, data, version,
-// updatedAt) and the app decodes it client-side. These types mirror
+// Runtime clients read Convex row tables through authenticated HTTP queries.
+// Some type and constant names below preserve the surviving blob contract used
+// by shipped clients; they do not name a live upstream system. The legacy shapes
+// mirror the compatibility DTOs in
 // MasonsBudget/MasonsBudget/Services/MC2DTOs.swift.
 //
 // Conventions carried over from AGENTS.md:
-//   - MC2 JSON is snake_case; this layer exposes camelCase.
+//   - Legacy blob JSON is snake_case; this layer exposes camelCase.
 //   - Money never touches float — raw values are kept lexically and converted to
 //     integer minor units via ./money.
 //   - Optional in the DTO means "may be absent in JSON". Default in the
@@ -20,7 +22,12 @@ import {
 } from "./family.ts"
 import { type Cents, type Sats, parseBtcToSats, parseCents } from "./money.ts"
 
-/** Every MC2 file the clients read. Mirrors MC2Reader / MC2SyncService. */
+/**
+ * Legacy blob names retained for decoding compatibility.
+ *
+ * This is not the runtime read plan: current clients query Convex row tables
+ * over HTTP with a read token.
+ */
 export const MC2_FILES = [
   "transactions",
   "budget",
@@ -149,7 +156,7 @@ export interface MonthlyHistoryEntry {
   readonly month: string
   readonly income: Cents
   readonly expenses: Cents
-  /** Savings rate in basis points; MC2 reports a percentage. */
+  /** Savings rate in basis points; the retained blob projection reports a percentage. */
   readonly savingsBps: number
 }
 
@@ -400,7 +407,7 @@ function asArray(value: unknown): Record<string, unknown>[] {
 // (BudgetView.monthTransactions); these helpers give the other clients the same
 // rule instead of trusting a precomputed total.
 
-/** `yyyy-MM`, e.g. "2026-07". MC2 budget files key on this. */
+/** `yyyy-MM`, e.g. "2026-07". Retained budget records key on this. */
 export type MonthKey = string
 
 /**
@@ -443,9 +450,10 @@ export function resolveBudgetMonth(
 /**
  * Month a transaction belongs to.
  *
- * MC2 dates are ISO `yyyy-MM-dd`, so the month is a prefix — no Date parsing, no
- * timezone to get wrong. A transaction dated 2026-07-01 belongs to July whatever
- * timezone the reader is in, which is the behaviour a ledger needs.
+ * Stored transaction dates are ISO `yyyy-MM-dd`, so the month is a prefix — no
+ * Date parsing, no timezone to get wrong. A transaction dated 2026-07-01 belongs
+ * to July whatever timezone the reader is in, which is the behaviour a ledger
+ * needs.
  */
 export function monthOf(date: string): MonthKey {
   return date.slice(0, 7)
