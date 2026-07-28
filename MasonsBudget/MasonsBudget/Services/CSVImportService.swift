@@ -23,6 +23,12 @@ struct ColumnMapping {
 }
 
 struct ImportedTransaction: Identifiable {
+    enum Kind: Equatable {
+        case income
+        case purchase
+        case refund
+    }
+
     let id = UUID()
     let date: Date
     let merchant: String
@@ -30,8 +36,28 @@ struct ImportedTransaction: Identifiable {
     let amountUsd: Decimal
     let category: String
     let method: String
-    let isIncome: Bool
     let note: String?
+
+    /// Category determines income. After import canonicalization, sign only
+    /// distinguishes a purchase from a genuine refund.
+    var kind: Kind {
+        if category.caseInsensitiveCompare("Income") == .orderedSame {
+            return .income
+        }
+        return sats < 0 ? .refund : .purchase
+    }
+
+    var isIncome: Bool {
+        kind == .income
+    }
+
+    var isRefund: Bool {
+        kind == .refund
+    }
+
+    var previewSign: String {
+        kind == .purchase ? "−" : "+"
+    }
 }
 
 enum CSVImportError: LocalizedError {
@@ -40,6 +66,7 @@ enum CSVImportError: LocalizedError {
     case missingRequiredColumns
     case dateParseFailure(row: Int)
     case amountParseFailure(row: Int)
+    case ambiguousNegativeAmount(row: Int)
 
     var errorDescription: String? {
         switch self {
@@ -48,6 +75,8 @@ enum CSVImportError: LocalizedError {
         case .missingRequiredColumns: "Required columns (date, amount) not found"
         case let .dateParseFailure(row): "Could not parse date on row \(row)"
         case let .amountParseFailure(row): "Could not parse amount on row \(row)"
+        case let .ambiguousNegativeAmount(row):
+            "Negative non-income amount on row \(row) must be labeled as a purchase or refund"
         }
     }
 }
@@ -117,10 +146,22 @@ final class CSVImportService: Sendable {
                 }
                 return ""
             }()
+            let type: String = {
+                if let tIdx = mapping.typeIndex, tIdx < cols.count {
+                    return sanitize(cols[tIdx])
+                }
+                return ""
+            }()
 
-            let sats = convertToSats(amount: amount, source: source)
-            let isIncome = sats > 0
-            let category = guessCategory(memo: memo)
+            let category = guessCategory(memo: "\(memo) \(type)")
+            let canonicalAmount = try canonicalAmount(
+                amount,
+                category: category,
+                type: type,
+                memo: memo,
+                row: idx + 2,
+            )
+            let sats = convertToSats(amount: canonicalAmount, source: source)
 
             results.append(ImportedTransaction(
                 date: date,
@@ -129,7 +170,6 @@ final class CSVImportService: Sendable {
                 amountUsd: usdValue(fromSats: sats),
                 category: category,
                 method: "on-chain",
-                isIncome: isIncome,
                 note: nil,
             ))
         }
@@ -265,6 +305,73 @@ final class CSVImportService: Sendable {
         let cal = Calendar.current
         let day = cal.startOfDay(for: date)
         return "\(day.timeIntervalSince1970)-\(sats)-\(merchant.lowercased().prefix(20))"
+    }
+
+    private enum ExplicitAmountKind {
+        case purchase
+        case refund
+    }
+
+    private func canonicalAmount(
+        _ amount: Decimal,
+        category: String,
+        type: String,
+        memo: String,
+        row: Int,
+    ) throws -> Decimal {
+        if category.caseInsensitiveCompare("Income") == .orderedSame {
+            return abs(amount)
+        }
+
+        let explicitKind = explicitAmountKind(in: type, bankingTermsAreExplicit: true)
+            ?? explicitAmountKind(in: memo, bankingTermsAreExplicit: false)
+        switch explicitKind {
+        case .purchase:
+            return abs(amount)
+        case .refund:
+            return -abs(amount)
+        case nil:
+            // Without an explicit direction, a negative non-income row could
+            // be either an old-convention purchase or a genuine refund.
+            guard amount >= 0 else {
+                throw CSVImportError.ambiguousNegativeAmount(row: row)
+            }
+            return amount
+        }
+    }
+
+    private func explicitAmountKind(
+        in value: String,
+        bankingTermsAreExplicit: Bool,
+    ) -> ExplicitAmountKind? {
+        let words = Set(value.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted))
+        let refundWords: Set<String> = [
+            "chargeback",
+            "refund",
+            "refunded",
+            "reimbursement",
+            "reversal",
+            "reversed",
+        ]
+        if !words.isDisjoint(with: refundWords) {
+            return .refund
+        }
+
+        var purchaseWords: Set<String> = [
+            "purchase",
+            "spend",
+            "spent",
+        ]
+        if bankingTermsAreExplicit {
+            purchaseWords.formUnion(["debit", "payment"])
+        }
+        if !words.isDisjoint(with: purchaseWords) {
+            return .purchase
+        }
+        if bankingTermsAreExplicit, !words.isDisjoint(with: ["credit", "credited"]) {
+            return .refund
+        }
+        return nil
     }
 
     private func usdValue(fromSats sats: Int64) -> Decimal {

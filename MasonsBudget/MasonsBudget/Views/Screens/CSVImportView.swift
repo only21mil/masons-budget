@@ -146,14 +146,18 @@ struct CSVImportView: View {
                 .foregroundStyle(theme.text)
 
             let income = importedRows.filter(\.isIncome)
-            let spends = importedRows.filter { !$0.isIncome }
+            let purchases = importedRows.filter { !$0.isIncome && !$0.isRefund }
+            let refunds = importedRows.filter(\.isRefund)
             HStack(spacing: 12) {
                 Text("\(income.count) income")
                     .font(AppFont.labelSmallRegular)
                     .foregroundStyle(theme.success)
-                Text("\(spends.count) spends")
+                Text("\(purchases.count) purchases")
                     .font(AppFont.labelSmallRegular)
                     .foregroundStyle(theme.textMuted)
+                Text("\(refunds.count) refunds")
+                    .font(AppFont.labelSmallRegular)
+                    .foregroundStyle(theme.success)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -184,6 +188,11 @@ struct CSVImportView: View {
                     Text(row.category)
                         .font(AppFont.smallRegular)
                         .foregroundStyle(theme.textMuted)
+                    if row.isRefund {
+                        Text("Refund")
+                            .font(AppFont.smallRegular)
+                            .foregroundStyle(theme.success)
+                    }
                     Text("·")
                         .foregroundStyle(theme.textMuted)
                     Text(formatDate(row.date))
@@ -194,9 +203,9 @@ struct CSVImportView: View {
 
             Spacer()
 
-            Text("\(row.isIncome ? "+" : "−")\(abs(row.sats))")
+            Text("\(row.previewSign)\(row.sats.magnitude)")
                 .font(AppFont.monoCaptionStrong)
-                .foregroundStyle(row.isIncome ? theme.success : theme.text)
+                .foregroundStyle(row.isIncome || row.isRefund ? theme.success : theme.text)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
