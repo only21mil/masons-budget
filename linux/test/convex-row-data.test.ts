@@ -44,6 +44,13 @@ function response(request: VogelVaultRowRequest): VogelVaultRowResult {
           updatedAtMs: 10,
         }],
       }
+    case "income":
+      return {
+        status: "ok",
+        kind: "income",
+        complete: true,
+        rows: [],
+      }
     case "todos":
       return {
         status: "ok",
@@ -137,6 +144,13 @@ function response(request: VogelVaultRowRequest): VogelVaultRowResult {
           asOf: "2026-07-26T00:00:00Z",
           updatedAtMs: 70,
         }],
+      }
+    case "btcBalanceDocuments":
+      return {
+        status: "ok",
+        kind: "btcBalanceDocuments",
+        complete: true,
+        rows: [],
       }
   }
 }

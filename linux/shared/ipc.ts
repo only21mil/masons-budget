@@ -86,6 +86,46 @@ export interface VogelVaultBtcBillPayRow {
   readonly updatedAtMs: number
 }
 
+export interface VogelVaultIncomeRow {
+  readonly incomeId: string
+  readonly owner: VogelVaultMember
+  readonly date: string
+  readonly month: string
+  readonly amountCents: bigint
+  readonly source: string
+  readonly loggedBy?: string
+  readonly note?: string
+  readonly archimedesRequestId?: string
+  readonly updatedAtMs: number
+}
+
+export interface VogelVaultBtcBalanceAccount {
+  readonly key: string
+  readonly label: string
+  readonly custody: "exchange" | "self_custody"
+  readonly sats: bigint
+  readonly fiatCents: bigint
+}
+
+export interface VogelVaultBtcBalanceTotals {
+  readonly sats: bigint
+  readonly fiatCents: bigint
+  readonly exchangeSats: bigint
+  readonly selfCustodySats: bigint
+}
+
+export interface VogelVaultBtcBalanceDocument {
+  readonly owner: VogelVaultMember
+  readonly schemaVersion: bigint
+  readonly asOf: string
+  readonly accounts: readonly VogelVaultBtcBalanceAccount[]
+  readonly totals: VogelVaultBtcBalanceTotals
+  readonly source?: string
+  readonly basis?: string
+  readonly confidence?: string
+  readonly updatedAtMs: number
+}
+
 export interface VogelVaultBudgetCategory {
   readonly name: string
   readonly icon?: string
@@ -173,6 +213,12 @@ export type VogelVaultRowRequest =
       readonly limit?: number
     }
   | {
+      readonly kind: "income"
+      readonly viewer: VogelVaultMember
+      readonly month?: string
+      readonly limit?: number
+    }
+  | {
       readonly kind: "btcBuys"
       readonly viewer: VogelVaultMember
       readonly scope: VogelVaultBtcScope
@@ -201,6 +247,11 @@ export type VogelVaultRowRequest =
       readonly viewer: VogelVaultMember
       readonly scope: VogelVaultBtcScope
     }
+  | {
+      readonly kind: "btcBalanceDocuments"
+      readonly viewer: VogelVaultMember
+      readonly scope: VogelVaultBtcScope
+    }
 
 export type VogelVaultRowSuccess =
   | {
@@ -218,6 +269,12 @@ export type VogelVaultRowSuccess =
       readonly status: "ok"
       readonly kind: "todos"
       readonly rows: readonly VogelVaultTodoRow[]
+      readonly complete: boolean
+    }
+  | {
+      readonly status: "ok"
+      readonly kind: "income"
+      readonly rows: readonly VogelVaultIncomeRow[]
       readonly complete: boolean
     }
   | {
@@ -247,6 +304,12 @@ export type VogelVaultRowSuccess =
       readonly status: "ok"
       readonly kind: "btcSnapshotMeta"
       readonly rows: readonly VogelVaultBtcSnapshotMeta[]
+      readonly complete: boolean
+    }
+  | {
+      readonly status: "ok"
+      readonly kind: "btcBalanceDocuments"
+      readonly rows: readonly VogelVaultBtcBalanceDocument[]
       readonly complete: boolean
     }
 

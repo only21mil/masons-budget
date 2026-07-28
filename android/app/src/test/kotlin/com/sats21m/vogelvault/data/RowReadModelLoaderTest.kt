@@ -161,6 +161,13 @@ private class FakeRows(
         limit: Int?,
     ) = todos
 
+    override suspend fun listIncome(
+        viewer: FamilyMember,
+        month: String?,
+        limit: Int?,
+    ): ConvexResult<RowSnapshot<IncomeRow>> =
+        ConvexResult.Ok(RowSnapshot(emptyList(), true))
+
     override suspend fun listBtcBuys(
         viewer: FamilyMember,
         scope: RowVisibilityScope,
@@ -200,6 +207,12 @@ private class FakeRows(
         viewer: FamilyMember,
         scope: RowVisibilityScope,
     ): ConvexResult<RowSnapshot<BtcSnapshotMetadataRow>> =
+        ConvexResult.Ok(RowSnapshot(emptyList(), true))
+
+    override suspend fun listBtcBalanceDocuments(
+        viewer: FamilyMember,
+        scope: RowVisibilityScope,
+    ): ConvexResult<RowSnapshot<BtcBalanceDocumentRow>> =
         ConvexResult.Ok(RowSnapshot(emptyList(), true))
 
     override suspend fun rowCounts(): ConvexResult<RowCounts> =

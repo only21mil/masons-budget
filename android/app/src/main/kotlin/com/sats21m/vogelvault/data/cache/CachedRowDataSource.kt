@@ -2,10 +2,12 @@ package com.sats21m.vogelvault.data.cache
 
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.BtcBillPayRow
+import com.sats21m.vogelvault.data.BtcBalanceDocumentRow
 import com.sats21m.vogelvault.data.BtcSnapshotMetadataRow
 import com.sats21m.vogelvault.data.BudgetDocumentSnapshot
 import com.sats21m.vogelvault.data.BudgetQueryScope
 import com.sats21m.vogelvault.data.RowCounts
+import com.sats21m.vogelvault.data.IncomeRow
 import com.sats21m.vogelvault.data.RowQueryRepository
 import com.sats21m.vogelvault.data.RowReadModelLoader
 import com.sats21m.vogelvault.data.RowSnapshot
@@ -191,6 +193,12 @@ private class CachingRowQueryRepository(
         return result
     }
 
+    override suspend fun listIncome(
+        viewer: FamilyMember,
+        month: String?,
+        limit: Int?,
+    ): ConvexResult<RowSnapshot<IncomeRow>> = remote.listIncome(viewer, month, limit)
+
     override suspend fun listBtcBuys(
         viewer: FamilyMember,
         scope: RowVisibilityScope,
@@ -287,6 +295,12 @@ private class CachingRowQueryRepository(
         scope: RowVisibilityScope,
     ): ConvexResult<RowSnapshot<BtcSnapshotMetadataRow>> =
         remote.getBtcSnapshotMetadata(viewer, scope)
+
+    override suspend fun listBtcBalanceDocuments(
+        viewer: FamilyMember,
+        scope: RowVisibilityScope,
+    ): ConvexResult<RowSnapshot<BtcBalanceDocumentRow>> =
+        remote.listBtcBalanceDocuments(viewer, scope)
 
     override suspend fun rowCounts(): ConvexResult<RowCounts> = remote.rowCounts()
 

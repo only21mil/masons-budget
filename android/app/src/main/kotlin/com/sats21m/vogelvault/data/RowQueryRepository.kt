@@ -36,6 +36,12 @@ interface RowQueryRepository {
         limit: Int? = null,
     ): ConvexResult<RowSnapshot<TodoItem>>
 
+    suspend fun listIncome(
+        viewer: FamilyMember,
+        month: String? = null,
+        limit: Int? = null,
+    ): ConvexResult<RowSnapshot<IncomeRow>>
+
     suspend fun listBtcBuys(
         viewer: FamilyMember,
         scope: RowVisibilityScope,
@@ -66,6 +72,11 @@ interface RowQueryRepository {
         scope: RowVisibilityScope,
     ): ConvexResult<RowSnapshot<BtcSnapshotMetadataRow>>
 
+    suspend fun listBtcBalanceDocuments(
+        viewer: FamilyMember,
+        scope: RowVisibilityScope,
+    ): ConvexResult<RowSnapshot<BtcBalanceDocumentRow>>
+
     suspend fun rowCounts(): ConvexResult<RowCounts>
 }
 
@@ -81,6 +92,12 @@ object DisabledRowQueryRepository : RowQueryRepository {
         done: Boolean?,
         limit: Int?,
     ): ConvexResult<RowSnapshot<TodoItem>> = ConvexResult.Disabled
+
+    override suspend fun listIncome(
+        viewer: FamilyMember,
+        month: String?,
+        limit: Int?,
+    ): ConvexResult<RowSnapshot<IncomeRow>> = ConvexResult.Disabled
 
     override suspend fun listBtcBuys(
         viewer: FamilyMember,
@@ -112,6 +129,11 @@ object DisabledRowQueryRepository : RowQueryRepository {
         scope: RowVisibilityScope,
     ): ConvexResult<RowSnapshot<BtcSnapshotMetadataRow>> = ConvexResult.Disabled
 
+    override suspend fun listBtcBalanceDocuments(
+        viewer: FamilyMember,
+        scope: RowVisibilityScope,
+    ): ConvexResult<RowSnapshot<BtcBalanceDocumentRow>> = ConvexResult.Disabled
+
     override suspend fun rowCounts(): ConvexResult<RowCounts> = ConvexResult.Disabled
 }
 
@@ -136,6 +158,16 @@ internal class ConvexRowQueryRepository(
         client.query(ConvexQuery.ListTodos(viewer, done, limit)).decodeRows(
             decode = PublicTodoDto::decode,
             map = PublicTodoDto::toDomain,
+        )
+
+    override suspend fun listIncome(
+        viewer: FamilyMember,
+        month: String?,
+        limit: Int?,
+    ): ConvexResult<RowSnapshot<IncomeRow>> =
+        client.query(ConvexQuery.ListIncome(viewer, month, limit)).decodeRows(
+            decode = PublicIncomeDto::decode,
+            map = PublicIncomeDto::toRow,
         )
 
     override suspend fun listBtcBuys(
@@ -186,6 +218,15 @@ internal class ConvexRowQueryRepository(
             val envelope = PublicBtcSnapshotMetadataDto.decode(value.parsed) ?: return@decode null
             RowSnapshot(envelope.rows, envelope.complete)
         }
+
+    override suspend fun listBtcBalanceDocuments(
+        viewer: FamilyMember,
+        scope: RowVisibilityScope,
+    ): ConvexResult<RowSnapshot<BtcBalanceDocumentRow>> =
+        client.query(ConvexQuery.ListBtcBalanceDocuments(viewer, scope)).decodeRows(
+            decode = PublicBtcBalanceDocumentDto::decode,
+            map = { it },
+        )
 
     override suspend fun rowCounts(): ConvexResult<RowCounts> =
         client.query(ConvexQuery.RowCounts).decode { value ->
