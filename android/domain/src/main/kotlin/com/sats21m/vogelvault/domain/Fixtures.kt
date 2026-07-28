@@ -64,6 +64,28 @@ object Fixtures {
         owner = owner,
     )
 
+    /** Dedicated demo income rows; transaction-shaped income remains only a mirror. */
+    private val INCOME = listOf(
+        IncomeEntry(
+            id = "income-0001",
+            date = "2026-07-25",
+            month = "2026-07",
+            amountCents = Money.parseCents("2480.00"),
+            sourceName = "Payroll",
+            note = null,
+            owner = FamilyMember.VICTOR,
+        ),
+        IncomeEntry(
+            id = "income-0002",
+            date = "2026-07-19",
+            month = "2026-07",
+            amountCents = Money.parseCents("2480.00"),
+            sourceName = "Payroll",
+            note = null,
+            owner = FamilyMember.VICTOR,
+        ),
+    )
+
     private val ADULT_BUDGET = Budget(
         month = "2026-07",
         categories = listOf(
@@ -145,6 +167,21 @@ object Fixtures {
         owner = owner,
     )
 
+    private val BTC_BILL_PAYS = listOf(
+        BtcBillPay(
+            id = "bill-pay-0001",
+            date = "2026-07-18",
+            merchant = "Electric Utility",
+            category = "Utilities",
+            amountUsdCents = Money.parseCents("186.55"),
+            btcSpentSats = Money.parseBtcToSats("0.00205000"),
+            feeUsdCents = 0L,
+            platform = "Strike",
+            note = null,
+            owner = FamilyMember.VICTOR,
+        ),
+    )
+
     private val TODOS = listOf(
         TodoItem("todo-0001", "Reconcile July statements", area = "Finance", due = "2026-07-27", flagged = true, owner = FamilyMember.VICTOR),
         TodoItem("todo-0002", "Review insurance renewal", area = "Home", due = "2026-07-30", owner = FamilyMember.VICTOR),
@@ -179,6 +216,20 @@ object Fixtures {
         val latestVisibleBuy =
             if (empty) null
             else BTC_BUYS.visibleTo(activeProfile).maxByOrNull { it.date }
+        val balanceAccounts =
+            if (empty) emptyList() else BTC_ACCOUNTS.netWorthScopeFor(activeProfile)
+        val balance = balanceAccounts.takeIf { it.isNotEmpty() }?.let { accounts ->
+            BtcBalance(
+                owner = if (activeProfile.isAdult) FamilyMember.VICTOR else activeProfile,
+                asOf = "2026-07-26",
+                accounts = accounts,
+                totalSats = accounts.sumOf { it.sats },
+                fiatCents = accounts.sumOf { it.fiatCents },
+                exchangeSats = accounts.filter { it.custody == Custody.EXCHANGE }.sumOf { it.sats },
+                selfCustodySats =
+                    accounts.filter { it.custody == Custody.SELF_CUSTODY }.sumOf { it.sats },
+            )
+        }
 
         return ReadModel(
             transactions = Slice(status, if (empty) emptyList() else TRANSACTIONS, stamp, "Demo fixtures · transactions"),
@@ -188,6 +239,15 @@ object Fixtures {
             todos = Slice(status, if (empty) emptyList() else TODOS, stamp, "Demo fixtures · todos"),
             btcPriceCents = latestVisibleBuy?.priceUsdCents ?: 0L,
             btcPriceAsOf = latestVisibleBuy?.date,
+            income = Slice(status, if (empty) emptyList() else INCOME, stamp, "Demo fixtures · income"),
+            btcBalance = Slice(status, balance, stamp, "Demo fixtures · bitcoin balance"),
+            btcBillPays =
+                Slice(
+                    status,
+                    if (empty) emptyList() else BTC_BILL_PAYS,
+                    stamp,
+                    "Demo fixtures · bitcoin bill pays",
+                ),
         )
     }
 }
