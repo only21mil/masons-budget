@@ -549,18 +549,17 @@ jobs:
             [35]='android-all-instrumented-15-robolectric-12650502-i7.jar'
           )
 
-          rg_status=0
+          # grep, not ripgrep: GitHub-hosted runners do not ship rg, and an
+          # absent tool made this guard exit 127 and fail the build spuriously.
+          scan_status=0
           sdk_declarations="$(
-            rg \
-              --multiline \
-              --no-filename \
-              --only-matching \
-              'sdk\s*=\s*\[[^]]+\]' \
+            grep -rhoE \
+              'sdk[[:space:]]*=[[:space:]]*\[[^]]+\]' \
               android/app/src/test
-          )" || rg_status=$?
-          if [ "$rg_status" -gt 1 ]; then
+          )" || scan_status=$?
+          if [ "$scan_status" -gt 1 ]; then
             echo "::error::Could not scan app tests for Robolectric SDK declarations."
-            exit "$rg_status"
+            exit "$scan_status"
           fi
 
           mapfile -t declared_sdks < <(
