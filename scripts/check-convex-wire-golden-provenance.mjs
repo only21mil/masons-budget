@@ -5,6 +5,7 @@ import { readdir, readFile } from "node:fs/promises"
 import path from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
+import ts from "typescript"
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const goldenRoot = path.join(repoRoot, "shared/domain/fixtures/convex-wire-golden")
@@ -12,7 +13,196 @@ const provenancePath = path.join(repoRoot, "shared/domain/convex-wire-golden-pro
 const provenance = JSON.parse(await readFile(provenancePath, "utf8"))
 const failures = []
 
-if (provenance.version !== 1) {
+const queryShapeAlgorithm = "typescript-ast-dependency-closure-v1"
+const queryShapeSources = ["convex/schema.ts", "convex/tables.ts"]
+
+function topLevelDeclarations(sourceFile) {
+  const declarations = new Map()
+  for (const statement of sourceFile.statements) {
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (ts.isIdentifier(declaration.name)) {
+          declarations.set(declaration.name.text, statement)
+        }
+      }
+    } else if (
+      (ts.isFunctionDeclaration(statement)
+        || ts.isTypeAliasDeclaration(statement)
+        || ts.isInterfaceDeclaration(statement)
+        || ts.isEnumDeclaration(statement)
+        || ts.isClassDeclaration(statement))
+      && statement.name
+    ) {
+      declarations.set(statement.name.text, statement)
+    }
+  }
+  return declarations
+}
+
+function schemaTables(sourceFile) {
+  const tables = new Map()
+  for (const statement of sourceFile.statements) {
+    if (!ts.isExportAssignment(statement) || !ts.isCallExpression(statement.expression)) {
+      continue
+    }
+    const [schemaObject] = statement.expression.arguments
+    if (!schemaObject || !ts.isObjectLiteralExpression(schemaObject)) continue
+    for (const property of schemaObject.properties) {
+      if (
+        (ts.isPropertyAssignment(property) || ts.isMethodDeclaration(property))
+        && property.name
+      ) {
+        const name = ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)
+          ? property.name.text
+          : undefined
+        if (name !== undefined) tables.set(name, property)
+      }
+    }
+  }
+  return tables
+}
+
+function canonicalTopLevelDeclaration(declaration, allowedSources) {
+  const sourceFile = declaration.getSourceFile()
+  if (!allowedSources.has(sourceFile.fileName)) return null
+
+  let current = declaration
+  while (current.parent && current.parent !== sourceFile) {
+    current = current.parent
+  }
+  if (current.parent !== sourceFile || ts.isImportDeclaration(current)) return null
+  if (
+    ts.isVariableStatement(current)
+    || ts.isFunctionDeclaration(current)
+    || ts.isTypeAliasDeclaration(current)
+    || ts.isInterfaceDeclaration(current)
+    || ts.isEnumDeclaration(current)
+    || ts.isClassDeclaration(current)
+  ) {
+    return current
+  }
+  return null
+}
+
+function declarationName(node) {
+  if (ts.isVariableStatement(node)) {
+    return node.declarationList.declarations
+      .map((declaration) => ts.isIdentifier(declaration.name) ? declaration.name.text : "")
+      .filter(Boolean)
+      .join(",")
+  }
+  return node.name?.text ?? `node-${node.pos}`
+}
+
+function queryShapeDigests(root, queryNames) {
+  const sourcePaths = Object.fromEntries(
+    queryShapeSources.map((relativePath) => [
+      relativePath,
+      path.join(root, relativePath),
+    ]),
+  )
+  const program = ts.createProgram(Object.values(sourcePaths), {
+    module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    skipLibCheck: true,
+    target: ts.ScriptTarget.ESNext,
+  })
+  const checker = program.getTypeChecker()
+  const schemaSource = program.getSourceFile(sourcePaths["convex/schema.ts"])
+  const tablesSource = program.getSourceFile(sourcePaths["convex/tables.ts"])
+  if (!schemaSource || !tablesSource) {
+    throw new Error("query shape sources could not be parsed")
+  }
+
+  const allowedSources = new Set([schemaSource.fileName, tablesSource.fileName])
+  const tablesDeclarations = topLevelDeclarations(tablesSource)
+  const tableShapes = schemaTables(schemaSource)
+  const printer = ts.createPrinter({
+    newLine: ts.NewLineKind.LineFeed,
+    removeComments: true,
+  })
+  const relativeSource = (sourceFile) =>
+    path.relative(root, sourceFile.fileName).split(path.sep).join("/")
+
+  const digests = {}
+  for (const queryName of queryNames) {
+    const rootDeclaration = tablesDeclarations.get(queryName)
+    if (!rootDeclaration) {
+      throw new Error(`captured query ${queryName} is not exported by convex/tables.ts`)
+    }
+
+    const selected = new Map()
+    const queue = []
+    const referencedTables = new Set()
+    const enqueue = (key, node, sourceFile = node.getSourceFile()) => {
+      const stableKey = `${relativeSource(sourceFile)}:${key}`
+      if (selected.has(stableKey)) return
+      selected.set(stableKey, { node, sourceFile })
+      queue.push({ node, sourceFile })
+    }
+    enqueue(`declaration:${declarationName(rootDeclaration)}`, rootDeclaration, tablesSource)
+
+    for (let index = 0; index < queue.length; index += 1) {
+      const { node } = queue[index]
+      const visit = (child) => {
+        if (
+          ts.isCallExpression(child)
+          && ts.isPropertyAccessExpression(child.expression)
+          && child.expression.name.text === "query"
+          && child.arguments.length > 0
+          && ts.isStringLiteral(child.arguments[0])
+        ) {
+          const tableName = child.arguments[0].text
+          referencedTables.add(tableName)
+          const tableShape = tableShapes.get(tableName)
+          if (!tableShape) {
+            throw new Error(
+              `captured query ${queryName} reads unknown schema table ${tableName}`,
+            )
+          }
+          enqueue(`table:${tableName}`, tableShape, schemaSource)
+        }
+
+        if (ts.isIdentifier(child)) {
+          let symbol = checker.getSymbolAtLocation(child)
+          if (symbol?.flags & ts.SymbolFlags.Alias) {
+            try {
+              symbol = checker.getAliasedSymbol(symbol)
+            } catch {
+              symbol = undefined
+            }
+          }
+          for (const declaration of symbol?.declarations ?? []) {
+            const topLevel = canonicalTopLevelDeclaration(declaration, allowedSources)
+            if (topLevel) {
+              enqueue(
+                `declaration:${declarationName(topLevel)}`,
+                topLevel,
+                topLevel.getSourceFile(),
+              )
+            }
+          }
+        }
+        ts.forEachChild(child, visit)
+      }
+      ts.forEachChild(node, visit)
+    }
+
+    if (referencedTables.size === 0) {
+      throw new Error(`captured query ${queryName} does not read a schema table`)
+    }
+    const canonical = [...selected.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, { node, sourceFile }]) =>
+        `${key}\n${printer.printNode(ts.EmitHint.Unspecified, node, sourceFile)}`,
+      )
+      .join("\n\n")
+    digests[queryName] = createHash("sha256").update(canonical).digest("hex")
+  }
+  return digests
+}
+
+if (provenance.version !== 2) {
   failures.push(`unsupported provenance version ${String(provenance.version)}`)
 }
 
@@ -64,20 +254,37 @@ for (const filename of captureFiles) {
   }
 }
 
-const schemaRelativePath = provenance.schema?.path
+const queryShapes = provenance.queryShapes
+if (queryShapes?.algorithm !== queryShapeAlgorithm) {
+  failures.push(`queryShapes.algorithm must be ${queryShapeAlgorithm}`)
+}
 if (
-  typeof schemaRelativePath !== "string"
-  || path.normalize(schemaRelativePath) !== "convex/schema.ts"
+  !Array.isArray(queryShapes?.sources)
+  || queryShapes.sources.join(",") !== queryShapeSources.join(",")
 ) {
-  failures.push("schema.path must attest convex/schema.ts")
-} else {
-  const schemaBytes = await readFile(path.join(repoRoot, schemaRelativePath))
-  const actualSchema = createHash("sha256").update(schemaBytes).digest("hex")
-  if (actualSchema !== provenance.schema?.sha256) {
-    failures.push(
-      `schema checksum mismatch: expected ${String(provenance.schema?.sha256)}, received ${actualSchema}`,
-    )
+  failures.push(`queryShapes.sources must be ${queryShapeSources.join(", ")}`)
+}
+
+let actualQueryShapeDigests = {}
+try {
+  actualQueryShapeDigests = queryShapeDigests(repoRoot, queries ?? [])
+  for (const query of queries ?? []) {
+    const expected = queryShapes?.sha256?.[query]
+    const actual = actualQueryShapeDigests[query]
+    if (actual !== expected) {
+      failures.push(
+        `query shape checksum mismatch for ${query}: `
+          + `expected ${String(expected)}, received ${actual}`,
+      )
+    }
   }
+} catch (error) {
+  failures.push(`could not compute query shape checksums: ${error.message}`)
+}
+
+if (process.argv.includes("--print-query-shapes")) {
+  console.log(JSON.stringify(actualQueryShapeDigests, null, 2))
+  process.exit(Object.keys(actualQueryShapeDigests).length === 0 ? 1 : 0)
 }
 
 if (failures.length > 0) {
@@ -133,5 +340,6 @@ if (ageDays >= warningAfterDays) {
 
 console.log(
   `PASS: ${captureFiles.length} production wire captures match their provenance checksums `
-    + `and schema ${provenance.schema.sha256}; age ${ageDays} days.`,
+    + `and ${Object.keys(actualQueryShapeDigests).length} captured query shapes; `
+    + `age ${ageDays} days.`,
 )

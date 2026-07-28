@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "capturedDate": "2026-07-27",
   "capturedDatePrecision": "day",
   "deployment": "prod:keen-elephant-452",
@@ -21,10 +21,22 @@
       "rowCounts"
     ]
   },
-  "schema": {
-    "path": "convex/schema.ts",
-    "sha256": "aeb2773ebaab6c5dde6f7777ca5e91120a08864aa65f5dbb8fc4db061255b61f",
-    "reattestedNote": "Re-attested for the Lane BA/BB/BD/BE boundary. The captures are unchanged, byte-for-byte production recordings from 2026-07-27. The schema hash moved because #126 adds document tables and #128 corrects the spend-sign projection and its comments; neither alters the shape of the seven captured queries. NOTE: #128 repurposes listTransactions.json.json from an expected-value fixture to a known-stale capture the decoder must REJECT. Once Convex is redeployed these captures no longer describe production and must be re-captured."
+  "queryShapes": {
+    "algorithm": "typescript-ast-dependency-closure-v1",
+    "sources": [
+      "convex/schema.ts",
+      "convex/tables.ts"
+    ],
+    "sha256": {
+      "getBudgetDocument": "606b75bec2277dfb895262409fc58046ba6bd4ce69f26c4a00ff904e88693014",
+      "listBtcAccounts": "fe79c1422e50ebb5124de472222ecd1b0c7f46541611c5369dfd17bb69e22363",
+      "listBtcBillPays": "4e24d4b969c840b9b31bdec0dc92dadaa4037281b51a1d347bf5a5f3d53e8028",
+      "listBtcBuys": "590002d1db61092759baa6ae531026aad7ca9151393cc922167067bbb0fd281d",
+      "listTodos": "54cf9c673c62a2c409bbba001783d1a77e8dd4cf5b07f560760b08df3b824d91",
+      "listTransactions": "3639f2006089642e3fc55de659abfa7ecb25605d513548ced7b583e8c0293a1b",
+      "rowCounts": "abb93411dd31b37906000d6e912d88328e2a088f4b2159558f7f1b017e2ecb41"
+    },
+    "reattestedNote": "The captures remain the byte-for-byte production recordings from 2026-07-27. Version 2 replaces the whole-file schema hash with per-query TypeScript AST dependency closures over the seven captured query declarations, their referenced helpers, and the schema tables they read. Comments and unrelated schema tables are deliberately outside the attestation. NOTE: #128 repurposes listTransactions.json.json from an expected-value fixture to a known-stale capture the decoder must REJECT. Once Convex is redeployed these captures no longer describe production and must be re-captured."
   },
   "freshness": {
     "warningAfterDays": 30,
