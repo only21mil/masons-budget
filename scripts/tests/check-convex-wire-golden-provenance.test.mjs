@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import test from "node:test"
@@ -14,7 +14,6 @@ async function fixtureRepo() {
   await mkdir(path.join(root, "scripts"), { recursive: true })
   await mkdir(path.join(root, "convex"), { recursive: true })
   await mkdir(path.join(root, "shared/domain"), { recursive: true })
-  await cp(path.join(repoRoot, "package.json"), path.join(root, "package.json"))
   await cp(sourceScript, path.join(root, "scripts/check-convex-wire-golden-provenance.mjs"))
   await cp(
     path.join(repoRoot, "convex/schema.ts"),
@@ -33,7 +32,6 @@ async function fixtureRepo() {
     path.join(root, "shared/domain/fixtures/convex-wire-golden"),
     { recursive: true },
   )
-  await symlink(path.join(repoRoot, "node_modules"), path.join(root, "node_modules"), "dir")
   return root
 }
 

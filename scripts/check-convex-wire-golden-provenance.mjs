@@ -5,7 +5,6 @@ import { readdir, readFile } from "node:fs/promises"
 import path from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
-import ts from "typescript"
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const goldenRoot = path.join(repoRoot, "shared/domain/fixtures/convex-wire-golden")
@@ -13,177 +12,267 @@ const provenancePath = path.join(repoRoot, "shared/domain/convex-wire-golden-pro
 const provenance = JSON.parse(await readFile(provenancePath, "utf8"))
 const failures = []
 
-const queryShapeAlgorithm = "typescript-ast-query-dependency-closure-v1"
+const queryShapeAlgorithm = "typescript-token-query-dependency-closure-v1"
 const queryShapeSources = ["convex/schema.ts", "convex/tables.ts"]
 
-function topLevelDeclarations(sourceFile) {
-  const declarations = new Map()
-  for (const statement of sourceFile.statements) {
-    if (ts.isVariableStatement(statement)) {
-      for (const declaration of statement.declarationList.declarations) {
-        if (ts.isIdentifier(declaration.name)) {
-          declarations.set(declaration.name.text, statement)
+function tokenizeTypeScript(source) {
+  const tokens = []
+  let index = 0
+  while (index < source.length) {
+    const char = source[index]
+    if (/\s/.test(char)) {
+      index += 1
+      continue
+    }
+    if (char === "/" && source[index + 1] === "/") {
+      index = source.indexOf("\n", index + 2)
+      if (index === -1) break
+      continue
+    }
+    if (char === "/" && source[index + 1] === "*") {
+      const end = source.indexOf("*/", index + 2)
+      if (end === -1) throw new Error("unterminated block comment")
+      index = end + 2
+      continue
+    }
+    if (char === "'" || char === "\"" || char === "`") {
+      const quote = char
+      const start = index
+      index += 1
+      while (index < source.length) {
+        if (source[index] === "\\") {
+          index += 2
+          continue
         }
+        if (source[index] === quote) {
+          index += 1
+          break
+        }
+        index += 1
+      }
+      if (source[index - 1] !== quote) {
+        throw new Error(`unterminated ${quote} literal`)
+      }
+      const raw = source.slice(start, index)
+      const value = quote === "\"" ? JSON.parse(raw) : raw.slice(1, -1)
+      tokens.push({ type: quote === "`" ? "template" : "string", value, raw })
+      continue
+    }
+    if (/[A-Za-z_$]/.test(char)) {
+      const start = index
+      index += 1
+      while (index < source.length && /[A-Za-z0-9_$]/.test(source[index])) {
+        index += 1
+      }
+      const value = source.slice(start, index)
+      tokens.push({ type: "identifier", value, raw: value })
+      continue
+    }
+    if (/[0-9]/.test(char)) {
+      const start = index
+      index += 1
+      while (index < source.length && /[0-9A-Fa-f_xXobn.eE+-]/.test(source[index])) {
+        index += 1
+      }
+      const value = source.slice(start, index)
+      tokens.push({ type: "number", value, raw: value })
+      continue
+    }
+    tokens.push({ type: "punctuation", value: char, raw: char })
+    index += 1
+  }
+  return tokens
+}
+
+function matchingToken(tokens, start, open, close) {
+  let depth = 0
+  for (let index = start; index < tokens.length; index += 1) {
+    if (tokens[index].value === open) depth += 1
+    if (tokens[index].value === close) depth -= 1
+    if (depth === 0) return index
+  }
+  throw new Error(`unmatched ${open}`)
+}
+
+function declarationEnd(tokens, start, keywordIndex, keyword) {
+  let braces = 0
+  let parentheses = 0
+  let brackets = 0
+  let bodyStarted = false
+  const blockDeclaration = ["function", "class", "interface", "enum"].includes(keyword)
+  for (let index = keywordIndex + 1; index < tokens.length; index += 1) {
+    const value = tokens[index].value
+    if (value === "(") parentheses += 1
+    else if (value === ")") parentheses -= 1
+    else if (value === "[") brackets += 1
+    else if (value === "]") brackets -= 1
+    else if (value === "{") {
+      if (parentheses === 0 && brackets === 0) bodyStarted = true
+      braces += 1
+    } else if (value === "}") {
+      braces -= 1
+      if (blockDeclaration && bodyStarted && braces === 0 && parentheses === 0) {
+        return tokens[index + 1]?.value === ";" ? index + 2 : index + 1
       }
     } else if (
-      (ts.isFunctionDeclaration(statement)
-        || ts.isTypeAliasDeclaration(statement)
-        || ts.isInterfaceDeclaration(statement)
-        || ts.isEnumDeclaration(statement)
-        || ts.isClassDeclaration(statement))
-      && statement.name
+      value === ";"
+      && braces === 0
+      && parentheses === 0
+      && brackets === 0
+      && !blockDeclaration
     ) {
-      declarations.set(statement.name.text, statement)
+      return index + 1
     }
+  }
+  throw new Error(`unterminated top-level ${tokens[start].value} declaration`)
+}
+
+function topLevelDeclarations(tokens, source) {
+  const declarations = new Map()
+  let braces = 0
+  let parentheses = 0
+  let brackets = 0
+  for (let index = 0; index < tokens.length; index += 1) {
+    const value = tokens[index].value
+    if (braces === 0 && parentheses === 0 && brackets === 0) {
+      const start = index
+      let keywordIndex = index
+      while (
+        ["export", "default", "declare", "async"].includes(tokens[keywordIndex]?.value)
+      ) {
+        keywordIndex += 1
+      }
+      const keyword = tokens[keywordIndex]?.value
+      if (["const", "let", "var", "function", "type", "interface", "enum", "class"].includes(keyword)) {
+        let nameIndex = keywordIndex + 1
+        if (tokens[nameIndex]?.value === "*") nameIndex += 1
+        const name = tokens[nameIndex]?.type === "identifier"
+          ? tokens[nameIndex].value
+          : undefined
+        if (name) {
+          const end = declarationEnd(tokens, start, keywordIndex, keyword)
+          declarations.set(name, {
+            name,
+            source,
+            tokens: tokens.slice(start, end),
+          })
+          index = end - 1
+          continue
+        }
+      }
+    }
+    if (value === "{") braces += 1
+    else if (value === "}") braces -= 1
+    else if (value === "(") parentheses += 1
+    else if (value === ")") parentheses -= 1
+    else if (value === "[") brackets += 1
+    else if (value === "]") brackets -= 1
   }
   return declarations
 }
 
-function schemaTables(sourceFile) {
-  const tables = new Map()
-  for (const statement of sourceFile.statements) {
-    if (!ts.isExportAssignment(statement) || !ts.isCallExpression(statement.expression)) {
-      continue
-    }
-    const [schemaObject] = statement.expression.arguments
-    if (!schemaObject || !ts.isObjectLiteralExpression(schemaObject)) continue
-    for (const property of schemaObject.properties) {
-      if (
-        (ts.isPropertyAssignment(property) || ts.isMethodDeclaration(property))
-        && property.name
-      ) {
-        const name = ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)
-          ? property.name.text
-          : undefined
-        if (name !== undefined) tables.set(name, property)
-      }
-    }
-  }
-  return tables
-}
-
-function canonicalTopLevelDeclaration(declaration, allowedSources) {
-  const sourceFile = declaration.getSourceFile()
-  if (!allowedSources.has(sourceFile.fileName)) return null
-
-  let current = declaration
-  while (current.parent && current.parent !== sourceFile) {
-    current = current.parent
-  }
-  if (current.parent !== sourceFile || ts.isImportDeclaration(current)) return null
-  if (
-    ts.isVariableStatement(current)
-    || ts.isFunctionDeclaration(current)
-    || ts.isTypeAliasDeclaration(current)
-    || ts.isInterfaceDeclaration(current)
-    || ts.isEnumDeclaration(current)
-    || ts.isClassDeclaration(current)
-  ) {
-    return current
-  }
-  return null
-}
-
-function declarationName(node) {
-  if (ts.isVariableStatement(node)) {
-    return node.declarationList.declarations
-      .map((declaration) => ts.isIdentifier(declaration.name) ? declaration.name.text : "")
-      .filter(Boolean)
-      .join(",")
-  }
-  return node.name?.text ?? `node-${node.pos}`
-}
-
-function queryShapeDigests(root, queryNames) {
-  const sourcePaths = Object.fromEntries(
-    queryShapeSources.map((relativePath) => [
-      relativePath,
-      path.join(root, relativePath),
-    ]),
+function schemaTableNames(tokens) {
+  const defineSchemaIndex = tokens.findIndex(
+    (token, index) => token.value === "defineSchema" && tokens[index + 1]?.value === "(",
   )
-  const program = ts.createProgram(Object.values(sourcePaths), {
-    module: ts.ModuleKind.NodeNext,
-    moduleResolution: ts.ModuleResolutionKind.NodeNext,
-    skipLibCheck: true,
-    target: ts.ScriptTarget.ESNext,
-  })
-  const checker = program.getTypeChecker()
-  const schemaSource = program.getSourceFile(sourcePaths["convex/schema.ts"])
-  const tablesSource = program.getSourceFile(sourcePaths["convex/tables.ts"])
-  if (!schemaSource || !tablesSource) {
-    throw new Error("query shape sources could not be parsed")
+  if (defineSchemaIndex === -1) throw new Error("convex/schema.ts has no defineSchema call")
+  const objectStart = tokens.findIndex(
+    (token, index) => index > defineSchemaIndex && token.value === "{",
+  )
+  if (objectStart === -1) throw new Error("defineSchema has no object literal")
+  const objectEnd = matchingToken(tokens, objectStart, "{", "}")
+  const names = new Set()
+  let depth = 1
+  for (let index = objectStart + 1; index < objectEnd; index += 1) {
+    const value = tokens[index].value
+    if (value === "{") depth += 1
+    else if (value === "}") depth -= 1
+    else if (
+      depth === 1
+      && (tokens[index].type === "identifier" || tokens[index].type === "string")
+      && tokens[index + 1]?.value === ":"
+    ) {
+      names.add(tokens[index].value)
+    }
   }
+  return names
+}
 
-  const allowedSources = new Set([schemaSource.fileName, tablesSource.fileName])
-  const tablesDeclarations = topLevelDeclarations(tablesSource)
-  const tableShapes = schemaTables(schemaSource)
-  const printer = ts.createPrinter({
-    newLine: ts.NewLineKind.LineFeed,
-    removeComments: true,
-  })
-  const relativeSource = (sourceFile) =>
-    path.relative(root, sourceFile.fileName).split(path.sep).join("/")
+function canonicalTokens(tokens) {
+  return tokens
+    .map((token) => `${token.type}:${token.raw}`)
+    .join("\u001f")
+}
 
+async function queryShapeDigests(root, queryNames) {
+  const sources = Object.fromEntries(
+    await Promise.all(
+      queryShapeSources.map(async (relativePath) => [
+        relativePath,
+        tokenizeTypeScript(await readFile(path.join(root, relativePath), "utf8")),
+      ]),
+    ),
+  )
+  const tableDeclarations = topLevelDeclarations(
+    sources["convex/tables.ts"],
+    "convex/tables.ts",
+  )
+  const schemaDeclarations = topLevelDeclarations(
+    sources["convex/schema.ts"],
+    "convex/schema.ts",
+  )
+  const declarationsByName = new Map()
+  for (const declaration of [
+    ...tableDeclarations.values(),
+    ...schemaDeclarations.values(),
+  ]) {
+    const declarations = declarationsByName.get(declaration.name) ?? []
+    declarations.push(declaration)
+    declarationsByName.set(declaration.name, declarations)
+  }
+  const tableNames = schemaTableNames(sources["convex/schema.ts"])
   const digests = {}
+
   for (const queryName of queryNames) {
-    const rootDeclaration = tablesDeclarations.get(queryName)
+    const rootDeclaration = tableDeclarations.get(queryName)
     if (!rootDeclaration) {
       throw new Error(`captured query ${queryName} is not exported by convex/tables.ts`)
     }
-
     const selected = new Map()
     const queue = []
     const referencedTables = new Set()
-    const enqueue = (key, node, sourceFile = node.getSourceFile()) => {
-      const stableKey = `${relativeSource(sourceFile)}:${key}`
-      if (selected.has(stableKey)) return
-      selected.set(stableKey, { node, sourceFile })
-      queue.push({ node, sourceFile })
+    const enqueue = (declaration) => {
+      const key = `${declaration.source}:declaration:${declaration.name}`
+      if (selected.has(key)) return
+      selected.set(key, declaration)
+      queue.push(declaration)
     }
-    enqueue(`declaration:${declarationName(rootDeclaration)}`, rootDeclaration, tablesSource)
+    enqueue(rootDeclaration)
 
     for (let index = 0; index < queue.length; index += 1) {
-      const { node } = queue[index]
-      const visit = (child) => {
+      const declaration = queue[index]
+      for (let tokenIndex = 0; tokenIndex < declaration.tokens.length; tokenIndex += 1) {
+        const token = declaration.tokens[tokenIndex]
         if (
-          ts.isCallExpression(child)
-          && ts.isPropertyAccessExpression(child.expression)
-          && child.expression.name.text === "query"
-          && child.arguments.length > 0
-          && ts.isStringLiteral(child.arguments[0])
+          token.value === "."
+          && declaration.tokens[tokenIndex + 1]?.value === "query"
+          && declaration.tokens[tokenIndex + 2]?.value === "("
+          && declaration.tokens[tokenIndex + 3]?.type === "string"
         ) {
-          const tableName = child.arguments[0].text
+          const tableName = declaration.tokens[tokenIndex + 3].value
           referencedTables.add(tableName)
-          if (!tableShapes.has(tableName)) {
+          if (!tableNames.has(tableName)) {
             throw new Error(
               `captured query ${queryName} reads unknown schema table ${tableName}`,
             )
           }
         }
-
-        if (ts.isIdentifier(child)) {
-          let symbol = checker.getSymbolAtLocation(child)
-          if (symbol?.flags & ts.SymbolFlags.Alias) {
-            try {
-              symbol = checker.getAliasedSymbol(symbol)
-            } catch {
-              symbol = undefined
-            }
-          }
-          for (const declaration of symbol?.declarations ?? []) {
-            const topLevel = canonicalTopLevelDeclaration(declaration, allowedSources)
-            if (topLevel) {
-              enqueue(
-                `declaration:${declarationName(topLevel)}`,
-                topLevel,
-                topLevel.getSourceFile(),
-              )
-            }
+        if (token.type === "identifier") {
+          for (const dependency of declarationsByName.get(token.value) ?? []) {
+            enqueue(dependency)
           }
         }
-        ts.forEachChild(child, visit)
       }
-      ts.forEachChild(node, visit)
     }
 
     if (referencedTables.size === 0) {
@@ -191,9 +280,7 @@ function queryShapeDigests(root, queryNames) {
     }
     const canonical = [...selected.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, { node, sourceFile }]) =>
-        `${key}\n${printer.printNode(ts.EmitHint.Unspecified, node, sourceFile)}`,
-      )
+      .map(([key, declaration]) => `${key}\n${canonicalTokens(declaration.tokens)}`)
       .join("\n\n")
     digests[queryName] = createHash("sha256").update(canonical).digest("hex")
   }
@@ -265,7 +352,7 @@ if (
 
 let actualQueryShapeDigests = {}
 try {
-  actualQueryShapeDigests = queryShapeDigests(repoRoot, queries ?? [])
+  actualQueryShapeDigests = await queryShapeDigests(repoRoot, queries ?? [])
   for (const query of queries ?? []) {
     const expected = queryShapes?.sha256?.[query]
     const actual = actualQueryShapeDigests[query]
