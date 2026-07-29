@@ -109,6 +109,7 @@
 		60A2374372574199C9FDA25D /* StockPriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F721A6FC17530024B35A0C6 /* StockPriceService.swift */; };
 		60DB40E2C6E812784A222981 /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DBCCD025DF53FB5AB826594 /* TasksView.swift */; };
 		6132ABC2B1A85E41529AC2D6 /* convex-int64-wire-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = EF30B8FE8B7986AB2D87D572 /* convex-int64-wire-cases.json */; };
+		616C71E062055307AE202DA8 /* ConvexConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08E8E973EE7F78352B998034 /* ConvexConfigTests.swift */; };
 		617A5624E857EBB25E55CBA7 /* InlineAddTaskBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5514024FC5632566C2498B75 /* InlineAddTaskBar.swift */; };
 		61BFE7AE76584D8C349D32C1 /* RetirementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ADB184F47423CA415614B24 /* RetirementView.swift */; };
 		627817036F8B1B2C7497C8BB /* NetWorthSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF559B68DCF5C8C506B2A151 /* NetWorthSnapshot.swift */; };
@@ -255,6 +256,7 @@
 /* Begin PBXFileReference section */
 		05894A6118C6AC44E989181E /* FamilyProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyProfile.swift; sourceTree = "<group>"; };
 		083F88D8EB4768C9BEDF39F9 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		08E8E973EE7F78352B998034 /* ConvexConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexConfigTests.swift; sourceTree = "<group>"; };
 		0DBCCD025DF53FB5AB826594 /* TasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksView.swift; sourceTree = "<group>"; };
 		0F3F8A436874CF43D7C27027 /* listBtcAccounts.convex_encoded_json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = listBtcAccounts.convex_encoded_json.json; sourceTree = "<group>"; };
 		130D186945E2F17AE4A79132 /* MC2DTOs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MC2DTOs.swift; sourceTree = "<group>"; };
@@ -422,6 +424,7 @@
 			isa = PBXGroup;
 			children = (
 				39F9FEE550CB799FCADD40AF /* BudgetMonthScopingTests.swift */,
+				08E8E973EE7F78352B998034 /* ConvexConfigTests.swift */,
 				3250E7396C07FAB87774D194 /* ConvexInt64WireTests.swift */,
 				AC71D565300376FE836CAA75 /* ConvexRowsTests.swift */,
 				8442D5C22B6167F76BFFBE9E /* ConvexSyncServiceTests.swift */,
@@ -933,6 +936,7 @@
 				3C5D681E2D464F77A40D8608 /* CategoryDetailView.swift in Sources */,
 				3F55B3C03BBD1E4EE61A0DC2 /* ContentView.swift in Sources */,
 				8B7D4660455866A0008B1DA6 /* ConvexClient.swift in Sources */,
+				616C71E062055307AE202DA8 /* ConvexConfigTests.swift in Sources */,
 				1670EB40C979537D67715D43 /* ConvexDataReader.swift in Sources */,
 				22BC0B9BFEB84EDDACF89666 /* ConvexInt64WireTests.swift in Sources */,
 				B754C97FC84C831388A66151 /* ConvexRows.swift in Sources */,
