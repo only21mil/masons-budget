@@ -2,8 +2,11 @@ package com.sats21m.vogelvault.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.data.RowReadFailure
 import com.sats21m.vogelvault.data.cache.CachedReadModel
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
+import com.sats21m.vogelvault.data.rowReadFailures
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
@@ -42,8 +45,25 @@ data class VaultUiState(
     val staleAuthorization: Boolean = false,
     /** Fixed, non-secret explanation when enabling authenticated reads fails. */
     val remoteConfigurationError: String? = null,
+    /** Distinct, non-secret causes retained before any stale-cache substitution. */
+    val rowReadFailures: Set<RowReadFailure> = data.rowReadFailures,
 ) {
     val switchTargets: List<FamilyMember> get() = activeProfile.allowedSwitchTargets
+
+    /**
+     * The most actionable cause for a single UI notice.
+     *
+     * The full set remains available above when different projections fail for
+     * different reasons.
+     */
+    val primaryRowReadFailure: RowReadFailure?
+        get() = FAILURE_DISPLAY_ORDER.firstOrNull(rowReadFailures::contains)
+
+    val rowReadFailureTitleRes: Int?
+        get() = primaryRowReadFailure?.titleRes
+
+    val rowReadFailureDetailRes: Int?
+        get() = primaryRowReadFailure?.detailRes
 
     /**
      * Months the Budget screen may scope to, newest first.
@@ -180,6 +200,7 @@ class VaultViewModel(
                 activeProfile = next,
                 data = if (!remoteEnabled) Fixtures.envelope(next) else loadingModel(next),
                 staleAuthorization = false,
+                rowReadFailures = emptySet(),
                 // A month picked against one profile's ledger means nothing on the
                 // next one, so the scope goes back to that profile's budget month.
                 selectedMonth = null,
@@ -194,7 +215,12 @@ class VaultViewModel(
     }
 
     fun simulate(status: Freshness) {
-        _state.update { it.copy(data = Fixtures.envelope(it.activeProfile, status)) }
+        _state.update {
+            it.copy(
+                data = Fixtures.envelope(it.activeProfile, status),
+                rowReadFailures = emptySet(),
+            )
+        }
     }
 
     fun enableRemoteRows(readToken: String) {
@@ -220,6 +246,7 @@ class VaultViewModel(
             it.copy(
                 data = loadingModel(profile),
                 remoteConfigurationError = null,
+                rowReadFailures = emptySet(),
             )
         }
         connectRows(profile)
@@ -250,6 +277,7 @@ class VaultViewModel(
                                             else -> live.withCacheFallback(cached.data)
                                         },
                                     staleAuthorization = unauthorized,
+                                    rowReadFailures = live?.rowReadFailures.orEmpty(),
                                 )
                             }
                         }
@@ -262,10 +290,15 @@ class VaultViewModel(
                     if (current.activeProfile != profile) {
                         current
                     } else {
+                        // Financial snapshots rejected by authorization are
+                        // intentionally hidden, even when Room has stale rows.
+                        // Other failures may use stale cache fallback because
+                        // they do not invalidate the viewer's right to see it.
                         val cached = cachedModel?.takeUnless { loaded.unauthorized }
                         current.copy(
                             data = loaded.data.withCacheFallback(cached?.data),
                             staleAuthorization = loaded.unauthorized,
+                            rowReadFailures = loaded.data.rowReadFailures,
                             now = clock(),
                         )
                     }
@@ -278,6 +311,33 @@ class VaultViewModel(
             "Authenticated row reads could not be saved securely. Remote reads remain disabled."
     }
 }
+
+private val FAILURE_DISPLAY_ORDER =
+    listOf(
+        RowReadFailure.UNAUTHORIZED,
+        RowReadFailure.DISABLED,
+        RowReadFailure.NOT_CONFIGURED,
+        RowReadFailure.MALFORMED_PAYLOAD,
+        RowReadFailure.TRANSPORT,
+    )
+
+private val RowReadFailure.titleRes: Int
+    get() = when (this) {
+        RowReadFailure.UNAUTHORIZED -> R.string.convex_row_failure_unauthorized_title
+        RowReadFailure.DISABLED -> R.string.convex_row_failure_disabled_title
+        RowReadFailure.NOT_CONFIGURED -> R.string.convex_row_failure_not_configured_title
+        RowReadFailure.TRANSPORT -> R.string.convex_row_failure_transport_title
+        RowReadFailure.MALFORMED_PAYLOAD -> R.string.convex_row_failure_malformed_payload_title
+    }
+
+private val RowReadFailure.detailRes: Int
+    get() = when (this) {
+        RowReadFailure.UNAUTHORIZED -> R.string.convex_row_failure_unauthorized_detail
+        RowReadFailure.DISABLED -> R.string.convex_row_failure_disabled_detail
+        RowReadFailure.NOT_CONFIGURED -> R.string.convex_row_failure_not_configured_detail
+        RowReadFailure.TRANSPORT -> R.string.convex_row_failure_transport_detail
+        RowReadFailure.MALFORMED_PAYLOAD -> R.string.convex_row_failure_malformed_payload_detail
+    }
 
 private fun loadingModel(profile: FamilyMember): ReadModel {
     val empty = Fixtures.envelope(profile, Freshness.EMPTY)

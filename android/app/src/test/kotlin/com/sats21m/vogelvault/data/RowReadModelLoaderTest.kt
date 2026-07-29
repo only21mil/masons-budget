@@ -1,5 +1,6 @@
 package com.sats21m.vogelvault.data
 
+import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcBuy
 import com.sats21m.vogelvault.domain.Custody
@@ -9,6 +10,10 @@ import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.domain.Transaction
 import com.sats21m.vogelvault.domain.budgetTransactionsFor
 import com.sats21m.vogelvault.domain.deriveBudgetSpend
+import com.sats21m.vogelvault.ui.VaultUiState
+import java.util.logging.Handler
+import java.util.logging.LogRecord
+import java.util.logging.Logger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -298,6 +303,122 @@ class RowReadModelLoaderTest {
         assertEquals(Freshness.ERROR, model.budget.status)
         assertEquals(emptyList(), model.transactions.value)
         assertEquals(null, model.budget.value)
+    }
+
+    @Test
+    fun `loader preserves each remote failure cause through the read model`() = runBlocking {
+        val cases: List<
+            Pair<ConvexResult<RowSnapshot<Transaction>>, RowReadFailure>,
+        > = listOf(
+            ConvexResult.Unauthorized to RowReadFailure.UNAUTHORIZED,
+            ConvexResult.Disabled to RowReadFailure.DISABLED,
+            ConvexResult.NotConfigured to RowReadFailure.NOT_CONFIGURED,
+            ConvexResult.Failed("transport failure (SocketTimeoutException)") to
+                RowReadFailure.TRANSPORT,
+            ConvexResult.Failed("unexpected payload shape") to
+                RowReadFailure.MALFORMED_PAYLOAD,
+        )
+
+        for ((result, expected) in cases) {
+            val model = RowReadModelLoader(FakeRows(transactions = result)).load(
+                FamilyMember.VICTOR,
+            )
+
+            assertEquals(Freshness.ERROR, model.transactions.status)
+            assertEquals(setOf(expected), model.rowReadFailures)
+            assertTrue(model.transactions.source.endsWith("failure=${expected.sourceTag}"))
+            assertTrue("SocketTimeoutException" !in model.transactions.source)
+        }
+    }
+
+    @Test
+    fun `incomplete successful payload is rejected as malformed`() = runBlocking {
+        val model = RowReadModelLoader(
+            FakeRows(
+                transactions = ConvexResult.Ok(RowSnapshot(emptyList(), complete = false)),
+            ),
+        ).load(FamilyMember.VICTOR)
+
+        assertEquals(Freshness.ERROR, model.transactions.status)
+        assertEquals(setOf(RowReadFailure.MALFORMED_PAYLOAD), model.rowReadFailures)
+        assertEquals(emptyList(), model.transactions.value)
+    }
+
+    @Test
+    fun `diagnostic log identifies projection and cause without repository detail`() = runBlocking {
+        val messages = mutableListOf<String>()
+        val logger = Logger.getLogger(RowReadModelLoader::class.java.name)
+        val handler = object : Handler() {
+            override fun publish(record: LogRecord) {
+                messages += record.message
+            }
+
+            override fun flush() = Unit
+
+            override fun close() = Unit
+        }
+        logger.addHandler(handler)
+
+        try {
+            RowReadModelLoader(
+                FakeRows(
+                    transactions =
+                        ConvexResult.Failed("transport failure (CredentialEchoException)"),
+                ),
+            ).load(FamilyMember.VICTOR)
+        } finally {
+            logger.removeHandler(handler)
+        }
+
+        assertTrue(
+            messages.any {
+                "projection=transactions" in it && "cause=TRANSPORT" in it
+            },
+        )
+        assertTrue(messages.none { "CredentialEchoException" in it })
+    }
+
+    @Test
+    fun `ui state maps every diagnosis to specific user copy`() = runBlocking {
+        val cases: List<
+            Pair<ConvexResult<RowSnapshot<Transaction>>, Pair<Int, Int>>,
+        > = listOf(
+            ConvexResult.Unauthorized to
+                Pair(
+                    R.string.convex_row_failure_unauthorized_title,
+                    R.string.convex_row_failure_unauthorized_detail,
+                ),
+            ConvexResult.Disabled to
+                Pair(
+                    R.string.convex_row_failure_disabled_title,
+                    R.string.convex_row_failure_disabled_detail,
+                ),
+            ConvexResult.NotConfigured to
+                Pair(
+                    R.string.convex_row_failure_not_configured_title,
+                    R.string.convex_row_failure_not_configured_detail,
+                ),
+            ConvexResult.Failed("http 503") to
+                Pair(
+                    R.string.convex_row_failure_transport_title,
+                    R.string.convex_row_failure_transport_detail,
+                ),
+            ConvexResult.Failed("malformed response envelope") to
+                Pair(
+                    R.string.convex_row_failure_malformed_payload_title,
+                    R.string.convex_row_failure_malformed_payload_detail,
+                ),
+        )
+
+        for ((result, expectedResources) in cases) {
+            val model = RowReadModelLoader(FakeRows(transactions = result)).load(
+                FamilyMember.VICTOR,
+            )
+            val state = VaultUiState(data = model)
+
+            assertEquals(expectedResources.first, state.rowReadFailureTitleRes)
+            assertEquals(expectedResources.second, state.rowReadFailureDetailRes)
+        }
     }
 
     private fun <T> ok(vararg rows: T): ConvexResult<RowSnapshot<T>> =
