@@ -180,7 +180,7 @@ internal fun TodoScreen(
                                 credentialStored = true
                                 null
                             },
-                            onFailure = ::credentialSaveFailureMessage,
+                            onFailure = { credentialSaveFailureMessage(it).resolve(context) },
                         )
                     }
                 }

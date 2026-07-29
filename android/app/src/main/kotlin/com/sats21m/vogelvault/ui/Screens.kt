@@ -1350,27 +1350,31 @@ internal fun SyncTokenConfiguration() {
     // Deliberately not saveable: the plaintext token must not enter saved
     // instance state. Submission immediately hands it to encrypted storage.
     var token by remember { mutableStateOf("") }
-    val application =
-        androidx.compose.ui.platform.LocalContext.current.applicationContext
-            as? com.sats21m.vogelvault.VaultApplication
+    val context = LocalContext.current
+    val application = context.applicationContext as? VaultApplication
     var hasStoredToken by remember(application) {
         mutableStateOf(application?.hasConvexWriteCredential() == true)
     }
     var saveFailure by remember { mutableStateOf<String?>(null) }
     var removalFailure by remember { mutableStateOf<String?>(null) }
 
-    Panel(stringResource(R.string.convex_sync_token_panel_title)) {
+    Panel(stringResource(R.string.write_credential_title)) {
         Column(
             Modifier.padding(VaultSpace.md),
             verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
         ) {
             Text(
+                text = stringResource(R.string.write_credential_source),
+                color = VaultTextMuted,
+                style = MaterialTheme.typography.labelSmall,
+            )
+            Text(
                 text =
                     stringResource(
                         if (hasStoredToken) {
-                            R.string.convex_sync_token_configured
+                            R.string.write_credential_configured
                         } else {
-                            R.string.convex_sync_token_unconfigured
+                            R.string.write_credential_unconfigured
                         },
                     ),
                 color = VaultTextDim,
@@ -1378,8 +1382,11 @@ internal fun SyncTokenConfiguration() {
             )
             OutlinedTextField(
                 value = token,
-                onValueChange = { token = it },
-                label = { Text(stringResource(R.string.convex_sync_token_label)) },
+                onValueChange = {
+                    token = it
+                    saveFailure = null
+                },
+                label = { Text(stringResource(R.string.write_credential_label)) },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
             )
@@ -1395,11 +1402,11 @@ internal fun SyncTokenConfiguration() {
                             saveFailure = null
                             removalFailure = null
                         }.onFailure {
-                            saveFailure = credentialSaveFailureMessage(it)
+                            saveFailure = credentialSaveFailureMessage(it).resolve(context)
                         }
                 },
             ) {
-                Text(stringResource(R.string.convex_sync_token_save))
+                Text(stringResource(R.string.write_credential_save))
             }
             if (hasStoredToken && application != null) {
                 androidx.compose.material3.OutlinedButton(
@@ -1412,7 +1419,7 @@ internal fun SyncTokenConfiguration() {
                                 saveFailure = null
                                 removalFailure = null
                             }.onFailure {
-                                removalFailure = credentialRemovalFailureMessage(it)
+                                removalFailure = credentialRemovalFailureMessage(it).resolve(context)
                             }
                     },
                     border =
@@ -1425,7 +1432,7 @@ internal fun SyncTokenConfiguration() {
                             contentColor = VaultCream,
                         ),
                 ) {
-                    Text(stringResource(R.string.convex_sync_token_remove))
+                    Text(stringResource(R.string.write_credential_remove))
                 }
             }
             saveFailure?.let {

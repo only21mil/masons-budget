@@ -114,8 +114,8 @@ class TodoWriteOutcomeTest {
         val all = listOf(blank, storage, readback, unexpected)
 
         assertEquals(all.size, all.distinct().size, "distinct causes: $all")
-        assertTrue(all.none { it.contains("sync token must not be blank") }, "no exception text is echoed")
-        assertTrue(unexpected.contains("RuntimeException"), "an unexpected cause is still identifiable")
+        assertTrue(all.none { it.formatArgument == "sync token must not be blank" }, "no exception text is echoed")
+        assertEquals("RuntimeException", unexpected.formatArgument, "an unexpected cause is still identifiable")
     }
 
     @Test
@@ -126,7 +126,7 @@ class TodoWriteOutcomeTest {
         val all = listOf(storage, readback, unexpected)
 
         assertEquals(all.size, all.distinct().size, "distinct causes: $all")
-        assertTrue(all.none { it.contains("not persisted") || it.contains("still readable") })
-        assertTrue(unexpected.contains("RuntimeException"), "an unexpected cause is still identifiable")
+        assertTrue(all.none { it.formatArgument == "not persisted" || it.formatArgument == "still readable" })
+        assertEquals("RuntimeException", unexpected.formatArgument, "an unexpected cause is still identifiable")
     }
 }
