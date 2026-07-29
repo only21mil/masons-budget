@@ -68,6 +68,12 @@ internal class ConvexQueryClient(
     }
 
     private fun parse(response: HttpTextResponse): ConvexResult<ConvexValue> {
+        if (response.code == HTTP_UNAUTHORIZED) {
+            // A bare 401 is ambiguous, but preserving a genuinely rejected token
+            // bricks every restart. Clearing a good token after a transient proxy
+            // rejection is recoverable, so fail toward credential self-healing.
+            return ConvexResult.Unauthorized
+        }
         if (response.code != HTTP_OK) return ConvexResult.Failed("http ${response.code}")
 
         val envelope = try {
@@ -109,6 +115,7 @@ internal class ConvexQueryClient(
 
     private companion object {
         const val HTTP_OK = 200
+        const val HTTP_UNAUTHORIZED = 401
         const val CONVEX_RESPONSE_FORMAT = "convex_encoded_json"
         val JSON = Json {
             isLenient = false
