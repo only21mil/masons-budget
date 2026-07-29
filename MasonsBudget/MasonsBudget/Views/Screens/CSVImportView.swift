@@ -259,10 +259,6 @@ struct CSVImportView: View {
                 .font(AppFont.headline)
                 .foregroundStyle(theme.text)
 
-            Text("Recurring patterns will be detected on next sync.")
-                .font(AppFont.labelSmallRegular)
-                .foregroundStyle(theme.textMuted)
-
             Button { dismiss() } label: {
                 Text("Done")
                     .font(AppFont.labelLargeStrong)
