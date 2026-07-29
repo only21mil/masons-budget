@@ -38,7 +38,7 @@ enum ConvexConfig {
     ) -> MigratingKeychainTokenStore {
         MigratingKeychainTokenStore(
             userDefaults: userDefaults,
-            legacyKey: syncTokenKey,
+            legacyKey: readTokenKey,
             keychain: keychain,
         )
     }
