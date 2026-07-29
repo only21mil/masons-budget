@@ -5,9 +5,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.sats21m.vogelvault.data.ConvexConfig
+import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.data.RowQueryRepositories
 import com.sats21m.vogelvault.data.SecureConvexConfigSource
+import com.sats21m.vogelvault.data.SecureConvexSyncTokenSource
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.cache.VaultDatabase
 import com.sats21m.vogelvault.ui.VaultViewModel
@@ -46,6 +48,17 @@ class VaultApplication : Application() {
                 buildTime = bakedConvexConfig,
                 stored = storedConvexConfigSource.current(),
             ),
+        )
+    }
+
+    /**
+     * Shared write transport. Every mutation reads the latest encrypted sync
+     * token at request time; no write credential is baked into the app.
+     */
+    internal val convexMutationClient: ConvexMutationClient by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        ConvexMutationClient(
+            configSource = convexConfigSource,
+            syncTokenSource = SecureConvexSyncTokenSource(storedConvexConfigSource),
         )
     }
 

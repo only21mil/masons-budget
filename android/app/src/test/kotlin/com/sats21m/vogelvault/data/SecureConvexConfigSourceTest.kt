@@ -10,16 +10,22 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 import java.util.UUID
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -60,6 +66,112 @@ class SecureConvexConfigSourceTest {
             assertNotEquals(token, value)
             assertNotEquals("https://example.convex.cloud", value)
         }
+    }
+
+    @Test
+    fun `encrypted sync token source authenticates a mutation without storing plaintext`() {
+        val syncToken = "vv-sync-${UUID.randomUUID()}"
+        source.updateSyncToken(syncToken)
+        val poster = CapturingPoster()
+        val client =
+            ConvexMutationClient(
+                configSource =
+                    MutableConvexConfigSource(
+                        ConvexConfig(deploymentUrl = "https://example.convex.cloud"),
+                    ),
+                syncTokenSource = SecureConvexSyncTokenSource(source),
+                http = poster,
+            )
+
+        val result = runBlocking { client.mutate(ConvexMutation.DeleteTodo("todo-1")) }
+
+        assertTrue(result.isOk)
+        val body = Json.parseToJsonElement(poster.body).jsonObject
+        val sentToken =
+            body["args"]
+                ?.jsonObject
+                ?.get("token")
+                ?.jsonPrimitive
+                ?.content
+        assertEquals(syncToken, sentToken)
+        context
+            .getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+            .all
+            .values
+            .forEach { stored -> assertNotEquals(syncToken, stored) }
+    }
+
+    @Test
+    fun `read and sync credentials can be removed independently`() {
+        val readToken = "vv-read-${UUID.randomUUID()}"
+        val syncToken = "vv-sync-${UUID.randomUUID()}"
+        source.update(
+            ConvexConfig(
+                deploymentUrl = "https://example.convex.cloud",
+                readToken = readToken,
+                remoteReadEnabled = true,
+            ),
+        )
+        source.updateSyncToken(syncToken)
+
+        source.clear()
+
+        assertEquals(ReadReadiness.DISABLED, source.current().readiness)
+        assertEquals(syncToken, SecureConvexSyncTokenSource(source).currentSyncToken())
+
+        source.update(
+            ConvexConfig(
+                deploymentUrl = "https://example.convex.cloud",
+                readToken = readToken,
+                remoteReadEnabled = true,
+            ),
+        )
+        source.clearSyncToken()
+
+        assertEquals(ReadReadiness.READY, source.current().readiness)
+        assertEquals(readToken, source.current().readTokenOrNull())
+        assertFalse(source.hasSyncToken())
+    }
+
+    @Test
+    fun `tampered sync token fails closed without disabling valid reads`() {
+        source.update(
+            ConvexConfig(
+                deploymentUrl = "https://example.convex.cloud",
+                readToken = "vv-read-${UUID.randomUUID()}",
+                remoteReadEnabled = true,
+            ),
+        )
+        source.updateSyncToken("vv-sync-${UUID.randomUUID()}")
+        context
+            .getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+            .edit()
+            .putString("sync_token", "not-valid-ciphertext")
+            .commit()
+
+        assertFalse(source.hasSyncToken())
+        assertNull(SecureConvexSyncTokenSource(source).currentSyncToken())
+        assertEquals(ReadReadiness.READY, source.current().readiness)
+    }
+
+    @Test
+    fun `failed sync token removal is reported and retains the credential`() {
+        val syncToken = "vv-sync-${UUID.randomUUID()}"
+        source.updateSyncToken(syncToken)
+        val failingSource =
+            SecureConvexConfigSource(
+                preferences =
+                    ClearCommitFailingPreferences(
+                        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE),
+                    ),
+                cipher = TestConfigCipher,
+            )
+
+        assertFailsWith<IOException> {
+            failingSource.clearSyncToken()
+        }
+
+        assertEquals(syncToken, SecureConvexSyncTokenSource(failingSource).currentSyncToken())
     }
 
     @Test
@@ -259,6 +371,18 @@ private class ClearCommitFailingPreferences(
 
             override fun commit(): Boolean = false
         }
+    }
+}
+
+private class CapturingPoster : HttpPoster {
+    lateinit var body: String
+
+    override suspend fun postJson(
+        url: String,
+        body: String,
+    ): HttpTextResponse {
+        this.body = body
+        return HttpTextResponse(200, """{"status":"success","value":{"outcome":"deleted"}}""")
     }
 }
 

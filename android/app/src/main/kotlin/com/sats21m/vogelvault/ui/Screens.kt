@@ -1134,7 +1134,7 @@ private fun VaultLazyListScope.settings(
         if (readsConvexRows) {
             StatusBanner(
                 "Convex row reads are enabled",
-                "Every query is authenticated. This client remains read-only.",
+                "Every query is authenticated. Writes require the separate sync credential below.",
                 tone = VaultTextMuted,
             )
         } else {
@@ -1155,6 +1155,7 @@ private fun VaultLazyListScope.settings(
         }
     }
     item { RemoteRowsConfiguration(onEnableRemoteRows) }
+    item { SyncTokenConfiguration() }
     item {
         Panel("Slices") {
             Column {
@@ -1261,6 +1262,116 @@ private fun RemoteRowsConfiguration(onEnable: (String) -> Unit) {
             }
         }
     }
+}
+
+@Composable
+private fun SyncTokenConfiguration() {
+    // Deliberately not saveable: the plaintext token must not enter saved
+    // instance state. Submission immediately hands it to encrypted storage.
+    var token by remember { mutableStateOf("") }
+    val application =
+        androidx.compose.ui.platform.LocalContext.current.applicationContext
+            as? com.sats21m.vogelvault.VaultApplication
+    val storedConfigSource =
+        remember(application) {
+            application?.let { com.sats21m.vogelvault.data.SecureConvexConfigSource(it) }
+        }
+    var hasStoredToken by remember(storedConfigSource) {
+        mutableStateOf(storedConfigSource?.hasSyncToken() == true)
+    }
+    var saveFailed by remember { mutableStateOf(false) }
+    var removalFailed by remember { mutableStateOf(false) }
+
+    Panel(stringResource(R.string.convex_sync_token_panel_title)) {
+        Column(
+            Modifier.padding(VaultSpace.md),
+            verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
+        ) {
+            Text(
+                text =
+                    stringResource(
+                        if (hasStoredToken) {
+                            R.string.convex_sync_token_configured
+                        } else {
+                            R.string.convex_sync_token_unconfigured
+                        },
+                    ),
+                color = VaultTextDim,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedTextField(
+                value = token,
+                onValueChange = { token = it },
+                label = { Text(stringResource(R.string.convex_sync_token_label)) },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+            )
+            Button(
+                enabled = token.isNotBlank() && storedConfigSource != null,
+                onClick = {
+                    runCatching {
+                        checkNotNull(storedConfigSource).updateSyncToken(token)
+                    }.onSuccess {
+                        token = ""
+                        hasStoredToken = true
+                        saveFailed = false
+                        removalFailed = false
+                    }.onFailure {
+                        saveFailed = true
+                    }
+                },
+            ) {
+                Text(stringResource(R.string.convex_sync_token_save))
+            }
+            if (hasStoredToken && storedConfigSource != null) {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = {
+                        runCatching {
+                            clearSyncTokenConfiguration(storedConfigSource)
+                        }.onSuccess {
+                            token = ""
+                            hasStoredToken = false
+                            saveFailed = false
+                            removalFailed = false
+                        }.onFailure {
+                            removalFailed = true
+                        }
+                    },
+                    border =
+                        androidx.compose.foundation.BorderStroke(
+                            width = 1.dp,
+                            color = VaultLine,
+                        ),
+                    colors =
+                        androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                            contentColor = VaultCream,
+                        ),
+                ) {
+                    Text(stringResource(R.string.convex_sync_token_remove))
+                }
+            }
+            if (saveFailed) {
+                Text(
+                    text = stringResource(R.string.convex_sync_token_save_failed),
+                    color = VaultWarning,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (removalFailed) {
+                Text(
+                    text = stringResource(R.string.convex_sync_token_remove_failed),
+                    color = VaultWarning,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+internal fun clearSyncTokenConfiguration(
+    stored: com.sats21m.vogelvault.data.SecureConvexConfigSource,
+) {
+    stored.clearSyncToken()
 }
 
 // ── shared ──────────────────────────────────────────────────────────────────
