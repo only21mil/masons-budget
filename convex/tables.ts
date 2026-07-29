@@ -1523,6 +1523,20 @@ async function upsertBtcBillPayRow(
     )
     .first();
   if (existing) {
+    // Bill pays deliberately share ONE source file and carry `owner` per row,
+    // unlike transactions which separate owners by file. The natural key is
+    // therefore (sourceFile, billPayId) alone, so a write reusing another
+    // member's id would patch THEIR row and flip its owner — destroying an
+    // adult payment and dropping the survivor out of every adult netWorth read.
+    // An upsert may change a row's money and metadata; it may never change who
+    // it belongs to.
+    if (existing.owner !== row.owner) {
+      throw new ConvexError(
+        `upsertBtcBillPay: ${row.billPayId} in ${row.sourceFile} belongs to ` +
+          `${existing.owner}, not ${row.owner}. Reusing another member's id ` +
+          `would overwrite their payment, so this is refused rather than merged.`,
+      );
+    }
     await ctx.db.patch(existing._id, row);
     return "updated";
   }
@@ -1588,6 +1602,39 @@ function requireSignAgrees(
         `${expectedNegative ? "negative" : "positive"} in ${sourceFile} ` +
         `(purchases are positive and refunds are negative for every owner), ` +
         `got ${minor}. The sign is not corrected here on purpose.`,
+    );
+  }
+}
+
+/** A bill payment is money leaving, in both currencies. Mirrors the intent of
+ *  requireSignAgrees: state the convention, refuse a violation, and never
+ *  silently correct it — a corrected sign hides a client bug until an aggregate
+ *  is already wrong. `feeUsdCents` may legitimately be zero; the rest may not. */
+function requireBillPayAmounts(billPay: {
+  id: string;
+  amountUsdCents: bigint;
+  btcSpentSats: bigint;
+  btcPriceCents: bigint;
+  feeUsdCents: bigint;
+}) {
+  const positive: Array<[string, bigint]> = [
+    ["amountUsdCents", billPay.amountUsdCents],
+    ["btcSpentSats", billPay.btcSpentSats],
+    ["btcPriceCents", billPay.btcPriceCents],
+  ];
+  for (const [field, value] of positive) {
+    if (value <= 0n) {
+      throw new ConvexError(
+        `upsertBtcBillPay: ${field} for ${billPay.id} must be positive ` +
+          `(a bill payment is a spend), got ${value}. The sign is not ` +
+          `corrected here on purpose.`,
+      );
+    }
+  }
+  if (billPay.feeUsdCents < 0n) {
+    throw new ConvexError(
+      `upsertBtcBillPay: feeUsdCents for ${billPay.id} must not be negative, ` +
+        `got ${billPay.feeUsdCents}.`,
     );
   }
 }
@@ -1674,6 +1721,21 @@ export const deleteTransaction = mutation({
       )
       .first();
     if (!existing) return { txId, owner, removed: false };
+    // The `owner` argument used to be resolved and then never consulted, so the
+    // row was found by (sourceFile, txId) alone. Transaction ids DO collide
+    // across source files — the neighbouring test seeds "shared-id" in both
+    // `transactions` and `mason-transactions` on purpose. That made
+    // deleteTransaction({txId, owner: "mason"}) with sourceFile omitted default
+    // to the ADULT file and permanently delete Victor's row while reporting
+    // success. There is no transaction tombstone, so the row is simply gone.
+    // Fail closed instead: an explicit owner must match the row we found.
+    if (isFamilyMember(rawOwner) && existing.owner !== rawOwner) {
+      throw new ConvexError(
+        `deleteTransaction: ${txId} in ${file} belongs to ${existing.owner}, ` +
+          `not ${rawOwner}. Pass the matching sourceFile for that owner; this ` +
+          `is not corrected here on purpose because the delete is irreversible.`,
+      );
+    }
     await ctx.db.delete(existing._id);
     return { txId, owner: existing.owner, removed: true };
   },
@@ -1799,6 +1861,21 @@ export const upsertBtcBillPay = mutation({
     validateSyncToken(token);
     const file = sourceFile ?? "bitcoin-bill-pays";
     const fileOwner = ownerForSourceFile(file, "btcBillPays");
+    // NOTE: deliberately NOT the upsertBtcAccount guard (owner must equal
+    // fileOwner). There is exactly one bill-pay source file and no child
+    // equivalent, so bill pays carry `owner` per row and rely on read-time
+    // visibility scoping — a child's row is visible to an adult but excluded
+    // from adult netWorth. Requiring owner === fileOwner here would forbid
+    // child bill pays outright. The cross-owner hijack is instead blocked in
+    // upsertBtcBillPayRow, which refuses to change an existing row's owner.
+    //
+    // A bill payment is a spend. Money keeps the repo-wide convention:
+    // purchases are POSITIVE, and the sign is never corrected here on purpose.
+    // upsertTransaction enforces this via requireSignAgrees; bill pays had no
+    // equivalent, so a client still carrying the pre-fix inverted convention
+    // could store negatives and make every aggregate under-report by twice the
+    // payment.
+    requireBillPayAmounts(billPay);
     const row = {
       billPayId: billPay.id,
       owner: resolveOwner(billPay.owner, fileOwner),

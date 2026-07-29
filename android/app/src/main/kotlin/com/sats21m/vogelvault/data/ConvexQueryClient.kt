@@ -95,11 +95,7 @@ internal class ConvexQueryClient(
                 } else {
                     errorData.stringOrNull()
                 }
-                if (message?.contains("Unauthorized", ignoreCase = true) == true) {
-                    ConvexResult.Unauthorized
-                } else {
-                    ConvexResult.Failed("convex error")
-                }
+                classifyConvexError(message)
             }
 
             else -> ConvexResult.Failed("unrecognised response envelope")
@@ -119,4 +115,29 @@ internal class ConvexQueryClient(
             allowSpecialFloatingPointValues = false
         }
     }
+}
+
+/**
+ * Classifies a Convex `status: "error"` envelope.
+ *
+ * Extracted and directly tested because ConvexResult.Unauthorized now DESTROYS
+ * the stored credential — that is what stops a rejected token surviving every
+ * restart. Precision is therefore load-bearing, and the deployment throws an
+ * "Unauthorized: ..." ConvexError for TWO unrelated conditions:
+ *
+ *  - "Unauthorized: invalid read token" — the client's credential is wrong.
+ *  - "Unauthorized: CONVEX_READ_TOKEN is not configured (fail-closed)." — the
+ *    DEPLOYMENT is misconfigured. That is a server fault every device sees at
+ *    once, so clearing credentials would wipe a perfectly good token
+ *    fleet-wide the moment the backend broke: a far worse failure than the one
+ *    the self-heal exists to fix.
+ */
+internal fun <T> classifyConvexError(message: String?): ConvexResult<T> {
+    if (message?.contains("is not configured", ignoreCase = true) == true) {
+        return ConvexResult.Failed("convex deployment misconfigured")
+    }
+    if (message?.contains("Unauthorized", ignoreCase = true) == true) {
+        return ConvexResult.Unauthorized
+    }
+    return ConvexResult.Failed("convex error")
 }

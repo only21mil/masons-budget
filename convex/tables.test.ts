@@ -2204,6 +2204,84 @@ describe("row mutations", () => {
     expect(await ids("maddox", "visible")).not.toContain("mason-bp-1");
   });
 
+  it("refuses to delete a transaction that belongs to a different owner", async () => {
+    await migrateAll(t);
+    // Ids collide across source files on purpose (see the shared-id test), and
+    // sourceFile defaults to the ADULT file. Before the owner check, asking to
+    // delete a child's id with sourceFile omitted silently deleted the adult's
+    // row and reported removed: true. There is no transaction tombstone, so the
+    // row would simply be gone.
+    const victorRow = await t.query(fn.listTransactions, { viewer: "victor" });
+    const target = victorRow.rows[0];
+    await expect(
+      t.mutation(fn.deleteTransaction, {
+        txId: target.txId,
+        owner: target.owner === "victor" ? "mason" : "victor",
+      }),
+    ).rejects.toThrow(/belongs to/);
+
+    const after = await t.query(fn.listTransactions, { viewer: "victor" });
+    expect(after.rows.map((r: { txId: string }) => r.txId)).toContain(target.txId);
+  });
+
+  it("refuses a bill pay whose money is not a positive spend", async () => {
+    for (const bad of [
+      { amountUsdCents: -18_655n },
+      { btcSpentSats: -200_000n },
+      { btcPriceCents: 0n },
+      { feeUsdCents: -1n },
+    ]) {
+      await expect(
+        t.mutation(fn.upsertBtcBillPay, {
+          billPay: {
+            id: "bad-bp",
+            date: "2026-07-24",
+            merchant: "Electric Utility",
+            category: "Utilities",
+            amountUsdCents: 18_655n,
+            btcSpentSats: 200_000n,
+            btcPriceCents: 10_000_000n,
+            feeUsdCents: 0n,
+            ...bad,
+          },
+        }),
+      ).rejects.toThrow();
+    }
+  });
+
+  it("refuses a bill-pay upsert that would change an existing row's owner", async () => {
+    const base = {
+      date: "2026-07-24",
+      merchant: "Electric Utility",
+      category: "Utilities",
+      amountUsdCents: 18_655n,
+      btcSpentSats: 200_000n,
+      btcPriceCents: 10_000_000n,
+      feeUsdCents: 0n,
+    };
+    await t.mutation(fn.upsertBtcBillPay, {
+      billPay: { id: "hijack-bp", owner: "victor", ...base },
+    });
+    // Bill pays share ONE source file, so the natural key is the id alone.
+    // Reusing it under another owner used to PATCH the adult's row, flipping
+    // its owner and overwriting every money field.
+    await expect(
+      t.mutation(fn.upsertBtcBillPay, {
+        billPay: { id: "hijack-bp", owner: "mason", ...base, amountUsdCents: 1n },
+      }),
+    ).rejects.toThrow(/belongs to victor/);
+
+    const rows = await queryRows(fn.listBtcBillPays, {
+      viewer: "victor",
+      scope: "visible",
+    });
+    const survivor = rows.find(
+      (r: { billPayId: string }) => r.billPayId === "hijack-bp",
+    );
+    expect(survivor.owner).toBe("victor");
+    expect(survivor.amountUsdCents).toBe(18_655n);
+  });
+
   it("refuses a BTC bill pay source outside the closed source catalogue", async () => {
     await expect(
       t.mutation(fn.upsertBtcBillPay, {
