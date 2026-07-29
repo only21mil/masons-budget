@@ -12,15 +12,13 @@ import {
   allowedSwitchTargets,
   displayName,
   isAdult,
-  mc2BTCBuysFileName,
-  mc2TransactionsFileName,
   profileDescription,
   sharesNetWorthWith,
   showsFullBudget,
   visibleTo,
 } from "@vogel-vault/domain/family"
 import { formatMinorUnits } from "@vogel-vault/domain/money"
-import { type Freshness, MC2_FILES, type Transaction } from "@vogel-vault/domain/readModel"
+import { type Freshness, type Transaction } from "@vogel-vault/domain/readModel"
 
 import { useAppState } from "../../app/AppState.tsx"
 import type { FixtureEnvelope } from "../../data/fixtures.ts"
@@ -201,7 +199,7 @@ function SyncHealthPage() {
         detail={
           readsRows
             ? "Every slice below came from Convex row tables over authenticated HTTP; the read token remains in the main process."
-            : "Enable and fully configure runtime row reads to replace the sanitized fixture envelope."
+            : "Configure authenticated reads from Convex row tables to replace the sanitized fixture envelope."
         }
       />
       <Panel title="Slices" flush>
@@ -217,27 +215,6 @@ function SyncHealthPage() {
           ]}
           rows={slices}
           rowKey={(row) => row.name}
-        />
-      </Panel>
-      <Panel
-        title="Legacy blob compatibility names"
-        source={`${MC2_FILES.length} retained schema names`}
-        flush
-      >
-        <DataTable
-          columns={[
-            { key: "file", header: "File", render: (row: { file: string }) => row.file },
-            {
-              key: "wired",
-              header: "In this build",
-              render: (row: { file: string }) => {
-                const wired = slices.some((slice) => slice.name === row.file)
-                return <Badge tone={wired ? "positive" : "neutral"}>{wired ? "wired" : "pending"}</Badge>
-              },
-            },
-          ]}
-          rows={MC2_FILES.map((file) => ({ file }))}
-          rowKey={(row) => row.file}
         />
       </Panel>
     </>
@@ -672,23 +649,21 @@ function OnboardingPage() {
           ))}
         </Toolbar>
       </Panel>
-      <Panel title="What syncs" source="Read-only in this build">
+      <Panel title="Row access" source="Convex row-table scope by profile">
         <DataTable
           columns={[
             { key: "member", header: "Profile", render: (row: { member: FamilyMember }) => displayName(row.member) },
             {
               key: "tx",
-              header: "Transactions file",
-              render: (row: { member: FamilyMember }) => (
-                <code className="vv-num">{mc2TransactionsFileName(row.member)}</code>
-              ),
+              header: "Transactions",
+              render: (row: { member: FamilyMember }) =>
+                isAdult(row.member) ? "Household + visible children" : "Own rows",
             },
             {
               key: "btc",
-              header: "Buys file",
-              render: (row: { member: FamilyMember }) => (
-                <code className="vv-num">{mc2BTCBuysFileName(row.member)}</code>
-              ),
+              header: "Bitcoin buys",
+              render: (row: { member: FamilyMember }) =>
+                isAdult(row.member) ? "Household + visible children" : "Own rows",
               secondary: true,
             },
           ]}

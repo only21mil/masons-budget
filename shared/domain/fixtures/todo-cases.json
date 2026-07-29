@@ -90,7 +90,7 @@
     {
       "name": "a legacy snake_case todo becomes the dual-field superset",
       "input": {
-        "id": "mc2-1",
+        "id": "legacy-1",
         "text": "Reconcile July statements",
         "category": "work",
         "due_date": "2026-07-27",
@@ -102,7 +102,7 @@
         "priority": 2
       },
       "expected": {
-        "id": "mc2-1",
+        "id": "legacy-1",
         "title": "Reconcile July statements",
         "text": "Reconcile July statements",
         "category": "work",

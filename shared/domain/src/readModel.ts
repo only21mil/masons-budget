@@ -1,13 +1,11 @@
 // The Vogel Vault — shared financial read model.
 //
 // Runtime clients read Convex row tables through authenticated HTTP queries.
-// Some type and constant names below preserve the surviving blob contract used
-// by shipped clients; they do not name a live upstream system. The legacy shapes
-// mirror the compatibility DTOs in
-// MasonsBudget/MasonsBudget/Services/MC2DTOs.swift.
+// Row normalizers preserve the field aliases still present in stored records,
+// but no separate upstream or sync service participates in reads.
 //
 // Conventions carried over from AGENTS.md:
-//   - Legacy blob JSON is snake_case; this layer exposes camelCase.
+//   - Stored wire fields may be snake_case; this layer exposes camelCase.
 //   - Money never touches float — raw values are kept lexically and converted to
 //     integer minor units via ./money.
 //   - Optional in the DTO means "may be absent in JSON". Default in the
@@ -22,38 +20,8 @@ import {
 } from "./family.ts"
 import { type Cents, type Sats, parseBtcToSats, parseCents } from "./money.ts"
 
-/**
- * Legacy blob names retained for decoding compatibility.
- *
- * This is not the runtime read plan: current clients query Convex row tables
- * over HTTP with a read token.
- */
-export const MC2_FILES = [
-  "transactions",
-  "budget",
-  "bitcoin-buys",
-  "bitcoin-bill-pays",
-  "btc-balance-snapshot",
-  "finances",
-  "todos",
-  "mason-transactions",
-  "mason-budget",
-  "mason-bitcoin-buys",
-  "maddox-transactions",
-  "son-balances",
-] as const
-
-export type MC2FileName = (typeof MC2_FILES)[number]
-
 /** Freshness of a slice of the read model, surfaced explicitly in the UI. */
 export type Freshness = "demo" | "live" | "stale" | "error" | "empty" | "loading"
-
-export interface DataFileEnvelope<T> {
-  readonly name: string
-  readonly data: T
-  readonly version: number
-  readonly updatedAt: number
-}
 
 export interface SliceState<T> {
   readonly status: Freshness

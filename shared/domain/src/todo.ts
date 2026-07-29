@@ -9,8 +9,8 @@
 // ../fixtures/todo-cases.json, which the TypeScript and Kotlin suites both load.
 //
 // Field-level truth, in order of authority:
-//   - The legacy Swift DTO `MC2TodoItem` is the compatibility authority for
-//     which aliases exist and how ownership resolves.
+//   - The retained Swift todo DTO is the compatibility authority for which
+//     aliases exist and how ownership resolves.
 //   - convex/todoNormalize.ts is the source of truth for what gets *emitted*.
 // Where the two disagree, the divergences are enumerated in the fixture's
 // $comment blocks and reproduced deliberately here, never accidentally.

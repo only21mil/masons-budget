@@ -8,9 +8,9 @@ decoder. The executable vectors live in
 ## Current data boundary
 
 Convex is the system of record. Shipped clients read the Convex row tables over
-the HTTP API with a runtime-injected read token. The shared types still include
-legacy blob-shaped names while that decoding contract remains load-bearing, but
-those names do not identify a live upstream service or a separate sync system.
+the HTTP API with a runtime-injected read token. Row decoders preserve the field
+aliases still present in stored records, but there is no live upstream service
+or separate sync system.
 
 ## Server responses are open objects
 

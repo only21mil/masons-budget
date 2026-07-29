@@ -85,27 +85,8 @@ export function profileDescription(member: FamilyMember): string {
   }
 }
 
-// ── Legacy blob-name routing ────────────────────────────────────────────────
-// Compatibility port of the Swift blob-name members. Runtime clients read
-// Convex row tables; these names remain part of the cross-client contract.
-
-export function mc2TransactionsFileName(member: FamilyMember): string {
-  switch (member) {
-    case "victor":
-    case "rachel":
-      return "transactions"
-    case "mason":
-      return "mason-transactions"
-    case "maddox":
-      return "maddox-transactions"
-  }
-}
-
-export function mc2BTCBuysFileName(member: FamilyMember): string {
-  return member === "mason" ? "mason-bitcoin-buys" : "bitcoin-buys"
-}
-
-export function hasDedicatedMC2ChildFinanceFiles(member: FamilyMember): boolean {
+/** Mason has a dedicated budget source; Maddox currently has none. */
+export function hasDedicatedChildBudgetSource(member: FamilyMember): boolean {
   return member === "mason"
 }
 

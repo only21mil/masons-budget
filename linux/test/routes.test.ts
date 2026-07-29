@@ -151,6 +151,23 @@ test("every page in STATIC_PAGES actually exists", () => {
   }
 })
 
+test("system pages describe current Convex row reads instead of retired file routing", () => {
+  const syncHealth = ALL_PAGES.find((page) => page.id === "sync-health")
+  const onboarding = ALL_PAGES.find((page) => page.id === "onboarding")
+  assert.ok(syncHealth)
+  assert.ok(onboarding)
+
+  const syncMarkup = renderPage(syncHealth, "victor", "normal")
+  assert.ok(syncMarkup.includes("Convex row tables"))
+  assert.ok(!syncMarkup.includes("Legacy blob compatibility names"))
+  assert.ok(!syncMarkup.includes("retained schema names"))
+
+  const onboardingMarkup = renderPage(onboarding, "victor", "normal")
+  assert.ok(onboardingMarkup.includes("Row access"))
+  assert.ok(!onboardingMarkup.includes("Transactions file"))
+  assert.ok(!onboardingMarkup.includes("Buys file"))
+})
+
 // ── Visibility leaks ────────────────────────────────────────────────────────
 
 /**

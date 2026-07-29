@@ -17,10 +17,8 @@ import {
   allowedSwitchTargets,
   canSeeDataOwnedBy,
   coerceOwner,
-  hasDedicatedMC2ChildFinanceFiles,
+  hasDedicatedChildBudgetSource,
   isAdult,
-  mc2BTCBuysFileName,
-  mc2TransactionsFileName,
   netWorthScopeFor,
   sharesNetWorthWith,
   showsFullBudget,
@@ -76,9 +74,7 @@ interface Fixtures {
   sharesNetWorth: PairCase[]
   allowedSwitchTargets: MemberCase<FamilyMember[]>[]
   showsFullBudget: MemberCase<boolean>[]
-  mc2TransactionsFileName: MemberCase<string>[]
-  mc2BTCBuysFileName: MemberCase<string>[]
-  hasDedicatedMC2ChildFinanceFiles: MemberCase<boolean>[]
+  hasDedicatedChildBudgetSource: MemberCase<boolean>[]
   sampleTransactions: SampleTransaction[]
   sampleAccounts: SampleAccount[]
   sampleTodos: SampleTodo[]
@@ -164,15 +160,9 @@ test("showsFullBudget tracks adulthood", () => {
   }
 })
 
-test("legacy blob-name routing matches the Swift enum", () => {
-  for (const testCase of fixtures.mc2TransactionsFileName) {
-    assert.equal(mc2TransactionsFileName(testCase.member), testCase.expected)
-  }
-  for (const testCase of fixtures.mc2BTCBuysFileName) {
-    assert.equal(mc2BTCBuysFileName(testCase.member), testCase.expected)
-  }
-  for (const testCase of fixtures.hasDedicatedMC2ChildFinanceFiles) {
-    assert.equal(hasDedicatedMC2ChildFinanceFiles(testCase.member), testCase.expected)
+test("dedicated child budget availability matches the shared fixture", () => {
+  for (const testCase of fixtures.hasDedicatedChildBudgetSource) {
+    assert.equal(hasDedicatedChildBudgetSource(testCase.member), testCase.expected)
   }
 })
 

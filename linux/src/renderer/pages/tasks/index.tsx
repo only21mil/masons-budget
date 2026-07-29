@@ -36,11 +36,11 @@ const TODAY = "2026-07-26"
  * Spelled out here rather than re-derived per view: one interpretation, one
  * place, same as the contract itself.
  */
-export const MC2_DEFAULT_PROJECT = "Inbox"
+export const UNFILED_PROJECT = "Inbox"
 
 /** Where a todo is filed: its project, else its area, else nowhere. */
 export function filingOf(todo: TodoItem): string | null {
-  const project = todo.project === MC2_DEFAULT_PROJECT ? null : todo.project
+  const project = todo.project === UNFILED_PROJECT ? null : todo.project
   return project ?? todo.area
 }
 
