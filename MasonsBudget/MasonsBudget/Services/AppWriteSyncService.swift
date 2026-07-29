@@ -26,7 +26,7 @@ enum AppWriteSyncService {
             return
         }
 
-        let fileName = owner.mc2TransactionsFileName
+        let fileName = owner.transactionsDataFileName
         pushTransactionPayload(payload, to: fileName, onResult: onResult)
     }
 
@@ -60,7 +60,7 @@ enum AppWriteSyncService {
         owner: FamilyMember,
         onResult: (@MainActor @Sendable (Bool) -> Void)? = nil,
     ) {
-        let fileName = owner.mc2TransactionsFileName
+        let fileName = owner.transactionsDataFileName
         let id = transaction.id
         deleteTransaction(id: id, from: fileName, onResult: onResult)
     }
@@ -100,7 +100,7 @@ enum AppWriteSyncService {
         owner: FamilyMember,
         onResult: (@MainActor @Sendable (Bool) -> Void)? = nil,
     ) {
-        let fileName = owner.mc2BTCBuysFileName
+        let fileName = owner.btcBuysDataFileName
         let payload = MC2BTCBuy(appBuy: buy)
         pushBTCBuyPayload(payload, to: fileName, onResult: onResult)
     }

@@ -61,7 +61,7 @@ class BudgetMonthPickerTest {
     /**
      * The Budget screen's derivation, mirrored from `Screens.kt`'s `budget()`.
      *
-     * MC2 publishes one budget file per profile carrying the current month's
+     * The compatibility budget document carries the current month's
      * targets, so an earlier month is scoped by re-labelling that budget and
      * re-deriving its actuals. Duplicated rather than shared because the screen
      * owns it inside a composable, and asking Robolectric to answer a question
@@ -90,7 +90,7 @@ class BudgetMonthPickerTest {
 
     @Test
     fun `Rachel is offered exactly what Victor is`() {
-        // Victor and Rachel are one household. Adult MC2 records default to owner
+        // Victor and Rachel are one household. Adult records default to owner
         // "victor", so a strict `owner == activeProfile` check anywhere in this
         // path empties Rachel's picker — the v0.3 bug, in month form.
         val victor = state(FamilyMember.VICTOR)

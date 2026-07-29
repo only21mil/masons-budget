@@ -231,9 +231,9 @@ final class FamilyVisibilityTests: XCTestCase {
 
         XCTAssertEqual(Set(fixture.allowedSwitchTargets.map(\.member)), expectedMembers)
         XCTAssertEqual(Set(fixture.showsFullBudget.map(\.member)), expectedMembers)
-        XCTAssertEqual(Set(fixture.mc2TransactionsFileName.map(\.member)), expectedMembers)
-        XCTAssertEqual(Set(fixture.mc2BTCBuysFileName.map(\.member)), expectedMembers)
-        XCTAssertEqual(Set(fixture.hasDedicatedMC2ChildFinanceFiles.map(\.member)), expectedMembers)
+        XCTAssertEqual(Set(fixture.transactionsDataFileName.map(\.member)), expectedMembers)
+        XCTAssertEqual(Set(fixture.btcBuysDataFileName.map(\.member)), expectedMembers)
+        XCTAssertEqual(Set(fixture.hasDedicatedChildFinanceFiles.map(\.member)), expectedMembers)
 
         XCTAssertEqual(fixture.sampleTransactions.count, 9)
         XCTAssertEqual(fixture.sampleAccounts.count, 3)
@@ -277,17 +277,17 @@ final class FamilyVisibilityTests: XCTestCase {
             XCTAssertEqual(try familyMember(testCase.member).showsFullBudget, testCase.expected)
         }
 
-        for testCase in fixture.mc2TransactionsFileName {
-            XCTAssertEqual(try familyMember(testCase.member).mc2TransactionsFileName, testCase.expected)
+        for testCase in fixture.transactionsDataFileName {
+            XCTAssertEqual(try familyMember(testCase.member).transactionsDataFileName, testCase.expected)
         }
 
-        for testCase in fixture.mc2BTCBuysFileName {
-            XCTAssertEqual(try familyMember(testCase.member).mc2BTCBuysFileName, testCase.expected)
+        for testCase in fixture.btcBuysDataFileName {
+            XCTAssertEqual(try familyMember(testCase.member).btcBuysDataFileName, testCase.expected)
         }
 
-        for testCase in fixture.hasDedicatedMC2ChildFinanceFiles {
+        for testCase in fixture.hasDedicatedChildFinanceFiles {
             XCTAssertEqual(
-                try familyMember(testCase.member).hasDedicatedMC2ChildFinanceFiles,
+                try familyMember(testCase.member).hasDedicatedChildFinanceFiles,
                 testCase.expected,
             )
         }
@@ -466,13 +466,30 @@ private struct VisibilityFixture: Decodable {
     let sharesNetWorth: [ViewerOwnerExpectation]
     let allowedSwitchTargets: [MemberListExpectation]
     let showsFullBudget: [MemberBoolExpectation]
-    let mc2TransactionsFileName: [MemberStringExpectation]
-    let mc2BTCBuysFileName: [MemberStringExpectation]
-    let hasDedicatedMC2ChildFinanceFiles: [MemberBoolExpectation]
+    let transactionsDataFileName: [MemberStringExpectation]
+    let btcBuysDataFileName: [MemberStringExpectation]
+    let hasDedicatedChildFinanceFiles: [MemberBoolExpectation]
     let sampleTransactions: [FixtureTransaction]
     let sampleAccounts: [FixtureAccount]
     let sampleTodos: [FixtureTodo]
     let expectations: FixtureExpectations
+
+    private enum CodingKeys: String, CodingKey {
+        case members
+        case adults
+        case defaultOwner
+        case canSee
+        case sharesNetWorth
+        case allowedSwitchTargets
+        case showsFullBudget
+        case transactionsDataFileName = "mc2TransactionsFileName"
+        case btcBuysDataFileName = "mc2BTCBuysFileName"
+        case hasDedicatedChildFinanceFiles = "hasDedicatedMC2ChildFinanceFiles"
+        case sampleTransactions
+        case sampleAccounts
+        case sampleTodos
+        case expectations
+    }
 }
 
 private struct ViewerOwnerExpectation: Decodable {

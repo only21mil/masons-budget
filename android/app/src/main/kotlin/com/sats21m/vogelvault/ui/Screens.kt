@@ -519,10 +519,10 @@ private fun VaultLazyListScope.budget(
     // reported category total: a July budget counts only July transactions.
     // Matches what iOS has always done (BudgetView.monthTransactions).
     //
-    // MC2 publishes one budget file per profile and it carries the current
+    // The compatibility budget document carries the current
     // month's targets, so an earlier month reuses those targets and re-derives
     // its own actuals. The banner below says so rather than letting the planned
-    // column imply MC2 had a June budget.
+    // column imply Convex stored a June budget.
     if (budget == null) {
         val readable = slice.status == Freshness.LIVE || slice.status == Freshness.DEMO
         item {
@@ -709,7 +709,7 @@ private val MONTH_NAMES =
 /**
  * `2026-07` → `Jul 2026`.
  *
- * A fixed table rather than a date formatter: MC2 month keys are already
+ * A fixed table rather than a date formatter: ledger month keys are already
  * unambiguous, and a locale-dependent format would make the design packet render
  * differently from the device. Anything unexpected falls through to the raw key
  * instead of throwing.
@@ -963,7 +963,7 @@ private fun priceBasis(state: VaultUiState): String =
 // ── Today ───────────────────────────────────────────────────────────────────
 
 /**
- * MC2's project for a todo nobody filed.
+ * The canonical project for a todo nobody filed.
  *
  * `Todo.normalize` defaults `project` to this string, mirroring the Convex
  * emitter, so once the todo boundary is wired through the contract the read
@@ -972,11 +972,11 @@ private fun priceBasis(state: VaultUiState): String =
  * as though every unsorted task were filed. See DOMAIN_ADOPTION.md in this app's
  * package root for where the interpretation is allowed to live.
  */
-private const val MC2_DEFAULT_PROJECT = "Inbox"
+private const val UNFILED_TODO_PROJECT = "Inbox"
 
 /** Where a todo is filed: its project, else its area, else nowhere. */
 private fun filing(todo: TodoItem): String? =
-    todo.project?.takeIf { it != MC2_DEFAULT_PROJECT } ?: todo.area
+    todo.project?.takeIf { it != UNFILED_TODO_PROJECT } ?: todo.area
 
 private fun VaultLazyListScope.today(
     state: VaultUiState,

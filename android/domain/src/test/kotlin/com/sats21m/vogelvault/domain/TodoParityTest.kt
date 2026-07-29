@@ -16,7 +16,7 @@ import kotlin.test.assertTrue
  * Every case is driven by `shared/domain/fixtures/todo-cases.json` — the same
  * file the TypeScript suite loads. The fixture is pinned to the server semantics
  * in `convex/todoNormalize.ts` + `convex/dataFiles.ts` and to the alias and
- * ownership rules in `MasonsBudget/.../MC2DTOs.swift`. If either changes, the
+ * ownership rules in the Apple compatibility DTOs. If either changes, the
  * fixture changes in the same commit and both clients move together.
  */
 class TodoParityTest {
@@ -361,7 +361,7 @@ class TodoParityTest {
         assertTrue(emptyList<CanonicalTodo>().visibleTo(FamilyMember.MASON).isEmpty())
     }
 
-    // ── Read-model bridge ───────────────────────────────────────────────────
+    // ── Read-model projection ───────────────────────────────────────────────
 
     @Test
     fun `due-by is open-and-on-or-before comparing ISO strings lexically`() {

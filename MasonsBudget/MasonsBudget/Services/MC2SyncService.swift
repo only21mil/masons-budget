@@ -46,7 +46,7 @@ final class MC2SyncService {
             totalEntities += await syncBTCBuys(&errors)
             totalEntities += await syncBTCBillPays(&errors)
             totalEntities += await syncFinances(&errors)
-        } else if currentMember.hasDedicatedMC2ChildFinanceFiles {
+        } else if currentMember.hasDedicatedChildFinanceFiles {
             // Mason: sync his own budget, transactions, BTC buys, and finances.
             totalEntities += await syncSonBalances(&errors)
             totalEntities += await syncMasonBudget(&errors)

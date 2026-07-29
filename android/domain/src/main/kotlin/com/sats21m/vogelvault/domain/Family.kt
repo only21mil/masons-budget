@@ -9,7 +9,7 @@ package com.sats21m.vogelvault.domain
  * which this module's test suite and the TypeScript suite both load.
  *
  * HARD RULE (repo AGENTS.md): Victor and Rachel are ONE shared household and see
- * identical data. Adult records in MC2 default to owner "victor", so any strict
+ * identical data. Canonical adult records default to owner "victor", so any strict
  * `owner == activeMember` check empties Rachel's tabs. That bug shipped in v0.3.
  * Always route visibility through [canSee] — never strict equality.
  */
@@ -44,17 +44,17 @@ enum class FamilyMember(val key: String) {
     val requiresAuthToSwitch: Boolean
         get() = true
 
-    val mc2TransactionsFileName: String
+    val transactionsDataFileName: String
         get() = when (this) {
             VICTOR, RACHEL -> "transactions"
             MASON -> "mason-transactions"
             MADDOX -> "maddox-transactions"
         }
 
-    val mc2BtcBuysFileName: String
+    val btcBuysDataFileName: String
         get() = if (this == MASON) "mason-bitcoin-buys" else "bitcoin-buys"
 
-    val hasDedicatedMc2ChildFinanceFiles: Boolean
+    val hasDedicatedChildFinanceFiles: Boolean
         get() = this == MASON
 
     /** Adults can see the household and the kids. Kids see only their own data. */
@@ -77,12 +77,12 @@ enum class FamilyMember(val key: String) {
     }
 
     companion object {
-        /** MC2 tags untagged adult records as "victor". Mirrors the Swift default. */
+        /** Untagged adult records resolve to "victor". Mirrors the Swift default. */
         val DEFAULT_OWNER: FamilyMember = VICTOR
 
         fun fromKeyOrNull(key: String?): FamilyMember? = entries.firstOrNull { it.key == key }
 
-        /** Unknown or absent owners fall back to the MC2 default rather than throwing. */
+        /** Unknown or absent owners fall back to the canonical default rather than throwing. */
         fun coerceOwner(key: String?): FamilyMember = fromKeyOrNull(key) ?: DEFAULT_OWNER
     }
 }

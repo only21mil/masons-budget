@@ -120,7 +120,7 @@ class DesignPacketFoldedTest {
         )
     }
 
-    /** Maddox has no dedicated MC2 budget file, so his budget is genuinely empty. */
+    /** Maddox has no dedicated budget data, so his budget is genuinely empty. */
     @Test
     fun maddoxBudgetIsEmpty() {
         capture(

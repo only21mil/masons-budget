@@ -121,17 +121,19 @@ class FamilyParityTest {
     }
 
     @Test
-    fun `MC2 file routing matches the Swift enum`() {
+    fun `legacy data file routing matches the Swift enum`() {
+        // These fixture keys preserve the cross-client JSON contract while the
+        // runtime symbols describe the Convex dataFiles boundary accurately.
         for (case in memberCases("mc2TransactionsFileName")) {
-            assertEquals(case["expected"].asString, member(case["member"].asString).mc2TransactionsFileName)
+            assertEquals(case["expected"].asString, member(case["member"].asString).transactionsDataFileName)
         }
         for (case in memberCases("mc2BTCBuysFileName")) {
-            assertEquals(case["expected"].asString, member(case["member"].asString).mc2BtcBuysFileName)
+            assertEquals(case["expected"].asString, member(case["member"].asString).btcBuysDataFileName)
         }
         for (case in memberCases("hasDedicatedMC2ChildFinanceFiles")) {
             assertEquals(
                 case["expected"].asBoolean,
-                member(case["member"].asString).hasDedicatedMc2ChildFinanceFiles,
+                member(case["member"].asString).hasDedicatedChildFinanceFiles,
             )
         }
     }

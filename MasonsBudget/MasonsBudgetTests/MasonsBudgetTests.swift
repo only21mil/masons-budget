@@ -436,10 +436,10 @@ final class MasonsBudgetTests: XCTestCase {
     }
 
     func testBTCBuyFileRoutingUsesDedicatedMasonFileOnly() {
-        XCTAssertEqual(FamilyMember.victor.mc2BTCBuysFileName, "bitcoin-buys")
-        XCTAssertEqual(FamilyMember.rachel.mc2BTCBuysFileName, "bitcoin-buys")
-        XCTAssertEqual(FamilyMember.mason.mc2BTCBuysFileName, "mason-bitcoin-buys")
-        XCTAssertEqual(FamilyMember.maddox.mc2BTCBuysFileName, "bitcoin-buys")
+        XCTAssertEqual(FamilyMember.victor.btcBuysDataFileName, "bitcoin-buys")
+        XCTAssertEqual(FamilyMember.rachel.btcBuysDataFileName, "bitcoin-buys")
+        XCTAssertEqual(FamilyMember.mason.btcBuysDataFileName, "mason-bitcoin-buys")
+        XCTAssertEqual(FamilyMember.maddox.btcBuysDataFileName, "bitcoin-buys")
     }
 
     func testBTCBillPayInit() throws {
