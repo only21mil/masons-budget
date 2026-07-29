@@ -1509,6 +1509,27 @@ async function upsertBtcBuyRow(
   return "inserted";
 }
 
+async function upsertBtcBillPayRow(
+  ctx: any,
+  row: {
+    billPayId: string;
+    sourceFile: string;
+  } & Record<string, unknown>,
+): Promise<UpsertOutcome> {
+  const existing = await ctx.db
+    .query("btcBillPays")
+    .withIndex("by_source_bill_pay_id", (q: any) =>
+      q.eq("sourceFile", row.sourceFile).eq("billPayId", row.billPayId),
+    )
+    .first();
+  if (existing) {
+    await ctx.db.patch(existing._id, row);
+    return "updated";
+  }
+  await ctx.db.insert("btcBillPays", row);
+  return "inserted";
+}
+
 async function upsertBtcAccountRow(ctx: any, row: any): Promise<UpsertOutcome> {
   const existing = await ctx.db
     .query("btcAccounts")
@@ -1753,6 +1774,58 @@ export const upsertBtcBuy = mutation({
   },
 });
 
+const btcBillPayInput = v.object({
+  id: v.string(),
+  date: v.string(),
+  merchant: v.string(),
+  category: v.string(),
+  amountUsdCents: v.int64(),
+  btcSpentSats: v.int64(),
+  btcPriceCents: v.int64(),
+  platform: v.optional(v.string()),
+  note: v.optional(v.string()),
+  feeUsdCents: v.int64(),
+  reference: v.optional(v.string()),
+  owner: v.optional(familyMemberValidator),
+});
+
+export const upsertBtcBillPay = mutation({
+  args: {
+    billPay: btcBillPayInput,
+    sourceFile: v.optional(v.string()),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { billPay, sourceFile, token }) => {
+    validateSyncToken(token);
+    const file = sourceFile ?? "bitcoin-bill-pays";
+    const fileOwner = ownerForSourceFile(file, "btcBillPays");
+    const row = {
+      billPayId: billPay.id,
+      owner: resolveOwner(billPay.owner, fileOwner),
+      date: billPay.date,
+      month: monthOf(billPay.date),
+      merchant: billPay.merchant,
+      category: billPay.category,
+      amountUsdCents: billPay.amountUsdCents,
+      btcSpentSats: billPay.btcSpentSats,
+      btcPriceCents: billPay.btcPriceCents,
+      platform: optionalText(billPay.platform),
+      note: optionalText(billPay.note),
+      feeUsdCents: billPay.feeUsdCents,
+      reference: optionalText(billPay.reference),
+      sourceFile: file,
+      updatedAtMs: Date.now(),
+    };
+    const outcome = await upsertBtcBillPayRow(ctx, row);
+    return {
+      billPayId: row.billPayId,
+      owner: row.owner,
+      month: row.month,
+      outcome,
+    };
+  },
+});
+
 export const upsertBtcAccount = mutation({
   args: {
     account: v.object({
@@ -1877,7 +1950,12 @@ export const upsertBudgetCategory = mutation({
 // Source-file ownership validation for public row upserts.
 // ─────────────────────────────────────────────────────────────────────────────
 
-type BlobKind = "transactions" | "todos" | "btcBuys" | "btcAccounts";
+type BlobKind =
+  | "transactions"
+  | "todos"
+  | "btcBuys"
+  | "btcBillPays"
+  | "btcAccounts";
 
 /**
  * Every source file the runtime upserts accept, and the owner its records
@@ -1895,6 +1973,7 @@ const BLOB_SOURCES: Record<string, { kind: BlobKind; owner: FamilyMember }> = {
   todos: { kind: "todos", owner: DEFAULT_OWNER },
   "bitcoin-buys": { kind: "btcBuys", owner: DEFAULT_OWNER },
   "mason-bitcoin-buys": { kind: "btcBuys", owner: "mason" },
+  "bitcoin-bill-pays": { kind: "btcBillPays", owner: DEFAULT_OWNER },
   "btc-balance-snapshot": { kind: "btcAccounts", owner: DEFAULT_OWNER },
   "son-balances": { kind: "btcAccounts", owner: "mason" },
 };
