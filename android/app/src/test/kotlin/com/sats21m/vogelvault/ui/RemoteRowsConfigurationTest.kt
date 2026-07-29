@@ -76,6 +76,35 @@ class RemoteRowsConfigurationTest {
         assertEquals(ReadReadiness.READY, effective.current().readiness)
         assertTrue(effective.current().hasReadToken)
     }
+
+    @Test
+    fun `removing sync token preserves configured row reads`() {
+        val context: Application = RuntimeEnvironment.getApplication()
+        val preferences =
+            context.getSharedPreferences(
+                "sync-token-configuration-test-${UUID.randomUUID()}",
+                Context.MODE_PRIVATE,
+            )
+        val stored =
+            SecureConvexConfigSource(
+                preferences = preferences,
+                cipher = PassthroughConfigCipher,
+            )
+        val configured =
+            ConvexConfig(
+                deploymentUrl = "https://example.convex.cloud",
+                readToken = "test-read-token",
+                remoteReadEnabled = true,
+            )
+        stored.update(configured)
+        stored.updateSyncToken("test-sync-token")
+
+        clearSyncTokenConfiguration(stored)
+
+        assertFalse(stored.hasSyncToken())
+        assertEquals(ReadReadiness.READY, stored.current().readiness)
+        assertTrue(stored.current().hasReadToken)
+    }
 }
 
 private object PassthroughConfigCipher : ConfigCipher {

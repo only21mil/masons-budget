@@ -2,6 +2,7 @@ package com.sats21m.vogelvault.data
 
 import com.sats21m.vogelvault.domain.Custody
 import com.sats21m.vogelvault.domain.FamilyMember
+import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -224,6 +225,47 @@ class ConvexMutationTest {
 
         assertEquals(ConvexResult.Unauthorized, result)
         assertFalse(result.toString().contains(token))
+    }
+
+    @Test
+    fun `network failure stays distinct from missing or rejected sync credentials`() {
+        val missingToken =
+            runBlocking {
+                ConvexMutationClient(
+                    configSource = source(readToken = testToken()),
+                    syncTokenSource = DisabledConvexSyncTokenSource,
+                    http = RecordingPoster(success()),
+                ).mutate(ConvexMutation.DeleteTodo("todo-1"))
+            }
+        val rejectedToken =
+            runBlocking {
+                client(
+                    RecordingPoster(
+                        HttpTextResponse(
+                            200,
+                            """{"status":"error","errorData":"Unauthorized: invalid sync token"}""",
+                        ),
+                    ),
+                ).mutate(ConvexMutation.DeleteTodo("todo-1"))
+            }
+        val networkFailure =
+            runBlocking {
+                ConvexMutationClient(
+                    configSource = source(readToken = testToken()),
+                    syncTokenSource = ConvexSyncTokenSource { testToken() },
+                    http =
+                        object : HttpPoster {
+                            override suspend fun postJson(
+                                url: String,
+                                body: String,
+                            ): HttpTextResponse = throw IOException("offline")
+                        },
+                ).mutate(ConvexMutation.DeleteTodo("todo-1"))
+            }
+
+        assertEquals(ConvexResult.Unauthorized, missingToken)
+        assertEquals(ConvexResult.Unauthorized, rejectedToken)
+        assertEquals(ConvexResult.Failed("transport failure (IOException)"), networkFailure)
     }
 
     @Test

@@ -67,9 +67,38 @@ class SecureConvexConfigSource internal constructor(
             if (!editor.commit()) throw IOException("encrypted Convex configuration was not persisted")
         }
 
+    /**
+     * Returns only whether a write credential is available.
+     *
+     * UI code must never receive the token value. The dedicated
+     * [SecureConvexSyncTokenSource] is the only production reader.
+     */
+    fun hasSyncToken(): Boolean =
+        synchronized(lock) {
+            readSyncTokenLocked() != null
+        }
+
+    /** Encrypt and persist a replacement write credential. */
+    fun updateSyncToken(syncToken: String) =
+        synchronized(lock) {
+            val normalized = syncToken.trim().takeIf { it.isNotEmpty() }
+                ?: throw IllegalArgumentException("sync token must not be blank")
+            val editor = preferences.edit()
+            putOrRemove(editor, KEY_SYNC_TOKEN, normalized)
+            if (!editor.commit()) throw IOException("encrypted Convex sync token was not persisted")
+        }
+
+    /** Remove only the write credential, leaving row-read configuration intact. */
+    fun clearSyncToken() =
+        synchronized(lock) {
+            val editor = preferences.edit()
+            editor.remove(KEY_SYNC_TOKEN)
+            if (!editor.commit()) throw IOException("encrypted Convex sync token was not cleared")
+        }
+
     fun clear() =
         synchronized(lock) {
-            clearLocked()
+            clearReadConfigurationLocked()
         }
 
     /**
@@ -84,14 +113,28 @@ class SecureConvexConfigSource internal constructor(
             if (!expected.allowsRemoteRead || !current().hasSameCredentialAs(expected)) {
                 return@synchronized false
             }
-            clearLocked()
+            clearReadConfigurationLocked()
             true
         }
 
     private fun read(key: String): String? = preferences.getString(key, null)?.let { cipher.decrypt(key, it) }
 
-    private fun clearLocked() {
-        if (!preferences.edit().clear().commit()) {
+    internal fun currentSyncToken(): String? =
+        synchronized(lock) {
+            readSyncTokenLocked()
+        }
+
+    private fun readSyncTokenLocked(): String? =
+        runCatching {
+            read(KEY_SYNC_TOKEN)?.trim()?.takeIf { it.isNotEmpty() }
+        }.getOrNull()
+
+    private fun clearReadConfigurationLocked() {
+        val editor = preferences.edit()
+        editor.remove(KEY_DEPLOYMENT_URL)
+        editor.remove(KEY_READ_TOKEN)
+        editor.remove(KEY_REMOTE_READ_ENABLED)
+        if (!editor.commit()) {
             throw IOException("encrypted Convex configuration was not cleared")
         }
     }
@@ -119,7 +162,21 @@ class SecureConvexConfigSource internal constructor(
         const val KEY_DEPLOYMENT_URL = "deployment_url"
         const val KEY_READ_TOKEN = "read_token"
         const val KEY_REMOTE_READ_ENABLED = "remote_read_enabled"
+        const val KEY_SYNC_TOKEN = "sync_token"
     }
+}
+
+/**
+ * Production mutation credential source backed by AndroidKeyStore encryption.
+ *
+ * Keeping this adapter internal prevents UI and logging code from gaining
+ * access to the credential while still allowing [ConvexMutationClient] to read
+ * the latest saved value for every request.
+ */
+internal class SecureConvexSyncTokenSource(
+    private val stored: SecureConvexConfigSource,
+) : ConvexSyncTokenSource {
+    override fun currentSyncToken(): String? = stored.currentSyncToken()
 }
 
 internal interface ConfigCipher {

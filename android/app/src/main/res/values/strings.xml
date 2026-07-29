@@ -27,6 +27,14 @@
     <string name="convex_read_token_unconfigured">No Convex read token is stored. Row reads are unconfigured.</string>
     <string name="convex_read_token_remove">Remove stored token</string>
     <string name="convex_read_token_remove_failed">The stored read token could not be removed.</string>
+    <string name="convex_sync_token_panel_title">Configure authenticated writes</string>
+    <string name="convex_sync_token_configured">A Convex sync token is stored securely. Its value cannot be viewed.</string>
+    <string name="convex_sync_token_unconfigured">No Convex sync token is stored. Writes will be rejected before connecting.</string>
+    <string name="convex_sync_token_label">Convex sync token</string>
+    <string name="convex_sync_token_save">Save write credential</string>
+    <string name="convex_sync_token_save_failed">The sync token could not be stored securely. Writes remain unconfigured.</string>
+    <string name="convex_sync_token_remove">Remove stored sync token</string>
+    <string name="convex_sync_token_remove_failed">The stored sync token could not be removed.</string>
     <string name="convex_budget_period_mismatch_detail">Convex returned targets for %1$s. Actuals were re-derived from %2$s transaction rows; the targets were not.</string>
     <string name="convex_uncategorized_spend_detail">The Convex transaction rows have no matching budget category, so this spend is counted on Activity only.</string>
     <string name="navigation_more">More</string>

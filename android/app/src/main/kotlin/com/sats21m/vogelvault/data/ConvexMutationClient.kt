@@ -33,7 +33,7 @@ internal object DisabledConvexSyncTokenSource : ConvexSyncTokenSource {
  */
 internal class ConvexMutationClient(
     private val configSource: ConvexConfigSource,
-    private val syncTokenSource: ConvexSyncTokenSource = DisabledConvexSyncTokenSource,
+    private val syncTokenSource: ConvexSyncTokenSource,
     private val http: HttpPoster = UrlConnectionHttpPoster(),
 ) {
     suspend fun mutate(mutation: ConvexMutation): ConvexResult<ConvexValue> {
