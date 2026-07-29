@@ -14,6 +14,7 @@ import type {
   VogelVaultBtcBuyRow,
   VogelVaultBtcScope,
   VogelVaultBtcSnapshotMeta,
+  VogelVaultFiatValuation,
   VogelVaultBudgetCategory,
   VogelVaultBudgetDocument,
   VogelVaultBudgetHistoryEntry,
@@ -205,6 +206,28 @@ function optionalInt64(record: Record<string, unknown>, key: string): bigint | u
   return int64(record, key)
 }
 
+function fiatValuation(
+  record: Record<string, unknown>,
+  sats: bigint,
+  legacyFiatCents: bigint | undefined,
+): VogelVaultFiatValuation | null {
+  if (!Object.hasOwn(record, "fiatValuation")) {
+    if (legacyFiatCents === undefined || (sats > 0n && legacyFiatCents === 0n)) return null
+    return { cents: legacyFiatCents }
+  }
+
+  const value = record["fiatValuation"]
+  if (value === null) return null
+  const valuation = responseObject(value, ["cents"])
+  return {
+    cents: int64(valuation, "cents"),
+    ...optionalField("priceCents", optionalInt64(valuation, "priceCents")),
+    ...optionalField("quotedAt", optionalText(valuation, "quotedAt")),
+    ...optionalField("source", optionalText(valuation, "source")),
+    ...optionalField("confidence", optionalText(valuation, "confidence")),
+  }
+}
+
 function safeInt64Number(record: Record<string, unknown>, key: string): number {
   const value = int64(record, key)
   if (value < BigInt(Number.MIN_SAFE_INTEGER) || value > BigInt(Number.MAX_SAFE_INTEGER)) {
@@ -352,19 +375,23 @@ function btcAccount(
 ): VogelVaultBtcAccountRow {
   const row = responseObject(
     value,
-    ["key", "owner", "label", "custody", "sats", "fiatCents", "asOf", "schemaVersion", "updatedAtMs"],
+    ["key", "owner", "label", "custody", "sats", "asOf", "schemaVersion", "updatedAtMs"],
   )
   const owner = member(row)
   assertVisible(viewer, owner, scope)
   const custody = row["custody"]
   if (custody !== "exchange" && custody !== "self_custody") throw new InvalidValue()
+  const sats = int64(row, "sats")
+  const legacyFiatCents = optionalInt64(row, "fiatCents")
+  const valuation = fiatValuation(row, sats, legacyFiatCents)
   return {
     key: text(row, "key", 256),
     owner,
     label: text(row, "label"),
     custody,
-    sats: int64(row, "sats"),
-    fiatCents: int64(row, "fiatCents"),
+    sats,
+    fiatCents: legacyFiatCents ?? valuation?.cents ?? 0n,
+    fiatValuation: valuation,
     asOf: text(row, "asOf"),
     schemaVersion: int64(row, "schemaVersion"),
     updatedAtMs: timestampValue(row),
@@ -511,15 +538,19 @@ function snapshotMeta(
 }
 
 function btcBalanceAccount(value: unknown): VogelVaultBtcBalanceDocument["accounts"][number] {
-  const row = responseObject(value, ["key", "label", "custody", "sats", "fiatCents"])
+  const row = responseObject(value, ["key", "label", "custody", "sats"])
   const custody = row["custody"]
   if (custody !== "exchange" && custody !== "self_custody") throw new InvalidValue()
+  const sats = int64(row, "sats")
+  const legacyFiatCents = optionalInt64(row, "fiatCents")
+  const valuation = fiatValuation(row, sats, legacyFiatCents)
   return {
     key: text(row, "key", 256),
     label: text(row, "label"),
     custody,
-    sats: int64(row, "sats"),
-    fiatCents: int64(row, "fiatCents"),
+    sats,
+    fiatCents: legacyFiatCents ?? valuation?.cents ?? 0n,
+    fiatValuation: valuation,
   }
 }
 
@@ -540,21 +571,29 @@ function btcBalanceDocument(
   }
   const totals = responseObject(
     row["totals"],
-    ["sats", "fiatCents", "exchangeSats", "selfCustodySats"],
+    ["sats", "exchangeSats", "selfCustodySats"],
   )
+  const totalSats = int64(totals, "sats")
+  const legacyTotalFiatCents = optionalInt64(totals, "fiatCents")
+  const totalValuation = fiatValuation(totals, totalSats, legacyTotalFiatCents)
   return {
     owner,
     schemaVersion: int64(row, "schemaVersion"),
     asOf: text(row, "asOf"),
     accounts: accounts.map(btcBalanceAccount),
     totals: {
-      sats: int64(totals, "sats"),
-      fiatCents: int64(totals, "fiatCents"),
+      sats: totalSats,
+      fiatCents: legacyTotalFiatCents ?? totalValuation?.cents ?? 0n,
+      fiatValuation: totalValuation,
       exchangeSats: int64(totals, "exchangeSats"),
       selfCustodySats: int64(totals, "selfCustodySats"),
     },
     ...optionalField("source", optionalText(row, "source")),
     ...optionalField("basis", optionalText(row, "basis")),
+    ...optionalField(
+      "balanceConfidence",
+      optionalText(row, "balanceConfidence") ?? optionalText(row, "confidence"),
+    ),
     ...optionalField("confidence", optionalText(row, "confidence")),
     updatedAtMs: timestampValue(row),
   }

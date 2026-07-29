@@ -22,6 +22,8 @@ import { type Freshness, type Transaction } from "@vogel-vault/domain/readModel"
 
 import { useAppState } from "../../app/AppState.tsx"
 import type { FixtureEnvelope } from "../../data/fixtures.ts"
+import { fiatCentsOf } from "../../data/btcFiatValuation.ts"
+import { PRICE_UNAVAILABLE } from "../../data/bitcoinDisplay.ts"
 import { spendAmount } from "../../data/transactionAmounts.ts"
 import {
   Badge,
@@ -328,7 +330,7 @@ export function buildExportDatasets(
         row.owner,
         String(row.sats),
         btcCell(row.sats),
-        usdCell(row.fiat),
+        fiatCentsOf(row) === null ? PRICE_UNAVAILABLE : usdCell(fiatCentsOf(row) ?? 0n),
         boolCell(sharesNetWorthWith(viewer, row.owner)),
       ]),
     },
