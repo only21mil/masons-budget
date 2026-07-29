@@ -54,6 +54,25 @@ internal sealed class ConvexMutation(val path: String) {
         override fun arguments(): JsonObject =
             argumentsWithOptionalSource("account", account.toJson(), sourceFile)
     }
+
+    data class UpsertBudgetCategory(
+        val viewer: FamilyMember,
+        val month: String,
+        val category: BudgetCategoryInput,
+    ) : ConvexMutation("tables:upsertBudgetCategory") {
+        init {
+            require(month.matches(BUDGET_MONTH_PATTERN)) {
+                "budget month must be canonical yyyy-MM"
+            }
+        }
+
+        override fun arguments(): JsonObject =
+            jsonObject(
+                "viewer" to JsonPrimitive(viewer.key),
+                "month" to JsonPrimitive(month),
+                "category" to category.toJson(),
+            )
+    }
 }
 
 internal enum class TransactionKind(val wireValue: String) {
@@ -170,6 +189,23 @@ internal data class BtcAccountInput(
     }.let(::JsonObject)
 }
 
+internal data class BudgetCategoryInput(
+    val name: String,
+    val budgetCents: Long,
+    val icon: String? = null,
+) {
+    init {
+        require(name.isNotBlank()) { "budget category name must not be blank" }
+        require(budgetCents >= 0L) { "budget category amount must not be negative" }
+    }
+
+    fun toJson(): JsonObject = buildMap<String, JsonElement> {
+        put("name", JsonPrimitive(name))
+        put("budgetCents", budgetCents.toConvexInt64())
+        icon?.trim()?.takeIf { it.isNotEmpty() }?.let { put("icon", JsonPrimitive(it)) }
+    }.let(::JsonObject)
+}
+
 private fun Long.toConvexInt64(): JsonObject {
     var remaining = this
     val bytes = ByteArray(Long.SIZE_BYTES) {
@@ -194,3 +230,5 @@ private fun argumentsWithOptionalSource(
 
 private fun jsonObject(vararg entries: Pair<String, JsonElement>): JsonObject =
     JsonObject(linkedMapOf(*entries))
+
+private val BUDGET_MONTH_PATTERN = Regex("""\d{4}-(0[1-9]|1[0-2])""")

@@ -42,4 +42,25 @@
     <string name="refresh_unavailable">Refresh unavailable while live reads are disabled</string>
     <string name="refresh_failed_title">Refresh failed</string>
     <string name="refresh_failed_detail">Live reads did not complete. Check the connection and read-token settings, then try again.</string>
+    <string name="budget_category_edit_action">Edit budget</string>
+    <string name="budget_category_editor_title">Edit %1$s budget</string>
+    <string name="budget_category_editor_month">Budget document month: %1$s</string>
+    <string name="budget_category_amount_label">Monthly budget (USD)</string>
+    <string name="btc_buy_add_action">Add Bitcoin buy</string>
+    <string name="btc_buy_editor_title">Add Bitcoin buy</string>
+    <string name="btc_buy_date_label">Date (yyyy-MM-dd)</string>
+    <string name="btc_buy_source_label">Source</string>
+    <string name="btc_buy_sats_label">Sats</string>
+    <string name="btc_buy_price_label">BTC price (USD)</string>
+    <string name="btc_buy_purchase_amount_label">Purchase amount (USD)</string>
+    <string name="btc_buy_independent_amounts_detail">Sats, BTC price, and purchase dollars are stored independently. Check all three before saving.</string>
+    <string name="write_cancel">Cancel</string>
+    <string name="write_save">Save</string>
+    <string name="write_credential_title">Convex write credential</string>
+    <string name="write_credential_source">AndroidKeyStore encrypted</string>
+    <string name="write_credential_configured">A write credential is stored securely on this device.</string>
+    <string name="write_credential_unconfigured">No write credential is configured. Budget and Bitcoin writes will fail closed.</string>
+    <string name="write_credential_label">Write credential</string>
+    <string name="write_credential_save">Save securely</string>
+    <string name="write_credential_remove">Remove</string>
 </resources>
