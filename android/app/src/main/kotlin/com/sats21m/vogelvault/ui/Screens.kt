@@ -286,7 +286,7 @@ fun ScreenHost(
                 Destination.BUDGET -> budget(state, months, budgetSpend) { picked = it }
                 Destination.BITCOIN -> bitcoin(state, bitcoinProjection, displayUnit)
                 Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
-                Destination.TODAY -> today(state, dueTodos)
+                Destination.TODAY -> item { TaskListsScreen(state, todosInput) }
                 Destination.FAMILY -> family(state)
                 Destination.SETTINGS -> settings(state, onEnableRemoteRows)
             }
@@ -314,7 +314,7 @@ private fun ScreenHeader(
         Destination.BUDGET -> state.data.budget.value?.let { monthLabel(budgetMonth ?: it.month) } ?: "No budget"
         Destination.BITCOIN -> "Stack and custody"
         Destination.NET_WORTH -> "Household for adults; self only for children"
-        Destination.TODAY -> "Due today or overdue"
+        Destination.TODAY -> "Projects, areas and smart lists"
         Destination.FAMILY -> "Who can see what"
         Destination.SETTINGS -> "Runtime and boundaries"
     }
