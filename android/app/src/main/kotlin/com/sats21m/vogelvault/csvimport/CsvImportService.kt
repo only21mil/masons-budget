@@ -40,6 +40,55 @@ internal data class CsvColumnMapping(
     val feeIndex: Int? = null,
 )
 
+/** Which way money moved, as stated by the source rather than inferred from a magnitude. */
+internal enum class CsvDirection {
+    /** A purchase or send. Stored positive. */
+    MONEY_OUT,
+
+    /** A refund, return or receive. Stored negative unless the row is income. */
+    MONEY_IN,
+}
+
+/** Where a row's direction came from. */
+internal enum class CsvDirectionEvidence {
+    /** The amount cell carried an explicit `-`, `+` or `(1.23)` marker. */
+    AMOUNT_SIGN,
+
+    /** A Type column named the direction and the amount cell was silent. */
+    TYPE_COLUMN,
+
+    /** Neither the amount nor a Type column stated a direction; treated as a purchase. */
+    DEFAULTED,
+}
+
+/**
+ * The direction a row's raw cells state, resolved without consulting the parsed
+ * magnitude. Deriving `kind` from this instead of from the money it produces is
+ * what stops the sign check from being a tautology.
+ */
+internal data class CsvSignContract(
+    val direction: CsvDirection,
+    val evidence: CsvDirectionEvidence,
+    /**
+     * True when an explicit amount sign and a Type column named opposite
+     * directions. The amount sign wins, but the row is flagged so the human sees
+     * that the source contradicted itself.
+     */
+    val conflict: Boolean = false,
+    /** The Type cell verbatim, so a rejection can quote what the source said. */
+    val typeCell: String = "",
+) {
+    /** Human-readable account of what the source said, for a named rejection. */
+    fun statement(): String {
+        val movement = if (direction == CsvDirection.MONEY_IN) "a refund" else "a purchase"
+        return when (evidence) {
+            CsvDirectionEvidence.AMOUNT_SIGN -> "$movement by its amount sign"
+            CsvDirectionEvidence.TYPE_COLUMN -> "$movement by its type \"$typeCell\""
+            CsvDirectionEvidence.DEFAULTED -> "$movement with no stated direction"
+        }
+    }
+}
+
 internal data class CsvImportedTransaction(
     val id: String,
     val date: LocalDate,
@@ -50,9 +99,22 @@ internal data class CsvImportedTransaction(
     val amountUsdCents: Long?,
     val category: String,
     val source: CsvImportSource,
+    /** 1-based CSV row this came from, so a rejection can name it. */
+    val rowNumber: Int = 0,
+    /**
+     * The verbatim amount cell. Retained so [CsvImportService.prepareTransactions]
+     * can re-derive direction from the source text rather than from [sats].
+     */
+    val amountCell: String = "",
+    /** The verbatim Type cell, empty when the source has no Type column. */
+    val typeCell: String = "",
 ) {
     val isIncome: Boolean
         get() = category.equals("Income", ignoreCase = true)
+
+    /** Direction re-derived from the raw cells; never from [sats] or [amountUsdCents]. */
+    val signContract: CsvSignContract
+        get() = CsvImportService.resolveSignContract(amountCell, typeCell)
 }
 
 internal data class CsvPreparedTransaction(
@@ -74,6 +136,17 @@ internal sealed class CsvImportException(message: String) : IllegalArgumentExcep
 
     class AmountParseFailure(row: Int) :
         CsvImportException("Could not parse the amount on row $row")
+
+    class IncomeSignContradiction(row: Int) :
+        CsvImportException(
+            "Row $row is income but its amount is negative; income must be positive",
+        )
+
+    class SignContradiction(row: Int, stated: String, stored: String) :
+        CsvImportException(
+            "Row $row states $stated but was stored as $stored; the import was stopped " +
+                "instead of writing the wrong sign",
+        )
 }
 
 /**
@@ -115,18 +188,41 @@ internal class CsvImportService {
             val rowNumber = index + 2
             val date = parseDate(columns[dateIndex])
                 ?: throw CsvImportException.DateParseFailure(rowNumber)
-            val amount = parseAmount(columns[amountIndex])
+            val amountCell = columns[amountIndex]
+            val amount = parseAmount(amountCell)
                 ?: throw CsvImportException.AmountParseFailure(rowNumber)
-            val sats = try {
-                convertToSats(amount, source)
-            } catch (_: ArithmeticException) {
-                throw CsvImportException.AmountParseFailure(rowNumber)
-            }
+            val typeCell = mapping.typeIndex
+                ?.takeIf { it < columns.size }
+                ?.let { columns[it] }
+                .orEmpty()
             val memo = mapping.memoIndex
                 ?.takeIf { it < columns.size }
                 ?.let { sanitize(columns[it]) }
                 .orEmpty()
             val merchant = memo.ifEmpty { source.label }
+            val category = guessCategory(merchant)
+            val isIncome = category.equals("Income", ignoreCase = true)
+
+            val contract = resolveSignContract(amountCell, typeCell)
+            if (isIncome &&
+                contract.direction == CsvDirection.MONEY_IN &&
+                contract.evidence == CsvDirectionEvidence.AMOUNT_SIGN
+            ) {
+                // Income is stored positive with kind CREDIT. Re-signing an
+                // explicitly negative amount would silently rewrite money, so stop.
+                throw CsvImportException.IncomeSignContradiction(rowNumber)
+            }
+            val magnitude = amount.abs()
+            val signed = if (storedNegative(contract.direction, isIncome)) {
+                magnitude.negate()
+            } else {
+                magnitude
+            }
+            val sats = try {
+                convertToSats(signed, source)
+            } catch (_: ArithmeticException) {
+                throw CsvImportException.AmountParseFailure(rowNumber)
+            }
             val cents = btcPriceCents
                 ?.takeIf { it > 0L }
                 ?.let { Money.satsToUsdCents(sats, it) }
@@ -137,8 +233,11 @@ internal class CsvImportService {
                 merchant = merchant,
                 sats = sats,
                 amountUsdCents = cents,
-                category = guessCategory(merchant),
+                category = category,
                 source = source,
+                rowNumber = rowNumber,
+                amountCell = amountCell,
+                typeCell = typeCell,
             )
         }
     }
@@ -167,16 +266,33 @@ internal class CsvImportService {
         }
     }
 
+    /**
+     * Build writes from parsed rows.
+     *
+     * `kind` comes from the direction stated by the row's raw cells, re-derived
+     * here, and the stored sign is then checked against it. The two agree only if
+     * both the Type read and the sign application are still correct: checking the
+     * sign against a `kind` inferred from that same sign proves nothing.
+     */
     fun prepareTransactions(
         imported: List<CsvImportedTransaction>,
         owner: FamilyMember,
     ): List<CsvPreparedTransaction> = imported.map { row ->
         val cents = row.amountUsdCents
             ?: throw CsvImportException.PriceUnavailable
+        val contract = row.signContract
         val kind = when {
             row.isIncome -> TransactionKind.CREDIT
-            cents < 0L -> TransactionKind.CREDIT
+            contract.direction == CsvDirection.MONEY_IN -> TransactionKind.CREDIT
             else -> TransactionKind.SPEND
+        }
+        val expectedNegative = storedNegative(contract.direction, row.isIncome)
+        if ((cents < 0L) != expectedNegative || (row.sats < 0L) != expectedNegative) {
+            throw CsvImportException.SignContradiction(
+                row = row.rowNumber,
+                stated = contract.statement(),
+                stored = if (cents < 0L) "a refund" else "a purchase",
+            )
         }
         CsvPreparedTransaction(
             transaction = TransactionInput(
@@ -432,7 +548,103 @@ internal class CsvImportService {
         )
     }
 
-    private companion object {
+    internal companion object {
+        /**
+         * Resolve the direction stated by a row's raw cells.
+         *
+         * Precedence: an explicit sign on the amount beats a Type column. The sign
+         * is unambiguous machine output, while a Type token has to pass a keyword
+         * classifier that can misread an unusual value; letting the classifier
+         * override a stated sign could corrupt sources that were already correct,
+         * whereas this rule can only change rows whose amount said nothing. A
+         * disagreement is still recorded so the row can be flagged.
+         */
+        fun resolveSignContract(
+            amountCell: String,
+            typeCell: String,
+        ): CsvSignContract {
+            val fromAmount = amountSignDirection(amountCell)
+            val fromType = typeDirection(typeCell)
+            return when {
+                fromAmount != null -> CsvSignContract(
+                    direction = fromAmount,
+                    evidence = CsvDirectionEvidence.AMOUNT_SIGN,
+                    conflict = fromType != null && fromType != fromAmount,
+                    typeCell = typeCell.trim(),
+                )
+
+                fromType != null -> CsvSignContract(
+                    direction = fromType,
+                    evidence = CsvDirectionEvidence.TYPE_COLUMN,
+                    typeCell = typeCell.trim(),
+                )
+
+                else -> CsvSignContract(
+                    direction = CsvDirection.MONEY_OUT,
+                    evidence = CsvDirectionEvidence.DEFAULTED,
+                    typeCell = typeCell.trim(),
+                )
+            }
+        }
+
+        /**
+         * The direction the amount cell states on its own, or null when it is
+         * silent. An unsigned amount is silent: that silence, read as "positive",
+         * is what turned typed refunds into purchases.
+         */
+        private fun amountSignDirection(amountCell: String): CsvDirection? {
+            val trimmed = amountCell.trim()
+                .replace("$", "")
+                .replace(" ", "")
+            val negative = trimmed.startsWith("-") ||
+                (trimmed.startsWith("(") && trimmed.endsWith(")"))
+            return when {
+                negative -> CsvDirection.MONEY_IN
+                trimmed.startsWith("+") -> CsvDirection.MONEY_OUT
+                else -> null
+            }
+        }
+
+        /**
+         * Classify a Type cell by whole words. A cell naming both directions (for
+         * example "Credit Card Purchase") is treated as silent rather than guessed
+         * at, which leaves such rows exactly where they were before this change.
+         */
+        private fun typeDirection(typeCell: String): CsvDirection? {
+            val words = typeCell.lowercase(Locale.US)
+                .split(Regex("[^a-z]+"))
+                .filter(String::isNotEmpty)
+                .toSet()
+            if (words.isEmpty()) return null
+            val out = words.any(MONEY_OUT_WORDS::contains)
+            val incoming = words.any(MONEY_IN_WORDS::contains)
+            return when {
+                out && !incoming -> CsvDirection.MONEY_OUT
+                incoming && !out -> CsvDirection.MONEY_IN
+                else -> null
+            }
+        }
+
+        /** Income is stored positive with kind CREDIT; refunds are the only negatives. */
+        private fun storedNegative(
+            direction: CsvDirection,
+            isIncome: Boolean,
+        ): Boolean = direction == CsvDirection.MONEY_IN && !isIncome
+
+        private val MONEY_OUT_WORDS = setOf(
+            "debit", "debits", "purchase", "purchases", "purchased",
+            "buy", "buys", "bought", "payment", "payments",
+            "withdraw", "withdrawal", "withdrawals", "sent", "send",
+            "spend", "charge", "charges", "fee", "fees",
+        )
+
+        private val MONEY_IN_WORDS = setOf(
+            "credit", "credits", "refund", "refunds", "refunded",
+            "return", "returns", "returned", "reversal", "reversed",
+            "deposit", "deposits", "receive", "received", "rebate",
+            "sell", "sells", "sold", "cashback", "payout",
+        )
+
         val DATE_TIME_FORMATTERS = setOf(
             DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss").withResolverStyle(ResolverStyle.STRICT),
             DateTimeFormatter.ofPattern("MM/dd/uuuu HH:mm:ss").withResolverStyle(ResolverStyle.STRICT),

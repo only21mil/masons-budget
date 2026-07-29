@@ -459,6 +459,14 @@ private fun CsvPreviewRow(
                 color = VaultTextDim,
                 style = MaterialTheme.typography.labelSmall,
             )
+            val contract = row.signContract
+            if (contract.conflict) {
+                Text(
+                    stringResource(R.string.csv_import_sign_conflict, contract.typeCell),
+                    color = VaultWarning,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
         }
         Text(
             row.amountUsdCents?.let(Money::formatUsd)

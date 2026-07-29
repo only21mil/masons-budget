@@ -56,6 +56,118 @@ class CsvImportServiceTest {
     }
 
     @Test
+    fun `unsigned amount with a type column signs purchases and refunds apart`() {
+        val imported = parse(
+            """
+            date,amount,type,memo
+            2026-05-01,500,Purchase,Costco
+            2026-05-02,500,Refund,Costco return
+            """,
+            CsvImportSource.CUSTOM,
+        )
+
+        assertEquals(2, imported.size)
+        val (purchase, refund) = imported
+        assertEquals(500L, purchase.sats, "an unsigned purchase stays positive")
+        assertEquals(50L, purchase.amountUsdCents)
+        assertEquals(-500L, refund.sats, "an unsigned refund must be signed by its type column")
+        assertEquals(-50L, refund.amountUsdCents)
+
+        val prepared = service.prepareTransactions(imported, FamilyMember.VICTOR)
+        assertEquals(TransactionKind.SPEND, prepared[0].transaction.kind)
+        assertEquals(50L, prepared[0].transaction.amountCents)
+        assertEquals(TransactionKind.CREDIT, prepared[1].transaction.kind)
+        assertEquals(-50L, prepared[1].transaction.amountCents)
+    }
+
+    @Test
+    fun `unsigned debit and credit tokens set direction`() {
+        val imported = parse(
+            """
+            date,amount,type,memo
+            2026-05-01,1200,DEBIT,Shell gas
+            2026-05-02,1200,CREDIT,Shell gas reversal
+            """,
+            CsvImportSource.CUSTOM,
+        )
+
+        assertEquals(1200L, imported[0].sats)
+        assertEquals(-1200L, imported[1].sats)
+        assertEquals(
+            TransactionKind.CREDIT,
+            service.prepareTransactions(imported, FamilyMember.VICTOR)[1].transaction.kind,
+        )
+    }
+
+    @Test
+    fun `kind is checked against the type column not the amount it came from`() {
+        val refund = parse(
+            "date,amount,type,memo\n2026-05-01,500,Refund,Costco return",
+            CsvImportSource.CUSTOM,
+        ).single()
+        // Simulate a future regression that stops applying the type column: the
+        // stored money says purchase while the source cell still says refund.
+        val regressed = refund.copy(sats = 500L, amountUsdCents = 50L)
+
+        val failure = assertFailsWith<CsvImportException.SignContradiction> {
+            service.prepareTransactions(listOf(regressed), FamilyMember.VICTOR)
+        }
+        assertTrue(
+            failure.message!!.contains("Refund"),
+            "the rejection must name what the source said: ${failure.message}",
+        )
+    }
+
+    @Test
+    fun `an explicit amount sign wins over a disagreeing type column and is flagged`() {
+        val row = parse(
+            "date,amount,type,memo\n2026-05-01,-500,Purchase,Costco",
+            CsvImportSource.CUSTOM,
+        ).single()
+
+        assertEquals(-500L, row.sats, "the stated amount sign is authoritative")
+        assertTrue(row.signContract.conflict, "the contradiction must be visible on the row")
+        assertEquals(CsvDirectionEvidence.AMOUNT_SIGN, row.signContract.evidence)
+        assertEquals(
+            TransactionKind.CREDIT,
+            service.prepareTransactions(listOf(row), FamilyMember.VICTOR).single().transaction.kind,
+        )
+    }
+
+    @Test
+    fun `a type cell naming both directions is never guessed at`() {
+        val row = parse(
+            "date,amount,type,memo\n2026-05-01,500,Credit Card Purchase,Costco",
+            CsvImportSource.CUSTOM,
+        ).single()
+
+        assertEquals(500L, row.sats)
+        assertEquals(CsvDirectionEvidence.DEFAULTED, row.signContract.evidence)
+        assertFalse(row.signContract.conflict)
+    }
+
+    @Test
+    fun `income keeps its positive house sign and rejects a negative amount by name`() {
+        val deposit = parse(
+            "date,amount,type,memo\n2026-05-01,100000,Credit,Direct Deposit",
+            CsvImportSource.CUSTOM,
+        ).single()
+
+        assertEquals("Income", deposit.category)
+        assertEquals(100_000L, deposit.sats, "income is stored positive with kind CREDIT")
+        val prepared = service.prepareTransactions(listOf(deposit), FamilyMember.VICTOR).single()
+        assertEquals(TransactionKind.CREDIT, prepared.transaction.kind)
+        assertEquals(10_000L, prepared.transaction.amountCents)
+
+        assertEquals(
+            "Row 2 is income but its amount is negative; income must be positive",
+            assertFailsWith<CsvImportException.IncomeSignContradiction> {
+                parse("date,amount,memo\n2026-05-01,-100000,Direct Deposit", CsvImportSource.CUSTOM)
+            }.message,
+        )
+    }
+
+    @Test
     fun `bitcoin and fiat remain separate integer units`() {
         val imported = service.parse(
             """

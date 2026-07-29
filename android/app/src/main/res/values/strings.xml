@@ -185,6 +185,7 @@
     <string name="csv_import_done">Done</string>
     <string name="csv_import_complete">Import complete</string>
     <string name="csv_import_complete_count">%1$d transactions were imported.</string>
+    <string name="csv_import_sign_conflict">Source contradicts itself: type \"%1$s\" disagrees with the amount sign. The amount sign was used.</string>
     <string name="csv_import_parse_failed">The CSV could not be parsed.</string>
     <string name="csv_import_invalid">Import stopped: one or more selected transactions are invalid.</string>
     <string name="csv_import_client_unavailable">Import stopped: the app write client is unavailable on this device.</string>
