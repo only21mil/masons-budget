@@ -379,6 +379,29 @@ const fn = {
     },
     { buyId: string; owner: Member; month: string; outcome: string }
   >,
+  upsertBtcBillPay: "tables:upsertBtcBillPay" as unknown as FunctionReference<
+    "mutation",
+    "public",
+    {
+      billPay: {
+        id: string;
+        date: string;
+        merchant: string;
+        category: string;
+        amountUsdCents: bigint;
+        btcSpentSats: bigint;
+        btcPriceCents: bigint;
+        platform?: string;
+        note?: string;
+        feeUsdCents: bigint;
+        reference?: string;
+        owner?: Member;
+      };
+      sourceFile?: string;
+      token?: string;
+    },
+    { billPayId: string; owner: Member; month: string; outcome: string }
+  >,
   upsertBtcAccount: "tables:upsertBtcAccount" as unknown as FunctionReference<
     "mutation",
     "public",
@@ -1869,6 +1892,98 @@ describe("row mutations", () => {
     expect(accounts.find((a) => a.key === "strike")?.sats).toBe(36000000n);
   });
 
+  it("upserts one BTC bill pay idempotently with separate sats and fiat fields", async () => {
+    const inserted = await t.mutation(fn.upsertBtcBillPay, {
+      billPay: {
+        id: "app-bp-1",
+        date: "2026-07-24",
+        merchant: "Electric Utility",
+        category: "Utilities",
+        amountUsdCents: 18_655n,
+        btcSpentSats: 200_000n,
+        btcPriceCents: 9_327_500n,
+        platform: "river",
+        feeUsdCents: 95n,
+        reference: "invoice-1",
+      },
+    });
+    expect(inserted).toMatchObject({
+      billPayId: "app-bp-1",
+      owner: "victor",
+      month: "2026-07",
+      outcome: "inserted",
+    });
+
+    const updated = await t.mutation(fn.upsertBtcBillPay, {
+      billPay: {
+        id: "app-bp-1",
+        date: "2026-07-24",
+        merchant: "Electric Utility",
+        category: "Utilities",
+        amountUsdCents: 18_700n,
+        btcSpentSats: 200_000n,
+        btcPriceCents: 9_327_500n,
+        feeUsdCents: 95n,
+      },
+    });
+    expect(updated.outcome).toBe("updated");
+
+    const rows = await queryRows(fn.listBtcBillPays, {
+      viewer: "victor",
+      scope: "visible",
+    });
+    expect(rows.filter((row) => row.billPayId === "app-bp-1")).toHaveLength(1);
+    expect(rows.find((row) => row.billPayId === "app-bp-1")).toMatchObject({
+      amountUsdCents: 18_700n,
+      btcSpentSats: 200_000n,
+      btcPriceCents: 9_327_500n,
+      feeUsdCents: 95n,
+    });
+  });
+
+  it("resolves BTC bill-pay owners through the existing visibility scopes", async () => {
+    await t.mutation(fn.upsertBtcBillPay, {
+      billPay: {
+        id: "mason-bp-1",
+        date: "2026-07-24",
+        merchant: "Game Store",
+        category: "Fun",
+        amountUsdCents: 2_000n,
+        btcSpentSats: 20_000n,
+        btcPriceCents: 10_000_000n,
+        feeUsdCents: 0n,
+        owner: "mason",
+      },
+    });
+
+    const ids = async (viewer: Member, scope: Scope) =>
+      (await queryRows(fn.listBtcBillPays, { viewer, scope })).map(
+        (row) => row.billPayId,
+      );
+    expect(await ids("victor", "visible")).toContain("mason-bp-1");
+    expect(await ids("victor", "netWorth")).not.toContain("mason-bp-1");
+    expect(await ids("mason", "visible")).toContain("mason-bp-1");
+    expect(await ids("maddox", "visible")).not.toContain("mason-bp-1");
+  });
+
+  it("refuses a BTC bill pay source outside the closed source catalogue", async () => {
+    await expect(
+      t.mutation(fn.upsertBtcBillPay, {
+        sourceFile: "mason-bitcoin-bill-pays",
+        billPay: {
+          id: "unknown-source-bp",
+          date: "2026-07-24",
+          merchant: "Nope",
+          category: "Other",
+          amountUsdCents: 1n,
+          btcSpentSats: 1n,
+          btcPriceCents: 1n,
+          feeUsdCents: 0n,
+        },
+      }),
+    ).rejects.toThrow(/Unknown source file "mason-bitcoin-bill-pays"/);
+  });
+
   it("refuses a sourceFile that holds a different kind of record", async () => {
     // "transactions" is both a file name and a table name, so the two can be
     // crossed by accident. A transaction row tagged with the todos file's
@@ -2084,6 +2199,23 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
             sats: 1n,
             priceUsdCents: 1n,
             usdCents: 1n,
+          },
+          token,
+        }),
+    },
+    {
+      name: "upsertBtcBillPay",
+      call: (token?: string) =>
+        t.mutation(fn.upsertBtcBillPay, {
+          billPay: {
+            id: "auth-bp-1",
+            date: "2026-07-25",
+            merchant: "Probe",
+            category: "Other",
+            amountUsdCents: 1n,
+            btcSpentSats: 1n,
+            btcPriceCents: 1n,
+            feeUsdCents: 0n,
           },
           token,
         }),
