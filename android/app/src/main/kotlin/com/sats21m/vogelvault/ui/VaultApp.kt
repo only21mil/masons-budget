@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.CurrencyBitcoin
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.People
@@ -90,6 +91,7 @@ enum class Destination(
     BTC_BILL_PAYS("BTC Bill Pays", Icons.Filled.ReceiptLong),
     NET_WORTH("Net Worth", Icons.Filled.AccountBalance),
     RETIREMENT("Retirement", Icons.Filled.Savings),
+    EXPORT("Export", Icons.Filled.FileDownload),
     TODAY("Today", Icons.Filled.WbSunny),
     TASKS("Tasks", Icons.Filled.Checklist),
     FAMILY("Family", Icons.Filled.People),
@@ -132,6 +134,7 @@ fun VaultApp(
     state: VaultUiState,
     onNavigate: (Destination) -> Unit,
     onSwitchProfile: (FamilyMember) -> Unit,
+    onRequestProfileSwitchAuthentication: (ProfileSwitchRequest) -> Unit = {},
     onEnableRemoteRows: (String) -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
@@ -150,7 +153,7 @@ fun VaultApp(
                 Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                     VaultRail(destinations, current, onNavigate)
                     Column(Modifier.weight(1f)) {
-                        VaultTopBar(state, onSwitchProfile) {
+                        VaultTopBar(state, onRequestProfileSwitchAuthentication, onSwitchProfile) {
                             onSwitchProfile(state.activeProfile)
                         }
                         HorizontalHairline()
@@ -169,7 +172,7 @@ fun VaultApp(
                 }
             } else {
                 Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                    VaultTopBar(state, onSwitchProfile) {
+                    VaultTopBar(state, onRequestProfileSwitchAuthentication, onSwitchProfile) {
                         onSwitchProfile(state.activeProfile)
                     }
                     HorizontalHairline()
@@ -354,7 +357,8 @@ private fun VaultBottomBar(
 @Composable
 private fun VaultTopBar(
     state: VaultUiState,
-    onSwitchProfile: (FamilyMember) -> Unit,
+    onRequestProfileSwitchAuthentication: (ProfileSwitchRequest) -> Unit,
+    onAuthorizedSwitch: (FamilyMember) -> Unit,
     onRefresh: () -> Unit,
 ) {
     Row(
@@ -364,26 +368,11 @@ private fun VaultTopBar(
             .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            state.activeProfile.displayName,
-            style = MaterialTheme.typography.titleMedium,
-            color = VaultCream,
+        ProfileSwitcher(
+            activeProfile = state.activeProfile,
+            onAuthenticationRequired = onRequestProfileSwitchAuthentication,
+            onAuthorizedSwitch = onAuthorizedSwitch,
         )
-        Spacer(Modifier.width(VaultSpace.sm))
-        if (!state.activeProfile.isAdult) {
-            // A child has exactly one switch target — itself. Show a static label
-            // rather than a control implying a door they cannot open.
-            Badge("Child profile")
-        } else {
-            // Tappable, not decorative: these previously rendered as inert pills
-            // that looked like tabs.
-            state.switchTargets
-                .filter { it != state.activeProfile }
-                .forEach { target ->
-                    Badge(target.displayName, onClick = { onSwitchProfile(target) })
-                    Spacer(Modifier.width(VaultSpace.xs))
-                }
-        }
         Spacer(Modifier.weight(1f))
         if (state.worstStatus == Freshness.LOADING) {
             CircularProgressIndicator(

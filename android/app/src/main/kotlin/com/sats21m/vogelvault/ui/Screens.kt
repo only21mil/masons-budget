@@ -297,6 +297,7 @@ fun ScreenHost(
                 Destination.BTC_BILL_PAYS -> btcBillPaysScreen(state, displayUnit, btcBillPaysTitle)
                 Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
                 Destination.RETIREMENT -> retirement(state, displayUnit)
+                Destination.EXPORT -> item { ExportScreen(state) }
                 Destination.TODAY -> today(state, dueTodos)
                 Destination.TASKS -> item { TaskListsScreen(state, todosInput) }
                 Destination.FAMILY -> family(state)
@@ -329,6 +330,7 @@ private fun ScreenHeader(
         Destination.BTC_BILL_PAYS -> "Bitcoin spent on bills visible to this profile"
         Destination.NET_WORTH -> "Household for adults; self only for children"
         Destination.RETIREMENT -> "A checkable long-range scenario"
+        Destination.EXPORT -> "Owner-filtered files shared outside the app"
         Destination.TODAY -> "Due today or overdue"
         Destination.TASKS -> "Projects, areas and smart lists"
         Destination.FAMILY -> "Who can see what"

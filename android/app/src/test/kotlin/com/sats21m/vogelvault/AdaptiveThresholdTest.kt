@@ -59,6 +59,7 @@ class DestinationVisibilityTest {
                 Destination.BTC_BILL_PAYS,
                 Destination.NET_WORTH,
                 Destination.RETIREMENT,
+                Destination.EXPORT,
                 Destination.TODAY,
                 Destination.TASKS,
                 Destination.FAMILY,

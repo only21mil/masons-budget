@@ -145,4 +145,12 @@
     <string name="tasks_cancel">Cancel</string>
     <string name="tasks_save">Save task</string>
     <string name="tasks_saving">Saving…</string>
+    <string name="profile_switcher_open">Choose profile</string>
+    <string name="profile_switcher_child_profile">Child profile</string>
+    <string name="export_reports_title">CSV reports</string>
+    <string name="export_reports_scope">Shared household or this child only</string>
+    <string name="export_transactions">Share transactions CSV</string>
+    <string name="export_budget_summary">Share budget summary CSV</string>
+    <string name="export_net_worth_history">Share net worth history CSV</string>
+    <string name="export_share_chooser">Share Vogel Vault report</string>
 </resources>
