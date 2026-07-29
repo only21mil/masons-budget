@@ -8,6 +8,7 @@ import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import androidx.biometric.BiometricPrompt
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -16,6 +17,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.fragment.app.FragmentActivity
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.notifications.BudgetNotificationController
 import com.sats21m.vogelvault.ui.OnboardingView
 import com.sats21m.vogelvault.ui.VaultApp
 import com.sats21m.vogelvault.ui.VaultLockController
@@ -60,6 +62,7 @@ class MainActivity : FragmentActivity() {
             )
         val displayPreferences =
             getSharedPreferences(DISPLAY_PREFERENCES, MODE_PRIVATE)
+        val budgetNotifications = BudgetNotificationController(this)
         setContent {
             VogelVaultTheme {
                 val state by model.state.collectAsStateWithLifecycle()
@@ -92,7 +95,18 @@ class MainActivity : FragmentActivity() {
                             },
                         )
 
-                    else ->
+                    else -> {
+                        // Budget alerts are evaluated only behind the unlock and
+                        // onboarding gates. A locked vault must not push the
+                        // household's spending into the notification shade.
+                        LaunchedEffect(
+                            state.activeProfile,
+                            state.data.budget,
+                            state.data.transactions,
+                            state.staleAuthorization,
+                        ) {
+                            budgetNotifications.evaluateAndNotify(state)
+                        }
                         VaultApp(
                             state = state,
                             onNavigate = model::navigate,
@@ -114,6 +128,7 @@ class MainActivity : FragmentActivity() {
                                     .apply()
                             },
                         )
+                    }
                 }
             }
         }

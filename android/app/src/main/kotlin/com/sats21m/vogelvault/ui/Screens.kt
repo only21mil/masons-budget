@@ -1232,6 +1232,9 @@ private fun VaultLazyListScope.settings(
             )
         }
     }
+    item {
+        BudgetNotificationSettings(state)
+    }
     item { RemoteRowsConfiguration(onEnableRemoteRows) }
     item { SyncTokenConfiguration() }
     item {

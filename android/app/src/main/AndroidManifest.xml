@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Exactly two app capabilities are declared, deliberately.
+  Every permission is declared deliberately.
 
   Adding a permission here is a review event, not a convenience: the app handles
   family financial data and its attack surface should stay at zero until a
@@ -20,11 +20,15 @@
   switch is now gated by AndroidX BiometricPrompt. It is a normal permission
   with no separate runtime dialog; BiometricPrompt owns the system UI and also
   permits the enrolled device credential as a fallback.
+
+  POST_NOTIFICATIONS supports opt-in budget alerts. It is requested only after
+  the active profile enables budget notifications in Settings, never at launch.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".VaultApplication"
