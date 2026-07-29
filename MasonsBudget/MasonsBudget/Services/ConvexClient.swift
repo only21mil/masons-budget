@@ -10,6 +10,16 @@ import Security
 enum ConvexConfig {
     private static let rowReadsEnabledKey = "convex_row_reads_enabled"
     private static let syncTokenKey = "convex_sync_token"
+    private static var syncTokenStore: MigratingKeychainTokenStore {
+        MigratingKeychainTokenStore(
+            userDefaults: .standard,
+            legacyKey: syncTokenKey,
+            keychain: KeychainCredentialStore(
+                service: "com.sats21m.vogel-vault.convex",
+                account: "sync-token",
+            ),
+        )
+    }
 
     /// The Convex deployment URL. Updated after `npx convex deploy`.
     /// Store in UserDefaults so it can be changed without an app update.
@@ -33,23 +43,28 @@ enum ConvexConfig {
     }
 
     /// Optional sync token for an authorized write path. NEVER hardcode a shared secret here
-    /// (see AGENTS.md). Sourced from UserDefaults so it can be injected at runtime; empty by
-    /// default so native writes stay fail-closed (the server rejects an empty/invalid token).
+    /// (see AGENTS.md). Stored in the Keychain after runtime injection; empty by default so
+    /// native writes stay fail-closed (the server rejects an empty/invalid token).
+    ///
+    /// Reading this property also migrates the Wave 1 UserDefaults value, if present, and
+    /// removes the cleartext copy only after the Keychain write succeeds.
     static var syncToken: String {
-        UserDefaults.standard.string(forKey: syncTokenKey) ?? ""
+        syncTokenStore.token
     }
 
-    static func setSyncToken(_ token: String) {
-        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            removeSyncToken()
-        } else {
-            UserDefaults.standard.set(trimmed, forKey: syncTokenKey)
-        }
+    /// Presence-only view for UI status. UI callers must not retain or render the credential.
+    static var hasSyncToken: Bool {
+        syncTokenStore.hasToken
     }
 
-    static func removeSyncToken() {
-        UserDefaults.standard.removeObject(forKey: syncTokenKey)
+    @discardableResult
+    static func setSyncToken(_ token: String) -> Bool {
+        syncTokenStore.set(token)
+    }
+
+    @discardableResult
+    static func removeSyncToken() -> Bool {
+        syncTokenStore.remove()
     }
 
     /// Optional read token.
@@ -83,6 +98,127 @@ enum ConvexConfig {
 
     static func setRowReadsEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: rowReadsEnabledKey)
+    }
+}
+
+/// The seam that makes credential storage testable.
+///
+/// `MasonsBudgetTests` is a `bundle.unit-test` target with no host application,
+/// so it has no keychain access group and every `SecItemAdd` fails with
+/// `errSecMissingEntitlement`. Tests that talk to the real Keychain therefore
+/// cannot pass — and, worse, a test asserting a credential is ABSENT passes
+/// trivially there, proving nothing. Injecting the store lets the tests assert
+/// the migration and clearing LOGIC against an in-memory double, which is the
+/// part that actually has bugs in it.
+protocol CredentialStoring {
+    func read() -> String?
+    @discardableResult func save(_ token: String) -> Bool
+    @discardableResult func clear() -> Bool
+}
+
+extension KeychainCredentialStore: CredentialStoring {}
+
+struct MigratingKeychainTokenStore {
+    let userDefaults: UserDefaults
+    let legacyKey: String
+    let keychain: CredentialStoring
+
+    var token: String {
+        if let storedToken = keychain.read(), !storedToken.isEmpty {
+            userDefaults.removeObject(forKey: legacyKey)
+            return storedToken
+        }
+
+        let legacyToken = userDefaults.string(forKey: legacyKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !legacyToken.isEmpty else {
+            userDefaults.removeObject(forKey: legacyKey)
+            return ""
+        }
+
+        guard keychain.save(legacyToken) else {
+            // Keep the only surviving copy when Keychain is unavailable. A later
+            // read retries the migration instead of destroying the credential.
+            return legacyToken
+        }
+        userDefaults.removeObject(forKey: legacyKey)
+        return legacyToken
+    }
+
+    var hasToken: Bool {
+        !token.isEmpty
+    }
+
+    @discardableResult
+    func set(_ token: String) -> Bool {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return remove() }
+        guard keychain.save(trimmed) else { return false }
+        userDefaults.removeObject(forKey: legacyKey)
+        return true
+    }
+
+    @discardableResult
+    func remove() -> Bool {
+        let removed = keychain.clear()
+        userDefaults.removeObject(forKey: legacyKey)
+        return removed
+    }
+}
+
+struct KeychainCredentialStore {
+    let service: String
+    let account: String
+
+    func read() -> String? {
+        var query = baseQuery
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data,
+              let token = String(data: data, encoding: .utf8)
+        else { return nil }
+        return token.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    @discardableResult
+    func save(_ token: String) -> Bool {
+        guard let data = token.data(using: .utf8), !token.isEmpty else {
+            return clear()
+        }
+
+        let attributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+        let updateStatus = SecItemUpdate(
+            baseQuery as CFDictionary,
+            attributes as CFDictionary,
+        )
+        if updateStatus == errSecSuccess {
+            return true
+        }
+        guard updateStatus == errSecItemNotFound else { return false }
+
+        var item = baseQuery
+        attributes.forEach { item[$0.key] = $0.value }
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
+    }
+
+    @discardableResult
+    func clear() -> Bool {
+        let status = SecItemDelete(baseQuery as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+
+    private var baseQuery: [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
     }
 }
 
