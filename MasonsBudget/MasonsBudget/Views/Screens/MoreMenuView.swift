@@ -71,7 +71,7 @@ struct SyncSetupView: View {
     // Write-only by design. Never seeded from storage and cleared the moment it is
     // saved, so the stored read token cannot be read back out of the UI.
     @State private var readTokenEntry = ""
-    @State private var hasReadToken = !ConvexConfig.readToken.isEmpty
+    @State private var hasReadToken = ConvexConfig.hasReadToken
     @State private var readTokenMessage: String?
 
     private var canSave: Bool {
@@ -279,7 +279,7 @@ struct SyncSetupView: View {
         }
         // The view can be constructed long before it is shown, so re-derive on appear
         // rather than trusting the value captured at init.
-        .onAppear { hasReadToken = !ConvexConfig.readToken.isEmpty }
+        .onAppear { hasReadToken = ConvexConfig.hasReadToken }
     }
 
     private var readTokenStatusText: String {
@@ -291,23 +291,21 @@ struct SyncSetupView: View {
     private func saveReadToken() {
         let trimmed = readTokenEntry.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        ConvexConfig.setReadToken(trimmed)
+        let saved = ConvexConfig.setReadToken(trimmed)
         readTokenEntry = ""
-        // Re-read the store instead of assuming the write landed, and keep the result a
-        // Bool: the stored token is never held in view state or rendered.
-        hasReadToken = !ConvexConfig.readToken.isEmpty
-        readTokenMessage = hasReadToken
+        hasReadToken = ConvexConfig.hasReadToken
+        readTokenMessage = saved && hasReadToken
             ? "Read token saved. It is sent with the next refresh."
             : "Could not save the read token."
     }
 
     private func removeReadToken() {
-        ConvexConfig.setReadToken("")
+        let removed = ConvexConfig.removeReadToken()
         readTokenEntry = ""
-        hasReadToken = !ConvexConfig.readToken.isEmpty
-        readTokenMessage = hasReadToken
-            ? "Could not remove the read token."
-            : "Read token removed from this device."
+        hasReadToken = ConvexConfig.hasReadToken
+        readTokenMessage = removed && !hasReadToken
+            ? "Read token removed from this device."
+            : "Could not remove the read token."
     }
 
     private func field(
