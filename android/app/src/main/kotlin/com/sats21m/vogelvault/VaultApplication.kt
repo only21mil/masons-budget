@@ -73,12 +73,12 @@ class VaultApplication : Application() {
     }
 
     /**
-     * Uses the closed mutation transport and remains fail-closed until an
-     * approved encrypted sync-token source is provided. The read token is never
-     * substituted and no write credential is bundled in the app.
+     * Edit and delete share the one write transport above, so they read the
+     * latest encrypted sync token at request time. Constructing a second client
+     * here would have no sync-token source and would stay fail-closed forever.
      */
     internal val transactionActions by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        ConvexTransactionActions(ConvexMutationClient(convexConfigSource))
+        ConvexTransactionActions(convexMutationClient)
     }
 
     val viewModelFactory: ViewModelProvider.Factory =

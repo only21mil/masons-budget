@@ -38,7 +38,6 @@ class MainActivity : ComponentActivity() {
                     onNavigate = model::navigate,
                     onSwitchProfile = model::switchProfile,
                     onEnableRemoteRows = model::enableRemoteRows,
-                    transactionActions = app.transactionActions,
                     onTransactionChanged = {
                         model.switchProfile(state.activeProfile)
                     },

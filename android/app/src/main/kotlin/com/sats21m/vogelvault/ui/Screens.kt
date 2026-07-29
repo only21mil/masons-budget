@@ -29,12 +29,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcBalance
 import com.sats21m.vogelvault.domain.BtcBillPay
@@ -144,7 +146,6 @@ fun ScreenHost(
     destination: Destination,
     state: VaultUiState,
     onEnableRemoteRows: (String) -> Unit = {},
-    transactionActions: TransactionActions? = null,
     onTransactionChanged: () -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
@@ -154,6 +155,10 @@ fun ScreenHost(
     var selectedTransactionKey by rememberSaveable(state.activeProfile) {
         mutableStateOf<String?>(null)
     }
+    // The write surface owns its own client, per the house write pattern: nothing
+    // threads suspend write callbacks through MainActivity -> VaultApp -> ScreenHost.
+    val vaultApplication = LocalContext.current.applicationContext as? VaultApplication
+    val transactionActions = remember(vaultApplication) { vaultApplication?.transactionActions }
     val budgetMonth = state.data.budget.value?.month
     val profile = state.activeProfile
     val transactionsInput = state.data.transactions.value
