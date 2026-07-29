@@ -39,8 +39,9 @@ internal fun formatBtcBillPayAmount(
     displayUnit: DisplayUnit,
 ): String =
     when (displayUnit) {
-        DisplayUnit.USD -> Money.formatUsd(-payment.amountUsdCents)
-        DisplayUnit.BTC, DisplayUnit.SATS -> Money.formatBitcoin(-payment.btcSpentSats, displayUnit)
+        DisplayUnit.USD -> Money.formatUsd(Math.negateExact(payment.amountUsdCents))
+        DisplayUnit.BTC, DisplayUnit.SATS ->
+            Money.formatBitcoin(Math.negateExact(payment.btcSpentSats), displayUnit)
     }
 
 internal fun formatBtcBillPayTotal(
