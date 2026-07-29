@@ -1,5 +1,5 @@
 {
-  "$comment": "Language-neutral golden vectors for tables:upsertTransaction. Input money is an exact decimal int64 string in cents. Accepted cases emit Convex convex_encoded_json tags. Rejected cases are mandatory: clients must not send them and the server independently rejects the same ledger invariants. Sync tokens are runtime-injected and MUST NOT appear in this fixture.",
+  "$comment": "Language-neutral golden vectors for tables:upsertTransaction. Input money is an exact decimal int64 string in cents. Accepted cases emit Convex convex_encoded_json tags. Rejected cases are mandatory: clients must not send them. Convex independently enforces auth, wire shape, closed owners, and signs; actor scope and transaction source/owner alignment remain client policy until the mutation accepts actor identity and checks both. Sync tokens are runtime-injected and MUST NOT appear in this fixture.",
   "contractVersion": 1,
   "path": "tables:upsertTransaction",
   "format": "convex_encoded_json",

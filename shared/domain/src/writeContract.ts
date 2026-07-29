@@ -1,7 +1,9 @@
 // The Vogel Vault — shared Convex row-write contract.
 //
 // This module validates client intent before a real mutation reaches Convex.
-// The server remains authoritative and independently enforces these invariants.
+// Convex independently enforces auth, wire shape, closed owners, and signs.
+// Actor scope and transaction source/owner alignment are client-side policy
+// until the mutation accepts actor identity and performs the same checks.
 // Credentials are intentionally outside this contract: clients inject the sync
 // token at runtime after building and validating the non-secret request body.
 
