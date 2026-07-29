@@ -172,6 +172,8 @@ fun ScreenHost(
     var picked by rememberSaveable(state.activeProfile, state.selectedMonth) {
         mutableStateOf(initialMonth)
     }
+    var budgetEditor by remember { mutableStateOf<BudgetCategoryEditorSeed?>(null) }
+    var showBtcBuyEditor by rememberSaveable { mutableStateOf(false) }
     // A refresh can retire the picked month. Fall back rather than render a month
     // the ledger no longer contains.
     val month = resolveBudgetMonth(picked, months, budgetMonth)
@@ -283,14 +285,39 @@ fun ScreenHost(
             when (destination) {
                 Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit)
                 Destination.ACTIVITY -> activity(state, checkNotNull(activitySearch))
-                Destination.BUDGET -> budget(state, months, budgetSpend) { picked = it }
-                Destination.BITCOIN -> bitcoin(state, bitcoinProjection, displayUnit)
+                Destination.BUDGET ->
+                    budget(
+                        state,
+                        months,
+                        budgetSpend,
+                        onSelectMonth = { picked = it },
+                        onEditCategory = { budgetEditor = it },
+                    )
+                Destination.BITCOIN ->
+                    bitcoin(
+                        state,
+                        bitcoinProjection,
+                        displayUnit,
+                        onAddBuy = { showBtcBuyEditor = true },
+                    )
                 Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
                 Destination.TODAY -> today(state, dueTodos)
                 Destination.FAMILY -> family(state)
                 Destination.SETTINGS -> settings(state, onEnableRemoteRows)
             }
         }
+    }
+    budgetEditor?.let { seed ->
+        BudgetCategoryEditorSheet(
+            seed = seed,
+            onDismiss = { budgetEditor = null },
+        )
+    }
+    if (showBtcBuyEditor) {
+        BtcBuyEntrySheet(
+            owner = state.activeProfile,
+            onDismiss = { showBtcBuyEditor = false },
+        )
     }
 }
 
@@ -578,6 +605,7 @@ private fun VaultLazyListScope.budget(
     months: List<String>,
     spend: BudgetSpend?,
     onSelectMonth: (String) -> Unit,
+    onEditCategory: (BudgetCategoryEditorSeed) -> Unit,
 ) {
     val slice = state.data.budget
     val budget = slice.value
@@ -683,12 +711,21 @@ private fun VaultLazyListScope.budget(
             rows = derived.categories,
             rowKey = { it.name },
         ) { category ->
-            LedgerRow(
-                primary = category.name,
-                secondary = "planned ${Money.formatUsd(category.budgetCents)}",
-                figure = Money.formatUsd(category.spentCents),
-                figureColor = if (category.isOverBudget) VaultNegative else VaultCream,
-                badge = if (category.isOverBudget) "over" else null,
+            EditableBudgetCategoryRow(
+                category = category,
+                canEdit =
+                    derived.month == budget.month &&
+                        slice.status == Freshness.LIVE,
+                onEdit = {
+                    onEditCategory(
+                        BudgetCategoryEditorSeed(
+                            viewer = state.activeProfile,
+                            displayedMonth = derived.month,
+                            budgetDocumentMonth = budget.month,
+                            category = category,
+                        ),
+                    )
+                },
             )
         }
     }
@@ -792,6 +829,7 @@ private fun VaultLazyListScope.bitcoin(
     state: VaultUiState,
     projection: BitcoinProjection,
     displayUnit: DisplayUnit,
+    onAddBuy: () -> Unit,
 ) {
     val slice = state.data.btcBalance
     val unavailable = projection.balance == null
@@ -842,6 +880,9 @@ private fun VaultLazyListScope.bitcoin(
         displayUnit = displayUnit,
         btcPriceCents = state.data.btcPriceCents,
     )
+    if (state.data.btcBuys.status == Freshness.LIVE) {
+        item { BtcBuyEntryAction(onAddBuy) }
+    }
     if (state.data.btcBuys.suppressFigures) {
         item {
             Panel("Recent buys", state.data.btcBuys.source) {
