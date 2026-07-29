@@ -127,7 +127,7 @@ jobs:
           # preflights, so they must not spend Linux or Android client minutes.
           declare -A job_paths=(
             [linux]='^linux/'
-            [android]='^(android/|\.github/workflows/scripts/(report_android_debug_signing|validate_android_debug_keystore)\.sh)$'
+            [android]='^(android/|\.github/workflows/scripts/(report_android_debug_signing|validate_android_debug_keystore)\.sh$)'
           )
 
           for t in linux android; do

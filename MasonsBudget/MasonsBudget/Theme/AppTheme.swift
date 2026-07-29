@@ -101,13 +101,13 @@ struct ColorTokens {
 
 extension ColorTokens {
     static let dark = ColorTokens(
-        bg: Color(hex: 0x0B0907),
+        bg: Color(hex: 0x050505),
         surface: Color(hex: 0x15120E),
         surface2: Color(hex: 0x1C1813),
         elevated: Color(hex: 0x211C16),
         border: Color(red: 1.0, green: 0.925, blue: 0.784, opacity: 0.08),
         borderStrong: Color(red: 1.0, green: 0.925, blue: 0.784, opacity: 0.14),
-        text: Color(hex: 0xF4ECD8),
+        text: Color(hex: 0xF5F2EA),
         textMuted: Color(red: 0.957, green: 0.925, blue: 0.847, opacity: 0.62),
         textFaint: Color(red: 0.957, green: 0.925, blue: 0.847, opacity: 0.55),
         accent: Color(hex: 0xF7931A),
