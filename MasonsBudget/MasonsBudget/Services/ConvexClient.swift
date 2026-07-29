@@ -9,7 +9,18 @@ import Security
 /// Configuration for the Convex deployment.
 enum ConvexConfig {
     private static let rowReadsEnabledKey = "convex_row_reads_enabled"
+    private static let readTokenKey = "convex_read_token"
     private static let syncTokenKey = "convex_sync_token"
+    private static var readTokenStore: MigratingKeychainTokenStore {
+        MigratingKeychainTokenStore(
+            userDefaults: .standard,
+            legacyKey: readTokenKey,
+            keychain: KeychainCredentialStore(
+                service: "com.sats21m.vogel-vault.convex",
+                account: "read-token",
+            ),
+        )
+    }
     private static var syncTokenStore: MigratingKeychainTokenStore {
         MigratingKeychainTokenStore(
             userDefaults: .standard,
@@ -74,20 +85,28 @@ enum ConvexConfig {
     /// fail-closed on reads too.
     ///
     /// Same rules as `syncToken`: never hardcode it, never bundle it in the app,
-    /// never commit it. Injected at runtime and empty by default, so a build that
-    /// has not been configured fails closed against an enforcing deployment rather
-    /// than silently carrying a secret.
+    /// never commit it. Stored in the device-only Keychain after runtime injection
+    /// and empty by default, so an unconfigured build fails closed.
+    ///
+    /// Reading this property migrates the legacy UserDefaults value and removes the
+    /// cleartext copy only after the Keychain write succeeds.
     static var readToken: String {
-        UserDefaults.standard.string(forKey: "convex_read_token") ?? ""
+        readTokenStore.token
     }
 
-    static func setReadToken(_ token: String) {
-        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            UserDefaults.standard.removeObject(forKey: "convex_read_token")
-        } else {
-            UserDefaults.standard.set(trimmed, forKey: "convex_read_token")
-        }
+    /// Presence-only view for UI status. UI callers must not retain or render the credential.
+    static var hasReadToken: Bool {
+        readTokenStore.hasToken
+    }
+
+    @discardableResult
+    static func setReadToken(_ token: String) -> Bool {
+        readTokenStore.set(token)
+    }
+
+    @discardableResult
+    static func removeReadToken() -> Bool {
+        readTokenStore.remove()
     }
 
     /// Runtime gate for the public row API. Default-off until the row schema and
