@@ -11,7 +11,7 @@
 //      adults default to "victor" — so the visibility layer is exercised
 //      honestly rather than being handed pre-filtered data.
 
-import { type FamilyMember, hasDedicatedChildBudgetSource, isAdult } from "@vogel-vault/domain/family"
+import { type FamilyMember, hasDedicatedChildFinanceFiles, isAdult } from "@vogel-vault/domain/family"
 import { parseBtcToSats, parseCents, type Cents } from "@vogel-vault/domain/money"
 import type {
   BTCAccount,
@@ -404,7 +404,7 @@ export function buildSanitizedFixtureEnvelope(
   // Falling back to the adult budget here leaked household categories to Maddox.
   const budgetForProfile = isAdult(activeProfile)
     ? ADULT_BUDGET
-    : hasDedicatedChildBudgetSource(activeProfile)
+    : hasDedicatedChildFinanceFiles(activeProfile)
       ? MASON_BUDGET
       : null
   const btcBalanceDocument = btcBalanceDocumentFor(activeProfile)

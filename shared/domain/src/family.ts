@@ -85,10 +85,37 @@ export function profileDescription(member: FamilyMember): string {
   }
 }
 
-/** Mason has a dedicated budget source; Maddox currently has none. */
-export function hasDedicatedChildBudgetSource(member: FamilyMember): boolean {
+/**
+ * Retained blob routing for the approval-gated whole-file writeback path.
+ * Runtime clients read row tables and must not use this as a read plan.
+ */
+export function transactionsDataFileName(member: FamilyMember): string {
+  switch (member) {
+    case "victor":
+    case "rachel":
+      return "transactions"
+    case "mason":
+      return "mason-transactions"
+    case "maddox":
+      return "maddox-transactions"
+  }
+}
+
+/** Retained buy-blob routing for approval-gated whole-file writeback. */
+export function btcBuysDataFileName(member: FamilyMember): string {
+  return member === "mason" ? "mason-bitcoin-buys" : "bitcoin-buys"
+}
+
+/** Mason has dedicated child finance blobs; Maddox currently has none. */
+export function hasDedicatedChildFinanceFiles(member: FamilyMember): boolean {
   return member === "mason"
 }
+
+/**
+ * @deprecated Compatibility export for the retained Convex blob-writeback
+ * parity check. New code should use transactionsDataFileName.
+ */
+export { transactionsDataFileName as mc2TransactionsFileName }
 
 // ── Collection helpers ──────────────────────────────────────────────────────
 // The clients should filter through these rather than hand-rolling predicates,

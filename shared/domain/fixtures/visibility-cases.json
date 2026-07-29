@@ -62,7 +62,21 @@
     { "member": "maddox", "expected": false }
   ],
 
-  "hasDedicatedChildBudgetSource": [
+  "transactionsDataFileName": [
+    { "member": "victor", "expected": "transactions" },
+    { "member": "rachel", "expected": "transactions" },
+    { "member": "mason", "expected": "mason-transactions" },
+    { "member": "maddox", "expected": "maddox-transactions" }
+  ],
+
+  "btcBuysDataFileName": [
+    { "member": "victor", "expected": "bitcoin-buys" },
+    { "member": "rachel", "expected": "bitcoin-buys" },
+    { "member": "mason", "expected": "mason-bitcoin-buys" },
+    { "member": "maddox", "expected": "bitcoin-buys" }
+  ],
+
+  "hasDedicatedChildFinanceFiles": [
     { "member": "victor", "expected": false },
     { "member": "rachel", "expected": false },
     { "member": "mason", "expected": true },

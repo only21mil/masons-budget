@@ -15,13 +15,15 @@ import { fileURLToPath } from "node:url"
 import {
   type FamilyMember,
   allowedSwitchTargets,
+  btcBuysDataFileName,
   canSeeDataOwnedBy,
   coerceOwner,
-  hasDedicatedChildBudgetSource,
+  hasDedicatedChildFinanceFiles,
   isAdult,
   netWorthScopeFor,
   sharesNetWorthWith,
   showsFullBudget,
+  transactionsDataFileName,
   visibleTo,
 } from "../src/family.ts"
 import { parseCents, sum } from "../src/money.ts"
@@ -74,7 +76,9 @@ interface Fixtures {
   sharesNetWorth: PairCase[]
   allowedSwitchTargets: MemberCase<FamilyMember[]>[]
   showsFullBudget: MemberCase<boolean>[]
-  hasDedicatedChildBudgetSource: MemberCase<boolean>[]
+  transactionsDataFileName: MemberCase<string>[]
+  btcBuysDataFileName: MemberCase<string>[]
+  hasDedicatedChildFinanceFiles: MemberCase<boolean>[]
   sampleTransactions: SampleTransaction[]
   sampleAccounts: SampleAccount[]
   sampleTodos: SampleTodo[]
@@ -160,9 +164,15 @@ test("showsFullBudget tracks adulthood", () => {
   }
 })
 
-test("dedicated child budget availability matches the shared fixture", () => {
-  for (const testCase of fixtures.hasDedicatedChildBudgetSource) {
-    assert.equal(hasDedicatedChildBudgetSource(testCase.member), testCase.expected)
+test("retained data-file routing matches the shared fixture", () => {
+  for (const testCase of fixtures.transactionsDataFileName) {
+    assert.equal(transactionsDataFileName(testCase.member), testCase.expected)
+  }
+  for (const testCase of fixtures.btcBuysDataFileName) {
+    assert.equal(btcBuysDataFileName(testCase.member), testCase.expected)
+  }
+  for (const testCase of fixtures.hasDedicatedChildFinanceFiles) {
+    assert.equal(hasDedicatedChildFinanceFiles(testCase.member), testCase.expected)
   }
 })
 

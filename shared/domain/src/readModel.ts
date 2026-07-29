@@ -53,7 +53,7 @@ export interface Transaction {
 /**
  * Signed contribution to budget spend.
  *
- * Adult and child files both store purchases as positive amounts. Credits and
+ * Adult and child rows both store purchases as positive amounts. Credits and
  * refunds are negative so they reduce actual spend. Income contributes zero.
  */
 export function spendAmount(transaction: Transaction): Cents {
