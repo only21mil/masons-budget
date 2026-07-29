@@ -151,7 +151,7 @@ jobs:
   build:
     needs: preflight
     if: github.repository == 'only21mil/masons-budget'
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS, ARM64, xcode]
     strategy:
       # Finish both platform jobs so one failure does not hide the other result.
       # Keep uploads serial because both platforms share a project build number.
@@ -168,13 +168,24 @@ jobs:
       # different toolchains, a change can pass CI and fail the release — which
       # is precisely how 16.4 survived here long after the runner image dropped
       # it: nothing exercised this path until the first real release attempt.
-      - name: Set up Xcode
-        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
-        with:
-          xcode-version: '26.6'
+      # Self-hosted: setup-xcode expects the hosted image's versioned bundles
+      # (/Applications/Xcode_26.6.app). The mini has a single /Applications/
+      # Xcode.app, so that action fails outright. Assert the version instead —
+      # the guarantee we need is "the pinned Xcode is what built this", and a
+      # mismatch must fail loudly rather than quietly release from another.
+      - name: Verify the pinned Xcode
+        run: |
+          set -euo pipefail
+          expected='26.6'
+          actual="$(xcodebuild -version | head -1 | awk '{print $2}')"
+          echo "xcodebuild reports $actual; release pins $expected"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::Xcode $expected is pinned for release but this runner has $actual." >&2
+            exit 1
+          fi
 
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: command -v xcodegen >/dev/null || brew install xcodegen
 
       - name: Generate Xcode project
         working-directory: MasonsBudget

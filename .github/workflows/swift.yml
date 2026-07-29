@@ -18,9 +18,15 @@ name: Swift CI
 # see XCODE_VERSION below. If the two drift further, a change can pass here and
 # fail during a release.
 #
-# Cost: macos-latest bills at 10x the Linux rate on a private repository
-# ($0.08/min vs $0.008/min), so an always-on Ubuntu detector gates the actual
-# Apple work, a head-repository check keeps fork PRs from spending it, and
+# Cost: the Apple job now runs on the SELF-HOSTED Mac mini (labels
+# self-hosted,macOS,ARM64,xcode), so it bills nothing. It previously ran on
+# macos-latest at 10x the Linux rate on a private repository ($0.08/min vs
+# $0.008/min) — that rate, across three release attempts and a day of PRs, is
+# what exhausted the Actions spending limit twice on 2026-07-28. The Ubuntu
+# detector, fork-PR guard and concurrency rules below are KEPT anyway: they
+# still stop pointless work, and they are what makes this job requireable at
+# all. An always-on Ubuntu detector gates the actual Apple work, a
+# head-repository check keeps fork PRs off the self-hosted machine, and
 # concurrency cancels superseded PR and merge-group runs. Title/body-only PR
 # edits use a separate no-op lane so they cannot cancel or restart unchanged
 # Apple work; base-branch edits stay in the cancellable PR lane because their
@@ -311,7 +317,7 @@ jobs:
       (needs.changes.result != 'success' || needs.changes.outputs.apple != 'false') &&
       needs.project-consistency.result == 'success'
     needs: [changes, project-consistency]
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS, ARM64, xcode]
     timeout-minutes: 45
 
     steps:
@@ -319,10 +325,20 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Xcode
-        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
-        with:
-          xcode-version: ${{ env.XCODE_VERSION }}
+      # Self-hosted: setup-xcode expects the hosted image's versioned bundles
+      # (/Applications/Xcode_26.6.app). The mini has a single /Applications/
+      # Xcode.app, so that action fails outright. Assert the version instead —
+      # the guarantee we actually need is "the pinned Xcode is what built this",
+      # and a mismatch must fail loudly rather than silently build with another.
+      - name: Verify the pinned Xcode
+        run: |
+          set -euo pipefail
+          actual="$(xcodebuild -version | head -1 | awk '{print $2}')"
+          echo "xcodebuild reports $actual; workflow pins ${XCODE_VERSION}"
+          if [ "$actual" != "${XCODE_VERSION}" ]; then
+            echo "::error::Xcode ${XCODE_VERSION} is pinned but this runner has ${actual}." >&2
+            exit 1
+          fi
 
       # Printed because the runner image moves under us: when this workflow
       # starts failing on a build that has not changed, the first question is
@@ -335,7 +351,7 @@ jobs:
           xcodebuild -showsdks | grep -iE 'ios|macos' || true
 
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: command -v xcodegen >/dev/null || brew install xcodegen
 
       - name: Generate the Xcode project
         working-directory: MasonsBudget
