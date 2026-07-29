@@ -101,4 +101,15 @@
     <string name="tasks_back">Back to all task lists</string>
     <string name="tasks_all_lists">All task lists</string>
     <string name="tasks_nothing_here">Nothing here.</string>
+    <string name="tasks_add">Add task</string>
+    <string name="tasks_add_title">New task</string>
+    <string name="tasks_task_title">Task title</string>
+    <string name="tasks_project">Project (optional)</string>
+    <string name="tasks_area">Area (optional)</string>
+    <string name="tasks_due_date">Due date (optional)</string>
+    <string name="tasks_due_date_hint">YYYY-MM-DD</string>
+    <string name="tasks_flag_task">Flag this task</string>
+    <string name="tasks_cancel">Cancel</string>
+    <string name="tasks_save">Save task</string>
+    <string name="tasks_saving">Saving…</string>
 </resources>

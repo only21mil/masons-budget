@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.Upcoming
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -78,7 +79,28 @@ internal fun TaskListsScreen(
     var selectedKind by rememberSaveable { mutableStateOf(TaskSmartList.TODAY.name) }
     var selectedOwner by rememberSaveable { mutableStateOf(FamilyMember.VICTOR.key) }
     var selectedName by rememberSaveable { mutableStateOf("") }
+    var addingTask by rememberSaveable { mutableStateOf(false) }
+    var writeNotice by rememberSaveable { mutableStateOf<String?>(null) }
     val route = TaskListRoute.entries.firstOrNull { it.name == routeName } ?: TaskListRoute.HUB
+
+    if (addingTask) {
+        AddTaskSheet(
+            owner = state.activeProfile,
+            onDismiss = { addingTask = false },
+            onSaved = { title ->
+                writeNotice = "Task added: $title"
+                addingTask = false
+            },
+        )
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.md)) {
+        Button(onClick = { addingTask = true }) {
+            Text(stringResource(R.string.tasks_add))
+        }
+        writeNotice?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = VaultAccent)
+        }
 
     when (route) {
         TaskListRoute.HUB ->
@@ -122,6 +144,7 @@ internal fun TaskListsScreen(
                 onBack = { routeName = TaskListRoute.HUB.name },
             )
         }
+    }
     }
 }
 

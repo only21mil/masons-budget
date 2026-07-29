@@ -7,7 +7,7 @@ import com.sats21m.vogelvault.domain.visibleTo
 import java.time.LocalDate
 
 /**
- * Read-only task organization derived from the normalized todo domain model.
+ * Task organization derived from the normalized todo domain model.
  *
  * The domain boundary deliberately turns wire-shape aliases into [TodoItem]
  * before this code runs. In particular, the canonical project value "Inbox"
