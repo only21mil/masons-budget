@@ -3,45 +3,70 @@ import XCTest
 
 final class ConvexConfigTests: XCTestCase {
     private let syncTokenKey = "convex_sync_token"
-    private var previousSyncToken: Any?
+    private var suiteName: String!
+    private var userDefaults: UserDefaults!
+    private var keychain: KeychainCredentialStore!
+    private var tokenStore: MigratingKeychainTokenStore!
 
     override func setUp() {
         super.setUp()
-        previousSyncToken = UserDefaults.standard.object(forKey: syncTokenKey)
-        UserDefaults.standard.removeObject(forKey: syncTokenKey)
+        suiteName = "ConvexConfigTests.\(UUID().uuidString)"
+        userDefaults = UserDefaults(suiteName: suiteName)
+        keychain = KeychainCredentialStore(
+            service: "com.sats21m.vogel-vault.tests.\(UUID().uuidString)",
+            account: "sync-token",
+        )
+        tokenStore = MigratingKeychainTokenStore(
+            userDefaults: userDefaults,
+            legacyKey: syncTokenKey,
+            keychain: keychain,
+        )
     }
 
     override func tearDown() {
-        if let previousSyncToken {
-            UserDefaults.standard.set(previousSyncToken, forKey: syncTokenKey)
-        } else {
-            UserDefaults.standard.removeObject(forKey: syncTokenKey)
-        }
-        previousSyncToken = nil
+        keychain.clear()
+        userDefaults.removePersistentDomain(forName: suiteName)
+        tokenStore = nil
+        keychain = nil
+        userDefaults = nil
+        suiteName = nil
         super.tearDown()
     }
 
-    func testSetSyncTokenTrimsAndStoresRuntimeCredential() {
-        ConvexConfig.setSyncToken("  runtime-token\n")
+    func testSetSyncTokenTrimsAndStoresRuntimeCredentialOnlyInKeychain() {
+        XCTAssertTrue(tokenStore.set("  runtime-token\n"))
 
-        XCTAssertEqual(ConvexConfig.syncToken, "runtime-token")
+        XCTAssertEqual(tokenStore.token, "runtime-token")
+        XCTAssertEqual(keychain.read(), "runtime-token")
+        XCTAssertNil(userDefaults.object(forKey: syncTokenKey))
+    }
+
+    func testReadingLegacySyncTokenMigratesItToKeychainAndRemovesCleartext() {
+        userDefaults.set("  existing-token\n", forKey: syncTokenKey)
+
+        XCTAssertEqual(tokenStore.token, "existing-token")
+        XCTAssertEqual(keychain.read(), "existing-token")
+        XCTAssertNil(userDefaults.object(forKey: syncTokenKey))
     }
 
     func testSetSyncTokenWithOnlyWhitespaceClearsStoredCredential() {
-        UserDefaults.standard.set("existing-token", forKey: syncTokenKey)
+        userDefaults.set("existing-token", forKey: syncTokenKey)
 
-        ConvexConfig.setSyncToken(" \n\t ")
+        XCTAssertTrue(tokenStore.set(" \n\t "))
 
-        XCTAssertTrue(ConvexConfig.syncToken.isEmpty)
-        XCTAssertNil(UserDefaults.standard.object(forKey: syncTokenKey))
+        XCTAssertTrue(tokenStore.token.isEmpty)
+        XCTAssertNil(keychain.read())
+        XCTAssertNil(userDefaults.object(forKey: syncTokenKey))
     }
 
-    func testRemoveSyncTokenClearsStoredCredential() {
-        UserDefaults.standard.set("existing-token", forKey: syncTokenKey)
+    func testRemoveSyncTokenClearsKeychainAndLegacyCredential() {
+        XCTAssertTrue(keychain.save("keychain-token"))
+        userDefaults.set("legacy-token", forKey: syncTokenKey)
 
-        ConvexConfig.removeSyncToken()
+        XCTAssertTrue(tokenStore.remove())
 
-        XCTAssertTrue(ConvexConfig.syncToken.isEmpty)
-        XCTAssertNil(UserDefaults.standard.object(forKey: syncTokenKey))
+        XCTAssertTrue(tokenStore.token.isEmpty)
+        XCTAssertNil(keychain.read())
+        XCTAssertNil(userDefaults.object(forKey: syncTokenKey))
     }
 }
