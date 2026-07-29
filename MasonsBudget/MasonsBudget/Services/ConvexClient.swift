@@ -9,6 +9,7 @@ import Security
 /// Configuration for the Convex deployment.
 enum ConvexConfig {
     private static let rowReadsEnabledKey = "convex_row_reads_enabled"
+    private static let syncTokenKey = "convex_sync_token"
 
     /// The Convex deployment URL. Updated after `npx convex deploy`.
     /// Store in UserDefaults so it can be changed without an app update.
@@ -35,7 +36,20 @@ enum ConvexConfig {
     /// (see AGENTS.md). Sourced from UserDefaults so it can be injected at runtime; empty by
     /// default so native writes stay fail-closed (the server rejects an empty/invalid token).
     static var syncToken: String {
-        UserDefaults.standard.string(forKey: "convex_sync_token") ?? ""
+        UserDefaults.standard.string(forKey: syncTokenKey) ?? ""
+    }
+
+    static func setSyncToken(_ token: String) {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            removeSyncToken()
+        } else {
+            UserDefaults.standard.set(trimmed, forKey: syncTokenKey)
+        }
+    }
+
+    static func removeSyncToken() {
+        UserDefaults.standard.removeObject(forKey: syncTokenKey)
     }
 
     /// Optional read token.
