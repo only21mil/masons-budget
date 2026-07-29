@@ -96,6 +96,7 @@
     <string name="csv_import_select_none">Select none</string>
     <string name="csv_import_no_unique_rows">No new transactions. Every parsed row already exists.</string>
     <string name="csv_import_price_unavailable">Bitcoin price is unavailable. Sats are shown, but import is blocked so fiat spend cannot become a confident zero.</string>
+    <string name="csv_import_price_basis">Fiat preview uses the app\'s recorded BTC price of %1$s, not a historical price from each row. Review every amount.</string>
     <string name="csv_import_write_unavailable">Secure transaction writeback is not configured in this Android build. Review is available; importing remains blocked.</string>
     <string name="csv_import_price_short">Price unavailable</string>
     <string name="csv_import_back">Back</string>
