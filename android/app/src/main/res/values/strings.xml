@@ -87,4 +87,18 @@
     <string name="add_transaction_save">Save</string>
     <string name="add_transaction_saving">Saving...</string>
     <string name="add_transaction_date_confirm">Use date</string>
+    <string name="vault_locked_title">Vogel Vault is locked</string>
+    <string name="vault_locked_detail">Authenticate with your biometric or device screen lock to view family finances.</string>
+    <string name="vault_unlock_action">Unlock vault</string>
+    <string name="vault_unlock_in_progress">Waiting for authentication…</string>
+    <string name="vault_auth_prompt_title">Unlock Vogel Vault</string>
+    <string name="vault_auth_prompt_subtitle">Confirm it’s you to view family finances</string>
+    <string name="vault_profile_prompt_title">Switch family profile</string>
+    <string name="vault_profile_prompt_subtitle">Authenticate before opening another family member’s profile</string>
+    <string name="vault_auth_error">Authentication did not complete. The vault remains locked.</string>
+    <string name="onboarding_title">Connect Vogel Vault</string>
+    <string name="onboarding_detail">This installation is not configured for the family ledger, so financial screens are unavailable.</string>
+    <string name="onboarding_token_help">Enter the approved Convex read credential. It is stored with Android Keystore encryption and used only for authenticated, read-only requests.</string>
+    <string name="onboarding_token_label">Convex read credential</string>
+    <string name="onboarding_connect_action">Save and connect</string>
 </resources>
