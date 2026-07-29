@@ -9,10 +9,13 @@ import com.sats21m.vogelvault.data.BudgetDocumentSnapshot
 import com.sats21m.vogelvault.data.BudgetQueryScope
 import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.HttpTextResponse
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
+import com.sats21m.vogelvault.data.RecordingPoster
 import com.sats21m.vogelvault.data.RowCounts
 import com.sats21m.vogelvault.data.IncomeRow
 import com.sats21m.vogelvault.data.RowQueryRepository
+import com.sats21m.vogelvault.data.RowQueryRepositories
 import com.sats21m.vogelvault.data.RowSnapshot
 import com.sats21m.vogelvault.data.RowVisibilityScope
 import com.sats21m.vogelvault.domain.BtcAccount
@@ -179,7 +182,7 @@ class CachedRowDataSourceTest {
         }
 
     @Test
-    fun `http 401 transport failure does not reject the credential`() =
+    fun `bare http 401 reports unauthorized and invokes credential rejection`() =
         runBlocking {
             val rejectionCount = AtomicInteger()
             val config =
@@ -188,12 +191,20 @@ class CachedRowDataSourceTest {
                     readToken = "manual-test-token",
                     remoteReadEnabled = true,
                 )
-            val remote = FakeRows().apply { failedReason = "http 401" }
+            val configSource = MutableConvexConfigSource(config)
+            // A proxy-generated 401 is ambiguous, but treating it as transport can
+            // preserve a genuinely rejected token forever. Prefer the recoverable
+            // failure: report Unauthorized and let credential self-healing run.
+            val remote =
+                RowQueryRepositories.convex(
+                    configSource = configSource,
+                    http = RecordingPoster(HttpTextResponse(401, "")),
+                )
             val source =
                 CachedRowDataSource(
                     remote = remote,
                     dao = dao,
-                    configSource = MutableConvexConfigSource(config),
+                    configSource = configSource,
                     onUnauthorized = {
                         rejectionCount.incrementAndGet()
                         false
@@ -202,8 +213,8 @@ class CachedRowDataSourceTest {
 
             val loaded = source.load(FamilyMember.VICTOR)
 
-            assertFalse(loaded.unauthorized)
-            assertEquals(0, rejectionCount.get())
+            assertTrue(loaded.unauthorized)
+            assertEquals(1, rejectionCount.get())
         }
 
     @Test
