@@ -152,7 +152,11 @@ dependencies {
     // be decoded lexically without ever passing money through Double.
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
 
-    val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
+    // Compose UI Test 1.7.6's Robolectric idle check does not flush process-global
+    // Snapshot apply notifications, so a screen that recomposes can strand them past
+    // its own Activity and hang the next Compose test in the same JVM for the full
+    // 60s Espresso timeout. 1.8.2 sends them before checking idleness.
+    val composeBom = platform("androidx.compose:compose-bom:2025.05.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)
 
