@@ -44,6 +44,10 @@ import {
   spendAmount,
 } from "../../data/transactionAmounts.ts"
 import {
+  fiatCentsOf,
+  fiatValuationOf,
+} from "../../data/btcFiatValuation.ts"
+import {
   Badge,
   type Column,
   DataTable,
@@ -139,7 +143,8 @@ function BitcoinSnapshotNotice({
     status !== "error" &&
     status !== "loading" &&
     status !== "empty" &&
-    document !== null
+    document !== null &&
+    fiatValuationOf(document.totals) !== null
 
   return available ? (
     <StatusBanner
@@ -150,17 +155,23 @@ function BitcoinSnapshotNotice({
     <StatusBanner
       tone="warning"
       title={PRICE_UNAVAILABLE}
-      detail="No canonical BTC balance document is available. BTC and SATS remain exact."
+      detail={
+        document
+          ? "The BTC balance is known, but no supported USD valuation exists. BTC and SATS remain exact."
+          : "No canonical BTC balance document is available. BTC and SATS remain exact."
+      }
     />
   )
 }
 
 function formatSnapshotBitcoin(
   sats: bigint,
-  fiatCents: bigint,
+  fiatCents: bigint | null,
   unit: DisplayUnit,
 ): string {
-  return unit === "usd" ? formatUsd(fiatCents) : formatBitcoin(sats, unit)
+  return unit === "usd"
+    ? fiatCents === null ? PRICE_UNAVAILABLE : formatUsd(fiatCents)
+    : formatBitcoin(sats, unit)
 }
 
 function incomeOf(transaction: Transaction): bigint {
@@ -293,7 +304,9 @@ function DashboardPage() {
   const spend = sum(budgetMonthTransactions.map(spendAmount))
   const income = sum(incomeRows.filter((row) => row.month === month).map((row) => row.amount))
   const stackSats = data.btcBalanceDocument.value?.totals.sats ?? 0n
-  const stackValue = data.btcBalanceDocument.value?.totals.fiat ?? 0n
+  const stackValue = data.btcBalanceDocument.value
+    ? fiatCentsOf(data.btcBalanceDocument.value.totals)
+    : null
 
   const txStatus = data.transactions.status
   const incomeStatus = data.income.status
@@ -322,7 +335,7 @@ function DashboardPage() {
         btcStatus,
         () => displayUnit === "usd"
           ? `Canonical snapshot · ${data.btcBalanceDocument.value?.asOf ?? "date unavailable"}`
-          : formatUsd(stackValue),
+          : stackValue === null ? PRICE_UNAVAILABLE : formatUsd(stackValue),
       ),
     },
     { label: "Open tasks", value: figure(todoStatus, () => String(todos.length)) },
@@ -398,7 +411,7 @@ function stackColumns(
       key: "amount",
       header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),
       numeric: true,
-      render: (row) => formatSnapshotBitcoin(row.sats, row.fiat, displayUnit),
+      render: (row) => formatSnapshotBitcoin(row.sats, fiatCentsOf(row), displayUnit),
     },
   ]
 }
@@ -584,7 +597,9 @@ function BitcoinOverviewPage() {
   const document = data.btcBalanceDocument.value
   const inScope = document?.accounts ?? []
   const totalSats = document?.totals.sats ?? 0n
-  const totalFiat = document?.totals.fiat ?? 0n
+  const totalValuation = document ? fiatValuationOf(document.totals) : null
+  const totalFiat = totalValuation?.cents ?? null
+  const valuationPrice = totalValuation?.priceCents ?? null
   const selfCustody = document?.totals.selfCustodySats ?? 0n
   const exchange = document?.totals.exchangeSats ?? 0n
   const status = data.btcBalanceDocument.status
@@ -620,7 +635,10 @@ function BitcoinOverviewPage() {
           },
           {
             label: "Value",
-            value: requiredFigure(status, () => formatUsd(totalFiat)),
+            value: requiredFigure(
+              status,
+              () => totalFiat === null ? PRICE_UNAVAILABLE : formatUsd(totalFiat),
+            ),
             provenance: "estimated",
           },
           {
@@ -633,7 +651,9 @@ function BitcoinOverviewPage() {
               status,
               () => formatSnapshotBitcoin(
                 selfCustody,
-                satsToUsdCents(selfCustody, data.btcPriceUsd),
+                valuationPrice && valuationPrice > 0n
+                  ? satsToUsdCents(selfCustody, valuationPrice)
+                  : null,
                 displayUnit,
               ),
             ),
@@ -644,7 +664,9 @@ function BitcoinOverviewPage() {
               status,
               () => formatSnapshotBitcoin(
                 exchange,
-                satsToUsdCents(exchange, data.btcPriceUsd),
+                valuationPrice && valuationPrice > 0n
+                  ? satsToUsdCents(exchange, valuationPrice)
+                  : null,
                 displayUnit,
               ),
             ),
@@ -856,7 +878,7 @@ function NetWorthPage() {
   const document = data.btcBalanceDocument.value
   const inScope = document?.accounts ?? []
   const stackSats = document?.totals.sats ?? 0n
-  const stackValue = document?.totals.fiat ?? 0n
+  const stackValue = document ? fiatCentsOf(document.totals) : null
 
   const projectedInScope = netWorthScopeFor(activeProfile, data.btcAccounts.value)
   const excluded = data.btcAccounts.value.filter(
@@ -897,7 +919,7 @@ function NetWorthPage() {
             label: "Fiat estimate",
             value: requiredFigure(
               data.btcBalanceDocument.status,
-              () => formatUsd(stackValue),
+              () => stackValue === null ? PRICE_UNAVAILABLE : formatUsd(stackValue),
             ),
             hint: requiredFigure(
               data.btcBalanceDocument.status,
@@ -921,7 +943,7 @@ function NetWorthPage() {
                 key: "amount",
                 header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),
                 numeric: true,
-                render: (row) => formatSnapshotBitcoin(row.sats, row.fiat, displayUnit),
+                render: (row) => formatSnapshotBitcoin(row.sats, fiatCentsOf(row), displayUnit),
               },
             ]}
             rows={inScope}
@@ -942,7 +964,7 @@ function NetWorthPage() {
                 key: "amount",
                 header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),
                 numeric: true,
-                render: (row) => formatSnapshotBitcoin(row.sats, row.fiat, displayUnit),
+                render: (row) => formatSnapshotBitcoin(row.sats, fiatCentsOf(row), displayUnit),
               },
             ]}
             rows={excluded}

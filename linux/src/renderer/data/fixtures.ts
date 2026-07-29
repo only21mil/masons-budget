@@ -373,7 +373,7 @@ export interface FixtureEnvelope {
   readonly btcBuys: SliceState<readonly BTCBuy[]>
   readonly billPays: SliceState<readonly BTCBillPay[]>
   readonly todos: SliceState<readonly TodoItem[]>
-  readonly btcPriceUsd: bigint
+  readonly btcPriceUsd: bigint | null
   readonly generatedAt: number
 }
 
@@ -431,6 +431,55 @@ export function buildSanitizedFixtureEnvelope(
   }
 }
 
+/**
+ * Exact production BTC quantity with the legacy zero that means "not valued".
+ *
+ * This is intentionally separate from the normal demo fixture: reviewers still
+ * need a positive-valuation state, while regressions need the real ambiguity
+ * that previously rendered as a confident $0.00.
+ */
+export function buildKnownSatsUnavailableFiatEnvelope(): FixtureEnvelope {
+  const base = buildSanitizedFixtureEnvelope("victor")
+  const accountRow: BTCAccount = {
+    key: "canonical-self-custody",
+    label: "Canonical Self Custody",
+    custody: "self_custody",
+    sats: 541_782_856n,
+    fiat: 0n,
+    owner: "victor",
+  }
+  const document: BTCSnapshot = {
+    schemaVersion: 2,
+    asOf: "2026-07-16T01:56:49.739734Z",
+    accounts: [accountRow],
+    totals: {
+      sats: 541_782_856n,
+      fiat: 0n,
+      exchangeSats: 0n,
+      selfCustodySats: 541_782_856n,
+    },
+    source: "Regression fixture · authoritative balance reconciliation",
+    basis: "quantity-only fixture",
+    confidence: "high",
+  }
+  return {
+    ...base,
+    btcBalanceDocument: {
+      status: "live",
+      value: document,
+      updatedAt: NOW,
+      source: "Regression fixture · canonical BTC balance document",
+    },
+    btcAccounts: {
+      status: "live",
+      value: [accountRow],
+      updatedAt: NOW,
+      source: "Regression fixture · BTC accounts",
+    },
+    btcPriceUsd: null,
+  }
+}
+
 /** Envelope with every slice forced to one state — drives the QA state matrix. */
 export function fixtureEnvelopeInState(
   activeProfile: FamilyMember,
@@ -458,6 +507,6 @@ export function fixtureEnvelopeInState(
     btcBuys: { ...base.btcBuys, value: [] },
     billPays: { ...base.billPays, value: [] },
     todos: { ...base.todos, value: [] },
-    btcPriceUsd: 0n,
+    btcPriceUsd: null,
   }
 }

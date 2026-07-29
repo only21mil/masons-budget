@@ -775,6 +775,146 @@ describe("main-process row repository", () => {
     ).resolves.toEqual({ status: "error", code: "invalid-response" })
   })
 
+  it("keeps known sats live while decoding unavailable and explicit-zero fiat valuation", async () => {
+    const legacyUnavailableDocument = btcBalanceDocument({
+      accounts: [{
+        key: "coldcard",
+        label: "Coldcard",
+        custody: "self_custody",
+        sats: int64(541_782_856n),
+        fiatCents: int64(0n),
+      }],
+      totals: {
+        sats: int64(541_782_856n),
+        fiatCents: int64(0n),
+        exchangeSats: int64(0n),
+        selfCustodySats: int64(541_782_856n),
+      },
+      balanceConfidence: "high",
+    })
+    const explicitUnavailableDocument = btcBalanceDocument({
+      accounts: [{
+        key: "coldcard",
+        label: "Coldcard",
+        custody: "self_custody",
+        sats: int64(541_782_856n),
+        fiatCents: int64(0n),
+        fiatValuation: null,
+      }],
+      totals: {
+        sats: int64(541_782_856n),
+        fiatCents: int64(0n),
+        fiatValuation: null,
+        exchangeSats: int64(0n),
+        selfCustodySats: int64(541_782_856n),
+      },
+      balanceConfidence: "high",
+    })
+    const tinyExplicitZero = btcBalanceDocument({
+      accounts: [{
+        key: "tiny",
+        label: "Tiny",
+        custody: "self_custody",
+        sats: int64(1n),
+        fiatCents: int64(0n),
+        fiatValuation: {
+          cents: int64(0n),
+          priceCents: int64(6_000_000n),
+          quotedAt: "2026-07-29T12:00:00Z",
+          source: "fixture quote",
+          confidence: "verified",
+        },
+      }],
+      totals: {
+        sats: int64(1n),
+        fiatCents: int64(0n),
+        fiatValuation: {
+          cents: int64(0n),
+          priceCents: int64(6_000_000n),
+          quotedAt: "2026-07-29T12:00:00Z",
+          source: "fixture quote",
+          confidence: "verified",
+        },
+        exchangeSats: int64(0n),
+        selfCustodySats: int64(1n),
+      },
+    })
+    const repository = (document: Record<string, unknown>) => createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => success({ complete: true, rows: [document] }),
+    })
+
+    await expect(
+      repository(legacyUnavailableDocument).query({
+        kind: "btcBalanceDocuments",
+        viewer: "victor",
+        scope: "netWorth",
+      }),
+    ).resolves.toMatchObject({
+      status: "ok",
+      rows: [{
+        balanceConfidence: "high",
+        accounts: [{ sats: 541_782_856n, fiatValuation: null }],
+        totals: { sats: 541_782_856n, fiatValuation: null },
+      }],
+    })
+    await expect(
+      repository(explicitUnavailableDocument).query({
+        kind: "btcBalanceDocuments",
+        viewer: "victor",
+        scope: "netWorth",
+      }),
+    ).resolves.toMatchObject({
+      status: "ok",
+      rows: [{
+        accounts: [{ sats: 541_782_856n, fiatValuation: null }],
+        totals: { sats: 541_782_856n, fiatValuation: null },
+      }],
+    })
+    await expect(
+      repository(tinyExplicitZero).query({
+        kind: "btcBalanceDocuments",
+        viewer: "victor",
+        scope: "netWorth",
+      }),
+    ).resolves.toMatchObject({
+      status: "ok",
+      rows: [{
+        accounts: [{
+          sats: 1n,
+          fiatValuation: {
+            cents: 0n,
+            priceCents: 6_000_000n,
+            source: "fixture quote",
+          },
+        }],
+        totals: { sats: 1n, fiatValuation: { cents: 0n } },
+      }],
+    })
+  })
+
+  it("rejects malformed fiat valuation instead of reviving the legacy zero", async () => {
+    const repository = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => success({
+        complete: true,
+        rows: [btcBalanceDocument({
+          totals: {
+            sats: int64(1n),
+            fiatCents: int64(0n),
+            fiatValuation: { cents: 0 },
+            exchangeSats: int64(0n),
+            selfCustodySats: int64(1n),
+          },
+        })],
+      }),
+    })
+
+    await expect(
+      repository.query({ kind: "btcBalanceDocuments", viewer: "victor", scope: "netWorth" }),
+    ).resolves.toEqual({ status: "error", code: "invalid-response" })
+  })
+
   it("requires backend budget ownership and scoped bill-pay visibility", async () => {
     const badBudget = createConvexRowRepository({
       configuration: () => ({ generation: 1, settings }),
