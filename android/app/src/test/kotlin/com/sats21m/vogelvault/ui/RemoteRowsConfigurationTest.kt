@@ -99,7 +99,7 @@ class RemoteRowsConfigurationTest {
         stored.update(configured)
         stored.updateSyncToken("test-sync-token")
 
-        clearSyncTokenConfiguration(stored)
+        stored.clearSyncToken()
 
         assertFalse(stored.hasSyncToken())
         assertEquals(ReadReadiness.READY, stored.current().readiness)
