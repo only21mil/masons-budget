@@ -85,11 +85,11 @@ export function profileDescription(member: FamilyMember): string {
   }
 }
 
-// ── Legacy blob-name routing ────────────────────────────────────────────────
-// Compatibility port of the Swift blob-name members. Runtime clients read
-// Convex row tables; these names remain part of the cross-client contract.
-
-export function mc2TransactionsFileName(member: FamilyMember): string {
+/**
+ * Retained blob routing for the approval-gated whole-file writeback path.
+ * Runtime clients read row tables and must not use this as a read plan.
+ */
+export function transactionsDataFileName(member: FamilyMember): string {
   switch (member) {
     case "victor":
     case "rachel":
@@ -101,13 +101,21 @@ export function mc2TransactionsFileName(member: FamilyMember): string {
   }
 }
 
-export function mc2BTCBuysFileName(member: FamilyMember): string {
+/** Retained buy-blob routing for approval-gated whole-file writeback. */
+export function btcBuysDataFileName(member: FamilyMember): string {
   return member === "mason" ? "mason-bitcoin-buys" : "bitcoin-buys"
 }
 
-export function hasDedicatedMC2ChildFinanceFiles(member: FamilyMember): boolean {
+/** Mason has dedicated child finance blobs; Maddox currently has none. */
+export function hasDedicatedChildFinanceFiles(member: FamilyMember): boolean {
   return member === "mason"
 }
+
+/**
+ * @deprecated Compatibility export for the retained Convex blob-writeback
+ * parity check. New code should use transactionsDataFileName.
+ */
+export { transactionsDataFileName as mc2TransactionsFileName }
 
 // ── Collection helpers ──────────────────────────────────────────────────────
 // The clients should filter through these rather than hand-rolling predicates,

@@ -24,7 +24,7 @@ import type { TodoItem } from "@vogel-vault/domain/readModel"
 import { type RawTodo, normalizeTodoRecord, toTodoItem } from "@vogel-vault/domain/todo"
 
 import { buildSanitizedFixtureEnvelope } from "../src/renderer/data/fixtures.ts"
-import { MC2_DEFAULT_PROJECT, filingOf, taskFilters, todoColumns } from "../src/renderer/pages/tasks/index.tsx"
+import { UNFILED_PROJECT, filingOf, taskFilters, todoColumns } from "../src/renderer/pages/tasks/index.tsx"
 
 /** The fixture clock, so a minted id or stamped timestamp cannot drift a run. */
 const NOW = Date.UTC(2026, 6, 26, 14, 30, 0)
@@ -140,7 +140,7 @@ const GROUPS: readonly DialectGroup[] = [
       "explicit legacy default project": {
         id: "d-3",
         text: "Sort out the garage shelving",
-        project: MC2_DEFAULT_PROJECT,
+        project: UNFILED_PROJECT,
         owner: "victor",
       },
       // Ownership resolves through assignee when owner is absent — the v0.3 bug.
@@ -198,7 +198,7 @@ test("an unfiled todo is not filed under a project called Inbox", () => {
   // The contract fills `project` in rather than leaving it unset, so a view that
   // trusts the field verbatim would invent an "Inbox" project heading and empty
   // the Inbox list at the same time.
-  assert.equal(unfiled.project, MC2_DEFAULT_PROJECT)
+  assert.equal(unfiled.project, UNFILED_PROJECT)
   assert.equal(filingOf(unfiled), null)
   assert.equal(taskFilters.inbox(unfiled), true)
 

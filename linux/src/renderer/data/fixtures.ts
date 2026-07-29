@@ -1,9 +1,9 @@
 // Sanitized fixture envelope.
 //
 // Used when runtime-gated Convex row reads are disabled or when QA selects a
-// forced state. Everything here is invented sample data with the same *shape*
-// the legacy blobs emit, so pages can be reviewed without a backend and without
-// any real family financial data on disk.
+// forced state. Everything here is invented sample data with the same shape as
+// the normalized row model, so pages can be reviewed without a backend and
+// without any real family financial data on disk.
 //
 // Two rules for this file:
 //   1. No real balances, account numbers, merchants, or identifiers. Ever.
@@ -11,7 +11,7 @@
 //      adults default to "victor" — so the visibility layer is exercised
 //      honestly rather than being handed pre-filtered data.
 
-import { type FamilyMember, hasDedicatedMC2ChildFinanceFiles, isAdult } from "@vogel-vault/domain/family"
+import { type FamilyMember, hasDedicatedChildFinanceFiles, isAdult } from "@vogel-vault/domain/family"
 import { parseBtcToSats, parseCents, type Cents } from "@vogel-vault/domain/money"
 import type {
   BTCAccount,
@@ -274,7 +274,7 @@ function buy(
     note: null,
     status: "settled",
     costBasisStatus: "confirmed",
-    loggedBy: "mc2",
+    loggedBy: "fixture",
     owner,
   }
 }
@@ -399,12 +399,12 @@ export function buildSanitizedFixtureEnvelope(
   overrides: Partial<Record<keyof FixtureEnvelope, Freshness>> = {},
 ): FixtureEnvelope {
   // Budget is per-owner, and there is no "default to the adult budget" case:
-  // adults share the household budget, Mason has dedicated legacy child finance
-  // records, and Maddox has none — so his budget slice is genuinely empty.
+  // adults share the household budget, Mason has a dedicated child budget
+  // source, and Maddox has none — so his budget slice is genuinely empty.
   // Falling back to the adult budget here leaked household categories to Maddox.
   const budgetForProfile = isAdult(activeProfile)
     ? ADULT_BUDGET
-    : hasDedicatedMC2ChildFinanceFiles(activeProfile)
+    : hasDedicatedChildFinanceFiles(activeProfile)
       ? MASON_BUDGET
       : null
   const btcBalanceDocument = btcBalanceDocumentFor(activeProfile)
