@@ -1,0 +1,259 @@
+{
+  "$comment": "Language-neutral golden vectors for tables:upsertTransaction. Input money is an exact decimal int64 string in cents. Accepted cases emit Convex convex_encoded_json tags. Rejected cases are mandatory: clients must not send them and the server independently rejects the same ledger invariants. Sync tokens are runtime-injected and MUST NOT appear in this fixture.",
+  "contractVersion": 1,
+  "path": "tables:upsertTransaction",
+  "format": "convex_encoded_json",
+  "signConvention": {
+    "purchase": "positive",
+    "refund": "negative",
+    "scope": "every-owner"
+  },
+  "accepted": [
+    {
+      "name": "adult purchase is positive",
+      "actor": "victor",
+      "input": {
+        "id": "write-adult-purchase",
+        "date": "2026-07-29",
+        "merchant": "Contract Grocer",
+        "amountCents": "3762",
+        "kind": "spend",
+        "category": "Groceries",
+        "owner": "victor",
+        "sourceFile": "transactions",
+        "card": "Visa"
+      },
+      "expected": {
+        "path": "tables:upsertTransaction",
+        "format": "convex_encoded_json",
+        "args": {
+          "transaction": {
+            "id": "write-adult-purchase",
+            "date": "2026-07-29",
+            "merchant": "Contract Grocer",
+            "amountCents": { "$integer": "sg4AAAAAAAA=" },
+            "kind": "spend",
+            "category": "Groceries",
+            "owner": "victor",
+            "card": "Visa"
+          },
+          "sourceFile": "transactions"
+        }
+      }
+    },
+    {
+      "name": "Rachel writes shared Victor household data",
+      "actor": "rachel",
+      "input": {
+        "id": "write-shared-household",
+        "date": "2026-07-29",
+        "merchant": "Household Market",
+        "amountCents": "1250",
+        "kind": "spend",
+        "category": "Groceries",
+        "owner": "victor",
+        "sourceFile": "transactions"
+      },
+      "expected": {
+        "path": "tables:upsertTransaction",
+        "format": "convex_encoded_json",
+        "args": {
+          "transaction": {
+            "id": "write-shared-household",
+            "date": "2026-07-29",
+            "merchant": "Household Market",
+            "amountCents": { "$integer": "4gQAAAAAAAA=" },
+            "kind": "spend",
+            "category": "Groceries",
+            "owner": "victor"
+          },
+          "sourceFile": "transactions"
+        }
+      }
+    },
+    {
+      "name": "adult writes child purchase with positive sign",
+      "actor": "rachel",
+      "input": {
+        "id": "write-mason-purchase",
+        "date": "2026-07-29",
+        "merchant": "Game Store",
+        "amountCents": "9007199254740992",
+        "kind": "spend",
+        "category": "Entertainment",
+        "owner": "mason",
+        "sourceFile": "mason-transactions",
+        "note": "Pins exact int64 beyond JavaScript safe integer"
+      },
+      "expected": {
+        "path": "tables:upsertTransaction",
+        "format": "convex_encoded_json",
+        "args": {
+          "transaction": {
+            "id": "write-mason-purchase",
+            "date": "2026-07-29",
+            "merchant": "Game Store",
+            "amountCents": { "$integer": "AAAAAAAAIAA=" },
+            "kind": "spend",
+            "category": "Entertainment",
+            "owner": "mason",
+            "note": "Pins exact int64 beyond JavaScript safe integer"
+          },
+          "sourceFile": "mason-transactions"
+        }
+      }
+    },
+    {
+      "name": "child refund is negative",
+      "actor": "mason",
+      "input": {
+        "id": "write-mason-refund",
+        "date": "2026-07-29",
+        "merchant": "Game Refund",
+        "amountCents": "-800",
+        "kind": "credit",
+        "category": "Entertainment",
+        "owner": "mason",
+        "sourceFile": "mason-transactions"
+      },
+      "expected": {
+        "path": "tables:upsertTransaction",
+        "format": "convex_encoded_json",
+        "args": {
+          "transaction": {
+            "id": "write-mason-refund",
+            "date": "2026-07-29",
+            "merchant": "Game Refund",
+            "amountCents": { "$integer": "4Pz///////8=" },
+            "kind": "credit",
+            "category": "Entertainment",
+            "owner": "mason"
+          },
+          "sourceFile": "mason-transactions"
+        }
+      }
+    },
+    {
+      "name": "income credit remains positive",
+      "actor": "maddox",
+      "input": {
+        "id": "write-maddox-income",
+        "date": "2026-07-29",
+        "merchant": "Allowance",
+        "amountCents": "500",
+        "kind": "credit",
+        "category": "Income",
+        "owner": "maddox",
+        "sourceFile": "maddox-transactions"
+      },
+      "expected": {
+        "path": "tables:upsertTransaction",
+        "format": "convex_encoded_json",
+        "args": {
+          "transaction": {
+            "id": "write-maddox-income",
+            "date": "2026-07-29",
+            "merchant": "Allowance",
+            "amountCents": { "$integer": "9AEAAAAAAAA=" },
+            "kind": "credit",
+            "category": "Income",
+            "owner": "maddox"
+          },
+          "sourceFile": "maddox-transactions"
+        }
+      }
+    }
+  ],
+  "rejected": [
+    {
+      "name": "adult purchase wrong negative sign",
+      "actor": "victor",
+      "input": { "id": "reject-1", "date": "2026-07-29", "merchant": "Store", "amountCents": "-3762", "kind": "spend", "category": "Shopping", "owner": "victor", "sourceFile": "transactions" },
+      "errorCode": "sign-disagrees"
+    },
+    {
+      "name": "child purchase wrong negative sign",
+      "actor": "mason",
+      "input": { "id": "reject-2", "date": "2026-07-29", "merchant": "Store", "amountCents": "-3762", "kind": "spend", "category": "Shopping", "owner": "mason", "sourceFile": "mason-transactions" },
+      "errorCode": "sign-disagrees"
+    },
+    {
+      "name": "adult refund wrong positive sign",
+      "actor": "rachel",
+      "input": { "id": "reject-3", "date": "2026-07-29", "merchant": "Refund", "amountCents": "800", "kind": "credit", "category": "Shopping", "owner": "victor", "sourceFile": "transactions" },
+      "errorCode": "sign-disagrees"
+    },
+    {
+      "name": "child refund wrong positive sign",
+      "actor": "maddox",
+      "input": { "id": "reject-4", "date": "2026-07-29", "merchant": "Refund", "amountCents": "800", "kind": "credit", "category": "Shopping", "owner": "maddox", "sourceFile": "maddox-transactions" },
+      "errorCode": "sign-disagrees"
+    },
+    {
+      "name": "zero has no sign",
+      "actor": "victor",
+      "input": { "id": "reject-5", "date": "2026-07-29", "merchant": "Zero", "amountCents": "0", "kind": "spend", "category": "Other", "owner": "victor", "sourceFile": "transactions" },
+      "errorCode": "zero-amount"
+    },
+    {
+      "name": "Income cannot be spend kind",
+      "actor": "victor",
+      "input": { "id": "reject-6", "date": "2026-07-29", "merchant": "Payroll", "amountCents": "50000", "kind": "spend", "category": "Income", "owner": "victor", "sourceFile": "transactions" },
+      "errorCode": "income-must-be-credit"
+    },
+    {
+      "name": "Income credit cannot be negative",
+      "actor": "victor",
+      "input": { "id": "reject-7", "date": "2026-07-29", "merchant": "Payroll", "amountCents": "-50000", "kind": "credit", "category": "Income", "owner": "victor", "sourceFile": "transactions" },
+      "errorCode": "sign-disagrees"
+    },
+    {
+      "name": "dollar decimal is not integer minor units",
+      "actor": "victor",
+      "input": { "id": "reject-8", "date": "2026-07-29", "merchant": "Store", "amountCents": "37.62", "kind": "spend", "category": "Shopping", "owner": "victor", "sourceFile": "transactions" },
+      "errorCode": "invalid-minor-units"
+    },
+    {
+      "name": "JSON number is not an exact cross-client int64 input",
+      "actor": "victor",
+      "input": { "id": "reject-9", "date": "2026-07-29", "merchant": "Store", "amountCents": 3762, "kind": "spend", "category": "Shopping", "owner": "victor", "sourceFile": "transactions" },
+      "errorCode": "invalid-minor-units"
+    },
+    {
+      "name": "value above signed int64 maximum",
+      "actor": "victor",
+      "input": { "id": "reject-10", "date": "2026-07-29", "merchant": "Store", "amountCents": "9223372036854775808", "kind": "spend", "category": "Shopping", "owner": "victor", "sourceFile": "transactions" },
+      "errorCode": "int64-out-of-range"
+    },
+    {
+      "name": "unknown owner is closed",
+      "actor": "victor",
+      "input": { "id": "reject-11", "date": "2026-07-29", "merchant": "Store", "amountCents": "100", "kind": "spend", "category": "Shopping", "owner": "other", "sourceFile": "transactions" },
+      "errorCode": "invalid-owner"
+    },
+    {
+      "name": "child cannot write adult household",
+      "actor": "mason",
+      "input": { "id": "reject-12", "date": "2026-07-29", "merchant": "Store", "amountCents": "100", "kind": "spend", "category": "Shopping", "owner": "victor", "sourceFile": "transactions" },
+      "errorCode": "write-not-authorized"
+    },
+    {
+      "name": "siblings cannot write each other",
+      "actor": "mason",
+      "input": { "id": "reject-13", "date": "2026-07-29", "merchant": "Store", "amountCents": "100", "kind": "spend", "category": "Shopping", "owner": "maddox", "sourceFile": "maddox-transactions" },
+      "errorCode": "write-not-authorized"
+    },
+    {
+      "name": "child owner cannot use adult source file",
+      "actor": "victor",
+      "input": { "id": "reject-14", "date": "2026-07-29", "merchant": "Store", "amountCents": "100", "kind": "spend", "category": "Shopping", "owner": "mason", "sourceFile": "transactions" },
+      "errorCode": "source-owner-mismatch"
+    },
+    {
+      "name": "unknown source file is rejected",
+      "actor": "victor",
+      "input": { "id": "reject-15", "date": "2026-07-29", "merchant": "Store", "amountCents": "100", "kind": "spend", "category": "Shopping", "owner": "victor", "sourceFile": "rachel-budget.json" },
+      "errorCode": "source-owner-mismatch"
+    }
+  ]
+}
