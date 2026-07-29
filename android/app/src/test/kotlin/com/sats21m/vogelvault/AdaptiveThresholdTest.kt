@@ -6,6 +6,8 @@ import com.sats21m.vogelvault.ui.Destination
 import com.sats21m.vogelvault.ui.UNFOLDED_MIN_WIDTH_DP
 import com.sats21m.vogelvault.ui.VaultUiState
 import com.sats21m.vogelvault.ui.VaultViewModel
+import com.sats21m.vogelvault.ui.foldedOverflowDestinations
+import com.sats21m.vogelvault.ui.foldedPrimaryDestinations
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -43,6 +45,35 @@ class AdaptiveThresholdTest {
 
 /** Destination visibility and the ViewModel's refusal to open a forbidden screen. */
 class DestinationVisibilityTest {
+
+    @Test
+    fun `folded navigation partitions every destination into primary or More`() {
+        val destinations = Destination.visibleTo(FamilyMember.VICTOR)
+        val primary = foldedPrimaryDestinations(destinations)
+        val overflow = foldedOverflowDestinations(destinations)
+
+        assertEquals(4, primary.size)
+        assertEquals(
+            listOf(
+                Destination.NET_WORTH,
+                Destination.TODAY,
+                Destination.FAMILY,
+                Destination.SETTINGS,
+            ),
+            overflow,
+        )
+        assertEquals(destinations, primary + overflow)
+        assertEquals(destinations.size, (primary + overflow).distinct().size)
+        assertTrue(Destination.SETTINGS in overflow)
+    }
+
+    @Test
+    fun `folded navigation does not add More when all destinations fit`() {
+        val destinations = Destination.entries.take(5)
+
+        assertEquals(destinations, foldedPrimaryDestinations(destinations))
+        assertTrue(foldedOverflowDestinations(destinations).isEmpty())
+    }
 
     @Test
     fun `remote-disabled fixtures never claim to be live or synced`() {
