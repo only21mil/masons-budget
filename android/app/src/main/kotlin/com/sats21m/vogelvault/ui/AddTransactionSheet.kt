@@ -38,10 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.data.ConvexMutation
-import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
-import com.sats21m.vogelvault.data.ConvexSyncTokenSource
-import com.sats21m.vogelvault.data.DisabledConvexSyncTokenSource
 import com.sats21m.vogelvault.data.TransactionInput
 import com.sats21m.vogelvault.data.TransactionKind
 import com.sats21m.vogelvault.domain.DisplayUnit
@@ -281,19 +278,9 @@ internal fun AddTransactionSheet(
 ) {
     val applicationContext = LocalContext.current.applicationContext
     val application = applicationContext as? VaultApplication
-    // WA1 owns encrypted sync-token storage. This lane depends only on its
-    // interface: once the application supplies it, writes become live without
-    // teaching this sheet anything about storage or credentials.
-    val syncTokenSource =
-        applicationContext as? ConvexSyncTokenSource ?: DisabledConvexSyncTokenSource
-    val mutationClient = remember(application, syncTokenSource) {
-        application?.let {
-            ConvexMutationClient(
-                configSource = it.convexConfigSource,
-                syncTokenSource = syncTokenSource,
-            )
-        }
-    }
+    // WA1 owns encrypted sync-token storage and exposes one process-scoped
+    // client. The sheet sees the transport, never the credential or its store.
+    val mutationClient = remember(application) { application?.convexMutationClient }
 
     var typeName by rememberSaveable { mutableStateOf(AddTransactionType.SPEND.name) }
     var inputUnitName by rememberSaveable { mutableStateOf(DisplayUnit.USD.name) }
