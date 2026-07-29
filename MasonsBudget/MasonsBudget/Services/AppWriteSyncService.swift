@@ -158,7 +158,7 @@ enum AppWriteSyncService {
 
         Task {
             let ok: Bool
-            if !ConvexConfig.syncToken.isEmpty {
+            if ConvexConfig.hasSyncToken {
                 let client = makeClient()
                 ok = await withRetry(label: "push todo \(payload.id)") {
                     try await client.upsertTodoRow(payload)
@@ -195,7 +195,7 @@ enum AppWriteSyncService {
 
         Task {
             let ok: Bool
-            if !ConvexConfig.syncToken.isEmpty {
+            if ConvexConfig.hasSyncToken {
                 let client = makeClient()
                 ok = await withRetry(label: "set todo completion \(payload.id)") {
                     try await client.upsertTodoRow(payload)
@@ -234,7 +234,7 @@ enum AppWriteSyncService {
 
         Task {
             let ok: Bool
-            if !ConvexConfig.syncToken.isEmpty {
+            if ConvexConfig.hasSyncToken {
                 let client = makeClient()
                 ok = await withRetry(label: "delete todo \(todoId)") {
                     try await client.deleteTodoRow(id: todoId)
