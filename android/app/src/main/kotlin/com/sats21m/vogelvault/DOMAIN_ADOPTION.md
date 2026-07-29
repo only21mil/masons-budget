@@ -24,9 +24,12 @@ Boundary shape, in one line:
 
 ## Status, 2026-07-26
 
-- **`ui/Screens.kt`, tasks section (`today()`)** — adopted. It filters with
-  `isDueBy`, the contract's own open-and-due rule, and knows nothing about field
-  aliases. The one thing it does interpret is `UNFILED_TODO_PROJECT`: the
+- **`ui/TodoScreen.kt`, the Today screen** — adopted. It filters on the single
+  canonical `due` spelling and knows nothing about field aliases. (`ui/TodayLogic.kt`
+  filters the same rows with `isDueBy`, the contract's own open-and-due rule, for
+  read-only surfaces; the editable screen is deliberately wider, because a
+  completed task has to stay visible to be reopened.) The one thing the screen
+  interprets is `UNFILED_TODO_PROJECT`: the
   normaliser fills `project` with `"Inbox"` for an unfiled todo rather than
   leaving it unset, so the row treats that value as "not filed" and falls through
   to the area. The Linux client's Tasks page carries the identical rule
@@ -46,8 +49,13 @@ Boundary shape, in one line:
   `TodoItem`. It must not run the canonical row back through the raw legacy alias
   normalizer. Unknown owners or any malformed row reject the whole envelope;
   the transport never drops a bad todo and presents a plausible partial list.
-- **Writeback** — not wired. When it is, it sends `Todo.normalizeWire(...)`, and
-  merges use `mergeTodos`/`reconcileTodos` rather than a local last-write-wins.
+- **Writeback (`ui/TodoMutationGateway.kt`)** — partly adopted. `toMutationJson`
+  emits the same dual-spelling wire record as `Todo.wireRecord` and carries every
+  metadata field the row arrived with, so an edit cannot erase notes, priority,
+  lane or timestamps. It is not yet routed through `Todo.normalizeWire(...)`, which
+  is where it belongs, and single-row writes here do not merge: the server's own
+  `>=` last-write-wins decides. Multi-row convergence still owes
+  `mergeTodos`/`reconcileTodos`.
 
 ## Why the fixture, not the unit test, is the contract
 

@@ -14,6 +14,7 @@ import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.cache.VaultDatabase
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.ui.ConvexTransactionActions
+import com.sats21m.vogelvault.ui.TodoMutationGateway
 import com.sats21m.vogelvault.ui.VaultViewModel
 import java.io.IOException
 
@@ -83,6 +84,41 @@ class VaultApplication : Application() {
     internal val transactionActions by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         ConvexTransactionActions(convexMutationClient)
     }
+
+    /**
+     * Todo writes ride the one shared mutation transport.
+     *
+     * A second client with its own credential store was the original shape here,
+     * and it would have been invisible: a token saved from the Today screen would
+     * have landed in a file [convexMutationClient] never reads, so the save would
+     * look successful while every write stayed unauthorized.
+     */
+    internal val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        TodoMutationGateway(convexMutationClient)
+    }
+
+    /** Whether a write credential exists. The value itself never reaches the UI. */
+    internal fun hasConvexWriteCredential(): Boolean =
+        synchronized(convexConfigLock) {
+            storedConvexConfigSource.hasSyncToken()
+        }
+
+    /**
+     * Encrypts and stores a replacement write credential.
+     *
+     * The failure is returned rather than collapsed to false so a screen can say
+     * which problem occurred: a blank entry, storage that refused the commit, or
+     * a value that could not be read back after being written.
+     */
+    internal fun saveConvexWriteCredential(token: String): Result<Unit> =
+        synchronized(convexConfigLock) {
+            runCatching {
+                storedConvexConfigSource.updateSyncToken(token)
+                check(storedConvexConfigSource.hasSyncToken()) {
+                    "the stored write credential could not be read back"
+                }
+            }
+        }
 
     val viewModelFactory: ViewModelProvider.Factory =
         object : ViewModelProvider.Factory {

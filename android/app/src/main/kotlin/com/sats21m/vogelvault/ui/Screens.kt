@@ -262,17 +262,21 @@ fun ScreenHost(
             balance = collections.netWorthBalance,
         )
     }
-    // isDueBy is the contract's own open-and-due rule, not a re-reading of the
-    // done/due fields here. TodayLogic derives the date from the injected clock.
-    val dueTodos = remember(state.now, profile, todosInput) {
-        todosDueToday(state)
-    }
 
     if (addingTransaction) {
         AddTransactionSheet(
             state = state,
             onDismiss = { addingTransaction = false },
         )
+    }
+
+    // Today is the one destination that edits rows rather than listing them, so it
+    // owns its own scaffold, snackbar and scrolling list, and renders instead of the
+    // shared ledger column rather than inside it. It reaches the write transport
+    // itself; nothing about writing passes through this shell.
+    if (destination == Destination.TODAY) {
+        TodoScreen(state = state, modifier = modifier)
+        return
     }
 
     LazyColumn(
@@ -336,7 +340,8 @@ fun ScreenHost(
                 Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
                 Destination.RETIREMENT -> retirement(state, displayUnit)
                 Destination.EXPORT -> item { ExportScreen(state) }
-                Destination.TODAY -> today(state, dueTodos)
+                // Rendered above, outside the shared ledger column.
+                Destination.TODAY -> Unit
                 Destination.TASKS -> item { TaskListsScreen(state, todosInput) }
                 Destination.FAMILY -> family(state)
                 Destination.SETTINGS -> settings(state, onEnableRemoteRows)
@@ -1151,60 +1156,7 @@ internal fun balanceSnapshotBasis(balance: BtcBalance): String = "Balance snapsh
 private fun priceBasis(state: VaultUiState): String =
     state.data.btcPriceAsOf?.let { "Last buy · $it" } ?: "No recorded price"
 
-// ── Today ───────────────────────────────────────────────────────────────────
-
-/**
- * The canonical project for a todo nobody filed.
- *
- * `Todo.normalize` defaults `project` to this string, mirroring the Convex
- * emitter, so once the todo boundary is wired through the contract the read
- * model will never hand this screen a null project. "Inbox" means the absence of
- * a filing, not a project a human made, and a row that prints it verbatim reads
- * as though every unsorted task were filed. See DOMAIN_ADOPTION.md in this app's
- * package root for where the interpretation is allowed to live.
- */
-private const val UNFILED_TODO_PROJECT = "Inbox"
-
-/** Where a todo is filed: its project, else its area, else nowhere. */
-private fun filing(todo: TodoItem): String? =
-    todo.project?.takeIf { it != UNFILED_TODO_PROJECT } ?: todo.area
-
-private fun VaultLazyListScope.today(
-    state: VaultUiState,
-    todos: List<TodoItem>,
-) {
-    val slice = state.data.todos
-
-    item { StaleNotice(slice.status) }
-    if (slice.suppressFigures) {
-        item {
-            Panel("Due", slice.source) {
-                StateBlock(slice.status)
-            }
-        }
-    } else if (todos.isEmpty()) {
-        item {
-            Panel("Due", slice.source) {
-                StateBlock(Freshness.EMPTY, title = "Nothing due today")
-            }
-        }
-    } else {
-        keyedPanel(
-            sectionKey = "today-due",
-            title = "Due",
-            source = slice.source,
-            rows = todos,
-            rowKey = TodoItem::id,
-        ) { todo ->
-            LedgerRow(
-                primary = todo.title,
-                secondary = listOfNotNull(filing(todo), todo.due).joinToString(" · "),
-                figure = "",
-                badge = if (todo.flagged) "flagged" else null,
-            )
-        }
-    }
-}
+// Today lives in TodoScreen.kt: it edits rows, so it owns its own scaffold.
 
 // ── Family ──────────────────────────────────────────────────────────────────
 
