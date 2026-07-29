@@ -1,6 +1,6 @@
 {
   "$comment": "Language-neutral golden vectors for tables:upsertTransaction. Input money is an exact decimal int64 string in cents. Accepted cases emit Convex convex_encoded_json tags. Rejected cases are mandatory: clients must not send them. Convex independently enforces auth, wire shape, closed owners, and signs; actor scope and transaction source/owner alignment remain client policy until the mutation accepts actor identity and checks both. Sync tokens are runtime-injected and MUST NOT appear in this fixture.",
-  "contractVersion": 1,
+  "contractVersion": 2,
   "path": "tables:upsertTransaction",
   "format": "convex_encoded_json",
   "signConvention": {
@@ -218,6 +218,12 @@
       "actor": "victor",
       "input": { "id": "reject-9", "date": "2026-07-29", "merchant": "Store", "amountCents": 3762, "kind": "spend", "category": "Shopping", "owner": "victor", "sourceFile": "transactions" },
       "errorCode": "invalid-minor-units"
+    },
+    {
+      "name": "malformed date cannot escape month-scoped queries",
+      "actor": "victor",
+      "input": { "id": "reject-10", "date": "2026-7-9", "merchant": "Store", "amountCents": "3762", "kind": "spend", "category": "Shopping", "owner": "victor", "sourceFile": "transactions" },
+      "errorCode": "invalid-date"
     },
     {
       "name": "value above signed int64 maximum",

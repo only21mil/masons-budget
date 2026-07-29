@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">Vogel Vault</string>
     <string name="convex_read_error_title">Convex row data unavailable</string>
-    <string name="convex_read_error_detail">The row read failed. Check the specific diagnostic notice before changing credentials or retrying.</string>
+    <string name="convex_read_error_detail">The row read failed. Check the connection and read-token settings, then retry.</string>
     <string name="convex_row_failure_unauthorized_title">Convex read credential rejected</string>
     <string name="convex_row_failure_unauthorized_detail">Convex rejected the configured read credential. Re-enter a valid credential; cached financial figures remain hidden.</string>
     <string name="convex_row_failure_disabled_title">Convex row reads disabled</string>

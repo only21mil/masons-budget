@@ -170,6 +170,46 @@ class RowReadModelLoaderTest {
     }
 
     @Test
+    fun `production BTC balance stays live while fiat is unavailable`() = runBlocking {
+        val repository = FakeRows(
+            balanceDocuments = ok(
+                BtcBalanceDocumentRow(
+                    owner = FamilyMember.VICTOR,
+                    schemaVersion = 2L,
+                    asOf = "2026-07-16T01:56:49Z",
+                    accounts = listOf(
+                        BtcBalanceAccountRow(
+                            key = "cold",
+                            label = "Cold storage",
+                            custody = Custody.SELF_CUSTODY,
+                            sats = 541_782_856L,
+                            fiatCents = 0L,
+                        ),
+                    ),
+                    totals = BtcBalanceTotalsRow(
+                        sats = 541_782_856L,
+                        fiatCents = 0L,
+                        exchangeSats = 0L,
+                        selfCustodySats = 541_782_856L,
+                    ),
+                    source = "authoritative reconciliation",
+                    basis = "self-custody screenshot",
+                    confidence = "high",
+                    updatedAtMs = 102L,
+                ),
+            ),
+        )
+
+        val model = RowReadModelLoader(repository) { 456L }.load(FamilyMember.RACHEL)
+
+        assertEquals(Freshness.LIVE, model.btcBalance.status)
+        assertEquals(541_782_856L, model.btcBalance.value?.totalSats)
+        assertTrue(model.btcFiatFiguresUnavailable)
+        assertNull(model.btcBalance.value?.fiatValuation)
+        assertEquals("high", model.btcBalance.value?.balanceConfidence)
+    }
+
+    @Test
     fun `loader names visible BTC scope and uses signed spend contribution`() = runBlocking {
         val repository = FakeRows(
             transactions = ok(

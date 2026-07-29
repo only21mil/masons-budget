@@ -4,6 +4,7 @@ import com.sats21m.vogelvault.domain.FamilyMember
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.fail
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -124,6 +125,17 @@ class ConvexWireGoldenValuesTest {
         assertEquals("son-coldcard-mason", accounts.rows[0].key)
         assertEquals(FamilyMember.MASON, accounts.rows[0].owner)
         assertEquals(76_406_392L, accounts.rows[0].sats)
+        assertNull(
+            accounts.rows[0].fiatValuation,
+            "convex_encoded_json must not promote the legacy zero to an available valuation",
+        )
+
+        val rawAccount = Json.parseToJsonElement(
+            goldenFixture("listBtcAccounts.json.json").readText(),
+        ).jsonObject.getValue("value").jsonObject
+            .getValue("rows").jsonArray[0].jsonObject
+        assertEquals("76406392", rawAccount.getValue("sats").jsonPrimitive.content)
+        assertEquals("0", rawAccount.getValue("fiatCents").jsonPrimitive.content)
     }
 
     private fun <T> requireOk(result: ConvexResult<T>, query: String): T =

@@ -18,6 +18,7 @@ import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcBuy
 import com.sats21m.vogelvault.domain.Custody
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.FiatValuation
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.ReadModel
 import com.sats21m.vogelvault.domain.Slice
@@ -290,6 +291,11 @@ private class CachingRowQueryRepository(
                                 custody = it.custody.key,
                                 sats = it.sats,
                                 fiatCents = it.fiatCents,
+                                fiatAvailable = it.fiatValuation != null,
+                                fiatPriceCents = it.fiatValuation?.priceCents,
+                                fiatQuotedAt = it.fiatValuation?.quotedAt,
+                                fiatSource = it.fiatValuation?.source,
+                                fiatConfidence = it.fiatValuation?.confidence,
                                 asOf = "",
                                 schemaVersion = 0L,
                                 sourceFile = it.owner.key,
@@ -399,4 +405,15 @@ private fun CachedBtcAccountEntity.toDomain() =
         sats,
         fiatCents,
         owner,
+        fiatValuation = if (fiatAvailable) {
+            FiatValuation(
+                cents = fiatCents,
+                priceCents = fiatPriceCents,
+                quotedAt = fiatQuotedAt,
+                source = fiatSource,
+                confidence = fiatConfidence,
+            )
+        } else {
+            null
+        },
     )

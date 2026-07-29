@@ -138,14 +138,36 @@ enum class Custody(val key: String) {
     val label: String get() = if (this == SELF_CUSTODY) "Self custody" else "Exchange"
 }
 
+/**
+ * A USD valuation with evidence independent from the BTC quantity.
+ *
+ * [cents] may legitimately be zero. A null valuation means USD is unavailable;
+ * balance confidence must never be promoted into [confidence].
+ */
+data class FiatValuation(
+    val cents: Long,
+    val priceCents: Long? = null,
+    val quotedAt: String? = null,
+    val source: String? = null,
+    val confidence: String? = null,
+)
+
+/** Conservative compatibility for rows that predate an availability field. */
+fun legacyFiatValuation(sats: Long, fiatCents: Long): FiatValuation? =
+    if (sats > 0L && fiatCents == 0L) null else FiatValuation(fiatCents)
+
 data class BtcAccount(
     val key: String,
     val label: String,
     val custody: Custody,
     val sats: Long,
+    /** Transition-only mirror. Render [fiatValuation], never this field. */
     val fiatCents: Long,
     override val owner: FamilyMember,
-) : Owned
+    val fiatValuation: FiatValuation? = legacyFiatValuation(sats, fiatCents),
+) : Owned {
+    val fiatFiguresUnavailable: Boolean get() = fiatValuation == null
+}
 
 data class BtcBuy(
     val id: String,
@@ -164,10 +186,16 @@ data class BtcBalance(
     val asOf: String,
     val accounts: List<BtcAccount>,
     val totalSats: Long,
+    /** Transition-only mirror. Render [fiatValuation], never this field. */
     val fiatCents: Long,
     val exchangeSats: Long,
     val selfCustodySats: Long,
-) : Owned
+    val fiatValuation: FiatValuation? = legacyFiatValuation(totalSats, fiatCents),
+    /** Confidence in the sats balance only. */
+    val balanceConfidence: String? = null,
+) : Owned {
+    val fiatFiguresUnavailable: Boolean get() = fiatValuation == null
+}
 
 data class IncomeEntry(
     val id: String,
@@ -248,6 +276,9 @@ data class ReadModel(
 
     val netWorthFiguresUnavailable: Boolean
         get() = btcBalance.requiredProjectionUnavailable || btcBalance.value == null
+
+    val btcFiatFiguresUnavailable: Boolean
+        get() = netWorthFiguresUnavailable || btcBalance.value?.fiatFiguresUnavailable != false
 
     val billPayLedgerUnavailable: Boolean
         get() = btcBillPays.requiredProjectionUnavailable || btcBillPays.value.isEmpty()

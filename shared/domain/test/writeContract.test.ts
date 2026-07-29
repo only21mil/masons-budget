@@ -42,7 +42,7 @@ const fixtures = JSON.parse(
 ) as Fixtures
 
 test("golden write payloads encode exact signed int64 minor units", () => {
-  assert.equal(fixtures.contractVersion, 1)
+  assert.equal(fixtures.contractVersion, 2)
   assert.equal(fixtures.path, "tables:upsertTransaction")
   assert.equal(fixtures.format, "convex_encoded_json")
   assert.deepEqual(fixtures.signConvention, {
@@ -70,6 +70,7 @@ test("golden rejection vectors remain strict", () => {
     "invalid-owner",
     "write-not-authorized",
     "source-owner-mismatch",
+    "invalid-date",
   ])
   for (const testCase of fixtures.rejected) {
     requiredRejections.delete(testCase.errorCode)

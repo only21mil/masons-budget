@@ -356,7 +356,7 @@ struct SyncSetupView: View {
 struct ConvexSyncTokenCard: View {
     @Environment(\.theme) private var theme
     @State private var tokenEntry = ""
-    @State private var hasToken = !ConvexConfig.syncToken.isEmpty
+    @State private var hasToken = ConvexConfig.hasSyncToken
     @State private var message: String?
 
     var body: some View {
@@ -421,7 +421,7 @@ struct ConvexSyncTokenCard: View {
                     .foregroundStyle(theme.textMuted)
             }
         }
-        .onAppear { hasToken = !ConvexConfig.syncToken.isEmpty }
+        .onAppear { hasToken = ConvexConfig.hasSyncToken }
     }
 
     private var statusText: String {
@@ -433,20 +433,20 @@ struct ConvexSyncTokenCard: View {
     private func saveToken() {
         let trimmed = tokenEntry.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        ConvexConfig.setSyncToken(trimmed)
+        let saved = ConvexConfig.setSyncToken(trimmed)
         tokenEntry = ""
-        hasToken = !ConvexConfig.syncToken.isEmpty
-        message = hasToken
+        hasToken = ConvexConfig.hasSyncToken
+        message = saved
             ? "Sync token saved. It is sent with the next write."
             : "Could not save the sync token."
     }
 
     private func removeToken() {
-        ConvexConfig.removeSyncToken()
+        let removed = ConvexConfig.removeSyncToken()
         tokenEntry = ""
-        hasToken = !ConvexConfig.syncToken.isEmpty
-        message = hasToken
-            ? "Could not remove the sync token."
-            : "Sync token removed from this device."
+        hasToken = ConvexConfig.hasSyncToken
+        message = removed && !hasToken
+            ? "Sync token removed from this device."
+            : "Could not remove the sync token."
     }
 }

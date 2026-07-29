@@ -88,7 +88,6 @@ private data class ScreenCollections(
     val visibleAccounts: List<BtcAccount>,
     val visibleBuys: List<BtcBuy>,
     val visibleBillPays: List<BtcBillPay>,
-    val incomeEntries: List<IncomeEntry>,
     val visibleTodos: List<TodoItem>,
 )
 
@@ -117,8 +116,19 @@ private data class NetWorthProjection(
     val balance: BtcBalance?,
 )
 
-internal fun ReadModel.dashboardIncomeCents(viewer: FamilyMember): Long? {
-    val rows = income.value.netWorthScopeFor(viewer)
+internal fun ReadModel.dashboardIncomeEntries(
+    viewer: FamilyMember,
+    month: String?,
+): List<IncomeEntry> =
+    month?.let { selected ->
+        income.value.netWorthScopeFor(viewer).filter { it.month == selected }
+    }.orEmpty()
+
+internal fun ReadModel.dashboardIncomeCents(
+    viewer: FamilyMember,
+    month: String?,
+): Long? {
+    val rows = dashboardIncomeEntries(viewer, month)
     return if (incomeFiguresUnavailable || rows.isEmpty()) null else rows.sumOf { it.amountCents }
 }
 
@@ -170,7 +180,6 @@ fun ScreenHost(
         accountsInput,
         buysInput,
         billPaysInput,
-        incomeInput,
         todosInput,
         netWorthBalance,
     ) {
@@ -182,7 +191,6 @@ fun ScreenHost(
             visibleAccounts = accountsInput.visibleTo(profile),
             visibleBuys = buysInput.visibleTo(profile),
             visibleBillPays = billPaysInput.visibleTo(profile),
-            incomeEntries = incomeInput.netWorthScopeFor(profile),
             visibleTodos = todosInput.visibleTo(profile),
         )
     }
@@ -191,18 +199,19 @@ fun ScreenHost(
     } else {
         null
     }
-    val dashboardProjection = remember(month, collections, incomeFiguresUnavailable) {
+    val dashboardIncomeEntries = remember(profile, month, incomeInput) {
+        state.data.dashboardIncomeEntries(profile, month)
+    }
+    val dashboardProjection = remember(month, collections, dashboardIncomeEntries, incomeFiguresUnavailable) {
         val budgetTransactions = collections.budgetTransactions.inMonth(month ?: "")
         val activity = collections.visibleTransactions.inMonth(month ?: "").take(6)
         DashboardProjection(
             activity = activity,
             accounts = collections.netWorthAccounts,
             balance = collections.netWorthBalance,
-            incomeEntries = collections.incomeEntries,
+            incomeEntries = dashboardIncomeEntries,
             spendCents = budgetTransactions.sumOf { it.spendAmount },
-            incomeCents = collections.incomeEntries
-                .takeUnless { incomeFiguresUnavailable || it.isEmpty() }
-                ?.sumOf { it.amountCents },
+            incomeCents = state.data.dashboardIncomeCents(profile, month),
             openTodos = collections.visibleTodos.count { !it.done },
         )
     }
@@ -893,7 +902,11 @@ private fun VaultLazyListScope.netWorth(
                 Kpi(
                     "Fiat estimate",
                     figure(unavailable) {
-                        Money.formatUsd(requireNotNull(projection.balance).fiatCents)
+                        formatCanonicalBalance(
+                            requireNotNull(projection.balance),
+                            DisplayUnit.USD,
+                            state.data.btcPriceCents,
+                        )
                     },
                     hint = figure(unavailable) {
                         balanceSnapshotBasis(requireNotNull(projection.balance))
@@ -971,11 +984,7 @@ private fun VaultLazyListScope.accountList(
         LedgerRow(
             primary = account.label,
             secondary = account.owner.displayName,
-            figure = if (displayUnit == DisplayUnit.USD) {
-                Money.formatUsd(account.fiatCents)
-            } else {
-                Money.formatBitcoin(account.sats, displayUnit, btcPriceCents)
-            },
+            figure = formatCanonicalAccount(account, displayUnit, btcPriceCents),
             figureColor = VaultCream,
             badge = account.custody.label,
             badgeAccented = account.custody.key == "self_custody",
@@ -987,13 +996,31 @@ private fun VaultUiState.formatBitcoin(sats: Long, unit: DisplayUnit): String =
     Money.formatBitcoin(sats, unit, data.btcPriceCents)
 
 private fun VaultUiState.formatBalance(balance: BtcBalance, unit: DisplayUnit): String =
+    formatCanonicalBalance(balance, unit, data.btcPriceCents)
+
+internal fun formatCanonicalBalance(
+    balance: BtcBalance,
+    unit: DisplayUnit,
+    recordedBuyPriceCents: Long,
+): String =
     if (unit == DisplayUnit.USD) {
-        Money.formatUsd(balance.fiatCents)
+        balance.fiatValuation?.let { Money.formatUsd(it.cents) } ?: Money.PRICE_UNAVAILABLE
     } else {
-        Money.formatBitcoin(balance.totalSats, unit, data.btcPriceCents)
+        Money.formatBitcoin(balance.totalSats, unit, recordedBuyPriceCents)
     }
 
-private fun balanceSnapshotBasis(balance: BtcBalance): String = "Snapshot · ${balance.asOf}"
+internal fun formatCanonicalAccount(
+    account: BtcAccount,
+    unit: DisplayUnit,
+    recordedBuyPriceCents: Long,
+): String =
+    if (unit == DisplayUnit.USD) {
+        account.fiatValuation?.let { Money.formatUsd(it.cents) } ?: Money.PRICE_UNAVAILABLE
+    } else {
+        Money.formatBitcoin(account.sats, unit, recordedBuyPriceCents)
+    }
+
+internal fun balanceSnapshotBasis(balance: BtcBalance): String = "Balance snapshot · ${balance.asOf}"
 
 private fun priceBasis(state: VaultUiState): String =
     state.data.btcPriceAsOf?.let { "Last buy · $it" } ?: "No recorded price"
@@ -1159,12 +1186,8 @@ private fun RemoteRowsConfiguration(onEnable: (String) -> Unit) {
     val application =
         androidx.compose.ui.platform.LocalContext.current.applicationContext
             as? com.sats21m.vogelvault.VaultApplication
-    val storedConfigSource =
-        remember(application) {
-            application?.let { com.sats21m.vogelvault.data.SecureConvexConfigSource(it) }
-        }
-    var hasStoredToken by remember(storedConfigSource) {
-        mutableStateOf(storedConfigSource?.current()?.hasReadToken == true)
+    var hasStoredToken by remember(application) {
+        mutableStateOf(application?.hasStoredConvexCredential() == true)
     }
     var removalFailed by remember { mutableStateOf(false) }
 
@@ -1196,24 +1219,21 @@ private fun RemoteRowsConfiguration(onEnable: (String) -> Unit) {
                 enabled = token.isNotBlank(),
                 onClick = {
                     onEnable(token)
-                    hasStoredToken = storedConfigSource?.current()?.hasReadToken == true
+                    hasStoredToken = application?.hasStoredConvexCredential() == true
                     removalFailed = false
                     token = ""
                 },
             ) {
                 Text("Save and refresh")
             }
-            if (hasStoredToken && storedConfigSource != null && application != null) {
+            if (hasStoredToken && application != null) {
                 androidx.compose.material3.OutlinedButton(
                     onClick = {
                         runCatching {
-                            clearRemoteRowsConfiguration(
-                                stored = storedConfigSource,
-                                effective = application.convexConfigSource,
-                            )
+                            application.removeStoredConvexCredential()
                         }.onSuccess {
                             token = ""
-                            hasStoredToken = false
+                            hasStoredToken = application.hasStoredConvexCredential()
                             removalFailed = false
                         }.onFailure {
                             removalFailed = true
@@ -1241,14 +1261,6 @@ private fun RemoteRowsConfiguration(onEnable: (String) -> Unit) {
             }
         }
     }
-}
-
-internal fun clearRemoteRowsConfiguration(
-    stored: com.sats21m.vogelvault.data.SecureConvexConfigSource,
-    effective: com.sats21m.vogelvault.data.MutableConvexConfigSource,
-) {
-    stored.clear()
-    effective.update(com.sats21m.vogelvault.data.ConvexConfig())
 }
 
 // ── shared ──────────────────────────────────────────────────────────────────

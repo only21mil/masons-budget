@@ -167,12 +167,15 @@ private fun BtcBalanceDocumentRow.toDomain(): BtcBalance = BtcBalance(
             sats = it.sats,
             fiatCents = it.fiatCents,
             owner = owner,
+            fiatValuation = it.fiatValuation,
         )
     },
     totalSats = totals.sats,
     fiatCents = totals.fiatCents,
     exchangeSats = totals.exchangeSats,
     selfCustodySats = totals.selfCustodySats,
+    fiatValuation = totals.fiatValuation,
+    balanceConfidence = balanceConfidence,
 )
 
 private val englishBudgetMonths = mapOf(
