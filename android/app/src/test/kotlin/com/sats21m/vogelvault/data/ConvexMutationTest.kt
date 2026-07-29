@@ -155,7 +155,7 @@ class ConvexMutationTest {
                 ConvexMutation.UpsertBudgetCategory(
                     viewer = FamilyMember.RACHEL,
                     month = "2026-07",
-                    category = BudgetCategoryInput("Groceries", 97_501L),
+                    category = BudgetCategoryInput("Groceries", 97_501L, icon = "cart"),
                 ),
             )
         }
@@ -165,6 +165,7 @@ class ConvexMutationTest {
         assertEquals("2026-07", args["month"]?.jsonPrimitive?.content)
         val category = args["category"]!!.jsonObject
         assertEquals("Groceries", category["name"]?.jsonPrimitive?.content)
+        assertEquals("cart", category["icon"]?.jsonPrimitive?.content)
         assertTagged(category, "budgetCents", "3XwBAAAAAAA=")
     }
 

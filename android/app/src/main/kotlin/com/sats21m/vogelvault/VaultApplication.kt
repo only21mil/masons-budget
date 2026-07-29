@@ -12,6 +12,7 @@ import com.sats21m.vogelvault.data.SecureConvexConfigSource
 import com.sats21m.vogelvault.data.SecureConvexSyncTokenSource
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.cache.VaultDatabase
+import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.ui.VaultViewModel
 import java.io.IOException
 
@@ -57,7 +58,9 @@ class VaultApplication : Application() {
      */
     internal val convexMutationClient: ConvexMutationClient by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         ConvexMutationClient(
-            configSource = convexConfigSource,
+            // The public deployment route is not a credential. Writes remain
+            // available even when authenticated row reads are disabled.
+            configSource = MutableConvexConfigSource(writeConvexConfig()),
             syncTokenSource = SecureConvexSyncTokenSource(storedConvexConfigSource),
         )
     }
@@ -226,3 +229,13 @@ internal fun buildTimeConvexConfig(readToken: String): ConvexConfig =
         readToken = readToken,
         remoteReadEnabled = readToken.isNotBlank(),
     )
+internal fun writeConvexConfig(): ConvexConfig =
+    ConvexConfig(deploymentUrl = PRODUCTION_DEPLOYMENT)
+
+/**
+ * Adult and Mason source files already carry their canonical owner. Maddox has
+ * no dedicated BTC-buy source, so his owner must be explicit or the row would be
+ * silently tagged as adult household data.
+ */
+internal fun explicitBtcBuyOwner(member: FamilyMember): FamilyMember? =
+    if (member == FamilyMember.MADDOX) member else null

@@ -24,6 +24,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.explicitBtcBuyOwner
 import com.sats21m.vogelvault.data.BtcBuyInput
 import com.sats21m.vogelvault.data.BudgetCategoryInput
 import com.sats21m.vogelvault.data.ConvexMutation
@@ -32,6 +33,8 @@ import com.sats21m.vogelvault.domain.CategorySpend
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.ui.components.LedgerRow
+import com.sats21m.vogelvault.ui.theme.VaultCream
+import com.sats21m.vogelvault.ui.theme.VaultNegative
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import java.math.BigDecimal
 import java.time.LocalDate
@@ -51,7 +54,14 @@ data class BudgetCategoryWriteRequest(
     val month: String,
     val categoryName: String,
     val budgetCents: Long,
-)
+    val icon: String?,
+) {
+    init {
+        require(month.matches(Regex("""\d{4}-(0[1-9]|1[0-2])""")))
+        require(categoryName.isNotBlank())
+        require(budgetCents >= 0L)
+    }
+}
 
 data class BtcBuyWriteRequest(
     val id: String,
@@ -61,7 +71,16 @@ data class BtcBuyWriteRequest(
     val sats: Long,
     val priceUsdCents: Long,
     val usdCents: Long,
-)
+) {
+    init {
+        require(id.isNotBlank())
+        require(runCatching { LocalDate.parse(date) }.isSuccess)
+        require(source.isNotBlank())
+        require(sats > 0L)
+        require(priceUsdCents > 0L)
+        require(usdCents > 0L)
+    }
+}
 
 internal sealed interface WriteDraftResult<out T> {
     data class Valid<T>(val request: T) : WriteDraftResult<T>
@@ -83,6 +102,7 @@ internal fun budgetCategoryWriteRequest(
             month = seed.budgetDocumentMonth,
             categoryName = seed.category.name,
             budgetCents = cents,
+            icon = seed.category.icon,
         ),
     )
 }
@@ -147,6 +167,8 @@ internal fun EditableBudgetCategoryRow(
             primary = category.name,
             secondary = "planned ${Money.formatUsd(category.budgetCents)}",
             figure = Money.formatUsd(category.spentCents),
+            figureColor = if (category.isOverBudget) VaultNegative else VaultCream,
+            badge = if (category.isOverBudget) "over" else null,
         )
         if (canEdit) {
             TextButton(onClick = onEdit, modifier = Modifier.padding(horizontal = VaultSpace.sm)) {
@@ -221,6 +243,7 @@ internal fun BudgetCategoryEditorSheet(
                                                     BudgetCategoryInput(
                                                         name = request.categoryName,
                                                         budgetCents = request.budgetCents,
+                                                        icon = request.icon,
                                                     ),
                                             ),
                                         )
@@ -331,10 +354,7 @@ internal fun BtcBuyEntrySheet(
                                                         sats = request.sats,
                                                         priceUsdCents = request.priceUsdCents,
                                                         usdCents = request.usdCents,
-                                                        owner =
-                                                            request.owner.takeIf {
-                                                                it == FamilyMember.MADDOX
-                                                            },
+                                                        owner = explicitBtcBuyOwner(request.owner),
                                                     ),
                                                 sourceFile = request.owner.btcBuysDataFileName,
                                             ),

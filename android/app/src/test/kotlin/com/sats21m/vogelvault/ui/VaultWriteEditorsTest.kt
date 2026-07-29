@@ -18,6 +18,7 @@ class VaultWriteEditorsTest {
         )
         assertEquals("2026-07", valid.request.month)
         assertEquals(97_501L, valid.request.budgetCents)
+        assertEquals("cart", valid.request.icon)
         assertIs<WriteDraftResult.Invalid>(budgetCategoryWriteRequest(earlier, "975.01"))
         assertIs<WriteDraftResult.Invalid>(budgetCategoryWriteRequest(future, "975.01"))
     }
@@ -79,6 +80,6 @@ class VaultWriteEditorsTest {
             viewer = FamilyMember.RACHEL,
             displayedMonth = displayedMonth,
             budgetDocumentMonth = "2026-07",
-            category = CategorySpend("Groceries", 90_000L, 50_000L),
+            category = CategorySpend("Groceries", 90_000L, 50_000L, icon = "cart"),
         )
 }
