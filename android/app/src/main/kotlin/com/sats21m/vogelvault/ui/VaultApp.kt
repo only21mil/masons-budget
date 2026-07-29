@@ -127,6 +127,8 @@ fun VaultApp(
     onNavigate: (Destination) -> Unit,
     onSwitchProfile: (FamilyMember) -> Unit,
     onEnableRemoteRows: (String) -> Unit = {},
+    transactionActions: TransactionActions? = null,
+    onTransactionChanged: () -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -151,12 +153,14 @@ fun VaultApp(
                         AuthorizationNotice(state)
                         RefreshFailureNotice(state)
                         ScreenHost(
-                            current,
-                            state,
-                            onEnableRemoteRows,
-                            displayUnit,
-                            onDisplayUnitChange,
-                            Modifier.weight(1f),
+                            destination = current,
+                            state = state,
+                            onEnableRemoteRows = onEnableRemoteRows,
+                            transactionActions = transactionActions,
+                            onTransactionChanged = onTransactionChanged,
+                            displayUnit = displayUnit,
+                            onDisplayUnitChange = onDisplayUnitChange,
+                            modifier = Modifier.weight(1f),
                         )
                     }
                 }
@@ -169,12 +173,14 @@ fun VaultApp(
                     AuthorizationNotice(state)
                     RefreshFailureNotice(state)
                     ScreenHost(
-                        current,
-                        state,
-                        onEnableRemoteRows,
-                        displayUnit,
-                        onDisplayUnitChange,
-                        Modifier.weight(1f),
+                        destination = current,
+                        state = state,
+                        onEnableRemoteRows = onEnableRemoteRows,
+                        transactionActions = transactionActions,
+                        onTransactionChanged = onTransactionChanged,
+                        displayUnit = displayUnit,
+                        onDisplayUnitChange = onDisplayUnitChange,
+                        modifier = Modifier.weight(1f),
                     )
                     HorizontalHairline()
                     VaultBottomBar(destinations, current, onNavigate)

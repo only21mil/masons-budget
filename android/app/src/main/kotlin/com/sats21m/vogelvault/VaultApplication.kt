@@ -5,11 +5,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.sats21m.vogelvault.data.ConvexConfig
+import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.data.RowQueryRepositories
 import com.sats21m.vogelvault.data.SecureConvexConfigSource
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.cache.VaultDatabase
+import com.sats21m.vogelvault.ui.ConvexTransactionActions
 import com.sats21m.vogelvault.ui.VaultViewModel
 
 /**
@@ -55,6 +57,15 @@ class VaultApplication : Application() {
             configSource = convexConfigSource,
             onUnauthorized = ::recoverRejectedConvexConfig,
         )
+    }
+
+    /**
+     * Uses the closed mutation transport and remains fail-closed until an
+     * approved encrypted sync-token source is provided. The read token is never
+     * substituted and no write credential is bundled in the app.
+     */
+    internal val transactionActions by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        ConvexTransactionActions(ConvexMutationClient(convexConfigSource))
     }
 
     val viewModelFactory: ViewModelProvider.Factory =

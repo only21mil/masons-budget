@@ -2,6 +2,7 @@ package com.sats21m.vogelvault.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -133,10 +134,15 @@ fun ScreenHost(
     destination: Destination,
     state: VaultUiState,
     onEnableRemoteRows: (String) -> Unit = {},
+    transactionActions: TransactionActions? = null,
+    onTransactionChanged: () -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    var selectedTransactionKey by rememberSaveable(state.activeProfile) {
+        mutableStateOf<String?>(null)
+    }
     val budgetMonth = state.data.budget.value?.month
     val profile = state.activeProfile
     val transactionsInput = state.data.transactions.value
@@ -259,7 +265,10 @@ fun ScreenHost(
             }
             when (destination) {
                 Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit)
-                Destination.ACTIVITY -> activity(state, collections.visibleTransactions)
+                Destination.ACTIVITY ->
+                    activity(state, collections.visibleTransactions) {
+                        selectedTransactionKey = it.selectionKey
+                    }
                 Destination.BUDGET -> budget(state, months, budgetSpend) { picked = it }
                 Destination.BITCOIN -> bitcoin(state, bitcoinProjection, displayUnit)
                 Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
@@ -268,6 +277,19 @@ fun ScreenHost(
                 Destination.SETTINGS -> settings(state, onEnableRemoteRows)
             }
         }
+    }
+
+    val selectedTransaction =
+        collections.visibleTransactions.firstOrNull {
+            it.selectionKey == selectedTransactionKey
+        }
+    if (selectedTransaction != null && transactionActions != null) {
+        TransactionDetailScreen(
+            transaction = selectedTransaction,
+            actions = transactionActions,
+            onClose = { selectedTransactionKey = null },
+            onChanged = onTransactionChanged,
+        )
     }
 }
 
@@ -468,6 +490,7 @@ private fun VaultLazyListScope.dashboard(
 private fun VaultLazyListScope.activity(
     state: VaultUiState,
     transactions: List<Transaction>,
+    onSelectTransaction: (Transaction) -> Unit,
 ) {
     item { StaleNotice(state.data.transactions.status) }
     if (state.data.transactions.suppressFigures) {
@@ -483,10 +506,21 @@ private fun VaultLazyListScope.activity(
         title = "${transactions.size} records",
         source = state.data.transactions.source,
         rows = transactions,
-        rowKey = Transaction::id,
-        rowContent = { TransactionRow(it) },
+        rowKey = Transaction::selectionKey,
+        rowContent = {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelectTransaction(it) },
+            ) {
+                TransactionRow(it)
+            }
+        },
     )
 }
+
+private val Transaction.selectionKey: String
+    get() = "${owner.key}\u0000$id"
 
 @Composable
 private fun TransactionRow(transaction: Transaction) {

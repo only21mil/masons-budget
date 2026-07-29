@@ -1,0 +1,169 @@
+package com.sats21m.vogelvault.ui
+
+import com.sats21m.vogelvault.data.ConvexConfig
+import com.sats21m.vogelvault.data.ConvexMutationClient
+import com.sats21m.vogelvault.data.ConvexSyncTokenSource
+import com.sats21m.vogelvault.data.HttpTextResponse
+import com.sats21m.vogelvault.data.MutableConvexConfigSource
+import com.sats21m.vogelvault.data.RecordingPoster
+import com.sats21m.vogelvault.data.testToken
+import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.Transaction
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+
+class TransactionDetailScreenTest {
+    @Test
+    fun `valid edit preserves identity owner source and exact signed cents`() {
+        val poster = RecordingPoster(success())
+        val actions = actions(poster)
+        val transaction = transaction(owner = FamilyMember.MASON)
+
+        val result =
+            runBlocking {
+                actions.save(
+                    transaction,
+                    TransactionDraft(
+                        merchant = "  Corrected Market ",
+                        category = "Groceries",
+                        amount = "142.18",
+                        method = "  Fold card ",
+                        date = "2026-07-28",
+                        note = "  corrected receipt ",
+                    ),
+                )
+            }
+
+        assertEquals(TransactionActionResult.Success, result)
+        val body = Json.parseToJsonElement(poster.bodies.single()).jsonObject
+        assertEquals("tables:upsertTransaction", body["path"]?.jsonPrimitive?.content)
+        assertEquals(
+            "convex_encoded_json",
+            body["format"]?.jsonPrimitive?.content,
+        )
+        val args = body["args"]!!.jsonObject
+        assertEquals("mason-transactions", args["sourceFile"]?.jsonPrimitive?.content)
+        val sent = args["transaction"]!!.jsonObject
+        assertEquals(transaction.id, sent["id"]?.jsonPrimitive?.content)
+        assertEquals("mason", sent["owner"]?.jsonPrimitive?.content)
+        assertEquals("Corrected Market", sent["merchant"]?.jsonPrimitive?.content)
+        assertEquals("Fold card", sent["card"]?.jsonPrimitive?.content)
+        assertEquals("corrected receipt", sent["note"]?.jsonPrimitive?.content)
+        assertEquals("spend", sent["kind"]?.jsonPrimitive?.content)
+        assertEquals(
+            "ijcAAAAAAAA=",
+            sent["amountCents"]!!
+                .jsonObject["\$integer"]
+                ?.jsonPrimitive
+                ?.content,
+        )
+    }
+
+    @Test
+    fun `editing a purchase negative is rejected visibly before network`() {
+        val poster = RecordingPoster(success())
+        val actions = actions(poster)
+
+        val result =
+            runBlocking {
+                actions.save(
+                    transaction(),
+                    draft(amount = "-12.34"),
+                )
+            }
+
+        val error = assertIs<TransactionActionResult.Error>(result)
+        assertTrue(error.message.contains("purchases and income must have a positive amount"))
+        assertTrue(poster.urls.isEmpty())
+        assertTrue(poster.bodies.isEmpty())
+    }
+
+    @Test
+    fun `delete sends irreversible scope explicitly for child row`() {
+        val poster = RecordingPoster(success())
+        val actions = actions(poster)
+
+        val result = runBlocking { actions.delete(transaction(owner = FamilyMember.MASON)) }
+
+        assertEquals(TransactionActionResult.Success, result)
+        val body = Json.parseToJsonElement(poster.bodies.single()).jsonObject
+        assertEquals("tables:deleteTransaction", body["path"]?.jsonPrimitive?.content)
+        val args = body["args"]!!.jsonObject
+        assertEquals("activity-row", args["txId"]?.jsonPrimitive?.content)
+        assertEquals("mason", args["owner"]?.jsonPrimitive?.content)
+        assertEquals("mason-transactions", args["sourceFile"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `server rejection remains visible and the editor can stay open`() {
+        val poster =
+            RecordingPoster(
+                HttpTextResponse(
+                    200,
+                    """{"status":"error","errorData":"sign mismatch","errorMessage":"redacted"}""",
+                ),
+            )
+
+        val result = runBlocking { actions(poster).save(transaction(), draft()) }
+
+        val error = assertIs<TransactionActionResult.Error>(result)
+        assertTrue(error.message.contains("Convex refused the change"))
+    }
+
+    @Test
+    fun `amount parser never rounds money`() {
+        assertEquals(14_218L, parseTransactionCents("$142.18"))
+        assertEquals(-1L, parseTransactionCents("-0.01"))
+        assertEquals(null, parseTransactionCents("1.001"))
+        assertEquals(null, parseTransactionCents("NaN"))
+        assertEquals("142.18", editableTransactionAmount(14_218L))
+        assertEquals("-0.01", editableTransactionAmount(-1L))
+    }
+
+    private fun actions(poster: RecordingPoster) =
+        ConvexTransactionActions(
+            ConvexMutationClient(
+                configSource =
+                    MutableConvexConfigSource(
+                        ConvexConfig(deploymentUrl = DEPLOYMENT),
+                    ),
+                syncTokenSource = ConvexSyncTokenSource { testToken() },
+                http = poster,
+            ),
+        )
+
+    private fun transaction(owner: FamilyMember = FamilyMember.VICTOR) =
+        Transaction(
+            id = "activity-row",
+            date = "2026-07-29",
+            merchant = "Neighborhood Market",
+            amount = 14_218L,
+            category = "Groceries",
+            card = "Visa",
+            note = "original",
+            owner = owner,
+        )
+
+    private fun draft(amount: String = "142.18") =
+        TransactionDraft(
+            merchant = "Neighborhood Market",
+            category = "Groceries",
+            amount = amount,
+            method = "Visa",
+            date = "2026-07-29",
+            note = "original",
+        )
+
+    private fun success() =
+        HttpTextResponse(200, """{"status":"success","value":{"outcome":"updated"}}""")
+
+    private companion object {
+        const val DEPLOYMENT = "https://keen-elephant-452.convex.cloud"
+    }
+}

@@ -27,6 +27,26 @@ internal sealed class ConvexMutation(val path: String) {
         )
     }
 
+    data class DeleteTransaction(
+        val txId: String,
+        val owner: FamilyMember,
+        val sourceFile: String,
+    ) : ConvexMutation("tables:deleteTransaction") {
+        init {
+            require(txId.isNotBlank()) { "transaction id must not be blank" }
+            require(sourceFile.isNotBlank()) { "source file must not be blank" }
+            require(sourceFile == owner.transactionsDataFileName) {
+                "source file must match the transaction owner"
+            }
+        }
+
+        override fun arguments(): JsonObject = jsonObject(
+            "txId" to JsonPrimitive(txId),
+            "owner" to JsonPrimitive(owner.key),
+            "sourceFile" to JsonPrimitive(sourceFile),
+        )
+    }
+
     data class UpsertTodo(val todo: JsonObject) : ConvexMutation("tables:upsertTodo") {
         override fun arguments(): JsonObject = jsonObject("todo" to todo)
     }
