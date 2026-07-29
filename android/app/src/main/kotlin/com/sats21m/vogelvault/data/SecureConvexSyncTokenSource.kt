@@ -11,7 +11,7 @@ import java.io.IOException
  * a rejected read token cannot erase a valid write credential, and neither
  * credential is ever accepted as a fallback for the other.
  */
-internal class SecureConvexSyncTokenSource private constructor(
+internal class SecureConvexSyncTokenSource internal constructor(
     private val preferences: SharedPreferences,
     private val cipher: ConfigCipher,
 ) : ConvexSyncTokenSource {

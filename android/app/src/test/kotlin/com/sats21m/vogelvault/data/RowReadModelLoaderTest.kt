@@ -190,7 +190,7 @@ class RowReadModelLoaderTest {
                         owner = FamilyMember.VICTOR,
                         month = "2026-07",
                         coinbaseOneBalanceCents = 0L,
-                        categories = listOf(BudgetCategoryRow("Groceries", null, 50_000L)),
+                        categories = listOf(BudgetCategoryRow("Groceries", "cart", 50_000L)),
                         effectiveApr = null,
                         strategyNote = null,
                         income = null,
@@ -241,6 +241,8 @@ class RowReadModelLoaderTest {
         )
 
         assertEquals(-2_500L, spend.actualCents)
+        assertEquals("cart", budget.categories.single().icon)
+        assertEquals("cart", spend.categories.single().icon)
         assertEquals(-2_500L, model.transactions.value.single().spendAmount)
         assertEquals(2_500L, model.transactions.value.single().displaySpendAmount)
         assertEquals(true, model.transactions.value.single().hasOppositeSpendSign)

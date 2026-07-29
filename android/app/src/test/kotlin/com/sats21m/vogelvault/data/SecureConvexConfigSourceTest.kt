@@ -212,6 +212,33 @@ class SecureConvexConfigSourceTest {
         assertEquals(ReadReadiness.DISABLED, source.current().readiness)
         assertTrue(context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).all.isEmpty())
     }
+
+    @Test
+    fun `write credential round trips encrypted and separately from read config`() {
+        val writePreferences =
+            context.getSharedPreferences("$preferencesName-write", Context.MODE_PRIVATE)
+        val writeSource = SecureConvexSyncTokenSource(writePreferences, TestConfigCipher)
+        val token = "vv-write-${UUID.randomUUID()}"
+
+        writeSource.update(token)
+
+        assertEquals(token, writeSource.currentSyncToken())
+        assertTrue(writeSource.isConfigured)
+        assertNotEquals(token, writePreferences.all.values.single())
+        assertEquals(ReadReadiness.DISABLED, source.current().readiness)
+    }
+
+    @Test
+    fun `tampered write credential fails closed`() {
+        val writePreferences =
+            context.getSharedPreferences("$preferencesName-write", Context.MODE_PRIVATE)
+        val writeSource = SecureConvexSyncTokenSource(writePreferences, TestConfigCipher)
+        writeSource.update("vv-write-${UUID.randomUUID()}")
+        writePreferences.edit().putString("sync_token", "not-valid-ciphertext").commit()
+
+        assertNull(writeSource.currentSyncToken())
+        assertFalse(writeSource.isConfigured)
+    }
 }
 
 private object TestConfigCipher : ConfigCipher {

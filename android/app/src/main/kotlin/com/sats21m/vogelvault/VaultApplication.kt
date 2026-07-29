@@ -72,7 +72,9 @@ class VaultApplication : Application() {
 
     private val mutationClient: ConvexMutationClient by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         ConvexMutationClient(
-            configSource = convexConfigSource,
+            // The public deployment route is not a credential. Writes must not
+            // become unusable just because authenticated row reads are disabled.
+            configSource = MutableConvexConfigSource(writeConvexConfig()),
             syncTokenSource = syncTokenSource,
         )
     }
@@ -97,6 +99,7 @@ class VaultApplication : Application() {
                     BudgetCategoryInput(
                         name = request.categoryName,
                         budgetCents = request.budgetCents,
+                        icon = request.icon,
                     ),
             ),
         )
@@ -220,6 +223,9 @@ internal fun buildTimeConvexConfig(readToken: String): ConvexConfig =
         readToken = readToken,
         remoteReadEnabled = readToken.isNotBlank(),
     )
+
+internal fun writeConvexConfig(): ConvexConfig =
+    ConvexConfig(deploymentUrl = PRODUCTION_DEPLOYMENT)
 
 /**
  * Adult and Mason source files already carry their canonical owner. Maddox has

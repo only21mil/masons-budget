@@ -50,4 +50,13 @@ class BuildTimeConvexConfigTest {
             model.state.value.data,
         )
     }
+
+    @Test
+    fun `write route is available without reusing a read credential`() {
+        val config = writeConvexConfig()
+
+        assertEquals(PRODUCTION_DEPLOYMENT, config.deploymentUrl)
+        assertFalse(config.hasReadToken)
+        assertFalse(config.allowsRemoteRead)
+    }
 }
