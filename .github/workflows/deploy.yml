@@ -151,7 +151,22 @@ jobs:
   build:
     needs: preflight
     if: github.repository == 'only21mil/masons-budget'
-    runs-on: [self-hosted, macOS, ARM64, xcode]
+    # HOSTED, deliberately, and only until manual signing lands.
+    #
+    # Swift CI runs on the self-hosted mini and costs nothing. The RELEASE job
+    # cannot yet: it signs, and automatic signing needs an interactive keychain.
+    # On the headless mini the archive fails with "User interaction is not
+    # allowed", "No profiles for 'com.sats21m.masonsbudget' were found", and
+    # "Revoke certificate: ...its private key is not installed in your keychain"
+    # — run 30415225274. A LaunchAgent has no GUI session to unlock a keychain
+    # or fetch a profile, so no amount of workflow tuning fixes it.
+    #
+    # PR #166 moves this path to MANUAL signing with a distribution certificate
+    # and profile imported from secrets into an ephemeral keychain, which needs
+    # no interaction. Once its runbook has been followed on a Mac and
+    # APPLE_MANUAL_SIGNING_READY is set, move this back to
+    # [self-hosted, macOS, ARM64, xcode] and releases become free too.
+    runs-on: macos-latest
     strategy:
       # Finish both platform jobs so one failure does not hide the other result.
       # Keep uploads serial because both platforms share a project build number.
