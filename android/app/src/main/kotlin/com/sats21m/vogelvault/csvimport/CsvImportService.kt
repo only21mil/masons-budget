@@ -154,12 +154,14 @@ internal class CsvImportService {
         existing: List<Transaction>,
         owner: FamilyMember,
     ): List<CsvImportedTransaction> {
-        val existingKeys = existing
-            .budgetTransactionsFor(owner)
+        val scopedExisting = existing.budgetTransactionsFor(owner)
+        val existingIds = scopedExisting.mapTo(mutableSetOf(), Transaction::id)
+        val existingKeys = scopedExisting
             .mapTo(mutableSetOf()) {
                 duplicateKey(it.date, it.amount, it.merchant)
             }
         return imported.filter { row ->
+            if (row.id in existingIds) return@filter false
             val cents = row.amountUsdCents ?: return@filter true
             duplicateKey(row.date.toString(), cents, row.merchant) !in existingKeys
         }
@@ -361,7 +363,7 @@ internal class CsvImportService {
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(canonical.toByteArray(StandardCharsets.UTF_8))
             .take(12)
-            .joinToString("") { "%02x".format(it) }
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
         return "csv-$digest"
     }
 

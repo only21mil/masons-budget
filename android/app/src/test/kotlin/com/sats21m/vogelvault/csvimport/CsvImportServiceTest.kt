@@ -136,6 +136,30 @@ class CsvImportServiceTest {
         val second = parse(csv, CsvImportSource.CUSTOM).single().id
 
         assertEquals(first, second)
+        assertTrue(first.matches(Regex("""csv-[0-9a-f]{24}""")))
+    }
+
+    @Test
+    fun `stable row id detects a retry even when the Bitcoin price changed`() {
+        val csv = "date,amount,memo\n2026-05-01,500,Costco"
+        val first = parse(csv, CsvImportSource.CUSTOM).single()
+        val retryAtDifferentPrice = service.parse(
+            csv.toByteArray(),
+            CsvImportSource.CUSTOM,
+            btcPriceCents = 20_000_000L,
+        )
+        val existing = transaction(FamilyMember.VICTOR).copy(
+            id = first.id,
+            amount = first.amountUsdCents!!,
+        )
+
+        assertTrue(
+            service.filterDuplicates(
+                retryAtDifferentPrice,
+                listOf(existing),
+                FamilyMember.RACHEL,
+            ).isEmpty(),
+        )
     }
 
     @Test
