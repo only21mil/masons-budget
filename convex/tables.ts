@@ -1621,6 +1621,43 @@ export const upsertTransaction = mutation({
   },
 });
 
+/**
+ * Delete ONE transaction row, scoped to its source file.
+ *
+ * A missing row is an idempotent success (`removed: false`), matching
+ * `deleteTodo`: clients may safely retry after losing a response without
+ * turning an already-completed delete into an error.
+ *
+ * Deliberately does NOT write a tombstone. `todoTombstones` is part of the
+ * blob todo convergence path and cannot represent transaction deletes. As with
+ * `deleteTodo`, a row deleted here would return if the internal migration were
+ * re-run from a blob that still contains it; transaction tombstones belong in
+ * a reviewed row-native convergence design when `dataFiles` is retired.
+ */
+export const deleteTransaction = mutation({
+  args: {
+    txId: v.string(),
+    owner: v.optional(familyMemberValidator),
+    sourceFile: v.optional(v.string()),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { txId, owner: rawOwner, sourceFile, token }) => {
+    validateSyncToken(token);
+    const file = sourceFile ?? "transactions";
+    const fileOwner = ownerForSourceFile(file, "transactions");
+    const owner = resolveOwner(rawOwner, fileOwner);
+    const existing = await ctx.db
+      .query("transactions")
+      .withIndex("by_source_tx_id", (q) =>
+        q.eq("sourceFile", file).eq("txId", txId),
+      )
+      .first();
+    if (!existing) return { txId, owner, removed: false };
+    await ctx.db.delete(existing._id);
+    return { txId, owner: existing.owner, removed: true };
+  },
+});
+
 /** Insert or replace ONE todo, keyed on its MC2 id. */
 export const upsertTodo = mutation({
   args: {

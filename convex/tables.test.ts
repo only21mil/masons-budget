@@ -349,6 +349,18 @@ const fn = {
     },
     { txId: string; owner: Member; month: string; outcome: string }
   >,
+  deleteTransaction:
+    "tables:deleteTransaction" as unknown as FunctionReference<
+      "mutation",
+      "public",
+      {
+        txId: string;
+        owner?: Member;
+        sourceFile?: string;
+        token?: string;
+      },
+      { txId: string; owner: Member; removed: boolean }
+    >,
   upsertTodo: "tables:upsertTodo" as unknown as FunctionReference<
     "mutation",
     "public",
@@ -854,6 +866,7 @@ describe("the blob path is untouched", () => {
         category: "Food",
       },
     });
+    await t.mutation(fn.deleteTransaction, { txId: "app-1" });
     await t.mutation(fn.upsertTodo, { todo: { id: "app-todo", title: "Ship it" } });
     await t.mutation(fn.deleteTodo, { todoId: "app-todo" });
 
@@ -871,6 +884,19 @@ describe("the blob path is untouched", () => {
     expect(await queryRows(fn.listTodos, { viewer: "victor" })).not.toContainEqual(
       expect.objectContaining({ todoId: "todo-1" }),
     );
+  });
+
+  it("deleteTransaction writes no todo tombstone — transactions need a separate convergence design", async () => {
+    await migrateAll(t);
+    await t.mutation(fn.deleteTransaction, { txId: "t-1" });
+
+    const tombstones = await t.run(async (ctx) =>
+      ctx.db.query("todoTombstones").collect(),
+    );
+    expect(tombstones).toHaveLength(0);
+    expect(
+      await queryRows(fn.listTransactions, { viewer: "victor" }),
+    ).not.toContainEqual(expect.objectContaining({ txId: "t-1" }));
   });
 
   it("typed document projection and inserts leave all blob tables byte-identical", async () => {
@@ -1783,6 +1809,59 @@ describe("row mutations", () => {
     expect(mason.map((row) => row.txId)).toEqual(["app-m1"]);
   });
 
+  it("deletes one source-scoped transaction and is idempotent when retried", async () => {
+    await migrateAll(t);
+
+    const removed = await t.mutation(fn.deleteTransaction, { txId: "t-1" });
+    expect(removed).toEqual({ txId: "t-1", owner: "victor", removed: true });
+
+    const retried = await t.mutation(fn.deleteTransaction, { txId: "t-1" });
+    expect(retried).toEqual({ txId: "t-1", owner: "victor", removed: false });
+
+    const rows = await queryRows(fn.listTransactions, { viewer: "victor" });
+    expect(rows.map((row) => row.txId)).not.toContain("t-1");
+    expect(rows.map((row) => row.txId)).toContain("t-2");
+    expect((await t.query(fn.rowCounts, {})).transactions).toBe(3);
+  });
+
+  it("uses source-file ownership and the source/id index to isolate child deletes", async () => {
+    await t.mutation(fn.upsertTransaction, {
+      transaction: {
+        id: "shared-id",
+        date: "2026-07-22",
+        merchant: "Adult",
+        amountCents: 100n,
+        category: "Other",
+      },
+    });
+    await t.mutation(fn.upsertTransaction, {
+      sourceFile: "mason-transactions",
+      transaction: {
+        id: "shared-id",
+        date: "2026-07-22",
+        merchant: "Child",
+        amountCents: 200n,
+        category: "Other",
+      },
+    });
+
+    const result = await t.mutation(fn.deleteTransaction, {
+      txId: "shared-id",
+      sourceFile: "mason-transactions",
+    });
+    expect(result).toEqual({
+      txId: "shared-id",
+      owner: "mason",
+      removed: true,
+    });
+
+    expect(
+      (await queryRows(fn.listTransactions, { viewer: "victor" })).map(
+        (row) => `${row.owner}:${row.txId}`,
+      ),
+    ).toEqual(["victor:shared-id"]);
+  });
+
   it("rejects negative purchases for adults and children", async () => {
     await expect(
       t.mutation(fn.upsertTransaction, {
@@ -2068,6 +2147,11 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
       name: "upsertTodo",
       call: (token?: string) =>
         t.mutation(fn.upsertTodo, { todo: { id: "auth-todo", title: "Probe" }, token }),
+    },
+    {
+      name: "deleteTransaction",
+      call: (token?: string) =>
+        t.mutation(fn.deleteTransaction, { txId: "auth-transaction", token }),
     },
     {
       name: "deleteTodo",
