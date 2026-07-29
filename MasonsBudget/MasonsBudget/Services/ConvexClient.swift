@@ -12,9 +12,8 @@ enum ConvexConfig {
     private static let readTokenKey = "convex_read_token"
     private static let syncTokenKey = "convex_sync_token"
     private static var readTokenStore: MigratingKeychainTokenStore {
-        MigratingKeychainTokenStore(
+        makeReadTokenStore(
             userDefaults: .standard,
-            legacyKey: readTokenKey,
             keychain: KeychainCredentialStore(
                 service: "com.sats21m.vogel-vault.convex",
                 account: "read-token",
@@ -29,6 +28,18 @@ enum ConvexConfig {
                 service: "com.sats21m.vogel-vault.convex",
                 account: "sync-token",
             ),
+        )
+    }
+
+    /// Injection seam for testing the production read-token migration wiring.
+    static func makeReadTokenStore(
+        userDefaults: UserDefaults,
+        keychain: CredentialStoring,
+    ) -> MigratingKeychainTokenStore {
+        MigratingKeychainTokenStore(
+            userDefaults: userDefaults,
+            legacyKey: readTokenKey,
+            keychain: keychain,
         )
     }
 

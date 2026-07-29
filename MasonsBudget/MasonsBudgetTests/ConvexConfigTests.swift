@@ -58,6 +58,19 @@ final class ConvexConfigTests: XCTestCase {
         return (store, double, suite)
     }
 
+    private func makeReadTokenStore(
+        legacyValue: String? = nil,
+        double: InMemoryCredentialStore = InMemoryCredentialStore(),
+    ) -> (MigratingKeychainTokenStore, InMemoryCredentialStore, UserDefaults) {
+        let suite = UserDefaults(suiteName: "read-token-\(UUID().uuidString)")!
+        if let legacyValue { suite.set(legacyValue, forKey: "convex_read_token") }
+        let store = ConvexConfig.makeReadTokenStore(
+            userDefaults: suite,
+            keychain: double,
+        )
+        return (store, double, suite)
+    }
+
     func testSetSyncTokenTrimsAndStoresOnlyInTheCredentialStore() {
         let (store, double, suite) = makeStore()
 
@@ -111,10 +124,7 @@ final class ConvexConfigTests: XCTestCase {
 
     func testReadTokenMigrationMovesLegacyCleartextIntoCredentialStore() {
         let key = "convex_read_token"
-        let (store, double, suite) = makeStore(
-            legacyKey: key,
-            legacyValue: "  vv-read-legacy  ",
-        )
+        let (store, double, suite) = makeReadTokenStore(legacyValue: "  vv-read-legacy  ")
 
         XCTAssertEqual(store.token, "vv-read-legacy")
 
@@ -125,7 +135,7 @@ final class ConvexConfigTests: XCTestCase {
 
     func testSettingReadTokenStoresNoCleartextCopy() {
         let key = "convex_read_token"
-        let (store, double, suite) = makeStore(legacyKey: key)
+        let (store, double, suite) = makeReadTokenStore()
 
         XCTAssertTrue(store.set("  vv-read-new  "))
 
@@ -138,8 +148,7 @@ final class ConvexConfigTests: XCTestCase {
         let key = "convex_read_token"
         let refusing = InMemoryCredentialStore()
         refusing.refuseWrites = true
-        let (store, _, suite) = makeStore(
-            legacyKey: key,
+        let (store, _, suite) = makeReadTokenStore(
             legacyValue: "vv-read-legacy",
             double: refusing,
         )
@@ -150,10 +159,7 @@ final class ConvexConfigTests: XCTestCase {
 
     func testRemovingReadTokenClearsCredentialAndLegacyCopy() {
         let key = "convex_read_token"
-        let (store, double, suite) = makeStore(
-            legacyKey: key,
-            legacyValue: "vv-read-legacy",
-        )
+        let (store, double, suite) = makeReadTokenStore(legacyValue: "vv-read-legacy")
         XCTAssertEqual(store.token, "vv-read-legacy")
 
         XCTAssertTrue(store.remove())
