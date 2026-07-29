@@ -12,6 +12,9 @@ ROOT = Path(__file__).resolve().parents[4]
 DEPLOY = ROOT / ".github/workflows/deploy.yml"
 PROJECT = ROOT / "MasonsBudget/project.yml"
 EXPORT_OPTIONS = ROOT / "ExportOptions.plist"
+GENERATED_PROJECT = (
+    ROOT / "MasonsBudget/MasonsBudget.xcodeproj/project.pbxproj"
+)
 
 
 class ManualReleaseSigningTests(unittest.TestCase):
@@ -28,6 +31,12 @@ class ManualReleaseSigningTests(unittest.TestCase):
             2,
             "both app targets must name the distribution identity explicitly",
         )
+        generated = GENERATED_PROJECT.read_text(encoding="utf-8")
+        self.assertGreaterEqual(generated.count("CODE_SIGN_STYLE = Manual;"), 2)
+        self.assertGreaterEqual(
+            generated.count('CODE_SIGN_IDENTITY = "Apple Distribution";'),
+            2,
+        )
 
     def test_deploy_cannot_create_signing_assets(self) -> None:
         deploy = DEPLOY.read_text(encoding="utf-8")
@@ -37,10 +46,12 @@ class ManualReleaseSigningTests(unittest.TestCase):
             deploy,
             "the release workflow must never authorize xcodebuild to create signing assets",
         )
+        self.assertNotIn("-authenticationKeyPath", deploy)
         self.assertIn("vars.APPLE_MANUAL_SIGNING_READY", deploy)
         self.assertIn('CODE_SIGN_STYLE=Manual', deploy)
         self.assertIn('CODE_SIGN_IDENTITY="Apple Distribution"', deploy)
-        self.assertIn('PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID"', deploy)
+        self.assertIn('PROVISIONING_PROFILE="$PROFILE_UUID"', deploy)
+        self.assertIn('PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"', deploy)
 
     def test_deploy_installs_human_provided_assets(self) -> None:
         deploy = DEPLOY.read_text(encoding="utf-8")

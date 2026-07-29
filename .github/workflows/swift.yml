@@ -403,10 +403,10 @@ jobs:
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
 
-      # Signing is disabled three ways because one is not enough: the project
-      # sets CODE_SIGN_STYLE=Automatic with a DEVELOPMENT_TEAM, and a runner has
-      # no Apple ID to resolve a profile with. The simulator does not verify
-      # signatures, so an unsigned bundle installs and the tests run.
+      # Signing is disabled three ways because one is not enough: the Debug
+      # configuration uses automatic signing with a DEVELOPMENT_TEAM, and a
+      # runner has no Apple ID to resolve a profile with. The simulator does not
+      # verify signatures, so an unsigned bundle installs and the tests run.
       #
       # This is also the structural reason this workflow cannot produce a
       # shippable artifact even by accident.

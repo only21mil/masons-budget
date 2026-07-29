@@ -251,7 +251,7 @@ jobs:
             exit 1
           fi
           if [ "$PLATFORM" = "macos" ] &&
-            ! security find-identity -v "$KEYCHAIN_PATH" |
+            ! security find-identity -v -p basic "$KEYCHAIN_PATH" |
               grep -q '"Mac Installer Distribution'; then
             echo "::error::The imported installer p12 has no usable Mac Installer Distribution identity and private key."
             exit 1
@@ -329,8 +329,6 @@ jobs:
             exit 1
           fi
           echo "App Store Connect key written and validated."
-          # xcodebuild wants an explicit path; altool finds it by convention.
-          echo "ASC_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
 
       - name: Archive
         working-directory: MasonsBudget
@@ -357,7 +355,8 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM=384ZGKG4GB \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+            PROVISIONING_PROFILE="$PROFILE_UUID" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
             OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_PATH"
 
       - name: Export
@@ -373,6 +372,11 @@ jobs:
           /usr/libexec/PlistBuddy \
             -c "Add :provisioningProfiles:com.sats21m.masonsbudget string $PROFILE_UUID" \
             "$EXPORT_OPTIONS"
+          if [ "$PLATFORM" = "ios" ]; then
+            /usr/libexec/PlistBuddy \
+              -c "Delete :installerSigningCertificate" \
+              "$EXPORT_OPTIONS"
+          fi
           echo "EXPORT_DIR=$EXPORT_DIR" >> "$GITHUB_ENV"
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE" \

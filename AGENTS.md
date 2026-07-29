@@ -139,13 +139,23 @@ Current status, historical cutover transcript, blast radius and rollback:
 
 **Releases run in GitHub Actions, not on a workstation.**
 `.github/workflows/deploy.yml` is `workflow_dispatch` only on `macos-latest`.
-It writes and validates an App Store Connect API key, archives and exports with
-`-allowProvisioningUpdates` plus the API-key path/ID/issuer, preserves the signed
-`.ipa` or `.pkg`, then uploads with `xcrun altool --apiKey/--apiIssuer`.
-The required repository secrets are `ASC_API_KEY_P8`, `ASC_KEY_ID`, and
-`ASC_ISSUER_ID`; the old Apple-ID password and `.p12` paths are retired. Signing
-uses team `384ZGKG4GB`. Triggering the workflow is the approval gate above — it
-is never automatic.
+Release archives use manual signing with human-created Apple Distribution and
+Mac Installer Distribution identities plus platform-specific App Store
+provisioning profiles. The archive and export commands contain no
+`-allowProvisioningUpdates`, so a release cannot create a certificate. The
+workflow preserves the signed `.ipa` or `.pkg`, then uploads with
+`xcrun altool --apiKey/--apiIssuer`.
+
+The required repository secrets are `ASC_API_KEY_P8`, `ASC_KEY_ID`,
+`ASC_ISSUER_ID`, `APPLE_DISTRIBUTION_CERTIFICATE_P12`,
+`APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD`, `APPLE_IOS_APP_STORE_PROFILE`,
+`APPLE_MAC_APP_STORE_PROFILE`, `APPLE_MAC_INSTALLER_CERTIFICATE_P12`, and
+`APPLE_MAC_INSTALLER_CERTIFICATE_PASSWORD`. The older
+`APPLE_CERTIFICATE_P12`/password/profile names are known stale and retired; the
+workflow deliberately never reads them. Signing uses team `384ZGKG4GB`.
+`APPLE_MANUAL_SIGNING_READY` must remain absent/false until
+`docs/apple-manual-signing-runbook.md` is completed. Triggering the workflow is
+the approval gate above — it is never automatic.
 
 Never put signing material, App Store Connect keys, `.p12` files, provisioning
 profiles, key IDs, or issuer IDs in the repo, in docs, or in a commit. Secrets
@@ -212,4 +222,4 @@ contract while shipped clients still consume `dataFiles`.
 
 ---
 
-*Last updated 2026-07-26 · Victor Vogel*
+*Last updated 2026-07-28 · Victor Vogel*
