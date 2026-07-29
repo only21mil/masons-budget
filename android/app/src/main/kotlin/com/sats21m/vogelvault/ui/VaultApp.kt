@@ -149,6 +149,7 @@ fun VaultApp(
                         }
                         HorizontalHairline()
                         AuthorizationNotice(state)
+                        RowReadFailureNotice(state)
                         RefreshFailureNotice(state)
                         ScreenHost(
                             current,
@@ -167,6 +168,7 @@ fun VaultApp(
                     }
                     HorizontalHairline()
                     AuthorizationNotice(state)
+                    RowReadFailureNotice(state)
                     RefreshFailureNotice(state)
                     ScreenHost(
                         current,
@@ -186,7 +188,7 @@ fun VaultApp(
 
 @Composable
 private fun AuthorizationNotice(state: VaultUiState) {
-    if (!state.staleAuthorization) return
+    if (!state.staleAuthorization || state.primaryRowReadFailure != null) return
     StatusBanner(
         text = stringResource(R.string.convex_auth_error_title),
         detail = stringResource(R.string.convex_auth_error_detail),
@@ -195,8 +197,25 @@ private fun AuthorizationNotice(state: VaultUiState) {
 }
 
 @Composable
+private fun RowReadFailureNotice(state: VaultUiState) {
+    val titleRes = state.rowReadFailureTitleRes ?: return
+    val detailRes = state.rowReadFailureDetailRes ?: return
+    StatusBanner(
+        text = stringResource(titleRes),
+        detail = stringResource(detailRes),
+        tone = com.sats21m.vogelvault.ui.theme.VaultWarning,
+    )
+}
+
+@Composable
 private fun RefreshFailureNotice(state: VaultUiState) {
-    if (state.staleAuthorization || state.worstStatus != Freshness.ERROR) return
+    if (
+        state.staleAuthorization ||
+        state.primaryRowReadFailure != null ||
+        state.worstStatus != Freshness.ERROR
+    ) {
+        return
+    }
     StatusBanner(
         text = stringResource(R.string.refresh_failed_title),
         detail = stringResource(R.string.refresh_failed_detail),
