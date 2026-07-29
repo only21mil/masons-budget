@@ -1,5 +1,6 @@
 package com.sats21m.vogelvault.ui
 
+import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.TransactionKind
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -7,6 +8,8 @@ import java.time.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class AddTransactionSheetTest {
@@ -106,6 +109,19 @@ class AddTransactionSheetTest {
         assertFails {
             prepare("1", DisplayUnit.SATS)
         }
+    }
+
+    @Test
+    fun `disabled and not configured writes name different causes`() {
+        val disabled = assertNotNull(transactionWriteFailureMessage(ConvexResult.Disabled))
+        val notConfigured = assertNotNull(
+            transactionWriteFailureMessage(ConvexResult.NotConfigured),
+        )
+
+        assertNotEquals(disabled, notConfigured)
+        assertTrue(disabled.contains("switched off"))
+        assertTrue(notConfigured.contains("deployment"))
+        assertTrue(notConfigured.contains("token"))
     }
 
     private fun prepare(

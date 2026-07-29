@@ -79,6 +79,22 @@ internal data class PreparedTransaction(
 )
 
 /**
+ * User-visible feedback for every remote transaction write result.
+ *
+ * Disabled is an operator switch; NotConfigured is a device/deployment setup
+ * problem. Keeping those sentences separate tells the user which remedy is
+ * available instead of reducing both causes to "not configured".
+ */
+internal fun transactionWriteFailureMessage(result: ConvexResult<*>): String? = when (result) {
+    is ConvexResult.Ok -> null
+    ConvexResult.Disabled -> "Remote transaction writes are switched off"
+    ConvexResult.NotConfigured -> "Transaction writing has no usable Convex deployment or token"
+    ConvexResult.Unauthorized -> "The sync credential is missing or was rejected"
+    ConvexResult.Missing -> "Convex returned no write result"
+    is ConvexResult.Failed -> "Transaction was not saved (${result.reason})"
+}
+
+/**
  * Turns user input into the exact row mutation payload.
  *
  * No binary floating point enters this path. USD allows at most two decimal
@@ -460,17 +476,11 @@ internal fun AddTransactionSheet(
                                 ),
                             )
                             saving = false
-                            when (result) {
-                                is ConvexResult.Ok -> onDismiss()
-                                ConvexResult.Unauthorized ->
-                                    errorMessage = "The sync credential is missing or was rejected"
-                                ConvexResult.NotConfigured,
-                                ConvexResult.Disabled,
-                                -> errorMessage = "Transaction writing is not configured"
-                                ConvexResult.Missing ->
-                                    errorMessage = "Convex returned no write result"
-                                is ConvexResult.Failed ->
-                                    errorMessage = "Transaction was not saved (${result.reason})"
+                            val failure = transactionWriteFailureMessage(result)
+                            if (failure == null) {
+                                onDismiss()
+                            } else {
+                                errorMessage = failure
                             }
                         }
                     },
