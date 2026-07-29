@@ -9,6 +9,7 @@ import Security
 /// Configuration for the Convex deployment.
 enum ConvexConfig {
     private static let rowReadsEnabledKey = "convex_row_reads_enabled"
+    private static let writesEnabledKey = "convex_writes_enabled"
     private static let readTokenKey = "convex_read_token"
     private static let syncTokenKey = "convex_sync_token"
     private static var readTokenStore: MigratingKeychainTokenStore {
@@ -128,6 +129,21 @@ enum ConvexConfig {
 
     static func setRowReadsEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: rowReadsEnabledKey)
+    }
+
+    /// Runtime kill switch for every app-originated write.
+    ///
+    /// Android has one and its `ConvexResult.Disabled` depends on it; without a
+    /// write switch here that state would be unreachable on Apple and the two
+    /// clients would disagree about the cause set. Unlike `rowReadsEnabled` this
+    /// defaults to ON: writes already ship, and defaulting it off would silently
+    /// stop every save. Absent key means enabled.
+    static var writesEnabled: Bool {
+        UserDefaults.standard.object(forKey: writesEnabledKey) as? Bool ?? true
+    }
+
+    static func setWritesEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: writesEnabledKey)
     }
 }
 

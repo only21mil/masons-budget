@@ -1,0 +1,228 @@
+import Foundation
+
+/// The outcome of a Convex write.
+///
+/// The Apple client reported every write as `Bool` until this type existed, so a
+/// missing sync credential, an unauthorized profile and a rejected amount sign
+/// were indistinguishable at the UI. Weeks of transactions were lost to exactly
+/// that ambiguity: the write "failed" and nobody could be told why.
+///
+/// Deliberately an enum with associated values rather than `Result` or a typed
+/// `Error`:
+///
+/// * `.disabled` and `.notConfigured` are ordinary states of this feature, not
+///   failures. `Result` would shove them into the failure channel and force a
+///   `try`/`catch` shape onto callers that have nothing to recover from.
+/// * An existential `Error` gives no exhaustiveness — the exact property `Bool`
+///   destroyed. A new cause must break every `switch` until it is handled.
+/// * `Result` would force `.failure(.unauthorized)` double-nesting in every
+///   SwiftUI `switch`.
+///
+/// The six cases are 1:1 with Android's `ConvexResult` so the two clients cannot
+/// disagree about what a rejection means. Android's `Ok(value)` becomes a plain
+/// `.ok`: Apple's write seam returns no value.
+enum ConvexWriteResult: Sendable, Equatable {
+    /// The write was accepted.
+    case ok
+
+    /// The write kill switch is off. No request was made.
+    case disabled
+
+    /// No usable Convex deployment URL. No request was made.
+    case notConfigured
+
+    /// The credential is missing locally, or the deployment rejected what we
+    /// sent. Refused before network I/O where the credential is absent.
+    case unauthorized
+
+    /// The mutation succeeded but returned no result — the deployment wrote
+    /// nothing we can confirm.
+    case missing
+
+    /// Everything else, narrowed to a cause this module authors itself.
+    case failed(ConvexWriteFailure)
+
+    var isOk: Bool { self == .ok }
+}
+
+/// The closed set of write failure causes.
+///
+/// Server text is deliberately never propagated into these values. A reason ends
+/// up in a log eventually, and a response body from this deployment can contain
+/// the household's financial data.
+enum ConvexWriteFailure: Sendable, Equatable {
+    /// The payload could not be built or encoded for the wire.
+    case payloadEncoding
+
+    /// The row mutation API is not deployed on this deployment.
+    case rowAPIUnavailable
+
+    /// The request never reached a Convex response.
+    case transport
+
+    /// Convex returned an application-level error for the mutation.
+    case serverRejected
+
+    /// Convex answered, but not in the shape the mutation contract requires.
+    case malformedResponse
+
+    /// A money value cannot be written exactly (sub-cent precision or Int64
+    /// overflow). `field` is an identifier this module authors, never user data.
+    case invalidAmount(field: String)
+
+    /// The row's owner does not match the profile being written to. `field` is an
+    /// identifier this module authors; the offending owner value is not carried.
+    case ownerMismatch(field: String)
+
+    /// A non-200 HTTP status.
+    case http(status: Int)
+
+    /// A short, authored, user-safe description of the cause.
+    var wireReason: String {
+        switch self {
+        case .payloadEncoding:
+            "the entry could not be encoded"
+        case .rowAPIUnavailable:
+            "the sync API is not deployed"
+        case .transport:
+            "the network request failed"
+        case .serverRejected:
+            "the server rejected the write"
+        case .malformedResponse:
+            "the server sent an unexpected response"
+        case let .invalidAmount(field):
+            "\(field) is not a writable amount"
+        case let .ownerMismatch(field):
+            "\(field) belongs to a different profile"
+        case let .http(status):
+            "HTTP \(status)"
+        }
+    }
+}
+
+extension ConvexWriteResult {
+    /// Maps a thrown write error onto its cause.
+    ///
+    /// This is the boundary that used to be a bare `} catch { return false }`.
+    /// `ConvexClient` already produces every one of these causes; nothing about
+    /// the transport changes here.
+    static func classify(_ error: Error) -> ConvexWriteResult {
+        switch error {
+        case let convex as ConvexError:
+            switch convex {
+            case .notConfigured:
+                return .notConfigured
+            case .networkError:
+                return .failed(.transport)
+            case let .httpError(status):
+                return status == 401 || status == 403
+                    ? .unauthorized
+                    : .failed(.http(status: status))
+            case .decodeFailed:
+                return .failed(.malformedResponse)
+            case .noData:
+                // Android calls this Missing: the call succeeded and the answer
+                // was null.
+                return .missing
+            case .serverError:
+                return .failed(.serverRejected)
+            case .unauthorized:
+                return .unauthorized
+            case .rowAPIUnavailable:
+                return .failed(.rowAPIUnavailable)
+            }
+
+        case let row as ConvexRowMutationError:
+            switch row {
+            case let .fractionalMinorUnit(field), let .minorUnitOverflow(field):
+                return .failed(.invalidAmount(field: field))
+            case let .ownerMismatch(field, _, _):
+                return .failed(.ownerMismatch(field: field))
+            case .unexpectedResponse:
+                return .failed(.malformedResponse)
+            }
+
+        case let validation as TransactionWriteValidationError:
+            switch validation {
+            case .ownerMismatch:
+                return .failed(.ownerMismatch(field: "transaction"))
+            case .transactionMustBeNonZero, .incomeMustBePositive:
+                return .failed(.invalidAmount(field: "transaction.amount"))
+            }
+
+        case let writeback as AppWritebackError:
+            switch writeback {
+            case .notConfigured, .invalidPairingURL:
+                // No paired-device credential exists, or the one we have can no
+                // longer be claimed. Android refuses the same state up front.
+                return .unauthorized
+            case .invalidBaseURL:
+                return .notConfigured
+            case let .httpError(status):
+                return status == 401 || status == 403
+                    ? .unauthorized
+                    : .failed(.http(status: status))
+            case .serverError:
+                return .failed(.serverRejected)
+            case .unexpectedResponse:
+                return .failed(.malformedResponse)
+            }
+
+        case is AppWriteSyncService.SyncError:
+            return .failed(.malformedResponse)
+
+        case is EncodingError:
+            return .failed(.payloadEncoding)
+
+        case is DecodingError:
+            return .failed(.malformedResponse)
+
+        default:
+            // URLError, CancellationError and Foundation I/O all land here; every
+            // remaining thrower on these paths is a request that never completed.
+            return .failed(.transport)
+        }
+    }
+
+    /// Whether another attempt could plausibly change the outcome.
+    ///
+    /// A missing credential, an unwritable amount and a profile mismatch are
+    /// deterministic. Retrying them burned three attempts and four seconds of the
+    /// user's time to reach the same rejection.
+    var isRetryable: Bool {
+        switch self {
+        case .ok:
+            false
+        case .unauthorized, .notConfigured, .disabled:
+            false
+        case .missing:
+            true
+        case let .failed(failure):
+            switch failure {
+            case .invalidAmount, .ownerMismatch, .payloadEncoding:
+                false
+            case .rowAPIUnavailable, .transport, .serverRejected, .malformedResponse, .http:
+                true
+            }
+        }
+    }
+
+    /// The user-visible message for this outcome, keyed off the operation label.
+    ///
+    /// Identical wording to Android's `AddTransactionSheet`, so a rejection reads
+    /// the same on every client.
+    func userMessage(operation: String) -> String? {
+        switch self {
+        case .ok:
+            nil
+        case .unauthorized:
+            "The sync credential is missing or was rejected"
+        case .notConfigured, .disabled:
+            "Transaction writing is not configured"
+        case .missing:
+            "Convex returned no write result"
+        case let .failed(failure):
+            "\(operation) was not saved (\(failure.wireReason))"
+        }
+    }
+}

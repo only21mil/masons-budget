@@ -568,19 +568,25 @@ struct ContentView: View {
                     Text(message)
                         .font(AppFont.labelStrong)
                         .foregroundStyle(theme.text)
-                    Text("Saved locally. Retry sync when ready.")
+                    Text(syncStatus.canRetry
+                        ? "Saved locally. Retry sync when ready."
+                        : "Saved on this device only.")
                         .font(AppFont.smallRegular)
                         .foregroundStyle(theme.textMuted)
                 }
 
                 Spacer()
 
-                Button("Retry") {
-                    syncStatus.retry()
+                // Hidden for causes another attempt cannot fix — a missing or
+                // rejected credential, an unwritable amount, a profile mismatch.
+                if syncStatus.canRetry {
+                    Button("Retry") {
+                        syncStatus.retry()
+                    }
+                    .font(AppFont.labelSmallStrong)
+                    .foregroundStyle(theme.accent)
+                    .buttonStyle(.plain)
                 }
-                .font(AppFont.labelSmallStrong)
-                .foregroundStyle(theme.accent)
-                .buttonStyle(.plain)
 
                 Button {
                     syncStatus.dismissFailure()

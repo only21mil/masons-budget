@@ -18,6 +18,14 @@ struct AddTransactionView: View {
     @State private var merchant = ""
     @State private var btcBuyPrice = ""
     @State private var amountValidationMessage: String?
+    /// Holds the in-flight write and its cause-specific rejection message. The
+    /// sheet stays open until the write is accepted.
+    @StateObject private var writeFeedback = WriteFeedbackStore()
+
+    /// The single inline message slot: local validation first, then the write cause.
+    private var inlineMessage: String? {
+        amountValidationMessage ?? writeFeedback.message
+    }
 
     private var btcPrice: Decimal {
         BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
@@ -122,9 +130,10 @@ struct AddTransactionView: View {
                         .foregroundStyle(theme.accent)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { saveTransaction() }
+                    Button(writeFeedback.isSaving ? "Saving…" : "Save") { saveTransaction() }
                         .font(AppFont.headline)
                         .foregroundStyle(theme.accent)
+                        .disabled(writeFeedback.isSaving)
                 }
             }
             .navigationTitle("New transaction")
@@ -190,8 +199,8 @@ struct AddTransactionView: View {
 
             conversionLine
 
-            if let amountValidationMessage {
-                Text(amountValidationMessage)
+            if let inlineMessage {
+                Text(inlineMessage)
                     .font(AppFont.labelSmall)
                     .foregroundStyle(theme.danger)
             }
@@ -237,7 +246,7 @@ struct AddTransactionView: View {
             }
         }
         .font(AppFont.labelRegular)
-        .foregroundStyle(amountValidationMessage == nil ? theme.textMuted : theme.danger)
+        .foregroundStyle(inlineMessage == nil ? theme.textMuted : theme.danger)
     }
 
     private func switchUnit(to newUnit: DisplayUnit) {
@@ -386,6 +395,7 @@ struct AddTransactionView: View {
 
     private func handleKey(_ key: String) {
         amountValidationMessage = nil
+        writeFeedback.clear()
         if key == "⌫" {
             if !amount.isEmpty { amount.removeLast() }
         } else if key == "." {
@@ -435,8 +445,13 @@ struct AddTransactionView: View {
         )
         modelContext.insert(tx)
         try? modelContext.save()
-        AppWriteSyncService.pushTransaction(tx, owner: activeMember)
-        dismiss()
+        amountValidationMessage = nil
+        writeFeedback.begin()
+        // The sheet stays open until the write result arrives, and closes only on
+        // `.ok`. Dismissing first is what made every rejection invisible.
+        AppWriteSyncService.pushTransaction(tx, owner: activeMember) { [writeFeedback, dismiss] result in
+            if writeFeedback.finish(result, operation: "Transaction") { dismiss() }
+        }
     }
 
     private func saveBTCBuy(owner activeMember: FamilyMember) {
@@ -477,8 +492,11 @@ struct AddTransactionView: View {
         modelContext.insert(buy)
         modelContext.insert(lot)
         try? modelContext.save()
-        AppWriteSyncService.pushBTCBuy(buy, owner: activeMember)
-        dismiss()
+        amountValidationMessage = nil
+        writeFeedback.begin()
+        AppWriteSyncService.pushBTCBuy(buy, owner: activeMember) { [writeFeedback, dismiss] result in
+            if writeFeedback.finish(result, operation: "Bitcoin buy") { dismiss() }
+        }
     }
 
     private func roundedSats(from value: Decimal) -> Int64 {

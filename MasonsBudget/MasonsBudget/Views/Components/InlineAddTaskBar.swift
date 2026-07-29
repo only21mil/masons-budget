@@ -14,8 +14,9 @@ struct InlineAddTaskBar: View {
     var defaultDueDate: Date?
     /// Pre-set flag for the created task (e.g. inside the Flagged list).
     var defaultFlagged = false
-    /// Optional writeback callback for surfaces that report sync failures.
-    var onResult: (@MainActor @Sendable (Bool) -> Void)?
+    /// Optional writeback callback for surfaces that report sync failures. Carries
+    /// the CAUSE of a rejection, not a bare success flag.
+    var onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)?
 
     @Binding var isExpanded: Bool
     @State private var draftText = ""
