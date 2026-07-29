@@ -183,11 +183,20 @@ jobs:
       # different toolchains, a change can pass CI and fail the release — which
       # is precisely how 16.4 survived here long after the runner image dropped
       # it: nothing exercised this path until the first real release attempt.
-      # Self-hosted: setup-xcode expects the hosted image's versioned bundles
-      # (/Applications/Xcode_26.6.app). The mini has a single /Applications/
-      # Xcode.app, so that action fails outright. Assert the version instead —
-      # the guarantee we need is "the pinned Xcode is what built this", and a
-      # mismatch must fail loudly rather than quietly release from another.
+      # This job runs HOSTED (see runs-on above), where the image ships several
+      # Xcodes and defaults to the wrong one — run 30415709899 reported 26.5
+      # against a 26.6 pin. setup-xcode is what selects it, so it stays here.
+      # It is NOT used in swift.yml, which runs on the self-hosted mini: that
+      # machine has a single /Applications/Xcode.app rather than the hosted
+      # image's versioned bundles, and the action fails outright there.
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: '26.6'
+
+      # Kept as a post-check rather than trusting setup-xcode silently. Nothing
+      # previously verified that selection actually took effect, which is how a
+      # stale pin survived here unnoticed until a real release attempt.
       - name: Verify the pinned Xcode
         run: |
           set -euo pipefail
