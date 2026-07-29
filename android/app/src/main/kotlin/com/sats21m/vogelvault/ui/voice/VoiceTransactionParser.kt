@@ -33,6 +33,18 @@ data class ParsedVoiceTransaction(
  *
  * Parsing produces a draft only. Callers must show the draft for review before
  * constructing or writing a transaction.
+ *
+ * There is deliberately no Android voice capture or write surface yet, so this
+ * class has no production caller. The removed one requested RECORD_AUDIO, which
+ * AndroidManifest.xml declares a review event rather than a convenience, and it
+ * would have sent household audio to Google's recognition service — a privacy
+ * change PRIVACY.md documents only for Apple's on-device framework. Shipping
+ * Android voice entry therefore needs Victor's explicit permission and privacy
+ * decision first, plus a capture surface and a writer built to the house write
+ * pattern (its own client from VaultApplication, one distinct message per
+ * ConvexResult cause, no suspend write callback threaded through the shell).
+ * This parser and its tests are kept so that work starts from tested logic that
+ * already matches the Apple client.
  */
 class VoiceTransactionParser {
     fun parse(
