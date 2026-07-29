@@ -69,12 +69,37 @@ class SecureConvexConfigSource internal constructor(
 
     fun clear() =
         synchronized(lock) {
-            if (!preferences.edit().clear().commit()) {
-                throw IOException("encrypted Convex configuration was not cleared")
+            clearLocked()
+        }
+
+    /**
+     * Clears only the complete credential that produced a rejected request.
+     *
+     * A user can replace the token while an older request is in flight. Exact
+     * comparison keeps that newer credential from being erased by the late
+     * unauthorized response.
+     */
+    fun clearIfCurrent(expected: ConvexConfig): Boolean =
+        synchronized(lock) {
+            if (!expected.allowsRemoteRead || !current().hasSameCredentialAs(expected)) {
+                return@synchronized false
             }
+            clearLocked()
+            true
         }
 
     private fun read(key: String): String? = preferences.getString(key, null)?.let { cipher.decrypt(key, it) }
+
+    private fun clearLocked() {
+        if (!preferences.edit().clear().commit()) {
+            throw IOException("encrypted Convex configuration was not cleared")
+        }
+    }
+
+    private fun ConvexConfig.hasSameCredentialAs(other: ConvexConfig): Boolean =
+        deploymentUrl == other.deploymentUrl &&
+            readTokenOrNull() == other.readTokenOrNull() &&
+            remoteReadEnabled == other.remoteReadEnabled
 
     private fun putOrRemove(
         editor: SharedPreferences.Editor,

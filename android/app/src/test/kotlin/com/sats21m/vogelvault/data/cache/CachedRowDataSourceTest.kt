@@ -7,7 +7,9 @@ import com.sats21m.vogelvault.data.BtcBalanceDocumentRow
 import com.sats21m.vogelvault.data.BtcSnapshotMetadataRow
 import com.sats21m.vogelvault.data.BudgetDocumentSnapshot
 import com.sats21m.vogelvault.data.BudgetQueryScope
+import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.data.RowCounts
 import com.sats21m.vogelvault.data.IncomeRow
 import com.sats21m.vogelvault.data.RowQueryRepository
@@ -26,6 +28,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -68,7 +72,7 @@ class CachedRowDataSourceTest {
                             ),
                         )
                 }
-            val source = CachedRowDataSource(remote, dao) { 100L }
+            val source = CachedRowDataSource(remote, dao, clock = { 100L })
             val viewer = FamilyMember.VICTOR
             val key = CacheQueryKeys.transactions(viewer.key)
 
@@ -87,7 +91,26 @@ class CachedRowDataSourceTest {
         runBlocking {
             var now = 100L
             val remote = FakeRows()
-            val source = CachedRowDataSource(remote, dao) { now }
+            val manualConfig =
+                ConvexConfig(
+                    deploymentUrl = "https://example.convex.cloud",
+                    readToken = "manual-test-token",
+                    remoteReadEnabled = true,
+                )
+            val rejectionCount = AtomicInteger()
+            val rejectedConfig = AtomicReference<ConvexConfig>()
+            val source =
+                CachedRowDataSource(
+                    remote = remote,
+                    dao = dao,
+                    clock = { now },
+                    configSource = MutableConvexConfigSource(manualConfig),
+                    onUnauthorized = {
+                        rejectionCount.incrementAndGet()
+                        rejectedConfig.set(it)
+                        false
+                    },
+                )
             val viewer = FamilyMember.VICTOR
             val key = CacheQueryKeys.transactions(viewer.key)
             remote.transactions = ConvexResult.Ok(RowSnapshot(listOf(transaction("old", 1L)), true))
@@ -110,13 +133,81 @@ class CachedRowDataSourceTest {
                 SnapshotAuthorization.UNAUTHORIZED,
                 dao.snapshots(key).single().authorization,
             )
+            assertEquals(1, rejectionCount.get())
+            assertEquals(manualConfig, rejectedConfig.get())
+        }
+
+    @Test
+    fun `usable fallback is retried once after stored token rejection`() =
+        runBlocking {
+            val remote = FakeRows().apply { unauthorized = true }
+            val manualConfig =
+                ConvexConfig(
+                    deploymentUrl = "https://example.convex.cloud",
+                    readToken = "manual-test-token",
+                    remoteReadEnabled = true,
+                )
+            val bakedConfig =
+                ConvexConfig(
+                    deploymentUrl = "https://example.convex.cloud",
+                    readToken = "baked-test-token",
+                    remoteReadEnabled = true,
+                )
+            val configSource = MutableConvexConfigSource(manualConfig)
+            val rejectionCount = AtomicInteger()
+            val source =
+                CachedRowDataSource(
+                    remote = remote,
+                    dao = dao,
+                    configSource = configSource,
+                    onUnauthorized = {
+                        rejectionCount.incrementAndGet()
+                        configSource.update(bakedConfig)
+                        remote.unauthorized = false
+                        true
+                    },
+                )
+
+            val loaded = source.load(FamilyMember.VICTOR)
+
+            assertFalse(loaded.unauthorized)
+            assertEquals(1, rejectionCount.get())
+            assertEquals(bakedConfig, configSource.current())
+        }
+
+    @Test
+    fun `http 401 transport failure does not reject the credential`() =
+        runBlocking {
+            val rejectionCount = AtomicInteger()
+            val config =
+                ConvexConfig(
+                    deploymentUrl = "https://example.convex.cloud",
+                    readToken = "manual-test-token",
+                    remoteReadEnabled = true,
+                )
+            val remote = FakeRows().apply { failedReason = "http 401" }
+            val source =
+                CachedRowDataSource(
+                    remote = remote,
+                    dao = dao,
+                    configSource = MutableConvexConfigSource(config),
+                    onUnauthorized = {
+                        rejectionCount.incrementAndGet()
+                        false
+                    },
+                )
+
+            val loaded = source.load(FamilyMember.VICTOR)
+
+            assertFalse(loaded.unauthorized)
+            assertEquals(0, rejectionCount.get())
         }
 
     @Test
     fun `offline read serves the authorized Room snapshot clearly marked stale`() =
         runBlocking {
             val remote = FakeRows()
-            val source = CachedRowDataSource(remote, dao) { 100L }
+            val source = CachedRowDataSource(remote, dao, clock = { 100L })
             val viewer = FamilyMember.VICTOR
             remote.transactions = ConvexResult.Ok(RowSnapshot(listOf(transaction("cached", 42L)), true))
             source.load(viewer)
@@ -162,7 +253,7 @@ class CachedRowDataSourceTest {
                     .databaseBuilder(context, VaultDatabase::class.java, databaseName)
                     .build()
             try {
-                CachedRowDataSource(remote, oldDatabase.cacheDao()) { 100L }
+                CachedRowDataSource(remote, oldDatabase.cacheDao(), clock = { 100L })
                     .load(FamilyMember.VICTOR)
 
                 val columns =
@@ -213,7 +304,7 @@ class CachedRowDataSourceTest {
         runBlocking {
             var now = 100L
             val remote = FakeRows()
-            val source = CachedRowDataSource(remote, dao) { now }
+            val source = CachedRowDataSource(remote, dao, clock = { now })
             val viewer = FamilyMember.VICTOR
             val key = CacheQueryKeys.transactions(viewer.key)
             remote.transactions = ConvexResult.Ok(RowSnapshot(listOf(transaction("old", 1L)), true))
@@ -260,6 +351,7 @@ class CachedRowDataSourceTest {
 private class FakeRows : RowQueryRepository {
     var unauthorized = false
     var offline = false
+    var failedReason: String? = null
     var transactions: ConvexResult<RowSnapshot<Transaction>> = ConvexResult.Ok(RowSnapshot(emptyList(), true))
 
     override suspend fun listTransactions(
@@ -269,6 +361,7 @@ private class FakeRows : RowQueryRepository {
     ): ConvexResult<RowSnapshot<Transaction>> =
         when {
             unauthorized -> ConvexResult.Unauthorized
+            failedReason != null -> ConvexResult.Failed(requireNotNull(failedReason))
             offline -> ConvexResult.Failed("transport failure")
             else -> transactions
         }
@@ -280,6 +373,7 @@ private class FakeRows : RowQueryRepository {
     ): ConvexResult<RowSnapshot<TodoItem>> =
         when {
             unauthorized -> ConvexResult.Unauthorized
+            failedReason != null -> ConvexResult.Failed(requireNotNull(failedReason))
             offline -> ConvexResult.Failed("transport failure")
             else -> ConvexResult.Ok(RowSnapshot(emptyList(), true))
         }
@@ -288,7 +382,12 @@ private class FakeRows : RowQueryRepository {
         viewer: FamilyMember,
         month: String?,
         limit: Int?,
-    ): ConvexResult<RowSnapshot<IncomeRow>> = ConvexResult.Disabled
+    ): ConvexResult<RowSnapshot<IncomeRow>> =
+        when {
+            unauthorized -> ConvexResult.Unauthorized
+            failedReason != null -> ConvexResult.Failed(requireNotNull(failedReason))
+            else -> ConvexResult.Disabled
+        }
 
     override suspend fun listBtcBuys(
         viewer: FamilyMember,
@@ -298,6 +397,7 @@ private class FakeRows : RowQueryRepository {
     ): ConvexResult<RowSnapshot<BtcBuy>> =
         when {
             unauthorized -> ConvexResult.Unauthorized
+            failedReason != null -> ConvexResult.Failed(requireNotNull(failedReason))
             offline -> ConvexResult.Failed("transport failure")
             else -> ConvexResult.Ok(RowSnapshot(emptyList(), true))
         }
@@ -307,7 +407,12 @@ private class FakeRows : RowQueryRepository {
         scope: RowVisibilityScope,
         month: String?,
         limit: Int?,
-    ): ConvexResult<RowSnapshot<BtcBillPayRow>> = ConvexResult.Disabled
+    ): ConvexResult<RowSnapshot<BtcBillPayRow>> =
+        when {
+            unauthorized -> ConvexResult.Unauthorized
+            failedReason != null -> ConvexResult.Failed(requireNotNull(failedReason))
+            else -> ConvexResult.Disabled
+        }
 
     override suspend fun listBtcAccounts(
         viewer: FamilyMember,
@@ -316,6 +421,8 @@ private class FakeRows : RowQueryRepository {
     ): ConvexResult<RowSnapshot<BtcAccount>> =
         if (unauthorized) {
             ConvexResult.Unauthorized
+        } else if (failedReason != null) {
+            ConvexResult.Failed(requireNotNull(failedReason))
         } else if (offline) {
             ConvexResult.Failed("transport failure")
         } else {
@@ -330,17 +437,37 @@ private class FakeRows : RowQueryRepository {
     override suspend fun getBudgetDocument(
         viewer: FamilyMember,
         scope: BudgetQueryScope,
-    ): ConvexResult<BudgetDocumentSnapshot> = ConvexResult.Disabled
+    ): ConvexResult<BudgetDocumentSnapshot> =
+        when {
+            unauthorized -> ConvexResult.Unauthorized
+            failedReason != null -> ConvexResult.Failed(requireNotNull(failedReason))
+            else -> ConvexResult.Disabled
+        }
 
     override suspend fun getBtcSnapshotMetadata(
         viewer: FamilyMember,
         scope: RowVisibilityScope,
-    ): ConvexResult<RowSnapshot<BtcSnapshotMetadataRow>> = ConvexResult.Disabled
+    ): ConvexResult<RowSnapshot<BtcSnapshotMetadataRow>> =
+        when {
+            unauthorized -> ConvexResult.Unauthorized
+            failedReason != null -> ConvexResult.Failed(requireNotNull(failedReason))
+            else -> ConvexResult.Disabled
+        }
 
     override suspend fun listBtcBalanceDocuments(
         viewer: FamilyMember,
         scope: RowVisibilityScope,
-    ): ConvexResult<RowSnapshot<BtcBalanceDocumentRow>> = ConvexResult.Disabled
+    ): ConvexResult<RowSnapshot<BtcBalanceDocumentRow>> =
+        when {
+            unauthorized -> ConvexResult.Unauthorized
+            failedReason != null -> ConvexResult.Failed(requireNotNull(failedReason))
+            else -> ConvexResult.Disabled
+        }
 
-    override suspend fun rowCounts(): ConvexResult<RowCounts> = ConvexResult.Disabled
+    override suspend fun rowCounts(): ConvexResult<RowCounts> =
+        when {
+            unauthorized -> ConvexResult.Unauthorized
+            failedReason != null -> ConvexResult.Failed(requireNotNull(failedReason))
+            else -> ConvexResult.Disabled
+        }
 }
