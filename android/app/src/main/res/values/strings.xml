@@ -27,13 +27,7 @@
     <string name="convex_read_token_unconfigured">No Convex read token is stored. Row reads are unconfigured.</string>
     <string name="convex_read_token_remove">Remove stored token</string>
     <string name="convex_read_token_remove_failed">The stored read token could not be removed.</string>
-    <string name="convex_sync_token_panel_title">Configure authenticated writes</string>
-    <string name="convex_sync_token_configured">A Convex sync token is stored securely. Its value cannot be viewed.</string>
-    <string name="convex_sync_token_unconfigured">No Convex sync token is stored. Writes will be rejected before connecting.</string>
-    <string name="convex_sync_token_label">Convex sync token</string>
-    <string name="convex_sync_token_save">Save write credential</string>
     <string name="convex_sync_token_save_failed">The sync token could not be stored securely. Writes remain unconfigured.</string>
-    <string name="convex_sync_token_remove">Remove stored sync token</string>
     <string name="convex_sync_token_remove_failed">The stored sync token could not be removed.</string>
     <string name="convex_budget_period_mismatch_detail">Convex returned targets for %1$s. Actuals were re-derived from %2$s transaction rows; the targets were not.</string>
     <string name="convex_uncategorized_spend_detail">The Convex transaction rows have no matching budget category, so this spend is counted on Activity only.</string>
@@ -183,6 +177,11 @@
     <string name="write_credential_label">Write credential</string>
     <string name="write_credential_save">Save securely</string>
     <string name="write_credential_remove">Remove</string>
+    <string name="write_credential_blank">Enter the write credential before saving.</string>
+    <string name="write_credential_save_readback_failed">The credential was written but could not be read back.</string>
+    <string name="write_credential_save_unexpected">The credential was not saved (%1$s).</string>
+    <string name="write_credential_remove_readback_failed">The credential was removed but remained readable.</string>
+    <string name="write_credential_remove_unexpected">The credential was not removed (%1$s).</string>
     <string name="transaction_detail_title">Transaction detail</string>
     <string name="transaction_detail_owner_source">%1$s · %2$s</string>
     <string name="transaction_merchant">Merchant</string>

@@ -1,5 +1,8 @@
 package com.sats21m.vogelvault.ui
 
+import android.content.Context
+import androidx.annotation.StringRes
+import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
@@ -90,19 +93,35 @@ internal suspend fun <T> awaitTodoDeleteFeedback(
     }
 }
 
+internal data class CredentialFailureMessage(
+    @StringRes val resourceId: Int,
+    val formatArgument: String? = null,
+) {
+    fun resolve(context: Context): String =
+        formatArgument?.let { context.getString(resourceId, it) } ?: context.getString(resourceId)
+}
+
 /** Why storing the write credential failed, one distinct cause at a time. */
-internal fun credentialSaveFailureMessage(error: Throwable): String = when (error) {
-    is IllegalArgumentException -> "Enter the sync credential before saving"
-    is IOException -> "Encrypted storage refused the credential, so nothing was saved"
-    is IllegalStateException -> "The credential was written but could not be read back"
-    else -> "The credential was not saved (${error.javaClass.simpleName})"
+internal fun credentialSaveFailureMessage(error: Throwable): CredentialFailureMessage = when (error) {
+    is IllegalArgumentException -> CredentialFailureMessage(R.string.write_credential_blank)
+    is IOException -> CredentialFailureMessage(R.string.convex_sync_token_save_failed)
+    is IllegalStateException -> CredentialFailureMessage(R.string.write_credential_save_readback_failed)
+    else ->
+        CredentialFailureMessage(
+            R.string.write_credential_save_unexpected,
+            error.javaClass.simpleName,
+        )
 }
 
 /** Why removing the write credential failed, without exposing stored content. */
-internal fun credentialRemovalFailureMessage(error: Throwable): String = when (error) {
-    is IOException -> "Encrypted storage refused to remove the credential"
-    is IllegalStateException -> "The credential was removed but remained readable"
-    else -> "The credential was not removed (${error.javaClass.simpleName})"
+internal fun credentialRemovalFailureMessage(error: Throwable): CredentialFailureMessage = when (error) {
+    is IOException -> CredentialFailureMessage(R.string.convex_sync_token_remove_failed)
+    is IllegalStateException -> CredentialFailureMessage(R.string.write_credential_remove_readback_failed)
+    else ->
+        CredentialFailureMessage(
+            R.string.write_credential_remove_unexpected,
+            error.javaClass.simpleName,
+        )
 }
 
 /**

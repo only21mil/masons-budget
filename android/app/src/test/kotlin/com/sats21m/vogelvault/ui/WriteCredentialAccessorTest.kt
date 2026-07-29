@@ -3,11 +3,14 @@ package com.sats21m.vogelvault.ui
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
@@ -56,8 +59,8 @@ class WriteCredentialAccessorTest {
     @Test
     fun `settings and today save through the same verified application accessor`() {
         showSettings()
-        compose.onNodeWithText("Convex sync token").performTextInput("settings-token")
-        compose.onNodeWithText("Save write credential").performClick()
+        compose.onNodeWithText("Write credential").performTextInput("settings-token")
+        compose.onNodeWithText("Save securely").performClick()
         settle()
 
         application.forgetCredential()
@@ -74,11 +77,42 @@ class WriteCredentialAccessorTest {
     }
 
     @Test
+    fun `settings destination includes credential panel wired to application accessor`() {
+        showSettingsDestination()
+        compose
+            .onNode(hasScrollAction())
+            .performScrollToNode(hasText("Write credential"))
+        compose
+            .onNodeWithText("Write credential")
+            .performTextInput("settings-destination-token")
+        compose.onNodeWithText("Save securely").performScrollTo().performClick()
+        settle()
+
+        assertEquals(
+            1,
+            application.verifiedSaveCalls,
+            "The Settings destination did not cross VaultApplication.saveConvexWriteCredential",
+        )
+        compose
+            .onNodeWithText("A write credential is stored securely on this device.")
+            .performScrollTo()
+            .fetchSemanticsNode()
+        assertEquals(
+            0,
+            compose
+                .onAllNodesWithText("settings-destination-token")
+                .fetchSemanticsNodes()
+                .size,
+            "The credential value reached rendered UI after Save",
+        )
+    }
+
+    @Test
     fun `settings removes through the application accessor`() {
         application.markCredentialStored()
         showSettings()
 
-        compose.onNodeWithText("Remove stored sync token").performClick()
+        compose.onNodeWithText("Remove").performClick()
         settle()
 
         assertEquals(1, application.verifiedRemovalCalls)
@@ -90,18 +124,18 @@ class WriteCredentialAccessorTest {
         val failures =
             listOf(
                 IOException("storage-secret-detail") to
-                    "Encrypted storage refused the credential, so nothing was saved",
+                    "The sync token could not be stored securely. Writes remain unconfigured.",
                 IllegalStateException("readback-secret-detail") to
-                    "The credential was written but could not be read back",
+                    "The credential was written but could not be read back.",
                 RuntimeException("unexpected-secret-detail") to
-                    "The credential was not saved (RuntimeException)",
+                    "The credential was not saved (RuntimeException).",
             )
 
         failures.forEachIndexed { index, (failure, expectedMessage) ->
             application.nextSaveFailure = failure
             showSettings()
-            compose.onNodeWithText("Convex sync token").performTextInput("token-$index")
-            compose.onNodeWithText("Save write credential").performClick()
+            compose.onNodeWithText("Write credential").performTextInput("token-$index")
+            compose.onNodeWithText("Save securely").performClick()
             settle()
 
             compose.onNodeWithText(expectedMessage).fetchSemanticsNode()
@@ -118,6 +152,20 @@ class WriteCredentialAccessorTest {
             activityController.get().setContent {
                 VogelVaultTheme {
                     SyncTokenConfiguration()
+                }
+            }
+        }
+        settle()
+    }
+
+    private fun showSettingsDestination() {
+        compose.runOnUiThread {
+            activityController.get().setContent {
+                VogelVaultTheme {
+                    ScreenHost(
+                        destination = Destination.SETTINGS,
+                        state = VaultUiState.of(FamilyMember.VICTOR, Destination.SETTINGS),
+                    )
                 }
             }
         }
