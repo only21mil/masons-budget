@@ -93,12 +93,6 @@ env:
   # of what is available, whereas a floating version turns up months later as an
   # unexplained compile error. Take the highest GM from that table.
   XCODE_VERSION: '26.6'
-  # Linux builds this exact release from its checksummed source archive. The
-  # Homebrew formula is macOS-only, despite Homebrew itself supporting Linux.
-  # Pinning makes a generator release an explicit reviewable change instead of
-  # letting a formula update rewrite the committed project unexpectedly.
-  XCODEGEN_VERSION: '2.46.0'
-  XCODEGEN_SHA256: c83c7bd70255b0ddf4116dadce16bdf0e5939165b43a544e124de294ec84aa27
   # brew's auto-update pulls a few hundred megabytes and a minute of wall clock
   # before it installs anything, and this runner is billed by the minute.
   HOMEBREW_NO_AUTO_UPDATE: 1
@@ -233,7 +227,7 @@ jobs:
 
           match_status=0
           grep -qE \
-            '^(MasonsBudget/|Package\.swift$|Tests/|shared/domain/convex-wire-golden-provenance\.json$|shared/domain/fixtures/convex-wire-golden/|\.github/workflows/swift\.yml$)' \
+            '^(MasonsBudget/|Package\.swift$|Tests/|shared/domain/convex-wire-golden-provenance\.json$|shared/domain/fixtures/convex-wire-golden/|scripts/regenerate-xcode-project\.sh$|\.github/workflows/swift\.yml$)' \
             <<< "$files" || match_status=$?
 
           if [ "$match_status" -eq 0 ]; then
@@ -264,45 +258,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # ubuntu-latest already carries Swift. XcodeGen's Homebrew formula is
-      # macOS-only, but the upstream Swift package builds and runs on Linux.
-      - name: Install pinned XcodeGen
-        run: |
-          set -euo pipefail
-          ARCHIVE="$RUNNER_TEMP/xcodegen.tar.gz"
-          SOURCE_DIR="$RUNNER_TEMP/xcodegen-source"
-          curl --fail --silent --show-error --location --retry 3 \
-            -o "$ARCHIVE" \
-            "https://github.com/yonaskolb/XcodeGen/archive/refs/tags/${XCODEGEN_VERSION}.tar.gz"
-          echo "${XCODEGEN_SHA256}  ${ARCHIVE}" | sha256sum --check --strict -
-          mkdir -p "$SOURCE_DIR"
-          tar xzf "$ARCHIVE" -C "$SOURCE_DIR" --strip-components=1
-          swift build \
-            --package-path "$SOURCE_DIR" \
-            --configuration release \
-            --product xcodegen
-          echo "$SOURCE_DIR/.build/release" >> "$GITHUB_PATH"
-
       # This is deliberately a prerequisite of the billed macOS job. A stale
-      # committed project fails here before any 10x runner starts.
+      # committed project fails here before the self-hosted Mac starts. The same
+      # script fixes drift on Linux or macOS and bootstraps the checksummed,
+      # pinned XcodeGen release, so this failure never requires Mac ownership.
       - name: Require the generated project to be committed
-        working-directory: MasonsBudget
-        run: |
-          set -euo pipefail
-          # XcodeGen's Linux build cannot replace an existing workspace bundle,
-          # so move the committed output aside and generate a clean one. Git's
-          # index still provides the comparison baseline.
-          mv MasonsBudget.xcodeproj "$RUNNER_TEMP/committed-MasonsBudget.xcodeproj"
-          xcodegen generate --spec project.yml --quiet
-          UNTRACKED_PROJECT_FILES=$(git ls-files --others --exclude-standard -- MasonsBudget.xcodeproj)
-          if git diff --quiet --exit-code -- MasonsBudget.xcodeproj && [ -z "$UNTRACKED_PROJECT_FILES" ]; then
-            echo "PASS: MasonsBudget.xcodeproj matches project.yml."
-          else
-            git diff --stat -- MasonsBudget.xcodeproj
-            printf '%s\n' "$UNTRACKED_PROJECT_FILES"
-            echo "FAIL: MasonsBudget.xcodeproj is stale. Run 'cd MasonsBudget && xcodegen generate --spec project.yml' and commit the result."
-            exit 1
-          fi
+        run: scripts/regenerate-xcode-project.sh --check
 
   swift:
     name: Build and test the Apple client
@@ -368,45 +329,35 @@ jobs:
       - name: SwiftPM package tests
         run: swift test
 
-      # Ask xcodebuild, not simctl. Run 2 chose the device from `simctl list
-      # devices available`, which reports the shared CoreSimulator device set —
-      # every runtime on the machine, whichever Xcode installed it. The chosen
-      # iPhone booted fine and xcodebuild then refused it, because a device
-      # simctl calls available is not necessarily a destination this Xcode has
-      # an eligible platform for.
+      # A runtime and a device are separate CoreSimulator resources. On the
+      # self-hosted mini, the first xcodebuild destination query returned only
+      # placeholders even though eleven concrete device plists already existed;
+      # the next job saw all eleven after the failure path called simctl. Do not
+      # depend on that cold-start registration side effect.
       #
-      # -showdestinations is the same resolver that will consume the answer, and
-      # it lists only what this scheme can actually run on. Reading the last
-      # eligible iPhone out of it cannot disagree with the test step.
-      #
-      # Hardcoding a model name would rot the first time the image ships a
-      # different device set, and any iPhone runs a unit-test bundle equally well.
-      - name: Choose an iOS simulator
+      # Explicitly reuse or create one named CI device on the newest installed
+      # iOS runtime, choosing an iPhone type whose declared runtime range
+      # includes it. Then ask xcodebuild to verify that exact UDID: simctl owns
+      # provisioning, while xcodebuild remains the authority on scheme
+      # eligibility. The helper names a missing runtime or device type directly.
+      - name: Ensure an iOS simulator
         id: simulator
         working-directory: MasonsBudget
+        env:
+          SIMULATOR_NAME: Vogel Vault CI iPhone
         run: |
           set -euo pipefail
+          UDID=$(/usr/bin/python3 \
+            ../.github/workflows/scripts/ensure_ios_simulator.py \
+            --name "$SIMULATOR_NAME")
           DESTINATIONS=$(xcodebuild -showdestinations \
             -project MasonsBudget.xcodeproj -scheme MasonsBudget 2>&1 || true)
           printf '%s\n' "$DESTINATIONS"
 
-          # Only the eligible block: the ineligible one lists real ids too, and
-          # picking from it is exactly the mistake run 2 made.
-          UDID=$(printf '%s\n' "$DESTINATIONS" \
-            | awk '/Available destinations/{ok=1; next} /Ineligible destinations/{ok=0} ok' \
-            | grep 'platform:iOS Simulator' \
-            | grep -v 'placeholder' \
-            | grep 'name:iPhone' \
-            | tail -1 \
-            | sed -n 's/.*[[:space:]]id:\([^,]*\),.*/\1/p' \
-            | tr -d '[:space:]' || true)
-          # `|| true` above is load-bearing: with pipefail set, a grep that
-          # matches nothing would kill this step outright and the explanatory
-          # error below — the whole point of the step — would never print.
-
-          if [ -z "$UDID" ]; then
-            echo "::error::xcodebuild lists no eligible iPhone simulator destination for this scheme. The destination dump above is the diagnosis; check that the pinned Xcode owns an installed iOS simulator runtime."
-            xcrun simctl list runtimes
+          if ! grep -F "id:$UDID," <<< "$DESTINATIONS" >/dev/null; then
+            echo "::error::The required simulator '$SIMULATOR_NAME' ($UDID) exists in CoreSimulator, but Xcode ${XCODE_VERSION} does not list that exact device as eligible for the MasonsBudget scheme."
+            echo "== Devices =="
+            xcrun simctl list devices
             exit 1
           fi
           echo "Testing on simulator $UDID"
