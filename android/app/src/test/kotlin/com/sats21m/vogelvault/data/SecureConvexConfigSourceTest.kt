@@ -2,6 +2,7 @@ package com.sats21m.vogelvault.data
 
 import android.app.Application
 import android.content.Context
+import android.content.SharedPreferences
 import com.sats21m.vogelvault.buildTimeConvexConfig
 import com.sats21m.vogelvault.initialConvexConfig
 import com.sats21m.vogelvault.recoverRejectedStoredConvexConfig
@@ -133,6 +134,40 @@ class SecureConvexConfigSourceTest {
     }
 
     @Test
+    fun `failed encrypted-store clear cannot escape unauthorized recovery`() {
+        val storedConfig =
+            ConvexConfig(
+                deploymentUrl = "https://example.convex.cloud",
+                readToken = "vv-manual-${UUID.randomUUID()}",
+                remoteReadEnabled = true,
+            )
+        source.update(storedConfig)
+        val failingSource =
+            SecureConvexConfigSource(
+                preferences =
+                    ClearCommitFailingPreferences(
+                        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE),
+                    ),
+                cipher = TestConfigCipher,
+            )
+        val fallback = buildTimeConvexConfig("vv-baked-${UUID.randomUUID()}")
+        val effective = MutableConvexConfigSource(storedConfig)
+
+        assertTrue(
+            recoverRejectedStoredConvexConfig(
+                rejected = storedConfig,
+                stored = failingSource,
+                effective = effective,
+                fallback = fallback,
+            ),
+        )
+
+        assertEquals(fallback.readTokenOrNull(), effective.current().readTokenOrNull())
+        assertEquals(ReadReadiness.READY, effective.current().readiness)
+        assertEquals(storedConfig.readTokenOrNull(), failingSource.current().readTokenOrNull())
+    }
+
+    @Test
     fun `rejected baked token is disabled when no stored credential remains`() {
         val bakedConfig = buildTimeConvexConfig("vv-baked-${UUID.randomUUID()}")
         val effective = MutableConvexConfigSource(bakedConfig)
@@ -211,6 +246,19 @@ class SecureConvexConfigSourceTest {
 
         assertEquals(ReadReadiness.DISABLED, source.current().readiness)
         assertTrue(context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).all.isEmpty())
+    }
+}
+
+private class ClearCommitFailingPreferences(
+    private val delegate: SharedPreferences,
+) : SharedPreferences by delegate {
+    override fun edit(): SharedPreferences.Editor {
+        val delegateEditor = delegate.edit()
+        return object : SharedPreferences.Editor by delegateEditor {
+            override fun clear(): SharedPreferences.Editor = this
+
+            override fun commit(): Boolean = false
+        }
     }
 }
 

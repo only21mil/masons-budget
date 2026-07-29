@@ -162,6 +162,37 @@ class VaultCacheDaoTest {
             assertEquals(2, cached.size)
             assertEquals(listOf(FamilyMember.MASON, FamilyMember.VICTOR), cached.map { it.owner })
             assertEquals(Long.MAX_VALUE, cached.single { it.owner == FamilyMember.VICTOR }.sats)
+            assertFalse(
+                cached.single { it.owner == FamilyMember.VICTOR }.fiatAvailable,
+                "positive sats plus legacy zero must remain unavailable in Room",
+            )
+        }
+
+    @Test
+    fun `btc cache stores explicit rounded zero availability and provenance`() =
+        runBlocking {
+            val key = CacheQueryKeys.btcAccounts(viewer = "victor", scope = "netWorth")
+            dao.replaceBtcAccounts(
+                queryKey = key,
+                rows = listOf(
+                    account(owner = FamilyMember.VICTOR, sats = 1L).copy(
+                        fiatAvailable = true,
+                        fiatPriceCents = 6_000_000L,
+                        fiatQuotedAt = "2026-07-29T12:00:00Z",
+                        fiatSource = "fixture quote",
+                        fiatConfidence = "verified",
+                    ),
+                ),
+                fetchedAtMs = 500L,
+                expectedRowCount = 1L,
+            )
+
+            val cached = dao.observeBtcAccounts(key).first().single()
+            assertTrue(cached.fiatAvailable)
+            assertEquals(0L, cached.fiatCents)
+            assertEquals(6_000_000L, cached.fiatPriceCents)
+            assertEquals("fixture quote", cached.fiatSource)
+            assertEquals("verified", cached.fiatConfidence)
         }
 
     private fun transaction(

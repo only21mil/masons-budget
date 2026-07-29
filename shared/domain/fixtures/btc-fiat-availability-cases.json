@@ -1,0 +1,59 @@
+{
+  "cases": [
+    {
+      "name": "production positive sats legacy zero",
+      "input": {
+        "btc": "5.41782856",
+        "fiat": "0"
+      },
+      "expected": {
+        "sats": "541782856",
+        "fiatAvailable": false,
+        "fiatCents": null
+      }
+    },
+    {
+      "name": "zero sats is a legitimate zero",
+      "input": {
+        "btc": "0",
+        "fiat": "0"
+      },
+      "expected": {
+        "sats": "0",
+        "fiatAvailable": true,
+        "fiatCents": "0"
+      }
+    },
+    {
+      "name": "explicit tiny balance rounds to zero cents",
+      "input": {
+        "btc": "0.00000001",
+        "fiat": "0",
+        "fiatValuation": {
+          "cents": "0",
+          "priceCents": "6000000",
+          "quotedAt": "2026-07-29T12:00:00Z",
+          "source": "fixture quote",
+          "confidence": "verified"
+        }
+      },
+      "expected": {
+        "sats": "1",
+        "fiatAvailable": true,
+        "fiatCents": "0"
+      }
+    },
+    {
+      "name": "positive legacy fiat remains available without invented evidence",
+      "input": {
+        "btc": "1",
+        "fiat": "60000"
+      },
+      "expected": {
+        "sats": "100000000",
+        "fiatAvailable": true,
+        "fiatCents": "6000000"
+      }
+    }
+  ]
+}

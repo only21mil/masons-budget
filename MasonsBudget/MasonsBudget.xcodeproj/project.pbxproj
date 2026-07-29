@@ -165,6 +165,7 @@
 		9A84F97A42F9A7ED4CC5DE86 /* Hairline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 598608F085B0A81286803F0F /* Hairline.swift */; };
 		9A9E95488C6473659AC40BF2 /* LegacyBlobCompatibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 196CEA0279F5A6BEA5F39E8F /* LegacyBlobCompatibilityTests.swift */; };
 		9CD68674D5B5B73B017EFC08 /* write-payload-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = 162F7C9725775ADC39BF6B0C /* write-payload-cases.json */; };
+		9F25069AA8D8C74899777A13 /* btc-fiat-availability-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = 25CE52C2D21FE78FC3334E5D /* btc-fiat-availability-cases.json */; };
 		A0353F71D2174CC8D429E7B9 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5AFC3C821C582B4F9E705206 /* Preview Assets.xcassets */; };
 		A08D8C317D5AF5D62EF1C62D /* TaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4B3C65C1FD9F1E13141EE7C /* TaskDetailView.swift */; };
 		A0E35125250CFD1858931070 /* CSVImportServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 142594BDFC0E0FF626E0E4D7 /* CSVImportServiceTests.swift */; };
@@ -264,6 +265,7 @@
 		1ADB184F47423CA415614B24 /* RetirementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetirementView.swift; sourceTree = "<group>"; };
 		1F721A6FC17530024B35A0C6 /* StockPriceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockPriceService.swift; sourceTree = "<group>"; };
 		2266CE759B0FEC971BEC064D /* MasonsBudgetMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MasonsBudgetMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		25CE52C2D21FE78FC3334E5D /* btc-fiat-availability-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "btc-fiat-availability-cases.json"; sourceTree = "<group>"; };
 		273950057898C808021DD99E /* BTCBillPayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BTCBillPayView.swift; sourceTree = "<group>"; };
 		28C9AC48788F6BD75F27ADC1 /* Transaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transaction.swift; sourceTree = "<group>"; };
 		2A36EDB41C72B5F230F05789 /* AreaTodoListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AreaTodoListView.swift; sourceTree = "<group>"; };
@@ -464,6 +466,7 @@
 		8BEF4D98799897F4A69F6A76 /* fixtures */ = {
 			isa = PBXGroup;
 			children = (
+				25CE52C2D21FE78FC3334E5D /* btc-fiat-availability-cases.json */,
 				EF30B8FE8B7986AB2D87D572 /* convex-int64-wire-cases.json */,
 				1A5243A1FDF7F650A8DB6182 /* json-number-money-cases.json */,
 				C2099C401266495C974A62BC /* month-cases.json */,
@@ -704,6 +707,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A9879A70BEBAAD08D3FA3628 /* README.md in Resources */,
+				9F25069AA8D8C74899777A13 /* btc-fiat-availability-cases.json in Resources */,
 				6132ABC2B1A85E41529AC2D6 /* convex-int64-wire-cases.json in Resources */,
 				17976960E05ECF3D6C23827A /* getBudgetDocument.convex_encoded_json.json in Resources */,
 				AD235E37C0A8962E20CFA401 /* getBudgetDocument.json.json in Resources */,
