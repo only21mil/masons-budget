@@ -112,7 +112,13 @@ class SecureConvexConfigSourceTest {
         source.update(storedConfig)
         val effective = MutableConvexConfigSource(storedConfig)
 
-        assertTrue(
+        // The return value answers "is there a usable credential to retry with?",
+        // not "was the rejection handled" -- CachedRowDataSource feeds it straight
+        // into retryWithFallback. A release build has no baked token, so there is
+        // nothing to retry and a second load would be wasted. The recovery itself
+        // still happens: both sources below must end up DISABLED rather than
+        // holding a credential the server has already rejected.
+        assertFalse(
             recoverRejectedStoredConvexConfig(
                 rejected = storedConfig,
                 stored = source,

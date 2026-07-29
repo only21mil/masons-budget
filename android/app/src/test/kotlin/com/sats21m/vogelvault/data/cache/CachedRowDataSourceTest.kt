@@ -72,7 +72,7 @@ class CachedRowDataSourceTest {
                             ),
                         )
                 }
-            val source = CachedRowDataSource(remote, dao) { 100L }
+            val source = CachedRowDataSource(remote, dao, clock = { 100L })
             val viewer = FamilyMember.VICTOR
             val key = CacheQueryKeys.transactions(viewer.key)
 
@@ -207,7 +207,7 @@ class CachedRowDataSourceTest {
     fun `offline read serves the authorized Room snapshot clearly marked stale`() =
         runBlocking {
             val remote = FakeRows()
-            val source = CachedRowDataSource(remote, dao) { 100L }
+            val source = CachedRowDataSource(remote, dao, clock = { 100L })
             val viewer = FamilyMember.VICTOR
             remote.transactions = ConvexResult.Ok(RowSnapshot(listOf(transaction("cached", 42L)), true))
             source.load(viewer)
@@ -253,7 +253,7 @@ class CachedRowDataSourceTest {
                     .databaseBuilder(context, VaultDatabase::class.java, databaseName)
                     .build()
             try {
-                CachedRowDataSource(remote, oldDatabase.cacheDao()) { 100L }
+                CachedRowDataSource(remote, oldDatabase.cacheDao(), clock = { 100L })
                     .load(FamilyMember.VICTOR)
 
                 val columns =
@@ -304,7 +304,7 @@ class CachedRowDataSourceTest {
         runBlocking {
             var now = 100L
             val remote = FakeRows()
-            val source = CachedRowDataSource(remote, dao) { now }
+            val source = CachedRowDataSource(remote, dao, clock = { now })
             val viewer = FamilyMember.VICTOR
             val key = CacheQueryKeys.transactions(viewer.key)
             remote.transactions = ConvexResult.Ok(RowSnapshot(listOf(transaction("old", 1L)), true))
