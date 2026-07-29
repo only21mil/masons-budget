@@ -118,8 +118,14 @@ enum AppWritebackConfig {
         return legacyToken
     }
 
+    /// Presence-only view of the credential for UI status. Callers that do not
+    /// need to authenticate must not retain or render `deviceToken`.
+    static var hasDeviceToken: Bool {
+        !deviceToken.isEmpty
+    }
+
     static var isConfigured: Bool {
-        baseURL != nil && !deviceID.isEmpty && !deviceToken.isEmpty
+        baseURL != nil && !deviceID.isEmpty && hasDeviceToken
     }
 
     static var bundledPairingURLs: [String] {
@@ -154,8 +160,11 @@ enum AppWritebackConfig {
     static func save(baseURL: String, deviceID: String, deviceToken: String) {
         UserDefaults.standard.set(baseURL.trimmingCharacters(in: .whitespacesAndNewlines), forKey: baseURLKey)
         UserDefaults.standard.set(deviceID.trimmingCharacters(in: .whitespacesAndNewlines), forKey: deviceIDKey)
-        AppWritebackDeviceTokenStore.save(deviceToken.trimmingCharacters(in: .whitespacesAndNewlines))
-        UserDefaults.standard.removeObject(forKey: deviceTokenKey)
+        let trimmedDeviceToken = deviceToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedDeviceToken.isEmpty {
+            AppWritebackDeviceTokenStore.save(trimmedDeviceToken)
+            UserDefaults.standard.removeObject(forKey: deviceTokenKey)
+        }
     }
 
     static func clear() {

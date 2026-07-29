@@ -154,6 +154,7 @@
 		8DDC0B51C872A1BE1717A7F1 /* CSVImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52815FF83DEA08F99F7B94B6 /* CSVImportService.swift */; };
 		8DF654AA7A8B2269A569CE26 /* ActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 355DA4D064A09FC72695758B /* ActivityView.swift */; };
 		8FA1F5019016A229F4F7FE7B /* IncomingEventsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DA02D07A5F77E55C69B00DF /* IncomingEventsSection.swift */; };
+		90E14E434FF58A97D552458E /* AppWritebackConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 661693167D7791B43DA9AA2D /* AppWritebackConfigTests.swift */; };
 		92289BEED97E0A6FA4B40D68 /* ScreenHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59DD3C8ADB2447DA2F2ABEF8 /* ScreenHeader.swift */; };
 		922DB4C9AB5F88B7E87EC756 /* listBtcBillPays.json.json in Resources */ = {isa = PBXBuildFile; fileRef = 5D35827B5A5FFF969AAD61BE /* listBtcBillPays.json.json */; };
 		92F0489AD93C51D921395285 /* TaskUndoBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9217F015BEE5502E0937BDC3 /* TaskUndoBanner.swift */; };
@@ -300,6 +301,7 @@
 		5D35827B5A5FFF969AAD61BE /* listBtcBillPays.json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = listBtcBillPays.json.json; sourceTree = "<group>"; };
 		5DC543643B1F2899DDB38FE5 /* BTCBillPay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BTCBillPay.swift; sourceTree = "<group>"; };
 		5EAD4E4602D4D4566CD78E35 /* AmountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmountView.swift; sourceTree = "<group>"; };
+		661693167D7791B43DA9AA2D /* AppWritebackConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppWritebackConfigTests.swift; sourceTree = "<group>"; };
 		69F495FB3EBA9A3F6B589C2E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6D0182EA2E13DE22F30E4E71 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		6D42E3A9B8292524595DB757 /* BTCPriceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BTCPriceService.swift; sourceTree = "<group>"; };
@@ -415,6 +417,7 @@
 		713CA87802FA5D0C380DF86E /* MasonsBudgetTests */ = {
 			isa = PBXGroup;
 			children = (
+				661693167D7791B43DA9AA2D /* AppWritebackConfigTests.swift */,
 				39F9FEE550CB799FCADD40AF /* BudgetMonthScopingTests.swift */,
 				08E8E973EE7F78352B998034 /* ConvexConfigTests.swift */,
 				3250E7396C07FAB87774D194 /* ConvexInt64WireTests.swift */,
@@ -904,6 +907,7 @@
 				0F8ED58D169C39B1704B92F1 /* AmountView.swift in Sources */,
 				064EE72180F8557196303AF4 /* AppTheme.swift in Sources */,
 				353D0C4ED3F4B00D713E03C8 /* AppWriteSyncService.swift in Sources */,
+				90E14E434FF58A97D552458E /* AppWritebackConfigTests.swift in Sources */,
 				72BB45F04434B3A718FE0904 /* AreaTodoListView.swift in Sources */,
 				6D9F88BEA980C5F18C00E5D5 /* BTCAccount.swift in Sources */,
 				ADF07F1500B9EBF914125718 /* BTCAccountDetailView.swift in Sources */,
