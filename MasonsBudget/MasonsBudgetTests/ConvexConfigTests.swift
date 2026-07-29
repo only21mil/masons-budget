@@ -33,40 +33,100 @@ final class ConvexConfigTests: XCTestCase {
         super.tearDown()
     }
 
-    func testSetSyncTokenTrimsAndStoresRuntimeCredentialOnlyInKeychain() {
-        XCTAssertTrue(tokenStore.set("  runtime-token\n"))
+    // These exercise MigratingKeychainTokenStore against an in-memory double.
+    //
+    // They deliberately do NOT touch the real Keychain: MasonsBudgetTests is a
+    // bundle.unit-test target with no host application, so it has no keychain
+    // access group and SecItemAdd always fails. A test written against the real
+    // Keychain here does not merely fail — a test asserting a credential is
+    // ABSENT passes trivially, which is worse, because it looks like proof and
+    // is not. The migration and clearing logic is what has bugs in it; the
+    // Security-framework call is a one-liner covered by the app itself.
 
-        XCTAssertEqual(tokenStore.token, "runtime-token")
-        XCTAssertEqual(keychain.read(), "runtime-token")
-        XCTAssertNil(userDefaults.object(forKey: syncTokenKey))
+    private func makeStore(
+        legacyValue: String? = nil,
+        double: InMemoryCredentialStore = InMemoryCredentialStore(),
+    ) -> (MigratingKeychainTokenStore, InMemoryCredentialStore, UserDefaults) {
+        let suite = UserDefaults(suiteName: "sync-token-\(UUID().uuidString)")!
+        if let legacyValue { suite.set(legacyValue, forKey: "convex_sync_token") }
+        let store = MigratingKeychainTokenStore(
+            userDefaults: suite,
+            legacyKey: "convex_sync_token",
+            keychain: double,
+        )
+        return (store, double, suite)
     }
 
-    func testReadingLegacySyncTokenMigratesItToKeychainAndRemovesCleartext() {
-        userDefaults.set("  existing-token\n", forKey: syncTokenKey)
+    func testSetSyncTokenTrimsAndStoresOnlyInTheCredentialStore() {
+        let (store, double, suite) = makeStore()
 
-        XCTAssertEqual(tokenStore.token, "existing-token")
-        XCTAssertEqual(keychain.read(), "existing-token")
-        XCTAssertNil(userDefaults.object(forKey: syncTokenKey))
+        XCTAssertTrue(store.set("  vv-sync-abc  "))
+
+        XCTAssertEqual(double.stored, "vv-sync-abc")
+        XCTAssertNil(suite.string(forKey: "convex_sync_token"))
+        XCTAssertEqual(store.token, "vv-sync-abc")
+        XCTAssertTrue(store.hasToken)
     }
 
     func testSetSyncTokenWithOnlyWhitespaceClearsStoredCredential() {
-        userDefaults.set("existing-token", forKey: syncTokenKey)
+        let (store, double, _) = makeStore()
+        XCTAssertTrue(store.set("vv-sync-abc"))
 
-        XCTAssertTrue(tokenStore.set(" \n\t "))
+        XCTAssertTrue(store.set("   "))
 
-        XCTAssertTrue(tokenStore.token.isEmpty)
-        XCTAssertNil(keychain.read())
-        XCTAssertNil(userDefaults.object(forKey: syncTokenKey))
+        XCTAssertNil(double.stored)
+        XCTAssertFalse(store.hasToken)
     }
 
-    func testRemoveSyncTokenClearsKeychainAndLegacyCredential() {
-        XCTAssertTrue(keychain.save("keychain-token"))
-        userDefaults.set("legacy-token", forKey: syncTokenKey)
+    func testRemoveSyncTokenClearsBothTheStoreAndTheLegacyCleartextCopy() {
+        let (store, double, suite) = makeStore(legacyValue: "vv-legacy")
 
-        XCTAssertTrue(tokenStore.remove())
+        XCTAssertTrue(store.remove())
 
-        XCTAssertTrue(tokenStore.token.isEmpty)
-        XCTAssertNil(keychain.read())
-        XCTAssertNil(userDefaults.object(forKey: syncTokenKey))
+        XCTAssertNil(double.stored)
+        XCTAssertNil(suite.string(forKey: "convex_sync_token"))
+        XCTAssertFalse(store.hasToken)
+    }
+
+    func testReadingMigratesTheLegacyCleartextTokenThenDeletesIt() {
+        let (store, double, suite) = makeStore(legacyValue: "vv-legacy")
+
+        XCTAssertEqual(store.token, "vv-legacy")
+
+        XCTAssertEqual(double.stored, "vv-legacy", "the token must land in the credential store")
+        XCTAssertNil(suite.string(forKey: "convex_sync_token"), "the cleartext copy must be gone")
+    }
+
+    func testAFailedStoreWriteKeepsTheOnlySurvivingCopy() {
+        // If the Keychain is unavailable, destroying the cleartext copy would
+        // lose the credential outright. Migration must retry later instead.
+        let refusing = InMemoryCredentialStore()
+        refusing.refuseWrites = true
+        let (store, _, suite) = makeStore(legacyValue: "vv-legacy", double: refusing)
+
+        XCTAssertEqual(store.token, "vv-legacy")
+        XCTAssertEqual(suite.string(forKey: "convex_sync_token"), "vv-legacy")
+    }
+}
+
+/// An in-memory stand-in for the Keychain, so the migration logic is testable
+/// in a unit-test bundle that has no keychain access group.
+final class InMemoryCredentialStore: CredentialStoring {
+    private(set) var stored: String?
+    var refuseWrites = false
+
+    func read() -> String? { stored }
+
+    @discardableResult
+    func save(_ token: String) -> Bool {
+        guard !refuseWrites else { return false }
+        stored = token
+        return true
+    }
+
+    @discardableResult
+    func clear() -> Bool {
+        stored = nil
+        return true
     }
 }

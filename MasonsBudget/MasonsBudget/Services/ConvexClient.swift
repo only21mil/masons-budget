@@ -101,10 +101,27 @@ enum ConvexConfig {
     }
 }
 
+/// The seam that makes credential storage testable.
+///
+/// `MasonsBudgetTests` is a `bundle.unit-test` target with no host application,
+/// so it has no keychain access group and every `SecItemAdd` fails with
+/// `errSecMissingEntitlement`. Tests that talk to the real Keychain therefore
+/// cannot pass — and, worse, a test asserting a credential is ABSENT passes
+/// trivially there, proving nothing. Injecting the store lets the tests assert
+/// the migration and clearing LOGIC against an in-memory double, which is the
+/// part that actually has bugs in it.
+protocol CredentialStoring {
+    func read() -> String?
+    @discardableResult func save(_ token: String) -> Bool
+    @discardableResult func clear() -> Bool
+}
+
+extension KeychainCredentialStore: CredentialStoring {}
+
 struct MigratingKeychainTokenStore {
     let userDefaults: UserDefaults
     let legacyKey: String
-    let keychain: KeychainCredentialStore
+    let keychain: CredentialStoring
 
     var token: String {
         if let storedToken = keychain.read(), !storedToken.isEmpty {
