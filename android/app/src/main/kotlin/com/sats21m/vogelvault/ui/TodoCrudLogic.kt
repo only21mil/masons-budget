@@ -15,6 +15,21 @@ internal data class PendingTodoDeletion(
     fun canUndo(nowMillis: Long): Boolean = nowMillis < expiresAtMillis
 }
 
+/**
+ * One order for the list, shared by the initial read and every optimistic edit.
+ *
+ * Two comparators would let a row jump position purely because it was the one
+ * just touched, which reads as data loss.
+ */
+internal val TODO_ORDER: Comparator<TodoItem> =
+    compareBy<TodoItem> { it.done }.thenByDescending { it.flagged }.thenBy { it.title }
+
+/**
+ * Everything due today or earlier, completed included.
+ *
+ * Deliberately wider than [todosDueToday], which the read-only surfaces use:
+ * this screen has to show a completed task so it can be reopened.
+ */
 internal fun todosForToday(
     todos: List<TodoItem>,
     viewer: FamilyMember,
@@ -22,7 +37,7 @@ internal fun todosForToday(
 ): List<TodoItem> =
     todos.visibleTo(viewer)
         .filter { todo -> todo.due?.let { it <= today } == true }
-        .sortedWith(compareBy<TodoItem> { it.done }.thenByDescending { it.flagged }.thenBy { it.title })
+        .sortedWith(TODO_ORDER)
 
 internal fun newTodo(
     title: String,

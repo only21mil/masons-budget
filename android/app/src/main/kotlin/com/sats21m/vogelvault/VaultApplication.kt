@@ -72,29 +72,40 @@ class VaultApplication : Application() {
         )
     }
 
-    private val convexSyncTokenSource: SecureConvexSyncTokenSource by lazy(
-        LazyThreadSafetyMode.SYNCHRONIZED,
-    ) {
-        SecureConvexSyncTokenSource(this)
-    }
-
+    /**
+     * Todo writes ride the one shared mutation transport.
+     *
+     * A second client with its own credential store was the original shape here,
+     * and it would have been invisible: a token saved from the Today screen would
+     * have landed in a file [convexMutationClient] never reads, so the save would
+     * look successful while every write stayed unauthorized.
+     */
     internal val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        TodoMutationGateway(
-            ConvexMutationClient(
-                configSource = convexConfigSource,
-                syncTokenSource = convexSyncTokenSource,
-            ),
-        )
+        TodoMutationGateway(convexMutationClient)
     }
 
-    internal fun hasTodoWriteAccess(): Boolean =
-        convexSyncTokenSource.currentSyncToken() != null
+    /** Whether a write credential exists. The value itself never reaches the UI. */
+    internal fun hasConvexWriteCredential(): Boolean =
+        synchronized(convexConfigLock) {
+            storedConvexConfigSource.hasSyncToken()
+        }
 
-    internal fun saveTodoWriteAccess(token: String): Boolean =
-        runCatching {
-            convexSyncTokenSource.update(token)
-            convexSyncTokenSource.currentSyncToken() != null
-        }.getOrDefault(false)
+    /**
+     * Encrypts and stores a replacement write credential.
+     *
+     * The failure is returned rather than collapsed to false so a screen can say
+     * which problem occurred: a blank entry, storage that refused the commit, or
+     * a value that could not be read back after being written.
+     */
+    internal fun saveConvexWriteCredential(token: String): Result<Unit> =
+        synchronized(convexConfigLock) {
+            runCatching {
+                storedConvexConfigSource.updateSyncToken(token)
+                check(storedConvexConfigSource.hasSyncToken()) {
+                    "the stored write credential could not be read back"
+                }
+            }
+        }
 
     val viewModelFactory: ViewModelProvider.Factory =
         object : ViewModelProvider.Factory {

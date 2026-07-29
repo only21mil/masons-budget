@@ -2,19 +2,75 @@ package com.sats21m.vogelvault.ui
 
 import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexMutationClient
+import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.ConvexValue
 import com.sats21m.vogelvault.domain.TodoItem
+import java.io.IOException
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
+/**
+ * Todo writes over the one shared Convex mutation transport.
+ *
+ * The whole result is handed back rather than a Boolean. "Switched off", "no
+ * deployment", "credential rejected" and "the server refused the row" are four
+ * different problems with four different fixes, and a Boolean turns all of them
+ * into the same shrug.
+ */
 internal class TodoMutationGateway(
     private val client: ConvexMutationClient,
 ) {
-    suspend fun upsert(todo: TodoItem): Boolean =
-        client.mutate(ConvexMutation.UpsertTodo(todo.toMutationJson())).isOk
+    suspend fun upsert(todo: TodoItem): ConvexResult<ConvexValue> =
+        client.mutate(ConvexMutation.UpsertTodo(todo.toMutationJson()))
 
-    suspend fun delete(todoId: String): Boolean =
-        client.mutate(ConvexMutation.DeleteTodo(todoId)).isOk
+    suspend fun delete(todoId: String): ConvexResult<ConvexValue> =
+        client.mutate(ConvexMutation.DeleteTodo(todoId))
+}
+
+/** What the user just tried to do, so a failure can name the action it lost. */
+internal enum class TodoWriteAction(val summary: String) {
+    ADD("Task not added"),
+    UPDATE("Change not saved"),
+    DELETE("Task not deleted"),
+    RESTORE("Task not restored"),
+}
+
+/**
+ * The sentence to show when a todo write did not succeed, null when it did.
+ *
+ * Every [ConvexResult] case gets its own wording. The reason inside
+ * [ConvexResult.Failed] is a string this app authored itself — never server
+ * text, which can carry the household's data into a snackbar.
+ */
+internal fun todoWriteFailureMessage(
+    action: TodoWriteAction,
+    result: ConvexResult<*>,
+): String? = when (result) {
+    is ConvexResult.Ok -> null
+    ConvexResult.Disabled -> "${action.summary}: live sync is switched off"
+    ConvexResult.NotConfigured -> "${action.summary}: no Convex deployment is configured"
+    ConvexResult.Unauthorized -> "${action.summary}: the sync credential is missing or was rejected"
+    ConvexResult.Missing -> "${action.summary}: Convex returned no write result"
+    is ConvexResult.Failed -> "${action.summary} (${result.reason})"
+}
+
+/**
+ * Shown when the process exposes no write transport at all.
+ *
+ * Only a preview or a non-application test host reaches this. It still gets its
+ * own sentence instead of a silent no-op, because a control that quietly does
+ * nothing is the failure this file exists to remove.
+ */
+internal fun todoWriteUnavailableMessage(action: TodoWriteAction): String =
+    "${action.summary}: this build has no write transport"
+
+/** Why storing the write credential failed, one distinct cause at a time. */
+internal fun credentialSaveFailureMessage(error: Throwable): String = when (error) {
+    is IllegalArgumentException -> "Enter the sync credential before saving"
+    is IOException -> "Encrypted storage refused the credential, so nothing was saved"
+    is IllegalStateException -> "The credential was written but could not be read back"
+    else -> "The credential was not saved (${error.javaClass.simpleName})"
 }
 
 /**

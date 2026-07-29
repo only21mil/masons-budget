@@ -38,10 +38,6 @@ class MainActivity : ComponentActivity() {
                     onNavigate = model::navigate,
                     onSwitchProfile = model::switchProfile,
                     onEnableRemoteRows = model::enableRemoteRows,
-                    hasTodoWriteAccess = app::hasTodoWriteAccess,
-                    onSaveTodoWriteAccess = app::saveTodoWriteAccess,
-                    onUpsertTodo = app.todoMutationGateway::upsert,
-                    onDeleteTodo = app.todoMutationGateway::delete,
                     displayUnit = displayUnit,
                     onDisplayUnitChange = { next ->
                         displayUnit = next

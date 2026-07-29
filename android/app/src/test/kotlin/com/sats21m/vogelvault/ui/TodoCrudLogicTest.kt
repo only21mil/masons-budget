@@ -62,6 +62,25 @@ class TodoCrudLogicTest {
     }
 
     @Test
+    fun `one order serves the list, every edit and the undo restore`() {
+        val open = todo(id = "b-open")
+        val flagged = todo(id = "a-flagged").withFlag(true, now)
+        val done = todo(id = "c-done").withCompletion(true, now)
+        val shuffled = listOf(done, open, flagged)
+
+        assertEquals(
+            listOf("a-flagged", "b-open", "c-done"),
+            shuffled.sortedWith(TODO_ORDER).map { it.id },
+        )
+        // The screen re-sorts an edited or restored row with this same comparator,
+        // so nothing jumps position purely because it was the row just touched.
+        assertEquals(
+            todosForToday(shuffled, FamilyMember.VICTOR, "2026-07-29").map { it.id },
+            shuffled.sortedWith(TODO_ORDER).map { it.id },
+        )
+    }
+
+    @Test
     fun `delete undo expires at exactly the Apple six second boundary`() {
         val pending = PendingTodoDeletion(todo(), expiresAtMillis = 7_000L)
 

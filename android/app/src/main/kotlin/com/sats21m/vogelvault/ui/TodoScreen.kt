@@ -2,7 +2,6 @@ package com.sats21m.vogelvault.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -45,14 +44,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
-import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.ConvexValue
+import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.TodoItem
+import com.sats21m.vogelvault.ui.components.StateBlock
 import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultBlack
 import com.sats21m.vogelvault.ui.theme.VaultCream
-import com.sats21m.vogelvault.ui.theme.VaultLine
+import com.sats21m.vogelvault.ui.theme.VaultNegative
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import com.sats21m.vogelvault.ui.theme.VaultSurface
 import com.sats21m.vogelvault.ui.theme.VaultTextDim
@@ -63,22 +65,46 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/**
+ * The normaliser fills `project` with "Inbox" for an unfiled todo rather than
+ * leaving it unset, so this screen treats that value as "not filed". See
+ * DOMAIN_ADOPTION.md in this app's package root; the Linux client's Tasks page
+ * carries the identical rule.
+ */
+private const val UNFILED_TODO_PROJECT = "Inbox"
+
+/** Where a todo is filed: its project, else its area, else nowhere. */
+private fun filing(todo: TodoItem): String? =
+    todo.project?.takeIf { it != UNFILED_TODO_PROJECT } ?: todo.area
+
+/**
+ * Today: the one editable list in the app.
+ *
+ * The screen reaches the write transport itself, exactly as AddTransactionSheet
+ * does, and no suspend write callback is threaded through MainActivity, VaultApp
+ * or ScreenHost. Every failure names its own cause, because "nothing happened"
+ * with no reason is indistinguishable from a broken feature.
+ */
 @Composable
 internal fun TodoScreen(
-    todos: List<TodoItem>,
-    viewer: FamilyMember,
-    nowMillis: Long,
-    hasWriteAccess: () -> Boolean,
-    saveWriteCredential: (String) -> Boolean,
-    upsert: suspend (TodoItem) -> Boolean,
-    delete: suspend (String) -> Boolean,
+    state: VaultUiState,
     modifier: Modifier = Modifier,
 ) {
-    val today = remember(nowMillis) {
-        Instant.ofEpochMilli(nowMillis).atZone(ZoneId.systemDefault()).toLocalDate().toString()
+    val application = LocalContext.current.applicationContext as? VaultApplication
+    // One process-scoped client, sharing the one encrypted credential store with
+    // Settings and every other write surface.
+    val gateway = remember(application) { application?.todoMutationGateway }
+
+    val viewer = state.activeProfile
+    val slice = state.data.todos
+    val todos = slice.value
+    val today = remember(state.now) {
+        Instant.ofEpochMilli(state.now).atZone(ZoneId.systemDefault()).toLocalDate().toString()
     }
     var localTodos by remember(viewer) { mutableStateOf(todosForToday(todos, viewer, today)) }
-    var writeReady by remember { mutableStateOf(hasWriteAccess()) }
+    var credentialStored by remember(application) {
+        mutableStateOf(application?.hasConvexWriteCredential() == true)
+    }
     var draft by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<TodoItem?>(null) }
     var editTitle by remember { mutableStateOf("") }
@@ -88,26 +114,37 @@ internal fun TodoScreen(
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val writeFailedMessage = stringResource(R.string.todo_write_failed)
     val undoLabel = stringResource(R.string.todo_undo)
 
     LaunchedEffect(todos, viewer, today) {
         localTodos = todosForToday(todos, viewer, today)
     }
 
-    fun reportFailure() {
-        scope.launch { snackbar.showSnackbar(message = writeFailedMessage) }
+    fun report(message: String) {
+        scope.launch { snackbar.showSnackbar(message = message) }
     }
 
-    fun mutate(todo: TodoItem, action: suspend () -> Boolean) {
+    /** Runs one write and returns the sentence to show, or null on success. */
+    suspend fun write(
+        action: TodoWriteAction,
+        call: suspend (TodoMutationGateway) -> ConvexResult<ConvexValue>,
+    ): String? {
+        val client = gateway ?: return todoWriteUnavailableMessage(action)
+        return todoWriteFailureMessage(action, call(client))
+    }
+
+    fun mutate(
+        todo: TodoItem,
+        action: TodoWriteAction,
+    ) {
         if (todo.id in busyIds) return
         busyIds = busyIds + todo.id
         scope.launch {
-            if (action()) {
-                localTodos = (localTodos.filterNot { it.id == todo.id } + todo)
-                    .sortedWith(compareBy<TodoItem> { it.done }.thenByDescending { it.flagged }.thenBy { it.title })
+            val failure = write(action) { it.upsert(todo) }
+            if (failure == null) {
+                localTodos = (localTodos.filterNot { it.id == todo.id } + todo).sortedWith(TODO_ORDER)
             } else {
-                reportFailure()
+                report(failure)
             }
             busyIds = busyIds - todo.id
         }
@@ -134,12 +171,18 @@ internal fun TodoScreen(
                 }
             }
 
-            if (!writeReady) {
+            if (!credentialStored) {
                 item {
                     TodoWriteCredentialCard { token ->
-                        val saved = saveWriteCredential(token)
-                        writeReady = saved && hasWriteAccess()
-                        saved
+                        val app = application
+                            ?: return@TodoWriteCredentialCard "This build cannot store a credential"
+                        app.saveConvexWriteCredential(token).fold(
+                            onSuccess = {
+                                credentialStored = true
+                                null
+                            },
+                            onFailure = ::credentialSaveFailureMessage,
+                        )
                     }
                 }
             }
@@ -158,11 +201,11 @@ internal fun TodoScreen(
                         modifier = Modifier.weight(1f),
                         label = { Text(stringResource(R.string.todo_new_task)) },
                         singleLine = true,
-                        enabled = writeReady,
+                        enabled = credentialStored,
                     )
                     Spacer(Modifier.width(VaultSpace.sm))
                     IconButton(
-                        enabled = writeReady && draft.isNotBlank(),
+                        enabled = credentialStored && draft.isNotBlank(),
                         onClick = {
                             val todo = newTodo(
                                 title = draft,
@@ -171,7 +214,7 @@ internal fun TodoScreen(
                                 now = Instant.now(),
                             )
                             draft = ""
-                            mutate(todo) { upsert(todo) }
+                            mutate(todo, TodoWriteAction.ADD)
                         },
                     ) {
                         Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.todo_add))
@@ -179,7 +222,18 @@ internal fun TodoScreen(
                 }
             }
 
-            if (localTodos.isEmpty()) {
+            // Demo, stale, loading and failed reads all say so, exactly as the
+            // read-only surfaces do. EMPTY is left to the emptiness message below.
+            if (slice.status != Freshness.LIVE && slice.status != Freshness.EMPTY) {
+                item { StateBlock(slice.status) }
+            }
+
+            // Suppressed figures mean the read itself is not trustworthy. Editing
+            // rows derived from it would write a guess back to the household, so the
+            // state is named instead of the list being drawn.
+            if (slice.suppressFigures) {
+                item { StateBlock(slice.status) }
+            } else if (localTodos.isEmpty()) {
                 item {
                     Text(
                         stringResource(R.string.todo_empty),
@@ -191,14 +245,12 @@ internal fun TodoScreen(
                 items(localTodos, key = TodoItem::id) { todo ->
                     TodoRow(
                         todo = todo,
-                        enabled = writeReady && todo.id !in busyIds,
+                        enabled = credentialStored && todo.id !in busyIds,
                         onToggleDone = {
-                            val changed = todo.withCompletion(!todo.done, Instant.now())
-                            mutate(changed) { upsert(changed) }
+                            mutate(todo.withCompletion(!todo.done, Instant.now()), TodoWriteAction.UPDATE)
                         },
                         onToggleFlag = {
-                            val changed = todo.withFlag(!todo.flagged, Instant.now())
-                            mutate(changed) { upsert(changed) }
+                            mutate(todo.withFlag(!todo.flagged, Instant.now()), TodoWriteAction.UPDATE)
                         },
                         onEdit = {
                             editing = todo
@@ -223,6 +275,8 @@ internal fun TodoScreen(
                                         duration = SnackbarDuration.Indefinite,
                                     )
                                 }
+                                // The six-second window starts at the deletion, not at
+                                // whenever the server answers.
                                 expiryJob = launch {
                                     delay(TODO_UNDO_WINDOW_MILLIS)
                                     if (pendingDeletion?.todo?.id == todo.id) {
@@ -230,27 +284,32 @@ internal fun TodoScreen(
                                         snackbar.currentSnackbarData?.dismiss()
                                     }
                                 }
-                                if (!delete(todo.id)) {
-                                    localTodos = (localTodos + todo).distinctBy(TodoItem::id)
+                                val deleteFailure = write(TodoWriteAction.DELETE) { it.delete(todo.id) }
+                                if (deleteFailure != null) {
+                                    localTodos = (localTodos + todo)
+                                        .distinctBy(TodoItem::id)
+                                        .sortedWith(TODO_ORDER)
                                     pendingDeletion = null
                                     expiryJob?.cancel()
                                     snackbar.currentSnackbarData?.dismiss()
                                     feedback.await()
-                                    reportFailure()
+                                    report(deleteFailure)
                                 } else {
-                                    val result = feedback.await()
+                                    val outcome = feedback.await()
                                     if (
-                                        result == SnackbarResult.ActionPerformed &&
+                                        outcome == SnackbarResult.ActionPerformed &&
                                         pendingDeletion?.todo?.id == todo.id &&
                                         pending.canUndo(System.currentTimeMillis())
                                     ) {
                                         expiryJob?.cancel()
-                                        if (upsert(todo)) {
+                                        val restoreFailure =
+                                            write(TodoWriteAction.RESTORE) { it.upsert(todo) }
+                                        if (restoreFailure == null) {
                                             localTodos = (localTodos + todo)
                                                 .distinctBy(TodoItem::id)
-                                                .sortedWith(compareBy<TodoItem> { it.done }.thenBy { it.title })
+                                                .sortedWith(TODO_ORDER)
                                         } else {
-                                            reportFailure()
+                                            report(restoreFailure)
                                         }
                                         pendingDeletion = null
                                     }
@@ -282,7 +341,7 @@ internal fun TodoScreen(
                     onClick = {
                         val changed = todo.withTitle(editTitle, Instant.now())
                         editing = null
-                        mutate(changed) { upsert(changed) }
+                        mutate(changed, TodoWriteAction.UPDATE)
                     },
                 ) { Text(stringResource(R.string.todo_save)) }
             },
@@ -326,7 +385,15 @@ private fun TodoRow(
                 color = VaultCream,
                 textDecoration = if (todo.done) TextDecoration.LineThrough else null,
             )
-            todo.due?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = VaultTextDim) }
+            listOfNotNull(filing(todo), todo.due)
+                .takeIf { it.isNotEmpty() }
+                ?.let {
+                    Text(
+                        it.joinToString(" · "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = VaultTextDim,
+                    )
+                }
         }
         IconButton(enabled = enabled, onClick = onToggleFlag) {
             Icon(
@@ -346,10 +413,18 @@ private fun TodoRow(
     }
 }
 
+/**
+ * One-time entry for the shared write credential.
+ *
+ * [save] returns null when the credential was stored, otherwise the reason it
+ * was not. Settings owns the same credential; this card exists so a blocked
+ * Today screen can be unblocked without hunting for that panel. The value is
+ * never read back, never saved into instance state, and never shown again.
+ */
 @Composable
-private fun TodoWriteCredentialCard(save: (String) -> Boolean) {
+private fun TodoWriteCredentialCard(save: (String) -> String?) {
     var token by remember { mutableStateOf("") }
-    var failed by remember { mutableStateOf(false) }
+    var failure by remember { mutableStateOf<String?>(null) }
     Column(
         Modifier
             .fillMaxWidth()
@@ -367,7 +442,7 @@ private fun TodoWriteCredentialCard(save: (String) -> Boolean) {
             value = token,
             onValueChange = {
                 token = it
-                failed = false
+                failure = null
             },
             label = { Text(stringResource(R.string.todo_sync_token)) },
             visualTransformation = PasswordVisualTransformation(),
@@ -377,13 +452,15 @@ private fun TodoWriteCredentialCard(save: (String) -> Boolean) {
         Button(
             enabled = token.isNotBlank(),
             onClick = {
-                if (save(token)) token = "" else failed = true
+                val problem = save(token)
+                failure = problem
+                if (problem == null) token = ""
             },
         ) {
             Text(stringResource(R.string.todo_save_access))
         }
-        if (failed) {
-            Text(stringResource(R.string.todo_write_access_failed), color = VaultLine)
+        failure?.let {
+            Text(it, color = VaultNegative, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

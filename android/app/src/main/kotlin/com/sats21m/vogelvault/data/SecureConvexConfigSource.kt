@@ -191,7 +191,7 @@ internal interface ConfigCipher {
     ): String
 }
 
-internal class AndroidKeyStoreConfigCipher(
+private class AndroidKeyStoreConfigCipher(
     private val alias: String,
 ) : ConfigCipher {
     override fun encrypt(
