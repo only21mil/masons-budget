@@ -42,7 +42,6 @@
     <string name="refresh_unavailable">Refresh unavailable while live reads are disabled</string>
     <string name="refresh_failed_title">Refresh failed</string>
     <string name="refresh_failed_detail">Live reads did not complete. Check the connection and read-token settings, then try again.</string>
-
     <string name="voice_transaction_title">Voice transaction</string>
     <string name="voice_transaction_instruction">Say the amount, the merchant, and roughly when. Everything is shown for review before it is saved.</string>
     <string name="voice_start_listening">Start listening</string>
@@ -87,4 +86,24 @@
     <string name="add_transaction_save">Save</string>
     <string name="add_transaction_saving">Saving...</string>
     <string name="add_transaction_date_confirm">Use date</string>
+    <string name="csv_import_action">Import CSV</string>
+    <string name="csv_import_title">Import CSV</string>
+    <string name="csv_import_choose_source">Choose the source format, then select a CSV file.</string>
+    <string name="csv_import_preview_title">Review transactions</string>
+    <string name="csv_import_unique_rows">%1$d new rows after duplicate filtering</string>
+    <string name="csv_import_selected_count">%1$d of %2$d selected</string>
+    <string name="csv_import_select_all">Select all</string>
+    <string name="csv_import_select_none">Select none</string>
+    <string name="csv_import_no_unique_rows">No new transactions. Every parsed row already exists.</string>
+    <string name="csv_import_price_unavailable">Bitcoin price is unavailable. Sats are shown, but import is blocked so fiat spend cannot become a confident zero.</string>
+    <string name="csv_import_write_unavailable">Secure transaction writeback is not configured in this Android build. Review is available; importing remains blocked.</string>
+    <string name="csv_import_price_short">Price unavailable</string>
+    <string name="csv_import_back">Back</string>
+    <string name="csv_import_confirm">Import %1$d</string>
+    <string name="csv_import_cancel">Cancel</string>
+    <string name="csv_import_done">Done</string>
+    <string name="csv_import_complete">Import complete</string>
+    <string name="csv_import_complete_count">%1$d transactions were imported.</string>
+    <string name="csv_import_parse_failed">The CSV could not be parsed.</string>
+    <string name="csv_import_failed">No rows were written. Check secure writeback configuration and try again.</string>
 </resources>
