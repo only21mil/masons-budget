@@ -47,7 +47,7 @@ enum AppWriteSyncService {
         Task {
             let client = makeClient()
             let ok = await withRetry(label: "push tx \(payload.id)") {
-                _ = try await client.appendTransaction(payload, to: fileName)
+                try await client.upsertTransactionRow(payload, sourceFile: fileName)
             }
             reportSyncResult(label: label, success: ok, retry: {
                 pushTransactionPayload(payload, to: fileName, onResult: onResult)
@@ -82,12 +82,7 @@ enum AppWriteSyncService {
         Task {
             let client = makeClient()
             let ok = await withRetry(label: "delete tx \(id)") {
-                let raw = try await client.fetchFileValue(fileName)
-                guard var rows = raw as? [[String: Any]] else {
-                    throw SyncError.unexpectedPayload
-                }
-                rows.removeAll { ($0["id"] as? String) == id }
-                _ = try await client.syncFile(name: fileName, data: rows)
+                try await client.deleteTransactionRow(id: id, sourceFile: fileName)
             }
             reportSyncResult(label: label, success: ok, retry: {
                 deleteTransaction(id: id, from: fileName, onResult: onResult)
@@ -102,11 +97,12 @@ enum AppWriteSyncService {
     ) {
         let fileName = owner.btcBuysDataFileName
         let payload = LegacyBTCBuyDTO(appBuy: buy)
-        pushBTCBuyPayload(payload, to: fileName, onResult: onResult)
+        pushBTCBuyPayload(payload, owner: owner, to: fileName, onResult: onResult)
     }
 
     private static func pushBTCBuyPayload(
         _ payload: LegacyBTCBuyDTO,
+        owner: FamilyMember,
         to fileName: String,
         onResult: (@MainActor @Sendable (Bool) -> Void)? = nil,
     ) {
@@ -114,7 +110,7 @@ enum AppWriteSyncService {
         reportSyncStart(label)
         guard ConvexConfig.isConfigured else {
             reportSyncResult(label: label, success: false, retry: {
-                pushBTCBuyPayload(payload, to: fileName, onResult: onResult)
+                pushBTCBuyPayload(payload, owner: owner, to: fileName, onResult: onResult)
             }, onResult: onResult)
             return
         }
@@ -122,16 +118,14 @@ enum AppWriteSyncService {
         Task {
             let client = makeClient()
             let ok = await withRetry(label: "push btc buy \(payload.id)") {
-                let raw = try await client.fetchFileValue(fileName)
-                guard var rows = raw as? [[String: Any]] else {
-                    throw SyncError.unexpectedPayload
-                }
-                rows.removeAll { ($0["id"] as? String) == payload.id }
-                try rows.append(payload.convexJSONObject())
-                _ = try await client.syncFile(name: fileName, data: rows)
+                try await client.upsertBTCBuyRow(
+                    payload,
+                    owner: owner,
+                    sourceFile: fileName,
+                )
             }
             reportSyncResult(label: label, success: ok, retry: {
-                pushBTCBuyPayload(payload, to: fileName, onResult: onResult)
+                pushBTCBuyPayload(payload, owner: owner, to: fileName, onResult: onResult)
             }, onResult: onResult)
         }
     }
@@ -164,12 +158,15 @@ enum AppWriteSyncService {
 
         Task {
             let ok: Bool
-            if !ConvexConfig.syncToken.isEmpty {
+            if ConvexConfig.hasSyncToken {
                 let client = makeClient()
                 ok = await withRetry(label: "push todo \(payload.id)") {
-                    _ = try await client.upsertTodo(payload)
+                    try await client.upsertTodoRow(payload)
                 }
             } else {
+                // Genuine row-API gap: paired-device credentials are accepted
+                // only by the legacy mobile todo mutations. Row mutations
+                // currently require the runtime-injected shared sync token.
                 let client = AppWritebackClient()
                 ok = await withRetry(label: "push todo via paired writeback \(payload.id)") {
                     let synced = try await client.upsertTodo(payload)
@@ -197,10 +194,19 @@ enum AppWriteSyncService {
         }
 
         Task {
-            let client = AppWritebackClient()
-            let ok = await withRetry(label: "set todo completion via paired writeback \(payload.id)") {
-                let synced = try await client.setTodoDone(id: payload.id, title: payload.effectiveTitle, isDone: isDone)
-                guard synced else { throw SyncError.unexpectedPayload }
+            let ok: Bool
+            if ConvexConfig.hasSyncToken {
+                let client = makeClient()
+                ok = await withRetry(label: "set todo completion \(payload.id)") {
+                    try await client.upsertTodoRow(payload)
+                }
+            } else {
+                // See pushTodoPayload: no paired-device row mutation exists.
+                let client = AppWritebackClient()
+                ok = await withRetry(label: "set todo completion via paired writeback \(payload.id)") {
+                    let synced = try await client.setTodoDone(id: payload.id, title: payload.effectiveTitle, isDone: isDone)
+                    guard synced else { throw SyncError.unexpectedPayload }
+                }
             }
             reportSyncResult(label: label, success: ok, retry: {
                 setTodoCompletionPayload(payload, isDone: isDone, onResult: onResult)
@@ -228,12 +234,13 @@ enum AppWriteSyncService {
 
         Task {
             let ok: Bool
-            if !ConvexConfig.syncToken.isEmpty {
+            if ConvexConfig.hasSyncToken {
                 let client = makeClient()
                 ok = await withRetry(label: "delete todo \(todoId)") {
-                    _ = try await client.removeTodo(id: todoId)
+                    try await client.deleteTodoRow(id: todoId)
                 }
             } else {
+                // See pushTodoPayload: no paired-device row mutation exists.
                 let client = AppWritebackClient()
                 ok = await withRetry(label: "delete todo via paired writeback \(todoId)") {
                     let synced = try await client.removeTodo(id: todoId)
@@ -251,20 +258,36 @@ enum AppWriteSyncService {
         onResult: (@MainActor @Sendable (Bool) -> Void)? = nil,
     ) {
         let name = category.name
+        let icon = category.icon
         let budget = category.monthlyBudget
-        pushBudgetCategoryUpdate(name: name, budget: budget, onResult: onResult)
+        let viewer = category.ownerMember
+        pushBudgetCategoryUpdate(
+            name: name,
+            icon: icon,
+            budget: budget,
+            viewer: viewer,
+            onResult: onResult,
+        )
     }
 
     private static func pushBudgetCategoryUpdate(
         name: String,
+        icon: String,
         budget: Decimal,
+        viewer: FamilyMember,
         onResult: (@MainActor @Sendable (Bool) -> Void)? = nil,
     ) {
         let label = "Save budget"
         reportSyncStart(label)
         guard ConvexConfig.isConfigured else {
             reportSyncResult(label: label, success: false, retry: {
-                pushBudgetCategoryUpdate(name: name, budget: budget, onResult: onResult)
+                pushBudgetCategoryUpdate(
+                    name: name,
+                    icon: icon,
+                    budget: budget,
+                    viewer: viewer,
+                    onResult: onResult,
+                )
             }, onResult: onResult)
             return
         }
@@ -272,20 +295,21 @@ enum AppWriteSyncService {
         Task {
             let client = makeClient()
             let ok = await withRetry(label: "update category \(name)") {
-                let raw = try await client.fetchFileValue("budget")
-                guard var budgetData = raw as? [String: Any],
-                      var cats = budgetData["categories"] as? [[String: Any]]
-                else {
-                    throw SyncError.unexpectedPayload
-                }
-                if let idx = cats.firstIndex(where: { ($0["name"] as? String) == name }) {
-                    cats[idx]["budget"] = NSDecimalNumber(decimal: budget).doubleValue
-                    budgetData["categories"] = cats
-                    _ = try await client.syncFile(name: "budget", data: budgetData)
-                }
+                try await client.upsertBudgetCategoryRow(
+                    name: name,
+                    icon: icon,
+                    budget: budget,
+                    viewer: viewer,
+                )
             }
             reportSyncResult(label: label, success: ok, retry: {
-                pushBudgetCategoryUpdate(name: name, budget: budget, onResult: onResult)
+                pushBudgetCategoryUpdate(
+                    name: name,
+                    icon: icon,
+                    budget: budget,
+                    viewer: viewer,
+                    onResult: onResult,
+                )
             }, onResult: onResult)
         }
     }
