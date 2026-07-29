@@ -298,6 +298,7 @@ fun ScreenHost(
                 Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
                 Destination.RETIREMENT -> retirement(state, displayUnit)
                 Destination.TODAY -> today(state, dueTodos)
+                Destination.TASKS -> item { TaskListsScreen(state, todosInput) }
                 Destination.FAMILY -> family(state)
                 Destination.SETTINGS -> settings(state, onEnableRemoteRows)
             }
@@ -329,6 +330,7 @@ private fun ScreenHeader(
         Destination.NET_WORTH -> "Household for adults; self only for children"
         Destination.RETIREMENT -> "A checkable long-range scenario"
         Destination.TODAY -> "Due today or overdue"
+        Destination.TASKS -> "Projects, areas and smart lists"
         Destination.FAMILY -> "Who can see what"
         Destination.SETTINGS -> "Runtime and boundaries"
     }

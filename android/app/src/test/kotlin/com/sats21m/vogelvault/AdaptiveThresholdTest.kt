@@ -60,6 +60,7 @@ class DestinationVisibilityTest {
                 Destination.NET_WORTH,
                 Destination.RETIREMENT,
                 Destination.TODAY,
+                Destination.TASKS,
                 Destination.FAMILY,
                 Destination.SETTINGS,
             ),

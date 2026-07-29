@@ -17,13 +17,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.CurrencyBitcoin
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Payments
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.WbSunny
@@ -90,6 +91,7 @@ enum class Destination(
     NET_WORTH("Net Worth", Icons.Filled.AccountBalance),
     RETIREMENT("Retirement", Icons.Filled.Savings),
     TODAY("Today", Icons.Filled.WbSunny),
+    TASKS("Tasks", Icons.Filled.Checklist),
     FAMILY("Family", Icons.Filled.People),
     SETTINGS("Settings", Icons.Filled.Settings);
 
