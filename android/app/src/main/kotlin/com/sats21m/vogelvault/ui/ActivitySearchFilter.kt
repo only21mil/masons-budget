@@ -17,9 +17,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -134,21 +135,20 @@ internal fun rememberActivitySearchProjection(
     var filterName by rememberSaveable { mutableStateOf(ActivityTransactionFilter.ALL.name) }
     val filter = ActivityTransactionFilter.valueOf(filterName)
 
-    val index by produceState<ActivitySearchIndex?>(initialValue = null, transactions) {
-        value = null
-        value = withContext(Dispatchers.Default) {
+    var index by remember(transactions) {
+        mutableStateOf<ActivitySearchIndex?>(null)
+    }
+    LaunchedEffect(transactions) {
+        index = withContext(Dispatchers.Default) {
             ActivitySearchIndex.build(transactions)
         }
     }
-    val result by produceState<SearchResult?>(
-        initialValue = null,
-        index,
-        query,
-        filter,
-    ) {
-        value = null
-        val currentIndex = index ?: return@produceState
-        value = withContext(Dispatchers.Default) {
+    var result by remember(index, query, filter) {
+        mutableStateOf<SearchResult?>(null)
+    }
+    LaunchedEffect(index, query, filter) {
+        val currentIndex = index ?: return@LaunchedEffect
+        result = withContext(Dispatchers.Default) {
             SearchResult(
                 index = currentIndex,
                 query = query,
