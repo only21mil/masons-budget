@@ -30,6 +30,9 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertTrue(MacNav.moneyItems.contains(.activity))
         XCTAssertTrue(MacNav.moneyItems.contains(.netWorth))
         XCTAssertTrue(MacNav.taskItems.contains(.projects))
+        XCTAssertEqual(MacNav.toolItems, [.syncSetup, .export])
+        XCTAssertEqual(MacNav.syncSetup.label, "Sync Setup")
+        XCTAssertFalse(MacNav.syncSetup.icon.isEmpty)
     }
 
     func testColorHexInit() {

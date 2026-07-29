@@ -35,7 +35,7 @@ enum AppTab: String, CaseIterable, Identifiable {
 
 enum MacNav: String, CaseIterable, Identifiable {
     case dashboard, budget, activity, btcBuys, billPay, retirement, netWorth
-    case today, inbox, upcoming, flagged, projects, export
+    case today, inbox, upcoming, flagged, projects, syncSetup, export
 
     var id: String {
         rawValue
@@ -55,6 +55,7 @@ enum MacNav: String, CaseIterable, Identifiable {
         case .upcoming: "Upcoming"
         case .flagged: "Flagged"
         case .projects: "Projects"
+        case .syncSetup: "Sync Setup"
         case .export: "Export"
         }
     }
@@ -73,13 +74,14 @@ enum MacNav: String, CaseIterable, Identifiable {
         case .upcoming: "calendar"
         case .flagged: "flag.fill"
         case .projects: "tray.fill"
+        case .syncSetup: "arrow.triangle.2.circlepath"
         case .export: "square.and.arrow.up"
         }
     }
 
     static let moneyItems: [MacNav] = [.dashboard, .budget, .activity, .btcBuys, .billPay, .retirement, .netWorth]
     static let taskItems: [MacNav] = [.today, .inbox, .upcoming, .flagged, .projects]
-    static let toolItems: [MacNav] = [.export]
+    static let toolItems: [MacNav] = [.syncSetup, .export]
 }
 
 // MARK: - Content View
@@ -280,6 +282,7 @@ struct ContentView: View {
                 case .upcoming: TaskSmartListView(filter: .upcoming)
                 case .flagged: TaskSmartListView(filter: .flagged)
                 case .projects: ProjectsView()
+                case .syncSetup: SyncSetupView()
                 case .export: ExportView()
                 }
             }

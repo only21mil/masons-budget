@@ -56,7 +56,7 @@ struct MoreMenuView: View {
     }
 }
 
-private struct SyncSetupView: View {
+struct SyncSetupView: View {
     @Environment(\.theme) var theme
     @State private var pairingURL = ""
     @State private var baseURL = AppWritebackConfig.baseURL?.absoluteString ?? ""
