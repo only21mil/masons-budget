@@ -1118,11 +1118,35 @@ private fun RemoteRowsConfiguration(onEnable: (String) -> Unit) {
     // Deliberately not saveable: the plaintext token must not enter saved
     // instance state. Submission immediately hands it to encrypted storage.
     var token by remember { mutableStateOf("") }
+    val application =
+        androidx.compose.ui.platform.LocalContext.current.applicationContext
+            as? com.sats21m.vogelvault.VaultApplication
+    val storedConfigSource =
+        remember(application) {
+            application?.let { com.sats21m.vogelvault.data.SecureConvexConfigSource(it) }
+        }
+    var hasStoredToken by remember(storedConfigSource) {
+        mutableStateOf(storedConfigSource?.current()?.hasReadToken == true)
+    }
+    var removalFailed by remember { mutableStateOf(false) }
+
     Panel("Configure authenticated row reads") {
         Column(
             Modifier.padding(VaultSpace.md),
             verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
         ) {
+            Text(
+                text =
+                    stringResource(
+                        if (hasStoredToken) {
+                            R.string.convex_read_token_configured
+                        } else {
+                            R.string.convex_read_token_unconfigured
+                        },
+                    ),
+                color = VaultTextDim,
+                style = MaterialTheme.typography.bodySmall,
+            )
             OutlinedTextField(
                 value = token,
                 onValueChange = { token = it },
@@ -1134,13 +1158,59 @@ private fun RemoteRowsConfiguration(onEnable: (String) -> Unit) {
                 enabled = token.isNotBlank(),
                 onClick = {
                     onEnable(token)
+                    hasStoredToken = storedConfigSource?.current()?.hasReadToken == true
+                    removalFailed = false
                     token = ""
                 },
             ) {
                 Text("Save and refresh")
             }
+            if (hasStoredToken && storedConfigSource != null && application != null) {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = {
+                        runCatching {
+                            clearRemoteRowsConfiguration(
+                                stored = storedConfigSource,
+                                effective = application.convexConfigSource,
+                            )
+                        }.onSuccess {
+                            token = ""
+                            hasStoredToken = false
+                            removalFailed = false
+                        }.onFailure {
+                            removalFailed = true
+                        }
+                    },
+                    border =
+                        androidx.compose.foundation.BorderStroke(
+                            width = 1.dp,
+                            color = VaultLine,
+                        ),
+                    colors =
+                        androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                            contentColor = VaultCream,
+                        ),
+                ) {
+                    Text(stringResource(R.string.convex_read_token_remove))
+                }
+            }
+            if (removalFailed) {
+                Text(
+                    text = stringResource(R.string.convex_read_token_remove_failed),
+                    color = VaultWarning,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
     }
+}
+
+internal fun clearRemoteRowsConfiguration(
+    stored: com.sats21m.vogelvault.data.SecureConvexConfigSource,
+    effective: com.sats21m.vogelvault.data.MutableConvexConfigSource,
+) {
+    stored.clear()
+    effective.update(com.sats21m.vogelvault.data.ConvexConfig())
 }
 
 // ── shared ──────────────────────────────────────────────────────────────────

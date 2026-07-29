@@ -13,6 +13,10 @@
     <string name="convex_auth_error_detail">Convex could not authorize row reads. This state combines a missing read token with a token the server rejected. Cached financial figures are hidden.</string>
     <string name="convex_rows_inactive_title">Convex row reads are not active</string>
     <string name="convex_rows_inactive_detail">No read token is configured, or remote reads are disabled; this screen cannot distinguish those states. Figures are sample data.</string>
+    <string name="convex_read_token_configured">A Convex read token is stored securely.</string>
+    <string name="convex_read_token_unconfigured">No Convex read token is stored. Row reads are unconfigured.</string>
+    <string name="convex_read_token_remove">Remove stored token</string>
+    <string name="convex_read_token_remove_failed">The stored read token could not be removed.</string>
     <string name="convex_budget_period_mismatch_detail">Convex returned targets for %1$s. Actuals were re-derived from %2$s transaction rows; the targets were not.</string>
     <string name="convex_uncategorized_spend_detail">The Convex transaction rows have no matching budget category, so this spend is counted on Activity only.</string>
 </resources>
