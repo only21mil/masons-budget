@@ -368,45 +368,35 @@ jobs:
       - name: SwiftPM package tests
         run: swift test
 
-      # Ask xcodebuild, not simctl. Run 2 chose the device from `simctl list
-      # devices available`, which reports the shared CoreSimulator device set —
-      # every runtime on the machine, whichever Xcode installed it. The chosen
-      # iPhone booted fine and xcodebuild then refused it, because a device
-      # simctl calls available is not necessarily a destination this Xcode has
-      # an eligible platform for.
+      # A runtime and a device are separate CoreSimulator resources. On the
+      # self-hosted mini, the first xcodebuild destination query returned only
+      # placeholders even though eleven concrete device plists already existed;
+      # the next job saw all eleven after the failure path called simctl. Do not
+      # depend on that cold-start registration side effect.
       #
-      # -showdestinations is the same resolver that will consume the answer, and
-      # it lists only what this scheme can actually run on. Reading the last
-      # eligible iPhone out of it cannot disagree with the test step.
-      #
-      # Hardcoding a model name would rot the first time the image ships a
-      # different device set, and any iPhone runs a unit-test bundle equally well.
-      - name: Choose an iOS simulator
+      # Explicitly reuse or create one named CI device on the newest installed
+      # iOS runtime, choosing an iPhone type whose declared runtime range
+      # includes it. Then ask xcodebuild to verify that exact UDID: simctl owns
+      # provisioning, while xcodebuild remains the authority on scheme
+      # eligibility. The helper names a missing runtime or device type directly.
+      - name: Ensure an iOS simulator
         id: simulator
         working-directory: MasonsBudget
+        env:
+          SIMULATOR_NAME: Vogel Vault CI iPhone
         run: |
           set -euo pipefail
+          UDID=$(/usr/bin/python3 \
+            ../.github/workflows/scripts/ensure_ios_simulator.py \
+            --name "$SIMULATOR_NAME")
           DESTINATIONS=$(xcodebuild -showdestinations \
             -project MasonsBudget.xcodeproj -scheme MasonsBudget 2>&1 || true)
           printf '%s\n' "$DESTINATIONS"
 
-          # Only the eligible block: the ineligible one lists real ids too, and
-          # picking from it is exactly the mistake run 2 made.
-          UDID=$(printf '%s\n' "$DESTINATIONS" \
-            | awk '/Available destinations/{ok=1; next} /Ineligible destinations/{ok=0} ok' \
-            | grep 'platform:iOS Simulator' \
-            | grep -v 'placeholder' \
-            | grep 'name:iPhone' \
-            | tail -1 \
-            | sed -n 's/.*[[:space:]]id:\([^,]*\),.*/\1/p' \
-            | tr -d '[:space:]' || true)
-          # `|| true` above is load-bearing: with pipefail set, a grep that
-          # matches nothing would kill this step outright and the explanatory
-          # error below — the whole point of the step — would never print.
-
-          if [ -z "$UDID" ]; then
-            echo "::error::xcodebuild lists no eligible iPhone simulator destination for this scheme. The destination dump above is the diagnosis; check that the pinned Xcode owns an installed iOS simulator runtime."
-            xcrun simctl list runtimes
+          if ! grep -F "id:$UDID," <<< "$DESTINATIONS" >/dev/null; then
+            echo "::error::The required simulator '$SIMULATOR_NAME' ($UDID) exists in CoreSimulator, but Xcode ${XCODE_VERSION} does not list that exact device as eligible for the MasonsBudget scheme."
+            echo "== Devices =="
+            xcrun simctl list devices
             exit 1
           fi
           echo "Testing on simulator $UDID"
