@@ -1133,9 +1133,9 @@ final class ConvexClient: Sendable {
         }
 
         let number = NSDecimalNumber(decimal: integral)
-        guard number != .notANumber,
-              number.compare(NSDecimalNumber(value: Int64.min)) != .orderedAscending,
-              number.compare(NSDecimalNumber(value: Int64.max)) != .orderedDescending
+        guard number != NSDecimalNumber.notANumber,
+              number.compare(NSDecimalNumber(string: String(Int64.min))) != .orderedAscending,
+              number.compare(NSDecimalNumber(string: String(Int64.max))) != .orderedDescending
         else {
             throw ConvexRowMutationError.minorUnitOverflow(field: field)
         }
