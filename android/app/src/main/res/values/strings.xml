@@ -63,4 +63,16 @@
     <string name="write_credential_label">Write credential</string>
     <string name="write_credential_save">Save securely</string>
     <string name="write_credential_remove">Remove</string>
+    <string name="add_transaction_action">Add</string>
+    <string name="add_transaction_title">New transaction</string>
+    <string name="add_transaction_merchant">Merchant or destination</string>
+    <string name="add_transaction_category">Category</string>
+    <string name="add_transaction_amount">Amount</string>
+    <string name="add_transaction_card">Card or method</string>
+    <string name="add_transaction_date">Date</string>
+    <string name="add_transaction_note">Note</string>
+    <string name="add_transaction_cancel">Cancel</string>
+    <string name="add_transaction_save">Save</string>
+    <string name="add_transaction_saving">Saving...</string>
+    <string name="add_transaction_date_confirm">Use date</string>
 </resources>
