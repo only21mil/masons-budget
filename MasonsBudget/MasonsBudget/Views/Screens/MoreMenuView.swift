@@ -59,9 +59,9 @@ struct MoreMenuView: View {
 private struct SyncSetupView: View {
     @Environment(\.theme) var theme
     @State private var pairingURL = ""
-    @State private var baseURL = MC2MobileWritebackConfig.baseURL?.absoluteString ?? ""
-    @State private var deviceID = MC2MobileWritebackConfig.deviceID
-    @State private var deviceToken = MC2MobileWritebackConfig.deviceToken
+    @State private var baseURL = AppWritebackConfig.baseURL?.absoluteString ?? ""
+    @State private var deviceID = AppWritebackConfig.deviceID
+    @State private var deviceToken = AppWritebackConfig.deviceToken
     @State private var statusMessage: String?
     @State private var isClaiming = false
 
@@ -79,7 +79,7 @@ private struct SyncSetupView: View {
 
     private var canClaim: Bool {
         let trimmed = pairingURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !isClaiming && (Self.isValidPairingURL(trimmed) || (trimmed.isEmpty && !MC2MobileWritebackConfig.bundledPairingURLs.isEmpty))
+        return !isClaiming && (Self.isValidPairingURL(trimmed) || (trimmed.isEmpty && !AppWritebackConfig.bundledPairingURLs.isEmpty))
     }
 
     var body: some View {
@@ -116,7 +116,7 @@ private struct SyncSetupView: View {
 
                 HStack(spacing: 12) {
                     Button("Clear") {
-                        MC2MobileWritebackConfig.clear()
+                        AppWritebackConfig.clear()
                         baseURL = ""
                         deviceID = ""
                         deviceToken = ""
@@ -124,7 +124,7 @@ private struct SyncSetupView: View {
                     .buttonStyle(.bordered)
 
                     Button("Save") {
-                        MC2MobileWritebackConfig.save(
+                        AppWritebackConfig.save(
                             baseURL: baseURL,
                             deviceID: deviceID,
                             deviceToken: deviceToken,
@@ -164,14 +164,14 @@ private struct SyncSetupView: View {
                     let deviceName = "Vogel Vault macOS"
                 #endif
                 if rawURL.isEmpty {
-                    try await MC2MobileWritebackClient().claimBundledPairing(deviceName: deviceName)
+                    try await AppWritebackClient().claimBundledPairing(deviceName: deviceName)
                 } else {
-                    try await MC2MobileWritebackClient().claimPairing(pairingURL: rawURL, deviceName: deviceName)
+                    try await AppWritebackClient().claimPairing(pairingURL: rawURL, deviceName: deviceName)
                 }
                 await MainActor.run {
-                    baseURL = MC2MobileWritebackConfig.baseURL?.absoluteString ?? ""
-                    deviceID = MC2MobileWritebackConfig.deviceID
-                    deviceToken = MC2MobileWritebackConfig.deviceToken
+                    baseURL = AppWritebackConfig.baseURL?.absoluteString ?? ""
+                    deviceID = AppWritebackConfig.deviceID
+                    deviceToken = AppWritebackConfig.deviceToken
                     pairingURL = ""
                     statusMessage = "Device pairing saved."
                     isClaiming = false

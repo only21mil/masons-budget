@@ -14,6 +14,9 @@ settings:
     GENERATE_INFOPLIST_FILE: YES
     CURRENT_PROJECT_VERSION: 42
     MARKETING_VERSION: "0.5.0"
+    # Compatibility input for existing archive automation. New callers should
+    # pass VOGEL_VAULT_BUNDLED_PAIRING_URLS_B64 directly.
+    VOGEL_VAULT_BUNDLED_PAIRING_URLS_B64: "$(MC2_BUNDLED_PAIRING_URLS_B64)"
 
 targets:
   MasonsBudget:
@@ -48,16 +51,16 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: YES
         ENABLE_PREVIEWS: YES
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: "NO"
-    # SAT-1508 — DO NOT replace this info block with INFOPLIST_KEY_MC2BundledPairingURLsB64.
+    # SAT-1508 — custom keys must use this info block, not INFOPLIST_KEY_*.
     # Xcode silently ignores custom (non-allowlisted) INFOPLIST_KEY_* settings; that is the
     # exact reason build 37 shipped WITHOUT pairing slots. Verified on the build-38 archives:
     # INFOPLIST_KEY_ variant -> key absent; this info block -> key present (PlistBuddy gate).
-    # Xcode expands $(MC2_BUNDLED_PAIRING_URLS_B64) from the archive CLI and merges the
+    # Xcode expands the pairing payload from the archive CLI and merges the
     # INFOPLIST_KEY_* values above into the generated file.
     info:
       path: Config/Info-iOS-generated.plist
       properties:
-        MC2BundledPairingURLsB64: "$(MC2_BUNDLED_PAIRING_URLS_B64)"
+        VogelVaultBundledPairingURLsB64: "$(VOGEL_VAULT_BUNDLED_PAIRING_URLS_B64)"
     dependencies: []
 
   MasonsBudgetMac:
@@ -90,7 +93,7 @@ targets:
     info:
       path: Config/Info-macOS-generated.plist
       properties:
-        MC2BundledPairingURLsB64: "$(MC2_BUNDLED_PAIRING_URLS_B64)"
+        VogelVaultBundledPairingURLsB64: "$(VOGEL_VAULT_BUNDLED_PAIRING_URLS_B64)"
     dependencies: []
 
   MasonsBudgetTests:

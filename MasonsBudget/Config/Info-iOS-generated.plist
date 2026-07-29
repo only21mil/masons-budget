@@ -18,7 +18,7 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
-	<key>MC2BundledPairingURLsB64</key>
-	<string>$(MC2_BUNDLED_PAIRING_URLS_B64)</string>
+	<key>VogelVaultBundledPairingURLsB64</key>
+	<string>$(VOGEL_VAULT_BUNDLED_PAIRING_URLS_B64)</string>
 </dict>
 </plist>

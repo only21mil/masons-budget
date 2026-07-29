@@ -1,5 +1,5 @@
-// Mason's Budget App — MC2 DTO & Mapper Tests
-// Uses embedded JSON fixtures matching the real MC2 file format.
+// The Vogel Vault — legacy blob DTO and ledger mapper tests
+// Uses embedded JSON fixtures matching the surviving `dataFiles` blob formats.
 // Note: JSON→Decimal decoding goes through Double, so we use assertDecimalClose
 // for fractional values. Integer Decimals (6200, 500) are exact.
 
@@ -7,7 +7,7 @@ import Foundation
 import SwiftData
 import XCTest
 
-final class MC2ReaderTests: XCTestCase {
+final class LegacyBlobCompatibilityTests: XCTestCase {
     // Helper: Decimal precision can drift through JSON→Double→Decimal path.
     // Compare to 8 decimal places which is more than enough for financial data.
     func assertDecimalClose(_ actual: Decimal?, _ expected: Decimal, tolerance: Decimal = 0.0001, file: StaticString = #file, line: UInt = #line) {
@@ -22,12 +22,12 @@ final class MC2ReaderTests: XCTestCase {
     // MARK: - Date parsing
 
     func testDateParsingYMD() {
-        let date = MC2Mapper.parseDate("2026-04-30")
+        let date = LedgerMapper.parseDate("2026-04-30")
         XCTAssertNotEqual(date, .distantPast)
     }
 
     func testDateParsingISO8601() {
-        let date = MC2Mapper.parseDate("2026-04-30T15:09:48.945031Z")
+        let date = LedgerMapper.parseDate("2026-04-30T15:09:48.945031Z")
         XCTAssertNotEqual(date, .distantPast)
     }
 
@@ -47,9 +47,9 @@ final class MC2ReaderTests: XCTestCase {
     }
 
     @MainActor
-    func testReplaceTodosUpdatesExistingMC2UniqueIDWithoutDuplicate() throws {
+    func testReplaceTodosUpdatesExistingImportedUniqueIDWithoutDuplicate() throws {
         let context = try makeInMemoryTodoContext()
-        let service = MC2SyncService(context: context)
+        let service = ConvexSyncService(context: context)
 
         context.insert(TodoItem(
             id: "t1",
@@ -81,7 +81,7 @@ final class MC2ReaderTests: XCTestCase {
     @MainActor
     func testReplaceTodosPreservesAppCreatedRowOnRemoteIDCollision() throws {
         let context = try makeInMemoryTodoContext()
-        let service = MC2SyncService(context: context)
+        let service = ConvexSyncService(context: context)
 
         context.insert(TodoItem(
             id: "t1",
@@ -115,7 +115,7 @@ final class MC2ReaderTests: XCTestCase {
     @MainActor
     func testReplaceTodosMultiOwnerPayloadScopesDeletionToPresentOwners() throws {
         let context = try makeInMemoryTodoContext()
-        let service = MC2SyncService(context: context)
+        let service = ConvexSyncService(context: context)
 
         // Seed two Victor-owned mc2 rows and two Rachel-owned mc2 rows.
         context.insert(TodoItem(
@@ -201,7 +201,7 @@ final class MC2ReaderTests: XCTestCase {
         ]
         """.data(using: .utf8)!
 
-        let dtos = try JSONDecoder().decode([MC2Transaction].self, from: json)
+        let dtos = try JSONDecoder().decode([LegacyTransactionDTO].self, from: json)
         XCTAssertEqual(dtos.count, 2)
         XCTAssertEqual(dtos[0].id, "mortgage-2026-03-01")
         assertDecimalClose(dtos[0].amount, 3613.79)
@@ -213,8 +213,8 @@ final class MC2ReaderTests: XCTestCase {
         [{"id":"t001","date":"2026-03-02","merchant":"Kroger","amount":76.81,"category":"Groceries","card":"Strike","note":""}]
         """.data(using: .utf8)!
 
-        let dtos = try JSONDecoder().decode([MC2Transaction].self, from: json)
-        let models = MC2Mapper.mapTransactions(dtos)
+        let dtos = try JSONDecoder().decode([LegacyTransactionDTO].self, from: json)
+        let models = LedgerMapper.mapTransactions(dtos)
 
         XCTAssertEqual(models.count, 1)
         XCTAssertEqual(models[0].id, "t001")
@@ -225,13 +225,13 @@ final class MC2ReaderTests: XCTestCase {
         XCTAssertNotEqual(models[0].date, .distantPast)
     }
 
-    func testMC2PositiveAdultSpendingContributesPositiveBudgetSpend() throws {
+    func testPositiveAdultSpendingContributesPositiveBudgetSpend() throws {
         let json = """
         [{"id":"t001","date":"2026-03-02","merchant":"Kroger","amount":76.81,"category":"Groceries","card":"Aven","note":""}]
         """.data(using: .utf8)!
 
-        let dtos = try JSONDecoder().decode([MC2Transaction].self, from: json)
-        let tx = try XCTUnwrap(MC2Mapper.mapTransactions(dtos).first)
+        let dtos = try JSONDecoder().decode([LegacyTransactionDTO].self, from: json)
+        let tx = try XCTUnwrap(LedgerMapper.mapTransactions(dtos).first)
 
         // The mapper defaults this adult file to Victor. Production purchases
         // are positive for every owner.
@@ -293,7 +293,7 @@ final class MC2ReaderTests: XCTestCase {
         assertDecimalClose(tx.displayAmount, 500)
     }
 
-    func testAppTransactionPayloadMatchesMC2Shape() throws {
+    func testAppTransactionPayloadMatchesLegacyBlobShape() throws {
         var components = DateComponents()
         components.calendar = Calendar(identifier: .gregorian)
         components.timeZone = TimeZone(secondsFromGMT: 0)
@@ -314,7 +314,7 @@ final class MC2ReaderTests: XCTestCase {
             createdBy: "manual",
         )
 
-        let dto = try MC2Transaction(appTransaction: transaction, owner: .victor)
+        let dto = try LegacyTransactionDTO(appTransaction: transaction, owner: .victor)
         XCTAssertEqual(dto.id, "manual-1-abcdef")
         XCTAssertEqual(dto.date, "2026-05-01")
         XCTAssertEqual(dto.merchant, "Starbucks")
@@ -344,7 +344,7 @@ final class MC2ReaderTests: XCTestCase {
             createdBy: "app",
         )
 
-        let dto = try MC2Transaction(appTransaction: transaction, owner: .victor)
+        let dto = try LegacyTransactionDTO(appTransaction: transaction, owner: .victor)
         assertDecimalClose(dto.amount, -32.45)
 
         let payload = try dto.convexJSONObject()
@@ -362,7 +362,7 @@ final class MC2ReaderTests: XCTestCase {
             createdBy: "app",
         )
 
-        let dto = try MC2Transaction(appTransaction: transaction, owner: .mason)
+        let dto = try LegacyTransactionDTO(appTransaction: transaction, owner: .mason)
         assertDecimalClose(dto.amount, 24)
 
         let payload = try dto.convexJSONObject()
@@ -380,7 +380,7 @@ final class MC2ReaderTests: XCTestCase {
             createdBy: "app",
         )
 
-        let dto = try MC2Transaction(appTransaction: transaction, owner: .victor)
+        let dto = try LegacyTransactionDTO(appTransaction: transaction, owner: .victor)
         assertDecimalClose(dto.amount, 500)
 
         let payload = try dto.convexJSONObject()
@@ -416,9 +416,9 @@ final class MC2ReaderTests: XCTestCase {
             createdBy: "app",
         )
 
-        XCTAssertEqual(try MC2Transaction(appTransaction: adultSpend, owner: .victor).amount, 25)
-        XCTAssertEqual(try MC2Transaction(appTransaction: childSpend, owner: .mason).amount, 24)
-        XCTAssertEqual(try MC2Transaction(appTransaction: refund, owner: .victor).amount, -12)
+        XCTAssertEqual(try LegacyTransactionDTO(appTransaction: adultSpend, owner: .victor).amount, 25)
+        XCTAssertEqual(try LegacyTransactionDTO(appTransaction: childSpend, owner: .mason).amount, 24)
+        XCTAssertEqual(try LegacyTransactionDTO(appTransaction: refund, owner: .victor).amount, -12)
     }
 
     // MARK: - budget.json
@@ -451,7 +451,7 @@ final class MC2ReaderTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let budget = try JSONDecoder().decode(MC2Budget.self, from: json)
+        let budget = try JSONDecoder().decode(LegacyBudgetDTO.self, from: json)
         XCTAssertEqual(budget.month, "April 2026")
         XCTAssertEqual(budget.categories.count, 2)
         assertDecimalClose(budget.income?.weeklyGross, 3941.53)
@@ -480,8 +480,8 @@ final class MC2ReaderTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let dto = try JSONDecoder().decode(MC2Budget.self, from: json)
-        let snapshot = MC2Mapper.mapBudgetSnapshot(dto)
+        let dto = try JSONDecoder().decode(LegacyBudgetDTO.self, from: json)
+        let snapshot = LedgerMapper.mapBudgetSnapshot(dto)
 
         XCTAssertEqual(snapshot.monthKey, "April 2026")
         assertDecimalClose(snapshot.weeklyGross, 3941.53)
@@ -499,8 +499,8 @@ final class MC2ReaderTests: XCTestCase {
         ]
         """.data(using: .utf8)!
 
-        let dtos = try JSONDecoder().decode([MC2BudgetCategory].self, from: json)
-        let models = MC2Mapper.mapBudgetCategories(dtos)
+        let dtos = try JSONDecoder().decode([LegacyBudgetCategoryDTO].self, from: json)
+        let models = LedgerMapper.mapBudgetCategories(dtos)
 
         XCTAssertEqual(models.count, 2)
         XCTAssertEqual(models[0].name, "Bills & Utilities")
@@ -526,7 +526,7 @@ final class MC2ReaderTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let snapshot = try JSONDecoder().decode(MC2BTCSnapshot.self, from: json)
+        let snapshot = try JSONDecoder().decode(LegacyBTCSnapshotDTO.self, from: json)
         XCTAssertEqual(snapshot.schemaVersion, 1)
         XCTAssertEqual(snapshot.accounts.count, 2)
         assertDecimalClose(snapshot.accounts["strike"]?.btc, 0.00874765)
@@ -547,8 +547,8 @@ final class MC2ReaderTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let snapshot = try JSONDecoder().decode(MC2BTCSnapshot.self, from: json)
-        let accounts = MC2Mapper.mapBTCAccounts(snapshot, owner: .victor)
+        let snapshot = try JSONDecoder().decode(LegacyBTCSnapshotDTO.self, from: json)
+        let accounts = LedgerMapper.mapBTCAccounts(snapshot, owner: .victor)
 
         XCTAssertEqual(accounts.count, 2)
         for acct in accounts {
@@ -584,7 +584,7 @@ final class MC2ReaderTests: XCTestCase {
         ]
         """.data(using: .utf8)!
 
-        let buys = try JSONDecoder().decode([MC2BTCBuy].self, from: json)
+        let buys = try JSONDecoder().decode([LegacyBTCBuyDTO].self, from: json)
         XCTAssertEqual(buys.count, 1)
         XCTAssertEqual(buys[0].id, "b-strike-2026-04-01")
         XCTAssertEqual(buys[0].amountSats, 732_371)
@@ -593,7 +593,7 @@ final class MC2ReaderTests: XCTestCase {
     }
 
     func testMapBTCBuy() {
-        let dto = MC2BTCBuy(
+        let dto = LegacyBTCBuyDTO(
             id: "b-strike-2026-04-01",
             date: "2026-04-01",
             source: "Strike",
@@ -608,7 +608,7 @@ final class MC2ReaderTests: XCTestCase {
             archimedesRequestId: "arch-001",
         )
 
-        let model = MC2Mapper.mapBTCBuy(dto)
+        let model = LedgerMapper.mapBTCBuy(dto)
         XCTAssertEqual(model.id, "b-strike-2026-04-01")
         XCTAssertEqual(model.amountSats, 732_371)
         XCTAssertEqual(model.source, "Strike")
@@ -617,7 +617,7 @@ final class MC2ReaderTests: XCTestCase {
     }
 
     func testMapBTCBuyPreservesExplicitOwner() {
-        let dto = MC2BTCBuy(
+        let dto = LegacyBTCBuyDTO(
             id: "b-app-rachel",
             date: "2026-04-01",
             source: "River",
@@ -633,7 +633,7 @@ final class MC2ReaderTests: XCTestCase {
             owner: "rachel",
         )
 
-        let model = MC2Mapper.mapBTCBuy(dto)
+        let model = LedgerMapper.mapBTCBuy(dto)
 
         XCTAssertEqual(model.ownerMember, .rachel)
         XCTAssertEqual(model.amountSats, 100_000)
@@ -661,7 +661,7 @@ final class MC2ReaderTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let wrapper = try JSONDecoder().decode(MC2BillPaysWrapper.self, from: json)
+        let wrapper = try JSONDecoder().decode(LegacyBillPaysWrapperDTO.self, from: json)
         XCTAssertEqual(wrapper.billPays.count, 1)
         XCTAssertEqual(wrapper.billPays[0].id, "bp005")
         assertDecimalClose(wrapper.billPays[0].amountUsd, 3613.79)
@@ -669,7 +669,7 @@ final class MC2ReaderTests: XCTestCase {
     }
 
     func testMapBTCBillPay() {
-        let dto = MC2BTCBillPay(
+        let dto = LegacyBTCBillPayDTO(
             id: "bp005",
             date: "2026-03-01",
             merchant: "PENNYMAC",
@@ -684,7 +684,7 @@ final class MC2ReaderTests: XCTestCase {
             owner: nil,
         )
 
-        let model = MC2Mapper.mapBTCBillPay(dto)
+        let model = LedgerMapper.mapBTCBillPay(dto)
         XCTAssertEqual(model.platform, "Strike")
         XCTAssertEqual(model.feeUSD, 28.55)
         XCTAssertEqual(model.btcSpent, 0.05425107)
@@ -692,7 +692,7 @@ final class MC2ReaderTests: XCTestCase {
     }
 
     func testMapBTCBillPayMasonOwner() {
-        let dto = MC2BTCBillPay(
+        let dto = LegacyBTCBillPayDTO(
             id: "bp-mason-allowance",
             date: "2026-04-15",
             merchant: "Mason allowance",
@@ -707,7 +707,7 @@ final class MC2ReaderTests: XCTestCase {
             owner: "mason",
         )
 
-        let model = MC2Mapper.mapBTCBillPay(dto)
+        let model = LedgerMapper.mapBTCBillPay(dto)
         XCTAssertEqual(model.ownerMember, .mason)
     }
 
@@ -742,7 +742,7 @@ final class MC2ReaderTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let finances = try JSONDecoder().decode(MC2Finances.self, from: json)
+        let finances = try JSONDecoder().decode(LegacyFinancesDTO.self, from: json)
         XCTAssertNotNil(finances.retirement.accounts["401k"])
         assertDecimalClose(finances.retirement.accounts["401k"]?.total, 773_307.46)
         XCTAssertEqual(finances.retirement.accounts["401k"]?.holdings.count, 1)
@@ -789,7 +789,7 @@ final class MC2ReaderTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let finances = try JSONDecoder().decode(MC2Finances.self, from: json)
+        let finances = try JSONDecoder().decode(LegacyFinancesDTO.self, from: json)
 
         XCTAssertEqual(finances.lastUpdated, "2026-04-29")
         XCTAssertEqual(Set(finances.retirement.accounts.keys), ["401k", "wap"])
@@ -829,8 +829,8 @@ final class MC2ReaderTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let finances = try JSONDecoder().decode(MC2Finances.self, from: json)
-        let accounts = MC2Mapper.mapFinances(finances, owner: .victor)
+        let finances = try JSONDecoder().decode(LegacyFinancesDTO.self, from: json)
+        let accounts = LedgerMapper.mapFinances(finances, owner: .victor)
 
         let k401 = try XCTUnwrap(accounts.first(where: { $0.name == "401k" }))
         XCTAssertEqual(k401.provider, "Discount Tire 401(k)")
@@ -850,14 +850,14 @@ final class MC2ReaderTests: XCTestCase {
         {"strike":0.00667448,"river":0.02497671,"coldcard":0.75072814,"total":0.78237933,"lastUpdated":"2026-04-24"}
         """.data(using: .utf8)!
 
-        let son = try JSONDecoder().decode(MC2SonBalances.self, from: json)
+        let son = try JSONDecoder().decode(LegacySonBalancesDTO.self, from: json)
         assertDecimalClose(son.total, 0.78237933)
         assertDecimalClose(son.coldcard, 0.75072814)
     }
 
     func testMapSonBalancesCreatesMasonAccounts() {
-        let son = MC2SonBalances(strike: 0.00667, river: 0.02497, coldcard: 0.75072, total: 0.78236, lastUpdated: "2026-04-24")
-        let accounts = MC2Mapper.mapSonBalances(son)
+        let son = LegacySonBalancesDTO(strike: 0.00667, river: 0.02497, coldcard: 0.75072, total: 0.78236, lastUpdated: "2026-04-24")
+        let accounts = LedgerMapper.mapSonBalances(son)
 
         XCTAssertEqual(accounts.count, 3)
         for acct in accounts {

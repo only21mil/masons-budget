@@ -61,7 +61,7 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable, Sendable {
         true
     }
 
-    var mc2TransactionsFileName: String {
+    var transactionsDataFileName: String {
         switch self {
         case .victor, .rachel:
             "transactions"
@@ -72,7 +72,7 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var mc2BTCBuysFileName: String {
+    var btcBuysDataFileName: String {
         switch self {
         case .mason:
             "mason-bitcoin-buys"
@@ -81,7 +81,7 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var hasDedicatedMC2ChildFinanceFiles: Bool {
+    var hasDedicatedChildFinanceFiles: Bool {
         switch self {
         case .mason:
             true

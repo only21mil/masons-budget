@@ -467,7 +467,7 @@ struct AddTransactionView: View {
         )
         let lot = CostBasisLot(
             lotId: buy.id,
-            date: MC2Transaction.dateString(from: date),
+            date: LegacyTransactionDTO.dateString(from: date),
             sats: sats,
             basisUsd: usd,
             label: account,

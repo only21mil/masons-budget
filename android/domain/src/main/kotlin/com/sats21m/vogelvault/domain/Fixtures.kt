@@ -4,12 +4,12 @@ package com.sats21m.vogelvault.domain
  * Sanitized fixture envelope.
  *
  * Remote reads remain disabled until runtime configuration enables them.
- * Everything here is invented sample data with the same shape MC2 emits and is
+ * Everything here is invented sample data with the public Convex row shape and is
  * used by unconfigured builds, previews and screenshots.
  *
  * Two rules:
  *   1. No real balances, account numbers, merchants or identifiers. Ever.
- *   2. Records carry canonical owners exactly as MC2 tags them — adults default
+ *   2. Records carry canonical owners exactly as Convex projects them — adults default
  *      to "victor" — so the visibility layer is exercised honestly.
  */
 object Fixtures {
@@ -198,7 +198,7 @@ object Fixtures {
      * Build the envelope for a profile.
      *
      * Budget is per-owner with no fall-through to the adult budget: adults share
-     * the household budget, Mason has dedicated MC2 child finance files, and
+     * the household budget, Mason has dedicated child finance data, and
      * Maddox has none — so his budget slice is genuinely empty. Defaulting to the
      * adult budget here leaked household categories to Maddox in the Linux client.
      */
@@ -208,7 +208,7 @@ object Fixtures {
     ): ReadModel {
         val budget = when {
             activeProfile.isAdult -> ADULT_BUDGET
-            activeProfile.hasDedicatedMc2ChildFinanceFiles -> MASON_BUDGET
+            activeProfile.hasDedicatedChildFinanceFiles -> MASON_BUDGET
             else -> null
         }
         val empty = status == Freshness.EMPTY

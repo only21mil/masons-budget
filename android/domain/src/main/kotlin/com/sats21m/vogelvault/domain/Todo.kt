@@ -9,23 +9,23 @@ import java.time.format.DateTimeFormatter
 /**
  * The Vogel Vault — shared todo contract, Kotlin mirror.
  *
- * Todos are the one MC2 collection the clients *write* as well as read, so
+ * Todos are the one legacy `dataFiles` collection the clients *write* as well as read, so
  * unlike transactions or budgets they need a canonical normaliser for the
- * dual-field superset MC2 emits, a last-write-wins merge, and tombstone
+ * dual-field superset the compatibility blob emits, a last-write-wins merge, and tombstone
  * application. Those rules live on the server in `convex/todoNormalize.ts` and
  * `convex/dataFiles.ts`; this file and `shared/domain/src/todo.ts` are the
  * client-side halves, pinned to each other by
  * `shared/domain/fixtures/todo-cases.json`, which both test suites load.
  *
  * Field-level truth, in order of authority:
- *   - `MC2TodoItem` in `MasonsBudget/MasonsBudget/Services/MC2DTOs.swift` owns
+ *   - the Apple compatibility todo DTO owns
  *     which aliases exist and how ownership resolves.
  *   - `convex/todoNormalize.ts` owns what gets emitted.
  * Where the two disagree, the divergences are listed in the fixture's
  * `$divergences` block and reproduced deliberately, never accidentally.
  *
  * HARD RULE (repo AGENTS.md): owner resolution goes through
- * [FamilyMember.coerceOwner] and visibility through [visibleTo]. Adult MC2
+ * [FamilyMember.coerceOwner] and visibility through [visibleTo]. Adult compatibility
  * records default to "victor", so a strict `owner == activeMember` check empties
  * Rachel's todo list. That bug shipped in v0.3.
  */
@@ -55,7 +55,7 @@ enum class TodoLane(val key: String) {
 data class CanonicalTodo(
     val id: String,
     val title: String,
-    /** MC2's alias for [title]. Kept because the server round-trips both. */
+    /** Legacy `dataFiles` alias for [title]. Kept because the server round-trips both. */
     val text: String,
     val lane: TodoLane,
     /** Raw `type`, which is usually but not always the lane. */
@@ -100,7 +100,7 @@ object Todo {
      */
     private val DUE_DATE_KEYS = listOf("dueDate", "due_date", "due", "date", "deadline", "when")
 
-    /** Words MC2 sometimes puts in `priority`. Port of Swift's decodePriority. */
+    /** Words legacy todo payloads sometimes put in `priority`. Port of Swift's decodePriority. */
     private val PRIORITY_WORDS = mapOf(
         "urgent" to 1,
         "high" to 1,
@@ -113,7 +113,7 @@ object Todo {
 
     fun normalizeLane(value: Any?): TodoLane? = TodoLane.fromValueOrNull(value)
 
-    /** MC2 passes the todo's `project` as [list]; the server calls it that too. */
+    /** Legacy todo payloads pass `project` as [list]; the server calls it that too. */
     fun resolveLane(category: Any? = null, type: Any? = null, list: Any? = null): TodoLane? =
         normalizeLane(category) ?: normalizeLane(type) ?: normalizeLane(list)
 
@@ -126,7 +126,7 @@ object Todo {
         return "${resolved.key.first()}$nowMillis"
     }
 
-    /** True when this todo originated in one of our clients rather than in MC2. */
+    /** True when this todo originated in one of our clients rather than the legacy import. */
     fun isAppCreated(raw: Map<String, Any?>): Boolean {
         val id = raw["id"].wireString()
         return id.startsWith("vv-") ||
@@ -185,7 +185,7 @@ object Todo {
         val updatedAt = firstPresent(raw, "updated_at", "updatedAt", "completedAt") ?: fallbackStamp
 
         // Ownership follows Swift's effectiveOwner: owner, then assignee, then
-        // the MC2 default. The server only reads `owner`, so an assignee-only
+        // the compatibility default. The server only reads `owner`, so an assignee-only
         // todo would land on Victor there — here it lands on the person it
         // names, which is what the visibility layer has to act on.
         val ownerKey = firstPresent(raw, "owner", "assignee")
@@ -389,7 +389,7 @@ object Todo {
     private fun resolveDueDate(raw: Map<String, Any?>): String {
         for (key in DUE_DATE_KEYS) {
             val value = raw[key] ?: continue
-            // Slice first: MC2 sometimes carries "2026-07-27 09:00" or a full
+            // Slice first: legacy todo payloads sometimes carry "2026-07-27 09:00" or a full
             // instant, and the due date is a calendar day on every client.
             val candidate = value.wireString().trim().take(10)
             // Validated, unlike the server: `when` is a Things bucket
@@ -493,7 +493,7 @@ fun reconcileTodos(
     nowMillis: Long,
 ): List<CanonicalTodo> = local.mergeTodos(remote, nowMillis).applyTombstones(tombstones)
 
-// ── Read-model bridge ───────────────────────────────────────────────────────
+// ── Read-model projection ───────────────────────────────────────────────────
 
 /**
  * Project a canonical todo onto the read model the screens already render.

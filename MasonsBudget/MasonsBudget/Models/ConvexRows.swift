@@ -108,9 +108,9 @@ struct ConvexTransactionRow: Decodable {
     let card: String?
     let note: String?
 
-    func legacyDTO() throws -> MC2Transaction {
+    func legacyDTO() throws -> LegacyTransactionDTO {
         try validateDateMonth(date: date, month: month)
-        return MC2Transaction(
+        return LegacyTransactionDTO(
             id: txId,
             date: date,
             merchant: merchant,
@@ -139,7 +139,7 @@ struct ConvexTodoRow: Decodable {
     let updatedAt: String?
     let completedAt: String?
 
-    func legacyDTO() throws -> MC2TodoItem {
+    func legacyDTO() throws -> LegacyTodoDTO {
         let decodedPriority: Int?
         if let priority {
             guard let exact = Int(exactly: priority) else {
@@ -149,7 +149,7 @@ struct ConvexTodoRow: Decodable {
         } else {
             decodedPriority = nil
         }
-        return MC2TodoItem(
+        return LegacyTodoDTO(
             rowId: todoId,
             title: title,
             project: project ?? lane,
@@ -182,9 +182,9 @@ struct ConvexBTCBuyRow: Decodable {
     let loggedBy: String?
     let archimedesRequestId: String?
 
-    func legacyDTO() throws -> MC2BTCBuy {
+    func legacyDTO() throws -> LegacyBTCBuyDTO {
         try validateDateMonth(date: date, month: month)
-        return MC2BTCBuy(
+        return LegacyBTCBuyDTO(
             id: buyId,
             date: date,
             source: source,
@@ -217,9 +217,9 @@ struct ConvexBTCBillPayRow: Decodable {
     let feeUsdCents: Int64
     let reference: String?
 
-    func legacyDTO() throws -> MC2BTCBillPay {
+    func legacyDTO() throws -> LegacyBTCBillPayDTO {
         try validateDateMonth(date: date, month: month)
-        return MC2BTCBillPay(
+        return LegacyBTCBillPayDTO(
             id: billPayId,
             date: date,
             merchant: merchant,
@@ -346,19 +346,19 @@ struct ConvexBudgetDocumentRow: Decodable {
     let ytdIncomeCents: Int64
     let monthlyHistory: [MonthlyHistory]
 
-    func adultBudgetDTO() -> MC2Budget {
-        MC2Budget(
+    func adultBudgetDTO() -> LegacyBudgetDTO {
+        LegacyBudgetDTO(
             month: month,
             coinbaseOneBalance: decimalMinorUnits(coinbaseOneBalanceCents, scale: 2),
             categories: categories.map {
-                MC2BudgetCategory(
+                LegacyBudgetCategoryDTO(
                     name: $0.name,
                     icon: $0.icon,
                     budget: decimalMinorUnits($0.budgetCents, scale: 2),
                     spent: nil,
                 )
             },
-            strategy: MC2BudgetStrategy(
+            strategy: LegacyBudgetStrategyDTO(
                 effectiveApr: effectiveApr.flatMap {
                     Decimal(string: $0, locale: Locale(identifier: "en_US_POSIX"))
                 },
@@ -368,7 +368,7 @@ struct ConvexBudgetDocumentRow: Decodable {
             mtdIncome: decimalMinorUnits(mtdIncomeCents, scale: 2),
             ytdIncome: decimalMinorUnits(ytdIncomeCents, scale: 2),
             monthlyHistory: monthlyHistory.map {
-                MC2MonthlyHistoryEntry(
+                LegacyMonthlyHistoryEntryDTO(
                     month: $0.month,
                     income: decimalMinorUnits($0.incomeCents, scale: 2),
                     expenses: decimalMinorUnits($0.expensesCents, scale: 2),
@@ -378,12 +378,12 @@ struct ConvexBudgetDocumentRow: Decodable {
         )
     }
 
-    func childBudgetDTO() -> MC2MasonBudget {
-        MC2MasonBudget(
+    func childBudgetDTO() -> LegacyMasonBudgetDTO {
+        LegacyMasonBudgetDTO(
             month: month,
             owner: owner.rawValue,
             categories: categories.map {
-                MC2BudgetCategory(
+                LegacyBudgetCategoryDTO(
                     name: $0.name,
                     icon: $0.icon,
                     budget: decimalMinorUnits($0.budgetCents, scale: 2),
@@ -397,8 +397,8 @@ struct ConvexBudgetDocumentRow: Decodable {
 }
 
 private extension ConvexBudgetDocumentRow.Income {
-    func legacyDTO() -> MC2BudgetIncome {
-        MC2BudgetIncome(
+    func legacyDTO() -> LegacyBudgetIncomeDTO {
+        LegacyBudgetIncomeDTO(
             weeklyGross: decimalMinorUnits(weeklyGrossCents, scale: 2),
             weeklyStrike: decimalMinorUnits(weeklyStrikeCents, scale: 2),
             weeklyRiver: decimalMinorUnits(weeklyRiverCents, scale: 2),
@@ -407,7 +407,7 @@ private extension ConvexBudgetDocumentRow.Income {
             mtdIncome: decimalMinorUnits(mtdIncomeCents, scale: 2),
             ytdIncome: decimalMinorUnits(ytdIncomeCents, scale: 2),
             paychecks: paychecks.map {
-                MC2Paycheck(
+                LegacyPaycheckDTO(
                     date: $0.date,
                     platform: $0.platform,
                     source: $0.source,
@@ -440,7 +440,7 @@ private func validateDateMonth(date: String, month: String) throws {
 struct ConvexRowReader: Sendable {
     let client: ConvexClient
 
-    func transactions(viewer: FamilyMember) async throws -> [MC2Transaction] {
+    func transactions(viewer: FamilyMember) async throws -> [LegacyTransactionDTO] {
         let envelope = try await client.fetchRows(
             .transactions(viewer: viewer),
             as: ConvexRowEnvelope<ConvexTransactionRow>.self,
@@ -452,7 +452,7 @@ struct ConvexRowReader: Sendable {
         return try rows.map { try $0.legacyDTO() }
     }
 
-    func todos(viewer: FamilyMember) async throws -> [MC2TodoItem] {
+    func todos(viewer: FamilyMember) async throws -> [LegacyTodoDTO] {
         let envelope = try await client.fetchRows(
             .todos(viewer: viewer),
             as: ConvexRowEnvelope<ConvexTodoRow>.self,
@@ -479,7 +479,7 @@ struct ConvexRowReader: Sendable {
         return try CanonicalFinancialProjection.income(rows: householdRows, complete: true)
     }
 
-    func btcBuys(viewer: FamilyMember, scope: ConvexRowScope) async throws -> [MC2BTCBuy] {
+    func btcBuys(viewer: FamilyMember, scope: ConvexRowScope) async throws -> [LegacyBTCBuyDTO] {
         let envelope = try await client.fetchRows(
             .btcBuys(viewer: viewer, scope: scope),
             as: ConvexRowEnvelope<ConvexBTCBuyRow>.self,
@@ -491,7 +491,7 @@ struct ConvexRowReader: Sendable {
         return try rows.map { try $0.legacyDTO() }
     }
 
-    func btcBillPays(viewer: FamilyMember, scope: ConvexRowScope) async throws -> [MC2BTCBillPay] {
+    func btcBillPays(viewer: FamilyMember, scope: ConvexRowScope) async throws -> [LegacyBTCBillPayDTO] {
         let envelope = try await client.fetchRows(
             .btcBillPays(viewer: viewer, scope: scope),
             as: ConvexRowEnvelope<ConvexBTCBillPayRow>.self,

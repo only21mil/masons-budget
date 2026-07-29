@@ -99,7 +99,7 @@ class ReadModelTest {
         assertNotNull(mason)
         assertEquals(FamilyMember.MASON, mason.owner)
 
-        assertNull(maddox, "Maddox has no dedicated MC2 budget file, so his slice is empty")
+        assertNull(maddox, "Maddox has no dedicated budget data, so his slice is empty")
     }
 
     @Test
