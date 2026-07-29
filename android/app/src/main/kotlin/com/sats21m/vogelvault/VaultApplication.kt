@@ -11,6 +11,7 @@ import com.sats21m.vogelvault.data.SecureConvexConfigSource
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.cache.VaultDatabase
 import com.sats21m.vogelvault.ui.VaultViewModel
+import java.io.IOException
 
 /**
  * Process-scoped infrastructure and the ViewModel composition root.
@@ -86,6 +87,25 @@ class VaultApplication : Application() {
         }
     }
 
+    internal fun hasStoredConvexCredential(): Boolean =
+        synchronized(convexConfigLock) {
+            storedConvexConfigSource.current().hasReadToken
+        }
+
+    /**
+     * Settings removal shares the same process lock as Save and unauthorized
+     * recovery. If recovery already cleared the manual credential and installed
+     * a working baked fallback, a stale Settings button becomes a no-op instead
+     * of disabling that fallback.
+     */
+    internal fun removeStoredConvexCredential(): Boolean =
+        synchronized(convexConfigLock) {
+            removeStoredConvexConfigIfPresent(
+                stored = storedConvexConfigSource,
+                effective = convexConfigSource,
+            )
+        }
+
     private fun recoverRejectedConvexConfig(rejected: ConvexConfig): Boolean =
         synchronized(convexConfigLock) {
             recoverRejectedStoredConvexConfig(
@@ -123,13 +143,23 @@ internal fun recoverRejectedStoredConvexConfig(
     effective: MutableConvexConfigSource,
     fallback: ConvexConfig,
 ): Boolean {
-    if (stored.clearIfCurrent(rejected)) {
-        val next =
-            if (fallback.hasSameCredentialAs(rejected)) {
-                ConvexConfig()
-            } else {
-                fallback
+    val cleared =
+        try {
+            stored.clearIfCurrent(rejected)
+        } catch (_: IOException) {
+            // A failed synchronous SharedPreferences commit must not escape a
+            // viewModelScope coroutine. The durable credential may need another
+            // removal attempt after restart, but this process can still fail
+            // closed or install a distinct baked fallback safely.
+            if (effective.current().hasSameCredentialAs(rejected)) {
+                val next = fallbackAfterRejection(rejected, fallback)
+                effective.update(next)
+                return next.allowsRemoteRead
             }
+            return false
+        }
+    if (cleared) {
+        val next = fallbackAfterRejection(rejected, fallback)
         effective.update(next)
         return next.allowsRemoteRead
     }
@@ -142,7 +172,31 @@ internal fun recoverRejectedStoredConvexConfig(
     return false
 }
 
-private fun ConvexConfig.hasSameCredentialAs(other: ConvexConfig): Boolean =
+internal fun removeStoredConvexConfigIfPresent(
+    stored: SecureConvexConfigSource,
+    effective: MutableConvexConfigSource,
+): Boolean {
+    val currentStored = stored.current()
+    if (!currentStored.hasReadToken) return false
+
+    stored.clear()
+    if (effective.current().hasSameCredentialAs(currentStored)) {
+        effective.update(ConvexConfig())
+    }
+    return true
+}
+
+private fun fallbackAfterRejection(
+    rejected: ConvexConfig,
+    fallback: ConvexConfig,
+): ConvexConfig =
+    if (fallback.hasSameCredentialAs(rejected)) {
+        ConvexConfig()
+    } else {
+        fallback
+    }
+
+internal fun ConvexConfig.hasSameCredentialAs(other: ConvexConfig): Boolean =
     deploymentUrl == other.deploymentUrl &&
         readTokenOrNull() == other.readTokenOrNull() &&
         remoteReadEnabled == other.remoteReadEnabled

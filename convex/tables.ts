@@ -41,6 +41,7 @@
 import { ConvexError, v } from "convex/values";
 
 import { query, mutation } from "./_generated/server";
+import { requireIsoDate } from "./dateValidation";
 import { custodyValidator, familyMemberValidator } from "./schema";
 import { normalizeTodoRecord, todoUpdatedMs } from "./todoNormalize";
 
@@ -290,6 +291,10 @@ function satsFromBuy(raw: Record<string, unknown>): bigint {
  */
 function monthOf(date: string): string {
   return date.slice(0, 7);
+}
+
+function rejectRowDate(code: string, field: string, message: string): never {
+  throw new ConvexError({ code, field, message });
 }
 
 /** null, undefined and "" all mean "nothing here"; store the field as absent. */
@@ -1663,7 +1668,8 @@ export const upsertTransaction = mutation({
     validateSyncToken(token);
     const file = sourceFile ?? "transactions";
     const fileOwner = ownerForSourceFile(file, "transactions");
-    const date = transaction.date;
+    const now = Date.now();
+    const date = requireIsoDate(transaction.date, "date", now, 30, rejectRowDate);
     const owner = resolveOwner(transaction.owner, fileOwner);
     requireSignAgrees(
       transaction.amountCents,
@@ -1682,7 +1688,7 @@ export const upsertTransaction = mutation({
       card: optionalText(transaction.card),
       note: optionalText(transaction.note),
       sourceFile: file,
-      updatedAtMs: Date.now(),
+      updatedAtMs: now,
     };
     const outcome = await upsertTransactionRow(ctx, row);
     return { txId: row.txId, owner: row.owner, month: row.month, outcome };
@@ -1861,6 +1867,8 @@ export const upsertBtcBillPay = mutation({
     validateSyncToken(token);
     const file = sourceFile ?? "bitcoin-bill-pays";
     const fileOwner = ownerForSourceFile(file, "btcBillPays");
+    const now = Date.now();
+    const date = requireIsoDate(billPay.date, "date", now, 30, rejectRowDate);
     // NOTE: deliberately NOT the upsertBtcAccount guard (owner must equal
     // fileOwner). There is exactly one bill-pay source file and no child
     // equivalent, so bill pays carry `owner` per row and rely on read-time
@@ -1879,8 +1887,8 @@ export const upsertBtcBillPay = mutation({
     const row = {
       billPayId: billPay.id,
       owner: resolveOwner(billPay.owner, fileOwner),
-      date: billPay.date,
-      month: monthOf(billPay.date),
+      date,
+      month: monthOf(date),
       merchant: billPay.merchant,
       category: billPay.category,
       amountUsdCents: billPay.amountUsdCents,
@@ -1891,7 +1899,7 @@ export const upsertBtcBillPay = mutation({
       feeUsdCents: billPay.feeUsdCents,
       reference: optionalText(billPay.reference),
       sourceFile: file,
-      updatedAtMs: Date.now(),
+      updatedAtMs: now,
     };
     const outcome = await upsertBtcBillPayRow(ctx, row);
     return {
