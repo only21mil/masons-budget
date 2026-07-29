@@ -38,6 +38,8 @@
     <string name="convex_budget_period_mismatch_detail">Convex returned targets for %1$s. Actuals were re-derived from %2$s transaction rows; the targets were not.</string>
     <string name="convex_uncategorized_spend_detail">The Convex transaction rows have no matching budget category, so this spend is counted on Activity only.</string>
     <string name="navigation_more">More</string>
+    <string name="btc_buys_screen_title">BTC Buys</string>
+    <string name="btc_bill_pays_screen_title">BTC Bill Pays</string>
     <string name="refresh_data">Refresh live data</string>
     <string name="refresh_unavailable">Refresh unavailable while live reads are disabled</string>
     <string name="refresh_failed_title">Refresh failed</string>

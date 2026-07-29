@@ -158,6 +158,8 @@ fun ScreenHost(
     val todosInput = state.data.todos.value
     val incomeFiguresUnavailable = state.data.incomeFiguresUnavailable
     val netWorthBalance = state.data.netWorthBalanceForDisplay()
+    val btcBuysTitle = stringResource(R.string.btc_buys_screen_title)
+    val btcBillPaysTitle = stringResource(R.string.btc_bill_pays_screen_title)
     val months = remember(profile, transactionsInput, budgetMonth) {
         transactionsInput.budgetMonthsFor(profile, budgetMonth)
     }
@@ -276,7 +278,13 @@ fun ScreenHost(
             }
             if (
                 displayUnit == DisplayUnit.USD &&
-                destination in setOf(Destination.DASHBOARD, Destination.BITCOIN, Destination.NET_WORTH)
+                destination in setOf(
+                    Destination.DASHBOARD,
+                    Destination.BITCOIN,
+                    Destination.BTC_BUYS,
+                    Destination.BTC_BILL_PAYS,
+                    Destination.NET_WORTH,
+                )
             ) {
                 item { BitcoinFiatNotice(state) }
             }
@@ -285,6 +293,8 @@ fun ScreenHost(
                 Destination.ACTIVITY -> activity(state, checkNotNull(activitySearch))
                 Destination.BUDGET -> budget(state, months, budgetSpend) { picked = it }
                 Destination.BITCOIN -> bitcoin(state, bitcoinProjection, displayUnit)
+                Destination.BTC_BUYS -> btcBuysScreen(state, displayUnit, btcBuysTitle)
+                Destination.BTC_BILL_PAYS -> btcBillPaysScreen(state, displayUnit, btcBillPaysTitle)
                 Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
                 Destination.TODAY -> today(state, dueTodos)
                 Destination.FAMILY -> family(state)
@@ -313,6 +323,8 @@ private fun ScreenHeader(
         // A profile with no budget file still says so — Maddox has none.
         Destination.BUDGET -> state.data.budget.value?.let { monthLabel(budgetMonth ?: it.month) } ?: "No budget"
         Destination.BITCOIN -> "Stack and custody"
+        Destination.BTC_BUYS -> "Purchases visible to this profile"
+        Destination.BTC_BILL_PAYS -> "Bitcoin spent on bills visible to this profile"
         Destination.NET_WORTH -> "Household for adults; self only for children"
         Destination.TODAY -> "Due today or overdue"
         Destination.FAMILY -> "Who can see what"
