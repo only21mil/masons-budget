@@ -143,6 +143,8 @@ fun ScreenHost(
     destination: Destination,
     state: VaultUiState,
     onEnableRemoteRows: (String) -> Unit = {},
+    budgetNotificationsEnabled: Boolean = false,
+    onBudgetNotificationsEnabledChange: (Boolean) -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -274,7 +276,13 @@ fun ScreenHost(
                 Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
                 Destination.TODAY -> today(state, dueTodos)
                 Destination.FAMILY -> family(state)
-                Destination.SETTINGS -> settings(state, onEnableRemoteRows)
+                Destination.SETTINGS ->
+                    settings(
+                        state,
+                        onEnableRemoteRows,
+                        budgetNotificationsEnabled,
+                        onBudgetNotificationsEnabledChange,
+                    )
             }
         }
     }
@@ -1090,6 +1098,8 @@ private fun VaultLazyListScope.family(state: VaultUiState) {
 private fun VaultLazyListScope.settings(
     state: VaultUiState,
     onEnableRemoteRows: (String) -> Unit,
+    budgetNotificationsEnabled: Boolean,
+    onBudgetNotificationsEnabledChange: (Boolean) -> Unit,
 ) {
     val readsConvexRows = state.data.transactions.source.startsWith("Convex")
     item {
@@ -1115,6 +1125,12 @@ private fun VaultLazyListScope.settings(
                 tone = VaultWarning,
             )
         }
+    }
+    item {
+        BudgetNotificationSettings(
+            enabled = budgetNotificationsEnabled,
+            onEnabledChange = onBudgetNotificationsEnabledChange,
+        )
     }
     item { RemoteRowsConfiguration(onEnableRemoteRows) }
     item {

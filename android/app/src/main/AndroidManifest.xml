@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Exactly one permission is declared, deliberately.
+  Every permission is declared deliberately.
 
   Adding a permission here is a review event, not a convenience: the app handles
   family financial data and its attack surface should stay at zero until a
@@ -12,13 +12,15 @@
   path is wired through the Room cache but disabled by default, so an
   unconfigured build still renders only sanitized fixtures — but
   HttpURLConnection throws SecurityException without
-  this line, which would make the plumbing impossible to exercise on a device,
-  and burying the permission inside a later UI change would hide precisely the
-  review event this comment exists to force.
+  this line, which would make the plumbing impossible to exercise on a device.
+
+  POST_NOTIFICATIONS supports opt-in budget alerts. It is requested only after
+  the active profile enables budget notifications in Settings, never at launch.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".VaultApplication"

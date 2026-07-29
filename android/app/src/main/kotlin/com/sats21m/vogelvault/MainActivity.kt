@@ -5,12 +5,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sats21m.vogelvault.domain.DisplayUnit
+import com.sats21m.vogelvault.notifications.BudgetNotificationController
 import com.sats21m.vogelvault.ui.VaultApp
 import com.sats21m.vogelvault.ui.VaultViewModel
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
@@ -22,6 +24,7 @@ class MainActivity : ComponentActivity() {
         val app = application as VaultApplication
         val displayPreferences =
             getSharedPreferences(DISPLAY_PREFERENCES, MODE_PRIVATE)
+        val budgetNotifications = BudgetNotificationController(this)
         setContent {
             VogelVaultTheme {
                 val model: VaultViewModel = viewModel(factory = app.viewModelFactory)
@@ -33,11 +36,28 @@ class MainActivity : ComponentActivity() {
                         ),
                     )
                 }
+                var budgetNotificationsEnabled by remember(state.activeProfile) {
+                    mutableStateOf(budgetNotifications.isEnabled(state.activeProfile))
+                }
+                LaunchedEffect(
+                    state.activeProfile,
+                    state.data.budget,
+                    state.data.transactions,
+                    state.staleAuthorization,
+                    budgetNotificationsEnabled,
+                ) {
+                    budgetNotifications.evaluateAndNotify(state)
+                }
                 VaultApp(
                     state = state,
                     onNavigate = model::navigate,
                     onSwitchProfile = model::switchProfile,
                     onEnableRemoteRows = model::enableRemoteRows,
+                    budgetNotificationsEnabled = budgetNotificationsEnabled,
+                    onBudgetNotificationsEnabledChange = { enabled ->
+                        budgetNotifications.setEnabled(state.activeProfile, enabled)
+                        budgetNotificationsEnabled = enabled
+                    },
                     displayUnit = displayUnit,
                     onDisplayUnitChange = { next ->
                         displayUnit = next
