@@ -186,6 +186,11 @@ fun ScreenHost(
             visibleTodos = todosInput.visibleTo(profile),
         )
     }
+    val activitySearch = if (destination == Destination.ACTIVITY) {
+        rememberActivitySearchProjection(collections.visibleTransactions)
+    } else {
+        null
+    }
     val dashboardProjection = remember(month, collections, incomeFiguresUnavailable) {
         val budgetTransactions = collections.budgetTransactions.inMonth(month ?: "")
         val activity = collections.visibleTransactions.inMonth(month ?: "").take(6)
@@ -259,7 +264,7 @@ fun ScreenHost(
             }
             when (destination) {
                 Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit)
-                Destination.ACTIVITY -> activity(state, collections.visibleTransactions)
+                Destination.ACTIVITY -> activity(state, checkNotNull(activitySearch))
                 Destination.BUDGET -> budget(state, months, budgetSpend) { picked = it }
                 Destination.BITCOIN -> bitcoin(state, bitcoinProjection, displayUnit)
                 Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
@@ -467,20 +472,53 @@ private fun VaultLazyListScope.dashboard(
 
 private fun VaultLazyListScope.activity(
     state: VaultUiState,
-    transactions: List<Transaction>,
+    search: ActivitySearchProjection,
 ) {
     item { StaleNotice(state.data.transactions.status) }
     if (state.data.transactions.suppressFigures) {
         item { Panel { StateBlock(state.data.transactions.status) } }
         return
     }
-    if (transactions.isEmpty()) {
+    if (search.totalCount == 0) {
         item { Panel { StateBlock(Freshness.EMPTY) } }
+        return
+    }
+    item { ActivitySearchControls(search) }
+    val transactions = search.transactions
+    if (transactions == null) {
+        item {
+            Panel {
+                Text(
+                    "Filtering cached records...",
+                    modifier = Modifier.padding(VaultSpace.md),
+                    color = VaultTextMuted,
+                )
+            }
+        }
+        return
+    }
+    if (transactions.isEmpty()) {
+        item {
+            Panel {
+                Column(Modifier.padding(VaultSpace.md)) {
+                    Text("No matching records", color = VaultCream)
+                    Text(
+                        "Try another search or filter.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VaultTextMuted,
+                    )
+                }
+            }
+        }
         return
     }
     keyedPanel(
         sectionKey = "activity-transactions",
-        title = "${transactions.size} records",
+        title = if (transactions.size == search.totalCount) {
+            "${transactions.size} records"
+        } else {
+            "${transactions.size} of ${search.totalCount} records"
+        },
         source = state.data.transactions.source,
         rows = transactions,
         rowKey = Transaction::id,
