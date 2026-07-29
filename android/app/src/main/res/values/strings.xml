@@ -40,7 +40,7 @@
     <string name="budget_notification_over_title">%1$s is over budget</string>
     <string name="budget_notification_body">%1$s spent of a %2$s budget for %3$s.</string>
     <string name="budget_notifications_setting_title">Budget notifications</string>
-    <string name="budget_notifications_setting_detail">Alert this profile after a category passes 85% and again after it passes its budget.</string>
+    <string name="budget_notifications_setting_detail">Alert this profile after a category passes 85%% and again after it passes its budget.</string>
     <string name="budget_notifications_enabled">Enabled for this household or profile</string>
     <string name="budget_notifications_disabled">Off — notification permission is requested only when enabled</string>
 </resources>
