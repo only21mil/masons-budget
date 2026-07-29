@@ -75,4 +75,16 @@
     <string name="voice_recognition_failed">Could not make out that recording. Try again, or type it instead.</string>
     <string name="voice_write_not_configured">Not saved: this device has no sync token. Add one in Settings before recording.</string>
     <string name="voice_write_failed">Not saved. The transaction was not written, so nothing has changed.</string>
+    <string name="add_transaction_action">Add</string>
+    <string name="add_transaction_title">New transaction</string>
+    <string name="add_transaction_merchant">Merchant or destination</string>
+    <string name="add_transaction_category">Category</string>
+    <string name="add_transaction_amount">Amount</string>
+    <string name="add_transaction_card">Card or method</string>
+    <string name="add_transaction_date">Date</string>
+    <string name="add_transaction_note">Note</string>
+    <string name="add_transaction_cancel">Cancel</string>
+    <string name="add_transaction_save">Save</string>
+    <string name="add_transaction_saving">Saving...</string>
+    <string name="add_transaction_date_confirm">Use date</string>
 </resources>

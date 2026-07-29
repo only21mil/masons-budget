@@ -147,6 +147,7 @@ fun ScreenHost(
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    var addingTransaction by rememberSaveable { mutableStateOf(false) }
     val budgetMonth = state.data.budget.value?.month
     val profile = state.activeProfile
     val transactionsInput = state.data.transactions.value
@@ -251,6 +252,13 @@ fun ScreenHost(
         todosDueToday(state)
     }
 
+    if (addingTransaction) {
+        AddTransactionSheet(
+            state = state,
+            onDismiss = { addingTransaction = false },
+        )
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(VaultSpace.md),
@@ -263,6 +271,7 @@ fun ScreenHost(
                     month,
                     displayUnit,
                     onDisplayUnitChange,
+                    onAddTransaction = { addingTransaction = true },
                 )
             }
             if (
@@ -292,6 +301,7 @@ private fun ScreenHeader(
     budgetMonth: String?,
     displayUnit: DisplayUnit,
     onDisplayUnitChange: (DisplayUnit) -> Unit,
+    onAddTransaction: () -> Unit,
 ) {
     val subtitle = when (destination) {
         Destination.DASHBOARD ->
@@ -329,6 +339,15 @@ private fun ScreenHeader(
                 color = VaultTextMuted,
                 modifier = Modifier.weight(1f),
             )
+            if (
+                destination == Destination.DASHBOARD ||
+                destination == Destination.ACTIVITY ||
+                destination == Destination.BUDGET
+            ) {
+                Button(onClick = onAddTransaction) {
+                    Text(stringResource(R.string.add_transaction_action))
+                }
+            }
             BitcoinUnitToggle(displayUnit, onDisplayUnitChange)
         }
     }
