@@ -39,6 +39,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.data.ConvexMutation
+import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.Transaction
@@ -58,30 +61,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-internal sealed interface CsvImportWriteResult {
-    data class Success(val count: Int) : CsvImportWriteResult
-    data object Failed : CsvImportWriteResult
-}
-
 private enum class CsvWizardStep {
     SOURCE,
     PREVIEW,
     DONE,
 }
 
-/**
- * Activity-screen entry point plus a full-screen source/preview/import wizard.
- *
- * [onImport] is deliberately nullable. Android has no approved runtime sync
- * credential composition yet, so unconfigured builds expose parsing and review
- * while disabling the final financial write instead of pretending it succeeded.
- */
+/** Activity-screen entry point plus a full-screen source/preview/import wizard. */
 @Composable
 internal fun CsvImportLauncher(
     owner: FamilyMember,
     existingTransactions: List<Transaction>,
     btcPriceCents: Long,
-    onImport: (suspend (List<CsvPreparedTransaction>) -> CsvImportWriteResult)?,
     modifier: Modifier = Modifier,
 ) {
     var open by rememberSaveable { mutableStateOf(false) }
@@ -98,7 +89,6 @@ internal fun CsvImportLauncher(
             owner = owner,
             existingTransactions = existingTransactions,
             btcPriceCents = btcPriceCents.takeIf { it > 0L },
-            onImport = onImport,
             onDismiss = { open = false },
         )
     }
@@ -109,10 +99,11 @@ private fun CsvImportWizard(
     owner: FamilyMember,
     existingTransactions: List<Transaction>,
     btcPriceCents: Long?,
-    onImport: (suspend (List<CsvPreparedTransaction>) -> CsvImportWriteResult)?,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
+    val application = context.applicationContext as? VaultApplication
+    val mutationClient = remember(application) { application?.convexMutationClient }
     val scope = rememberCoroutineScope()
     val service = remember { CsvImportService() }
     var step by remember { mutableStateOf(CsvWizardStep.SOURCE) }
@@ -176,7 +167,6 @@ private fun CsvImportWizard(
                     rows = rows,
                     selectedIds = selectedIds,
                     btcPriceCents = btcPriceCents,
-                    writeAvailable = onImport != null,
                     loading = loading,
                     error = error,
                     onToggle = { id ->
@@ -194,28 +184,75 @@ private fun CsvImportWizard(
                         error = null
                     },
                     onImport = {
-                        val writer = onImport ?: return@CsvPreviewStep
                         val selected = rows.filter { it.id in selectedIds }
+                        val prepared = runCatching {
+                            service.prepareTransactions(selected, owner)
+                        }.getOrElse {
+                            error = it.message ?: context.getString(R.string.csv_import_invalid)
+                            return@CsvPreviewStep
+                        }
+                        val client = mutationClient
+                        if (client == null) {
+                            error = context.getString(R.string.csv_import_client_unavailable)
+                            return@CsvPreviewStep
+                        }
+
                         loading = true
                         error = null
                         scope.launch {
-                            val prepared = runCatching {
-                                service.prepareTransactions(selected, owner)
-                            }.getOrElse {
-                                loading = false
-                                error = it.message ?: context.getString(R.string.csv_import_failed)
-                                return@launch
+                            var savedCount = 0
+                            for (row in prepared) {
+                                when (
+                                    val result = client.mutate(
+                                        ConvexMutation.UpsertTransaction(
+                                            transaction = row.transaction,
+                                            sourceFile = row.sourceFile,
+                                        ),
+                                    )
+                                ) {
+                                    is ConvexResult.Ok -> savedCount++
+                                    ConvexResult.Unauthorized -> {
+                                        error = context.getString(
+                                            R.string.csv_import_unauthorized,
+                                            savedCount,
+                                        )
+                                        break
+                                    }
+                                    ConvexResult.NotConfigured -> {
+                                        error = context.getString(
+                                            R.string.csv_import_not_configured,
+                                            savedCount,
+                                        )
+                                        break
+                                    }
+                                    ConvexResult.Disabled -> {
+                                        error = context.getString(
+                                            R.string.csv_import_disabled,
+                                            savedCount,
+                                        )
+                                        break
+                                    }
+                                    ConvexResult.Missing -> {
+                                        error = context.getString(
+                                            R.string.csv_import_missing,
+                                            savedCount,
+                                        )
+                                        break
+                                    }
+                                    is ConvexResult.Failed -> {
+                                        error = context.getString(
+                                            R.string.csv_import_failed,
+                                            savedCount,
+                                            result.reason,
+                                        )
+                                        break
+                                    }
+                                }
                             }
-                            when (val result = writer(prepared)) {
-                                is CsvImportWriteResult.Success -> {
-                                    loading = false
-                                    importedCount = result.count
-                                    step = CsvWizardStep.DONE
-                                }
-                                CsvImportWriteResult.Failed -> {
-                                    loading = false
-                                    error = context.getString(R.string.csv_import_failed)
-                                }
+                            loading = false
+                            if (savedCount == prepared.size) {
+                                importedCount = savedCount
+                                step = CsvWizardStep.DONE
                             }
                         }
                     },
@@ -284,7 +321,6 @@ private fun CsvPreviewStep(
     rows: List<CsvImportedTransaction>,
     selectedIds: Set<String>,
     btcPriceCents: Long?,
-    writeAvailable: Boolean,
     loading: Boolean,
     error: String?,
     onToggle: (String) -> Unit,
@@ -317,9 +353,6 @@ private fun CsvPreviewStep(
                         Money.formatUsd(btcPriceCents),
                     ),
                 )
-            }
-            if (!writeAvailable) {
-                WarningText(stringResource(R.string.csv_import_write_unavailable))
             }
             if (error != null) ErrorText(error)
             Row(
@@ -382,7 +415,6 @@ private fun CsvPreviewStep(
                 enabled =
                     selectedIds.isNotEmpty() &&
                         priceAvailable &&
-                        writeAvailable &&
                         !loading,
                 modifier = Modifier.weight(1f),
             ) {

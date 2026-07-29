@@ -97,7 +97,6 @@
     <string name="csv_import_no_unique_rows">No new transactions. Every parsed row already exists.</string>
     <string name="csv_import_price_unavailable">Bitcoin price is unavailable. Sats are shown, but import is blocked so fiat spend cannot become a confident zero.</string>
     <string name="csv_import_price_basis">Fiat preview uses the app\'s recorded BTC price of %1$s, not a historical price from each row. Review every amount.</string>
-    <string name="csv_import_write_unavailable">Secure transaction writeback is not configured in this Android build. Review is available; importing remains blocked.</string>
     <string name="csv_import_price_short">Price unavailable</string>
     <string name="csv_import_back">Back</string>
     <string name="csv_import_confirm">Import %1$d</string>
@@ -106,5 +105,11 @@
     <string name="csv_import_complete">Import complete</string>
     <string name="csv_import_complete_count">%1$d transactions were imported.</string>
     <string name="csv_import_parse_failed">The CSV could not be parsed.</string>
-    <string name="csv_import_failed">No rows were written. Check secure writeback configuration and try again.</string>
+    <string name="csv_import_invalid">Import stopped: one or more selected transactions are invalid.</string>
+    <string name="csv_import_client_unavailable">Import stopped: the app write client is unavailable on this device.</string>
+    <string name="csv_import_unauthorized">Import stopped after %1$d rows: the sync token is missing or was rejected.</string>
+    <string name="csv_import_not_configured">Import stopped after %1$d rows: the Convex deployment URL is not configured.</string>
+    <string name="csv_import_disabled">Import stopped after %1$d rows: authenticated writes are disabled.</string>
+    <string name="csv_import_missing">Import stopped after %1$d rows: Convex accepted the request but returned no write result.</string>
+    <string name="csv_import_failed">Import stopped after %1$d rows: the write failed (%2$s).</string>
 </resources>

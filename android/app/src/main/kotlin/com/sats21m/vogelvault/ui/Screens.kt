@@ -289,7 +289,6 @@ fun ScreenHost(
                             owner = state.activeProfile,
                             existingTransactions = state.data.transactions.value,
                             btcPriceCents = state.data.btcPriceCents,
-                            onImport = null,
                         )
                     }
                     activity(state, checkNotNull(activitySearch))
