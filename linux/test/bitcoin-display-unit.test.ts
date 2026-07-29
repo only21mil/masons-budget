@@ -15,6 +15,9 @@ import {
   formatBitcoin,
   newestVisibleBuyPrice,
 } from "../src/renderer/data/bitcoinDisplay.ts"
+import {
+  buildKnownSatsUnavailableFiatEnvelope,
+} from "../src/renderer/data/fixtures.ts"
 import { resolvePage } from "../src/renderer/pages/index.ts"
 
 const REFERENCE_PRICE_CENTS = 10_000_000n
@@ -114,6 +117,35 @@ test("USD UI shows Price unavailable when the required BTC document source is em
   assert.ok(markup.includes("No canonical BTC balance document is available."))
 })
 
+test.each(["dashboard", "bitcoin", "net-worth"])(
+  "%s keeps production sats visible while every canonical USD surface is unavailable",
+  (route) => {
+    const markup = renderPage(
+      route,
+      "victor",
+      "usd",
+      "normal",
+      buildKnownSatsUnavailableFiatEnvelope(),
+    )
+
+    assert.ok(markup.includes(PRICE_UNAVAILABLE), `${route} did not suppress unavailable fiat`)
+    assert.ok(
+      markup.includes("The BTC balance is known, but no supported USD valuation exists."),
+      `${route} did not explain the mixed-availability snapshot`,
+    )
+    assert.ok(!markup.includes("$0.00"), `${route} rendered the legacy zero as a valuation`)
+  },
+)
+
+test("the production-shaped stack remains exact in BTC and SATS modes", () => {
+  const data = buildKnownSatsUnavailableFiatEnvelope()
+  const btc = renderPage("dashboard", "victor", "btc", "normal", data)
+  const sats = renderPage("dashboard", "victor", "sats", "normal", data)
+
+  assert.ok(btc.includes("5.41782856 BTC"))
+  assert.ok(sats.includes("541 782 856 sats"))
+})
+
 function buy(id: string, date: string, priceUsd: bigint, owner: FamilyMember): BTCBuy {
   return {
     id,
@@ -141,6 +173,7 @@ function renderPage(
   profile: FamilyMember,
   displayUnit: "btc" | "sats" | "usd",
   state: "normal" | "empty" = "normal",
+  initialData?: ReturnType<typeof buildKnownSatsUnavailableFiatEnvelope>,
 ): string {
   return renderToStaticMarkup(
     createElement(AppStateProvider, {
@@ -148,6 +181,7 @@ function renderPage(
       initialRoute: route,
       initialStateOverride: state,
       initialDisplayUnit: displayUnit,
+      initialData,
       children: createElement(Harness, { route }),
     }),
   )

@@ -2,10 +2,16 @@
 
 Target deployment: `prod:keen-elephant-452`
 
-This is the operator sequence for adding the row schema and projecting the
-authoritative `dataFiles` blobs into row tables. It does not cut any client over
-to the rows. The blob path remains authoritative and must remain byte-identical:
-`dataFiles`, `syncVersions`, and `todoTombstones` are not migration targets.
+> **Completed-operation record; do not rerun as synchronization.** The row
+> schema/API were deployed and this migration was applied. The sequence below is
+> retained for audit provenance, not as a current deployment plan. A rerun can
+> resurrect row-native deletes while compatible blobs still contain the old
+> record. See `docs/HANDOFF.md` for the current row-write path.
+
+This was the operator sequence for adding the row schema and projecting the
+then-authoritative `dataFiles` blobs into row tables. It did not cut any client
+over to the rows. The blob path had to remain byte-identical:
+`dataFiles`, `syncVersions`, and `todoTombstones` were not migration targets.
 
 The recorded production payload has 905 adult transactions, 31 BTC buys, and
 25 todos. Nothing in this document is fresh evidence about the deployment:

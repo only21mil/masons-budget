@@ -22,6 +22,8 @@ import { type Freshness, type Transaction } from "@vogel-vault/domain/readModel"
 
 import { useAppState } from "../../app/AppState.tsx"
 import type { FixtureEnvelope } from "../../data/fixtures.ts"
+import { fiatCentsOf } from "../../data/btcFiatValuation.ts"
+import { PRICE_UNAVAILABLE } from "../../data/bitcoinDisplay.ts"
 import { spendAmount } from "../../data/transactionAmounts.ts"
 import {
   Badge,
@@ -328,7 +330,7 @@ export function buildExportDatasets(
         row.owner,
         String(row.sats),
         btcCell(row.sats),
-        usdCell(row.fiat),
+        fiatCentsOf(row) === null ? PRICE_UNAVAILABLE : usdCell(fiatCentsOf(row) ?? 0n),
         boolCell(sharesNetWorthWith(viewer, row.owner)),
       ]),
     },
@@ -530,25 +532,25 @@ function ExportPage() {
 function CSVImportPage() {
   return (
     <>
-      <PageHeader title="CSV Import" subtitle="Bring transactions in from a statement" />
+      <PageHeader title="CSV Import" subtitle="Unavailable in this build" />
       <StatusBanner
         tone="warning"
         title="Import is a write path and is not enabled"
-        detail="Imports would mutate Convex row tables. That path is owned by the approved writeback lane, not the desktop client."
+        detail="This client has no file-selection or row-mutation path for imports. No statement can be imported here."
       />
-      <Panel title="How import will work">
+      <Panel title="Required safety contract">
         <ol className="vv-muted" style={{ margin: 0, paddingLeft: "1.2rem", lineHeight: 1.8 }}>
-          <li>Choose a CSV and map its columns to merchant, date, amount, and category.</li>
-          <li>Rows are previewed with the owner they would be tagged with.</li>
-          <li>Amounts are parsed as decimals, never floats — cents are exact.</li>
-          <li>Nothing is written until the mapping is confirmed.</li>
+          <li>Any proposed implementation must preview merchant, date, amount, category, and owner before writing.</li>
+          <li>Amounts must be parsed directly to exact integer cents, never through floating point.</li>
+          <li>Purchases must stay positive and refunds negative for every owner.</li>
+          <li>Rows must use the authenticated Convex row mutation API only after explicit confirmation.</li>
         </ol>
       </Panel>
       <Panel title="Preview" flush>
         <StateBlock
           state="empty"
-          title="No file selected"
-          detail="File selection needs a reviewed preload surface before it can be enabled."
+          title="Import unavailable"
+          detail="There is no file picker, preview parser, or mutation bridge in this build."
         />
       </Panel>
     </>

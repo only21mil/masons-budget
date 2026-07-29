@@ -24,6 +24,13 @@ import type {
   VogelVaultTransactionRow,
 } from "../../../shared/ipc.ts"
 import type { FixtureEnvelope, IncomeRecord } from "./fixtures.ts"
+import {
+  type BTCAccountWithFiatValuation,
+  type BTCSnapshotWithFiatAvailability,
+  type BTCTotalsWithFiatValuation,
+  type FiatValuation,
+  fiatValuationOf,
+} from "./btcFiatValuation.ts"
 
 export type QueryConvexRows = (request: VogelVaultRowRequest) => Promise<VogelVaultRowResult>
 
@@ -94,7 +101,7 @@ function errorEnvelope(code: VogelVaultRowErrorCode, now: number): FixtureEnvelo
     btcBuys: errorSlice([], code),
     billPays: errorSlice([], code),
     todos: errorSlice([], code),
-    btcPriceUsd: 0n,
+    btcPriceUsd: null,
     generatedAt: now,
   }
 }
@@ -109,7 +116,7 @@ function emptyEnvelope(now: number): FixtureEnvelope {
     btcBuys: populatedSlice([], false, null, `${SOURCE} · BTC buys`),
     billPays: populatedSlice([], false, null, `${SOURCE} · BTC bill pays`),
     todos: populatedSlice([], false, null, `${SOURCE} · todos`),
-    btcPriceUsd: 0n,
+    btcPriceUsd: null,
     generatedAt: now,
   }
 }
@@ -170,13 +177,46 @@ function btcBuy(row: VogelVaultBtcBuyRow): BTCBuy {
   }
 }
 
-function btcAccount(row: VogelVaultBtcAccountRow): BTCAccount {
+function ipcFiatValuation(row: {
+  readonly sats: bigint
+  readonly fiatCents: bigint
+  readonly fiatValuation?: {
+    readonly cents: bigint
+    readonly priceCents?: bigint
+    readonly quotedAt?: string
+    readonly source?: string
+    readonly confidence?: string
+  } | null
+}): FiatValuation | null {
+  if (!Object.hasOwn(row, "fiatValuation")) {
+    if (row.sats > 0n && row.fiatCents === 0n) return null
+    return {
+      cents: row.fiatCents,
+      priceCents: null,
+      quotedAt: null,
+      source: null,
+      confidence: null,
+    }
+  }
+  return row.fiatValuation
+    ? {
+        cents: row.fiatValuation.cents,
+        priceCents: row.fiatValuation.priceCents ?? null,
+        quotedAt: row.fiatValuation.quotedAt ?? null,
+        source: row.fiatValuation.source ?? null,
+        confidence: row.fiatValuation.confidence ?? null,
+      }
+    : null
+}
+
+function btcAccount(row: VogelVaultBtcAccountRow): BTCAccountWithFiatValuation {
   return {
     key: row.key,
     label: row.label,
     custody: row.custody,
     sats: row.sats,
     fiat: row.fiatCents,
+    fiatValuation: ipcFiatValuation(row),
     owner: row.owner,
   }
 }
@@ -198,26 +238,32 @@ function billPay(row: VogelVaultBtcBillPayRow): BTCBillPay {
   }
 }
 
-function btcBalanceDocument(document: VogelVaultBtcBalanceDocument): BTCSnapshot {
+function btcBalanceDocument(
+  document: VogelVaultBtcBalanceDocument,
+): BTCSnapshotWithFiatAvailability {
+  const totals: BTCTotalsWithFiatValuation = {
+    sats: document.totals.sats,
+    fiat: document.totals.fiatCents,
+    fiatValuation: ipcFiatValuation(document.totals),
+    exchangeSats: document.totals.exchangeSats,
+    selfCustodySats: document.totals.selfCustodySats,
+  }
   return {
     schemaVersion: Number(document.schemaVersion),
     asOf: document.asOf,
-    accounts: document.accounts.map((account) => ({
+    accounts: document.accounts.map((account): BTCAccountWithFiatValuation => ({
       key: account.key,
       label: account.label,
       custody: account.custody,
       sats: account.sats,
       fiat: account.fiatCents,
+      fiatValuation: ipcFiatValuation(account),
       owner: document.owner,
     })),
-    totals: {
-      sats: document.totals.sats,
-      fiat: document.totals.fiatCents,
-      exchangeSats: document.totals.exchangeSats,
-      selfCustodySats: document.totals.selfCustodySats,
-    },
+    totals,
     source: document.source ?? null,
     basis: document.basis ?? null,
+    balanceConfidence: document.balanceConfidence ?? document.confidence ?? null,
     confidence: document.confidence ?? null,
   }
 }
@@ -307,9 +353,12 @@ function budget(document: VogelVaultBudgetDocument): Budget | null {
   }
 }
 
-function priceFromBalanceDocument(document: BTCSnapshot | null): bigint {
-  if (!document || document.totals.sats <= 0n) return 0n
-  return (document.totals.fiat * 100_000_000n) / document.totals.sats
+function priceFromBalanceDocument(document: BTCSnapshot | null): bigint | null {
+  if (!document || document.totals.sats <= 0n) return null
+  const valuation = fiatValuationOf(document.totals)
+  if (!valuation) return null
+  return valuation.priceCents ??
+    (valuation.cents * 100_000_000n) / document.totals.sats
 }
 
 export async function loadConvexRowEnvelope(

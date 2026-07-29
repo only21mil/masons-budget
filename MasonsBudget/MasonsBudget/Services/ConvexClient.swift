@@ -9,7 +9,17 @@ import Security
 /// Configuration for the Convex deployment.
 enum ConvexConfig {
     private static let rowReadsEnabledKey = "convex_row_reads_enabled"
+    private static let readTokenKey = "convex_read_token"
     private static let syncTokenKey = "convex_sync_token"
+    private static var readTokenStore: MigratingKeychainTokenStore {
+        makeReadTokenStore(
+            userDefaults: .standard,
+            keychain: KeychainCredentialStore(
+                service: "com.sats21m.vogel-vault.convex",
+                account: "read-token",
+            ),
+        )
+    }
     private static var syncTokenStore: MigratingKeychainTokenStore {
         MigratingKeychainTokenStore(
             userDefaults: .standard,
@@ -18,6 +28,18 @@ enum ConvexConfig {
                 service: "com.sats21m.vogel-vault.convex",
                 account: "sync-token",
             ),
+        )
+    }
+
+    /// Injection seam for testing the production read-token migration wiring.
+    static func makeReadTokenStore(
+        userDefaults: UserDefaults,
+        keychain: CredentialStoring,
+    ) -> MigratingKeychainTokenStore {
+        MigratingKeychainTokenStore(
+            userDefaults: userDefaults,
+            legacyKey: readTokenKey,
+            keychain: keychain,
         )
     }
 
@@ -74,20 +96,28 @@ enum ConvexConfig {
     /// fail-closed on reads too.
     ///
     /// Same rules as `syncToken`: never hardcode it, never bundle it in the app,
-    /// never commit it. Injected at runtime and empty by default, so a build that
-    /// has not been configured fails closed against an enforcing deployment rather
-    /// than silently carrying a secret.
+    /// never commit it. Stored in the device-only Keychain after runtime injection
+    /// and empty by default, so an unconfigured build fails closed.
+    ///
+    /// Reading this property migrates the legacy UserDefaults value and removes the
+    /// cleartext copy only after the Keychain write succeeds.
     static var readToken: String {
-        UserDefaults.standard.string(forKey: "convex_read_token") ?? ""
+        readTokenStore.token
     }
 
-    static func setReadToken(_ token: String) {
-        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            UserDefaults.standard.removeObject(forKey: "convex_read_token")
-        } else {
-            UserDefaults.standard.set(trimmed, forKey: "convex_read_token")
-        }
+    /// Presence-only view for UI status. UI callers must not retain or render the credential.
+    static var hasReadToken: Bool {
+        readTokenStore.hasToken
+    }
+
+    @discardableResult
+    static func setReadToken(_ token: String) -> Bool {
+        readTokenStore.set(token)
+    }
+
+    @discardableResult
+    static func removeReadToken() -> Bool {
+        readTokenStore.remove()
     }
 
     /// Runtime gate for the public row API. Default-off until the row schema and
@@ -828,6 +858,39 @@ enum ConvexTaggedInt64Decoder {
     }
 }
 
+/// Encodes Swift `Int64` values for Convex's `convex_encoded_json` request format.
+///
+/// Row mutations accept `v.int64()`, which is not a JSON number. Sending an
+/// `NSNumber` here would either lose precision above 2^53 or be rejected by
+/// Convex. Keep the exact little-endian tag at the request boundary.
+enum ConvexTaggedInt64Encoder {
+    static func encode(_ value: Int64) -> [String: String] {
+        var littleEndian = value.littleEndian
+        let bytes = withUnsafeBytes(of: &littleEndian) { Data($0) }
+        return ["$integer": bytes.base64EncodedString()]
+    }
+}
+
+enum ConvexRowMutationError: LocalizedError, Equatable {
+    case fractionalMinorUnit(field: String)
+    case minorUnitOverflow(field: String)
+    case ownerMismatch(field: String, expected: FamilyMember, actual: String?)
+    case unexpectedResponse(path: String)
+
+    var errorDescription: String? {
+        switch self {
+        case let .fractionalMinorUnit(field):
+            "\(field) has precision smaller than one cent and cannot be written exactly."
+        case let .minorUnitOverflow(field):
+            "\(field) does not fit in the Convex Int64 money contract."
+        case let .ownerMismatch(field, expected, actual):
+            "\(field) owner '\(actual ?? "missing")' does not match \(expected.rawValue)."
+        case let .unexpectedResponse(path):
+            "\(path) returned an unexpected response."
+        }
+    }
+}
+
 /// Type-erased Codable wrapper for Convex responses.
 struct AnyCodable: Decodable {
     let value: Any
@@ -937,55 +1000,177 @@ final class ConvexClient: Sendable {
         return result
     }
 
-    /// Replace a whole data file payload and bump its sync version.
-    @discardableResult
-    func syncFile(name: String, data: Any) async throws -> Double {
-        let raw = try await mutation("dataFiles:sync", args: [
-            "name": name,
-            "data": data,
+    /// Insert or replace one transaction row. The source file is the ownership
+    /// boundary: adult rows stay canonical to Victor while child rows remain
+    /// isolated in their own files.
+    func upsertTransactionRow(
+        _ transaction: LegacyTransactionDTO,
+        sourceFile: String = "transactions",
+    ) async throws {
+        let amountCents = try Self.exactMinorUnits(transaction.amount, field: "transaction.amount")
+        let kind = transaction.category == "Income" || amountCents < 0 ? "credit" : "spend"
+        var row: [String: Any] = [
+            "id": transaction.id,
+            "date": transaction.date,
+            "merchant": transaction.merchant,
+            "amountCents": ConvexTaggedInt64Encoder.encode(amountCents),
+            "kind": kind,
+            "category": transaction.category,
+        ]
+        if let card = transaction.card { row["card"] = card }
+        if let note = transaction.note { row["note"] = note }
+
+        let path = "tables:upsertTransaction"
+        let raw = try await mutation(path, args: [
+            "sourceFile": sourceFile,
+            "transaction": row,
         ])
-        guard let result = raw as? [String: Any] else { return 0 }
-        if let version = result["version"] as? Double { return version }
-        if let version = result["version"] as? Int { return Double(version) }
-        return 0
+        guard let result = raw as? [String: Any],
+              result["txId"] as? String == transaction.id
+        else {
+            throw ConvexRowMutationError.unexpectedResponse(path: path)
+        }
     }
 
-    /// Push one app-created transaction into the shared legacy transactions document.
-    @discardableResult
-    func appendTransaction(_ transaction: LegacyTransactionDTO, to name: String = "transactions") async throws -> Double {
-        let raw = try await mutation("dataFiles:appendTransaction", args: [
-            "name": name,
-            "transaction": transaction.convexJSONObject(),
+    /// Delete one transaction row without reading or rewriting its neighbours.
+    func deleteTransactionRow(id: String, sourceFile: String = "transactions") async throws {
+        let path = "tables:deleteTransaction"
+        let raw = try await mutation(path, args: [
+            "txId": id,
+            "sourceFile": sourceFile,
         ])
-        guard let result = raw as? [String: Any] else { return 0 }
-        if let version = result["version"] as? Double { return version }
-        if let version = result["version"] as? Int { return Double(version) }
-        return 0
+        guard let result = raw as? [String: Any],
+              result["txId"] as? String == id,
+              result["removed"] is Bool
+        else {
+            throw ConvexRowMutationError.unexpectedResponse(path: path)
+        }
     }
 
-    /// Upsert one app-created or app-edited todo into the shared legacy todos document.
-    @discardableResult
-    func upsertTodo(_ todo: LegacyTodoDTO, to name: String = "todos") async throws -> Double {
-        let raw = try await mutation("dataFiles:upsertTodo", args: [
-            "name": name,
+    /// Insert or replace one Bitcoin purchase row using exact cents and sats.
+    func upsertBTCBuyRow(
+        _ buy: LegacyBTCBuyDTO,
+        owner: FamilyMember,
+        sourceFile: String = "bitcoin-buys",
+    ) async throws {
+        guard buy.owner == owner.rawValue else {
+            throw ConvexRowMutationError.ownerMismatch(
+                field: "btcBuy",
+                expected: owner,
+                actual: buy.owner,
+            )
+        }
+        let priceUsdCents = try Self.exactMinorUnits(buy.priceUsd, field: "btcBuy.priceUsd")
+        let usdCents = try Self.exactMinorUnits(buy.usd, field: "btcBuy.usd")
+        var row: [String: Any] = [
+            "id": buy.id,
+            "date": buy.date,
+            "source": buy.source,
+            "sats": ConvexTaggedInt64Encoder.encode(buy.amountSats),
+            "priceUsdCents": ConvexTaggedInt64Encoder.encode(priceUsdCents),
+            "usdCents": ConvexTaggedInt64Encoder.encode(usdCents),
+        ]
+        if let note = buy.note { row["note"] = note }
+        if let status = buy.status { row["status"] = status }
+        if let costBasisStatus = buy.costBasisStatus { row["costBasisStatus"] = costBasisStatus }
+        if let loggedBy = buy.loggedBy { row["loggedBy"] = loggedBy }
+        if let requestID = buy.archimedesRequestId { row["archimedesRequestId"] = requestID }
+        // Adult blob rows are canonical to Victor and resolved from sourceFile.
+        // Children must carry their own owner even when no dedicated legacy buy
+        // file exists (Maddox), or their balance would enter the adult ledger.
+        if !owner.isAdult { row["owner"] = owner.rawValue }
+
+        let path = "tables:upsertBtcBuy"
+        let raw = try await mutation(path, args: [
+            "sourceFile": sourceFile,
+            "buy": row,
+        ])
+        guard let result = raw as? [String: Any],
+              result["buyId"] as? String == buy.id
+        else {
+            throw ConvexRowMutationError.unexpectedResponse(path: path)
+        }
+    }
+
+    /// Upsert one app-created or app-edited todo row.
+    func upsertTodoRow(_ todo: LegacyTodoDTO) async throws {
+        let path = "tables:upsertTodo"
+        let raw = try await mutation(path, args: [
             "todo": todo.convexJSONObject(),
         ])
-        guard let result = raw as? [String: Any] else { return 0 }
-        if let version = result["version"] as? Double { return version }
-        if let version = result["version"] as? Int { return Double(version) }
-        return 0
+        guard let result = raw as? [String: Any],
+              result["todoId"] as? String == todo.id
+        else {
+            throw ConvexRowMutationError.unexpectedResponse(path: path)
+        }
     }
 
-    @discardableResult
-    func removeTodo(id: String) async throws -> Bool {
-        let raw = try await mutation("dataFiles:removeTodo", args: [
+    /// Delete one todo row. A missing row is still a successful idempotent delete.
+    func deleteTodoRow(id: String) async throws {
+        let path = "tables:deleteTodo"
+        let raw = try await mutation(path, args: [
             "todoId": id,
         ])
-        guard let result = raw as? [String: Any] else { return false }
-        return result["removed"] as? Bool ?? false
+        guard let result = raw as? [String: Any],
+              result["todoId"] as? String == id,
+              result["removed"] is Bool
+        else {
+            throw ConvexRowMutationError.unexpectedResponse(path: path)
+        }
+    }
+
+    /// Update one category in the viewer's current row-backed budget document.
+    /// The read supplies the server's exact month guard; guessing the current
+    /// month locally could edit the wrong document around a rollover.
+    func upsertBudgetCategoryRow(
+        name: String,
+        icon: String,
+        budget: Decimal,
+        viewer: FamilyMember,
+    ) async throws {
+        let envelope = try await fetchRows(
+            .budget(viewer: viewer),
+            as: ConvexBudgetDocumentEnvelope.self,
+        )
+        let document = try envelope.completeDocument()
+        let budgetCents = try Self.exactMinorUnits(budget, field: "budgetCategory.budget")
+        let path = "tables:upsertBudgetCategory"
+        let raw = try await mutation(path, args: [
+            "viewer": viewer.rawValue,
+            "month": document.month,
+            "category": [
+                "name": name,
+                "icon": icon,
+                "budgetCents": ConvexTaggedInt64Encoder.encode(budgetCents),
+            ],
+        ])
+        guard let result = raw as? [String: Any],
+              result["name"] as? String == name,
+              result["month"] as? String == document.month
+        else {
+            throw ConvexRowMutationError.unexpectedResponse(path: path)
+        }
     }
 
     // MARK: - Internal
+
+    static func exactMinorUnits(_ value: Decimal, field: String) throws -> Int64 {
+        var scaled = value * 100
+        var integral = Decimal()
+        NSDecimalRound(&integral, &scaled, 0, .plain)
+        guard scaled == integral else {
+            throw ConvexRowMutationError.fractionalMinorUnit(field: field)
+        }
+
+        let number = NSDecimalNumber(decimal: integral)
+        guard number != NSDecimalNumber.notANumber,
+              number.compare(NSDecimalNumber(string: String(Int64.min))) != .orderedAscending,
+              number.compare(NSDecimalNumber(string: String(Int64.max))) != .orderedDescending
+        else {
+            throw ConvexRowMutationError.minorUnitOverflow(field: field)
+        }
+        return number.int64Value
+    }
 
     /// Execute a Convex query and return the raw result.
     private func query(_ path: String, args: [String: Any]) async throws -> Any {

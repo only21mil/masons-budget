@@ -4,6 +4,14 @@
 export type VogelVaultMember = "victor" | "rachel" | "mason" | "maddox"
 export type VogelVaultBtcScope = "visible" | "netWorth"
 
+export interface VogelVaultFiatValuation {
+  readonly cents: bigint
+  readonly priceCents?: bigint
+  readonly quotedAt?: string
+  readonly source?: string
+  readonly confidence?: string
+}
+
 export interface VogelVaultTransactionRow {
   readonly txId: string
   readonly owner: VogelVaultMember
@@ -63,7 +71,9 @@ export interface VogelVaultBtcAccountRow {
   readonly label: string
   readonly custody: "exchange" | "self_custody"
   readonly sats: bigint
+  /** Transition-only mirror; render fiatValuation instead. */
   readonly fiatCents: bigint
+  readonly fiatValuation?: VogelVaultFiatValuation | null
   readonly asOf: string
   readonly schemaVersion: bigint
   readonly updatedAtMs: number
@@ -104,12 +114,16 @@ export interface VogelVaultBtcBalanceAccount {
   readonly label: string
   readonly custody: "exchange" | "self_custody"
   readonly sats: bigint
+  /** Transition-only mirror; render fiatValuation instead. */
   readonly fiatCents: bigint
+  readonly fiatValuation?: VogelVaultFiatValuation | null
 }
 
 export interface VogelVaultBtcBalanceTotals {
   readonly sats: bigint
+  /** Transition-only mirror; render fiatValuation instead. */
   readonly fiatCents: bigint
+  readonly fiatValuation?: VogelVaultFiatValuation | null
   readonly exchangeSats: bigint
   readonly selfCustodySats: bigint
 }
@@ -122,6 +136,9 @@ export interface VogelVaultBtcBalanceDocument {
   readonly totals: VogelVaultBtcBalanceTotals
   readonly source?: string
   readonly basis?: string
+  /** Confidence in the sats balance only. */
+  readonly balanceConfidence?: string
+  /** Transition-only alias for balanceConfidence. */
   readonly confidence?: string
   readonly updatedAtMs: number
 }

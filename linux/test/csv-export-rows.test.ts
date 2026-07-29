@@ -4,7 +4,11 @@ import { test } from "vitest"
 import { FAMILY_MEMBERS, type FamilyMember } from "@vogel-vault/domain/family"
 
 import { validateCsvRequest } from "../electron/csvExport.ts"
-import { buildSanitizedFixtureEnvelope } from "../src/renderer/data/fixtures.ts"
+import {
+  buildKnownSatsUnavailableFiatEnvelope,
+  buildSanitizedFixtureEnvelope,
+} from "../src/renderer/data/fixtures.ts"
+import { PRICE_UNAVAILABLE } from "../src/renderer/data/bitcoinDisplay.ts"
 import { EXPORT_DATASET_IDS, buildExportDatasets } from "../src/renderer/pages/admin/index.tsx"
 
 type Datasets = ReturnType<typeof buildExportDatasets>
@@ -83,4 +87,16 @@ test("money and bitcoin cells retain exact decimal text", () => {
   assert.equal(cell(datasets.transactions, "tx-0001", "signed_usd"), "-142.18")
   assert.equal(cell(datasets.transactions, "tx-0003", "amount_usd"), "2480.00")
   assert.equal(cell(datasets["bitcoin-accounts"], "mason-stack", "btc"), "0.00120000")
+})
+
+test("bitcoin account export labels unavailable fiat instead of writing a confident zero", () => {
+  const accounts = buildExportDatasets(
+    "victor",
+    buildKnownSatsUnavailableFiatEnvelope(),
+  )["bitcoin-accounts"]
+
+  assert.equal(
+    cell(accounts, "canonical-self-custody", "fiat_usd"),
+    PRICE_UNAVAILABLE,
+  )
 })
