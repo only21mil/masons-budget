@@ -177,7 +177,11 @@ jobs:
         run: |
           set -euo pipefail
           expected='26.6'
-          actual="$(xcodebuild -version | head -1 | awk '{print $2}')"
+          # NOT `xcodebuild -version | head -1`: head closes the pipe after one
+          # line, xcodebuild writes into the closed descriptor and dies with an
+          # uncaught NSException, exit 134. Capture in full, then parse.
+          version_output="$(xcodebuild -version)"
+          actual="$(printf '%s\n' "$version_output" | awk 'NR==1 {print $2}')"
           echo "xcodebuild reports $actual; release pins $expected"
           if [ "$actual" != "$expected" ]; then
             echo "::error::Xcode $expected is pinned for release but this runner has $actual." >&2
