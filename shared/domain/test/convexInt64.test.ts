@@ -4,7 +4,7 @@ import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 
-import { decodeConvexInt64 } from "../src/convexInt64.ts"
+import { decodeConvexInt64, encodeConvexInt64 } from "../src/convexInt64.ts"
 
 interface ValidCase {
   name: string
@@ -46,6 +46,12 @@ const fixtures = JSON.parse(
 test("decodes canonical signed little-endian Convex int64 fixtures", () => {
   for (const testCase of fixtures.valid) {
     assert.equal(decodeConvexInt64(testCase.wire), BigInt(testCase.decimal), testCase.name)
+  }
+})
+
+test("encodes the canonical signed little-endian Convex int64 fixtures", () => {
+  for (const testCase of fixtures.valid) {
+    assert.deepEqual(encodeConvexInt64(BigInt(testCase.decimal)), testCase.wire, testCase.name)
   }
 })
 
@@ -112,6 +118,8 @@ test("production format cases enforce format-specific int64 behavior", async (co
 test("pins signed int64 extrema", () => {
   assert.equal(decodeConvexInt64({ $integer: "/////////38=" }), 9_223_372_036_854_775_807n)
   assert.equal(decodeConvexInt64({ $integer: "AAAAAAAAAIA=" }), -9_223_372_036_854_775_808n)
+  assert.throws(() => encodeConvexInt64(9_223_372_036_854_775_808n), RangeError)
+  assert.throws(() => encodeConvexInt64(-9_223_372_036_854_775_809n), RangeError)
 })
 
 test("preserves values beyond the JavaScript safe integer range", () => {
