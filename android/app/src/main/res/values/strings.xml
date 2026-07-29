@@ -104,4 +104,7 @@
     <string name="todo_sync_token">Sync credential</string>
     <string name="todo_save_access">Save write access</string>
     <string name="todo_write_access_failed">The credential could not be saved.</string>
+    <string name="todo_write_failed">Todo write failed. Nothing was changed.</string>
+    <string name="todo_deleted">Deleted “%1$s”</string>
+    <string name="todo_undo">Undo</string>
 </resources>

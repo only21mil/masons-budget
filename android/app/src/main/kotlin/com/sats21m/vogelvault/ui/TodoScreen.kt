@@ -41,6 +41,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
@@ -58,6 +59,7 @@ import com.sats21m.vogelvault.ui.theme.VaultTextDim
 import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -85,13 +87,16 @@ internal fun TodoScreen(
     var expiryJob by remember { mutableStateOf<Job?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val writeFailedMessage = stringResource(R.string.todo_write_failed)
+    val undoLabel = stringResource(R.string.todo_undo)
 
     LaunchedEffect(todos, viewer, today) {
         localTodos = todosForToday(todos, viewer, today)
     }
 
     fun reportFailure() {
-        scope.launch { snackbar.showSnackbar(message = "Todo write failed. Nothing was changed.") }
+        scope.launch { snackbar.showSnackbar(message = writeFailedMessage) }
     }
 
     fun mutate(todo: TodoItem, action: suspend () -> Boolean) {
@@ -207,26 +212,33 @@ internal fun TodoScreen(
                             )
                             busyIds = busyIds + todo.id
                             localTodos = localTodos.filterNot { it.id == todo.id }
+                            snackbar.currentSnackbarData?.dismiss()
                             pendingDeletion = pending
                             expiryJob?.cancel()
                             scope.launch {
+                                val feedback = async {
+                                    snackbar.showSnackbar(
+                                        message = context.getString(R.string.todo_deleted, todo.title),
+                                        actionLabel = undoLabel,
+                                        duration = SnackbarDuration.Indefinite,
+                                    )
+                                }
+                                expiryJob = launch {
+                                    delay(TODO_UNDO_WINDOW_MILLIS)
+                                    if (pendingDeletion?.todo?.id == todo.id) {
+                                        pendingDeletion = null
+                                        snackbar.currentSnackbarData?.dismiss()
+                                    }
+                                }
                                 if (!delete(todo.id)) {
                                     localTodos = (localTodos + todo).distinctBy(TodoItem::id)
                                     pendingDeletion = null
+                                    expiryJob?.cancel()
+                                    snackbar.currentSnackbarData?.dismiss()
+                                    feedback.await()
                                     reportFailure()
                                 } else {
-                                    expiryJob = scope.launch {
-                                        delay(TODO_UNDO_WINDOW_MILLIS)
-                                        if (pendingDeletion?.todo?.id == todo.id) {
-                                            pendingDeletion = null
-                                            snackbar.currentSnackbarData?.dismiss()
-                                        }
-                                    }
-                                    val result = snackbar.showSnackbar(
-                                        message = "Deleted “${todo.title}”",
-                                        actionLabel = "Undo",
-                                        duration = SnackbarDuration.Indefinite,
-                                    )
+                                    val result = feedback.await()
                                     if (
                                         result == SnackbarResult.ActionPerformed &&
                                         pendingDeletion?.todo?.id == todo.id &&
