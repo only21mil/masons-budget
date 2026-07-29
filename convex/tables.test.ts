@@ -410,6 +410,23 @@ const fn = {
     },
     { key: string; owner: Member; outcome: string }
   >,
+  upsertBudgetCategory:
+    "tables:upsertBudgetCategory" as unknown as FunctionReference<
+      "mutation",
+      "public",
+      {
+        viewer: Member;
+        month: string;
+        category: { name: string; icon?: string; budgetCents: bigint };
+        token?: string;
+      },
+      {
+        owner: Member;
+        month: string;
+        name: string;
+        outcome: string;
+      }
+    >,
   // dataFiles entry points, used only by the auth-parity block.
   dataFilesGet: "dataFiles:get" as unknown as FunctionReference<
     "query",
@@ -855,6 +872,7 @@ beforeEach(async () => {
 
 describe("the blob path is untouched", () => {
   it("the row mutations do not write dataFiles either", async () => {
+    await migrateAll(t);
     const before = await blobWorldSnapshot(t);
 
     await t.mutation(fn.upsertTransaction, {
@@ -869,6 +887,11 @@ describe("the blob path is untouched", () => {
     await t.mutation(fn.deleteTransaction, { txId: "app-1" });
     await t.mutation(fn.upsertTodo, { todo: { id: "app-todo", title: "Ship it" } });
     await t.mutation(fn.deleteTodo, { todoId: "app-todo" });
+    await t.mutation(fn.upsertBudgetCategory, {
+      viewer: "victor",
+      month: "2026-07",
+      category: { name: "Groceries", budgetCents: 95000n },
+    });
 
     expect(await blobWorldSnapshot(t)).toEqual(before);
   });
@@ -1948,6 +1971,142 @@ describe("row mutations", () => {
     expect(accounts.find((a) => a.key === "strike")?.sats).toBe(36000000n);
   });
 
+  it("updates and inserts categories without replacing the budget document", async () => {
+    await migrateAll(t);
+
+    const updated = await t.mutation(fn.upsertBudgetCategory, {
+      viewer: "rachel",
+      month: "2026-07",
+      category: {
+        name: "Groceries",
+        icon: "basket",
+        budgetCents: 97500n,
+      },
+    });
+    expect(updated).toEqual({
+      owner: "victor",
+      month: "2026-07",
+      name: "Groceries",
+      outcome: "updated",
+    });
+
+    const inserted = await t.mutation(fn.upsertBudgetCategory, {
+      viewer: "victor",
+      month: "2026-07",
+      category: {
+        name: "Travel",
+        icon: "airplane",
+        budgetCents: 25000n,
+      },
+    });
+    expect(inserted.outcome).toBe("inserted");
+
+    const response = await t.query(fn.getBudgetDocument, {
+      viewer: "rachel",
+      scope: "netWorth",
+    });
+    expect(response.document).toMatchObject({
+      owner: "victor",
+      month: "2026-07",
+      coinbaseOneBalanceCents: 12550n,
+      categories: [
+        { name: "Groceries", icon: "basket", budgetCents: 97500n },
+        { name: "Utilities", icon: "zap", budgetCents: 40000n },
+        { name: "Travel", icon: "airplane", budgetCents: 25000n },
+      ],
+      mtdIncomeCents: 250000n,
+    });
+  });
+
+  it("scopes category edits to the budget document's exact month", async () => {
+    await migrateAll(t);
+
+    for (const staleMonth of ["2026-06", "2026-08"]) {
+      await expect(
+        t.mutation(fn.upsertBudgetCategory, {
+          viewer: "victor",
+          month: staleMonth,
+          category: { name: "Groceries", budgetCents: 1n },
+        }),
+      ).rejects.toThrow(
+        new RegExp(`requested month "${staleMonth}".*month "2026-07"`),
+      );
+    }
+
+    await expect(
+      t.mutation(fn.upsertBudgetCategory, {
+        viewer: "victor",
+        month: "2026-07",
+        category: { name: "Groceries", budgetCents: 99000n },
+      }),
+    ).resolves.toMatchObject({ month: "2026-07", outcome: "updated" });
+
+    const response = await t.query(fn.getBudgetDocument, {
+      viewer: "victor",
+      scope: "netWorth",
+    });
+    expect(response.document?.categories[0].budgetCents).toBe(99000n);
+  });
+
+  it("keeps child category edits in the child's budget", async () => {
+    await migrateAll(t);
+
+    await t.mutation(fn.upsertBudgetCategory, {
+      viewer: "mason",
+      month: "2026-07",
+      category: { name: "Fun", icon: "controller", budgetCents: 8000n },
+    });
+
+    const mason = await t.query(fn.getBudgetDocument, {
+      viewer: "mason",
+      scope: "netWorth",
+    });
+    const adult = await t.query(fn.getBudgetDocument, {
+      viewer: "victor",
+      scope: "netWorth",
+    });
+    expect(mason.document?.owner).toBe("mason");
+    expect(mason.document?.categories).toEqual([
+      { name: "Fun", icon: "controller", budgetCents: 8000n },
+    ]);
+    expect(adult.document?.categories[0]).toEqual({
+      name: "Groceries",
+      icon: "cart",
+      budgetCents: 90000n,
+    });
+    await expect(
+      t.mutation(fn.upsertBudgetCategory, {
+        viewer: "maddox",
+        month: "2026-07",
+        category: { name: "Fun", budgetCents: 1n },
+      }),
+    ).rejects.toThrow(/maddox has no budget document/);
+  });
+
+  it("does not create a whole budget document from a category edit", async () => {
+    await expect(
+      t.mutation(fn.upsertBudgetCategory, {
+        viewer: "mason",
+        month: "2026-07",
+        category: { name: "Fun", budgetCents: 1n },
+      }),
+    ).rejects.toThrow(/does not exist.*does not create a whole budget document/);
+  });
+
+  it("rejects non-integer category money", async () => {
+    await migrateAll(t);
+    await expect(
+      t.mutation(fn.upsertBudgetCategory, {
+        viewer: "victor",
+        month: "2026-07",
+        category: {
+          name: "Groceries",
+          budgetCents: 12.5 as unknown as bigint,
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
   it("refuses a sourceFile that holds a different kind of record", async () => {
     // "transactions" is both a file name and a table name, so the two can be
     // crossed by accident. A transaction row tagged with the todos file's
@@ -2188,13 +2347,35 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
           token,
         }),
     },
+    {
+      name: "upsertBudgetCategory",
+      call: (token?: string) =>
+        t.mutation(fn.upsertBudgetCategory, {
+          viewer: "victor",
+          month: "2026-07",
+          category: {
+            name: "Groceries",
+            budgetCents: 90000n,
+          },
+          token,
+        }),
+    },
   ] as const;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Undo the openGates() in the outer beforeEach — these tests are about the
     // deployed default, which is both gates closed.
     delete process.env.ALLOW_TOKENLESS_READ;
     delete process.env.ALLOW_TOKENLESS_SYNC;
+    // Auth succeeds before handler state is consulted. Seed the one document
+    // whose mutation needs an existing aggregate so the valid-token and hatch
+    // cases can proceed past auth and complete the write.
+    await t.run(async (ctx) => {
+      await ctx.db.insert(
+        "budgetDocuments",
+        projectBudgetDocument(JSON.stringify(ADULT_BUDGET), "budget", 1000),
+      );
+    });
   });
 
   describe("no token configured, no hatch (the deployed default)", () => {

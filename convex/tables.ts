@@ -1789,6 +1789,90 @@ export const upsertBtcAccount = mutation({
   },
 });
 
+/**
+ * Insert or replace ONE category in the budget document visible to `viewer`.
+ *
+ * The document itself must already exist: creating one would require defaults
+ * for income, history and other fields that a category edit does not own. A new
+ * category name is appended to the existing document; an exact name match is
+ * replaced in place so category ordering remains stable.
+ *
+ * `month` is an optimistic scope guard, not a month selector. getBudgetDocument
+ * exposes the one document selected by budgetSourceFor(viewer), and callers
+ * derive spend from that document's own month. Refusing a stale month here keeps
+ * a category edit made from a June screen from changing the July document.
+ */
+export const upsertBudgetCategory = mutation({
+  args: {
+    viewer: familyMemberValidator,
+    month: v.string(),
+    category: v.object({
+      name: v.string(),
+      icon: v.optional(v.string()),
+      budgetCents: v.int64(),
+    }),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { viewer, month, category, token }) => {
+    validateSyncToken(token);
+    const sourceFile = budgetSourceFor(viewer);
+    if (sourceFile === null) {
+      throw new ConvexError(
+        `upsertBudgetCategory: ${viewer} has no budget document.`,
+      );
+    }
+
+    const existing = await ctx.db
+      .query("budgetDocuments")
+      .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
+      .unique();
+    if (!existing) {
+      throw new ConvexError(
+        `upsertBudgetCategory: budget document "${sourceFile}" does not exist; ` +
+          "a category edit does not create a whole budget document.",
+      );
+    }
+    if (!sharesNetWorthWith(viewer, existing.owner)) {
+      throw new ConvexError(
+        `upsertBudgetCategory: ${viewer} cannot write ${existing.owner}'s budget.`,
+      );
+    }
+    if (month !== existing.month) {
+      throw new ConvexError(
+        `upsertBudgetCategory: requested month ${JSON.stringify(month)} does ` +
+          `not match ${sourceFile}'s month ${JSON.stringify(existing.month)}.`,
+      );
+    }
+
+    const categoryIndex = existing.categories.findIndex(
+      (candidate) => candidate.name === category.name,
+    );
+    const categories = [...existing.categories];
+    const normalizedCategory = {
+      name: category.name,
+      icon: optionalText(category.icon),
+      budgetCents: category.budgetCents,
+    };
+    const outcome: UpsertOutcome = categoryIndex === -1 ? "inserted" : "updated";
+    if (categoryIndex === -1) {
+      categories.push(normalizedCategory);
+    } else {
+      categories[categoryIndex] = normalizedCategory;
+    }
+
+    await ctx.db.patch(existing._id, {
+      categories,
+      updatedAtMs: Date.now(),
+    });
+    return {
+      owner: existing.owner,
+      month: existing.month,
+      name: category.name,
+      outcome,
+    };
+  },
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Source-file ownership validation for public row upserts.
 // ─────────────────────────────────────────────────────────────────────────────
