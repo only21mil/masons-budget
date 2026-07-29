@@ -39,6 +39,9 @@ class FamilyParityTest {
 
     private fun memberCases(name: String) = fixtures.getAsJsonArray(name).map { it.asJsonObject }
 
+    private fun memberCases(name: String, legacyName: String) =
+        (fixtures.getAsJsonArray(name) ?: fixtures.getAsJsonArray(legacyName)).map { it.asJsonObject }
+
     private val members: List<FamilyMember>
         get() = fixtures.getAsJsonArray("members").map { member(it.asString) }
 
@@ -122,15 +125,15 @@ class FamilyParityTest {
 
     @Test
     fun `legacy data file routing matches the Swift enum`() {
-        // These fixture keys preserve the cross-client JSON contract while the
-        // runtime symbols describe the Convex dataFiles boundary accurately.
-        for (case in memberCases("mc2TransactionsFileName")) {
+        // Accept the old fixture keys until the coordinated shared-domain PR
+        // lands; the runtime symbols and preferred keys are neutral.
+        for (case in memberCases("transactionsDataFileName", "mc2TransactionsFileName")) {
             assertEquals(case["expected"].asString, member(case["member"].asString).transactionsDataFileName)
         }
-        for (case in memberCases("mc2BTCBuysFileName")) {
+        for (case in memberCases("btcBuysDataFileName", "mc2BTCBuysFileName")) {
             assertEquals(case["expected"].asString, member(case["member"].asString).btcBuysDataFileName)
         }
-        for (case in memberCases("hasDedicatedMC2ChildFinanceFiles")) {
+        for (case in memberCases("hasDedicatedChildFinanceFiles", "hasDedicatedMC2ChildFinanceFiles")) {
             assertEquals(
                 case["expected"].asBoolean,
                 member(case["member"].asString).hasDedicatedChildFinanceFiles,

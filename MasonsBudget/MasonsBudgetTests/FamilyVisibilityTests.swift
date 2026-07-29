@@ -482,13 +482,43 @@ private struct VisibilityFixture: Decodable {
         case sharesNetWorth
         case allowedSwitchTargets
         case showsFullBudget
-        case transactionsDataFileName = "mc2TransactionsFileName"
-        case btcBuysDataFileName = "mc2BTCBuysFileName"
-        case hasDedicatedChildFinanceFiles = "hasDedicatedMC2ChildFinanceFiles"
+        case transactionsDataFileName
+        case legacyTransactionsDataFileName = "mc2TransactionsFileName"
+        case btcBuysDataFileName
+        case legacyBTCBuysDataFileName = "mc2BTCBuysFileName"
+        case hasDedicatedChildFinanceFiles
+        case legacyDedicatedChildFinanceFiles = "hasDedicatedMC2ChildFinanceFiles"
         case sampleTransactions
         case sampleAccounts
         case sampleTodos
         case expectations
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        members = try container.decode([String].self, forKey: .members)
+        adults = try container.decode([String].self, forKey: .adults)
+        defaultOwner = try container.decode(String.self, forKey: .defaultOwner)
+        canSee = try container.decode([ViewerOwnerExpectation].self, forKey: .canSee)
+        sharesNetWorth = try container.decode([ViewerOwnerExpectation].self, forKey: .sharesNetWorth)
+        allowedSwitchTargets = try container.decode([MemberListExpectation].self, forKey: .allowedSwitchTargets)
+        showsFullBudget = try container.decode([MemberBoolExpectation].self, forKey: .showsFullBudget)
+        transactionsDataFileName = try container.decodeIfPresent(
+            [MemberStringExpectation].self,
+            forKey: .transactionsDataFileName,
+        ) ?? container.decode([MemberStringExpectation].self, forKey: .legacyTransactionsDataFileName)
+        btcBuysDataFileName = try container.decodeIfPresent(
+            [MemberStringExpectation].self,
+            forKey: .btcBuysDataFileName,
+        ) ?? container.decode([MemberStringExpectation].self, forKey: .legacyBTCBuysDataFileName)
+        hasDedicatedChildFinanceFiles = try container.decodeIfPresent(
+            [MemberBoolExpectation].self,
+            forKey: .hasDedicatedChildFinanceFiles,
+        ) ?? container.decode([MemberBoolExpectation].self, forKey: .legacyDedicatedChildFinanceFiles)
+        sampleTransactions = try container.decode([FixtureTransaction].self, forKey: .sampleTransactions)
+        sampleAccounts = try container.decode([FixtureAccount].self, forKey: .sampleAccounts)
+        sampleTodos = try container.decode([FixtureTodo].self, forKey: .sampleTodos)
+        expectations = try container.decode(FixtureExpectations.self, forKey: .expectations)
     }
 }
 
