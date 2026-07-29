@@ -36,15 +36,11 @@ class MainActivity : ComponentActivity() {
                         ),
                     )
                 }
-                var budgetNotificationsEnabled by remember(state.activeProfile) {
-                    mutableStateOf(budgetNotifications.isEnabled(state.activeProfile))
-                }
                 LaunchedEffect(
                     state.activeProfile,
                     state.data.budget,
                     state.data.transactions,
                     state.staleAuthorization,
-                    budgetNotificationsEnabled,
                 ) {
                     budgetNotifications.evaluateAndNotify(state)
                 }
@@ -53,11 +49,6 @@ class MainActivity : ComponentActivity() {
                     onNavigate = model::navigate,
                     onSwitchProfile = model::switchProfile,
                     onEnableRemoteRows = model::enableRemoteRows,
-                    budgetNotificationsEnabled = budgetNotificationsEnabled,
-                    onBudgetNotificationsEnabledChange = { enabled ->
-                        budgetNotifications.setEnabled(state.activeProfile, enabled)
-                        budgetNotificationsEnabled = enabled
-                    },
                     displayUnit = displayUnit,
                     onDisplayUnitChange = { next ->
                         displayUnit = next

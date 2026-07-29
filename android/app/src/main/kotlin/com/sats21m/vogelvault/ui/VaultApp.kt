@@ -127,8 +127,6 @@ fun VaultApp(
     onNavigate: (Destination) -> Unit,
     onSwitchProfile: (FamilyMember) -> Unit,
     onEnableRemoteRows: (String) -> Unit = {},
-    budgetNotificationsEnabled: Boolean = false,
-    onBudgetNotificationsEnabledChange: (Boolean) -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -154,14 +152,12 @@ fun VaultApp(
                         RowReadFailureNotice(state)
                         RefreshFailureNotice(state)
                         ScreenHost(
-                            current,
-                            state,
-                            onEnableRemoteRows,
-                            budgetNotificationsEnabled,
-                            onBudgetNotificationsEnabledChange,
-                            displayUnit,
-                            onDisplayUnitChange,
-                            Modifier.weight(1f),
+                            destination = current,
+                            state = state,
+                            onEnableRemoteRows = onEnableRemoteRows,
+                            displayUnit = displayUnit,
+                            onDisplayUnitChange = onDisplayUnitChange,
+                            modifier = Modifier.weight(1f),
                         )
                     }
                 }
@@ -175,14 +171,12 @@ fun VaultApp(
                     RowReadFailureNotice(state)
                     RefreshFailureNotice(state)
                     ScreenHost(
-                        current,
-                        state,
-                        onEnableRemoteRows,
-                        budgetNotificationsEnabled,
-                        onBudgetNotificationsEnabledChange,
-                        displayUnit,
-                        onDisplayUnitChange,
-                        Modifier.weight(1f),
+                        destination = current,
+                        state = state,
+                        onEnableRemoteRows = onEnableRemoteRows,
+                        displayUnit = displayUnit,
+                        onDisplayUnitChange = onDisplayUnitChange,
+                        modifier = Modifier.weight(1f),
                     )
                     HorizontalHairline()
                     VaultBottomBar(destinations, current, onNavigate)

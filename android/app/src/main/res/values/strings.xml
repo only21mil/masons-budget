@@ -95,4 +95,5 @@
     <string name="budget_notifications_setting_detail">Alert this profile after a category passes 85%% and again after it passes its budget.</string>
     <string name="budget_notifications_enabled">Enabled for this household or profile</string>
     <string name="budget_notifications_disabled">Off — notification permission is requested only when enabled</string>
+    <string name="budget_notifications_permission_denied">Not enabled: Android denied notification permission. Allow notifications in system settings, then try again.</string>
 </resources>

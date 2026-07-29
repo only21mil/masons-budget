@@ -13,25 +13,48 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.notifications.BudgetNotificationController
 import com.sats21m.vogelvault.ui.components.Panel
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import com.sats21m.vogelvault.ui.theme.VaultTextMuted
+import com.sats21m.vogelvault.ui.theme.VaultWarning
 
 @Composable
-internal fun BudgetNotificationSettings(
-    enabled: Boolean,
-    onEnabledChange: (Boolean) -> Unit,
-) {
+internal fun BudgetNotificationSettings(state: VaultUiState) {
     val context = LocalContext.current
+    val appContext = context.applicationContext
+    val notifications = remember(appContext) { BudgetNotificationController(appContext) }
+    val profile = state.activeProfile
+    var enabled by rememberSaveable(profile) {
+        mutableStateOf(notifications.isEnabled(profile))
+    }
+    var rejectionMessage by rememberSaveable(profile) { mutableStateOf<String?>(null) }
+    val permissionDeniedMessage =
+        stringResource(R.string.budget_notifications_permission_denied)
+    val setEnabled: (Boolean) -> Unit = { next ->
+        notifications.setEnabled(profile, next)
+        enabled = next
+        rejectionMessage = null
+        if (next) notifications.evaluateAndNotify(state)
+    }
     val permissionLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) onEnabledChange(true)
+            if (granted) {
+                setEnabled(true)
+            } else {
+                rejectionMessage = permissionDeniedMessage
+            }
         }
 
     Panel(stringResource(R.string.budget_notifications_setting_title)) {
@@ -52,19 +75,22 @@ internal fun BudgetNotificationSettings(
                     ),
                     color = VaultTextMuted,
                 )
+                rejectionMessage?.let { message ->
+                    Text(message, color = VaultWarning)
+                }
             }
             Switch(
                 checked = enabled,
                 onCheckedChange = { next ->
                     when {
-                        !next -> onEnabledChange(false)
+                        !next -> setEnabled(false)
                         Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ->
-                            onEnabledChange(true)
+                            setEnabled(true)
                         ContextCompat.checkSelfPermission(
                             context,
                             Manifest.permission.POST_NOTIFICATIONS,
                         ) == PackageManager.PERMISSION_GRANTED ->
-                            onEnabledChange(true)
+                            setEnabled(true)
                         else -> permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 },
