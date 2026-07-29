@@ -1,5 +1,5 @@
 // Mason's Budget App — BTC bill pay record
-// Mirrors MC2 bitcoin-bill-pays.json entries.
+// Mirrors Bitcoin bill-pay rows and their surviving legacy blob shape.
 // Bills paid in BTC via Strike (mortgage, credit cards, insurance, etc.).
 
 import Foundation

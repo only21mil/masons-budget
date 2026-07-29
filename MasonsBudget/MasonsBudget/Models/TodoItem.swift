@@ -1,5 +1,5 @@
 // The Vogel Vault — Todo item model
-// Mirrors MC2 todos data synced through Convex.
+// Mirrors todo data synced from Convex.
 
 import Foundation
 import SwiftData

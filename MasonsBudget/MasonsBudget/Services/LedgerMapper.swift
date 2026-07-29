@@ -1,6 +1,6 @@
 import Foundation
 
-enum MC2Mapper {
+enum LedgerMapper {
     static func parseDate(_ raw: String) -> Date {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime]
@@ -20,7 +20,7 @@ enum MC2Mapper {
         return .distantPast
     }
 
-    static func mapTransactions(_ dtos: [MC2Transaction], owner: FamilyMember = .victor) -> [Transaction] {
+    static func mapTransactions(_ dtos: [LegacyTransactionDTO], owner: FamilyMember = .victor) -> [Transaction] {
         dtos.map { dto in
             let resolvedOwner = dto.owner ?? owner
             return Transaction(
@@ -39,7 +39,7 @@ enum MC2Mapper {
         }
     }
 
-    static func mapBudgetSnapshot(_ dto: MC2Budget) -> MonthlyBudgetSnapshot {
+    static func mapBudgetSnapshot(_ dto: LegacyBudgetDTO) -> MonthlyBudgetSnapshot {
         let actualIncome = actualIncomeTotals(
             income: dto.income,
             budgetMonth: dto.month,
@@ -62,7 +62,7 @@ enum MC2Mapper {
     }
 
     static func actualIncomeTotals(
-        income: MC2BudgetIncome?,
+        income: LegacyBudgetIncomeDTO?,
         budgetMonth: String,
         topLevelMTD: Decimal? = nil,
         topLevelYTD: Decimal? = nil,
@@ -110,7 +110,7 @@ enum MC2Mapper {
         return note
     }
 
-    static func mapPaychecksToTransactions(_ paychecks: [MC2Paycheck]?, owner: FamilyMember = .victor) -> [Transaction] {
+    static func mapPaychecksToTransactions(_ paychecks: [LegacyPaycheckDTO]?, owner: FamilyMember = .victor) -> [Transaction] {
         guard let paychecks else { return [] }
         return paychecks.map { paycheck in
             let src = paycheck.source ?? "Paycheck"
@@ -130,7 +130,7 @@ enum MC2Mapper {
         }
     }
 
-    static func mapMonthlyHistory(_ entries: [MC2MonthlyHistoryEntry]?) -> [MonthlyBudgetSnapshot] {
+    static func mapMonthlyHistory(_ entries: [LegacyMonthlyHistoryEntryDTO]?) -> [MonthlyBudgetSnapshot] {
         guard let entries else { return [] }
         return entries.compactMap { entry in
             guard !entry.month.isEmpty else { return nil }
@@ -142,7 +142,7 @@ enum MC2Mapper {
         }
     }
 
-    static func mapBudgetCategories(_ dtos: [MC2BudgetCategory], owner: FamilyMember = .victor) -> [BudgetCategory] {
+    static func mapBudgetCategories(_ dtos: [LegacyBudgetCategoryDTO], owner: FamilyMember = .victor) -> [BudgetCategory] {
         dtos.enumerated().map { index, dto in
             let name = owner == .victor ? dto.name : "\(owner.rawValue):\(dto.name)"
             return BudgetCategory(
@@ -155,7 +155,7 @@ enum MC2Mapper {
         }
     }
 
-    static func mapBTCAccounts(_ snapshot: MC2BTCSnapshot, owner: FamilyMember) -> [BTCAccount] {
+    static func mapBTCAccounts(_ snapshot: LegacyBTCSnapshotDTO, owner: FamilyMember) -> [BTCAccount] {
         snapshot.accounts.map { key, entry in
             BTCAccount(
                 key: "\(snapshot.asOf)-\(key)-\(owner)",
@@ -168,7 +168,7 @@ enum MC2Mapper {
         }
     }
 
-    static func mapBTCBuy(_ dto: MC2BTCBuy, owner: FamilyMember = .victor) -> BTCBuy {
+    static func mapBTCBuy(_ dto: LegacyBTCBuyDTO, owner: FamilyMember = .victor) -> BTCBuy {
         let resolvedOwner = dto.owner
             .flatMap { FamilyMember(rawValue: $0.lowercased()) }
             ?? owner
@@ -190,7 +190,7 @@ enum MC2Mapper {
         )
     }
 
-    static func mapBTCBillPay(_ dto: MC2BTCBillPay) -> BTCBillPay {
+    static func mapBTCBillPay(_ dto: LegacyBTCBillPayDTO) -> BTCBillPay {
         let owner = dto.owner
             .flatMap { FamilyMember(rawValue: $0.lowercased()) }
             ?? .victor
@@ -210,7 +210,7 @@ enum MC2Mapper {
         )
     }
 
-    static func mapFinances(_ finances: MC2Finances, owner: FamilyMember) -> [HoldingAccount] {
+    static func mapFinances(_ finances: LegacyFinancesDTO, owner: FamilyMember) -> [HoldingAccount] {
         var accounts: [HoldingAccount] = []
 
         for (key, account) in finances.retirement.accounts {
@@ -229,7 +229,7 @@ enum MC2Mapper {
         return accounts
     }
 
-    /// Map a single MC2 finance account into a SwiftData HoldingAccount, using
+    /// Map a single surviving finance-blob account into a SwiftData HoldingAccount, using
     /// `viewer.canSee(dataOwnedBy:)` for visibility instead of strict equality —
     /// this is what makes Victor and Rachel see the same shared adult finances
     /// (no data split; single household dataset).
@@ -240,7 +240,7 @@ enum MC2Mapper {
     /// regardless of which adult triggered the sync.
     private static func mapFinanceAccount(
         key: String,
-        account: MC2FinanceAccount,
+        account: LegacyFinanceAccountDTO,
         viewer: FamilyMember,
         ownerOverride: FamilyMember? = nil,
     ) -> HoldingAccount? {
@@ -296,7 +296,7 @@ enum MC2Mapper {
         return holdingAccount
     }
 
-    static func mapSonBalances(_ son: MC2SonBalances) -> [BTCAccount] {
+    static func mapSonBalances(_ son: LegacySonBalancesDTO) -> [BTCAccount] {
         [
             BTCAccount(key: "son-strike-mason", label: "Strike", custody: .exchange, btc: son.strike, fiat: 0, owner: .mason),
             BTCAccount(key: "son-river-mason", label: "River", custody: .exchange, btc: son.river, fiat: 0, owner: .mason),
@@ -304,7 +304,7 @@ enum MC2Mapper {
         ]
     }
 
-    static func mapTodos(_ dtos: [MC2TodoItem], viewer _: FamilyMember) -> [TodoItem] {
+    static func mapTodos(_ dtos: [LegacyTodoDTO], viewer _: FamilyMember) -> [TodoItem] {
         dtos.compactMap { dto in
             // Drop todos whose owner string is a non-nil unrecognized value; an absent owner
             // defaults to .victor via effectiveOwner. All recognized owners are mapped (multi-profile).

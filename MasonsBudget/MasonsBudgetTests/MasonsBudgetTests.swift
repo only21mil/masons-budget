@@ -425,7 +425,7 @@ final class MasonsBudgetTests: XCTestCase {
             owner: .rachel,
         )
 
-        let dto = MC2BTCBuy(appBuy: buy)
+        let dto = LegacyBTCBuyDTO(appBuy: buy)
         let object = try dto.convexJSONObject()
 
         XCTAssertEqual(dto.amountBtc, Decimal(string: "0.00123456"))
@@ -436,10 +436,10 @@ final class MasonsBudgetTests: XCTestCase {
     }
 
     func testBTCBuyFileRoutingUsesDedicatedMasonFileOnly() {
-        XCTAssertEqual(FamilyMember.victor.mc2BTCBuysFileName, "bitcoin-buys")
-        XCTAssertEqual(FamilyMember.rachel.mc2BTCBuysFileName, "bitcoin-buys")
-        XCTAssertEqual(FamilyMember.mason.mc2BTCBuysFileName, "mason-bitcoin-buys")
-        XCTAssertEqual(FamilyMember.maddox.mc2BTCBuysFileName, "bitcoin-buys")
+        XCTAssertEqual(FamilyMember.victor.btcBuysDataFileName, "bitcoin-buys")
+        XCTAssertEqual(FamilyMember.rachel.btcBuysDataFileName, "bitcoin-buys")
+        XCTAssertEqual(FamilyMember.mason.btcBuysDataFileName, "mason-bitcoin-buys")
+        XCTAssertEqual(FamilyMember.maddox.btcBuysDataFileName, "bitcoin-buys")
     }
 
     func testBTCBillPayInit() throws {
@@ -475,7 +475,7 @@ final class MasonsBudgetTests: XCTestCase {
     func testTodoItemInit() {
         let todo = TodoItem(
             id: "vv-test-task",
-            title: "Verify MC2 todo sync",
+            title: "Verify Convex todo sync",
             project: "Inbox",
             dueDate: Date(),
             isFlagged: true,
@@ -484,7 +484,7 @@ final class MasonsBudgetTests: XCTestCase {
         )
 
         XCTAssertEqual(todo.id, "vv-test-task")
-        XCTAssertEqual(todo.title, "Verify MC2 todo sync")
+        XCTAssertEqual(todo.title, "Verify Convex todo sync")
         XCTAssertEqual(todo.project, "Inbox")
         XCTAssertTrue(todo.isFlagged)
         XCTAssertFalse(todo.isDone)
@@ -509,8 +509,8 @@ final class MasonsBudgetTests: XCTestCase {
           }
         ]
         """.data(using: .utf8)!
-        let dtos = try JSONDecoder().decode([MC2TodoItem].self, from: json)
-        let todos = MC2Mapper.mapTodos(dtos, viewer: .victor)
+        let dtos = try JSONDecoder().decode([LegacyTodoDTO].self, from: json)
+        let todos = LedgerMapper.mapTodos(dtos, viewer: .victor)
 
         XCTAssertEqual(todos.map(\.id), ["family-task"])
         XCTAssertEqual(todos.first?.ownerMember, .victor)
@@ -531,7 +531,7 @@ final class MasonsBudgetTests: XCTestCase {
         ]
         """.data(using: .utf8)!
 
-        let dtos = try JSONDecoder().decode([MC2TodoItem].self, from: json)
+        let dtos = try JSONDecoder().decode([LegacyTodoDTO].self, from: json)
 
         XCTAssertEqual(dtos.first?.id, "1774806795347")
         XCTAssertEqual(dtos.first?.createdAt, "1774914863033")
@@ -560,8 +560,8 @@ final class MasonsBudgetTests: XCTestCase {
         ]
         """.data(using: .utf8)!
 
-        let dtos = try JSONDecoder().decode([MC2TodoItem].self, from: json)
-        let todos = MC2Mapper.mapTodos(dtos, viewer: .victor)
+        let dtos = try JSONDecoder().decode([LegacyTodoDTO].self, from: json)
+        let todos = LedgerMapper.mapTodos(dtos, viewer: .victor)
 
         XCTAssertEqual(todos.map(\.id), ["rachel-task", "mason-task"])
         XCTAssertEqual(todos.map(\.ownerMember), [.rachel, .mason])
@@ -575,7 +575,7 @@ final class MasonsBudgetTests: XCTestCase {
             createdBy: "app",
         )
 
-        let dto = MC2TodoItem(appTodo: todo)
+        let dto = LegacyTodoDTO(appTodo: todo)
 
         XCTAssertEqual(dto.owner, FamilyMember.mason.rawValue)
     }

@@ -1,5 +1,5 @@
 // Mason's Budget App — Transaction model
-// Mirrors MC2 transactions.json entries.
+// Mirrors the surviving legacy transactions blob and public Convex rows.
 // Money is Decimal (never Double — financial precision).
 
 import Foundation
@@ -10,7 +10,7 @@ final class Transaction {
     @Attribute(.unique) var id: String
     var date: Date
     var merchant: String
-    /// Fiat budget amount in USD. Keep this canonical for MC2 transactions.json compatibility.
+    /// Fiat budget amount in USD. Keep this canonical for legacy blob compatibility.
     var amount: Decimal
     var category: String
     var amountSats: Int64?

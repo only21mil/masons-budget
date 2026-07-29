@@ -162,7 +162,7 @@ final class FamilyVisibilityTests: XCTestCase {
         XCTAssertEqual(victorSpending, 315, "Victor sees all household spending")
     }
 
-    // MARK: - MC2 Owner Tag Defaults
+    // MARK: - Canonical Owner Tag Defaults
 
     func testDefaultOwnerIsVictor() {
         let tx = Transaction(
@@ -173,7 +173,7 @@ final class FamilyVisibilityTests: XCTestCase {
             category: "Other",
             createdBy: "mc2",
         )
-        XCTAssertEqual(tx.ownerMember, .victor, "Untagged records default to Victor (MC2 convention)")
+        XCTAssertEqual(tx.ownerMember, .victor, "Untagged records default to Victor")
     }
 
     func testExplicitOwnerPreserved() {
@@ -231,9 +231,9 @@ final class FamilyVisibilityTests: XCTestCase {
 
         XCTAssertEqual(Set(fixture.allowedSwitchTargets.map(\.member)), expectedMembers)
         XCTAssertEqual(Set(fixture.showsFullBudget.map(\.member)), expectedMembers)
-        XCTAssertEqual(Set(fixture.mc2TransactionsFileName.map(\.member)), expectedMembers)
-        XCTAssertEqual(Set(fixture.mc2BTCBuysFileName.map(\.member)), expectedMembers)
-        XCTAssertEqual(Set(fixture.hasDedicatedMC2ChildFinanceFiles.map(\.member)), expectedMembers)
+        XCTAssertEqual(Set(fixture.transactionsDataFileName.map(\.member)), expectedMembers)
+        XCTAssertEqual(Set(fixture.btcBuysDataFileName.map(\.member)), expectedMembers)
+        XCTAssertEqual(Set(fixture.hasDedicatedChildFinanceFiles.map(\.member)), expectedMembers)
 
         XCTAssertEqual(fixture.sampleTransactions.count, 9)
         XCTAssertEqual(fixture.sampleAccounts.count, 3)
@@ -277,17 +277,17 @@ final class FamilyVisibilityTests: XCTestCase {
             XCTAssertEqual(try familyMember(testCase.member).showsFullBudget, testCase.expected)
         }
 
-        for testCase in fixture.mc2TransactionsFileName {
-            XCTAssertEqual(try familyMember(testCase.member).mc2TransactionsFileName, testCase.expected)
+        for testCase in fixture.transactionsDataFileName {
+            XCTAssertEqual(try familyMember(testCase.member).transactionsDataFileName, testCase.expected)
         }
 
-        for testCase in fixture.mc2BTCBuysFileName {
-            XCTAssertEqual(try familyMember(testCase.member).mc2BTCBuysFileName, testCase.expected)
+        for testCase in fixture.btcBuysDataFileName {
+            XCTAssertEqual(try familyMember(testCase.member).btcBuysDataFileName, testCase.expected)
         }
 
-        for testCase in fixture.hasDedicatedMC2ChildFinanceFiles {
+        for testCase in fixture.hasDedicatedChildFinanceFiles {
             XCTAssertEqual(
-                try familyMember(testCase.member).hasDedicatedMC2ChildFinanceFiles,
+                try familyMember(testCase.member).hasDedicatedChildFinanceFiles,
                 testCase.expected,
             )
         }
@@ -466,13 +466,60 @@ private struct VisibilityFixture: Decodable {
     let sharesNetWorth: [ViewerOwnerExpectation]
     let allowedSwitchTargets: [MemberListExpectation]
     let showsFullBudget: [MemberBoolExpectation]
-    let mc2TransactionsFileName: [MemberStringExpectation]
-    let mc2BTCBuysFileName: [MemberStringExpectation]
-    let hasDedicatedMC2ChildFinanceFiles: [MemberBoolExpectation]
+    let transactionsDataFileName: [MemberStringExpectation]
+    let btcBuysDataFileName: [MemberStringExpectation]
+    let hasDedicatedChildFinanceFiles: [MemberBoolExpectation]
     let sampleTransactions: [FixtureTransaction]
     let sampleAccounts: [FixtureAccount]
     let sampleTodos: [FixtureTodo]
     let expectations: FixtureExpectations
+
+    private enum CodingKeys: String, CodingKey {
+        case members
+        case adults
+        case defaultOwner
+        case canSee
+        case sharesNetWorth
+        case allowedSwitchTargets
+        case showsFullBudget
+        case transactionsDataFileName
+        case legacyTransactionsDataFileName = "mc2TransactionsFileName"
+        case btcBuysDataFileName
+        case legacyBTCBuysDataFileName = "mc2BTCBuysFileName"
+        case hasDedicatedChildFinanceFiles
+        case legacyDedicatedChildFinanceFiles = "hasDedicatedMC2ChildFinanceFiles"
+        case sampleTransactions
+        case sampleAccounts
+        case sampleTodos
+        case expectations
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        members = try container.decode([String].self, forKey: .members)
+        adults = try container.decode([String].self, forKey: .adults)
+        defaultOwner = try container.decode(String.self, forKey: .defaultOwner)
+        canSee = try container.decode([ViewerOwnerExpectation].self, forKey: .canSee)
+        sharesNetWorth = try container.decode([ViewerOwnerExpectation].self, forKey: .sharesNetWorth)
+        allowedSwitchTargets = try container.decode([MemberListExpectation].self, forKey: .allowedSwitchTargets)
+        showsFullBudget = try container.decode([MemberBoolExpectation].self, forKey: .showsFullBudget)
+        transactionsDataFileName = try container.decodeIfPresent(
+            [MemberStringExpectation].self,
+            forKey: .transactionsDataFileName,
+        ) ?? container.decode([MemberStringExpectation].self, forKey: .legacyTransactionsDataFileName)
+        btcBuysDataFileName = try container.decodeIfPresent(
+            [MemberStringExpectation].self,
+            forKey: .btcBuysDataFileName,
+        ) ?? container.decode([MemberStringExpectation].self, forKey: .legacyBTCBuysDataFileName)
+        hasDedicatedChildFinanceFiles = try container.decodeIfPresent(
+            [MemberBoolExpectation].self,
+            forKey: .hasDedicatedChildFinanceFiles,
+        ) ?? container.decode([MemberBoolExpectation].self, forKey: .legacyDedicatedChildFinanceFiles)
+        sampleTransactions = try container.decode([FixtureTransaction].self, forKey: .sampleTransactions)
+        sampleAccounts = try container.decode([FixtureAccount].self, forKey: .sampleAccounts)
+        sampleTodos = try container.decode([FixtureTodo].self, forKey: .sampleTodos)
+        expectations = try container.decode(FixtureExpectations.self, forKey: .expectations)
+    }
 }
 
 private struct ViewerOwnerExpectation: Decodable {

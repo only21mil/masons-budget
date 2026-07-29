@@ -1,17 +1,17 @@
 package com.sats21m.vogelvault.domain
 
 /**
- * The Vogel Vault — MC2 read model, Kotlin mirror.
+ * The Vogel Vault — Convex row read model, Kotlin mirror.
  *
  * Mirrors `shared/domain/src/readModel.ts` and, behind that,
- * `MasonsBudget/MasonsBudget/Services/MC2DTOs.swift`.
+ * the Apple client's compatibility DTO boundary.
  *
  * Money is held as integer minor units — USD cents and satoshis — never as a
  * `Double`. See [Money].
  */
 
-/** Every MC2 file the clients read. */
-val MC2_FILES: List<String> = listOf(
+/** Every legacy `dataFiles` blob retained for compatibility tooling. */
+val LEGACY_DATA_FILE_NAMES: List<String> = listOf(
     "transactions",
     "budget",
     "bitcoin-buys",
@@ -258,7 +258,7 @@ data class ReadModel(
 // A budget is for one month, so its spend must come from that month's
 // transactions and no others. iOS has always derived it this way
 // (BudgetView.monthTransactions); this gives Android the same rule instead of
-// trusting the precomputed `spent` field MC2 reports.
+// trusting the compatibility projection's precomputed `spent` field.
 
 /**
  * Transactions that contribute to [viewer]'s budget.
@@ -284,7 +284,7 @@ fun resolveBudgetMonth(selected: String?, months: List<String>, budgetMonth: Str
 
 /** Month a transaction belongs to, as `yyyy-MM`.
  *
- * MC2 dates are ISO `yyyy-MM-dd`, so the month is a prefix — no date parsing and
+ * Ledger dates are ISO `yyyy-MM-dd`, so the month is a prefix — no date parsing and
  * no timezone to get wrong. A transaction dated the 1st belongs to that month for
  * every reader, which is what a ledger needs.
  */

@@ -1,5 +1,5 @@
 // Mason's Budget App — BTC buy record
-// Mirrors MC2 bitcoin-buys.json entries.
+// Mirrors Bitcoin-buy rows and their surviving legacy blob shape.
 // ID format: "b-{source}-{date}" e.g. "b-strike-2026-04-01".
 // BTC is Decimal, sats is Int64. Always derive one from the other.
 

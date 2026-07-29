@@ -1,29 +1,29 @@
-// The Vogel Vault — legacy dataFiles reader
-// Reads legacy blob data from the Convex backend.
-// Decodes responses into the compatibility DTOs used by MC2Mapper.
+// The Vogel Vault — Convex data reader
+// Prefers public row tables and falls back to surviving `dataFiles` blobs where
+// row coverage is not available. Blob responses use the compatibility DTOs.
 
 import Foundation
 import os
 
-struct MC2ReadBatch<Value> {
+struct ConvexReadBatch<Value> {
     let value: Value
     /// Nil means the legacy payload does not prove absence for unrepresented owners.
     let replacementOwners: Set<FamilyMember>?
 }
 
-/// Reads legacy `dataFiles` blob data from the Convex cloud backend.
+/// Reads financial data from Convex row tables with explicit legacy-blob fallbacks.
 ///
 /// Usage:
 /// ```swift
-/// let reader = MC2Reader()
+/// let reader = ConvexDataReader()
 /// let transactions = try await reader.readTransactions(viewer: .rachel)
 /// let budget = try await reader.readBudget(viewer: .rachel)
 /// ```
-actor MC2Reader {
+actor ConvexDataReader {
     private let client: ConvexClient
     private let rowReader: ConvexRowReader
     private let rowReadsEnabled: () -> Bool
-    private let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "MC2Reader")
+    private let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "ConvexDataReader")
 
     init(
         client: ConvexClient? = nil,
@@ -38,50 +38,50 @@ actor MC2Reader {
     // MARK: - Public API
 
     /// Read all transactions from Convex.
-    func readTransactions(viewer: FamilyMember) async throws -> MC2ReadBatch<[MC2Transaction]> {
+    func readTransactions(viewer: FamilyMember) async throws -> ConvexReadBatch<[LegacyTransactionDTO]> {
         if rowReadsEnabled() {
             do {
                 let rows = try await rowReader.transactions(viewer: viewer)
                 let owners = Set(FamilyMember.allCases.filter { viewer.canSee(dataOwnedBy: $0) })
-                return MC2ReadBatch(value: rows, replacementOwners: owners)
+                return ConvexReadBatch(value: rows, replacementOwners: owners)
             } catch let error as ConvexError where error.isRowAPIUnavailable {
                 log.notice("Public row API is not deployed; reading authenticated transactions blob")
             }
         }
 
-        let blob = try await client.fetchFile("transactions", as: [MC2Transaction].self)
-        return MC2ReadBatch(value: blob, replacementOwners: nil)
+        let blob = try await client.fetchFile("transactions", as: [LegacyTransactionDTO].self)
+        return ConvexReadBatch(value: blob, replacementOwners: nil)
     }
 
     /// Read the current budget from Convex.
-    func readBudget(viewer: FamilyMember) async throws -> MC2Budget {
+    func readBudget(viewer: FamilyMember) async throws -> LegacyBudgetDTO {
         try await rowOrBlob(
             { try await rowReader.budget(viewer: viewer).adultBudgetDTO() },
-            blob: { try await client.fetchFile("budget", as: MC2Budget.self) },
+            blob: { try await client.fetchFile("budget", as: LegacyBudgetDTO.self) },
         )
     }
 
     /// Read the BTC balance snapshot from Convex.
-    func readBTCSnapshot() async throws -> MC2BTCSnapshot {
-        try await client.fetchFile("btc-balance-snapshot", as: MC2BTCSnapshot.self)
+    func readBTCSnapshot() async throws -> LegacyBTCSnapshotDTO {
+        try await client.fetchFile("btc-balance-snapshot", as: LegacyBTCSnapshotDTO.self)
     }
 
     /// Read all BTC buy records from Convex.
-    func readBTCBuys(viewer: FamilyMember) async throws -> [MC2BTCBuy] {
+    func readBTCBuys(viewer: FamilyMember) async throws -> [LegacyBTCBuyDTO] {
         try await rowOrBlob(
             { try await rowReader.btcBuys(viewer: viewer, scope: .netWorth) },
-            blob: { try await client.fetchFile("bitcoin-buys", as: [MC2BTCBuy].self) },
+            blob: { try await client.fetchFile("bitcoin-buys", as: [LegacyBTCBuyDTO].self) },
         )
     }
 
     /// Read all BTC bill pay records from Convex.
-    func readBTCBillPays(viewer: FamilyMember) async throws -> [MC2BTCBillPay] {
+    func readBTCBillPays(viewer: FamilyMember) async throws -> [LegacyBTCBillPayDTO] {
         try await rowOrBlob(
             { try await rowReader.btcBillPays(viewer: viewer, scope: .netWorth) },
             blob: {
                 let wrapper = try await client.fetchFile(
                     "bitcoin-bill-pays",
-                    as: MC2BillPaysWrapper.self,
+                    as: LegacyBillPaysWrapperDTO.self,
                 )
                 return wrapper.billPays
             },
@@ -89,56 +89,56 @@ actor MC2Reader {
     }
 
     /// Read retirement/brokerage data from Convex.
-    func readFinances() async throws -> MC2Finances {
-        try await client.fetchFile("finances", as: MC2Finances.self)
+    func readFinances() async throws -> LegacyFinancesDTO {
+        try await client.fetchFile("finances", as: LegacyFinancesDTO.self)
     }
 
     /// Read Mason's BTC balances from Convex.
-    func readSonBalances() async throws -> MC2SonBalances {
-        try await client.fetchFile("son-balances", as: MC2SonBalances.self)
+    func readSonBalances() async throws -> LegacySonBalancesDTO {
+        try await client.fetchFile("son-balances", as: LegacySonBalancesDTO.self)
     }
 
     /// Read Mason's budget from Convex.
-    func readMasonBudget(viewer: FamilyMember) async throws -> MC2MasonBudget {
+    func readMasonBudget(viewer: FamilyMember) async throws -> LegacyMasonBudgetDTO {
         try await rowOrBlob(
             { try await rowReader.budget(viewer: viewer).childBudgetDTO() },
-            blob: { try await client.fetchFile("mason-budget", as: MC2MasonBudget.self) },
+            blob: { try await client.fetchFile("mason-budget", as: LegacyMasonBudgetDTO.self) },
         )
     }
 
     /// Read Mason's transactions from Convex.
-    func readMasonTransactions(viewer: FamilyMember) async throws -> [MC2Transaction] {
+    func readMasonTransactions(viewer: FamilyMember) async throws -> [LegacyTransactionDTO] {
         try await rowOrBlob(
             { try await rowReader.transactions(viewer: viewer) },
             blob: {
                 try await client.fetchFile(
                     "mason-transactions",
-                    as: [MC2Transaction].self,
+                    as: [LegacyTransactionDTO].self,
                 )
             },
         )
     }
 
     /// Read Mason's BTC buys from Convex.
-    func readMasonBTCBuys(viewer: FamilyMember) async throws -> [MC2BTCBuy] {
+    func readMasonBTCBuys(viewer: FamilyMember) async throws -> [LegacyBTCBuyDTO] {
         try await rowOrBlob(
             { try await rowReader.btcBuys(viewer: viewer, scope: .netWorth) },
             blob: {
                 try await client.fetchFile(
                     "mason-bitcoin-buys",
-                    as: [MC2BTCBuy].self,
+                    as: [LegacyBTCBuyDTO].self,
                 )
             },
         )
     }
 
-    /// Read MC2 todos. Supports either a raw array or `{ "todos": [...] }`.
-    func readTodos(viewer: FamilyMember) async throws -> MC2ReadBatch<[MC2TodoItem]> {
+    /// Read todos. The legacy blob fallback supports a raw array or `{ "todos": [...] }`.
+    func readTodos(viewer: FamilyMember) async throws -> ConvexReadBatch<[LegacyTodoDTO]> {
         if rowReadsEnabled() {
             do {
                 let rows = try await rowReader.todos(viewer: viewer)
                 let owners = Set(FamilyMember.allCases.filter { viewer.canSee(dataOwnedBy: $0) })
-                return MC2ReadBatch(value: rows, replacementOwners: owners)
+                return ConvexReadBatch(value: rows, replacementOwners: owners)
             } catch let error as ConvexError where error.isRowAPIUnavailable {
                 log.notice("Public row API is not deployed; reading authenticated todos blob")
             }
@@ -151,10 +151,10 @@ actor MC2Reader {
         } else if let wrapper = raw as? [String: Any], let array = wrapper["todos"] as? [Any] {
             rawTodos = array
         } else {
-            return MC2ReadBatch(value: [], replacementOwners: nil)
+            return ConvexReadBatch(value: [], replacementOwners: nil)
         }
 
-        let todos: [MC2TodoItem] = rawTodos.compactMap { item in
+        let todos: [LegacyTodoDTO] = rawTodos.compactMap { item in
             guard JSONSerialization.isValidJSONObject(item),
                   let data = try? JSONSerialization.data(withJSONObject: item)
             else {
@@ -162,14 +162,14 @@ actor MC2Reader {
                 return nil
             }
             do {
-                return try JSONDecoder().decode(MC2TodoItem.self, from: data)
+                return try JSONDecoder().decode(LegacyTodoDTO.self, from: data)
             } catch {
                 let id = (item as? [String: Any])?["id"] as? String ?? "unknown"
                 log.warning("Failed to decode todo \(id, privacy: .public): \(error.localizedDescription, privacy: .public)")
                 return nil
             }
         }
-        return MC2ReadBatch(value: todos, replacementOwners: nil)
+        return ConvexReadBatch(value: todos, replacementOwners: nil)
     }
 
     /// Check current data versions (lightweight — for change detection).

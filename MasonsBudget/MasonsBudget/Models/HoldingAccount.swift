@@ -1,5 +1,5 @@
 // Mason's Budget App — Retirement / brokerage models
-// Mirrors MC2 finances.json structure.
+// Mirrors the surviving finances blob structure.
 // HoldingAccount → Holding → HoldingLot (cascading relationships).
 
 import Foundation

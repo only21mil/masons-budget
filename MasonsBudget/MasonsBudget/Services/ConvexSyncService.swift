@@ -3,10 +3,10 @@ import os
 import SwiftData
 
 @MainActor
-final class MC2SyncService {
-    private let reader: MC2Reader
+final class ConvexSyncService {
+    private let reader: ConvexDataReader
     private let context: ModelContext
-    private let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "MC2Sync")
+    private let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "ConvexSync")
 
     static let lastSyncKey = "mc2_last_sync"
     static let lastSyncErrorKey = "mc2_last_sync_error"
@@ -19,14 +19,14 @@ final class MC2SyncService {
         return FamilyMember(rawValue: raw) ?? .victor
     }
 
-    init(reader: MC2Reader, context: ModelContext) {
+    init(reader: ConvexDataReader, context: ModelContext) {
         self.reader = reader
         self.context = context
     }
 
     /// Convenience init using the default Convex client.
     init(context: ModelContext) {
-        reader = MC2Reader()
+        reader = ConvexDataReader()
         self.context = context
     }
 
@@ -46,7 +46,7 @@ final class MC2SyncService {
             totalEntities += await syncBTCBuys(&errors)
             totalEntities += await syncBTCBillPays(&errors)
             totalEntities += await syncFinances(&errors)
-        } else if currentMember.hasDedicatedMC2ChildFinanceFiles {
+        } else if currentMember.hasDedicatedChildFinanceFiles {
             // Mason: sync his own budget, transactions, BTC buys, and finances.
             totalEntities += await syncSonBalances(&errors)
             totalEntities += await syncMasonBudget(&errors)
@@ -54,10 +54,10 @@ final class MC2SyncService {
             totalEntities += await syncMasonBTCBuys(&errors)
             totalEntities += await syncFinances(&errors)
         } else {
-            // Maddox does not have dedicated MC2 finance files yet. Keep his sync
-            // limited to shared todos until those data files exist.
+            // Maddox does not have dedicated finance data yet. Keep his sync
+            // limited to shared todos until a dedicated row scope exists.
             let member = currentMember
-            log.info("No dedicated MC2 finance sync path for \(member.rawValue, privacy: .public)")
+            log.info("No dedicated finance sync path for \(member.rawValue, privacy: .public)")
         }
 
         recordNetWorthSnapshot()
@@ -111,7 +111,7 @@ final class MC2SyncService {
     private func syncTransactions(_ errors: inout [String]) async -> Int {
         do {
             let batch = try await reader.readTransactions(viewer: currentMember)
-            let models = MC2Mapper.mapTransactions(batch.value)
+            let models = LedgerMapper.mapTransactions(batch.value)
             let owners = batch.replacementOwners.map { Array($0) } ?? [.victor, .rachel]
             replaceTransactions(ownedBy: owners, with: models)
             return models.count
@@ -125,12 +125,12 @@ final class MC2SyncService {
     private func syncBudget(_ errors: inout [String]) async -> Int {
         do {
             let dto = try await reader.readBudget(viewer: currentMember)
-            let currentSnapshot = MC2Mapper.mapBudgetSnapshot(dto)
-            let historicalSnapshots = MC2Mapper.mapMonthlyHistory(dto.monthlyHistory)
-            let categories = MC2Mapper.mapBudgetCategories(dto.categories)
+            let currentSnapshot = LedgerMapper.mapBudgetSnapshot(dto)
+            let historicalSnapshots = LedgerMapper.mapMonthlyHistory(dto.monthlyHistory)
+            let categories = LedgerMapper.mapBudgetCategories(dto.categories)
             replaceBudgetData(forOwner: .victor, snapshots: [currentSnapshot] + historicalSnapshots, categories: categories)
 
-            let incomeTransactions = MC2Mapper.mapPaychecksToTransactions(dto.income?.paychecks)
+            let incomeTransactions = LedgerMapper.mapPaychecksToTransactions(dto.income?.paychecks)
             replaceIncomeTransactions(forOwner: .victor, with: incomeTransactions)
 
             return 1 + historicalSnapshots.count + categories.count + incomeTransactions.count
@@ -145,7 +145,7 @@ final class MC2SyncService {
         do {
             let dto = try await reader.readBTCSnapshot()
             let owner: FamilyMember = currentMember.isAdult ? .victor : currentMember
-            let accounts = MC2Mapper.mapBTCAccounts(dto, owner: owner)
+            let accounts = LedgerMapper.mapBTCAccounts(dto, owner: owner)
             replaceBTCAccounts(ownedBy: [.victor, .rachel], with: accounts)
             return accounts.count
         } catch {
@@ -158,7 +158,7 @@ final class MC2SyncService {
     private func syncBTCBuys(_ errors: inout [String]) async -> Int {
         do {
             let dtos = try await reader.readBTCBuys(viewer: currentMember)
-            let models = dtos.map { MC2Mapper.mapBTCBuy($0) }
+            let models = dtos.map { LedgerMapper.mapBTCBuy($0) }
             replaceBTCBuys(ownedBy: [.victor, .rachel], with: models)
             return models.count
         } catch {
@@ -171,7 +171,7 @@ final class MC2SyncService {
     private func syncBTCBillPays(_ errors: inout [String]) async -> Int {
         do {
             let dtos = try await reader.readBTCBillPays(viewer: currentMember)
-            let models = dtos.map { MC2Mapper.mapBTCBillPay($0) }
+            let models = dtos.map { LedgerMapper.mapBTCBillPay($0) }
             replaceBTCBillPays(ownedBy: [.victor, .rachel], with: models)
             return models.count
         } catch {
@@ -184,7 +184,7 @@ final class MC2SyncService {
     private func syncTodos(_ errors: inout [String]) async -> Int {
         do {
             let batch = try await reader.readTodos(viewer: currentMember)
-            let models = MC2Mapper.mapTodos(batch.value, viewer: currentMember)
+            let models = LedgerMapper.mapTodos(batch.value, viewer: currentMember)
             replaceTodos(
                 visibleTo: currentMember,
                 with: models,
@@ -201,7 +201,7 @@ final class MC2SyncService {
     private func syncFinances(_ errors: inout [String]) async -> Int {
         do {
             let dto = try await reader.readFinances()
-            let accounts = MC2Mapper.mapFinances(dto, owner: currentMember)
+            let accounts = LedgerMapper.mapFinances(dto, owner: currentMember)
             replaceHoldingAccounts(visibleTo: currentMember, with: accounts)
             return accounts.count
         } catch {
@@ -214,7 +214,7 @@ final class MC2SyncService {
     private func syncSonBalances(_ errors: inout [String]) async -> Int {
         do {
             let dto = try await reader.readSonBalances()
-            let accounts = MC2Mapper.mapSonBalances(dto)
+            let accounts = LedgerMapper.mapSonBalances(dto)
             replaceBTCAccounts(ownedBy: [.mason], with: accounts)
             return accounts.count
         } catch {
@@ -227,7 +227,7 @@ final class MC2SyncService {
     private func syncMasonBudget(_ errors: inout [String]) async -> Int {
         do {
             let dto = try await reader.readMasonBudget(viewer: currentMember)
-            let categories = MC2Mapper.mapBudgetCategories(dto.categories, owner: .mason)
+            let categories = LedgerMapper.mapBudgetCategories(dto.categories, owner: .mason)
             let snapshot = makeMasonSnapshot(from: dto)
 
             replaceBudgetData(forOwner: .mason, snapshots: [snapshot], categories: categories)
@@ -242,11 +242,11 @@ final class MC2SyncService {
     /// Build Mason's monthly snapshot. Prefers a real `income` block (e.g., River
     /// direct-deposit paychecks) when present; falls back to the legacy
     /// `allowance` field for kids who don't have real income yet.
-    private func makeMasonSnapshot(from dto: MC2MasonBudget) -> MonthlyBudgetSnapshot {
+    private func makeMasonSnapshot(from dto: LegacyMasonBudgetDTO) -> MonthlyBudgetSnapshot {
         let masonKey = "mason:\(dto.month)"
         if let income = dto.income, let weeklyGross = income.weeklyGross, weeklyGross > 0 {
             let monthly = income.monthlyGross ?? (weeklyGross * Decimal(52) / Decimal(12))
-            let actualIncome = MC2Mapper.actualIncomeTotals(income: income, budgetMonth: dto.month)
+            let actualIncome = LedgerMapper.actualIncomeTotals(income: income, budgetMonth: dto.month)
             return MonthlyBudgetSnapshot(
                 monthKey: masonKey,
                 weeklyGross: weeklyGross,
@@ -274,7 +274,7 @@ final class MC2SyncService {
     private func syncMasonTransactions(_ errors: inout [String]) async -> Int {
         do {
             let dtos = try await reader.readMasonTransactions(viewer: currentMember)
-            let models = MC2Mapper.mapTransactions(dtos, owner: .mason)
+            let models = LedgerMapper.mapTransactions(dtos, owner: .mason)
             replaceTransactions(ownedBy: [.mason], with: models)
             return models.count
         } catch {
@@ -287,7 +287,7 @@ final class MC2SyncService {
     private func syncMasonBTCBuys(_ errors: inout [String]) async -> Int {
         do {
             let dtos = try await reader.readMasonBTCBuys(viewer: currentMember)
-            let models = dtos.map { MC2Mapper.mapBTCBuy($0, owner: .mason) }
+            let models = dtos.map { LedgerMapper.mapBTCBuy($0, owner: .mason) }
             replaceBTCBuys(ownedBy: [.mason], with: models)
             return models.count
         } catch {
@@ -602,7 +602,10 @@ final class MC2SyncService {
         // absence for owners actually present in the payload. App-only todos are
         // untouched in either mode.
         let remoteOwners = replacementOwners ?? Set(remoteTodos.map(\.ownerMember))
-        let scopedMC2Local = existing.filter { $0.createdBy == "mc2" && remoteOwners.contains($0.ownerMember) }
+        // `mc2` is persisted provenance from the legacy import, not a live system name.
+        let scopedLegacyImports = existing.filter {
+            $0.createdBy == "mc2" && remoteOwners.contains($0.ownerMember)
+        }
         // Full id index across ALL existing rows so an insert can never collide with an
         // existing @Attribute(.unique) id (app-created or out-of-scope owner).
         let existingById = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -617,11 +620,11 @@ final class MC2SyncService {
                 // An app-created row owns this id: never overwrite user-entered data and never
                 // insert a duplicate of the unique id.
                 if local.createdBy == "app" {
-                    log.warning("Skipping mc2 todo \(remote.id): id already owned by app-created row")
+                    log.warning("Skipping imported todo \(remote.id): id already owned by app-created row")
                     continue
                 }
                 guard local.createdBy == "mc2" else {
-                    log.warning("Skipping mc2 todo \(remote.id): id already owned by non-mc2 row")
+                    log.warning("Skipping imported todo \(remote.id): id already owned by another source")
                     continue
                 }
                 if remote.updatedAt > local.updatedAt {
@@ -642,7 +645,7 @@ final class MC2SyncService {
             }
         }
 
-        for local in scopedMC2Local {
+        for local in scopedLegacyImports {
             if remoteById[local.id] == nil {
                 context.delete(local)
             }
