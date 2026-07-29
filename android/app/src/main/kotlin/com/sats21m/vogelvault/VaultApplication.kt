@@ -5,11 +5,20 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.sats21m.vogelvault.data.ConvexConfig
+import com.sats21m.vogelvault.data.BtcBuyInput
+import com.sats21m.vogelvault.data.BudgetCategoryInput
+import com.sats21m.vogelvault.data.ConvexMutation
+import com.sats21m.vogelvault.data.ConvexMutationClient
+import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.data.RowQueryRepositories
 import com.sats21m.vogelvault.data.SecureConvexConfigSource
+import com.sats21m.vogelvault.data.SecureConvexSyncTokenSource
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.cache.VaultDatabase
+import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.ui.BtcBuyWriteRequest
+import com.sats21m.vogelvault.ui.BudgetCategoryWriteRequest
 import com.sats21m.vogelvault.ui.VaultViewModel
 
 /**
@@ -56,6 +65,58 @@ class VaultApplication : Application() {
             onUnauthorized = ::recoverRejectedConvexConfig,
         )
     }
+
+    private val syncTokenSource: SecureConvexSyncTokenSource by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        SecureConvexSyncTokenSource(this)
+    }
+
+    private val mutationClient: ConvexMutationClient by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        ConvexMutationClient(
+            configSource = convexConfigSource,
+            syncTokenSource = syncTokenSource,
+        )
+    }
+
+    val writeCredentialConfigured: Boolean
+        get() = syncTokenSource.isConfigured
+
+    fun saveWriteCredential(token: String): Boolean =
+        runCatching { syncTokenSource.update(token) }.isSuccess
+
+    fun removeWriteCredential(): Boolean =
+        runCatching { syncTokenSource.clear() }.isSuccess
+
+    suspend fun writeBudgetCategory(
+        request: BudgetCategoryWriteRequest,
+    ): ConvexResult<*> =
+        mutationClient.mutate(
+            ConvexMutation.UpsertBudgetCategory(
+                viewer = request.viewer,
+                month = request.month,
+                category =
+                    BudgetCategoryInput(
+                        name = request.categoryName,
+                        budgetCents = request.budgetCents,
+                    ),
+            ),
+        )
+
+    suspend fun writeBtcBuy(request: BtcBuyWriteRequest): ConvexResult<*> =
+        mutationClient.mutate(
+            ConvexMutation.UpsertBtcBuy(
+                buy =
+                    BtcBuyInput(
+                        id = request.id,
+                        date = request.date,
+                        source = request.source,
+                        sats = request.sats,
+                        priceUsdCents = request.priceUsdCents,
+                        usdCents = request.usdCents,
+                        owner = explicitBtcBuyOwner(request.owner),
+                    ),
+                sourceFile = request.owner.btcBuysDataFileName,
+            ),
+        )
 
     val viewModelFactory: ViewModelProvider.Factory =
         object : ViewModelProvider.Factory {
@@ -159,3 +220,11 @@ internal fun buildTimeConvexConfig(readToken: String): ConvexConfig =
         readToken = readToken,
         remoteReadEnabled = readToken.isNotBlank(),
     )
+
+/**
+ * Adult and Mason source files already carry their canonical owner. Maddox has
+ * no dedicated BTC-buy source, so his owner must be explicit or the row would be
+ * silently tagged as adult household data.
+ */
+internal fun explicitBtcBuyOwner(member: FamilyMember): FamilyMember? =
+    if (member == FamilyMember.MADDOX) member else null

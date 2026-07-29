@@ -10,9 +10,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.ui.VaultApp
 import com.sats21m.vogelvault.ui.VaultViewModel
+import com.sats21m.vogelvault.ui.WriteSubmissionResult
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
 
 class MainActivity : ComponentActivity() {
@@ -33,11 +35,39 @@ class MainActivity : ComponentActivity() {
                         ),
                     )
                 }
+                var writeCredentialConfigured by remember {
+                    mutableStateOf(app.writeCredentialConfigured)
+                }
                 VaultApp(
                     state = state,
                     onNavigate = model::navigate,
                     onSwitchProfile = model::switchProfile,
                     onEnableRemoteRows = model::enableRemoteRows,
+                    writeCredentialConfigured = writeCredentialConfigured,
+                    onSaveWriteCredential = { token ->
+                        app.saveWriteCredential(token).also { saved ->
+                            if (saved) writeCredentialConfigured = true
+                        }
+                    },
+                    onRemoveWriteCredential = {
+                        app.removeWriteCredential().also { removed ->
+                            if (removed) writeCredentialConfigured = false
+                        }
+                    },
+                    onWriteBudgetCategory = { request ->
+                        app.writeBudgetCategory(request).toWriteSubmissionResult().also { result ->
+                            if (result == WriteSubmissionResult.Saved) {
+                                model.switchProfile(model.state.value.activeProfile)
+                            }
+                        }
+                    },
+                    onWriteBtcBuy = { request ->
+                        app.writeBtcBuy(request).toWriteSubmissionResult().also { result ->
+                            if (result == WriteSubmissionResult.Saved) {
+                                model.switchProfile(model.state.value.activeProfile)
+                            }
+                        }
+                    },
                     displayUnit = displayUnit,
                     onDisplayUnitChange = { next ->
                         displayUnit = next
@@ -55,3 +85,12 @@ class MainActivity : ComponentActivity() {
         const val DISPLAY_UNIT_KEY = "display_unit"
     }
 }
+
+internal fun ConvexResult<*>.toWriteSubmissionResult(): WriteSubmissionResult =
+    when (this) {
+        is ConvexResult.Ok -> WriteSubmissionResult.Saved
+        ConvexResult.NotConfigured, ConvexResult.Disabled, ConvexResult.Missing ->
+            WriteSubmissionResult.NotConfigured
+        ConvexResult.Unauthorized -> WriteSubmissionResult.Unauthorized
+        is ConvexResult.Failed -> WriteSubmissionResult.Failed("The write did not complete. ${reason}.")
+    }
