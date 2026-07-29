@@ -55,6 +55,8 @@ class DestinationVisibilityTest {
         assertEquals(4, primary.size)
         assertEquals(
             listOf(
+                Destination.BTC_BUYS,
+                Destination.BTC_BILL_PAYS,
                 Destination.NET_WORTH,
                 Destination.RETIREMENT,
                 Destination.TODAY,

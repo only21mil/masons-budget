@@ -85,6 +85,8 @@ enum class Destination(
     ACTIVITY("Activity", Icons.Filled.ReceiptLong),
     BUDGET("Budget", Icons.Filled.Payments),
     BITCOIN("Bitcoin", Icons.Filled.CurrencyBitcoin),
+    BTC_BUYS("BTC Buys", Icons.Filled.CurrencyBitcoin),
+    BTC_BILL_PAYS("BTC Bill Pays", Icons.Filled.ReceiptLong),
     NET_WORTH("Net Worth", Icons.Filled.AccountBalance),
     RETIREMENT("Retirement", Icons.Filled.Savings),
     TODAY("Today", Icons.Filled.WbSunny),
