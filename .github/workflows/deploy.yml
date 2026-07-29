@@ -5,12 +5,15 @@ name: Deploy to TestFlight (manual trigger only)
 # Triggering this workflow IS the app-build approval gate described in AGENTS.md.
 # It never runs automatically.
 #
-# Signing: the runner has no Apple ID, so CODE_SIGN_STYLE=Automatic cannot work.
-# The certificate is imported into a throwaway keychain and the provisioning
-# profile installed, then archive/export run against it. Upload uses the App
-# Store Connect API key rather than an Apple ID username/password — the previous
-# version of this workflow referenced APPSTORE_USERNAME/APPSTORE_PASSWORD
-# secrets that do not exist in this repository.
+# Signing is deliberately manual. Human-created distribution identities are
+# imported into a throwaway keychain and a human-created App Store profile is
+# installed before archive/export. Neither command is allowed to update
+# provisioning, so this workflow cannot mint or revoke an Apple certificate.
+# The App Store Connect API key is only for the read preflight and upload.
+#
+# APPLE_MANUAL_SIGNING_READY is a repository variable, absent/false by default.
+# Set it only after following docs/apple-manual-signing-runbook.md; until then
+# the release gate stops before a macOS runner or any app-build command starts.
 
 on:
   workflow_dispatch:
@@ -50,6 +53,17 @@ jobs:
             exit 1
           fi
           echo "Release ref is main."
+
+      - name: Require verified manual signing assets
+        env:
+          MANUAL_SIGNING_READY: ${{ vars.APPLE_MANUAL_SIGNING_READY }}
+        run: |
+          set -euo pipefail
+          if [ "$MANUAL_SIGNING_READY" != "true" ]; then
+            echo "::error::Manual Apple signing is inert. Complete docs/apple-manual-signing-runbook.md, then set repository variable APPLE_MANUAL_SIGNING_READY=true."
+            exit 1
+          fi
+          echo "Manual signing assets were explicitly enabled."
 
       # Check the protected contexts and the completed Apple build at the exact
       # release SHA. A workflow name, detector decision, or older successful run
@@ -100,7 +114,7 @@ jobs:
           fi
 
   preflight:
-    name: Verify App Store Connect visibility
+    name: Verify release secrets and App Store Connect visibility
     needs: release-gate
     if: github.repository == 'only21mil/masons-budget'
     runs-on: ubuntu-latest
@@ -108,6 +122,23 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
+
+      # Presence and base64 shape only. The macOS import step below proves that
+      # the passwords match and the profiles are valid CMS documents before the
+      # first xcodebuild command. The human runbook performs the same checks
+      # locally before APPLE_MANUAL_SIGNING_READY may be enabled.
+      - name: Verify release secret presence
+        env:
+          APPLE_DISTRIBUTION_CERTIFICATE_P12: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_P12 }}
+          APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          APPLE_IOS_APP_STORE_PROFILE: ${{ secrets.APPLE_IOS_APP_STORE_PROFILE }}
+          APPLE_MAC_APP_STORE_PROFILE: ${{ secrets.APPLE_MAC_APP_STORE_PROFILE }}
+          APPLE_MAC_INSTALLER_CERTIFICATE_P12: ${{ secrets.APPLE_MAC_INSTALLER_CERTIFICATE_P12 }}
+          APPLE_MAC_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_MAC_INSTALLER_CERTIFICATE_PASSWORD }}
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: python3 .github/workflows/scripts/report_secret_presence.py
 
       - name: Probe exact bundle and latest build
         env:
@@ -149,6 +180,122 @@ jobs:
         working-directory: MasonsBudget
         run: xcodegen generate --spec project.yml
 
+      - name: Import manual signing assets
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          APPLE_DISTRIBUTION_CERTIFICATE_P12: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_P12 }}
+          APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          APPLE_IOS_APP_STORE_PROFILE: ${{ secrets.APPLE_IOS_APP_STORE_PROFILE }}
+          APPLE_MAC_APP_STORE_PROFILE: ${{ secrets.APPLE_MAC_APP_STORE_PROFILE }}
+          APPLE_MAC_INSTALLER_CERTIFICATE_P12: ${{ secrets.APPLE_MAC_INSTALLER_CERTIFICATE_P12 }}
+          APPLE_MAC_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_MAC_INSTALLER_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          require_secret() {
+            if [ -z "$2" ]; then
+              echo "::error::$1 is required for the $PLATFORM manual-signing path."
+              exit 1
+            fi
+          }
+
+          require_secret APPLE_DISTRIBUTION_CERTIFICATE_P12 "$APPLE_DISTRIBUTION_CERTIFICATE_P12"
+          require_secret APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD "$APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD"
+
+          if [ "$PLATFORM" = "ios" ]; then
+            require_secret APPLE_IOS_APP_STORE_PROFILE "$APPLE_IOS_APP_STORE_PROFILE"
+            PROFILE_B64="$APPLE_IOS_APP_STORE_PROFILE"
+            EXPECTED_PROFILE_PLATFORM=iOS
+            PROFILE_EXTENSION=mobileprovision
+          else
+            require_secret APPLE_MAC_APP_STORE_PROFILE "$APPLE_MAC_APP_STORE_PROFILE"
+            require_secret APPLE_MAC_INSTALLER_CERTIFICATE_P12 "$APPLE_MAC_INSTALLER_CERTIFICATE_P12"
+            require_secret APPLE_MAC_INSTALLER_CERTIFICATE_PASSWORD "$APPLE_MAC_INSTALLER_CERTIFICATE_PASSWORD"
+            PROFILE_B64="$APPLE_MAC_APP_STORE_PROFILE"
+            EXPECTED_PROFILE_PLATFORM=OSX
+            PROFILE_EXTENSION=provisionprofile
+          fi
+
+          KEYCHAIN_PATH="$RUNNER_TEMP/manual-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          printf '%s' "$APPLE_DISTRIBUTION_CERTIFICATE_P12" |
+            base64 --decode > "$RUNNER_TEMP/apple-distribution.p12"
+          security import "$RUNNER_TEMP/apple-distribution.p12" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+
+          if [ "$PLATFORM" = "macos" ]; then
+            printf '%s' "$APPLE_MAC_INSTALLER_CERTIFICATE_P12" |
+              base64 --decode > "$RUNNER_TEMP/mac-installer-distribution.p12"
+            security import "$RUNNER_TEMP/mac-installer-distribution.p12" \
+              -k "$KEYCHAIN_PATH" \
+              -P "$APPLE_MAC_INSTALLER_CERTIFICATE_PASSWORD" \
+              -T /usr/bin/productbuild \
+              -T /usr/bin/security
+          fi
+
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+
+          if ! security find-identity -v -p codesigning "$KEYCHAIN_PATH" |
+            grep -q '"Apple Distribution'; then
+            echo "::error::The imported distribution p12 has no usable Apple Distribution identity and private key."
+            exit 1
+          fi
+          if [ "$PLATFORM" = "macos" ] &&
+            ! security find-identity -v "$KEYCHAIN_PATH" |
+              grep -q '"Mac Installer Distribution'; then
+            echo "::error::The imported installer p12 has no usable Mac Installer Distribution identity and private key."
+            exit 1
+          fi
+
+          ENCODED_PROFILE="$RUNNER_TEMP/$PLATFORM-profile"
+          DECODED_PROFILE="$RUNNER_TEMP/$PLATFORM-profile.plist"
+          printf '%s' "$PROFILE_B64" | base64 --decode > "$ENCODED_PROFILE"
+          security cms -D -i "$ENCODED_PROFILE" > "$DECODED_PROFILE"
+
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$DECODED_PROFILE")
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" "$DECODED_PROFILE")
+          PROFILE_TEAM=$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" "$DECODED_PROFILE")
+          PROFILE_APP_ID=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" "$DECODED_PROFILE")
+          PROFILE_PLATFORM=$(/usr/libexec/PlistBuddy -c "Print :Platform:0" "$DECODED_PROFILE")
+          PROFILE_DEBUG=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:get-task-allow" "$DECODED_PROFILE")
+
+          if [ "$PROFILE_TEAM" != "384ZGKG4GB" ] ||
+            [ "$PROFILE_APP_ID" != "384ZGKG4GB.com.sats21m.masonsbudget" ] ||
+            [ "$PROFILE_PLATFORM" != "$EXPECTED_PROFILE_PLATFORM" ] ||
+            [ "$PROFILE_DEBUG" != "false" ]; then
+            echo "::error::The $PLATFORM profile is not a non-debug App Store profile for team 384ZGKG4GB and com.sats21m.masonsbudget."
+            exit 1
+          fi
+
+          PROFILE_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          INSTALLED_PROFILE_PATH="$PROFILE_DIR/$PROFILE_UUID.$PROFILE_EXTENSION"
+          mkdir -p "$PROFILE_DIR"
+          cp "$ENCODED_PROFILE" "$INSTALLED_PROFILE_PATH"
+
+          rm -f \
+            "$RUNNER_TEMP/apple-distribution.p12" \
+            "$RUNNER_TEMP/mac-installer-distribution.p12" \
+            "$ENCODED_PROFILE" \
+            "$DECODED_PROFILE"
+
+          {
+            echo "KEYCHAIN_PATH=$KEYCHAIN_PATH"
+            echo "PROFILE_UUID=$PROFILE_UUID"
+            echo "PROFILE_NAME=$PROFILE_NAME"
+            echo "INSTALLED_PROFILE_PATH=$INSTALLED_PROFILE_PATH"
+          } >> "$GITHUB_ENV"
+          echo "Validated and installed the $PLATFORM manual-signing assets."
+
       - name: Write App Store Connect API key
         env:
           ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
@@ -185,19 +332,10 @@ jobs:
           # xcodebuild wants an explicit path; altool finds it by convention.
           echo "ASC_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
 
-      # Signing assets come from App Store Connect via the API key, not from an
-      # exported .p12. The project is already CODE_SIGN_STYLE=Automatic with
-      # DEVELOPMENT_TEAM 384ZGKG4GB and ExportOptions.plist says signingStyle
-      # automatic, so a certificate import was never the right shape here — and
-      # the imported pair had drifted out of sync anyway (the p12 and its
-      # password no longer matched, and the machine holding the originals is
-      # gone). An API key cannot go stale the same way and needs no Mac.
       - name: Archive
         working-directory: MasonsBudget
         env:
           PLATFORM: ${{ matrix.platform }}
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           set -euo pipefail
           if [ "$PLATFORM" = "ios" ]; then
@@ -216,29 +354,30 @@ jobs:
             -scheme "$SCHEME" \
             -destination "$DESTINATION" \
             -archivePath "$ARCHIVE" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$ASC_KEY_PATH" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            DEVELOPMENT_TEAM=384ZGKG4GB \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+            OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_PATH"
 
       - name: Export
         working-directory: MasonsBudget
         env:
           PLATFORM: ${{ matrix.platform }}
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           set -euo pipefail
           EXPORT_DIR="build/${PLATFORM}"
+          EXPORT_OPTIONS="$RUNNER_TEMP/ExportOptions-${PLATFORM}.plist"
+          cp ../ExportOptions.plist "$EXPORT_OPTIONS"
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles dict" "$EXPORT_OPTIONS"
+          /usr/libexec/PlistBuddy \
+            -c "Add :provisioningProfiles:com.sats21m.masonsbudget string $PROFILE_UUID" \
+            "$EXPORT_OPTIONS"
           echo "EXPORT_DIR=$EXPORT_DIR" >> "$GITHUB_ENV"
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE" \
             -exportPath "$EXPORT_DIR" \
-            -exportOptionsPlist ../ExportOptions.plist \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$ASC_KEY_PATH" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+            -exportOptionsPlist "$EXPORT_OPTIONS"
 
       # Keep the signed artifact BEFORE attempting the upload. Archive and export
       # are the expensive, fragile part; the upload depends on App Store Connect
@@ -282,5 +421,9 @@ jobs:
       - name: Clean up signing material
         if: always()
         run: |
+          security delete-keychain "${KEYCHAIN_PATH:-}" 2>/dev/null || true
           rm -rf "$HOME/private_keys"
-          rm -rf "$HOME/Library/MobileDevice/Provisioning Profiles"
+          if [ -n "${INSTALLED_PROFILE_PATH:-}" ]; then
+            rm -f "$INSTALLED_PROFILE_PATH"
+          fi
+          rm -f "$RUNNER_TEMP"/ExportOptions-*.plist
