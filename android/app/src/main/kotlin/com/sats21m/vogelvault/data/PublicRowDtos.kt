@@ -4,8 +4,10 @@ import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcBuy
 import com.sats21m.vogelvault.domain.Custody
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.FiatValuation
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.domain.Transaction
+import com.sats21m.vogelvault.domain.legacyFiatValuation
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 import kotlinx.serialization.json.JsonArray
@@ -56,6 +58,7 @@ data class BtcBalanceAccountRow(
     val custody: Custody,
     val sats: Long,
     val fiatCents: Long,
+    val fiatValuation: FiatValuation? = legacyFiatValuation(sats, fiatCents),
 )
 
 data class BtcBalanceTotalsRow(
@@ -63,6 +66,7 @@ data class BtcBalanceTotalsRow(
     val fiatCents: Long,
     val exchangeSats: Long,
     val selfCustodySats: Long,
+    val fiatValuation: FiatValuation? = legacyFiatValuation(sats, fiatCents),
 )
 
 data class BtcBalanceDocumentRow(
@@ -73,8 +77,10 @@ data class BtcBalanceDocumentRow(
     val totals: BtcBalanceTotalsRow,
     val source: String?,
     val basis: String?,
+    /** Confidence in the sats balance only. */
     val confidence: String?,
     val updatedAtMs: Long,
+    val balanceConfidence: String? = confidence,
 )
 
 data class BudgetCategoryRow(
@@ -135,8 +141,10 @@ data class BtcSnapshotMetadataRow(
     val asOf: String,
     val source: String?,
     val basis: String?,
+    /** Transition-only alias from the legacy public field. */
     val confidence: String?,
     val updatedAtMs: Long,
+    val balanceConfidence: String? = confidence,
 )
 
 /** Internal wire envelope. No Convex document shape crosses this boundary. */
@@ -375,6 +383,7 @@ internal data class PublicBtcAccountDto(
     val asOf: String,
     val schemaVersion: Long,
     val updatedAtMs: Long,
+    val fiatValuation: FiatValuation?,
 ) {
     fun toDomain(): BtcAccount = BtcAccount(
         key = key,
@@ -383,22 +392,28 @@ internal data class PublicBtcAccountDto(
         sats = sats,
         fiatCents = fiatCents,
         owner = owner,
+        fiatValuation = fiatValuation,
     )
 
     companion object {
         fun decode(element: JsonElement): PublicBtcAccountDto? {
             val row = element as? JsonObject ?: return null
             val custodyKey = row.rowString("custody") ?: return null
+            val sats = row.rowInt64("sats") ?: return null
+            val legacyFiat = row.decodedOptionalInt64("fiatCents") ?: return null
+            val fiatCents = legacyFiat.value ?: 0L
+            val fiatValuation = row.decodedFiatValuation(sats, fiatCents) ?: return null
             return PublicBtcAccountDto(
                 key = row.rowString("key") ?: return null,
                 owner = row.rowOwner() ?: return null,
                 label = row.rowStringAllowEmpty("label") ?: return null,
                 custody = Custody.entries.firstOrNull { it.key == custodyKey } ?: return null,
-                sats = row.rowInt64("sats") ?: return null,
-                fiatCents = row.rowInt64("fiatCents") ?: return null,
+                sats = sats,
+                fiatCents = fiatCents,
                 asOf = row.rowStringAllowEmpty("asOf") ?: return null,
                 schemaVersion = row.rowInt64("schemaVersion") ?: return null,
                 updatedAtMs = row.requiredLong("updatedAtMs") ?: return null,
+                fiatValuation = fiatValuation.value,
             )
         }
     }
@@ -516,33 +531,46 @@ internal object PublicBtcBalanceDocumentDto {
         val source = row.decodedOptionalString("source") ?: return null
         val basis = row.decodedOptionalString("basis") ?: return null
         val confidence = row.decodedOptionalString("confidence") ?: return null
+        val balanceConfidence = row.decodedOptionalString("balanceConfidence") ?: return null
         val totals = row["totals"] as? JsonObject ?: return null
+        val totalSats = totals.rowInt64("sats") ?: return null
+        val legacyTotalFiat = totals.decodedOptionalInt64("fiatCents") ?: return null
+        val totalFiatCents = legacyTotalFiat.value ?: 0L
+        val totalFiatValuation =
+            totals.decodedFiatValuation(totalSats, totalFiatCents) ?: return null
         return BtcBalanceDocumentRow(
             owner = row.rowOwner() ?: return null,
             schemaVersion = row.rowInt64("schemaVersion") ?: return null,
             asOf = row.rowStringAllowEmpty("asOf") ?: return null,
             accounts = row.decodeObjectArray("accounts", ::decodeAccount) ?: return null,
             totals = BtcBalanceTotalsRow(
-                sats = totals.rowInt64("sats") ?: return null,
-                fiatCents = totals.rowInt64("fiatCents") ?: return null,
+                sats = totalSats,
+                fiatCents = totalFiatCents,
                 exchangeSats = totals.rowInt64("exchangeSats") ?: return null,
                 selfCustodySats = totals.rowInt64("selfCustodySats") ?: return null,
+                fiatValuation = totalFiatValuation.value,
             ),
             source = source.value,
             basis = basis.value,
             confidence = confidence.value,
             updatedAtMs = row.requiredLong("updatedAtMs") ?: return null,
+            balanceConfidence = balanceConfidence.value ?: confidence.value,
         )
     }
 
     private fun decodeAccount(row: JsonObject): BtcBalanceAccountRow? {
         val custodyKey = row.rowString("custody") ?: return null
+        val sats = row.rowInt64("sats") ?: return null
+        val legacyFiat = row.decodedOptionalInt64("fiatCents") ?: return null
+        val fiatCents = legacyFiat.value ?: 0L
+        val fiatValuation = row.decodedFiatValuation(sats, fiatCents) ?: return null
         return BtcBalanceAccountRow(
             key = row.rowString("key") ?: return null,
             label = row.rowStringAllowEmpty("label") ?: return null,
             custody = Custody.entries.firstOrNull { it.key == custodyKey } ?: return null,
-            sats = row.rowInt64("sats") ?: return null,
-            fiatCents = row.rowInt64("fiatCents") ?: return null,
+            sats = sats,
+            fiatCents = fiatCents,
+            fiatValuation = fiatValuation.value,
         )
     }
 }
@@ -635,6 +663,7 @@ internal object PublicBtcSnapshotMetadataDto {
         val source = row.decodedOptionalString("source") ?: return null
         val basis = row.decodedOptionalString("basis") ?: return null
         val confidence = row.decodedOptionalString("confidence") ?: return null
+        val balanceConfidence = row.decodedOptionalString("balanceConfidence") ?: return null
         return BtcSnapshotMetadataRow(
             owner = row.rowOwner() ?: return null,
             schemaVersion = row.rowInt64("schemaVersion") ?: return null,
@@ -643,6 +672,7 @@ internal object PublicBtcSnapshotMetadataDto {
             basis = basis.value,
             confidence = confidence.value,
             updatedAtMs = row.requiredLong("updatedAtMs") ?: return null,
+            balanceConfidence = balanceConfidence.value ?: confidence.value,
         )
     }
 }
@@ -667,6 +697,31 @@ private fun JsonObject.decodedOptionalString(key: String): OptionalField<String>
 private fun JsonObject.decodedOptionalInt64(key: String): OptionalField<Long>? {
     if (!containsKey(key)) return OptionalField(null)
     return OptionalField(getValue(key).decodeConvexInt64OrNull() ?: return null)
+}
+
+private fun JsonObject.decodedFiatValuation(
+    sats: Long,
+    legacyFiatCents: Long,
+): OptionalField<FiatValuation>? {
+    if (!containsKey("fiatValuation")) {
+        return OptionalField(legacyFiatValuation(sats, legacyFiatCents))
+    }
+    val encoded = getValue("fiatValuation")
+    if (encoded is kotlinx.serialization.json.JsonNull) return OptionalField(null)
+    val valuation = encoded as? JsonObject ?: return null
+    val priceCents = valuation.decodedOptionalInt64("priceCents") ?: return null
+    val quotedAt = valuation.decodedOptionalString("quotedAt") ?: return null
+    val source = valuation.decodedOptionalString("source") ?: return null
+    val confidence = valuation.decodedOptionalString("confidence") ?: return null
+    return OptionalField(
+        FiatValuation(
+            cents = valuation.rowInt64("cents") ?: return null,
+            priceCents = priceCents.value,
+            quotedAt = quotedAt.value,
+            source = source.value,
+            confidence = confidence.value,
+        ),
+    )
 }
 
 private fun <T> JsonObject.decodedOptionalObject(

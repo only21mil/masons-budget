@@ -2,6 +2,7 @@ package com.sats21m.vogelvault.ui
 
 import android.app.Application
 import android.content.Context
+import com.sats21m.vogelvault.removeStoredConvexConfigIfPresent
 import com.sats21m.vogelvault.data.ConfigCipher
 import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
@@ -42,12 +43,67 @@ class RemoteRowsConfigurationTest {
         val effective = MutableConvexConfigSource(configured)
         stored.update(configured)
 
-        clearRemoteRowsConfiguration(stored, effective)
+        assertTrue(removeStoredConvexConfigIfPresent(stored, effective))
 
         assertTrue(preferences.all.isEmpty())
         assertEquals(ReadReadiness.DISABLED, stored.current().readiness)
         assertEquals(ReadReadiness.DISABLED, effective.current().readiness)
         assertFalse(effective.current().hasReadToken)
+    }
+
+    @Test
+    fun `stale remove cannot disable a working fallback after self heal`() {
+        val context: Application = RuntimeEnvironment.getApplication()
+        val preferences =
+            context.getSharedPreferences(
+                "remote-rows-stale-configuration-test-${UUID.randomUUID()}",
+                Context.MODE_PRIVATE,
+            )
+        val stored =
+            SecureConvexConfigSource(
+                preferences = preferences,
+                cipher = PassthroughConfigCipher,
+            )
+        val fallback =
+            ConvexConfig(
+                deploymentUrl = "https://example.convex.cloud",
+                readToken = "working-fallback",
+                remoteReadEnabled = true,
+            )
+        val effective = MutableConvexConfigSource(fallback)
+
+        assertFalse(removeStoredConvexConfigIfPresent(stored, effective))
+        assertEquals(ReadReadiness.READY, effective.current().readiness)
+        assertTrue(effective.current().hasReadToken)
+    }
+
+    @Test
+    fun `removing sync token preserves configured row reads`() {
+        val context: Application = RuntimeEnvironment.getApplication()
+        val preferences =
+            context.getSharedPreferences(
+                "sync-token-configuration-test-${UUID.randomUUID()}",
+                Context.MODE_PRIVATE,
+            )
+        val stored =
+            SecureConvexConfigSource(
+                preferences = preferences,
+                cipher = PassthroughConfigCipher,
+            )
+        val configured =
+            ConvexConfig(
+                deploymentUrl = "https://example.convex.cloud",
+                readToken = "test-read-token",
+                remoteReadEnabled = true,
+            )
+        stored.update(configured)
+        stored.updateSyncToken("test-sync-token")
+
+        clearSyncTokenConfiguration(stored)
+
+        assertFalse(stored.hasSyncToken())
+        assertEquals(ReadReadiness.READY, stored.current().readiness)
+        assertTrue(stored.current().hasReadToken)
     }
 }
 

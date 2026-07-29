@@ -38,7 +38,10 @@
 import { ConvexError, v } from "convex/values";
 import type { DataModel } from "./_generated/dataModel";
 import { mutation, type MutationCtx } from "./_generated/server";
+import { requireIsoDate } from "./dateValidation";
 import { mergeTodoPayload, normalizeTodoRecord } from "./todoNormalize";
+
+export { isRealIsoDate } from "./dateValidation";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -300,91 +303,6 @@ export function minorUnitsToStoredAmount(minor: number, field: string): number {
     );
   }
   return encoded;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Dates — MIRROR of isIsoDate (shared/domain/src/todo.ts)
-// ─────────────────────────────────────────────────────────────────────────────
-
-const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
-const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] as const;
-
-function isLeapYear(year: number): boolean {
-  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
-}
-
-/**
- * A real calendar date, not a Date.UTC round-trip: `new Date("2026-02-30")`
- * rolls forward to March 2nd, which would file a mistyped February row under
- * the wrong month and quietly move budget spend between two months.
- */
-export function isRealIsoDate(value: string): boolean {
-  const match = ISO_DATE.exec(value);
-  if (!match) return false;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  if (month < 1 || month > 12 || day < 1) return false;
-  const length =
-    (DAYS_IN_MONTH[month - 1] as number) +
-    (month === 2 && isLeapYear(year) ? 1 : 0);
-  return day <= length;
-}
-
-const EARLIEST_YEAR = 2000;
-const DAY_MS = 86_400_000;
-
-/**
- * Date-only `yyyy-MM-dd`, a real calendar day, inside a plausible window.
- *
- * Date-only and not a full instant because `monthOf` takes a 7-character prefix
- * and every client renders the string as-is; a `2026-07-26T00:00:00Z` row shows
- * up literally in the UI. The window catches the other common typo — a
- * transposed year — while leaving room for a future-dated entry.
- */
-function requireIsoDate(
-  value: string,
-  field: string,
-  now: number,
-  forwardDays: number,
-): string {
-  if (value !== value.trim()) {
-    reject("invalid_date", field, `${field} has surrounding whitespace`);
-  }
-  if (!ISO_DATE.test(value)) {
-    reject(
-      "invalid_date",
-      field,
-      `${field} must be an ISO calendar date (yyyy-MM-dd), got ` +
-        `${JSON.stringify(value)}`,
-    );
-  }
-  if (!isRealIsoDate(value)) {
-    reject(
-      "invalid_date",
-      field,
-      `${field} is not a real calendar date: ${value}`,
-    );
-  }
-  const year = Number(value.slice(0, 4));
-  if (year < EARLIEST_YEAR) {
-    reject(
-      "date_out_of_range",
-      field,
-      `${field} of ${value} is before ${EARLIEST_YEAR}; that is a typo, not a ` +
-        "transaction",
-    );
-  }
-  const latest = new Date(now + forwardDays * DAY_MS).toISOString().slice(0, 10);
-  if (value > latest) {
-    reject(
-      "date_out_of_range",
-      field,
-      `${field} of ${value} is more than ${forwardDays} days in the future ` +
-        `(limit ${latest})`,
-    );
-  }
-  return value;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -875,7 +793,7 @@ export const createTransaction = mutation({
     const file = transactionsFileFor(owner);
     // 30 days forward: a purchase is dated when it happened, and a future date
     // beyond a pending charge is a typed year or month.
-    const date = requireIsoDate(args.date, "date", now, 30);
+    const date = requireIsoDate(args.date, "date", now, 30, reject);
     const merchant = requireText(args.merchant, "merchant", MAX_MERCHANT);
     const amountMinor = requireMinorUnits(args.amountMinor, "amountMinor");
     const kind = args.kind ?? "spend";
@@ -1029,7 +947,7 @@ export const editTransaction = mutation({
     const record: Record<string, unknown> = { ...stored };
 
     if (args.date !== undefined) {
-      record.date = requireIsoDate(args.date, "date", now, 30);
+      record.date = requireIsoDate(args.date, "date", now, 30, reject);
     }
     if (args.merchant !== undefined) {
       record.merchant = requireText(args.merchant, "merchant", MAX_MERCHANT);
@@ -1195,7 +1113,7 @@ export const createTodo = mutation({
     const dueDate =
       args.dueDate === undefined || args.dueDate === null || args.dueDate === ""
         ? ""
-        : requireIsoDate(args.dueDate, "dueDate", now, 3_650);
+        : requireIsoDate(args.dueDate, "dueDate", now, 3_650, reject);
 
     const payload: Record<string, unknown> = {
       id,
@@ -1340,7 +1258,7 @@ export const editTodo = mutation({
       patch.dueDate =
         args.dueDate === null || args.dueDate === ""
           ? ""
-          : requireIsoDate(args.dueDate, "dueDate", now, 3_650);
+          : requireIsoDate(args.dueDate, "dueDate", now, 3_650, reject);
     }
     if (args.priority !== undefined) patch.priority = requirePriority(args.priority);
     if (args.flag !== undefined) patch.flag = args.flag;

@@ -6,6 +6,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.fail
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -321,6 +323,42 @@ class RowQueryRepositoryTest {
     }
 
     @Test
+    fun `standalone BTC accounts preserve explicit rounded zero and reject malformed valuation`() {
+        val available = RecordingPoster(
+            rowSuccess(
+                """[{"key":"tiny","owner":"victor","label":"Tiny","custody":"self_custody","sats":${convexInt64(1)},"fiatValuation":{"cents":${convexInt64(0)},"priceCents":${convexInt64(6000000)},"quotedAt":"2026-07-29T12:00:00Z","source":"fixture quote","confidence":"verified"},"asOf":"2026-07-29","schemaVersion":${convexInt64(3)},"updatedAtMs":0.0}]""",
+            ),
+        )
+        val account = (
+            runBlocking {
+                repositoryWith(available).listBtcAccounts(
+                    FamilyMember.VICTOR,
+                    RowVisibilityScope.NET_WORTH,
+                )
+            } as? ConvexResult.Ok
+        )?.value?.rows?.single() ?: fail("expected explicit valuation")
+
+        assertEquals(1L, account.sats)
+        assertEquals(0L, assertNotNull(account.fiatValuation).cents)
+        assertEquals("verified", account.fiatValuation?.confidence)
+
+        val malformed = RecordingPoster(
+            rowSuccess(
+                """[{"key":"tiny","owner":"victor","label":"Tiny","custody":"self_custody","sats":${convexInt64(1)},"fiatValuation":{"cents":"0"},"asOf":"2026-07-29","schemaVersion":${convexInt64(3)},"updatedAtMs":0.0}]""",
+            ),
+        )
+        assertEquals(
+            ConvexResult.Failed("unexpected payload shape"),
+            runBlocking {
+                repositoryWith(malformed).listBtcAccounts(
+                    FamilyMember.VICTOR,
+                    RowVisibilityScope.NET_WORTH,
+                )
+            },
+        )
+    }
+
+    @Test
     fun `bill pay money and row counts decode strictly`() {
         val billPoster = RecordingPoster(
             rowSuccess(
@@ -475,6 +513,8 @@ class RowQueryRepositoryTest {
 
         assertEquals(185_000_000L, document.totals.sats)
         assertEquals(18_130_055L, document.totals.fiatCents)
+        assertEquals(18_130_055L, document.totals.fiatValuation?.cents)
+        assertEquals("verified", document.balanceConfidence)
         assertEquals(150_000_000L, document.accounts.last().sats)
         assertEquals("tables:listBtcBalanceDocuments", sentPath(valid))
         assertEquals("convex_encoded_json", sentFormat(valid))
@@ -493,6 +533,28 @@ class RowQueryRepositoryTest {
                 )
             },
         )
+    }
+
+    @Test
+    fun `production-shaped BTC document keeps sats available and fiat unavailable`() {
+        val production = RecordingPoster(
+            rowSuccess(
+                """[{"owner":"victor","schemaVersion":${convexInt64(2)},"asOf":"2026-07-16T01:56:49Z","accounts":[{"key":"cold","label":"Cold storage","custody":"self_custody","sats":${convexInt64(541782856)},"fiatCents":${convexInt64(0)}}],"totals":{"sats":${convexInt64(541782856)},"fiatCents":${convexInt64(0)},"exchangeSats":${convexInt64(0)},"selfCustodySats":${convexInt64(541782856)}},"source":"authoritative reconciliation","basis":"self-custody screenshot","confidence":"high","updatedAtMs":0.0}]""",
+            ),
+        )
+        val document = (
+            runBlocking {
+                repositoryWith(production).listBtcBalanceDocuments(
+                    FamilyMember.RACHEL,
+                    RowVisibilityScope.NET_WORTH,
+                )
+            } as? ConvexResult.Ok
+        )?.value?.rows?.single() ?: fail("expected production-shaped document")
+
+        assertEquals(541_782_856L, document.totals.sats)
+        assertNull(document.totals.fiatValuation)
+        assertNull(document.accounts.single().fiatValuation)
+        assertEquals("high", document.balanceConfidence)
     }
 
     @Test
