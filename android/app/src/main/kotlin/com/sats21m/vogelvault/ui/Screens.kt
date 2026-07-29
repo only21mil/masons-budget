@@ -143,6 +143,10 @@ fun ScreenHost(
     destination: Destination,
     state: VaultUiState,
     onEnableRemoteRows: (String) -> Unit = {},
+    hasTodoWriteAccess: () -> Boolean = { false },
+    onSaveTodoWriteAccess: (String) -> Boolean = { false },
+    onUpsertTodo: suspend (TodoItem) -> Boolean = { false },
+    onDeleteTodo: suspend (String) -> Boolean = { false },
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -259,6 +263,20 @@ fun ScreenHost(
         )
     }
 
+    if (destination == Destination.TODAY) {
+        TodoScreen(
+            todos = todosInput,
+            viewer = profile,
+            nowMillis = state.now,
+            hasWriteAccess = hasTodoWriteAccess,
+            saveWriteCredential = onSaveTodoWriteAccess,
+            upsert = onUpsertTodo,
+            delete = onDeleteTodo,
+            modifier = modifier,
+        )
+        return
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(VaultSpace.md),
@@ -286,7 +304,7 @@ fun ScreenHost(
                 Destination.BUDGET -> budget(state, months, budgetSpend) { picked = it }
                 Destination.BITCOIN -> bitcoin(state, bitcoinProjection, displayUnit)
                 Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
-                Destination.TODAY -> today(state, dueTodos)
+                Destination.TODAY -> Unit
                 Destination.FAMILY -> family(state)
                 Destination.SETTINGS -> settings(state, onEnableRemoteRows)
             }

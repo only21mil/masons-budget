@@ -12,6 +12,7 @@ import com.sats21m.vogelvault.data.SecureConvexConfigSource
 import com.sats21m.vogelvault.data.SecureConvexSyncTokenSource
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.cache.VaultDatabase
+import com.sats21m.vogelvault.ui.TodoMutationGateway
 import com.sats21m.vogelvault.ui.VaultViewModel
 import java.io.IOException
 
@@ -70,6 +71,30 @@ class VaultApplication : Application() {
             onUnauthorized = ::recoverRejectedConvexConfig,
         )
     }
+
+    private val convexSyncTokenSource: SecureConvexSyncTokenSource by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        SecureConvexSyncTokenSource(this)
+    }
+
+    internal val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        TodoMutationGateway(
+            ConvexMutationClient(
+                configSource = convexConfigSource,
+                syncTokenSource = convexSyncTokenSource,
+            ),
+        )
+    }
+
+    internal fun hasTodoWriteAccess(): Boolean =
+        convexSyncTokenSource.currentSyncToken() != null
+
+    internal fun saveTodoWriteAccess(token: String): Boolean =
+        runCatching {
+            convexSyncTokenSource.update(token)
+            convexSyncTokenSource.currentSyncToken() != null
+        }.getOrDefault(false)
 
     val viewModelFactory: ViewModelProvider.Factory =
         object : ViewModelProvider.Factory {
