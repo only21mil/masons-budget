@@ -1,0 +1,168 @@
+package com.sats21m.vogelvault.ui
+
+import com.sats21m.vogelvault.domain.BtcAccount
+import com.sats21m.vogelvault.domain.BtcBalance
+import com.sats21m.vogelvault.domain.Budget
+import com.sats21m.vogelvault.domain.BudgetCategory
+import com.sats21m.vogelvault.domain.Custody
+import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.Fixtures
+import com.sats21m.vogelvault.domain.Transaction
+import java.time.LocalDate
+import kotlin.test.Test
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+
+class ExportReportsTest {
+    @Test
+    fun `transaction export keeps shared adults and excludes child rows`() {
+        val data = Fixtures.envelope(FamilyMember.VICTOR).copy(
+            transactions = Fixtures.envelope(FamilyMember.VICTOR).transactions.copy(
+                value = listOf(
+                    transaction("victor-purchase", 1_234L, FamilyMember.VICTOR),
+                    transaction("rachel-refund", -250L, FamilyMember.RACHEL),
+                    transaction("mason-purchase", 999L, FamilyMember.MASON),
+                ),
+            ),
+        )
+
+        val csv = ExportReports.transactions(
+            FamilyMember.VICTOR,
+            data,
+            LocalDate.parse("2026-07-29"),
+        )
+
+        assertContains(csv.content, "victor-purchase")
+        assertContains(csv.content, "12.34")
+        assertContains(csv.content, "rachel-refund")
+        assertContains(csv.content, "-2.50")
+        assertFalse(csv.content.contains("mason-purchase"), csv.content)
+    }
+
+    @Test
+    fun `child transaction export is self only`() {
+        val fixture = Fixtures.envelope(FamilyMember.MASON)
+        val data = fixture.copy(
+            transactions = fixture.transactions.copy(
+                value = listOf(
+                    transaction("adult", 100L, FamilyMember.VICTOR),
+                    transaction("mason", 200L, FamilyMember.MASON),
+                    transaction("maddox", 300L, FamilyMember.MADDOX),
+                ),
+            ),
+        )
+
+        val csv = ExportReports.transactions(
+            FamilyMember.MASON,
+            data,
+            LocalDate.parse("2026-07-29"),
+        )
+
+        assertFalse(csv.content.contains("adult"), csv.content)
+        assertContains(csv.content, "mason")
+        assertFalse(csv.content.contains("maddox"), csv.content)
+    }
+
+    @Test
+    fun `budget summary preserves purchase and refund signs without child spend`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR)
+        val budget = Budget(
+            month = "2026-07",
+            categories = listOf(BudgetCategory("Groceries", 10_000L, 0L)),
+            owner = FamilyMember.VICTOR,
+        )
+        val data = fixture.copy(
+            budget = fixture.budget.copy(value = budget),
+            transactions = fixture.transactions.copy(
+                value = listOf(
+                    transaction("purchase", 2_000L, FamilyMember.VICTOR),
+                    transaction("refund", -500L, FamilyMember.RACHEL),
+                    transaction("child", 8_000L, FamilyMember.MASON),
+                ),
+            ),
+        )
+
+        val csv = ExportReports.budgetSummary(FamilyMember.VICTOR, data)
+
+        assertContains(csv.content, "Groceries,100.00,15.00,85.00,15%")
+    }
+
+    @Test
+    fun `net worth export recomputes adult total without child accounts`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR)
+        val adult = account("adult", 12_345L, FamilyMember.VICTOR)
+        val child = account("child", 98_765L, FamilyMember.MASON)
+        val balance = BtcBalance(
+            owner = FamilyMember.VICTOR,
+            asOf = "2026-07-28",
+            accounts = listOf(adult, child),
+            totalSats = adult.sats + child.sats,
+            fiatCents = adult.fiatCents + child.fiatCents,
+            exchangeSats = adult.sats + child.sats,
+            selfCustodySats = 0L,
+        )
+        val data = fixture.copy(btcBalance = fixture.btcBalance.copy(value = balance))
+
+        val csv = ExportReports.netWorthHistory(
+            FamilyMember.VICTOR,
+            data,
+            LocalDate.parse("2026-07-29"),
+        )
+
+        assertContains(csv.content, "2026-07-28,123.45,123.45")
+        assertFalse(csv.content.contains("1111.10"), csv.content)
+    }
+
+    @Test
+    fun `csv escaping preserves commas quotes and newlines`() {
+        val fixture = Fixtures.envelope(FamilyMember.MASON)
+        val data = fixture.copy(
+            transactions = fixture.transactions.copy(
+                value = listOf(
+                    transaction(
+                        merchant = "Shop, \"North\"\nDesk",
+                        amount = 100L,
+                        owner = FamilyMember.MASON,
+                    ),
+                ),
+            ),
+        )
+
+        val csv = ExportReports.transactions(
+            FamilyMember.MASON,
+            data,
+            LocalDate.parse("2026-07-29"),
+        )
+
+        assertContains(csv.content, "\"Shop, \"\"North\"\"\nDesk\"")
+        assertEquals("transactions-2026-07-29.csv", csv.filename)
+    }
+
+    private fun transaction(
+        merchant: String,
+        amount: Long,
+        owner: FamilyMember,
+    ) = Transaction(
+        id = "$owner-$merchant",
+        date = "2026-07-20",
+        merchant = merchant,
+        amount = amount,
+        spendAmount = amount,
+        category = "Groceries",
+        owner = owner,
+    )
+
+    private fun account(
+        key: String,
+        fiatCents: Long,
+        owner: FamilyMember,
+    ) = BtcAccount(
+        key = key,
+        label = key,
+        custody = Custody.EXCHANGE,
+        sats = fiatCents,
+        fiatCents = fiatCents,
+        owner = owner,
+    )
+}

@@ -56,6 +56,7 @@ class DestinationVisibilityTest {
         assertEquals(
             listOf(
                 Destination.NET_WORTH,
+                Destination.EXPORT,
                 Destination.TODAY,
                 Destination.FAMILY,
                 Destination.SETTINGS,
