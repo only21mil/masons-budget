@@ -1,176 +1,155 @@
 # The Vogel Vault
 
-A voice-first, Bitcoin-native budget tracker for the family. Internal repo name is
-still "Mason's Budget App".
+A private, Bitcoin-native budget and family-finance application. The internal
+repository name remains “Mason's Budget App.”
 
-> **Start here: [`docs/HANDOFF.md`](docs/HANDOFF.md)** — the goal, current state,
-> what is done, and what is left. Read it before acting on anything else in this
-> repo, including the rest of this README.
+> Start with [`docs/HANDOFF.md`](docs/HANDOFF.md). It records the current
+> architecture, write contract, safety invariants, and evidence boundary.
 
 ## Clients
 
 | Client | Path | Stack |
-|---|---|---|
-| iOS / macOS | `MasonsBudget/` | SwiftUI, SwiftData, SFSpeechRecognizer on-device voice |
-| Linux desktop | `linux/` | Electron + React + TypeScript + Vite |
-| Android (Pixel Fold) | `android/` | Kotlin |
-| Backend | `convex/` | Convex — system of record; shipped clients currently read legacy `dataFiles` blobs |
+| --- | --- | --- |
+| iOS and macOS | `MasonsBudget/` | SwiftUI and SwiftData |
+| Linux desktop | `linux/` | Electron, React, TypeScript, and Vite |
+| Android | `android/` | Kotlin and Compose |
+| Backend | `convex/` | Convex system of record |
 
 The family/visibility contract lives in `shared/domain` and mirrors
 `MasonsBudget/MasonsBudget/Models/SharedEnums.swift`, which is authoritative.
-`shared/domain/fixtures/visibility-cases.json` pins TypeScript and Kotlin to the
-same vectors as the Swift tests — change the Swift rules and the fixture changes
-in the same commit.
+Adults can see household and child records, but adult net worth includes adult
+owners only. Children see only their own records.
 
-No Plaid, no third-party financial aggregator, no data broker.
+There is no Plaid integration, bank linking, or third-party financial
+aggregator.
 
-## Working on this
+## Working on the repository
 
-Tracking, review and builds are on GitHub. Nothing is kept on a workstation:
-clone where you need it, push a branch, delete the checkout. See `AGENTS.md`.
+Tracking, review, and builds are on GitHub. Work on a branch and open a pull
+request; never commit to `main`. See `AGENTS.md` for the approval gates around
+Apple builds, releases, production Convex operations, and credentials.
 
 ```bash
 git clone https://github.com/only21mil/masons-budget.git
 cd masons-budget
-npm ci        # workspaces: convex backend, shared/domain, linux client
+npm ci
 ```
 
-Linux client and shared contract:
+Shared contract and Linux client:
 
 ```bash
-npm run test --workspace @vogel-vault/domain   # visibility + money parity
-cd linux && npm run typecheck && npm run lint && npm run test && npm run dev
+npm run typecheck --workspace @vogel-vault/domain
+npm run test --workspace @vogel-vault/domain
+cd linux
+npm run typecheck
+npm run lint
+npm run test
 ```
 
-Android domain module — plain Kotlin/JVM, needs no Android SDK:
+Convex:
 
 ```bash
-cd android && gradle :domain:test
+cd /path/to/masons-budget
+npx tsc --noEmit -p convex/tsconfig.json
+npx tsc --noEmit -p convex/tsconfig.test.json
+npm run convex:test
 ```
 
-Apple targets need macOS and Xcode:
+Android unit tests can run locally with the repository wrapper:
 
 ```bash
-cd MasonsBudget && xcodegen generate --spec project.yml
-xcodebuild -project MasonsBudget.xcodeproj -scheme MasonsBudget \
-  -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
+export ANDROID_HOME=/home/victor/Android/Sdk
+export JAVA_HOME=/home/victor/.local/opt/jdk21
+cd android
+./gradlew testDebugUnitTest
 ```
 
-`MasonsBudget/project.yml` is the source of truth; the `.xcodeproj` is generated.
-Never hand-edit the pbxproj. Releases run through the manually triggered
-`.github/workflows/deploy.yml`, sign as team `384ZGKG4GB`, and use the App Store
-Connect API-key secrets `ASC_API_KEY_P8`, `ASC_KEY_ID`, and `ASC_ISSUER_ID`.
-The old Apple-ID password and `.p12` routes are retired. Every release needs
-Victor's approval.
-
-## Linux preflight
-
-On a Linux machine, run the safe static preflight before asking a Mac build host to
-compile:
+Apple app-target builds and tests require Victor's explicit approval and run on
+the approved macOS/GitHub Actions path. On Linux, the non-building static
+preflight is:
 
 ```bash
 scripts/vv-swift-check.sh
 ```
 
-This does not run `xcodebuild`, simulator actions, signing, archives, uploads,
-or TestFlight. It checks the Swift toolchain, temp XcodeGen generation,
-SourceKit-backed SwiftLint, SwiftFormat, `git diff --check`, a Swift typecheck
-smoke, serialized SwiftPM core tests, a `Package.resolved` mutation guard, and
-a redacted gitleaks scan over tracked/unignored working-tree files.
-
-For Apple SDK builds, use the approval-gated Mac bridge documented in
-`docs/linux-apple-build-boundary.md`.
-
-If SourceKit-LSP feels stale, use:
-
-```bash
-scripts/vv-swift-lsp-reset.sh status
-scripts/vv-swift-lsp-reset.sh prime
-```
+`MasonsBudget/project.yml` is the XcodeGen source of truth. Never hand-edit the
+generated `.xcodeproj`.
 
 ## Project structure
 
-- `convex/` — schema, legacy blob functions, row queries, writeback, migration, tests
-- `shared/domain/` — cross-client visibility, money, and wire-format contracts
+- `convex/` — schema, authenticated row queries and mutations, legacy blob
+  compatibility, migration, and tests
+- `shared/domain/` — cross-client visibility, money, todo, and wire contracts
 - `linux/` — Electron/React desktop client
-- `android/` — Kotlin/Compose Fold client and plain-JVM domain module
-- `MasonsBudget/project.yml` — XcodeGen source of truth; never hand-edit the generated project
-- `MasonsBudget/MasonsBudget/Models/` — SwiftData models and family visibility rules
-- `MasonsBudget/MasonsBudget/Services/` — Convex transport, legacy blob compatibility,
-  writeback, import, prices, voice, and sync orchestration
+- `android/` — Kotlin/Compose client and plain-JVM domain module
+- `MasonsBudget/MasonsBudget/Models/` — SwiftData models and authoritative
+  family visibility rules
+- `MasonsBudget/MasonsBudget/Services/` — Convex transport, blob compatibility,
+  approved writeback, prices, voice parsing, and sync orchestration
 - `MasonsBudget/MasonsBudget/Views/` — shared iOS/macOS screens and components
-- `MasonsBudget/MasonsBudgetTests/` — Swift tests
 
 ## Data flow
 
-Convex is authoritative; there is no service upstream of it. Nothing has written
-to Convex since 2026-07-18. MC2 disappeared when its DGX Spark host was wiped,
-and its source was never pushed anywhere, so it cannot be restored.
+Convex is authoritative; there is no service upstream of it. MC2 disappeared
+when its DGX Spark host was wiped, and its source was never pushed. Its name
+survives only in compatibility types for the retained JSON schema.
 
-Production still has only the original blob tables. Every shipped client reads
-the JSON documents in `dataFiles`; `syncVersions` and `todoTombstones` support
-that contract. The row schema, internal backfill, row queries, and validating
-write path exist in this repository but have not been deployed.
+The production row schema and authenticated `tables:*` API are deployed, and
+the approved migration populated typed rows/documents from the retained blobs.
+The original `dataFiles` documents remain for shipped compatibility readers and
+fallbacks.
 
-```
-CURRENT PRODUCTION
-Convex system of record (`dataFiles`)
-    ├── iOS/macOS: ConvexClient → MC2Reader → compatibility DTOs → MC2Mapper
-    ├── Linux:     Convex transport → legacy JSON read model
-    └── Android:   Convex transport → legacy JSON read model
-
-APPROVAL-GATED CUTOVER — NOT DEPLOYED
-unchanged `dataFiles` ──internal backfill──> row tables ──row queries──> clients
+```text
+Convex system of record
+    ├── typed rows/documents ──authenticated tables:* API──> current row paths
+    └── unchanged dataFiles blobs ──compatibility API─────> legacy readers
 ```
 
-The backfill must leave `dataFiles`, `syncVersions`, and `todoTombstones`
-byte-identical so existing clients continue to work throughout the cutover.
-Deployment and client cutover are coordinated under
-[umbrella issue #46](https://github.com/only21mil/masons-budget/issues/46).
+New ledger integrations write rows. A new or reconstructed transaction uses
+`tables:upsertTransaction`, not `dataFiles:appendTransaction` or
+`writeback:createTransaction`. Other row mutations are documented in
+[`docs/HANDOFF.md`](docs/HANDOFF.md#3-the-canonical-write-path).
 
-## Voice Input
+Every row mutation requires the runtime-injected sync token. Money is integer
+minor units, and HTTP calls use `format: "convex_encoded_json"` so each int64 is
+tagged as `{"$integer":"<base64>"}`. Purchases are positive and refunds are
+negative for every owner; the server rejects a contradictory sign instead of
+correcting it.
 
-The voice flow works in three stages:
+Do not delete or casually change `dataFiles`, `syncVersions`,
+`todoTombstones`, the Swift `MC2*` compatibility types, or legacy JSON decoding.
+They remain load-bearing until every shipped blob reader/writer has retired and
+a reviewed convergence plan has landed.
 
-1. **Capture** — `VoiceCaptureView` uses `SFSpeechRecognizer` (on-device, en-US) with `AVAudioEngine`. Tap-and-hold mic FAB on Dashboard.
-2. **Parse** — `VoiceParser` extracts amount ($45, "five dollars"), merchant (at/from/to prepositions), category (merchant mapping + keywords), date (today/yesterday/weekdays/ISO), card (on/with), and note (note: prefix).
-3. **Confirm** — Review parsed result with Edit/Save buttons. Saves directly to SwiftData.
+## Voice entry
 
-## MC2 history and blob compatibility
-
-MC2 (mission-control) was the Python service that originally owned the family
-finance JSON and pushed projections into Convex. It is gone, but its file names,
-field names, record shapes, and adult-versus-child conventions survive in the
-only remaining copy of the data and therefore throughout the code.
-
-The Swift client reads Convex `dataFiles` documents including `budget`,
-`transactions`, `bitcoin-buys`, `bitcoin-bill-pays`, `btc-balance-snapshot`,
-`finances`, `son-balances`, and the Mason-specific files. `MC2DTOs`, `MC2Mapper`,
-`MC2Reader`, and `MC2SyncService` are historical compatibility names: these
-types now read from Convex, not from an MC2 process. Keeping the names and shapes
-stable protects existing JSON decoding and SwiftData mapping during cutover.
-
-Do not delete the blob path, alter `syncVersions`/`todoTombstones`, or break old
-JSON decoding when adding row reads. Production migration and client cutover are
-approval-gated and coordinated under [issue #46](https://github.com/only21mil/masons-budget/issues/46).
+The iOS voice-entry screen uses `SFSpeechRecognizer` and `AVAudioEngine`.
+Tapping the microphone starts or stops recognition; the transcript is parsed
+locally into amount, merchant, category, date, payment method, and note fields
+for review before saving. The current code does not require Apple's on-device
+recognition mode, and microphone capture is unavailable in the macOS target.
 
 ## Configuration
 
 | Key | Value |
-|---|---|
+| --- | --- |
 | Bundle ID | `com.sats21m.masonsbudget` |
-| Team | `384ZGKG4GB` |
-| iOS Target | 17.0+ |
-| Swift | 5.9 |
-| Code Sign | Automatic |
+| Apple team | `384ZGKG4GB` |
+| iOS deployment target | 17.0 |
+| macOS deployment target | 14.0 |
+| Swift language version | 5.9 |
+
+Release workflows are manually triggered and approval-gated. Signing material
+and App Store Connect credentials belong in GitHub Actions secrets, never in
+source or documentation.
 
 ## Privacy
 
-- No Plaid, no bank linking, no third-party data aggregation
-- Voice processed on-device via Apple's SFSpeechRecognizer
-- Convex is the private backend and system of record; clients cache mapped data locally
-- No Plaid-style aggregator, analytics, or tracking
-- Full privacy policy: `PRIVACY.md`
+- No Plaid, bank linking, third-party aggregation, analytics, or tracking
+- Convex is the private household backend
+- Voice audio is submitted to Apple's speech-recognition framework and is not
+  retained by the app after recognition
+- Full policy: [`PRIVACY.md`](PRIVACY.md)
 
 ## License
 

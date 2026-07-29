@@ -5,6 +5,13 @@ Reviewed source: `build/finish-vogel-vault` at `e2d0781`
 Recorded production evidence date: 2026-07-26  
 Preflight date: 2026-07-27
 
+> **Historical pre-deploy record.** The row schema/API were subsequently
+> deployed and the migration was applied. Do not use this document as current
+> deployment state or as an instruction to deploy again. See `docs/HANDOFF.md`
+> for the present architecture and use a fresh approved preflight for any
+> production operation. Statements below are preserved as evidence about the
+> reviewed `e2d0781` bundle before that deployment.
+
 ## Verdict
 
 **Do not deploy until `ALLOW_TOKENLESS_SYNC` is confirmed absent on the target.**
@@ -30,11 +37,11 @@ No `convex deploy`, `dev`, `env`, or `run` command was used for this preflight.
 Therefore “today” below means the state recorded in committed repository
 evidence, not a fresh inspection of `keen-elephant-452`.
 
-The committed evidence agrees on these facts:
+At the 2026-07-27 preflight, the committed evidence agreed on these facts:
 
-- `AGENTS.md` and `docs/HANDOFF.md` say production still has only the legacy
-  blob tables and that the row schema/backfill/writeback have not been deployed.
-- `docs/HANDOFF.md` records 13 `dataFiles` documents and the real payload counts
+- The then-current `AGENTS.md` and `docs/HANDOFF.md` recorded only the legacy
+  blob tables and said the row schema/backfill/writeback were not yet deployed.
+- The then-current `docs/HANDOFF.md` recorded 13 `dataFiles` documents and counts
   of 905 transactions, 31 BTC buys, and 25 todos.
 - `docs/convex-read-auth-cutover.md` records the 2026-07-26 read-auth result and
   explicitly warns that it is not a current probe.
@@ -48,7 +55,7 @@ state.
 
 This list covers application tables, not Convex system tables.
 
-### Recorded on production today
+### Production state recorded for the preflight
 
 | Existing table | Proposed action |
 | --- | --- |
