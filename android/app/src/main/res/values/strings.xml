@@ -42,7 +42,6 @@
     <string name="refresh_unavailable">Refresh unavailable while live reads are disabled</string>
     <string name="refresh_failed_title">Refresh failed</string>
     <string name="refresh_failed_detail">Live reads did not complete. Check the connection and read-token settings, then try again.</string>
-
     <string name="voice_transaction_title">Voice transaction</string>
     <string name="voice_transaction_instruction">Say the amount, the merchant, and roughly when. Everything is shown for review before it is saved.</string>
     <string name="voice_start_listening">Start listening</string>
@@ -87,4 +86,35 @@
     <string name="add_transaction_save">Save</string>
     <string name="add_transaction_saving">Saving...</string>
     <string name="add_transaction_date_confirm">Use date</string>
+    <string name="retirement_projection_title">Bitcoin retirement projection</string>
+    <string name="retirement_horizon_label">HORIZON</string>
+    <string name="retirement_horizon_years">%1$d years</string>
+    <string name="retirement_projected_bitcoin_label">Bitcoin at %1$d years</string>
+    <string name="retirement_starting_bitcoin_label">Starting Bitcoin</string>
+    <string name="retirement_balance_as_of_hint">balance as of %1$s</string>
+    <string name="retirement_scenario_hint">scenario, not a forecast</string>
+    <string name="retirement_monthly_inputs_title">Monthly Bitcoin inputs</string>
+    <string name="retirement_dca_label">Weekly DCA</string>
+    <string name="retirement_dca_detail">2,100,000 sats/week × 4.33 weeks</string>
+    <string name="retirement_surplus_label">Budget surplus</string>
+    <string name="retirement_surplus_detail">%1$s income − %2$s planned spending; floored at zero</string>
+    <string name="retirement_bonus_label">Adult bonuses</string>
+    <string name="retirement_bonus_detail">%1$s/year spread evenly across 12 months</string>
+    <string name="retirement_assumptions_title">Assumptions and exclusions</string>
+    <string name="retirement_price_assumption">%1$s/BTC from the last recorded buy on %2$s; constant for conversions and not a live quote</string>
+    <string name="retirement_growth_assumption" formatted="false">Bitcoin grows 15%/year, compounded monthly at 15% ÷ 12</string>
+    <string name="retirement_contribution_assumption">Every contribution buys Bitcoin at the same recorded price</string>
+    <string name="retirement_securities_excluded">401(k), WAP, VOO, IBIT, employer match, taxes, fees, and inflation are excluded because Android has no canonical retirement-account rows</string>
+    <string name="retirement_scenario_warning_title">Assumption-driven scenario</string>
+    <string name="retirement_scenario_warning_detail">This is arithmetic over the listed inputs, not financial advice or a prediction. Change in price, income, spending, contributions, or returns changes the result.</string>
+    <string name="retirement_balance_unavailable_title">Bitcoin balance unavailable</string>
+    <string name="retirement_balance_unavailable_detail">A projection requires the canonical Bitcoin quantity for this profile. No zero balance was assumed.</string>
+    <string name="retirement_price_unavailable_title">Sats known; fiat valuation unavailable</string>
+    <string name="retirement_price_unavailable_detail">The canonical fiat field is not a price source. Add a dated recorded-buy price before converting surplus or bonuses; the app will not project from $0.00.</string>
+    <string name="retirement_income_unavailable_title">Income unavailable</string>
+    <string name="retirement_income_unavailable_detail">A projection requires a profile-scoped income month. No zero income was assumed.</string>
+    <string name="retirement_budget_unavailable_title">Budget unavailable</string>
+    <string name="retirement_budget_unavailable_detail">A projection requires this profile’s planned monthly spending. No zero budget was assumed.</string>
+    <string name="retirement_math_unavailable_title">Projection outside supported range</string>
+    <string name="retirement_math_unavailable_detail">The inputs could not be converted to an exact integer-satoshi result. No estimate is shown.</string>
 </resources>
