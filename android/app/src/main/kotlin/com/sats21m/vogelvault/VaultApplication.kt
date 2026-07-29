@@ -92,8 +92,13 @@ open class VaultApplication : Application() {
      * and it would have been invisible: a token saved from the Today screen would
      * have landed in a file [convexMutationClient] never reads, so the save would
      * look successful while every write stayed unauthorized.
+     *
+     * Open so a test can substitute a gateway whose transport it controls. That
+     * is the only way to drive TodoScreen's real delete path — including the
+     * ordering of its snackbar against the mutation result — instead of testing
+     * a helper in isolation and calling it screen coverage.
      */
-    internal val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+    internal open val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         TodoMutationGateway(convexMutationClient)
     }
 

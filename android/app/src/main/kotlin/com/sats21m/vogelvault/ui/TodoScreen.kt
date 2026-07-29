@@ -88,6 +88,13 @@ private fun filing(todo: TodoItem): String? =
 internal fun TodoScreen(
     state: VaultUiState,
     modifier: Modifier = Modifier,
+    /**
+     * Wall clock behind the undo window, injectable exactly as VaultViewModel's
+     * is. Robolectric's virtual clock does not reach System.currentTimeMillis in
+     * app code, so without this seam the slow-server case could only be tested
+     * by sleeping for six real seconds.
+     */
+    nowMillis: () -> Long = System::currentTimeMillis,
 ) {
     val application = LocalContext.current.applicationContext as? VaultApplication
     // One process-scoped client, sharing the one encrypted credential store with
@@ -259,7 +266,7 @@ internal fun TodoScreen(
                             if (todo.id in busyIds) return@TodoRow
                             val pending = PendingTodoDeletion(
                                 todo,
-                                System.currentTimeMillis() + TODO_UNDO_WINDOW_MILLIS,
+                                nowMillis() + TODO_UNDO_WINDOW_MILLIS,
                             )
                             busyIds = busyIds + todo.id
                             localTodos = localTodos.filterNot { it.id == todo.id }
@@ -286,7 +293,7 @@ internal fun TodoScreen(
                                         showDeleted = { message ->
                                             if (
                                                 pendingDeletion?.todo?.id == todo.id &&
-                                                pending.canUndo(System.currentTimeMillis())
+                                                pending.canUndo(nowMillis())
                                             ) {
                                                 snackbar.showSnackbar(
                                                     message = message,
@@ -294,7 +301,16 @@ internal fun TodoScreen(
                                                     duration = SnackbarDuration.Indefinite,
                                                 )
                                             } else {
-                                                SnackbarResult.Dismissed
+                                                // A slow server answered after the undo window
+                                                // closed. The row really is gone, so say so:
+                                                // trading a false success for a silent success
+                                                // is not an improvement, it just moves which
+                                                // sentence the user never gets. No Undo action,
+                                                // because that offer has genuinely expired.
+                                                snackbar.showSnackbar(
+                                                    message = message,
+                                                    duration = SnackbarDuration.Short,
+                                                )
                                             }
                                         },
                                     )
@@ -313,7 +329,7 @@ internal fun TodoScreen(
                                         if (
                                             feedback.snackbarResult == SnackbarResult.ActionPerformed &&
                                             pendingDeletion?.todo?.id == todo.id &&
-                                            pending.canUndo(System.currentTimeMillis())
+                                            pending.canUndo(nowMillis())
                                         ) {
                                             expiryJob?.cancel()
                                             val restoreFailure =
