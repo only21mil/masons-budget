@@ -186,7 +186,9 @@ class VoiceTransactionParser {
     private fun String.trimTrailingWords(): String? {
         val parts = split(WHITESPACE).filter(String::isNotEmpty).toMutableList()
         while (parts.lastOrNull()?.lowercase() in TRAILING_MERCHANT_WORDS) {
-            parts.removeLast()
+            // Not removeLast(): on API 35 that resolves to java.util.List#removeLast,
+            // which does not exist below 35, and minSdk here is 29.
+            parts.removeAt(parts.lastIndex)
         }
         return parts.joinToString(" ").ifBlank { null }
     }
