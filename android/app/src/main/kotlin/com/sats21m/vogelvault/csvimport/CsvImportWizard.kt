@@ -175,7 +175,7 @@ private fun CsvImportWizard(
                 CsvWizardStep.PREVIEW -> CsvPreviewStep(
                     rows = rows,
                     selectedIds = selectedIds,
-                    priceAvailable = btcPriceCents != null,
+                    btcPriceCents = btcPriceCents,
                     writeAvailable = onImport != null,
                     loading = loading,
                     error = error,
@@ -283,7 +283,7 @@ private fun CsvSourceStep(
 private fun CsvPreviewStep(
     rows: List<CsvImportedTransaction>,
     selectedIds: Set<String>,
-    priceAvailable: Boolean,
+    btcPriceCents: Long?,
     writeAvailable: Boolean,
     loading: Boolean,
     error: String?,
@@ -293,6 +293,7 @@ private fun CsvPreviewStep(
     onImport: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val priceAvailable = btcPriceCents != null
     Column(Modifier.fillMaxSize()) {
         Column(
             Modifier.padding(
@@ -309,6 +310,13 @@ private fun CsvPreviewStep(
             )
             if (!priceAvailable) {
                 WarningText(stringResource(R.string.csv_import_price_unavailable))
+            } else {
+                WarningText(
+                    stringResource(
+                        R.string.csv_import_price_basis,
+                        Money.formatUsd(btcPriceCents),
+                    ),
+                )
             }
             if (!writeAvailable) {
                 WarningText(stringResource(R.string.csv_import_write_unavailable))
@@ -425,7 +433,7 @@ private fun CsvPreviewRow(
                 ?: stringResource(R.string.csv_import_price_short),
             color = when {
                 row.amountUsdCents == null -> VaultWarning
-                row.amountUsdCents < 0L -> VaultPositive
+                row.isIncome || row.amountUsdCents < 0L -> VaultPositive
                 else -> VaultNegative
             },
             style = MaterialTheme.typography.bodyMedium,
