@@ -1,18 +1,18 @@
 import SwiftData
 import XCTest
 
-final class MC2SyncServiceTests: XCTestCase {
+final class ConvexSyncServiceTests: XCTestCase {
     @MainActor
     func testAdultNetWorthSnapshotExcludesChildBalance() throws {
         let defaults = UserDefaults.standard
-        let previousMember = defaults.object(forKey: MC2SyncService.selectedMemberKey)
+        let previousMember = defaults.object(forKey: ConvexSyncService.selectedMemberKey)
         let previousBTCPrice = defaults.object(forKey: BTCPriceService.priceKey)
         defer {
-            restore(previousMember, forKey: MC2SyncService.selectedMemberKey, in: defaults)
+            restore(previousMember, forKey: ConvexSyncService.selectedMemberKey, in: defaults)
             restore(previousBTCPrice, forKey: BTCPriceService.priceKey, in: defaults)
         }
 
-        defaults.set(FamilyMember.rachel.rawValue, forKey: MC2SyncService.selectedMemberKey)
+        defaults.set(FamilyMember.rachel.rawValue, forKey: ConvexSyncService.selectedMemberKey)
         defaults.set(100_000, forKey: BTCPriceService.priceKey)
 
         let schema = Schema([
@@ -53,7 +53,7 @@ final class MC2SyncServiceTests: XCTestCase {
             totalValue: 20_000,
         ))
 
-        MC2SyncService(context: context).recordNetWorthSnapshot()
+        ConvexSyncService(context: context).recordNetWorthSnapshot()
         try context.save()
 
         let snapshots = try context.fetch(FetchDescriptor<NetWorthSnapshot>())

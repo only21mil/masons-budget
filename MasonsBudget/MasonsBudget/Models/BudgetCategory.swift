@@ -1,5 +1,5 @@
 // Mason's Budget App — Budget category model
-// Mirrors MC2 budget.json category entries (Bills & Utilities, Dining, etc.).
+// Mirrors budget category rows and their surviving legacy blob shape.
 
 import Foundation
 import SwiftData

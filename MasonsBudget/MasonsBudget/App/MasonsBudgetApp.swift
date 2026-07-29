@@ -142,7 +142,7 @@ struct MasonsBudgetApp: App {
         await BTCPriceService.shared.refreshAndStore()
         await StockPriceService.shared.refreshAndStore()
         guard ConvexConfig.isConfigured else { return }
-        let sync = MC2SyncService(context: sharedModelContainer.mainContext)
+        let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
         await sync.syncAll()
     }
 
@@ -152,7 +152,7 @@ struct MasonsBudgetApp: App {
         await BTCPriceService.shared.refreshAndStore()
         await StockPriceService.shared.refreshAndStore()
         guard ConvexConfig.isConfigured else { return }
-        let sync = MC2SyncService(context: sharedModelContainer.mainContext)
+        let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
         let changed = await sync.hasUpdates()
         if changed {
             await sync.syncAll()

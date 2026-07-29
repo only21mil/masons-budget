@@ -1,5 +1,5 @@
 // Mason's Budget App — BTC account model
-// Mirrors MC2 btc-balance-snapshot.json account entries.
+// Mirrors Bitcoin account rows and the surviving balance-snapshot blob.
 // Each account: Strike, River, CashApp, Coldcard, Zeus, etc.
 
 import Foundation

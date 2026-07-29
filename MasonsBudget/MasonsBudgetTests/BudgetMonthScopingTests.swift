@@ -230,7 +230,7 @@ final class BudgetMonthScopingTests: XCTestCase {
     // MARK: - Month scoping does not weaken household scoping
 
     func testRachelSeesTheSameJulyTotalAsVictor() throws {
-        // Adult MC2 records default to owner "victor". Month scoping must not be
+        // Canonical adult records default to owner "victor". Month scoping must not be
         // the thing that empties Rachel's budget screen. That bug shipped in v0.3.
         let transactions = try sampleTransactions()
         let july = try monthAnchor(2026, 7)

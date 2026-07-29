@@ -1,5 +1,5 @@
 // Mason's Budget App — Monthly budget snapshot
-// Mirrors MC2 budget.json top-level fields (balances, income, strategy).
+// Mirrors the surviving budget blob's top-level fields (balances, income, strategy).
 // One snapshot per month, keyed by "April 2026" etc.
 
 import Foundation

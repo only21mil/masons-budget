@@ -16,9 +16,9 @@ enum AppWriteSyncService {
         onResult: (@MainActor @Sendable (Bool) -> Void)? = nil,
     ) {
         let label = "Save transaction"
-        let payload: MC2Transaction
+        let payload: LegacyTransactionDTO
         do {
-            payload = try MC2Transaction(appTransaction: transaction, owner: owner)
+            payload = try LegacyTransactionDTO(appTransaction: transaction, owner: owner)
         } catch {
             log.error("\(error.localizedDescription, privacy: .public)")
             reportSyncStart(label)
@@ -31,7 +31,7 @@ enum AppWriteSyncService {
     }
 
     private static func pushTransactionPayload(
-        _ payload: MC2Transaction,
+        _ payload: LegacyTransactionDTO,
         to fileName: String,
         onResult: (@MainActor @Sendable (Bool) -> Void)? = nil,
     ) {
@@ -101,12 +101,12 @@ enum AppWriteSyncService {
         onResult: (@MainActor @Sendable (Bool) -> Void)? = nil,
     ) {
         let fileName = owner.btcBuysDataFileName
-        let payload = MC2BTCBuy(appBuy: buy)
+        let payload = LegacyBTCBuyDTO(appBuy: buy)
         pushBTCBuyPayload(payload, to: fileName, onResult: onResult)
     }
 
     private static func pushBTCBuyPayload(
-        _ payload: MC2BTCBuy,
+        _ payload: LegacyBTCBuyDTO,
         to fileName: String,
         onResult: (@MainActor @Sendable (Bool) -> Void)? = nil,
     ) {
@@ -140,17 +140,17 @@ enum AppWriteSyncService {
     /// main actor with the final success/failure so callers can surface sync state (see SAT-1342)
     /// instead of treating every write as a phantom success.
     static func pushTodo(_ todo: TodoItem, onResult: (@MainActor @Sendable (Bool) -> Void)? = nil) {
-        let payload = MC2TodoItem(appTodo: todo)
+        let payload = LegacyTodoDTO(appTodo: todo)
         pushTodoPayload(payload, onResult: onResult)
     }
 
     static func setTodoCompletion(_ todo: TodoItem, onResult: (@MainActor @Sendable (Bool) -> Void)? = nil) {
-        let payload = MC2TodoItem(appTodo: todo)
+        let payload = LegacyTodoDTO(appTodo: todo)
         setTodoCompletionPayload(payload, isDone: todo.isDone, onResult: onResult)
     }
 
     private static func pushTodoPayload(
-        _ payload: MC2TodoItem,
+        _ payload: LegacyTodoDTO,
         onResult: (@MainActor @Sendable (Bool) -> Void)? = nil,
     ) {
         let label = "Save todo"
@@ -170,7 +170,7 @@ enum AppWriteSyncService {
                     _ = try await client.upsertTodo(payload)
                 }
             } else {
-                let client = MC2MobileWritebackClient()
+                let client = AppWritebackClient()
                 ok = await withRetry(label: "push todo via paired writeback \(payload.id)") {
                     let synced = try await client.upsertTodo(payload)
                     guard synced else { throw SyncError.unexpectedPayload }
@@ -183,7 +183,7 @@ enum AppWriteSyncService {
     }
 
     private static func setTodoCompletionPayload(
-        _ payload: MC2TodoItem,
+        _ payload: LegacyTodoDTO,
         isDone: Bool,
         onResult: (@MainActor @Sendable (Bool) -> Void)? = nil,
     ) {
@@ -197,7 +197,7 @@ enum AppWriteSyncService {
         }
 
         Task {
-            let client = MC2MobileWritebackClient()
+            let client = AppWritebackClient()
             let ok = await withRetry(label: "set todo completion via paired writeback \(payload.id)") {
                 let synced = try await client.setTodoDone(id: payload.id, title: payload.effectiveTitle, isDone: isDone)
                 guard synced else { throw SyncError.unexpectedPayload }
@@ -234,7 +234,7 @@ enum AppWriteSyncService {
                     _ = try await client.removeTodo(id: todoId)
                 }
             } else {
-                let client = MC2MobileWritebackClient()
+                let client = AppWritebackClient()
                 ok = await withRetry(label: "delete todo via paired writeback \(todoId)") {
                     let synced = try await client.removeTodo(id: todoId)
                     guard synced else { throw SyncError.unexpectedPayload }

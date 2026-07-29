@@ -162,7 +162,7 @@ final class FamilyVisibilityTests: XCTestCase {
         XCTAssertEqual(victorSpending, 315, "Victor sees all household spending")
     }
 
-    // MARK: - MC2 Owner Tag Defaults
+    // MARK: - Canonical Owner Tag Defaults
 
     func testDefaultOwnerIsVictor() {
         let tx = Transaction(
@@ -173,7 +173,7 @@ final class FamilyVisibilityTests: XCTestCase {
             category: "Other",
             createdBy: "mc2",
         )
-        XCTAssertEqual(tx.ownerMember, .victor, "Untagged records default to Victor (MC2 convention)")
+        XCTAssertEqual(tx.ownerMember, .victor, "Untagged records default to Victor")
     }
 
     func testExplicitOwnerPreserved() {

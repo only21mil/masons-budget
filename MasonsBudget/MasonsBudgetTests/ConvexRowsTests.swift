@@ -285,7 +285,7 @@ final class ConvexRowsTests: XCTestCase {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: TodoItem.self, configurations: configuration)
         let context = ModelContext(container)
-        let service = MC2SyncService(context: context)
+        let service = ConvexSyncService(context: context)
         context.insert(TodoItem(
             id: "stale-rachel",
             title: "Stale",
