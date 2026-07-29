@@ -4,10 +4,13 @@ import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcBalance
 import com.sats21m.vogelvault.domain.BtcBillPay
 import com.sats21m.vogelvault.domain.Custody
+import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.FiatValuation
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.IncomeEntry
+import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.Slice
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -66,6 +69,55 @@ class FinancialScreenValuesTest {
             1L,
             model.netWorthBalanceForDisplay()?.accounts?.single()?.sats,
             "the displayed total must not be recomputed from accounts",
+        )
+    }
+
+    @Test
+    fun `known sats with unavailable fiat never render a confident zero`() {
+        val balance = Fixtures.btcBalanceWithoutFiatValuation()
+        val account = balance.accounts.single()
+
+        assertEquals(Money.PRICE_UNAVAILABLE, formatCanonicalBalance(balance, DisplayUnit.USD, 0L))
+        assertEquals(Money.PRICE_UNAVAILABLE, formatCanonicalAccount(account, DisplayUnit.USD, 0L))
+        assertEquals("5.41782856 BTC", formatCanonicalBalance(balance, DisplayUnit.BTC, 0L))
+        assertEquals("541 782 856 sats", formatCanonicalBalance(balance, DisplayUnit.SATS, 0L))
+        assertTrue(balanceSnapshotBasis(balance).startsWith("Balance snapshot"))
+        assertFalse(balanceSnapshotBasis(balance).contains("quote", ignoreCase = true))
+    }
+
+    @Test
+    fun `available zero fiat remains a real zero`() {
+        fun balance(sats: Long, valuation: FiatValuation) = BtcBalance(
+            owner = FamilyMember.VICTOR,
+            asOf = "2026-07-29",
+            accounts = emptyList(),
+            totalSats = sats,
+            fiatCents = valuation.cents,
+            exchangeSats = 0L,
+            selfCustodySats = sats,
+            fiatValuation = valuation,
+        )
+
+        assertEquals(
+            "\$0.00",
+            formatCanonicalBalance(balance(0L, FiatValuation(0L)), DisplayUnit.USD, 0L),
+        )
+        assertEquals(
+            "\$0.00",
+            formatCanonicalBalance(
+                balance(
+                    1L,
+                    FiatValuation(
+                        cents = 0L,
+                        priceCents = 6_000_000L,
+                        quotedAt = "2026-07-29T12:00:00Z",
+                        source = "fixture quote",
+                        confidence = "verified",
+                    ),
+                ),
+                DisplayUnit.USD,
+                0L,
+            ),
         )
     }
 

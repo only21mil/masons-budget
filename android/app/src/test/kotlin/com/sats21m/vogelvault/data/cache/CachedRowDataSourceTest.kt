@@ -19,6 +19,7 @@ import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcBuy
 import com.sats21m.vogelvault.domain.Custody
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.FiatValuation
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.domain.Transaction
@@ -35,6 +36,8 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
@@ -227,7 +230,61 @@ class CachedRowDataSourceTest {
         }
 
     @Test
-    fun `version one disk cache does not serve old projected spend sign after reopen`() =
+    fun `offline BTC cache preserves unavailable and explicit zero valuation`() =
+        runBlocking {
+            val viewer = FamilyMember.VICTOR
+            val remote =
+                FakeRows().apply {
+                    accounts =
+                        ConvexResult.Ok(
+                            RowSnapshot(
+                                listOf(
+                                    BtcAccount(
+                                        "cold",
+                                        "Cold",
+                                        Custody.SELF_CUSTODY,
+                                        541_782_856L,
+                                        0L,
+                                        viewer,
+                                    ),
+                                    BtcAccount(
+                                        "tiny",
+                                        "Tiny",
+                                        Custody.SELF_CUSTODY,
+                                        1L,
+                                        0L,
+                                        viewer,
+                                        FiatValuation(
+                                            cents = 0L,
+                                            priceCents = 6_000_000L,
+                                            quotedAt = "2026-07-29T12:00:00Z",
+                                            source = "fixture quote",
+                                            confidence = "verified",
+                                        ),
+                                    ),
+                                ),
+                                true,
+                            ),
+                        )
+                }
+            val source = CachedRowDataSource(remote, dao, clock = { 100L })
+            source.load(viewer)
+            remote.offline = true
+
+            val cached =
+                source.observe(viewer).first {
+                    it.data.btcAccounts.value.size == 2
+                }.data.btcAccounts.value.associateBy { it.key }
+
+            assertNull(cached.getValue("cold").fiatValuation)
+            val tiny = assertNotNull(cached.getValue("tiny").fiatValuation)
+            assertEquals(0L, tiny.cents)
+            assertEquals("fixture quote", tiny.source)
+            assertEquals("verified", tiny.confidence)
+        }
+
+    @Test
+    fun `current disk cache does not serve old projected spend sign after reopen`() =
         runBlocking {
             val context: Application = RuntimeEnvironment.getApplication()
             val databaseName = "spend-sign-upgrade-test.db"
@@ -267,7 +324,7 @@ class CachedRowDataSourceTest {
                                 }
                             }
                         }
-                assertEquals(1, oldDatabase.openHelper.readableDatabase.version)
+                assertEquals(2, oldDatabase.openHelper.readableDatabase.version)
                 assertTrue("amount_cents" in columns)
                 assertFalse("spend_amount" in columns)
                 assertFalse("display_spend_amount" in columns)
@@ -288,7 +345,7 @@ class CachedRowDataSourceTest {
                         }
                 val transaction = cached.data.transactions.value.single()
 
-                assertEquals(1, reopenedDatabase.openHelper.readableDatabase.version)
+                assertEquals(2, reopenedDatabase.openHelper.readableDatabase.version)
                 assertEquals(3_750L, transaction.amount)
                 assertEquals(3_750L, transaction.spendAmount)
                 assertEquals(3_750L, transaction.displaySpendAmount)
@@ -353,6 +410,7 @@ private class FakeRows : RowQueryRepository {
     var offline = false
     var failedReason: String? = null
     var transactions: ConvexResult<RowSnapshot<Transaction>> = ConvexResult.Ok(RowSnapshot(emptyList(), true))
+    var accounts: ConvexResult<RowSnapshot<BtcAccount>>? = null
 
     override suspend fun listTransactions(
         viewer: FamilyMember,
@@ -426,7 +484,7 @@ private class FakeRows : RowQueryRepository {
         } else if (offline) {
             ConvexResult.Failed("transport failure")
         } else {
-            ConvexResult.Ok(
+            accounts ?: ConvexResult.Ok(
                 RowSnapshot(
                     listOf(BtcAccount("cold", "Cold", Custody.SELF_CUSTODY, 21L, 42L, viewer)),
                     true,

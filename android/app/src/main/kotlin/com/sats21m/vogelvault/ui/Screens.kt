@@ -855,7 +855,11 @@ private fun VaultLazyListScope.netWorth(
                 Kpi(
                     "Fiat estimate",
                     figure(unavailable) {
-                        Money.formatUsd(requireNotNull(projection.balance).fiatCents)
+                        formatCanonicalBalance(
+                            requireNotNull(projection.balance),
+                            DisplayUnit.USD,
+                            state.data.btcPriceCents,
+                        )
                     },
                     hint = figure(unavailable) {
                         balanceSnapshotBasis(requireNotNull(projection.balance))
@@ -933,11 +937,7 @@ private fun VaultLazyListScope.accountList(
         LedgerRow(
             primary = account.label,
             secondary = account.owner.displayName,
-            figure = if (displayUnit == DisplayUnit.USD) {
-                Money.formatUsd(account.fiatCents)
-            } else {
-                Money.formatBitcoin(account.sats, displayUnit, btcPriceCents)
-            },
+            figure = formatCanonicalAccount(account, displayUnit, btcPriceCents),
             figureColor = VaultCream,
             badge = account.custody.label,
             badgeAccented = account.custody.key == "self_custody",
@@ -949,13 +949,31 @@ private fun VaultUiState.formatBitcoin(sats: Long, unit: DisplayUnit): String =
     Money.formatBitcoin(sats, unit, data.btcPriceCents)
 
 private fun VaultUiState.formatBalance(balance: BtcBalance, unit: DisplayUnit): String =
+    formatCanonicalBalance(balance, unit, data.btcPriceCents)
+
+internal fun formatCanonicalBalance(
+    balance: BtcBalance,
+    unit: DisplayUnit,
+    recordedBuyPriceCents: Long,
+): String =
     if (unit == DisplayUnit.USD) {
-        Money.formatUsd(balance.fiatCents)
+        balance.fiatValuation?.let { Money.formatUsd(it.cents) } ?: Money.PRICE_UNAVAILABLE
     } else {
-        Money.formatBitcoin(balance.totalSats, unit, data.btcPriceCents)
+        Money.formatBitcoin(balance.totalSats, unit, recordedBuyPriceCents)
     }
 
-private fun balanceSnapshotBasis(balance: BtcBalance): String = "Snapshot · ${balance.asOf}"
+internal fun formatCanonicalAccount(
+    account: BtcAccount,
+    unit: DisplayUnit,
+    recordedBuyPriceCents: Long,
+): String =
+    if (unit == DisplayUnit.USD) {
+        account.fiatValuation?.let { Money.formatUsd(it.cents) } ?: Money.PRICE_UNAVAILABLE
+    } else {
+        Money.formatBitcoin(account.sats, unit, recordedBuyPriceCents)
+    }
+
+internal fun balanceSnapshotBasis(balance: BtcBalance): String = "Balance snapshot · ${balance.asOf}"
 
 private fun priceBasis(state: VaultUiState): String =
     state.data.btcPriceAsOf?.let { "Last buy · $it" } ?: "No recorded price"

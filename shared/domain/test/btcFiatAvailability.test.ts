@@ -39,15 +39,16 @@ test("BTC fiat availability is independent from sats balance confidence", () => 
     )
     const account = snapshot.accounts[0]
     assert.ok(account)
+    const valuation = account.fiatValuation ?? null
 
     assert.equal(String(account.sats), fixture.expected.sats, fixture.name)
-    assert.equal(account.fiatValuation !== null, fixture.expected.fiatAvailable, fixture.name)
+    assert.equal(valuation !== null, fixture.expected.fiatAvailable, fixture.name)
     assert.equal(
-      account.fiatValuation === null ? null : String(account.fiatValuation.cents),
+      valuation === null ? null : String(valuation.cents),
       fixture.expected.fiatCents,
       fixture.name,
     )
     assert.equal(snapshot.balanceConfidence, "high", fixture.name)
-    assert.equal(account.fiatValuation?.confidence ?? null, fixture.input.fiatValuation ? "verified" : null)
+    assert.equal(valuation?.confidence ?? null, fixture.input.fiatValuation ? "verified" : null)
   }
 })

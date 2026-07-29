@@ -148,6 +148,31 @@ object Fixtures {
         buy("buy-0005", "2026-07-14", "Gift", "0.00040000", "91000.00", "36.40", FamilyMember.MASON),
     )
 
+    /**
+     * Production-shaped compatibility fixture: quantity is authoritative while
+     * the legacy zero carries no USD valuation evidence.
+     */
+    fun btcBalanceWithoutFiatValuation(): BtcBalance {
+        val account = BtcAccount(
+            key = "cold-storage",
+            label = "Cold storage",
+            custody = Custody.SELF_CUSTODY,
+            sats = 541_782_856L,
+            fiatCents = 0L,
+            owner = FamilyMember.VICTOR,
+        )
+        return BtcBalance(
+            owner = FamilyMember.VICTOR,
+            asOf = "2026-07-16T01:56:49Z",
+            accounts = listOf(account),
+            totalSats = 541_782_856L,
+            fiatCents = 0L,
+            exchangeSats = 0L,
+            selfCustodySats = 541_782_856L,
+            balanceConfidence = "high",
+        )
+    }
+
     private fun buy(
         id: String,
         date: String,

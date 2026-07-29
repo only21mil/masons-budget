@@ -18,7 +18,7 @@ import {
   netWorthScopeFor,
   visibleTo,
 } from "./family.ts"
-import { type Cents, type Sats, parseBtcToSats, parseCents } from "./money.ts"
+import { type Cents, type Sats, parseBtcToSats, parseCents, parseMinorUnits } from "./money.ts"
 
 /** Freshness of a slice of the read model, surfaced explicitly in the UI. */
 export type Freshness = "demo" | "live" | "stale" | "error" | "empty" | "loading"
@@ -211,7 +211,7 @@ export interface BTCAccount {
   readonly sats: Sats
   /** @deprecated Transition-only mirror. Render `fiatValuation`, never this field. */
   readonly fiat: Cents
-  readonly fiatValuation: FiatValuation | null
+  readonly fiatValuation?: FiatValuation | null
   readonly owner: FamilyMember
 }
 
@@ -219,7 +219,7 @@ export interface BTCTotals {
   readonly sats: Sats
   /** @deprecated Transition-only mirror. Render `fiatValuation`, never this field. */
   readonly fiat: Cents
-  readonly fiatValuation: FiatValuation | null
+  readonly fiatValuation?: FiatValuation | null
   readonly exchangeSats: Sats
   readonly selfCustodySats: Sats
 }
@@ -232,7 +232,7 @@ export interface BTCSnapshot {
   readonly source: string | null
   readonly basis: string | null
   /** Confidence in the sats balance only. */
-  readonly balanceConfidence: string | null
+  readonly balanceConfidence?: string | null
   /** @deprecated Transition-only alias for balanceConfidence. */
   readonly confidence: string | null
 }
@@ -404,11 +404,11 @@ function normalizeFiatValuation(
   sats: Sats,
   legacyFiat: Cents,
 ): FiatValuation | null {
-  if (Object.hasOwn(container, "fiatValuation")) {
+  if (Object.prototype.hasOwnProperty.call(container, "fiatValuation")) {
     const valuation = asRecord(container.fiatValuation)
     if (!valuation || valuation.cents === undefined || valuation.cents === null) return null
     return {
-      cents: BigInt(String(valuation.cents)),
+      cents: parseMinorUnits(valuation.cents, 0),
       priceCents: optionalIntegerMinorUnits(valuation.priceCents),
       quotedAt: optionalString(valuation.quotedAt),
       source: optionalString(valuation.source),
@@ -432,7 +432,7 @@ function normalizeFiatValuation(
 
 function optionalIntegerMinorUnits(value: unknown): Cents | null {
   if (value === null || value === undefined || value === "") return null
-  return BigInt(String(value))
+  return parseMinorUnits(value, 0)
 }
 
 // ── Month scoping ───────────────────────────────────────────────────────────
