@@ -2,6 +2,7 @@ package com.sats21m.vogelvault.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,12 +29,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.csvimport.CsvImportLauncher
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcBalance
@@ -144,11 +147,19 @@ fun ScreenHost(
     destination: Destination,
     state: VaultUiState,
     onEnableRemoteRows: (String) -> Unit = {},
+    onTransactionChanged: () -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var addingTransaction by rememberSaveable { mutableStateOf(false) }
+    var selectedTransactionKey by rememberSaveable(state.activeProfile) {
+        mutableStateOf<String?>(null)
+    }
+    // The write surface owns its own client, per the house write pattern: nothing
+    // threads suspend write callbacks through MainActivity -> VaultApp -> ScreenHost.
+    val vaultApplication = LocalContext.current.applicationContext as? VaultApplication
+    val transactionActions = remember(vaultApplication) { vaultApplication?.transactionActions }
     val budgetMonth = state.data.budget.value?.month
     val profile = state.activeProfile
     val transactionsInput = state.data.transactions.value
@@ -301,7 +312,9 @@ fun ScreenHost(
                             btcPriceCents = state.data.btcPriceCents,
                         )
                     }
-                    activity(state, checkNotNull(activitySearch))
+                    activity(state, checkNotNull(activitySearch)) {
+                        selectedTransactionKey = it.selectionKey
+                    }
                 }
                 Destination.BUDGET ->
                     budget(
@@ -340,6 +353,19 @@ fun ScreenHost(
         BtcBuyEntrySheet(
             owner = state.activeProfile,
             onDismiss = { showBtcBuyEditor = false },
+        )
+    }
+
+    val selectedTransaction =
+        collections.visibleTransactions.firstOrNull {
+            it.selectionKey == selectedTransactionKey
+        }
+    if (selectedTransaction != null && transactionActions != null) {
+        TransactionDetailScreen(
+            transaction = selectedTransaction,
+            actions = transactionActions,
+            onClose = { selectedTransactionKey = null },
+            onChanged = onTransactionChanged,
         )
     }
 }
@@ -556,6 +582,7 @@ private fun VaultLazyListScope.dashboard(
 private fun VaultLazyListScope.activity(
     state: VaultUiState,
     search: ActivitySearchProjection,
+    onSelectTransaction: (Transaction) -> Unit,
 ) {
     item { StaleNotice(state.data.transactions.status) }
     if (state.data.transactions.suppressFigures) {
@@ -604,10 +631,21 @@ private fun VaultLazyListScope.activity(
         },
         source = state.data.transactions.source,
         rows = transactions,
-        rowKey = Transaction::id,
-        rowContent = { TransactionRow(it) },
+        rowKey = Transaction::selectionKey,
+        rowContent = {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelectTransaction(it) },
+            ) {
+                TransactionRow(it)
+            }
+        },
     )
 }
+
+private val Transaction.selectionKey: String
+    get() = "${owner.key}\u0000$id"
 
 @Composable
 private fun TransactionRow(transaction: Transaction) {

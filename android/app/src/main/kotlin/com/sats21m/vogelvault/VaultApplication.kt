@@ -13,6 +13,7 @@ import com.sats21m.vogelvault.data.SecureConvexSyncTokenSource
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.cache.VaultDatabase
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.ui.ConvexTransactionActions
 import com.sats21m.vogelvault.ui.VaultViewModel
 import java.io.IOException
 
@@ -72,6 +73,15 @@ class VaultApplication : Application() {
             configSource = convexConfigSource,
             onUnauthorized = ::recoverRejectedConvexConfig,
         )
+    }
+
+    /**
+     * Edit and delete share the one write transport above, so they read the
+     * latest encrypted sync token at request time. Constructing a second client
+     * here would have no sync-token source and would stay fail-closed forever.
+     */
+    internal val transactionActions by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        ConvexTransactionActions(convexMutationClient)
     }
 
     val viewModelFactory: ViewModelProvider.Factory =

@@ -214,4 +214,20 @@
     <string name="write_credential_label">Write credential</string>
     <string name="write_credential_save">Save securely</string>
     <string name="write_credential_remove">Remove</string>
+    <string name="transaction_detail_title">Transaction detail</string>
+    <string name="transaction_detail_owner_source">%1$s · %2$s</string>
+    <string name="transaction_merchant">Merchant</string>
+    <string name="transaction_category">Category</string>
+    <string name="transaction_amount">Signed amount</string>
+    <string name="transaction_amount_sign_help">Purchases stay positive; refunds stay negative.</string>
+    <string name="transaction_method">Method</string>
+    <string name="transaction_date">Date</string>
+    <string name="transaction_date_help">YYYY-MM-DD</string>
+    <string name="transaction_note">Note</string>
+    <string name="transaction_cancel">Cancel</string>
+    <string name="transaction_save">Save</string>
+    <string name="transaction_delete">Delete transaction</string>
+    <string name="transaction_delete_confirm_title">Delete this transaction?</string>
+    <string name="transaction_delete_confirm_detail">This cannot be undone. There is no transaction tombstone.</string>
+    <string name="transaction_delete_confirm_action">Delete permanently</string>
 </resources>

@@ -21,6 +21,11 @@ class ConvexMutationTest {
     fun `each row mutation uses the mutation endpoint and its closed path`() {
         val mutations = listOf(
             ConvexMutation.UpsertTransaction(transaction()),
+            ConvexMutation.DeleteTransaction(
+                txId = "tx-1",
+                owner = FamilyMember.MASON,
+                sourceFile = "mason-transactions",
+            ),
             ConvexMutation.UpsertTodo(JsonObject(mapOf("id" to JsonPrimitive("todo-1")))),
             ConvexMutation.DeleteTodo("todo-1"),
             ConvexMutation.UpsertBtcBuy(
@@ -52,6 +57,7 @@ class ConvexMutationTest {
         )
         val expectedPaths = listOf(
             "tables:upsertTransaction",
+            "tables:deleteTransaction",
             "tables:upsertTodo",
             "tables:deleteTodo",
             "tables:upsertBtcBuy",
@@ -182,6 +188,37 @@ class ConvexMutationTest {
         val transaction = sentArgs(poster)["transaction"]!!.jsonObject
         assertTagged(transaction, "amountCents", "ijcAAAAAAAA=")
         assertEquals("spend", transaction["kind"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `transaction delete always sends matching owner and source file`() {
+        val poster = RecordingPoster(success())
+
+        runBlocking {
+            client(poster).mutate(
+                ConvexMutation.DeleteTransaction(
+                    txId = "shared-id",
+                    owner = FamilyMember.MASON,
+                    sourceFile = "mason-transactions",
+                ),
+            )
+        }
+
+        val args = sentArgs(poster)
+        assertEquals("shared-id", args["txId"]?.jsonPrimitive?.content)
+        assertEquals("mason", args["owner"]?.jsonPrimitive?.content)
+        assertEquals("mason-transactions", args["sourceFile"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `transaction delete refuses a source file for another owner`() {
+        assertFailsWith<IllegalArgumentException> {
+            ConvexMutation.DeleteTransaction(
+                txId = "shared-id",
+                owner = FamilyMember.MASON,
+                sourceFile = "transactions",
+            )
+        }
     }
 
     @Test
