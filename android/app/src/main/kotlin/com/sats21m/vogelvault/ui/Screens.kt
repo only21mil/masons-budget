@@ -88,7 +88,6 @@ private data class ScreenCollections(
     val visibleAccounts: List<BtcAccount>,
     val visibleBuys: List<BtcBuy>,
     val visibleBillPays: List<BtcBillPay>,
-    val incomeEntries: List<IncomeEntry>,
     val visibleTodos: List<TodoItem>,
 )
 
@@ -117,8 +116,19 @@ private data class NetWorthProjection(
     val balance: BtcBalance?,
 )
 
-internal fun ReadModel.dashboardIncomeCents(viewer: FamilyMember): Long? {
-    val rows = income.value.netWorthScopeFor(viewer)
+internal fun ReadModel.dashboardIncomeEntries(
+    viewer: FamilyMember,
+    month: String?,
+): List<IncomeEntry> =
+    month?.let { selected ->
+        income.value.netWorthScopeFor(viewer).filter { it.month == selected }
+    }.orEmpty()
+
+internal fun ReadModel.dashboardIncomeCents(
+    viewer: FamilyMember,
+    month: String?,
+): Long? {
+    val rows = dashboardIncomeEntries(viewer, month)
     return if (incomeFiguresUnavailable || rows.isEmpty()) null else rows.sumOf { it.amountCents }
 }
 
@@ -170,7 +180,6 @@ fun ScreenHost(
         accountsInput,
         buysInput,
         billPaysInput,
-        incomeInput,
         todosInput,
         netWorthBalance,
     ) {
@@ -182,22 +191,22 @@ fun ScreenHost(
             visibleAccounts = accountsInput.visibleTo(profile),
             visibleBuys = buysInput.visibleTo(profile),
             visibleBillPays = billPaysInput.visibleTo(profile),
-            incomeEntries = incomeInput.netWorthScopeFor(profile),
             visibleTodos = todosInput.visibleTo(profile),
         )
     }
-    val dashboardProjection = remember(month, collections, incomeFiguresUnavailable) {
+    val dashboardIncomeEntries = remember(profile, month, incomeInput) {
+        state.data.dashboardIncomeEntries(profile, month)
+    }
+    val dashboardProjection = remember(month, collections, dashboardIncomeEntries, incomeFiguresUnavailable) {
         val budgetTransactions = collections.budgetTransactions.inMonth(month ?: "")
         val activity = collections.visibleTransactions.inMonth(month ?: "").take(6)
         DashboardProjection(
             activity = activity,
             accounts = collections.netWorthAccounts,
             balance = collections.netWorthBalance,
-            incomeEntries = collections.incomeEntries,
+            incomeEntries = dashboardIncomeEntries,
             spendCents = budgetTransactions.sumOf { it.spendAmount },
-            incomeCents = collections.incomeEntries
-                .takeUnless { incomeFiguresUnavailable || it.isEmpty() }
-                ?.sumOf { it.amountCents },
+            incomeCents = state.data.dashboardIncomeCents(profile, month),
             openTodos = collections.visibleTodos.count { !it.done },
         )
     }

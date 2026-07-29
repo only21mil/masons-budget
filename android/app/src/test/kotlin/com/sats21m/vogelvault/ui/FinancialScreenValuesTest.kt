@@ -20,16 +20,43 @@ import kotlin.test.assertTrue
 
 class FinancialScreenValuesTest {
     @Test
-    fun `headlines use dedicated income and document totals`() {
+    fun `dashboard income follows the selected month at month boundaries`() {
         val model = Fixtures.envelope(FamilyMember.VICTOR).copy(
             income = Slice(
                 Freshness.LIVE,
                 listOf(
                     IncomeEntry(
-                        id = "income",
+                        id = "june-close",
+                        date = "2026-06-30",
+                        month = "2026-06",
+                        amountCents = 111_111L,
+                        sourceName = "Payroll",
+                        note = null,
+                        owner = FamilyMember.VICTOR,
+                    ),
+                    IncomeEntry(
+                        id = "july-open",
                         date = "2026-07-01",
                         month = "2026-07",
-                        amountCents = 3_489_347L,
+                        amountCents = 222_222L,
+                        sourceName = "Payroll",
+                        note = null,
+                        owner = FamilyMember.VICTOR,
+                    ),
+                    IncomeEntry(
+                        id = "july-close",
+                        date = "2026-07-31",
+                        month = "2026-07",
+                        amountCents = 333_333L,
+                        sourceName = "Payroll",
+                        note = null,
+                        owner = FamilyMember.VICTOR,
+                    ),
+                    IncomeEntry(
+                        id = "august-open",
+                        date = "2026-08-01",
+                        month = "2026-08",
+                        amountCents = 444_444L,
                         sourceName = "Payroll",
                         note = null,
                         owner = FamilyMember.VICTOR,
@@ -63,7 +90,11 @@ class FinancialScreenValuesTest {
             ),
         )
 
-        assertEquals(3_489_347L, model.dashboardIncomeCents(FamilyMember.RACHEL))
+        assertEquals(111_111L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-06"))
+        assertEquals(555_555L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-07"))
+        assertEquals(444_444L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-08"))
+        assertNull(model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-09"))
+        assertNull(model.dashboardIncomeCents(FamilyMember.RACHEL, null))
         assertEquals(541_782_856L, model.netWorthBalanceForDisplay()?.totalSats)
         assertEquals(
             1L,
@@ -125,7 +156,7 @@ class FinancialScreenValuesTest {
     fun `required empty sources are unavailable while empty todos remain countable`() {
         val model = Fixtures.envelope(FamilyMember.VICTOR, Freshness.EMPTY)
 
-        assertNull(model.dashboardIncomeCents(FamilyMember.VICTOR))
+        assertNull(model.dashboardIncomeCents(FamilyMember.VICTOR, "2026-07"))
         assertNull(model.netWorthBalanceForDisplay())
         assertFalse(model.billPaysAvailableTo(FamilyMember.VICTOR))
         assertFalse(model.todos.suppressFigures)
