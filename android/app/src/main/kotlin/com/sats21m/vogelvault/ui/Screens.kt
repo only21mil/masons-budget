@@ -34,6 +34,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.csvimport.CsvImportLauncher
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcBalance
 import com.sats21m.vogelvault.domain.BtcBillPay
@@ -259,7 +260,17 @@ fun ScreenHost(
             }
             when (destination) {
                 Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit)
-                Destination.ACTIVITY -> activity(state, collections.visibleTransactions)
+                Destination.ACTIVITY -> {
+                    item {
+                        CsvImportLauncher(
+                            owner = state.activeProfile,
+                            existingTransactions = state.data.transactions.value,
+                            btcPriceCents = state.data.btcPriceCents,
+                            onImport = null,
+                        )
+                    }
+                    activity(state, collections.visibleTransactions)
+                }
                 Destination.BUDGET -> budget(state, months, budgetSpend) { picked = it }
                 Destination.BITCOIN -> bitcoin(state, bitcoinProjection, displayUnit)
                 Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
