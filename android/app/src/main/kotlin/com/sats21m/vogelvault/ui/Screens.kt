@@ -263,6 +263,7 @@ fun ScreenHost(
                 Destination.BUDGET -> budget(state, months, budgetSpend) { picked = it }
                 Destination.BITCOIN -> bitcoin(state, bitcoinProjection, displayUnit)
                 Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
+                Destination.RETIREMENT -> retirement(state, displayUnit)
                 Destination.TODAY -> today(state, dueTodos)
                 Destination.FAMILY -> family(state)
                 Destination.SETTINGS -> settings(state, onEnableRemoteRows)
@@ -290,6 +291,7 @@ private fun ScreenHeader(
         Destination.BUDGET -> state.data.budget.value?.let { monthLabel(budgetMonth ?: it.month) } ?: "No budget"
         Destination.BITCOIN -> "Stack and custody"
         Destination.NET_WORTH -> "Household for adults; self only for children"
+        Destination.RETIREMENT -> "A checkable long-range scenario"
         Destination.TODAY -> "Due today or overdue"
         Destination.FAMILY -> "Who can see what"
         Destination.SETTINGS -> "Runtime and boundaries"
