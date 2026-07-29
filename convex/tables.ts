@@ -1509,6 +1509,41 @@ async function upsertBtcBuyRow(
   return "inserted";
 }
 
+async function upsertBtcBillPayRow(
+  ctx: any,
+  row: {
+    billPayId: string;
+    sourceFile: string;
+  } & Record<string, unknown>,
+): Promise<UpsertOutcome> {
+  const existing = await ctx.db
+    .query("btcBillPays")
+    .withIndex("by_source_bill_pay_id", (q: any) =>
+      q.eq("sourceFile", row.sourceFile).eq("billPayId", row.billPayId),
+    )
+    .first();
+  if (existing) {
+    // Bill pays deliberately share ONE source file and carry `owner` per row,
+    // unlike transactions which separate owners by file. The natural key is
+    // therefore (sourceFile, billPayId) alone, so a write reusing another
+    // member's id would patch THEIR row and flip its owner — destroying an
+    // adult payment and dropping the survivor out of every adult netWorth read.
+    // An upsert may change a row's money and metadata; it may never change who
+    // it belongs to.
+    if (existing.owner !== row.owner) {
+      throw new ConvexError(
+        `upsertBtcBillPay: ${row.billPayId} in ${row.sourceFile} belongs to ` +
+          `${existing.owner}, not ${row.owner}. Reusing another member's id ` +
+          `would overwrite their payment, so this is refused rather than merged.`,
+      );
+    }
+    await ctx.db.patch(existing._id, row);
+    return "updated";
+  }
+  await ctx.db.insert("btcBillPays", row);
+  return "inserted";
+}
+
 async function upsertBtcAccountRow(ctx: any, row: any): Promise<UpsertOutcome> {
   const existing = await ctx.db
     .query("btcAccounts")
@@ -1571,6 +1606,39 @@ function requireSignAgrees(
   }
 }
 
+/** A bill payment is money leaving, in both currencies. Mirrors the intent of
+ *  requireSignAgrees: state the convention, refuse a violation, and never
+ *  silently correct it — a corrected sign hides a client bug until an aggregate
+ *  is already wrong. `feeUsdCents` may legitimately be zero; the rest may not. */
+function requireBillPayAmounts(billPay: {
+  id: string;
+  amountUsdCents: bigint;
+  btcSpentSats: bigint;
+  btcPriceCents: bigint;
+  feeUsdCents: bigint;
+}) {
+  const positive: Array<[string, bigint]> = [
+    ["amountUsdCents", billPay.amountUsdCents],
+    ["btcSpentSats", billPay.btcSpentSats],
+    ["btcPriceCents", billPay.btcPriceCents],
+  ];
+  for (const [field, value] of positive) {
+    if (value <= 0n) {
+      throw new ConvexError(
+        `upsertBtcBillPay: ${field} for ${billPay.id} must be positive ` +
+          `(a bill payment is a spend), got ${value}. The sign is not ` +
+          `corrected here on purpose.`,
+      );
+    }
+  }
+  if (billPay.feeUsdCents < 0n) {
+    throw new ConvexError(
+      `upsertBtcBillPay: feeUsdCents for ${billPay.id} must not be negative, ` +
+        `got ${billPay.feeUsdCents}.`,
+    );
+  }
+}
+
 const transactionInput = v.object({
   id: v.string(),
   date: v.string(),
@@ -1618,6 +1686,58 @@ export const upsertTransaction = mutation({
     };
     const outcome = await upsertTransactionRow(ctx, row);
     return { txId: row.txId, owner: row.owner, month: row.month, outcome };
+  },
+});
+
+/**
+ * Delete ONE transaction row, scoped to its source file.
+ *
+ * A missing row is an idempotent success (`removed: false`), matching
+ * `deleteTodo`: clients may safely retry after losing a response without
+ * turning an already-completed delete into an error.
+ *
+ * Deliberately does NOT write a tombstone. `todoTombstones` is part of the
+ * blob todo convergence path and cannot represent transaction deletes. As with
+ * `deleteTodo`, a row deleted here would return if the internal migration were
+ * re-run from a blob that still contains it; transaction tombstones belong in
+ * a reviewed row-native convergence design when `dataFiles` is retired.
+ */
+export const deleteTransaction = mutation({
+  args: {
+    txId: v.string(),
+    owner: v.optional(familyMemberValidator),
+    sourceFile: v.optional(v.string()),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { txId, owner: rawOwner, sourceFile, token }) => {
+    validateSyncToken(token);
+    const file = sourceFile ?? "transactions";
+    const fileOwner = ownerForSourceFile(file, "transactions");
+    const owner = resolveOwner(rawOwner, fileOwner);
+    const existing = await ctx.db
+      .query("transactions")
+      .withIndex("by_source_tx_id", (q) =>
+        q.eq("sourceFile", file).eq("txId", txId),
+      )
+      .first();
+    if (!existing) return { txId, owner, removed: false };
+    // The `owner` argument used to be resolved and then never consulted, so the
+    // row was found by (sourceFile, txId) alone. Transaction ids DO collide
+    // across source files — the neighbouring test seeds "shared-id" in both
+    // `transactions` and `mason-transactions` on purpose. That made
+    // deleteTransaction({txId, owner: "mason"}) with sourceFile omitted default
+    // to the ADULT file and permanently delete Victor's row while reporting
+    // success. There is no transaction tombstone, so the row is simply gone.
+    // Fail closed instead: an explicit owner must match the row we found.
+    if (isFamilyMember(rawOwner) && existing.owner !== rawOwner) {
+      throw new ConvexError(
+        `deleteTransaction: ${txId} in ${file} belongs to ${existing.owner}, ` +
+          `not ${rawOwner}. Pass the matching sourceFile for that owner; this ` +
+          `is not corrected here on purpose because the delete is irreversible.`,
+      );
+    }
+    await ctx.db.delete(existing._id);
+    return { txId, owner: existing.owner, removed: true };
   },
 });
 
@@ -1716,6 +1836,73 @@ export const upsertBtcBuy = mutation({
   },
 });
 
+const btcBillPayInput = v.object({
+  id: v.string(),
+  date: v.string(),
+  merchant: v.string(),
+  category: v.string(),
+  amountUsdCents: v.int64(),
+  btcSpentSats: v.int64(),
+  btcPriceCents: v.int64(),
+  platform: v.optional(v.string()),
+  note: v.optional(v.string()),
+  feeUsdCents: v.int64(),
+  reference: v.optional(v.string()),
+  owner: v.optional(familyMemberValidator),
+});
+
+export const upsertBtcBillPay = mutation({
+  args: {
+    billPay: btcBillPayInput,
+    sourceFile: v.optional(v.string()),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { billPay, sourceFile, token }) => {
+    validateSyncToken(token);
+    const file = sourceFile ?? "bitcoin-bill-pays";
+    const fileOwner = ownerForSourceFile(file, "btcBillPays");
+    // NOTE: deliberately NOT the upsertBtcAccount guard (owner must equal
+    // fileOwner). There is exactly one bill-pay source file and no child
+    // equivalent, so bill pays carry `owner` per row and rely on read-time
+    // visibility scoping — a child's row is visible to an adult but excluded
+    // from adult netWorth. Requiring owner === fileOwner here would forbid
+    // child bill pays outright. The cross-owner hijack is instead blocked in
+    // upsertBtcBillPayRow, which refuses to change an existing row's owner.
+    //
+    // A bill payment is a spend. Money keeps the repo-wide convention:
+    // purchases are POSITIVE, and the sign is never corrected here on purpose.
+    // upsertTransaction enforces this via requireSignAgrees; bill pays had no
+    // equivalent, so a client still carrying the pre-fix inverted convention
+    // could store negatives and make every aggregate under-report by twice the
+    // payment.
+    requireBillPayAmounts(billPay);
+    const row = {
+      billPayId: billPay.id,
+      owner: resolveOwner(billPay.owner, fileOwner),
+      date: billPay.date,
+      month: monthOf(billPay.date),
+      merchant: billPay.merchant,
+      category: billPay.category,
+      amountUsdCents: billPay.amountUsdCents,
+      btcSpentSats: billPay.btcSpentSats,
+      btcPriceCents: billPay.btcPriceCents,
+      platform: optionalText(billPay.platform),
+      note: optionalText(billPay.note),
+      feeUsdCents: billPay.feeUsdCents,
+      reference: optionalText(billPay.reference),
+      sourceFile: file,
+      updatedAtMs: Date.now(),
+    };
+    const outcome = await upsertBtcBillPayRow(ctx, row);
+    return {
+      billPayId: row.billPayId,
+      owner: row.owner,
+      month: row.month,
+      outcome,
+    };
+  },
+});
+
 export const upsertBtcAccount = mutation({
   args: {
     account: v.object({
@@ -1752,11 +1939,100 @@ export const upsertBtcAccount = mutation({
   },
 });
 
+/**
+ * Insert or replace ONE category in the budget document visible to `viewer`.
+ *
+ * The document itself must already exist: creating one would require defaults
+ * for income, history and other fields that a category edit does not own. A new
+ * category name is appended to the existing document; an exact name match is
+ * replaced in place so category ordering remains stable.
+ *
+ * `month` is an optimistic scope guard, not a month selector. getBudgetDocument
+ * exposes the one document selected by budgetSourceFor(viewer), and callers
+ * derive spend from that document's own month. Refusing a stale month here keeps
+ * a category edit made from a June screen from changing the July document.
+ */
+export const upsertBudgetCategory = mutation({
+  args: {
+    viewer: familyMemberValidator,
+    month: v.string(),
+    category: v.object({
+      name: v.string(),
+      icon: v.optional(v.string()),
+      budgetCents: v.int64(),
+    }),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { viewer, month, category, token }) => {
+    validateSyncToken(token);
+    const sourceFile = budgetSourceFor(viewer);
+    if (sourceFile === null) {
+      throw new ConvexError(
+        `upsertBudgetCategory: ${viewer} has no budget document.`,
+      );
+    }
+
+    const existing = await ctx.db
+      .query("budgetDocuments")
+      .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
+      .unique();
+    if (!existing) {
+      throw new ConvexError(
+        `upsertBudgetCategory: budget document "${sourceFile}" does not exist; ` +
+          "a category edit does not create a whole budget document.",
+      );
+    }
+    if (!sharesNetWorthWith(viewer, existing.owner)) {
+      throw new ConvexError(
+        `upsertBudgetCategory: ${viewer} cannot write ${existing.owner}'s budget.`,
+      );
+    }
+    if (month !== existing.month) {
+      throw new ConvexError(
+        `upsertBudgetCategory: requested month ${JSON.stringify(month)} does ` +
+          `not match ${sourceFile}'s month ${JSON.stringify(existing.month)}.`,
+      );
+    }
+
+    const categoryIndex = existing.categories.findIndex(
+      (candidate) => candidate.name === category.name,
+    );
+    const categories = [...existing.categories];
+    const normalizedCategory = {
+      name: category.name,
+      icon: optionalText(category.icon),
+      budgetCents: category.budgetCents,
+    };
+    const outcome: UpsertOutcome = categoryIndex === -1 ? "inserted" : "updated";
+    if (categoryIndex === -1) {
+      categories.push(normalizedCategory);
+    } else {
+      categories[categoryIndex] = normalizedCategory;
+    }
+
+    await ctx.db.patch(existing._id, {
+      categories,
+      updatedAtMs: Date.now(),
+    });
+    return {
+      owner: existing.owner,
+      month: existing.month,
+      name: category.name,
+      outcome,
+    };
+  },
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Source-file ownership validation for public row upserts.
 // ─────────────────────────────────────────────────────────────────────────────
 
-type BlobKind = "transactions" | "todos" | "btcBuys" | "btcAccounts";
+type BlobKind =
+  | "transactions"
+  | "todos"
+  | "btcBuys"
+  | "btcBillPays"
+  | "btcAccounts";
 
 /**
  * Every source file the runtime upserts accept, and the owner its records
@@ -1774,6 +2050,7 @@ const BLOB_SOURCES: Record<string, { kind: BlobKind; owner: FamilyMember }> = {
   todos: { kind: "todos", owner: DEFAULT_OWNER },
   "bitcoin-buys": { kind: "btcBuys", owner: DEFAULT_OWNER },
   "mason-bitcoin-buys": { kind: "btcBuys", owner: "mason" },
+  "bitcoin-bill-pays": { kind: "btcBillPays", owner: DEFAULT_OWNER },
   "btc-balance-snapshot": { kind: "btcAccounts", owner: DEFAULT_OWNER },
   "son-balances": { kind: "btcAccounts", owner: "mason" },
 };

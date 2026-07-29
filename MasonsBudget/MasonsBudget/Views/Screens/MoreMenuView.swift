@@ -56,12 +56,15 @@ struct MoreMenuView: View {
     }
 }
 
-private struct SyncSetupView: View {
+struct SyncSetupView: View {
     @Environment(\.theme) var theme
     @State private var pairingURL = ""
     @State private var baseURL = AppWritebackConfig.baseURL?.absoluteString ?? ""
     @State private var deviceID = AppWritebackConfig.deviceID
-    @State private var deviceToken = AppWritebackConfig.deviceToken
+    // Write-only by design. The Keychain value is represented in view state only
+    // by its presence and is never loaded back into this field.
+    @State private var deviceTokenEntry = ""
+    @State private var hasDeviceToken = AppWritebackConfig.hasDeviceToken
     @State private var statusMessage: String?
     @State private var isClaiming = false
 
@@ -74,7 +77,7 @@ private struct SyncSetupView: View {
     private var canSave: Bool {
         Self.isValidPairingURL(baseURL) &&
             !deviceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            !deviceToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            (hasDeviceToken || !deviceTokenEntry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     private var canClaim: Bool {
@@ -109,7 +112,17 @@ private struct SyncSetupView: View {
                 VStack(spacing: 14) {
                     field("Writeback URL", text: $baseURL)
                     field("Device ID", text: $deviceID)
-                    secureField("Device Token", text: $deviceToken)
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(hasDeviceToken ? theme.success : theme.warn)
+                            .frame(width: 8, height: 8)
+                        Text(deviceTokenStatusText)
+                            .font(AppFont.smallRegular)
+                            .foregroundStyle(theme.textMuted)
+                        Spacer(minLength: 0)
+                    }
+                    .accessibilityElement(children: .combine)
+                    secureField("Paste device token", text: $deviceTokenEntry)
                 }
                 .glassCard(padding: 14, radius: AppLayout.radiusMedium)
                 .padding(.horizontal, AppLayout.sectionPadding)
@@ -119,7 +132,8 @@ private struct SyncSetupView: View {
                         AppWritebackConfig.clear()
                         baseURL = ""
                         deviceID = ""
-                        deviceToken = ""
+                        deviceTokenEntry = ""
+                        hasDeviceToken = false
                     }
                     .buttonStyle(.bordered)
 
@@ -127,8 +141,13 @@ private struct SyncSetupView: View {
                         AppWritebackConfig.save(
                             baseURL: baseURL,
                             deviceID: deviceID,
-                            deviceToken: deviceToken,
+                            deviceToken: deviceTokenEntry,
                         )
+                        deviceTokenEntry = ""
+                        hasDeviceToken = AppWritebackConfig.hasDeviceToken
+                        statusMessage = hasDeviceToken
+                            ? "Writeback settings saved."
+                            : "Could not save the device token."
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(!canSave)
@@ -136,6 +155,10 @@ private struct SyncSetupView: View {
                 .padding(.horizontal, AppLayout.sectionPadding)
 
                 convexReadTokenCard
+                    .glassCard(padding: 14, radius: AppLayout.radiusMedium)
+                    .padding(.horizontal, AppLayout.sectionPadding)
+
+                ConvexSyncTokenCard()
                     .glassCard(padding: 14, radius: AppLayout.radiusMedium)
                     .padding(.horizontal, AppLayout.sectionPadding)
 
@@ -149,6 +172,7 @@ private struct SyncSetupView: View {
             .padding(.bottom, 100)
         }
         .background(theme.bg)
+        .onAppear { hasDeviceToken = AppWritebackConfig.hasDeviceToken }
     }
 
     private func claimPairing() {
@@ -171,7 +195,8 @@ private struct SyncSetupView: View {
                 await MainActor.run {
                     baseURL = AppWritebackConfig.baseURL?.absoluteString ?? ""
                     deviceID = AppWritebackConfig.deviceID
-                    deviceToken = AppWritebackConfig.deviceToken
+                    deviceTokenEntry = ""
+                    hasDeviceToken = AppWritebackConfig.hasDeviceToken
                     pairingURL = ""
                     statusMessage = "Device pairing saved."
                     isClaiming = false
@@ -183,6 +208,12 @@ private struct SyncSetupView: View {
                 }
             }
         }
+    }
+
+    private var deviceTokenStatusText: String {
+        hasDeviceToken
+            ? "A device token is stored on this device."
+            : "No device token. App writeback is not configured."
     }
 
     /// Convex reads are fail-closed as of 2026-07-26, and the token they need lived in a
@@ -315,5 +346,107 @@ private struct SyncSetupView: View {
               let host = url.host?.lowercased()
         else { return false }
         return scheme == "https" || host == "localhost" || host == "127.0.0.1"
+    }
+}
+
+/// Shared credential control for iOS Sync Setup and the macOS settings surface.
+///
+/// The stored token is deliberately represented only as a Bool. Its value is
+/// never loaded into view state or rendered back into a field.
+struct ConvexSyncTokenCard: View {
+    @Environment(\.theme) private var theme
+    @State private var tokenEntry = ""
+    @State private var hasToken = !ConvexConfig.syncToken.isEmpty
+    @State private var message: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Convex Sync Token")
+                    .font(AppFont.headline)
+                    .foregroundStyle(theme.text)
+                Text(ConvexConfig.deploymentURL.host ?? "no deployment host")
+                    .font(AppFont.smallRegular)
+                    .foregroundStyle(theme.textFaint)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(hasToken ? theme.success : theme.warn)
+                    .frame(width: 8, height: 8)
+                Text(statusText)
+                    .font(AppFont.smallRegular)
+                    .foregroundStyle(theme.textMuted)
+                Spacer(minLength: 0)
+            }
+            .accessibilityElement(children: .combine)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Paste sync token")
+                    .font(AppFont.labelSmallStrong)
+                    .foregroundStyle(theme.textMuted)
+                SecureField("Paste sync token", text: $tokenEntry)
+                    .autocorrectionDisabled()
+                    .font(AppFont.body)
+                    .foregroundStyle(theme.text)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            HStack(spacing: 12) {
+                PasteButton(payloadType: String.self) { pasted in
+                    guard let token = pasted.first else { return }
+                    tokenEntry = token.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+
+                Spacer(minLength: 0)
+
+                if hasToken {
+                    Button("Remove") {
+                        removeToken()
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Button("Save") {
+                    saveToken()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(tokenEntry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            if let message {
+                Text(message)
+                    .font(AppFont.smallRegular)
+                    .foregroundStyle(theme.textMuted)
+            }
+        }
+        .onAppear { hasToken = !ConvexConfig.syncToken.isEmpty }
+    }
+
+    private var statusText: String {
+        hasToken
+            ? "A sync token is stored on this device."
+            : "No sync token. Transaction, Bitcoin, and budget writes will be rejected."
+    }
+
+    private func saveToken() {
+        let trimmed = tokenEntry.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        ConvexConfig.setSyncToken(trimmed)
+        tokenEntry = ""
+        hasToken = !ConvexConfig.syncToken.isEmpty
+        message = hasToken
+            ? "Sync token saved. It is sent with the next write."
+            : "Could not save the sync token."
+    }
+
+    private func removeToken() {
+        ConvexConfig.removeSyncToken()
+        tokenEntry = ""
+        hasToken = !ConvexConfig.syncToken.isEmpty
+        message = hasToken
+            ? "Could not remove the sync token."
+            : "Sync token removed from this device."
     }
 }

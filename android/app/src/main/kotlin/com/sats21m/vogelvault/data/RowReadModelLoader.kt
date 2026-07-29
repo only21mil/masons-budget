@@ -11,8 +11,52 @@ import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.IncomeEntry
 import com.sats21m.vogelvault.domain.ReadModel
 import com.sats21m.vogelvault.domain.Slice
+import java.util.logging.Logger
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+
+/**
+ * A non-secret diagnosis for a rejected row projection.
+ *
+ * The tag is carried in [Slice.source] because the shared domain model has no
+ * failure-metadata field. This preserves the cause through Room/cache fallback
+ * without weakening the fail-closed [Freshness.ERROR] contract.
+ */
+enum class RowReadFailure(
+    internal val sourceTag: String,
+) {
+    UNAUTHORIZED("unauthorized"),
+    DISABLED("disabled"),
+    NOT_CONFIGURED("not_configured"),
+    TRANSPORT("transport"),
+    MALFORMED_PAYLOAD("malformed_payload"),
+    ;
+
+    internal fun attachTo(source: String): String = "$source$FAILURE_MARKER$sourceTag"
+
+    companion object {
+        private const val FAILURE_MARKER = " · failure="
+
+        internal fun fromSource(source: String): RowReadFailure? {
+            val tag = source.substringAfterLast(FAILURE_MARKER, missingDelimiterValue = "")
+            return entries.firstOrNull { it.sourceTag == tag }
+        }
+    }
+}
+
+/** Every distinct failed-read cause retained by this model's slices. */
+val ReadModel.rowReadFailures: Set<RowReadFailure>
+    get() =
+        listOf(
+            transactions.source,
+            budget.source,
+            btcAccounts.source,
+            btcBuys.source,
+            todos.source,
+            income.source,
+            btcBalance.source,
+            btcBillPays.source,
+        ).mapNotNullTo(linkedSetOf()) { RowReadFailure.fromSource(it) }
 
 /**
  * Builds the UI read model from bounded public row queries.
@@ -187,14 +231,19 @@ private fun BudgetDocumentRow.toDomain(): Budget? {
 private fun ConvexResult<BudgetDocumentSnapshot>.toBudgetSlice(stamp: Long): Slice<Budget?> =
     when (this) {
         is ConvexResult.Ok -> when {
-            !value.complete -> errorSlice(null, "Convex rows · budget")
+            !value.complete ->
+                errorSlice(null, "Convex rows · budget", RowReadFailure.MALFORMED_PAYLOAD)
             value.document == null -> emptySlice(null, "Convex rows · budget")
             else -> value.document.toDomain()?.let {
                 liveSlice(it, "Convex rows · budget", stamp)
-            } ?: errorSlice(null, "Convex rows · budget")
+            } ?: errorSlice(
+                null,
+                "Convex rows · budget",
+                RowReadFailure.MALFORMED_PAYLOAD,
+            )
         }
         ConvexResult.Missing -> emptySlice(null, "Convex rows · budget")
-        else -> errorSlice(null, "Convex rows · budget")
+        else -> failureSlice(null, "Convex rows · budget")
     }
 
 /**
@@ -210,9 +259,9 @@ private fun ConvexResult<RowSnapshot<com.sats21m.vogelvault.domain.Transaction>>
     return when (this) {
         is ConvexResult.Ok ->
             if (value.complete) liveSlice(value.rows, source, stamp)
-            else errorSlice(emptyList(), source)
+            else errorSlice(emptyList(), source, RowReadFailure.MALFORMED_PAYLOAD)
         ConvexResult.Missing -> emptySlice(emptyList(), source)
-        else -> errorSlice(emptyList(), source)
+        else -> failureSlice(emptyList(), source)
     }
 }
 
@@ -222,12 +271,12 @@ private fun <T> ConvexResult<RowSnapshot<T>>.toSlice(
     stamp: Long,
 ): Slice<List<T>> = when (this) {
     is ConvexResult.Ok -> when {
-        !value.complete -> errorSlice(empty, source)
+        !value.complete -> errorSlice(empty, source, RowReadFailure.MALFORMED_PAYLOAD)
         value.rows.isEmpty() -> emptySlice(empty, source)
         else -> liveSlice(value.rows, source, stamp)
     }
     ConvexResult.Missing -> emptySlice(empty, source)
-    else -> errorSlice(empty, source)
+    else -> failureSlice(empty, source)
 }
 
 private fun <T, R> ConvexResult<RowSnapshot<T>>.toMappedSlice(
@@ -237,12 +286,12 @@ private fun <T, R> ConvexResult<RowSnapshot<T>>.toMappedSlice(
     map: (T) -> R,
 ): Slice<List<R>> = when (this) {
     is ConvexResult.Ok -> when {
-        !value.complete -> errorSlice(empty, source)
+        !value.complete -> errorSlice(empty, source, RowReadFailure.MALFORMED_PAYLOAD)
         value.rows.isEmpty() -> emptySlice(empty, source)
         else -> liveSlice(value.rows.map(map), source, stamp)
     }
     ConvexResult.Missing -> emptySlice(empty, source)
-    else -> errorSlice(empty, source)
+    else -> failureSlice(empty, source)
 }
 
 private fun ConvexResult<RowSnapshot<BtcBalanceDocumentRow>>.toBtcBalanceSlice(
@@ -251,13 +300,14 @@ private fun ConvexResult<RowSnapshot<BtcBalanceDocumentRow>>.toBtcBalanceSlice(
     val source = "Convex rows · bitcoin balance"
     return when (this) {
         is ConvexResult.Ok -> when {
-            !value.complete -> errorSlice(null, source)
+            !value.complete -> errorSlice(null, source, RowReadFailure.MALFORMED_PAYLOAD)
             value.rows.isEmpty() -> emptySlice(null, source)
-            value.rows.size != 1 -> errorSlice(null, source)
+            value.rows.size != 1 ->
+                errorSlice(null, source, RowReadFailure.MALFORMED_PAYLOAD)
             else -> liveSlice(value.rows.single().toDomain(), source, stamp)
         }
         ConvexResult.Missing -> emptySlice(null, source)
-        else -> errorSlice(null, source)
+        else -> failureSlice(null, source)
     }
 }
 
@@ -267,5 +317,41 @@ private fun <T> liveSlice(value: T, source: String, stamp: Long): Slice<T> =
 private fun <T> emptySlice(value: T, source: String): Slice<T> =
     Slice(Freshness.EMPTY, value, null, source)
 
-private fun <T> errorSlice(value: T, source: String): Slice<T> =
-    Slice(Freshness.ERROR, value, null, source)
+private fun <T> ConvexResult<*>.failureSlice(value: T, source: String): Slice<T> {
+    val failure = when (this) {
+        ConvexResult.Unauthorized -> RowReadFailure.UNAUTHORIZED
+        ConvexResult.Disabled -> RowReadFailure.DISABLED
+        ConvexResult.NotConfigured -> RowReadFailure.NOT_CONFIGURED
+        is ConvexResult.Failed -> reason.toRowReadFailure()
+        is ConvexResult.Ok,
+        ConvexResult.Missing,
+        -> RowReadFailure.MALFORMED_PAYLOAD
+    }
+    return errorSlice(value, source, failure)
+}
+
+private fun String.toRowReadFailure(): RowReadFailure =
+    if (
+        contains("malformed", ignoreCase = true) ||
+        contains("unrecognised", ignoreCase = true) ||
+        contains("unexpected payload", ignoreCase = true) ||
+        contains("decode", ignoreCase = true)
+    ) {
+        RowReadFailure.MALFORMED_PAYLOAD
+    } else {
+        RowReadFailure.TRANSPORT
+    }
+
+private fun <T> errorSlice(
+    value: T,
+    source: String,
+    failure: RowReadFailure,
+): Slice<T> {
+    rowReadLog.warning(
+        "Convex row read unavailable: projection=${source.substringAfterLast(" · ")} " +
+            "cause=${failure.name}",
+    )
+    return Slice(Freshness.ERROR, value, null, failure.attachTo(source))
+}
+
+private val rowReadLog: Logger = Logger.getLogger(RowReadModelLoader::class.java.name)

@@ -33,26 +33,4 @@ final class VoiceParserCoreTests: XCTestCase {
         XCTAssertEqual(components.month, 4)
         XCTAssertEqual(components.day, 28)
     }
-
-    func testFallbackRunsForLowConfidence() async {
-        let fallback = RecordingFallback()
-        let parser = VoiceParser(llmFallback: fallback, confidenceThreshold: 0.95)
-
-        let result = await parser.parseWithFallback("pay something maybe", today: today)
-
-        XCTAssertTrue(fallback.wasCalled)
-        XCTAssertEqual(result.merchant, "Fallback")
-    }
-}
-
-private final class RecordingFallback: VoiceParserLLMFallback, @unchecked Sendable {
-    private(set) var wasCalled = false
-
-    func refine(transcript: String, partial: ParsedTransaction) async -> ParsedTransaction {
-        wasCalled = true
-        var refined = partial
-        refined.amount = refined.amount ?? 1
-        refined.merchant = "Fallback"
-        return refined
-    }
 }

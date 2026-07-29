@@ -9,6 +9,7 @@ import Security
 /// Configuration for the Convex deployment.
 enum ConvexConfig {
     private static let rowReadsEnabledKey = "convex_row_reads_enabled"
+    private static let syncTokenKey = "convex_sync_token"
 
     /// The Convex deployment URL. Updated after `npx convex deploy`.
     /// Store in UserDefaults so it can be changed without an app update.
@@ -35,7 +36,20 @@ enum ConvexConfig {
     /// (see AGENTS.md). Sourced from UserDefaults so it can be injected at runtime; empty by
     /// default so native writes stay fail-closed (the server rejects an empty/invalid token).
     static var syncToken: String {
-        UserDefaults.standard.string(forKey: "convex_sync_token") ?? ""
+        UserDefaults.standard.string(forKey: syncTokenKey) ?? ""
+    }
+
+    static func setSyncToken(_ token: String) {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            removeSyncToken()
+        } else {
+            UserDefaults.standard.set(trimmed, forKey: syncTokenKey)
+        }
+    }
+
+    static func removeSyncToken() {
+        UserDefaults.standard.removeObject(forKey: syncTokenKey)
     }
 
     /// Optional read token.
@@ -104,8 +118,14 @@ enum AppWritebackConfig {
         return legacyToken
     }
 
+    /// Presence-only view of the credential for UI status. Callers that do not
+    /// need to authenticate must not retain or render `deviceToken`.
+    static var hasDeviceToken: Bool {
+        !deviceToken.isEmpty
+    }
+
     static var isConfigured: Bool {
-        baseURL != nil && !deviceID.isEmpty && !deviceToken.isEmpty
+        baseURL != nil && !deviceID.isEmpty && hasDeviceToken
     }
 
     static var bundledPairingURLs: [String] {
@@ -140,7 +160,14 @@ enum AppWritebackConfig {
     static func save(baseURL: String, deviceID: String, deviceToken: String) {
         UserDefaults.standard.set(baseURL.trimmingCharacters(in: .whitespacesAndNewlines), forKey: baseURLKey)
         UserDefaults.standard.set(deviceID.trimmingCharacters(in: .whitespacesAndNewlines), forKey: deviceIDKey)
-        AppWritebackDeviceTokenStore.save(deviceToken.trimmingCharacters(in: .whitespacesAndNewlines))
+        // A blank token must NOT leave the previous one in place. baseURL and
+        // deviceID above have already been overwritten, so keeping the old
+        // secret would pair this device's new host with the OLD host's
+        // credential and still report isConfigured == true — a failed pairing
+        // that looks like a successful one. Clear instead, so the state is
+        // honestly unconfigured and the user is asked to pair again.
+        let trimmedDeviceToken = deviceToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        AppWritebackDeviceTokenStore.save(trimmedDeviceToken)
         UserDefaults.standard.removeObject(forKey: deviceTokenKey)
     }
 
@@ -820,22 +847,6 @@ final class ConvexClient: Sendable {
         ])
         guard let result = raw as? [String: Any] else { return false }
         return result["removed"] as? Bool ?? false
-    }
-
-    /// Push one app-created bill pay into the bitcoin-bill-pays document.
-    @discardableResult
-    func appendBillPay(_ billPay: LegacyBTCBillPayDTO) async throws -> Double {
-        let data = try JSONEncoder().encode(billPay)
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw ConvexError.decodeFailed("billPay", NSError(domain: "LegacyBlobBTCBillPay", code: -1))
-        }
-        let raw = try await mutation("dataFiles:appendBillPay", args: [
-            "billPay": object,
-        ])
-        guard let result = raw as? [String: Any] else { return 0 }
-        if let version = result["version"] as? Double { return version }
-        if let version = result["version"] as? Int { return Double(version) }
-        return 0
     }
 
     // MARK: - Internal

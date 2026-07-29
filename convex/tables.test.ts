@@ -349,6 +349,18 @@ const fn = {
     },
     { txId: string; owner: Member; month: string; outcome: string }
   >,
+  deleteTransaction:
+    "tables:deleteTransaction" as unknown as FunctionReference<
+      "mutation",
+      "public",
+      {
+        txId: string;
+        owner?: Member;
+        sourceFile?: string;
+        token?: string;
+      },
+      { txId: string; owner: Member; removed: boolean }
+    >,
   upsertTodo: "tables:upsertTodo" as unknown as FunctionReference<
     "mutation",
     "public",
@@ -379,6 +391,29 @@ const fn = {
     },
     { buyId: string; owner: Member; month: string; outcome: string }
   >,
+  upsertBtcBillPay: "tables:upsertBtcBillPay" as unknown as FunctionReference<
+    "mutation",
+    "public",
+    {
+      billPay: {
+        id: string;
+        date: string;
+        merchant: string;
+        category: string;
+        amountUsdCents: bigint;
+        btcSpentSats: bigint;
+        btcPriceCents: bigint;
+        platform?: string;
+        note?: string;
+        feeUsdCents: bigint;
+        reference?: string;
+        owner?: Member;
+      };
+      sourceFile?: string;
+      token?: string;
+    },
+    { billPayId: string; owner: Member; month: string; outcome: string }
+  >,
   upsertBtcAccount: "tables:upsertBtcAccount" as unknown as FunctionReference<
     "mutation",
     "public",
@@ -398,6 +433,23 @@ const fn = {
     },
     { key: string; owner: Member; outcome: string }
   >,
+  upsertBudgetCategory:
+    "tables:upsertBudgetCategory" as unknown as FunctionReference<
+      "mutation",
+      "public",
+      {
+        viewer: Member;
+        month: string;
+        category: { name: string; icon?: string; budgetCents: bigint };
+        token?: string;
+      },
+      {
+        owner: Member;
+        month: string;
+        name: string;
+        outcome: string;
+      }
+    >,
   // dataFiles entry points, used only by the auth-parity block.
   dataFilesGet: "dataFiles:get" as unknown as FunctionReference<
     "query",
@@ -843,6 +895,7 @@ beforeEach(async () => {
 
 describe("the blob path is untouched", () => {
   it("the row mutations do not write dataFiles either", async () => {
+    await migrateAll(t);
     const before = await blobWorldSnapshot(t);
 
     await t.mutation(fn.upsertTransaction, {
@@ -854,8 +907,14 @@ describe("the blob path is untouched", () => {
         category: "Food",
       },
     });
+    await t.mutation(fn.deleteTransaction, { txId: "app-1" });
     await t.mutation(fn.upsertTodo, { todo: { id: "app-todo", title: "Ship it" } });
     await t.mutation(fn.deleteTodo, { todoId: "app-todo" });
+    await t.mutation(fn.upsertBudgetCategory, {
+      viewer: "victor",
+      month: "2026-07",
+      category: { name: "Groceries", budgetCents: 95000n },
+    });
 
     expect(await blobWorldSnapshot(t)).toEqual(before);
   });
@@ -871,6 +930,19 @@ describe("the blob path is untouched", () => {
     expect(await queryRows(fn.listTodos, { viewer: "victor" })).not.toContainEqual(
       expect.objectContaining({ todoId: "todo-1" }),
     );
+  });
+
+  it("deleteTransaction writes no todo tombstone — transactions need a separate convergence design", async () => {
+    await migrateAll(t);
+    await t.mutation(fn.deleteTransaction, { txId: "t-1" });
+
+    const tombstones = await t.run(async (ctx) =>
+      ctx.db.query("todoTombstones").collect(),
+    );
+    expect(tombstones).toHaveLength(0);
+    expect(
+      await queryRows(fn.listTransactions, { viewer: "victor" }),
+    ).not.toContainEqual(expect.objectContaining({ txId: "t-1" }));
   });
 
   it("typed document projection and inserts leave all blob tables byte-identical", async () => {
@@ -1783,6 +1855,59 @@ describe("row mutations", () => {
     expect(mason.map((row) => row.txId)).toEqual(["app-m1"]);
   });
 
+  it("deletes one source-scoped transaction and is idempotent when retried", async () => {
+    await migrateAll(t);
+
+    const removed = await t.mutation(fn.deleteTransaction, { txId: "t-1" });
+    expect(removed).toEqual({ txId: "t-1", owner: "victor", removed: true });
+
+    const retried = await t.mutation(fn.deleteTransaction, { txId: "t-1" });
+    expect(retried).toEqual({ txId: "t-1", owner: "victor", removed: false });
+
+    const rows = await queryRows(fn.listTransactions, { viewer: "victor" });
+    expect(rows.map((row) => row.txId)).not.toContain("t-1");
+    expect(rows.map((row) => row.txId)).toContain("t-2");
+    expect((await t.query(fn.rowCounts, {})).transactions).toBe(3);
+  });
+
+  it("uses source-file ownership and the source/id index to isolate child deletes", async () => {
+    await t.mutation(fn.upsertTransaction, {
+      transaction: {
+        id: "shared-id",
+        date: "2026-07-22",
+        merchant: "Adult",
+        amountCents: 100n,
+        category: "Other",
+      },
+    });
+    await t.mutation(fn.upsertTransaction, {
+      sourceFile: "mason-transactions",
+      transaction: {
+        id: "shared-id",
+        date: "2026-07-22",
+        merchant: "Child",
+        amountCents: 200n,
+        category: "Other",
+      },
+    });
+
+    const result = await t.mutation(fn.deleteTransaction, {
+      txId: "shared-id",
+      sourceFile: "mason-transactions",
+    });
+    expect(result).toEqual({
+      txId: "shared-id",
+      owner: "mason",
+      removed: true,
+    });
+
+    expect(
+      (await queryRows(fn.listTransactions, { viewer: "victor" })).map(
+        (row) => `${row.owner}:${row.txId}`,
+      ),
+    ).toEqual(["victor:shared-id"]);
+  });
+
   it("rejects negative purchases for adults and children", async () => {
     await expect(
       t.mutation(fn.upsertTransaction, {
@@ -1867,6 +1992,313 @@ describe("row mutations", () => {
     const accounts = await queryRows(fn.listBtcAccounts, { viewer: "victor", scope: "visible" });
     expect(accounts.filter((a) => a.key === "strike")).toHaveLength(1);
     expect(accounts.find((a) => a.key === "strike")?.sats).toBe(36000000n);
+  });
+
+  it("updates and inserts categories without replacing the budget document", async () => {
+    await migrateAll(t);
+
+    const updated = await t.mutation(fn.upsertBudgetCategory, {
+      viewer: "rachel",
+      month: "2026-07",
+      category: {
+        name: "Groceries",
+        icon: "basket",
+        budgetCents: 97500n,
+      },
+    });
+    expect(updated).toEqual({
+      owner: "victor",
+      month: "2026-07",
+      name: "Groceries",
+      outcome: "updated",
+    });
+
+    const inserted = await t.mutation(fn.upsertBudgetCategory, {
+      viewer: "victor",
+      month: "2026-07",
+      category: {
+        name: "Travel",
+        icon: "airplane",
+        budgetCents: 25000n,
+      },
+    });
+    expect(inserted.outcome).toBe("inserted");
+
+    const response = await t.query(fn.getBudgetDocument, {
+      viewer: "rachel",
+      scope: "netWorth",
+    });
+    expect(response.document).toMatchObject({
+      owner: "victor",
+      month: "2026-07",
+      coinbaseOneBalanceCents: 12550n,
+      categories: [
+        { name: "Groceries", icon: "basket", budgetCents: 97500n },
+        { name: "Utilities", icon: "zap", budgetCents: 40000n },
+        { name: "Travel", icon: "airplane", budgetCents: 25000n },
+      ],
+      mtdIncomeCents: 250000n,
+    });
+  });
+
+  it("scopes category edits to the budget document's exact month", async () => {
+    await migrateAll(t);
+
+    for (const staleMonth of ["2026-06", "2026-08"]) {
+      await expect(
+        t.mutation(fn.upsertBudgetCategory, {
+          viewer: "victor",
+          month: staleMonth,
+          category: { name: "Groceries", budgetCents: 1n },
+        }),
+      ).rejects.toThrow(
+        new RegExp(`requested month "${staleMonth}".*month "2026-07"`),
+      );
+    }
+
+    await expect(
+      t.mutation(fn.upsertBudgetCategory, {
+        viewer: "victor",
+        month: "2026-07",
+        category: { name: "Groceries", budgetCents: 99000n },
+      }),
+    ).resolves.toMatchObject({ month: "2026-07", outcome: "updated" });
+
+    const response = await t.query(fn.getBudgetDocument, {
+      viewer: "victor",
+      scope: "netWorth",
+    });
+    expect(response.document?.categories[0].budgetCents).toBe(99000n);
+  });
+
+  it("keeps child category edits in the child's budget", async () => {
+    await migrateAll(t);
+
+    await t.mutation(fn.upsertBudgetCategory, {
+      viewer: "mason",
+      month: "2026-07",
+      category: { name: "Fun", icon: "controller", budgetCents: 8000n },
+    });
+
+    const mason = await t.query(fn.getBudgetDocument, {
+      viewer: "mason",
+      scope: "netWorth",
+    });
+    const adult = await t.query(fn.getBudgetDocument, {
+      viewer: "victor",
+      scope: "netWorth",
+    });
+    expect(mason.document?.owner).toBe("mason");
+    expect(mason.document?.categories).toEqual([
+      { name: "Fun", icon: "controller", budgetCents: 8000n },
+    ]);
+    expect(adult.document?.categories[0]).toEqual({
+      name: "Groceries",
+      icon: "cart",
+      budgetCents: 90000n,
+    });
+    await expect(
+      t.mutation(fn.upsertBudgetCategory, {
+        viewer: "maddox",
+        month: "2026-07",
+        category: { name: "Fun", budgetCents: 1n },
+      }),
+    ).rejects.toThrow(/maddox has no budget document/);
+  });
+
+  it("does not create a whole budget document from a category edit", async () => {
+    await expect(
+      t.mutation(fn.upsertBudgetCategory, {
+        viewer: "mason",
+        month: "2026-07",
+        category: { name: "Fun", budgetCents: 1n },
+      }),
+    ).rejects.toThrow(/does not exist.*does not create a whole budget document/);
+  });
+
+  it("rejects non-integer category money", async () => {
+    await migrateAll(t);
+    await expect(
+      t.mutation(fn.upsertBudgetCategory, {
+        viewer: "victor",
+        month: "2026-07",
+        category: {
+          name: "Groceries",
+          budgetCents: 12.5 as unknown as bigint,
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("upserts one BTC bill pay idempotently with separate sats and fiat fields", async () => {
+    const inserted = await t.mutation(fn.upsertBtcBillPay, {
+      billPay: {
+        id: "app-bp-1",
+        date: "2026-07-24",
+        merchant: "Electric Utility",
+        category: "Utilities",
+        amountUsdCents: 18_655n,
+        btcSpentSats: 200_000n,
+        btcPriceCents: 9_327_500n,
+        platform: "river",
+        feeUsdCents: 95n,
+        reference: "invoice-1",
+      },
+    });
+    expect(inserted).toMatchObject({
+      billPayId: "app-bp-1",
+      owner: "victor",
+      month: "2026-07",
+      outcome: "inserted",
+    });
+
+    const updated = await t.mutation(fn.upsertBtcBillPay, {
+      billPay: {
+        id: "app-bp-1",
+        date: "2026-07-24",
+        merchant: "Electric Utility",
+        category: "Utilities",
+        amountUsdCents: 18_700n,
+        btcSpentSats: 200_000n,
+        btcPriceCents: 9_327_500n,
+        feeUsdCents: 95n,
+      },
+    });
+    expect(updated.outcome).toBe("updated");
+
+    const rows = await queryRows(fn.listBtcBillPays, {
+      viewer: "victor",
+      scope: "visible",
+    });
+    expect(rows.filter((row) => row.billPayId === "app-bp-1")).toHaveLength(1);
+    expect(rows.find((row) => row.billPayId === "app-bp-1")).toMatchObject({
+      amountUsdCents: 18_700n,
+      btcSpentSats: 200_000n,
+      btcPriceCents: 9_327_500n,
+      feeUsdCents: 95n,
+    });
+  });
+
+  it("resolves BTC bill-pay owners through the existing visibility scopes", async () => {
+    await t.mutation(fn.upsertBtcBillPay, {
+      billPay: {
+        id: "mason-bp-1",
+        date: "2026-07-24",
+        merchant: "Game Store",
+        category: "Fun",
+        amountUsdCents: 2_000n,
+        btcSpentSats: 20_000n,
+        btcPriceCents: 10_000_000n,
+        feeUsdCents: 0n,
+        owner: "mason",
+      },
+    });
+
+    const ids = async (viewer: Member, scope: Scope) =>
+      (await queryRows(fn.listBtcBillPays, { viewer, scope })).map(
+        (row) => row.billPayId,
+      );
+    expect(await ids("victor", "visible")).toContain("mason-bp-1");
+    expect(await ids("victor", "netWorth")).not.toContain("mason-bp-1");
+    expect(await ids("mason", "visible")).toContain("mason-bp-1");
+    expect(await ids("maddox", "visible")).not.toContain("mason-bp-1");
+  });
+
+  it("refuses to delete a transaction that belongs to a different owner", async () => {
+    await migrateAll(t);
+    // Ids collide across source files on purpose (see the shared-id test), and
+    // sourceFile defaults to the ADULT file. Before the owner check, asking to
+    // delete a child's id with sourceFile omitted silently deleted the adult's
+    // row and reported removed: true. There is no transaction tombstone, so the
+    // row would simply be gone.
+    const victorRow = await t.query(fn.listTransactions, { viewer: "victor" });
+    const target = victorRow.rows[0];
+    await expect(
+      t.mutation(fn.deleteTransaction, {
+        txId: target.txId,
+        owner: target.owner === "victor" ? "mason" : "victor",
+      }),
+    ).rejects.toThrow(/belongs to/);
+
+    const after = await t.query(fn.listTransactions, { viewer: "victor" });
+    expect(after.rows.map((r: { txId: string }) => r.txId)).toContain(target.txId);
+  });
+
+  it("refuses a bill pay whose money is not a positive spend", async () => {
+    for (const bad of [
+      { amountUsdCents: -18_655n },
+      { btcSpentSats: -200_000n },
+      { btcPriceCents: 0n },
+      { feeUsdCents: -1n },
+    ]) {
+      await expect(
+        t.mutation(fn.upsertBtcBillPay, {
+          billPay: {
+            id: "bad-bp",
+            date: "2026-07-24",
+            merchant: "Electric Utility",
+            category: "Utilities",
+            amountUsdCents: 18_655n,
+            btcSpentSats: 200_000n,
+            btcPriceCents: 10_000_000n,
+            feeUsdCents: 0n,
+            ...bad,
+          },
+        }),
+      ).rejects.toThrow();
+    }
+  });
+
+  it("refuses a bill-pay upsert that would change an existing row's owner", async () => {
+    const base = {
+      date: "2026-07-24",
+      merchant: "Electric Utility",
+      category: "Utilities",
+      amountUsdCents: 18_655n,
+      btcSpentSats: 200_000n,
+      btcPriceCents: 10_000_000n,
+      feeUsdCents: 0n,
+    };
+    await t.mutation(fn.upsertBtcBillPay, {
+      billPay: { id: "hijack-bp", owner: "victor", ...base },
+    });
+    // Bill pays share ONE source file, so the natural key is the id alone.
+    // Reusing it under another owner used to PATCH the adult's row, flipping
+    // its owner and overwriting every money field.
+    await expect(
+      t.mutation(fn.upsertBtcBillPay, {
+        billPay: { id: "hijack-bp", owner: "mason", ...base, amountUsdCents: 1n },
+      }),
+    ).rejects.toThrow(/belongs to victor/);
+
+    const rows = await queryRows(fn.listBtcBillPays, {
+      viewer: "victor",
+      scope: "visible",
+    });
+    const survivor = rows.find(
+      (r: { billPayId: string }) => r.billPayId === "hijack-bp",
+    );
+    expect(survivor).toBeDefined();
+    expect(survivor?.owner).toBe("victor");
+    expect(survivor?.amountUsdCents).toBe(18_655n);
+  });
+
+  it("refuses a BTC bill pay source outside the closed source catalogue", async () => {
+    await expect(
+      t.mutation(fn.upsertBtcBillPay, {
+        sourceFile: "mason-bitcoin-bill-pays",
+        billPay: {
+          id: "unknown-source-bp",
+          date: "2026-07-24",
+          merchant: "Nope",
+          category: "Other",
+          amountUsdCents: 1n,
+          btcSpentSats: 1n,
+          btcPriceCents: 1n,
+          feeUsdCents: 0n,
+        },
+      }),
+    ).rejects.toThrow(/Unknown source file "mason-bitcoin-bill-pays"/);
   });
 
   it("refuses a sourceFile that holds a different kind of record", async () => {
@@ -2070,6 +2502,11 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
         t.mutation(fn.upsertTodo, { todo: { id: "auth-todo", title: "Probe" }, token }),
     },
     {
+      name: "deleteTransaction",
+      call: (token?: string) =>
+        t.mutation(fn.deleteTransaction, { txId: "auth-transaction", token }),
+    },
+    {
       name: "deleteTodo",
       call: (token?: string) => t.mutation(fn.deleteTodo, { todoId: "auth-todo", token }),
     },
@@ -2084,6 +2521,23 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
             sats: 1n,
             priceUsdCents: 1n,
             usdCents: 1n,
+          },
+          token,
+        }),
+    },
+    {
+      name: "upsertBtcBillPay",
+      call: (token?: string) =>
+        t.mutation(fn.upsertBtcBillPay, {
+          billPay: {
+            id: "auth-bp-1",
+            date: "2026-07-25",
+            merchant: "Probe",
+            category: "Other",
+            amountUsdCents: 1n,
+            btcSpentSats: 1n,
+            btcPriceCents: 1n,
+            feeUsdCents: 0n,
           },
           token,
         }),
@@ -2104,13 +2558,35 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
           token,
         }),
     },
+    {
+      name: "upsertBudgetCategory",
+      call: (token?: string) =>
+        t.mutation(fn.upsertBudgetCategory, {
+          viewer: "victor",
+          month: "2026-07",
+          category: {
+            name: "Groceries",
+            budgetCents: 90000n,
+          },
+          token,
+        }),
+    },
   ] as const;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Undo the openGates() in the outer beforeEach — these tests are about the
     // deployed default, which is both gates closed.
     delete process.env.ALLOW_TOKENLESS_READ;
     delete process.env.ALLOW_TOKENLESS_SYNC;
+    // Auth succeeds before handler state is consulted. Seed the one document
+    // whose mutation needs an existing aggregate so the valid-token and hatch
+    // cases can proceed past auth and complete the write.
+    await t.run(async (ctx) => {
+      await ctx.db.insert(
+        "budgetDocuments",
+        projectBudgetDocument(JSON.stringify(ADULT_BUDGET), "budget", 1000),
+      );
+    });
   });
 
   describe("no token configured, no hatch (the deployed default)", () => {

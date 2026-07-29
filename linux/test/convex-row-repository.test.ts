@@ -298,6 +298,42 @@ describe("main-process row repository", () => {
     expect(calls).toBe(2)
   })
 
+  it("admits every row request in one renderer refresh", async () => {
+    const releases: Array<() => void> = []
+    let calls = 0
+    const repository = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => {
+        calls += 1
+        await new Promise<void>((resolve) => releases.push(resolve))
+        return success({ complete: true, rows: [] })
+      },
+    })
+    const requests = [
+      { kind: "transactions", viewer: "victor" },
+      { kind: "todos", viewer: "victor" },
+      { kind: "income", viewer: "victor" },
+      { kind: "btcBuys", viewer: "victor", scope: "visible" },
+      { kind: "btcAccounts", viewer: "victor", scope: "visible" },
+      { kind: "btcBillPays", viewer: "victor", scope: "visible" },
+      { kind: "budget", viewer: "victor", scope: "netWorth" },
+      { kind: "btcSnapshotMeta", viewer: "victor", scope: "visible" },
+      { kind: "btcBalanceDocuments", viewer: "victor", scope: "netWorth" },
+    ]
+
+    const pending = requests.map((request) => repository.query(request))
+    expect(calls).toBe(9)
+    for (const release of releases) release()
+
+    const results = await Promise.all(pending)
+    expect(results.at(-1)).toEqual({
+      status: "ok",
+      kind: "btcBalanceDocuments",
+      complete: true,
+      rows: [],
+    })
+  })
+
   it("fails a full request when the backend envelope is incomplete", async () => {
     const repository = createConvexRowRepository({
       configuration: () => ({ generation: 1, settings }),

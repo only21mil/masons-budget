@@ -83,7 +83,6 @@ struct MasonsBudgetApp: App {
                     .task {
                         await syncFromConvex()
                         startPeriodicSync()
-                        BudgetNotificationManager.shared.requestPermission()
                     }
                     .opacity(isUnlocked || !appLockEnabled ? 1 : 0)
 

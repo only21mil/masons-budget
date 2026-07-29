@@ -20,14 +20,14 @@ let package = Package(
             exclude: [
                 "AppWriteSyncService.swift",
                 "BTCPriceService.swift",
-                "BudgetNotificationManager.swift",
+                
                 "CSVImportService.swift",
                 "ConvexClient.swift",
                 "MC2DTOs.swift",
                 "MC2Mapper.swift",
                 "MC2Reader.swift",
                 "MC2SyncService.swift",
-                "RecurringDetector.swift",
+                
                 "SearchMatcher.swift",
                 "StockPriceService.swift",
                 "SyncStatusStore.swift",

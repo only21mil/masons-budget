@@ -1,6 +1,7 @@
 package com.sats21m.vogelvault.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,18 +12,25 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.CurrencyBitcoin
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -33,6 +41,10 @@ import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -41,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.ui.components.Badge
 import com.sats21m.vogelvault.ui.components.FreshnessTag
 import com.sats21m.vogelvault.ui.components.HorizontalHairline
@@ -91,6 +104,23 @@ enum class Destination(
  */
 const val UNFOLDED_MIN_WIDTH_DP = 600
 
+private const val FOLDED_MAX_ITEMS = 5
+private const val FOLDED_PRIMARY_ITEMS_WITH_OVERFLOW = FOLDED_MAX_ITEMS - 1
+
+internal fun foldedPrimaryDestinations(destinations: List<Destination>): List<Destination> =
+    if (destinations.size <= FOLDED_MAX_ITEMS) {
+        destinations
+    } else {
+        destinations.take(FOLDED_PRIMARY_ITEMS_WITH_OVERFLOW)
+    }
+
+internal fun foldedOverflowDestinations(destinations: List<Destination>): List<Destination> =
+    if (destinations.size <= FOLDED_MAX_ITEMS) {
+        emptyList()
+    } else {
+        destinations.drop(FOLDED_PRIMARY_ITEMS_WITH_OVERFLOW)
+    }
+
 @Composable
 fun VaultApp(
     state: VaultUiState,
@@ -114,9 +144,12 @@ fun VaultApp(
                 Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                     VaultRail(destinations, current, onNavigate)
                     Column(Modifier.weight(1f)) {
-                        VaultTopBar(state, onSwitchProfile)
+                        VaultTopBar(state, onSwitchProfile) {
+                            onSwitchProfile(state.activeProfile)
+                        }
                         HorizontalHairline()
                         AuthorizationNotice(state)
+                        RefreshFailureNotice(state)
                         ScreenHost(
                             current,
                             state,
@@ -129,9 +162,12 @@ fun VaultApp(
                 }
             } else {
                 Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                    VaultTopBar(state, onSwitchProfile)
+                    VaultTopBar(state, onSwitchProfile) {
+                        onSwitchProfile(state.activeProfile)
+                    }
                     HorizontalHairline()
                     AuthorizationNotice(state)
+                    RefreshFailureNotice(state)
                     ScreenHost(
                         current,
                         state,
@@ -154,6 +190,16 @@ private fun AuthorizationNotice(state: VaultUiState) {
     StatusBanner(
         text = stringResource(R.string.convex_auth_error_title),
         detail = stringResource(R.string.convex_auth_error_detail),
+        tone = com.sats21m.vogelvault.ui.theme.VaultWarning,
+    )
+}
+
+@Composable
+private fun RefreshFailureNotice(state: VaultUiState) {
+    if (state.staleAuthorization || state.worstStatus != Freshness.ERROR) return
+    StatusBanner(
+        text = stringResource(R.string.refresh_failed_title),
+        detail = stringResource(R.string.refresh_failed_detail),
         tone = com.sats21m.vogelvault.ui.theme.VaultWarning,
     )
 }
@@ -195,11 +241,12 @@ private fun VaultBottomBar(
     current: Destination,
     onNavigate: (Destination) -> Unit,
 ) {
-    // Folded, a Pixel Fold cannot carry eight labelled tabs. Show the five most
-    // used and reach the rest by unfolding or from Settings.
-    val folded = destinations.take(5)
+    val primary = foldedPrimaryDestinations(destinations)
+    val overflow = foldedOverflowDestinations(destinations)
+    var overflowExpanded by remember { mutableStateOf(false) }
+
     NavigationBar(containerColor = VaultSurfaceSunken) {
-        folded.forEach { destination ->
+        primary.forEach { destination ->
             NavigationBarItem(
                 selected = destination == current,
                 onClick = { onNavigate(destination) },
@@ -214,11 +261,77 @@ private fun VaultBottomBar(
                 ),
             )
         }
+        if (overflow.isNotEmpty()) {
+            NavigationBarItem(
+                selected = current in overflow,
+                onClick = { overflowExpanded = true },
+                icon = {
+                    Box {
+                        Icon(
+                            Icons.Filled.MoreHoriz,
+                            contentDescription = stringResource(R.string.navigation_more),
+                        )
+                        DropdownMenu(
+                            expanded = overflowExpanded,
+                            onDismissRequest = { overflowExpanded = false },
+                            containerColor = VaultSurfaceSunken,
+                        ) {
+                            overflow.forEach { destination ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            destination.label,
+                                            color = if (destination == current) {
+                                                VaultCream
+                                            } else {
+                                                VaultTextDim
+                                            },
+                                        )
+                                    },
+                                    onClick = {
+                                        overflowExpanded = false
+                                        onNavigate(destination)
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            destination.icon,
+                                            contentDescription = null,
+                                            tint = if (destination == current) {
+                                                VaultAccent
+                                            } else {
+                                                VaultTextMuted
+                                            },
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                    }
+                },
+                label = {
+                    Text(
+                        stringResource(R.string.navigation_more),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = VaultCream,
+                    selectedTextColor = VaultCream,
+                    indicatorColor = VaultAccentDim,
+                    unselectedIconColor = VaultTextMuted,
+                    unselectedTextColor = VaultTextDim,
+                ),
+            )
+        }
     }
 }
 
 @Composable
-private fun VaultTopBar(state: VaultUiState, onSwitchProfile: (FamilyMember) -> Unit) {
+private fun VaultTopBar(
+    state: VaultUiState,
+    onSwitchProfile: (FamilyMember) -> Unit,
+    onRefresh: () -> Unit,
+) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -247,6 +360,31 @@ private fun VaultTopBar(state: VaultUiState, onSwitchProfile: (FamilyMember) -> 
                 }
         }
         Spacer(Modifier.weight(1f))
+        if (state.worstStatus == Freshness.LOADING) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                color = VaultAccent,
+                strokeWidth = 2.dp,
+            )
+        } else {
+            IconButton(
+                onClick = onRefresh,
+                enabled = state.worstStatus != Freshness.DEMO,
+            ) {
+                Icon(
+                    Icons.Filled.Refresh,
+                    contentDescription = stringResource(
+                        if (state.worstStatus == Freshness.DEMO) {
+                            R.string.refresh_unavailable
+                        } else {
+                            R.string.refresh_data
+                        },
+                    ),
+                    tint = if (state.worstStatus == Freshness.DEMO) VaultTextDim else VaultCream,
+                )
+            }
+        }
+        Spacer(Modifier.width(VaultSpace.xs))
         Text("SYNC", style = MaterialTheme.typography.labelSmall, color = VaultTextDim)
         Spacer(Modifier.width(VaultSpace.xs))
         FreshnessTag(state.worstStatus, state.worstUpdatedAt, state.now)

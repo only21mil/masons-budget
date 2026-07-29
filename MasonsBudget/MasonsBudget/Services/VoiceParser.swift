@@ -42,25 +42,7 @@ struct Confidence: Equatable {
     }
 }
 
-protocol VoiceParserLLMFallback: AnyObject, Sendable {
-    func refine(transcript: String, partial: ParsedTransaction) async -> ParsedTransaction
-}
-
-final class NoOpLLMFallback: VoiceParserLLMFallback, @unchecked Sendable {
-    func refine(transcript _: String, partial: ParsedTransaction) async -> ParsedTransaction {
-        partial
-    }
-}
-
 final class VoiceParser {
-    private let llmFallback: VoiceParserLLMFallback?
-    private let confidenceThreshold: Double
-
-    init(llmFallback: VoiceParserLLMFallback? = nil, confidenceThreshold: Double = 0.5) {
-        self.llmFallback = llmFallback
-        self.confidenceThreshold = confidenceThreshold
-    }
-
     func parse(_ transcript: String, today: Date) -> ParsedTransaction {
         let lower = transcript.lowercased()
         var hasExplicitDate = false
@@ -96,16 +78,6 @@ final class VoiceParser {
         result.confidence.overall = active.isEmpty ? 0.3 : Confidence.average(active)
 
         return result
-    }
-
-    func parseWithFallback(_ transcript: String, today: Date) async -> ParsedTransaction {
-        let result = parse(transcript, today: today)
-        guard let fallback = llmFallback,
-              result.confidence.overall < confidenceThreshold
-        else {
-            return result
-        }
-        return await fallback.refine(transcript: transcript, partial: result)
     }
 
     // MARK: - Amount extraction

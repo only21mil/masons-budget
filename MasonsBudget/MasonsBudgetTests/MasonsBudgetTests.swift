@@ -9,9 +9,9 @@ final class MasonsBudgetTests: XCTestCase {
 
     func testAppThemeColorsExist() {
         XCTAssertEqual(ColorTokens.dark.accent, Color(hex: 0xF7931A))
-        XCTAssertEqual(ColorTokens.dark.bg, Color(hex: 0x0B0907))
+        XCTAssertEqual(ColorTokens.dark.bg, Color(hex: 0x050505))
         XCTAssertEqual(ColorTokens.dark.surface, Color(hex: 0x15120E))
-        XCTAssertEqual(ColorTokens.dark.text, Color(hex: 0xF4ECD8))
+        XCTAssertEqual(ColorTokens.dark.text, Color(hex: 0xF5F2EA))
 
         XCTAssertEqual(ColorTokens.light.accent, Color(hex: 0xF7931A))
         XCTAssertEqual(ColorTokens.light.bg, Color(hex: 0xFAF8F4))
@@ -30,6 +30,9 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertTrue(MacNav.moneyItems.contains(.activity))
         XCTAssertTrue(MacNav.moneyItems.contains(.netWorth))
         XCTAssertTrue(MacNav.taskItems.contains(.projects))
+        XCTAssertEqual(MacNav.toolItems, [.syncSetup, .export])
+        XCTAssertEqual(MacNav.syncSetup.label, "Sync Setup")
+        XCTAssertFalse(MacNav.syncSetup.icon.isEmpty)
     }
 
     func testColorHexInit() {
@@ -228,84 +231,6 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertEqual(cat.name, "Groceries")
         XCTAssertEqual(cat.sortOrder, 0)
         XCTAssertFalse(cat.isIncome)
-    }
-
-    func testBudgetNotificationsFilterTransactionsByFamilyMember() {
-        let category = BudgetCategory(
-            name: "Gaming",
-            icon: "gamecontroller.fill",
-            monthlyBudget: 100,
-            owner: .mason,
-        )
-        let masonTransaction = Transaction(
-            id: "tx-mason-gaming",
-            date: Date(),
-            merchant: "Game Store",
-            amount: 90,
-            category: "Gaming",
-            owner: .mason,
-            createdBy: "mason",
-        )
-        let victorTransaction = Transaction(
-            id: "tx-victor-gaming",
-            date: Date(),
-            merchant: "Console Store",
-            amount: 90,
-            category: "Gaming",
-            owner: .victor,
-            createdBy: "victor",
-        )
-
-        let alerts = BudgetNotificationManager.shared.budgetAlerts(
-            categories: [category],
-            transactions: [masonTransaction, victorTransaction],
-            member: .mason,
-        )
-
-        XCTAssertEqual(alerts.count, 1)
-        XCTAssertEqual(alerts.first?.title, "Gaming Almost at Limit")
-    }
-
-    func testBudgetNotificationsUseNarrowScopeAndCanonicalSpend() {
-        let adultCategory = BudgetCategory(
-            name: "Gaming",
-            icon: "gamecontroller.fill",
-            monthlyBudget: 100,
-            owner: .victor,
-        )
-        let childCategory = BudgetCategory(
-            name: "Mason:Gaming",
-            icon: "gamecontroller.fill",
-            monthlyBudget: 50,
-            owner: .mason,
-        )
-        let adultSpend = Transaction(
-            id: "tx-victor-positive-spend",
-            date: Date(),
-            merchant: "Console Store",
-            amount: 90,
-            category: "Gaming",
-            owner: .victor,
-            createdBy: "victor",
-        )
-        let childSpend = Transaction(
-            id: "tx-mason-positive-spend",
-            date: Date(),
-            merchant: "Game Store",
-            amount: 60,
-            category: "Gaming",
-            owner: .mason,
-            createdBy: "mason",
-        )
-
-        let alerts = BudgetNotificationManager.shared.budgetAlerts(
-            categories: [adultCategory, childCategory],
-            transactions: [adultSpend, childSpend],
-            member: .victor,
-        )
-
-        XCTAssertEqual(alerts.count, 1)
-        XCTAssertEqual(alerts.first?.title, "Gaming Almost at Limit")
     }
 
     func testTransactionsExportUsesWideRecordVisibility() {

@@ -23,20 +23,26 @@ class VaultApplication : Application() {
         VaultDatabase.create(this)
     }
 
+    private val convexConfigLock = Any()
+
     private val storedConvexConfigSource: SecureConvexConfigSource by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         SecureConvexConfigSource(this)
+    }
+
+    private val bakedConvexConfig: ConvexConfig by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        buildTimeConvexConfig(BuildConfig.CONVEX_READ_TOKEN)
     }
 
     /**
      * A valid manually entered credential wins across restarts. The baked debug
      * credential remains an in-memory seed for a fresh install or unusable
-     * encrypted state; it is never copied into storage.
+     * encrypted state; it is never copied into storage. A stored credential
+     * keeps that precedence only until Convex rejects it.
      */
     val convexConfigSource: MutableConvexConfigSource by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        val buildTime = buildTimeConvexConfig(BuildConfig.CONVEX_READ_TOKEN)
         MutableConvexConfigSource(
             initial = initialConvexConfig(
-                buildTime = buildTime,
+                buildTime = bakedConvexConfig,
                 stored = storedConvexConfigSource.current(),
             ),
         )
@@ -46,6 +52,8 @@ class VaultApplication : Application() {
         CachedRowDataSource(
             remote = RowQueryRepositories.convex(convexConfigSource),
             dao = database.cacheDao(),
+            configSource = convexConfigSource,
+            onUnauthorized = ::recoverRejectedConvexConfig,
         )
     }
 
@@ -72,9 +80,21 @@ class VaultApplication : Application() {
                 readToken = readToken,
                 remoteReadEnabled = true,
             )
-        storedConvexConfigSource.update(next)
-        convexConfigSource.update(next)
+        synchronized(convexConfigLock) {
+            storedConvexConfigSource.update(next)
+            convexConfigSource.update(next)
+        }
     }
+
+    private fun recoverRejectedConvexConfig(rejected: ConvexConfig): Boolean =
+        synchronized(convexConfigLock) {
+            recoverRejectedStoredConvexConfig(
+                rejected = rejected,
+                stored = storedConvexConfigSource,
+                effective = convexConfigSource,
+                fallback = bakedConvexConfig,
+            )
+        }
 }
 
 // Public routing configuration, not a credential.
@@ -89,6 +109,43 @@ internal fun initialConvexConfig(
     } else {
         buildTime
     }
+
+/**
+ * Stops a server-rejected stored credential from winning startup precedence.
+ *
+ * The compare-and-clear protects a newer manual entry from a late response to
+ * an older request. A blank release-build fallback deliberately leaves remote
+ * reads disabled after the rejected stored credential is removed.
+ */
+internal fun recoverRejectedStoredConvexConfig(
+    rejected: ConvexConfig,
+    stored: SecureConvexConfigSource,
+    effective: MutableConvexConfigSource,
+    fallback: ConvexConfig,
+): Boolean {
+    if (stored.clearIfCurrent(rejected)) {
+        val next =
+            if (fallback.hasSameCredentialAs(rejected)) {
+                ConvexConfig()
+            } else {
+                fallback
+            }
+        effective.update(next)
+        return next.allowsRemoteRead
+    }
+
+    if (!stored.current().allowsRemoteRead && effective.current().hasSameCredentialAs(rejected)) {
+        // The in-memory baked fallback was itself rejected. Disable it so the
+        // next refresh cannot keep sending a credential known to be invalid.
+        effective.update(ConvexConfig())
+    }
+    return false
+}
+
+private fun ConvexConfig.hasSameCredentialAs(other: ConvexConfig): Boolean =
+    deploymentUrl == other.deploymentUrl &&
+        readTokenOrNull() == other.readTokenOrNull() &&
+        remoteReadEnabled == other.remoteReadEnabled
 
 /**
  * Turns the debug BuildConfig field into a fail-closed runtime configuration.
