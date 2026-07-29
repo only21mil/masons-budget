@@ -44,6 +44,11 @@ class ConvexMutationTest {
                     asOf = "2026-07-29",
                 ),
             ),
+            ConvexMutation.UpsertBudgetCategory(
+                viewer = FamilyMember.RACHEL,
+                month = "2026-07",
+                category = BudgetCategoryInput("Groceries", 97_500L),
+            ),
         )
         val expectedPaths = listOf(
             "tables:upsertTransaction",
@@ -51,6 +56,7 @@ class ConvexMutationTest {
             "tables:deleteTodo",
             "tables:upsertBtcBuy",
             "tables:upsertBtcAccount",
+            "tables:upsertBudgetCategory",
         )
 
         mutations.zip(expectedPaths).forEach { (mutation, expectedPath) ->
@@ -138,6 +144,29 @@ class ConvexMutationTest {
         assertTagged(buy, "sats", "AQAAAAAAAAA=")
         assertTagged(buy, "priceUsdCents", "//////////8=")
         assertTagged(buy, "usdCents", "AAAAAAAAAIA=")
+    }
+
+    @Test
+    fun `budget category keeps viewer month and exact cents on the wire`() {
+        val poster = RecordingPoster(success())
+
+        runBlocking {
+            client(poster).mutate(
+                ConvexMutation.UpsertBudgetCategory(
+                    viewer = FamilyMember.RACHEL,
+                    month = "2026-07",
+                    category = BudgetCategoryInput("Groceries", 97_501L, icon = "cart"),
+                ),
+            )
+        }
+
+        val args = sentArgs(poster)
+        assertEquals("rachel", args["viewer"]?.jsonPrimitive?.content)
+        assertEquals("2026-07", args["month"]?.jsonPrimitive?.content)
+        val category = args["category"]!!.jsonObject
+        assertEquals("Groceries", category["name"]?.jsonPrimitive?.content)
+        assertEquals("cart", category["icon"]?.jsonPrimitive?.content)
+        assertTagged(category, "budgetCents", "3XwBAAAAAAA=")
     }
 
     @Test
