@@ -190,18 +190,36 @@ export function normalizeBudget(raw: Record<string, unknown>, owner: FamilyMembe
 
 export type BTCCustody = "exchange" | "self_custody"
 
+/**
+ * An optional USD valuation with evidence independent from the BTC balance.
+ *
+ * `cents` may legitimately be zero. A missing object means no supported USD
+ * value exists; callers must not infer availability from balance confidence.
+ */
+export interface FiatValuation {
+  readonly cents: Cents
+  readonly priceCents: Cents | null
+  readonly quotedAt: string | null
+  readonly source: string | null
+  readonly confidence: string | null
+}
+
 export interface BTCAccount {
   readonly key: string
   readonly label: string
   readonly custody: BTCCustody
   readonly sats: Sats
+  /** @deprecated Transition-only mirror. Render `fiatValuation`, never this field. */
   readonly fiat: Cents
+  readonly fiatValuation: FiatValuation | null
   readonly owner: FamilyMember
 }
 
 export interface BTCTotals {
   readonly sats: Sats
+  /** @deprecated Transition-only mirror. Render `fiatValuation`, never this field. */
   readonly fiat: Cents
+  readonly fiatValuation: FiatValuation | null
   readonly exchangeSats: Sats
   readonly selfCustodySats: Sats
 }
@@ -213,6 +231,9 @@ export interface BTCSnapshot {
   readonly totals: BTCTotals
   readonly source: string | null
   readonly basis: string | null
+  /** Confidence in the sats balance only. */
+  readonly balanceConfidence: string | null
+  /** @deprecated Transition-only alias for balanceConfidence. */
   readonly confidence: string | null
 }
 
@@ -249,29 +270,39 @@ export function normalizeBTCSnapshot(raw: Record<string, unknown>, owner: Family
   const accountsRaw = asRecord(raw.accounts) ?? {}
   const totals = asRecord(raw.totals) ?? {}
   const metadata = asRecord(raw.metadata)
+  const balanceConfidence = metadata ? optionalString(metadata.confidence) : null
   return {
     schemaVersion: Number(raw.schemaVersion ?? 0),
     asOf: String(raw.asOf ?? ""),
     accounts: Object.entries(accountsRaw).map(([key, value]) => {
       const entry = asRecord(value) ?? {}
+      const sats = parseBtcToSats(entry.btc)
+      const legacyFiat = parseCents(entry.fiat)
       return {
         key,
         label: String(entry.label ?? key),
         custody: entry.custody === "self_custody" ? "self_custody" : "exchange",
-        sats: parseBtcToSats(entry.btc),
-        fiat: parseCents(entry.fiat),
+        sats,
+        fiat: legacyFiat,
+        fiatValuation: normalizeFiatValuation(entry, sats, legacyFiat),
         owner,
       }
     }),
     totals: {
       sats: parseBtcToSats(totals.btc),
       fiat: parseCents(totals.fiat),
+      fiatValuation: normalizeFiatValuation(
+        totals,
+        parseBtcToSats(totals.btc),
+        parseCents(totals.fiat),
+      ),
       exchangeSats: parseBtcToSats(totals.exchange_btc),
       selfCustodySats: parseBtcToSats(totals.self_custody_btc),
     },
     source: metadata ? optionalString(metadata.source) : null,
     basis: metadata ? optionalString(metadata.basis) : null,
-    confidence: metadata ? optionalString(metadata.confidence) : null,
+    balanceConfidence,
+    confidence: balanceConfidence,
   }
 }
 
@@ -366,6 +397,42 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 function asArray(value: unknown): Record<string, unknown>[] {
   if (!Array.isArray(value)) return []
   return value.filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
+}
+
+function normalizeFiatValuation(
+  container: Record<string, unknown>,
+  sats: Sats,
+  legacyFiat: Cents,
+): FiatValuation | null {
+  if (Object.hasOwn(container, "fiatValuation")) {
+    const valuation = asRecord(container.fiatValuation)
+    if (!valuation || valuation.cents === undefined || valuation.cents === null) return null
+    return {
+      cents: BigInt(String(valuation.cents)),
+      priceCents: optionalIntegerMinorUnits(valuation.priceCents),
+      quotedAt: optionalString(valuation.quotedAt),
+      source: optionalString(valuation.source),
+      confidence: optionalString(valuation.confidence),
+    }
+  }
+
+  // Conservative compatibility for legacy blobs with no discriminator:
+  // positive sats plus stored zero has no valuation evidence. Zero sats is a
+  // legitimate zero, and positive legacy fiat remains available with unknown
+  // provenance.
+  if (sats > 0n && legacyFiat === 0n) return null
+  return {
+    cents: legacyFiat,
+    priceCents: null,
+    quotedAt: null,
+    source: null,
+    confidence: null,
+  }
+}
+
+function optionalIntegerMinorUnits(value: unknown): Cents | null {
+  if (value === null || value === undefined || value === "") return null
+  return BigInt(String(value))
 }
 
 // ── Month scoping ───────────────────────────────────────────────────────────
