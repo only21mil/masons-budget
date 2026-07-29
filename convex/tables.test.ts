@@ -34,6 +34,7 @@ import { PUBLIC_QUERY_INDEX_PLAN } from "./tables";
 const modules: Record<string, () => Promise<unknown>> = {
   "./_generated/server.ts": () => import("./generatedServer.test-stub"),
   "./dataFiles.ts": () => import("./dataFiles"),
+  "./dateValidation.ts": () => import("./dateValidation"),
   "./migrate.ts": () => import("./migrate"),
   "./tables.ts": () => import("./tables"),
   "./todoNormalize.ts": () => import("./todoNormalize"),
@@ -1933,6 +1934,40 @@ describe("row mutations", () => {
         },
       }),
     ).rejects.toThrow(/purchases are positive and refunds are negative for every owner/);
+  });
+
+  it("rejects malformed transaction and bill-pay dates before deriving month", async () => {
+    await expect(
+      t.mutation(fn.upsertTransaction, {
+        transaction: {
+          id: "malformed-date-transaction",
+          date: "2026-7-9",
+          merchant: "Invisible spend",
+          amountCents: 100n,
+          category: "Other",
+        },
+      }),
+    ).rejects.toThrow(/ISO calendar date/);
+
+    await expect(
+      t.mutation(fn.upsertBtcBillPay, {
+        billPay: {
+          id: "malformed-date-bill-pay",
+          date: "2026-7-9",
+          merchant: "Invisible bill pay",
+          category: "Other",
+          amountUsdCents: 100n,
+          btcSpentSats: 100n,
+          btcPriceCents: 100n,
+          feeUsdCents: 0n,
+        },
+      }),
+    ).rejects.toThrow(/ISO calendar date/);
+
+    expect((await t.query(fn.rowCounts, {}))).toMatchObject({
+      transactions: 0,
+      btcBillPays: 0,
+    });
   });
 
   it("upserts a btc buy and a btc account idempotently", async () => {

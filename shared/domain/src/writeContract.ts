@@ -14,6 +14,7 @@ import {
   isFamilyMember,
   transactionsDataFileName,
 } from "./family.ts"
+import { isIsoDate } from "./todo.ts"
 
 export const CONVEX_WRITE_FORMAT = "convex_encoded_json" as const
 export const UPSERT_TRANSACTION_PATH = "tables:upsertTransaction" as const
@@ -22,6 +23,7 @@ export type TransactionWriteKind = "spend" | "credit"
 
 export type WriteContractErrorCode =
   | "invalid-actor"
+  | "invalid-date"
   | "invalid-input"
   | "invalid-owner"
   | "write-not-authorized"
@@ -145,7 +147,7 @@ export function buildTransactionWriteRequest(
 
   const transaction: TransactionWriteWire = {
     id: requiredString(candidate.id, "id"),
-    date: requiredString(candidate.date, "date"),
+    date: requiredIsoDate(candidate.date),
     merchant: requiredString(candidate.merchant, "merchant"),
     amountCents: encodeConvexInt64(amountCents),
     kind,
@@ -207,6 +209,17 @@ function requiredString(value: unknown, field: string): string {
     throw new WriteContractError("invalid-input", `${field} must be a non-empty string`)
   }
   return value
+}
+
+function requiredIsoDate(value: unknown): string {
+  const date = requiredString(value, "date")
+  if (!isIsoDate(date)) {
+    throw new WriteContractError(
+      "invalid-date",
+      `date must be a real ISO calendar date (yyyy-MM-dd), got ${JSON.stringify(date)}`,
+    )
+  }
+  return date
 }
 
 function optionalWireString(

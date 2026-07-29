@@ -55,6 +55,7 @@ useIsolatedDeploymentEnv();
 const modules: Record<string, () => Promise<unknown>> = {
   "./_generated/server.ts": () => import("./generatedServer.test-stub"),
   "./dataFiles.ts": () => import("./dataFiles"),
+  "./dateValidation.ts": () => import("./dateValidation"),
   "./todoNormalize.ts": () => import("./todoNormalize"),
   "./writeback.ts": () => import("./writeback"),
 };
