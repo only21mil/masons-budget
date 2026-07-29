@@ -61,7 +61,6 @@ import com.sats21m.vogelvault.ui.theme.VaultTextDim
 import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -268,13 +267,6 @@ internal fun TodoScreen(
                             pendingDeletion = pending
                             expiryJob?.cancel()
                             scope.launch {
-                                val feedback = async {
-                                    snackbar.showSnackbar(
-                                        message = context.getString(R.string.todo_deleted, todo.title),
-                                        actionLabel = undoLabel,
-                                        duration = SnackbarDuration.Indefinite,
-                                    )
-                                }
                                 // The six-second window starts at the deletion, not at
                                 // whenever the server answers.
                                 expiryJob = launch {
@@ -284,34 +276,57 @@ internal fun TodoScreen(
                                         snackbar.currentSnackbarData?.dismiss()
                                     }
                                 }
-                                val deleteFailure = write(TodoWriteAction.DELETE) { it.delete(todo.id) }
-                                if (deleteFailure != null) {
-                                    localTodos = (localTodos + todo)
-                                        .distinctBy(TodoItem::id)
-                                        .sortedWith(TODO_ORDER)
-                                    pendingDeletion = null
-                                    expiryJob?.cancel()
-                                    snackbar.currentSnackbarData?.dismiss()
-                                    feedback.await()
-                                    report(deleteFailure)
-                                } else {
-                                    val outcome = feedback.await()
-                                    if (
-                                        outcome == SnackbarResult.ActionPerformed &&
-                                        pendingDeletion?.todo?.id == todo.id &&
-                                        pending.canUndo(System.currentTimeMillis())
-                                    ) {
-                                        expiryJob?.cancel()
-                                        val restoreFailure =
-                                            write(TodoWriteAction.RESTORE) { it.upsert(todo) }
-                                        if (restoreFailure == null) {
-                                            localTodos = (localTodos + todo)
-                                                .distinctBy(TodoItem::id)
-                                                .sortedWith(TODO_ORDER)
-                                        } else {
-                                            report(restoreFailure)
-                                        }
+                                when (
+                                    val feedback = awaitTodoDeleteFeedback(
+                                        delete = {
+                                            write(TodoWriteAction.DELETE) { it.delete(todo.id) }
+                                        },
+                                        deletedMessage =
+                                            context.getString(R.string.todo_deleted, todo.title),
+                                        showDeleted = { message ->
+                                            if (
+                                                pendingDeletion?.todo?.id == todo.id &&
+                                                pending.canUndo(System.currentTimeMillis())
+                                            ) {
+                                                snackbar.showSnackbar(
+                                                    message = message,
+                                                    actionLabel = undoLabel,
+                                                    duration = SnackbarDuration.Indefinite,
+                                                )
+                                            } else {
+                                                SnackbarResult.Dismissed
+                                            }
+                                        },
+                                    )
+                                ) {
+                                    is TodoDeleteFeedback.Failed -> {
+                                        localTodos = (localTodos + todo)
+                                            .distinctBy(TodoItem::id)
+                                            .sortedWith(TODO_ORDER)
                                         pendingDeletion = null
+                                        expiryJob?.cancel()
+                                        snackbar.currentSnackbarData?.dismiss()
+                                        report(feedback.message)
+                                    }
+
+                                    is TodoDeleteFeedback.Deleted -> {
+                                        if (
+                                            feedback.snackbarResult == SnackbarResult.ActionPerformed &&
+                                            pendingDeletion?.todo?.id == todo.id &&
+                                            pending.canUndo(System.currentTimeMillis())
+                                        ) {
+                                            expiryJob?.cancel()
+                                            val restoreFailure =
+                                                write(TodoWriteAction.RESTORE) { it.upsert(todo) }
+                                            if (restoreFailure == null) {
+                                                localTodos = (localTodos + todo)
+                                                    .distinctBy(TodoItem::id)
+                                                    .sortedWith(TODO_ORDER)
+                                            } else {
+                                                report(restoreFailure)
+                                            }
+                                            pendingDeletion = null
+                                        }
                                     }
                                 }
                                 busyIds = busyIds - todo.id

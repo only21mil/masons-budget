@@ -5,9 +5,12 @@ import com.sats21m.vogelvault.data.ConvexValue
 import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
@@ -78,6 +81,28 @@ class TodoWriteOutcomeTest {
             unavailable.none { it in convexMessages },
             "a missing transport must not be mistaken for a Convex answer",
         )
+    }
+
+    @Test
+    fun `a failed delete never publishes the deleted success message`() = runBlocking {
+        val deleted = "Deleted \"Pay electric bill\""
+        val published = mutableListOf<String>()
+        val failure = assertNotNull(
+            todoWriteFailureMessage(TodoWriteAction.DELETE, ConvexResult.Failed("http 500")),
+        )
+
+        val feedback = awaitTodoDeleteFeedback(
+            delete = { failure },
+            deletedMessage = deleted,
+            showDeleted = { message ->
+                published += message
+                Unit
+            },
+        )
+
+        assertIs<TodoDeleteFeedback.Failed>(feedback)
+        assertEquals(failure, feedback.message)
+        assertFalse(deleted in published, "failed delete published optimistic success: $published")
     }
 
     @Test

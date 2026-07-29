@@ -65,6 +65,31 @@ internal fun todoWriteFailureMessage(
 internal fun todoWriteUnavailableMessage(action: TodoWriteAction): String =
     "${action.summary}: this build has no write transport"
 
+internal sealed interface TodoDeleteFeedback<out T> {
+    data class Deleted<T>(val snackbarResult: T) : TodoDeleteFeedback<T>
+    data class Failed(val message: String) : TodoDeleteFeedback<Nothing>
+}
+
+/**
+ * Publishes delete success only after the mutation has returned Ok.
+ *
+ * [delete] returns null exclusively for ConvexResult.Ok. Keeping the snackbar
+ * callback behind that result prevents an eventual failure from first reading
+ * as a successful deletion.
+ */
+internal suspend fun <T> awaitTodoDeleteFeedback(
+    delete: suspend () -> String?,
+    deletedMessage: String,
+    showDeleted: suspend (String) -> T,
+): TodoDeleteFeedback<T> {
+    val failure = delete()
+    return if (failure == null) {
+        TodoDeleteFeedback.Deleted(showDeleted(deletedMessage))
+    } else {
+        TodoDeleteFeedback.Failed(failure)
+    }
+}
+
 /** Why storing the write credential failed, one distinct cause at a time. */
 internal fun credentialSaveFailureMessage(error: Throwable): String = when (error) {
     is IllegalArgumentException -> "Enter the sync credential before saving"
