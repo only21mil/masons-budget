@@ -231,12 +231,6 @@ fun ScreenHost(
             balance = collections.netWorthBalance,
         )
     }
-    // isDueBy is the contract's own open-and-due rule, not a re-reading of the
-    // done/due fields here. TodayLogic derives the date from the injected clock.
-    val dueTodos = remember(state.now, profile, todosInput) {
-        todosDueToday(state)
-    }
-
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(VaultSpace.md),
@@ -263,7 +257,7 @@ fun ScreenHost(
                 Destination.BUDGET -> budget(state, months, budgetSpend) { picked = it }
                 Destination.BITCOIN -> bitcoin(state, bitcoinProjection, displayUnit)
                 Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
-                Destination.TODAY -> today(state, dueTodos)
+                Destination.TODAY -> item { TaskListsScreen(state, todosInput) }
                 Destination.FAMILY -> family(state)
                 Destination.SETTINGS -> settings(state, onEnableRemoteRows)
             }
@@ -290,7 +284,7 @@ private fun ScreenHeader(
         Destination.BUDGET -> state.data.budget.value?.let { monthLabel(budgetMonth ?: it.month) } ?: "No budget"
         Destination.BITCOIN -> "Stack and custody"
         Destination.NET_WORTH -> "Household for adults; self only for children"
-        Destination.TODAY -> "Due today or overdue"
+        Destination.TODAY -> "Projects, areas and smart lists"
         Destination.FAMILY -> "Who can see what"
         Destination.SETTINGS -> "Runtime and boundaries"
     }

@@ -19,13 +19,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.CurrencyBitcoin
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -85,7 +85,7 @@ enum class Destination(
     BUDGET("Budget", Icons.Filled.Payments),
     BITCOIN("Bitcoin", Icons.Filled.CurrencyBitcoin),
     NET_WORTH("Net Worth", Icons.Filled.AccountBalance),
-    TODAY("Today", Icons.Filled.WbSunny),
+    TODAY("Tasks", Icons.Filled.Checklist),
     FAMILY("Family", Icons.Filled.People),
     SETTINGS("Settings", Icons.Filled.Settings);
 

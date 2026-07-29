@@ -34,4 +34,19 @@
     <string name="refresh_unavailable">Refresh unavailable while live reads are disabled</string>
     <string name="refresh_failed_title">Refresh failed</string>
     <string name="refresh_failed_detail">Live reads did not complete. Check the connection and read-token settings, then try again.</string>
+    <string name="tasks_title">Tasks</string>
+    <string name="tasks_inbox">Inbox</string>
+    <string name="tasks_today">Today</string>
+    <string name="tasks_upcoming">Upcoming</string>
+    <string name="tasks_flagged">Flagged</string>
+    <string name="tasks_this_week">This week</string>
+    <string name="tasks_long_term">Long term</string>
+    <string name="tasks_projects">Projects</string>
+    <string name="tasks_areas">Areas</string>
+    <string name="tasks_no_projects">Tag a task with a project and it will show up here.</string>
+    <string name="tasks_no_areas">Tag a task with an area and it will show up here.</string>
+    <string name="tasks_open_group">Open %1$s</string>
+    <string name="tasks_back">Back to all task lists</string>
+    <string name="tasks_all_lists">All task lists</string>
+    <string name="tasks_nothing_here">Nothing here.</string>
 </resources>
