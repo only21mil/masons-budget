@@ -77,6 +77,7 @@ struct InlineAddTaskBar: View {
         }
     }
 
+    @MainActor
     private func addTask() {
         let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }

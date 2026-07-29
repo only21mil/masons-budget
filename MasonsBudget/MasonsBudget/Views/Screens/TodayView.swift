@@ -184,7 +184,7 @@ struct TodayView: View {
 
     /// The user-visible report is `ContentView`'s sync banner, which now renders
     /// the cause. This log line names it for diagnosis.
-    @MainActor
+    @MainActor @Sendable
     private static func reportTodoWriteback(_ result: ConvexWriteResult) {
         guard !result.isOk else { return }
         let cause = result.userMessage(operation: "Save todo") ?? "unknown cause"
