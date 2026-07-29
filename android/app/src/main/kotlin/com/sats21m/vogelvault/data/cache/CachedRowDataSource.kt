@@ -6,6 +6,8 @@ import com.sats21m.vogelvault.data.BtcBalanceDocumentRow
 import com.sats21m.vogelvault.data.BtcSnapshotMetadataRow
 import com.sats21m.vogelvault.data.BudgetDocumentSnapshot
 import com.sats21m.vogelvault.data.BudgetQueryScope
+import com.sats21m.vogelvault.data.ConvexConfig
+import com.sats21m.vogelvault.data.ConvexConfigSource
 import com.sats21m.vogelvault.data.RowCounts
 import com.sats21m.vogelvault.data.IncomeRow
 import com.sats21m.vogelvault.data.RowQueryRepository
@@ -48,6 +50,8 @@ class CachedRowDataSource(
     private val remote: RowQueryRepository,
     private val dao: VaultCacheDao,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val configSource: ConvexConfigSource? = null,
+    private val onUnauthorized: (ConvexConfig) -> Boolean = { false },
 ) {
     fun observe(viewer: FamilyMember): Flow<CachedReadModel> {
         val transactionsKey = CacheQueryKeys.transactions(viewer.key)
@@ -97,18 +101,43 @@ class CachedRowDataSource(
     }
 
     suspend fun load(viewer: FamilyMember): LoadedReadModel {
+        val first = loadOnce(viewer)
+        return if (first.retryWithFallback) {
+            loadOnce(viewer).loaded
+        } else {
+            first.loaded
+        }
+    }
+
+    private suspend fun loadOnce(viewer: FamilyMember): LoadAttempt {
         val unauthorized = AtomicBoolean(false)
+        val rejectionHandled = AtomicBoolean(false)
+        val retryWithFallback = AtomicBoolean(false)
+        val requestConfig = configSource?.current()
         val cachingRepository =
             CachingRowQueryRepository(
                 remote = remote,
                 dao = dao,
                 clock = clock,
-                onUnauthorized = { unauthorized.set(true) },
+                onUnauthorized = {
+                    unauthorized.set(true)
+                    if (requestConfig != null && rejectionHandled.compareAndSet(false, true)) {
+                        retryWithFallback.set(onUnauthorized(requestConfig))
+                    }
+                },
             )
         val data = RowReadModelLoader(cachingRepository, clock).load(viewer)
-        return LoadedReadModel(data, unauthorized.get())
+        return LoadAttempt(
+            loaded = LoadedReadModel(data, unauthorized.get()),
+            retryWithFallback = retryWithFallback.get(),
+        )
     }
 }
+
+private data class LoadAttempt(
+    val loaded: LoadedReadModel,
+    val retryWithFallback: Boolean,
+)
 
 private class CachingRowQueryRepository(
     private val remote: RowQueryRepository,
@@ -197,7 +226,8 @@ private class CachingRowQueryRepository(
         viewer: FamilyMember,
         month: String?,
         limit: Int?,
-    ): ConvexResult<RowSnapshot<IncomeRow>> = remote.listIncome(viewer, month, limit)
+    ): ConvexResult<RowSnapshot<IncomeRow>> =
+        reportUnauthorized(remote.listIncome(viewer, month, limit))
 
     override suspend fun listBtcBuys(
         viewer: FamilyMember,
@@ -283,30 +313,37 @@ private class CachingRowQueryRepository(
         month: String?,
         limit: Int?,
     ): ConvexResult<RowSnapshot<BtcBillPayRow>> =
-        remote.listBtcBillPays(viewer, scope, month, limit)
+        reportUnauthorized(remote.listBtcBillPays(viewer, scope, month, limit))
 
     override suspend fun getBudgetDocument(
         viewer: FamilyMember,
         scope: BudgetQueryScope,
-    ): ConvexResult<BudgetDocumentSnapshot> = remote.getBudgetDocument(viewer, scope)
+    ): ConvexResult<BudgetDocumentSnapshot> =
+        reportUnauthorized(remote.getBudgetDocument(viewer, scope))
 
     override suspend fun getBtcSnapshotMetadata(
         viewer: FamilyMember,
         scope: RowVisibilityScope,
     ): ConvexResult<RowSnapshot<BtcSnapshotMetadataRow>> =
-        remote.getBtcSnapshotMetadata(viewer, scope)
+        reportUnauthorized(remote.getBtcSnapshotMetadata(viewer, scope))
 
     override suspend fun listBtcBalanceDocuments(
         viewer: FamilyMember,
         scope: RowVisibilityScope,
     ): ConvexResult<RowSnapshot<BtcBalanceDocumentRow>> =
-        remote.listBtcBalanceDocuments(viewer, scope)
+        reportUnauthorized(remote.listBtcBalanceDocuments(viewer, scope))
 
-    override suspend fun rowCounts(): ConvexResult<RowCounts> = remote.rowCounts()
+    override suspend fun rowCounts(): ConvexResult<RowCounts> =
+        reportUnauthorized(remote.rowCounts())
 
     private suspend fun markUnauthorized(queryKey: String) {
         onUnauthorized()
         dao.markUnauthorized(queryKey, clock())
+    }
+
+    private fun <T> reportUnauthorized(result: ConvexResult<T>): ConvexResult<T> {
+        if (result === ConvexResult.Unauthorized) onUnauthorized()
+        return result
     }
 }
 
