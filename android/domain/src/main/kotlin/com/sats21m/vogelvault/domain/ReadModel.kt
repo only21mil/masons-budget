@@ -231,6 +231,13 @@ data class TodoItem(
     val due: String? = null,
     val flagged: Boolean = false,
     override val owner: FamilyMember,
+    val lane: String? = null,
+    val notes: String? = null,
+    val priority: Long? = null,
+    val createdAt: String? = null,
+    val updatedAt: String? = null,
+    val completedAt: String? = null,
+    val updatedAtMs: Long = 0L,
 ) : Owned
 
 /**

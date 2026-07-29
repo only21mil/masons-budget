@@ -283,6 +283,13 @@ internal data class PublicTodoDto(
         due = due,
         flagged = flagged,
         owner = owner,
+        lane = lane,
+        notes = notes,
+        priority = priority,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+        completedAt = completedAt,
+        updatedAtMs = updatedAtMs,
     )
 
     companion object {
