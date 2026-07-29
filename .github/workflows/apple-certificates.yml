@@ -1,0 +1,93 @@
+name: Apple certificates
+
+# Manual only. The App Store Connect credentials that can inspect or clear the
+# signing-certificate cap exist solely as Actions secrets, so the tool that uses
+# them has to run here rather than on a workstation.
+#
+# `list` is read-only and is the default. `revoke` requires explicit ids and the
+# script refuses anything that is not a development certificate.
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "list (read-only) or revoke"
+        required: true
+        default: list
+        type: choice
+        options: [list, revoke]
+      certificate_ids:
+        description: "Space-separated ids to revoke. Ignored for list."
+        required: false
+        type: string
+
+concurrency:
+  group: apple-certificates
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  certificates:
+    name: Inspect or clear Apple signing certificates
+    # ubuntu, not macOS: this is a REST call. macOS runners bill at 10x and the
+    # account has hit its Actions spending limit twice in one day.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install the JWT dependencies
+        run: pip install --quiet pyjwt cryptography
+
+      - name: Materialise the API key
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ASC_API_KEY_P8:-}" ]; then
+            echo "::error::ASC_API_KEY_P8 is not configured" >&2
+            exit 1
+          fi
+          # Written outside the workspace so a later step cannot commit or
+          # upload it by accident, and mode 600 so nothing else on the runner
+          # can read it.
+          KEY_PATH="$RUNNER_TEMP/asc_key.p8"
+          umask 177
+          printf '%s' "$ASC_API_KEY_P8" > "$KEY_PATH"
+          # A base64-wrapped secret is a common shape; accept either without
+          # ever printing the contents.
+          if ! grep -q 'BEGIN PRIVATE KEY' "$KEY_PATH"; then
+            if base64 -d < "$KEY_PATH" 2>/dev/null | grep -q 'BEGIN PRIVATE KEY'; then
+              base64 -d < "$KEY_PATH" > "$KEY_PATH.decoded"
+              mv "$KEY_PATH.decoded" "$KEY_PATH"
+              chmod 600 "$KEY_PATH"
+            else
+              echo "::error::ASC_API_KEY_P8 is neither a PEM private key nor base64 of one" >&2
+              exit 1
+            fi
+          fi
+          echo "ASC_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Run
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          COMMAND: ${{ inputs.command }}
+          CERTIFICATE_IDS: ${{ inputs.certificate_ids }}
+        run: |
+          set -euo pipefail
+          if [ "$COMMAND" = "list" ]; then
+            python3 .github/workflows/scripts/apple_certificates.py list
+          else
+            if [ -z "${CERTIFICATE_IDS// /}" ]; then
+              echo "::error::revoke requires certificate_ids; run list first" >&2
+              exit 1
+            fi
+            args=()
+            for id in $CERTIFICATE_IDS; do args+=(--id "$id"); done
+            python3 .github/workflows/scripts/apple_certificates.py revoke "${args[@]}"
+          fi
+
+      - name: Remove the key
+        if: always()
+        run: rm -f "${ASC_KEY_PATH:-$RUNNER_TEMP/asc_key.p8}"
