@@ -62,7 +62,9 @@ export const CONVEX_ROW_LIMITS = {
   maxStringLength: 16_384,
   cacheMs: 5_000,
   maxCachedRequests: 64,
-  maxInFlightRequests: 8,
+  // One renderer refresh fans out to nine independent row queries after
+  // rowCounts. Keep the guard large enough for that single trusted load.
+  maxInFlightRequests: 9,
 } as const
 
 const MEMBERS = ["victor", "rachel", "mason", "maddox"] as const
