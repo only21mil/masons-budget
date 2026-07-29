@@ -9,6 +9,7 @@
  */
 
 import type * as dataFiles from "../dataFiles.js";
+import type * as dateValidation from "../dateValidation.js";
 import type * as documentProjection from "../documentProjection.js";
 import type * as migrate from "../migrate.js";
 import type * as tables from "../tables.js";
@@ -23,6 +24,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   dataFiles: typeof dataFiles;
+  dateValidation: typeof dateValidation;
   documentProjection: typeof documentProjection;
   migrate: typeof migrate;
   tables: typeof tables;
