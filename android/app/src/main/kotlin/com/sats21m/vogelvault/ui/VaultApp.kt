@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.CircularProgressIndicator
@@ -85,6 +86,7 @@ enum class Destination(
     BUDGET("Budget", Icons.Filled.Payments),
     BITCOIN("Bitcoin", Icons.Filled.CurrencyBitcoin),
     NET_WORTH("Net Worth", Icons.Filled.AccountBalance),
+    RETIREMENT("Retirement", Icons.Filled.Savings),
     TODAY("Today", Icons.Filled.WbSunny),
     FAMILY("Family", Icons.Filled.People),
     SETTINGS("Settings", Icons.Filled.Settings);
