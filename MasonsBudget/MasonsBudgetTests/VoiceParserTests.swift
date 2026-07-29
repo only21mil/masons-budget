@@ -287,35 +287,4 @@ final class VoiceParserTests: XCTestCase {
         XCTAssertEqual(r.card, "Strike")
         XCTAssertEqual(r.note, "monthly mortgage")
     }
-
-    // MARK: - LLM fallback hook
-
-    func testNoOpFallback_PassesThrough() async {
-        let partial = ParsedTransaction(amount: 5, merchant: "X")
-        let refined = await NoOpLLMFallback().refine(transcript: "irrelevant", partial: partial)
-        XCTAssertEqual(refined, partial)
-    }
-
-    func testParseWithFallback_HighConfidenceSkipsFallback() async {
-        let recorder = RecordingFallback()
-        let p = VoiceParser(llmFallback: recorder, confidenceThreshold: 0.5)
-        _ = await p.parseWithFallback("$45 at Costco yesterday", today: today)
-        XCTAssertEqual(recorder.callCount, 0)
-    }
-
-    func testParseWithFallback_LowConfidenceTriggersFallback() async {
-        let recorder = RecordingFallback()
-        let p = VoiceParser(llmFallback: recorder, confidenceThreshold: 0.95)
-        _ = await p.parseWithFallback("spent some money", today: today)
-        XCTAssertEqual(recorder.callCount, 1)
-    }
-}
-
-/// Test double — counts how many times the fallback was invoked.
-private final class RecordingFallback: VoiceParserLLMFallback, @unchecked Sendable {
-    var callCount = 0
-    func refine(transcript _: String, partial: ParsedTransaction) async -> ParsedTransaction {
-        callCount += 1
-        return partial
-    }
 }

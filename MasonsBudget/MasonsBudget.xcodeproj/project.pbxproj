@@ -25,7 +25,6 @@
 		1287315587BFEF686848BA45 /* TaskSmartListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 859D4699AA8657478F0E4D21 /* TaskSmartListView.swift */; };
 		12A5E7048C0FED8784BDBD4C /* listTransactions.convex_encoded_json.json in Resources */ = {isa = PBXBuildFile; fileRef = E9C16AAB01C5D56B81A0DAA4 /* listTransactions.convex_encoded_json.json */; };
 		13554C2A3633B76D998FDCD7 /* CSVImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52815FF83DEA08F99F7B94B6 /* CSVImportService.swift */; };
-		136BCFFC782CCDFBB5ECA092 /* RecurringDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13B457058988A6C86FCA5978 /* RecurringDetector.swift */; };
 		13B46090FA129DE2F6714ADB /* AddTransactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BED9DCEAF24F0852B41BEDF2 /* AddTransactionView.swift */; };
 		14611BD57EFBBF83C6BBDA69 /* SyncEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F048D3DB36FA73A8D570960 /* SyncEvent.swift */; };
 		14C6AEEDC863470D493846FD /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DBCCD025DF53FB5AB826594 /* TasksView.swift */; };
@@ -38,7 +37,6 @@
 		1798FC8BF60D85845AD1C79D /* ProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E87F8471A5178129ADC32F6 /* ProjectsView.swift */; };
 		17BBEDB466265654289AAE51 /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BCFC0CB64EDE2474B2E5620 /* TransactionDetailView.swift */; };
 		1937D7FCF5D407C26B8C83EC /* Hairline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 598608F085B0A81286803F0F /* Hairline.swift */; };
-		1A66DF88BA4B309BA08D2EA9 /* BudgetNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7307B6F0A5546DBFB1FE332B /* BudgetNotificationManager.swift */; };
 		1DCAE04D1FD4D959FD8F4048 /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BCFC0CB64EDE2474B2E5620 /* TransactionDetailView.swift */; };
 		1F1C8AF4B264D3CD836DE6E4 /* CostBasisLot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 460FAFA4D544CE62A5974814 /* CostBasisLot.swift */; };
 		1FD655B5F5F84FD9B852D99B /* SearchMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2283F2AE36B94EF55B4AAD6 /* SearchMatcher.swift */; };
@@ -83,7 +81,6 @@
 		4965940A810E888490574351 /* listBtcBillPays.convex_encoded_json.json in Resources */ = {isa = PBXBuildFile; fileRef = 59FFF78C97F7D0BF875F4206 /* listBtcBillPays.convex_encoded_json.json */; };
 		4A07B5BA11595826A572BCD6 /* TransactionSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 570F3F5990719F8820C73D57 /* TransactionSource.swift */; };
 		4A58601D081D021F3B18B255 /* BTCAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC62602DF8D847C5671804D /* BTCAccount.swift */; };
-		4B346A59BD332EF252AF63A1 /* BudgetNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7307B6F0A5546DBFB1FE332B /* BudgetNotificationManager.swift */; };
 		4B43ABD83280EB7928ED2DE8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 69F495FB3EBA9A3F6B589C2E /* Assets.xcassets */; };
 		4BD1E0F73E843E2217A7FC04 /* TaskSmartListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 859D4699AA8657478F0E4D21 /* TaskSmartListView.swift */; };
 		4C8EAE9F329F12474404F004 /* FamilyProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05894A6118C6AC44E989181E /* FamilyProfile.swift */; };
@@ -113,7 +110,6 @@
 		617A5624E857EBB25E55CBA7 /* InlineAddTaskBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5514024FC5632566C2498B75 /* InlineAddTaskBar.swift */; };
 		61BFE7AE76584D8C349D32C1 /* RetirementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ADB184F47423CA415614B24 /* RetirementView.swift */; };
 		627817036F8B1B2C7497C8BB /* NetWorthSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF559B68DCF5C8C506B2A151 /* NetWorthSnapshot.swift */; };
-		64330EAE4BCAA813DD6F194A /* RecurringDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13B457058988A6C86FCA5978 /* RecurringDetector.swift */; };
 		6511CFB62F4D955953DFDF29 /* TaskUndoBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9217F015BEE5502E0937BDC3 /* TaskUndoBanner.swift */; };
 		66EB6E0D58B325B4F2FD532E /* CostBasisLot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 460FAFA4D544CE62A5974814 /* CostBasisLot.swift */; };
 		6700EF3793D4D70A6F67E0BC /* SharedEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97885C819FB926B04D0E8D3F /* SharedEnums.swift */; };
@@ -122,7 +118,6 @@
 		6D9F88BEA980C5F18C00E5D5 /* BTCAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC62602DF8D847C5671804D /* BTCAccount.swift */; };
 		6FCFC09A23B2D4FE242B0E9B /* TaskUndoBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9217F015BEE5502E0937BDC3 /* TaskUndoBanner.swift */; };
 		6FE8B184183F43327912A71A /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2EE11ADEBED01F399DA8F0F /* DashboardView.swift */; };
-		70B97A8C3F140C4A841E0D1D /* BudgetNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7307B6F0A5546DBFB1FE332B /* BudgetNotificationManager.swift */; };
 		713310A2FC852F3ED403DD16 /* AmountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EAD4E4602D4D4566CD78E35 /* AmountView.swift */; };
 		7278CE8F39F5AFB791DE48D4 /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BCFC0CB64EDE2474B2E5620 /* TransactionDetailView.swift */; };
 		727E7F9A70589881AA409AC7 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2EE11ADEBED01F399DA8F0F /* DashboardView.swift */; };
@@ -131,7 +126,6 @@
 		7429AC04E251756C88D32419 /* TaskUndoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B76057F6E5D01B646C6C3DE7 /* TaskUndoStore.swift */; };
 		7455ECEB00AC386FEC93935D /* AppWriteSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D424253F2EA585494807458 /* AppWriteSyncService.swift */; };
 		7563328AA8BADD5505402EE8 /* SyncEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F048D3DB36FA73A8D570960 /* SyncEvent.swift */; };
-		7605540B201A48941ED794B3 /* RecurringDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6B72C3A66D87A91EEF55223 /* RecurringDetectorTests.swift */; };
 		7726E5908E6D0685AF8573FC /* SyncStatusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D86340D4ABE8A55B4DA49FF6 /* SyncStatusStore.swift */; };
 		777A58FB2F9ED9243F50855A /* ProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E87F8471A5178129ADC32F6 /* ProjectsView.swift */; };
 		78CD410FBB0B0F30FC04C2B5 /* AreaTodoListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A36EDB41C72B5F230F05789 /* AreaTodoListView.swift */; };
@@ -231,7 +225,6 @@
 		E118CB2B87FCF5A38191F7A5 /* ConvexSyncServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8442D5C22B6167F76BFFBE9E /* ConvexSyncServiceTests.swift */; };
 		E2F8586BAC515B8742BA438A /* MonthlyBudgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B2D2A739D76D88CF2D981C6 /* MonthlyBudgetSnapshot.swift */; };
 		E47423E8CDB190F1BB982E95 /* MoreMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C4688B09BFCB16C26276040 /* MoreMenuView.swift */; };
-		E6167BE075D915EAACB5C1B8 /* RecurringDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13B457058988A6C86FCA5978 /* RecurringDetector.swift */; };
 		E678847B04562368D94CD18E /* MC2DTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 130D186945E2F17AE4A79132 /* MC2DTOs.swift */; };
 		E72C1516754CC4B60DCF93C6 /* SyncStatusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D86340D4ABE8A55B4DA49FF6 /* SyncStatusStore.swift */; };
 		E748DE87C77526CF1C9469D0 /* VoiceParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B1E681CE6C03C61153CAE59 /* VoiceParser.swift */; };
@@ -260,7 +253,6 @@
 		0DBCCD025DF53FB5AB826594 /* TasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksView.swift; sourceTree = "<group>"; };
 		0F3F8A436874CF43D7C27027 /* listBtcAccounts.convex_encoded_json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = listBtcAccounts.convex_encoded_json.json; sourceTree = "<group>"; };
 		130D186945E2F17AE4A79132 /* MC2DTOs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MC2DTOs.swift; sourceTree = "<group>"; };
-		13B457058988A6C86FCA5978 /* RecurringDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringDetector.swift; sourceTree = "<group>"; };
 		142594BDFC0E0FF626E0E4D7 /* CSVImportServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSVImportServiceTests.swift; sourceTree = "<group>"; };
 		1548F69DA102C9E89909A9D9 /* rowCounts.json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = rowCounts.json.json; sourceTree = "<group>"; };
 		196CEA0279F5A6BEA5F39E8F /* LegacyBlobCompatibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyBlobCompatibilityTests.swift; sourceTree = "<group>"; };
@@ -312,7 +304,6 @@
 		6D9D2114CBEC645F03E11CE8 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
 		6F123D957238EE653A6F6751 /* BudgetCategory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetCategory.swift; sourceTree = "<group>"; };
 		709F4C2338EDE5D2BBB8C9F8 /* UnitToggleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnitToggleView.swift; sourceTree = "<group>"; };
-		7307B6F0A5546DBFB1FE332B /* BudgetNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetNotificationManager.swift; sourceTree = "<group>"; };
 		74F59856EBCC3BB3C78D5958 /* listBtcBuys.json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = listBtcBuys.json.json; sourceTree = "<group>"; };
 		782A3D53AC3B913AC715D707 /* TodoProject.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodoProject.swift; sourceTree = "<group>"; };
 		7C88BCB850C5B37D433F37C2 /* rowCounts.convex_encoded_json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = rowCounts.convex_encoded_json.json; sourceTree = "<group>"; };
@@ -335,7 +326,6 @@
 		9FBD5FB3989AEA4A2A5A5B9A /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
 		A1BBFC0B4CB494B00C7FBF13 /* visibility-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "visibility-cases.json"; sourceTree = "<group>"; };
 		A4B3C65C1FD9F1E13141EE7C /* TaskDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetailView.swift; sourceTree = "<group>"; };
-		A6B72C3A66D87A91EEF55223 /* RecurringDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringDetectorTests.swift; sourceTree = "<group>"; };
 		AC71D565300376FE836CAA75 /* ConvexRowsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexRowsTests.swift; sourceTree = "<group>"; };
 		B2FE9738F0574D3031E44C26 /* ProjectTodoListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectTodoListView.swift; sourceTree = "<group>"; };
 		B6DC67CB4C872B77EB725922 /* ProfileSwitcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSwitcherView.swift; sourceTree = "<group>"; };
@@ -432,7 +422,6 @@
 				2AC58C7449FBDB08006CFC23 /* FamilyVisibilityTests.swift */,
 				196CEA0279F5A6BEA5F39E8F /* LegacyBlobCompatibilityTests.swift */,
 				EF5C5935A12805ECA579168B /* MasonsBudgetTests.swift */,
-				A6B72C3A66D87A91EEF55223 /* RecurringDetectorTests.swift */,
 				5B419D48E89A2C2DCD79A7F8 /* VoiceParserTests.swift */,
 			);
 			path = MasonsBudgetTests;
@@ -451,7 +440,6 @@
 			children = (
 				3D424253F2EA585494807458 /* AppWriteSyncService.swift */,
 				6D42E3A9B8292524595DB757 /* BTCPriceService.swift */,
-				7307B6F0A5546DBFB1FE332B /* BudgetNotificationManager.swift */,
 				F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */,
 				E4DF0247EF288DCF8C3F9782 /* ConvexDataReader.swift */,
 				49C3385DCCF03F3E6D6FE6C7 /* ConvexSyncService.swift */,
@@ -459,7 +447,6 @@
 				91E4D6A837EBFF6D4985DF22 /* LedgerMapper.swift */,
 				40F757710D47100DAE386F72 /* LegacyBlobDTOs.swift */,
 				130D186945E2F17AE4A79132 /* MC2DTOs.swift */,
-				13B457058988A6C86FCA5978 /* RecurringDetector.swift */,
 				E2283F2AE36B94EF55B4AAD6 /* SearchMatcher.swift */,
 				1F721A6FC17530024B35A0C6 /* StockPriceService.swift */,
 				D86340D4ABE8A55B4DA49FF6 /* SyncStatusStore.swift */,
@@ -773,7 +760,6 @@
 				B30351D759C3C58F53E15C32 /* BTCPriceService.swift in Sources */,
 				A14E8E51D94738A7CA25C9CB /* BitcoinIcons.swift in Sources */,
 				299ED7B254C76D1E92A0220D /* BudgetCategory.swift in Sources */,
-				1A66DF88BA4B309BA08D2EA9 /* BudgetNotificationManager.swift in Sources */,
 				7F206C7332A7AFA5BB962E49 /* BudgetView.swift in Sources */,
 				8DDC0B51C872A1BE1717A7F1 /* CSVImportService.swift in Sources */,
 				3D33AAE7E64E51E6A10F22EB /* CSVImportView.swift in Sources */,
@@ -805,7 +791,6 @@
 				22D2DCF2D99CB0EBD5F13623 /* ProfileSwitcherView.swift in Sources */,
 				52B443B199D5AC3640525B0A /* ProjectTodoListView.swift in Sources */,
 				A8842AB993A3B57408404D4E /* ProjectsView.swift in Sources */,
-				E6167BE075D915EAACB5C1B8 /* RecurringDetector.swift in Sources */,
 				8D117BFB9E780625C653B1CF /* RetirementView.swift in Sources */,
 				84C14555E924E91D3C73C55E /* ScreenHeader.swift in Sources */,
 				EFBB7BB8E76452640F44EF64 /* SearchMatcher.swift in Sources */,
@@ -850,7 +835,6 @@
 				42CC887EC2077D56C2F0AA2F /* BTCPriceService.swift in Sources */,
 				84680CBB7571265A670FF80F /* BitcoinIcons.swift in Sources */,
 				0B7AFCE74E5D43974F8AC1AE /* BudgetCategory.swift in Sources */,
-				4B346A59BD332EF252AF63A1 /* BudgetNotificationManager.swift in Sources */,
 				5C491764B10B9D634D9C8A32 /* BudgetView.swift in Sources */,
 				13554C2A3633B76D998FDCD7 /* CSVImportService.swift in Sources */,
 				A4BFB4132F896AF661537AAF /* CSVImportView.swift in Sources */,
@@ -882,7 +866,6 @@
 				8762E9AC6714420D2E8E38B8 /* ProfileSwitcherView.swift in Sources */,
 				2F829E91B66B1C0F4AB2B42F /* ProjectTodoListView.swift in Sources */,
 				777A58FB2F9ED9243F50855A /* ProjectsView.swift in Sources */,
-				64330EAE4BCAA813DD6F194A /* RecurringDetector.swift in Sources */,
 				B32D966284A56194CBB3AC16 /* RetirementView.swift in Sources */,
 				92289BEED97E0A6FA4B40D68 /* ScreenHeader.swift in Sources */,
 				C20B3F463C5014BE4D0BC278 /* SearchMatcher.swift in Sources */,
@@ -928,7 +911,6 @@
 				7D48872896D49FB898A12EC5 /* BitcoinIcons.swift in Sources */,
 				25D761D3D754B167202F23A7 /* BudgetCategory.swift in Sources */,
 				07D0AA232411368DDBE5A262 /* BudgetMonthScopingTests.swift in Sources */,
-				70B97A8C3F140C4A841E0D1D /* BudgetNotificationManager.swift in Sources */,
 				FF53E751B802F5EFB8382F76 /* BudgetView.swift in Sources */,
 				C077695E6F3899F7B2262410 /* CSVImportService.swift in Sources */,
 				A0E35125250CFD1858931070 /* CSVImportServiceTests.swift in Sources */,
@@ -967,8 +949,6 @@
 				B4EDB5E700BF7C5162C6804E /* ProfileSwitcherView.swift in Sources */,
 				51BEEF51F09DBEE974B679E0 /* ProjectTodoListView.swift in Sources */,
 				1798FC8BF60D85845AD1C79D /* ProjectsView.swift in Sources */,
-				136BCFFC782CCDFBB5ECA092 /* RecurringDetector.swift in Sources */,
-				7605540B201A48941ED794B3 /* RecurringDetectorTests.swift in Sources */,
 				61BFE7AE76584D8C349D32C1 /* RetirementView.swift in Sources */,
 				5EAA31651D7CB8DA2D1CA647 /* ScreenHeader.swift in Sources */,
 				1FD655B5F5F84FD9B852D99B /* SearchMatcher.swift in Sources */,

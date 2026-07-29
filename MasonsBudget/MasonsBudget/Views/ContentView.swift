@@ -391,6 +391,7 @@ struct ContentView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
+            .keyboardShortcut("n", modifiers: .command)
             .shadow(color: Color(hex: 0xF7931A).opacity(0.35), radius: 3, y: 2)
         }
 
