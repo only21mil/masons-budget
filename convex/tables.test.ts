@@ -2278,8 +2278,9 @@ describe("row mutations", () => {
     const survivor = rows.find(
       (r: { billPayId: string }) => r.billPayId === "hijack-bp",
     );
-    expect(survivor.owner).toBe("victor");
-    expect(survivor.amountUsdCents).toBe(18_655n);
+    expect(survivor).toBeDefined();
+    expect(survivor?.owner).toBe("victor");
+    expect(survivor?.amountUsdCents).toBe(18_655n);
   });
 
   it("refuses a BTC bill pay source outside the closed source catalogue", async () => {

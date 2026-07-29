@@ -160,11 +160,15 @@ enum AppWritebackConfig {
     static func save(baseURL: String, deviceID: String, deviceToken: String) {
         UserDefaults.standard.set(baseURL.trimmingCharacters(in: .whitespacesAndNewlines), forKey: baseURLKey)
         UserDefaults.standard.set(deviceID.trimmingCharacters(in: .whitespacesAndNewlines), forKey: deviceIDKey)
+        // A blank token must NOT leave the previous one in place. baseURL and
+        // deviceID above have already been overwritten, so keeping the old
+        // secret would pair this device's new host with the OLD host's
+        // credential and still report isConfigured == true — a failed pairing
+        // that looks like a successful one. Clear instead, so the state is
+        // honestly unconfigured and the user is asked to pair again.
         let trimmedDeviceToken = deviceToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedDeviceToken.isEmpty {
-            AppWritebackDeviceTokenStore.save(trimmedDeviceToken)
-            UserDefaults.standard.removeObject(forKey: deviceTokenKey)
-        }
+        AppWritebackDeviceTokenStore.save(trimmedDeviceToken)
+        UserDefaults.standard.removeObject(forKey: deviceTokenKey)
     }
 
     static func clear() {

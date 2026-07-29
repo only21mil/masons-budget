@@ -11,7 +11,7 @@ final class AppWritebackConfigTests: XCTestCase {
         super.tearDown()
     }
 
-    func testBlankDeviceTokenEntryPreservesStoredCredential() {
+    func testBlankDeviceTokenEntryClearsStoredCredential() {
         AppWritebackConfig.save(
             baseURL: "https://first.example",
             deviceID: "device-one",
@@ -24,10 +24,13 @@ final class AppWritebackConfigTests: XCTestCase {
             deviceToken: "   ",
         )
 
+        // baseURL and deviceID have already moved to the new host. Keeping the
+        // OLD host's token would pair them together and still report configured
+        // — a failed pairing wearing a success. Fail closed instead.
         XCTAssertEqual(AppWritebackConfig.baseURL?.absoluteString, "https://second.example")
         XCTAssertEqual(AppWritebackConfig.deviceID, "device-two")
-        XCTAssertTrue(AppWritebackConfig.hasDeviceToken)
-        XCTAssertEqual(AppWritebackConfig.deviceToken, "test-device-token")
+        XCTAssertFalse(AppWritebackConfig.hasDeviceToken)
+        XCTAssertFalse(AppWritebackConfig.isConfigured)
     }
 
     func testClearRemovesStoredCredentialAndIdentifiers() {
