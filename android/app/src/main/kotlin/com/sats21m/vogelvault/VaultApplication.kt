@@ -24,7 +24,7 @@ import java.io.IOException
  * Dependencies remain lazy so a disabled/unconfigured build never opens a
  * Convex socket on startup.
  */
-class VaultApplication : Application() {
+open class VaultApplication : Application() {
     val database: VaultDatabase by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         VaultDatabase.create(this)
     }
@@ -98,7 +98,7 @@ class VaultApplication : Application() {
     }
 
     /** Whether a write credential exists. The value itself never reaches the UI. */
-    internal fun hasConvexWriteCredential(): Boolean =
+    internal open fun hasConvexWriteCredential(): Boolean =
         synchronized(convexConfigLock) {
             storedConvexConfigSource.hasSyncToken()
         }
@@ -110,12 +110,27 @@ class VaultApplication : Application() {
      * which problem occurred: a blank entry, storage that refused the commit, or
      * a value that could not be read back after being written.
      */
-    internal fun saveConvexWriteCredential(token: String): Result<Unit> =
+    internal open fun saveConvexWriteCredential(token: String): Result<Unit> =
         synchronized(convexConfigLock) {
             runCatching {
                 storedConvexConfigSource.updateSyncToken(token)
                 check(storedConvexConfigSource.hasSyncToken()) {
                     "the stored write credential could not be read back"
+                }
+            }
+        }
+
+    /**
+     * Removes the write credential through the same process lock and accessor
+     * used by Save. Settings receives only the outcome and the postcondition;
+     * the stored value never crosses this boundary.
+     */
+    internal open fun removeConvexWriteCredential(): Result<Unit> =
+        synchronized(convexConfigLock) {
+            runCatching {
+                storedConvexConfigSource.clearSyncToken()
+                check(!storedConvexConfigSource.hasSyncToken()) {
+                    "the removed write credential was still readable"
                 }
             }
         }

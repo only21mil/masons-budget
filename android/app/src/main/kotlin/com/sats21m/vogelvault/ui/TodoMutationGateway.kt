@@ -73,6 +73,13 @@ internal fun credentialSaveFailureMessage(error: Throwable): String = when (erro
     else -> "The credential was not saved (${error.javaClass.simpleName})"
 }
 
+/** Why removing the write credential failed, without exposing stored content. */
+internal fun credentialRemovalFailureMessage(error: Throwable): String = when (error) {
+    is IOException -> "Encrypted storage refused to remove the credential"
+    is IllegalStateException -> "The credential was removed but remained readable"
+    else -> "The credential was not removed (${error.javaClass.simpleName})"
+}
+
 /**
  * Preserve every field Android received. Omitting metadata here would make a
  * title edit confidently erase priority, notes, lane, or timestamps.

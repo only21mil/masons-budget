@@ -1346,22 +1346,18 @@ private fun RemoteRowsConfiguration(onEnable: (String) -> Unit) {
 }
 
 @Composable
-private fun SyncTokenConfiguration() {
+internal fun SyncTokenConfiguration() {
     // Deliberately not saveable: the plaintext token must not enter saved
     // instance state. Submission immediately hands it to encrypted storage.
     var token by remember { mutableStateOf("") }
     val application =
         androidx.compose.ui.platform.LocalContext.current.applicationContext
             as? com.sats21m.vogelvault.VaultApplication
-    val storedConfigSource =
-        remember(application) {
-            application?.let { com.sats21m.vogelvault.data.SecureConvexConfigSource(it) }
-        }
-    var hasStoredToken by remember(storedConfigSource) {
-        mutableStateOf(storedConfigSource?.hasSyncToken() == true)
+    var hasStoredToken by remember(application) {
+        mutableStateOf(application?.hasConvexWriteCredential() == true)
     }
-    var saveFailed by remember { mutableStateOf(false) }
-    var removalFailed by remember { mutableStateOf(false) }
+    var saveFailure by remember { mutableStateOf<String?>(null) }
+    var removalFailure by remember { mutableStateOf<String?>(null) }
 
     Panel(stringResource(R.string.convex_sync_token_panel_title)) {
         Column(
@@ -1388,35 +1384,36 @@ private fun SyncTokenConfiguration() {
                 visualTransformation = PasswordVisualTransformation(),
             )
             Button(
-                enabled = token.isNotBlank() && storedConfigSource != null,
+                enabled = token.isNotBlank() && application != null,
                 onClick = {
-                    runCatching {
-                        checkNotNull(storedConfigSource).updateSyncToken(token)
-                    }.onSuccess {
-                        token = ""
-                        hasStoredToken = true
-                        saveFailed = false
-                        removalFailed = false
-                    }.onFailure {
-                        saveFailed = true
-                    }
+                    val app = checkNotNull(application)
+                    app
+                        .saveConvexWriteCredential(token)
+                        .onSuccess {
+                            token = ""
+                            hasStoredToken = app.hasConvexWriteCredential()
+                            saveFailure = null
+                            removalFailure = null
+                        }.onFailure {
+                            saveFailure = credentialSaveFailureMessage(it)
+                        }
                 },
             ) {
                 Text(stringResource(R.string.convex_sync_token_save))
             }
-            if (hasStoredToken && storedConfigSource != null) {
+            if (hasStoredToken && application != null) {
                 androidx.compose.material3.OutlinedButton(
                     onClick = {
-                        runCatching {
-                            clearSyncTokenConfiguration(storedConfigSource)
-                        }.onSuccess {
-                            token = ""
-                            hasStoredToken = false
-                            saveFailed = false
-                            removalFailed = false
-                        }.onFailure {
-                            removalFailed = true
-                        }
+                        application
+                            .removeConvexWriteCredential()
+                            .onSuccess {
+                                token = ""
+                                hasStoredToken = application.hasConvexWriteCredential()
+                                saveFailure = null
+                                removalFailure = null
+                            }.onFailure {
+                                removalFailure = credentialRemovalFailureMessage(it)
+                            }
                     },
                     border =
                         androidx.compose.foundation.BorderStroke(
@@ -1431,28 +1428,22 @@ private fun SyncTokenConfiguration() {
                     Text(stringResource(R.string.convex_sync_token_remove))
                 }
             }
-            if (saveFailed) {
+            saveFailure?.let {
                 Text(
-                    text = stringResource(R.string.convex_sync_token_save_failed),
+                    text = it,
                     color = VaultWarning,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            if (removalFailed) {
+            removalFailure?.let {
                 Text(
-                    text = stringResource(R.string.convex_sync_token_remove_failed),
+                    text = it,
                     color = VaultWarning,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
         }
     }
-}
-
-internal fun clearSyncTokenConfiguration(
-    stored: com.sats21m.vogelvault.data.SecureConvexConfigSource,
-) {
-    stored.clearSyncToken()
 }
 
 // ── shared ──────────────────────────────────────────────────────────────────
