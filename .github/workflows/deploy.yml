@@ -176,6 +176,9 @@ jobs:
             echo "::error::ASC_KEY_ID is required."
             exit 1
           fi
+          PROFILE_DIR="$HOME/Library/MobileDevice/Provisioning Profiles" \
+            bash .github/workflows/scripts/recover_stale_apple_release_artifacts.sh
+
           SIGNING_ROOT="$RUNNER_TEMP/vogel-vault-signing-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${PLATFORM}"
           RELEASE_ROOT="$RUNNER_TEMP/vogel-vault-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${PLATFORM}"
           KEYCHAIN_PATH="$SIGNING_ROOT/manual-signing.keychain-db"
@@ -184,7 +187,17 @@ jobs:
           ASC_KEY_PATH="$PRIVATE_KEYS_DIR/AuthKey_${ASC_KEY_ID}.p8"
           EXPORT_OPTIONS_PATH="$SIGNING_ROOT/ExportOptions-${PLATFORM}.plist"
 
+          if [ -e "$SIGNING_ROOT" ] || [ -L "$SIGNING_ROOT" ] ||
+            [ -e "$RELEASE_ROOT" ] || [ -L "$RELEASE_ROOT" ]; then
+            echo "::error::A current run-scoped release path already exists after stale cleanup."
+            exit 1
+          fi
           install -d -m 700 "$SIGNING_ROOT" "$PRIVATE_KEYS_DIR" "$RELEASE_ROOT"
+          printf '%s\n' "vogel-vault-release-state-v1" > "$SIGNING_ROOT/.vogel-vault-release-owner"
+          printf '%s\n' "vogel-vault-release-state-v1" > "$RELEASE_ROOT/.vogel-vault-release-owner"
+          chmod 600 \
+            "$SIGNING_ROOT/.vogel-vault-release-owner" \
+            "$RELEASE_ROOT/.vogel-vault-release-owner"
           security list-keychains -d user > "$ORIGINAL_KEYCHAINS_FILE"
           {
             echo "SIGNING_ROOT=$SIGNING_ROOT"
@@ -308,6 +321,7 @@ jobs:
             PROFILE_UUID="$PROFILE_UUID" \
             PROFILE_EXTENSION="$PROFILE_EXTENSION" \
             GITHUB_ENV="$GITHUB_ENV" \
+            RELEASE_STATE_DIR="$SIGNING_ROOT" \
             bash .github/workflows/scripts/install_provisioning_profile.sh
           echo "Validated and prepared the $PLATFORM manual-signing assets."
 

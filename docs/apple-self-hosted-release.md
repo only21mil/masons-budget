@@ -106,6 +106,15 @@ directories. If the UUID path already contains the identical profile, the run
 reuses and preserves it. If that path contains different bytes, signing fails
 closed rather than overwriting a persistent-host asset.
 
+At the start of the next release leg, the workflow also scans for interrupted
+prior runs. It recognizes an artifact only when its strict run/attempt/platform
+name and workflow ownership marker both match. A stale keychain is removed from
+the current search list without replacing or reordering unrelated entries. A
+profile is removed only when its recorded digest and either its creation marker
+or its still-linked staging inode prove that the interrupted run created it.
+Unmarked lookalikes and ownership mismatches are preserved for manual review.
+The same marker guard applies to stale release output directories.
+
 Never replace that cleanup with deletion of `~/private_keys` or the whole
 Provisioning Profiles directory. Those locations may contain unrelated assets
 on a persistent runner.
