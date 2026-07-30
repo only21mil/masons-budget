@@ -257,6 +257,47 @@ class CsvImportServiceTest {
     }
 
     @Test
+    fun `cash app persists asset amount when generic fiat amount appears first`() {
+        val imported = parse(
+            """
+            Date,Amount,Asset Amount,Fee,Notes
+            2026-05-01,50.00,0.000005,0,Cash App buy
+            """,
+            CsvImportSource.CASH_APP,
+        ).single()
+
+        assertEquals(500L, imported.sats)
+        assertEquals(50L, imported.amountUsdCents)
+
+        val prepared = service.prepareTransactions(
+            listOf(imported),
+            FamilyMember.VICTOR,
+        ).single()
+        assertEquals(50L, prepared.transaction.amountCents)
+        assertEquals("Imported from Cash App; 500 sats", prepared.transaction.note)
+    }
+
+    @Test
+    fun `custom import rejects amount columns that share its best available match`() {
+        val failure = assertFailsWith<CsvImportException.AmbiguousAmountColumns> {
+            parse(
+                """
+                date,Amount,Asset Amount,memo
+                2026-05-01,50.00,0.000005,Custom buy
+                """,
+                CsvImportSource.CUSTOM,
+            )
+        }
+
+        assertEquals(
+            "Multiple amount columns matched the same CSV preference: \"Amount\", " +
+                "\"Asset Amount\". Nothing was imported because the app cannot safely " +
+                "choose between financial columns",
+            failure.message,
+        )
+    }
+
+    @Test
     fun `quoted commas escaped quotes and line breaks stay in one memo`() {
         val row = parse(
             "date,amount,memo\n2026-05-01,500,\"Coffee, \"\"beans\"\"\nand more\"",
