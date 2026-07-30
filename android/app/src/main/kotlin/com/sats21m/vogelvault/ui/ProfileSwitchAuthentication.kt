@@ -81,9 +81,6 @@ internal class ProfileSwitchAuthenticationGate(
 ) {
     private var pending: ProfileSwitchRequest? = null
 
-    /** True while the prompt owns a switch that has not yet been authorized. */
-    val isAwaitingAuthentication: Boolean get() = pending != null
-
     fun authenticate(request: ProfileSwitchRequest) {
         onRefusalChanged(null)
         // FamilyMember.requiresAuthToSwitch says every switch is authenticated. A

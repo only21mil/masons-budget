@@ -9,6 +9,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -311,11 +312,10 @@ class ProfileSwitchAuthenticationTest {
         compose.waitForIdle()
     }
 
+    /** Reads the switcher control itself, not any name that happens to be on screen. */
     private fun assertProfileShown(member: FamilyMember) {
-        assertTrue(
-            compose.onAllNodesWithText(member.displayName).fetchSemanticsNodes().isNotEmpty(),
-            "${member.displayName} is not the profile on screen.",
-        )
+        compose.onNodeWithContentDescription(context.getString(R.string.profile_switcher_open))
+            .assertTextContains(member.displayName)
     }
 
     private fun assertRefusalShown(cause: ProfileSwitchRefusal) {
