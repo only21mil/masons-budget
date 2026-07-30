@@ -22,10 +22,14 @@ final class WriteFeedbackStore: ObservableObject {
     /// The last rejection cause, for views that branch rather than render.
     @Published private(set) var lastResult: ConvexWriteResult?
 
+    /// A local database rejection is separate from the remote result channel.
+    @Published private(set) var lastLocalFailure: LocalSaveFailure?
+
     func begin() {
         isSaving = true
         message = nil
         lastResult = nil
+        lastLocalFailure = nil
     }
 
     /// Records a local rejection that never reached the write seam.
@@ -33,6 +37,14 @@ final class WriteFeedbackStore: ObservableObject {
         isSaving = false
         message = text
         lastResult = nil
+        lastLocalFailure = nil
+    }
+
+    func failLocal(_ failure: LocalSaveFailure, operation: String) {
+        isSaving = false
+        message = failure.userMessage(operation: operation)
+        lastResult = nil
+        lastLocalFailure = failure
     }
 
     /// Records a write outcome. Returns true only when the write was accepted,
@@ -41,6 +53,7 @@ final class WriteFeedbackStore: ObservableObject {
     func finish(_ result: ConvexWriteResult, operation: String) -> Bool {
         isSaving = false
         lastResult = result
+        lastLocalFailure = nil
         message = result.userMessage(operation: operation)
         return result.isOk
     }
@@ -48,6 +61,7 @@ final class WriteFeedbackStore: ObservableObject {
     func clear() {
         message = nil
         lastResult = nil
+        lastLocalFailure = nil
     }
 }
 
@@ -63,16 +77,19 @@ final class WriteBatchTally: ObservableObject {
     /// The first rejection cause seen. Batches fail for one shared reason far
     /// more often than for N different ones.
     @Published private(set) var firstFailure: ConvexWriteResult?
+    /// A local batch save failure prevents every remote write from starting.
+    @Published private(set) var localFailure: LocalSaveFailure?
 
-    var failed: Int { completed - succeeded }
-    var isFinished: Bool { expected > 0 && completed >= expected }
-    var isRunning: Bool { expected > 0 && completed < expected }
+    var failed: Int { localFailure == nil ? completed - succeeded : expected }
+    var isFinished: Bool { expected > 0 && (localFailure != nil || completed >= expected) }
+    var isRunning: Bool { expected > 0 && localFailure == nil && completed < expected }
 
     func start(expected count: Int) {
         expected = count
         completed = 0
         succeeded = 0
         firstFailure = nil
+        localFailure = nil
     }
 
     func record(_ result: ConvexWriteResult) {
@@ -84,8 +101,18 @@ final class WriteBatchTally: ObservableObject {
         }
     }
 
+    func recordLocalFailure(_ failure: LocalSaveFailure) {
+        completed = expected
+        succeeded = 0
+        firstFailure = nil
+        localFailure = failure
+    }
+
     /// The user-visible summary, or nil when every write in the batch landed.
     func summary(operation: String) -> String? {
+        if let localFailure {
+            return localFailure.userMessage(operation: operation)
+        }
         guard failed > 0, let firstFailure else { return nil }
         let cause = firstFailure.userMessage(operation: operation) ?? "unknown cause"
         return "\(failed) of \(expected) did not sync — \(cause)"

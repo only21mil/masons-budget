@@ -444,13 +444,20 @@ struct AddTransactionView: View {
             createdBy: "app",
         )
         modelContext.insert(tx)
-        try? modelContext.save()
         amountValidationMessage = nil
         writeFeedback.begin()
-        // The sheet stays open until the write result arrives, and closes only on
-        // `.ok`. Dismissing first is what made every rejection invisible.
-        AppWriteSyncService.pushTransaction(tx, owner: activeMember) { [writeFeedback, dismiss] result in
-            if writeFeedback.finish(result, operation: "Transaction") { dismiss() }
+        LocalMutationSave.perform(
+            operation: "Transaction",
+            in: modelContext,
+            onFailure: { [writeFeedback] failure in
+                writeFeedback.failLocal(failure, operation: "Transaction")
+            },
+        ) {
+            // The sheet stays open until the write result arrives, and closes only
+            // on `.ok`. Dismissing first made every rejection invisible.
+            AppWriteSyncService.pushTransaction(tx, owner: activeMember) { [writeFeedback, dismiss] result in
+                if writeFeedback.finish(result, operation: "Transaction") { dismiss() }
+            }
         }
     }
 
@@ -491,11 +498,18 @@ struct AddTransactionView: View {
 
         modelContext.insert(buy)
         modelContext.insert(lot)
-        try? modelContext.save()
         amountValidationMessage = nil
         writeFeedback.begin()
-        AppWriteSyncService.pushBTCBuy(buy, owner: activeMember) { [writeFeedback, dismiss] result in
-            if writeFeedback.finish(result, operation: "Bitcoin buy") { dismiss() }
+        LocalMutationSave.perform(
+            operation: "Bitcoin buy",
+            in: modelContext,
+            onFailure: { [writeFeedback] failure in
+                writeFeedback.failLocal(failure, operation: "Bitcoin buy")
+            },
+        ) {
+            AppWriteSyncService.pushBTCBuy(buy, owner: activeMember) { [writeFeedback, dismiss] result in
+                if writeFeedback.finish(result, operation: "Bitcoin buy") { dismiss() }
+            }
         }
     }
 

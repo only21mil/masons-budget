@@ -65,8 +65,15 @@ enum AppWriteSyncService {
         owner: FamilyMember,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
+        deleteTransaction(id: transaction.id, owner: owner, onResult: onResult)
+    }
+
+    static func deleteTransaction(
+        id: String,
+        owner: FamilyMember,
+        onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
+    ) {
         let fileName = owner.transactionsDataFileName
-        let id = transaction.id
         deleteTransaction(id: id, from: fileName, onResult: onResult)
     }
 

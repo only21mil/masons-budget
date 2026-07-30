@@ -195,8 +195,11 @@ struct VoiceTransactionView: View {
             createdBy: "voice",
         )
         modelContext.insert(tx)
-        try? modelContext.save()
-        AppWriteSyncService.pushTransaction(tx, owner: activeMember)
+        guard LocalMutationSave.perform(operation: "Voice transaction", in: modelContext, remoteWrite: {
+            AppWriteSyncService.pushTransaction(tx, owner: activeMember)
+        }) else {
+            return
+        }
         transcriber.stop()
         dismiss()
     }

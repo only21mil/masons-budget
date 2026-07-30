@@ -258,7 +258,7 @@ struct CSVImportView: View {
                 .font(AppFont.iconXL)
                 .padding(.bottom, 4)
 
-            Text("\(importCount) transactions added")
+            Text(syncTally.localFailure == nil ? "\(importCount) transactions added" : "Import not saved")
                 .font(AppFont.headline)
                 .foregroundStyle(theme.text)
 
@@ -288,6 +288,7 @@ struct CSVImportView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             .padding(.top, 20)
+            .disabled(syncTally.isRunning)
         }
     }
 
@@ -323,16 +324,23 @@ struct CSVImportView: View {
         for tx in transactions {
             modelContext.insert(tx)
         }
-        try? modelContext.save()
         syncTally.start(expected: transactions.count)
         let owner = activeMember
-        for tx in transactions {
-            AppWriteSyncService.pushTransaction(tx, owner: owner) { [syncTally] result in
-                syncTally.record(result)
+        let saved = LocalMutationSave.perform(
+            operation: "CSV import",
+            in: modelContext,
+            onFailure: { [syncTally] failure in
+                syncTally.recordLocalFailure(failure)
+            },
+        ) {
+            for tx in transactions {
+                AppWriteSyncService.pushTransaction(tx, owner: owner) { [syncTally] result in
+                    syncTally.record(result)
+                }
             }
         }
 
-        importCount = transactions.count
+        importCount = saved ? transactions.count : 0
         isImporting = false
         step = .done
     }

@@ -166,10 +166,17 @@ struct CategoryDetailView: View {
             return
         }
         category.monthlyBudget = value
-        try? modelContext.save()
         writeFeedback.begin()
-        AppWriteSyncService.pushBudgetCategoryUpdate(category) { [writeFeedback] result in
-            writeFeedback.finish(result, operation: "Budget")
+        LocalMutationSave.perform(
+            operation: "Budget",
+            in: modelContext,
+            onFailure: { [writeFeedback] failure in
+                writeFeedback.failLocal(failure, operation: "Budget")
+            },
+        ) {
+            AppWriteSyncService.pushBudgetCategoryUpdate(category) { [writeFeedback] result in
+                writeFeedback.finish(result, operation: "Budget")
+            }
         }
     }
 

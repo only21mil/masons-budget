@@ -155,9 +155,13 @@ struct TransactionDetailView: View {
 
     private func deleteTransaction() {
         let owner = transaction.ownerMember
-        AppWriteSyncService.deleteTransaction(transaction, owner: owner)
+        let id = transaction.id
         modelContext.delete(transaction)
-        try? modelContext.save()
+        guard LocalMutationSave.perform(operation: "Delete transaction", in: modelContext, remoteWrite: {
+            AppWriteSyncService.deleteTransaction(id: id, owner: owner)
+        }) else {
+            return
+        }
         dismiss()
     }
 
@@ -174,8 +178,11 @@ struct TransactionDetailView: View {
         transaction.card = method
         transaction.note = note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : note
         transaction.date = date
-        try? modelContext.save()
-        AppWriteSyncService.pushTransaction(transaction, owner: transaction.ownerMember)
+        guard LocalMutationSave.perform(operation: "Transaction", in: modelContext, remoteWrite: {
+            AppWriteSyncService.pushTransaction(transaction, owner: transaction.ownerMember)
+        }) else {
+            return
+        }
         dismiss()
     }
 }

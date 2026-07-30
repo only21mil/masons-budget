@@ -163,13 +163,17 @@ struct TaskDetailView: View {
         todo.priority = priority
         todo.isFlagged = isFlagged
         todo.updatedAt = .now
-        try? modelContext.save()
-        AppWriteSyncService.pushTodo(todo)
+        guard LocalMutationSave.perform(operation: "Todo", in: modelContext, remoteWrite: {
+            AppWriteSyncService.pushTodo(todo)
+        }) else {
+            return
+        }
         dismiss()
     }
 
     private func deleteTask() {
-        TaskUndoStore.shared.delete(todo, in: modelContext)
-        dismiss()
+        if TaskUndoStore.shared.delete(todo, in: modelContext) {
+            dismiss()
+        }
     }
 }

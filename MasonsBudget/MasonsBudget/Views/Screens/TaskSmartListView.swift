@@ -228,16 +228,18 @@ struct TaskRowView: View {
         withAnimation(.easeOut(duration: 0.25)) {
             todo.isDone.toggle()
             todo.updatedAt = .now
-            try? modelContext.save()
-            AppWriteSyncService.setTodoCompletion(todo)
+            LocalMutationSave.perform(operation: "Todo completion", in: modelContext) {
+                AppWriteSyncService.setTodoCompletion(todo)
+            }
         }
     }
 
     private func toggleFlag() {
         todo.isFlagged.toggle()
         todo.updatedAt = .now
-        try? modelContext.save()
-        AppWriteSyncService.pushTodo(todo)
+        LocalMutationSave.perform(operation: "Todo flag", in: modelContext) {
+            AppWriteSyncService.pushTodo(todo)
+        }
     }
 
     private func deleteSelf() {

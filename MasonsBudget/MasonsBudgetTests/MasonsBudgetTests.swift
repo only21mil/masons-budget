@@ -226,6 +226,25 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertNil(store.lastResult)
     }
 
+    @MainActor
+    func testSyncStatusStorePreservesEarlierFailureWhenLaterWriteSucceedsLast() {
+        let store = SyncStatusStore()
+
+        store.begin("CSV transaction A")
+        store.begin("CSV transaction B")
+        store.complete("CSV transaction A", result: .failed(.transport))
+        store.complete("CSV transaction B", result: .ok)
+
+        XCTAssertEqual(store.pendingCount, 0)
+        XCTAssertEqual(store.phase, .failed)
+        XCTAssertEqual(store.lastOperation, "CSV transaction A")
+        XCTAssertEqual(store.lastResult, .failed(.transport))
+        XCTAssertEqual(
+            store.lastError,
+            "CSV transaction A was not saved (the network request failed)",
+        )
+    }
+
     // MARK: - Write result causes (SAT-1342)
     //
     // The regression these guard: every write outcome was a Bool, so a missing
@@ -383,6 +402,36 @@ final class MasonsBudgetTests: XCTestCase {
         store.begin()
         XCTAssertTrue(store.finish(.ok, operation: "Transaction"))
         XCTAssertNil(store.message)
+    }
+
+    @MainActor
+    func testLocalSaveFailureRollsBackAndNeverStartsRemoteWriteback() {
+        let context = FailingLocalMutationContext()
+        let statusStore = SyncStatusStore()
+        var remoteWriteCount = 0
+        var surfacedFailure: LocalSaveFailure?
+
+        let saved = LocalMutationSave.perform(
+            operation: "Transaction",
+            in: context,
+            statusStore: statusStore,
+            onFailure: { surfacedFailure = $0 },
+        ) {
+            remoteWriteCount += 1
+        }
+
+        XCTAssertFalse(saved)
+        XCTAssertEqual(context.saveAttempts, 1)
+        XCTAssertEqual(context.rollbackCount, 1)
+        XCTAssertEqual(remoteWriteCount, 0)
+        XCTAssertEqual(surfacedFailure, .persistence)
+        XCTAssertEqual(statusStore.phase, .failed)
+        XCTAssertEqual(statusStore.lastLocalFailure, .persistence)
+        XCTAssertNil(statusStore.lastResult)
+        XCTAssertEqual(
+            statusStore.lastError,
+            "Transaction was not saved on this device (the local database rejected the change)",
+        )
     }
 
     func testWriteKillSwitchRefusesBeforeAnyIO() {
@@ -707,4 +756,23 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertTrue(acct.holdings.isEmpty)
         XCTAssertEqual(acct.weeklyContribution, 0)
     }
+}
+
+@MainActor
+private final class FailingLocalMutationContext: LocalMutationContext {
+    private(set) var saveAttempts = 0
+    private(set) var rollbackCount = 0
+
+    func save() throws {
+        saveAttempts += 1
+        throw TestLocalSaveError.rejected
+    }
+
+    func rollback() {
+        rollbackCount += 1
+    }
+}
+
+private enum TestLocalSaveError: Error {
+    case rejected
 }
