@@ -45,7 +45,7 @@ jobs:
     name: actionlint + secret inventory
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -90,6 +90,11 @@ jobs:
           NL=$'\n'
           actionlint -format "{{range .}}::error file={{.Filepath}},line={{.Line}},col={{.Column}}::{{.Message}}${NL}{{end}}" || true
           actionlint -color
+
+      - name: Immutable action references
+        run: |
+          python3 .github/workflows/scripts/check_action_pins.py
+          python3 .github/workflows/scripts/tests/test_action_pins.py
 
       - name: Secret inventory cross-check
         run: python3 .github/workflows/scripts/check_secret_inventory.py
