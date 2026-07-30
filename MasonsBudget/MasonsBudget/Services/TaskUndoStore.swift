@@ -65,6 +65,56 @@ struct DeletedTodoSnapshot: Identifiable {
     }
 }
 
+/// Owns the narrow SwiftData undo group for one attempted todo deletion.
+///
+/// A temporary undo manager restores the registered model instance if the save
+/// fails, without rolling back unrelated pending edits or changing the caller's
+/// existing undo history.
+@MainActor
+final class TodoDeleteRollback {
+    private let modelContext: ModelContext
+    private let undoManager: UndoManager
+    private let previousUndoManager: UndoManager?
+    private var isActive = true
+
+    init(todo: TodoItem, in modelContext: ModelContext) {
+        self.modelContext = modelContext
+        previousUndoManager = modelContext.undoManager
+        undoManager = UndoManager()
+        undoManager.groupsByEvent = false
+
+        // Flush earlier edits before installing the operation-local manager so
+        // the delete is the only change captured by this undo group.
+        modelContext.processPendingChanges()
+        modelContext.undoManager = undoManager
+        undoManager.beginUndoGrouping()
+        modelContext.delete(todo)
+        modelContext.processPendingChanges()
+        // SwiftData may close the explicit group while coalescing its pending
+        // delete. Only close it ourselves when it remains open.
+        if undoManager.groupingLevel > 0 {
+            undoManager.endUndoGrouping()
+        }
+    }
+
+    func restore() {
+        guard isActive else { return }
+        undoManager.undo()
+        modelContext.processPendingChanges()
+        finish()
+    }
+
+    func commit() {
+        guard isActive else { return }
+        finish()
+    }
+
+    private func finish() {
+        modelContext.undoManager = previousUndoManager
+        isActive = false
+    }
+}
+
 @MainActor
 final class TaskUndoStore: ObservableObject {
     static let shared = TaskUndoStore()
@@ -75,29 +125,44 @@ final class TaskUndoStore: ObservableObject {
 
     private init() {}
 
-    func delete(_ todo: TodoItem, in modelContext: ModelContext) {
+    @discardableResult
+    func delete(_ todo: TodoItem, in modelContext: ModelContext) -> Bool {
         let snapshot = DeletedTodoSnapshot(todo: todo)
-        clearPending()
-        modelContext.delete(todo)
-        try? modelContext.save()
-        present(snapshot)
-        AppWriteSyncService.deleteTodo(id: snapshot.id)
+        let rollback = Self.beginTrackedDelete(todo, in: modelContext)
+        return LocalMutationSave.perform(operation: "Delete todo", in: modelContext, rollbackMutation: {
+            Self.restoreFailedDelete(rollback)
+        }) {
+            rollback.commit()
+            clearPending()
+            present(snapshot)
+            AppWriteSyncService.deleteTodo(id: snapshot.id)
+        }
     }
 
     func restore(in modelContext: ModelContext) {
         guard let snapshot = pending else { return }
-        clearPending()
+        let previous: DeletedTodoSnapshot?
         let todo: TodoItem
         if let existing = existingTodo(id: snapshot.id, in: modelContext) {
+            previous = DeletedTodoSnapshot(todo: existing)
             snapshot.apply(to: existing)
             todo = existing
         } else {
+            previous = nil
             let restored = snapshot.restoredTodo()
             modelContext.insert(restored)
             todo = restored
         }
-        try? modelContext.save()
-        AppWriteSyncService.pushTodo(todo)
+        LocalMutationSave.perform(operation: "Restore todo", in: modelContext, rollbackMutation: {
+            if let previous {
+                previous.apply(to: todo)
+            } else {
+                modelContext.delete(todo)
+            }
+        }) {
+            clearPending()
+            AppWriteSyncService.pushTodo(todo)
+        }
     }
 
     func dismiss() {
@@ -130,5 +195,16 @@ final class TaskUndoStore: ObservableObject {
             },
         )
         return try? modelContext.fetch(descriptor).first
+    }
+
+    static func beginTrackedDelete(
+        _ todo: TodoItem,
+        in modelContext: ModelContext,
+    ) -> TodoDeleteRollback {
+        TodoDeleteRollback(todo: todo, in: modelContext)
+    }
+
+    static func restoreFailedDelete(_ rollback: TodoDeleteRollback) {
+        rollback.restore()
     }
 }

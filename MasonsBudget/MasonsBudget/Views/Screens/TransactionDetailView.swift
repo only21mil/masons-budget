@@ -155,9 +155,15 @@ struct TransactionDetailView: View {
 
     private func deleteTransaction() {
         let owner = transaction.ownerMember
-        AppWriteSyncService.deleteTransaction(transaction, owner: owner)
+        let id = transaction.id
         modelContext.delete(transaction)
-        try? modelContext.save()
+        guard LocalMutationSave.perform(operation: "Delete transaction", in: modelContext, rollbackMutation: {
+            modelContext.insert(transaction)
+        }, remoteWrite: {
+            AppWriteSyncService.deleteTransaction(id: id, owner: owner)
+        }) else {
+            return
+        }
         dismiss()
     }
 
@@ -167,6 +173,13 @@ struct TransactionDetailView: View {
             .replacingOccurrences(of: ",", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard let amount = Decimal(string: cleanAmount) else { return }
+        let previousMerchant = transaction.merchant
+        let previousCategory = transaction.category
+        let previousAmount = transaction.amount
+        let previousCard = transaction.card
+        let previousNote = transaction.note
+        let previousDate = transaction.date
+        let previousOwner = transaction.owner
 
         transaction.merchant = merchant.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? transaction.merchant : merchant
         transaction.category = category.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Other" : category
@@ -174,8 +187,20 @@ struct TransactionDetailView: View {
         transaction.card = method
         transaction.note = note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : note
         transaction.date = date
-        try? modelContext.save()
-        AppWriteSyncService.pushTransaction(transaction, owner: transaction.ownerMember)
+        transaction.ownerMember = transaction.ownerMember.ledgerOwner
+        guard LocalMutationSave.perform(operation: "Transaction", in: modelContext, rollbackMutation: {
+            transaction.merchant = previousMerchant
+            transaction.category = previousCategory
+            transaction.amount = previousAmount
+            transaction.card = previousCard
+            transaction.note = previousNote
+            transaction.date = previousDate
+            transaction.owner = previousOwner
+        }, remoteWrite: {
+            AppWriteSyncService.pushTransaction(transaction, owner: transaction.ownerMember)
+        }) else {
+            return
+        }
         dismiss()
     }
 }

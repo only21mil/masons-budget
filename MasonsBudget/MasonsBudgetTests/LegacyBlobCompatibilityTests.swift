@@ -60,7 +60,7 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
         ))
         try context.save()
 
-        service.replaceTodos(visibleTo: .victor, with: [
+        try service.replaceTodos(visibleTo: .victor, with: [
             TodoItem(
                 id: "t1",
                 title: "Remote newer title",
@@ -92,7 +92,7 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
         ))
         try context.save()
 
-        service.replaceTodos(visibleTo: .victor, with: [
+        try service.replaceTodos(visibleTo: .victor, with: [
             TodoItem(
                 id: "t1",
                 title: "Remote mc2 task",
@@ -150,7 +150,7 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
 
         // Rachel-only payload: r1 is updated, r2 is absent (should be deleted).
         // Victor rows are entirely absent from this payload (must be untouched).
-        service.replaceTodos(visibleTo: .rachel, with: [
+        try service.replaceTodos(visibleTo: .rachel, with: [
             TodoItem(
                 id: "r1",
                 title: "Rachel todo 1 (updated)",

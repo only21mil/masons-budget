@@ -3,6 +3,12 @@
   "members": ["victor", "rachel", "mason", "maddox"],
   "adults": ["victor", "rachel"],
   "defaultOwner": "victor",
+  "ledgerOwner": [
+    { "member": "victor", "expected": "victor" },
+    { "member": "rachel", "expected": "victor" },
+    { "member": "mason", "expected": "mason" },
+    { "member": "maddox", "expected": "maddox" }
+  ],
 
   "canSee": [
     { "viewer": "victor", "owner": "victor", "expected": true },

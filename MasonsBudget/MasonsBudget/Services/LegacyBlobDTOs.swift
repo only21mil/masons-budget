@@ -33,20 +33,22 @@ enum TransactionWriteValidationError: LocalizedError, Equatable {
 
 extension LegacyTransactionDTO {
     init(appTransaction transaction: Transaction, owner: FamilyMember) throws {
-        guard transaction.owner == owner.rawValue else {
+        let canonicalOwner = owner.ledgerOwner
+        let transactionOwner = FamilyMember(rawValue: transaction.owner)?.ledgerOwner
+        guard transactionOwner == canonicalOwner else {
             throw TransactionWriteValidationError.ownerMismatch(
                 transactionOwner: transaction.owner,
-                targetOwner: owner,
+                targetOwner: canonicalOwner,
             )
         }
 
         if transaction.isIncome {
             guard transaction.amount > 0 else {
-                throw TransactionWriteValidationError.incomeMustBePositive(owner: owner)
+                throw TransactionWriteValidationError.incomeMustBePositive(owner: canonicalOwner)
             }
         } else {
             guard transaction.amount != 0 else {
-                throw TransactionWriteValidationError.transactionMustBeNonZero(owner: owner)
+                throw TransactionWriteValidationError.transactionMustBeNonZero(owner: canonicalOwner)
             }
         }
 
@@ -58,7 +60,7 @@ extension LegacyTransactionDTO {
             category: transaction.category,
             card: transaction.card,
             note: transaction.note,
-            owner: nil,
+            owner: canonicalOwner,
         )
     }
 
@@ -219,7 +221,8 @@ struct LegacyBTCBuyDTO: Codable {
 }
 
 extension LegacyBTCBuyDTO {
-    init(appBuy buy: BTCBuy) {
+    init(appBuy buy: BTCBuy, owner: FamilyMember) {
+        let canonicalOwner = owner.ledgerOwner
         self.init(
             id: buy.id,
             date: LegacyTransactionDTO.dateString(from: buy.date),
@@ -233,7 +236,7 @@ extension LegacyBTCBuyDTO {
             costBasisStatus: buy.costBasisStatus,
             loggedBy: buy.loggedBy,
             archimedesRequestId: buy.archimedesRequestId,
-            owner: buy.owner,
+            owner: canonicalOwner.rawValue,
         )
     }
 

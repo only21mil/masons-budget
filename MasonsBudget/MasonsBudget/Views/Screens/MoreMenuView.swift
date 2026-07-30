@@ -77,7 +77,7 @@ struct SyncSetupView: View {
     private var canSave: Bool {
         Self.isValidPairingURL(baseURL) &&
             !deviceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            (hasDeviceToken || !deviceTokenEntry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            !deviceTokenEntry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var canClaim: Bool {
@@ -138,14 +138,14 @@ struct SyncSetupView: View {
                     .buttonStyle(.bordered)
 
                     Button("Save") {
-                        AppWritebackConfig.save(
+                        let saved = AppWritebackConfig.save(
                             baseURL: baseURL,
                             deviceID: deviceID,
                             deviceToken: deviceTokenEntry,
                         )
                         deviceTokenEntry = ""
                         hasDeviceToken = AppWritebackConfig.hasDeviceToken
-                        statusMessage = hasDeviceToken
+                        statusMessage = saved && hasDeviceToken
                             ? "Writeback settings saved."
                             : "Could not save the device token."
                     }

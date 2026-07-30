@@ -11,6 +11,9 @@ struct CategoryDetailView: View {
 
     let selectedMonth: Date
     @State private var monthlyBudget: String
+    /// Cause-specific feedback for the budget write. Nothing reported the outcome
+    /// of this save at all before: a rejected budget looked identical to a saved one.
+    @StateObject private var writeFeedback = WriteFeedbackStore()
 
     init(category: BudgetCategory, selectedMonth: Date) {
         self.category = category
@@ -71,6 +74,17 @@ struct CategoryDetailView: View {
                             .frame(maxWidth: 140)
                     }
                     .padding(14)
+
+                    if let message = writeFeedback.message {
+                        HStack {
+                            Text(message)
+                                .font(AppFont.labelSmall)
+                                .foregroundStyle(theme.danger)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 12)
+                    }
 
                     Hairline()
 
@@ -134,9 +148,10 @@ struct CategoryDetailView: View {
         #endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
+                    Button(writeFeedback.isSaving ? "Saving…" : "Save") { save() }
                         .font(AppFont.bodyBold)
                         .foregroundStyle(theme.accent)
+                        .disabled(writeFeedback.isSaving)
                 }
             }
     }
@@ -146,10 +161,26 @@ struct CategoryDetailView: View {
             .replacingOccurrences(of: "$", with: "")
             .replacingOccurrences(of: ",", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        if let value = Decimal(string: clean), value >= 0 {
-            category.monthlyBudget = value
-            try? modelContext.save()
-            AppWriteSyncService.pushBudgetCategoryUpdate(category)
+        guard let value = Decimal(string: clean), value >= 0 else {
+            writeFeedback.reject("Enter a monthly limit of zero or more")
+            return
+        }
+        let previousBudget = category.monthlyBudget
+        category.monthlyBudget = value
+        writeFeedback.begin()
+        LocalMutationSave.perform(
+            operation: "Budget",
+            in: modelContext,
+            onFailure: { [writeFeedback] failure in
+                writeFeedback.failLocal(failure, operation: "Budget")
+            },
+            rollbackMutation: {
+                category.monthlyBudget = previousBudget
+            },
+        ) {
+            AppWriteSyncService.pushBudgetCategoryUpdate(category) { [writeFeedback] result in
+                writeFeedback.finish(result, operation: "Budget")
+            }
         }
     }
 

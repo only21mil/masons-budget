@@ -512,32 +512,39 @@ struct ContentView: View {
     @ViewBuilder
     private var syncStatusGlyph: some View {
         if syncStatus.phase != .idle {
-            Button {
-                if syncStatus.phase == .failed {
+            if syncStatus.phase == .failed, syncStatus.canRetry {
+                Button {
                     syncStatus.retry()
+                } label: {
+                    syncStatusGlyphImage
                 }
-            } label: {
-                Image(systemName: syncStatusIcon)
-                    .font(AppFont.labelStrong)
-                    .foregroundStyle(syncStatus.phase == .failed ? theme.danger : theme.accent)
-                    .frame(width: 32, height: 32)
-                    .background(syncStatus.phase == .failed ? theme.dangerSoft : theme.accentSoft)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .overlay(alignment: .topTrailing) {
-                        if syncStatus.pendingCount > 1 {
-                            Text("\(syncStatus.pendingCount)")
-                                .font(AppFont.monoNanoStrong)
-                                .foregroundStyle(.white)
-                                .frame(minWidth: 14, minHeight: 14)
-                                .background(theme.accent)
-                                .clipShape(Circle())
-                                .offset(x: 4, y: -4)
-                        }
-                    }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Retry sync")
+            } else {
+                syncStatusGlyphImage
+                    .accessibilityLabel(syncStatus.phase == .failed ? "Sync failed" : "Sync status")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(syncStatus.phase == .failed ? "Retry sync" : "Sync status")
         }
+    }
+
+    private var syncStatusGlyphImage: some View {
+        Image(systemName: syncStatusIcon)
+            .font(AppFont.labelStrong)
+            .foregroundStyle(syncStatus.phase == .failed ? theme.danger : theme.accent)
+            .frame(width: 32, height: 32)
+            .background(syncStatus.phase == .failed ? theme.dangerSoft : theme.accentSoft)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(alignment: .topTrailing) {
+                if syncStatus.pendingCount > 1 {
+                    Text("\(syncStatus.pendingCount)")
+                        .font(AppFont.monoNanoStrong)
+                        .foregroundStyle(.white)
+                        .frame(minWidth: 14, minHeight: 14)
+                        .background(theme.accent)
+                        .clipShape(Circle())
+                        .offset(x: 4, y: -4)
+                }
+            }
     }
 
     private var syncStatusIcon: String {
@@ -568,19 +575,25 @@ struct ContentView: View {
                     Text(message)
                         .font(AppFont.labelStrong)
                         .foregroundStyle(theme.text)
-                    Text("Saved locally. Retry sync when ready.")
+                    Text(syncStatus.canRetry
+                        ? "Saved locally. Retry sync when ready."
+                        : "Saved on this device only.")
                         .font(AppFont.smallRegular)
                         .foregroundStyle(theme.textMuted)
                 }
 
                 Spacer()
 
-                Button("Retry") {
-                    syncStatus.retry()
+                // Hidden for causes another attempt cannot fix — a missing or
+                // rejected credential, an unwritable amount, a profile mismatch.
+                if syncStatus.canRetry {
+                    Button("Retry") {
+                        syncStatus.retry()
+                    }
+                    .font(AppFont.labelSmallStrong)
+                    .foregroundStyle(theme.accent)
+                    .buttonStyle(.plain)
                 }
-                .font(AppFont.labelSmallStrong)
-                .foregroundStyle(theme.accent)
-                .buttonStyle(.plain)
 
                 Button {
                     syncStatus.dismissFailure()

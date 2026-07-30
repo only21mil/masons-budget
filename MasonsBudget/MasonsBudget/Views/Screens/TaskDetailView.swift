@@ -156,6 +156,7 @@ struct TaskDetailView: View {
     private func save() {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let previous = DeletedTodoSnapshot(todo: todo)
         todo.title = trimmed
         todo.dueDate = hasDueDate ? dueDate : nil
         todo.project = project.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : project
@@ -163,13 +164,19 @@ struct TaskDetailView: View {
         todo.priority = priority
         todo.isFlagged = isFlagged
         todo.updatedAt = .now
-        try? modelContext.save()
-        AppWriteSyncService.pushTodo(todo)
+        guard LocalMutationSave.perform(operation: "Todo", in: modelContext, rollbackMutation: {
+            previous.apply(to: todo)
+        }, remoteWrite: {
+            AppWriteSyncService.pushTodo(todo)
+        }) else {
+            return
+        }
         dismiss()
     }
 
     private func deleteTask() {
-        TaskUndoStore.shared.delete(todo, in: modelContext)
-        dismiss()
+        if TaskUndoStore.shared.delete(todo, in: modelContext) {
+            dismiss()
+        }
     }
 }

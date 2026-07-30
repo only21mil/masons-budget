@@ -164,8 +164,9 @@ actor ConvexDataReader {
             do {
                 return try JSONDecoder().decode(LegacyTodoDTO.self, from: data)
             } catch {
-                let id = (item as? [String: Any])?["id"] as? String ?? "unknown"
-                log.warning("Failed to decode todo \(id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                // Todo ids/titles and decoder details can contain household
+                // data. Keep diagnostics authored and value-free.
+                log.warning("Skipped one malformed todo row")
                 return nil
             }
         }

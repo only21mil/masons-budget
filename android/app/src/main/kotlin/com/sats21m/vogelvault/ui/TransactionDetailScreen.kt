@@ -89,7 +89,7 @@ internal class ConvexTransactionActions(
                     kind = originalKind(original),
                     card = draft.method.trim().ifEmpty { null },
                     note = draft.note.trim().ifEmpty { null },
-                    owner = original.owner,
+                    owner = original.owner.ledgerOwner,
                 )
             } catch (error: IllegalArgumentException) {
                 return TransactionActionResult.Error(
@@ -101,7 +101,7 @@ internal class ConvexTransactionActions(
             .mutate(
                 ConvexMutation.UpsertTransaction(
                     transaction = transaction,
-                    sourceFile = original.owner.transactionsDataFileName,
+                    sourceFile = original.owner.ledgerOwner.transactionsDataFileName,
                 ),
             ).toTransactionActionResult()
     }
@@ -111,8 +111,8 @@ internal class ConvexTransactionActions(
             .mutate(
                 ConvexMutation.DeleteTransaction(
                     txId = transaction.id,
-                    owner = transaction.owner,
-                    sourceFile = transaction.owner.transactionsDataFileName,
+                    owner = transaction.owner.ledgerOwner,
+                    sourceFile = transaction.owner.ledgerOwner.transactionsDataFileName,
                 ),
             ).toTransactionActionResult()
 }

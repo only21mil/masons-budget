@@ -14,8 +14,9 @@ struct InlineAddTaskBar: View {
     var defaultDueDate: Date?
     /// Pre-set flag for the created task (e.g. inside the Flagged list).
     var defaultFlagged = false
-    /// Optional writeback callback for surfaces that report sync failures.
-    var onResult: (@MainActor @Sendable (Bool) -> Void)?
+    /// Optional writeback callback for surfaces that report sync failures. Carries
+    /// the CAUSE of a rejection, not a bare success flag.
+    var onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)?
 
     @Binding var isExpanded: Bool
     @State private var draftText = ""
@@ -76,6 +77,7 @@ struct InlineAddTaskBar: View {
         }
     }
 
+    @MainActor
     private func addTask() {
         let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -88,9 +90,13 @@ struct InlineAddTaskBar: View {
             createdBy: "app",
         )
         modelContext.insert(todo)
-        try? modelContext.save()
-        AppWriteSyncService.pushTodo(todo, onResult: onResult)
-        draftText = ""
-        isExpanded = false
+        if LocalMutationSave.perform(operation: "Todo", in: modelContext, rollbackMutation: {
+            modelContext.delete(todo)
+        }, remoteWrite: {
+            AppWriteSyncService.pushTodo(todo, onResult: onResult)
+        }) {
+            draftText = ""
+            isExpanded = false
+        }
     }
 }
