@@ -151,6 +151,9 @@ fun ScreenHost(
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
     modifier: Modifier = Modifier,
+    taskListsContent: @Composable (VaultUiState, List<TodoItem>) -> Unit = { taskState, todos ->
+        TaskListsScreen(taskState, todos)
+    },
 ) {
     var addingTransaction by rememberSaveable { mutableStateOf(false) }
     var selectedTransactionKey by rememberSaveable(state.activeProfile) {
@@ -312,7 +315,7 @@ fun ScreenHost(
                     item {
                         CsvImportLauncher(
                             owner = state.activeProfile,
-                            existingTransactions = state.data.transactions.value,
+                            existingTransactions = collections.visibleTransactions,
                             btcPriceCents = state.data.btcPriceCents,
                         )
                     }
@@ -342,7 +345,11 @@ fun ScreenHost(
                 Destination.EXPORT -> item { ExportScreen(state) }
                 // Rendered above, outside the shared ledger column.
                 Destination.TODAY -> Unit
-                Destination.TASKS -> item { TaskListsScreen(state, todosInput) }
+                Destination.TASKS -> item {
+                    // ScreenHost is the privacy boundary: a destination never
+                    // receives rows its active profile cannot see.
+                    taskListsContent(state, collections.visibleTodos)
+                }
                 Destination.FAMILY -> family(state)
                 Destination.SETTINGS -> settings(state, onEnableRemoteRows)
             }

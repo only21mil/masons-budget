@@ -60,6 +60,9 @@ internal fun TaskListsScreen(
     todos: List<TodoItem>,
     zoneId: ZoneId = ZoneId.systemDefault(),
 ) {
+    // ScreenHost has already scoped this handoff to the active profile.
+    // TaskListModel deliberately checks again as defense in depth because the
+    // model is also callable outside this composable.
     val slice = state.data.todos
     if (slice.suppressFigures) {
         TaskPanel(stringResource(R.string.tasks_title)) {
