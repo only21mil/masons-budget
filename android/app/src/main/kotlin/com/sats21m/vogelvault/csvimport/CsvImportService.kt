@@ -59,6 +59,12 @@ internal enum class CsvDirectionEvidence {
 
     /** Neither the amount nor a Type column stated a direction; treated as a purchase. */
     DEFAULTED,
+
+    /**
+     * An explicit amount sign and a Type column named opposite directions. No
+     * direction is resolved: the row is rejected by name instead of guessed at.
+     */
+    CONTRADICTED,
 }
 
 /**
@@ -67,25 +73,40 @@ internal enum class CsvDirectionEvidence {
  * what stops the sign check from being a tautology.
  */
 internal data class CsvSignContract(
-    val direction: CsvDirection,
-    val evidence: CsvDirectionEvidence,
     /**
-     * True when an explicit amount sign and a Type column named opposite
-     * directions. The amount sign wins, but the row is flagged so the human sees
-     * that the source contradicted itself.
+     * The direction the row states, or null when the amount sign and the Type
+     * column state opposite directions. A null direction is never resolved into a
+     * winner: signing money on a guess is the corruption this class exists to stop.
      */
-    val conflict: Boolean = false,
+    val direction: CsvDirection?,
+    val evidence: CsvDirectionEvidence,
     /** The Type cell verbatim, so a rejection can quote what the source said. */
     val typeCell: String = "",
+    /** The amount cell verbatim, so a rejection can quote the sign it carried. */
+    val amountCell: String = "",
+    /** What the amount sign said alone; null when the cell carried no sign. */
+    val amountSays: CsvDirection? = null,
+    /** What the Type column said alone; null when it was silent or ambiguous. */
+    val typeSays: CsvDirection? = null,
 ) {
+    /** What the amount cell said on its own, so a rejection can name that source. */
+    fun amountStatement(): String = "its amount \"$amountCell\" says ${movement(amountSays)}"
+
+    /** What the Type column said on its own, so a rejection can name that source. */
+    fun typeStatement(): String = "its type \"$typeCell\" says ${movement(typeSays)}"
+
     /** Human-readable account of what the source said, for a named rejection. */
-    fun statement(): String {
-        val movement = if (direction == CsvDirection.MONEY_IN) "a refund" else "a purchase"
-        return when (evidence) {
-            CsvDirectionEvidence.AMOUNT_SIGN -> "$movement by its amount sign"
-            CsvDirectionEvidence.TYPE_COLUMN -> "$movement by its type \"$typeCell\""
-            CsvDirectionEvidence.DEFAULTED -> "$movement with no stated direction"
-        }
+    fun statement(): String = when (evidence) {
+        CsvDirectionEvidence.AMOUNT_SIGN -> "${movement(direction)} by its amount sign"
+        CsvDirectionEvidence.TYPE_COLUMN -> "${movement(direction)} by its type \"$typeCell\""
+        CsvDirectionEvidence.DEFAULTED -> "${movement(direction)} with no stated direction"
+        CsvDirectionEvidence.CONTRADICTED -> "${amountStatement()} while ${typeStatement()}"
+    }
+
+    private fun movement(of: CsvDirection?): String = when (of) {
+        CsvDirection.MONEY_IN -> "a refund"
+        CsvDirection.MONEY_OUT -> "a purchase"
+        null -> "nothing"
     }
 }
 
@@ -147,6 +168,13 @@ internal sealed class CsvImportException(message: String) : IllegalArgumentExcep
             "Row $row states $stated but was stored as $stored; the import was stopped " +
                 "instead of writing the wrong sign",
         )
+
+    class SignTypeContradiction(row: Int, amount: String, type: String) :
+        CsvImportException(
+            "Row $row contradicts itself: $amount but $type. Nothing was imported " +
+                "because neither source can be trusted over the other; correct the row " +
+                "or drop one of the two columns, then import again",
+        )
 }
 
 /**
@@ -204,8 +232,17 @@ internal class CsvImportService {
             val isIncome = category.equals("Income", ignoreCase = true)
 
             val contract = resolveSignContract(amountCell, typeCell)
+            // A row whose sign and Type column disagree states two different
+            // amounts of money. Picking either one silently mis-signs money the
+            // user will never re-check, so the row is rejected by name instead.
+            val direction = contract.direction
+                ?: throw CsvImportException.SignTypeContradiction(
+                    row = rowNumber,
+                    amount = contract.amountStatement(),
+                    type = contract.typeStatement(),
+                )
             if (isIncome &&
-                contract.direction == CsvDirection.MONEY_IN &&
+                direction == CsvDirection.MONEY_IN &&
                 contract.evidence == CsvDirectionEvidence.AMOUNT_SIGN
             ) {
                 // Income is stored positive with kind CREDIT. Re-signing an
@@ -213,7 +250,7 @@ internal class CsvImportService {
                 throw CsvImportException.IncomeSignContradiction(rowNumber)
             }
             val magnitude = amount.abs()
-            val signed = if (storedNegative(contract.direction, isIncome)) {
+            val signed = if (storedNegative(direction, isIncome)) {
                 magnitude.negate()
             } else {
                 magnitude
@@ -273,6 +310,10 @@ internal class CsvImportService {
      * here, and the stored sign is then checked against it. The two agree only if
      * both the Type read and the sign application are still correct: checking the
      * sign against a `kind` inferred from that same sign proves nothing.
+     *
+     * A row whose cells contradict each other has no direction to check against
+     * and is refused here as well, so no route to the write client can pick a
+     * winner behind the parse-time rejection.
      */
     fun prepareTransactions(
         imported: List<CsvImportedTransaction>,
@@ -281,12 +322,18 @@ internal class CsvImportService {
         val cents = row.amountUsdCents
             ?: throw CsvImportException.PriceUnavailable
         val contract = row.signContract
+        val direction = contract.direction
+            ?: throw CsvImportException.SignTypeContradiction(
+                row = row.rowNumber,
+                amount = contract.amountStatement(),
+                type = contract.typeStatement(),
+            )
         val kind = when {
             row.isIncome -> TransactionKind.CREDIT
-            contract.direction == CsvDirection.MONEY_IN -> TransactionKind.CREDIT
+            direction == CsvDirection.MONEY_IN -> TransactionKind.CREDIT
             else -> TransactionKind.SPEND
         }
-        val expectedNegative = storedNegative(contract.direction, row.isIncome)
+        val expectedNegative = storedNegative(direction, row.isIncome)
         if ((cents < 0L) != expectedNegative || (row.sats < 0L) != expectedNegative) {
             throw CsvImportException.SignContradiction(
                 row = row.rowNumber,
@@ -552,12 +599,15 @@ internal class CsvImportService {
         /**
          * Resolve the direction stated by a row's raw cells.
          *
-         * Precedence: an explicit sign on the amount beats a Type column. The sign
-         * is unambiguous machine output, while a Type token has to pass a keyword
-         * classifier that can misread an unusual value; letting the classifier
-         * override a stated sign could corrupt sources that were already correct,
-         * whereas this rule can only change rows whose amount said nothing. A
-         * disagreement is still recorded so the row can be flagged.
+         * There is no precedence rule, because neither source deserves one. A
+         * signed amount is unambiguous machine output but its convention belongs to
+         * the exporting bank, and most banks write purchases negative where this
+         * app stores them positive; a Type token is stated in the app's own terms
+         * but has to survive a keyword classifier. Ranking one above the other just
+         * chooses which population of files gets silently mis-signed. So when both
+         * speak and disagree, no direction is returned and the caller rejects the
+         * row by name. When only one speaks it is believed, which is what keeps
+         * unsigned amounts taking their direction from the Type column.
          */
         fun resolveSignContract(
             amountCell: String,
@@ -565,24 +615,30 @@ internal class CsvImportService {
         ): CsvSignContract {
             val fromAmount = amountSignDirection(amountCell)
             val fromType = typeDirection(typeCell)
+            val cells = CsvSignContract(
+                direction = null,
+                evidence = CsvDirectionEvidence.CONTRADICTED,
+                typeCell = typeCell.trim(),
+                amountCell = amountCell.trim(),
+                amountSays = fromAmount,
+                typeSays = fromType,
+            )
             return when {
-                fromAmount != null -> CsvSignContract(
+                fromAmount != null && fromType != null && fromAmount != fromType -> cells
+
+                fromAmount != null -> cells.copy(
                     direction = fromAmount,
                     evidence = CsvDirectionEvidence.AMOUNT_SIGN,
-                    conflict = fromType != null && fromType != fromAmount,
-                    typeCell = typeCell.trim(),
                 )
 
-                fromType != null -> CsvSignContract(
+                fromType != null -> cells.copy(
                     direction = fromType,
                     evidence = CsvDirectionEvidence.TYPE_COLUMN,
-                    typeCell = typeCell.trim(),
                 )
 
-                else -> CsvSignContract(
+                else -> cells.copy(
                     direction = CsvDirection.MONEY_OUT,
                     evidence = CsvDirectionEvidence.DEFAULTED,
-                    typeCell = typeCell.trim(),
                 )
             }
         }
