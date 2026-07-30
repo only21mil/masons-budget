@@ -129,18 +129,35 @@ internal fun foldedOverflowDestinations(destinations: List<Destination>): List<D
         destinations.drop(FOLDED_PRIMARY_ITEMS_WITH_OVERFLOW)
     }
 
+/**
+ * @param onRequestProfileSwitchAuthentication the receiver that must authenticate
+ * a profile switch before it happens. Null means the shell was composed without
+ * one; the switch is then refused and named rather than silently dropped. A no-op
+ * default here is what shipped, and it made the biometric gate unreachable.
+ * @param profileSwitchRefusal the cause reported by that receiver, shown to the
+ * user. A rejected switch names its cause.
+ */
 @Composable
 fun VaultApp(
     state: VaultUiState,
     onNavigate: (Destination) -> Unit,
     onSwitchProfile: (FamilyMember) -> Unit,
-    onRequestProfileSwitchAuthentication: (ProfileSwitchRequest) -> Unit = {},
+    onRequestProfileSwitchAuthentication: ((ProfileSwitchRequest) -> Unit)? = null,
+    profileSwitchRefusal: ProfileSwitchRefusal? = null,
     onEnableRemoteRows: (String) -> Unit = {},
     onTransactionChanged: () -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    // An unwired shell refuses loudly instead of swallowing the request: the user
+    // learns the switch did not happen, and so does anyone testing this screen.
+    var unwiredRefusal by remember { mutableStateOf<ProfileSwitchRefusal?>(null) }
+    val requestProfileSwitchAuthentication: (ProfileSwitchRequest) -> Unit =
+        onRequestProfileSwitchAuthentication
+            ?: { unwiredRefusal = ProfileSwitchRefusal.SHELL_NOT_CONNECTED }
+    val refusal = unwiredRefusal ?: profileSwitchRefusal
+
     BoxWithConstraints(modifier.fillMaxSize().background(VaultBlack)) {
         val unfolded = maxWidth.value >= UNFOLDED_MIN_WIDTH_DP
 
@@ -154,10 +171,11 @@ fun VaultApp(
                 Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                     VaultRail(destinations, current, onNavigate)
                     Column(Modifier.weight(1f)) {
-                        VaultTopBar(state, onRequestProfileSwitchAuthentication, onSwitchProfile) {
+                        VaultTopBar(state, requestProfileSwitchAuthentication, onSwitchProfile) {
                             onSwitchProfile(state.activeProfile)
                         }
                         HorizontalHairline()
+                        ProfileSwitchRefusalNotice(refusal)
                         AuthorizationNotice(state)
                         RowReadFailureNotice(state)
                         RefreshFailureNotice(state)
@@ -174,10 +192,11 @@ fun VaultApp(
                 }
             } else {
                 Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                    VaultTopBar(state, onRequestProfileSwitchAuthentication, onSwitchProfile) {
+                    VaultTopBar(state, requestProfileSwitchAuthentication, onSwitchProfile) {
                         onSwitchProfile(state.activeProfile)
                     }
                     HorizontalHairline()
+                    ProfileSwitchRefusalNotice(refusal)
                     AuthorizationNotice(state)
                     RowReadFailureNotice(state)
                     RefreshFailureNotice(state)
@@ -196,6 +215,23 @@ fun VaultApp(
             }
         }
     }
+}
+
+/**
+ * Why the profile did not change.
+ *
+ * Rendered above every other notice and never suppressed by one: the user just
+ * asked for this, and a refusal they cannot see is the silent failure the house
+ * rules forbid.
+ */
+@Composable
+private fun ProfileSwitchRefusalNotice(refusal: ProfileSwitchRefusal?) {
+    if (refusal == null) return
+    StatusBanner(
+        text = stringResource(refusal.titleRes),
+        detail = stringResource(refusal.detailRes),
+        tone = com.sats21m.vogelvault.ui.theme.VaultWarning,
+    )
 }
 
 @Composable
