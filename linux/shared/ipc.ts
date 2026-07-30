@@ -368,7 +368,12 @@ export type VogelVaultMutationKind =
 interface VogelVaultMutationBase {
   /** Correlates an optimistic renderer revision with exactly one reply. */
   readonly requestId: string
-  /** User intent for authorization/audit; main independently enforces scope. */
+  /**
+   * Non-authoritative UI intent for local audit/telemetry only.
+   *
+   * A paired Linux credential is household-wide authority. Neither main nor
+   * Convex uses this renderer-controlled value to grant access.
+   */
   readonly actor: VogelVaultMember
 }
 
@@ -384,11 +389,14 @@ export type VogelVaultMutationRequest =
       readonly category: string
       readonly card?: string
       readonly note?: string
+      /** Omit only for a create whose natural key has never existed. */
+      readonly baseUpdatedAtMs?: number
     })
   | (VogelVaultMutationBase & {
       readonly kind: "transaction.delete"
       readonly id: string
       readonly owner: VogelVaultMember
+      readonly baseUpdatedAtMs: number
     })
   | (VogelVaultMutationBase & {
       readonly kind: "todo.upsert"
@@ -406,25 +414,34 @@ export type VogelVaultMutationRequest =
       readonly createdAt?: string
       readonly updatedAt?: string
       readonly completedAt?: string
+      /** Omit only for a create whose natural key has never existed. */
+      readonly baseUpdatedAtMs?: number
     })
   | (VogelVaultMutationBase & {
       readonly kind: "todo.delete"
       readonly id: string
       readonly owner: VogelVaultMember
+      readonly baseUpdatedAtMs: number
     })
   | (VogelVaultMutationBase & {
       readonly kind: "budgetCategory.upsert"
+      readonly owner: VogelVaultMember
       readonly month: string
       readonly name: string
       /** Previous category name when this write is an atomic rename. */
       readonly originalName?: string
       readonly icon?: string
       readonly budgetCents: bigint
+      /** Enclosing budget-document revision; omit only when the document is new. */
+      readonly baseUpdatedAtMs?: number
     })
   | (VogelVaultMutationBase & {
       readonly kind: "budgetCategory.delete"
+      readonly owner: VogelVaultMember
       readonly month: string
       readonly name: string
+      /** Enclosing budget-document revision. */
+      readonly baseUpdatedAtMs: number
     })
   | (VogelVaultMutationBase & {
       readonly kind: "btcBuy.upsert"
@@ -440,11 +457,14 @@ export type VogelVaultMutationRequest =
       readonly costBasisStatus?: string
       readonly loggedBy?: string
       readonly archimedesRequestId?: string
+      /** Omit only for a create whose natural key has never existed. */
+      readonly baseUpdatedAtMs?: number
     })
   | (VogelVaultMutationBase & {
       readonly kind: "btcBuy.delete"
       readonly id: string
       readonly owner: VogelVaultMember
+      readonly baseUpdatedAtMs: number
     })
   | (VogelVaultMutationBase & {
       readonly kind: "btcBillPay.upsert"
@@ -460,11 +480,14 @@ export type VogelVaultMutationRequest =
       readonly note?: string
       readonly feeUsdCents: bigint
       readonly reference?: string
+      /** Omit only for a create whose natural key has never existed. */
+      readonly baseUpdatedAtMs?: number
     })
   | (VogelVaultMutationBase & {
       readonly kind: "btcBillPay.delete"
       readonly id: string
       readonly owner: VogelVaultMember
+      readonly baseUpdatedAtMs: number
     })
   | (VogelVaultMutationBase & {
       readonly kind: "btcAccount.upsert"
@@ -480,11 +503,15 @@ export type VogelVaultMutationRequest =
        * must not derive or invent a fiat valuation from the displayed BTC price.
        */
       readonly fiatValuation?: VogelVaultFiatValuation
+      /** Enclosing BTC balance-document revision; omit only when it is new. */
+      readonly baseUpdatedAtMs?: number
     })
   | (VogelVaultMutationBase & {
       readonly kind: "btcAccount.delete"
       readonly key: string
       readonly owner: VogelVaultMember
+      /** Enclosing BTC balance-document revision. */
+      readonly baseUpdatedAtMs: number
     })
 
 export type VogelVaultMutationOutcome =
@@ -556,12 +583,15 @@ export type VogelVaultPairingStatus =
       readonly status: "paired"
       readonly pairedAt: number
       readonly capabilities: readonly VogelVaultMutationKind[]
+      /** Effective local write switch and approved-origin state. */
+      readonly writesEnabled: boolean
     }
-  | { readonly status: "unpaired" }
+  | { readonly status: "unpaired"; readonly writesEnabled: boolean }
   | { readonly status: "unavailable" }
 
 export type VogelVaultUnpairResult =
   | { readonly status: "ok"; readonly revoked: boolean }
   | { readonly status: "unpaired" }
+  | { readonly status: "cancelled" }
   | { readonly status: "unavailable" }
   | { readonly status: "failed" }

@@ -12,7 +12,7 @@ import { writeFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import path from "node:path"
 
-import { BrowserWindow, app, dialog, ipcMain, safeStorage, session, shell } from "electron"
+import { BrowserWindow, app, dialog, ipcMain, safeStorage, session } from "electron"
 import type { IpcMainInvokeEvent } from "electron"
 
 import {
@@ -29,8 +29,12 @@ import {
   createRemoteReader,
 } from "./convexRead.ts"
 import { createConvexRowRepository } from "./convexRows.ts"
-import { createPairedDeviceController } from "./convexMutations.ts"
+import {
+  createPairedDeviceController,
+  resolveApprovedDeploymentOrigin,
+} from "./convexMutations.ts"
 import { createDeviceCredentialStore } from "./deviceCredentialStore.ts"
+import { createRendererSecurityPolicy } from "./rendererSecurity.ts"
 import {
   CONVEX_MUTATION_CHANNEL,
   CONVEX_READ_CHANNEL,
@@ -52,29 +56,7 @@ const dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const RENDERER_DIST = path.join(dirname, "../dist")
-
-/** Origins the renderer is permitted to live on. Everything else is blocked. */
-function isAllowedRendererUrl(target: string): boolean {
-  if (DEV_SERVER_URL && target.startsWith(DEV_SERVER_URL)) return true
-  if (target.startsWith("file://")) {
-    const resolved = path.resolve(fileURLToPath(target))
-    return resolved.startsWith(path.resolve(RENDERER_DIST))
-  }
-  return false
-}
-
-/**
- * Only http(s) links are handed to the user's browser. Anything else — file://,
- * javascript:, custom schemes — is dropped rather than passed to xdg-open.
- */
-function isSafeExternalUrl(target: string): boolean {
-  try {
-    const { protocol } = new URL(target)
-    return protocol === "https:" || protocol === "http:"
-  } catch {
-    return false
-  }
-}
+const rendererSecurity = createRendererSecurityPolicy(RENDERER_DIST, DEV_SERVER_URL)
 
 function hardenSession(): void {
   const defaultSession = session.defaultSession
@@ -89,12 +71,7 @@ function hardenSession(): void {
   // No renderer-initiated network access. All data reaches the renderer through
   // the main process, so any outbound request from the renderer is unexpected.
   defaultSession.webRequest.onBeforeRequest((details, callback) => {
-    const { url } = details
-    if (url.startsWith("devtools:") || url.startsWith("blob:") || url.startsWith("data:")) {
-      callback({ cancel: false })
-      return
-    }
-    callback({ cancel: !isAllowedRendererUrl(url) })
+    callback({ cancel: !rendererSecurity.allowsResource(details.url) })
   })
 }
 
@@ -108,7 +85,7 @@ function hardenSession(): void {
 function isTrustedSender(event: IpcMainInvokeEvent): boolean {
   const frame = event.senderFrame
   if (!frame || frame !== event.sender.mainFrame) return false
-  return isAllowedRendererUrl(frame.url)
+  return rendererSecurity.allowsDocument(frame.url)
 }
 
 /**
@@ -276,7 +253,7 @@ function registerConvexRows(): void {
 
 function pairedDeviceWritesEnabled(): boolean {
   const value = process.env.VOGEL_VAULT_DEVICE_WRITES?.trim().toLowerCase()
-  return value === undefined || value === "1" || value === "true"
+  return value === "1" || value === "true"
 }
 
 /**
@@ -295,12 +272,32 @@ function registerPairedDeviceWrites(): void {
     store,
     post: postJsonToDeployment,
     writesEnabled: pairedDeviceWritesEnabled,
+    approvedDeploymentOrigin: () =>
+      resolveApprovedDeploymentOrigin(process.env.VOGEL_VAULT_CONVEX_URL),
   })
 
   ipcMain.handle(
     DEVICE_PAIR_CHANNEL,
     async (event, request: unknown): Promise<VogelVaultPairingResult> => {
       if (!isTrustedSender(event)) return { status: "failed", code: "invalid-input" }
+      const approvedOrigin = resolveApprovedDeploymentOrigin(
+        process.env.VOGEL_VAULT_CONVEX_URL,
+      )
+      if (approvedOrigin === null) return { status: "failed", code: "unavailable" }
+      const window = BrowserWindow.fromWebContents(event.sender)
+      if (!window) return { status: "failed", code: "cancelled" }
+      const confirmation = await dialog.showMessageBox(window, {
+        type: "warning",
+        title: "Pair this Linux device?",
+        message: "Pair this device for household writes?",
+        detail:
+          `Approved host: ${approvedOrigin}\n\nMaximum possible grants: tasks, transactions, budget, and bitcoin. The server's actual grants are shown after pairing.`,
+        buttons: ["Cancel", "Pair device"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      })
+      if (confirmation.response !== 1) return { status: "failed", code: "cancelled" }
       return controller.pair(request)
     },
   )
@@ -329,6 +326,19 @@ function registerPairedDeviceWrites(): void {
     DEVICE_UNPAIR_CHANNEL,
     async (event): Promise<VogelVaultUnpairResult> => {
       if (!isTrustedSender(event)) return { status: "unavailable" }
+      const window = BrowserWindow.fromWebContents(event.sender)
+      if (!window) return { status: "cancelled" }
+      const confirmation = await dialog.showMessageBox(window, {
+        type: "warning",
+        title: "Unpair this Linux device?",
+        message: "Revoke household write access from this device?",
+        detail: "No local or remote state changes until you confirm.",
+        buttons: ["Cancel", "Unpair device"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      })
+      if (confirmation.response !== 1) return { status: "cancelled" }
       return controller.unpair()
     },
   )
@@ -364,14 +374,11 @@ function createWindow(): BrowserWindow {
 
   // Block navigation away from the app shell entirely.
   window.webContents.on("will-navigate", (event, target) => {
-    if (!isAllowedRendererUrl(target)) event.preventDefault()
+    if (!rendererSecurity.allowsDocument(target)) event.preventDefault()
   })
 
-  // No popups. External links open in the user's real browser instead.
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    if (isSafeExternalUrl(url)) void shell.openExternal(url)
-    return { action: "deny" }
-  })
+  // No popups and no renderer-controlled external URL opening.
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }))
 
   // A renderer that tries to attach a webview is misbehaving; strip it.
   window.webContents.on("will-attach-webview", (event) => {
@@ -379,7 +386,7 @@ function createWindow(): BrowserWindow {
   })
 
   if (DEV_SERVER_URL) {
-    void window.loadURL(DEV_SERVER_URL)
+    void window.loadURL(rendererSecurity.documentUrl)
   } else {
     void window.loadFile(path.join(RENDERER_DIST, "index.html"))
   }

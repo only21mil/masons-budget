@@ -6,6 +6,7 @@ import { encodeConvexInt64 } from "@vogel-vault/domain"
 import {
   PAIRED_DEVICE_PATHS,
   createPairedDeviceController,
+  resolveApprovedDeploymentOrigin,
   validateMutationRequest,
 } from "../electron/convexMutations.ts"
 import type {
@@ -52,6 +53,16 @@ function success(value: unknown) {
   }
 }
 
+function failure(code: string, extra: Record<string, unknown> = {}) {
+  return {
+    httpStatus: 200,
+    body: JSON.stringify({
+      status: "error",
+      errorData: { code, message: "redacted", ...extra },
+    }),
+  }
+}
+
 function transactionRequest() {
   return {
     kind: "transaction.upsert" as const,
@@ -68,11 +79,27 @@ function transactionRequest() {
 }
 
 describe("paired-device main controller", () => {
+  it("pins trusted routing to the one approved production origin", () => {
+    expect(resolveApprovedDeploymentOrigin(
+      "https://keen-elephant-452.convex.cloud/",
+    )).toBe("https://keen-elephant-452.convex.cloud")
+    expect(resolveApprovedDeploymentOrigin(
+      "https://other.convex.cloud/",
+    )).toBeNull()
+    expect(resolveApprovedDeploymentOrigin(
+      "https://keen-elephant-452.convex.cloud.attacker.test/",
+    )).toBeNull()
+    expect(resolveApprovedDeploymentOrigin(
+      "https://keen-elephant-452.convex.cloud/path",
+    )).toBeNull()
+  })
+
   it("validates closed requests, including atomic budget-category renames", () => {
     expect(validateMutationRequest({
       kind: "budgetCategory.upsert",
       requestId: "request_rename",
       actor: "victor",
+      owner: "victor",
       month: "2026-07",
       name: "Dining",
       originalName: "Restaurants",
@@ -100,6 +127,7 @@ describe("paired-device main controller", () => {
     const controller = createPairedDeviceController({
       store: localStore,
       writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
       random,
       post: async (endpoint, body) => {
         calls.push({ endpoint, body })
@@ -113,8 +141,7 @@ describe("paired-device main controller", () => {
       },
     })
 
-    const pairingInput =
-      "https://household.convex.cloud/#pair=pair_identifier.secret_identifier"
+    const pairingInput = "pair_identifier.secret_identifier"
     const result = await controller.pair({ pairingInput, deviceName: "Fedora desktop" })
     const body = JSON.parse(calls[0]?.body ?? "{}")
 
@@ -138,7 +165,10 @@ describe("paired-device main controller", () => {
       ],
     })
     expect(JSON.stringify(result)).not.toContain(body.args.deviceToken)
-    await expect(controller.status()).resolves.toEqual(result)
+    await expect(controller.status()).resolves.toEqual({
+      ...result,
+      writesEnabled: true,
+    })
   })
 
   it("preflights protected storage and never claims when unavailable", async () => {
@@ -146,14 +176,61 @@ describe("paired-device main controller", () => {
     const controller = createPairedDeviceController({
       store: { ...store(null), readiness: () => "unsafe-linux-backend" },
       writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
       post,
     })
 
     await expect(controller.pair({
-      pairingInput: "https://household.convex.cloud/#pair=pair_identifier.secret_identifier",
+      pairingInput: "pair_identifier.secret_identifier",
       deviceName: "Fedora desktop",
     })).resolves.toEqual({ status: "failed", code: "credential-storage" })
     expect(post).not.toHaveBeenCalled()
+  })
+
+  it("accepts secret-only pairing codes and preserves an explicit empty grant", async () => {
+    const localStore = store(null)
+    const post = vi.fn(async (_endpoint: string, body: string) => {
+      const wire = JSON.parse(body)
+      return success({
+        ok: true,
+        deviceId: wire.args.deviceId,
+        pairedAt: 1_774_000_000_000,
+        capabilities: [],
+      })
+    })
+    const controller = createPairedDeviceController({
+      store: localStore,
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post,
+    })
+
+    await expect(controller.pair({
+      pairingInput: "pair_identifier.secret_identifier",
+      deviceName: "Fedora desktop",
+    })).resolves.toEqual({
+      status: "paired",
+      pairedAt: 1_774_000_000_000,
+      capabilities: [],
+    })
+    await expect(controller.status()).resolves.toEqual({
+      status: "paired",
+      pairedAt: 1_774_000_000_000,
+      capabilities: [],
+      writesEnabled: true,
+    })
+
+    const invalidController = createPairedDeviceController({
+      store: store(null),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: vi.fn(),
+    })
+    await expect(invalidController.pair({
+      pairingInput:
+        "https://keen-elephant-452.convex.cloud/#pair=pair_identifier.secret_identifier",
+      deviceName: "Fedora desktop",
+    })).resolves.toEqual({ status: "failed", code: "invalid-input" })
   })
 
   it("best-effort revokes a claimed device when its response cannot be trusted", async () => {
@@ -161,6 +238,7 @@ describe("paired-device main controller", () => {
     const controller = createPairedDeviceController({
       store: store(null),
       writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
       random: (bytes) => Buffer.alloc(bytes, 3),
       post: async (_endpoint, body) => {
         const wire = JSON.parse(body)
@@ -178,7 +256,7 @@ describe("paired-device main controller", () => {
     })
 
     await expect(controller.pair({
-      pairingInput: "https://household.convex.cloud/#pair=pair_identifier.secret_identifier",
+      pairingInput: "pair_identifier.secret_identifier",
       deviceName: "Fedora desktop",
     })).resolves.toEqual({ status: "failed", code: "invalid-response" })
     expect(paths).toEqual([PAIRED_DEVICE_PATHS.claim, PAIRED_DEVICE_PATHS.revoke])
@@ -189,6 +267,7 @@ describe("paired-device main controller", () => {
     const controller = createPairedDeviceController({
       store: store(),
       writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
       post: async (endpoint, body) => {
         calls.push({ endpoint, body })
         return success({ ok: true, entityId: "tx-1", outcome: "updated" })
@@ -214,6 +293,41 @@ describe("paired-device main controller", () => {
     expect(JSON.stringify(result)).not.toContain(snapshot.deviceCredential)
   })
 
+  it("treats actor as non-authoritative intent and canonicalizes Rachel finance", async () => {
+    const calls: Record<string, unknown>[] = []
+    const controller = createPairedDeviceController({
+      store: store(),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: async (_endpoint, body) => {
+        calls.push(JSON.parse(body))
+        return success({ ok: true, entityId: "tx-rachel", outcome: "inserted" })
+      },
+    })
+
+    await expect(controller.mutate({
+      kind: "transaction.upsert",
+      requestId: "request_rachel",
+      actor: "maddox",
+      id: "tx-rachel",
+      owner: "rachel",
+      date: "2026-07-30",
+      merchant: "Household",
+      amountCents: 100n,
+      transactionKind: "spend",
+      category: "Home",
+    })).resolves.toMatchObject({ status: "ok" })
+
+    expect(calls[0]).toMatchObject({
+      args: {
+        owner: "victor",
+        sourceFile: "transactions",
+        transaction: { owner: "victor" },
+      },
+    })
+    expect(calls[0]).not.toHaveProperty("args.actor")
+  })
+
   it("adapts renderer names to the exact budget and account backend contracts", async () => {
     const localStore = store({
       ...snapshot,
@@ -223,10 +337,18 @@ describe("paired-device main controller", () => {
     const controller = createPairedDeviceController({
       store: localStore,
       writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
       post: async (_endpoint, body) => {
         const wire = JSON.parse(body) as Record<string, unknown>
         bodies.push(wire)
-        return success({ ok: true, entityId: "entity", outcome: "updated" })
+        const path = wire.path
+        return success({
+          ok: true,
+          entityId: path === PAIRED_DEVICE_PATHS["budgetCategory.upsert"]
+            ? "Dining"
+            : "cold-storage",
+          outcome: "updated",
+        })
       },
     })
 
@@ -234,6 +356,7 @@ describe("paired-device main controller", () => {
       kind: "budgetCategory.upsert",
       requestId: "request_budget",
       actor: "mason",
+      owner: "mason",
       month: "2026-07",
       name: "Dining",
       originalName: "Restaurants",
@@ -293,6 +416,7 @@ describe("paired-device main controller", () => {
     const disabled = createPairedDeviceController({
       store: store(),
       writesEnabled: () => false,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
       post: vi.fn(),
     })
     await expect(disabled.mutate(transactionRequest())).resolves.toMatchObject({
@@ -302,6 +426,7 @@ describe("paired-device main controller", () => {
     const absent = createPairedDeviceController({
       store: store(null),
       writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
       post: vi.fn(),
     })
     await expect(absent.mutate(transactionRequest())).resolves.toMatchObject({
@@ -312,9 +437,9 @@ describe("paired-device main controller", () => {
     const unauthorized = createPairedDeviceController({
       store: unauthorizedStore,
       writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
       post: async () => ({
-        httpStatus: 200,
-        body: JSON.stringify({ status: "error", errorData: "Unauthorized mobile device" }),
+        ...failure("DEVICE_UNAUTHORIZED"),
       }),
     })
     await expect(unauthorized.mutate(transactionRequest())).resolves.toMatchObject({
@@ -325,9 +450,10 @@ describe("paired-device main controller", () => {
     const missing = createPairedDeviceController({
       store: store(),
       writesEnabled: () => true,
-      post: async () => ({
-        httpStatus: 200,
-        body: JSON.stringify({ status: "error", errorData: "Row not found" }),
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: async () => failure("ENTITY_NOT_FOUND", {
+        entityType: "transaction",
+        entityId: "tx-1",
       }),
     })
     await expect(missing.mutate(transactionRequest())).resolves.toMatchObject({
@@ -337,6 +463,7 @@ describe("paired-device main controller", () => {
     const failed = createPairedDeviceController({
       store: store(),
       writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
       post: async () => ({ httpStatus: 200, body: "<not-json>" }),
     })
     await expect(failed.mutate(transactionRequest())).resolves.toMatchObject({
@@ -345,11 +472,126 @@ describe("paired-device main controller", () => {
     })
   })
 
+  it("classifies only bounded structured error codes and exact success values", async () => {
+    const plainTextStore = store()
+    const plainText = createPairedDeviceController({
+      store: plainTextStore,
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: async () => ({
+        httpStatus: 200,
+        body: JSON.stringify({
+          status: "error",
+          errorData: "Unauthorized mobile device",
+        }),
+      }),
+    })
+    await expect(plainText.mutate(transactionRequest())).resolves.toMatchObject({
+      status: "failed",
+      code: "invalid-response",
+    })
+    expect(plainTextStore.current).not.toBeNull()
+
+    const wrongEntity = createPairedDeviceController({
+      store: store(),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: async () => success({
+        ok: true,
+        entityId: "different-entity",
+        outcome: "updated",
+      }),
+    })
+    await expect(wrongEntity.mutate(transactionRequest())).resolves.toMatchObject({
+      status: "failed",
+      code: "invalid-response",
+    })
+
+    const extraKey = createPairedDeviceController({
+      store: store(),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: async () => success({
+        ok: true,
+        entityId: "tx-1",
+        outcome: "updated",
+        remoteText: "should not cross",
+      }),
+    })
+    await expect(extraKey.mutate(transactionRequest())).resolves.toMatchObject({
+      status: "failed",
+      code: "invalid-response",
+    })
+  })
+
+  it("serializes mutation and unpair, preventing late credential races", async () => {
+    const paths: string[] = []
+    let releaseMutation: (() => void) | undefined
+    const mutationGate = new Promise<void>((resolve) => {
+      releaseMutation = resolve
+    })
+    let markMutationStarted: (() => void) | undefined
+    const mutationStarted = new Promise<void>((resolve) => {
+      markMutationStarted = resolve
+    })
+    const localStore = store()
+    const controller = createPairedDeviceController({
+      store: localStore,
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: async (_endpoint, body) => {
+        const wire = JSON.parse(body)
+        paths.push(wire.path)
+        if (wire.path === PAIRED_DEVICE_PATHS["transaction.upsert"]) {
+          markMutationStarted?.()
+          await mutationGate
+          return success({ ok: true, entityId: "tx-1", outcome: "updated" })
+        }
+        return success({ ok: true, revoked: true })
+      },
+    })
+
+    const mutation = controller.mutate(transactionRequest())
+    const unpair = controller.unpair()
+    await mutationStarted
+    expect(paths).toEqual([PAIRED_DEVICE_PATHS["transaction.upsert"]])
+    releaseMutation?.()
+    await expect(mutation).resolves.toMatchObject({ status: "ok" })
+    await expect(unpair).resolves.toEqual({ status: "ok", revoked: true })
+    expect(paths).toEqual([
+      PAIRED_DEVICE_PATHS["transaction.upsert"],
+      PAIRED_DEVICE_PATHS.revoke,
+    ])
+    expect(localStore.current).toBeNull()
+  })
+
+  it("disables effective grants without trapping or contacting a stale origin", async () => {
+    const localStore = store()
+    const post = vi.fn()
+    const controller = createPairedDeviceController({
+      store: localStore,
+      writesEnabled: () => false,
+      approvedDeploymentOrigin: () => "https://replacement.convex.cloud",
+      post,
+    })
+
+    await expect(controller.status()).resolves.toEqual({
+      status: "paired",
+      pairedAt: snapshot.pairedAt,
+      capabilities: [],
+      writesEnabled: false,
+    })
+    await expect(controller.unpair()).resolves.toEqual({ status: "ok", revoked: false })
+    expect(post).not.toHaveBeenCalled()
+    expect(localStore.current).toBeNull()
+  })
+
   it("keeps the credential when remote-first unpair cannot reach the server", async () => {
     const localStore = store()
     const controller = createPairedDeviceController({
       store: localStore,
       writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
       post: async () => {
         throw new Error("offline")
       },
