@@ -291,6 +291,7 @@ private fun satsToCentsExact(
 internal fun AddTransactionSheet(
     state: VaultUiState,
     onDismiss: () -> Unit,
+    onWriteSucceeded: () -> Unit,
 ) {
     val applicationContext = LocalContext.current.applicationContext
     val application = applicationContext as? VaultApplication
@@ -478,6 +479,7 @@ internal fun AddTransactionSheet(
                             saving = false
                             val failure = transactionWriteFailureMessage(result)
                             if (failure == null) {
+                                onWriteSucceeded()
                                 onDismiss()
                             } else {
                                 errorMessage = failure

@@ -41,7 +41,9 @@ import androidx.compose.ui.window.DialogProperties
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.data.ConvexMutation
+import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.ConvexValue
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.Transaction
@@ -67,12 +69,53 @@ private enum class CsvWizardStep {
     DONE,
 }
 
+internal data class CsvImportWriteOutcome(
+    val savedCount: Int,
+    val failure: ConvexResult<ConvexValue>?,
+)
+
+/**
+ * The CSV surface's production write path.
+ *
+ * A batch requests one authoritative refresh after its accepted rows have
+ * finished. A fully rejected batch requests none; a partially accepted batch
+ * still refreshes the rows Convex did commit while preserving the rejection
+ * result so the wizard can name why it stopped.
+ */
+internal suspend fun writeCsvImport(
+    prepared: List<CsvPreparedTransaction>,
+    client: ConvexMutationClient,
+    onWriteSucceeded: () -> Unit,
+): CsvImportWriteOutcome {
+    var savedCount = 0
+    var failure: ConvexResult<ConvexValue>? = null
+    for (row in prepared) {
+        val result = client.mutate(
+            ConvexMutation.UpsertTransaction(
+                transaction = row.transaction,
+                sourceFile = row.sourceFile,
+            ),
+        )
+        if (result is ConvexResult.Ok) {
+            savedCount++
+        } else {
+            failure = result
+            break
+        }
+    }
+    if (savedCount > 0) {
+        onWriteSucceeded()
+    }
+    return CsvImportWriteOutcome(savedCount, failure)
+}
+
 /** Activity-screen entry point plus a full-screen source/preview/import wizard. */
 @Composable
 internal fun CsvImportLauncher(
     owner: FamilyMember,
     existingTransactions: List<Transaction>,
     btcPriceCents: Long,
+    onWriteSucceeded: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var open by rememberSaveable { mutableStateOf(false) }
@@ -90,6 +133,7 @@ internal fun CsvImportLauncher(
             existingTransactions = existingTransactions,
             btcPriceCents = btcPriceCents.takeIf { it > 0L },
             onDismiss = { open = false },
+            onWriteSucceeded = onWriteSucceeded,
         )
     }
 }
@@ -100,6 +144,7 @@ private fun CsvImportWizard(
     existingTransactions: List<Transaction>,
     btcPriceCents: Long?,
     onDismiss: () -> Unit,
+    onWriteSucceeded: () -> Unit,
 ) {
     val context = LocalContext.current
     val application = context.applicationContext as? VaultApplication
@@ -200,58 +245,50 @@ private fun CsvImportWizard(
                         loading = true
                         error = null
                         scope.launch {
-                            var savedCount = 0
-                            for (row in prepared) {
-                                when (
-                                    val result = client.mutate(
-                                        ConvexMutation.UpsertTransaction(
-                                            transaction = row.transaction,
-                                            sourceFile = row.sourceFile,
-                                        ),
+                            val outcome =
+                                writeCsvImport(
+                                    prepared = prepared,
+                                    client = client,
+                                    onWriteSucceeded = onWriteSucceeded,
+                                )
+                            when (val result = outcome.failure) {
+                                null -> Unit
+                                is ConvexResult.Ok -> Unit
+                                ConvexResult.Unauthorized -> {
+                                    error = context.getString(
+                                        R.string.csv_import_unauthorized,
+                                        outcome.savedCount,
                                     )
-                                ) {
-                                    is ConvexResult.Ok -> savedCount++
-                                    ConvexResult.Unauthorized -> {
-                                        error = context.getString(
-                                            R.string.csv_import_unauthorized,
-                                            savedCount,
-                                        )
-                                        break
-                                    }
-                                    ConvexResult.NotConfigured -> {
-                                        error = context.getString(
-                                            R.string.csv_import_not_configured,
-                                            savedCount,
-                                        )
-                                        break
-                                    }
-                                    ConvexResult.Disabled -> {
-                                        error = context.getString(
-                                            R.string.csv_import_disabled,
-                                            savedCount,
-                                        )
-                                        break
-                                    }
-                                    ConvexResult.Missing -> {
-                                        error = context.getString(
-                                            R.string.csv_import_missing,
-                                            savedCount,
-                                        )
-                                        break
-                                    }
-                                    is ConvexResult.Failed -> {
-                                        error = context.getString(
-                                            R.string.csv_import_failed,
-                                            savedCount,
-                                            result.reason,
-                                        )
-                                        break
-                                    }
+                                }
+                                ConvexResult.NotConfigured -> {
+                                    error = context.getString(
+                                        R.string.csv_import_not_configured,
+                                        outcome.savedCount,
+                                    )
+                                }
+                                ConvexResult.Disabled -> {
+                                    error = context.getString(
+                                        R.string.csv_import_disabled,
+                                        outcome.savedCount,
+                                    )
+                                }
+                                ConvexResult.Missing -> {
+                                    error = context.getString(
+                                        R.string.csv_import_missing,
+                                        outcome.savedCount,
+                                    )
+                                }
+                                is ConvexResult.Failed -> {
+                                    error = context.getString(
+                                        R.string.csv_import_failed,
+                                        outcome.savedCount,
+                                        result.reason,
+                                    )
                                 }
                             }
                             loading = false
-                            if (savedCount == prepared.size) {
-                                importedCount = savedCount
+                            if (outcome.savedCount == prepared.size) {
+                                importedCount = outcome.savedCount
                                 step = CsvWizardStep.DONE
                             }
                         }

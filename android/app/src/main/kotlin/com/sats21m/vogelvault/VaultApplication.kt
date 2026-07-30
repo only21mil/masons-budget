@@ -58,7 +58,9 @@ open class VaultApplication : Application() {
      * Shared write transport. Every mutation reads the latest encrypted sync
      * token at request time; no write credential is baked into the app.
      */
-    internal val convexMutationClient: ConvexMutationClient by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+    internal open val convexMutationClient: ConvexMutationClient by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
         ConvexMutationClient(
             // The public deployment route is not a credential. Writes remain
             // available even when authenticated row reads are disabled.

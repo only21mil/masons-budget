@@ -147,7 +147,7 @@ fun ScreenHost(
     destination: Destination,
     state: VaultUiState,
     onEnableRemoteRows: (String) -> Unit = {},
-    onTransactionChanged: () -> Unit = {},
+    onWriteSucceeded: () -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -267,6 +267,7 @@ fun ScreenHost(
         AddTransactionSheet(
             state = state,
             onDismiss = { addingTransaction = false },
+            onWriteSucceeded = onWriteSucceeded,
         )
     }
 
@@ -314,6 +315,7 @@ fun ScreenHost(
                             owner = state.activeProfile,
                             existingTransactions = state.data.transactions.value,
                             btcPriceCents = state.data.btcPriceCents,
+                            onWriteSucceeded = onWriteSucceeded,
                         )
                     }
                     activity(state, checkNotNull(activitySearch)) {
@@ -342,7 +344,14 @@ fun ScreenHost(
                 Destination.EXPORT -> item { ExportScreen(state) }
                 // Rendered above, outside the shared ledger column.
                 Destination.TODAY -> Unit
-                Destination.TASKS -> item { TaskListsScreen(state, todosInput) }
+                Destination.TASKS ->
+                    item {
+                        TaskListsScreen(
+                            state = state,
+                            todos = todosInput,
+                            onWriteSucceeded = onWriteSucceeded,
+                        )
+                    }
                 Destination.FAMILY -> family(state)
                 Destination.SETTINGS -> settings(state, onEnableRemoteRows)
             }
@@ -352,12 +361,14 @@ fun ScreenHost(
         BudgetCategoryEditorSheet(
             seed = seed,
             onDismiss = { budgetEditor = null },
+            onWriteSucceeded = onWriteSucceeded,
         )
     }
     if (showBtcBuyEditor) {
         BtcBuyEntrySheet(
             owner = state.activeProfile,
             onDismiss = { showBtcBuyEditor = false },
+            onWriteSucceeded = onWriteSucceeded,
         )
     }
 
@@ -370,7 +381,7 @@ fun ScreenHost(
             transaction = selectedTransaction,
             actions = transactionActions,
             onClose = { selectedTransactionKey = null },
-            onChanged = onTransactionChanged,
+            onChanged = onWriteSucceeded,
         )
     }
 }

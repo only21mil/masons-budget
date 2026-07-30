@@ -58,6 +58,7 @@ private enum class TaskListRoute {
 internal fun TaskListsScreen(
     state: VaultUiState,
     todos: List<TodoItem>,
+    onWriteSucceeded: () -> Unit,
     zoneId: ZoneId = ZoneId.systemDefault(),
 ) {
     val slice = state.data.todos
@@ -91,6 +92,7 @@ internal fun TaskListsScreen(
                 writeNotice = "Task added: $title"
                 addingTask = false
             },
+            onWriteSucceeded = onWriteSucceeded,
         )
     }
 
