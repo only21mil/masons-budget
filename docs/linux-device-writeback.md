@@ -42,6 +42,16 @@ validated payload. Upserts return exactly
 `{ok:true,entityId,removed}`. `dataFiles:revokeMobileDevice` lets a device revoke
 itself and is idempotent.
 
+Validation is enforced again at the Convex mutation boundary rather than
+trusted to the Electron client. Identifiers are canonical, bounded, non-empty
+strings; text is bounded and control-character-free; revisions are
+non-negative safe integers; money and sats obey each resource's sign rules.
+Ledger dates and todo due dates are real `yyyy-MM-dd` calendar days. Device
+timestamps (`todo.createdAt`, `updatedAt`, `completedAt`, BTC account `asOf`,
+and valuation `quotedAt`) are real UTC ISO instants ending in `Z`. A structured
+`VALIDATION_FAILED` response commits no rows, tombstones, cutover lock, or
+`lastSeenAt` update.
+
 Linux todo and financial writes use `updatedAtMs` for optimistic concurrency.
 An upsert omits `baseUpdatedAtMs` only for a genuinely new natural key/document;
 updates and all deletes send the timestamp read from the row or enclosing
@@ -52,7 +62,9 @@ matching tombstone, while a never-seen key fails with `ENTITY_NOT_FOUND`.
 Rachel's financial intent is stored in the canonical shared adult ledger under
 Victor. This applies to transactions, budgets, BTC buys, bill pays, and
 accounts; no financial row persists `owner:"rachel"`. Mason and Maddox remain
-their own closed source owners where those resources support them.
+their own closed source owners where those resources support them. The sole
+`bitcoin-bill-pays` source is adult-only, so a child bill-pay upsert or delete
+fails with `OWNER_SOURCE_MISMATCH`.
 
 `lastSeenAt` moves only after an authorized mutation succeeds. Authentication,
 capability, owner, validation, and collision failures leave it unchanged.
@@ -68,7 +80,8 @@ read the legacy blob.
 
 Budget category renames replace the original array position atomically, reject
 case-insensitive collisions, require the displayed month to match the stored
-document, and tombstone the old name. BTC account writes update
+document, and use one case-folded tombstone identity for rename, delete, retry,
+and migration suppression. BTC account writes update
 `btcBalanceDocuments` first, recompute exact totals, then reconcile the
 `btcAccounts` row mirror in the same transaction.
 
@@ -77,6 +90,25 @@ BTC fiat valuation is optional. A supplied
 with its provenance. Omitting it preserves an existing canonical valuation; a
 new unvalued account remains unvalued and makes the aggregate fiat total absent.
 The backend never fabricates zero.
+
+## Runtime cutover lock
+
+Every successful runtime core insert, update, or delete atomically creates a
+single indexed `runtimeSourceLocks` row for its source file. This applies to
+trusted sync-token entry points and per-device entry points, including budget
+and BTC document/mirror writes. The marker is permanent migration ownership
+state, not a mutex.
+
+Once present, `migrate:migrateFile` refuses dry-run and apply and
+`migrate:verifyFile` refuses verification with `RUNTIME_SOURCE_LOCKED`, before
+reading the legacy source blob or migrated targets. Legacy migration is a
+one-shot bootstrap and never becomes a bidirectional synchronizer that could
+overwrite runtime edits, creates, or tombstones. Migration projection and
+migration writes do not create the lock themselves.
+
+Natural-key reads use fail-closed uniqueness checks. A duplicate pairing ID,
+legacy source blob, row natural key, or BTC mirror key is reported instead of
+silently choosing or overwriting one physical document.
 
 ## Trusted pairing mint
 

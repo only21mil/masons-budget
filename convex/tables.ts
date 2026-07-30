@@ -42,7 +42,7 @@ import { ConvexError, v } from "convex/values";
 
 import type { Doc } from "./_generated/dataModel";
 import { query, mutation, type MutationCtx } from "./_generated/server";
-import { requireIsoDate } from "./dateValidation";
+import { isRealIsoDate, requireIsoDate } from "./dateValidation";
 import { authenticateDevice, markDeviceSeen } from "./deviceAuth";
 import { custodyValidator, familyMemberValidator } from "./schema";
 import { normalizeTodoRecord, todoUpdatedMs } from "./todoNormalize";
@@ -312,6 +312,14 @@ function monthOf(date: string): string {
 
 function rejectRowDate(code: string, field: string, message: string): never {
   throw new ConvexError({ code, field, message });
+}
+
+function rejectDeviceDate(
+  _code: string,
+  _field: string,
+  message: string,
+): never {
+  deviceFailure("VALIDATION_FAILED", message);
 }
 
 /** null, undefined and "" all mean "nothing here"; store the field as absent. */
@@ -1526,6 +1534,128 @@ function deviceFailure(
   });
 }
 
+const DEVICE_MAX_IDENTIFIER = 256;
+const DEVICE_MAX_TEXT = 16_384;
+const DEVICE_CONTROL = /[\u0000-\u001f\u007f]/;
+const DEVICE_MONTH = /^\d{4}-(?:0[1-9]|1[0-2])$/;
+const DEVICE_ISO_TIMESTAMP =
+  /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{3})?Z$/;
+
+function requireDeviceText(
+  value: string,
+  field: string,
+  options: { max?: number; allowEmpty?: boolean; canonical?: boolean } = {},
+): string {
+  const max = options.max ?? DEVICE_MAX_TEXT;
+  if (
+    (!options.allowEmpty && value.length === 0) ||
+    value.length > max ||
+    DEVICE_CONTROL.test(value) ||
+    (options.canonical && value !== value.trim())
+  ) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      `${field} must be ${options.allowEmpty ? "" : "non-empty, "}at most ${max} ` +
+        "characters, free of control characters" +
+        (options.canonical ? ", and have no surrounding whitespace." : "."),
+    );
+  }
+  return value;
+}
+
+function requireDeviceIdentifier(value: string, field: string): string {
+  return requireDeviceText(value, field, {
+    max: DEVICE_MAX_IDENTIFIER,
+    canonical: true,
+  });
+}
+
+function requireDeviceOptionalText(
+  value: string | undefined,
+  field: string,
+  max = DEVICE_MAX_TEXT,
+) {
+  if (value !== undefined) {
+    requireDeviceText(value, field, { max, allowEmpty: true });
+  }
+}
+
+function requireDeviceCalendarDate(value: string | undefined, field: string) {
+  if (value === undefined) return;
+  requireDeviceText(value, field, { max: 10 });
+  if (!isRealIsoDate(value)) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      `${field} must be a real ISO calendar date (yyyy-MM-dd).`,
+    );
+  }
+}
+
+function requireDeviceTimestamp(value: string | undefined, field: string) {
+  if (value === undefined) return;
+  requireDeviceText(value, field, { max: 24 });
+  const parsed = Date.parse(value);
+  if (!DEVICE_ISO_TIMESTAMP.test(value) || !Number.isFinite(parsed)) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      `${field} must be a UTC ISO timestamp (yyyy-MM-ddTHH:mm:ss[.SSS]Z).`,
+    );
+  }
+  const canonical = new Date(parsed).toISOString();
+  if (value !== canonical && value !== canonical.replace(".000Z", "Z")) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      `${field} must identify a real UTC instant without normalization.`,
+    );
+  }
+}
+
+function requireDeviceRevision(value: number | undefined, required: boolean) {
+  if (
+    (required && value === undefined) ||
+    (value !== undefined && (!Number.isSafeInteger(value) || value < 0))
+  ) {
+    deviceFailure(
+      value === undefined ? "REVISION_REQUIRED" : "VALIDATION_FAILED",
+      value === undefined
+        ? "baseUpdatedAtMs is required for this operation."
+        : "baseUpdatedAtMs must be a non-negative safe integer.",
+    );
+  }
+}
+
+function requireDeviceMonth(value: string) {
+  requireDeviceText(value, "month", { max: 7 });
+  if (!DEVICE_MONTH.test(value)) {
+    deviceFailure("VALIDATION_FAILED", "month must be yyyy-MM.");
+  }
+}
+
+function requireDeviceNonnegative(value: bigint, field: string) {
+  if (value < 0n) {
+    deviceFailure("VALIDATION_FAILED", `${field} must not be negative.`);
+  }
+}
+
+function requireDevicePositive(value: bigint, field: string) {
+  if (value <= 0n) {
+    deviceFailure("VALIDATION_FAILED", `${field} must be positive.`);
+  }
+}
+
+async function lockRuntimeSource(ctx: MutationCtx, sourceFile: string) {
+  const existing = await ctx.db
+    .query("runtimeSourceLocks")
+    .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
+    .unique();
+  if (!existing) {
+    await ctx.db.insert("runtimeSourceLocks", {
+      sourceFile,
+      lockedAtMs: Date.now(),
+    });
+  }
+}
+
 function nextUpdatedAtMs(previous: number): number {
   return Math.max(Date.now(), previous + 1);
 }
@@ -1585,9 +1715,7 @@ async function upsertRowTombstone(
     entityId,
     owner,
     deletedAtMs: now,
-    ...(deletedFromUpdatedAtMs === undefined
-      ? {}
-      : { deletedFromUpdatedAtMs }),
+    ...(deletedFromUpdatedAtMs === undefined ? {} : { deletedFromUpdatedAtMs }),
   };
   if (existing) await ctx.db.patch(existing._id, record);
   else await ctx.db.insert("rowTombstones", record);
@@ -1626,16 +1754,17 @@ async function upsertTransactionRow(
     .withIndex("by_source_tx_id", (q: any) =>
       q.eq("sourceFile", row.sourceFile).eq("txId", row.txId),
     )
-    .first();
+    .unique();
   const tombstone = optimistic
     ? await findRowTombstone(ctx, "transaction", row.sourceFile, row.txId)
     : null;
   if (existing) {
     if (existing.owner !== row.owner) {
-      throw new ConvexError(
-        `upsertTransaction: ${row.txId} in ${row.sourceFile} belongs to ` +
-          `${existing.owner}, not ${row.owner}; changing an existing ` +
-          `transaction's owner is refused.`,
+      deviceFailure(
+        "OWNER_MISMATCH",
+        `Transaction ${row.txId} belongs to ${existing.owner}, not ${row.owner}.`,
+        "transaction",
+        row.txId,
       );
     }
     if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
@@ -1646,10 +1775,7 @@ async function upsertTransactionRow(
         row.txId,
       );
     }
-    if (
-      optimistic &&
-      optimistic.baseUpdatedAtMs !== existing.updatedAtMs
-    ) {
+    if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
       deviceFailure(
         "ENTITY_CONFLICT",
         "The transaction changed after it was read.",
@@ -1657,6 +1783,7 @@ async function upsertTransactionRow(
         row.txId,
       );
     }
+    await lockRuntimeSource(ctx, row.sourceFile);
     await ctx.db.patch(existing._id, {
       ...row,
       updatedAtMs: optimistic
@@ -1684,6 +1811,7 @@ async function upsertTransactionRow(
       row.txId,
     );
   }
+  await lockRuntimeSource(ctx, row.sourceFile);
   await ctx.db.insert("transactions", row);
   await clearRowTombstone(ctx, "transaction", row.sourceFile, row.txId);
   return "inserted";
@@ -1697,15 +1825,17 @@ async function upsertTodoRow(
   const existing = await ctx.db
     .query("todos")
     .withIndex("by_todo_id", (q: any) => q.eq("todoId", row.todoId))
-    .first();
+    .unique();
   const tombstone = optimistic
     ? await findRowTombstone(ctx, "todo", row.sourceFile, row.todoId)
     : null;
   if (existing) {
     if (existing.owner !== row.owner) {
-      throw new ConvexError(
-        `upsertTodo: ${row.todoId} belongs to ${existing.owner}, not ` +
-          `${row.owner}; changing an existing todo's owner is refused.`,
+      deviceFailure(
+        "OWNER_MISMATCH",
+        `Todo ${row.todoId} belongs to ${existing.owner}, not ${row.owner}.`,
+        "todo",
+        row.todoId,
       );
     }
     if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
@@ -1716,10 +1846,7 @@ async function upsertTodoRow(
         row.todoId,
       );
     }
-    if (
-      optimistic &&
-      optimistic.baseUpdatedAtMs !== existing.updatedAtMs
-    ) {
+    if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
       deviceFailure(
         "ENTITY_CONFLICT",
         "The todo changed after it was read.",
@@ -1727,6 +1854,7 @@ async function upsertTodoRow(
         row.todoId,
       );
     }
+    await lockRuntimeSource(ctx, row.sourceFile);
     await ctx.db.patch(existing._id, {
       ...row,
       updatedAtMs: optimistic
@@ -1755,6 +1883,7 @@ async function upsertTodoRow(
       row.todoId,
     );
   }
+  await lockRuntimeSource(ctx, row.sourceFile);
   await ctx.db.insert("todos", row);
   await clearRowTombstone(ctx, "todo", row.sourceFile, row.todoId);
   await clearLegacyTodoTombstone(ctx, row.todoId);
@@ -1771,16 +1900,17 @@ async function upsertBtcBuyRow(
     .withIndex("by_source_buy_id", (q: any) =>
       q.eq("sourceFile", row.sourceFile).eq("buyId", row.buyId),
     )
-    .first();
+    .unique();
   const tombstone = optimistic
     ? await findRowTombstone(ctx, "btcBuy", row.sourceFile, row.buyId)
     : null;
   if (existing) {
     if (existing.owner !== row.owner) {
-      throw new ConvexError(
-        `upsertBtcBuy: ${row.buyId} in ${row.sourceFile} belongs to ` +
-          `${existing.owner}, not ${row.owner}; changing an existing buy's ` +
-          `owner is refused.`,
+      deviceFailure(
+        "OWNER_MISMATCH",
+        `Bitcoin buy ${row.buyId} belongs to ${existing.owner}, not ${row.owner}.`,
+        "btcBuy",
+        row.buyId,
       );
     }
     if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
@@ -1791,10 +1921,7 @@ async function upsertBtcBuyRow(
         row.buyId,
       );
     }
-    if (
-      optimistic &&
-      optimistic.baseUpdatedAtMs !== existing.updatedAtMs
-    ) {
+    if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
       deviceFailure(
         "ENTITY_CONFLICT",
         "The bitcoin buy changed after it was read.",
@@ -1802,6 +1929,7 @@ async function upsertBtcBuyRow(
         row.buyId,
       );
     }
+    await lockRuntimeSource(ctx, row.sourceFile);
     await ctx.db.patch(existing._id, {
       ...row,
       updatedAtMs: optimistic
@@ -1829,6 +1957,7 @@ async function upsertBtcBuyRow(
       row.buyId,
     );
   }
+  await lockRuntimeSource(ctx, row.sourceFile);
   await ctx.db.insert("btcBuys", row);
   await clearRowTombstone(ctx, "btcBuy", row.sourceFile, row.buyId);
   return "inserted";
@@ -1844,14 +1973,9 @@ async function upsertBtcBillPayRow(
     .withIndex("by_source_bill_pay_id", (q: any) =>
       q.eq("sourceFile", row.sourceFile).eq("billPayId", row.billPayId),
     )
-    .first();
+    .unique();
   const tombstone = optimistic
-    ? await findRowTombstone(
-        ctx,
-        "btcBillPay",
-        row.sourceFile,
-        row.billPayId,
-      )
+    ? await findRowTombstone(ctx, "btcBillPay", row.sourceFile, row.billPayId)
     : null;
   if (existing) {
     // Bill pays deliberately share ONE source file and carry `owner` per row,
@@ -1862,10 +1986,11 @@ async function upsertBtcBillPayRow(
     // An upsert may change a row's money and metadata; it may never change who
     // it belongs to.
     if (existing.owner !== row.owner) {
-      throw new ConvexError(
-        `upsertBtcBillPay: ${row.billPayId} in ${row.sourceFile} belongs to ` +
-          `${existing.owner}, not ${row.owner}. Reusing another member's id ` +
-          `would overwrite their payment, so this is refused rather than merged.`,
+      deviceFailure(
+        "OWNER_MISMATCH",
+        `Bitcoin bill pay ${row.billPayId} belongs to ${existing.owner}, not ${row.owner}.`,
+        "btcBillPay",
+        row.billPayId,
       );
     }
     if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
@@ -1876,10 +2001,7 @@ async function upsertBtcBillPayRow(
         row.billPayId,
       );
     }
-    if (
-      optimistic &&
-      optimistic.baseUpdatedAtMs !== existing.updatedAtMs
-    ) {
+    if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
       deviceFailure(
         "ENTITY_CONFLICT",
         "The bitcoin bill pay changed after it was read.",
@@ -1887,6 +2009,7 @@ async function upsertBtcBillPayRow(
         row.billPayId,
       );
     }
+    await lockRuntimeSource(ctx, row.sourceFile);
     await ctx.db.patch(existing._id, {
       ...row,
       updatedAtMs: optimistic
@@ -1914,6 +2037,7 @@ async function upsertBtcBillPayRow(
       row.billPayId,
     );
   }
+  await lockRuntimeSource(ctx, row.sourceFile);
   await ctx.db.insert("btcBillPays", row);
   await clearRowTombstone(ctx, "btcBillPay", row.sourceFile, row.billPayId);
   return "inserted";
@@ -1928,12 +2052,14 @@ async function upsertBtcAccountRow(
     .withIndex("by_owner_key", (q: any) =>
       q.eq("owner", row.owner).eq("key", row.key),
     )
-    .first();
+    .unique();
   if (existing) {
+    await lockRuntimeSource(ctx, row.sourceFile);
     await ctx.db.patch(existing._id, row);
     await clearRowTombstone(ctx, "btcAccount", row.sourceFile, row.key);
     return "updated";
   }
+  await lockRuntimeSource(ctx, row.sourceFile);
   await ctx.db.insert("btcAccounts", row);
   await clearRowTombstone(ctx, "btcAccount", row.sourceFile, row.key);
   return "inserted";
@@ -1962,13 +2088,15 @@ function requireSignAgrees(
   category: string,
 ) {
   if (minor === 0n) {
-    throw new ConvexError(
+    deviceFailure(
+      "VALIDATION_FAILED",
       "upsertTransaction: amountCents must not be zero — a zero-value " +
         "transaction has no sign to check.",
     );
   }
   if (category === "Income" && kind !== "credit") {
-    throw new ConvexError(
+    deviceFailure(
+      "VALIDATION_FAILED",
       'upsertTransaction: a transaction categorised "Income" must be sent ' +
         'with kind "credit".',
     );
@@ -1979,7 +2107,8 @@ function requireSignAgrees(
     const sourceFile = isAdult(owner)
       ? "transactions"
       : `${owner}-transactions`;
-    throw new ConvexError(
+    deviceFailure(
+      "VALIDATION_FAILED",
       `upsertTransaction: a ${kind} for ${owner} must be ` +
         `${expectedNegative ? "negative" : "positive"} in ${sourceFile} ` +
         `(purchases are positive and refunds are negative for every owner), ` +
@@ -2006,7 +2135,8 @@ function requireBillPayAmounts(billPay: {
   ];
   for (const [field, value] of positive) {
     if (value <= 0n) {
-      throw new ConvexError(
+      deviceFailure(
+        "VALIDATION_FAILED",
         `upsertBtcBillPay: ${field} for ${billPay.id} must be positive ` +
           `(a bill payment is a spend), got ${value}. The sign is not ` +
           `corrected here on purpose.`,
@@ -2014,7 +2144,8 @@ function requireBillPayAmounts(billPay: {
     }
   }
   if (billPay.feeUsdCents < 0n) {
-    throw new ConvexError(
+    deviceFailure(
+      "VALIDATION_FAILED",
       `upsertBtcBillPay: feeUsdCents for ${billPay.id} must not be negative, ` +
         `got ${billPay.feeUsdCents}.`,
     );
@@ -2163,7 +2294,13 @@ export const upsertTransaction = mutation({
     const file = sourceFile ?? "transactions";
     const fileOwner = ownerForSourceFile(file, "transactions");
     const now = Date.now();
-    const date = requireIsoDate(transaction.date, "date", now, 30, rejectRowDate);
+    const date = requireIsoDate(
+      transaction.date,
+      "date",
+      now,
+      30,
+      rejectRowDate,
+    );
     // During the compatibility window, older clients may omit owner or send
     // Rachel for the shared adult ledger. The source file is already the
     // authoritative ownership boundary, so canonicalize here without breaking
@@ -2221,8 +2358,9 @@ export const deleteTransaction = mutation({
       .withIndex("by_source_tx_id", (q) =>
         q.eq("sourceFile", file).eq("txId", txId),
       )
-      .first();
+      .unique();
     if (!existing) {
+      await lockRuntimeSource(ctx, file);
       await upsertRowTombstone(ctx, "transaction", file, txId, owner);
       return { txId, owner, removed: false };
     }
@@ -2241,6 +2379,7 @@ export const deleteTransaction = mutation({
           `is not corrected here on purpose because the delete is irreversible.`,
       );
     }
+    await lockRuntimeSource(ctx, file);
     await ctx.db.delete(existing._id);
     await upsertRowTombstone(ctx, "transaction", file, txId, existing.owner);
     return { txId, owner: existing.owner, removed: true };
@@ -2285,12 +2424,14 @@ export const deleteTodo = mutation({
     const existing = await ctx.db
       .query("todos")
       .withIndex("by_todo_id", (q) => q.eq("todoId", todoId))
-      .first();
+      .unique();
     if (!existing) {
+      await lockRuntimeSource(ctx, "todos");
       await upsertRowTombstone(ctx, "todo", "todos", todoId, DEFAULT_OWNER);
       await upsertLegacyTodoTombstone(ctx, todoId);
       return { todoId, removed: false };
     }
+    await lockRuntimeSource(ctx, existing.sourceFile);
     await ctx.db.delete(existing._id);
     await upsertRowTombstone(
       ctx,
@@ -2483,7 +2624,10 @@ function canonicalLedgerOwner(owner: FamilyMember): FamilyMember {
 function foldedCategoryName(value: string): string {
   const normalized = value.trim();
   if (!normalized) {
-    throw new ConvexError("Budget category name must not be empty.");
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Budget category name must not be empty.",
+    );
   }
   return normalized.toLocaleLowerCase("en-US");
 }
@@ -2503,7 +2647,8 @@ async function upsertBudgetCategoryCore(
 ): Promise<{ entityId: string; outcome: UpsertOutcome }> {
   const expectedOwner = budgetOwnerForSource(sourceFile);
   if (owner !== expectedOwner) {
-    throw new ConvexError(
+    deviceFailure(
+      "OWNER_SOURCE_MISMATCH",
       `Budget source "${sourceFile}" belongs to ${expectedOwner}, not ${owner}.`,
     );
   }
@@ -2512,20 +2657,29 @@ async function upsertBudgetCategoryCore(
     .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
     .unique();
   if (!existing) {
-    throw new ConvexError(
+    deviceFailure(
+      "ENTITY_NOT_FOUND",
       `Budget document "${sourceFile}" does not exist; a category edit ` +
         "does not create a whole budget document.",
+      "budgetCategory",
+      previousName ?? category.name,
     );
   }
   if (existing.owner !== owner) {
-    throw new ConvexError(
+    deviceFailure(
+      "OWNER_MISMATCH",
       `Budget document "${sourceFile}" belongs to ${existing.owner}, not ${owner}.`,
+      "budgetCategory",
+      previousName ?? category.name,
     );
   }
   if (month !== existing.month) {
-    throw new ConvexError(
+    deviceFailure(
+      "ENTITY_CONFLICT",
       `requested month ${JSON.stringify(month)} does not match ` +
         `${sourceFile}'s month ${JSON.stringify(existing.month)}.`,
+      "budgetCategory",
+      previousName ?? category.name,
     );
   }
   if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
@@ -2536,10 +2690,7 @@ async function upsertBudgetCategoryCore(
       previousName ?? category.name,
     );
   }
-  if (
-    optimistic &&
-    optimistic.baseUpdatedAtMs !== existing.updatedAtMs
-  ) {
+  if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
     deviceFailure(
       "ENTITY_CONFLICT",
       "The budget changed after it was read.",
@@ -2559,8 +2710,11 @@ async function upsertBudgetCategoryCore(
     (candidate) => foldedCategoryName(candidate.name) === targetFold,
   );
   if (previousName !== undefined && sourceIndex === -1) {
-    throw new ConvexError(
+    deviceFailure(
+      "ENTITY_NOT_FOUND",
       `Budget category ${JSON.stringify(previousName)} does not exist.`,
+      "budgetCategory",
+      previousName,
     );
   }
   if (
@@ -2568,8 +2722,11 @@ async function upsertBudgetCategoryCore(
     targetIndex !== -1 &&
     targetIndex !== sourceIndex
   ) {
-    throw new ConvexError(
+    deviceFailure(
+      "VALIDATION_FAILED",
       `Budget category ${JSON.stringify(name)} already exists; rename refused.`,
+      "budgetCategory",
+      name,
     );
   }
 
@@ -2584,6 +2741,7 @@ async function upsertBudgetCategoryCore(
   if (writeIndex === -1) categories.push(normalizedCategory);
   else categories[writeIndex] = normalizedCategory;
 
+  await lockRuntimeSource(ctx, sourceFile);
   await ctx.db.patch(existing._id, {
     categories,
     updatedAtMs: optimistic
@@ -2595,12 +2753,12 @@ async function upsertBudgetCategoryCore(
       ctx,
       "budgetCategory",
       sourceFile,
-      previousName.trim(),
+      sourceFold,
       owner,
       optimistic?.baseUpdatedAtMs,
     );
   }
-  await clearRowTombstone(ctx, "budgetCategory", sourceFile, name);
+  await clearRowTombstone(ctx, "budgetCategory", sourceFile, targetFold);
   return { entityId: name, outcome };
 }
 
@@ -2614,7 +2772,8 @@ async function deleteBudgetCategoryCore(
 ): Promise<boolean> {
   const expectedOwner = budgetOwnerForSource(sourceFile);
   if (owner !== expectedOwner) {
-    throw new ConvexError(
+    deviceFailure(
+      "OWNER_SOURCE_MISMATCH",
       `Budget source "${sourceFile}" belongs to ${expectedOwner}, not ${owner}.`,
     );
   }
@@ -2623,17 +2782,28 @@ async function deleteBudgetCategoryCore(
     .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
     .unique();
   if (!existing) {
-    throw new ConvexError(`Budget document "${sourceFile}" does not exist.`);
+    deviceFailure(
+      "ENTITY_NOT_FOUND",
+      `Budget document "${sourceFile}" does not exist.`,
+      "budgetCategory",
+      name,
+    );
   }
   if (existing.owner !== owner) {
-    throw new ConvexError(
+    deviceFailure(
+      "OWNER_MISMATCH",
       `Budget document "${sourceFile}" belongs to ${existing.owner}, not ${owner}.`,
+      "budgetCategory",
+      name,
     );
   }
   if (month !== existing.month) {
-    throw new ConvexError(
+    deviceFailure(
+      "ENTITY_CONFLICT",
       `requested month ${JSON.stringify(month)} does not match ` +
         `${sourceFile}'s month ${JSON.stringify(existing.month)}.`,
+      "budgetCategory",
+      name,
     );
   }
   if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
@@ -2648,13 +2818,12 @@ async function deleteBudgetCategoryCore(
   const index = existing.categories.findIndex(
     (candidate) => foldedCategoryName(candidate.name) === targetFold,
   );
+  const tombstoneId = targetFold;
   const tombstone = optimistic
-    ? await findRowTombstone(ctx, "budgetCategory", sourceFile, name.trim())
+    ? await findRowTombstone(ctx, "budgetCategory", sourceFile, tombstoneId)
     : null;
   if (index === -1 && optimistic) {
-    if (
-      tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs
-    ) {
+    if (tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs) {
       return false;
     }
     deviceFailure(
@@ -2666,10 +2835,7 @@ async function deleteBudgetCategoryCore(
       name,
     );
   }
-  if (
-    optimistic &&
-    optimistic.baseUpdatedAtMs !== existing.updatedAtMs
-  ) {
+  if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
     deviceFailure(
       "ENTITY_CONFLICT",
       "The budget changed after it was read.",
@@ -2680,6 +2846,7 @@ async function deleteBudgetCategoryCore(
   if (index !== -1) {
     const categories = [...existing.categories];
     categories.splice(index, 1);
+    await lockRuntimeSource(ctx, sourceFile);
     await ctx.db.patch(existing._id, {
       categories,
       updatedAtMs: optimistic
@@ -2687,11 +2854,12 @@ async function deleteBudgetCategoryCore(
         : Date.now(),
     });
   }
+  if (index === -1) await lockRuntimeSource(ctx, sourceFile);
   await upsertRowTombstone(
     ctx,
     "budgetCategory",
     sourceFile,
-    name.trim(),
+    tombstoneId,
     owner,
     optimistic?.baseUpdatedAtMs,
   );
@@ -2817,9 +2985,7 @@ async function deleteTransactionCore(
     );
   }
   if (!existing && optimistic) {
-    if (
-      tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs
-    ) {
+    if (tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs) {
       return false;
     }
     deviceFailure(
@@ -2832,8 +2998,11 @@ async function deleteTransactionCore(
     );
   }
   if (existing && existing.owner !== owner) {
-    throw new ConvexError(
+    deviceFailure(
+      "OWNER_MISMATCH",
       `Transaction ${txId} belongs to ${existing.owner}, not ${owner}.`,
+      "transaction",
+      txId,
     );
   }
   if (
@@ -2848,6 +3017,7 @@ async function deleteTransactionCore(
       txId,
     );
   }
+  await lockRuntimeSource(ctx, sourceFile);
   if (existing) await ctx.db.delete(existing._id);
   await upsertRowTombstone(
     ctx,
@@ -2882,9 +3052,7 @@ async function deleteTodoCore(
     );
   }
   if (!existing && optimistic) {
-    if (
-      tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs
-    ) {
+    if (tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs) {
       return false;
     }
     deviceFailure(
@@ -2897,8 +3065,11 @@ async function deleteTodoCore(
     );
   }
   if (existing && existing.owner !== owner) {
-    throw new ConvexError(
+    deviceFailure(
+      "OWNER_MISMATCH",
       `Todo ${todoId} belongs to ${existing.owner}, not ${owner}.`,
+      "todo",
+      todoId,
     );
   }
   if (
@@ -2913,6 +3084,7 @@ async function deleteTodoCore(
       todoId,
     );
   }
+  await lockRuntimeSource(ctx, "todos");
   if (existing) await ctx.db.delete(existing._id);
   await upsertRowTombstone(
     ctx,
@@ -2952,9 +3124,7 @@ async function deleteBtcBuyCore(
     );
   }
   if (!existing && optimistic) {
-    if (
-      tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs
-    ) {
+    if (tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs) {
       return false;
     }
     deviceFailure(
@@ -2967,8 +3137,11 @@ async function deleteBtcBuyCore(
     );
   }
   if (existing && existing.owner !== owner) {
-    throw new ConvexError(
+    deviceFailure(
+      "OWNER_MISMATCH",
       `Bitcoin buy ${buyId} belongs to ${existing.owner}, not ${owner}.`,
+      "btcBuy",
+      buyId,
     );
   }
   if (
@@ -2983,6 +3156,7 @@ async function deleteBtcBuyCore(
       buyId,
     );
   }
+  await lockRuntimeSource(ctx, sourceFile);
   if (existing) await ctx.db.delete(existing._id);
   await upsertRowTombstone(
     ctx,
@@ -3020,9 +3194,7 @@ async function deleteBtcBillPayCore(
     );
   }
   if (!existing && optimistic) {
-    if (
-      tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs
-    ) {
+    if (tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs) {
       return false;
     }
     deviceFailure(
@@ -3035,8 +3207,11 @@ async function deleteBtcBillPayCore(
     );
   }
   if (existing && existing.owner !== owner) {
-    throw new ConvexError(
+    deviceFailure(
+      "OWNER_MISMATCH",
       `Bitcoin bill pay ${billPayId} belongs to ${existing.owner}, not ${owner}.`,
+      "btcBillPay",
+      billPayId,
     );
   }
   if (
@@ -3051,6 +3226,7 @@ async function deleteBtcBillPayCore(
       billPayId,
     );
   }
+  await lockRuntimeSource(ctx, sourceFile);
   if (existing) await ctx.db.delete(existing._id);
   await upsertRowTombstone(
     ctx,
@@ -3130,7 +3306,14 @@ async function upsertBtcAccountCore(
 ): Promise<UpsertOutcome> {
   requireSourceOwner(sourceFile, "btcAccounts", account.owner);
   const key = account.key.trim();
-  if (!key) throw new ConvexError("Bitcoin account key must not be empty.");
+  if (!key) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Bitcoin account key must not be empty.",
+      "btcAccount",
+      account.key,
+    );
+  }
   const existingDocument = await ctx.db
     .query("btcBalanceDocuments")
     .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
@@ -3139,9 +3322,12 @@ async function upsertBtcAccountCore(
     ? await findRowTombstone(ctx, "btcAccount", sourceFile, key)
     : null;
   if (existingDocument && existingDocument.owner !== account.owner) {
-    throw new ConvexError(
+    deviceFailure(
+      "OWNER_MISMATCH",
       `Bitcoin document "${sourceFile}" belongs to ` +
         `${existingDocument.owner}, not ${account.owner}.`,
+      "btcAccount",
+      key,
     );
   }
   if (
@@ -3224,8 +3410,10 @@ async function upsertBtcAccountCore(
     updatedAtMs: now,
   };
   if (existingDocument) {
+    await lockRuntimeSource(ctx, sourceFile);
     await ctx.db.patch(existingDocument._id, documentPatch);
   } else {
+    await lockRuntimeSource(ctx, sourceFile);
     await ctx.db.insert("btcBalanceDocuments", {
       sourceFile,
       ...documentPatch,
@@ -3264,8 +3452,14 @@ async function deleteBtcAccountCore(
 ) {
   requireSourceOwner(sourceFile, "btcAccounts", owner);
   const accountKey = key.trim();
-  if (!accountKey)
-    throw new ConvexError("Bitcoin account key must not be empty.");
+  if (!accountKey) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Bitcoin account key must not be empty.",
+      "btcAccount",
+      key,
+    );
+  }
   const document = await ctx.db
     .query("btcBalanceDocuments")
     .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
@@ -3282,8 +3476,11 @@ async function deleteBtcAccountCore(
     );
   }
   if (document && document.owner !== owner) {
-    throw new ConvexError(
+    deviceFailure(
+      "OWNER_MISMATCH",
       `Bitcoin document "${sourceFile}" belongs to ${document.owner}, not ${owner}.`,
+      "btcAccount",
+      accountKey,
     );
   }
   const accounts = document
@@ -3292,9 +3489,7 @@ async function deleteBtcAccountCore(
   const removed =
     document !== null && accounts.length !== document.accounts.length;
   if (!removed && optimistic) {
-    if (
-      tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs
-    ) {
+    if (tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs) {
       return false;
     }
     deviceFailure(
@@ -3319,6 +3514,7 @@ async function deleteBtcAccountCore(
     );
   }
   if (document && removed) {
+    await lockRuntimeSource(ctx, sourceFile);
     await ctx.db.patch(document._id, {
       accounts,
       totals: btcAccountTotals(accounts),
@@ -3327,6 +3523,7 @@ async function deleteBtcAccountCore(
         : Date.now(),
     });
   }
+  if (!removed) await lockRuntimeSource(ctx, sourceFile);
   const mirror = await ctx.db
     .query("btcAccounts")
     .withIndex("by_owner_key", (q) =>
@@ -3364,6 +3561,12 @@ export const upsertTransactionFromDevice = mutation({
       args.deviceToken,
       "transactions:write",
     );
+    requireDeviceRevision(args.baseUpdatedAtMs, false);
+    requireDeviceIdentifier(args.transaction.id, "transaction.id");
+    requireDeviceText(args.transaction.merchant, "transaction.merchant");
+    requireDeviceText(args.transaction.category, "transaction.category");
+    requireDeviceOptionalText(args.transaction.card, "transaction.card");
+    requireDeviceOptionalText(args.transaction.note, "transaction.note");
     const ledgerOwner = canonicalLedgerOwner(args.owner);
     requireSourceOwner(args.sourceFile, "transactions", ledgerOwner);
     if (args.transaction.owner !== args.owner) {
@@ -3380,7 +3583,7 @@ export const upsertTransactionFromDevice = mutation({
       "date",
       now,
       30,
-      rejectRowDate,
+      rejectDeviceDate,
     );
     requireSignAgrees(
       args.transaction.amountCents,
@@ -3388,19 +3591,23 @@ export const upsertTransactionFromDevice = mutation({
       args.transaction.kind,
       args.transaction.category,
     );
-    const outcome = await upsertTransactionRow(ctx, {
-      txId: args.transaction.id,
-      owner: ledgerOwner,
-      date,
-      month: monthOf(date),
-      merchant: args.transaction.merchant,
-      amountCents: args.transaction.amountCents,
-      category: args.transaction.category,
-      card: optionalText(args.transaction.card),
-      note: optionalText(args.transaction.note),
-      sourceFile: args.sourceFile,
-      updatedAtMs: now,
-    }, { baseUpdatedAtMs: args.baseUpdatedAtMs });
+    const outcome = await upsertTransactionRow(
+      ctx,
+      {
+        txId: args.transaction.id,
+        owner: ledgerOwner,
+        date,
+        month: monthOf(date),
+        merchant: args.transaction.merchant,
+        amountCents: args.transaction.amountCents,
+        category: args.transaction.category,
+        card: optionalText(args.transaction.card),
+        note: optionalText(args.transaction.note),
+        sourceFile: args.sourceFile,
+        updatedAtMs: now,
+      },
+      { baseUpdatedAtMs: args.baseUpdatedAtMs },
+    );
     await markDeviceSeen(ctx, device);
     return { ok: true as const, entityId: args.transaction.id, outcome };
   },
@@ -3423,6 +3630,8 @@ export const deleteTransactionFromDevice = mutation({
       args.deviceToken,
       "transactions:write",
     );
+    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    requireDeviceIdentifier(args.entityId, "entityId");
     const removed = await deleteTransactionCore(
       ctx,
       args.sourceFile,
@@ -3452,8 +3661,24 @@ export const upsertTodoFromDevice = mutation({
       args.deviceToken,
       "todos:write",
     );
+    requireDeviceRevision(args.baseUpdatedAtMs, false);
+    requireDeviceIdentifier(args.todo.id, "todo.id");
+    requireDeviceText(args.todo.title, "todo.title");
+    requireDeviceOptionalText(args.todo.lane, "todo.lane");
+    requireDeviceOptionalText(args.todo.project, "todo.project");
+    requireDeviceOptionalText(args.todo.area, "todo.area");
+    requireDeviceCalendarDate(args.todo.due, "todo.due");
+    requireDeviceOptionalText(args.todo.notes, "todo.notes");
+    requireDeviceTimestamp(args.todo.createdAt, "todo.createdAt");
+    requireDeviceTimestamp(args.todo.updatedAt, "todo.updatedAt");
+    requireDeviceTimestamp(args.todo.completedAt, "todo.completedAt");
     if (args.todo.owner !== args.owner) {
-      throw new ConvexError("Todo owner does not match request owner.");
+      deviceFailure(
+        "OWNER_MISMATCH",
+        "Todo owner does not match request owner.",
+        "todo",
+        args.todo.id,
+      );
     }
     const outcome = await upsertTodoRow(
       ctx,
@@ -3482,6 +3707,8 @@ export const deleteTodoFromDevice = mutation({
       args.deviceToken,
       "todos:write",
     );
+    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    requireDeviceIdentifier(args.entityId, "entityId");
     const removed = await deleteTodoCore(ctx, args.owner, args.entityId, {
       baseUpdatedAtMs: args.baseUpdatedAtMs,
     });
@@ -3509,6 +3736,14 @@ export const upsertBudgetCategoryFromDevice = mutation({
       args.deviceToken,
       "budget:write",
     );
+    requireDeviceRevision(args.baseUpdatedAtMs, false);
+    requireDeviceMonth(args.month);
+    requireDeviceIdentifier(args.category.name, "category.name");
+    requireDeviceOptionalText(args.category.icon, "category.icon");
+    requireDeviceNonnegative(args.category.budgetCents, "category.budgetCents");
+    if (args.previousName !== undefined) {
+      requireDeviceIdentifier(args.previousName, "previousName");
+    }
     const result = await upsertBudgetCategoryCore(
       ctx,
       args.sourceFile,
@@ -3541,6 +3776,9 @@ export const deleteBudgetCategoryFromDevice = mutation({
       args.deviceToken,
       "budget:write",
     );
+    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    requireDeviceMonth(args.month);
+    requireDeviceIdentifier(args.entityId, "entityId");
     const removed = await deleteBudgetCategoryCore(
       ctx,
       args.sourceFile,
@@ -3571,6 +3809,20 @@ export const upsertBtcBuyFromDevice = mutation({
       args.deviceToken,
       "bitcoin:write",
     );
+    requireDeviceRevision(args.baseUpdatedAtMs, false);
+    requireDeviceIdentifier(args.buy.id, "buy.id");
+    requireDeviceText(args.buy.source, "buy.source");
+    requireDevicePositive(args.buy.sats, "buy.sats");
+    requireDevicePositive(args.buy.priceUsdCents, "buy.priceUsdCents");
+    requireDevicePositive(args.buy.usdCents, "buy.usdCents");
+    requireDeviceOptionalText(args.buy.note, "buy.note");
+    requireDeviceOptionalText(args.buy.status, "buy.status");
+    requireDeviceOptionalText(args.buy.costBasisStatus, "buy.costBasisStatus");
+    requireDeviceOptionalText(args.buy.loggedBy, "buy.loggedBy");
+    requireDeviceOptionalText(
+      args.buy.archimedesRequestId,
+      "buy.archimedesRequestId",
+    );
     const ledgerOwner = canonicalLedgerOwner(args.owner);
     requireSourceOwner(args.sourceFile, "btcBuys", ledgerOwner);
     if (args.buy.owner !== args.owner) {
@@ -3582,24 +3834,34 @@ export const upsertBtcBuyFromDevice = mutation({
       );
     }
     const now = Date.now();
-    const date = requireIsoDate(args.buy.date, "date", now, 30, rejectRowDate);
-    const outcome = await upsertBtcBuyRow(ctx, {
-      buyId: args.buy.id,
-      owner: ledgerOwner,
-      date,
-      month: monthOf(date),
-      source: args.buy.source,
-      sats: args.buy.sats,
-      priceUsdCents: args.buy.priceUsdCents,
-      usdCents: args.buy.usdCents,
-      note: optionalText(args.buy.note),
-      status: optionalText(args.buy.status),
-      costBasisStatus: optionalText(args.buy.costBasisStatus),
-      loggedBy: optionalText(args.buy.loggedBy),
-      archimedesRequestId: optionalText(args.buy.archimedesRequestId),
-      sourceFile: args.sourceFile,
-      updatedAtMs: now,
-    }, { baseUpdatedAtMs: args.baseUpdatedAtMs });
+    const date = requireIsoDate(
+      args.buy.date,
+      "date",
+      now,
+      30,
+      rejectDeviceDate,
+    );
+    const outcome = await upsertBtcBuyRow(
+      ctx,
+      {
+        buyId: args.buy.id,
+        owner: ledgerOwner,
+        date,
+        month: monthOf(date),
+        source: args.buy.source,
+        sats: args.buy.sats,
+        priceUsdCents: args.buy.priceUsdCents,
+        usdCents: args.buy.usdCents,
+        note: optionalText(args.buy.note),
+        status: optionalText(args.buy.status),
+        costBasisStatus: optionalText(args.buy.costBasisStatus),
+        loggedBy: optionalText(args.buy.loggedBy),
+        archimedesRequestId: optionalText(args.buy.archimedesRequestId),
+        sourceFile: args.sourceFile,
+        updatedAtMs: now,
+      },
+      { baseUpdatedAtMs: args.baseUpdatedAtMs },
+    );
     await markDeviceSeen(ctx, device);
     return { ok: true as const, entityId: args.buy.id, outcome };
   },
@@ -3622,6 +3884,8 @@ export const deleteBtcBuyFromDevice = mutation({
       args.deviceToken,
       "bitcoin:write",
     );
+    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    requireDeviceIdentifier(args.entityId, "entityId");
     const removed = await deleteBtcBuyCore(
       ctx,
       args.sourceFile,
@@ -3651,6 +3915,13 @@ export const upsertBtcBillPayFromDevice = mutation({
       args.deviceToken,
       "bitcoin:write",
     );
+    requireDeviceRevision(args.baseUpdatedAtMs, false);
+    requireDeviceIdentifier(args.billPay.id, "billPay.id");
+    requireDeviceText(args.billPay.merchant, "billPay.merchant");
+    requireDeviceText(args.billPay.category, "billPay.category");
+    requireDeviceOptionalText(args.billPay.platform, "billPay.platform");
+    requireDeviceOptionalText(args.billPay.note, "billPay.note");
+    requireDeviceOptionalText(args.billPay.reference, "billPay.reference");
     if (args.billPay.owner !== args.owner) {
       deviceFailure(
         "OWNER_MISMATCH",
@@ -3659,6 +3930,8 @@ export const upsertBtcBillPayFromDevice = mutation({
         args.billPay.id,
       );
     }
+    const ledgerOwner = canonicalLedgerOwner(args.owner);
+    requireSourceOwner(args.sourceFile, "btcBillPays", ledgerOwner);
     requireBillPayAmounts(args.billPay);
     const now = Date.now();
     const date = requireIsoDate(
@@ -3666,25 +3939,29 @@ export const upsertBtcBillPayFromDevice = mutation({
       "date",
       now,
       30,
-      rejectRowDate,
+      rejectDeviceDate,
     );
-    const outcome = await upsertBtcBillPayRow(ctx, {
-      billPayId: args.billPay.id,
-      owner: canonicalLedgerOwner(args.owner),
-      date,
-      month: monthOf(date),
-      merchant: args.billPay.merchant,
-      category: args.billPay.category,
-      amountUsdCents: args.billPay.amountUsdCents,
-      btcSpentSats: args.billPay.btcSpentSats,
-      btcPriceCents: args.billPay.btcPriceCents,
-      platform: optionalText(args.billPay.platform),
-      note: optionalText(args.billPay.note),
-      feeUsdCents: args.billPay.feeUsdCents,
-      reference: optionalText(args.billPay.reference),
-      sourceFile: args.sourceFile,
-      updatedAtMs: now,
-    }, { baseUpdatedAtMs: args.baseUpdatedAtMs });
+    const outcome = await upsertBtcBillPayRow(
+      ctx,
+      {
+        billPayId: args.billPay.id,
+        owner: ledgerOwner,
+        date,
+        month: monthOf(date),
+        merchant: args.billPay.merchant,
+        category: args.billPay.category,
+        amountUsdCents: args.billPay.amountUsdCents,
+        btcSpentSats: args.billPay.btcSpentSats,
+        btcPriceCents: args.billPay.btcPriceCents,
+        platform: optionalText(args.billPay.platform),
+        note: optionalText(args.billPay.note),
+        feeUsdCents: args.billPay.feeUsdCents,
+        reference: optionalText(args.billPay.reference),
+        sourceFile: args.sourceFile,
+        updatedAtMs: now,
+      },
+      { baseUpdatedAtMs: args.baseUpdatedAtMs },
+    );
     await markDeviceSeen(ctx, device);
     return { ok: true as const, entityId: args.billPay.id, outcome };
   },
@@ -3707,9 +3984,13 @@ export const deleteBtcBillPayFromDevice = mutation({
       args.deviceToken,
       "bitcoin:write",
     );
+    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    requireDeviceIdentifier(args.entityId, "entityId");
+    const ledgerOwner = canonicalLedgerOwner(args.owner);
+    requireSourceOwner(args.sourceFile, "btcBillPays", ledgerOwner);
     const removed = await deleteBtcBillPayCore(
       ctx,
-      canonicalLedgerOwner(args.owner),
+      ledgerOwner,
       args.entityId,
       { baseUpdatedAtMs: args.baseUpdatedAtMs },
     );
@@ -3735,6 +4016,41 @@ export const upsertBtcAccountFromDevice = mutation({
       args.deviceToken,
       "bitcoin:write",
     );
+    requireDeviceRevision(args.baseUpdatedAtMs, false);
+    requireDeviceIdentifier(args.account.key, "account.key");
+    requireDeviceText(args.account.label, "account.label");
+    requireDeviceNonnegative(args.account.sats, "account.sats");
+    requireDeviceTimestamp(args.account.asOf, "account.asOf");
+    if (args.account.schemaVersion !== undefined) {
+      requireDeviceNonnegative(
+        args.account.schemaVersion,
+        "account.schemaVersion",
+      );
+    }
+    if (args.account.fiatValuation !== undefined) {
+      requireDeviceNonnegative(
+        args.account.fiatValuation.cents,
+        "account.fiatValuation.cents",
+      );
+      if (args.account.fiatValuation.priceCents !== undefined) {
+        requireDeviceNonnegative(
+          args.account.fiatValuation.priceCents,
+          "account.fiatValuation.priceCents",
+        );
+      }
+      requireDeviceTimestamp(
+        args.account.fiatValuation.quotedAt,
+        "account.fiatValuation.quotedAt",
+      );
+      requireDeviceOptionalText(
+        args.account.fiatValuation.source,
+        "account.fiatValuation.source",
+      );
+      requireDeviceOptionalText(
+        args.account.fiatValuation.confidence,
+        "account.fiatValuation.confidence",
+      );
+    }
     if (args.account.owner !== args.owner) {
       deviceFailure(
         "OWNER_MISMATCH",
@@ -3747,14 +4063,11 @@ export const upsertBtcAccountFromDevice = mutation({
       ...args.account,
       owner: canonicalLedgerOwner(args.account.owner),
     };
-    const outcome = await upsertBtcAccountCore(
-      ctx,
-      args.sourceFile,
-      account,
-      { baseUpdatedAtMs: args.baseUpdatedAtMs },
-    );
+    const outcome = await upsertBtcAccountCore(ctx, args.sourceFile, account, {
+      baseUpdatedAtMs: args.baseUpdatedAtMs,
+    });
     await markDeviceSeen(ctx, device);
-    return { ok: true as const, entityId: args.account.key.trim(), outcome };
+    return { ok: true as const, entityId: args.account.key, outcome };
   },
 });
 
@@ -3775,7 +4088,9 @@ export const deleteBtcAccountFromDevice = mutation({
       args.deviceToken,
       "bitcoin:write",
     );
-    const entityId = args.entityId.trim();
+    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    requireDeviceIdentifier(args.entityId, "entityId");
+    const entityId = args.entityId;
     const removed = await deleteBtcAccountCore(
       ctx,
       args.sourceFile,

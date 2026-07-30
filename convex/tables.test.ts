@@ -1929,7 +1929,9 @@ describe("row mutations", () => {
 
     expect(result.owner).toBe("victor");
     const rows = await queryRows(fn.listTransactions, { viewer: "rachel" });
-    expect(rows.find((row) => row.txId === "legacy-rachel")?.owner).toBe("victor");
+    expect(rows.find((row) => row.txId === "legacy-rachel")?.owner).toBe(
+      "victor",
+    );
   });
 
   it("deletes one source-scoped transaction and is idempotent when retried", async () => {
@@ -2170,7 +2172,7 @@ describe("row mutations", () => {
           category: { name: "Groceries", budgetCents: 1n },
         }),
       ).rejects.toThrow(
-        new RegExp(`requested month "${staleMonth}".*month "2026-07"`),
+        new RegExp(`requested month .*${staleMonth}.*month .*2026-07`),
       );
     }
 

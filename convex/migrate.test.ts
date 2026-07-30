@@ -120,6 +120,7 @@ const api = {
         migratedRowCount: number;
         targetTables: { table: string; rows: number }[];
         planFingerprint: string;
+        runtimeLocked: boolean;
       }[];
       skippedDocumentShapedFiles: string[];
       frozenPlanFingerprint: string;
@@ -1310,7 +1311,7 @@ describe("migrating every file", () => {
       await ctx.db.insert("rowTombstones", {
         entityType: "budgetCategory",
         sourceFile: "budget",
-        entityId: "Adult category 0",
+        entityId: "adult category 0",
         owner: "victor",
         deletedAtMs: Date.now(),
       });
@@ -2036,6 +2037,88 @@ describe("verification is a real check, not a formality", () => {
 // ─── Refusals ────────────────────────────────────────────────────────────────
 
 describe("refusals", () => {
+  test("dry-run, apply, and verify fail closed before reading or writing a runtime-owned source", async () => {
+    const t = harness();
+    await seedBlob(t, "transactions", { deliberately: "unreadable" });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("runtimeSourceLocks", {
+        sourceFile: "transactions",
+        lockedAtMs: 1,
+      });
+      await ctx.db.insert("transactions", {
+        sourceFile: "transactions",
+        txId: "runtime-row",
+        owner: "victor",
+        date: "2026-07-30",
+        month: "2026-07",
+        merchant: "Runtime truth",
+        amountCents: 100n,
+        category: "Food",
+        updatedAtMs: 2,
+      });
+    });
+
+    await expect(
+      t.mutation(api.migrateFile, { file: "transactions" }),
+    ).rejects.toThrow(/RUNTIME_SOURCE_LOCKED/);
+    await expect(
+      t.mutation(api.migrateFile, {
+        file: "transactions",
+        apply: true,
+        expectedPlanFingerprint: "not-a-reviewed-plan",
+      }),
+    ).rejects.toThrow(/RUNTIME_SOURCE_LOCKED/);
+    await expect(
+      t.query(api.verifyFile, { file: "transactions" }),
+    ).rejects.toThrow(/RUNTIME_SOURCE_LOCKED/);
+
+    const rows = await rowsIn(t, "transactions");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      txId: "runtime-row",
+      merchant: "Runtime truth",
+      updatedAtMs: 2,
+    });
+  });
+
+  test("duplicate physical natural keys are refused instead of collapsed in a map", async () => {
+    const t = harness();
+    await seedBlob(t, "transactions", [TRANSACTIONS[0]]);
+    await t.run(async (ctx) => {
+      for (const merchant of ["First physical row", "Second physical row"]) {
+        await ctx.db.insert("transactions", {
+          sourceFile: "transactions",
+          txId: String(TRANSACTIONS[0]!.id),
+          owner: "victor",
+          date: "2026-07-01",
+          month: "2026-07",
+          merchant,
+          amountCents: 100n,
+          category: "Food",
+          updatedAtMs: 1,
+        });
+      }
+    });
+
+    await expect(
+      t.mutation(api.migrateFile, { file: "transactions" }),
+    ).rejects.toThrow(/Duplicate migrated natural key/);
+    expect(
+      (await rowsIn(t, "transactions")).map((row) => row.merchant),
+    ).toEqual(["First physical row", "Second physical row"]);
+  });
+
+  test("duplicate source blobs are refused instead of selecting one arbitrarily", async () => {
+    const t = harness();
+    await seedBlob(t, "transactions", [TRANSACTIONS[0]], 1);
+    await seedBlob(t, "transactions", [TRANSACTIONS[1]], 2);
+
+    await expect(
+      t.mutation(api.migrateFile, { file: "transactions" }),
+    ).rejects.toThrow();
+    expect(await rowsIn(t, "transactions")).toEqual([]);
+  });
+
   test("a shape it does not understand is refused, not guessed at", async () => {
     const t = harness();
     await seedBlob(t, "transactions", { month: "2026-07", total: 1234 });
@@ -2094,6 +2177,7 @@ describe("status", () => {
         projectedRowCount: projectedRows,
         migratedRowCount: 0,
         blobUnreadable: false,
+        runtimeLocked: false,
       });
     }
 
@@ -2118,6 +2202,26 @@ describe("status", () => {
     expect(
       status.files.find((file) => file.file === "todos")!.blobUnreadable,
     ).toBe(true);
+  });
+
+  test("reports source-level runtime ownership without mutating it", async () => {
+    const t = harness();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("runtimeSourceLocks", {
+        sourceFile: "transactions",
+        lockedAtMs: 1,
+      });
+    });
+    const status = await t.query(api.status, {});
+    expect(
+      status.files.find((file) => file.file === "transactions")!.runtimeLocked,
+    ).toBe(true);
+    expect(
+      status.files.find((file) => file.file === "todos")!.runtimeLocked,
+    ).toBe(false);
+    expect(
+      await t.run(async (ctx) => ctx.db.query("runtimeSourceLocks").collect()),
+    ).toHaveLength(1);
   });
 });
 
