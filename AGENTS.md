@@ -15,7 +15,10 @@ Never describe MC2 as a live upstream or direct work toward a separate MC2 repo.
 - Work happens on a branch, reviewed via a pull request. Never commit to `main`.
 - File a GitHub issue for a bug or follow-up rather than batching it silently into the current change.
 - Check open issues and PRs at the start of a task so lanes do not duplicate work.
-- Builds run on GitHub Actions (`.github/workflows/clients.yml`), not on an installed local toolchain.
+- Routine verification runs in GitHub Actions. Linux/Android work uses hosted
+  Ubuntu; Apple work uses the registered MacBook Pro, with the Mac mini only as
+  an explicitly selected fallback. The Framework laptop remains the primary
+  development and Linux-preflight machine.
 
 Superseded: this file previously mandated mirroring every change into Linear. That rule no longer applies.
 
@@ -101,9 +104,15 @@ Sync entry points in `MC2SyncService.syncAll()` are split by member. Mason path:
 
 This app is often worked by Codex, OpenCode, Claude, and Sats lanes. All of them may keep fixing bugs, filing GitHub issues, moving to the next item, editing code, and running static/non-app-artifact checks automatically.
 
+The unsigned Apple verification automatically routed by `.github/workflows/swift.yml`
+to the registered MacBook Pro is pre-authorized for affected PRs and main pushes.
+It creates no distributable artifact. The Mac mini route requires an explicit
+manual fallback dispatch.
+
 Stop and ask Victor before:
 - bumping `CURRENT_PROJECT_VERSION` for distribution
-- any `xcodebuild build` / `xcodebuild test` / simulator build-run command that builds app targets
+- any direct or ad hoc `xcodebuild build` / `xcodebuild test` / simulator
+  build-run command outside that ordinary CI route
 - creating an archive for TestFlight/App Store/tester distribution
 - exporting an `.ipa`, `.app`, `.pkg`, `.dmg`, or other release artifact
 - uploading to TestFlight/App Store Connect or any distribution channel
@@ -137,15 +146,18 @@ Current status, historical cutover transcript, blast radius and rollback:
 
 ## Build, archive, TestFlight
 
-**Releases run in GitHub Actions, not on a workstation.**
-`.github/workflows/deploy.yml` is `workflow_dispatch` only on `macos-latest`.
-It writes and validates an App Store Connect API key, archives and exports with
-`-allowProvisioningUpdates` plus the API-key path/ID/issuer, preserves the signed
-`.ipa` or `.pkg`, then uploads with `xcrun altool --apiKey/--apiIssuer`.
-The required repository secrets are `ASC_API_KEY_P8`, `ASC_KEY_ID`, and
-`ASC_ISSUER_ID`; the old Apple-ID password and `.p12` paths are retired. Signing
-uses team `384ZGKG4GB`. Triggering the workflow is the approval gate above — it
-is never automatic.
+**Releases run in GitHub Actions on self-hosted Apple hardware.**
+`.github/workflows/deploy.yml` is `workflow_dispatch` only and defaults to the
+registered MacBook Pro (`mason-mbp`). The registered Mac mini (`mason-mini`) is
+available only through the explicit fallback input. The workflow uses reviewed
+manual-signing assets in a run-scoped keychain, restores the persistent host's
+original keychain search list, preserves the signed `.ipa` or `.pkg`, then
+uploads with the App Store Connect API key. `APPLE_MANUAL_SIGNING_READY` must be
+exactly `true`, and the inventory in `.github/workflows/secrets-inventory.json`
+lists the required certificate, profile, and ASC secrets. Triggering the
+workflow remains the approval gate; it is never automatic.
+Setup and persistent-host cleanup rules are in
+`docs/apple-self-hosted-release.md`.
 
 Never put signing material, App Store Connect keys, `.p12` files, provisioning
 profiles, key IDs, or issuer IDs in the repo, in docs, or in a commit. Secrets
@@ -160,8 +172,10 @@ live in GitHub Actions secrets. Report only present/missing, never a value.
 3. Both schemes ship together: `MasonsBudget` (iOS) and `MasonsBudgetMac` (macOS).
    Use the `both` platform input.
 
-**Local Apple work.** `xcodebuild` needs macOS, so it cannot run on a Linux
-machine at all. `scripts/vv-swift-check.sh` is the Linux-safe static preflight —
+**Build hosts.** The Framework laptop is the primary development/Linux preflight
+machine. `xcodebuild` needs macOS, so ordinary affected-tree Apple CI runs on
+the MacBook Pro; the Mac mini is a manually selected fallback only.
+`scripts/vv-swift-check.sh` is the Linux-safe static preflight —
 XcodeGen generation into a temp dir, SwiftLint, SwiftFormat, a stdin typecheck,
 SwiftPM core tests, and a secret scan — with no app target build, simulator,
 archive, signing, or upload. It reports every tool it cannot find rather than

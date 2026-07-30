@@ -143,6 +143,12 @@ Release workflows are manually triggered and approval-gated. Signing material
 and App Store Connect credentials belong in GitHub Actions secrets, never in
 source or documentation.
 
+The Framework laptop is the primary development and Linux-preflight host.
+Automatic Apple CI and the default manual release route use the self-hosted
+MacBook Pro label `mason-mbp`; the self-hosted Mac mini label `mason-mini` is
+available only through an explicit manual fallback selection. No workflow uses
+GitHub-hosted macOS/Xcode runners.
+
 ## Privacy
 
 - No Plaid, bank linking, third-party aggregation, analytics, or tracking

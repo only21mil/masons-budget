@@ -5,9 +5,11 @@ simulator runs, signing, archive/export, and TestFlight all belong on macOS with
 Xcode. The practical goal is to catch as much as possible on Linux before macOS
 is asked to compile.
 
-Releases themselves run in GitHub Actions on a `macos-latest` runner — see
-`.github/workflows/deploy.yml`. This document covers the checks that can happen
-before that point, on any machine.
+The Framework laptop is the primary development and Linux-preflight machine.
+Apple CI and releases run through GitHub Actions on the registered MacBook Pro
+(`mason-mbp`). The registered Mac mini (`mason-mini`) is an explicit manual
+fallback, not an automatic route. There is no GitHub-hosted macOS/Xcode path.
+This document covers the checks that can happen before Apple hardware is used.
 
 ## Linux preflight
 
@@ -68,8 +70,9 @@ VV_MAC_HOST=victor@my-mac VV_MAC_REPO=~/checkouts/masons-budget \
   scripts/vv-remote-build.sh status
 ```
 
-Prefer the GitHub Actions release workflow where it applies; this bridge is for
-iterating against a Mac you already have in front of you.
+Prefer the GitHub Actions Apple workflows. The remote bridge is for an
+explicitly approved iteration against a Mac already in front of you; it does not
+replace the MBP-primary/mini-fallback runner policy.
 
 Read-only/non-build actions:
 

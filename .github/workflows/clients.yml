@@ -288,8 +288,7 @@ jobs:
         working-directory: linux
 
       - name: Build
-        run: npx vite build
-        working-directory: linux
+        run: npm run build --workspace @vogel-vault/linux
 
       - name: Upload build output
         if: >-

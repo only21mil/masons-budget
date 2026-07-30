@@ -42,6 +42,20 @@ class PrivateKeyPresenceTests(unittest.TestCase):
             "ASC_API_KEY_P8": RAW_PEM,
             "ASC_KEY_ID": secret_marker,
             "ASC_ISSUER_ID": "12345678-1234-1234-1234-123456789abc",
+            "APPLE_DISTRIBUTION_CERTIFICATE_P12": base64.b64encode(
+                b"synthetic-distribution-p12"
+            ).decode("ascii"),
+            "APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD": "synthetic-password",
+            "APPLE_IOS_APP_STORE_PROFILE": base64.b64encode(
+                b"synthetic-ios-profile"
+            ).decode("ascii"),
+            "APPLE_MAC_APP_STORE_PROFILE": base64.b64encode(
+                b"synthetic-macos-profile"
+            ).decode("ascii"),
+            "APPLE_MAC_INSTALLER_CERTIFICATE_P12": base64.b64encode(
+                b"synthetic-installer-p12"
+            ).decode("ascii"),
+            "APPLE_MAC_INSTALLER_CERTIFICATE_PASSWORD": "synthetic-password",
         }
         output = io.StringIO()
         with patch.dict(os.environ, environment, clear=True), contextlib.redirect_stdout(output):

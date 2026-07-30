@@ -13,8 +13,8 @@
 //
 // ── Why this needs a display ────────────────────────────────────────────────
 //
-// Electron 33 cannot open an ordinary window with no display server. Measured
-// on 2026-07-26 against electron 33.4.11:
+// Electron cannot open this ordinary window with no display server. Originally
+// measured on 2026-07-26 against Electron 33 and retained as a runtime check:
 //
 //   --ozone-platform=headless          new BrowserWindow() never returns; the
 //                                      main process JS thread blocks forever
@@ -135,7 +135,7 @@ if (mode === "none") {
     "SKIPPED — no display available, so no window can be opened.",
     "",
     "  xvfb-run is not on PATH and neither DISPLAY nor WAYLAND_DISPLAY is set.",
-    "  Electron 33 cannot open an ordinary window without a display server:",
+    "  Electron cannot open this ordinary window without a display server:",
     "  --ozone-platform=headless hangs inside new BrowserWindow() and its",
     "  DevTools endpoint segfaults. Offscreen rendering would work, but the app",
     "  does not enable it and it cannot be forced from outside the app.",

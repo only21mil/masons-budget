@@ -6,6 +6,22 @@ This audit covered the root npm project, both npm workspaces, and the Android
 Gradle dependency graph. It did not build a distributable, deploy, read
 production, or touch a device.
 
+## Resolution update — 2026-07-30
+
+The Linux foundation upgrade moved the shipped runtime to Electron `43.2.0`,
+the package verifier to `@electron/asar` `4.2.1`, Electron Builder to the
+patched v26 release `26.15.7`, and the lint stack to ESLint `10.8.0`.
+Narrow root overrides keep Electron Builder's Linux package path on the audited
+ASAR/universal/EJS releases and replace the vulnerable cleanup dependency under
+its unused Windows installer path. They require Node 22.12 or newer; CI uses
+Node 24.
+
+A clean `npm ci` followed by both full and production-only `npm audit` now
+reports zero vulnerabilities. Typecheck, lint, tests, the preload-boundary
+guard, and the canonical Linux build pass. The distributable package and
+packaged-app smoke remain part of the approval-gated package verification; the
+dependency upgrade does not waive that gate.
+
 ## Measured results
 
 | Scope | Command/result |
