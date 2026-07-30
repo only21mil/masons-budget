@@ -47,6 +47,24 @@ class ManualReleaseSigningTests(unittest.TestCase):
         self.assertIn('CODE_SIGN_IDENTITY="Apple Distribution"', deploy)
         self.assertIn('PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID"', deploy)
 
+    def test_apple_workflows_use_only_the_pinned_xcodegen_path(self) -> None:
+        deploy = DEPLOY.read_text(encoding="utf-8")
+        swift = SWIFT.read_text(encoding="utf-8")
+        generator = (
+            ROOT / "scripts" / "regenerate-xcode-project.sh"
+        ).read_text(encoding="utf-8")
+
+        for workflow in (deploy, swift):
+            self.assertNotIn("brew install xcodegen", workflow)
+            self.assertNotIn("xcodegen generate --spec project.yml", workflow)
+        self.assertIn(
+            "node .github/workflows/scripts/release_check_gate.mjs",
+            deploy,
+        )
+        self.assertIn("scripts/regenerate-xcode-project.sh --check", swift)
+        self.assertIn('XCODEGEN_VERSION="2.46.0"', generator)
+        self.assertIn('readonly XCODEGEN_SHA256="', generator)
+
     def test_persistent_runner_cleanup_is_run_scoped_and_restorative(self) -> None:
         deploy = DEPLOY.read_text(encoding="utf-8")
 

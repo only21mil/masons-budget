@@ -11,9 +11,9 @@ name: Swift CI
 # second route to a shipped build, which is why every xcodebuild call below
 # disables signing outright rather than merely skipping the upload step.
 #
-# Xcode policy matches deploy.yml: both self-hosted routes assert the exact
-# installed version and generate from project.yml, which remains the source of
-# truth. The .xcodeproj is generated output and must never be hand-edited.
+# Xcode policy matches deploy.yml: self-hosted routes assert the exact installed
+# version, while the Ubuntu consistency job regenerates with pinned XcodeGen and
+# all Apple jobs consume the verified committed project.
 #
 # Cost: automatic Apple work runs on the SELF-HOSTED MacBook Pro (labels
 # self-hosted,macOS,ARM64,xcode,mason-mbp). The Mac mini is selected only by an
@@ -84,10 +84,6 @@ env:
   # Both registered Apple hosts must expose this exact version through their
   # selected /Applications/Xcode.app. A mismatch fails before build work starts.
   XCODE_VERSION: '26.6'
-  # brew's auto-update pulls a few hundred megabytes before it installs
-  # anything; skipping it keeps self-hosted latency and network use predictable.
-  HOMEBREW_NO_AUTO_UPDATE: 1
-  HOMEBREW_NO_INSTALL_CLEANUP: 1
 
 jobs:
   changes:
@@ -247,7 +243,7 @@ jobs:
         with:
           persist-credentials: false
 
-      # This is deliberately a prerequisite of the billed macOS job. A stale
+      # This is deliberately a prerequisite of the self-hosted Apple job. A stale
       # committed project fails here before the self-hosted Mac starts. The same
       # script fixes drift on Linux or macOS and bootstraps the checksummed,
       # pinned XcodeGen release, so this failure never requires Mac ownership.
@@ -256,9 +252,9 @@ jobs:
 
   swift:
     name: Build and test the Apple client
-    # One job, not three. Xcode selection, the brew install and project
-    # generation cost the same few minutes whichever leg needs them, and on a
-    # 10x runner paying for that setup once beats parallelism.
+    # One job, not three. Xcode selection, simulator preparation, and project
+    # tests share one self-hosted machine; keeping them together avoids
+    # redundant setup and runner contention.
     if: >-
       always() &&
       github.repository == 'only21mil/masons-budget' &&
@@ -311,13 +307,6 @@ jobs:
           xcodebuild -version
           swift --version
           xcodebuild -showsdks | grep -iE 'ios|macos' || true
-
-      - name: Install XcodeGen
-        run: command -v xcodegen >/dev/null || brew install xcodegen
-
-      - name: Generate the Xcode project
-        working-directory: MasonsBudget
-        run: xcodegen generate --spec project.yml
 
       # Cheapest signal first. VogelVaultCore is a plain SwiftPM library with no
       # simulator, no signing and no app bundle, so a syntax-level break in

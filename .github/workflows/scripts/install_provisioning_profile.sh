@@ -21,7 +21,20 @@ if [ ! -f "$ENCODED_PROFILE" ]; then
   exit 1
 fi
 
-install -d -m 700 "$PROFILE_DIR"
+if [ -L "$PROFILE_DIR" ] || { [ -e "$PROFILE_DIR" ] && [ ! -d "$PROFILE_DIR" ]; }; then
+  echo "install-provisioning-profile: profile directory must be a real directory." >&2
+  exit 1
+fi
+if [ ! -e "$PROFILE_DIR" ]; then
+  (
+    umask 077
+    mkdir -p "$PROFILE_DIR"
+  )
+fi
+if [ -L "$PROFILE_DIR" ] || [ ! -d "$PROFILE_DIR" ]; then
+  echo "install-provisioning-profile: profile directory changed while being prepared." >&2
+  exit 1
+fi
 installed_profile_path="$PROFILE_DIR/$PROFILE_UUID.$PROFILE_EXTENSION"
 created_profile=false
 path_recorded=false
