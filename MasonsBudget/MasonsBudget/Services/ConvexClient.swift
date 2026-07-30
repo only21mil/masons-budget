@@ -69,8 +69,9 @@ enum ConvexConfig {
     /// (see AGENTS.md). Stored in the Keychain after runtime injection; empty by default so
     /// native writes stay fail-closed (the server rejects an empty/invalid token).
     ///
-    /// Reading this property also migrates the Wave 1 UserDefaults value, if present, and
-    /// removes the cleartext copy only after the Keychain write succeeds.
+    /// Reading this property also attempts to migrate the Wave 1 UserDefaults value, if
+    /// present. A failed Keychain write discards that cleartext value and leaves writes
+    /// unauthorized instead of authenticating from insecure storage.
     static var syncToken: String {
         syncTokenStore.token
     }
@@ -100,8 +101,9 @@ enum ConvexConfig {
     /// never commit it. Stored in the device-only Keychain after runtime injection
     /// and empty by default, so an unconfigured build fails closed.
     ///
-    /// Reading this property migrates the legacy UserDefaults value and removes the
-    /// cleartext copy only after the Keychain write succeeds.
+    /// Reading this property attempts to migrate the legacy UserDefaults value. A failed
+    /// Keychain write discards that cleartext value and leaves reads unauthenticated
+    /// instead of authenticating from insecure storage.
     static var readToken: String {
         readTokenStore.token
     }
@@ -183,9 +185,11 @@ struct MigratingKeychainTokenStore {
         }
 
         guard keychain.save(legacyToken) else {
-            // Keep the only surviving copy when Keychain is unavailable. A later
-            // read retries the migration instead of destroying the credential.
-            return legacyToken
+            // Never authenticate from UserDefaults. If secure migration fails,
+            // discard the cleartext credential and fail closed; the write path
+            // reports `.unauthorized` and Sync Setup shows the missing credential.
+            userDefaults.removeObject(forKey: legacyKey)
+            return ""
         }
         userDefaults.removeObject(forKey: legacyKey)
         return legacyToken
@@ -259,11 +263,15 @@ struct KeychainCredentialStore {
         return status == errSecSuccess || status == errSecItemNotFound
     }
 
-    private var baseQuery: [String: Any] {
+    /// The exact query used by every Security-framework operation. Internal
+    /// visibility lets the unit test guard the macOS data-protection opt-in
+    /// without replacing the production SecItem path with a test-only helper.
+    var baseQuery: [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
+            kSecUseDataProtectionKeychain as String: true,
         ]
     }
 }
