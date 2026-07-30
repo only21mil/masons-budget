@@ -3,6 +3,29 @@ import XCTest
 
 final class ConvexSyncServiceTests: XCTestCase {
     @MainActor
+    func testSuccessfulSyncPublishesVersionsAsFinalCompletionMarker() {
+        let store = RecordingSyncMetadataStore()
+
+        ConvexSyncService.publishSuccessfulSync(
+            versions: ["todos": 42],
+            totalEntities: 7,
+            timestamp: 123,
+            to: store,
+        )
+
+        XCTAssertEqual(
+            store.mutations,
+            [
+                "set:\(ConvexSyncService.lastSyncKey)",
+                "set:\(ConvexSyncService.syncCountKey)",
+                "remove:\(ConvexSyncService.lastSyncErrorKey)",
+                "set:\(ConvexSyncService.dataVersionsKey)",
+            ],
+        )
+        XCTAssertEqual(store.mutations.last, "set:\(ConvexSyncService.dataVersionsKey)")
+    }
+
+    @MainActor
     func testAdultNetWorthSnapshotExcludesChildBalance() throws {
         let defaults = UserDefaults.standard
         let previousMember = defaults.object(forKey: ConvexSyncService.selectedMemberKey)
@@ -71,5 +94,32 @@ final class ConvexSyncServiceTests: XCTestCase {
         } else {
             defaults.removeObject(forKey: key)
         }
+    }
+}
+
+private final class RecordingSyncMetadataStore: SyncMetadataStoring {
+    private var values: [String: Any] = [:]
+    private(set) var mutations: [String] = []
+
+    func object(forKey defaultName: String) -> Any? {
+        values[defaultName]
+    }
+
+    func string(forKey defaultName: String) -> String? {
+        values[defaultName] as? String
+    }
+
+    func dictionary(forKey defaultName: String) -> [String: Any]? {
+        values[defaultName] as? [String: Any]
+    }
+
+    func set(_ value: Any?, forKey defaultName: String) {
+        mutations.append("set:\(defaultName)")
+        values[defaultName] = value
+    }
+
+    func removeObject(forKey defaultName: String) {
+        mutations.append("remove:\(defaultName)")
+        values.removeValue(forKey: defaultName)
     }
 }
