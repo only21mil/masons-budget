@@ -14,6 +14,10 @@ const UINT64_MODULUS = 1n << 64n
 const INT64_MIN = -(1n << 63n)
 const INT64_MAX = (1n << 63n) - 1n
 
+export function isConvexInt64(value: bigint): boolean {
+  return value >= INT64_MIN && value <= INT64_MAX
+}
+
 /** Encode a signed bigint as Convex's canonical convex_encoded_json v.int64() value. */
 export function encodeConvexInt64(value: bigint): ConvexInt64WireValue {
   if (value < INT64_MIN || value > INT64_MAX) {

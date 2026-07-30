@@ -26,7 +26,12 @@ const capabilities: readonly RendererMutationKind[] = [
 ]
 
 const adapter: RendererMutationAdapter = {
-  getPairingStatus: async () => ({ status: "paired", pairedAt: 1, capabilities }),
+  getPairingStatus: async () => ({
+    status: "paired",
+    pairedAt: 1,
+    capabilities,
+    writesEnabled: true,
+  }),
   pairDevice: async () => ({ status: "paired", pairedAt: 1, capabilities }),
   mutateConvexRow: async (request) => ({
     status: "ok",
@@ -38,8 +43,8 @@ const adapter: RendererMutationAdapter = {
   unpairDevice: async () => ({ status: "ok", revoked: true }),
 }
 
-function liveEnvelope() {
-  const data = buildSanitizedFixtureEnvelope("victor")
+function liveEnvelope(profile: "victor" | "rachel" | "mason" | "maddox" = "victor") {
+  const data = buildSanitizedFixtureEnvelope(profile)
   return {
     ...data,
     transactions: { ...data.transactions, status: "live" as const },
@@ -51,13 +56,16 @@ function liveEnvelope() {
   }
 }
 
-function renderRoute(route: string): string {
+function renderRoute(
+  route: string,
+  profile: "victor" | "rachel" | "mason" | "maddox" = "victor",
+): string {
   const page = ALL_PAGES.find((candidate) => candidate.id === route)!
   return renderToStaticMarkup(
     createElement(AppStateProvider, {
-      initialProfile: "victor",
+      initialProfile: profile,
       initialRoute: route,
-      initialData: liveEnvelope(),
+      initialData: liveEnvelope(profile),
       initialDataOrigin: "remote",
       initialMutationCapabilities: capabilities,
       mutationAdapter: adapter,
@@ -72,7 +80,7 @@ describe("renderer CRUD routes", () => {
     ["budget", "Add category"],
     ["bitcoin-buys", "Add buy"],
     ["bills", "Add bill payment"],
-    ["bitcoin", "Add synced account"],
+    ["bitcoin", "Add BTC account"],
     ["today", "Add task"],
     ["inbox", "Add task"],
     ["upcoming", "Add task"],
@@ -97,6 +105,8 @@ describe("renderer CRUD routes", () => {
     expect(markup).toContain("USD valuation requires independent provenance")
     expect(markup).not.toContain(">Fiat value<")
     expect(markup).not.toContain(">USD valuation<")
+    expect(markup).toContain('aria-label="Edit Canonical Cold Storage"')
+    expect(markup).not.toContain('aria-label="Edit Cold Storage"')
   })
 
   it("names dialogs and mutation controls without relying on color or row clicks", () => {
@@ -111,9 +121,24 @@ describe("renderer CRUD routes", () => {
   it("keeps derived-only routes free of create and delete controls", () => {
     for (const route of ["dashboard", "retirement", "net-worth"]) {
       const markup = renderRoute(route)
-      expect(markup).not.toMatch(/Add (transaction|category|buy|bill payment|synced account|task)/)
+      expect(markup).not.toMatch(/Add (transaction|category|buy|bill payment|BTC account|task)/)
       expect(markup).not.toContain(">Delete<")
     }
+  })
+
+  it("disables unsupported child financial sources before they reach IPC", () => {
+    const masonBills = renderRoute("bills", "mason")
+    expect(masonBills).toMatch(
+      /<button[^>]*disabled[^>]*title="This profile has no supported durable source for that operation\."[^>]*>Add bill payment<\/button>/,
+    )
+
+    const maddoxBuys = renderRoute("bitcoin-buys", "maddox")
+    expect(maddoxBuys).toMatch(
+      /<button[^>]*disabled[^>]*title="This profile has no supported durable source for that operation\."[^>]*>Add buy<\/button>/,
+    )
+
+    const masonBuys = renderRoute("bitcoin-buys", "mason")
+    expect(masonBuys).not.toMatch(/<button[^>]*disabled[^>]*>Add buy<\/button>/)
   })
 
   it("renders write controls disabled for fixture origin", () => {
@@ -134,19 +159,39 @@ describe("renderer CRUD routes", () => {
     const page = ALL_PAGES.find((candidate) => candidate.id === "settings")!
     const unpaired = renderToStaticMarkup(
       createElement(AppStateProvider, {
-        initialPairingStatus: { status: "unpaired" },
+        initialPairingStatus: { status: "unpaired", writesEnabled: true },
         mutationAdapter: adapter,
         children: createElement(page.Component),
       }),
     )
-    expect(unpaired).toContain("Pairing input")
+    expect(unpaired).toContain("One-time pairing code")
+    expect(unpaired).toContain('type="password"')
+    expect(unpaired).toContain("Copy only the pairingCode secret")
+    expect(unpaired).toContain("stored by the server as this device")
     expect(unpaired).toContain('maxLength="2048"')
     expect(unpaired).toContain('maxLength="80"')
     expect(unpaired).not.toMatch(/device id|credential value|backend response/i)
 
+    const pairingDisabled = renderToStaticMarkup(
+      createElement(AppStateProvider, {
+        initialPairingStatus: { status: "unpaired", writesEnabled: false },
+        mutationAdapter: adapter,
+        children: createElement(page.Component),
+      }),
+    )
+    expect(pairingDisabled).toContain("Paired-device writes are disabled")
+    expect(pairingDisabled).toMatch(
+      /<button[^>]*disabled[^>]*>Pair device<\/button>/,
+    )
+
     const paired = renderToStaticMarkup(
       createElement(AppStateProvider, {
-        initialPairingStatus: { status: "paired", pairedAt: 1, capabilities },
+        initialPairingStatus: {
+          status: "paired",
+          pairedAt: 1,
+          capabilities,
+          writesEnabled: true,
+        },
         initialMutationCapabilities: capabilities,
         mutationAdapter: adapter,
         children: createElement(page.Component),
@@ -155,5 +200,21 @@ describe("renderer CRUD routes", () => {
     expect(paired).toContain("Enabled write capabilities")
     expect(paired).toContain("Unpair device")
     expect(paired).not.toMatch(/device id|credential value/i)
+
+    const writesDisabled = renderToStaticMarkup(
+      createElement(AppStateProvider, {
+        initialPairingStatus: {
+          status: "paired",
+          pairedAt: 1,
+          capabilities: [],
+          writesEnabled: false,
+        },
+        mutationAdapter: adapter,
+        children: createElement(page.Component),
+      }),
+    )
+    expect(writesDisabled).toContain("Paired · writes disabled")
+    expect(writesDisabled).toContain("No write capabilities granted.")
+    expect(writesDisabled).toContain("Unpair device")
   })
 })

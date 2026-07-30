@@ -6,6 +6,7 @@ import {
   applyOptimisticMutation,
   beginMutation,
   finishRefresh,
+  isEntityPending,
   optimisticEnvelope,
   settleMutation,
   type RendererMutationRequest,
@@ -82,9 +83,88 @@ describe("renderer mutation controller", () => {
     expect(refreshFailed.notice?.tone).toBe("warning")
     expect(optimisticEnvelope(data, refreshFailed, "victor", 7).todos.value[0]?.id)
       .toBe("todo-optimistic")
+    expect(isEntityPending(
+      refreshFailed,
+      "todo.upsert",
+      "victor",
+      request.id,
+    )).toBe(true)
+    expect(beginMutation(
+      refreshFailed,
+      { ...request, requestId: "request-after-failed-refresh" },
+      data,
+      "victor",
+      7,
+    ).status).toBe("busy")
 
     const refreshed = finishRefresh(refreshFailed, "victor", 7, true)
     expect(refreshed.committed).toHaveLength(0)
+    expect(beginMutation(
+      refreshed,
+      { ...request, requestId: "request-after-refresh" },
+      data,
+      "victor",
+      7,
+    ).status).toBe("started")
+  })
+
+  it("clears only the mutation covered by a concurrent refresh snapshot", () => {
+    const data = buildSanitizedFixtureEnvelope("victor")
+    const first = beginMutation(
+      EMPTY_MUTATION_CONTROLLER,
+      request,
+      data,
+      "victor",
+      7,
+    )
+    if (first.status !== "started") return
+    const firstCommitted = settleMutation(
+      first.state,
+      first.pending,
+      success,
+      "victor",
+      7,
+    )
+    const secondRequest: RendererMutationRequest = {
+      ...request,
+      requestId: "request-2",
+      id: "todo-optimistic-2",
+    }
+    const second = beginMutation(
+      firstCommitted,
+      secondRequest,
+      data,
+      "victor",
+      7,
+    )
+    if (second.status !== "started") return
+    const bothCommitted = settleMutation(
+      second.state,
+      second.pending,
+      {
+        ...success,
+        requestId: secondRequest.requestId,
+        entityId: secondRequest.id,
+      },
+      "victor",
+      7,
+    )
+
+    const firstRefresh = finishRefresh(
+      bothCommitted,
+      "victor",
+      7,
+      true,
+      [request.requestId],
+    )
+    expect(firstRefresh.committed.map((entry) => entry.request.requestId))
+      .toEqual([secondRequest.requestId])
+    expect(isEntityPending(
+      firstRefresh,
+      "todo.upsert",
+      "victor",
+      secondRequest.id,
+    )).toBe(true)
   })
 
   it("applies exact optimistic values without editing derived fields", () => {
@@ -93,6 +173,7 @@ describe("renderer mutation controller", () => {
       kind: "budgetCategory.upsert",
       requestId: "budget-1",
       actor: "victor",
+      owner: "victor",
       month: data.budget.value!.month,
       name: "Groceries",
       budgetCents: 123_45n,

@@ -11,6 +11,7 @@ import type {
 import { useAppState } from "../app/AppState.tsx"
 import {
   formatCentsInput,
+  mutationOwner,
   parseExactCents,
   parseExactSats,
   stableId,
@@ -110,7 +111,7 @@ export function TransactionFormDialog({
       requestId: stableId("request"),
       actor: activeProfile,
       id,
-      owner: transaction?.owner ?? activeProfile,
+      owner: mutationOwner("transaction.upsert", transaction?.owner ?? activeProfile),
       date,
       merchant: merchant.trim(),
       amountCents: signed,
@@ -118,6 +119,7 @@ export function TransactionFormDialog({
       category: category.trim(),
       card: optional(card),
       note: optional(note),
+      ...(transaction ? { baseUpdatedAtMs: transaction.updatedAtMs } : {}),
     })
     setBusy(false)
     const message = localMutationError(result)
@@ -215,6 +217,12 @@ export function TodoFormDialog({
       area: optional(area),
       due: optional(due),
       notes: optional(notes),
+      lane: todo?.lane ?? undefined,
+      priority: todo?.priority ?? undefined,
+      createdAt: todo?.createdAt ?? undefined,
+      updatedAt: todo?.updatedAt ?? undefined,
+      completedAt: todo?.completedAt ?? undefined,
+      ...(todo ? { baseUpdatedAtMs: todo.updatedAtMs } : {}),
     })
     setBusy(false)
     const message = localMutationError(result)
@@ -262,7 +270,7 @@ export function BudgetCategoryFormDialog({
   month: string
   onClose: () => void
 }) {
-  const { activeProfile, submitMutation } = useAppState()
+  const { activeProfile, data, submitMutation } = useAppState()
   const formId = useId()
   const [name, setName] = useState(category?.name ?? "")
   const [icon, setIcon] = useState(category?.icon ?? "")
@@ -289,10 +297,15 @@ export function BudgetCategoryFormDialog({
       kind: "budgetCategory.upsert",
       requestId: stableId("request"),
       actor: activeProfile,
+      owner: mutationOwner("budgetCategory.upsert", data.budget.value?.owner ?? activeProfile),
       month,
       name: name.trim(),
+      ...(category ? { originalName: category.name } : {}),
       icon: optional(icon),
       budgetCents: cents,
+      ...(data.budget.value
+        ? { baseUpdatedAtMs: data.budget.value.updatedAtMs }
+        : {}),
     })
     setBusy(false)
     const message = localMutationError(result)
@@ -375,7 +388,7 @@ export function BtcBuyFormDialog({
       requestId: stableId("request"),
       actor: activeProfile,
       id,
-      owner: buy?.owner ?? activeProfile,
+      owner: mutationOwner("btcBuy.upsert", buy?.owner ?? activeProfile),
       date,
       source: source.trim(),
       sats: satsValue,
@@ -385,6 +398,8 @@ export function BtcBuyFormDialog({
       buyStatus: buy?.status ?? undefined,
       costBasisStatus: optional(basis),
       loggedBy: buy?.loggedBy ?? undefined,
+      archimedesRequestId: buy?.archimedesRequestId ?? undefined,
+      ...(buy ? { baseUpdatedAtMs: buy.updatedAtMs } : {}),
     })
     setBusy(false)
     const message = localMutationError(result)
@@ -475,7 +490,7 @@ export function BillPayFormDialog({
       requestId: stableId("request"),
       actor: activeProfile,
       id,
-      owner: payment?.owner ?? activeProfile,
+      owner: mutationOwner("btcBillPay.upsert", payment?.owner ?? activeProfile),
       date,
       merchant: merchant.trim(),
       category: category.trim(),
@@ -486,6 +501,7 @@ export function BillPayFormDialog({
       platform: optional(platform),
       reference: optional(reference),
       note: optional(note),
+      ...(payment ? { baseUpdatedAtMs: payment.updatedAtMs } : {}),
     })
     setBusy(false)
     const message = localMutationError(result)
@@ -532,13 +548,17 @@ export function BtcAccountFormDialog({
   account: BTCAccount | null
   onClose: () => void
 }) {
-  const { activeProfile, submitMutation } = useAppState()
+  const { activeProfile, data, submitMutation } = useAppState()
   const formId = useId()
   const [key, setKey] = useState(account?.key ?? "")
   const [label, setLabel] = useState(account?.label ?? "")
   const [custody, setCustody] = useState<"exchange" | "self_custody">(account?.custody ?? "self_custody")
   const [sats, setSats] = useState(account?.sats.toString() ?? "")
-  const [asOf, setAsOf] = useState(today())
+  const [asOf, setAsOf] = useState(
+    account?.asOf.slice(0, 10) ??
+    data.btcBalanceDocument.value?.asOf.slice(0, 10) ??
+    today(),
+  )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -548,9 +568,13 @@ export function BtcAccountFormDialog({
     setLabel(account?.label ?? "")
     setCustody(account?.custody ?? "self_custody")
     setSats(account?.sats.toString() ?? "")
-    setAsOf(today())
+    setAsOf(
+      account?.asOf.slice(0, 10) ??
+      data.btcBalanceDocument.value?.asOf.slice(0, 10) ??
+      today(),
+    )
     setError(null)
-  }, [account, open])
+  }, [account, data.btcBalanceDocument.value?.asOf, open])
 
   async function submit() {
     const satsValue = parseExactSats(sats)
@@ -564,11 +588,14 @@ export function BtcAccountFormDialog({
       requestId: stableId("request"),
       actor: activeProfile,
       key: key.trim(),
-      owner: account?.owner ?? activeProfile,
+      owner: mutationOwner("btcAccount.upsert", account?.owner ?? activeProfile),
       label: label.trim(),
       custody,
       sats: satsValue,
       asOf: `${asOf}T00:00:00Z`,
+      ...(data.btcBalanceDocument.value
+        ? { baseUpdatedAtMs: data.btcBalanceDocument.value.updatedAtMs }
+        : {}),
     })
     setBusy(false)
     const message = localMutationError(result)
@@ -579,7 +606,7 @@ export function BtcAccountFormDialog({
   return (
     <DialogFrame
       open={open}
-      title={account ? "Edit synced BTC account" : "Add synced BTC account"}
+      title={account ? "Edit BTC account" : "Add BTC account"}
       description="Only the BTC quantity is editable. USD valuation requires independent provenance."
       onClose={onClose}
       busy={busy}

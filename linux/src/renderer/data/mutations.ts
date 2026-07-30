@@ -1,7 +1,9 @@
 import {
   type FamilyMember,
   canSeeDataOwnedBy,
+  ledgerOwner,
 } from "@vogel-vault/domain/family"
+import { isConvexInt64 } from "@vogel-vault/domain"
 import type {
   BTCAccount,
   BTCBillPay,
@@ -12,209 +14,26 @@ import type {
 } from "@vogel-vault/domain/readModel"
 
 import type { FixtureEnvelope } from "./fixtures.ts"
+import type {
+  VogelVaultMutationKind,
+  VogelVaultMutationRequest,
+  VogelVaultMutationResult,
+  VogelVaultPairingRequest,
+  VogelVaultPairingResult,
+  VogelVaultPairingStatus,
+  VogelVaultUnpairResult,
+} from "../../../shared/ipc.ts"
 
-export type RendererMutationKind =
-  | "transaction.upsert"
-  | "transaction.delete"
-  | "todo.upsert"
-  | "todo.delete"
-  | "budgetCategory.upsert"
-  | "budgetCategory.delete"
-  | "btcBuy.upsert"
-  | "btcBuy.delete"
-  | "btcBillPay.upsert"
-  | "btcBillPay.delete"
-  | "btcAccount.upsert"
-  | "btcAccount.delete"
-
-interface MutationBase {
-  readonly requestId: string
-  readonly actor: FamilyMember
-}
-
-export type RendererMutationRequest =
-  | (MutationBase & {
-      readonly kind: "transaction.upsert"
-      readonly id: string
-      readonly owner: FamilyMember
-      readonly date: string
-      readonly merchant: string
-      readonly amountCents: bigint
-      readonly transactionKind: "spend" | "credit"
-      readonly category: string
-      readonly card?: string
-      readonly note?: string
-    })
-  | (MutationBase & {
-      readonly kind: "transaction.delete"
-      readonly id: string
-      readonly owner: FamilyMember
-    })
-  | (MutationBase & {
-      readonly kind: "todo.upsert"
-      readonly id: string
-      readonly owner: FamilyMember
-      readonly title: string
-      readonly done: boolean
-      readonly flagged: boolean
-      readonly lane?: string
-      readonly project?: string
-      readonly area?: string
-      readonly due?: string
-      readonly notes?: string
-      readonly priority?: bigint
-      readonly createdAt?: string
-      readonly updatedAt?: string
-      readonly completedAt?: string
-    })
-  | (MutationBase & {
-      readonly kind: "todo.delete"
-      readonly id: string
-      readonly owner: FamilyMember
-    })
-  | (MutationBase & {
-      readonly kind: "budgetCategory.upsert"
-      readonly month: string
-      readonly name: string
-      readonly icon?: string
-      readonly budgetCents: bigint
-    })
-  | (MutationBase & {
-      readonly kind: "budgetCategory.delete"
-      readonly month: string
-      readonly name: string
-    })
-  | (MutationBase & {
-      readonly kind: "btcBuy.upsert"
-      readonly id: string
-      readonly owner: FamilyMember
-      readonly date: string
-      readonly source: string
-      readonly sats: bigint
-      readonly priceUsdCents: bigint
-      readonly usdCents: bigint
-      readonly note?: string
-      readonly buyStatus?: string
-      readonly costBasisStatus?: string
-      readonly loggedBy?: string
-      readonly archimedesRequestId?: string
-    })
-  | (MutationBase & {
-      readonly kind: "btcBuy.delete"
-      readonly id: string
-      readonly owner: FamilyMember
-    })
-  | (MutationBase & {
-      readonly kind: "btcBillPay.upsert"
-      readonly id: string
-      readonly owner: FamilyMember
-      readonly date: string
-      readonly merchant: string
-      readonly category: string
-      readonly amountUsdCents: bigint
-      readonly btcSpentSats: bigint
-      readonly btcPriceCents: bigint
-      readonly platform?: string
-      readonly note?: string
-      readonly feeUsdCents: bigint
-      readonly reference?: string
-    })
-  | (MutationBase & {
-      readonly kind: "btcBillPay.delete"
-      readonly id: string
-      readonly owner: FamilyMember
-    })
-  | (MutationBase & {
-      readonly kind: "btcAccount.upsert"
-      readonly key: string
-      readonly owner: FamilyMember
-      readonly label: string
-      readonly custody: "exchange" | "self_custody"
-      readonly sats: bigint
-      readonly asOf: string
-      readonly schemaVersion?: bigint
-      readonly fiatValuation?: {
-        readonly cents: bigint
-        readonly priceCents?: bigint
-        readonly quotedAt?: string
-        readonly source?: string
-        readonly confidence?: string
-      }
-    })
-  | (MutationBase & {
-      readonly kind: "btcAccount.delete"
-      readonly key: string
-      readonly owner: FamilyMember
-    })
-
-export type RendererMutationResult =
-  | {
-      readonly status: "ok"
-      readonly requestId: string
-      readonly kind: RendererMutationKind
-      readonly outcome: "inserted" | "updated" | "deleted" | "not-found"
-      readonly entityId: string
-    }
-  | {
-      readonly status:
-        | "disabled"
-        | "not-configured"
-        | "unauthorized"
-        | "missing"
-      readonly requestId: string
-      readonly kind: RendererMutationKind
-    }
-  | {
-      readonly status: "failed"
-      readonly requestId: string
-      readonly kind: RendererMutationKind
-      readonly code:
-        | "invalid-request"
-        | "conflict"
-        | "unavailable"
-        | "invalid-response"
-        | "credential-storage"
-    }
-
-export type PairingStatus =
-  | {
-      readonly status: "paired"
-      readonly pairedAt: number
-      readonly capabilities: readonly RendererMutationKind[]
-    }
-  | { readonly status: "unpaired" }
-  | { readonly status: "unavailable" }
-
-export interface PairingRequest {
-  readonly pairingInput: string
-  readonly deviceName: string
-}
-
-export type PairingResult =
-  | {
-      readonly status: "paired"
-      readonly pairedAt: number
-      readonly capabilities: readonly RendererMutationKind[]
-    }
-  | { readonly status: "disabled" }
-  | {
-      readonly status: "failed"
-      readonly code:
-        | "invalid-input"
-        | "expired"
-        | "already-claimed"
-        | "cancelled"
-        | "server-rejected"
-        | "unavailable"
-        | "invalid-response"
-        | "credential-storage"
-    }
-
-export type UnpairResult =
-  | { readonly status: "ok"; readonly revoked: boolean }
-  | { readonly status: "unpaired" }
-  | { readonly status: "unavailable" }
-  | { readonly status: "failed" }
+// Renderer code consumes the one shared preload contract directly. These
+// aliases deliberately contain no local fields: a main-process contract change
+// must fail this TypeScript project instead of silently compiling two dialects.
+export type RendererMutationKind = VogelVaultMutationKind
+export type RendererMutationRequest = VogelVaultMutationRequest
+export type RendererMutationResult = VogelVaultMutationResult
+export type PairingStatus = VogelVaultPairingStatus
+export type PairingRequest = VogelVaultPairingRequest
+export type PairingResult = VogelVaultPairingResult
+export type UnpairResult = VogelVaultUnpairResult
 
 export interface RendererMutationAdapter {
   getPairingStatus(): Promise<PairingStatus>
@@ -237,6 +56,7 @@ export const MUTATION_MESSAGES: Readonly<Record<RendererMutationResult["status"]
 export interface MutationGateInput {
   readonly dataOrigin: DataOrigin
   readonly bridgeAvailable: boolean
+  readonly writesEnabled: boolean
   readonly capabilities: readonly RendererMutationKind[]
   readonly kind: RendererMutationKind
   readonly actor: FamilyMember
@@ -258,6 +78,9 @@ export function mutationGate(input: MutationGateInput): MutationGate {
   if (!input.bridgeAvailable) {
     return { allowed: false, reason: "The secure write bridge is unavailable." }
   }
+  if (!input.writesEnabled) {
+    return { allowed: false, reason: "Paired-device writes are disabled in this runtime." }
+  }
   if (!input.capabilities.includes(input.kind)) {
     return { allowed: false, reason: "This operation is not enabled for the paired device." }
   }
@@ -266,6 +89,12 @@ export function mutationGate(input: MutationGateInput): MutationGate {
   }
   if (input.owner && !canSeeDataOwnedBy(input.actor, input.owner)) {
     return { allowed: false, reason: "This profile cannot edit that owner's record." }
+  }
+  if (input.owner && !supportsMutationOwner(input.kind, input.owner)) {
+    return {
+      allowed: false,
+      reason: "This profile has no supported durable source for that operation.",
+    }
   }
   if (
     input.kind.startsWith("budgetCategory.") &&
@@ -282,13 +111,32 @@ export function parseExactCents(value: string): bigint | null {
   const sign = match[1] === "-" ? -1n : 1n
   const whole = BigInt(match[2]!)
   const fraction = BigInt((match[3] ?? "").padEnd(2, "0"))
-  return sign * (whole * 100n + fraction)
+  const cents = sign * (whole * 100n + fraction)
+  return isConvexInt64(cents) ? cents : null
 }
 
 export function parseExactSats(value: string): bigint | null {
   const normalized = value.trim()
   if (!/^\d+$/.test(normalized)) return null
-  return BigInt(normalized)
+  const sats = BigInt(normalized)
+  return isConvexInt64(sats) ? sats : null
+}
+
+export function mutationOwner(
+  kind: RendererMutationKind,
+  actorOrStoredOwner: FamilyMember,
+): FamilyMember {
+  return kind.startsWith("todo.") ? actorOrStoredOwner : ledgerOwner(actorOrStoredOwner)
+}
+
+export function supportsMutationOwner(
+  kind: RendererMutationKind,
+  actorOrStoredOwner: FamilyMember,
+): boolean {
+  const owner = mutationOwner(kind, actorOrStoredOwner)
+  if (kind.startsWith("todo.") || kind.startsWith("transaction.")) return true
+  if (kind.startsWith("btcBillPay.")) return owner === "victor"
+  return owner === "victor" || owner === "mason"
 }
 
 export function formatCentsInput(value: bigint): string {
@@ -308,6 +156,7 @@ export function stableId(prefix: string): string {
 export function entityKey(request: RendererMutationRequest): string {
   switch (request.kind) {
     case "budgetCategory.upsert":
+      return `budgetCategory:${request.month}:${request.originalName ?? request.name}`
     case "budgetCategory.delete":
       return `budgetCategory:${request.month}:${request.name}`
     case "btcAccount.upsert":
@@ -354,7 +203,12 @@ export function beginMutation(
   generation: number,
 ): BeginMutationResult {
   const key = entityKey(request)
-  if (state.pending[key]) return { status: "busy", state }
+  if (
+    state.pending[key] ||
+    state.committed.some((mutation) => mutation.entityKey === key)
+  ) {
+    return { status: "busy", state }
+  }
   const pending: PendingMutation = {
     request,
     entityKey: key,
@@ -411,9 +265,14 @@ export function finishRefresh(
   profile: FamilyMember,
   generation: number,
   succeeded: boolean,
+  requestIds?: readonly string[],
 ): MutationControllerState {
+  const requested = requestIds ? new Set(requestIds) : null
   const applicable = state.committed.filter(
-    (mutation) => mutation.profile === profile && mutation.generation === generation,
+    (mutation) =>
+      mutation.profile === profile &&
+      mutation.generation === generation &&
+      (requested === null || requested.has(mutation.request.requestId)),
   )
   if (applicable.length === 0) return state
   if (!succeeded) {
@@ -461,7 +320,10 @@ export function isEntityPending(
     : kind.startsWith("btcAccount.")
       ? `btcAccount:${owner}:${id}`
       : `${kind.split(".")[0]}:${owner}:${id}`
-  return Boolean(state.pending[key])
+  return Boolean(
+    state.pending[key] ||
+    state.committed.some((mutation) => mutation.entityKey === key),
+  )
 }
 
 function mutationSnapshot(
@@ -477,7 +339,14 @@ function mutationSnapshot(
       return data.todos.value.find((row) => row.id === request.id)
     case "budgetCategory.upsert":
     case "budgetCategory.delete":
-      return data.budget.value?.categories.find((row) => row.name === request.name)
+      return data.budget.value?.categories.find(
+        (row) =>
+          row.name === (
+            request.kind === "budgetCategory.upsert"
+              ? request.originalName ?? request.name
+              : request.name
+          ),
+      )
     case "btcBuy.upsert":
     case "btcBuy.delete":
       return data.btcBuys.value.find((row) => row.id === request.id)
@@ -506,8 +375,10 @@ export function applyOptimisticMutation(
 ): FixtureEnvelope {
   switch (request.kind) {
     case "transaction.upsert": {
+      const existing = data.transactions.value.find((item) => item.id === request.id)
       const row: Transaction = {
         id: request.id,
+        updatedAtMs: existing?.updatedAtMs ?? 0,
         owner: request.owner,
         date: request.date,
         merchant: request.merchant,
@@ -533,12 +404,19 @@ export function applyOptimisticMutation(
         },
       }
     case "todo.upsert": {
+      const existing = data.todos.value.find((item) => item.id === request.id)
       const row: TodoItem = {
         id: request.id,
+        updatedAtMs: existing?.updatedAtMs ?? 0,
         owner: request.owner,
         title: request.title,
         done: request.done,
         flagged: request.flagged,
+        lane: request.lane ?? existing?.lane ?? null,
+        priority: request.priority ?? existing?.priority ?? null,
+        createdAt: request.createdAt ?? existing?.createdAt ?? null,
+        updatedAt: request.updatedAt ?? existing?.updatedAt ?? null,
+        completedAt: request.completedAt ?? existing?.completedAt ?? null,
         project: request.project ?? null,
         area: request.area ?? null,
         due: request.due ?? null,
@@ -560,7 +438,8 @@ export function applyOptimisticMutation(
     case "budgetCategory.upsert": {
       const budget = data.budget.value
       if (!budget) return data
-      const existing = budget.categories.find((row) => row.name === request.name)
+      const existingName = request.originalName ?? request.name
+      const existing = budget.categories.find((row) => row.name === existingName)
       const row: BudgetCategory = {
         name: request.name,
         icon: request.icon ?? null,
@@ -575,7 +454,7 @@ export function applyOptimisticMutation(
             ...budget,
             categories: replaceOrAppend(
               budget.categories,
-              (category) => category.name === row.name,
+              (category) => category.name === existingName,
               row,
             ),
           },
@@ -597,8 +476,10 @@ export function applyOptimisticMutation(
       }
     }
     case "btcBuy.upsert": {
+      const existing = data.btcBuys.value.find((item) => item.id === request.id)
       const row: BTCBuy = {
         id: request.id,
+        updatedAtMs: existing?.updatedAtMs ?? 0,
         owner: request.owner,
         date: request.date,
         source: request.source,
@@ -609,6 +490,8 @@ export function applyOptimisticMutation(
         status: request.buyStatus ?? null,
         costBasisStatus: request.costBasisStatus ?? null,
         loggedBy: request.loggedBy ?? null,
+        archimedesRequestId:
+          request.archimedesRequestId ?? existing?.archimedesRequestId ?? null,
       }
       return {
         ...data,
@@ -624,8 +507,10 @@ export function applyOptimisticMutation(
         btcBuys: { ...data.btcBuys, value: data.btcBuys.value.filter((row) => row.id !== request.id) },
       }
     case "btcBillPay.upsert": {
+      const existing = data.billPays.value.find((item) => item.id === request.id)
       const row: BTCBillPay = {
         id: request.id,
+        updatedAtMs: existing?.updatedAtMs ?? 0,
         owner: request.owner,
         date: request.date,
         merchant: request.merchant,
@@ -655,6 +540,8 @@ export function applyOptimisticMutation(
       const existing = data.btcAccounts.value.find((row) => row.key === request.key)
       const row: BTCAccount = {
         key: request.key,
+        updatedAtMs: existing?.updatedAtMs ?? 0,
+        asOf: request.asOf,
         owner: request.owner,
         label: request.label,
         custody: request.custody,

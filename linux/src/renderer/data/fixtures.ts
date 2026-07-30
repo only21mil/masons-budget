@@ -79,6 +79,7 @@ function tx(
 ): Transaction {
   return {
     id,
+    updatedAtMs: NOW,
     date: daysAgo(agoDays),
     merchant,
     amount: parseCents(amount),
@@ -92,6 +93,7 @@ function tx(
 // ── Budget ──────────────────────────────────────────────────────────────────
 
 const ADULT_BUDGET: Budget = {
+  updatedAtMs: NOW,
   month: CURRENT_MONTH,
   coinbaseOneBalance: parseCents("0"),
   categories: [
@@ -131,6 +133,7 @@ const ADULT_BUDGET: Budget = {
 }
 
 const MASON_BUDGET: Budget = {
+  updatedAtMs: NOW,
   month: CURRENT_MONTH,
   coinbaseOneBalance: parseCents("0"),
   categories: [
@@ -197,6 +200,7 @@ const BTC_ACCOUNTS: readonly BTCAccount[] = [
 ]
 
 const ADULT_BTC_BALANCE_DOCUMENT: BTCSnapshot = {
+  updatedAtMs: NOW,
   schemaVersion: 1,
   asOf: "2026-07-16",
   accounts: [
@@ -221,6 +225,7 @@ function btcBalanceDocumentFor(profile: FamilyMember): BTCSnapshot {
   const sats = accountRow?.sats ?? 0n
   const fiat = accountRow?.fiat ?? 0n
   return {
+    updatedAtMs: NOW,
     schemaVersion: 1,
     asOf: "2026-07-16",
     accounts,
@@ -244,7 +249,16 @@ function account(
   fiat: string,
   owner: FamilyMember,
 ): BTCAccount {
-  return { key, label, custody, sats: parseBtcToSats(btc), fiat: parseCents(fiat), owner }
+  return {
+    key,
+    updatedAtMs: NOW,
+    asOf: "2026-07-16",
+    label,
+    custody,
+    sats: parseBtcToSats(btc),
+    fiat: parseCents(fiat),
+    owner,
+  }
 }
 
 const BTC_BUYS: readonly BTCBuy[] = [
@@ -266,6 +280,7 @@ function buy(
 ): BTCBuy {
   return {
     id,
+    updatedAtMs: NOW,
     date: daysAgo(agoDays),
     source,
     sats: parseBtcToSats(btc),
@@ -275,6 +290,7 @@ function buy(
     status: "settled",
     costBasisStatus: "confirmed",
     loggedBy: "fixture",
+    archimedesRequestId: null,
     owner,
   }
 }
@@ -282,6 +298,7 @@ function buy(
 const BILL_PAYS: readonly BTCBillPay[] = [
   {
     id: "pay-0001",
+    updatedAtMs: NOW,
     date: daysAgo(6),
     merchant: "Internet Provider",
     category: "Utilities",
@@ -296,6 +313,7 @@ const BILL_PAYS: readonly BTCBillPay[] = [
   },
   {
     id: "pay-0002",
+    updatedAtMs: NOW,
     date: daysAgo(20),
     merchant: "Electric Utility",
     category: "Utilities",
@@ -442,6 +460,8 @@ export function buildKnownSatsUnavailableFiatEnvelope(): FixtureEnvelope {
   const base = buildSanitizedFixtureEnvelope("victor")
   const accountRow: BTCAccount = {
     key: "canonical-self-custody",
+    updatedAtMs: NOW,
+    asOf: "2026-07-16T01:56:49.739734Z",
     label: "Canonical Self Custody",
     custody: "self_custody",
     sats: 541_782_856n,
@@ -449,6 +469,7 @@ export function buildKnownSatsUnavailableFiatEnvelope(): FixtureEnvelope {
     owner: "victor",
   }
   const document: BTCSnapshot = {
+    updatedAtMs: NOW,
     schemaVersion: 2,
     asOf: "2026-07-16T01:56:49.739734Z",
     accounts: [accountRow],

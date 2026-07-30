@@ -156,7 +156,12 @@ export function AppStateProvider({
   >(
     initialPairingStatus ??
     (initialMutationCapabilities.length > 0
-      ? { status: "paired", pairedAt: 0, capabilities: initialMutationCapabilities }
+      ? {
+          status: "paired",
+          pairedAt: 0,
+          capabilities: initialMutationCapabilities,
+          writesEnabled: true,
+        }
       : { status: "loading" }),
   )
   const [mutationController, setMutationController] =
@@ -247,7 +252,11 @@ export function AppStateProvider({
     void adapter.getPairingStatus().then(
       (status) => {
         if (current) {
-          setMutationCapabilities(status.status === "paired" ? status.capabilities : [])
+          setMutationCapabilities(
+            status.status === "paired" && status.writesEnabled
+              ? status.capabilities
+              : [],
+          )
           setPairingStatus(status)
         }
       },
@@ -273,7 +282,7 @@ export function AppStateProvider({
         result = { status: "failed", code: "unavailable" }
       }
       if (result.status === "paired") {
-        setPairingStatus(result)
+        setPairingStatus({ ...result, writesEnabled: true })
         setMutationCapabilities(result.capabilities)
       }
       return result
@@ -291,7 +300,7 @@ export function AppStateProvider({
       result = { status: "unavailable" }
     }
     if (result.status === "ok" || result.status === "unpaired") {
-      setPairingStatus({ status: "unpaired" })
+      setPairingStatus({ status: "unpaired", writesEnabled: false })
       setMutationCapabilities([])
     }
     return result
@@ -317,8 +326,17 @@ export function AppStateProvider({
   const refresh = useCallback(async () => {
     if (stateOverride !== "normal") return false
     const nextGeneration = generationRef.current
-    return loadRemote(activeProfile, nextGeneration)
-  }, [activeProfile, loadRemote, stateOverride])
+    const loaded = await loadRemote(activeProfile, nextGeneration)
+    updateController(
+      finishRefresh(
+        controllerRef.current,
+        activeProfile,
+        nextGeneration,
+        loaded,
+      ),
+    )
+    return loaded
+  }, [activeProfile, loadRemote, stateOverride, updateController])
 
   const gateMutation = useCallback(
     (
@@ -331,6 +349,8 @@ export function AppStateProvider({
       mutationGate({
         dataOrigin,
         bridgeAvailable: Boolean(adapter),
+        writesEnabled:
+          pairingStatus.status === "paired" && pairingStatus.writesEnabled,
         capabilities: mutationCapabilities,
         kind,
         actor: activeProfile,
@@ -339,7 +359,7 @@ export function AppStateProvider({
         selectedMonth: selected,
         persistedMonth: persisted,
       }),
-    [activeProfile, adapter, dataOrigin, mutationCapabilities],
+    [activeProfile, adapter, dataOrigin, mutationCapabilities, pairingStatus],
   )
 
   const submitMutation = useCallback(
@@ -351,6 +371,8 @@ export function AppStateProvider({
       const gate = mutationGate({
         dataOrigin,
         bridgeAvailable: Boolean(adapter),
+        writesEnabled:
+          pairingStatus.status === "paired" && pairingStatus.writesEnabled,
         capabilities: mutationCapabilities,
         kind: request.kind,
         actor: activeProfile,
@@ -410,6 +432,7 @@ export function AppStateProvider({
             activeProfile,
             generationAtStart,
             refreshed,
+            [started.pending.request.requestId],
           ),
         )
       } else if (result.status === "missing") {
@@ -424,6 +447,7 @@ export function AppStateProvider({
       dataOrigin,
       loadRemote,
       mutationCapabilities,
+      pairingStatus,
       updateController,
     ],
   )
@@ -513,7 +537,7 @@ function mutationFreshness(data: FixtureEnvelope, kind: RendererMutationKind): s
   if (kind.startsWith("budgetCategory.")) return data.budget.status
   if (kind.startsWith("btcBuy.")) return data.btcBuys.status
   if (kind.startsWith("btcBillPay.")) return data.billPays.status
-  return data.btcAccounts.status
+  return data.btcBalanceDocument.status
 }
 
 export function useAppState(): AppStateValue {

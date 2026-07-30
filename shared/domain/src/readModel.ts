@@ -40,6 +40,8 @@ export function emptySlice<T>(value: T, source: string): SliceState<T> {
 
 export interface Transaction {
   readonly id: string
+  /** Exact row revision used for optimistic concurrency. */
+  readonly updatedAtMs: number
   readonly date: string
   readonly merchant: string
   /** Signed stored amount. Positive is money out; negative is a credit/refund. */
@@ -81,6 +83,7 @@ export function isSpend(transaction: Transaction): boolean {
 export function normalizeTransaction(raw: Record<string, unknown>, fallbackOwner?: FamilyMember): Transaction {
   return {
     id: String(raw.id ?? ""),
+    updatedAtMs: timestampMillis(raw.updatedAtMs ?? raw.updated_at_ms),
     date: String(raw.date ?? ""),
     merchant: String(raw.merchant ?? ""),
     amount: parseCents(raw.amount),
@@ -129,6 +132,8 @@ export interface MonthlyHistoryEntry {
 }
 
 export interface Budget {
+  /** Exact enclosing document revision used for category writes. */
+  readonly updatedAtMs: number
   readonly month: string
   readonly coinbaseOneBalance: Cents
   readonly categories: readonly BudgetCategory[]
@@ -145,6 +150,7 @@ export function normalizeBudget(raw: Record<string, unknown>, owner: FamilyMembe
   const strategy = asRecord(raw.strategy)
   const income = asRecord(raw.income)
   return {
+    updatedAtMs: timestampMillis(raw.updatedAtMs ?? raw.updated_at_ms),
     month: String(raw.month ?? ""),
     coinbaseOneBalance: parseCents(raw.coinbase_one_balance),
     categories: asArray(raw.categories).map((entry) => ({
@@ -206,6 +212,9 @@ export interface FiatValuation {
 
 export interface BTCAccount {
   readonly key: string
+  /** Exact row-mirror revision; account writes use the enclosing snapshot revision. */
+  readonly updatedAtMs: number
+  readonly asOf: string
   readonly label: string
   readonly custody: BTCCustody
   readonly sats: Sats
@@ -225,6 +234,8 @@ export interface BTCTotals {
 }
 
 export interface BTCSnapshot {
+  /** Exact enclosing balance-document revision used for account writes. */
+  readonly updatedAtMs: number
   readonly schemaVersion: number
   readonly asOf: string
   readonly accounts: readonly BTCAccount[]
@@ -239,6 +250,8 @@ export interface BTCSnapshot {
 
 export interface BTCBuy {
   readonly id: string
+  /** Exact row revision used for optimistic concurrency. */
+  readonly updatedAtMs: number
   readonly date: string
   readonly source: string
   readonly sats: Sats
@@ -248,11 +261,14 @@ export interface BTCBuy {
   readonly status: string | null
   readonly costBasisStatus: string | null
   readonly loggedBy: string | null
+  readonly archimedesRequestId: string | null
   readonly owner: FamilyMember
 }
 
 export interface BTCBillPay {
   readonly id: string
+  /** Exact row revision used for optimistic concurrency. */
+  readonly updatedAtMs: number
   readonly date: string
   readonly merchant: string
   readonly category: string
@@ -272,6 +288,7 @@ export function normalizeBTCSnapshot(raw: Record<string, unknown>, owner: Family
   const metadata = asRecord(raw.metadata)
   const balanceConfidence = metadata ? optionalString(metadata.confidence) : null
   return {
+    updatedAtMs: timestampMillis(raw.updatedAtMs ?? raw.updated_at_ms),
     schemaVersion: Number(raw.schemaVersion ?? 0),
     asOf: String(raw.asOf ?? ""),
     accounts: Object.entries(accountsRaw).map(([key, value]) => {
@@ -280,6 +297,8 @@ export function normalizeBTCSnapshot(raw: Record<string, unknown>, owner: Family
       const legacyFiat = parseCents(entry.fiat)
       return {
         key,
+        updatedAtMs: timestampMillis(entry.updatedAtMs ?? entry.updated_at_ms),
+        asOf: String(entry.asOf ?? raw.asOf ?? ""),
         label: String(entry.label ?? key),
         custody: entry.custody === "self_custody" ? "self_custody" : "exchange",
         sats,
@@ -309,6 +328,7 @@ export function normalizeBTCSnapshot(raw: Record<string, unknown>, owner: Family
 export function normalizeBTCBuy(raw: Record<string, unknown>, fallbackOwner?: FamilyMember): BTCBuy {
   return {
     id: String(raw.id ?? ""),
+    updatedAtMs: timestampMillis(raw.updatedAtMs ?? raw.updated_at_ms),
     date: String(raw.date ?? ""),
     source: String(raw.source ?? ""),
     // amount_sats is authoritative; amount_btc is a convenience mirror.
@@ -319,6 +339,9 @@ export function normalizeBTCBuy(raw: Record<string, unknown>, fallbackOwner?: Fa
     status: optionalString(raw.status),
     costBasisStatus: optionalString(raw.cost_basis_status),
     loggedBy: optionalString(raw.logged_by),
+    archimedesRequestId: optionalString(
+      raw.archimedesRequestId ?? raw.archimedes_request_id,
+    ),
     owner: raw.owner === undefined && fallbackOwner ? fallbackOwner : coerceOwner(raw.owner),
   }
 }
@@ -326,6 +349,7 @@ export function normalizeBTCBuy(raw: Record<string, unknown>, fallbackOwner?: Fa
 export function normalizeBTCBillPay(raw: Record<string, unknown>, fallbackOwner?: FamilyMember): BTCBillPay {
   return {
     id: String(raw.id ?? ""),
+    updatedAtMs: timestampMillis(raw.updatedAtMs ?? raw.updated_at_ms),
     date: String(raw.date ?? ""),
     merchant: String(raw.merchant ?? ""),
     category: String(raw.category ?? "Other"),
@@ -344,12 +368,19 @@ export function normalizeBTCBillPay(raw: Record<string, unknown>, fallbackOwner?
 
 export interface TodoItem {
   readonly id: string
+  /** Exact row revision used for optimistic concurrency. */
+  readonly updatedAtMs: number
   readonly title: string
   readonly done: boolean
   readonly project: string | null
   readonly area: string | null
   readonly due: string | null
   readonly flagged: boolean
+  readonly lane: string | null
+  readonly priority: bigint | null
+  readonly createdAt: string | null
+  readonly updatedAt: string | null
+  readonly completedAt: string | null
   readonly notes: string | null
   readonly owner: FamilyMember
 }
@@ -357,12 +388,18 @@ export interface TodoItem {
 export function normalizeTodo(raw: Record<string, unknown>, fallbackOwner?: FamilyMember): TodoItem {
   return {
     id: String(raw.id ?? ""),
+    updatedAtMs: timestampMillis(raw.updatedAtMs ?? raw.updated_at_ms),
     title: String(raw.title ?? ""),
     done: Boolean(raw.done ?? raw.completed ?? false),
     project: optionalString(raw.project),
     area: optionalString(raw.area),
     due: optionalString(raw.due),
     flagged: Boolean(raw.flagged ?? false),
+    lane: optionalString(raw.lane),
+    priority: optionalBigInt(raw.priority),
+    createdAt: optionalString(raw.createdAt ?? raw.created_at),
+    updatedAt: optionalString(raw.updatedAt ?? raw.updated_at),
+    completedAt: optionalString(raw.completedAt ?? raw.completed_at),
     notes: optionalString(raw.notes ?? raw.note),
     owner: raw.owner === undefined && fallbackOwner ? fallbackOwner : coerceOwner(raw.owner),
   }
@@ -433,6 +470,20 @@ function normalizeFiatValuation(
 function optionalIntegerMinorUnits(value: unknown): Cents | null {
   if (value === null || value === undefined || value === "") return null
   return parseMinorUnits(value, 0)
+}
+
+function optionalBigInt(value: unknown): bigint | null {
+  if (value === null || value === undefined || value === "") return null
+  try {
+    return BigInt(String(value))
+  } catch {
+    return null
+  }
+}
+
+function timestampMillis(value: unknown): number {
+  const parsed = typeof value === "number" ? value : Number(value ?? 0)
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0
 }
 
 // ── Month scoping ───────────────────────────────────────────────────────────

@@ -74,7 +74,7 @@ import {
   StatusBanner,
   TransactionFormDialog,
 } from "../../components/index.ts"
-import { stableId } from "../../data/mutations.ts"
+import { mutationOwner, stableId } from "../../data/mutations.ts"
 import type { PageManifest } from "../types.ts"
 
 // ── shared helpers ──────────────────────────────────────────────────────────
@@ -238,7 +238,8 @@ function TransactionActions({ transaction }: { transaction: Transaction }) {
       requestId: stableId("request"),
       actor: activeProfile,
       id: transaction.id,
-      owner: transaction.owner,
+      owner: mutationOwner("transaction.delete", transaction.owner),
+      baseUpdatedAtMs: transaction.updatedAtMs,
     })
     setDeleting(false)
     if (result.status === "ok") setConfirming(false)
@@ -313,13 +314,17 @@ function BudgetCategoryActions({
   )
 
   async function remove() {
+    const baseUpdatedAtMs = data.budget.value?.updatedAtMs
+    if (baseUpdatedAtMs === undefined) return
     setDeleting(true)
     const result = await submitMutation({
       kind: "budgetCategory.delete",
       requestId: stableId("request"),
       actor: activeProfile,
+      owner: mutationOwner("budgetCategory.delete", owner),
       month,
       name: category.name,
+      baseUpdatedAtMs,
     })
     setDeleting(false)
     if (result.status === "ok") setConfirming(false)
@@ -368,7 +373,8 @@ function BtcBuyActions({ buy }: { buy: BTCBuy }) {
       requestId: stableId("request"),
       actor: activeProfile,
       id: buy.id,
-      owner: buy.owner,
+      owner: mutationOwner("btcBuy.delete", buy.owner),
+      baseUpdatedAtMs: buy.updatedAtMs,
     })
     setDeleting(false)
     if (result.status === "ok") setConfirming(false)
@@ -398,7 +404,8 @@ function BillPayActions({ payment }: { payment: BTCBillPay }) {
       requestId: stableId("request"),
       actor: activeProfile,
       id: payment.id,
-      owner: payment.owner,
+      owner: mutationOwner("btcBillPay.delete", payment.owner),
+      baseUpdatedAtMs: payment.updatedAtMs,
     })
     setDeleting(false)
     if (result.status === "ok") setConfirming(false)
@@ -417,18 +424,29 @@ function BtcAccountActions({ account }: { account: BTCAccount }) {
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const editGate = mutationGate("btcAccount.upsert", data.btcAccounts.status, account.owner)
-  const deleteGate = mutationGate("btcAccount.delete", data.btcAccounts.status, account.owner)
+  const editGate = mutationGate(
+    "btcAccount.upsert",
+    data.btcBalanceDocument.status,
+    mutationOwner("btcAccount.upsert", account.owner),
+  )
+  const deleteGate = mutationGate(
+    "btcAccount.delete",
+    data.btcBalanceDocument.status,
+    mutationOwner("btcAccount.delete", account.owner),
+  )
   const pending = isMutationPending("btcAccount.upsert", account.owner, account.key)
 
   async function remove() {
+    const baseUpdatedAtMs = data.btcBalanceDocument.value?.updatedAtMs
+    if (baseUpdatedAtMs === undefined) return
     setDeleting(true)
     const result = await submitMutation({
       kind: "btcAccount.delete",
       requestId: stableId("request"),
       actor: activeProfile,
       key: account.key,
-      owner: account.owner,
+      owner: mutationOwner("btcAccount.delete", account.owner),
+      baseUpdatedAtMs,
     })
     setDeleting(false)
     if (result.status === "ok") setConfirming(false)
@@ -851,7 +869,11 @@ function ActivityPage() {
   } = useAppState()
   const [adding, setAdding] = useState(false)
   const transactions = visibleTo(activeProfile, data.transactions.value)
-  const addGate = mutationGate("transaction.upsert", data.transactions.status, activeProfile)
+  const addGate = mutationGate(
+    "transaction.upsert",
+    data.transactions.status,
+    mutationOwner("transaction.upsert", activeProfile),
+  )
   const columns = useMemo<ReadonlyArray<Column<Transaction>>>(
     () => [
       ...activityColumns,
@@ -937,7 +959,11 @@ function BitcoinOverviewPage() {
   const selfCustody = document?.totals.selfCustodySats ?? 0n
   const exchange = document?.totals.exchangeSats ?? 0n
   const status = data.btcBalanceDocument.status
-  const addGate = mutationGate("btcAccount.upsert", data.btcAccounts.status, activeProfile)
+  const addGate = mutationGate(
+    "btcAccount.upsert",
+    data.btcBalanceDocument.status,
+    mutationOwner("btcAccount.upsert", activeProfile),
+  )
   const syncedColumns: ReadonlyArray<Column<BTCAccount>> = [
     ...stackColumns(displayUnit),
     { key: "owner", header: "Owner", render: (row) => <Badge>{row.owner}</Badge>, secondary: true },
@@ -965,7 +991,7 @@ function BitcoinOverviewPage() {
               disabled={!addGate.allowed}
               title={addGate.reason ?? undefined}
             >
-              Add synced account
+              Add BTC account
             </Button>
             <FreshnessTag
               status={data.btcBalanceDocument.status}
@@ -1036,41 +1062,25 @@ function BitcoinOverviewPage() {
           detail="Children's stacks are shown for oversight but never roll into adult totals."
         />
       ) : null}
-      <PageGrid>
-        <Panel
-          title="Accounts in net worth"
-          source={data.btcBalanceDocument.source}
-          flush
-          className="vv-span-2"
-        >
-          <DataTable
-            columns={stackColumns(displayUnit)}
-            rows={inScope}
-            rowKey={(row) => row.key}
-            state={tableState(data.btcBalanceDocument.status)}
-          />
-        </Panel>
-        <Panel
-          title="Synced accounts"
-          source={`${data.btcAccounts.source} · managed rows, separate from canonical totals`}
-          flush
-          className="vv-span-2"
-        >
-          <StatusBanner
-            tone="info"
-            title="Account edits do not fabricate a USD value"
-            detail="The canonical balance document remains the source for totals above. A quantity edit is shown here until the backend reconciles that document."
-          />
-          <DataTable
-            columns={syncedColumns}
-            rows={visible}
-            rowKey={(row) => row.key}
-            state={tableState(data.btcAccounts.status)}
-            emptyTitle="No synced accounts"
-            emptyDetail="No editable account rows are visible to this profile."
-          />
-        </Panel>
-      </PageGrid>
+      <Panel
+        title="Canonical accounts"
+        source={`${data.btcBalanceDocument.source} · writes update this document atomically`}
+        flush
+      >
+        <StatusBanner
+          tone="info"
+          title="Account edits do not fabricate a USD value"
+          detail="Quantity edits preserve an existing supported valuation; new unvalued accounts remain unvalued."
+        />
+        <DataTable
+          columns={syncedColumns}
+          rows={inScope}
+          rowKey={(row) => row.key}
+          state={tableState(data.btcBalanceDocument.status)}
+          emptyTitle="No canonical accounts"
+          emptyDetail="No editable account document is available for this profile."
+        />
+      </Panel>
       <BtcAccountFormDialog open={adding} account={null} onClose={() => setAdding(false)} />
     </>
   )
@@ -1092,7 +1102,11 @@ function BitcoinBuysPage() {
   const totalSats = sum(buys.map((buy) => buy.sats))
   const totalUsd = sum(buys.map((buy) => buy.usd))
   const price = referencePrice(activeProfile, data.btcBuys.status, data.btcBuys.value)
-  const addGate = mutationGate("btcBuy.upsert", data.btcBuys.status, activeProfile)
+  const addGate = mutationGate(
+    "btcBuy.upsert",
+    data.btcBuys.status,
+    mutationOwner("btcBuy.upsert", activeProfile),
+  )
 
   return (
     <>
@@ -1186,7 +1200,11 @@ function BillsPage() {
   } = useAppState()
   const [adding, setAdding] = useState(false)
   const pays = visibleTo(activeProfile, data.billPays.value)
-  const addGate = mutationGate("btcBillPay.upsert", data.billPays.status, activeProfile)
+  const addGate = mutationGate(
+    "btcBillPay.upsert",
+    data.billPays.status,
+    mutationOwner("btcBillPay.upsert", activeProfile),
+  )
 
   return (
     <>
