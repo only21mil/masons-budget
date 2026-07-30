@@ -7,7 +7,16 @@
 // scripts/qa-preload-boundary.mjs checks that the method names declared here
 // match the ones the preload actually exposes.
 
-import type { VogelVaultRowRequest, VogelVaultRowResult } from "../../shared/ipc.ts"
+import type {
+  VogelVaultMutationRequest,
+  VogelVaultMutationResult,
+  VogelVaultPairingRequest,
+  VogelVaultPairingResult,
+  VogelVaultPairingStatus,
+  VogelVaultRowRequest,
+  VogelVaultRowResult,
+  VogelVaultUnpairResult,
+} from "../../shared/ipc.ts"
 
 export interface VogelVaultRuntimeInfo {
   readonly appName: string
@@ -82,6 +91,14 @@ declare global {
       getRemoteSnapshot(): Promise<VogelVaultRemoteSnapshot>
       /** Closed row/document request union; main re-validates every field. */
       queryConvexRows(request: VogelVaultRowRequest): Promise<VogelVaultRowResult>
+      /** Claim a one-time pairing without exposing the resulting credential. */
+      pairDevice(request: VogelVaultPairingRequest): Promise<VogelVaultPairingResult>
+      /** Credential-free local pairing state and closed mutation capabilities. */
+      getPairingStatus(): Promise<VogelVaultPairingStatus>
+      /** Closed domain mutation request; main owns authorization and transport. */
+      mutateConvexRow(request: VogelVaultMutationRequest): Promise<VogelVaultMutationResult>
+      /** Revoke the current paired device and clear its protected credential. */
+      unpairDevice(): Promise<VogelVaultUnpairResult>
     }
   }
 }
