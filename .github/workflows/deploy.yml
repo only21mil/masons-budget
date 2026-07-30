@@ -6,6 +6,12 @@ name: Deploy to TestFlight (manual trigger only)
 # Triggering this workflow IS the app-build approval gate described in AGENTS.md.
 # It never runs automatically.
 #
+# Every release SHA, including a non-Apple-only change, must already have a
+# successful Xcode project-consistency check and Apple build from Swift CI. If
+# those jobs skipped, dispatch Swift CI with the MBP against the exact current
+# main SHA and wait for it to pass before dispatching this workflow. The safe
+# operator sequence is documented in docs/apple-self-hosted-release.md.
+#
 # Signing: the runner has no Apple ID, so CODE_SIGN_STYLE=Automatic cannot work.
 # The certificate is imported into a throwaway keychain and the provisioning
 # profile installed, then archive/export run against it. Upload uses the App
@@ -92,9 +98,10 @@ jobs:
             "/repos/${GITHUB_REPOSITORY}/commits/${RELEASE_SHA}/check-runs?filter=latest&per_page=100")"
 
           # Apple release integrity is stricter than ordinary conditional CI.
-          # The exact SHA must have successful project-consistency and Apple
-          # build checks. A non-Apple push may satisfy that by manually
-          # dispatching Swift CI for the same SHA before starting this release.
+          # Every exact release SHA must have successful project-consistency and
+          # Apple build checks, even when its diff is non-Apple. A skipped Apple
+          # check requires a manual MBP Swift CI dispatch on the exact current
+          # main SHA before this deploy is started.
           printf '%s' "$checks" |
             node .github/workflows/scripts/release_check_gate.mjs
 
