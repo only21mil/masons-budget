@@ -16,22 +16,42 @@ import kotlin.test.assertTrue
 class RetirementScreenTest {
     @Test
     fun `production shaped positive sats and zero fiat refuse a zero-price projection`() {
-        val state = stateWithProductionBalance().copy(
-            data = stateWithProductionBalance().data.copy(
-                btcPriceCents = 0L,
-                btcPriceAsOf = null,
-            ),
-        )
+        val usable = stateWithProductionBalance()
 
-        val result = retirementInputs(state)
+        // Control: the production-shaped balance — real sats, fiat 0 — is usable as
+        // soon as a dated recorded price exists. Every refusal below therefore has
+        // to come from the price itself, not from an inert fixture.
+        val inputs = assertIs<RetirementInputResult.Available>(retirementInputs(usable)).inputs
+        assertEquals(541_782_856L, inputs.startingSats)
+        assertEquals(11_500_000L, inputs.btcPriceCents)
 
+        // A zero price with a perfectly good date. Nothing else in this state hints
+        // at the gap, because fiat 0 is how production stores the balance.
         assertEquals(
             RetirementInputResult.Unavailable(RetirementUnavailableReason.RECORDED_PRICE),
-            result,
+            retirementInputs(usable.withRecordedPrice(cents = 0L, asOf = "2026-07-01")),
+            "a zero recorded price cannot value a positive stack",
         )
-        assertNull((result as? RetirementInputResult.Available)?.let {
-            projectRetirement(it.inputs, 10)
-        })
+        assertEquals(
+            RetirementInputResult.Unavailable(RetirementUnavailableReason.RECORDED_PRICE),
+            retirementInputs(usable.withRecordedPrice(cents = -1L, asOf = "2026-07-01")),
+            "a negative recorded price cannot value a positive stack",
+        )
+        assertEquals(
+            RetirementInputResult.Unavailable(RetirementUnavailableReason.RECORDED_PRICE),
+            retirementInputs(usable.withRecordedPrice(cents = 11_500_000L, asOf = null)),
+            "an undated price is not evidence",
+        )
+        assertEquals(
+            RetirementInputResult.Unavailable(RetirementUnavailableReason.RECORDED_PRICE),
+            retirementInputs(usable.withRecordedPrice(cents = 11_500_000L, asOf = "   ")),
+            "a blank price date is not evidence",
+        )
+
+        assertNull(
+            projectRetirement(inputs.copy(btcPriceCents = 0L), 10),
+            "the projection refuses a zero price on its own too",
+        )
     }
 
     @Test
@@ -92,6 +112,9 @@ class RetirementScreenTest {
         assertEquals(0L, projection.monthlyBonusSats)
         assertTrue(projection.projectedSats > inputs.startingSats)
     }
+
+    private fun VaultUiState.withRecordedPrice(cents: Long, asOf: String?): VaultUiState =
+        copy(data = data.copy(btcPriceCents = cents, btcPriceAsOf = asOf))
 
     private fun stateWithProductionBalance(): VaultUiState {
         val original = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
