@@ -11,8 +11,10 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertNotSame
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -53,6 +55,54 @@ class VaultViewModelDispatcherTest {
         } finally {
             database.close()
         }
+    }
+
+    @Test
+    fun `refresh reloads rows without resetting destination or selected month`() {
+        val loadSignal = AtomicReference(CountDownLatch(1))
+        val remote =
+            proxy<RowQueryRepository> { methodName ->
+                if (methodName == "listTransactions") loadSignal.get().countDown()
+                ConvexResult.Failed("refresh state probe")
+            }
+        val context: Application = RuntimeEnvironment.getApplication()
+        val database =
+            Room
+                .inMemoryDatabaseBuilder(context, VaultDatabase::class.java)
+                .allowMainThreadQueries()
+                .build()
+        try {
+            val model = VaultViewModel(rowSource = CachedRowDataSource(remote, database.cacheDao()))
+            assertTrue(loadSignal.get().await(5, TimeUnit.SECONDS), "initial row load never started")
+            model.navigate(Destination.BUDGET)
+            model.seedSelectedMonth("2026-06")
+            val beforeRefresh = model.state.value
+            val refreshLoad = CountDownLatch(1)
+            loadSignal.set(refreshLoad)
+
+            model.refreshActiveProfile()
+
+            assertEquals(Destination.BUDGET, model.state.value.destination)
+            assertEquals("2026-06", model.state.value.selectedMonth)
+            assertEquals(
+                beforeRefresh.data,
+                model.state.value.data,
+                "refresh replaced trustworthy rows with a loading projection",
+            )
+            assertTrue(refreshLoad.await(5, TimeUnit.SECONDS), "refresh never started a new row load")
+            assertEquals(Destination.BUDGET, model.state.value.destination)
+            assertEquals("2026-06", model.state.value.selectedMonth)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun VaultViewModel.seedSelectedMonth(month: String) {
+        val field = VaultViewModel::class.java.getDeclaredField("_state")
+        field.isAccessible = true
+        val mutableState = field.get(this) as MutableStateFlow<VaultUiState>
+        mutableState.value = mutableState.value.copy(selectedMonth = month)
     }
 
     private inline fun <reified T> proxy(

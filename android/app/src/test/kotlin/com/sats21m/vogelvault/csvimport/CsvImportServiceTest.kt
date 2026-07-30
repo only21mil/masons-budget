@@ -312,10 +312,38 @@ class CsvImportServiceTest {
     }
 
     @Test
+    fun `camel case headers retain date sats merchant and fee boundaries`() {
+        val row = parse(
+            """
+            TransactionDate,feeAmount,AmountSats,MerchantDescription
+            2026-05-01,25,500,Custom buy
+            """,
+            CsvImportSource.CUSTOM,
+        ).single()
+
+        assertEquals(500L, row.sats, "camel-case feeAmount must not become the transaction amount")
+        assertEquals("Custom buy", row.merchant)
+    }
+
+    @Test
+    fun `acronym amount header is split before its following word`() {
+        val row = parse(
+            """
+            TransactionDate,BTCAmount,MerchantDescription
+            2026-05-01,0.000005,Custom buy
+            """,
+            CsvImportSource.CUSTOM,
+        ).single()
+
+        assertEquals(500L, row.sats)
+        assertEquals("Custom buy", row.merchant)
+    }
+
+    @Test
     fun `a fee-only amount header is not a usable transaction amount`() {
         assertFailsWith<CsvImportException.MissingRequiredColumns> {
             parse(
-                "date,Fee Amount,memo\n2026-05-01,25,Custom buy",
+                "TransactionDate,feeAmount,MerchantDescription\n2026-05-01,25,Custom buy",
                 CsvImportSource.CUSTOM,
             )
         }

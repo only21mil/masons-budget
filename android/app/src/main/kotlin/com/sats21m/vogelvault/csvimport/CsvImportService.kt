@@ -621,6 +621,8 @@ internal class CsvImportService {
 
     private fun csvHeaderTokens(value: String): Set<String> =
         value
+            .replace(ACRONYM_TO_WORD_BOUNDARY, "$1 $2")
+            .replace(LOWER_OR_DIGIT_TO_UPPER_BOUNDARY, "$1 $2")
             .lowercase(Locale.US)
             .split(Regex("[^a-z0-9]+"))
             .filterTo(linkedSetOf(), String::isNotEmpty)
@@ -730,6 +732,9 @@ internal class CsvImportService {
             "deposit", "deposits", "receive", "received", "rebate",
             "sell", "sells", "sold", "cashback", "payout",
         )
+
+        private val ACRONYM_TO_WORD_BOUNDARY = Regex("([A-Z])([A-Z][a-z])")
+        private val LOWER_OR_DIGIT_TO_UPPER_BOUNDARY = Regex("([a-z0-9])([A-Z])")
 
         val DATE_TIME_FORMATTERS = setOf(
             DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss").withResolverStyle(ResolverStyle.STRICT),
