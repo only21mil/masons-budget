@@ -212,8 +212,10 @@ class TaskStateProfileSwitchTest {
         compose.onAllNodesWithText(text).fetchSemanticsNodes().size
 
     private fun settle() {
-        shadowOf(Looper.getMainLooper()).idle()
-        compose.waitForIdle()
+        repeat(3) {
+            compose.waitForIdle()
+            shadowOf(Looper.getMainLooper()).idle()
+        }
     }
 }
 

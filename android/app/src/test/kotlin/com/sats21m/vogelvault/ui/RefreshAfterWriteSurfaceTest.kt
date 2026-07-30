@@ -381,6 +381,41 @@ class RefreshAfterWriteSurfaceTest {
         )
     }
 
+    @Test
+    fun `screen host wires Today success to refresh and rejects do not refresh`() {
+        val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+        val state = VaultUiState(
+            activeProfile = FamilyMember.VICTOR,
+            destination = Destination.TODAY,
+            data = base.copy(todos = base.todos.copy(value = emptyList())),
+        )
+        val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
+            ScreenHost(
+                destination = Destination.TODAY,
+                state = state,
+                onWriteSucceeded = onWriteSucceeded,
+            )
+        }
+        val interact = {
+            compose.onNodeWithText(application.getString(R.string.todo_new_task))
+                .performTextInput("Production shell task")
+            compose.onNodeWithContentDescription(application.getString(R.string.todo_add))
+                .performClick()
+            Unit
+        }
+
+        assertEquals(1, runSurface(SUCCESS, content, interact))
+        assertEquals(
+            0,
+            runSurface(
+                REJECTION,
+                content,
+                interact,
+                rejectionText = "Task not added (http 500)",
+            ),
+        )
+    }
+
     private fun runSurface(
         response: HttpTextResponse,
         content: @Composable (() -> Unit) -> Unit,
