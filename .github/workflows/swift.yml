@@ -7,9 +7,11 @@ name: Swift CI
 #
 # This workflow closes that hole and stops there. It builds and tests. It does
 # not sign, archive, export or upload — that is deploy.yml's job, behind its
-# manual trigger, which is the app-build approval gate. Nothing here may become a
-# second route to a shipped build, which is why every xcodebuild call below
-# disables signing outright rather than merely skipping the upload step.
+# manual trigger, which is the app-build approval gate. Nothing here may become
+# a second route to a shipped build: product builds disable signing outright.
+# The isolated Keychain test host alone gets a local ad-hoc signature so macOS
+# can carry its test-only entitlement; ad-hoc signing uses no identity, profile,
+# team, account, archive, export, or upload.
 #
 # Xcode policy matches deploy.yml: self-hosted routes assert the exact installed
 # version, while the Ubuntu consistency job regenerates with pinned XcodeGen and
@@ -389,9 +391,11 @@ jobs:
       # both keychain implementations in tearDown. A disposable unlocked file
       # Keychain makes the legacy half independent of the runner's persistent
       # login Keychain. Data Protection still intentionally requires the runner
-      # user to have unlocked their login Keychain once after boot. No password
-      # is stored, and no app, release credential, provisioning profile, or
-      # signing identity is used.
+      # user to have unlocked their login Keychain once after boot. The XCTest
+      # bundle runs inside a minimal app-like host because Apple derives Data
+      # Protection access from the main executable. Xcode applies only a local
+      # ad-hoc signature (`-`) to carry the test-only access-group entitlement;
+      # that uses no certificate, profile, team, account, or release secret.
       - name: Native macOS Keychain migration tests
         working-directory: MasonsBudget
         run: |
@@ -443,10 +447,11 @@ jobs:
             -scheme MasonsBudgetMacKeychainTests \
             -destination "platform=macOS" \
             -resultBundlePath "$RUNNER_TEMP/MasonsBudget-macOS-Keychain.xcresult" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM=""
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGN_IDENTITY="-" \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER=""
 
       # The two app targets compile the same sources for different platforms, so
       # this catches an iOS-only API landing in shared code. deploy.yml offers a

@@ -9,6 +9,20 @@
       <BuildActionEntries>
          <BuildActionEntry
             buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "6514FDDE61A82E66A5FA9BC7"
+               BuildableName = "MasonsBudgetMacKeychainTestHost.app"
+               BlueprintName = "MasonsBudgetMacKeychainTestHost"
+               ReferencedContainer = "container:MasonsBudget.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
             buildForRunning = "NO"
             buildForProfiling = "NO"
             buildForArchiving = "NO"
@@ -32,9 +46,9 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "AEF07A0E42A43360BFF7892A"
-            BuildableName = "MasonsBudgetMacKeychainTests.xctest"
-            BlueprintName = "MasonsBudgetMacKeychainTests"
+            BlueprintIdentifier = "6514FDDE61A82E66A5FA9BC7"
+            BuildableName = "MasonsBudgetMacKeychainTestHost.app"
+            BlueprintName = "MasonsBudgetMacKeychainTestHost"
             ReferencedContainer = "container:MasonsBudget.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
@@ -64,15 +78,16 @@
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES">
-      <MacroExpansion>
+      <BuildableProductRunnable
+         runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "AEF07A0E42A43360BFF7892A"
-            BuildableName = "MasonsBudgetMacKeychainTests.xctest"
-            BlueprintName = "MasonsBudgetMacKeychainTests"
+            BlueprintIdentifier = "6514FDDE61A82E66A5FA9BC7"
+            BuildableName = "MasonsBudgetMacKeychainTestHost.app"
+            BlueprintName = "MasonsBudgetMacKeychainTestHost"
             ReferencedContainer = "container:MasonsBudget.xcodeproj">
          </BuildableReference>
-      </MacroExpansion>
+      </BuildableProductRunnable>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -80,15 +95,16 @@
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
       debugDocumentVersioning = "YES">
-      <MacroExpansion>
+      <BuildableProductRunnable
+         runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "AEF07A0E42A43360BFF7892A"
-            BuildableName = "MasonsBudgetMacKeychainTests.xctest"
-            BlueprintName = "MasonsBudgetMacKeychainTests"
+            BlueprintIdentifier = "6514FDDE61A82E66A5FA9BC7"
+            BuildableName = "MasonsBudgetMacKeychainTestHost.app"
+            BlueprintName = "MasonsBudgetMacKeychainTestHost"
             ReferencedContainer = "container:MasonsBudget.xcodeproj">
          </BuildableReference>
-      </MacroExpansion>
+      </BuildableProductRunnable>
    </ProfileAction>
    <AnalyzeAction
       buildConfiguration = "Debug">

@@ -126,9 +126,14 @@ Native Security-framework behavior remains an Apple-hardware boundary. The
 `MasonsBudgetMacKeychainTests` Xcode target compiles the production credential
 primitives directly and verifies legacy file-Keychain migration to the Data
 Protection Keychain using unique test-only identities. The ordinary draft-PR
-Swift workflow runs it unsigned on the MBP and cleans both test items in
-`tearDown`; Linux preflight can validate its project membership and formatting,
-but cannot execute the keychains.
+Swift workflow runs it on the MBP inside the minimal
+`MasonsBudgetMacKeychainTestHost`. That host receives only an ad-hoc local
+signature and a test-only access group—never a certificate, provisioning
+profile, team, account, or release secret. CI puts the legacy item in a
+disposable unlocked file Keychain and restores the runner's default/search list
+on exit; XCTest also clears both unique test items in `tearDown`. Linux preflight
+can validate project membership and formatting but cannot execute the
+keychains.
 
 The first package should target Linux and macOS, run with `swift test` on Linux,
 and be imported back into the app from XcodeGen once the Mac build path is
