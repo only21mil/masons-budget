@@ -386,12 +386,58 @@ jobs:
       # The iOS simulator bundle cannot execute a real Data Protection Keychain
       # migration. This isolated native target compiles only the production
       # credential primitives, uses a unique test service/account, and cleans
-      # both keychain implementations in tearDown. It needs no app, release
-      # credential, provisioning profile, or signing identity.
+      # both keychain implementations in tearDown. A disposable unlocked file
+      # Keychain makes the legacy half independent of the runner's persistent
+      # login Keychain. Data Protection still intentionally requires the runner
+      # user to have unlocked their login Keychain once after boot. No password
+      # is stored, and no app, release credential, provisioning profile, or
+      # signing identity is used.
       - name: Native macOS Keychain migration tests
         working-directory: MasonsBudget
         run: |
           set -euo pipefail
+
+          TEST_KEYCHAIN="$RUNNER_TEMP/masons-budget-keychain-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.keychain-db"
+          TEST_KEYCHAIN_PASSWORD="$(openssl rand -base64 48)"
+          ORIGINAL_DEFAULT="$(
+            security default-keychain -d user |
+              sed -E 's/^[[:space:]]*"([^"]+)"[[:space:]]*$/\1/'
+          )"
+          mapfile -t ORIGINAL_KEYCHAINS < <(
+            security list-keychains -d user |
+              sed -E 's/^[[:space:]]*"([^"]+)"[[:space:]]*$/\1/'
+          )
+
+          cleanup_test_keychain() {
+            original_exit_status=$?
+            trap - EXIT
+            cleanup_status=0
+            if [ -n "$ORIGINAL_DEFAULT" ]; then
+              security default-keychain -d user -s "$ORIGINAL_DEFAULT" ||
+                cleanup_status=1
+            fi
+            if [ "${#ORIGINAL_KEYCHAINS[@]}" -gt 0 ]; then
+              security list-keychains -d user -s "${ORIGINAL_KEYCHAINS[@]}" ||
+                cleanup_status=1
+            fi
+            security delete-keychain "$TEST_KEYCHAIN" 2>/dev/null || true
+            if [ "$cleanup_status" -ne 0 ]; then
+              echo "::error::Could not restore the runner's Keychain configuration."
+            fi
+            if [ "$original_exit_status" -ne 0 ]; then
+              exit "$original_exit_status"
+            fi
+            exit "$cleanup_status"
+          }
+          trap cleanup_test_keychain EXIT
+
+          security delete-keychain "$TEST_KEYCHAIN" 2>/dev/null || true
+          security create-keychain -p "$TEST_KEYCHAIN_PASSWORD" "$TEST_KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$TEST_KEYCHAIN"
+          security unlock-keychain -p "$TEST_KEYCHAIN_PASSWORD" "$TEST_KEYCHAIN"
+          security default-keychain -d user -s "$TEST_KEYCHAIN"
+          security list-keychains -d user -s "$TEST_KEYCHAIN"
+
           xcodebuild test \
             -project MasonsBudget.xcodeproj \
             -scheme MasonsBudgetMacKeychainTests \
