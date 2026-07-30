@@ -90,7 +90,11 @@ final class TodoDeleteRollback {
         undoManager.beginUndoGrouping()
         modelContext.delete(todo)
         modelContext.processPendingChanges()
-        undoManager.endUndoGrouping()
+        // SwiftData may close the explicit group while coalescing its pending
+        // delete. Only close it ourselves when it remains open.
+        if undoManager.groupingLevel > 0 {
+            undoManager.endUndoGrouping()
+        }
     }
 
     func restore() {
