@@ -75,6 +75,8 @@ class ManualReleaseSigningTests(unittest.TestCase):
             'security list-keychains -d user -s "${original_keychains[@]}"',
             'security delete-keychain "$KEYCHAIN_PATH"',
             "CREATED_PROFILE=false",
+            "recover_stale_apple_release_artifacts.sh",
+            ".vogel-vault-release-owner",
             "bash .github/workflows/scripts/install_provisioning_profile.sh",
             'if [ "${CREATED_PROFILE:-false}" = "true" ]',
             '"$RUNNER_TEMP"/vogel-vault-signing-*',
@@ -93,6 +95,24 @@ class ManualReleaseSigningTests(unittest.TestCase):
             '            rm -f "$INSTALLED_PROFILE_PATH"',
             deploy,
         )
+        self.assertLess(
+            deploy.index("recover_stale_apple_release_artifacts.sh"),
+            deploy.index(
+                'security list-keychains -d user > "$ORIGINAL_KEYCHAINS_FILE"'
+            ),
+        )
+
+        recovery = (
+            ROOT
+            / ".github/workflows/scripts/recover_stale_apple_release_artifacts.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'security list-keychains -d user -s "${filtered_keychains[@]}"',
+            recovery,
+        )
+        self.assertIn('if ! is_owned_directory "$signing_root"', recovery)
+        self.assertIn('"$target" -ef "$stage"', recovery)
+        self.assertNotIn('rm -rf "$HOME', recovery)
 
     def test_export_is_manual(self) -> None:
         with EXPORT_OPTIONS.open("rb") as handle:

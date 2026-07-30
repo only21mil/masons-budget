@@ -117,6 +117,7 @@ jobs:
         run: |
           python3 .github/workflows/scripts/tests/test_manual_release_signing.py
           python3 .github/workflows/scripts/tests/test_install_provisioning_profile.py
+          python3 .github/workflows/scripts/tests/test_recover_stale_apple_release_artifacts.py
 
       # The reporter is the only thing standing between Victor and a release that
       # dies at the signing step, so it gets exercised here rather than debugged

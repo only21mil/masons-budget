@@ -22,6 +22,12 @@ class InstallProvisioningProfileTests(unittest.TestCase):
         self.profile_dir = self.root / "Provisioning Profiles"
         self.encoded = self.root / "input.mobileprovision"
         self.github_env = self.root / "github-env"
+        self.state_dir = self.root / "vogel-vault-signing-123-1-ios"
+        self.state_dir.mkdir()
+        (self.state_dir / ".vogel-vault-release-owner").write_text(
+            "vogel-vault-release-state-v1\n",
+            encoding="utf-8",
+        )
         self.encoded.write_bytes(b"profile-one")
 
     def tearDown(self) -> None:
@@ -40,6 +46,10 @@ class InstallProvisioningProfileTests(unittest.TestCase):
                 "PROFILE_UUID": PROFILE_UUID,
                 "PROFILE_EXTENSION": PROFILE_EXTENSION,
                 "GITHUB_ENV": str(self.github_env),
+                "RELEASE_STATE_DIR": str(self.state_dir),
+                "GITHUB_RUN_ID": "123",
+                "GITHUB_RUN_ATTEMPT": "1",
+                "PLATFORM": "ios",
             }
         )
         return subprocess.run(
@@ -64,6 +74,16 @@ class InstallProvisioningProfileTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(self.profile_dir.stat().st_mode), 0o700)
         self.assertIn(f"INSTALLED_PROFILE_PATH={self.installed}", self.env_lines())
         self.assertIn("CREATED_PROFILE=true", self.env_lines())
+        self.assertTrue((self.state_dir / ".vogel-vault-owned-profile").is_file())
+        self.assertEqual(
+            (
+                self.state_dir / ".vogel-vault-profile-created"
+            ).read_text(encoding="utf-8"),
+            "vogel-vault-release-state-v1\n",
+        )
+        self.assertFalse(
+            (self.profile_dir / ".vogel-vault-profile-123-1-ios").exists()
+        )
 
     def test_reuses_an_identical_profile_without_changing_it(self) -> None:
         self.profile_dir.mkdir(parents=True)
@@ -84,6 +104,7 @@ class InstallProvisioningProfileTests(unittest.TestCase):
         self.assertEqual(after.st_ino, before.st_ino)
         self.assertEqual(stat.S_IMODE(after.st_mode), 0o640)
         self.assertIn("CREATED_PROFILE=false", self.env_lines())
+        self.assertFalse((self.state_dir / ".vogel-vault-owned-profile").exists())
 
     def test_refuses_to_replace_a_different_profile(self) -> None:
         self.profile_dir.mkdir(parents=True)
@@ -115,6 +136,19 @@ class InstallProvisioningProfileTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("must be a real directory", result.stderr)
         self.assertEqual(self.profile_dir.read_bytes(), b"host-owned-file")
+        self.assertEqual(self.env_lines(), set())
+
+    def test_refuses_an_unowned_release_state_directory(self) -> None:
+        (self.state_dir / ".vogel-vault-release-owner").write_text(
+            "somebody-else\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_installer()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not workflow-owned", result.stderr)
+        self.assertFalse(self.installed.exists())
         self.assertEqual(self.env_lines(), set())
 
 
