@@ -34,6 +34,7 @@ const requests = [
     actor: "victor",
     id: "transaction-01",
     owner: "victor",
+    baseUpdatedAtMs: 100,
     date: "2026-07-30",
     merchant: "Example",
     amountCents: 1_025n,
@@ -46,6 +47,7 @@ const requests = [
     actor: "victor",
     id: "transaction-01",
     owner: "victor",
+    baseUpdatedAtMs: 100,
   },
   {
     kind: "todo.upsert",
@@ -57,6 +59,7 @@ const requests = [
     done: false,
     flagged: true,
     priority: 1n,
+    baseUpdatedAtMs: 100,
   },
   {
     kind: "todo.delete",
@@ -64,11 +67,13 @@ const requests = [
     actor: "mason",
     id: "todo-01",
     owner: "mason",
+    baseUpdatedAtMs: 100,
   },
   {
     kind: "budgetCategory.upsert",
     requestId: "request-05",
     actor: "victor",
+    owner: "victor",
     month: "2026-07",
     name: "Food",
     budgetCents: 50_000n,
@@ -77,8 +82,10 @@ const requests = [
     kind: "budgetCategory.delete",
     requestId: "request-06",
     actor: "victor",
+    owner: "victor",
     month: "2026-07",
     name: "Food",
+    baseUpdatedAtMs: 100,
   },
   {
     kind: "btcBuy.upsert",
@@ -86,6 +93,7 @@ const requests = [
     actor: "victor",
     id: "buy-01",
     owner: "victor",
+    baseUpdatedAtMs: 100,
     date: "2026-07-30",
     source: "Example",
     sats: 100_000n,
@@ -98,6 +106,7 @@ const requests = [
     actor: "victor",
     id: "buy-01",
     owner: "victor",
+    baseUpdatedAtMs: 100,
   },
   {
     kind: "btcBillPay.upsert",
@@ -105,6 +114,7 @@ const requests = [
     actor: "victor",
     id: "bill-01",
     owner: "victor",
+    baseUpdatedAtMs: 100,
     date: "2026-07-30",
     merchant: "Example",
     category: "Bills",
@@ -119,6 +129,7 @@ const requests = [
     actor: "victor",
     id: "bill-01",
     owner: "victor",
+    baseUpdatedAtMs: 100,
   },
   {
     kind: "btcAccount.upsert",
@@ -126,6 +137,7 @@ const requests = [
     actor: "victor",
     key: "cold-storage",
     owner: "victor",
+    baseUpdatedAtMs: 100,
     label: "Cold storage",
     custody: "self_custody",
     sats: 1_000_000n,
@@ -137,6 +149,7 @@ const requests = [
     actor: "victor",
     key: "cold-storage",
     owner: "victor",
+    baseUpdatedAtMs: 100,
   },
 ] as const satisfies readonly VogelVaultMutationRequest[]
 
@@ -240,7 +253,10 @@ describe("paired-device IPC contract", () => {
       pairedAt: 1_753_891_200_000,
       capabilities: requests.map((candidate) => candidate.kind),
     } satisfies VogelVaultPairingResult
-    const status = paired satisfies VogelVaultPairingStatus
+    const status = {
+      ...paired,
+      writesEnabled: true,
+    } satisfies VogelVaultPairingStatus
     const unpaired = { status: "ok", revoked: true } satisfies VogelVaultUnpairResult
 
     expect(request).toEqual({
@@ -277,5 +293,28 @@ describe("paired-device IPC contract", () => {
     expect(writeContracts).not.toMatch(
       /\breadonly\s+(?:token|url|endpoint|path|raw|serverText)\??\s*:/i,
     )
+  })
+
+  it("requires attached native confirmation and never opens renderer URLs externally", () => {
+    const main = readFileSync(join(root, "electron", "main.ts"), "utf8")
+    const pairHandler = main.slice(
+      main.indexOf("ipcMain.handle(\n    DEVICE_PAIR_CHANNEL"),
+      main.indexOf("ipcMain.handle(\n    DEVICE_PAIRING_STATUS_CHANNEL"),
+    )
+    const unpairHandler = main.slice(
+      main.indexOf("ipcMain.handle(\n    DEVICE_UNPAIR_CHANNEL"),
+      main.indexOf("function createWindow"),
+    )
+
+    expect(pairHandler.indexOf("dialog.showMessageBox(window")).toBeGreaterThan(0)
+    expect(pairHandler.indexOf("dialog.showMessageBox(window"))
+      .toBeLessThan(pairHandler.indexOf("controller.pair(request)"))
+    expect(pairHandler).toContain("Maximum possible grants: tasks, transactions, budget, and bitcoin")
+    expect(pairHandler).toContain("confirmation.response !== 1")
+    expect(unpairHandler.indexOf("dialog.showMessageBox(window")).toBeGreaterThan(0)
+    expect(unpairHandler.indexOf("dialog.showMessageBox(window"))
+      .toBeLessThan(unpairHandler.indexOf("controller.unpair()"))
+    expect(main).not.toContain("shell.openExternal")
+    expect(main).not.toMatch(/\bimport\b[^\n]*\bshell\b[^\n]*\bfrom "electron"/)
   })
 })

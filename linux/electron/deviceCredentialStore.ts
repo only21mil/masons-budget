@@ -5,12 +5,12 @@
 // more importantly, makes the app-ready precondition explicit at the call site.
 
 import { randomUUID } from "node:crypto"
+import { constants as fsConstants } from "node:fs"
 import {
   chmod,
   lstat,
   mkdir,
   open,
-  readFile,
   rename,
   unlink,
 } from "node:fs/promises"
@@ -39,6 +39,12 @@ const MUTATION_KINDS = [
   "btcAccount.delete",
 ] as const satisfies readonly VogelVaultMutationKind[]
 const MUTATION_KIND_SET: ReadonlySet<string> = new Set(MUTATION_KINDS)
+const SAFE_LINUX_BACKENDS: ReadonlySet<string> = new Set([
+  "gnome_libsecret",
+  "kwallet",
+  "kwallet5",
+  "kwallet6",
+])
 
 export type CredentialStorageReadiness =
   | "ready"
@@ -214,7 +220,6 @@ function payloadFromText(text: string): StoredCredentialPayload {
 function validatedCapabilities(value: unknown): readonly VogelVaultMutationKind[] {
   if (
     !Array.isArray(value) ||
-    value.length === 0 ||
     value.length > MUTATION_KINDS.length ||
     value.some(
       (capability) =>
@@ -234,6 +239,24 @@ async function privateRegularFile(file: string): Promise<boolean> {
     if (!stat.isFile() || stat.isSymbolicLink()) throw new CredentialStorageError("invalid")
     if ((stat.mode & 0o077) !== 0) throw new CredentialStorageError("invalid")
     if (stat.size > MAX_STORE_BYTES) throw new CredentialStorageError("invalid")
+    return true
+  } catch (error) {
+    if (error instanceof CredentialStorageError) throw error
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false
+    throw new CredentialStorageError("io")
+  }
+}
+
+async function privateDirectory(directory: string): Promise<boolean> {
+  try {
+    const stat = await lstat(directory)
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      throw new CredentialStorageError("invalid")
+    }
+    if ((stat.mode & 0o077) !== 0) throw new CredentialStorageError("invalid")
+    if (typeof process.getuid === "function" && stat.uid !== process.getuid()) {
+      throw new CredentialStorageError("invalid")
+    }
     return true
   } catch (error) {
     if (error instanceof CredentialStorageError) throw error
@@ -265,7 +288,7 @@ export function createDeviceCredentialStore(
     if (options.platform === "linux") {
       try {
         const backend = options.safeStorage.getSelectedStorageBackend()
-        if (backend === "basic_text" || backend === "unknown") {
+        if (!SAFE_LINUX_BACKENDS.has(backend)) {
           return "unsafe-linux-backend"
         }
       } catch {
@@ -289,17 +312,42 @@ export function createDeviceCredentialStore(
   }
 
   async function readEnvelope(): Promise<StoredCredentialEnvelope | null> {
-    if (!(await privateRegularFile(storePath))) return null
-    let text: string
+    if (!(await privateDirectory(directory))) return null
+    let handle
     try {
-      text = await readFile(storePath, "utf8")
-    } catch {
+      handle = await open(
+        storePath,
+        fsConstants.O_RDONLY |
+          (fsConstants.O_NOFOLLOW ?? 0),
+      )
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
+      if ((error as NodeJS.ErrnoException).code === "ELOOP") {
+        throw new CredentialStorageError("invalid")
+      }
       throw new CredentialStorageError("io")
     }
-    if (Buffer.byteLength(text, "utf8") > MAX_STORE_BYTES) {
-      throw new CredentialStorageError("invalid")
+    try {
+      const stat = await handle.stat()
+      if (
+        !stat.isFile() ||
+        (stat.mode & 0o077) !== 0 ||
+        stat.size > MAX_STORE_BYTES ||
+        (typeof process.getuid === "function" && stat.uid !== process.getuid())
+      ) {
+        throw new CredentialStorageError("invalid")
+      }
+      const text = await handle.readFile({ encoding: "utf8" })
+      if (Buffer.byteLength(text, "utf8") > MAX_STORE_BYTES) {
+        throw new CredentialStorageError("invalid")
+      }
+      return envelopeFromText(text)
+    } catch (error) {
+      if (error instanceof CredentialStorageError) throw error
+      throw new CredentialStorageError("io")
+    } finally {
+      await handle.close().catch(() => undefined)
     }
-    return envelopeFromText(text)
   }
 
   function decryptPayload(envelope: StoredCredentialEnvelope): StoredCredentialPayload {
@@ -379,11 +427,10 @@ export function createDeviceCredentialStore(
 
         try {
           await mkdir(directory, { recursive: true, mode: 0o700 })
-          const directoryStat = await lstat(directory)
-          if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
+          await chmod(directory, 0o700)
+          if (!(await privateDirectory(directory))) {
             throw new CredentialStorageError("invalid")
           }
-          await chmod(directory, 0o700)
           if (await privateRegularFile(storePath)) {
             // Validation above deliberately happens before the replacement.
           }

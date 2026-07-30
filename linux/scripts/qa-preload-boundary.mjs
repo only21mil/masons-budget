@@ -98,7 +98,11 @@ for (const [needle, label] of requiredMainSettings) {
 }
 
 // The window-open handler must deny. Anything else lets the renderer spawn UI.
-require_(/return\s*\{\s*action:\s*"deny"\s*\}/.test(mainSource), "main: window open handler denies")
+require_(
+  /setWindowOpenHandler\(\(\)\s*=>\s*\(\{\s*action:\s*"deny"\s*\}\)\)/.test(mainSource) ||
+    /return\s*\{\s*action:\s*"deny"\s*\}/.test(mainSource),
+  "main: window open handler denies",
+)
 
 // ── Forbidden patterns anywhere in the boundary ────────────────────────────
 const forbidden = [
@@ -304,9 +308,10 @@ require_(
   "main: credential storage is registered only after Electron is ready",
 )
 require_(
-  credentialStoreSource.includes('"basic_text"') &&
-    credentialStoreSource.includes('"unknown"'),
-  "credential store: unsafe Linux encryption backends are refused",
+  credentialStoreSource.includes('"gnome_libsecret"') &&
+    credentialStoreSource.includes('"kwallet6"') &&
+    credentialStoreSource.includes("!SAFE_LINUX_BACKENDS.has(backend)"),
+  "credential store: Linux encryption backend uses a closed safe allowlist",
 )
 require_(
   credentialStoreSource.includes('open(temporaryPath, "wx", 0o600)') &&
@@ -314,9 +319,11 @@ require_(
     credentialStoreSource.includes("chmod(directory, 0o700)"),
   "credential store: private atomic file replacement is preserved",
 )
+const mutationUrls = convexMutationsSource.match(/https?:\/\/[A-Za-z0-9._:/-]+/g) ?? []
 require_(
-  !/https?:\/\//.test(convexMutationsSource),
-  "convexMutations: no deployment URL is hard-coded",
+  mutationUrls.length === 1 &&
+    mutationUrls[0] === "https://keen-elephant-452.convex.cloud",
+  "convexMutations: only the reviewed household origin is pinned",
 )
 require_(
   convexMutationsSource.includes('"convex_encoded_json"') &&

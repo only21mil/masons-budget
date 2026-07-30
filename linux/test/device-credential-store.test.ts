@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises"
+import { chmod, mkdtemp, mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -141,6 +141,7 @@ describe("paired-device credential storage", () => {
     const controller = createPairedDeviceController({
       store: credentialStore,
       writesEnabled: () => true,
+      approvedDeploymentOrigin: () => fixture().deploymentOrigin,
       post,
     })
 
@@ -150,6 +151,7 @@ describe("paired-device credential storage", () => {
       actor: "victor",
       id: "tx-1",
       owner: "victor",
+      baseUpdatedAtMs: 100,
     })).resolves.toMatchObject({ status: "failed", code: "credential-storage" })
     expect(post).not.toHaveBeenCalled()
   })
@@ -192,6 +194,45 @@ describe("paired-device credential storage", () => {
       ...fixture(),
       capabilities: ["admin.everything" as never],
     })).rejects.toMatchObject({ code: "invalid" })
+  })
+
+  it("preserves an explicit empty capability grant", async () => {
+    const store = createDeviceCredentialStore({
+      appReady: () => true,
+      platform: "linux",
+      safeStorage: protectedStorage(),
+      userDataPath: await temporaryRoot(),
+    })
+
+    const saved = await store.save({ ...fixture(), capabilities: [] })
+    expect(saved.capabilities).toEqual([])
+    await expect(store.load()).resolves.toEqual(saved)
+  })
+
+  it("rejects permissive and symlinked credential directories", async () => {
+    const root = await temporaryRoot()
+    const permissiveDirectory = path.join(root, "paired-device")
+    await mkdir(permissiveDirectory, { mode: 0o700 })
+    await chmod(permissiveDirectory, 0o755)
+    const permissiveStore = createDeviceCredentialStore({
+      appReady: () => true,
+      platform: "linux",
+      safeStorage: protectedStorage(),
+      userDataPath: root,
+    })
+    await expect(permissiveStore.load()).rejects.toMatchObject({ code: "invalid" })
+
+    const linkedRoot = await temporaryRoot()
+    const targetRoot = await temporaryRoot()
+    await mkdir(path.join(targetRoot, "paired-device"), { mode: 0o700 })
+    await symlink(path.join(targetRoot, "paired-device"), path.join(linkedRoot, "paired-device"))
+    const linkedStore = createDeviceCredentialStore({
+      appReady: () => true,
+      platform: "linux",
+      safeStorage: protectedStorage(),
+      userDataPath: linkedRoot,
+    })
+    await expect(linkedStore.load()).rejects.toMatchObject({ code: "invalid" })
   })
 
   it("clears only the credential revision that received the rejection", async () => {
