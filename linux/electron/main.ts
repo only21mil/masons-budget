@@ -34,6 +34,7 @@ import {
   resolveApprovedDeploymentOrigin,
 } from "./convexMutations.ts"
 import { createDeviceCredentialStore } from "./deviceCredentialStore.ts"
+import { createNativeConfirmationGuard } from "./nativeConfirmationGuard.ts"
 import { createRendererSecurityPolicy } from "./rendererSecurity.ts"
 import {
   CONVEX_MUTATION_CHANNEL,
@@ -275,6 +276,7 @@ function registerPairedDeviceWrites(): void {
     approvedDeploymentOrigin: () =>
       resolveApprovedDeploymentOrigin(process.env.VOGEL_VAULT_CONVEX_URL),
   })
+  const nativeConfirmation = createNativeConfirmationGuard()
 
   ipcMain.handle(
     DEVICE_PAIR_CHANNEL,
@@ -286,19 +288,26 @@ function registerPairedDeviceWrites(): void {
       if (approvedOrigin === null) return { status: "failed", code: "unavailable" }
       const window = BrowserWindow.fromWebContents(event.sender)
       if (!window) return { status: "failed", code: "cancelled" }
-      const confirmation = await dialog.showMessageBox(window, {
-        type: "warning",
-        title: "Pair this Linux device?",
-        message: "Pair this device for household writes?",
-        detail:
-          `Approved host: ${approvedOrigin}\n\nMaximum possible grants: tasks, transactions, budget, and bitcoin. The server's actual grants are shown after pairing.`,
-        buttons: ["Cancel", "Pair device"],
-        defaultId: 0,
-        cancelId: 0,
-        noLink: true,
-      })
-      if (confirmation.response !== 1) return { status: "failed", code: "cancelled" }
-      return controller.pair(request)
+      return nativeConfirmation.run(
+        { status: "failed", code: "cancelled" },
+        async () => {
+          const confirmation = await dialog.showMessageBox(window, {
+            type: "warning",
+            title: "Pair this Linux device?",
+            message: "Pair this device for household writes?",
+            detail:
+              `Approved host: ${approvedOrigin}\n\nMaximum possible grants: tasks, transactions, budget, and bitcoin. The server's actual grants are shown after pairing.`,
+            buttons: ["Cancel", "Pair device"],
+            defaultId: 0,
+            cancelId: 0,
+            noLink: true,
+          })
+          if (confirmation.response !== 1) {
+            return { status: "failed", code: "cancelled" }
+          }
+          return controller.pair(request)
+        },
+      )
     },
   )
   ipcMain.handle(
@@ -328,18 +337,23 @@ function registerPairedDeviceWrites(): void {
       if (!isTrustedSender(event)) return { status: "unavailable" }
       const window = BrowserWindow.fromWebContents(event.sender)
       if (!window) return { status: "cancelled" }
-      const confirmation = await dialog.showMessageBox(window, {
-        type: "warning",
-        title: "Unpair this Linux device?",
-        message: "Revoke household write access from this device?",
-        detail: "No local or remote state changes until you confirm.",
-        buttons: ["Cancel", "Unpair device"],
-        defaultId: 0,
-        cancelId: 0,
-        noLink: true,
-      })
-      if (confirmation.response !== 1) return { status: "cancelled" }
-      return controller.unpair()
+      return nativeConfirmation.run(
+        { status: "cancelled" },
+        async () => {
+          const confirmation = await dialog.showMessageBox(window, {
+            type: "warning",
+            title: "Unpair this Linux device?",
+            message: "Revoke household write access from this device?",
+            detail: "No local or remote state changes until you confirm.",
+            buttons: ["Cancel", "Unpair device"],
+            defaultId: 0,
+            cancelId: 0,
+            noLink: true,
+          })
+          if (confirmation.response !== 1) return { status: "cancelled" }
+          return controller.unpair()
+        },
+      )
     },
   )
 }
