@@ -148,12 +148,16 @@ fun ScreenHost(
     destination: Destination,
     state: VaultUiState,
     onEnableRemoteRows: (String) -> Unit = {},
-    onTransactionChanged: () -> Unit = {},
+    onWriteSucceeded: () -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
     modifier: Modifier = Modifier,
     taskListsContent: @Composable (VaultUiState, List<TodoItem>) -> Unit = { taskState, todos ->
-        TaskListsScreen(taskState, todos)
+        TaskListsScreen(
+            state = taskState,
+            todos = todos,
+            onWriteSucceeded = onWriteSucceeded,
+        )
     },
 ) {
     var addingTransaction by rememberSaveable { mutableStateOf(false) }
@@ -271,6 +275,7 @@ fun ScreenHost(
         AddTransactionSheet(
             state = state,
             onDismiss = { addingTransaction = false },
+            onWriteSucceeded = onWriteSucceeded,
         )
     }
 
@@ -320,6 +325,7 @@ fun ScreenHost(
                             owner = state.activeProfile,
                             existingTransactions = collections.visibleTransactions,
                             btcPriceCents = state.data.btcPriceCents,
+                            onWriteSucceeded = onWriteSucceeded,
                         )
                     }
                     activity(state, checkNotNull(activitySearch)) {
@@ -350,7 +356,9 @@ fun ScreenHost(
                 Destination.TODAY -> Unit
                 Destination.TASKS -> item {
                     // ScreenHost is the privacy boundary: a destination never
-                    // receives rows its active profile cannot see.
+                    // receives rows its active profile cannot see. The refresh
+                    // callback travels with the rows via taskListsContent's
+                    // default, so filtering and refreshing cannot diverge.
                     taskListsContent(state, collections.visibleTodos)
                 }
                 Destination.FAMILY -> family(state)
@@ -362,12 +370,14 @@ fun ScreenHost(
         BudgetCategoryEditorSheet(
             seed = seed,
             onDismiss = { budgetEditor = null },
+            onWriteSucceeded = onWriteSucceeded,
         )
     }
     if (showBtcBuyEditor) {
         BtcBuyEntrySheet(
             owner = state.activeProfile,
             onDismiss = { showBtcBuyEditor = false },
+            onWriteSucceeded = onWriteSucceeded,
         )
     }
 
@@ -380,7 +390,7 @@ fun ScreenHost(
             transaction = selectedTransaction,
             actions = transactionActions,
             onClose = { selectedTransactionKey = null },
-            onChanged = onTransactionChanged,
+            onChanged = onWriteSucceeded,
         )
     }
 }

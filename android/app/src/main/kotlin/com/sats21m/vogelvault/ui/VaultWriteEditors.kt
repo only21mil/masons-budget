@@ -190,6 +190,7 @@ internal fun BtcBuyEntryAction(onClick: () -> Unit) {
 internal fun BudgetCategoryEditorSheet(
     seed: BudgetCategoryEditorSeed,
     onDismiss: () -> Unit,
+    onWriteSucceeded: () -> Unit,
 ) {
     val application = LocalContext.current.applicationContext as? VaultApplication
     val mutationClient = remember(application) { application?.convexMutationClient }
@@ -249,7 +250,10 @@ internal fun BudgetCategoryEditorSheet(
                                         )
                                     submitting = false
                                     when (result) {
-                                        is ConvexResult.Ok -> onDismiss()
+                                        is ConvexResult.Ok -> {
+                                            onWriteSucceeded()
+                                            onDismiss()
+                                        }
                                         ConvexResult.Unauthorized ->
                                             message =
                                                 "Budget not saved: Convex rejected the sync token."
@@ -283,6 +287,7 @@ internal fun BudgetCategoryEditorSheet(
 internal fun BtcBuyEntrySheet(
     owner: FamilyMember,
     onDismiss: () -> Unit,
+    onWriteSucceeded: () -> Unit,
 ) {
     val application = LocalContext.current.applicationContext as? VaultApplication
     val mutationClient = remember(application) { application?.convexMutationClient }
@@ -361,7 +366,10 @@ internal fun BtcBuyEntrySheet(
                                         )
                                     submitting = false
                                     when (result) {
-                                        is ConvexResult.Ok -> onDismiss()
+                                        is ConvexResult.Ok -> {
+                                            onWriteSucceeded()
+                                            onDismiss()
+                                        }
                                         ConvexResult.Unauthorized ->
                                             message =
                                                 "Bitcoin buy not saved: Convex rejected the sync token."

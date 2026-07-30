@@ -88,6 +88,7 @@ internal fun AddTaskSheet(
     owner: FamilyMember,
     onDismiss: () -> Unit,
     onSaved: (String) -> Unit,
+    onWriteSucceeded: () -> Unit,
 ) {
     val application = LocalContext.current.applicationContext as? VaultApplication
     val mutationClient = remember(application) { application?.convexMutationClient }
@@ -184,7 +185,10 @@ internal fun AddTaskSheet(
                             val result = client.mutate(ConvexMutation.UpsertTodo(task))
                             saving = false
                             when (result) {
-                                is ConvexResult.Ok -> onSaved(taskTitle)
+                                is ConvexResult.Ok -> {
+                                    onWriteSucceeded()
+                                    onSaved(taskTitle)
+                                }
                                 ConvexResult.Unauthorized ->
                                     message = "Task not added: the sync token is missing or unauthorized."
                                 ConvexResult.NotConfigured ->

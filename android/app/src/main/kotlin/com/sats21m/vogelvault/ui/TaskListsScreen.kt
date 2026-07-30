@@ -58,6 +58,7 @@ private enum class TaskListRoute {
 internal fun TaskListsScreen(
     state: VaultUiState,
     todos: List<TodoItem>,
+    onWriteSucceeded: () -> Unit,
     zoneId: ZoneId = ZoneId.systemDefault(),
 ) {
     // ScreenHost has already scoped this handoff to the active profile.
@@ -102,6 +103,7 @@ internal fun TaskListsScreen(
                 writeNotice = "Task added: $title"
                 addingTask = false
             },
+            onWriteSucceeded = onWriteSucceeded,
         )
     }
 

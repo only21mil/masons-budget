@@ -151,10 +151,11 @@ class MainActivity : FragmentActivity() {
                             onRequestProfileSwitchAuthentication = profileSwitchGate::authenticate,
                             profileSwitchRefusal = profileSwitchRefusal.value,
                             onEnableRemoteRows = model::enableRemoteRows,
-                            // A completed edit or delete has to be reflected by the
-                            // ledger the shell reads. Re-selecting the active profile
-                            // is the existing refresh path, not a write callback.
-                            onTransactionChanged = {
+                            // Every completed write reaches this one authoritative
+                            // row-refresh trigger. Re-selecting the active profile
+                            // only reloads rows; it never reports a write completion,
+                            // so this callback cannot feed itself into a refresh loop.
+                            onWriteSucceeded = {
                                 model.switchProfile(state.activeProfile)
                             },
                             displayUnit = displayUnit,
