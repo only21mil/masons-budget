@@ -9,6 +9,7 @@ import Security
 /// Configuration for the Convex deployment.
 enum ConvexConfig {
     private static let rowReadsEnabledKey = "convex_row_reads_enabled"
+    private static let writesEnabledKey = "convex_writes_enabled"
     private static let readTokenKey = "convex_read_token"
     private static let syncTokenKey = "convex_sync_token"
     private static var readTokenStore: MigratingKeychainTokenStore {
@@ -43,19 +44,10 @@ enum ConvexConfig {
         )
     }
 
-    /// The Convex deployment URL. Updated after `npx convex deploy`.
-    /// Store in UserDefaults so it can be changed without an app update.
+    /// The audited production deployment. A mutable preference here allowed a
+    /// local setting or stale migration value to redirect authenticated traffic.
     static var deploymentURL: URL {
-        if let saved = UserDefaults.standard.string(forKey: "convex_deployment_url"),
-           let url = URL(string: saved)
-        {
-            return url
-        }
-        return URL(string: "https://keen-elephant-452.convex.cloud")!
-    }
-
-    static func setDeploymentURL(_ urlString: String) {
-        UserDefaults.standard.set(urlString, forKey: "convex_deployment_url")
+        URL(string: "https://keen-elephant-452.convex.cloud")!
     }
 
     /// Whether the Convex URL has been configured (not placeholder).
@@ -68,8 +60,9 @@ enum ConvexConfig {
     /// (see AGENTS.md). Stored in the Keychain after runtime injection; empty by default so
     /// native writes stay fail-closed (the server rejects an empty/invalid token).
     ///
-    /// Reading this property also migrates the Wave 1 UserDefaults value, if present, and
-    /// removes the cleartext copy only after the Keychain write succeeds.
+    /// Reading this property also attempts to migrate the Wave 1 UserDefaults value, if
+    /// present. A failed Keychain write discards that cleartext value and leaves writes
+    /// unauthorized instead of authenticating from insecure storage.
     static var syncToken: String {
         syncTokenStore.token
     }
@@ -99,8 +92,9 @@ enum ConvexConfig {
     /// never commit it. Stored in the device-only Keychain after runtime injection
     /// and empty by default, so an unconfigured build fails closed.
     ///
-    /// Reading this property migrates the legacy UserDefaults value and removes the
-    /// cleartext copy only after the Keychain write succeeds.
+    /// Reading this property attempts to migrate the legacy UserDefaults value. A failed
+    /// Keychain write discards that cleartext value and leaves reads unauthenticated
+    /// instead of authenticating from insecure storage.
     static var readToken: String {
         readTokenStore.token
     }
@@ -128,6 +122,21 @@ enum ConvexConfig {
 
     static func setRowReadsEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: rowReadsEnabledKey)
+    }
+
+    /// Runtime kill switch for every app-originated write.
+    ///
+    /// Android has one and its `ConvexResult.Disabled` depends on it; without a
+    /// write switch here that state would be unreachable on Apple and the two
+    /// clients would disagree about the cause set. Unlike `rowReadsEnabled` this
+    /// defaults to ON: writes already ship, and defaulting it off would silently
+    /// stop every save. Absent key means enabled.
+    static var writesEnabled: Bool {
+        UserDefaults.standard.object(forKey: writesEnabledKey) as? Bool ?? true
+    }
+
+    static func setWritesEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: writesEnabledKey)
     }
 }
 
@@ -167,9 +176,11 @@ struct MigratingKeychainTokenStore {
         }
 
         guard keychain.save(legacyToken) else {
-            // Keep the only surviving copy when Keychain is unavailable. A later
-            // read retries the migration instead of destroying the credential.
-            return legacyToken
+            // Never authenticate from UserDefaults. If secure migration fails,
+            // discard the cleartext credential and fail closed; the write path
+            // reports `.unauthorized` and Sync Setup shows the missing credential.
+            userDefaults.removeObject(forKey: legacyKey)
+            return ""
         }
         userDefaults.removeObject(forKey: legacyKey)
         return legacyToken
@@ -215,14 +226,10 @@ struct KeychainCredentialStore {
 
     @discardableResult
     func save(_ token: String) -> Bool {
-        guard let data = token.data(using: .utf8), !token.isEmpty else {
+        guard let attributes = writeAttributes(for: token) else {
             return clear()
         }
 
-        let attributes: [String: Any] = [
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-        ]
         let updateStatus = SecItemUpdate(
             baseQuery as CFDictionary,
             attributes as CFDictionary,
@@ -237,17 +244,29 @@ struct KeychainCredentialStore {
         return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }
 
+    func writeAttributes(for token: String) -> [String: Any]? {
+        guard let data = token.data(using: .utf8), !token.isEmpty else { return nil }
+        return [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+    }
+
     @discardableResult
     func clear() -> Bool {
         let status = SecItemDelete(baseQuery as CFDictionary)
         return status == errSecSuccess || status == errSecItemNotFound
     }
 
-    private var baseQuery: [String: Any] {
+    /// The exact query used by every Security-framework operation. Internal
+    /// visibility lets the unit test guard the macOS data-protection opt-in
+    /// without replacing the production SecItem path with a test-only helper.
+    var baseQuery: [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
+            kSecUseDataProtectionKeychain as String: true,
         ]
     }
 }
@@ -272,14 +291,16 @@ enum AppWritebackConfig {
     }
 
     static var deviceToken: String {
-        if let token = AppWritebackDeviceTokenStore.read(), !token.isEmpty {
+        if let token = AppWritebackDeviceTokenStore.store.read(), !token.isEmpty {
             return token
         }
         let legacyToken = UserDefaults.standard.string(forKey: deviceTokenKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !legacyToken.isEmpty {
-            AppWritebackDeviceTokenStore.save(legacyToken)
             UserDefaults.standard.removeObject(forKey: deviceTokenKey)
+            guard AppWritebackDeviceTokenStore.store.save(legacyToken) else {
+                return ""
+            }
         }
         return legacyToken
     }
@@ -323,64 +344,41 @@ enum AppWritebackConfig {
         return []
     }
 
-    static func save(baseURL: String, deviceID: String, deviceToken: String) {
-        UserDefaults.standard.set(baseURL.trimmingCharacters(in: .whitespacesAndNewlines), forKey: baseURLKey)
-        UserDefaults.standard.set(deviceID.trimmingCharacters(in: .whitespacesAndNewlines), forKey: deviceIDKey)
-        // A blank token must NOT leave the previous one in place. baseURL and
-        // deviceID above have already been overwritten, so keeping the old
-        // secret would pair this device's new host with the OLD host's
-        // credential and still report isConfigured == true — a failed pairing
-        // that looks like a successful one. Clear instead, so the state is
-        // honestly unconfigured and the user is asked to pair again.
+    @discardableResult
+    static func save(
+        baseURL: String,
+        deviceID: String,
+        deviceToken: String,
+        credentialStore: any CredentialStoring = AppWritebackDeviceTokenStore.store,
+    ) -> Bool {
+        let trimmedBaseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedDeviceID = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedDeviceToken = deviceToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        AppWritebackDeviceTokenStore.save(trimmedDeviceToken)
+        guard !trimmedBaseURL.isEmpty, !trimmedDeviceID.isEmpty, !trimmedDeviceToken.isEmpty else {
+            return false
+        }
+        guard credentialStore.save(trimmedDeviceToken) else { return false }
+        UserDefaults.standard.set(trimmedBaseURL, forKey: baseURLKey)
+        UserDefaults.standard.set(trimmedDeviceID, forKey: deviceIDKey)
         UserDefaults.standard.removeObject(forKey: deviceTokenKey)
+        return true
     }
 
     static func clear() {
         UserDefaults.standard.removeObject(forKey: baseURLKey)
         UserDefaults.standard.removeObject(forKey: deviceIDKey)
         UserDefaults.standard.removeObject(forKey: deviceTokenKey)
-        AppWritebackDeviceTokenStore.clear()
+        AppWritebackDeviceTokenStore.store.clear()
     }
 }
 
-private enum AppWritebackDeviceTokenStore {
+enum AppWritebackDeviceTokenStore {
     // Preserve the deployed Keychain service as a credential migration boundary.
     private static let service = "com.sats21m.vogel-vault.mc2-mobile"
     private static let account = "device-token"
 
-    static func read() -> String? {
-        var query = baseQuery
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data,
-              let token = String(data: data, encoding: .utf8)
-        else { return nil }
-        return token.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    static func save(_ token: String) {
-        clear()
-        guard let data = token.data(using: .utf8), !token.isEmpty else { return }
-        var item = baseQuery
-        item[kSecValueData as String] = data
-        SecItemAdd(item as CFDictionary, nil)
-    }
-
-    static func clear() {
-        SecItemDelete(baseQuery as CFDictionary)
-    }
-
-    private static var baseQuery: [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
+    static var store: KeychainCredentialStore {
+        KeychainCredentialStore(service: service, account: account)
     }
 }
 
@@ -389,7 +387,8 @@ enum AppWritebackError: LocalizedError {
     case invalidBaseURL
     case invalidPairingURL
     case httpError(Int)
-    case serverError(String)
+    case serverError
+    case credentialStorageFailed
     case unexpectedResponse
 
     var errorDescription: String? {
@@ -402,8 +401,10 @@ enum AppWritebackError: LocalizedError {
             "The device pairing URL is invalid or expired."
         case let .httpError(code):
             "The writeback endpoint returned HTTP \(code)."
-        case let .serverError(message):
-            message
+        case .serverError:
+            "The writeback endpoint rejected the request."
+        case .credentialStorageFailed:
+            "The device credential could not be stored securely."
         case .unexpectedResponse:
             "The writeback endpoint returned an unexpected response."
         }
@@ -464,8 +465,7 @@ final class AppWritebackClient: Sendable {
         }
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         if http.statusCode != 200 {
-            let message = object?["error"] as? String
-            throw AppWritebackError.serverError(message ?? "Device pairing failed.")
+            throw AppWritebackError.serverError
         }
         guard let deviceID = object?["deviceId"] as? String,
               let deviceToken = object?["deviceToken"] as? String
@@ -473,11 +473,11 @@ final class AppWritebackClient: Sendable {
             throw AppWritebackError.unexpectedResponse
         }
 
-        AppWritebackConfig.save(
+        guard AppWritebackConfig.save(
             baseURL: baseURL.absoluteString,
             deviceID: deviceID,
             deviceToken: deviceToken,
-        )
+        ) else { throw AppWritebackError.credentialStorageFailed }
     }
 
     func claimBundledPairing(deviceName: String) async throws {
@@ -485,7 +485,7 @@ final class AppWritebackClient: Sendable {
 
         let urls = AppWritebackConfig.bundledPairingURLs
         guard !urls.isEmpty else {
-            throw AppWritebackError.serverError("This build does not include a mobile pairing slot.")
+            throw AppWritebackError.serverError
         }
 
         var lastError: Error?
@@ -527,7 +527,7 @@ final class AppWritebackClient: Sendable {
         }
 
         guard isDone else {
-            throw AppWritebackError.serverError("This mobile writeback endpoint cannot reopen todos.")
+            throw AppWritebackError.serverError
         }
 
         let endpoint = baseURL
@@ -556,12 +556,11 @@ final class AppWritebackClient: Sendable {
 
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         if http.statusCode != 200 {
-            let message = object?["error"] as? String
-            throw AppWritebackError.serverError(message ?? "App writeback failed.")
+            throw AppWritebackError.serverError
         }
         guard let object else { throw AppWritebackError.unexpectedResponse }
         guard object["ok"] as? Bool == true else {
-            throw AppWritebackError.serverError((object["error"] as? String) ?? "The writeback endpoint rejected todo completion.")
+            throw AppWritebackError.serverError
         }
         return true
     }
@@ -583,7 +582,7 @@ final class AppWritebackClient: Sendable {
         else { throw AppWritebackError.notConfigured }
 
         guard Self.isConvexBaseURL(baseURL) else {
-            throw AppWritebackError.serverError("This mobile writeback endpoint cannot delete todos.")
+            throw AppWritebackError.serverError
         }
 
         return try await removeTodoViaConvex(baseURL: baseURL, id: id)
@@ -606,7 +605,7 @@ final class AppWritebackClient: Sendable {
         else { throw AppWritebackError.notConfigured }
 
         guard Self.isConvexBaseURL(baseURL) else {
-            throw AppWritebackError.serverError("This mobile writeback endpoint cannot upsert todos.")
+            throw AppWritebackError.serverError
         }
 
         return try await upsertTodoViaConvex(baseURL: baseURL, todo: todo)
@@ -630,11 +629,11 @@ final class AppWritebackClient: Sendable {
             throw AppWritebackError.unexpectedResponse
         }
 
-        AppWritebackConfig.save(
+        guard AppWritebackConfig.save(
             baseURL: baseURL.absoluteString,
             deviceID: deviceID,
             deviceToken: deviceToken,
-        )
+        ) else { throw AppWritebackError.credentialStorageFailed }
     }
 
     private func setTodoDoneViaConvex(baseURL: URL, id: String, title: String, isDone: Bool) async throws -> Bool {
@@ -703,10 +702,7 @@ final class AppWritebackClient: Sendable {
         if object?["status"] as? String == "error" {
             // ConvexError application errors carry the real reason in errorData;
             // errorMessage is the prod-masked "Server Error" string (SAT-1508).
-            let detail = (object?["errorData"] as? String)
-                ?? (object?["errorMessage"] as? String)
-                ?? "Convex mobile writeback failed."
-            throw AppWritebackError.serverError(detail)
+            throw AppWritebackError.serverError
         }
         guard object?["status"] as? String == "success" else {
             throw AppWritebackError.unexpectedResponse
@@ -1005,8 +1001,24 @@ final class ConvexClient: Sendable {
     /// isolated in their own files.
     func upsertTransactionRow(
         _ transaction: LegacyTransactionDTO,
-        sourceFile: String = "transactions",
+        owner: FamilyMember,
+        sourceFile: String,
     ) async throws {
+        let canonicalOwner = owner.ledgerOwner
+        guard transaction.owner == canonicalOwner else {
+            throw ConvexRowMutationError.ownerMismatch(
+                field: "transaction.owner",
+                expected: canonicalOwner,
+                actual: transaction.owner?.rawValue,
+            )
+        }
+        guard sourceFile == canonicalOwner.transactionsDataFileName else {
+            throw ConvexRowMutationError.ownerMismatch(
+                field: "transaction.sourceFile",
+                expected: canonicalOwner,
+                actual: sourceFile,
+            )
+        }
         let amountCents = try Self.exactMinorUnits(transaction.amount, field: "transaction.amount")
         let kind = transaction.category == "Income" || amountCents < 0 ? "credit" : "spend"
         var row: [String: Any] = [
@@ -1016,6 +1028,7 @@ final class ConvexClient: Sendable {
             "amountCents": ConvexTaggedInt64Encoder.encode(amountCents),
             "kind": kind,
             "category": transaction.category,
+            "owner": canonicalOwner.rawValue,
         ]
         if let card = transaction.card { row["card"] = card }
         if let note = transaction.note { row["note"] = note }
@@ -1033,10 +1046,23 @@ final class ConvexClient: Sendable {
     }
 
     /// Delete one transaction row without reading or rewriting its neighbours.
-    func deleteTransactionRow(id: String, sourceFile: String = "transactions") async throws {
+    func deleteTransactionRow(
+        id: String,
+        owner: FamilyMember,
+        sourceFile: String,
+    ) async throws {
+        let canonicalOwner = owner.ledgerOwner
+        guard sourceFile == canonicalOwner.transactionsDataFileName else {
+            throw ConvexRowMutationError.ownerMismatch(
+                field: "transaction.sourceFile",
+                expected: canonicalOwner,
+                actual: sourceFile,
+            )
+        }
         let path = "tables:deleteTransaction"
         let raw = try await mutation(path, args: [
             "txId": id,
+            "owner": canonicalOwner.rawValue,
             "sourceFile": sourceFile,
         ])
         guard let result = raw as? [String: Any],

@@ -53,7 +53,7 @@ final class ConvexSyncServiceTests: XCTestCase {
             totalValue: 20_000,
         ))
 
-        ConvexSyncService(context: context).recordNetWorthSnapshot()
+        try ConvexSyncService(context: context).recordNetWorthSnapshot()
         try context.save()
 
         let snapshots = try context.fetch(FetchDescriptor<NetWorthSnapshot>())

@@ -182,9 +182,12 @@ struct TodayView: View {
         }
     }
 
+    /// The user-visible report is `ContentView`'s sync banner, which now renders
+    /// the cause. This log line names it for diagnosis.
     @MainActor
-    private static func reportTodoWriteback(_ success: Bool) {
-        guard !success else { return }
-        log.error("Todo writeback failed after retries")
+    private static func reportTodoWriteback(_ result: ConvexWriteResult) {
+        guard !result.isOk else { return }
+        let cause = result.userMessage(operation: "Save todo") ?? "unknown cause"
+        log.error("Todo writeback rejected: \(cause, privacy: .public)")
     }
 }

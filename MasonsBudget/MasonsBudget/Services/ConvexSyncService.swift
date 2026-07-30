@@ -60,7 +60,12 @@ final class ConvexSyncService {
             log.info("No dedicated finance sync path for \(member.rawValue, privacy: .public)")
         }
 
-        recordNetWorthSnapshot()
+        do {
+            try recordNetWorthSnapshot()
+        } catch {
+            errors.append("Net worth snapshot")
+            log.error("Failed to record net worth snapshot")
+        }
 
         do {
             try context.save()
@@ -70,12 +75,20 @@ final class ConvexSyncService {
             errors.append("Save failed: \(error.localizedDescription)")
         }
 
-        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastSyncKey)
-        UserDefaults.standard.set(totalEntities, forKey: Self.syncCountKey)
         if errors.isEmpty {
-            UserDefaults.standard.removeObject(forKey: Self.lastSyncErrorKey)
-            // Only mark versions as synced when sync fully succeeds
-            await saveCurrentVersions()
+            do {
+                // Fetch versions before publishing success metadata. A version
+                // fetch failure must leave the prior timestamp/count/version
+                // intact so polling retries the incomplete sync.
+                try await saveCurrentVersions()
+                UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastSyncKey)
+                UserDefaults.standard.set(totalEntities, forKey: Self.syncCountKey)
+                UserDefaults.standard.removeObject(forKey: Self.lastSyncErrorKey)
+            } catch {
+                errors.append("Versions")
+                UserDefaults.standard.set("Versions", forKey: Self.lastSyncErrorKey)
+                log.error("Failed to save sync versions")
+            }
         } else {
             UserDefaults.standard.set(errors.joined(separator: "; "), forKey: Self.lastSyncErrorKey)
             log.warning("Sync completed with errors: \(errors.joined(separator: "; "))")
@@ -97,13 +110,9 @@ final class ConvexSyncService {
     }
 
     /// Save current remote versions to UserDefaults (call after successful sync).
-    func saveCurrentVersions() async {
-        do {
-            let versions = try await reader.checkVersions()
-            UserDefaults.standard.set(versions, forKey: Self.dataVersionsKey)
-        } catch {
-            log.error("Failed to save versions: \(error.localizedDescription)")
-        }
+    func saveCurrentVersions() async throws {
+        let versions = try await reader.checkVersions()
+        UserDefaults.standard.set(versions, forKey: Self.dataVersionsKey)
     }
 
     // MARK: - Individual sync methods
@@ -113,7 +122,7 @@ final class ConvexSyncService {
             let batch = try await reader.readTransactions(viewer: currentMember)
             let models = LedgerMapper.mapTransactions(batch.value)
             let owners = batch.replacementOwners.map { Array($0) } ?? [.victor, .rachel]
-            replaceTransactions(ownedBy: owners, with: models)
+            try replaceTransactions(ownedBy: owners, with: models)
             return models.count
         } catch {
             log.error("Transactions sync failed: \(error.localizedDescription)")
@@ -128,10 +137,10 @@ final class ConvexSyncService {
             let currentSnapshot = LedgerMapper.mapBudgetSnapshot(dto)
             let historicalSnapshots = LedgerMapper.mapMonthlyHistory(dto.monthlyHistory)
             let categories = LedgerMapper.mapBudgetCategories(dto.categories)
-            replaceBudgetData(forOwner: .victor, snapshots: [currentSnapshot] + historicalSnapshots, categories: categories)
+            try replaceBudgetData(forOwner: .victor, snapshots: [currentSnapshot] + historicalSnapshots, categories: categories)
 
             let incomeTransactions = LedgerMapper.mapPaychecksToTransactions(dto.income?.paychecks)
-            replaceIncomeTransactions(forOwner: .victor, with: incomeTransactions)
+            try replaceIncomeTransactions(forOwner: .victor, with: incomeTransactions)
 
             return 1 + historicalSnapshots.count + categories.count + incomeTransactions.count
         } catch {
@@ -146,7 +155,7 @@ final class ConvexSyncService {
             let dto = try await reader.readBTCSnapshot()
             let owner: FamilyMember = currentMember.isAdult ? .victor : currentMember
             let accounts = LedgerMapper.mapBTCAccounts(dto, owner: owner)
-            replaceBTCAccounts(ownedBy: [.victor, .rachel], with: accounts)
+            try replaceBTCAccounts(ownedBy: [.victor, .rachel], with: accounts)
             return accounts.count
         } catch {
             log.error("BTC accounts sync failed: \(error.localizedDescription)")
@@ -159,7 +168,7 @@ final class ConvexSyncService {
         do {
             let dtos = try await reader.readBTCBuys(viewer: currentMember)
             let models = dtos.map { LedgerMapper.mapBTCBuy($0) }
-            replaceBTCBuys(ownedBy: [.victor, .rachel], with: models)
+            try replaceBTCBuys(ownedBy: [.victor, .rachel], with: models)
             return models.count
         } catch {
             log.error("BTC buys sync failed: \(error.localizedDescription)")
@@ -172,7 +181,7 @@ final class ConvexSyncService {
         do {
             let dtos = try await reader.readBTCBillPays(viewer: currentMember)
             let models = dtos.map { LedgerMapper.mapBTCBillPay($0) }
-            replaceBTCBillPays(ownedBy: [.victor, .rachel], with: models)
+            try replaceBTCBillPays(ownedBy: [.victor, .rachel], with: models)
             return models.count
         } catch {
             log.error("BTC bill pays sync failed: \(error.localizedDescription)")
@@ -185,7 +194,7 @@ final class ConvexSyncService {
         do {
             let batch = try await reader.readTodos(viewer: currentMember)
             let models = LedgerMapper.mapTodos(batch.value, viewer: currentMember)
-            replaceTodos(
+            try replaceTodos(
                 visibleTo: currentMember,
                 with: models,
                 replacementOwners: batch.replacementOwners,
@@ -202,7 +211,7 @@ final class ConvexSyncService {
         do {
             let dto = try await reader.readFinances()
             let accounts = LedgerMapper.mapFinances(dto, owner: currentMember)
-            replaceHoldingAccounts(visibleTo: currentMember, with: accounts)
+            try replaceHoldingAccounts(visibleTo: currentMember, with: accounts)
             return accounts.count
         } catch {
             log.error("Finances sync failed: \(error.localizedDescription)")
@@ -215,7 +224,7 @@ final class ConvexSyncService {
         do {
             let dto = try await reader.readSonBalances()
             let accounts = LedgerMapper.mapSonBalances(dto)
-            replaceBTCAccounts(ownedBy: [.mason], with: accounts)
+            try replaceBTCAccounts(ownedBy: [.mason], with: accounts)
             return accounts.count
         } catch {
             log.error("Son balances sync failed: \(error.localizedDescription)")
@@ -230,7 +239,7 @@ final class ConvexSyncService {
             let categories = LedgerMapper.mapBudgetCategories(dto.categories, owner: .mason)
             let snapshot = makeMasonSnapshot(from: dto)
 
-            replaceBudgetData(forOwner: .mason, snapshots: [snapshot], categories: categories)
+            try replaceBudgetData(forOwner: .mason, snapshots: [snapshot], categories: categories)
             return 1 + categories.count
         } catch {
             log.error("Mason budget sync failed: \(error.localizedDescription)")
@@ -275,7 +284,7 @@ final class ConvexSyncService {
         do {
             let dtos = try await reader.readMasonTransactions(viewer: currentMember)
             let models = LedgerMapper.mapTransactions(dtos, owner: .mason)
-            replaceTransactions(ownedBy: [.mason], with: models)
+            try replaceTransactions(ownedBy: [.mason], with: models)
             return models.count
         } catch {
             log.error("Mason transactions sync failed: \(error.localizedDescription)")
@@ -288,7 +297,7 @@ final class ConvexSyncService {
         do {
             let dtos = try await reader.readMasonBTCBuys(viewer: currentMember)
             let models = dtos.map { LedgerMapper.mapBTCBuy($0, owner: .mason) }
-            replaceBTCBuys(ownedBy: [.mason], with: models)
+            try replaceBTCBuys(ownedBy: [.mason], with: models)
             return models.count
         } catch {
             log.error("Mason BTC buys sync failed: \(error.localizedDescription)")
@@ -297,8 +306,7 @@ final class ConvexSyncService {
         }
     }
 
-    func recordNetWorthSnapshot() {
-        do {
+    func recordNetWorthSnapshot() throws {
             // Only record one snapshot per day per member to avoid unbounded growth
             let cal = Calendar.current
             let existing = try context.fetch(FetchDescriptor<NetWorthSnapshot>())
@@ -335,21 +343,11 @@ final class ConvexSyncService {
                 owner: currentMember,
             )
             context.insert(snapshot)
-        } catch {
-            log.error("Failed to record net worth snapshot: \(error.localizedDescription)")
-        }
     }
 
-    private func replaceBudgetData(forOwner owner: FamilyMember, snapshots: [MonthlyBudgetSnapshot], categories: [BudgetCategory]) {
-        let existingSnapshots: [MonthlyBudgetSnapshot]
-        let existingCats: [BudgetCategory]
-        do {
-            existingSnapshots = try context.fetch(FetchDescriptor<MonthlyBudgetSnapshot>())
-            existingCats = try context.fetch(FetchDescriptor<BudgetCategory>())
-        } catch {
-            log.error("Failed to fetch budget data: \(error.localizedDescription)")
-            return
-        }
+    private func replaceBudgetData(forOwner owner: FamilyMember, snapshots: [MonthlyBudgetSnapshot], categories: [BudgetCategory]) throws {
+        let existingSnapshots = try context.fetch(FetchDescriptor<MonthlyBudgetSnapshot>())
+        let existingCats = try context.fetch(FetchDescriptor<BudgetCategory>())
 
         // Snapshots: keyed by unique monthKey. Index ALL existing rows so an insert
         // can never collide with an out-of-scope monthKey.
@@ -414,14 +412,8 @@ final class ConvexSyncService {
         local.owner = remote.owner
     }
 
-    private func replaceBTCAccounts(ownedBy owners: [FamilyMember], with accounts: [BTCAccount]) {
-        let existing: [BTCAccount]
-        do {
-            existing = try context.fetch(FetchDescriptor<BTCAccount>())
-        } catch {
-            log.error("Failed to fetch BTCAccount slice: \(error.localizedDescription)")
-            return
-        }
+    private func replaceBTCAccounts(ownedBy owners: [FamilyMember], with accounts: [BTCAccount]) throws {
+        let existing = try context.fetch(FetchDescriptor<BTCAccount>())
 
         let remoteKeys = Set(accounts.map(\.key))
         var existingByKey: [String: BTCAccount] = [:]
@@ -452,14 +444,8 @@ final class ConvexSyncService {
         local.lastUpdated = remote.lastUpdated
     }
 
-    private func replaceTransactions(ownedBy owners: [FamilyMember], with transactions: [Transaction]) {
-        let existing: [Transaction]
-        do {
-            existing = try context.fetch(FetchDescriptor<Transaction>())
-        } catch {
-            log.error("Failed to fetch Transaction slice: \(error.localizedDescription)")
-            return
-        }
+    private func replaceTransactions(ownedBy owners: [FamilyMember], with transactions: [Transaction]) throws {
+        let existing = try context.fetch(FetchDescriptor<Transaction>())
 
         let remoteIds = Set(transactions.map(\.id))
         var existingById: [String: Transaction] = [:]
@@ -495,14 +481,8 @@ final class ConvexSyncService {
         local.sourceFile = remote.sourceFile
     }
 
-    private func replaceBTCBuys(ownedBy owners: [FamilyMember], with buys: [BTCBuy]) {
-        let existing: [BTCBuy]
-        do {
-            existing = try context.fetch(FetchDescriptor<BTCBuy>())
-        } catch {
-            log.error("Failed to fetch BTCBuy slice: \(error.localizedDescription)")
-            return
-        }
+    private func replaceBTCBuys(ownedBy owners: [FamilyMember], with buys: [BTCBuy]) throws {
+        let existing = try context.fetch(FetchDescriptor<BTCBuy>())
 
         let remoteIds = Set(buys.map(\.id))
         var existingById: [String: BTCBuy] = [:]
@@ -541,14 +521,8 @@ final class ConvexSyncService {
         local.owner = remote.owner
     }
 
-    private func replaceBTCBillPays(ownedBy owners: [FamilyMember], with billPays: [BTCBillPay]) {
-        let existing: [BTCBillPay]
-        do {
-            existing = try context.fetch(FetchDescriptor<BTCBillPay>())
-        } catch {
-            log.error("Failed to fetch BTCBillPay slice: \(error.localizedDescription)")
-            return
-        }
+    private func replaceBTCBillPays(ownedBy owners: [FamilyMember], with billPays: [BTCBillPay]) throws {
+        let existing = try context.fetch(FetchDescriptor<BTCBillPay>())
 
         let remoteIds = Set(billPays.map(\.id))
         var existingById: [String: BTCBillPay] = [:]
@@ -588,14 +562,8 @@ final class ConvexSyncService {
         visibleTo _: FamilyMember,
         with remoteTodos: [TodoItem],
         replacementOwners: Set<FamilyMember>? = nil,
-    ) {
-        let existing: [TodoItem]
-        do {
-            existing = try context.fetch(FetchDescriptor<TodoItem>())
-        } catch {
-            log.error("Failed to fetch TodoItem slice: \(error.localizedDescription)")
-            return
-        }
+    ) throws {
+        let existing = try context.fetch(FetchDescriptor<TodoItem>())
 
         // A complete row snapshot explicitly names its replacement scope, even
         // when one owner currently has zero rows. Legacy payloads can only prove
@@ -652,14 +620,8 @@ final class ConvexSyncService {
         }
     }
 
-    private func replaceIncomeTransactions(forOwner owner: FamilyMember, with transactions: [Transaction]) {
-        let existing: [Transaction]
-        do {
-            existing = try context.fetch(FetchDescriptor<Transaction>())
-        } catch {
-            log.error("Failed to fetch income transactions: \(error.localizedDescription)")
-            return
-        }
+    private func replaceIncomeTransactions(forOwner owner: FamilyMember, with transactions: [Transaction]) throws {
+        let existing = try context.fetch(FetchDescriptor<Transaction>())
 
         let remoteIds = Set(transactions.map(\.id))
         var existingById: [String: Transaction] = [:]
@@ -681,14 +643,8 @@ final class ConvexSyncService {
         }
     }
 
-    private func replaceHoldingAccounts(visibleTo viewer: FamilyMember, with accounts: [HoldingAccount]) {
-        let existing: [HoldingAccount]
-        do {
-            existing = try context.fetch(FetchDescriptor<HoldingAccount>())
-        } catch {
-            log.error("Failed to fetch HoldingAccount slice: \(error.localizedDescription)")
-            return
-        }
+    private func replaceHoldingAccounts(visibleTo viewer: FamilyMember, with accounts: [HoldingAccount]) throws {
+        let existing = try context.fetch(FetchDescriptor<HoldingAccount>())
 
         let remoteNames = Set(accounts.map(\.name))
         var existingByName: [String: HoldingAccount] = [:]

@@ -1,6 +1,13 @@
 import XCTest
 
 final class FamilyVisibilityTests: XCTestCase {
+    func testLedgerOwnerKeepsActorSeparateFromFinancialOwner() {
+        XCTAssertEqual(FamilyMember.victor.ledgerOwner, .victor)
+        XCTAssertEqual(FamilyMember.rachel.ledgerOwner, .victor)
+        XCTAssertEqual(FamilyMember.mason.ledgerOwner, .mason)
+        XCTAssertEqual(FamilyMember.maddox.ledgerOwner, .maddox)
+    }
+
     // MARK: - Core canSee Logic
 
     func testAdultSeesAllMembers() {

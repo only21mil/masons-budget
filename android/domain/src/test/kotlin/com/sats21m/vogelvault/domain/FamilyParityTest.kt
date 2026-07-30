@@ -124,6 +124,13 @@ class FamilyParityTest {
     }
 
     @Test
+    fun `ledger owner keeps actor separate from financial ownership`() {
+        for (case in memberCases("ledgerOwner")) {
+            assertEquals(member(case["expected"].asString), member(case["member"].asString).ledgerOwner)
+        }
+    }
+
+    @Test
     fun `legacy data file routing matches the Swift enum`() {
         // Accept the old fixture keys until the coordinated shared-domain PR
         // lands; the runtime symbols and preferred keys are neutral.
