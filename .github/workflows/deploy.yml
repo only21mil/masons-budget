@@ -1,9 +1,16 @@
 name: Deploy to TestFlight (manual trigger only)
 
-# Runs entirely on a GitHub macOS runner — no workstation of Victor's is needed.
+# Apple work runs on the registered MacBook Pro. The Mac mini is an explicit
+# dispatch-time fallback, never an automatic route.
 #
 # Triggering this workflow IS the app-build approval gate described in AGENTS.md.
 # It never runs automatically.
+#
+# Every release SHA, including a non-Apple-only change, must already have a
+# successful Xcode project-consistency check and Apple build from Swift CI. If
+# those jobs skipped, dispatch Swift CI with the MBP against the exact current
+# main SHA and wait for it to pass before dispatching this workflow. The safe
+# operator sequence is documented in docs/apple-self-hosted-release.md.
 #
 # Signing: the runner has no Apple ID, so CODE_SIGN_STYLE=Automatic cannot work.
 # The certificate is imported into a throwaway keychain and the provisioning
@@ -23,6 +30,14 @@ on:
           - ios
           - macos
           - both
+      apple_runner:
+        description: 'Apple build host'
+        required: true
+        default: mbp
+        type: choice
+        options:
+          - mbp
+          - mini
 
 permissions:
   contents: read
@@ -40,6 +55,10 @@ jobs:
     name: Require main and green required CI
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
       - name: Require an exact main ref
         env:
           RELEASE_REF: ${{ github.ref }}
@@ -50,6 +69,16 @@ jobs:
             exit 1
           fi
           echo "Release ref is main."
+
+      - name: Require reviewed manual signing assets
+        env:
+          MANUAL_SIGNING_READY: ${{ vars.APPLE_MANUAL_SIGNING_READY }}
+        run: |
+          set -euo pipefail
+          if [ "$MANUAL_SIGNING_READY" != "true" ]; then
+            echo "::error::APPLE_MANUAL_SIGNING_READY must be exactly true after the manual-signing runbook has been completed."
+            exit 1
+          fi
 
       # Check the protected contexts and the completed Apple build at the exact
       # release SHA. A workflow name, detector decision, or older successful run
@@ -63,72 +92,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Two classes, because "did not need to run" and "failed" are not the
-          # same thing and this gate previously could not tell them apart.
-          #
-          # ALWAYS: these run on every commit. Nothing but success is acceptable.
-          # The two detectors are in here deliberately — their success is what
-          # proves CI actually evaluated this SHA, so a skip below is a decision
-          # rather than a workflow that never started.
-          always_green=(
-            "Detect changed trees"
-            "Detect Apple changes"
-            "actionlint + secret inventory"
-            "Shared domain contract"
-            "Convex functions"
-          )
-          # CONDITIONAL: gated by the detectors above. `skipped` is the correct
-          # outcome for a commit that touches none of that tree, so treating it
-          # as a failure made a release impossible from any commit that did not
-          # touch Apple files — which is most commits. `failure`, `cancelled`,
-          # `timed_out`, `missing` and anything still pending remain fatal, so
-          # the case this gate exists for still trips it: commit 0d546d87
-          # shipped alongside a FAILED Apple run.
-          conditional=(
-            "Production wire golden decoders"
-            "Linux client"
-            "Android client"
-            "Build and test the Apple client"
-          )
           checks="$(gh api \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "/repos/${GITHUB_REPOSITORY}/commits/${RELEASE_SHA}/check-runs?filter=latest&per_page=100")"
 
-          conclusion_of() {
-            jq -r --arg name "$1" \
-              '[.check_runs[]
-                | select(.name == $name and .app.id == 15368)]
-               | sort_by(.completed_at // .started_at // .created_at // "")
-               | last
-               | if . == null then "missing"
-                 elif .status != "completed" then "pending"
-                 else (.conclusion // "missing") end' <<< "$checks"
-          }
-
-          failed=false
-          for name in "${always_green[@]}"; do
-            conclusion="$(conclusion_of "$name")"
-            if [ "$conclusion" = "success" ]; then
-              printf 'PASS  %s\n' "$name"
-            else
-              printf 'FAIL  %s (%s)\n' "$name" "$conclusion"
-              failed=true
-            fi
-          done
-          for name in "${conditional[@]}"; do
-            conclusion="$(conclusion_of "$name")"
-            case "$conclusion" in
-              success) printf 'PASS  %s\n' "$name" ;;
-              skipped) printf 'SKIP  %s (not applicable to this commit)\n' "$name" ;;
-              *)       printf 'FAIL  %s (%s)\n' "$name" "$conclusion"; failed=true ;;
-            esac
-          done
-
-          if [ "$failed" = "true" ]; then
-            echo "::error::The exact main release SHA does not have green required CI."
-            exit 1
-          fi
+          # Apple release integrity is stricter than ordinary conditional CI.
+          # Every exact release SHA must have successful project-consistency and
+          # Apple build checks, even when its diff is non-Apple. A skipped Apple
+          # check requires a manual MBP Swift CI dispatch on the exact current
+          # main SHA before this deploy is started.
+          printf '%s' "$checks" |
+            node .github/workflows/scripts/release_check_gate.mjs
 
   preflight:
     name: Verify App Store Connect visibility
@@ -151,22 +126,14 @@ jobs:
   build:
     needs: preflight
     if: github.repository == 'only21mil/masons-budget'
-    # HOSTED, deliberately, and only until manual signing lands.
-    #
-    # Swift CI runs on the self-hosted mini and costs nothing. The RELEASE job
-    # cannot yet: it signs, and automatic signing needs an interactive keychain.
-    # On the headless mini the archive fails with "User interaction is not
-    # allowed", "No profiles for 'com.sats21m.masonsbudget' were found", and
-    # "Revoke certificate: ...its private key is not installed in your keychain"
-    # — run 30415225274. A LaunchAgent has no GUI session to unlock a keychain
-    # or fetch a profile, so no amount of workflow tuning fixes it.
-    #
-    # PR #166 moves this path to MANUAL signing with a distribution certificate
-    # and profile imported from secrets into an ephemeral keychain, which needs
-    # no interaction. Once its runbook has been followed on a Mac and
-    # APPLE_MANUAL_SIGNING_READY is set, move this back to
-    # [self-hosted, macOS, ARM64, xcode] and releases become free too.
-    runs-on: macos-latest
+    runs-on: >-
+      ${{
+        fromJSON(
+          inputs.apple_runner == 'mini' &&
+          '["self-hosted","macOS","ARM64","xcode","mason-mini"]' ||
+          '["self-hosted","macOS","ARM64","xcode","mason-mbp"]'
+        )
+      }}
     strategy:
       # Finish both platform jobs so one failure does not hide the other result.
       # Keep uploads serial because both platforms share a project build number.
@@ -179,24 +146,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # Must match XCODE_VERSION in swift.yml. If verification and release use
-      # different toolchains, a change can pass CI and fail the release — which
-      # is precisely how 16.4 survived here long after the runner image dropped
-      # it: nothing exercised this path until the first real release attempt.
-      # This job runs HOSTED (see runs-on above), where the image ships several
-      # Xcodes and defaults to the wrong one — run 30415709899 reported 26.5
-      # against a 26.6 pin. setup-xcode is what selects it, so it stays here.
-      # It is NOT used in swift.yml, which runs on the self-hosted mini: that
-      # machine has a single /Applications/Xcode.app rather than the hosted
-      # image's versioned bundles, and the action fails outright there.
-      - name: Set up Xcode
-        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
-        with:
-          xcode-version: '26.6'
-
-      # Kept as a post-check rather than trusting setup-xcode silently. Nothing
-      # previously verified that selection actually took effect, which is how a
-      # stale pin survived here unnoticed until a real release attempt.
+      # Self-hosted hosts carry one selected Xcode. Assert the exact version
+      # rather than mutating the persistent machine during a release.
       - name: Verify the pinned Xcode
         run: |
           set -euo pipefail
@@ -212,12 +163,153 @@ jobs:
             exit 1
           fi
 
-      - name: Install XcodeGen
-        run: command -v xcodegen >/dev/null || brew install xcodegen
+      # Publish every cleanup path before creating a keychain, profile, or key.
+      # That makes the final always() step effective even when asset import fails
+      # halfway through on a persistent self-hosted machine.
+      - name: Prepare run-scoped signing paths
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ASC_KEY_ID" ]; then
+            echo "::error::ASC_KEY_ID is required."
+            exit 1
+          fi
+          SIGNING_ROOT="$RUNNER_TEMP/vogel-vault-signing-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${PLATFORM}"
+          RELEASE_ROOT="$RUNNER_TEMP/vogel-vault-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${PLATFORM}"
+          KEYCHAIN_PATH="$SIGNING_ROOT/manual-signing.keychain-db"
+          ORIGINAL_KEYCHAINS_FILE="$SIGNING_ROOT/original-keychains.txt"
+          PRIVATE_KEYS_DIR="$SIGNING_ROOT/private_keys"
+          ASC_KEY_PATH="$PRIVATE_KEYS_DIR/AuthKey_${ASC_KEY_ID}.p8"
+          EXPORT_OPTIONS_PATH="$SIGNING_ROOT/ExportOptions-${PLATFORM}.plist"
 
-      - name: Generate Xcode project
-        working-directory: MasonsBudget
-        run: xcodegen generate --spec project.yml
+          install -d -m 700 "$SIGNING_ROOT" "$PRIVATE_KEYS_DIR" "$RELEASE_ROOT"
+          security list-keychains -d user > "$ORIGINAL_KEYCHAINS_FILE"
+          {
+            echo "SIGNING_ROOT=$SIGNING_ROOT"
+            echo "RELEASE_ROOT=$RELEASE_ROOT"
+            echo "KEYCHAIN_PATH=$KEYCHAIN_PATH"
+            echo "ORIGINAL_KEYCHAINS_FILE=$ORIGINAL_KEYCHAINS_FILE"
+            echo "API_PRIVATE_KEYS_DIR=$PRIVATE_KEYS_DIR"
+            echo "ASC_KEY_PATH=$ASC_KEY_PATH"
+            echo "EXPORT_OPTIONS_PATH=$EXPORT_OPTIONS_PATH"
+            echo "CREATED_PROFILE=false"
+          } >> "$GITHUB_ENV"
+
+      - name: Import and validate manual signing assets
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          APPLE_DISTRIBUTION_CERTIFICATE_P12: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_P12 }}
+          APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          APPLE_IOS_APP_STORE_PROFILE: ${{ secrets.APPLE_IOS_APP_STORE_PROFILE }}
+          APPLE_MAC_APP_STORE_PROFILE: ${{ secrets.APPLE_MAC_APP_STORE_PROFILE }}
+          APPLE_MAC_INSTALLER_CERTIFICATE_P12: ${{ secrets.APPLE_MAC_INSTALLER_CERTIFICATE_P12 }}
+          APPLE_MAC_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_MAC_INSTALLER_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          require_secret() {
+            if [ -z "$2" ]; then
+              echo "::error::$1 is required for the $PLATFORM manual-signing path."
+              exit 1
+            fi
+          }
+
+          require_secret APPLE_DISTRIBUTION_CERTIFICATE_P12 "$APPLE_DISTRIBUTION_CERTIFICATE_P12"
+          require_secret APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD "$APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD"
+          if [ "$PLATFORM" = "ios" ]; then
+            require_secret APPLE_IOS_APP_STORE_PROFILE "$APPLE_IOS_APP_STORE_PROFILE"
+            PROFILE_B64="$APPLE_IOS_APP_STORE_PROFILE"
+            EXPECTED_PROFILE_PLATFORM=iOS
+            PROFILE_EXTENSION=mobileprovision
+          else
+            require_secret APPLE_MAC_APP_STORE_PROFILE "$APPLE_MAC_APP_STORE_PROFILE"
+            require_secret APPLE_MAC_INSTALLER_CERTIFICATE_P12 "$APPLE_MAC_INSTALLER_CERTIFICATE_P12"
+            require_secret APPLE_MAC_INSTALLER_CERTIFICATE_PASSWORD "$APPLE_MAC_INSTALLER_CERTIFICATE_PASSWORD"
+            PROFILE_B64="$APPLE_MAC_APP_STORE_PROFILE"
+            EXPECTED_PROFILE_PLATFORM=OSX
+            PROFILE_EXTENSION=provisionprofile
+          fi
+
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          DISTRIBUTION_P12="$SIGNING_ROOT/apple-distribution.p12"
+          printf '%s' "$APPLE_DISTRIBUTION_CERTIFICATE_P12" |
+            /usr/bin/base64 -D > "$DISTRIBUTION_P12"
+          chmod 600 "$DISTRIBUTION_P12"
+          security import "$DISTRIBUTION_P12" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+
+          if [ "$PLATFORM" = "macos" ]; then
+            INSTALLER_P12="$SIGNING_ROOT/mac-installer-distribution.p12"
+            printf '%s' "$APPLE_MAC_INSTALLER_CERTIFICATE_P12" |
+              /usr/bin/base64 -D > "$INSTALLER_P12"
+            chmod 600 "$INSTALLER_P12"
+            security import "$INSTALLER_P12" \
+              -k "$KEYCHAIN_PATH" \
+              -P "$APPLE_MAC_INSTALLER_CERTIFICATE_PASSWORD" \
+              -T /usr/bin/productbuild \
+              -T /usr/bin/security
+          fi
+
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
+
+          original_keychains=()
+          while IFS= read -r keychain; do
+            [ -n "$keychain" ] && original_keychains+=("$keychain")
+          done < <(sed -e 's/^[[:space:]]*"//' -e 's/"[[:space:]]*$//' "$ORIGINAL_KEYCHAINS_FILE")
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "${original_keychains[@]}"
+
+          if ! security find-identity -v -p codesigning "$KEYCHAIN_PATH" |
+            grep -q '"Apple Distribution'; then
+            echo "::error::The imported distribution p12 has no usable Apple Distribution identity and private key."
+            exit 1
+          fi
+          if [ "$PLATFORM" = "macos" ] &&
+            ! security find-identity -v "$KEYCHAIN_PATH" |
+              grep -q '"Mac Installer Distribution'; then
+            echo "::error::The imported installer p12 has no usable Mac Installer Distribution identity and private key."
+            exit 1
+          fi
+
+          ENCODED_PROFILE="$SIGNING_ROOT/$PLATFORM-profile"
+          DECODED_PROFILE="$SIGNING_ROOT/$PLATFORM-profile.plist"
+          printf '%s' "$PROFILE_B64" | /usr/bin/base64 -D > "$ENCODED_PROFILE"
+          security cms -D -i "$ENCODED_PROFILE" > "$DECODED_PROFILE"
+
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$DECODED_PROFILE")
+          PROFILE_TEAM=$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" "$DECODED_PROFILE")
+          PROFILE_APP_ID=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" "$DECODED_PROFILE")
+          PROFILE_PLATFORM=$(/usr/libexec/PlistBuddy -c "Print :Platform:0" "$DECODED_PROFILE")
+          PROFILE_DEBUG=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:get-task-allow" "$DECODED_PROFILE")
+
+          if [[ ! "$PROFILE_UUID" =~ ^[0-9A-Fa-f-]{36}$ ]] ||
+            [ "$PROFILE_TEAM" != "384ZGKG4GB" ] ||
+            [ "$PROFILE_APP_ID" != "384ZGKG4GB.com.sats21m.masonsbudget" ] ||
+            [ "$PROFILE_PLATFORM" != "$EXPECTED_PROFILE_PLATFORM" ] ||
+            [ "$PROFILE_DEBUG" != "false" ]; then
+            echo "::error::The $PLATFORM profile is not a non-debug App Store profile for team 384ZGKG4GB and com.sats21m.masonsbudget."
+            exit 1
+          fi
+
+          PROFILE_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
+          ENCODED_PROFILE="$ENCODED_PROFILE" \
+            PROFILE_DIR="$PROFILE_DIR" \
+            PROFILE_UUID="$PROFILE_UUID" \
+            PROFILE_EXTENSION="$PROFILE_EXTENSION" \
+            GITHUB_ENV="$GITHUB_ENV" \
+            bash .github/workflows/scripts/install_provisioning_profile.sh
+          echo "Validated and prepared the $PLATFORM manual-signing assets."
 
       - name: Write App Store Connect API key
         env:
@@ -230,54 +322,39 @@ jobs:
             echo "::error::App Store Connect secrets missing. Required: ASC_API_KEY_P8, ASC_KEY_ID, ASC_ISSUER_ID."
             exit 1
           fi
-          # altool looks for the key by convention in this directory.
-          mkdir -p "$HOME/private_keys"
-          KEY_PATH="$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8"
-
           # The secret may hold the raw PEM or a base64 wrapper of it, depending
           # on how it was set. Assuming base64 unconditionally silently wrote
           # garbage, and xcodebuild reported it four steps later as an opaque
           # DVTFoundation.JWT.Error.keyPathInvalid. Detect, then verify.
           if printf '%s' "$ASC_API_KEY_P8" | grep -q "BEGIN PRIVATE KEY"; then
-            printf '%s\n' "$ASC_API_KEY_P8" > "$KEY_PATH"
+            printf '%s\n' "$ASC_API_KEY_P8" > "$ASC_KEY_PATH"
           else
-            printf '%s' "$ASC_API_KEY_P8" | base64 --decode > "$KEY_PATH" 2>/dev/null || true
+            printf '%s' "$ASC_API_KEY_P8" | /usr/bin/base64 -D > "$ASC_KEY_PATH" 2>/dev/null || true
           fi
-          chmod 600 "$KEY_PATH"
+          chmod 600 "$ASC_KEY_PATH"
 
           # Fail here, with a sentence that says what to do, rather than letting
           # a malformed key surface as a JWT error inside xcodebuild.
-          if ! grep -q "BEGIN PRIVATE KEY" "$KEY_PATH"; then
+          if ! grep -q "BEGIN PRIVATE KEY" "$ASC_KEY_PATH"; then
             echo "::error::ASC_API_KEY_P8 did not yield a valid .p8. Set it to the file contents verbatim: gh secret set ASC_API_KEY_P8 -R only21mil/masons-budget < AuthKey_XXXX.p8"
             exit 1
           fi
           echo "App Store Connect key written and validated."
-          # xcodebuild wants an explicit path; altool finds it by convention.
-          echo "ASC_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
 
-      # Signing assets come from App Store Connect via the API key, not from an
-      # exported .p12. The project is already CODE_SIGN_STYLE=Automatic with
-      # DEVELOPMENT_TEAM 384ZGKG4GB and ExportOptions.plist says signingStyle
-      # automatic, so a certificate import was never the right shape here — and
-      # the imported pair had drifted out of sync anyway (the p12 and its
-      # password no longer matched, and the machine holding the originals is
-      # gone). An API key cannot go stale the same way and needs no Mac.
       - name: Archive
         working-directory: MasonsBudget
         env:
           PLATFORM: ${{ matrix.platform }}
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           set -euo pipefail
           if [ "$PLATFORM" = "ios" ]; then
             SCHEME=MasonsBudget
             DESTINATION="generic/platform=iOS"
-            ARCHIVE=build/MasonsBudget.xcarchive
+            ARCHIVE="$RELEASE_ROOT/MasonsBudget.xcarchive"
           else
             SCHEME=MasonsBudgetMac
             DESTINATION="generic/platform=macOS"
-            ARCHIVE=build/MasonsBudgetMac.xcarchive
+            ARCHIVE="$RELEASE_ROOT/MasonsBudgetMac.xcarchive"
           fi
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
 
@@ -286,29 +363,29 @@ jobs:
             -scheme "$SCHEME" \
             -destination "$DESTINATION" \
             -archivePath "$ARCHIVE" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$ASC_KEY_PATH" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            DEVELOPMENT_TEAM=384ZGKG4GB \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+            OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_PATH"
 
       - name: Export
         working-directory: MasonsBudget
         env:
           PLATFORM: ${{ matrix.platform }}
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           set -euo pipefail
-          EXPORT_DIR="build/${PLATFORM}"
+          EXPORT_DIR="$RELEASE_ROOT/export"
+          cp ../ExportOptions.plist "$EXPORT_OPTIONS_PATH"
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles dict" "$EXPORT_OPTIONS_PATH"
+          /usr/libexec/PlistBuddy \
+            -c "Add :provisioningProfiles:com.sats21m.masonsbudget string $PROFILE_UUID" \
+            "$EXPORT_OPTIONS_PATH"
           echo "EXPORT_DIR=$EXPORT_DIR" >> "$GITHUB_ENV"
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE" \
             -exportPath "$EXPORT_DIR" \
-            -exportOptionsPlist ../ExportOptions.plist \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$ASC_KEY_PATH" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+            -exportOptionsPlist "$EXPORT_OPTIONS_PATH"
 
       # Keep the signed artifact BEFORE attempting the upload. Archive and export
       # are the expensive, fragile part; the upload depends on App Store Connect
@@ -321,8 +398,8 @@ jobs:
         with:
           name: ${{ matrix.platform }}-release-${{ github.run_number }}
           path: |
-            MasonsBudget/build/*/*.ipa
-            MasonsBudget/build/*/*.pkg
+            ${{ runner.temp }}/vogel-vault-release-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.platform }}/export/*.ipa
+            ${{ runner.temp }}/vogel-vault-release-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.platform }}/export/*.pkg
           if-no-files-found: warn
           retention-days: 14
 
@@ -352,5 +429,66 @@ jobs:
       - name: Clean up signing material
         if: always()
         run: |
-          rm -rf "$HOME/private_keys"
-          rm -rf "$HOME/Library/MobileDevice/Provisioning Profiles"
+          set -u
+          cleanup_failed=false
+
+          if [ -n "${ORIGINAL_KEYCHAINS_FILE:-}" ] &&
+            [ -f "$ORIGINAL_KEYCHAINS_FILE" ]; then
+            original_keychains=()
+            while IFS= read -r keychain; do
+              [ -n "$keychain" ] && original_keychains+=("$keychain")
+            done < <(sed -e 's/^[[:space:]]*"//' -e 's/"[[:space:]]*$//' "$ORIGINAL_KEYCHAINS_FILE")
+            if ! security list-keychains -d user -s "${original_keychains[@]}"; then
+              echo "::error::Could not restore the runner's original keychain search list."
+              cleanup_failed=true
+            fi
+          fi
+
+          if [ -n "${KEYCHAIN_PATH:-}" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+          fi
+          if [ "${CREATED_PROFILE:-false}" = "true" ] &&
+            [ -n "${INSTALLED_PROFILE_PATH:-}" ]; then
+            rm -f "$INSTALLED_PROFILE_PATH"
+          fi
+
+          if [ -n "${SIGNING_ROOT:-}" ]; then
+            case "$SIGNING_ROOT" in
+              "$RUNNER_TEMP"/vogel-vault-signing-*) rm -rf "$SIGNING_ROOT" ;;
+              *)
+                echo "::error::Refusing to delete unexpected signing path: $SIGNING_ROOT"
+                cleanup_failed=true
+                ;;
+            esac
+          fi
+          if [ -n "${RELEASE_ROOT:-}" ]; then
+            case "$RELEASE_ROOT" in
+              "$RUNNER_TEMP"/vogel-vault-release-*) rm -rf "$RELEASE_ROOT" ;;
+              *)
+                echo "::error::Refusing to delete unexpected release path: $RELEASE_ROOT"
+                cleanup_failed=true
+                ;;
+            esac
+          fi
+
+          if [ "${CREATED_PROFILE:-false}" = "true" ] &&
+            [ -n "${INSTALLED_PROFILE_PATH:-}" ] &&
+            [ -e "$INSTALLED_PROFILE_PATH" ]; then
+            echo "::error::The run-owned provisioning profile remains after cleanup."
+            cleanup_failed=true
+          fi
+          if [ "${CREATED_PROFILE:-false}" != "true" ] &&
+            [ -n "${INSTALLED_PROFILE_PATH:-}" ] &&
+            [ ! -e "$INSTALLED_PROFILE_PATH" ]; then
+            echo "::error::The pre-existing provisioning profile disappeared during cleanup."
+            cleanup_failed=true
+          fi
+          if [ -n "${SIGNING_ROOT:-}" ] && [ -e "$SIGNING_ROOT" ]; then
+            echo "::error::The run-scoped signing directory remains after cleanup."
+            cleanup_failed=true
+          fi
+          if [ -n "${RELEASE_ROOT:-}" ] && [ -e "$RELEASE_ROOT" ]; then
+            echo "::error::The run-scoped release directory remains after cleanup."
+            cleanup_failed=true
+          fi
+          [ "$cleanup_failed" = "false" ]

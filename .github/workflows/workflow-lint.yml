@@ -95,10 +95,23 @@ jobs:
         run: python3 .github/workflows/scripts/check_secret_inventory.py
 
       - name: App Store Connect preflight tests
-        run: node --test .github/workflows/scripts/tests/app_store_connect_preflight.test.mjs
+        run: |
+          node --test .github/workflows/scripts/tests/app_store_connect_preflight.test.mjs
+          node --test .github/workflows/scripts/tests/release_check_gate.test.mjs
 
       - name: Secret presence reporter tests
         run: python3 .github/workflows/scripts/tests/test_report_secret_presence.py
+
+      - name: Apple changed-tree routing tests
+        run: python3 .github/workflows/scripts/tests/test_apple_changed_tree.py
+
+      - name: Apple simulator selection tests
+        run: python3 .github/workflows/scripts/tests/test_ensure_ios_simulator.py
+
+      - name: Manual Apple release signing contract
+        run: |
+          python3 .github/workflows/scripts/tests/test_manual_release_signing.py
+          python3 .github/workflows/scripts/tests/test_install_provisioning_profile.py
 
       # The reporter is the only thing standing between Victor and a release that
       # dies at the signing step, so it gets exercised here rather than debugged

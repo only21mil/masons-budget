@@ -7,6 +7,11 @@
     "shared/domain",
     "linux"
   ],
+  "overrides": {
+    "@electron/asar": "4.2.1",
+    "@electron/universal": "3.0.6",
+    "ejs": "6.0.1"
+  },
   "scripts": {
     "dev": "npx convex dev",
     "deploy": "npx convex deploy",
