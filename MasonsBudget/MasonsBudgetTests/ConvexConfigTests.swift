@@ -98,8 +98,8 @@ final class ConvexConfigTests: XCTestCase {
             "the production SecItem query must opt macOS into the Data Protection Keychain",
         )
         XCTAssertEqual(
-            store.writeAttributes(for: "secret")?[kSecAttrAccessible as String] as? CFString,
-            kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            store.writeAttributes(for: "secret")?[kSecAttrAccessible as String] as? String,
+            kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String,
         )
     }
 
@@ -122,8 +122,8 @@ final class ConvexConfigTests: XCTestCase {
             true,
         )
         XCTAssertEqual(
-            store.writeAttributes(for: "secret")?[kSecAttrAccessible as String] as? CFString,
-            kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            store.writeAttributes(for: "secret")?[kSecAttrAccessible as String] as? String,
+            kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String,
         )
     }
 
