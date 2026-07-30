@@ -119,18 +119,69 @@ class CsvImportServiceTest {
     }
 
     @Test
-    fun `an explicit amount sign wins over a disagreeing type column and is flagged`() {
-        val row = parse(
-            "date,amount,type,memo\n2026-05-01,-500,Purchase,Costco",
+    fun `a sign and type contradiction rejects the row naming what each source said`() {
+        // Most banks export purchases negative while this app stores them positive,
+        // so "-500,Purchase" is genuinely ambiguous: a refund of 500 under the
+        // app's convention, a purchase of 500 under the bank's. Neither reading may
+        // be picked silently, so nothing imports.
+        assertEquals(
+            "Row 2 contradicts itself: its amount \"-500\" says a refund but its type " +
+                "\"Purchase\" says a purchase. Nothing was imported because neither " +
+                "source can be trusted over the other; correct the row or drop one of " +
+                "the two columns, then import again",
+            assertFailsWith<CsvImportException.SignTypeContradiction> {
+                parse(
+                    "date,amount,type,memo\n2026-05-01,-500,Purchase,Costco",
+                    CsvImportSource.CUSTOM,
+                )
+            }.message,
+        )
+    }
+
+    @Test
+    fun `a contradicted row is refused again on the way to the write client`() {
+        val clean = parse(
+            "date,amount,type,memo\n2026-05-01,500,Purchase,Costco",
+            CsvImportSource.CUSTOM,
+        ).single()
+        // Simulate a future regression that stops rejecting at parse and hands a
+        // contradicted row to the import button: prepareTransactions is the last
+        // thing between these cells and a signed write, so it must refuse too.
+        val contradicted = clean.copy(amountCell = "-500")
+
+        val failure = assertFailsWith<CsvImportException.SignTypeContradiction> {
+            service.prepareTransactions(listOf(contradicted), FamilyMember.VICTOR)
+        }
+        assertTrue(
+            failure.message!!.contains("its amount \"-500\" says a refund") &&
+                failure.message!!.contains("its type \"Purchase\" says a purchase"),
+            "the rejection must name both sources: ${failure.message}",
+        )
+    }
+
+    @Test
+    fun `a sign that agrees with its type column is a convention not a contradiction`() {
+        val refund = parse(
+            "date,amount,type,memo\n2026-05-01,-500,Refund,Costco return",
+            CsvImportSource.CUSTOM,
+        ).single()
+        val purchase = parse(
+            "date,amount,type,memo\n2026-05-01,+500,Purchase,Costco",
             CsvImportSource.CUSTOM,
         ).single()
 
-        assertEquals(-500L, row.sats, "the stated amount sign is authoritative")
-        assertTrue(row.signContract.conflict, "the contradiction must be visible on the row")
-        assertEquals(CsvDirectionEvidence.AMOUNT_SIGN, row.signContract.evidence)
+        assertEquals(-500L, refund.sats, "a signed refund typed Refund must still import")
+        assertEquals(CsvDirectionEvidence.AMOUNT_SIGN, refund.signContract.evidence)
+        assertEquals(500L, purchase.sats, "a signed purchase typed Purchase must still import")
+        assertEquals(CsvDirectionEvidence.AMOUNT_SIGN, purchase.signContract.evidence)
+
         assertEquals(
             TransactionKind.CREDIT,
-            service.prepareTransactions(listOf(row), FamilyMember.VICTOR).single().transaction.kind,
+            service.prepareTransactions(listOf(refund), FamilyMember.VICTOR).single().transaction.kind,
+        )
+        assertEquals(
+            TransactionKind.SPEND,
+            service.prepareTransactions(listOf(purchase), FamilyMember.VICTOR).single().transaction.kind,
         )
     }
 
@@ -143,7 +194,6 @@ class CsvImportServiceTest {
 
         assertEquals(500L, row.sats)
         assertEquals(CsvDirectionEvidence.DEFAULTED, row.signContract.evidence)
-        assertFalse(row.signContract.conflict)
     }
 
     @Test
