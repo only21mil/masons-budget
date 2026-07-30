@@ -44,6 +44,9 @@ internal data class TaskListModel(
             viewer: FamilyMember,
             today: LocalDate,
         ): TaskListModel {
+            // ScreenHost filters before TaskListsScreen receives rows. Keep this
+            // second check deliberately: direct model callers must not become a
+            // route around the family visibility contract.
             val visible = todos.visibleTo(viewer)
             val open = visible.filterNot(TodoItem::done)
             val weekFromToday = today.plusDays(7)

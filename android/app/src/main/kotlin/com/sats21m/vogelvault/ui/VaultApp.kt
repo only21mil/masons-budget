@@ -74,14 +74,13 @@ import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 /**
  * Destinations.
  *
- * `adultOnly` is enforced by the shell, not just hidden from the bar — a child
- * profile must not be able to land on an adult surface even if state is restored
- * or forced.
+ * Every destination has a child-scoped presentation. Privacy is enforced where
+ * each screen receives or derives its collections; the destination catalog is
+ * not an authorization boundary.
  */
 enum class Destination(
     val label: String,
     val icon: ImageVector,
-    val adultOnly: Boolean = false,
 ) {
     DASHBOARD("Dashboard", Icons.Filled.Dashboard),
     ACTIVITY("Activity", Icons.Filled.ReceiptLong),
@@ -95,12 +94,7 @@ enum class Destination(
     TODAY("Today", Icons.Filled.WbSunny),
     TASKS("Tasks", Icons.Filled.Checklist),
     FAMILY("Family", Icons.Filled.People),
-    SETTINGS("Settings", Icons.Filled.Settings);
-
-    companion object {
-        fun visibleTo(member: FamilyMember): List<Destination> =
-            entries.filter { member.isAdult || !it.adultOnly }
-    }
+    SETTINGS("Settings", Icons.Filled.Settings),
 }
 
 /**
@@ -162,10 +156,8 @@ fun VaultApp(
         val unfolded = maxWidth.value >= UNFOLDED_MIN_WIDTH_DP
 
         CompositionLocalProvider(LocalIsUnfolded provides unfolded) {
-            val destinations = Destination.visibleTo(state.activeProfile)
-            // A profile switch can strand the user on a destination they may no
-            // longer open. Fall back rather than render an empty shell.
-            val current = if (state.destination in destinations) state.destination else Destination.DASHBOARD
+            val destinations = Destination.entries.toList()
+            val current = state.destination
 
             if (unfolded) {
                 Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {

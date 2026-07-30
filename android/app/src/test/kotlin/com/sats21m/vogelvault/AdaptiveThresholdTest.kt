@@ -43,12 +43,12 @@ class AdaptiveThresholdTest {
     }
 }
 
-/** Destination visibility and the ViewModel's refusal to open a forbidden screen. */
+/** Destination catalog and folded-navigation partitioning. */
 class DestinationVisibilityTest {
 
     @Test
     fun `folded navigation partitions every destination into primary or More`() {
-        val destinations = Destination.visibleTo(FamilyMember.VICTOR)
+        val destinations = Destination.entries.toList()
         val primary = foldedPrimaryDestinations(destinations)
         val overflow = foldedOverflowDestinations(destinations)
 
@@ -105,21 +105,26 @@ class DestinationVisibilityTest {
     }
 
     @Test
-    fun `children see no fewer destinations than exist and no adult-only ones`() {
-        val adultOnly = Destination.entries.filter { it.adultOnly }
+    fun `children can navigate every child-scoped destination`() {
         for (child in listOf(FamilyMember.MASON, FamilyMember.MADDOX)) {
-            val visible = Destination.visibleTo(child)
-            assertTrue(visible.isNotEmpty())
-            for (destination in adultOnly) {
-                assertFalse(destination in visible, "$destination must be hidden from $child")
+            val viewModel = VaultViewModel(remoteInitiallyEnabled = false)
+            viewModel.switchProfile(child)
+
+            for (destination in Destination.entries) {
+                viewModel.navigate(destination)
+                assertEquals(destination, viewModel.state.value.destination, "$child could not open $destination")
             }
         }
     }
 
     @Test
-    fun `adults see every destination`() {
-        assertEquals(Destination.entries.toList(), Destination.visibleTo(FamilyMember.VICTOR))
-        assertEquals(Destination.entries.toList(), Destination.visibleTo(FamilyMember.RACHEL))
+    fun `profile switching preserves the current child-scoped destination`() {
+        val viewModel = VaultViewModel(remoteInitiallyEnabled = false)
+        viewModel.navigate(Destination.SETTINGS)
+
+        viewModel.switchProfile(FamilyMember.MASON)
+
+        assertEquals(Destination.SETTINGS, viewModel.state.value.destination)
     }
 
     @Test
