@@ -235,8 +235,8 @@ test("query-shape digest ignores comments and unrelated schema but catches depen
   assert.notEqual(relevant.listTransactions, baseline.listTransactions)
 
   const relevantTablesSource = tablesSource.replace(
-    "? 0n\n      : row.amountCents;",
-    "? 0n\n      : -row.amountCents;",
+    'const spendAmount = row.category === "Income" ? 0n : row.amountCents;',
+    'const spendAmount = row.category === "Income" ? 0n : -row.amountCents;',
   )
   assert.notEqual(relevantTablesSource, tablesSource)
   const relevantProjection = queryShapeDigestsFromSources(

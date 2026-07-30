@@ -6,6 +6,7 @@ import { convexTest } from "convex-test";
 import type { FunctionReference } from "convex/server";
 import { afterEach, beforeEach } from "vitest";
 
+import type { DeviceCapability } from "./deviceAuth";
 import schema from "./schema";
 
 /**
@@ -19,6 +20,9 @@ import schema from "./schema";
 const modules: Record<string, () => Promise<unknown>> = {
   "./_generated/server.ts": () => import("./generatedServer.test-stub"),
   "./dataFiles.ts": () => import("./dataFiles"),
+  "./dateValidation.ts": () => import("./dateValidation"),
+  "./deviceAuth.ts": () => import("./deviceAuth"),
+  "./tables.ts": () => import("./tables"),
   "./todoNormalize.ts": () => import("./todoNormalize"),
 };
 
@@ -53,12 +57,13 @@ export const api = {
     { token?: string },
     { name: string; version: number; updatedAt: number }[]
   >,
-  listTodoTombstones: "dataFiles:listTodoTombstones" as unknown as FunctionReference<
-    "query",
-    "public",
-    { token?: string },
-    { id: string; deletedAt: number }[]
-  >,
+  listTodoTombstones:
+    "dataFiles:listTodoTombstones" as unknown as FunctionReference<
+      "query",
+      "public",
+      { token?: string },
+      { id: string; deletedAt: number }[]
+    >,
   sync: "dataFiles:sync" as unknown as FunctionReference<
     "mutation",
     "public",
@@ -71,22 +76,23 @@ export const api = {
     { files: { name: string; data: unknown }[]; token?: string },
     { name: string; version: number }[]
   >,
-  appendTransaction: "dataFiles:appendTransaction" as unknown as FunctionReference<
-    "mutation",
-    "public",
-    {
-      name?: "transactions" | "mason-transactions";
-      transaction: {
-        id: string;
-        date: string;
-        merchant: string;
-        amount: number;
-        category: string;
-      };
-      token?: string;
-    },
-    { name: string; version: number; id: string }
-  >,
+  appendTransaction:
+    "dataFiles:appendTransaction" as unknown as FunctionReference<
+      "mutation",
+      "public",
+      {
+        name?: "transactions" | "mason-transactions";
+        transaction: {
+          id: string;
+          date: string;
+          merchant: string;
+          amount: number;
+          category: string;
+        };
+        token?: string;
+      },
+      { name: string; version: number; id: string }
+    >,
   upsertTodo: "dataFiles:upsertTodo" as unknown as FunctionReference<
     "mutation",
     "public",
@@ -105,61 +111,85 @@ export const api = {
     { name: string; token?: string },
     null
   >,
-  createMobilePairing: "dataFiles:createMobilePairing" as unknown as FunctionReference<
-    "mutation",
-    "public",
-    {
-      pairId: string;
-      proofHash: string;
-      expiresAt: number;
-      createdBy?: string;
-      token?: string;
-    },
-    { pairId: string; expiresAt: number }
-  >,
-  claimMobilePairing: "dataFiles:claimMobilePairing" as unknown as FunctionReference<
-    "mutation",
-    "public",
-    {
-      pairId: string;
-      proofHash: string;
-      deviceName: string;
-      deviceId: string;
-      deviceToken: string;
-    },
-    { ok: boolean; deviceId: string; pairedAt: number }
-  >,
-  upsertTodoFromMobile: "dataFiles:upsertTodoFromMobile" as unknown as FunctionReference<
-    "mutation",
-    "public",
-    { deviceId: string; deviceToken: string; todo: TodoPayload },
-    { ok: boolean; name: string; version: number; id: string; applied: boolean }
-  >,
-  completeTodoFromMobile: "dataFiles:completeTodoFromMobile" as unknown as FunctionReference<
-    "mutation",
-    "public",
-    {
-      deviceId: string;
-      deviceToken: string;
-      id: string;
-      title?: string;
-      done?: boolean;
-    },
-    {
-      ok: boolean;
-      id: string;
-      done: boolean;
-      completedAt: string | null;
-      version: number;
-      titleMatched: boolean;
-    }
-  >,
-  removeTodoFromMobile: "dataFiles:removeTodoFromMobile" as unknown as FunctionReference<
-    "mutation",
-    "public",
-    { deviceId: string; deviceToken: string; id: string },
-    { ok: boolean; name: string; version: number; removed: boolean }
-  >,
+  createMobilePairing:
+    "dataFiles:createMobilePairing" as unknown as FunctionReference<
+      "mutation",
+      "public",
+      {
+        pairId: string;
+        proofHash: string;
+        expiresAt: number;
+        createdBy?: string;
+        capabilities?: DeviceCapability[];
+        token?: string;
+      },
+      { pairId: string; expiresAt: number }
+    >,
+  claimMobilePairing:
+    "dataFiles:claimMobilePairing" as unknown as FunctionReference<
+      "mutation",
+      "public",
+      {
+        pairId: string;
+        proofHash: string;
+        deviceName: string;
+        deviceId: string;
+        deviceToken: string;
+      },
+      {
+        ok: true;
+        deviceId: string;
+        pairedAt: number;
+        capabilities: DeviceCapability[];
+      }
+    >,
+  upsertTodoFromMobile:
+    "dataFiles:upsertTodoFromMobile" as unknown as FunctionReference<
+      "mutation",
+      "public",
+      { deviceId: string; deviceToken: string; todo: TodoPayload },
+      {
+        ok: boolean;
+        name: string;
+        version: number;
+        id: string;
+        applied: boolean;
+      }
+    >,
+  completeTodoFromMobile:
+    "dataFiles:completeTodoFromMobile" as unknown as FunctionReference<
+      "mutation",
+      "public",
+      {
+        deviceId: string;
+        deviceToken: string;
+        id: string;
+        title?: string;
+        done?: boolean;
+      },
+      {
+        ok: boolean;
+        id: string;
+        done: boolean;
+        completedAt: string | null;
+        version: number;
+        titleMatched: boolean;
+      }
+    >,
+  removeTodoFromMobile:
+    "dataFiles:removeTodoFromMobile" as unknown as FunctionReference<
+      "mutation",
+      "public",
+      { deviceId: string; deviceToken: string; id: string },
+      { ok: boolean; name: string; version: number; removed: boolean }
+    >,
+  revokeMobileDevice:
+    "dataFiles:revokeMobileDevice" as unknown as FunctionReference<
+      "mutation",
+      "public",
+      { deviceId: string; deviceToken: string },
+      { ok: true; revoked: boolean }
+    >,
 };
 
 // ── Deployment environment ──
@@ -217,6 +247,12 @@ export function freshSecret(): string {
   return crypto.randomUUID();
 }
 
+export function freshProofHash(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(32)))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 // ── Fixtures ──
 
 export async function seedDataFile(
@@ -268,18 +304,21 @@ export async function pairMobileDevice(
   t: TestConvexInstance,
   syncToken: string,
   deviceId = "device-under-test",
+  capabilities?: DeviceCapability[],
 ) {
   const pairId = `pair-${crypto.randomUUID()}`;
-  const proofHash = freshSecret();
+  const proofHash = freshProofHash();
   const deviceToken = freshSecret();
 
-  await t.mutation(api.createMobilePairing, {
+  const createArgs = {
     pairId,
     proofHash,
     expiresAt: Date.now() + 60_000,
     token: syncToken,
-  });
-  await t.mutation(api.claimMobilePairing, {
+    ...(capabilities === undefined ? {} : { capabilities }),
+  };
+  await t.mutation(api.createMobilePairing, createArgs);
+  const claim = await t.mutation(api.claimMobilePairing, {
     pairId,
     proofHash,
     deviceName: "Test iPhone",
@@ -287,5 +326,5 @@ export async function pairMobileDevice(
     deviceToken,
   });
 
-  return { deviceId, deviceToken, pairId };
+  return { deviceId, deviceToken, pairId, capabilities: claim.capabilities };
 }
