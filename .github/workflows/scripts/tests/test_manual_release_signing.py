@@ -56,7 +56,9 @@ class ManualReleaseSigningTests(unittest.TestCase):
             'security list-keychains -d user > "$ORIGINAL_KEYCHAINS_FILE"',
             'security list-keychains -d user -s "${original_keychains[@]}"',
             'security delete-keychain "$KEYCHAIN_PATH"',
-            'rm -f "$INSTALLED_PROFILE_PATH"',
+            "CREATED_PROFILE=false",
+            "bash .github/workflows/scripts/install_provisioning_profile.sh",
+            'if [ "${CREATED_PROFILE:-false}" = "true" ]',
             '"$RUNNER_TEMP"/vogel-vault-signing-*',
             '"$RUNNER_TEMP"/vogel-vault-release-*',
             "API_PRIVATE_KEYS_DIR=$PRIVATE_KEYS_DIR",
@@ -67,6 +69,11 @@ class ManualReleaseSigningTests(unittest.TestCase):
         self.assertNotIn('rm -rf "$HOME/private_keys"', deploy)
         self.assertNotIn(
             'rm -rf "$HOME/Library/MobileDevice/Provisioning Profiles"', deploy
+        )
+        self.assertNotIn(
+            'if [ -n "${INSTALLED_PROFILE_PATH:-}" ]; then\n'
+            '            rm -f "$INSTALLED_PROFILE_PATH"',
+            deploy,
         )
 
     def test_export_is_manual(self) -> None:

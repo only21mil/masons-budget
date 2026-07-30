@@ -58,6 +58,9 @@ function validateAsar(archive, label) {
   const packaged = JSON.parse(asar.extractFile(archive, "package.json").toString("utf8"))
   if (packaged.main !== "dist-electron/main.js") fail(`${label} package main is ${JSON.stringify(packaged.main)}.`)
   if (packaged.author?.name !== "Victor Vogel") fail(`${label} package author is not Victor Vogel.`)
+  if (packaged.homepage !== "https://github.com/only21mil/masons-budget") {
+    fail(`${label} package homepage is ${JSON.stringify(packaged.homepage)}.`)
+  }
   if (!String(packaged.description).includes("private family Bitcoin and budget dashboard")) {
     fail(`${label} package description is missing the product identity.`)
   }
@@ -71,6 +74,9 @@ try {
   if (debField(deb, "Package") !== "vogel-vault") fail(`deb package name is ${JSON.stringify(debField(deb, "Package"))}.`)
   if (debField(deb, "Architecture") !== "amd64") fail(`deb architecture is ${JSON.stringify(debField(deb, "Architecture"))}.`)
   if (!debField(deb, "Maintainer").startsWith("Victor Vogel")) fail(`deb maintainer is ${JSON.stringify(debField(deb, "Maintainer"))}.`)
+  if (debField(deb, "Homepage") !== "https://github.com/only21mil/masons-budget") {
+    fail(`deb homepage is ${JSON.stringify(debField(deb, "Homepage"))}.`)
+  }
   if (!debField(deb, "Description").includes("Private family Bitcoin and budget dashboard")) {
     fail("deb description is missing the product identity.")
   }

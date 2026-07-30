@@ -245,6 +245,7 @@ jobs:
             echo "API_PRIVATE_KEYS_DIR=$PRIVATE_KEYS_DIR"
             echo "ASC_KEY_PATH=$ASC_KEY_PATH"
             echo "EXPORT_OPTIONS_PATH=$EXPORT_OPTIONS_PATH"
+            echo "CREATED_PROFILE=false"
           } >> "$GITHUB_ENV"
 
       - name: Import and validate manual signing assets
@@ -352,12 +353,14 @@ jobs:
           fi
 
           PROFILE_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
-          INSTALLED_PROFILE_PATH="$PROFILE_DIR/$PROFILE_UUID.$PROFILE_EXTENSION"
           echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
-          echo "INSTALLED_PROFILE_PATH=$INSTALLED_PROFILE_PATH" >> "$GITHUB_ENV"
-          mkdir -p "$PROFILE_DIR"
-          install -m 600 "$ENCODED_PROFILE" "$INSTALLED_PROFILE_PATH"
-          echo "Validated and installed the $PLATFORM manual-signing assets."
+          ENCODED_PROFILE="$ENCODED_PROFILE" \
+            PROFILE_DIR="$PROFILE_DIR" \
+            PROFILE_UUID="$PROFILE_UUID" \
+            PROFILE_EXTENSION="$PROFILE_EXTENSION" \
+            GITHUB_ENV="$GITHUB_ENV" \
+            bash .github/workflows/scripts/install_provisioning_profile.sh
+          echo "Validated and prepared the $PLATFORM manual-signing assets."
 
       - name: Write App Store Connect API key
         env:
@@ -495,7 +498,8 @@ jobs:
           if [ -n "${KEYCHAIN_PATH:-}" ]; then
             security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
           fi
-          if [ -n "${INSTALLED_PROFILE_PATH:-}" ]; then
+          if [ "${CREATED_PROFILE:-false}" = "true" ] &&
+            [ -n "${INSTALLED_PROFILE_PATH:-}" ]; then
             rm -f "$INSTALLED_PROFILE_PATH"
           fi
 
@@ -518,9 +522,16 @@ jobs:
             esac
           fi
 
-          if [ -n "${INSTALLED_PROFILE_PATH:-}" ] &&
+          if [ "${CREATED_PROFILE:-false}" = "true" ] &&
+            [ -n "${INSTALLED_PROFILE_PATH:-}" ] &&
             [ -e "$INSTALLED_PROFILE_PATH" ]; then
             echo "::error::The run-owned provisioning profile remains after cleanup."
+            cleanup_failed=true
+          fi
+          if [ "${CREATED_PROFILE:-false}" != "true" ] &&
+            [ -n "${INSTALLED_PROFILE_PATH:-}" ] &&
+            [ ! -e "$INSTALLED_PROFILE_PATH" ]; then
+            echo "::error::The pre-existing provisioning profile disappeared during cleanup."
             cleanup_failed=true
           fi
           if [ -n "${SIGNING_ROOT:-}" ] && [ -e "$SIGNING_ROOT" ]; then

@@ -52,8 +52,10 @@ Each matrix leg creates separate signing and release directories containing its
 run ID, attempt, and platform under `RUNNER_TEMP`. Before changing the user
 keychain search list, it records the complete prior list. The final `always()`
 cleanup restores that list, deletes the temporary keychain, removes only the
-exact profile installed by that leg, and deletes only those validated
-run-scoped directories.
+exact profile created by that leg, and deletes only those validated run-scoped
+directories. If the UUID path already contains the identical profile, the run
+reuses and preserves it. If that path contains different bytes, signing fails
+closed rather than overwriting a persistent-host asset.
 
 Never replace that cleanup with deletion of `~/private_keys` or the whole
 Provisioning Profiles directory. Those locations may contain unrelated assets

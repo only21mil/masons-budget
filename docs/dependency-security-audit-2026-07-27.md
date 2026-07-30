@@ -12,15 +12,22 @@ The Linux foundation upgrade moved the shipped runtime to Electron `43.2.0`,
 the package verifier to `@electron/asar` `4.2.1`, Electron Builder to the
 patched v26 release `26.15.7`, and the lint stack to ESLint `10.8.0`.
 Narrow root overrides keep Electron Builder's Linux package path on the audited
-ASAR/universal/EJS releases and replace the vulnerable cleanup dependency under
-its unused Windows installer path. They require Node 22.12 or newer; CI uses
-Node 24.
+ASAR/universal/EJS releases. They require Node 22.12 or newer; CI uses Node 24.
 
-A clean `npm ci` followed by both full and production-only `npm audit` now
-reports zero vulnerabilities. Typecheck, lint, tests, the preload-boundary
-guard, and the canonical Linux build pass. The distributable package and
-packaged-app smoke remain part of the approval-gated package verification; the
-dependency upgrade does not waive that gate.
+A full `npm audit` reports 10 cascading high-severity package nodes from the
+`brace-expansion` finding through Electron Builder's Windows-only Squirrel
+toolchain. `temp@0.9.4` requires the callback API from rimraf 2; forcing it to
+rimraf 6 made tracked cleanup throw a `TypeError`, so the incompatible override
+was removed and an executable cleanup test now protects that contract. This
+repository packages only Linux `.deb` and AppImage targets, and neither calls
+`electron-winstaller`, `temp`, rimraf, or the affected glob expansion path.
+`npm audit --omit=dev` remains clean, but that view alone is not treated as
+proof of shipped-runtime safety.
+
+Typecheck, lint, tests, the preload-boundary guard, and the canonical Linux
+build pass. The distributable package and packaged-app smoke remain part of the
+approval-gated package verification; the dependency upgrade does not waive
+that gate.
 
 ## Measured results
 

@@ -41,6 +41,13 @@ class AppleChangedTreeTests(unittest.TestCase):
             )
         )
 
+    def test_simulator_provisioning_script_allocates_apple(self) -> None:
+        self.assertTrue(
+            MODULE.requires_apple(
+                [".github/workflows/scripts/ensure_ios_simulator.py"]
+            )
+        )
+
     def test_unrelated_shared_file_does_not_allocate_apple(self) -> None:
         self.assertFalse(
             MODULE.requires_apple(["shared/domain/src/writeContract.ts"])

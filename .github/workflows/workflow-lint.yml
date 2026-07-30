@@ -103,8 +103,13 @@ jobs:
       - name: Apple changed-tree routing tests
         run: python3 .github/workflows/scripts/tests/test_apple_changed_tree.py
 
+      - name: Apple simulator selection tests
+        run: python3 .github/workflows/scripts/tests/test_ensure_ios_simulator.py
+
       - name: Manual Apple release signing contract
-        run: python3 .github/workflows/scripts/tests/test_manual_release_signing.py
+        run: |
+          python3 .github/workflows/scripts/tests/test_manual_release_signing.py
+          python3 .github/workflows/scripts/tests/test_install_provisioning_profile.py
 
       # The reporter is the only thing standing between Victor and a release that
       # dies at the signing step, so it gets exercised here rather than debugged

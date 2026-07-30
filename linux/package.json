@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "The Vogel Vault \u2014 private family Bitcoin and budget dashboard",
+  "homepage": "https://github.com/only21mil/masons-budget",
   "author": {
     "name": "Victor Vogel"
   },
@@ -15,7 +16,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json",
     "lint": "eslint .",
-    "test": "vitest run",
+    "test": "vitest run && node --test test/temp-tracked-cleanup.check.mjs",
     "qa:preload-boundary": "node scripts/qa-preload-boundary.mjs",
     "build:release": "npm run typecheck && vite build --mode release",
     "package": "npm run package:linux",
@@ -57,6 +58,7 @@
     "extraMetadata": {
       "name": "vogel-vault",
       "description": "The Vogel Vault — private family Bitcoin and budget dashboard",
+      "homepage": "https://github.com/only21mil/masons-budget",
       "author": {
         "name": "Victor Vogel"
       }
@@ -68,7 +70,8 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "package.json"
+      "package.json",
+      "!**/*.map"
     ],
     "linux": {
       "target": [

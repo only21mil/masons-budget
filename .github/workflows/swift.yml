@@ -84,8 +84,8 @@ env:
   # Both registered Apple hosts must expose this exact version through their
   # selected /Applications/Xcode.app. A mismatch fails before build work starts.
   XCODE_VERSION: '26.6'
-  # brew's auto-update pulls a few hundred megabytes and a minute of wall clock
-  # before it installs anything, and this runner is billed by the minute.
+  # brew's auto-update pulls a few hundred megabytes before it installs
+  # anything; skipping it keeps self-hosted latency and network use predictable.
   HOMEBREW_NO_AUTO_UPDATE: 1
   HOMEBREW_NO_INSTALL_CLEANUP: 1
 
