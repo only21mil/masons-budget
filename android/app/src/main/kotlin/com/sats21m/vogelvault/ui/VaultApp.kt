@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.CurrencyBitcoin
@@ -24,7 +25,6 @@ import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Settings
@@ -83,11 +83,11 @@ enum class Destination(
     val icon: ImageVector,
 ) {
     DASHBOARD("Dashboard", Icons.Filled.Dashboard),
-    ACTIVITY("Activity", Icons.Filled.ReceiptLong),
+    ACTIVITY("Activity", Icons.AutoMirrored.Filled.ReceiptLong),
     BUDGET("Budget", Icons.Filled.Payments),
     BITCOIN("Bitcoin", Icons.Filled.CurrencyBitcoin),
     BTC_BUYS("BTC Buys", Icons.Filled.CurrencyBitcoin),
-    BTC_BILL_PAYS("BTC Bill Pays", Icons.Filled.ReceiptLong),
+    BTC_BILL_PAYS("BTC Bill Pays", Icons.AutoMirrored.Filled.ReceiptLong),
     NET_WORTH("Net Worth", Icons.Filled.AccountBalance),
     RETIREMENT("Retirement", Icons.Filled.Savings),
     EXPORT("Export", Icons.Filled.FileDownload),
