@@ -50,10 +50,7 @@ type Scope = "visible" | "netWorth";
 
 type RowEnvelope<Row> = { rows: Row[]; complete: boolean };
 
-async function queryRows<
-  Args extends { viewer: Member },
-  Row,
->(
+async function queryRows<Args extends { viewer: Member }, Row>(
   reference: FunctionReference<"query", "public", Args, RowEnvelope<Row>>,
   ...args: OptionalRestArgs<
     FunctionReference<"query", "public", Args, RowEnvelope<Row>>
@@ -126,7 +123,13 @@ const fn = {
   listBtcBuys: "tables:listBtcBuys" as unknown as FunctionReference<
     "query",
     "public",
-    { viewer: Member; scope: Scope; month?: string; limit?: number; token?: string },
+    {
+      viewer: Member;
+      scope: Scope;
+      month?: string;
+      limit?: number;
+      token?: string;
+    },
     {
       rows: Array<{
         buyId: string;
@@ -143,7 +146,13 @@ const fn = {
   listBtcBillPays: "tables:listBtcBillPays" as unknown as FunctionReference<
     "query",
     "public",
-    { viewer: Member; scope: Scope; month?: string; limit?: number; token?: string },
+    {
+      viewer: Member;
+      scope: Scope;
+      month?: string;
+      limit?: number;
+      token?: string;
+    },
     {
       rows: Array<{
         billPayId: string;
@@ -350,18 +359,17 @@ const fn = {
     },
     { txId: string; owner: Member; month: string; outcome: string }
   >,
-  deleteTransaction:
-    "tables:deleteTransaction" as unknown as FunctionReference<
-      "mutation",
-      "public",
-      {
-        txId: string;
-        owner?: Member;
-        sourceFile?: string;
-        token?: string;
-      },
-      { txId: string; owner: Member; removed: boolean }
-    >,
+  deleteTransaction: "tables:deleteTransaction" as unknown as FunctionReference<
+    "mutation",
+    "public",
+    {
+      txId: string;
+      owner?: Member;
+      sourceFile?: string;
+      token?: string;
+    },
+    { txId: string; owner: Member; removed: boolean }
+  >,
   upsertTodo: "tables:upsertTodo" as unknown as FunctionReference<
     "mutation",
     "public",
@@ -514,7 +522,13 @@ const ADULT_TRANSACTIONS = [
 
 // Purchases are positive for every owner.
 const MASON_TRANSACTIONS = [
-  { id: "m-1", date: "2026-07-04", merchant: "Game Store", amount: 60, category: "Fun" },
+  {
+    id: "m-1",
+    date: "2026-07-04",
+    merchant: "Game Store",
+    amount: 60,
+    category: "Fun",
+  },
 ];
 
 const ADULT_BUYS = [
@@ -604,7 +618,12 @@ const SNAPSHOT = {
   asOf: "2026-07-18T12:00:00Z",
   accounts: {
     strike: { btc: 0.35, fiat: 34300.55, label: "Strike", custody: "exchange" },
-    coldcard: { btc: 1.5, fiat: 147000, label: "Coldcard", custody: "self_custody" },
+    coldcard: {
+      btc: 1.5,
+      fiat: 147000,
+      label: "Coldcard",
+      custody: "self_custody",
+    },
   },
   totals: { btc: 1.85, fiat: 181300.55 },
   metadata: {
@@ -706,7 +725,12 @@ const FINANCES = {
 };
 
 const TODOS = [
-  { id: "todo-1", title: "Pay the water bill", done: false, updated_at: "2026-07-10T09:00:00Z" },
+  {
+    id: "todo-1",
+    title: "Pay the water bill",
+    done: false,
+    updated_at: "2026-07-10T09:00:00Z",
+  },
   {
     id: "todo-2",
     title: "Mason: tidy room",
@@ -744,7 +768,7 @@ async function migrateAll(t: T) {
     "income",
     "balances",
   ]) {
-    const reviewed = await t.mutation(fn.migrateFile, { file: name }) as {
+    const reviewed = (await t.mutation(fn.migrateFile, { file: name })) as {
       frozenPlanFingerprint: string;
     };
     await t.mutation(fn.migrateFile, {
@@ -909,7 +933,9 @@ describe("the blob path is untouched", () => {
       },
     });
     await t.mutation(fn.deleteTransaction, { txId: "app-1" });
-    await t.mutation(fn.upsertTodo, { todo: { id: "app-todo", title: "Ship it" } });
+    await t.mutation(fn.upsertTodo, {
+      todo: { id: "app-todo", title: "Ship it" },
+    });
     await t.mutation(fn.deleteTodo, { todoId: "app-todo" });
     await t.mutation(fn.upsertBudgetCategory, {
       viewer: "victor",
@@ -917,20 +943,22 @@ describe("the blob path is untouched", () => {
       category: { name: "Groceries", budgetCents: 95000n },
     });
 
-    expect(await blobWorldSnapshot(t)).toEqual(before);
+    const after = await blobWorldSnapshot(t);
+    expect(after.files).toEqual(before.files);
+    expect(after.versions).toEqual(before.versions);
   });
 
-  it("deleteTodo writes no tombstone — that table belongs to the blob path", async () => {
+  it("deleteTodo preserves the legacy tombstone while clients still read blobs", async () => {
     await migrateAll(t);
     await t.mutation(fn.deleteTodo, { todoId: "todo-1" });
 
     const tombstones = await t.run(async (ctx) =>
       ctx.db.query("todoTombstones").collect(),
     );
-    expect(tombstones).toHaveLength(0);
-    expect(await queryRows(fn.listTodos, { viewer: "victor" })).not.toContainEqual(
-      expect.objectContaining({ todoId: "todo-1" }),
-    );
+    expect(tombstones.map((row) => row.id)).toEqual(["todo-1"]);
+    expect(
+      await queryRows(fn.listTodos, { viewer: "victor" }),
+    ).not.toContainEqual(expect.objectContaining({ todoId: "todo-1" }));
   });
 
   it("deleteTransaction writes no todo tombstone — transactions need a separate convergence design", async () => {
@@ -985,10 +1013,9 @@ describe("money is integer minor units", () => {
     });
 
     const byId = new Map(
-      (await queryRows(fn.listTransactions, { viewer: "victor" })).map((row) => [
-        row.txId,
-        row,
-      ]),
+      (await queryRows(fn.listTransactions, { viewer: "victor" })).map(
+        (row) => [row.txId, row],
+      ),
     );
 
     expect(byId.get("t-1")).toMatchObject({
@@ -1056,10 +1083,9 @@ describe("money is integer minor units", () => {
     });
 
     const byId = new Map(
-      (await queryRows(fn.listTransactions, { viewer: "victor" })).map((row) => [
-        row.txId,
-        row,
-      ]),
+      (await queryRows(fn.listTransactions, { viewer: "victor" })).map(
+        (row) => [row.txId, row],
+      ),
     );
     expect(byId.get("production-adult-purchase")).toMatchObject({
       spendAmount: 3762n,
@@ -1114,7 +1140,10 @@ describe("money is integer minor units", () => {
   });
 
   it("prefers amount_sats over the lossy amount_btc mirror", async () => {
-    const buys = await queryRows(fn.listBtcBuys, { viewer: "victor", scope: "visible" });
+    const buys = await queryRows(fn.listBtcBuys, {
+      viewer: "victor",
+      scope: "visible",
+    });
     const adult = buys.find((buy) => buy.buyId === "b-1");
     expect(adult?.sats).toBe(250000n);
     expect(adult?.priceUsdCents).toBe(9800050n);
@@ -1126,7 +1155,10 @@ describe("money is integer minor units", () => {
   });
 
   it("converts snapshot balances to sats and cents", async () => {
-    const accounts = await queryRows(fn.listBtcAccounts, { viewer: "victor", scope: "visible" });
+    const accounts = await queryRows(fn.listBtcAccounts, {
+      viewer: "victor",
+      scope: "visible",
+    });
     const strike = accounts.find(
       (account) => account.key === "strike" && account.owner === "victor",
     );
@@ -1143,8 +1175,12 @@ describe("owner is first class, and the two visibility rules keep their widths",
   it("adult records default to victor and Rachel still sees all of them", async () => {
     // The v0.3 bug: adult records carry owner "victor", so a strict
     // `owner === viewer` check leaves Rachel with empty screens.
-    const victorRows = await queryRows(fn.listTransactions, { viewer: "victor" });
-    const rachelRows = await queryRows(fn.listTransactions, { viewer: "rachel" });
+    const victorRows = await queryRows(fn.listTransactions, {
+      viewer: "victor",
+    });
+    const rachelRows = await queryRows(fn.listTransactions, {
+      viewer: "rachel",
+    });
 
     expect(victorRows.map((row) => row.txId).sort()).toEqual(
       rachelRows.map((row) => row.txId).sort(),
@@ -1205,9 +1241,9 @@ describe("owner is first class, and the two visibility rules keep their widths",
     expect(visible.map((a) => a.owner)).toContain("mason");
     // …and it must NOT be part of adult net worth.
     expect(netWorth.map((a) => a.owner)).not.toContain("mason");
-    expect(netWorth.every((a) => a.owner === "victor" || a.owner === "rachel")).toBe(
-      true,
-    );
+    expect(
+      netWorth.every((a) => a.owner === "victor" || a.owner === "rachel"),
+    ).toBe(true);
     // Backwards would mean either a leak or an empty screen; assert the gap is
     // real rather than the two queries having quietly become one.
     expect(netWorth.length).toBeLessThan(visible.length);
@@ -1257,7 +1293,10 @@ describe("owner is first class, and the two visibility rules keep their widths",
     // Both the adults and Mason have a "strike" account. Identity is
     // (owner, key); merging on key alone would put a child's stack in the
     // adult total.
-    const accounts = await queryRows(fn.listBtcAccounts, { viewer: "victor", scope: "visible" });
+    const accounts = await queryRows(fn.listBtcAccounts, {
+      viewer: "victor",
+      scope: "visible",
+    });
     const mason = accounts.filter((account) => account.owner === "mason");
     expect(mason.map((account) => account.key).sort()).toEqual([
       "son-coldcard-mason",
@@ -1269,7 +1308,14 @@ describe("owner is first class, and the two visibility rules keep their widths",
 
   it("refuses a garbage owner string in a child file instead of coercing it", async () => {
     await seedDataFile(t, "maddox-transactions", [
-      { id: "x-1", date: "2026-07-08", merchant: "Sweets", amount: 5, category: "Fun", owner: "Maddox " },
+      {
+        id: "x-1",
+        date: "2026-07-08",
+        merchant: "Sweets",
+        amount: 5,
+        category: "Fun",
+        owner: "Maddox ",
+      },
     ]);
     await expect(
       t.mutation(fn.migrateFile, { file: "maddox-transactions" }),
@@ -1413,7 +1459,10 @@ describe("indexed month and date", () => {
   });
 
   it("returns newest first and honours limit", async () => {
-    const rows = await queryRows(fn.listTransactions, { viewer: "victor", limit: 2 });
+    const rows = await queryRows(fn.listTransactions, {
+      viewer: "victor",
+      limit: 2,
+    });
     expect(rows.map((row) => row.date)).toEqual(["2026-07-19", "2026-07-04"]);
   });
 
@@ -1516,7 +1565,10 @@ describe("indexed month and date", () => {
       },
     });
 
-    const newest = await queryRows(fn.listTodos, { viewer: "victor", limit: 1 });
+    const newest = await queryRows(fn.listTodos, {
+      viewer: "victor",
+      limit: 1,
+    });
     expect(newest.map((todo) => todo.todoId)).toEqual(["recent-open"]);
   });
 
@@ -1580,7 +1632,9 @@ describe("public Linux/Android read contract", () => {
       limit: 1,
     });
     expect(income).toEqual({
-      rows: [expect.objectContaining({ incomeId: "income-1", amountCents: 250055n })],
+      rows: [
+        expect.objectContaining({ incomeId: "income-1", amountCents: 250055n }),
+      ],
       complete: false,
     });
 
@@ -1636,7 +1690,9 @@ describe("public Linux/Android read contract", () => {
 
     await expect(
       t.query(fn.listTransactions, { viewer: "maddox" }),
-    ).rejects.toThrow(/complete snapshot exceeds the hard maximum of 2000 rows/);
+    ).rejects.toThrow(
+      /complete snapshot exceeds the hard maximum of 2000 rows/,
+    );
 
     const bounded = await t.query(fn.listTransactions, {
       viewer: "maddox",
@@ -1682,9 +1738,9 @@ describe("public Linux/Android read contract", () => {
       scope: "netWorth",
     });
     expect(mason.document).toMatchObject({ owner: "mason", month: "2026-07" });
-    expect(mason.document?.categories.map((category) => category.name)).toEqual([
-      "Fun",
-    ]);
+    expect(mason.document?.categories.map((category) => category.name)).toEqual(
+      ["Fun"],
+    );
   });
 
   it("returns complete BTC documents while keeping son-balances out of adult net worth", async () => {
@@ -1694,9 +1750,9 @@ describe("public Linux/Android read contract", () => {
     });
     expect(visible.complete).toBe(true);
     expect(visible.rows.map((row) => row.owner)).toEqual(["mason", "victor"]);
-    expect(
-      visible.rows.find((row) => row.owner === "mason")?.totals.sats,
-    ).toBe(1600000n);
+    expect(visible.rows.find((row) => row.owner === "mason")?.totals.sats).toBe(
+      1600000n,
+    );
 
     const netWorth = await t.query(fn.listBtcBalanceDocuments, {
       viewer: "rachel",
@@ -1704,9 +1760,11 @@ describe("public Linux/Android read contract", () => {
     });
     expect(netWorth.rows.map((row) => row.owner)).toEqual(["victor"]);
     expect(
-      netWorth.rows.flatMap((row) => row.accounts).some(
-        (account) => account.key === "strike" && account.sats === 400000n,
-      ),
+      netWorth.rows
+        .flatMap((row) => row.accounts)
+        .some(
+          (account) => account.key === "strike" && account.sats === 400000n,
+        ),
     ).toBe(false);
 
     const mason = await t.query(fn.listBtcBalanceDocuments, {
@@ -1768,9 +1826,9 @@ describe("public Linux/Android read contract", () => {
       viewer: "victor",
       scope: "netWorth",
     });
-    expect(netWorth.document?.accounts.map((account) => account.owner)).toEqual([
-      "victor",
-    ]);
+    expect(netWorth.document?.accounts.map((account) => account.owner)).toEqual(
+      ["victor"],
+    );
 
     const mason = await t.query(fn.getFinanceDocument, {
       viewer: "mason",
@@ -1938,7 +1996,9 @@ describe("row mutations", () => {
           category: "Fun",
         },
       }),
-    ).rejects.toThrow(/purchases are positive and refunds are negative for every owner/);
+    ).rejects.toThrow(
+      /purchases are positive and refunds are negative for every owner/,
+    );
 
     await expect(
       t.mutation(fn.upsertTransaction, {
@@ -1951,7 +2011,9 @@ describe("row mutations", () => {
           category: "Fun",
         },
       }),
-    ).rejects.toThrow(/purchases are positive and refunds are negative for every owner/);
+    ).rejects.toThrow(
+      /purchases are positive and refunds are negative for every owner/,
+    );
   });
 
   it("rejects malformed transaction and bill-pay dates before deriving month", async () => {
@@ -1982,7 +2044,7 @@ describe("row mutations", () => {
       }),
     ).rejects.toThrow(/ISO calendar date/);
 
-    expect((await t.query(fn.rowCounts, {}))).toMatchObject({
+    expect(await t.query(fn.rowCounts, {})).toMatchObject({
       transactions: 0,
       btcBillPays: 0,
     });
@@ -2042,7 +2104,10 @@ describe("row mutations", () => {
       ).outcome,
     ).toBe("updated");
 
-    const accounts = await queryRows(fn.listBtcAccounts, { viewer: "victor", scope: "visible" });
+    const accounts = await queryRows(fn.listBtcAccounts, {
+      viewer: "victor",
+      scope: "visible",
+    });
     expect(accounts.filter((a) => a.key === "strike")).toHaveLength(1);
     expect(accounts.find((a) => a.key === "strike")?.sats).toBe(36000000n);
   });
@@ -2166,7 +2231,9 @@ describe("row mutations", () => {
         month: "2026-07",
         category: { name: "Fun", budgetCents: 1n },
       }),
-    ).rejects.toThrow(/does not exist.*does not create a whole budget document/);
+    ).rejects.toThrow(
+      /does not exist.*does not create a whole budget document/,
+    );
   });
 
   it("rejects non-integer category money", async () => {
@@ -2274,7 +2341,9 @@ describe("row mutations", () => {
     ).rejects.toThrow(/belongs to/);
 
     const after = await t.query(fn.listTransactions, { viewer: "victor" });
-    expect(after.rows.map((r: { txId: string }) => r.txId)).toContain(target.txId);
+    expect(after.rows.map((r: { txId: string }) => r.txId)).toContain(
+      target.txId,
+    );
   });
 
   it("refuses a bill pay whose money is not a positive spend", async () => {
@@ -2320,7 +2389,12 @@ describe("row mutations", () => {
     // its owner and overwriting every money field.
     await expect(
       t.mutation(fn.upsertBtcBillPay, {
-        billPay: { id: "hijack-bp", owner: "mason", ...base, amountUsdCents: 1n },
+        billPay: {
+          id: "hijack-bp",
+          owner: "mason",
+          ...base,
+          amountUsdCents: 1n,
+        },
       }),
     ).rejects.toThrow(/belongs to victor/);
 
@@ -2445,12 +2519,24 @@ describe("row mutations", () => {
 
 describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
   const readEntryPoints = [
-    { name: "listTransactions", call: (token?: string) => queryRows(fn.listTransactions, { viewer: "victor", token }) },
-    { name: "listTodos", call: (token?: string) => queryRows(fn.listTodos, { viewer: "victor", token }) },
+    {
+      name: "listTransactions",
+      call: (token?: string) =>
+        queryRows(fn.listTransactions, { viewer: "victor", token }),
+    },
+    {
+      name: "listTodos",
+      call: (token?: string) =>
+        queryRows(fn.listTodos, { viewer: "victor", token }),
+    },
     {
       name: "listBtcBuys",
       call: (token?: string) =>
-        queryRows(fn.listBtcBuys, { viewer: "victor", scope: "visible", token }),
+        queryRows(fn.listBtcBuys, {
+          viewer: "victor",
+          scope: "visible",
+          token,
+        }),
     },
     {
       name: "listBtcBillPays",
@@ -2531,7 +2617,10 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
           token,
         }),
     },
-    { name: "rowCounts", call: (token?: string) => t.query(fn.rowCounts, { token }) },
+    {
+      name: "rowCounts",
+      call: (token?: string) => t.query(fn.rowCounts, { token }),
+    },
   ] as const;
 
   const writeEntryPoints = [
@@ -2552,7 +2641,10 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
     {
       name: "upsertTodo",
       call: (token?: string) =>
-        t.mutation(fn.upsertTodo, { todo: { id: "auth-todo", title: "Probe" }, token }),
+        t.mutation(fn.upsertTodo, {
+          todo: { id: "auth-todo", title: "Probe" },
+          token,
+        }),
     },
     {
       name: "deleteTransaction",
@@ -2561,7 +2653,8 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
     },
     {
       name: "deleteTodo",
-      call: (token?: string) => t.mutation(fn.deleteTodo, { todoId: "auth-todo", token }),
+      call: (token?: string) =>
+        t.mutation(fn.deleteTodo, { todoId: "auth-todo", token }),
     },
     {
       name: "upsertBtcBuy",
@@ -2681,7 +2774,9 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
     for (const entry of readEntryPoints) {
       it(`${entry.name} rejects a missing or wrong token and admits the right one`, async () => {
         await expect(entry.call()).rejects.toThrow(/invalid read token/);
-        await expect(entry.call(freshSecret())).rejects.toThrow(/invalid read token/);
+        await expect(entry.call(freshSecret())).rejects.toThrow(
+          /invalid read token/,
+        );
         await expect(entry.call(readToken)).resolves.toBeDefined();
       });
     }
@@ -2689,7 +2784,9 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
     for (const entry of writeEntryPoints) {
       it(`${entry.name} rejects a missing or wrong token and admits the right one`, async () => {
         await expect(entry.call()).rejects.toThrow(/invalid sync token/);
-        await expect(entry.call(freshSecret())).rejects.toThrow(/invalid sync token/);
+        await expect(entry.call(freshSecret())).rejects.toThrow(
+          /invalid sync token/,
+        );
         await expect(entry.call(syncToken)).resolves.toBeDefined();
       });
     }
@@ -2702,7 +2799,9 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
         ALLOW_TOKENLESS_READ: "true",
       });
       // Same env, same answer from both files. That equality is the contract.
-      await expect(t.query(fn.dataFilesGet, { name: "todos" })).resolves.toBeDefined();
+      await expect(
+        t.query(fn.dataFilesGet, { name: "todos" }),
+      ).resolves.toBeDefined();
       await expect(
         queryRows(fn.listTransactions, { viewer: "victor" }),
       ).resolves.toBeDefined();

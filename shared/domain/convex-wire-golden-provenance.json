@@ -28,16 +28,16 @@
       "convex/tables.ts"
     ],
     "sha256": {
-      "getBudgetDocument": "8a52219a5a26cf1da35ed2e0de19ebafc5abfcf5ee1c114de34052bd83d2a196",
-      "listBtcAccounts": "b5cb7f16237bfb70858b75900d337cacdcb2c935cbb76a1fb1a7732790709e4b",
-      "listBtcBillPays": "2a70c1d1b3c309dcee1bbc5ec76e920fe8ce9186e9382234b8e0df520b23915a",
-      "listBtcBuys": "43cb1de9f821a00feb571bf3010e855be052a12c7f46db2534a945a721703240",
-      "listIncome": "5fcfeeb56d5b9413ea1499bba268ade3d4672168648a80ac45f368c31538a46d",
-      "listTodos": "b5ab58d02eca89c4c72dc0d6954e8a01a47ee99d09abd286bb5f6bfd08f63276",
-      "listTransactions": "15d87b9275192143b3f47009f1414faeaf4ba5c80180c6a1fb26a39a9d514000",
-      "rowCounts": "aa277cbc41bdcfcdab2d2517c6330b51a63f57110a5c659d4ecc7d434316809e"
+      "getBudgetDocument": "c004678746daccf1deeeeefb7a5ba080de82eed144c602304e91ca5fae27f8cb",
+      "listBtcAccounts": "d0a661a7e705082ecb70e0e03b49b0e33c19025ce2d749fa6cc23d0947e46d7c",
+      "listBtcBillPays": "43b11b2e3e91c33bdd2215a6c5ecfc3afa8d63a01e6296b5a283e70250ed31b7",
+      "listBtcBuys": "4a71649dd12be3951d472e1b29a018d86c7031163470f4859e256c1609aaf9fd",
+      "listIncome": "e549d764046ce6ff0d755fe24c145a3b1a9a79c884f1b69750acc38401149168",
+      "listTodos": "efa2312be3f5cb7d68cde727c752be66b13c7a9c2d7077974a849dde8c7ad53d",
+      "listTransactions": "99431116be32b73051fe0d06c6c7c259ef9fde07e87f0011da6802212ec3f78d",
+      "rowCounts": "135f485eef0e0c0c8dcc0998e1b542a846fecdbcf8e49f12ff49cc478bd0af15"
     },
-    "reattestedNote": "Generated alongside this authenticated production capture using comment-free per-query TypeScript token dependency closures. Previously attested queries without wire captures are retained and refreshed."
+    "reattestedNote": "The capture checksums and date remain from the authenticated production capture. Query-shape hashes were deterministically refreshed for the reviewed backend source change without making a production request."
   },
   "freshness": {
     "warningAfterDays": 30,

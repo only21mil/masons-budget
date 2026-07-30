@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   api,
+  freshProofHash,
   freshSecret,
   readDataFile,
   setDeploymentEnv,
@@ -238,7 +239,7 @@ describe("mutation auth: createMobilePairing is deliberately stricter", () => {
     await expect(
       t.mutation(api.createMobilePairing, {
         pairId: "pair-1",
-        proofHash: freshSecret(),
+        proofHash: freshProofHash(),
         expiresAt: Date.now() + 60_000,
       }),
     ).rejects.toThrow(/CONVEX_SYNC_TOKEN is required for mobile pairing/);
@@ -249,7 +250,7 @@ describe("mutation auth: createMobilePairing is deliberately stricter", () => {
     await expect(
       t.mutation(api.createMobilePairing, {
         pairId: "pair-1",
-        proofHash: freshSecret(),
+        proofHash: freshProofHash(),
         expiresAt: Date.now() + 60_000,
         token: freshSecret(),
       }),
@@ -262,7 +263,7 @@ describe("mutation auth: createMobilePairing is deliberately stricter", () => {
     await expect(
       t.mutation(api.createMobilePairing, {
         pairId: "pair-1",
-        proofHash: freshSecret(),
+        proofHash: freshProofHash(),
         expiresAt: Date.now() - 1,
         token: syncToken,
       }),
@@ -275,10 +276,23 @@ describe("mutation auth: createMobilePairing is deliberately stricter", () => {
     await expect(
       t.mutation(api.createMobilePairing, {
         pairId: "   ",
-        proofHash: freshSecret(),
+        proofHash: freshProofHash(),
         expiresAt: Date.now() + 60_000,
         token: syncToken,
       }),
-    ).rejects.toThrow(/pairId and proofHash required/);
+    ).rejects.toThrow(/pairId is malformed/);
+  });
+
+  it("caps pairing lifetime to the bounded mint policy", async () => {
+    const syncToken = freshSecret();
+    setDeploymentEnv({ CONVEX_SYNC_TOKEN: syncToken });
+    await expect(
+      t.mutation(api.createMobilePairing, {
+        pairId: "pair-too-long",
+        proofHash: freshProofHash(),
+        expiresAt: Date.now() + 367 * 24 * 60 * 60 * 1000,
+        token: syncToken,
+      }),
+    ).rejects.toThrow(/within 366 days/);
   });
 });
