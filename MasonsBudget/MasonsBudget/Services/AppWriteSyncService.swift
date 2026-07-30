@@ -369,8 +369,9 @@ enum AppWriteSyncService {
         result: ConvexWriteResult,
         retry: (@MainActor @Sendable () -> Void)?,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)?,
-        statusStore: SyncStatusStore = .shared,
+        statusStore: SyncStatusStore? = nil,
     ) {
+        let statusStore = statusStore ?? .shared
         // A Retry button that cannot change the outcome is worse than none: it
         // tells the user the save might still land.
         let retryAction = result.isRetryable ? retry : nil
@@ -386,8 +387,9 @@ enum AppWriteSyncService {
     @discardableResult
     static func reportSyncStart(
         _ label: String,
-        statusStore: SyncStatusStore = .shared,
+        statusStore: SyncStatusStore? = nil,
     ) -> UUID {
+        let statusStore = statusStore ?? .shared
         let id = UUID()
         statusStore.begin(label, id: id)
         return id

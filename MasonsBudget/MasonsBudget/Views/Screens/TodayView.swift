@@ -176,18 +176,18 @@ struct TodayView: View {
             Hairline()
             InlineAddTaskBar(
                 defaultDueDate: Calendar.current.startOfDay(for: Date()),
-                onResult: Self.reportTodoWriteback,
+                // Keep the closure literal at the @MainActor @Sendable
+                // destination so Swift never has to convert an isolated
+                // function value after the fact.
+                onResult: { result in
+                    guard !result.isOk else { return }
+                    let cause =
+                        result.userMessage(operation: "Save todo")
+                        ?? "unknown cause"
+                    Self.log.error("Todo writeback rejected: \(cause, privacy: .public)")
+                },
                 isExpanded: $showingDraft,
             )
         }
-    }
-
-    /// The user-visible report is `ContentView`'s sync banner, which now renders
-    /// the cause. This log line names it for diagnosis.
-    @MainActor
-    private static func reportTodoWriteback(_ result: ConvexWriteResult) {
-        guard !result.isOk else { return }
-        let cause = result.userMessage(operation: "Save todo") ?? "unknown cause"
-        log.error("Todo writeback rejected: \(cause, privacy: .public)")
     }
 }

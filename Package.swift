@@ -20,17 +20,19 @@ let package = Package(
             exclude: [
                 "AppWriteSyncService.swift",
                 "BTCPriceService.swift",
-                
                 "CSVImportService.swift",
                 "ConvexClient.swift",
+                "ConvexDataReader.swift",
+                "ConvexSyncService.swift",
+                "ConvexWriteResult.swift",
+                "LedgerMapper.swift",
+                "LegacyBlobDTOs.swift",
                 "MC2DTOs.swift",
-                "MC2Mapper.swift",
-                "MC2Reader.swift",
-                "MC2SyncService.swift",
-                
                 "SearchMatcher.swift",
                 "StockPriceService.swift",
                 "SyncStatusStore.swift",
+                "TaskUndoStore.swift",
+                "WriteFeedbackStore.swift",
             ],
             sources: [
                 "VoiceParser.swift",
