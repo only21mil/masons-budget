@@ -22,6 +22,7 @@
 		0B7AFCE74E5D43974F8AC1AE /* BudgetCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F123D957238EE653A6F6751 /* BudgetCategory.swift */; };
 		0D76FD14D73A05203A2007B5 /* ConvexDataReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4DF0247EF288DCF8C3F9782 /* ConvexDataReader.swift */; };
 		0DB81852B8BCA4A88AACB54E /* VoiceTransactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E61832AD53C22BEAF0386F25 /* VoiceTransactionView.swift */; };
+		0E0BA12F2A4242401EC61705 /* CredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD41DDCF104257BD3DF9B43B /* CredentialStore.swift */; };
 		0F8ED58D169C39B1704B92F1 /* AmountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EAD4E4602D4D4566CD78E35 /* AmountView.swift */; };
 		1287315587BFEF686848BA45 /* TaskSmartListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 859D4699AA8657478F0E4D21 /* TaskSmartListView.swift */; };
 		12A5E7048C0FED8784BDBD4C /* listTransactions.convex_encoded_json.json in Resources */ = {isa = PBXBuildFile; fileRef = E9C16AAB01C5D56B81A0DAA4 /* listTransactions.convex_encoded_json.json */; };
@@ -163,10 +164,12 @@
 		93A4F335D5DBBCBF731A774E /* json-number-money-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = 1A5243A1FDF7F650A8DB6182 /* json-number-money-cases.json */; };
 		9471CE70E75C895D86D443DA /* TodoProject.swift in Sources */ = {isa = PBXBuildFile; fileRef = 782A3D53AC3B913AC715D707 /* TodoProject.swift */; };
 		95C893AE2DE6A9C76042C9BA /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FBD5FB3989AEA4A2A5A5B9A /* TodayView.swift */; };
+		965B6F7CD7F0D9E5176CBF42 /* KeychainMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DE6FED52908B7371F4BB6A4 /* KeychainMigrationTests.swift */; };
 		99422FD652B7511E916F0164 /* ConvexRowsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC71D565300376FE836CAA75 /* ConvexRowsTests.swift */; };
 		9A84F97A42F9A7ED4CC5DE86 /* Hairline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 598608F085B0A81286803F0F /* Hairline.swift */; };
 		9A9E95488C6473659AC40BF2 /* LegacyBlobCompatibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 196CEA0279F5A6BEA5F39E8F /* LegacyBlobCompatibilityTests.swift */; };
 		9CD68674D5B5B73B017EFC08 /* write-payload-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = 162F7C9725775ADC39BF6B0C /* write-payload-cases.json */; };
+		9E71C571DBC6B819C1B86836 /* CredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD41DDCF104257BD3DF9B43B /* CredentialStore.swift */; };
 		9F25069AA8D8C74899777A13 /* btc-fiat-availability-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = 25CE52C2D21FE78FC3334E5D /* btc-fiat-availability-cases.json */; };
 		A0353F71D2174CC8D429E7B9 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5AFC3C821C582B4F9E705206 /* Preview Assets.xcassets */; };
 		A08D8C317D5AF5D62EF1C62D /* TaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4B3C65C1FD9F1E13141EE7C /* TaskDetailView.swift */; };
@@ -198,6 +201,7 @@
 		B348E53CF2F397BC7DA7FE98 /* BTCAccountDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB39E4E9476D6B0B76703693 /* BTCAccountDetailView.swift */; };
 		B4EDB5E700BF7C5162C6804E /* ProfileSwitcherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6DC67CB4C872B77EB725922 /* ProfileSwitcherView.swift */; };
 		B754C97FC84C831388A66151 /* ConvexRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8998D9F9DC9435AE8FBBBCBC /* ConvexRows.swift */; };
+		B9698C367243EADFF86543FA /* CredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD41DDCF104257BD3DF9B43B /* CredentialStore.swift */; };
 		B9BB77FF6FDB83BA802A2564 /* SharedEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97885C819FB926B04D0E8D3F /* SharedEnums.swift */; };
 		BA080D383822B146E5BDC0C1 /* MoreMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C4688B09BFCB16C26276040 /* MoreMenuView.swift */; };
 		BAA8B13B0A0FAC1F790BE8EB /* LedgerMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91E4D6A837EBFF6D4985DF22 /* LedgerMapper.swift */; };
@@ -208,6 +212,7 @@
 		C196EDE6E90DE6BBB122E90A /* AddTransactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BED9DCEAF24F0852B41BEDF2 /* AddTransactionView.swift */; };
 		C20B3F463C5014BE4D0BC278 /* SearchMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2283F2AE36B94EF55B4AAD6 /* SearchMatcher.swift */; };
 		C20D34C265A1FDA9FF26D0A4 /* PillButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = F77DC014DA99E364F0D6572E /* PillButton.swift */; };
+		C3FF29C4AD47F7CFFCBC4BC2 /* CredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD41DDCF104257BD3DF9B43B /* CredentialStore.swift */; };
 		C467725DD84089198DA37B58 /* ConvexSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C3385DCCF03F3E6D6FE6C7 /* ConvexSyncService.swift */; };
 		C4732154C67A071211508A18 /* MoreMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C4688B09BFCB16C26276040 /* MoreMenuView.swift */; };
 		C4AC630F0736F1FF8E22CB1C /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FBD5FB3989AEA4A2A5A5B9A /* TodayView.swift */; };
@@ -259,6 +264,7 @@
 		05894A6118C6AC44E989181E /* FamilyProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyProfile.swift; sourceTree = "<group>"; };
 		083F88D8EB4768C9BEDF39F9 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		08E8E973EE7F78352B998034 /* ConvexConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexConfigTests.swift; sourceTree = "<group>"; };
+		0ACB7A8E84B52A659BB1F92E /* MasonsBudgetMacKeychainTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MasonsBudgetMacKeychainTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0DBCCD025DF53FB5AB826594 /* TasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksView.swift; sourceTree = "<group>"; };
 		0F3F8A436874CF43D7C27027 /* listBtcAccounts.convex_encoded_json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = listBtcAccounts.convex_encoded_json.json; sourceTree = "<group>"; };
 		130D186945E2F17AE4A79132 /* MC2DTOs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MC2DTOs.swift; sourceTree = "<group>"; };
@@ -269,6 +275,7 @@
 		19DCBB53F51F8E4A3BE1BD9E /* HoldingAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoldingAccount.swift; sourceTree = "<group>"; };
 		1A5243A1FDF7F650A8DB6182 /* json-number-money-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "json-number-money-cases.json"; sourceTree = "<group>"; };
 		1ADB184F47423CA415614B24 /* RetirementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetirementView.swift; sourceTree = "<group>"; };
+		1DE6FED52908B7371F4BB6A4 /* KeychainMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainMigrationTests.swift; sourceTree = "<group>"; };
 		1F721A6FC17530024B35A0C6 /* StockPriceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockPriceService.swift; sourceTree = "<group>"; };
 		2266CE759B0FEC971BEC064D /* MasonsBudgetMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MasonsBudgetMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		230D932174FB25E1E6FA335C /* WriteFeedbackStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WriteFeedbackStore.swift; sourceTree = "<group>"; };
@@ -340,6 +347,7 @@
 		A1BBFC0B4CB494B00C7FBF13 /* visibility-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "visibility-cases.json"; sourceTree = "<group>"; };
 		A4B3C65C1FD9F1E13141EE7C /* TaskDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetailView.swift; sourceTree = "<group>"; };
 		AC71D565300376FE836CAA75 /* ConvexRowsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexRowsTests.swift; sourceTree = "<group>"; };
+		AD41DDCF104257BD3DF9B43B /* CredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialStore.swift; sourceTree = "<group>"; };
 		B0A3F46E4A07D5AA25C0F87E /* ConvexWriteResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexWriteResult.swift; sourceTree = "<group>"; };
 		B2FE9738F0574D3031E44C26 /* ProjectTodoListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectTodoListView.swift; sourceTree = "<group>"; };
 		B6DC67CB4C872B77EB725922 /* ProfileSwitcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSwitcherView.swift; sourceTree = "<group>"; };
@@ -459,6 +467,7 @@
 				E4DF0247EF288DCF8C3F9782 /* ConvexDataReader.swift */,
 				49C3385DCCF03F3E6D6FE6C7 /* ConvexSyncService.swift */,
 				B0A3F46E4A07D5AA25C0F87E /* ConvexWriteResult.swift */,
+				AD41DDCF104257BD3DF9B43B /* CredentialStore.swift */,
 				52815FF83DEA08F99F7B94B6 /* CSVImportService.swift */,
 				91E4D6A837EBFF6D4985DF22 /* LedgerMapper.swift */,
 				40F757710D47100DAE386F72 /* LegacyBlobDTOs.swift */,
@@ -523,10 +532,19 @@
 			isa = PBXGroup;
 			children = (
 				1E2B17A781D88E62AA8309C0 /* MasonsBudget */,
+				C1311B6364180758E1347974 /* MasonsBudgetMacKeychainTests */,
 				713CA87802FA5D0C380DF86E /* MasonsBudgetTests */,
 				4921A9FF079719620BB4641C /* shared */,
 				CD4620B610CEE2DF1604438D /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		C1311B6364180758E1347974 /* MasonsBudgetMacKeychainTests */ = {
+			isa = PBXGroup;
+			children = (
+				1DE6FED52908B7371F4BB6A4 /* KeychainMigrationTests.swift */,
+			);
+			path = MasonsBudgetMacKeychainTests;
 			sourceTree = "<group>";
 		};
 		C1457F24A57D25A4C17B0625 /* Screens */ = {
@@ -577,6 +595,7 @@
 			children = (
 				310E21BFB1D9D582BCD6A71B /* MasonsBudget.app */,
 				2266CE759B0FEC971BEC064D /* MasonsBudgetMac.app */,
+				0ACB7A8E84B52A659BB1F92E /* MasonsBudgetMacKeychainTests.xctest */,
 				84B5CA78FD69DF5C17B4C334 /* MasonsBudgetTests.xctest */,
 			);
 			name = Products;
@@ -653,6 +672,23 @@
 			productReference = 84B5CA78FD69DF5C17B4C334 /* MasonsBudgetTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		AEF07A0E42A43360BFF7892A /* MasonsBudgetMacKeychainTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D2D0AAD840C4B558BDEF3824 /* Build configuration list for PBXNativeTarget "MasonsBudgetMacKeychainTests" */;
+			buildPhases = (
+				17DD666149B8074899AC1D63 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MasonsBudgetMacKeychainTests;
+			packageProductDependencies = (
+			);
+			productName = MasonsBudgetMacKeychainTests;
+			productReference = 0ACB7A8E84B52A659BB1F92E /* MasonsBudgetMacKeychainTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		EFDC4FC30F8EFE1C5A5CD380 /* MasonsBudgetMac */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 945ABFF4651CAF5A59B6F4E8 /* Build configuration list for PBXNativeTarget "MasonsBudgetMac" */;
@@ -707,6 +743,7 @@
 				6650D6D4CE8B75E1CBD2DEFB /* MasonsBudget */,
 				EFDC4FC30F8EFE1C5A5CD380 /* MasonsBudgetMac */,
 				8EF51CAB51630BAD4A576507 /* MasonsBudgetTests */,
+				AEF07A0E42A43360BFF7892A /* MasonsBudgetMacKeychainTests */,
 			);
 		};
 /* End PBXProject section */
@@ -762,6 +799,15 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		17DD666149B8074899AC1D63 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C3FF29C4AD47F7CFFCBC4BC2 /* CredentialStore.swift in Sources */,
+				965B6F7CD7F0D9E5176CBF42 /* KeychainMigrationTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		62E5AB5A420BD4D5359AA880 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -792,6 +838,7 @@
 				A9C97F4F24814C2915C6BAD1 /* ConvexSyncService.swift in Sources */,
 				A926EBA0625AC1BA2DC2BC1B /* ConvexWriteResult.swift in Sources */,
 				1F1C8AF4B264D3CD836DE6E4 /* CostBasisLot.swift in Sources */,
+				B9698C367243EADFF86543FA /* CredentialStore.swift in Sources */,
 				F1CAC198C07A1B0C06A294AE /* DashboardView.swift in Sources */,
 				343BA3F322C725977C4FD80E /* ExportView.swift in Sources */,
 				8CF4139C75810E99221B0692 /* FamilyProfile.swift in Sources */,
@@ -869,6 +916,7 @@
 				29B7A179D5E5A2917D463234 /* ConvexSyncService.swift in Sources */,
 				C64C83084A9488E6FB97E4D0 /* ConvexWriteResult.swift in Sources */,
 				66EB6E0D58B325B4F2FD532E /* CostBasisLot.swift in Sources */,
+				0E0BA12F2A4242401EC61705 /* CredentialStore.swift in Sources */,
 				6FE8B184183F43327912A71A /* DashboardView.swift in Sources */,
 				07F997E66D8676FA7608605E /* ExportView.swift in Sources */,
 				4C8EAE9F329F12474404F004 /* FamilyProfile.swift in Sources */,
@@ -953,6 +1001,7 @@
 				E118CB2B87FCF5A38191F7A5 /* ConvexSyncServiceTests.swift in Sources */,
 				C7C1D96BF10E5EF407DBF988 /* ConvexWriteResult.swift in Sources */,
 				3F8A344C3E812E582DBCB399 /* CostBasisLot.swift in Sources */,
+				9E71C571DBC6B819C1B86836 /* CredentialStore.swift in Sources */,
 				727E7F9A70589881AA409AC7 /* DashboardView.swift in Sources */,
 				B01D62F2D057FFF30B54C0DD /* ExportView.swift in Sources */,
 				472A41D28DD9D5D4083D88FD /* FamilyProfile.swift in Sources */,
@@ -1202,6 +1251,22 @@
 			};
 			name = Debug;
 		};
+		74680A6CA2B9728637DCE3A7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.sats21m.masonsbudget.keychain-tests";
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
 		9756FBD91A417932AD3C6CF7 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1285,6 +1350,22 @@
 			};
 			name = Debug;
 		};
+		F534C2CE7F829130482BC03E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.sats21m.masonsbudget.keychain-tests";
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1311,6 +1392,15 @@
 			buildConfigurations = (
 				024C1CE79C020C7B45EC3495 /* Debug */,
 				22942F511B0237EE22FAC8CF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D2D0AAD840C4B558BDEF3824 /* Build configuration list for PBXNativeTarget "MasonsBudgetMacKeychainTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F534C2CE7F829130482BC03E /* Debug */,
+				74680A6CA2B9728637DCE3A7 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

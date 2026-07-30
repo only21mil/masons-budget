@@ -34,7 +34,7 @@ final class ConvexConfigTests: XCTestCase {
         super.tearDown()
     }
 
-    // The migration tests exercise MigratingKeychainTokenStore against an
+    // These simulator tests exercise MigratingKeychainTokenStore against an
     // in-memory double.
     //
     // They deliberately do NOT touch the real Keychain: MasonsBudgetTests is a
@@ -44,7 +44,9 @@ final class ConvexConfigTests: XCTestCase {
     // ABSENT passes trivially, which is worse, because it looks like proof and
     // is not. The migration and clearing logic is tested through the production
     // store, while the real SecItem query itself is asserted without executing
-    // it so macOS's data-protection opt-in cannot regress.
+    // it so macOS's data-protection opt-in cannot regress. The separate native
+    // `MasonsBudgetMacKeychainTests` target executes the complete file-Keychain
+    // to Data Protection Keychain migration on macOS.
 
     private func makeStore(
         legacyKey: String = "convex_sync_token",

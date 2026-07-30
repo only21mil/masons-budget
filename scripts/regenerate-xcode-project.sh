@@ -266,4 +266,11 @@ fi
 
 printf 'Regenerated MasonsBudget.xcodeproj with XcodeGen %s.\n' \
   "$XCODEGEN_VERSION"
-git -C "$REPO_ROOT" status --short -- MasonsBudget/MasonsBudget.xcodeproj
+if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git -C "$REPO_ROOT" status --short -- MasonsBudget/MasonsBudget.xcodeproj
+else
+  # A linked-worktree .git file can point outside the container mount used when
+  # Swift is unavailable. Generation still succeeded; status is informational.
+  printf '%s\n' \
+    'NOTE: generated the project, but git metadata is outside this container mount; run git status on the host.'
+fi

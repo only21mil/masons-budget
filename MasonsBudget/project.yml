@@ -119,6 +119,23 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.sats21m.masonsbudget.tests
         GENERATE_INFOPLIST_FILE: YES
 
+  # Native macOS Security-framework integration tests. This target compiles
+  # only the production credential primitives and uses unique test-only
+  # service/account identities; it never reads an app or release credential.
+  MasonsBudgetMacKeychainTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: MasonsBudgetMacKeychainTests
+        excludes:
+          - "**/.DS_Store"
+      - path: MasonsBudget/Services/CredentialStore.swift
+    dependencies: []
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sats21m.masonsbudget.keychain-tests
+        GENERATE_INFOPLIST_FILE: YES
+
 schemes:
   MasonsBudget:
     build:
@@ -152,3 +169,12 @@ schemes:
       config: Debug
     archive:
       config: Release
+
+  MasonsBudgetMacKeychainTests:
+    build:
+      targets:
+        MasonsBudgetMacKeychainTests: [test]
+    test:
+      config: Debug
+      targets:
+        - MasonsBudgetMacKeychainTests

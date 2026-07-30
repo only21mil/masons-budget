@@ -383,11 +383,29 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM=""
 
-      # Build only: the MasonsBudgetMac scheme has no test targets, and the two
-      # app targets compile the same sources for different platforms, so this
-      # exists to catch an iOS-only API landing in shared code. deploy.yml offers
-      # a macos platform, so a Mac build that has silently rotted is a release
-      # that fails at the archive step.
+      # The iOS simulator bundle cannot execute a real Data Protection Keychain
+      # migration. This isolated native target compiles only the production
+      # credential primitives, uses a unique test service/account, and cleans
+      # both keychain implementations in tearDown. It needs no app, release
+      # credential, provisioning profile, or signing identity.
+      - name: Native macOS Keychain migration tests
+        working-directory: MasonsBudget
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -project MasonsBudget.xcodeproj \
+            -scheme MasonsBudgetMacKeychainTests \
+            -destination "platform=macOS" \
+            -resultBundlePath "$RUNNER_TEMP/MasonsBudget-macOS-Keychain.xcresult" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      # The two app targets compile the same sources for different platforms, so
+      # this catches an iOS-only API landing in shared code. deploy.yml offers a
+      # macos platform, so a Mac build that has silently rotted is a release that
+      # fails at the archive step.
       - name: macOS build
         working-directory: MasonsBudget
         run: |
@@ -408,7 +426,9 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: masonsbudget-ios-xcresult
-          path: ${{ runner.temp }}/MasonsBudget-iOS.xcresult
+          name: masonsbudget-xcresults
+          path: |
+            ${{ runner.temp }}/MasonsBudget-iOS.xcresult
+            ${{ runner.temp }}/MasonsBudget-macOS-Keychain.xcresult
           retention-days: 7
           if-no-files-found: ignore

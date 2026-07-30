@@ -164,13 +164,15 @@ if [[ $RUN_SWIFTLINT -eq 1 ]]; then
     --strict \
     --quiet \
     "$ROOT/MasonsBudget/MasonsBudget" \
-    "$ROOT/MasonsBudget/MasonsBudgetTests"
+    "$ROOT/MasonsBudget/MasonsBudgetTests" \
+    "$ROOT/MasonsBudget/MasonsBudgetMacKeychainTests"
 fi
 
 if [[ $RUN_FORMAT -eq 1 ]]; then
   run_capture swiftformat-lint swiftformat \
     "$ROOT/MasonsBudget/MasonsBudget" \
     "$ROOT/MasonsBudget/MasonsBudgetTests" \
+    "$ROOT/MasonsBudget/MasonsBudgetMacKeychainTests" \
     --swiftversion 6.3 \
     --lint \
     --dry-run \

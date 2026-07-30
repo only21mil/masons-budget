@@ -25,8 +25,8 @@ archive, upload, or app-target test commands. It checks:
 - required Swift tooling on PATH
 - `git diff --check`
 - temp-directory XcodeGen generation from `MasonsBudget/project.yml`
-- SourceKit-backed SwiftLint over app and test paths
-- SwiftFormat lint over app and test paths
+- SourceKit-backed SwiftLint over app, simulator-test, and native macOS-test paths
+- SwiftFormat lint over app, simulator-test, and native macOS-test paths
 - stdin Swift typecheck smoke
 - serialized SwiftPM Linux tests when `Package.swift` is present
 - `Package.resolved` mutation guard before/after SwiftPM work
@@ -121,6 +121,14 @@ Avoid extracting:
 - SwiftData `@Model` classes
 - services that depend on Apple platform APIs, Keychain, LocalAuthentication,
   app lifecycle, or Convex runtime wiring
+
+Native Security-framework behavior remains an Apple-hardware boundary. The
+`MasonsBudgetMacKeychainTests` Xcode target compiles the production credential
+primitives directly and verifies legacy file-Keychain migration to the Data
+Protection Keychain using unique test-only identities. The ordinary draft-PR
+Swift workflow runs it unsigned on the MBP and cleans both test items in
+`tearDown`; Linux preflight can validate its project membership and formatting,
+but cannot execute the keychains.
 
 The first package should target Linux and macOS, run with `swift test` on Linux,
 and be imported back into the app from XcodeGen once the Mac build path is
