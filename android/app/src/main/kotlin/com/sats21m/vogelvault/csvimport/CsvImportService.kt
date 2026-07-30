@@ -158,6 +158,13 @@ internal sealed class CsvImportException(message: String) : IllegalArgumentExcep
     class AmountParseFailure(row: Int) :
         CsvImportException("Could not parse the amount on row $row")
 
+    class AmbiguousAmountColumns(headers: List<String>) :
+        CsvImportException(
+            "Multiple amount columns matched the same CSV preference: " +
+                headers.joinToString { "\"$it\"" } +
+                ". Nothing was imported because the app cannot safely choose between financial columns",
+        )
+
     class IncomeSignContradiction(row: Int) :
         CsvImportException(
             "Row $row is income but its amount is negative; income must be positive",
@@ -357,24 +364,17 @@ internal class CsvImportService {
     }
 
     fun autoDetectColumns(headers: List<String>): CsvColumnMapping {
-        var date: Int? = null
-        var amount: Int? = null
-        var memo: Int? = null
-        var type: Int? = null
-        var fee: Int? = null
-
-        headers.map(String::lowercase).forEachIndexed { index, header ->
-            when {
-                date == null && ("date" in header || "time" in header) -> date = index
-                amount == null && listOf("amount", "qty", "quantity", "sats", "btc")
-                    .any(header::contains) -> amount = index
-                memo == null && listOf("memo", "note", "description", "merchant", "narrative")
-                    .any(header::contains) -> memo = index
-                type == null && "type" in header -> type = index
-                fee == null && "fee" in header -> fee = index
-            }
-        }
-        return CsvColumnMapping(date, amount, memo, type, fee)
+        return sourceMapping(
+            headers = headers,
+            date = listOf("date", "time"),
+            // Prefer a stated Bitcoin unit over a generic amount. If the first
+            // applicable preference still names multiple columns, sourceMapping
+            // rejects the file instead of guessing between financial units.
+            amount = listOf("sats", "btc", "quantity", "qty", "amount"),
+            memo = listOf("memo", "note", "description", "merchant", "narrative"),
+            type = listOf("type"),
+            fee = listOf("fee"),
+        )
     }
 
     fun guessCategory(memo: String): String {
@@ -540,7 +540,7 @@ internal class CsvImportService {
         sourceMapping(
             headers = headers,
             date = listOf("date"),
-            amount = listOf("amount", "btc"),
+            amount = listOf("amount btc", "btc amount", "amount", "btc"),
             memo = listOf("memo", "description"),
             type = listOf("type"),
         )
@@ -583,12 +583,28 @@ internal class CsvImportService {
         fee: List<String> = emptyList(),
     ): CsvColumnMapping {
         val lower = headers.map { it.lowercase(Locale.US) }
-        fun first(keywords: List<String>): Int? =
-            lower.indexOfFirst { header -> keywords.any(header::contains) }
-                .takeIf { it >= 0 }
+        fun first(
+            keywords: List<String>,
+            rejectAmbiguousAmount: Boolean = false,
+        ): Int? {
+            // This loop order is the schema contract: a vendor's first requested
+            // alias outranks every later alias regardless of file header order.
+            // Multiple headers matching that same winning amount alias have no
+            // declared tie-break, so refuse them instead of selecting by position.
+            keywords.forEach { keyword ->
+                val matches = lower.indices.filter { index -> keyword in lower[index] }
+                if (rejectAmbiguousAmount && matches.size > 1) {
+                    throw CsvImportException.AmbiguousAmountColumns(
+                        matches.map(headers::get),
+                    )
+                }
+                matches.firstOrNull()?.let { return it }
+            }
+            return null
+        }
         return CsvColumnMapping(
             dateIndex = first(date),
-            amountIndex = first(amount),
+            amountIndex = first(amount, rejectAmbiguousAmount = true),
             memoIndex = first(memo),
             typeIndex = first(type),
             feeIndex = first(fee),
