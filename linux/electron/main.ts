@@ -12,7 +12,7 @@ import { writeFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import path from "node:path"
 
-import { BrowserWindow, app, dialog, ipcMain, session, shell } from "electron"
+import { BrowserWindow, app, dialog, ipcMain, safeStorage, session, shell } from "electron"
 import type { IpcMainInvokeEvent } from "electron"
 
 import {
@@ -29,12 +29,24 @@ import {
   createRemoteReader,
 } from "./convexRead.ts"
 import { createConvexRowRepository } from "./convexRows.ts"
+import { createPairedDeviceController } from "./convexMutations.ts"
+import { createDeviceCredentialStore } from "./deviceCredentialStore.ts"
 import {
+  CONVEX_MUTATION_CHANNEL,
   CONVEX_READ_CHANNEL,
   CONVEX_ROWS_CHANNEL,
   CSV_EXPORT_CHANNEL,
+  DEVICE_PAIR_CHANNEL,
+  DEVICE_PAIRING_STATUS_CHANNEL,
+  DEVICE_UNPAIR_CHANNEL,
 } from "./ipcChannels.ts"
-import type { VogelVaultRowResult } from "../shared/ipc.ts"
+import type {
+  VogelVaultMutationResult,
+  VogelVaultPairingResult,
+  VogelVaultPairingStatus,
+  VogelVaultRowResult,
+  VogelVaultUnpairResult,
+} from "../shared/ipc.ts"
 
 const dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -262,6 +274,66 @@ function registerConvexRows(): void {
   )
 }
 
+function pairedDeviceWritesEnabled(): boolean {
+  const value = process.env.VOGEL_VAULT_DEVICE_WRITES?.trim().toLowerCase()
+  return value === undefined || value === "1" || value === "true"
+}
+
+/**
+ * Paired-device writes. The controller is created only after Electron is ready:
+ * safeStorage is not valid before that point, and its credential never leaves
+ * the main process.
+ */
+function registerPairedDeviceWrites(): void {
+  const store = createDeviceCredentialStore({
+    appReady: () => app.isReady(),
+    platform: process.platform,
+    safeStorage,
+    userDataPath: app.getPath("userData"),
+  })
+  const controller = createPairedDeviceController({
+    store,
+    post: postJsonToDeployment,
+    writesEnabled: pairedDeviceWritesEnabled,
+  })
+
+  ipcMain.handle(
+    DEVICE_PAIR_CHANNEL,
+    async (event, request: unknown): Promise<VogelVaultPairingResult> => {
+      if (!isTrustedSender(event)) return { status: "failed", code: "invalid-input" }
+      return controller.pair(request)
+    },
+  )
+  ipcMain.handle(
+    DEVICE_PAIRING_STATUS_CHANNEL,
+    async (event): Promise<VogelVaultPairingStatus> => {
+      if (!isTrustedSender(event)) return { status: "unavailable" }
+      return controller.status()
+    },
+  )
+  ipcMain.handle(
+    CONVEX_MUTATION_CHANNEL,
+    async (event, request: unknown): Promise<VogelVaultMutationResult> => {
+      if (!isTrustedSender(event)) {
+        return {
+          status: "failed",
+          requestId: "invalid-request",
+          kind: "transaction.upsert",
+          code: "invalid-request",
+        }
+      }
+      return controller.mutate(request)
+    },
+  )
+  ipcMain.handle(
+    DEVICE_UNPAIR_CHANNEL,
+    async (event): Promise<VogelVaultUnpairResult> => {
+      if (!isTrustedSender(event)) return { status: "unavailable" }
+      return controller.unpair()
+    },
+  )
+}
+
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1440,
@@ -334,6 +406,7 @@ if (!app.requestSingleInstanceLock()) {
     registerCsvExport()
     registerRemoteSnapshot()
     registerConvexRows()
+    registerPairedDeviceWrites()
     createWindow()
 
     app.on("activate", () => {
