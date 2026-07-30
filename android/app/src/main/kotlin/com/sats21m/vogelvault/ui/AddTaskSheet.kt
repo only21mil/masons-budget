@@ -93,13 +93,13 @@ internal fun AddTaskSheet(
     val mutationClient = remember(application) { application?.convexMutationClient }
     val scope = rememberCoroutineScope()
 
-    var title by rememberSaveable { mutableStateOf("") }
-    var project by rememberSaveable { mutableStateOf("") }
-    var area by rememberSaveable { mutableStateOf("") }
-    var due by rememberSaveable { mutableStateOf("") }
-    var flagged by rememberSaveable { mutableStateOf(false) }
-    var saving by rememberSaveable { mutableStateOf(false) }
-    var message by rememberSaveable { mutableStateOf<String?>(null) }
+    var title by rememberSaveable(owner) { mutableStateOf("") }
+    var project by rememberSaveable(owner) { mutableStateOf("") }
+    var area by rememberSaveable(owner) { mutableStateOf("") }
+    var due by rememberSaveable(owner) { mutableStateOf("") }
+    var flagged by rememberSaveable(owner) { mutableStateOf(false) }
+    var saving by rememberSaveable(owner) { mutableStateOf(false) }
+    var message by rememberSaveable(owner) { mutableStateOf<String?>(null) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(

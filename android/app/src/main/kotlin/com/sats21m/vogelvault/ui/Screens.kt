@@ -23,6 +23,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -275,7 +276,9 @@ fun ScreenHost(
     // shared ledger column rather than inside it. It reaches the write transport
     // itself; nothing about writing passes through this shell.
     if (destination == Destination.TODAY) {
-        TodoScreen(state = state, modifier = modifier)
+        key(state.activeProfile) {
+            TodoScreen(state = state, modifier = modifier)
+        }
         return
     }
 

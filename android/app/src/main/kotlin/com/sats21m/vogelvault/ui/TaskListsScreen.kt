@@ -75,12 +75,20 @@ internal fun TaskListsScreen(
         TaskListModel.build(todos, state.activeProfile, date)
     }
 
-    var routeName by rememberSaveable { mutableStateOf(TaskListRoute.HUB.name) }
-    var selectedKind by rememberSaveable { mutableStateOf(TaskSmartList.TODAY.name) }
-    var selectedOwner by rememberSaveable { mutableStateOf(FamilyMember.VICTOR.key) }
-    var selectedName by rememberSaveable { mutableStateOf("") }
-    var addingTask by rememberSaveable { mutableStateOf(false) }
-    var writeNotice by rememberSaveable { mutableStateOf<String?>(null) }
+    var routeName by rememberSaveable(state.activeProfile) {
+        mutableStateOf(TaskListRoute.HUB.name)
+    }
+    var selectedKind by rememberSaveable(state.activeProfile) {
+        mutableStateOf(TaskSmartList.TODAY.name)
+    }
+    var selectedOwner by rememberSaveable(state.activeProfile) {
+        mutableStateOf(state.activeProfile.key)
+    }
+    var selectedName by rememberSaveable(state.activeProfile) { mutableStateOf("") }
+    var addingTask by rememberSaveable(state.activeProfile) { mutableStateOf(false) }
+    var writeNotice by rememberSaveable(state.activeProfile) {
+        mutableStateOf<String?>(null)
+    }
     val route = TaskListRoute.entries.firstOrNull { it.name == routeName } ?: TaskListRoute.HUB
 
     if (addingTask) {
