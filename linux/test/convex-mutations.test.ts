@@ -84,6 +84,9 @@ describe("paired-device main controller", () => {
       "https://keen-elephant-452.convex.cloud/",
     )).toBe("https://keen-elephant-452.convex.cloud")
     expect(resolveApprovedDeploymentOrigin(
+      "  https://keen-elephant-452.convex.cloud/  ",
+    )).toBe("https://keen-elephant-452.convex.cloud")
+    expect(resolveApprovedDeploymentOrigin(
       "https://other.convex.cloud/",
     )).toBeNull()
     expect(resolveApprovedDeploymentOrigin(
@@ -115,6 +118,14 @@ describe("paired-device main controller", () => {
       ...transactionRequest(),
       date: "2026-02-30",
     })).toBeNull()
+    expect(validateMutationRequest({
+      ...transactionRequest(),
+      merchant: "  Hardware store  ",
+      category: " Home ",
+    })).toMatchObject({
+      merchant: "  Hardware store  ",
+      category: " Home ",
+    })
   })
 
   it("claims with main-generated credentials, expands grants, and exposes no secret", async () => {
@@ -491,6 +502,28 @@ describe("paired-device main controller", () => {
       code: "invalid-response",
     })
     expect(plainTextStore.current).not.toBeNull()
+
+    const encodedErrorStore = store()
+    const encodedError = createPairedDeviceController({
+      store: encodedErrorStore,
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: async () => ({
+        httpStatus: 200,
+        body: JSON.stringify({
+          status: "error",
+          errorMessage: "redacted",
+          errorData: JSON.stringify({
+            code: "DEVICE_UNAUTHORIZED",
+            message: "redacted",
+          }),
+        }),
+      }),
+    })
+    await expect(encodedError.mutate(transactionRequest())).resolves.toMatchObject({
+      status: "unauthorized",
+    })
+    expect(encodedErrorStore.current).toBeNull()
 
     const wrongEntity = createPairedDeviceController({
       store: store(),
