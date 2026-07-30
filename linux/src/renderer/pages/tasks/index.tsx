@@ -15,13 +15,17 @@ import {
   Button,
   type Column,
   DataTable,
+  DeleteConfirmDialog,
   FreshnessTag,
+  MutationNotice,
   PageHeader,
   Panel,
   StateBlock,
   TextInput,
+  TodoFormDialog,
   Toolbar,
 } from "../../components/index.ts"
+import { stableId } from "../../data/mutations.ts"
 import type { PageManifest } from "../types.ts"
 
 const TODAY = "2026-07-26"
@@ -102,6 +106,116 @@ export const todoColumns: ReadonlyArray<Column<TodoItem>> = [
   { key: "owner", header: "Owner", render: (row) => <Badge>{row.owner}</Badge>, secondary: true },
 ]
 
+function TodoActionsCell({ todo }: { todo: TodoItem }) {
+  const {
+    activeProfile,
+    data,
+    isMutationPending,
+    mutationGate,
+    submitMutation,
+  } = useAppState()
+  const [editing, setEditing] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const upsertGate = mutationGate("todo.upsert", data.todos.status, todo.owner)
+  const deleteGate = mutationGate("todo.delete", data.todos.status, todo.owner)
+  const pending = isMutationPending("todo.upsert", todo.owner, todo.id)
+
+  async function update(changes: Partial<Pick<TodoItem, "done" | "flagged">>) {
+    if (!upsertGate.allowed) return
+    await submitMutation({
+      kind: "todo.upsert",
+      requestId: stableId("request"),
+      actor: activeProfile,
+      id: todo.id,
+      owner: todo.owner,
+      title: todo.title,
+      done: changes.done ?? todo.done,
+      flagged: changes.flagged ?? todo.flagged,
+      project: todo.project ?? undefined,
+      area: todo.area ?? undefined,
+      due: todo.due ?? undefined,
+      notes: todo.notes ?? undefined,
+    })
+  }
+
+  async function remove() {
+    setDeleting(true)
+    const result = await submitMutation({
+      kind: "todo.delete",
+      requestId: stableId("request"),
+      actor: activeProfile,
+      id: todo.id,
+      owner: todo.owner,
+    })
+    setDeleting(false)
+    if (result.status === "ok") setConfirming(false)
+  }
+
+  return (
+    <>
+      <div className="vv-row-actions" aria-busy={pending || deleting || undefined}>
+        <Button
+          variant="ghost"
+          onClick={() => void update({ done: !todo.done })}
+          disabled={!upsertGate.allowed || pending}
+          aria-label={`${todo.done ? "Reopen" : "Complete"} ${todo.title}`}
+        >
+          {todo.done ? "Reopen" : "Complete"}
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => void update({ flagged: !todo.flagged })}
+          disabled={!upsertGate.allowed || pending}
+          aria-pressed={todo.flagged}
+          aria-label={`${todo.flagged ? "Unflag" : "Flag"} ${todo.title}`}
+        >
+          {todo.flagged ? "Unflag" : "Flag"}
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => setEditing(true)}
+          disabled={!upsertGate.allowed || pending}
+          aria-label={`Edit ${todo.title}`}
+        >
+          Edit
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => setConfirming(true)}
+          disabled={!deleteGate.allowed || deleting}
+          aria-label={`Delete ${todo.title}`}
+        >
+          Delete
+        </Button>
+      </div>
+      <TodoFormDialog open={editing} todo={todo} onClose={() => setEditing(false)} />
+      <DeleteConfirmDialog
+        open={confirming}
+        label={todo.title}
+        busy={deleting}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => void remove()}
+      />
+    </>
+  )
+}
+
+function useInteractiveTodoColumns(): ReadonlyArray<Column<TodoItem>> {
+  return useMemo(
+    () => [
+      ...todoColumns,
+      {
+        key: "actions",
+        header: "Actions",
+        render: (row: TodoItem) => <TodoActionsCell todo={row} />,
+        width: "284px",
+      },
+    ],
+    [],
+  )
+}
+
 /** Shared list page — the five task views differ only by filter and copy. */
 function TodoListPage({
   title,
@@ -118,19 +232,64 @@ function TodoListPage({
   emptyDetail: string
   showComposer?: boolean
 }) {
-  const { data } = useAppState()
+  const {
+    activeProfile,
+    data,
+    mutationGate,
+    mutationNotice,
+    refresh,
+    submitMutation,
+  } = useAppState()
   const todos = useVisibleTodos()
   const [draft, setDraft] = useState("")
+  const [adding, setAdding] = useState(false)
+  const [quickError, setQuickError] = useState<string | null>(null)
+  const columns = useInteractiveTodoColumns()
 
   const rows = todos.filter(filter)
+  const addGate = mutationGate("todo.upsert", data.todos.status, activeProfile)
+
+  async function quickAdd() {
+    if (!draft.trim() || !addGate.allowed) return
+    const result = await submitMutation({
+      kind: "todo.upsert",
+      requestId: stableId("request"),
+      actor: activeProfile,
+      id: stableId("todo"),
+      owner: activeProfile,
+      title: draft.trim(),
+      done: false,
+      flagged: false,
+      due: title === "Today" ? TODAY : undefined,
+    })
+    if (result.status === "ok") {
+      setDraft("")
+      setQuickError(null)
+    } else {
+      setQuickError("The task was not saved. Your draft is still here.")
+    }
+  }
 
   return (
     <>
       <PageHeader
         title={title}
         subtitle={subtitle}
-        actions={<FreshnessTag status={data.todos.status} updatedAt={data.todos.updatedAt} />}
+        actions={
+          <>
+            <Button
+              variant="primary"
+              onClick={() => setAdding(true)}
+              disabled={!addGate.allowed}
+              title={addGate.reason ?? undefined}
+            >
+              Add task
+            </Button>
+            <FreshnessTag status={data.todos.status} updatedAt={data.todos.updatedAt} />
+          </>
+        }
       />
+      <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
       {showComposer ? (
         <Toolbar>
           <TextInput
@@ -139,19 +298,20 @@ function TodoListPage({
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
           />
-          {/*
-            Writeback is not wired. The Convex write path is credential-gated and
-            owned by the approved app-writeback lane, so this control is disabled
-            rather than pretending to save and silently dropping the task.
-          */}
-          <Button icon="check" disabled title="Writeback is not enabled in this build">
+          <Button
+            icon="check"
+            disabled={!addGate.allowed || !draft.trim()}
+            title={addGate.reason ?? undefined}
+            onClick={() => void quickAdd()}
+          >
             Add
           </Button>
+          {quickError ? <span role="alert" className="vv-negative">{quickError}</span> : null}
         </Toolbar>
       ) : null}
       <Panel source={data.todos.source} flush>
         <DataTable
-          columns={todoColumns}
+          columns={columns}
           rows={rows}
           rowKey={(row) => row.id}
           state={tableState(data.todos.status)}
@@ -160,6 +320,12 @@ function TodoListPage({
           footer={`${rows.length} shown · ${todos.length} visible to this profile`}
         />
       </Panel>
+      <TodoFormDialog
+        open={adding}
+        todo={null}
+        defaultDue={title === "Today" ? TODAY : undefined}
+        onClose={() => setAdding(false)}
+      />
     </>
   )
 }
@@ -215,8 +381,17 @@ function FlaggedPage() {
 }
 
 function ProjectsPage() {
-  const { data } = useAppState()
+  const {
+    activeProfile,
+    data,
+    mutationGate,
+    mutationNotice,
+    refresh,
+  } = useAppState()
   const todos = useVisibleTodos()
+  const [adding, setAdding] = useState(false)
+  const columns = useInteractiveTodoColumns()
+  const addGate = mutationGate("todo.upsert", data.todos.status, activeProfile)
 
   const groups = useMemo(() => {
     const byProject = new Map<string, TodoItem[]>()
@@ -232,7 +407,10 @@ function ProjectsPage() {
   if (data.todos.status === "loading") {
     return (
       <>
-        <PageHeader title="Projects" />
+        <PageHeader
+          title="Projects"
+          actions={<Button disabled title={addGate.reason ?? undefined}>Add task</Button>}
+        />
         <StateBlock state="loading" />
       </>
     )
@@ -241,12 +419,25 @@ function ProjectsPage() {
   if (groups.length === 0) {
     return (
       <>
-        <PageHeader title="Projects" />
+        <PageHeader
+          title="Projects"
+          actions={
+            <Button
+              variant="primary"
+              onClick={() => setAdding(true)}
+              disabled={!addGate.allowed}
+              title={addGate.reason ?? undefined}
+            >
+              Add task
+            </Button>
+          }
+        />
         <StateBlock
           state={data.todos.status === "error" ? "error" : "empty"}
           title="No projects"
           detail="No tasks visible to this profile are grouped under a project or area."
         />
+        <TodoFormDialog open={adding} todo={null} onClose={() => setAdding(false)} />
       </>
     )
   }
@@ -256,8 +447,21 @@ function ProjectsPage() {
       <PageHeader
         title="Projects"
         subtitle="Grouped by project, then area"
-        actions={<FreshnessTag status={data.todos.status} updatedAt={data.todos.updatedAt} />}
+        actions={
+          <>
+            <Button
+              variant="primary"
+              onClick={() => setAdding(true)}
+              disabled={!addGate.allowed}
+              title={addGate.reason ?? undefined}
+            >
+              Add task
+            </Button>
+            <FreshnessTag status={data.todos.status} updatedAt={data.todos.updatedAt} />
+          </>
+        }
       />
+      <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
       <div className="vv-stack">
         {groups.map(([name, items]) => {
           const open = items.filter((item) => !item.done).length
@@ -269,7 +473,7 @@ function ProjectsPage() {
               flush
             >
               <DataTable
-                columns={todoColumns}
+                columns={columns}
                 rows={items}
                 rowKey={(row) => row.id}
                 state="normal"
@@ -278,6 +482,7 @@ function ProjectsPage() {
           )
         })}
       </div>
+      <TodoFormDialog open={adding} todo={null} onClose={() => setAdding(false)} />
     </>
   )
 }
