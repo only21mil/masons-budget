@@ -58,7 +58,7 @@ extension LegacyTransactionDTO {
             category: transaction.category,
             card: transaction.card,
             note: transaction.note,
-            owner: nil,
+            owner: owner,
         )
     }
 

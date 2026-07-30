@@ -10,9 +10,17 @@ enum AppWriteSyncService {
         ConvexClient(deploymentURL: ConvexConfig.deploymentURL)
     }
 
+    /// Deterministic transport/configuration seam for exercising the complete
+    /// production transaction-write path at the HTTP request boundary.
+    struct TransactionWriteDependencies: Sendable {
+        let client: ConvexClient
+        let blocker: ConvexWriteResult?
+    }
+
     static func pushTransaction(
         _ transaction: Transaction,
         owner: FamilyMember,
+        dependencies: TransactionWriteDependencies? = nil,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         let label = "Save transaction"
@@ -32,30 +40,59 @@ enum AppWriteSyncService {
         }
 
         let fileName = owner.transactionsDataFileName
-        pushTransactionPayload(payload, to: fileName, onResult: onResult)
+        pushTransactionPayload(
+            payload,
+            owner: owner,
+            to: fileName,
+            dependencies: dependencies,
+            onResult: onResult,
+        )
     }
 
     private static func pushTransactionPayload(
         _ payload: LegacyTransactionDTO,
+        owner: FamilyMember,
         to fileName: String,
+        dependencies: TransactionWriteDependencies?,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         let label = "Save transaction"
         reportSyncStart(label)
-        if let blocked = writeBlocker(requiresSyncToken: true) {
+        let blocked = if let dependencies {
+            dependencies.blocker
+        } else {
+            writeBlocker(requiresSyncToken: true)
+        }
+        if let blocked {
             reportSyncResult(label: label, result: blocked, retry: {
-                pushTransactionPayload(payload, to: fileName, onResult: onResult)
+                pushTransactionPayload(
+                    payload,
+                    owner: owner,
+                    to: fileName,
+                    dependencies: dependencies,
+                    onResult: onResult,
+                )
             }, onResult: onResult)
             return
         }
 
         Task {
-            let client = makeClient()
+            let client = dependencies?.client ?? makeClient()
             let result = await withRetry(label: "push tx \(payload.id)") {
-                try await client.upsertTransactionRow(payload, sourceFile: fileName)
+                try await client.upsertTransactionRow(
+                    payload,
+                    owner: owner,
+                    sourceFile: fileName,
+                )
             }
             reportSyncResult(label: label, result: result, retry: {
-                pushTransactionPayload(payload, to: fileName, onResult: onResult)
+                pushTransactionPayload(
+                    payload,
+                    owner: owner,
+                    to: fileName,
+                    dependencies: dependencies,
+                    onResult: onResult,
+                )
             }, onResult: onResult)
         }
     }

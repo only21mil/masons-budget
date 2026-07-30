@@ -21,8 +21,8 @@ struct CSVImportView: View {
     /// still reported "N transactions added".
     @StateObject private var syncTally = WriteBatchTally()
 
-    private var activeMember: FamilyMember {
-        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    private var activeMember: FamilyMember? {
+        FamilyMember(rawValue: selectedMemberRaw)
     }
 
     private let service = CSVImportService()
@@ -315,6 +315,7 @@ struct CSVImportView: View {
     }
 
     private func performImport() {
+        guard let activeMember else { return }
         isImporting = true
         let selected = importedRows.filter { selectedRows.contains($0.id) }
         let sourceTag = "csv-import-\(selectedSource?.rawValue ?? "custom")-\(formatDate(Date()))"

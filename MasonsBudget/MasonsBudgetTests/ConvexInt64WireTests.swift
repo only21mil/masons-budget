@@ -216,23 +216,30 @@ final class ConvexRowMutationTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testFinancialWritesUseRowsTaggedMoneyAndChildOwnership() async throws {
         let capture = RowMutationRequestCapture()
         let client = makeClient(capture: capture)
-        let transaction = LegacyTransactionDTO(
+        let transaction = Transaction(
             id: "tx-1",
-            date: "2026-07-29",
+            date: .now,
             merchant: "Refund",
             amount: Decimal(string: "-8.00")!,
             category: "Shopping",
             card: "Aven",
-            note: nil,
-            owner: nil,
+            owner: .mason,
+            createdBy: "app",
         )
-        try await client.upsertTransactionRow(
-            transaction,
-            sourceFile: "mason-transactions",
-        )
+        let transactionResult = await withCheckedContinuation { continuation in
+            AppWriteSyncService.pushTransaction(
+                transaction,
+                owner: .mason,
+                dependencies: .init(client: client, blocker: nil),
+            ) { result in
+                continuation.resume(returning: result)
+            }
+        }
+        XCTAssertEqual(transactionResult, .ok)
         try await client.deleteTransactionRow(
             id: transaction.id,
             sourceFile: "mason-transactions",
@@ -282,7 +289,7 @@ final class ConvexRowMutationTests: XCTestCase {
             transactionRow["amountCents"] as? [String: String],
             ["$integer": "4Pz///////8="],
         )
-        XCTAssertNil(transactionRow["owner"])
+        XCTAssertEqual(transactionRow["owner"] as? String, "mason")
 
         let buyArgs = try XCTUnwrap(requests[2]["args"] as? [String: Any])
         XCTAssertEqual(buyArgs["sourceFile"] as? String, "bitcoin-buys")

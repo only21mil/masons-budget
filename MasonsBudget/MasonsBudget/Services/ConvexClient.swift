@@ -1021,12 +1021,21 @@ final class ConvexClient: Sendable {
     /// isolated in their own files.
     func upsertTransactionRow(
         _ transaction: LegacyTransactionDTO,
+        owner: FamilyMember,
         sourceFile: String = "transactions",
     ) async throws {
+        guard transaction.owner == owner else {
+            throw ConvexRowMutationError.ownerMismatch(
+                field: "transaction",
+                expected: owner,
+                actual: transaction.owner?.rawValue,
+            )
+        }
         let amountCents = try Self.exactMinorUnits(transaction.amount, field: "transaction.amount")
         let kind = transaction.category == "Income" || amountCents < 0 ? "credit" : "spend"
         var row: [String: Any] = [
             "id": transaction.id,
+            "owner": owner.rawValue,
             "date": transaction.date,
             "merchant": transaction.merchant,
             "amountCents": ConvexTaggedInt64Encoder.encode(amountCents),
@@ -1091,10 +1100,7 @@ final class ConvexClient: Sendable {
         if let costBasisStatus = buy.costBasisStatus { row["costBasisStatus"] = costBasisStatus }
         if let loggedBy = buy.loggedBy { row["loggedBy"] = loggedBy }
         if let requestID = buy.archimedesRequestId { row["archimedesRequestId"] = requestID }
-        // Adult blob rows are canonical to Victor and resolved from sourceFile.
-        // Children must carry their own owner even when no dedicated legacy buy
-        // file exists (Maddox), or their balance would enter the adult ledger.
-        if !owner.isAdult { row["owner"] = owner.rawValue }
+        row["owner"] = owner.rawValue
 
         let path = "tables:upsertBtcBuy"
         let raw = try await mutation(path, args: [

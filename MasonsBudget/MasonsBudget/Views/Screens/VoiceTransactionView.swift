@@ -19,8 +19,8 @@ struct VoiceTransactionView: View {
         BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
     }
 
-    private var activeMember: FamilyMember {
-        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    private var activeMember: FamilyMember? {
+        FamilyMember(rawValue: selectedMemberRaw)
     }
 
     private var canSave: Bool {
@@ -173,6 +173,7 @@ struct VoiceTransactionView: View {
 
     private func saveTransaction() {
         parseTranscript()
+        guard let activeMember else { return }
         guard let amount = parsed.amount, let merchant = parsed.merchant, !merchant.isEmpty else { return }
 
         let isIncome = (parsed.category ?? "").localizedCaseInsensitiveContains("income") ||
