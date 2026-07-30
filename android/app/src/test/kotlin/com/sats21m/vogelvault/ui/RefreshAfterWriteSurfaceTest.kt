@@ -10,6 +10,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
@@ -224,6 +225,77 @@ class RefreshAfterWriteSurfaceTest {
         assertEquals(0, rejected.savedCount)
         assertEquals("http 500", assertIs<ConvexResult.Failed>(rejected.failure).reason)
         assertEquals(0, refreshCount)
+    }
+
+    @Test
+    fun `screen host wires transaction success to refresh and rejects do not refresh`() {
+        val state = VaultUiState(
+            activeProfile = FamilyMember.VICTOR,
+            destination = Destination.ACTIVITY,
+            data = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE),
+        )
+        val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
+            ScreenHost(
+                destination = Destination.ACTIVITY,
+                state = state,
+                onWriteSucceeded = onWriteSucceeded,
+            )
+        }
+        val interact = {
+            compose.onNodeWithText("Add").performClick()
+            settle()
+            compose.onNodeWithText("Merchant or destination").performTextInput("Neighborhood Market")
+            compose.onNodeWithText("Amount").performTextInput("14.18")
+            compose.onNode(hasText("Save") and hasClickAction()).performScrollTo()
+                .performSemanticsAction(SemanticsActions.OnClick)
+            Unit
+        }
+
+        assertEquals(1, runSurface(SUCCESS, content, interact))
+        assertEquals(
+            0,
+            runSurface(
+                REJECTION,
+                content,
+                interact,
+                rejectionText = "Transaction was not saved (http 500)",
+            ),
+        )
+    }
+
+    @Test
+    fun `screen host wires task success to refresh and rejects do not refresh`() {
+        val state = VaultUiState(
+            activeProfile = FamilyMember.MADDOX,
+            destination = Destination.TASKS,
+            data = Fixtures.envelope(FamilyMember.MADDOX, Freshness.LIVE),
+        )
+        val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
+            ScreenHost(
+                destination = Destination.TASKS,
+                state = state,
+                onWriteSucceeded = onWriteSucceeded,
+            )
+        }
+        val interact = {
+            compose.onNodeWithText("Add task").performScrollTo().performClick()
+            settle()
+            compose.onNodeWithText("Task title").performTextInput("Finish homework")
+            compose.onNode(hasText("Save task") and hasClickAction()).performScrollTo()
+                .performSemanticsAction(SemanticsActions.OnClick)
+            Unit
+        }
+
+        assertEquals(1, runSurface(SUCCESS, content, interact))
+        assertEquals(
+            0,
+            runSurface(
+                REJECTION,
+                content,
+                interact,
+                rejectionText = "Task not added: Convex rejected the write (http 500).",
+            ),
+        )
     }
 
     private fun runSurface(

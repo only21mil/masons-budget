@@ -1,6 +1,7 @@
 package com.sats21m.vogelvault
 
 import android.content.Context
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -8,15 +9,23 @@ import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextInput
 import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.ui.Destination
 import com.sats21m.vogelvault.ui.ProfileSwitchRefusal
+import com.sats21m.vogelvault.ui.RefreshAfterWriteApplication
 import com.sats21m.vogelvault.ui.VaultLockController
 import com.sats21m.vogelvault.ui.VaultViewModel
 import com.sats21m.vogelvault.ui.titleRes
 import kotlin.test.assertEquals
+import kotlin.test.assertNotSame
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Job
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -98,6 +107,55 @@ class MainActivityProfileSwitchWiringTest {
         )
     }
 
+    @Test
+    @Config(
+        sdk = [34],
+        application = RefreshAfterWriteApplication::class,
+    )
+    fun `production shell reloads the active profile after a successful write`() {
+        val testApplication = application as RefreshAfterWriteApplication
+        compose.activity.viewModelStore.clear()
+        compose.activityRule.scenario.recreate()
+        val activity = compose.activity
+        activity.privateField<VaultLockController>("lockController").authenticationSucceeded()
+        activity.privateMethod("publishLockState")
+        compose.waitForIdle()
+
+        testApplication.poster.response =
+            com.sats21m.vogelvault.data.HttpTextResponse(
+                200,
+                """{"status":"success","value":"accepted"}""",
+            )
+        testApplication.poster.requestCount = 0
+
+        val model = compose.activity.privateField<VaultViewModel>("model")
+        model.navigate(Destination.ACTIVITY)
+        compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000L) {
+            model.privateField<Job?>("rowJob") != null
+        }
+        val refreshBeforeWrite = model.privateField<Job>("rowJob")
+
+        compose.onNodeWithText("Add").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Merchant or destination").performTextInput("Neighborhood Market")
+        compose.onNodeWithText("Amount").performTextInput("14.18")
+        compose.onNode(hasText("Save") and hasClickAction()).performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitUntil(timeoutMillis = 5_000L) {
+            testApplication.poster.requestCount == 1
+        }
+        compose.waitUntil(timeoutMillis = 5_000L) {
+            model.privateField<Job?>("rowJob") !== refreshBeforeWrite
+        }
+
+        assertNotSame(
+            refreshBeforeWrite,
+            model.privateField<Job>("rowJob"),
+            "MainActivity did not bind write success to an active-profile row reload.",
+        )
+    }
+
     @Suppress("UNCHECKED_CAST")
     private fun <T> MainActivity.privateField(name: String): T {
         val field = MainActivity::class.java.getDeclaredField(name)
@@ -109,5 +167,12 @@ class MainActivityProfileSwitchWiringTest {
         val method = MainActivity::class.java.getDeclaredMethod(name)
         method.isAccessible = true
         method.invoke(this)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> VaultViewModel.privateField(name: String): T {
+        val field = VaultViewModel::class.java.getDeclaredField(name)
+        field.isAccessible = true
+        return field.get(this) as T
     }
 }
