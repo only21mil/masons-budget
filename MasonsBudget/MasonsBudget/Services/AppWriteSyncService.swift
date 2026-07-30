@@ -1,6 +1,11 @@
 import Foundation
 import os
 
+enum AppWriteSyncError: Error {
+    case unexpectedPayload
+}
+
+@MainActor
 enum AppWriteSyncService {
     private static let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "AppWriteSync")
     private static let maxRetries = 2
@@ -22,9 +27,10 @@ enum AppWriteSyncService {
             payload = try LegacyTransactionDTO(appTransaction: transaction, owner: canonicalOwner)
         } catch {
             log.error("Refused transaction payload: \(ConvexWriteResult.classify(error).diagnosticCode, privacy: .public)")
-            reportSyncStart(label)
+            let operationID = reportSyncStart(label)
             reportSyncResult(
                 label: label,
+                operationID: operationID,
                 result: ConvexWriteResult.classify(error),
                 retry: nil,
                 onResult: onResult,
@@ -43,9 +49,9 @@ enum AppWriteSyncService {
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         let label = "Save transaction"
-        reportSyncStart(label)
+        let operationID = reportSyncStart(label)
         if let blocked = writeBlocker(requiresSyncToken: true) {
-            reportSyncResult(label: label, result: blocked, retry: {
+            reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
                 pushTransactionPayload(payload, owner: owner, to: fileName, onResult: onResult)
             }, onResult: onResult)
             return
@@ -56,7 +62,7 @@ enum AppWriteSyncService {
             let result = await withRetry(label: "push tx \(payload.id)") {
                 try await client.upsertTransactionRow(payload, owner: owner, sourceFile: fileName)
             }
-            reportSyncResult(label: label, result: result, retry: {
+            reportSyncResult(label: label, operationID: operationID, result: result, retry: {
                 pushTransactionPayload(payload, owner: owner, to: fileName, onResult: onResult)
             }, onResult: onResult)
         }
@@ -87,9 +93,9 @@ enum AppWriteSyncService {
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         let label = "Delete transaction"
-        reportSyncStart(label)
+        let operationID = reportSyncStart(label)
         if let blocked = writeBlocker(requiresSyncToken: true) {
-            reportSyncResult(label: label, result: blocked, retry: {
+            reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
                 deleteTransaction(id: id, owner: owner, from: fileName, onResult: onResult)
             }, onResult: onResult)
             return
@@ -100,7 +106,7 @@ enum AppWriteSyncService {
             let result = await withRetry(label: "delete tx \(id)") {
                 try await client.deleteTransactionRow(id: id, owner: owner, sourceFile: fileName)
             }
-            reportSyncResult(label: label, result: result, retry: {
+            reportSyncResult(label: label, operationID: operationID, result: result, retry: {
                 deleteTransaction(id: id, owner: owner, from: fileName, onResult: onResult)
             }, onResult: onResult)
         }
@@ -124,9 +130,9 @@ enum AppWriteSyncService {
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         let label = "Save BTC buy"
-        reportSyncStart(label)
+        let operationID = reportSyncStart(label)
         if let blocked = writeBlocker(requiresSyncToken: true) {
-            reportSyncResult(label: label, result: blocked, retry: {
+            reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
                 pushBTCBuyPayload(payload, owner: owner, to: fileName, onResult: onResult)
             }, onResult: onResult)
             return
@@ -141,7 +147,7 @@ enum AppWriteSyncService {
                     sourceFile: fileName,
                 )
             }
-            reportSyncResult(label: label, result: result, retry: {
+            reportSyncResult(label: label, operationID: operationID, result: result, retry: {
                 pushBTCBuyPayload(payload, owner: owner, to: fileName, onResult: onResult)
             }, onResult: onResult)
         }
@@ -171,9 +177,9 @@ enum AppWriteSyncService {
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         let label = "Save todo"
-        reportSyncStart(label)
+        let operationID = reportSyncStart(label)
         if let blocked = writeBlocker(requiresSyncToken: false) {
-            reportSyncResult(label: label, result: blocked, retry: {
+            reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
                 pushTodoPayload(payload, onResult: onResult)
             }, onResult: onResult)
             return
@@ -197,10 +203,10 @@ enum AppWriteSyncService {
                 let client = AppWritebackClient()
                 result = await withRetry(label: "push todo via paired writeback \(payload.id)") {
                     let synced = try await client.upsertTodo(payload)
-                    guard synced else { throw SyncError.unexpectedPayload }
+                    guard synced else { throw AppWriteSyncError.unexpectedPayload }
                 }
             }
-            reportSyncResult(label: label, result: result, retry: {
+            reportSyncResult(label: label, operationID: operationID, result: result, retry: {
                 pushTodoPayload(payload, onResult: onResult)
             }, onResult: onResult)
         }
@@ -212,9 +218,9 @@ enum AppWriteSyncService {
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         let label = "Update todo completion"
-        reportSyncStart(label)
+        let operationID = reportSyncStart(label)
         if let blocked = writeBlocker(requiresSyncToken: false) {
-            reportSyncResult(label: label, result: blocked, retry: {
+            reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
                 setTodoCompletionPayload(payload, isDone: isDone, onResult: onResult)
             }, onResult: onResult)
             return
@@ -232,10 +238,10 @@ enum AppWriteSyncService {
                 let client = AppWritebackClient()
                 result = await withRetry(label: "set todo completion via paired writeback \(payload.id)") {
                     let synced = try await client.setTodoDone(id: payload.id, title: payload.effectiveTitle, isDone: isDone)
-                    guard synced else { throw SyncError.unexpectedPayload }
+                    guard synced else { throw AppWriteSyncError.unexpectedPayload }
                 }
             }
-            reportSyncResult(label: label, result: result, retry: {
+            reportSyncResult(label: label, operationID: operationID, result: result, retry: {
                 setTodoCompletionPayload(payload, isDone: isDone, onResult: onResult)
             }, onResult: onResult)
         }
@@ -254,9 +260,9 @@ enum AppWriteSyncService {
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         let label = "Delete todo"
-        reportSyncStart(label)
+        let operationID = reportSyncStart(label)
         if let blocked = writeBlocker(requiresSyncToken: false) {
-            reportSyncResult(label: label, result: blocked, retry: {
+            reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
                 deleteTodo(id: todoId, onResult: onResult)
             }, onResult: onResult)
             return
@@ -274,10 +280,10 @@ enum AppWriteSyncService {
                 let client = AppWritebackClient()
                 result = await withRetry(label: "delete todo via paired writeback \(todoId)") {
                     let synced = try await client.removeTodo(id: todoId)
-                    guard synced else { throw SyncError.unexpectedPayload }
+                    guard synced else { throw AppWriteSyncError.unexpectedPayload }
                 }
             }
-            reportSyncResult(label: label, result: result, retry: {
+            reportSyncResult(label: label, operationID: operationID, result: result, retry: {
                 deleteTodo(id: todoId, onResult: onResult)
             }, onResult: onResult)
         }
@@ -308,9 +314,9 @@ enum AppWriteSyncService {
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         let label = "Save budget"
-        reportSyncStart(label)
+        let operationID = reportSyncStart(label)
         if let blocked = writeBlocker(requiresSyncToken: true) {
-            reportSyncResult(label: label, result: blocked, retry: {
+            reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
                 pushBudgetCategoryUpdate(
                     name: name,
                     icon: icon,
@@ -332,7 +338,7 @@ enum AppWriteSyncService {
                     viewer: viewer,
                 )
             }
-            reportSyncResult(label: label, result: result, retry: {
+            reportSyncResult(label: label, operationID: operationID, result: result, retry: {
                 pushBudgetCategoryUpdate(
                     name: name,
                     icon: icon,
@@ -357,25 +363,34 @@ enum AppWriteSyncService {
         return nil
     }
 
-    private static func reportSyncResult(
+    static func reportSyncResult(
         label: String,
+        operationID: UUID,
         result: ConvexWriteResult,
         retry: (@MainActor @Sendable () -> Void)?,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)?,
+        statusStore: SyncStatusStore = .shared,
     ) {
         // A Retry button that cannot change the outcome is worse than none: it
         // tells the user the save might still land.
         let retryAction = result.isRetryable ? retry : nil
-        Task { @MainActor in
-            SyncStatusStore.shared.complete(label, result: result, retry: retryAction)
-            onResult?(result)
-        }
+        statusStore.complete(
+            label,
+            id: operationID,
+            result: result,
+            retry: retryAction,
+        )
+        onResult?(result)
     }
 
-    private static func reportSyncStart(_ label: String) {
-        Task { @MainActor in
-            SyncStatusStore.shared.begin(label)
-        }
+    @discardableResult
+    static func reportSyncStart(
+        _ label: String,
+        statusStore: SyncStatusStore = .shared,
+    ) -> UUID {
+        let id = UUID()
+        statusStore.begin(label, id: id)
+        return id
     }
 
     /// Returns `.ok` on success, otherwise the classified cause of the last attempt.
@@ -386,15 +401,19 @@ enum AppWriteSyncService {
     ///
     /// Marked discardable so callers that don't yet consume the result still compile.
     @discardableResult
-    private static func withRetry(
+    static func withRetry(
         label: String,
         operation: @escaping () async throws -> Void,
     ) async -> ConvexWriteResult {
         var lastResult = ConvexWriteResult.failed(.transport)
         for attempt in 0 ... maxRetries {
             do {
+                try Task.checkCancellation()
                 try await operation()
                 return .ok
+            } catch is CancellationError {
+                log.info("Cancelled \(label, privacy: .public)")
+                return .failed(.cancelled)
             } catch {
                 lastResult = ConvexWriteResult.classify(error)
                 guard lastResult.isRetryable else {
@@ -403,16 +422,19 @@ enum AppWriteSyncService {
                 }
                 if attempt < maxRetries {
                     log.warning("Retry \(attempt + 1)/\(maxRetries) for \(label, privacy: .public): \(lastResult.diagnosticCode, privacy: .public)")
-                    try? await Task.sleep(nanoseconds: retryDelay)
+                    do {
+                        try await Task.sleep(nanoseconds: retryDelay)
+                    } catch is CancellationError {
+                        log.info("Cancelled \(label, privacy: .public) during retry delay")
+                        return .failed(.cancelled)
+                    } catch {
+                        return ConvexWriteResult.classify(error)
+                    }
                 } else {
                     log.error("Failed \(label, privacy: .public) after \(maxRetries) retries: \(lastResult.diagnosticCode, privacy: .public)")
                 }
             }
         }
         return lastResult
-    }
-
-    enum SyncError: Error {
-        case unexpectedPayload
     }
 }

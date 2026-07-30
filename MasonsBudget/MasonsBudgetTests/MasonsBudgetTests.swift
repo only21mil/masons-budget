@@ -188,8 +188,8 @@ final class MasonsBudgetTests: XCTestCase {
         let store = SyncStatusStore()
         var didRetry = false
 
-        store.begin("Save transaction")
-        store.complete("Save transaction", result: .failed(.transport), retry: {
+        let id = store.begin("Save transaction")
+        store.complete("Save transaction", id: id, result: .failed(.transport), retry: {
             didRetry = true
         })
 
@@ -211,14 +211,14 @@ final class MasonsBudgetTests: XCTestCase {
     func testSyncStatusStoreClearsAfterFinalSuccess() {
         let store = SyncStatusStore()
 
-        store.begin("Save todo")
-        store.begin("Save transaction")
-        store.complete("Save todo", result: .ok)
+        let todoID = store.begin("Save todo")
+        let transactionID = store.begin("Save transaction")
+        store.complete("Save todo", id: todoID, result: .ok)
 
         XCTAssertEqual(store.phase, .syncing)
         XCTAssertEqual(store.pendingCount, 1)
 
-        store.complete("Save transaction", result: .ok)
+        store.complete("Save transaction", id: transactionID, result: .ok)
 
         XCTAssertEqual(store.phase, .idle)
         XCTAssertEqual(store.pendingCount, 0)
@@ -230,10 +230,10 @@ final class MasonsBudgetTests: XCTestCase {
     func testSyncStatusStorePreservesEarlierFailureWhenLaterWriteSucceedsLast() {
         let store = SyncStatusStore()
 
-        store.begin("CSV transaction A")
-        store.begin("CSV transaction B")
-        store.complete("CSV transaction A", result: .failed(.transport))
-        store.complete("CSV transaction B", result: .ok)
+        let firstID = store.begin("CSV transaction A")
+        let secondID = store.begin("CSV transaction B")
+        store.complete("CSV transaction A", id: firstID, result: .failed(.transport))
+        store.complete("CSV transaction B", id: secondID, result: .ok)
 
         XCTAssertEqual(store.pendingCount, 0)
         XCTAssertEqual(store.phase, .failed)
@@ -249,18 +249,145 @@ final class MasonsBudgetTests: XCTestCase {
     func testSyncStatusStorePreservesFailureForConcurrentSameLabelOperations() {
         let store = SyncStatusStore()
 
-        store.begin("Save transaction")
-        store.begin("Save transaction")
-        store.complete("Save transaction", result: .failed(.transport))
-        store.complete("Save transaction", result: .ok)
+        let firstID = store.begin("Save transaction")
+        let secondID = store.begin("Save transaction")
+        store.complete("Save transaction", id: firstID, result: .failed(.transport))
+        store.complete("Save transaction", id: secondID, result: .unauthorized)
 
         XCTAssertEqual(store.pendingCount, 0)
         XCTAssertEqual(store.phase, .failed)
         XCTAssertEqual(store.lastResult, .failed(.transport))
+        XCTAssertEqual(store.retainedFailureCount, 2)
+
+        store.dismissFailure()
+        XCTAssertEqual(store.phase, .failed)
+        XCTAssertEqual(store.lastResult, .unauthorized)
+        XCTAssertEqual(store.retainedFailureCount, 1)
 
         store.dismissFailure()
         XCTAssertEqual(store.phase, .idle)
-        XCTAssertNil(store.lastResult)
+        XCTAssertEqual(store.retainedFailureCount, 0)
+    }
+
+    @MainActor
+    func testExplicitOperationIDBalancesImmediateFailureWithoutOrderingRace() {
+        let store = SyncStatusStore()
+        let id = AppWriteSyncService.reportSyncStart(
+            "Save transaction",
+            statusStore: store,
+        )
+
+        AppWriteSyncService.reportSyncResult(
+            label: "Save transaction",
+            operationID: id,
+            result: .disabled,
+            retry: nil,
+            onResult: nil,
+            statusStore: store,
+        )
+
+        XCTAssertEqual(store.pendingCount, 0)
+        XCTAssertEqual(store.phase, .failed)
+        XCTAssertEqual(store.lastResult, .disabled)
+    }
+
+    @MainActor
+    func testExplicitOperationIDBalancesImmediatePayloadFailure() {
+        let store = SyncStatusStore()
+        let id = AppWriteSyncService.reportSyncStart(
+            "Save transaction",
+            statusStore: store,
+        )
+
+        AppWriteSyncService.reportSyncResult(
+            label: "Save transaction",
+            operationID: id,
+            result: .failed(.invalidAmount(field: "transaction.amount")),
+            retry: nil,
+            onResult: nil,
+            statusStore: store,
+        )
+
+        XCTAssertEqual(store.pendingCount, 0)
+        XCTAssertEqual(store.retainedFailureCount, 1)
+        XCTAssertEqual(
+            store.lastError,
+            "Save transaction was not saved (transaction.amount is not a writable amount)",
+        )
+    }
+
+    @MainActor
+    func testExplicitOperationIDBalancesMockAsyncCompletion() async {
+        let store = SyncStatusStore()
+        let id = AppWriteSyncService.reportSyncStart(
+            "Save todo",
+            statusStore: store,
+        )
+
+        await Task.yield()
+        AppWriteSyncService.reportSyncResult(
+            label: "Save todo",
+            operationID: id,
+            result: .ok,
+            retry: nil,
+            onResult: nil,
+            statusStore: store,
+        )
+
+        XCTAssertEqual(store.pendingCount, 0)
+        XCTAssertEqual(store.phase, .idle)
+    }
+
+    @MainActor
+    func testImmediateWriteBlockerCompletesBeforePushReturns() {
+        let original = ConvexConfig.writesEnabled
+        SyncStatusStore.shared.resetForTesting()
+        defer {
+            ConvexConfig.setWritesEnabled(original)
+            SyncStatusStore.shared.resetForTesting()
+        }
+        ConvexConfig.setWritesEnabled(false)
+        let recorder = WriteResultRecorder()
+        let transaction = Transaction(
+            id: "blocked-operation",
+            date: .now,
+            merchant: "Test",
+            amount: 1,
+            category: "Other",
+            owner: .victor,
+            createdBy: "app",
+        )
+
+        AppWriteSyncService.pushTransaction(transaction, owner: .victor) {
+            recorder.result = $0
+        }
+
+        XCTAssertEqual(recorder.result, .disabled)
+    }
+
+    @MainActor
+    func testImmediatePayloadFailureCompletesBeforePushReturns() {
+        SyncStatusStore.shared.resetForTesting()
+        defer { SyncStatusStore.shared.resetForTesting() }
+        let recorder = WriteResultRecorder()
+        let transaction = Transaction(
+            id: "invalid-payload-operation",
+            date: .now,
+            merchant: "Test",
+            amount: 1,
+            category: "Other",
+            owner: .mason,
+            createdBy: "app",
+        )
+
+        AppWriteSyncService.pushTransaction(transaction, owner: .victor) {
+            recorder.result = $0
+        }
+
+        XCTAssertEqual(
+            recorder.result,
+            .failed(.ownerMismatch(field: "transaction")),
+        )
     }
 
     // MARK: - Write result causes (SAT-1342)
@@ -277,6 +404,7 @@ final class MasonsBudgetTests: XCTestCase {
             .unauthorized,
             .missing,
             .failed(.transport),
+            .failed(.cancelled),
             .failed(.credentialStorage),
             .failed(.serverRejected),
             .failed(.rowAPIUnavailable),
@@ -359,6 +487,7 @@ final class MasonsBudgetTests: XCTestCase {
             .failed(.credentialStorage),
         )
         XCTAssertEqual(ConvexWriteResult.classify(URLError(.timedOut)), .failed(.transport))
+        XCTAssertEqual(ConvexWriteResult.classify(CancellationError()), .failed(.cancelled))
     }
 
     func testNonRetryableCausesDoNotBurnRetries() {
@@ -370,6 +499,7 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertFalse(ConvexWriteResult.failed(.payloadEncoding).isRetryable)
         XCTAssertFalse(ConvexWriteResult.failed(.credentialStorage).isRetryable)
         XCTAssertTrue(ConvexWriteResult.failed(.transport).isRetryable)
+        XCTAssertFalse(ConvexWriteResult.failed(.cancelled).isRetryable)
         XCTAssertFalse(ConvexWriteResult.failed(.serverRejected).isRetryable)
         XCTAssertFalse(ConvexWriteResult.failed(.rowAPIUnavailable).isRetryable)
         XCTAssertFalse(ConvexWriteResult.failed(.malformedResponse).isRetryable)
@@ -383,8 +513,8 @@ final class MasonsBudgetTests: XCTestCase {
         let store = SyncStatusStore()
         var didRetry = false
 
-        store.begin("Save transaction")
-        store.complete("Save transaction", result: .unauthorized, retry: { didRetry = true })
+        let id = store.begin("Save transaction")
+        store.complete("Save transaction", id: id, result: .unauthorized, retry: { didRetry = true })
 
         XCTAssertEqual(store.lastError, "The sync credential is missing or was rejected")
         XCTAssertFalse(store.canRetry)
@@ -468,12 +598,41 @@ final class MasonsBudgetTests: XCTestCase {
             "Transaction was not saved on this device (the local database rejected the change)",
         )
 
-        statusStore.begin("Save todo")
-        statusStore.complete("Save todo", result: .ok)
+        let id = statusStore.begin("Save todo")
+        statusStore.complete("Save todo", id: id, result: .ok)
         XCTAssertEqual(statusStore.phase, .failed)
         XCTAssertEqual(statusStore.lastLocalFailure, .persistence)
     }
 
+    @MainActor
+    func testFailedTodoDeleteRollbackReusesTrackedSwiftDataIdentity() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: TodoItem.self, configurations: configuration)
+        let context = ModelContext(container)
+        let todo = TodoItem(
+            id: "rollback-identity",
+            title: "Preserve this model",
+            owner: .mason,
+            createdBy: "app",
+        )
+        context.insert(todo)
+        try context.save()
+        let originalPersistentID = todo.persistentModelID
+
+        context.delete(todo)
+        TaskUndoStore.restoreFailedDelete(todo, in: context)
+        try context.save()
+
+        let restored = try XCTUnwrap(
+            context.fetch(FetchDescriptor<TodoItem>()).first(where: {
+                $0.id == "rollback-identity"
+            }),
+        )
+        XCTAssertTrue(restored === todo)
+        XCTAssertEqual(restored.persistentModelID, originalPersistentID)
+    }
+
+    @MainActor
     func testWriteKillSwitchRefusesBeforeAnyIO() {
         let original = ConvexConfig.writesEnabled
         defer { ConvexConfig.setWritesEnabled(original) }
@@ -487,6 +646,40 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertNotEqual(AppWriteSyncService.writeBlocker(requiresSyncToken: true), .disabled)
     }
 
+    @MainActor
+    func testCancellationStopsRetryLoopImmediately() async {
+        var attempts = 0
+
+        let result = await AppWriteSyncService.withRetry(label: "cancelled mock") {
+            attempts += 1
+            throw CancellationError()
+        }
+
+        XCTAssertEqual(result, .failed(.cancelled))
+        XCTAssertEqual(attempts, 1)
+    }
+
+    @MainActor
+    func testCancellationDuringRetryDelayIsNotSwallowed() async {
+        var attempts = 0
+        let task = Task { @MainActor in
+            await AppWriteSyncService.withRetry(label: "cancelled delay mock") {
+                attempts += 1
+                throw URLError(.timedOut)
+            }
+        }
+
+        while attempts == 0 {
+            await Task.yield()
+        }
+        task.cancel()
+
+        let result = await task.value
+        XCTAssertEqual(result, .failed(.cancelled))
+        XCTAssertEqual(attempts, 1)
+    }
+
+    @MainActor
     func testRowWritesAreRefusedBeforeIOWithoutASyncToken() throws {
         // Android's ConvexMutationClient refuses on a missing token instead of
         // discovering the rejection after three retries; Apple now matches. The
@@ -812,6 +1005,11 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertTrue(acct.holdings.isEmpty)
         XCTAssertEqual(acct.weeklyContribution, 0)
     }
+}
+
+@MainActor
+private final class WriteResultRecorder {
+    var result: ConvexWriteResult?
 }
 
 @MainActor

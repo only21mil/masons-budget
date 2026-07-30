@@ -103,8 +103,20 @@ final class ConvexConfigTests: XCTestCase {
         )
     }
 
+#if os(macOS)
+    func testLegacyMacFileKeychainQueryOmitsDataProtectionSelector() {
+        let legacy = KeychainCredentialStore(
+            service: "com.sats21m.vogel-vault.convex",
+            account: "sync-token",
+            usesDataProtectionKeychain: false,
+        )
+
+        XCTAssertNil(legacy.baseQuery[kSecUseDataProtectionKeychain as String])
+    }
+#endif
+
     func testPairingCredentialUsesTheSameProtectedDeviceOnlyKeychainPolicy() {
-        let store = AppWritebackDeviceTokenStore.store
+        let store = AppWritebackDeviceTokenStore.dataProtectionStore
         XCTAssertEqual(
             store.baseQuery[kSecUseDataProtectionKeychain as String] as? Bool,
             true,
@@ -128,14 +140,14 @@ final class ConvexConfigTests: XCTestCase {
         )
     }
 
-    func testSetSyncTokenWithOnlyWhitespaceClearsStoredCredential() {
+    func testSetSyncTokenWithOnlyWhitespaceFailsAndPreservesStoredCredential() {
         let (store, double, _) = makeStore()
         XCTAssertTrue(store.set("vv-sync-abc"))
 
-        XCTAssertTrue(store.set("   "))
+        XCTAssertFalse(store.set("   "))
 
-        XCTAssertNil(double.stored)
-        XCTAssertFalse(store.hasToken)
+        XCTAssertEqual(double.stored, "vv-sync-abc")
+        XCTAssertTrue(store.hasToken)
     }
 
     func testRemoveSyncTokenClearsBothTheStoreAndTheLegacyCleartextCopy() {
@@ -189,6 +201,15 @@ final class ConvexConfigTests: XCTestCase {
         XCTAssertEqual(store.token, "vv-read-new")
     }
 
+    func testBlankReadTokenSetterPreservesCredentialUntilExplicitRemoval() {
+        let (store, double, _) = makeReadTokenStore()
+        XCTAssertTrue(store.set("vv-read-new"))
+
+        XCTAssertFalse(store.set("\n  "))
+        XCTAssertEqual(double.stored, "vv-read-new")
+        XCTAssertEqual(store.token, "vv-read-new")
+    }
+
     func testReadTokenMigrationFailsClosedWhenCredentialWriteFails() {
         let key = "convex_read_token"
         let refusing = InMemoryCredentialStore()
@@ -213,6 +234,65 @@ final class ConvexConfigTests: XCTestCase {
         XCTAssertNil(suite.string(forKey: key))
         XCTAssertFalse(store.hasToken)
     }
+
+    func testDataProtectionCredentialWinsAndRetiresLegacyFileKeychainCopy() {
+        let primary = InMemoryCredentialStore()
+        let legacy = InMemoryCredentialStore()
+        primary.save("dp-token")
+        legacy.save("legacy-token")
+        let store = MigratingCredentialStore(primary: primary, legacy: legacy)
+
+        XCTAssertEqual(store.read(), "dp-token")
+        XCTAssertEqual(primary.stored, "dp-token")
+        XCTAssertNil(legacy.stored)
+    }
+
+    func testLegacyFileKeychainCredentialMigratesOnlyAfterVerifiedDataProtectionRead() {
+        let primary = InMemoryCredentialStore()
+        let legacy = InMemoryCredentialStore()
+        legacy.save("legacy-token")
+        let store = MigratingCredentialStore(primary: primary, legacy: legacy)
+
+        XCTAssertEqual(store.read(), "legacy-token")
+        XCTAssertEqual(primary.stored, "legacy-token")
+        XCTAssertNil(legacy.stored)
+    }
+
+    func testFailedDataProtectionMigrationPreservesUsableLegacyCredential() {
+        let primary = InMemoryCredentialStore()
+        primary.refuseWrites = true
+        let legacy = InMemoryCredentialStore()
+        legacy.save("legacy-token")
+        let store = MigratingCredentialStore(primary: primary, legacy: legacy)
+
+        XCTAssertEqual(store.read(), "legacy-token")
+        XCTAssertNil(primary.stored)
+        XCTAssertEqual(legacy.stored, "legacy-token")
+    }
+
+    func testUnverifiedDataProtectionMigrationPreservesLegacyCredential() {
+        let primary = VerificationMismatchCredentialStore()
+        let legacy = InMemoryCredentialStore()
+        legacy.save("legacy-token")
+        let store = MigratingCredentialStore(primary: primary, legacy: legacy)
+
+        XCTAssertEqual(store.read(), "legacy-token")
+        XCTAssertEqual(legacy.stored, "legacy-token")
+    }
+
+    func testTransitionClearRemovesDataProtectionAndLegacyCredentials() {
+        let primary = InMemoryCredentialStore()
+        let legacy = InMemoryCredentialStore()
+        primary.save("dp-token")
+        legacy.save("legacy-token")
+        let store = MigratingCredentialStore(primary: primary, legacy: legacy)
+
+        XCTAssertTrue(store.clear())
+        XCTAssertNil(primary.stored)
+        XCTAssertNil(legacy.stored)
+        XCTAssertEqual(primary.clearCount, 1)
+        XCTAssertEqual(legacy.clearCount, 1)
+    }
 }
 
 /// An in-memory stand-in for the Keychain, so the migration logic is testable
@@ -220,6 +300,7 @@ final class ConvexConfigTests: XCTestCase {
 final class InMemoryCredentialStore: CredentialStoring {
     private(set) var stored: String?
     var refuseWrites = false
+    private(set) var clearCount = 0
 
     func read() -> String? { stored }
 
@@ -232,7 +313,18 @@ final class InMemoryCredentialStore: CredentialStoring {
 
     @discardableResult
     func clear() -> Bool {
+        clearCount += 1
         stored = nil
         return true
     }
+}
+
+final class VerificationMismatchCredentialStore: CredentialStoring {
+    private var didSave = false
+    func read() -> String? { didSave ? "different-token" : nil }
+    func save(_: String) -> Bool {
+        didSave = true
+        return true
+    }
+    func clear() -> Bool { true }
 }

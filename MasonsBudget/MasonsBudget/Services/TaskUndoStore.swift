@@ -80,7 +80,10 @@ final class TaskUndoStore: ObservableObject {
         let snapshot = DeletedTodoSnapshot(todo: todo)
         modelContext.delete(todo)
         return LocalMutationSave.perform(operation: "Delete todo", in: modelContext, rollbackMutation: {
-            modelContext.insert(snapshot.restoredTodo())
+            // Reinsert the same tracked model. Creating a snapshot clone here
+            // changes SwiftData identity and can collide with the still-tracked
+            // deleted object after a failed save.
+            Self.restoreFailedDelete(todo, in: modelContext)
         }) {
             clearPending()
             present(snapshot)
@@ -144,5 +147,9 @@ final class TaskUndoStore: ObservableObject {
             },
         )
         return try? modelContext.fetch(descriptor).first
+    }
+
+    static func restoreFailedDelete(_ todo: TodoItem, in modelContext: ModelContext) {
+        modelContext.insert(todo)
     }
 }

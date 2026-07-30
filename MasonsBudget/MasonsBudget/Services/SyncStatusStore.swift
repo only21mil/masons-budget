@@ -82,21 +82,30 @@ final class SyncStatusStore: ObservableObject {
     /// unwritable amount cannot be fixed by trying again.
     @Published private(set) var canRetry = false
 
-    private var retryAction: (@MainActor @Sendable () -> Void)?
-    private var activeOperationIDs: Set<UUID> = []
-    private var queuedOperationIDs: [String: [UUID]] = [:]
-    private var failedOperationID: UUID?
+    private struct RetainedFailure {
+        let operation: String
+        let message: String
+        let result: ConvexWriteResult?
+        let localFailure: LocalSaveFailure?
+        let retryAction: (@MainActor @Sendable () -> Void)?
+    }
 
-    func begin(_ operation: String) {
+    private var activeOperationIDs: Set<UUID> = []
+    private var retainedFailures: [UUID: RetainedFailure] = [:]
+    private var failureOrder: [UUID] = []
+    private var displayedFailureID: UUID?
+
+    @discardableResult
+    func begin(_ operation: String) -> UUID {
         let id = UUID()
-        queuedOperationIDs[operation, default: []].append(id)
         begin(operation, id: id)
+        return id
     }
 
     func begin(_ operation: String, id: UUID) {
         activeOperationIDs.insert(id)
         pendingCount = activeOperationIDs.count
-        if phase != .failed {
+        if retainedFailures.isEmpty {
             lastOperation = operation
             phase = .syncing
         }
@@ -109,24 +118,6 @@ final class SyncStatusStore: ObservableObject {
     /// amount alike, which is the defect this type exists to remove.
     func complete(
         _ operation: String,
-        result: ConvexWriteResult,
-        retry: (@MainActor @Sendable () -> Void)? = nil,
-    ) {
-        let id: UUID
-        if var queued = queuedOperationIDs[operation], !queued.isEmpty {
-            id = queued.removeFirst()
-            queuedOperationIDs[operation] = queued
-        } else {
-            id = UUID()
-        }
-        if queuedOperationIDs[operation]?.isEmpty == true {
-            queuedOperationIDs.removeValue(forKey: operation)
-        }
-        complete(operation, id: id, result: result, retry: retry)
-    }
-
-    func complete(
-        _ operation: String,
         id: UUID,
         result: ConvexWriteResult,
         retry: (@MainActor @Sendable () -> Void)? = nil,
@@ -135,66 +126,119 @@ final class SyncStatusStore: ObservableObject {
         pendingCount = activeOperationIDs.count
 
         if result.isOk {
-            // A later success from another operation cannot erase this failure.
-            guard failedOperationID == nil || failedOperationID == id else { return }
-            failedOperationID = nil
-            lastOperation = operation
-            if pendingCount == 0 {
-                phase = .idle
-                lastError = nil
-                lastResult = nil
-                lastLocalFailure = nil
-                retryAction = nil
-                canRetry = false
-            } else {
-                phase = .syncing
-            }
+            removeFailure(id: id)
+            refreshPresentation(fallbackOperation: operation)
         } else {
-            failedOperationID = id
-            lastOperation = operation
-            phase = .failed
-            lastError = result.userMessage(operation: operation) ?? "\(operation) did not sync"
-            lastResult = result
-            lastLocalFailure = nil
-            retryAction = result.isRetryable ? retry : nil
-            canRetry = retryAction != nil
+            retainFailure(
+                id: id,
+                operation: operation,
+                message: result.userMessage(operation: operation) ?? "\(operation) did not sync",
+                result: result,
+                localFailure: nil,
+                retry: result.isRetryable ? retry : nil,
+            )
         }
     }
 
     /// Records a local database rejection. It cannot be represented as a remote
     /// result because writeback was deliberately never started.
     func recordLocalFailure(_ operation: String, failure: LocalSaveFailure) {
-        lastOperation = operation
-        phase = .failed
-        lastError = failure.userMessage(operation: operation)
-        lastResult = nil
-        lastLocalFailure = failure
-        // A local-save failure has no remote operation id, but it is still
-        // sticky against unrelated remote completions until dismissed.
-        failedOperationID = UUID()
-        retryAction = nil
-        canRetry = false
+        retainFailure(
+            id: UUID(),
+            operation: operation,
+            message: failure.userMessage(operation: operation),
+            result: nil,
+            localFailure: failure,
+            retry: nil,
+        )
     }
 
     func retry() {
-        guard let retryAction else { return }
-        lastError = nil
-        lastResult = nil
-        lastLocalFailure = nil
-        self.retryAction = nil
-        failedOperationID = nil
-        canRetry = false
-        phase = pendingCount > 0 ? .syncing : .idle
+        guard let id = displayedFailureID,
+              let retryAction = retainedFailures[id]?.retryAction
+        else { return }
+        removeFailure(id: id)
+        refreshPresentation()
         retryAction()
     }
 
     func dismissFailure() {
-        guard phase == .failed else { return }
+        guard let id = displayedFailureID else { return }
+        removeFailure(id: id)
+        refreshPresentation()
+    }
+
+    var retainedFailureCount: Int {
+        retainedFailures.count
+    }
+
+    func resetForTesting() {
+        activeOperationIDs.removeAll()
+        retainedFailures.removeAll()
+        failureOrder.removeAll()
+        displayedFailureID = nil
+        pendingCount = 0
+        lastOperation = nil
         lastError = nil
         lastResult = nil
         lastLocalFailure = nil
-        retryAction = nil
-        failedOperationID = nil
+        canRetry = false
+        phase = .idle
+    }
+
+    private func retainFailure(
+        id: UUID,
+        operation: String,
+        message: String,
+        result: ConvexWriteResult?,
+        localFailure: LocalSaveFailure?,
+        retry: (@MainActor @Sendable () -> Void)?,
+    ) {
+        if retainedFailures[id] == nil {
+            failureOrder.append(id)
+        }
+        retainedFailures[id] = RetainedFailure(
+            operation: operation,
+            message: message,
+            result: result,
+            localFailure: localFailure,
+            retryAction: retry,
+        )
+        if displayedFailureID == nil {
+            displayedFailureID = id
+        }
+        refreshPresentation()
+    }
+
+    private func removeFailure(id: UUID) {
+        retainedFailures.removeValue(forKey: id)
+        failureOrder.removeAll { $0 == id }
+        if displayedFailureID == id {
+            displayedFailureID = nil
+        }
+    }
+
+    private func refreshPresentation(fallbackOperation: String? = nil) {
+        if displayedFailureID == nil {
+            displayedFailureID = failureOrder.first(where: { retainedFailures[$0] != nil })
+        }
+
+        if let id = displayedFailureID,
+           let failure = retainedFailures[id]
+        {
+            lastOperation = failure.operation
+            lastError = failure.message
+            lastResult = failure.result
+            lastLocalFailure = failure.localFailure
+            canRetry = failure.retryAction != nil
+            phase = .failed
+            return
+        }
+
+        lastOperation = fallbackOperation ?? lastOperation
+        lastError = nil
+        lastResult = nil
+        lastLocalFailure = nil
         canRetry = false
         phase = pendingCount > 0 ? .syncing : .idle
     }

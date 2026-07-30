@@ -60,6 +60,10 @@ enum ConvexWriteFailure: Sendable, Equatable {
     /// The request never reached a Convex response.
     case transport
 
+    /// The owning task was cancelled. Cancellation is terminal for this
+    /// operation and must never consume retry attempts.
+    case cancelled
+
     /// A pairing credential could not be committed to protected storage.
     case credentialStorage
 
@@ -89,6 +93,8 @@ enum ConvexWriteFailure: Sendable, Equatable {
             "the sync API is not deployed"
         case .transport:
             "the network request failed"
+        case .cancelled:
+            "the operation was cancelled"
         case .credentialStorage:
             "the device credential could not be stored securely"
         case .serverRejected:
@@ -175,7 +181,7 @@ extension ConvexWriteResult {
                 return .failed(.malformedResponse)
             }
 
-        case is AppWriteSyncService.SyncError:
+        case is AppWriteSyncError:
             return .failed(.malformedResponse)
 
         case is EncodingError:
@@ -184,8 +190,11 @@ extension ConvexWriteResult {
         case is DecodingError:
             return .failed(.malformedResponse)
 
+        case is CancellationError:
+            return .failed(.cancelled)
+
         default:
-            // URLError, CancellationError and Foundation I/O all land here; every
+            // URLError and Foundation I/O land here; every
             // remaining thrower on these paths is a request that never completed.
             return .failed(.transport)
         }
@@ -206,7 +215,7 @@ extension ConvexWriteResult {
             true
         case let .failed(failure):
             switch failure {
-            case .invalidAmount, .ownerMismatch, .payloadEncoding, .credentialStorage:
+            case .invalidAmount, .ownerMismatch, .payloadEncoding, .credentialStorage, .cancelled:
                 false
             case .transport:
                 true
@@ -232,6 +241,7 @@ extension ConvexWriteResult {
             case .payloadEncoding: "payload_encoding"
             case .rowAPIUnavailable: "row_api_unavailable"
             case .transport: "transport"
+            case .cancelled: "cancelled"
             case .credentialStorage: "credential_storage"
             case .serverRejected: "server_rejected"
             case .malformedResponse: "malformed_response"

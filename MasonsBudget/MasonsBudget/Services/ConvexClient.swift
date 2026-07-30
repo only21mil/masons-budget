@@ -15,7 +15,7 @@ enum ConvexConfig {
     private static var readTokenStore: MigratingKeychainTokenStore {
         makeReadTokenStore(
             userDefaults: .standard,
-            keychain: KeychainCredentialStore(
+            keychain: ProtectedCredentialStore.make(
                 service: "com.sats21m.vogel-vault.convex",
                 account: "read-token",
             ),
@@ -25,7 +25,7 @@ enum ConvexConfig {
         MigratingKeychainTokenStore(
             userDefaults: .standard,
             legacyKey: syncTokenKey,
-            keychain: KeychainCredentialStore(
+            keychain: ProtectedCredentialStore.make(
                 service: "com.sats21m.vogel-vault.convex",
                 account: "sync-token",
             ),
@@ -193,7 +193,9 @@ struct MigratingKeychainTokenStore {
     @discardableResult
     func set(_ token: String) -> Bool {
         let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return remove() }
+        // Clearing a text field is not authorization to destroy the credential.
+        // Callers must use the explicit remove action for that state change.
+        guard !trimmed.isEmpty else { return false }
         guard keychain.save(trimmed) else { return false }
         userDefaults.removeObject(forKey: legacyKey)
         return true
@@ -207,9 +209,70 @@ struct MigratingKeychainTokenStore {
     }
 }
 
+/// Migrates the macOS file Keychain item onto the Data Protection Keychain.
+///
+/// The primary value is always read first. A legacy value remains usable while
+/// migration is attempted, and is deleted only after the primary store returns
+/// the exact value that was written. That ordering prevents a transient
+/// Security-framework failure from destroying the only credential.
+struct MigratingCredentialStore: CredentialStoring {
+    let primary: any CredentialStoring
+    let legacy: any CredentialStoring
+
+    func read() -> String? {
+        if let primaryToken = normalized(primary.read()) {
+            _ = legacy.clear()
+            return primaryToken
+        }
+
+        guard let legacyToken = normalized(legacy.read()) else { return nil }
+        if primary.save(legacyToken),
+           normalized(primary.read()) == legacyToken
+        {
+            _ = legacy.clear()
+        }
+        return legacyToken
+    }
+
+    @discardableResult
+    func save(_ token: String) -> Bool {
+        guard let normalizedToken = normalized(token),
+              primary.save(normalizedToken),
+              normalized(primary.read()) == normalizedToken
+        else { return false }
+        _ = legacy.clear()
+        return true
+    }
+
+    @discardableResult
+    func clear() -> Bool {
+        let primaryCleared = primary.clear()
+        let legacyCleared = legacy.clear()
+        return primaryCleared && legacyCleared
+    }
+
+    private func normalized(_ token: String?) -> String? {
+        guard let trimmed = token?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty
+        else { return nil }
+        return trimmed
+    }
+}
+
 struct KeychainCredentialStore {
     let service: String
     let account: String
+    let usesDataProtectionKeychain: Bool
+
+    init(
+        service: String,
+        account: String,
+        usesDataProtectionKeychain: Bool = true
+    ) {
+        self.service = service
+        self.account = account
+        self.usesDataProtectionKeychain = usesDataProtectionKeychain
+    }
 
     func read() -> String? {
         var query = baseQuery
@@ -262,12 +325,33 @@ struct KeychainCredentialStore {
     /// visibility lets the unit test guard the macOS data-protection opt-in
     /// without replacing the production SecItem path with a test-only helper.
     var baseQuery: [String: Any] {
-        [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecUseDataProtectionKeychain as String: true,
         ]
+        if usesDataProtectionKeychain {
+            query[kSecUseDataProtectionKeychain as String] = true
+        }
+        return query
+    }
+}
+
+enum ProtectedCredentialStore {
+    static func make(service: String, account: String) -> any CredentialStoring {
+        let primary = KeychainCredentialStore(service: service, account: account)
+#if os(macOS)
+        // Omitting kSecUseDataProtectionKeychain addresses the legacy file
+        // Keychain on macOS. This branch is not compiled on iOS.
+        let legacy = KeychainCredentialStore(
+            service: service,
+            account: account,
+            usesDataProtectionKeychain: false,
+        )
+        return MigratingCredentialStore(primary: primary, legacy: legacy)
+#else
+        return primary
+#endif
     }
 }
 
@@ -297,10 +381,11 @@ enum AppWritebackConfig {
         let legacyToken = UserDefaults.standard.string(forKey: deviceTokenKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !legacyToken.isEmpty {
-            UserDefaults.standard.removeObject(forKey: deviceTokenKey)
             guard AppWritebackDeviceTokenStore.store.save(legacyToken) else {
                 return ""
             }
+            // The protected store verifies its own read before returning true.
+            UserDefaults.standard.removeObject(forKey: deviceTokenKey)
         }
         return legacyToken
     }
@@ -377,8 +462,12 @@ enum AppWritebackDeviceTokenStore {
     private static let service = "com.sats21m.vogel-vault.mc2-mobile"
     private static let account = "device-token"
 
-    static var store: KeychainCredentialStore {
+    static var dataProtectionStore: KeychainCredentialStore {
         KeychainCredentialStore(service: service, account: account)
+    }
+
+    static var store: any CredentialStoring {
+        ProtectedCredentialStore.make(service: service, account: account)
     }
 }
 

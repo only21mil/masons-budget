@@ -2,10 +2,21 @@ import Foundation
 import os
 import SwiftData
 
+protocol SyncMetadataStoring: AnyObject {
+    func object(forKey defaultName: String) -> Any?
+    func string(forKey defaultName: String) -> String?
+    func dictionary(forKey defaultName: String) -> [String: Any]?
+    func set(_ value: Any?, forKey defaultName: String)
+    func removeObject(forKey defaultName: String)
+}
+
+extension UserDefaults: SyncMetadataStoring {}
+
 @MainActor
 final class ConvexSyncService {
     private let reader: ConvexDataReader
     private let context: ModelContext
+    private let metadataStore: any SyncMetadataStoring
     private let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "ConvexSync")
 
     static let lastSyncKey = "mc2_last_sync"
@@ -15,19 +26,28 @@ final class ConvexSyncService {
     static let dataVersionsKey = "mc2_data_versions"
 
     private var currentMember: FamilyMember {
-        let raw = UserDefaults.standard.string(forKey: Self.selectedMemberKey) ?? "victor"
+        let raw = metadataStore.string(forKey: Self.selectedMemberKey) ?? "victor"
         return FamilyMember(rawValue: raw) ?? .victor
     }
 
-    init(reader: ConvexDataReader, context: ModelContext) {
+    init(
+        reader: ConvexDataReader,
+        context: ModelContext,
+        metadataStore: any SyncMetadataStoring = UserDefaults.standard
+    ) {
         self.reader = reader
         self.context = context
+        self.metadataStore = metadataStore
     }
 
     /// Convenience init using the default Convex client.
-    init(context: ModelContext) {
+    init(
+        context: ModelContext,
+        metadataStore: any SyncMetadataStoring = UserDefaults.standard
+    ) {
         reader = ConvexDataReader()
         self.context = context
+        self.metadataStore = metadataStore
     }
 
     func syncAll() async {
@@ -77,20 +97,23 @@ final class ConvexSyncService {
 
         if errors.isEmpty {
             do {
-                // Fetch versions before publishing success metadata. A version
-                // fetch failure must leave the prior timestamp/count/version
-                // intact so polling retries the incomplete sync.
-                try await saveCurrentVersions()
-                UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastSyncKey)
-                UserDefaults.standard.set(totalEntities, forKey: Self.syncCountKey)
-                UserDefaults.standard.removeObject(forKey: Self.lastSyncErrorKey)
+                // Fetch first, then publish the versions LAST. The version map is
+                // the completion marker: if the process stops during metadata
+                // publication, the old versions remain and polling retries.
+                let versions = try await reader.checkVersions()
+                Self.publishSuccessfulSync(
+                    versions: versions,
+                    totalEntities: totalEntities,
+                    timestamp: Date().timeIntervalSince1970,
+                    to: metadataStore,
+                )
             } catch {
                 errors.append("Versions")
-                UserDefaults.standard.set("Versions", forKey: Self.lastSyncErrorKey)
+                metadataStore.set("Versions", forKey: Self.lastSyncErrorKey)
                 log.error("Failed to save sync versions")
             }
         } else {
-            UserDefaults.standard.set(errors.joined(separator: "; "), forKey: Self.lastSyncErrorKey)
+            metadataStore.set(errors.joined(separator: "; "), forKey: Self.lastSyncErrorKey)
             log.warning("Sync completed with errors: \(errors.joined(separator: "; "))")
         }
     }
@@ -101,7 +124,7 @@ final class ConvexSyncService {
     func hasUpdates() async -> Bool {
         do {
             let remoteVersions = try await reader.checkVersions()
-            let savedData = UserDefaults.standard.dictionary(forKey: Self.dataVersionsKey) as? [String: Double] ?? [:]
+            let savedData = metadataStore.dictionary(forKey: Self.dataVersionsKey) as? [String: Double] ?? [:]
             return remoteVersions != savedData
         } catch {
             log.error("Version check failed: \(error.localizedDescription)")
@@ -109,10 +132,17 @@ final class ConvexSyncService {
         }
     }
 
-    /// Save current remote versions to UserDefaults (call after successful sync).
-    func saveCurrentVersions() async throws {
-        let versions = try await reader.checkVersions()
-        UserDefaults.standard.set(versions, forKey: Self.dataVersionsKey)
+    static func publishSuccessfulSync(
+        versions: [String: Double],
+        totalEntities: Int,
+        timestamp: TimeInterval,
+        to store: any SyncMetadataStoring,
+    ) {
+        store.set(timestamp, forKey: lastSyncKey)
+        store.set(totalEntities, forKey: syncCountKey)
+        store.removeObject(forKey: lastSyncErrorKey)
+        // Completion marker. Do not add writes after this line.
+        store.set(versions, forKey: dataVersionsKey)
     }
 
     // MARK: - Individual sync methods
