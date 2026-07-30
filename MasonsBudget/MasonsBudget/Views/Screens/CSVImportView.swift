@@ -17,6 +17,9 @@ struct CSVImportView: View {
     @State private var isImporting = false
     @State private var showFilePicker = false
     @State private var importCount = 0
+    /// Aggregate sync outcome for the batch. Without it an import that half-landed
+    /// still reported "N transactions added".
+    @StateObject private var syncTally = WriteBatchTally()
 
     private var activeMember: FamilyMember {
         FamilyMember(rawValue: selectedMemberRaw) ?? .victor
@@ -255,9 +258,25 @@ struct CSVImportView: View {
                 .font(AppFont.iconXL)
                 .padding(.bottom, 4)
 
-            Text("\(importCount) transactions added")
+            Text(syncTally.localFailure == nil ? "\(importCount) transactions added" : "Import not saved")
                 .font(AppFont.headline)
                 .foregroundStyle(theme.text)
+
+            if syncTally.isRunning {
+                Text("Syncing \(syncTally.completed) of \(syncTally.expected)…")
+                    .font(AppFont.labelSmall)
+                    .foregroundStyle(theme.textMuted)
+            } else if let summary = syncTally.summary(operation: "Transaction") {
+                Text(summary)
+                    .font(AppFont.labelSmall)
+                    .foregroundStyle(theme.danger)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            } else if syncTally.isFinished {
+                Text("All synced")
+                    .font(AppFont.labelSmall)
+                    .foregroundStyle(theme.textMuted)
+            }
 
             Button { dismiss() } label: {
                 Text("Done")
@@ -269,6 +288,7 @@ struct CSVImportView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             .padding(.top, 20)
+            .disabled(syncTally.isRunning)
         }
     }
 
@@ -299,15 +319,32 @@ struct CSVImportView: View {
         isImporting = true
         let selected = importedRows.filter { selectedRows.contains($0.id) }
         let sourceTag = "csv-import-\(selectedSource?.rawValue ?? "custom")-\(formatDate(Date()))"
-        let transactions = service.toTransactions(selected, owner: activeMember, sourceTag: sourceTag)
+        let ledgerOwner = activeMember.ledgerOwner
+        let transactions = service.toTransactions(selected, owner: ledgerOwner, sourceTag: sourceTag)
 
         for tx in transactions {
             modelContext.insert(tx)
         }
-        try? modelContext.save()
-        transactions.forEach { AppWriteSyncService.pushTransaction($0, owner: activeMember) }
+        syncTally.start(expected: transactions.count)
+        let owner = ledgerOwner
+        let saved = LocalMutationSave.perform(
+            operation: "CSV import",
+            in: modelContext,
+            onFailure: { [syncTally] failure in
+                syncTally.recordLocalFailure(failure)
+            },
+            rollbackMutation: {
+                transactions.forEach { modelContext.delete($0) }
+            },
+        ) {
+            for tx in transactions {
+                AppWriteSyncService.pushTransaction(tx, owner: owner) { [syncTally] result in
+                    syncTally.record(result)
+                }
+            }
+        }
 
-        importCount = transactions.count
+        importCount = saved ? transactions.count : 0
         isImporting = false
         step = .done
     }

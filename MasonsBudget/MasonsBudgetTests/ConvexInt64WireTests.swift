@@ -227,14 +227,16 @@ final class ConvexRowMutationTests: XCTestCase {
             category: "Shopping",
             card: "Aven",
             note: nil,
-            owner: nil,
+            owner: .mason,
         )
         try await client.upsertTransactionRow(
             transaction,
+            owner: .mason,
             sourceFile: "mason-transactions",
         )
         try await client.deleteTransactionRow(
             id: transaction.id,
+            owner: .mason,
             sourceFile: "mason-transactions",
         )
 

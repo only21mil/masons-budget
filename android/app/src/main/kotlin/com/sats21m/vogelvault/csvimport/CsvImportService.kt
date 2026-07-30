@@ -357,9 +357,9 @@ internal class CsvImportService {
                 category = row.category,
                 kind = kind,
                 note = "Imported from ${row.source.label}; ${row.sats} sats",
-                owner = owner,
+                owner = owner.ledgerOwner,
             ),
-            sourceFile = owner.transactionsDataFileName,
+            sourceFile = owner.ledgerOwner.transactionsDataFileName,
         )
     }
 

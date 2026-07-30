@@ -1670,7 +1670,12 @@ export const upsertTransaction = mutation({
     const fileOwner = ownerForSourceFile(file, "transactions");
     const now = Date.now();
     const date = requireIsoDate(transaction.date, "date", now, 30, rejectRowDate);
-    const owner = resolveOwner(transaction.owner, fileOwner);
+    // During the compatibility window, older clients may omit owner or send
+    // Rachel for the shared adult ledger. The source file is already the
+    // authoritative ownership boundary, so canonicalize here without breaking
+    // those clients. Once all shipped clients send both fields, the staged
+    // contract can require them and reject mismatches.
+    const owner = fileOwner;
     requireSignAgrees(
       transaction.amountCents,
       owner,

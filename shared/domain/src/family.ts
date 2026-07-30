@@ -32,6 +32,17 @@ export function isAdult(member: FamilyMember): boolean {
   return ADULTS.has(member)
 }
 
+/**
+ * Canonical owner for financial ledger records.
+ *
+ * Victor and Rachel are one adult household whose durable records are stored
+ * as Victor-owned. The active profile remains the actor/viewer; it must never
+ * be copied into the owner field merely because Rachel initiated a write.
+ */
+export function ledgerOwner(member: FamilyMember): FamilyMember {
+  return isAdult(member) ? DEFAULT_OWNER : member
+}
+
 /** Adults get the full budget/spending surface; kids get a Bitcoin-focused one. */
 export function showsFullBudget(member: FamilyMember): boolean {
   return isAdult(member)

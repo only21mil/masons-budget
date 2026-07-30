@@ -162,9 +162,9 @@ internal fun prepareTransaction(
             kind = kind,
             card = draft.card.trim(),
             note = draft.note.trim().takeIf(String::isNotEmpty),
-            owner = draft.owner,
+            owner = draft.owner.ledgerOwner,
         ),
-        sourceFile = draft.owner.transactionsDataFileName,
+        sourceFile = draft.owner.ledgerOwner.transactionsDataFileName,
         sats = sats,
     )
 }

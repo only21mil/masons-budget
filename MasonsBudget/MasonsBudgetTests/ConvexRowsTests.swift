@@ -294,7 +294,7 @@ final class ConvexRowsTests: XCTestCase {
         ))
         try context.save()
 
-        service.replaceTodos(
+        try service.replaceTodos(
             visibleTo: .victor,
             with: [],
             replacementOwners: Set(FamilyMember.allCases),

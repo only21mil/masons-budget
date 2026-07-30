@@ -52,6 +52,14 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// Canonical owner for financial ledger records.
+    ///
+    /// Victor and Rachel are one household. Rachel remains the actor/viewer,
+    /// while durable adult financial rows are Victor-owned.
+    var ledgerOwner: FamilyMember {
+        isAdult ? .victor : self
+    }
+
     var allowedSwitchTargets: [FamilyMember] {
         if isAdult { return FamilyMember.allCases }
         return [self]

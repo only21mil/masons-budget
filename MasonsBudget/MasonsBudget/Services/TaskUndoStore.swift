@@ -75,29 +75,43 @@ final class TaskUndoStore: ObservableObject {
 
     private init() {}
 
-    func delete(_ todo: TodoItem, in modelContext: ModelContext) {
+    @discardableResult
+    func delete(_ todo: TodoItem, in modelContext: ModelContext) -> Bool {
         let snapshot = DeletedTodoSnapshot(todo: todo)
-        clearPending()
         modelContext.delete(todo)
-        try? modelContext.save()
-        present(snapshot)
-        AppWriteSyncService.deleteTodo(id: snapshot.id)
+        return LocalMutationSave.perform(operation: "Delete todo", in: modelContext, rollbackMutation: {
+            modelContext.insert(snapshot.restoredTodo())
+        }) {
+            clearPending()
+            present(snapshot)
+            AppWriteSyncService.deleteTodo(id: snapshot.id)
+        }
     }
 
     func restore(in modelContext: ModelContext) {
         guard let snapshot = pending else { return }
-        clearPending()
+        let previous: DeletedTodoSnapshot?
         let todo: TodoItem
         if let existing = existingTodo(id: snapshot.id, in: modelContext) {
+            previous = DeletedTodoSnapshot(todo: existing)
             snapshot.apply(to: existing)
             todo = existing
         } else {
+            previous = nil
             let restored = snapshot.restoredTodo()
             modelContext.insert(restored)
             todo = restored
         }
-        try? modelContext.save()
-        AppWriteSyncService.pushTodo(todo)
+        LocalMutationSave.perform(operation: "Restore todo", in: modelContext, rollbackMutation: {
+            if let previous {
+                previous.apply(to: todo)
+            } else {
+                modelContext.delete(todo)
+            }
+        }) {
+            clearPending()
+            AppWriteSyncService.pushTodo(todo)
+        }
     }
 
     func dismiss() {

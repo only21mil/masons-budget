@@ -22,6 +22,10 @@ enum class FamilyMember(val key: String) {
     val isAdult: Boolean
         get() = this == VICTOR || this == RACHEL
 
+    /** Canonical owner for financial records; the active profile remains the actor/viewer. */
+    val ledgerOwner: FamilyMember
+        get() = if (isAdult) VICTOR else this
+
     /** Adults get the full budget surface; kids get a Bitcoin-focused one. */
     val showsFullBudget: Boolean
         get() = isAdult

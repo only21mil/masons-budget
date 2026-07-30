@@ -20,6 +20,7 @@ import {
   coerceOwner,
   hasDedicatedChildFinanceFiles,
   isAdult,
+  ledgerOwner,
   netWorthScopeFor,
   sharesNetWorthWith,
   showsFullBudget,
@@ -72,6 +73,7 @@ interface Fixtures {
   members: FamilyMember[]
   adults: FamilyMember[]
   defaultOwner: FamilyMember
+  ledgerOwner: MemberCase<FamilyMember>[]
   canSee: PairCase[]
   sharesNetWorth: PairCase[]
   allowedSwitchTargets: MemberCase<FamilyMember[]>[]
@@ -161,6 +163,12 @@ test("showsFullBudget tracks adulthood", () => {
   for (const testCase of fixtures.showsFullBudget) {
     assert.equal(showsFullBudget(testCase.member), testCase.expected)
     assert.equal(isAdult(testCase.member), testCase.expected)
+  }
+})
+
+test("ledgerOwner keeps actor identity separate from canonical financial ownership", () => {
+  for (const testCase of fixtures.ledgerOwner) {
+    assert.equal(ledgerOwner(testCase.member), testCase.expected)
   }
 })
 

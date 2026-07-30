@@ -1856,6 +1856,24 @@ describe("row mutations", () => {
     expect(mason.map((row) => row.txId)).toEqual(["app-m1"]);
   });
 
+  it("canonicalizes a legacy Rachel upsert to the shared adult ledger owner", async () => {
+    const result = await t.mutation(fn.upsertTransaction, {
+      sourceFile: "transactions",
+      transaction: {
+        id: "legacy-rachel",
+        date: "2026-07-22",
+        merchant: "Household",
+        amountCents: 900n,
+        category: "Other",
+        owner: "rachel",
+      },
+    });
+
+    expect(result.owner).toBe("victor");
+    const rows = await queryRows(fn.listTransactions, { viewer: "rachel" });
+    expect(rows.find((row) => row.txId === "legacy-rachel")?.owner).toBe("victor");
+  });
+
   it("deletes one source-scoped transaction and is idempotent when retried", async () => {
     await migrateAll(t);
 

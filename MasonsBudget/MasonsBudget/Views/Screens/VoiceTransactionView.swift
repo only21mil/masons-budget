@@ -191,12 +191,17 @@ struct VoiceTransactionView: View {
             amountSats: signedSats,
             card: method,
             note: parsed.note ?? transcript,
-            owner: activeMember,
+            owner: activeMember.ledgerOwner,
             createdBy: "voice",
         )
         modelContext.insert(tx)
-        try? modelContext.save()
-        AppWriteSyncService.pushTransaction(tx, owner: activeMember)
+        guard LocalMutationSave.perform(operation: "Voice transaction", in: modelContext, rollbackMutation: {
+            modelContext.delete(tx)
+        }, remoteWrite: {
+            AppWriteSyncService.pushTransaction(tx, owner: activeMember.ledgerOwner)
+        }) else {
+            return
+        }
         transcriber.stop()
         dismiss()
     }
