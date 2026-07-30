@@ -165,6 +165,9 @@ class TaskStateProfileSwitchTest {
                         owner = state.activeProfile,
                         onDismiss = {},
                         onSaved = {},
+                        // This case asserts profile-switch state clearing, not the
+                        // ledger refresh; RefreshAfterWriteSurfaceTest owns that.
+                        onWriteSucceeded = {},
                     )
                 }
             }
