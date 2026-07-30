@@ -47,7 +47,7 @@ jobs:
       android: ${{ steps.filter.outputs.android }}
       backend: ${{ steps.filter.outputs.backend }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -146,9 +146,9 @@ jobs:
     if: github.repository == 'only21mil/masons-budget'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
@@ -172,9 +172,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
@@ -182,12 +182,15 @@ jobs:
       - name: Fixture provenance and freshness
         run: node scripts/check-convex-wire-golden-provenance.mjs
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           distribution: temurin
           java-version: 21
 
-      - uses: gradle/actions/setup-gradle@v4
+      # v5.0.2 is the latest Node 24 open-source release. v6 changes the
+      # caching implementation's license and behavior, so it needs a separate
+      # legal and technical review before adoption.
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
 
       - run: npm ci
 
@@ -218,9 +221,9 @@ jobs:
     if: github.repository == 'only21mil/masons-budget'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
@@ -258,9 +261,9 @@ jobs:
       (needs.changes.result != 'success' || needs.changes.outputs.linux == 'true')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
@@ -294,7 +297,7 @@ jobs:
         if: >-
           github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
           (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-client-dist
           path: |
@@ -324,7 +327,7 @@ jobs:
           always() &&
           github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
           (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-design-packet
           path: linux/screenshots
@@ -341,7 +344,7 @@ jobs:
       (needs.changes.result != 'success' || needs.changes.outputs.android == 'true')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Detect which Android modules exist
         id: probe
@@ -359,7 +362,7 @@ jobs:
             echo "::notice::android/app not scaffolded yet — domain module only, no APK."
           fi
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         if: steps.probe.outputs.gradle == 'true'
         with:
           distribution: temurin
@@ -367,8 +370,9 @@ jobs:
 
       # setup-gradle configures caching; the committed, checksummed wrapper owns
       # the Gradle version. The domain module is plain Kotlin/JVM and needs no
-      # Android SDK — only the app module does.
-      - uses: gradle/actions/setup-gradle@v4
+      # Android SDK — only the app module does. v5.0.2 is the latest Node 24
+      # open-source release; v6 requires separate license/behavior review.
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
         if: steps.probe.outputs.gradle == 'true'
 
       # Robolectric's android-all runtimes are resolved by the test JVM rather
@@ -377,7 +381,7 @@ jobs:
       # transient faults and SHA-512 verification rejects partial/corrupt files.
       - name: Restore Robolectric API 34 and 35 runtimes
         if: steps.probe.outputs.app == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ${{ runner.temp }}/robolectric-dependencies/android-all-instrumented-15-robolectric-12650502-i7.jar
@@ -624,7 +628,7 @@ jobs:
           steps.probe.outputs.app == 'true' &&
           github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
           (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: android-design-packet
           path: android/app/build/outputs/roborazzi
@@ -638,7 +642,7 @@ jobs:
           steps.debug_keystore.outputs.stable == 'true' &&
           github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
           (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: vogel-vault-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
@@ -646,7 +650,7 @@ jobs:
 
       - name: Upload test report on failure
         if: failure() && steps.probe.outputs.gradle == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: android-test-report
           path: android/**/build/reports/tests/**
