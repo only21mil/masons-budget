@@ -178,15 +178,7 @@ class VaultViewModel(
     }
 
     fun navigate(destination: Destination) {
-        _state.update { current ->
-            // Refuse a destination this profile may not open, rather than
-            // rendering it and relying on the shell to catch it.
-            if (destination in Destination.visibleTo(current.activeProfile)) {
-                current.copy(destination = destination)
-            } else {
-                current
-            }
-        }
+        _state.update { current -> current.copy(destination = destination) }
     }
 
     fun switchProfile(next: FamilyMember) {
@@ -195,7 +187,6 @@ class VaultViewModel(
             // to reach an adult one even if the control is bypassed.
             if (next !in current.activeProfile.allowedSwitchTargets) return@update current
 
-            val destinations = Destination.visibleTo(next)
             current.copy(
                 activeProfile = next,
                 data = if (!remoteEnabled) Fixtures.envelope(next) else loadingModel(next),
@@ -204,14 +195,22 @@ class VaultViewModel(
                 // A month picked against one profile's ledger means nothing on the
                 // next one, so the scope goes back to that profile's budget month.
                 selectedMonth = null,
-                destination = if (current.destination in destinations) {
-                    current.destination
-                } else {
-                    Destination.DASHBOARD
-                },
             )
         }
         if (remoteEnabled && rowSource != null && _state.value.activeProfile == next) connectRows(next)
+    }
+
+    /**
+     * Reloads the active profile after an accepted write without pretending the
+     * user switched profiles.
+     *
+     * A real switch clears profile-scoped navigation state and replaces the
+     * current rows with a loading projection. A write refresh keeps both the
+     * screen state and its last trustworthy rows visible until the reload lands.
+     */
+    fun refreshActiveProfile() {
+        if (!remoteEnabled || rowSource == null) return
+        connectRows(_state.value.activeProfile)
     }
 
     fun simulate(status: Freshness) {

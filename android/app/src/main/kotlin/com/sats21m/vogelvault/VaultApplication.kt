@@ -12,6 +12,9 @@ import com.sats21m.vogelvault.data.SecureConvexConfigSource
 import com.sats21m.vogelvault.data.SecureConvexSyncTokenSource
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.cache.VaultDatabase
+import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.ui.ConvexTransactionActions
+import com.sats21m.vogelvault.ui.TodoMutationGateway
 import com.sats21m.vogelvault.ui.VaultViewModel
 import java.io.IOException
 
@@ -21,7 +24,7 @@ import java.io.IOException
  * Dependencies remain lazy so a disabled/unconfigured build never opens a
  * Convex socket on startup.
  */
-class VaultApplication : Application() {
+open class VaultApplication : Application() {
     val database: VaultDatabase by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         VaultDatabase.create(this)
     }
@@ -55,9 +58,13 @@ class VaultApplication : Application() {
      * Shared write transport. Every mutation reads the latest encrypted sync
      * token at request time; no write credential is baked into the app.
      */
-    internal val convexMutationClient: ConvexMutationClient by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+    internal open val convexMutationClient: ConvexMutationClient by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
         ConvexMutationClient(
-            configSource = convexConfigSource,
+            // The public deployment route is not a credential. Writes remain
+            // available even when authenticated row reads are disabled.
+            configSource = MutableConvexConfigSource(writeConvexConfig()),
             syncTokenSource = SecureConvexSyncTokenSource(storedConvexConfigSource),
         )
     }
@@ -70,6 +77,70 @@ class VaultApplication : Application() {
             onUnauthorized = ::recoverRejectedConvexConfig,
         )
     }
+
+    /**
+     * Edit and delete share the one write transport above, so they read the
+     * latest encrypted sync token at request time. Constructing a second client
+     * here would have no sync-token source and would stay fail-closed forever.
+     */
+    internal val transactionActions by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        ConvexTransactionActions(convexMutationClient)
+    }
+
+    /**
+     * Todo writes ride the one shared mutation transport.
+     *
+     * A second client with its own credential store was the original shape here,
+     * and it would have been invisible: a token saved from the Today screen would
+     * have landed in a file [convexMutationClient] never reads, so the save would
+     * look successful while every write stayed unauthorized.
+     *
+     * Open so a test can substitute a gateway whose transport it controls. That
+     * is the only way to drive TodoScreen's real delete path — including the
+     * ordering of its snackbar against the mutation result — instead of testing
+     * a helper in isolation and calling it screen coverage.
+     */
+    internal open val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        TodoMutationGateway(convexMutationClient)
+    }
+
+    /** Whether a write credential exists. The value itself never reaches the UI. */
+    internal open fun hasConvexWriteCredential(): Boolean =
+        synchronized(convexConfigLock) {
+            storedConvexConfigSource.hasSyncToken()
+        }
+
+    /**
+     * Encrypts and stores a replacement write credential.
+     *
+     * The failure is returned rather than collapsed to false so a screen can say
+     * which problem occurred: a blank entry, storage that refused the commit, or
+     * a value that could not be read back after being written.
+     */
+    internal open fun saveConvexWriteCredential(token: String): Result<Unit> =
+        synchronized(convexConfigLock) {
+            runCatching {
+                storedConvexConfigSource.updateSyncToken(token)
+                check(storedConvexConfigSource.hasSyncToken()) {
+                    "the stored write credential could not be read back"
+                }
+            }
+        }
+
+    /**
+     * Removes the write credential through the same process lock and accessor
+     * used by Save. Settings receives only the outcome and the postcondition;
+     * the stored value never crosses this boundary.
+     */
+    internal open fun removeConvexWriteCredential(): Result<Unit> =
+        synchronized(convexConfigLock) {
+            runCatching {
+                storedConvexConfigSource.clearSyncToken()
+                check(!storedConvexConfigSource.hasSyncToken()) {
+                    "the removed write credential was still readable"
+                }
+            }
+        }
 
     val viewModelFactory: ViewModelProvider.Factory =
         object : ViewModelProvider.Factory {
@@ -226,3 +297,13 @@ internal fun buildTimeConvexConfig(readToken: String): ConvexConfig =
         readToken = readToken,
         remoteReadEnabled = readToken.isNotBlank(),
     )
+internal fun writeConvexConfig(): ConvexConfig =
+    ConvexConfig(deploymentUrl = PRODUCTION_DEPLOYMENT)
+
+/**
+ * Adult and Mason source files already carry their canonical owner. Maddox has
+ * no dedicated BTC-buy source, so his owner must be explicit or the row would be
+ * silently tagged as adult household data.
+ */
+internal fun explicitBtcBuyOwner(member: FamilyMember): FamilyMember? =
+    if (member == FamilyMember.MADDOX) member else null

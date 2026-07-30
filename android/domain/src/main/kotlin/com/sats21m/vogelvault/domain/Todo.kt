@@ -511,6 +511,13 @@ fun CanonicalTodo.toTodoItem(): TodoItem = TodoItem(
     due = dueDate.ifEmpty { null },
     flagged = flagged,
     owner = owner,
+    lane = lane.key,
+    notes = notes.ifEmpty { null },
+    priority = priority.toLong(),
+    createdAt = createdAt.ifEmpty { null },
+    updatedAt = updatedAt.ifEmpty { null },
+    completedAt = completedAt,
+    updatedAtMs = Todo.updatedMillis(this),
 )
 
 /** Open and due on or before [date], comparing ISO strings lexically. */

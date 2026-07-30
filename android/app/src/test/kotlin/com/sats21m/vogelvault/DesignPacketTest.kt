@@ -57,7 +57,7 @@ class DesignPacketFoldedTest {
 
     @Test
     fun adultDestinations() {
-        for (destination in Destination.visibleTo(FamilyMember.VICTOR)) {
+        for (destination in Destination.entries) {
             capture(
                 "folded-${destination.name.lowercase()}-victor-normal",
                 VaultUiState.of(FamilyMember.VICTOR, destination),
@@ -67,7 +67,7 @@ class DesignPacketFoldedTest {
 
     @Test
     fun childDestinations() {
-        for (destination in Destination.visibleTo(FamilyMember.MASON)) {
+        for (destination in Destination.entries) {
             capture(
                 "folded-${destination.name.lowercase()}-mason-normal",
                 VaultUiState.of(FamilyMember.MASON, destination),
@@ -160,7 +160,7 @@ class DesignPacketUnfoldedTest {
 
     @Test
     fun adultDestinations() {
-        for (destination in Destination.visibleTo(FamilyMember.VICTOR)) {
+        for (destination in Destination.entries) {
             capture(
                 "unfolded-${destination.name.lowercase()}-victor-normal",
                 VaultUiState.of(FamilyMember.VICTOR, destination),

@@ -17,13 +17,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.CurrencyBitcoin
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Payments
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.CircularProgressIndicator
@@ -71,28 +74,27 @@ import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 /**
  * Destinations.
  *
- * `adultOnly` is enforced by the shell, not just hidden from the bar — a child
- * profile must not be able to land on an adult surface even if state is restored
- * or forced.
+ * Every destination has a child-scoped presentation. Privacy is enforced where
+ * each screen receives or derives its collections; the destination catalog is
+ * not an authorization boundary.
  */
 enum class Destination(
     val label: String,
     val icon: ImageVector,
-    val adultOnly: Boolean = false,
 ) {
     DASHBOARD("Dashboard", Icons.Filled.Dashboard),
     ACTIVITY("Activity", Icons.Filled.ReceiptLong),
     BUDGET("Budget", Icons.Filled.Payments),
     BITCOIN("Bitcoin", Icons.Filled.CurrencyBitcoin),
+    BTC_BUYS("BTC Buys", Icons.Filled.CurrencyBitcoin),
+    BTC_BILL_PAYS("BTC Bill Pays", Icons.Filled.ReceiptLong),
     NET_WORTH("Net Worth", Icons.Filled.AccountBalance),
+    RETIREMENT("Retirement", Icons.Filled.Savings),
+    EXPORT("Export", Icons.Filled.FileDownload),
     TODAY("Today", Icons.Filled.WbSunny),
+    TASKS("Tasks", Icons.Filled.Checklist),
     FAMILY("Family", Icons.Filled.People),
-    SETTINGS("Settings", Icons.Filled.Settings);
-
-    companion object {
-        fun visibleTo(member: FamilyMember): List<Destination> =
-            entries.filter { member.isAdult || !it.adultOnly }
-    }
+    SETTINGS("Settings", Icons.Filled.Settings),
 }
 
 /**
@@ -121,62 +123,83 @@ internal fun foldedOverflowDestinations(destinations: List<Destination>): List<D
         destinations.drop(FOLDED_PRIMARY_ITEMS_WITH_OVERFLOW)
     }
 
+/**
+ * @param onRequestProfileSwitchAuthentication the receiver that must authenticate
+ * a profile switch before it happens. Null means the shell was composed without
+ * one; the switch is then refused and named rather than silently dropped. A no-op
+ * default here is what shipped, and it made the biometric gate unreachable.
+ * @param profileSwitchRefusal the cause reported by that receiver, shown to the
+ * user. A rejected switch names its cause.
+ */
 @Composable
 fun VaultApp(
     state: VaultUiState,
     onNavigate: (Destination) -> Unit,
     onSwitchProfile: (FamilyMember) -> Unit,
+    onRequestProfileSwitchAuthentication: ((ProfileSwitchRequest) -> Unit)? = null,
+    profileSwitchRefusal: ProfileSwitchRefusal? = null,
     onEnableRemoteRows: (String) -> Unit = {},
+    onWriteSucceeded: () -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    // An unwired shell refuses loudly instead of swallowing the request: the user
+    // learns the switch did not happen, and so does anyone testing this screen.
+    var unwiredRefusal by remember { mutableStateOf<ProfileSwitchRefusal?>(null) }
+    val requestProfileSwitchAuthentication: (ProfileSwitchRequest) -> Unit =
+        onRequestProfileSwitchAuthentication
+            ?: { unwiredRefusal = ProfileSwitchRefusal.SHELL_NOT_CONNECTED }
+    val refusal = unwiredRefusal ?: profileSwitchRefusal
+
     BoxWithConstraints(modifier.fillMaxSize().background(VaultBlack)) {
         val unfolded = maxWidth.value >= UNFOLDED_MIN_WIDTH_DP
 
         CompositionLocalProvider(LocalIsUnfolded provides unfolded) {
-            val destinations = Destination.visibleTo(state.activeProfile)
-            // A profile switch can strand the user on a destination they may no
-            // longer open. Fall back rather than render an empty shell.
-            val current = if (state.destination in destinations) state.destination else Destination.DASHBOARD
+            val destinations = Destination.entries.toList()
+            val current = state.destination
 
             if (unfolded) {
                 Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                     VaultRail(destinations, current, onNavigate)
                     Column(Modifier.weight(1f)) {
-                        VaultTopBar(state, onSwitchProfile) {
+                        VaultTopBar(state, requestProfileSwitchAuthentication, onSwitchProfile) {
                             onSwitchProfile(state.activeProfile)
                         }
                         HorizontalHairline()
+                        ProfileSwitchRefusalNotice(refusal)
                         AuthorizationNotice(state)
                         RowReadFailureNotice(state)
                         RefreshFailureNotice(state)
                         ScreenHost(
-                            current,
-                            state,
-                            onEnableRemoteRows,
-                            displayUnit,
-                            onDisplayUnitChange,
-                            Modifier.weight(1f),
+                            destination = current,
+                            state = state,
+                            onEnableRemoteRows = onEnableRemoteRows,
+                            onWriteSucceeded = onWriteSucceeded,
+                            displayUnit = displayUnit,
+                            onDisplayUnitChange = onDisplayUnitChange,
+                            modifier = Modifier.weight(1f),
                         )
                     }
                 }
             } else {
                 Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                    VaultTopBar(state, onSwitchProfile) {
+                    VaultTopBar(state, requestProfileSwitchAuthentication, onSwitchProfile) {
                         onSwitchProfile(state.activeProfile)
                     }
                     HorizontalHairline()
+                    ProfileSwitchRefusalNotice(refusal)
                     AuthorizationNotice(state)
                     RowReadFailureNotice(state)
                     RefreshFailureNotice(state)
                     ScreenHost(
-                        current,
-                        state,
-                        onEnableRemoteRows,
-                        displayUnit,
-                        onDisplayUnitChange,
-                        Modifier.weight(1f),
+                        destination = current,
+                        state = state,
+                        onEnableRemoteRows = onEnableRemoteRows,
+                        onWriteSucceeded = onWriteSucceeded,
+                        displayUnit = displayUnit,
+                        onDisplayUnitChange = onDisplayUnitChange,
+                        modifier = Modifier.weight(1f),
                     )
                     HorizontalHairline()
                     VaultBottomBar(destinations, current, onNavigate)
@@ -184,6 +207,23 @@ fun VaultApp(
             }
         }
     }
+}
+
+/**
+ * Why the profile did not change.
+ *
+ * Rendered above every other notice and never suppressed by one: the user just
+ * asked for this, and a refusal they cannot see is the silent failure the house
+ * rules forbid.
+ */
+@Composable
+private fun ProfileSwitchRefusalNotice(refusal: ProfileSwitchRefusal?) {
+    if (refusal == null) return
+    StatusBanner(
+        text = stringResource(refusal.titleRes),
+        detail = stringResource(refusal.detailRes),
+        tone = com.sats21m.vogelvault.ui.theme.VaultWarning,
+    )
 }
 
 @Composable
@@ -348,7 +388,8 @@ private fun VaultBottomBar(
 @Composable
 private fun VaultTopBar(
     state: VaultUiState,
-    onSwitchProfile: (FamilyMember) -> Unit,
+    onRequestProfileSwitchAuthentication: (ProfileSwitchRequest) -> Unit,
+    onAuthorizedSwitch: (FamilyMember) -> Unit,
     onRefresh: () -> Unit,
 ) {
     Row(
@@ -358,26 +399,11 @@ private fun VaultTopBar(
             .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            state.activeProfile.displayName,
-            style = MaterialTheme.typography.titleMedium,
-            color = VaultCream,
+        ProfileSwitcher(
+            activeProfile = state.activeProfile,
+            onAuthenticationRequired = onRequestProfileSwitchAuthentication,
+            onAuthorizedSwitch = onAuthorizedSwitch,
         )
-        Spacer(Modifier.width(VaultSpace.sm))
-        if (!state.activeProfile.isAdult) {
-            // A child has exactly one switch target — itself. Show a static label
-            // rather than a control implying a door they cannot open.
-            Badge("Child profile")
-        } else {
-            // Tappable, not decorative: these previously rendered as inert pills
-            // that looked like tabs.
-            state.switchTargets
-                .filter { it != state.activeProfile }
-                .forEach { target ->
-                    Badge(target.displayName, onClick = { onSwitchProfile(target) })
-                    Spacer(Modifier.width(VaultSpace.xs))
-                }
-        }
         Spacer(Modifier.weight(1f))
         if (state.worstStatus == Freshness.LOADING) {
             CircularProgressIndicator(

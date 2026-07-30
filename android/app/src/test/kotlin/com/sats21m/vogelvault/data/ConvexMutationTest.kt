@@ -21,6 +21,11 @@ class ConvexMutationTest {
     fun `each row mutation uses the mutation endpoint and its closed path`() {
         val mutations = listOf(
             ConvexMutation.UpsertTransaction(transaction()),
+            ConvexMutation.DeleteTransaction(
+                txId = "tx-1",
+                owner = FamilyMember.MASON,
+                sourceFile = "mason-transactions",
+            ),
             ConvexMutation.UpsertTodo(JsonObject(mapOf("id" to JsonPrimitive("todo-1")))),
             ConvexMutation.DeleteTodo("todo-1"),
             ConvexMutation.UpsertBtcBuy(
@@ -44,13 +49,20 @@ class ConvexMutationTest {
                     asOf = "2026-07-29",
                 ),
             ),
+            ConvexMutation.UpsertBudgetCategory(
+                viewer = FamilyMember.RACHEL,
+                month = "2026-07",
+                category = BudgetCategoryInput("Groceries", 97_500L),
+            ),
         )
         val expectedPaths = listOf(
             "tables:upsertTransaction",
+            "tables:deleteTransaction",
             "tables:upsertTodo",
             "tables:deleteTodo",
             "tables:upsertBtcBuy",
             "tables:upsertBtcAccount",
+            "tables:upsertBudgetCategory",
         )
 
         mutations.zip(expectedPaths).forEach { (mutation, expectedPath) ->
@@ -141,6 +153,29 @@ class ConvexMutationTest {
     }
 
     @Test
+    fun `budget category keeps viewer month and exact cents on the wire`() {
+        val poster = RecordingPoster(success())
+
+        runBlocking {
+            client(poster).mutate(
+                ConvexMutation.UpsertBudgetCategory(
+                    viewer = FamilyMember.RACHEL,
+                    month = "2026-07",
+                    category = BudgetCategoryInput("Groceries", 97_501L, icon = "cart"),
+                ),
+            )
+        }
+
+        val args = sentArgs(poster)
+        assertEquals("rachel", args["viewer"]?.jsonPrimitive?.content)
+        assertEquals("2026-07", args["month"]?.jsonPrimitive?.content)
+        val category = args["category"]!!.jsonObject
+        assertEquals("Groceries", category["name"]?.jsonPrimitive?.content)
+        assertEquals("cart", category["icon"]?.jsonPrimitive?.content)
+        assertTagged(category, "budgetCents", "3XwBAAAAAAA=")
+    }
+
+    @Test
     fun `transaction cents are tagged and purchase sign is preserved`() {
         val poster = RecordingPoster(success())
 
@@ -153,6 +188,37 @@ class ConvexMutationTest {
         val transaction = sentArgs(poster)["transaction"]!!.jsonObject
         assertTagged(transaction, "amountCents", "ijcAAAAAAAA=")
         assertEquals("spend", transaction["kind"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `transaction delete always sends matching owner and source file`() {
+        val poster = RecordingPoster(success())
+
+        runBlocking {
+            client(poster).mutate(
+                ConvexMutation.DeleteTransaction(
+                    txId = "shared-id",
+                    owner = FamilyMember.MASON,
+                    sourceFile = "mason-transactions",
+                ),
+            )
+        }
+
+        val args = sentArgs(poster)
+        assertEquals("shared-id", args["txId"]?.jsonPrimitive?.content)
+        assertEquals("mason", args["owner"]?.jsonPrimitive?.content)
+        assertEquals("mason-transactions", args["sourceFile"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `transaction delete refuses a source file for another owner`() {
+        assertFailsWith<IllegalArgumentException> {
+            ConvexMutation.DeleteTransaction(
+                txId = "shared-id",
+                owner = FamilyMember.MASON,
+                sourceFile = "transactions",
+            )
+        }
     }
 
     @Test

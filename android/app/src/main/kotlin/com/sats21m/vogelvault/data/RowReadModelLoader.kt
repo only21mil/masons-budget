@@ -216,7 +216,15 @@ private fun BudgetDocumentRow.toDomain(): Budget? {
     val canonicalMonth = canonicalBudgetMonth(month) ?: return null
     return Budget(
         month = canonicalMonth,
-        categories = categories.map { BudgetCategory(it.name, it.budgetCents, spentCents = 0L) },
+        categories =
+            categories.map {
+                BudgetCategory(
+                    name = it.name,
+                    budgetCents = it.budgetCents,
+                    spentCents = 0L,
+                    icon = it.icon,
+                )
+            },
         income = income?.let {
             BudgetIncome(
                 weeklyGrossCents = it.weeklyGrossCents,

@@ -2,6 +2,7 @@ package com.sats21m.vogelvault.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,18 +23,22 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.csvimport.CsvImportLauncher
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcBalance
 import com.sats21m.vogelvault.domain.BtcBillPay
@@ -143,11 +148,26 @@ fun ScreenHost(
     destination: Destination,
     state: VaultUiState,
     onEnableRemoteRows: (String) -> Unit = {},
+    onWriteSucceeded: () -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
     modifier: Modifier = Modifier,
+    taskListsContent: @Composable (VaultUiState, List<TodoItem>) -> Unit = { taskState, todos ->
+        TaskListsScreen(
+            state = taskState,
+            todos = todos,
+            onWriteSucceeded = onWriteSucceeded,
+        )
+    },
 ) {
     var addingTransaction by rememberSaveable { mutableStateOf(false) }
+    var selectedTransactionKey by rememberSaveable(state.activeProfile) {
+        mutableStateOf<String?>(null)
+    }
+    // The write surface owns its own client, per the house write pattern: nothing
+    // threads suspend write callbacks through MainActivity -> VaultApp -> ScreenHost.
+    val vaultApplication = LocalContext.current.applicationContext as? VaultApplication
+    val transactionActions = remember(vaultApplication) { vaultApplication?.transactionActions }
     val budgetMonth = state.data.budget.value?.month
     val profile = state.activeProfile
     val transactionsInput = state.data.transactions.value
@@ -158,6 +178,8 @@ fun ScreenHost(
     val todosInput = state.data.todos.value
     val incomeFiguresUnavailable = state.data.incomeFiguresUnavailable
     val netWorthBalance = state.data.netWorthBalanceForDisplay()
+    val btcBuysTitle = stringResource(R.string.btc_buys_screen_title)
+    val btcBillPaysTitle = stringResource(R.string.btc_bill_pays_screen_title)
     val months = remember(profile, transactionsInput, budgetMonth) {
         transactionsInput.budgetMonthsFor(profile, budgetMonth)
     }
@@ -172,6 +194,8 @@ fun ScreenHost(
     var picked by rememberSaveable(state.activeProfile, state.selectedMonth) {
         mutableStateOf(initialMonth)
     }
+    var budgetEditor by remember { mutableStateOf<BudgetCategoryEditorSeed?>(null) }
+    var showBtcBuyEditor by rememberSaveable { mutableStateOf(false) }
     // A refresh can retire the picked month. Fall back rather than render a month
     // the ledger no longer contains.
     val month = resolveBudgetMonth(picked, months, budgetMonth)
@@ -196,7 +220,10 @@ fun ScreenHost(
         )
     }
     val activitySearch = if (destination == Destination.ACTIVITY) {
-        rememberActivitySearchProjection(collections.visibleTransactions)
+        rememberActivitySearchProjection(
+            transactions = collections.visibleTransactions,
+            profile = state.activeProfile,
+        )
     } else {
         null
     }
@@ -246,17 +273,28 @@ fun ScreenHost(
             balance = collections.netWorthBalance,
         )
     }
-    // isDueBy is the contract's own open-and-due rule, not a re-reading of the
-    // done/due fields here. TodayLogic derives the date from the injected clock.
-    val dueTodos = remember(state.now, profile, todosInput) {
-        todosDueToday(state)
-    }
 
     if (addingTransaction) {
         AddTransactionSheet(
             state = state,
             onDismiss = { addingTransaction = false },
+            onWriteSucceeded = onWriteSucceeded,
         )
+    }
+
+    // Today is the one destination that edits rows rather than listing them, so it
+    // owns its own scaffold, snackbar and scrolling list, and renders instead of the
+    // shared ledger column rather than inside it. It reaches the write transport
+    // itself; nothing about writing passes through this shell.
+    if (destination == Destination.TODAY) {
+        key(state.activeProfile) {
+            TodoScreen(
+                state = state,
+                onWriteSucceeded = onWriteSucceeded,
+                modifier = modifier,
+            )
+        }
+        return
     }
 
     LazyColumn(
@@ -276,21 +314,91 @@ fun ScreenHost(
             }
             if (
                 displayUnit == DisplayUnit.USD &&
-                destination in setOf(Destination.DASHBOARD, Destination.BITCOIN, Destination.NET_WORTH)
+                destination in setOf(
+                    Destination.DASHBOARD,
+                    Destination.BITCOIN,
+                    Destination.BTC_BUYS,
+                    Destination.BTC_BILL_PAYS,
+                    Destination.NET_WORTH,
+                )
             ) {
                 item { BitcoinFiatNotice(state) }
             }
             when (destination) {
                 Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit)
-                Destination.ACTIVITY -> activity(state, checkNotNull(activitySearch))
-                Destination.BUDGET -> budget(state, months, budgetSpend) { picked = it }
-                Destination.BITCOIN -> bitcoin(state, bitcoinProjection, displayUnit)
+                Destination.ACTIVITY -> {
+                    item {
+                        CsvImportLauncher(
+                            owner = state.activeProfile,
+                            existingTransactions = collections.visibleTransactions,
+                            btcPriceCents = state.data.btcPriceCents,
+                            onWriteSucceeded = onWriteSucceeded,
+                        )
+                    }
+                    activity(state, checkNotNull(activitySearch)) {
+                        selectedTransactionKey = it.selectionKey
+                    }
+                }
+                Destination.BUDGET ->
+                    budget(
+                        state,
+                        months,
+                        budgetSpend,
+                        onSelectMonth = { picked = it },
+                        onEditCategory = { budgetEditor = it },
+                    )
+                Destination.BITCOIN ->
+                    bitcoin(
+                        state,
+                        bitcoinProjection,
+                        displayUnit,
+                        onAddBuy = { showBtcBuyEditor = true },
+                    )
+                Destination.BTC_BUYS -> btcBuysScreen(state, displayUnit, btcBuysTitle)
+                Destination.BTC_BILL_PAYS -> btcBillPaysScreen(state, displayUnit, btcBillPaysTitle)
                 Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
-                Destination.TODAY -> today(state, dueTodos)
+                Destination.RETIREMENT -> retirement(state, displayUnit)
+                Destination.EXPORT -> item { ExportScreen(state) }
+                // Rendered above, outside the shared ledger column.
+                Destination.TODAY -> Unit
+                Destination.TASKS -> item {
+                    // ScreenHost is the privacy boundary: a destination never
+                    // receives rows its active profile cannot see. The refresh
+                    // callback travels with the rows via taskListsContent's
+                    // default, so filtering and refreshing cannot diverge.
+                    taskListsContent(state, collections.visibleTodos)
+                }
                 Destination.FAMILY -> family(state)
                 Destination.SETTINGS -> settings(state, onEnableRemoteRows)
             }
         }
+    }
+    budgetEditor?.let { seed ->
+        BudgetCategoryEditorSheet(
+            seed = seed,
+            onDismiss = { budgetEditor = null },
+            onWriteSucceeded = onWriteSucceeded,
+        )
+    }
+    if (showBtcBuyEditor) {
+        BtcBuyEntrySheet(
+            owner = state.activeProfile,
+            onDismiss = { showBtcBuyEditor = false },
+            onWriteSucceeded = onWriteSucceeded,
+        )
+    }
+
+    val selectedTransaction =
+        collections.visibleTransactions.firstOrNull {
+            it.selectionKey == selectedTransactionKey
+        }
+    if (selectedTransaction != null && transactionActions != null) {
+        TransactionDetailScreen(
+            transaction = selectedTransaction,
+            actions = transactionActions,
+            onClose = { selectedTransactionKey = null },
+            onChanged = onWriteSucceeded,
+        )
     }
 }
 
@@ -313,8 +421,13 @@ private fun ScreenHeader(
         // A profile with no budget file still says so — Maddox has none.
         Destination.BUDGET -> state.data.budget.value?.let { monthLabel(budgetMonth ?: it.month) } ?: "No budget"
         Destination.BITCOIN -> "Stack and custody"
+        Destination.BTC_BUYS -> "Purchases visible to this profile"
+        Destination.BTC_BILL_PAYS -> "Bitcoin spent on bills visible to this profile"
         Destination.NET_WORTH -> "Household for adults; self only for children"
+        Destination.RETIREMENT -> "A checkable long-range scenario"
+        Destination.EXPORT -> "Owner-filtered files shared outside the app"
         Destination.TODAY -> "Due today or overdue"
+        Destination.TASKS -> "Projects, areas and smart lists"
         Destination.FAMILY -> "Who can see what"
         Destination.SETTINGS -> "Runtime and boundaries"
     }
@@ -501,6 +614,7 @@ private fun VaultLazyListScope.dashboard(
 private fun VaultLazyListScope.activity(
     state: VaultUiState,
     search: ActivitySearchProjection,
+    onSelectTransaction: (Transaction) -> Unit,
 ) {
     item { StaleNotice(state.data.transactions.status) }
     if (state.data.transactions.suppressFigures) {
@@ -549,10 +663,21 @@ private fun VaultLazyListScope.activity(
         },
         source = state.data.transactions.source,
         rows = transactions,
-        rowKey = Transaction::id,
-        rowContent = { TransactionRow(it) },
+        rowKey = Transaction::selectionKey,
+        rowContent = {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelectTransaction(it) },
+            ) {
+                TransactionRow(it)
+            }
+        },
     )
 }
+
+private val Transaction.selectionKey: String
+    get() = "${owner.key}\u0000$id"
 
 @Composable
 private fun TransactionRow(transaction: Transaction) {
@@ -578,6 +703,7 @@ private fun VaultLazyListScope.budget(
     months: List<String>,
     spend: BudgetSpend?,
     onSelectMonth: (String) -> Unit,
+    onEditCategory: (BudgetCategoryEditorSeed) -> Unit,
 ) {
     val slice = state.data.budget
     val budget = slice.value
@@ -683,12 +809,21 @@ private fun VaultLazyListScope.budget(
             rows = derived.categories,
             rowKey = { it.name },
         ) { category ->
-            LedgerRow(
-                primary = category.name,
-                secondary = "planned ${Money.formatUsd(category.budgetCents)}",
-                figure = Money.formatUsd(category.spentCents),
-                figureColor = if (category.isOverBudget) VaultNegative else VaultCream,
-                badge = if (category.isOverBudget) "over" else null,
+            EditableBudgetCategoryRow(
+                category = category,
+                canEdit =
+                    derived.month == budget.month &&
+                        slice.status == Freshness.LIVE,
+                onEdit = {
+                    onEditCategory(
+                        BudgetCategoryEditorSeed(
+                            viewer = state.activeProfile,
+                            displayedMonth = derived.month,
+                            budgetDocumentMonth = budget.month,
+                            category = category,
+                        ),
+                    )
+                },
             )
         }
     }
@@ -792,6 +927,7 @@ private fun VaultLazyListScope.bitcoin(
     state: VaultUiState,
     projection: BitcoinProjection,
     displayUnit: DisplayUnit,
+    onAddBuy: () -> Unit,
 ) {
     val slice = state.data.btcBalance
     val unavailable = projection.balance == null
@@ -842,6 +978,9 @@ private fun VaultLazyListScope.bitcoin(
         displayUnit = displayUnit,
         btcPriceCents = state.data.btcPriceCents,
     )
+    if (state.data.btcBuys.status == Freshness.LIVE) {
+        item { BtcBuyEntryAction(onAddBuy) }
+    }
     if (state.data.btcBuys.suppressFigures) {
         item {
             Panel("Recent buys", state.data.btcBuys.source) {
@@ -1044,60 +1183,7 @@ internal fun balanceSnapshotBasis(balance: BtcBalance): String = "Balance snapsh
 private fun priceBasis(state: VaultUiState): String =
     state.data.btcPriceAsOf?.let { "Last buy · $it" } ?: "No recorded price"
 
-// ── Today ───────────────────────────────────────────────────────────────────
-
-/**
- * The canonical project for a todo nobody filed.
- *
- * `Todo.normalize` defaults `project` to this string, mirroring the Convex
- * emitter, so once the todo boundary is wired through the contract the read
- * model will never hand this screen a null project. "Inbox" means the absence of
- * a filing, not a project a human made, and a row that prints it verbatim reads
- * as though every unsorted task were filed. See DOMAIN_ADOPTION.md in this app's
- * package root for where the interpretation is allowed to live.
- */
-private const val UNFILED_TODO_PROJECT = "Inbox"
-
-/** Where a todo is filed: its project, else its area, else nowhere. */
-private fun filing(todo: TodoItem): String? =
-    todo.project?.takeIf { it != UNFILED_TODO_PROJECT } ?: todo.area
-
-private fun VaultLazyListScope.today(
-    state: VaultUiState,
-    todos: List<TodoItem>,
-) {
-    val slice = state.data.todos
-
-    item { StaleNotice(slice.status) }
-    if (slice.suppressFigures) {
-        item {
-            Panel("Due", slice.source) {
-                StateBlock(slice.status)
-            }
-        }
-    } else if (todos.isEmpty()) {
-        item {
-            Panel("Due", slice.source) {
-                StateBlock(Freshness.EMPTY, title = "Nothing due today")
-            }
-        }
-    } else {
-        keyedPanel(
-            sectionKey = "today-due",
-            title = "Due",
-            source = slice.source,
-            rows = todos,
-            rowKey = TodoItem::id,
-        ) { todo ->
-            LedgerRow(
-                primary = todo.title,
-                secondary = listOfNotNull(filing(todo), todo.due).joinToString(" · "),
-                figure = "",
-                badge = if (todo.flagged) "flagged" else null,
-            )
-        }
-    }
-}
+// Today lives in TodoScreen.kt: it edits rows, so it owns its own scaffold.
 
 // ── Family ──────────────────────────────────────────────────────────────────
 
@@ -1172,6 +1258,9 @@ private fun VaultLazyListScope.settings(
                 tone = VaultWarning,
             )
         }
+    }
+    item {
+        BudgetNotificationSettings(state)
     }
     item { RemoteRowsConfiguration(onEnableRemoteRows) }
     item { SyncTokenConfiguration() }
@@ -1284,35 +1373,35 @@ private fun RemoteRowsConfiguration(onEnable: (String) -> Unit) {
 }
 
 @Composable
-private fun SyncTokenConfiguration() {
+internal fun SyncTokenConfiguration() {
     // Deliberately not saveable: the plaintext token must not enter saved
     // instance state. Submission immediately hands it to encrypted storage.
     var token by remember { mutableStateOf("") }
-    val application =
-        androidx.compose.ui.platform.LocalContext.current.applicationContext
-            as? com.sats21m.vogelvault.VaultApplication
-    val storedConfigSource =
-        remember(application) {
-            application?.let { com.sats21m.vogelvault.data.SecureConvexConfigSource(it) }
-        }
-    var hasStoredToken by remember(storedConfigSource) {
-        mutableStateOf(storedConfigSource?.hasSyncToken() == true)
+    val context = LocalContext.current
+    val application = context.applicationContext as? VaultApplication
+    var hasStoredToken by remember(application) {
+        mutableStateOf(application?.hasConvexWriteCredential() == true)
     }
-    var saveFailed by remember { mutableStateOf(false) }
-    var removalFailed by remember { mutableStateOf(false) }
+    var saveFailure by remember { mutableStateOf<String?>(null) }
+    var removalFailure by remember { mutableStateOf<String?>(null) }
 
-    Panel(stringResource(R.string.convex_sync_token_panel_title)) {
+    Panel(stringResource(R.string.write_credential_title)) {
         Column(
             Modifier.padding(VaultSpace.md),
             verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
         ) {
             Text(
+                text = stringResource(R.string.write_credential_source),
+                color = VaultTextMuted,
+                style = MaterialTheme.typography.labelSmall,
+            )
+            Text(
                 text =
                     stringResource(
                         if (hasStoredToken) {
-                            R.string.convex_sync_token_configured
+                            R.string.write_credential_configured
                         } else {
-                            R.string.convex_sync_token_unconfigured
+                            R.string.write_credential_unconfigured
                         },
                     ),
                 color = VaultTextDim,
@@ -1320,41 +1409,45 @@ private fun SyncTokenConfiguration() {
             )
             OutlinedTextField(
                 value = token,
-                onValueChange = { token = it },
-                label = { Text(stringResource(R.string.convex_sync_token_label)) },
+                onValueChange = {
+                    token = it
+                    saveFailure = null
+                },
+                label = { Text(stringResource(R.string.write_credential_label)) },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
             )
             Button(
-                enabled = token.isNotBlank() && storedConfigSource != null,
+                enabled = token.isNotBlank() && application != null,
                 onClick = {
-                    runCatching {
-                        checkNotNull(storedConfigSource).updateSyncToken(token)
-                    }.onSuccess {
-                        token = ""
-                        hasStoredToken = true
-                        saveFailed = false
-                        removalFailed = false
-                    }.onFailure {
-                        saveFailed = true
-                    }
+                    val app = checkNotNull(application)
+                    app
+                        .saveConvexWriteCredential(token)
+                        .onSuccess {
+                            token = ""
+                            hasStoredToken = app.hasConvexWriteCredential()
+                            saveFailure = null
+                            removalFailure = null
+                        }.onFailure {
+                            saveFailure = credentialSaveFailureMessage(it).resolve(context)
+                        }
                 },
             ) {
-                Text(stringResource(R.string.convex_sync_token_save))
+                Text(stringResource(R.string.write_credential_save))
             }
-            if (hasStoredToken && storedConfigSource != null) {
+            if (hasStoredToken && application != null) {
                 androidx.compose.material3.OutlinedButton(
                     onClick = {
-                        runCatching {
-                            clearSyncTokenConfiguration(storedConfigSource)
-                        }.onSuccess {
-                            token = ""
-                            hasStoredToken = false
-                            saveFailed = false
-                            removalFailed = false
-                        }.onFailure {
-                            removalFailed = true
-                        }
+                        application
+                            .removeConvexWriteCredential()
+                            .onSuccess {
+                                token = ""
+                                hasStoredToken = application.hasConvexWriteCredential()
+                                saveFailure = null
+                                removalFailure = null
+                            }.onFailure {
+                                removalFailure = credentialRemovalFailureMessage(it).resolve(context)
+                            }
                     },
                     border =
                         androidx.compose.foundation.BorderStroke(
@@ -1366,31 +1459,25 @@ private fun SyncTokenConfiguration() {
                             contentColor = VaultCream,
                         ),
                 ) {
-                    Text(stringResource(R.string.convex_sync_token_remove))
+                    Text(stringResource(R.string.write_credential_remove))
                 }
             }
-            if (saveFailed) {
+            saveFailure?.let {
                 Text(
-                    text = stringResource(R.string.convex_sync_token_save_failed),
+                    text = it,
                     color = VaultWarning,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            if (removalFailed) {
+            removalFailure?.let {
                 Text(
-                    text = stringResource(R.string.convex_sync_token_remove_failed),
+                    text = it,
                     color = VaultWarning,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
         }
     }
-}
-
-internal fun clearSyncTokenConfiguration(
-    stored: com.sats21m.vogelvault.data.SecureConvexConfigSource,
-) {
-    stored.clearSyncToken()
 }
 
 // ── shared ──────────────────────────────────────────────────────────────────

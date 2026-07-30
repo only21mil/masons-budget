@@ -103,6 +103,7 @@ data class BudgetCategory(
     val name: String,
     val budgetCents: Long,
     val spentCents: Long,
+    val icon: String? = null,
 ) {
     val remainingCents: Long get() = budgetCents - spentCents
     val isOverBudget: Boolean get() = spentCents > budgetCents
@@ -231,6 +232,13 @@ data class TodoItem(
     val due: String? = null,
     val flagged: Boolean = false,
     override val owner: FamilyMember,
+    val lane: String? = null,
+    val notes: String? = null,
+    val priority: Long? = null,
+    val createdAt: String? = null,
+    val updatedAt: String? = null,
+    val completedAt: String? = null,
+    val updatedAtMs: Long = 0L,
 ) : Owned
 
 /**
@@ -334,6 +342,7 @@ data class CategorySpend(
     val name: String,
     val budgetCents: Long,
     val spentCents: Long,
+    val icon: String? = null,
 ) {
     val remainingCents: Long get() = budgetCents - spentCents
     val isOverBudget: Boolean get() = spentCents > budgetCents
@@ -372,7 +381,12 @@ fun deriveBudgetSpend(budget: Budget, transactions: List<Transaction>): BudgetSp
 
     val categories = budget.categories.map { category ->
         val spent = spentByCategory.remove(category.name) ?: 0L
-        CategorySpend(name = category.name, budgetCents = category.budgetCents, spentCents = spent)
+        CategorySpend(
+            name = category.name,
+            budgetCents = category.budgetCents,
+            spentCents = spent,
+            icon = category.icon,
+        )
     }
 
     return BudgetSpend(
