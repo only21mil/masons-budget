@@ -66,6 +66,41 @@ test("skipped Apple checks block release until exact-SHA manual verification", (
   assert.equal(result.passed, false)
 })
 
+test("missing project consistency blocks release", () => {
+  const base = payload()
+  base.check_runs = base.check_runs.filter(
+    (entry) => entry.name !== "Verify committed Xcode project",
+  )
+
+  const result = evaluateReleaseChecks(base)
+
+  assert.equal(result.passed, false)
+  assert.ok(
+    result.lines.includes("FAIL  Verify committed Xcode project (missing)"),
+  )
+})
+
+test("pending project consistency blocks release", () => {
+  const base = payload()
+  base.check_runs = base.check_runs.filter(
+    (entry) => entry.name !== "Verify committed Xcode project",
+  )
+  base.check_runs.push(
+    check("Verify committed Xcode project", null, {
+      status: "in_progress",
+      completed_at: null,
+      started_at: "2026-07-30T14:00:00Z",
+    }),
+  )
+
+  const result = evaluateReleaseChecks(base)
+
+  assert.equal(result.passed, false)
+  assert.ok(
+    result.lines.includes("FAIL  Verify committed Xcode project (pending)"),
+  )
+})
+
 test("a skipped non-Apple conditional check remains acceptable", () => {
   const result = evaluateReleaseChecks(
     payload({

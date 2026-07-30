@@ -107,6 +107,16 @@ class InstallProvisioningProfileTests(unittest.TestCase):
         self.assertIn("must be a real directory", result.stderr)
         self.assertEqual(list(actual_directory.iterdir()), [])
 
+    def test_refuses_a_regular_file_as_the_profile_directory(self) -> None:
+        self.profile_dir.write_bytes(b"host-owned-file")
+
+        result = self.run_installer()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must be a real directory", result.stderr)
+        self.assertEqual(self.profile_dir.read_bytes(), b"host-owned-file")
+        self.assertEqual(self.env_lines(), set())
+
 
 if __name__ == "__main__":
     unittest.main()
