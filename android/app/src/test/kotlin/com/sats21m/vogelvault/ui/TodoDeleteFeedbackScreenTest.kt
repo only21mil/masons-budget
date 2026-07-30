@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.sats21m.vogelvault.R
@@ -24,7 +25,7 @@ import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.channels.Channel
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -58,6 +59,7 @@ class TodoDeleteFeedbackScreenTest {
 
     private lateinit var activityController: ActivityController<ComponentActivity>
     private lateinit var application: GatedTodoWriteApplication
+    private var refreshCount: Int = 0
 
     /**
      * The screen's undo clock, controlled here rather than read from the host.
@@ -84,6 +86,8 @@ class TodoDeleteFeedbackScreenTest {
     @Before
     fun startComposeHost() {
         application = RuntimeEnvironment.getApplication() as GatedTodoWriteApplication
+        application.poster.reset()
+        refreshCount = 0
         activityController = Robolectric.buildActivity(ComponentActivity::class.java)
         activityController.get().setTheme(R.style.Theme_VogelVault)
         activityController.setup()
@@ -113,6 +117,7 @@ class TodoDeleteFeedbackScreenTest {
             nodesWithText(undoLabel),
             "TodoScreen offered Undo for a delete the server has not accepted yet",
         )
+        assertEquals(0, refreshCount, "an in-flight delete refreshed rows before Convex accepted it")
 
         application.poster.answer(HttpTextResponse(500, ""))
         settle()
@@ -132,6 +137,7 @@ class TodoDeleteFeedbackScreenTest {
             nodesWithText(todo.title),
             "a rejected delete must put the row back",
         )
+        assertEquals(0, refreshCount, "a rejected delete refreshed authoritative rows")
     }
 
     @Test
@@ -161,6 +167,27 @@ class TodoDeleteFeedbackScreenTest {
             nodesWithText(todo.title),
             "a successful delete put the row back",
         )
+        assertEquals(1, refreshCount, "an accepted delete did not refresh authoritative rows")
+    }
+
+    @Test
+    fun `a successful undo refreshes after both accepted writes`() {
+        showToday()
+        deleteTheTodo()
+
+        application.poster.answer(HttpTextResponse(200, """{"status":"success","value":"deleted"}"""))
+        settle()
+        assertEquals(1, refreshCount, "the accepted delete did not refresh")
+
+        compose.onNodeWithText(undoLabel).performClick()
+        settle()
+        assertEquals(2, application.poster.requestCount, "Undo never reached the write transport")
+
+        application.poster.answer(HttpTextResponse(200, """{"status":"success","value":"restored"}"""))
+        settle()
+
+        assertEquals(2, refreshCount, "the accepted restore did not refresh")
+        assertEquals(1, nodesWithText(todo.title), "the restored task did not return")
     }
 
     private fun deleteTheTodo() {
@@ -186,7 +213,11 @@ class TodoDeleteFeedbackScreenTest {
         compose.runOnUiThread {
             activityController.get().setContent {
                 VogelVaultTheme {
-                    TodoScreen(state = state, nowMillis = { screenNowMillis })
+                    TodoScreen(
+                        state = state,
+                        onWriteSucceeded = { refreshCount++ },
+                        nowMillis = { screenNowMillis },
+                    )
                 }
             }
         }
@@ -208,7 +239,7 @@ class TodoDeleteFeedbackScreenTest {
  * answer, which is where optimistic feedback hides.
  */
 class GatedPoster : HttpPoster {
-    private val answered = CompletableDeferred<HttpTextResponse>()
+    private val answers = Channel<HttpTextResponse>(Channel.UNLIMITED)
 
     @Volatile
     var requestCount: Int = 0
@@ -216,11 +247,18 @@ class GatedPoster : HttpPoster {
 
     override suspend fun postJson(url: String, body: String): HttpTextResponse {
         requestCount += 1
-        return answered.await()
+        return answers.receive()
     }
 
     fun answer(response: HttpTextResponse) {
-        answered.complete(response)
+        check(answers.trySend(response).isSuccess)
+    }
+
+    fun reset() {
+        requestCount = 0
+        while (answers.tryReceive().isSuccess) {
+            // Clear any unconsumed answer if Robolectric reuses this application.
+        }
     }
 }
 

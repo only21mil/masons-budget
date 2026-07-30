@@ -220,7 +220,10 @@ fun ScreenHost(
         )
     }
     val activitySearch = if (destination == Destination.ACTIVITY) {
-        rememberActivitySearchProjection(collections.visibleTransactions)
+        rememberActivitySearchProjection(
+            transactions = collections.visibleTransactions,
+            profile = state.activeProfile,
+        )
     } else {
         null
     }
@@ -285,7 +288,11 @@ fun ScreenHost(
     // itself; nothing about writing passes through this shell.
     if (destination == Destination.TODAY) {
         key(state.activeProfile) {
-            TodoScreen(state = state, modifier = modifier)
+            TodoScreen(
+                state = state,
+                onWriteSucceeded = onWriteSucceeded,
+                modifier = modifier,
+            )
         }
         return
     }

@@ -298,6 +298,40 @@ class CsvImportServiceTest {
     }
 
     @Test
+    fun `amount inference ignores fee columns and matches whole header tokens`() {
+        val row = parse(
+            """
+            Settlement Date,Fee Amount,Net Amount,memo
+            2026-05-01,25,500,Custom buy
+            """,
+            CsvImportSource.CUSTOM,
+        ).single()
+
+        assertEquals(500L, row.sats, "the fee column must never become the transaction amount")
+        assertEquals("Custom buy", row.merchant)
+    }
+
+    @Test
+    fun `a fee-only amount header is not a usable transaction amount`() {
+        assertFailsWith<CsvImportException.MissingRequiredColumns> {
+            parse(
+                "date,Fee Amount,memo\n2026-05-01,25,Custom buy",
+                CsvImportSource.CUSTOM,
+            )
+        }
+    }
+
+    @Test
+    fun `header aliases do not match inside unrelated words`() {
+        assertFailsWith<CsvImportException.MissingRequiredColumns> {
+            parse(
+                "updated,amount,memo\n2026-05-01,500,Custom buy",
+                CsvImportSource.CUSTOM,
+            )
+        }
+    }
+
+    @Test
     fun `quoted commas escaped quotes and line breaks stay in one memo`() {
         val row = parse(
             "date,amount,memo\n2026-05-01,500,\"Coffee, \"\"beans\"\"\nand more\"",
@@ -328,6 +362,24 @@ class CsvImportServiceTest {
         assertTrue(
             service.filterDuplicates(imported, listOf(childMatch), FamilyMember.MASON).isEmpty(),
             "A child must deduplicate against their own rows",
+        )
+    }
+
+    @Test
+    fun `duplicate filtering keeps merchants that differ after twenty characters`() {
+        val sharedPrefix = "12345678901234567890"
+        val imported = parse(
+            "date,amount,memo\n2026-05-01,500,${sharedPrefix}North",
+            CsvImportSource.CUSTOM,
+        )
+        val distinctExisting = transaction(FamilyMember.VICTOR).copy(
+            merchant = "${sharedPrefix}South",
+        )
+
+        assertEquals(
+            imported,
+            service.filterDuplicates(imported, listOf(distinctExisting), FamilyMember.VICTOR),
+            "a shortened merchant key suppressed a different real transaction",
         )
     }
 

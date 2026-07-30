@@ -9,11 +9,13 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.csvimport.CsvImportService
@@ -30,6 +32,7 @@ import com.sats21m.vogelvault.domain.CategorySpend
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
+import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
 import java.util.UUID
 import kotlin.test.assertEquals
@@ -188,6 +191,86 @@ class RefreshAfterWriteSurfaceTest {
                 content,
                 interact,
                 rejectionText = "Task not added: Convex rejected the write (http 500).",
+            ),
+        )
+    }
+
+    @Test
+    fun `Today add refreshes after success and not after rejection`() {
+        val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+        val state =
+            VaultUiState(
+                activeProfile = FamilyMember.VICTOR,
+                destination = Destination.TODAY,
+                data = base.copy(todos = base.todos.copy(value = emptyList())),
+            )
+        val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
+            TodoScreen(
+                state = state,
+                onWriteSucceeded = onWriteSucceeded,
+            )
+        }
+        val interact = {
+            compose.onNodeWithText(application.getString(R.string.todo_new_task))
+                .performTextInput("Reconcile receipts")
+            compose.onNodeWithContentDescription(application.getString(R.string.todo_add))
+                .performClick()
+            Unit
+        }
+
+        assertEquals(1, runSurface(SUCCESS, content, interact))
+        assertEquals(
+            0,
+            runSurface(
+                REJECTION,
+                content,
+                interact,
+                rejectionText = "Task not added (http 500)",
+            ),
+        )
+    }
+
+    @Test
+    fun `Today edit refreshes after success and not after rejection`() {
+        val todo =
+            TodoItem(
+                id = "today-refresh-edit",
+                title = "Reconcile receipt",
+                due = "2026-07-01",
+                owner = FamilyMember.VICTOR,
+            )
+        val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+        val state =
+            VaultUiState(
+                activeProfile = FamilyMember.VICTOR,
+                destination = Destination.TODAY,
+                data = base.copy(todos = base.todos.copy(value = listOf(todo))),
+            )
+        val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
+            TodoScreen(
+                state = state,
+                onWriteSucceeded = onWriteSucceeded,
+            )
+        }
+        val interact = {
+            compose.onNodeWithContentDescription(application.getString(R.string.todo_edit))
+                .performScrollTo()
+                .performClick()
+            compose.onNodeWithText(application.getString(R.string.todo_title))
+                .performTextReplacement("Reconcile all receipts")
+            compose.onNode(hasText(application.getString(R.string.todo_save)) and hasClickAction())
+                .performClick()
+            Unit
+        }
+
+        assertEquals(1, runSurface(SUCCESS, content, interact))
+        assertEquals(
+            0,
+            runSurface(
+                REJECTION,
+                content,
+                interact,
+                rejectionText = "Change not saved (http 500)",
             ),
         )
     }
@@ -369,6 +452,8 @@ internal class RefreshAfterWritePoster : HttpPoster {
 
 internal class RefreshAfterWriteApplication : VaultApplication() {
     val poster = RefreshAfterWritePoster()
+
+    override fun hasConvexWriteCredential(): Boolean = true
 
     override val convexMutationClient: ConvexMutationClient by lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,

@@ -37,6 +37,7 @@ class MainActivity : FragmentActivity() {
     private val profileSwitchRefusal = mutableStateOf<ProfileSwitchRefusal?>(null)
     private lateinit var biometricPrompt: BiometricPrompt
     private lateinit var model: VaultViewModel
+    private lateinit var budgetNotifications: BudgetNotificationController
 
     /**
      * The receiver of a profile-switch request.
@@ -95,7 +96,7 @@ class MainActivity : FragmentActivity() {
             )
         val displayPreferences =
             getSharedPreferences(DISPLAY_PREFERENCES, MODE_PRIVATE)
-        val budgetNotifications = BudgetNotificationController(this)
+        budgetNotifications = BudgetNotificationController(this)
         setContent {
             VogelVaultTheme {
                 val state by model.state.collectAsStateWithLifecycle()
@@ -151,13 +152,10 @@ class MainActivity : FragmentActivity() {
                             onRequestProfileSwitchAuthentication = profileSwitchGate::authenticate,
                             profileSwitchRefusal = profileSwitchRefusal.value,
                             onEnableRemoteRows = model::enableRemoteRows,
-                            // Every completed write reaches this one authoritative
-                            // row-refresh trigger. Re-selecting the active profile
-                            // only reloads rows; it never reports a write completion,
-                            // so this callback cannot feed itself into a refresh loop.
-                            onWriteSucceeded = {
-                                model.switchProfile(state.activeProfile)
-                            },
+                            // Every accepted write reaches this one authoritative
+                            // row-refresh trigger without resetting profile-scoped
+                            // navigation state as a real profile switch does.
+                            onWriteSucceeded = model::refreshActiveProfile,
                             displayUnit = displayUnit,
                             onDisplayUnitChange = { next ->
                                 displayUnit = next
@@ -180,6 +178,7 @@ class MainActivity : FragmentActivity() {
     override fun onStop() {
         lockController.backgrounded()
         publishLockState()
+        budgetNotifications.cancelVisibleAlerts()
         super.onStop()
     }
 

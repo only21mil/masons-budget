@@ -1,5 +1,8 @@
 package com.sats21m.vogelvault
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
@@ -9,13 +12,16 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
+import androidx.lifecycle.Lifecycle
 import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.notifications.BudgetNotificationController
 import com.sats21m.vogelvault.ui.ProfileSwitchRefusal
 import com.sats21m.vogelvault.ui.VaultLockController
 import com.sats21m.vogelvault.ui.VaultViewModel
 import com.sats21m.vogelvault.ui.titleRes
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import org.junit.After
 import org.junit.Before
@@ -67,6 +73,7 @@ class MainActivityProfileSwitchWiringTest {
 
     @After
     fun restoreReadConfiguration() {
+        notificationManager.cancelAll()
         application.convexConfigSource.update(originalConfig)
     }
 
@@ -98,6 +105,57 @@ class MainActivityProfileSwitchWiringTest {
         )
     }
 
+    @Test
+    fun `production shell removes visible budget amounts when the vault backgrounds`() {
+        publishBudgetNotification()
+        assertTrue(
+            notificationManager.activeNotifications.any { it.notification.channelId == BUDGET_CHANNEL_ID },
+            "the privacy test never placed a budget notification in the shade",
+        )
+
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+
+        assertFalse(
+            notificationManager.activeNotifications.any { it.notification.channelId == BUDGET_CHANNEL_ID },
+            "MainActivity.onStop left a budget notification visible after relocking",
+        )
+    }
+
+    @Test
+    fun `disabling budget alerts removes an already visible amount`() {
+        publishBudgetNotification()
+        assertTrue(notificationManager.activeNotifications.isNotEmpty())
+
+        BudgetNotificationController(context).setEnabled(FamilyMember.VICTOR, false)
+
+        assertFalse(
+            notificationManager.activeNotifications.any { it.notification.channelId == BUDGET_CHANNEL_ID },
+            "turning budget alerts off left the previous amount visible",
+        )
+    }
+
+    private val notificationManager: NotificationManager
+        get() = context.getSystemService(NotificationManager::class.java)
+
+    private fun publishBudgetNotification() {
+        notificationManager.createNotificationChannel(
+            NotificationChannel(
+                BUDGET_CHANNEL_ID,
+                "Budget privacy test",
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ),
+        )
+        notificationManager.notify(
+            "budget-privacy-test",
+            1,
+            Notification.Builder(context, BUDGET_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_launcher_monochrome)
+                .setContentTitle("Groceries over budget")
+                .setContentText("\$123.45 of \$100.00")
+                .build(),
+        )
+    }
+
     @Suppress("UNCHECKED_CAST")
     private fun <T> MainActivity.privateField(name: String): T {
         val field = MainActivity::class.java.getDeclaredField(name)
@@ -109,5 +167,9 @@ class MainActivityProfileSwitchWiringTest {
         val method = MainActivity::class.java.getDeclaredMethod(name)
         method.isAccessible = true
         method.invoke(this)
+    }
+
+    private companion object {
+        const val BUDGET_CHANNEL_ID = "budget_alerts"
     }
 }

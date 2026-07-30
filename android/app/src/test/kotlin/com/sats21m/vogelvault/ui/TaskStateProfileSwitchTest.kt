@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -140,6 +141,29 @@ class TaskStateProfileSwitchTest {
 
         assertEquals(0, nodesWithText(victorTask), "The previous owner's task title crossed profiles.")
         assertEquals(0, nodesWithText(victorProject), "The previous owner's project crossed profiles.")
+    }
+
+    @Test
+    fun `Activity query and filter are discarded by a real profile switch`() {
+        navigateTo(Destination.ACTIVITY)
+        showScreenHost()
+
+        val privateQuery = "Victor private merchant query"
+        compose.onNode(hasSetTextAction() and hasText("Search activity"))
+            .performTextInput(privateQuery)
+        compose.onNodeWithText(ActivityTransactionFilter.INCOME.label)
+            .performClick()
+        settle()
+        compose.onNodeWithText(ActivityTransactionFilter.INCOME.label).assertIsSelected()
+
+        switchTo(FamilyMember.RACHEL)
+
+        assertEquals(
+            0,
+            nodesWithText(privateQuery),
+            "Victor's Activity query remained visible after switching to Rachel.",
+        )
+        compose.onNodeWithText(ActivityTransactionFilter.ALL.label).assertIsSelected()
     }
 
     private fun showScreenHost() {

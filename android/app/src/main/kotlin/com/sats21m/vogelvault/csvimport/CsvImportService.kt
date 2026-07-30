@@ -366,7 +366,7 @@ internal class CsvImportService {
     fun autoDetectColumns(headers: List<String>): CsvColumnMapping {
         return sourceMapping(
             headers = headers,
-            date = listOf("date", "time"),
+            date = listOf("date", "timestamp", "time"),
             // Prefer a stated Bitcoin unit over a generic amount. If the first
             // applicable preference still names multiple columns, sourceMapping
             // rejects the file instead of guessing between financial units.
@@ -534,7 +534,7 @@ internal class CsvImportService {
         date: String,
         cents: Long,
         merchant: String,
-    ): String = "$date|$cents|${merchant.lowercase(Locale.US).take(20)}"
+    ): String = "$date|$cents|${merchant.trim().lowercase(Locale.US)}"
 
     private fun mapStrike(headers: List<String>): CsvColumnMapping =
         sourceMapping(
@@ -582,7 +582,7 @@ internal class CsvImportService {
         type: List<String> = emptyList(),
         fee: List<String> = emptyList(),
     ): CsvColumnMapping {
-        val lower = headers.map { it.lowercase(Locale.US) }
+        val headerTokens = headers.map(::csvHeaderTokens)
         fun first(
             keywords: List<String>,
             rejectAmbiguousAmount: Boolean = false,
@@ -592,7 +592,15 @@ internal class CsvImportService {
             // Multiple headers matching that same winning amount alias have no
             // declared tie-break, so refuse them instead of selecting by position.
             keywords.forEach { keyword ->
-                val matches = lower.indices.filter { index -> keyword in lower[index] }
+                val wanted = csvHeaderTokens(keyword)
+                val matches = headerTokens.indices.filter { index ->
+                    val candidate = headerTokens[index]
+                    val feeOnly =
+                        rejectAmbiguousAmount &&
+                            candidate.any { it == "fee" || it == "fees" } &&
+                            "fee" !in wanted
+                    !feeOnly && wanted.isNotEmpty() && wanted.all(candidate::contains)
+                }
                 if (rejectAmbiguousAmount && matches.size > 1) {
                     throw CsvImportException.AmbiguousAmountColumns(
                         matches.map(headers::get),
@@ -610,6 +618,12 @@ internal class CsvImportService {
             feeIndex = first(fee),
         )
     }
+
+    private fun csvHeaderTokens(value: String): Set<String> =
+        value
+            .lowercase(Locale.US)
+            .split(Regex("[^a-z0-9]+"))
+            .filterTo(linkedSetOf(), String::isNotEmpty)
 
     internal companion object {
         /**
