@@ -1495,7 +1495,7 @@ async function readBlob(ctx: any, file: string): Promise<unknown | undefined> {
   const doc = await ctx.db
     .query("dataFiles")
     .withIndex("by_name", (q: any) => q.eq("name", file))
-    .first();
+    .unique();
   return doc?.data;
 }
 
@@ -1538,19 +1538,30 @@ function migrationTargets(
     key: rowKey(source, document),
     document,
   }));
-  if (source.kind !== "btcBalanceDocument") return primary;
-
-  const balanceDocument = projected.docs[0] as unknown as BtcBalanceDocumentRow;
-  const accounts = projectBtcAccountRows(
-    source.file as BtcBalanceSourceFile,
-    balanceDocument,
-  );
-  const auxiliary: MigrationTarget[] = accounts.map((document) => ({
-    table: BTC_ACCOUNTS_TABLE,
-    key: `${String(document.owner)}:${String(document.key)}`,
-    document,
-  }));
-  return [...primary, ...auxiliary];
+  let targets = primary;
+  if (source.kind === "btcBalanceDocument") {
+    const auxiliary: MigrationTarget[] = projectBtcAccountRows(
+      source.file as BtcBalanceSourceFile,
+      projected.docs[0] as unknown as BtcBalanceDocumentRow,
+    ).map((document) => ({
+      table: BTC_ACCOUNTS_TABLE,
+      key: `${String(document.owner)}:${String(document.key)}`,
+      document,
+    }));
+    targets = [...primary, ...auxiliary];
+  }
+  const seen = new Set<string>();
+  for (const target of targets) {
+    const identity = `${target.table}\u0000${target.key}`;
+    if (seen.has(identity)) {
+      throw new ConvexError(
+        `Duplicate projected natural key ${JSON.stringify(target.key)} for ` +
+          `${target.table} from ${source.file}; refusing to create ambiguous rows.`,
+      );
+    }
+    seen.add(identity);
+  }
+  return targets;
 }
 
 const MAX_TOMBSTONES_PER_SOURCE = 256;
@@ -1671,7 +1682,13 @@ async function applyTombstoneSuppression(
     const document = projected.docs[0]!;
     const categories = (
       document.categories as Array<Record<string, unknown>>
-    ).filter((category) => !ids.has(String(category.name)));
+    ).filter((category) => {
+      const name = String(category.name);
+      const folded = name.trim().toLocaleLowerCase("en-US");
+      // Exact matching preserves compatibility with tombstones written before
+      // folded category identities; folded matching is the canonical path.
+      return !ids.has(name) && !ids.has(folded);
+    });
     return {
       rows: projected.rows,
       docs: [{ ...document, categories }],
@@ -1823,7 +1840,14 @@ async function readMigrated(
   const byKey = new Map<string, Record<string, unknown>>();
   for (const doc of existing) {
     if (doc.sourceFile !== source.file) continue;
-    byKey.set(rowKey(source, doc), doc);
+    const key = rowKey(source, doc);
+    if (byKey.has(key)) {
+      throw new ConvexError(
+        `Duplicate migrated natural key ${JSON.stringify(key)} exists for ` +
+          `${source.file}; refusing to select one row arbitrarily.`,
+      );
+    }
+    byKey.set(key, doc);
   }
   return byKey;
 }
@@ -1842,9 +1866,43 @@ async function readMigratedTarget(
   const byKey = new Map<string, Record<string, unknown>>();
   for (const doc of existing) {
     if (doc.sourceFile !== source.file) continue;
-    byKey.set(`${String(doc.owner)}:${String(doc.key)}`, doc);
+    const key = `${String(doc.owner)}:${String(doc.key)}`;
+    if (byKey.has(key)) {
+      throw new ConvexError(
+        `Duplicate BTC account natural key ${JSON.stringify(key)} exists for ` +
+          `${source.file}; refusing to select one row arbitrarily.`,
+      );
+    }
+    byKey.set(key, doc);
   }
   return byKey;
+}
+
+async function runtimeSourceLock(
+  ctx: MutationCtx | QueryCtx,
+  sourceFile: string,
+) {
+  return await ctx.db
+    .query("runtimeSourceLocks")
+    .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
+    .unique();
+}
+
+async function refuseRuntimeOwnedSource(
+  ctx: MutationCtx | QueryCtx,
+  sourceFile: string,
+) {
+  const lock = await runtimeSourceLock(ctx, sourceFile);
+  if (lock) {
+    throw new ConvexError({
+      code: "RUNTIME_SOURCE_LOCKED",
+      sourceFile,
+      message:
+        `${sourceFile} has accepted runtime writes since row cutover. ` +
+        "Legacy migration is one-shot bootstrap, not synchronization; refusing " +
+        "to overwrite runtime-owned creates, edits, deletes, documents, or mirrors.",
+    });
+  }
 }
 
 // ─── Internal administrative surface ────────────────────────────────────────
@@ -1964,6 +2022,7 @@ export const status = internalQuery({
         ),
         targetTables: migratedByTable,
         planFingerprint: plan.sourceFingerprints.get(source.file)!,
+        runtimeLocked: (await runtimeSourceLock(ctx, source.file)) !== null,
       });
     }
 
@@ -2005,6 +2064,7 @@ export const migrateFile = internalMutation({
   },
   handler: async (ctx, args) => {
     const source = sourceFor(args.file);
+    await refuseRuntimeOwnedSource(ctx, source.file);
     const apply = args.apply ?? false;
     const cursor = args.cursor ?? 0;
     const batchSize = args.batchSize ?? DEFAULT_BATCH_SIZE;
@@ -2185,6 +2245,7 @@ export const verifyFile = internalQuery({
   args: { file: v.string() },
   handler: async (ctx, { file }) => {
     const source = sourceFor(file);
+    await refuseRuntimeOwnedSource(ctx, source.file);
 
     const data = await readBlob(ctx, source.file);
     if (data === undefined) {

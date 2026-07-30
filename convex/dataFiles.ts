@@ -143,10 +143,7 @@ function validateConfiguredSyncToken(token?: string) {
       message: "CONVEX_SYNC_TOKEN is required for mobile pairing",
     });
   }
-  if (
-    token !== undefined &&
-    (token.length < 16 || token.length > 512)
-  ) {
+  if (token !== undefined && (token.length < 16 || token.length > 512)) {
     throw new ConvexError({
       code: "VALIDATION_FAILED",
       message: "Malformed sync credential.",
@@ -162,6 +159,7 @@ function validateConfiguredSyncToken(token?: string) {
 
 type PairingErrorCode =
   | "DEVICE_ID_CONFLICT"
+  | "PAIRING_ID_CONFLICT"
   | "PAIRING_ALREADY_CLAIMED"
   | "PAIRING_EXPIRED"
   | "PAIRING_NOT_FOUND"
@@ -183,11 +181,11 @@ function validatePairingInput(
   if (!/^[0-9a-f]{64}$/.test(proofHash)) {
     pairingFailure("VALIDATION_FAILED", "proofHash must be lowercase sha256");
   }
-  if (
-    createdBy !== undefined &&
-    (!createdBy.trim() || createdBy.length > 80)
-  ) {
-    pairingFailure("VALIDATION_FAILED", "createdBy must contain 1-80 characters");
+  if (createdBy !== undefined && (!createdBy.trim() || createdBy.length > 80)) {
+    pairingFailure(
+      "VALIDATION_FAILED",
+      "createdBy must contain 1-80 characters",
+    );
   }
 }
 
@@ -626,16 +624,16 @@ export const createMobilePairing = mutation({
       pairingFailure("VALIDATION_FAILED", "expiresAt must be in the future");
     }
     if (expiresAt > now + 366 * 24 * 60 * 60 * 1000) {
-      pairingFailure(
-        "VALIDATION_FAILED",
-        "expiresAt must be within 366 days",
-      );
+      pairingFailure("VALIDATION_FAILED", "expiresAt must be within 366 days");
     }
 
     const existing = await ctx.db
       .query("mobilePairings")
       .withIndex("by_pair_id", (q) => q.eq("pairId", pairId))
-      .first();
+      .unique();
+    if (existing) {
+      pairingFailure("PAIRING_ID_CONFLICT", "Pairing id is already in use");
+    }
     const record = {
       pairId,
       proofHash,
@@ -650,8 +648,7 @@ export const createMobilePairing = mutation({
           : normalizeDeviceCapabilities(capabilities),
     };
 
-    if (existing) await ctx.db.patch(existing._id, record);
-    else await ctx.db.insert("mobilePairings", record);
+    await ctx.db.insert("mobilePairings", record);
     return { pairId, expiresAt };
   },
 });
@@ -687,7 +684,7 @@ export const claimMobilePairing = mutation({
     const pairing = await ctx.db
       .query("mobilePairings")
       .withIndex("by_pair_id", (q) => q.eq("pairId", pairId))
-      .first();
+      .unique();
 
     if (!pairing) {
       pairingFailure("PAIRING_NOT_FOUND", "Pairing not found");

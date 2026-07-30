@@ -226,6 +226,15 @@ export default defineSchema({
     .index("by_entity", ["entityType", "sourceFile", "entityId"])
     .index("by_type_source", ["entityType", "sourceFile"]),
 
+  // Once any runtime client writes a migrated source, the surviving legacy blob
+  // is no longer allowed to project over it. This source-level cutover lock is
+  // deliberately separate from row tombstones: tombstones defend individual
+  // deletes, while this lock protects creates and edits from stale blob replay.
+  runtimeSourceLocks: defineTable({
+    sourceFile: v.string(),
+    lockedAtMs: v.float64(),
+  }).index("by_source_file", ["sourceFile"]),
+
   // ── Mobile writeback pairing (SAT-1429) ──
   // Public iPhones cannot reach DGX/Tailscale, so they complete existing MC2
   // todos through Convex using per-device tokens. Pairings are one-time secrets

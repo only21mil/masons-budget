@@ -284,9 +284,341 @@ describe("device row authorization", () => {
     );
     expect(stored!.lastSeenAt).toBe(0);
   });
+
+  it("validates every device resource before writing or marking the device seen", async () => {
+    const device = await fullDevice("validation-device");
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("mobileDevices")
+        .withIndex("by_device_id", (q) => q.eq("deviceId", device.deviceId))
+        .unique();
+      await ctx.db.patch(row!._id, { lastSeenAt: 0 });
+    });
+
+    const invalidRequests = [
+      () =>
+        t.mutation(api.upsertTransaction, {
+          ...authArgs(device),
+          owner: "victor",
+          sourceFile: "transactions",
+          transaction: {
+            id: " spaced-id ",
+            owner: "victor",
+            date: "2026-07-30",
+            merchant: "Store",
+            amountCents: 100n,
+            kind: "spend",
+            category: "Food",
+          },
+        }),
+      () =>
+        t.mutation(api.upsertTodo, {
+          ...authArgs(device),
+          owner: "victor",
+          sourceFile: "todos",
+          todo: {
+            id: "todo-invalid",
+            owner: "victor",
+            title: "control\u0000character",
+            done: false,
+            flagged: false,
+          },
+        }),
+      () =>
+        t.mutation(api.upsertTodo, {
+          ...authArgs(device),
+          owner: "victor",
+          sourceFile: "todos",
+          todo: {
+            id: "todo-invalid-due",
+            owner: "victor",
+            title: "Invalid due",
+            done: false,
+            flagged: false,
+            due: "2026-02-30",
+          },
+        }),
+      () =>
+        t.mutation(api.upsertTodo, {
+          ...authArgs(device),
+          owner: "victor",
+          sourceFile: "todos",
+          todo: {
+            id: "todo-invalid-timestamp",
+            owner: "victor",
+            title: "Invalid timestamp",
+            done: false,
+            flagged: false,
+            updatedAt: "2026-07-30 12:00:00",
+          },
+        }),
+      () =>
+        t.mutation(api.upsertBudgetCategory, {
+          ...authArgs(device),
+          owner: "victor",
+          sourceFile: "budget",
+          month: "2026-07",
+          category: { name: "Food", budgetCents: -1n },
+        }),
+      () =>
+        t.mutation(api.upsertBtcBuy, {
+          ...authArgs(device),
+          owner: "victor",
+          sourceFile: "bitcoin-buys",
+          buy: {
+            id: "buy-invalid",
+            owner: "victor",
+            date: "2026-07-30",
+            source: "strike",
+            sats: -1n,
+            priceUsdCents: 10_000_000n,
+            usdCents: 100n,
+          },
+        }),
+      () =>
+        t.mutation(api.upsertBtcBillPay, {
+          ...authArgs(device),
+          owner: "victor",
+          sourceFile: "bitcoin-bill-pays",
+          billPay: {
+            id: "bill-invalid",
+            owner: "victor",
+            date: "2026-07-30",
+            merchant: "",
+            category: "Bills",
+            amountUsdCents: 100n,
+            btcSpentSats: 1n,
+            btcPriceCents: 10_000_000n,
+            feeUsdCents: 0n,
+          },
+        }),
+      () =>
+        t.mutation(api.upsertBtcAccount, {
+          ...authArgs(device),
+          owner: "victor",
+          sourceFile: "btc-balance-snapshot",
+          account: {
+            key: " account ",
+            owner: "victor",
+            label: "Account",
+            custody: "exchange",
+            sats: -1n,
+            asOf: "2026-07-30T00:00:00.000Z",
+          },
+        }),
+      () =>
+        t.mutation(api.upsertBtcAccount, {
+          ...authArgs(device),
+          owner: "victor",
+          sourceFile: "btc-balance-snapshot",
+          account: {
+            key: "invalid-as-of",
+            owner: "victor",
+            label: "Account",
+            custody: "exchange",
+            sats: 1n,
+            asOf: "2026-07-30",
+          },
+        }),
+      () =>
+        t.mutation(api.deleteTransaction, {
+          ...authArgs(device),
+          owner: "victor",
+          sourceFile: "transactions",
+          entityId: "tx-invalid",
+          baseUpdatedAtMs: 1.5,
+        }),
+    ];
+
+    for (const request of invalidRequests) {
+      await expectDeviceError(request(), "VALIDATION_FAILED");
+    }
+
+    const state = await t.run(async (ctx) => ({
+      transactions: await ctx.db.query("transactions").collect(),
+      todos: await ctx.db.query("todos").collect(),
+      budgets: await ctx.db.query("budgetDocuments").collect(),
+      buys: await ctx.db.query("btcBuys").collect(),
+      bills: await ctx.db.query("btcBillPays").collect(),
+      accounts: await ctx.db.query("btcAccounts").collect(),
+      balanceDocuments: await ctx.db.query("btcBalanceDocuments").collect(),
+      tombstones: await ctx.db.query("rowTombstones").collect(),
+      locks: await ctx.db.query("runtimeSourceLocks").collect(),
+      device: await ctx.db
+        .query("mobileDevices")
+        .withIndex("by_device_id", (q) => q.eq("deviceId", device.deviceId))
+        .unique(),
+    }));
+    expect(state).toMatchObject({
+      transactions: [],
+      todos: [],
+      budgets: [],
+      buys: [],
+      bills: [],
+      accounts: [],
+      balanceDocuments: [],
+      tombstones: [],
+      locks: [],
+    });
+    expect(state.device!.lastSeenAt).toBe(0);
+  });
+
+  it("fails closed when a physical natural key is already duplicated", async () => {
+    const device = await fullDevice("duplicate-key-device");
+    await t.run(async (ctx) => {
+      for (const owner of ["victor", "mason"] as const) {
+        await ctx.db.insert("transactions", {
+          txId: "duplicate-id",
+          owner,
+          date: "2026-07-30",
+          month: "2026-07",
+          merchant: `${owner} row`,
+          amountCents: 100n,
+          category: "Food",
+          sourceFile: "transactions",
+          updatedAtMs: 1,
+        });
+      }
+      const row = await ctx.db
+        .query("mobileDevices")
+        .withIndex("by_device_id", (q) => q.eq("deviceId", device.deviceId))
+        .unique();
+      await ctx.db.patch(row!._id, { lastSeenAt: 0 });
+    });
+
+    await expect(
+      t.mutation(api.upsertTransaction, {
+        ...authArgs(device),
+        owner: "victor",
+        sourceFile: "transactions",
+        baseUpdatedAtMs: 1,
+        transaction: {
+          id: "duplicate-id",
+          owner: "victor",
+          date: "2026-07-30",
+          merchant: "Must not land",
+          amountCents: 100n,
+          kind: "spend",
+          category: "Food",
+        },
+      }),
+    ).rejects.toThrow();
+
+    const state = await t.run(async (ctx) => ({
+      merchants: (await ctx.db.query("transactions").collect()).map(
+        (row) => row.merchant,
+      ),
+      locks: await ctx.db.query("runtimeSourceLocks").collect(),
+      device: await ctx.db
+        .query("mobileDevices")
+        .withIndex("by_device_id", (q) => q.eq("deviceId", device.deviceId))
+        .unique(),
+    }));
+    expect(state.merchants.sort()).toEqual(["mason row", "victor row"]);
+    expect(state.locks).toEqual([]);
+    expect(state.device!.lastSeenAt).toBe(0);
+  });
 });
 
 describe("device transaction and todo mutations", () => {
+  it("atomically marks every runtime-owned source at its first successful write", async () => {
+    await seedBudgets();
+    const device = await fullDevice("source-lock-device");
+    const auth = authArgs(device);
+
+    await t.mutation(api.upsertTransaction, {
+      ...auth,
+      owner: "victor",
+      sourceFile: "transactions",
+      transaction: {
+        id: "lock-transaction",
+        owner: "victor",
+        date: "2026-07-30",
+        merchant: "Store",
+        amountCents: 100n,
+        kind: "spend",
+        category: "Food",
+      },
+    });
+    await t.mutation(api.upsertTodo, {
+      ...auth,
+      owner: "victor",
+      sourceFile: "todos",
+      todo: {
+        id: "lock-todo",
+        owner: "victor",
+        title: "Locked",
+        done: false,
+        flagged: false,
+        due: "2026-08-15",
+        createdAt: "2026-07-30T00:00:00.000Z",
+      },
+    });
+    await t.mutation(api.upsertBudgetCategory, {
+      ...auth,
+      owner: "victor",
+      sourceFile: "budget",
+      month: "2026-07",
+      baseUpdatedAtMs: await budgetRevision("budget"),
+      category: { name: "Locked category", budgetCents: 100n },
+    });
+    await t.mutation(api.upsertBtcBuy, {
+      ...auth,
+      owner: "victor",
+      sourceFile: "bitcoin-buys",
+      buy: {
+        id: "lock-buy",
+        owner: "victor",
+        date: "2026-07-30",
+        source: "strike",
+        sats: 1n,
+        priceUsdCents: 10_000_000n,
+        usdCents: 100n,
+      },
+    });
+    await t.mutation(api.upsertBtcBillPay, {
+      ...auth,
+      owner: "victor",
+      sourceFile: "bitcoin-bill-pays",
+      billPay: {
+        id: "lock-bill",
+        owner: "victor",
+        date: "2026-07-30",
+        merchant: "Utility",
+        category: "Bills",
+        amountUsdCents: 100n,
+        btcSpentSats: 1n,
+        btcPriceCents: 10_000_000n,
+        feeUsdCents: 0n,
+      },
+    });
+    await t.mutation(api.upsertBtcAccount, {
+      ...auth,
+      owner: "victor",
+      sourceFile: "btc-balance-snapshot",
+      account: {
+        key: "lock-account",
+        owner: "victor",
+        label: "Account",
+        custody: "exchange",
+        sats: 1n,
+        asOf: "2026-07-30T00:00:00.000Z",
+      },
+    });
+
+    const locks = await t.run(async (ctx) =>
+      ctx.db.query("runtimeSourceLocks").collect(),
+    );
+    expect(locks.map((lock) => lock.sourceFile).sort()).toEqual([
+      "bitcoin-bill-pays",
+      "bitcoin-buys",
+      "btc-balance-snapshot",
+      "budget",
+      "todos",
+      "transactions",
+    ]);
+  });
+
   it("returns exact outcomes and leaves idempotent tombstones", async () => {
     const device = await fullDevice();
     const transactionArgs = {
@@ -525,6 +857,49 @@ describe("device transaction and todo mutations", () => {
 });
 
 describe("device budget mutations", () => {
+  it("uses one folded identity for mixed-case deletion retries and migration suppression", async () => {
+    await seedBudgets();
+    const device = await fullDevice();
+    const baseUpdatedAtMs = await budgetRevision("budget");
+    const request = {
+      ...authArgs(device),
+      owner: "victor",
+      sourceFile: "budget",
+      month: "2026-07",
+      entityId: "food",
+      baseUpdatedAtMs,
+    };
+
+    await expect(
+      t.mutation(api.deleteBudgetCategory, request),
+    ).resolves.toMatchObject({ entityId: "food", removed: true });
+    await expect(
+      t.mutation(api.deleteBudgetCategory, request),
+    ).resolves.toMatchObject({ entityId: "food", removed: false });
+
+    const state = await t.run(async (ctx) => ({
+      budget: await ctx.db
+        .query("budgetDocuments")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "budget"))
+        .unique(),
+      tombstones: await ctx.db
+        .query("rowTombstones")
+        .withIndex("by_entity", (q) =>
+          q.eq("entityType", "budgetCategory").eq("sourceFile", "budget"),
+        )
+        .collect(),
+      lock: await ctx.db
+        .query("runtimeSourceLocks")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "budget"))
+        .unique(),
+    }));
+    expect(state.budget!.categories.map((category) => category.name)).toEqual([
+      "Fun",
+    ]);
+    expect(state.tombstones.map((row) => row.entityId)).toEqual(["food"]);
+    expect(state.lock).toMatchObject({ sourceFile: "budget" });
+  });
+
   it("renames in place, rejects collisions/stale months, and deletes idempotently", async () => {
     await seedBudgets();
     const device = await fullDevice();
@@ -607,6 +982,49 @@ describe("device budget mutations", () => {
 });
 
 describe("device bitcoin mutations", () => {
+  it("rejects child writes to the adult-only bill-pay source before side effects", async () => {
+    const device = await fullDevice("child-bill-device");
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("mobileDevices")
+        .withIndex("by_device_id", (q) => q.eq("deviceId", device.deviceId))
+        .unique();
+      await ctx.db.patch(row!._id, { lastSeenAt: 0 });
+    });
+
+    await expectDeviceError(
+      t.mutation(api.upsertBtcBillPay, {
+        ...authArgs(device),
+        owner: "mason",
+        sourceFile: "bitcoin-bill-pays",
+        billPay: {
+          id: "child-bill",
+          owner: "mason",
+          date: "2026-07-30",
+          merchant: "Must not land",
+          category: "Bills",
+          amountUsdCents: 100n,
+          btcSpentSats: 1n,
+          btcPriceCents: 10_000_000n,
+          feeUsdCents: 0n,
+        },
+      }),
+      "OWNER_SOURCE_MISMATCH",
+    );
+
+    const state = await t.run(async (ctx) => ({
+      bills: await ctx.db.query("btcBillPays").collect(),
+      locks: await ctx.db.query("runtimeSourceLocks").collect(),
+      device: await ctx.db
+        .query("mobileDevices")
+        .withIndex("by_device_id", (q) => q.eq("deviceId", device.deviceId))
+        .unique(),
+    }));
+    expect(state.bills).toEqual([]);
+    expect(state.locks).toEqual([]);
+    expect(state.device!.lastSeenAt).toBe(0);
+  });
+
   it("canonicalizes Rachel financial intent into the shared Victor ledger", async () => {
     await seedBudgets();
     const device = await fullDevice();
@@ -679,22 +1097,18 @@ describe("device bitcoin mutations", () => {
 
     const owners = await t.run(async (ctx) => ({
       transaction: (await ctx.db.query("transactions").unique())!.owner,
-      budget: (
-        await ctx.db
-          .query("budgetDocuments")
-          .withIndex("by_source_file", (q) => q.eq("sourceFile", "budget"))
-          .unique()
-      )!.owner,
+      budget: (await ctx.db
+        .query("budgetDocuments")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "budget"))
+        .unique())!.owner,
       buy: (await ctx.db.query("btcBuys").unique())!.owner,
       bill: (await ctx.db.query("btcBillPays").unique())!.owner,
-      accountDocument: (
-        await ctx.db
-          .query("btcBalanceDocuments")
-          .withIndex("by_source_file", (q) =>
-            q.eq("sourceFile", "btc-balance-snapshot"),
-          )
-          .unique()
-      )!.owner,
+      accountDocument: (await ctx.db
+        .query("btcBalanceDocuments")
+        .withIndex("by_source_file", (q) =>
+          q.eq("sourceFile", "btc-balance-snapshot"),
+        )
+        .unique())!.owner,
       accountMirror: (await ctx.db.query("btcAccounts").unique())!.owner,
     }));
     expect(owners).toEqual({
@@ -944,9 +1358,7 @@ describe("device bitcoin mutations", () => {
         asOf: "2026-07-30T01:00:00.000Z",
       },
     });
-    const updatedRevision = await btcDocumentRevision(
-      "btc-balance-snapshot",
-    );
+    const updatedRevision = await btcDocumentRevision("btc-balance-snapshot");
     await t.mutation(api.upsertBtcAccount, {
       ...base,
       baseUpdatedAtMs: updatedRevision,

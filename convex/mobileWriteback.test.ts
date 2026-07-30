@@ -113,6 +113,36 @@ describe("mobile writeback rejects anything but a live paired device", () => {
 });
 
 describe("pairing", () => {
+  it("refuses a duplicate pair id without replacing the original proof or grant", async () => {
+    const pairId = `pair-${crypto.randomUUID()}`;
+    const proofHash = freshProofHash();
+    await t.mutation(api.createMobilePairing, {
+      pairId,
+      proofHash,
+      expiresAt: Date.now() + 60_000,
+      token: syncToken,
+    });
+
+    await expect(
+      t.mutation(api.createMobilePairing, {
+        pairId,
+        proofHash: freshProofHash(),
+        expiresAt: Date.now() + 120_000,
+        capabilities: ["bitcoin:write"],
+        token: syncToken,
+      }),
+    ).rejects.toThrow(/PAIRING_ID_CONFLICT/);
+
+    const claimed = await t.mutation(api.claimMobilePairing, {
+      pairId,
+      proofHash,
+      deviceName: "Original pairing",
+      deviceId: "original-pairing-device",
+      deviceToken: freshSecret(),
+    });
+    expect(claimed.capabilities).toEqual(["todos:write"]);
+  });
+
   it("keeps legacy pairings exactly todo-only", async () => {
     const paired = await pairMobileDevice(t, syncToken);
     expect(paired.capabilities).toEqual(["todos:write"]);
