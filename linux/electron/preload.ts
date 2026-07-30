@@ -28,13 +28,26 @@
 import { contextBridge, ipcRenderer } from "electron"
 
 import {
+  CONVEX_MUTATION_CHANNEL,
   CONVEX_READ_CHANNEL,
   CONVEX_ROWS_CHANNEL,
   CSV_EXPORT_CHANNEL,
+  DEVICE_PAIR_CHANNEL,
+  DEVICE_PAIRING_STATUS_CHANNEL,
+  DEVICE_UNPAIR_CHANNEL,
 } from "./ipcChannels.ts"
 import type { CsvExportRequest, CsvExportResult } from "./csvExport.ts"
 import type { RemoteSnapshotResult } from "./convexRead.ts"
-import type { VogelVaultRowRequest, VogelVaultRowResult } from "../shared/ipc.ts"
+import type {
+  VogelVaultMutationRequest,
+  VogelVaultMutationResult,
+  VogelVaultPairingRequest,
+  VogelVaultPairingResult,
+  VogelVaultPairingStatus,
+  VogelVaultRowRequest,
+  VogelVaultRowResult,
+  VogelVaultUnpairResult,
+} from "../shared/ipc.ts"
 
 declare const __APP_VERSION__: string
 
@@ -89,9 +102,33 @@ function queryConvexRows(request: VogelVaultRowRequest): Promise<VogelVaultRowRe
   return ipcRenderer.invoke(CONVEX_ROWS_CHANNEL, request) as Promise<VogelVaultRowResult>
 }
 
+/** Claim a single user-provided pairing value; no credential is returned. */
+function pairDevice(request: VogelVaultPairingRequest): Promise<VogelVaultPairingResult> {
+  return ipcRenderer.invoke(DEVICE_PAIR_CHANNEL, request) as Promise<VogelVaultPairingResult>
+}
+
+/** Read local pairing state and supported domain operations only. */
+function getPairingStatus(): Promise<VogelVaultPairingStatus> {
+  return ipcRenderer.invoke(DEVICE_PAIRING_STATUS_CHANNEL) as Promise<VogelVaultPairingStatus>
+}
+
+/** Submit one closed domain mutation; main supplies all transport credentials. */
+function mutateConvexRow(request: VogelVaultMutationRequest): Promise<VogelVaultMutationResult> {
+  return ipcRenderer.invoke(CONVEX_MUTATION_CHANNEL, request) as Promise<VogelVaultMutationResult>
+}
+
+/** Revoke the paired device and remove its protected local credential. */
+function unpairDevice(): Promise<VogelVaultUnpairResult> {
+  return ipcRenderer.invoke(DEVICE_UNPAIR_CHANNEL) as Promise<VogelVaultUnpairResult>
+}
+
 contextBridge.exposeInMainWorld("vogelVault", {
   getRuntimeInfo: (): RuntimeInfo => runtimeInfo,
   exportCsv,
   getRemoteSnapshot,
   queryConvexRows,
+  pairDevice,
+  getPairingStatus,
+  mutateConvexRow,
+  unpairDevice,
 })
