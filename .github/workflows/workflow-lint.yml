@@ -100,6 +100,12 @@ jobs:
       - name: Secret presence reporter tests
         run: python3 .github/workflows/scripts/tests/test_report_secret_presence.py
 
+      - name: Apple changed-tree routing tests
+        run: python3 .github/workflows/scripts/tests/test_apple_changed_tree.py
+
+      - name: Manual Apple release signing contract
+        run: python3 .github/workflows/scripts/tests/test_manual_release_signing.py
+
       # The reporter is the only thing standing between Victor and a release that
       # dies at the signing step, so it gets exercised here rather than debugged
       # on a macOS runner ten minutes into an archive. This job binds no secrets,

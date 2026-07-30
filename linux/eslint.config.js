@@ -18,6 +18,10 @@ export default tseslint.config(
     plugins: { "react-hooks": reactHooks },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // v7 adds compiler-oriented effect rules beyond the previous lint
+      // contract. Adopt those with dedicated renderer changes, not as a side
+      // effect of the security upgrade.
+      "react-hooks/set-state-in-effect": "off",
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
       // The renderer must never reach for a Node primitive; if one appears here
       // it means the preload boundary has been widened.

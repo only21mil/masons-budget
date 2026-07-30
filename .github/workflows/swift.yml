@@ -11,16 +11,14 @@ name: Swift CI
 # second route to a shipped build, which is why every xcodebuild call below
 # disables signing outright rather than merely skipping the upload step.
 #
-# Xcode setup follows deploy.yml — same pinned setup-xcode action, same
-# `xcodegen generate --spec project.yml`, project.yml as the source of truth and
-# the .xcodeproj as generated output that is never hand-edited. It does NOT
-# follow deploy.yml's Xcode version, because that version no longer exists;
-# see XCODE_VERSION below. If the two drift further, a change can pass here and
-# fail during a release.
+# Xcode policy matches deploy.yml: both self-hosted routes assert the exact
+# installed version and generate from project.yml, which remains the source of
+# truth. The .xcodeproj is generated output and must never be hand-edited.
 #
-# Cost: the Apple job now runs on the SELF-HOSTED Mac mini (labels
-# self-hosted,macOS,ARM64,xcode), so it bills nothing. It previously ran on
-# macos-latest at 10x the Linux rate on a private repository ($0.08/min vs
+# Cost: automatic Apple work runs on the SELF-HOSTED MacBook Pro (labels
+# self-hosted,macOS,ARM64,xcode,mason-mbp). The Mac mini is selected only by an
+# explicit manual fallback dispatch. Both avoid hosted macOS billing. CI previously ran on
+# GitHub-hosted macOS at 10x the Linux rate on a private repository ($0.08/min vs
 # $0.008/min) — that rate, across three release attempts and a day of PRs, is
 # what exhausted the Actions spending limit twice on 2026-07-28. The Ubuntu
 # detector, fork-PR guard and concurrency rules below are KEPT anyway: they
@@ -42,8 +40,18 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
   merge_group:
-  # The escape hatch: a manual run verifies Apple regardless of its diff.
+  # Manual verification defaults to the MacBook Pro. The Mac mini is available
+  # only as an explicit fallback; automatic events can never select it.
   workflow_dispatch:
+    inputs:
+      apple_runner:
+        description: Apple build host
+        required: true
+        default: mbp
+        type: choice
+        options:
+          - mbp
+          - mini
 
 permissions:
   contents: read
@@ -73,25 +81,8 @@ concurrency:
     }}
 
 env:
-  # NOT 16.4, which is what deploy.yml and project.yml still say. Run 1 of this
-  # workflow proved macos-latest no longer carries any Xcode 16: the image ships
-  # 26.0.1 through 26.6 and setup-xcode fails outright with "Could not find
-  # Xcode version that satisfied version spec: '16.4'". deploy.yml's archive
-  # step is therefore dead on arrival too — the whole reason this workflow
-  # exists is that nobody had ever run either one.
-  #
-  # This must track the image's newest Xcode, not the oldest. Run 2 pinned
-  # 26.0.1 on the theory that the least new SDK was safest for sources written
-  # against Xcode 16, and it failed: the simulator runtimes installed on the
-  # image belong to the newest Xcode, so `simctl` happily listed and booted an
-  # iPhone 17 that xcodebuild then rejected, because Xcode 26.0.1's SDK is 26.0
-  # and no eligible iOS Simulator platform existed for it. An older Xcode on
-  # this image has no simulator to test on.
-  #
-  # Still an exact pin rather than latest-stable: when the image rotates, this
-  # fails loudly at setup with a one-line fix and setup-xcode prints the table
-  # of what is available, whereas a floating version turns up months later as an
-  # unexplained compile error. Take the highest GM from that table.
+  # Both registered Apple hosts must expose this exact version through their
+  # selected /Applications/Xcode.app. A mismatch fails before build work starts.
   XCODE_VERSION: '26.6'
   # brew's auto-update pulls a few hundred megabytes and a minute of wall clock
   # before it installs anything, and this runner is billed by the minute.
@@ -133,7 +124,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_REF: ${{ github.ref }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
@@ -182,16 +173,15 @@ jobs:
               exit 0
             fi
           elif [ "$EVENT_NAME" = "pull_request" ]; then
-            if [ -z "$BASE_REF" ]; then
-              run_apple "Pull request base ref is missing."
+            if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              run_apple "Pull request base SHA is missing or malformed."
               exit 0
             fi
-            base="origin/$BASE_REF"
-            if ! git fetch -q origin "$BASE_REF"; then
-              run_apple "Pull request base could not be fetched."
+            if ! git cat-file -e "${BASE_SHA}^{commit}"; then
+              run_apple "Pull request base is unavailable in the full checkout."
               exit 0
             fi
-            if ! diff_base="$(git merge-base HEAD "$base")"; then
+            if ! diff_base="$(git merge-base HEAD "$BASE_SHA")"; then
               run_apple "Pull request merge base could not be determined."
               exit 0
             fi
@@ -226,8 +216,7 @@ jobs:
           printf '%s\n' "$files" | sed 's/^/  /'
 
           match_status=0
-          grep -qE \
-            '^(MasonsBudget/|Package\.swift$|Tests/|shared/domain/convex-wire-golden-provenance\.json$|shared/domain/fixtures/convex-wire-golden/|scripts/regenerate-xcode-project\.sh$|\.github/workflows/swift\.yml$)' \
+          python3 .github/workflows/scripts/apple_changed_tree.py \
             <<< "$files" || match_status=$?
 
           if [ "$match_status" -eq 0 ]; then
@@ -278,7 +267,15 @@ jobs:
       (needs.changes.result != 'success' || needs.changes.outputs.apple != 'false') &&
       needs.project-consistency.result == 'success'
     needs: [changes, project-consistency]
-    runs-on: [self-hosted, macOS, ARM64, xcode]
+    runs-on: >-
+      ${{
+        fromJSON(
+          github.event_name == 'workflow_dispatch' &&
+          inputs.apple_runner == 'mini' &&
+          '["self-hosted","macOS","ARM64","xcode","mason-mini"]' ||
+          '["self-hosted","macOS","ARM64","xcode","mason-mbp"]'
+        )
+      }}
     timeout-minutes: 45
 
     steps:
@@ -287,7 +284,7 @@ jobs:
           persist-credentials: false
 
       # Self-hosted: setup-xcode expects the hosted image's versioned bundles
-      # (/Applications/Xcode_26.6.app). The mini has a single /Applications/
+      # (/Applications/Xcode_26.6.app). Our build hosts have a single /Applications/
       # Xcode.app, so that action fails outright. Assert the version instead —
       # the guarantee we actually need is "the pinned Xcode is what built this",
       # and a mismatch must fail loudly rather than silently build with another.
@@ -330,7 +327,7 @@ jobs:
         run: swift test
 
       # A runtime and a device are separate CoreSimulator resources. On the
-      # self-hosted mini, the first xcodebuild destination query returned only
+      # self-hosted host, the first xcodebuild destination query returned only
       # placeholders even though eleven concrete device plists already existed;
       # the next job saw all eleven after the failure path called simctl. Do not
       # depend on that cold-start registration side effect.
