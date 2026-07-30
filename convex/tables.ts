@@ -40,8 +40,10 @@
 
 import { ConvexError, v } from "convex/values";
 
-import { query, mutation } from "./_generated/server";
-import { requireIsoDate } from "./dateValidation";
+import type { Doc } from "./_generated/dataModel";
+import { query, mutation, type MutationCtx } from "./_generated/server";
+import { isRealIsoDate, requireIsoDate } from "./dateValidation";
+import { authenticateDevice, markDeviceSeen } from "./deviceAuth";
 import { custodyValidator, familyMemberValidator } from "./schema";
 import { normalizeTodoRecord, todoUpdatedMs } from "./todoNormalize";
 
@@ -78,7 +80,11 @@ function warnPermissive(hatchVar: string, tokenVar: string, tokenSet: boolean) {
 function validateSyncToken(token?: string) {
   const expected = process.env.CONVEX_SYNC_TOKEN;
   if (process.env.ALLOW_TOKENLESS_SYNC === "true") {
-    warnPermissive("ALLOW_TOKENLESS_SYNC", "CONVEX_SYNC_TOKEN", Boolean(expected));
+    warnPermissive(
+      "ALLOW_TOKENLESS_SYNC",
+      "CONVEX_SYNC_TOKEN",
+      Boolean(expected),
+    );
     return;
   }
   if (!expected) {
@@ -96,7 +102,11 @@ function validateSyncToken(token?: string) {
 function validateReadToken(token?: string) {
   const expected = process.env.CONVEX_READ_TOKEN;
   if (process.env.ALLOW_TOKENLESS_READ === "true") {
-    warnPermissive("ALLOW_TOKENLESS_READ", "CONVEX_READ_TOKEN", Boolean(expected));
+    warnPermissive(
+      "ALLOW_TOKENLESS_READ",
+      "CONVEX_READ_TOKEN",
+      Boolean(expected),
+    );
     return;
   }
   if (!expected) {
@@ -158,7 +168,10 @@ function canSeeDataOwnedBy(viewer: FamilyMember, owner: FamilyMember): boolean {
   return false;
 }
 
-function sharesNetWorthWith(viewer: FamilyMember, owner: FamilyMember): boolean {
+function sharesNetWorthWith(
+  viewer: FamilyMember,
+  owner: FamilyMember,
+): boolean {
   if (viewer === owner) return true;
   return isAdult(viewer) && isAdult(owner);
 }
@@ -218,7 +231,8 @@ function resolveOwner(raw: unknown, fileOwner: FamilyMember): FamilyMember {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function numberToDecimalString(value: number): string {
-  if (!Number.isFinite(value)) throw new RangeError(`Not a finite number: ${value}`);
+  if (!Number.isFinite(value))
+    throw new RangeError(`Not a finite number: ${value}`);
   // Avoid exponential notation for the magnitudes this data uses.
   if (Math.abs(value) < 1e21) {
     return value.toFixed(20).replace(/0+$/, "").replace(/\.$/, "");
@@ -231,11 +245,14 @@ function parseMinorUnits(value: unknown, scale: number): bigint {
   if (typeof value === "bigint") return value;
 
   const raw =
-    typeof value === "number" ? numberToDecimalString(value) : String(value).trim();
+    typeof value === "number"
+      ? numberToDecimalString(value)
+      : String(value).trim();
   if (raw === "") return 0n;
 
   const match = /^(-)?(\d*)(?:\.(\d*))?$/.exec(raw);
-  if (!match) throw new RangeError(`Not a decimal value: ${JSON.stringify(value)}`);
+  if (!match)
+    throw new RangeError(`Not a decimal value: ${JSON.stringify(value)}`);
 
   const [, sign, whole = "", frac = ""] = match;
   if (whole === "" && frac === "") {
@@ -297,6 +314,14 @@ function rejectRowDate(code: string, field: string, message: string): never {
   throw new ConvexError({ code, field, message });
 }
 
+function rejectDeviceDate(
+  _code: string,
+  _field: string,
+  message: string,
+): never {
+  deviceFailure("VALIDATION_FAILED", message);
+}
+
 /** null, undefined and "" all mean "nothing here"; store the field as absent. */
 function optionalText(value: unknown): string | undefined {
   if (value === null || value === undefined) return undefined;
@@ -338,7 +363,11 @@ type PublicEnvelope<T> = {
 
 function requestedRowCap(limit: number | undefined, queryName: string): number {
   if (limit === undefined) return PUBLIC_SNAPSHOT_HARD_MAX + 1;
-  if (!Number.isInteger(limit) || limit < 1 || limit > PUBLIC_SNAPSHOT_HARD_MAX) {
+  if (
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > PUBLIC_SNAPSHOT_HARD_MAX
+  ) {
     throw new ConvexError(
       `${queryName}: limit must be an integer from 1 to ${PUBLIC_SNAPSHOT_HARD_MAX}.`,
     );
@@ -387,12 +416,8 @@ function projectTransaction(row: {
   // displaySpendAmount, hasOppositeSpendSign), mirrored by
   // MasonsBudget/MasonsBudget/Models/Transaction.swift.
   //
-  const spendAmount =
-    row.category === "Income"
-      ? 0n
-      : row.amountCents;
-  const displaySpendAmount =
-    spendAmount < 0n ? -spendAmount : spendAmount;
+  const spendAmount = row.category === "Income" ? 0n : row.amountCents;
+  const displaySpendAmount = spendAmount < 0n ? -spendAmount : spendAmount;
 
   return {
     txId: row.txId,
@@ -547,7 +572,14 @@ function projectBtcAccount(row: {
   label: string;
   custody: "exchange" | "self_custody";
   sats: bigint;
-  fiatCents: bigint;
+  fiatCents?: bigint;
+  fiatValuation?: {
+    cents: bigint;
+    priceCents?: bigint;
+    quotedAt?: string;
+    source?: string;
+    confidence?: string;
+  };
   asOf: string;
   schemaVersion: bigint;
   updatedAtMs: number;
@@ -559,6 +591,7 @@ function projectBtcAccount(row: {
     custody: row.custody,
     sats: row.sats,
     fiatCents: row.fiatCents,
+    fiatValuation: row.fiatValuation,
     asOf: row.asOf,
     schemaVersion: row.schemaVersion,
     updatedAtMs: row.updatedAtMs,
@@ -664,11 +697,18 @@ function publicBtcBalanceDocument(row: {
     label: string;
     custody: "exchange" | "self_custody";
     sats: bigint;
-    fiatCents: bigint;
+    fiatCents?: bigint;
+    fiatValuation?: {
+      cents: bigint;
+      priceCents?: bigint;
+      quotedAt?: string;
+      source?: string;
+      confidence?: string;
+    };
   }>;
   totals: {
     sats: bigint;
-    fiatCents: bigint;
+    fiatCents?: bigint;
     exchangeSats: bigint;
     selfCustodySats: bigint;
   };
@@ -687,6 +727,7 @@ function publicBtcBalanceDocument(row: {
       custody: account.custody,
       sats: account.sats,
       fiatCents: account.fiatCents,
+      fiatValuation: account.fiatValuation,
     })),
     totals: {
       sats: row.totals.sats,
@@ -1070,8 +1111,9 @@ export const listBtcBillPays = query({
               .collect()
           : ctx.db
               .query("btcBillPays")
-              .withIndex(PUBLIC_QUERY_INDEX_PLAN.listBtcBillPays.all.name, (q) =>
-                q.eq("owner", owner),
+              .withIndex(
+                PUBLIC_QUERY_INDEX_PLAN.listBtcBillPays.all.name,
+                (q) => q.eq("owner", owner),
               )
               .order("desc")
               .take(cap),
@@ -1321,9 +1363,7 @@ export const getFinanceDocument = query({
     return {
       document: {
         lastUpdated: doc.lastUpdated,
-        retirementTotalCents: accounts.some((account) =>
-          isAdult(account.owner),
-        )
+        retirementTotalCents: accounts.some((account) => isAdult(account.owner))
           ? doc.retirementTotalCents
           : undefined,
         accounts,
@@ -1346,12 +1386,13 @@ export const rowCounts = query({
       btcBillPays: (await ctx.db.query("btcBillPays").collect()).length,
       btcAccounts: (await ctx.db.query("btcAccounts").collect()).length,
       income: (await ctx.db.query("income").collect()).length,
-      balanceDocuments: (await ctx.db.query("balanceDocuments").collect()).length,
+      balanceDocuments: (await ctx.db.query("balanceDocuments").collect())
+        .length,
       budgetDocuments: (await ctx.db.query("budgetDocuments").collect()).length,
-      btcBalanceDocuments: (
-        await ctx.db.query("btcBalanceDocuments").collect()
-      ).length,
-      financeDocuments: (await ctx.db.query("financeDocuments").collect()).length,
+      btcBalanceDocuments: (await ctx.db.query("btcBalanceDocuments").collect())
+        .length,
+      financeDocuments: (await ctx.db.query("financeDocuments").collect())
+        .length,
     };
   },
 });
@@ -1461,72 +1502,481 @@ function buildBtcBuyRow(
 // ─────────────────────────────────────────────────────────────────────────────
 
 type UpsertOutcome = "inserted" | "updated";
+type RowEntityType =
+  | "transaction"
+  | "todo"
+  | "budgetCategory"
+  | "btcBuy"
+  | "btcBillPay"
+  | "btcAccount";
+
+type DeviceErrorCode =
+  | "DEVICE_UNAUTHORIZED"
+  | "ENTITY_CONFLICT"
+  | "ENTITY_DELETED"
+  | "ENTITY_NOT_FOUND"
+  | "OWNER_MISMATCH"
+  | "OWNER_SOURCE_MISMATCH"
+  | "REVISION_REQUIRED"
+  | "VALIDATION_FAILED";
+
+function deviceFailure(
+  code: DeviceErrorCode,
+  message: string,
+  entityType?: RowEntityType,
+  entityId?: string,
+): never {
+  throw new ConvexError({
+    code,
+    message,
+    ...(entityType === undefined ? {} : { entityType }),
+    ...(entityId === undefined ? {} : { entityId }),
+  });
+}
+
+const DEVICE_MAX_IDENTIFIER = 256;
+const DEVICE_MAX_TEXT = 16_384;
+const DEVICE_CONTROL = /[\u0000-\u001f\u007f]/;
+const DEVICE_MONTH = /^\d{4}-(?:0[1-9]|1[0-2])$/;
+const DEVICE_ISO_TIMESTAMP =
+  /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{3})?Z$/;
+
+function requireDeviceText(
+  value: string,
+  field: string,
+  options: { max?: number; allowEmpty?: boolean; canonical?: boolean } = {},
+): string {
+  const max = options.max ?? DEVICE_MAX_TEXT;
+  if (
+    (!options.allowEmpty && value.length === 0) ||
+    value.length > max ||
+    DEVICE_CONTROL.test(value) ||
+    (options.canonical && value !== value.trim())
+  ) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      `${field} must be ${options.allowEmpty ? "" : "non-empty, "}at most ${max} ` +
+        "characters, free of control characters" +
+        (options.canonical ? ", and have no surrounding whitespace." : "."),
+    );
+  }
+  return value;
+}
+
+function requireDeviceIdentifier(value: string, field: string): string {
+  return requireDeviceText(value, field, {
+    max: DEVICE_MAX_IDENTIFIER,
+    canonical: true,
+  });
+}
+
+function requireDeviceOptionalText(
+  value: string | undefined,
+  field: string,
+  max = DEVICE_MAX_TEXT,
+) {
+  if (value !== undefined) {
+    requireDeviceText(value, field, { max, allowEmpty: true });
+  }
+}
+
+function requireDeviceCalendarDate(value: string | undefined, field: string) {
+  if (value === undefined) return;
+  requireDeviceText(value, field, { max: 10 });
+  if (!isRealIsoDate(value)) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      `${field} must be a real ISO calendar date (yyyy-MM-dd).`,
+    );
+  }
+}
+
+function requireDeviceTimestamp(value: string | undefined, field: string) {
+  if (value === undefined) return;
+  requireDeviceText(value, field, { max: 24 });
+  const parsed = Date.parse(value);
+  if (!DEVICE_ISO_TIMESTAMP.test(value) || !Number.isFinite(parsed)) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      `${field} must be a UTC ISO timestamp (yyyy-MM-ddTHH:mm:ss[.SSS]Z).`,
+    );
+  }
+  const canonical = new Date(parsed).toISOString();
+  if (value !== canonical && value !== canonical.replace(".000Z", "Z")) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      `${field} must identify a real UTC instant without normalization.`,
+    );
+  }
+}
+
+function requireDeviceRevision(value: number | undefined, required: boolean) {
+  if (
+    (required && value === undefined) ||
+    (value !== undefined && (!Number.isSafeInteger(value) || value < 0))
+  ) {
+    deviceFailure(
+      value === undefined ? "REVISION_REQUIRED" : "VALIDATION_FAILED",
+      value === undefined
+        ? "baseUpdatedAtMs is required for this operation."
+        : "baseUpdatedAtMs must be a non-negative safe integer.",
+    );
+  }
+}
+
+function requireDeviceMonth(value: string) {
+  requireDeviceText(value, "month", { max: 7 });
+  if (!DEVICE_MONTH.test(value)) {
+    deviceFailure("VALIDATION_FAILED", "month must be yyyy-MM.");
+  }
+}
+
+function requireDeviceNonnegative(value: bigint, field: string) {
+  if (value < 0n) {
+    deviceFailure("VALIDATION_FAILED", `${field} must not be negative.`);
+  }
+}
+
+function requireDevicePositive(value: bigint, field: string) {
+  if (value <= 0n) {
+    deviceFailure("VALIDATION_FAILED", `${field} must be positive.`);
+  }
+}
+
+async function lockRuntimeSource(ctx: MutationCtx, sourceFile: string) {
+  const existing = await ctx.db
+    .query("runtimeSourceLocks")
+    .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
+    .unique();
+  if (!existing) {
+    await ctx.db.insert("runtimeSourceLocks", {
+      sourceFile,
+      lockedAtMs: Date.now(),
+    });
+  }
+}
+
+function nextUpdatedAtMs(previous: number): number {
+  return Math.max(Date.now(), previous + 1);
+}
+
+type OptimisticWrite = { baseUpdatedAtMs?: number };
+
+async function findRowTombstone(
+  ctx: MutationCtx,
+  entityType: RowEntityType,
+  sourceFile: string,
+  entityId: string,
+) {
+  return await ctx.db
+    .query("rowTombstones")
+    .withIndex("by_entity", (q) =>
+      q
+        .eq("entityType", entityType)
+        .eq("sourceFile", sourceFile)
+        .eq("entityId", entityId),
+    )
+    .unique();
+}
+
+async function clearRowTombstone(
+  ctx: MutationCtx,
+  entityType: RowEntityType,
+  sourceFile: string,
+  entityId: string,
+) {
+  const tombstone = await findRowTombstone(
+    ctx,
+    entityType,
+    sourceFile,
+    entityId,
+  );
+  if (tombstone) await ctx.db.delete(tombstone._id);
+}
+
+async function upsertRowTombstone(
+  ctx: MutationCtx,
+  entityType: RowEntityType,
+  sourceFile: string,
+  entityId: string,
+  owner: FamilyMember,
+  deletedFromUpdatedAtMs?: number,
+) {
+  const now = Date.now();
+  const existing = await findRowTombstone(
+    ctx,
+    entityType,
+    sourceFile,
+    entityId,
+  );
+  const record = {
+    entityType,
+    sourceFile,
+    entityId,
+    owner,
+    deletedAtMs: now,
+    ...(deletedFromUpdatedAtMs === undefined ? {} : { deletedFromUpdatedAtMs }),
+  };
+  if (existing) await ctx.db.patch(existing._id, record);
+  else await ctx.db.insert("rowTombstones", record);
+}
+
+async function upsertLegacyTodoTombstone(ctx: MutationCtx, todoId: string) {
+  const existing = await ctx.db
+    .query("todoTombstones")
+    .withIndex("by_todo_id", (q) => q.eq("id", todoId))
+    .unique();
+  if (existing) {
+    await ctx.db.patch(existing._id, { deletedAt: Date.now() });
+  } else {
+    await ctx.db.insert("todoTombstones", {
+      id: todoId,
+      deletedAt: Date.now(),
+    });
+  }
+}
+
+async function clearLegacyTodoTombstone(ctx: MutationCtx, todoId: string) {
+  const existing = await ctx.db
+    .query("todoTombstones")
+    .withIndex("by_todo_id", (q) => q.eq("id", todoId))
+    .unique();
+  if (existing) await ctx.db.delete(existing._id);
+}
 
 async function upsertTransactionRow(
-  ctx: any,
+  ctx: MutationCtx,
   row: ReturnType<typeof buildTransactionRow>,
+  optimistic?: OptimisticWrite,
 ): Promise<UpsertOutcome> {
   const existing = await ctx.db
     .query("transactions")
     .withIndex("by_source_tx_id", (q: any) =>
       q.eq("sourceFile", row.sourceFile).eq("txId", row.txId),
     )
-    .first();
+    .unique();
+  const tombstone = optimistic
+    ? await findRowTombstone(ctx, "transaction", row.sourceFile, row.txId)
+    : null;
   if (existing) {
-    await ctx.db.patch(existing._id, row);
+    if (existing.owner !== row.owner) {
+      deviceFailure(
+        "OWNER_MISMATCH",
+        `Transaction ${row.txId} belongs to ${existing.owner}, not ${row.owner}.`,
+        "transaction",
+        row.txId,
+      );
+    }
+    if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
+      deviceFailure(
+        "REVISION_REQUIRED",
+        "baseUpdatedAtMs is required to update an existing transaction.",
+        "transaction",
+        row.txId,
+      );
+    }
+    if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
+      deviceFailure(
+        "ENTITY_CONFLICT",
+        "The transaction changed after it was read.",
+        "transaction",
+        row.txId,
+      );
+    }
+    await lockRuntimeSource(ctx, row.sourceFile);
+    await ctx.db.patch(existing._id, {
+      ...row,
+      updatedAtMs: optimistic
+        ? nextUpdatedAtMs(existing.updatedAtMs)
+        : row.updatedAtMs,
+    });
+    await clearRowTombstone(ctx, "transaction", row.sourceFile, row.txId);
     return "updated";
   }
+  if (optimistic?.baseUpdatedAtMs !== undefined) {
+    deviceFailure(
+      tombstone ? "ENTITY_DELETED" : "ENTITY_NOT_FOUND",
+      tombstone
+        ? "The transaction was deleted after it was read."
+        : "The transaction to update does not exist.",
+      "transaction",
+      row.txId,
+    );
+  }
+  if (tombstone) {
+    deviceFailure(
+      "ENTITY_DELETED",
+      "A deleted transaction id cannot be silently resurrected.",
+      "transaction",
+      row.txId,
+    );
+  }
+  await lockRuntimeSource(ctx, row.sourceFile);
   await ctx.db.insert("transactions", row);
+  await clearRowTombstone(ctx, "transaction", row.sourceFile, row.txId);
   return "inserted";
 }
 
 async function upsertTodoRow(
-  ctx: any,
+  ctx: MutationCtx,
   row: ReturnType<typeof buildTodoRow>,
+  optimistic?: OptimisticWrite,
 ): Promise<UpsertOutcome> {
   const existing = await ctx.db
     .query("todos")
     .withIndex("by_todo_id", (q: any) => q.eq("todoId", row.todoId))
-    .first();
+    .unique();
+  const tombstone = optimistic
+    ? await findRowTombstone(ctx, "todo", row.sourceFile, row.todoId)
+    : null;
   if (existing) {
-    await ctx.db.patch(existing._id, row);
+    if (existing.owner !== row.owner) {
+      deviceFailure(
+        "OWNER_MISMATCH",
+        `Todo ${row.todoId} belongs to ${existing.owner}, not ${row.owner}.`,
+        "todo",
+        row.todoId,
+      );
+    }
+    if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
+      deviceFailure(
+        "REVISION_REQUIRED",
+        "baseUpdatedAtMs is required to update an existing todo.",
+        "todo",
+        row.todoId,
+      );
+    }
+    if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
+      deviceFailure(
+        "ENTITY_CONFLICT",
+        "The todo changed after it was read.",
+        "todo",
+        row.todoId,
+      );
+    }
+    await lockRuntimeSource(ctx, row.sourceFile);
+    await ctx.db.patch(existing._id, {
+      ...row,
+      updatedAtMs: optimistic
+        ? nextUpdatedAtMs(existing.updatedAtMs)
+        : row.updatedAtMs,
+    });
+    await clearRowTombstone(ctx, "todo", row.sourceFile, row.todoId);
+    await clearLegacyTodoTombstone(ctx, row.todoId);
     return "updated";
   }
+  if (optimistic?.baseUpdatedAtMs !== undefined) {
+    deviceFailure(
+      tombstone ? "ENTITY_DELETED" : "ENTITY_NOT_FOUND",
+      tombstone
+        ? "The todo was deleted after it was read."
+        : "The todo to update does not exist.",
+      "todo",
+      row.todoId,
+    );
+  }
+  if (tombstone) {
+    deviceFailure(
+      "ENTITY_DELETED",
+      "A deleted todo id cannot be silently resurrected.",
+      "todo",
+      row.todoId,
+    );
+  }
+  await lockRuntimeSource(ctx, row.sourceFile);
   await ctx.db.insert("todos", row);
+  await clearRowTombstone(ctx, "todo", row.sourceFile, row.todoId);
+  await clearLegacyTodoTombstone(ctx, row.todoId);
   return "inserted";
 }
 
 async function upsertBtcBuyRow(
-  ctx: any,
+  ctx: MutationCtx,
   row: ReturnType<typeof buildBtcBuyRow>,
+  optimistic?: OptimisticWrite,
 ): Promise<UpsertOutcome> {
   const existing = await ctx.db
     .query("btcBuys")
     .withIndex("by_source_buy_id", (q: any) =>
       q.eq("sourceFile", row.sourceFile).eq("buyId", row.buyId),
     )
-    .first();
+    .unique();
+  const tombstone = optimistic
+    ? await findRowTombstone(ctx, "btcBuy", row.sourceFile, row.buyId)
+    : null;
   if (existing) {
-    await ctx.db.patch(existing._id, row);
+    if (existing.owner !== row.owner) {
+      deviceFailure(
+        "OWNER_MISMATCH",
+        `Bitcoin buy ${row.buyId} belongs to ${existing.owner}, not ${row.owner}.`,
+        "btcBuy",
+        row.buyId,
+      );
+    }
+    if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
+      deviceFailure(
+        "REVISION_REQUIRED",
+        "baseUpdatedAtMs is required to update an existing bitcoin buy.",
+        "btcBuy",
+        row.buyId,
+      );
+    }
+    if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
+      deviceFailure(
+        "ENTITY_CONFLICT",
+        "The bitcoin buy changed after it was read.",
+        "btcBuy",
+        row.buyId,
+      );
+    }
+    await lockRuntimeSource(ctx, row.sourceFile);
+    await ctx.db.patch(existing._id, {
+      ...row,
+      updatedAtMs: optimistic
+        ? nextUpdatedAtMs(existing.updatedAtMs)
+        : row.updatedAtMs,
+    });
+    await clearRowTombstone(ctx, "btcBuy", row.sourceFile, row.buyId);
     return "updated";
   }
+  if (optimistic?.baseUpdatedAtMs !== undefined) {
+    deviceFailure(
+      tombstone ? "ENTITY_DELETED" : "ENTITY_NOT_FOUND",
+      tombstone
+        ? "The bitcoin buy was deleted after it was read."
+        : "The bitcoin buy to update does not exist.",
+      "btcBuy",
+      row.buyId,
+    );
+  }
+  if (tombstone) {
+    deviceFailure(
+      "ENTITY_DELETED",
+      "A deleted bitcoin buy id cannot be silently resurrected.",
+      "btcBuy",
+      row.buyId,
+    );
+  }
+  await lockRuntimeSource(ctx, row.sourceFile);
   await ctx.db.insert("btcBuys", row);
+  await clearRowTombstone(ctx, "btcBuy", row.sourceFile, row.buyId);
   return "inserted";
 }
 
 async function upsertBtcBillPayRow(
-  ctx: any,
-  row: {
-    billPayId: string;
-    sourceFile: string;
-  } & Record<string, unknown>,
+  ctx: MutationCtx,
+  row: Omit<Doc<"btcBillPays">, "_id" | "_creationTime">,
+  optimistic?: OptimisticWrite,
 ): Promise<UpsertOutcome> {
   const existing = await ctx.db
     .query("btcBillPays")
     .withIndex("by_source_bill_pay_id", (q: any) =>
       q.eq("sourceFile", row.sourceFile).eq("billPayId", row.billPayId),
     )
-    .first();
+    .unique();
+  const tombstone = optimistic
+    ? await findRowTombstone(ctx, "btcBillPay", row.sourceFile, row.billPayId)
+    : null;
   if (existing) {
     // Bill pays deliberately share ONE source file and carry `owner` per row,
     // unlike transactions which separate owners by file. The natural key is
@@ -1536,31 +1986,82 @@ async function upsertBtcBillPayRow(
     // An upsert may change a row's money and metadata; it may never change who
     // it belongs to.
     if (existing.owner !== row.owner) {
-      throw new ConvexError(
-        `upsertBtcBillPay: ${row.billPayId} in ${row.sourceFile} belongs to ` +
-          `${existing.owner}, not ${row.owner}. Reusing another member's id ` +
-          `would overwrite their payment, so this is refused rather than merged.`,
+      deviceFailure(
+        "OWNER_MISMATCH",
+        `Bitcoin bill pay ${row.billPayId} belongs to ${existing.owner}, not ${row.owner}.`,
+        "btcBillPay",
+        row.billPayId,
       );
     }
-    await ctx.db.patch(existing._id, row);
+    if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
+      deviceFailure(
+        "REVISION_REQUIRED",
+        "baseUpdatedAtMs is required to update an existing bill pay.",
+        "btcBillPay",
+        row.billPayId,
+      );
+    }
+    if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
+      deviceFailure(
+        "ENTITY_CONFLICT",
+        "The bitcoin bill pay changed after it was read.",
+        "btcBillPay",
+        row.billPayId,
+      );
+    }
+    await lockRuntimeSource(ctx, row.sourceFile);
+    await ctx.db.patch(existing._id, {
+      ...row,
+      updatedAtMs: optimistic
+        ? nextUpdatedAtMs(existing.updatedAtMs)
+        : row.updatedAtMs,
+    });
+    await clearRowTombstone(ctx, "btcBillPay", row.sourceFile, row.billPayId);
     return "updated";
   }
+  if (optimistic?.baseUpdatedAtMs !== undefined) {
+    deviceFailure(
+      tombstone ? "ENTITY_DELETED" : "ENTITY_NOT_FOUND",
+      tombstone
+        ? "The bitcoin bill pay was deleted after it was read."
+        : "The bitcoin bill pay to update does not exist.",
+      "btcBillPay",
+      row.billPayId,
+    );
+  }
+  if (tombstone) {
+    deviceFailure(
+      "ENTITY_DELETED",
+      "A deleted bill pay id cannot be silently resurrected.",
+      "btcBillPay",
+      row.billPayId,
+    );
+  }
+  await lockRuntimeSource(ctx, row.sourceFile);
   await ctx.db.insert("btcBillPays", row);
+  await clearRowTombstone(ctx, "btcBillPay", row.sourceFile, row.billPayId);
   return "inserted";
 }
 
-async function upsertBtcAccountRow(ctx: any, row: any): Promise<UpsertOutcome> {
+async function upsertBtcAccountRow(
+  ctx: MutationCtx,
+  row: Omit<Doc<"btcAccounts">, "_id" | "_creationTime">,
+): Promise<UpsertOutcome> {
   const existing = await ctx.db
     .query("btcAccounts")
     .withIndex("by_owner_key", (q: any) =>
       q.eq("owner", row.owner).eq("key", row.key),
     )
-    .first();
+    .unique();
   if (existing) {
+    await lockRuntimeSource(ctx, row.sourceFile);
     await ctx.db.patch(existing._id, row);
+    await clearRowTombstone(ctx, "btcAccount", row.sourceFile, row.key);
     return "updated";
   }
+  await lockRuntimeSource(ctx, row.sourceFile);
   await ctx.db.insert("btcAccounts", row);
+  await clearRowTombstone(ctx, "btcAccount", row.sourceFile, row.key);
   return "inserted";
 }
 
@@ -1587,22 +2088,27 @@ function requireSignAgrees(
   category: string,
 ) {
   if (minor === 0n) {
-    throw new ConvexError(
+    deviceFailure(
+      "VALIDATION_FAILED",
       "upsertTransaction: amountCents must not be zero — a zero-value " +
         "transaction has no sign to check.",
     );
   }
   if (category === "Income" && kind !== "credit") {
-    throw new ConvexError(
+    deviceFailure(
+      "VALIDATION_FAILED",
       'upsertTransaction: a transaction categorised "Income" must be sent ' +
         'with kind "credit".',
     );
   }
 
   const expectedNegative = category !== "Income" && kind === "credit";
-  if ((minor < 0n) !== expectedNegative) {
-    const sourceFile = isAdult(owner) ? "transactions" : `${owner}-transactions`;
-    throw new ConvexError(
+  if (minor < 0n !== expectedNegative) {
+    const sourceFile = isAdult(owner)
+      ? "transactions"
+      : `${owner}-transactions`;
+    deviceFailure(
+      "VALIDATION_FAILED",
       `upsertTransaction: a ${kind} for ${owner} must be ` +
         `${expectedNegative ? "negative" : "positive"} in ${sourceFile} ` +
         `(purchases are positive and refunds are negative for every owner), ` +
@@ -1629,7 +2135,8 @@ function requireBillPayAmounts(billPay: {
   ];
   for (const [field, value] of positive) {
     if (value <= 0n) {
-      throw new ConvexError(
+      deviceFailure(
+        "VALIDATION_FAILED",
         `upsertBtcBillPay: ${field} for ${billPay.id} must be positive ` +
           `(a bill payment is a spend), got ${value}. The sign is not ` +
           `corrected here on purpose.`,
@@ -1637,7 +2144,8 @@ function requireBillPayAmounts(billPay: {
     }
   }
   if (billPay.feeUsdCents < 0n) {
-    throw new ConvexError(
+    deviceFailure(
+      "VALIDATION_FAILED",
       `upsertBtcBillPay: feeUsdCents for ${billPay.id} must not be negative, ` +
         `got ${billPay.feeUsdCents}.`,
     );
@@ -1656,6 +2164,123 @@ const transactionInput = v.object({
   owner: v.optional(familyMemberValidator),
 });
 
+const transactionDeviceInput = v.object({
+  id: v.string(),
+  date: v.string(),
+  merchant: v.string(),
+  amountCents: v.int64(),
+  kind: transactionKindValidator,
+  category: v.string(),
+  card: v.optional(v.string()),
+  note: v.optional(v.string()),
+  owner: familyMemberValidator,
+});
+
+const transactionSourceValidator = v.union(
+  v.literal("transactions"),
+  v.literal("mason-transactions"),
+  v.literal("maddox-transactions"),
+);
+
+const todoDeviceInput = v.object({
+  id: v.string(),
+  owner: familyMemberValidator,
+  title: v.string(),
+  done: v.boolean(),
+  flagged: v.boolean(),
+  lane: v.optional(v.string()),
+  project: v.optional(v.string()),
+  area: v.optional(v.string()),
+  due: v.optional(v.string()),
+  notes: v.optional(v.string()),
+  priority: v.optional(v.int64()),
+  createdAt: v.optional(v.string()),
+  updatedAt: v.optional(v.string()),
+  completedAt: v.optional(v.string()),
+});
+
+const btcBuyDeviceInput = v.object({
+  id: v.string(),
+  owner: familyMemberValidator,
+  date: v.string(),
+  source: v.string(),
+  sats: v.int64(),
+  priceUsdCents: v.int64(),
+  usdCents: v.int64(),
+  note: v.optional(v.string()),
+  status: v.optional(v.string()),
+  costBasisStatus: v.optional(v.string()),
+  loggedBy: v.optional(v.string()),
+  archimedesRequestId: v.optional(v.string()),
+});
+
+const btcBuySourceValidator = v.union(
+  v.literal("bitcoin-buys"),
+  v.literal("mason-bitcoin-buys"),
+);
+
+const btcBillPayDeviceInput = v.object({
+  id: v.string(),
+  owner: familyMemberValidator,
+  date: v.string(),
+  merchant: v.string(),
+  category: v.string(),
+  amountUsdCents: v.int64(),
+  btcSpentSats: v.int64(),
+  btcPriceCents: v.int64(),
+  platform: v.optional(v.string()),
+  note: v.optional(v.string()),
+  feeUsdCents: v.int64(),
+  reference: v.optional(v.string()),
+});
+
+const budgetCategoryDeviceInput = v.object({
+  name: v.string(),
+  icon: v.optional(v.string()),
+  budgetCents: v.int64(),
+});
+
+const budgetSourceValidator = v.union(
+  v.literal("budget"),
+  v.literal("mason-budget"),
+);
+
+const btcAccountDeviceInput = v.object({
+  key: v.string(),
+  owner: familyMemberValidator,
+  label: v.string(),
+  custody: custodyValidator,
+  sats: v.int64(),
+  asOf: v.string(),
+  schemaVersion: v.optional(v.int64()),
+  fiatValuation: v.optional(
+    v.object({
+      cents: v.int64(),
+      priceCents: v.optional(v.int64()),
+      quotedAt: v.optional(v.string()),
+      source: v.optional(v.string()),
+      confidence: v.optional(v.string()),
+    }),
+  ),
+});
+
+const btcAccountSourceValidator = v.union(
+  v.literal("btc-balance-snapshot"),
+  v.literal("son-balances"),
+);
+
+const deviceUpsertResultValidator = v.object({
+  ok: v.literal(true),
+  entityId: v.string(),
+  outcome: v.union(v.literal("inserted"), v.literal("updated")),
+});
+
+const deviceDeleteResultValidator = v.object({
+  ok: v.literal(true),
+  entityId: v.string(),
+  removed: v.boolean(),
+});
+
 /** Insert or replace ONE transaction. Compare with dataFiles:appendTransaction,
  *  which rewrites all 905 to do this. */
 export const upsertTransaction = mutation({
@@ -1669,7 +2294,13 @@ export const upsertTransaction = mutation({
     const file = sourceFile ?? "transactions";
     const fileOwner = ownerForSourceFile(file, "transactions");
     const now = Date.now();
-    const date = requireIsoDate(transaction.date, "date", now, 30, rejectRowDate);
+    const date = requireIsoDate(
+      transaction.date,
+      "date",
+      now,
+      30,
+      rejectRowDate,
+    );
     // During the compatibility window, older clients may omit owner or send
     // Rachel for the shared adult ledger. The source file is already the
     // authoritative ownership boundary, so canonicalize here without breaking
@@ -1707,11 +2338,8 @@ export const upsertTransaction = mutation({
  * `deleteTodo`: clients may safely retry after losing a response without
  * turning an already-completed delete into an error.
  *
- * Deliberately does NOT write a tombstone. `todoTombstones` is part of the
- * blob todo convergence path and cannot represent transaction deletes. As with
- * `deleteTodo`, a row deleted here would return if the internal migration were
- * re-run from a blob that still contains it; transaction tombstones belong in
- * a reviewed row-native convergence design when `dataFiles` is retired.
+ * The natural-key tombstone is written even when the row is already absent, so
+ * retrying is idempotent and a later migration cannot resurrect the blob row.
  */
 export const deleteTransaction = mutation({
   args: {
@@ -1730,8 +2358,12 @@ export const deleteTransaction = mutation({
       .withIndex("by_source_tx_id", (q) =>
         q.eq("sourceFile", file).eq("txId", txId),
       )
-      .first();
-    if (!existing) return { txId, owner, removed: false };
+      .unique();
+    if (!existing) {
+      await lockRuntimeSource(ctx, file);
+      await upsertRowTombstone(ctx, "transaction", file, txId, owner);
+      return { txId, owner, removed: false };
+    }
     // The `owner` argument used to be resolved and then never consulted, so the
     // row was found by (sourceFile, txId) alone. Transaction ids DO collide
     // across source files — the neighbouring test seeds "shared-id" in both
@@ -1747,7 +2379,9 @@ export const deleteTransaction = mutation({
           `is not corrected here on purpose because the delete is irreversible.`,
       );
     }
+    await lockRuntimeSource(ctx, file);
     await ctx.db.delete(existing._id);
+    await upsertRowTombstone(ctx, "transaction", file, txId, existing.owner);
     return { txId, owner: existing.owner, removed: true };
   },
 });
@@ -1780,11 +2414,8 @@ export const upsertTodo = mutation({
 /**
  * Delete ONE todo row.
  *
- * Deliberately does NOT write a `todoTombstones` entry: that table belongs to
- * the blob path, which this change must leave untouched. The consequence is
- * named rather than hidden — a row deleted here would come back if the todo
- * the internal migration were re-run from a blob that still contains it.
- * Row-native deletes get their own tombstone table when `dataFiles` is retired.
+ * Writes both row-native and legacy todo tombstones. The legacy marker remains
+ * required while shipped clients still converge through the todos blob.
  */
 export const deleteTodo = mutation({
   args: { todoId: v.string(), token: v.optional(v.string()) },
@@ -1793,9 +2424,23 @@ export const deleteTodo = mutation({
     const existing = await ctx.db
       .query("todos")
       .withIndex("by_todo_id", (q) => q.eq("todoId", todoId))
-      .first();
-    if (!existing) return { todoId, removed: false };
+      .unique();
+    if (!existing) {
+      await lockRuntimeSource(ctx, "todos");
+      await upsertRowTombstone(ctx, "todo", "todos", todoId, DEFAULT_OWNER);
+      await upsertLegacyTodoTombstone(ctx, todoId);
+      return { todoId, removed: false };
+    }
+    await lockRuntimeSource(ctx, existing.sourceFile);
     await ctx.db.delete(existing._id);
+    await upsertRowTombstone(
+      ctx,
+      "todo",
+      existing.sourceFile,
+      todoId,
+      existing.owner,
+    );
+    await upsertLegacyTodoTombstone(ctx, todoId);
     return { todoId, removed: true };
   },
 });
@@ -1965,6 +2610,262 @@ export const upsertBtcAccount = mutation({
  * derive spend from that document's own month. Refusing a stale month here keeps
  * a category edit made from a June screen from changing the July document.
  */
+function budgetOwnerForSource(
+  sourceFile: "budget" | "mason-budget",
+): FamilyMember {
+  return sourceFile === "budget" ? "victor" : "mason";
+}
+
+/** Rachel shares the canonical adult financial ledger stored under Victor. */
+function canonicalLedgerOwner(owner: FamilyMember): FamilyMember {
+  return owner === "rachel" ? "victor" : owner;
+}
+
+function foldedCategoryName(value: string): string {
+  const normalized = value.trim();
+  if (!normalized) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Budget category name must not be empty.",
+    );
+  }
+  return normalized.toLocaleLowerCase("en-US");
+}
+
+async function upsertBudgetCategoryCore(
+  ctx: MutationCtx,
+  sourceFile: "budget" | "mason-budget",
+  owner: FamilyMember,
+  month: string,
+  category: {
+    name: string;
+    icon?: string;
+    budgetCents: bigint;
+  },
+  previousName?: string,
+  optimistic?: OptimisticWrite,
+): Promise<{ entityId: string; outcome: UpsertOutcome }> {
+  const expectedOwner = budgetOwnerForSource(sourceFile);
+  if (owner !== expectedOwner) {
+    deviceFailure(
+      "OWNER_SOURCE_MISMATCH",
+      `Budget source "${sourceFile}" belongs to ${expectedOwner}, not ${owner}.`,
+    );
+  }
+  const existing = await ctx.db
+    .query("budgetDocuments")
+    .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
+    .unique();
+  if (!existing) {
+    deviceFailure(
+      "ENTITY_NOT_FOUND",
+      `Budget document "${sourceFile}" does not exist; a category edit ` +
+        "does not create a whole budget document.",
+      "budgetCategory",
+      previousName ?? category.name,
+    );
+  }
+  if (existing.owner !== owner) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Budget document "${sourceFile}" belongs to ${existing.owner}, not ${owner}.`,
+      "budgetCategory",
+      previousName ?? category.name,
+    );
+  }
+  if (month !== existing.month) {
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      `requested month ${JSON.stringify(month)} does not match ` +
+        `${sourceFile}'s month ${JSON.stringify(existing.month)}.`,
+      "budgetCategory",
+      previousName ?? category.name,
+    );
+  }
+  if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
+    deviceFailure(
+      "REVISION_REQUIRED",
+      "baseUpdatedAtMs is required to edit a budget document.",
+      "budgetCategory",
+      previousName ?? category.name,
+    );
+  }
+  if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      "The budget changed after it was read.",
+      "budgetCategory",
+      previousName ?? category.name,
+    );
+  }
+
+  const name = category.name.trim();
+  const targetFold = foldedCategoryName(name);
+  const sourceFold =
+    previousName === undefined ? targetFold : foldedCategoryName(previousName);
+  const sourceIndex = existing.categories.findIndex(
+    (candidate) => foldedCategoryName(candidate.name) === sourceFold,
+  );
+  const targetIndex = existing.categories.findIndex(
+    (candidate) => foldedCategoryName(candidate.name) === targetFold,
+  );
+  if (previousName !== undefined && sourceIndex === -1) {
+    deviceFailure(
+      "ENTITY_NOT_FOUND",
+      `Budget category ${JSON.stringify(previousName)} does not exist.`,
+      "budgetCategory",
+      previousName,
+    );
+  }
+  if (
+    previousName !== undefined &&
+    targetIndex !== -1 &&
+    targetIndex !== sourceIndex
+  ) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      `Budget category ${JSON.stringify(name)} already exists; rename refused.`,
+      "budgetCategory",
+      name,
+    );
+  }
+
+  const categories = [...existing.categories];
+  const normalizedCategory = {
+    name,
+    icon: optionalText(category.icon),
+    budgetCents: category.budgetCents,
+  };
+  const writeIndex = previousName !== undefined ? sourceIndex : targetIndex;
+  const outcome: UpsertOutcome = writeIndex === -1 ? "inserted" : "updated";
+  if (writeIndex === -1) categories.push(normalizedCategory);
+  else categories[writeIndex] = normalizedCategory;
+
+  await lockRuntimeSource(ctx, sourceFile);
+  await ctx.db.patch(existing._id, {
+    categories,
+    updatedAtMs: optimistic
+      ? nextUpdatedAtMs(existing.updatedAtMs)
+      : Date.now(),
+  });
+  if (previousName !== undefined && sourceFold !== targetFold) {
+    await upsertRowTombstone(
+      ctx,
+      "budgetCategory",
+      sourceFile,
+      sourceFold,
+      owner,
+      optimistic?.baseUpdatedAtMs,
+    );
+  }
+  await clearRowTombstone(ctx, "budgetCategory", sourceFile, targetFold);
+  return { entityId: name, outcome };
+}
+
+async function deleteBudgetCategoryCore(
+  ctx: MutationCtx,
+  sourceFile: "budget" | "mason-budget",
+  owner: FamilyMember,
+  month: string,
+  name: string,
+  optimistic?: OptimisticWrite,
+): Promise<boolean> {
+  const expectedOwner = budgetOwnerForSource(sourceFile);
+  if (owner !== expectedOwner) {
+    deviceFailure(
+      "OWNER_SOURCE_MISMATCH",
+      `Budget source "${sourceFile}" belongs to ${expectedOwner}, not ${owner}.`,
+    );
+  }
+  const existing = await ctx.db
+    .query("budgetDocuments")
+    .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
+    .unique();
+  if (!existing) {
+    deviceFailure(
+      "ENTITY_NOT_FOUND",
+      `Budget document "${sourceFile}" does not exist.`,
+      "budgetCategory",
+      name,
+    );
+  }
+  if (existing.owner !== owner) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Budget document "${sourceFile}" belongs to ${existing.owner}, not ${owner}.`,
+      "budgetCategory",
+      name,
+    );
+  }
+  if (month !== existing.month) {
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      `requested month ${JSON.stringify(month)} does not match ` +
+        `${sourceFile}'s month ${JSON.stringify(existing.month)}.`,
+      "budgetCategory",
+      name,
+    );
+  }
+  if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
+    deviceFailure(
+      "REVISION_REQUIRED",
+      "baseUpdatedAtMs is required to delete a budget category.",
+      "budgetCategory",
+      name,
+    );
+  }
+  const targetFold = foldedCategoryName(name);
+  const index = existing.categories.findIndex(
+    (candidate) => foldedCategoryName(candidate.name) === targetFold,
+  );
+  const tombstoneId = targetFold;
+  const tombstone = optimistic
+    ? await findRowTombstone(ctx, "budgetCategory", sourceFile, tombstoneId)
+    : null;
+  if (index === -1 && optimistic) {
+    if (tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs) {
+      return false;
+    }
+    deviceFailure(
+      tombstone ? "ENTITY_CONFLICT" : "ENTITY_NOT_FOUND",
+      tombstone
+        ? "The category deletion does not match the current revision."
+        : "The budget category to delete does not exist.",
+      "budgetCategory",
+      name,
+    );
+  }
+  if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      "The budget changed after it was read.",
+      "budgetCategory",
+      name,
+    );
+  }
+  if (index !== -1) {
+    const categories = [...existing.categories];
+    categories.splice(index, 1);
+    await lockRuntimeSource(ctx, sourceFile);
+    await ctx.db.patch(existing._id, {
+      categories,
+      updatedAtMs: optimistic
+        ? nextUpdatedAtMs(existing.updatedAtMs)
+        : Date.now(),
+    });
+  }
+  if (index === -1) await lockRuntimeSource(ctx, sourceFile);
+  await upsertRowTombstone(
+    ctx,
+    "budgetCategory",
+    sourceFile,
+    tombstoneId,
+    owner,
+    optimistic?.baseUpdatedAtMs,
+  );
+  return index !== -1;
+}
+
 export const upsertBudgetCategory = mutation({
   args: {
     viewer: familyMemberValidator,
@@ -1985,54 +2886,1220 @@ export const upsertBudgetCategory = mutation({
       );
     }
 
-    const existing = await ctx.db
-      .query("budgetDocuments")
-      .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
-      .unique();
-    if (!existing) {
-      throw new ConvexError(
-        `upsertBudgetCategory: budget document "${sourceFile}" does not exist; ` +
-          "a category edit does not create a whole budget document.",
-      );
-    }
-    if (!sharesNetWorthWith(viewer, existing.owner)) {
-      throw new ConvexError(
-        `upsertBudgetCategory: ${viewer} cannot write ${existing.owner}'s budget.`,
-      );
-    }
-    if (month !== existing.month) {
-      throw new ConvexError(
-        `upsertBudgetCategory: requested month ${JSON.stringify(month)} does ` +
-          `not match ${sourceFile}'s month ${JSON.stringify(existing.month)}.`,
-      );
-    }
-
-    const categoryIndex = existing.categories.findIndex(
-      (candidate) => candidate.name === category.name,
+    const owner = budgetOwnerForSource(sourceFile);
+    const result = await upsertBudgetCategoryCore(
+      ctx,
+      sourceFile,
+      owner,
+      month,
+      category,
     );
-    const categories = [...existing.categories];
-    const normalizedCategory = {
-      name: category.name,
-      icon: optionalText(category.icon),
-      budgetCents: category.budgetCents,
-    };
-    const outcome: UpsertOutcome = categoryIndex === -1 ? "inserted" : "updated";
-    if (categoryIndex === -1) {
-      categories.push(normalizedCategory);
-    } else {
-      categories[categoryIndex] = normalizedCategory;
-    }
-
-    await ctx.db.patch(existing._id, {
-      categories,
-      updatedAtMs: Date.now(),
-    });
     return {
-      owner: existing.owner,
-      month: existing.month,
-      name: category.name,
-      outcome,
+      owner,
+      month,
+      name: result.entityId,
+      outcome: result.outcome,
     };
+  },
+});
+
+function requireSourceOwner(
+  sourceFile: string,
+  kind: BlobKind,
+  owner: FamilyMember,
+) {
+  const expectedOwner = ownerForSourceFile(sourceFile, kind);
+  if (owner !== expectedOwner) {
+    deviceFailure(
+      "OWNER_SOURCE_MISMATCH",
+      `Source file "${sourceFile}" belongs to ${expectedOwner}, not ${owner}.`,
+    );
+  }
+}
+
+function deviceTodoRow(
+  todo: {
+    id: string;
+    owner: FamilyMember;
+    title: string;
+    done: boolean;
+    flagged: boolean;
+    lane?: string;
+    project?: string;
+    area?: string;
+    due?: string;
+    notes?: string;
+    priority?: bigint;
+    createdAt?: string;
+    updatedAt?: string;
+    completedAt?: string;
+  },
+  now: number,
+) {
+  return buildTodoRow(
+    {
+      id: todo.id,
+      owner: todo.owner,
+      title: todo.title,
+      done: todo.done,
+      flagged: todo.flagged,
+      category: todo.lane,
+      project: todo.project,
+      area: todo.area,
+      dueDate: todo.due,
+      notes: todo.notes,
+      priority: todo.priority,
+      createdAt: todo.createdAt,
+      updatedAt: todo.updatedAt,
+      completedAt: todo.completedAt,
+    },
+    todo.owner,
+    "todos",
+    now,
+  );
+}
+
+async function deleteTransactionCore(
+  ctx: MutationCtx,
+  sourceFile: string,
+  owner: FamilyMember,
+  txId: string,
+  optimistic?: OptimisticWrite,
+) {
+  requireSourceOwner(sourceFile, "transactions", owner);
+  const existing = await ctx.db
+    .query("transactions")
+    .withIndex("by_source_tx_id", (q) =>
+      q.eq("sourceFile", sourceFile).eq("txId", txId),
+    )
+    .unique();
+  const tombstone = optimistic
+    ? await findRowTombstone(ctx, "transaction", sourceFile, txId)
+    : null;
+  if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
+    deviceFailure(
+      "REVISION_REQUIRED",
+      "baseUpdatedAtMs is required to delete a transaction.",
+      "transaction",
+      txId,
+    );
+  }
+  if (!existing && optimistic) {
+    if (tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs) {
+      return false;
+    }
+    deviceFailure(
+      tombstone ? "ENTITY_CONFLICT" : "ENTITY_NOT_FOUND",
+      tombstone
+        ? "The transaction deletion does not match the current revision."
+        : "The transaction to delete does not exist.",
+      "transaction",
+      txId,
+    );
+  }
+  if (existing && existing.owner !== owner) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Transaction ${txId} belongs to ${existing.owner}, not ${owner}.`,
+      "transaction",
+      txId,
+    );
+  }
+  if (
+    existing &&
+    optimistic &&
+    optimistic.baseUpdatedAtMs !== existing.updatedAtMs
+  ) {
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      "The transaction changed after it was read.",
+      "transaction",
+      txId,
+    );
+  }
+  await lockRuntimeSource(ctx, sourceFile);
+  if (existing) await ctx.db.delete(existing._id);
+  await upsertRowTombstone(
+    ctx,
+    "transaction",
+    sourceFile,
+    txId,
+    owner,
+    optimistic?.baseUpdatedAtMs,
+  );
+  return existing !== null;
+}
+
+async function deleteTodoCore(
+  ctx: MutationCtx,
+  owner: FamilyMember,
+  todoId: string,
+  optimistic?: OptimisticWrite,
+) {
+  const existing = await ctx.db
+    .query("todos")
+    .withIndex("by_todo_id", (q) => q.eq("todoId", todoId))
+    .unique();
+  const tombstone = optimistic
+    ? await findRowTombstone(ctx, "todo", "todos", todoId)
+    : null;
+  if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
+    deviceFailure(
+      "REVISION_REQUIRED",
+      "baseUpdatedAtMs is required to delete a todo.",
+      "todo",
+      todoId,
+    );
+  }
+  if (!existing && optimistic) {
+    if (tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs) {
+      return false;
+    }
+    deviceFailure(
+      tombstone ? "ENTITY_CONFLICT" : "ENTITY_NOT_FOUND",
+      tombstone
+        ? "The todo deletion does not match the current revision."
+        : "The todo to delete does not exist.",
+      "todo",
+      todoId,
+    );
+  }
+  if (existing && existing.owner !== owner) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Todo ${todoId} belongs to ${existing.owner}, not ${owner}.`,
+      "todo",
+      todoId,
+    );
+  }
+  if (
+    existing &&
+    optimistic &&
+    optimistic.baseUpdatedAtMs !== existing.updatedAtMs
+  ) {
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      "The todo changed after it was read.",
+      "todo",
+      todoId,
+    );
+  }
+  await lockRuntimeSource(ctx, "todos");
+  if (existing) await ctx.db.delete(existing._id);
+  await upsertRowTombstone(
+    ctx,
+    "todo",
+    "todos",
+    todoId,
+    owner,
+    optimistic?.baseUpdatedAtMs,
+  );
+  await upsertLegacyTodoTombstone(ctx, todoId);
+  return existing !== null;
+}
+
+async function deleteBtcBuyCore(
+  ctx: MutationCtx,
+  sourceFile: string,
+  owner: FamilyMember,
+  buyId: string,
+  optimistic?: OptimisticWrite,
+) {
+  requireSourceOwner(sourceFile, "btcBuys", owner);
+  const existing = await ctx.db
+    .query("btcBuys")
+    .withIndex("by_source_buy_id", (q) =>
+      q.eq("sourceFile", sourceFile).eq("buyId", buyId),
+    )
+    .unique();
+  const tombstone = optimistic
+    ? await findRowTombstone(ctx, "btcBuy", sourceFile, buyId)
+    : null;
+  if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
+    deviceFailure(
+      "REVISION_REQUIRED",
+      "baseUpdatedAtMs is required to delete a bitcoin buy.",
+      "btcBuy",
+      buyId,
+    );
+  }
+  if (!existing && optimistic) {
+    if (tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs) {
+      return false;
+    }
+    deviceFailure(
+      tombstone ? "ENTITY_CONFLICT" : "ENTITY_NOT_FOUND",
+      tombstone
+        ? "The bitcoin buy deletion does not match the current revision."
+        : "The bitcoin buy to delete does not exist.",
+      "btcBuy",
+      buyId,
+    );
+  }
+  if (existing && existing.owner !== owner) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Bitcoin buy ${buyId} belongs to ${existing.owner}, not ${owner}.`,
+      "btcBuy",
+      buyId,
+    );
+  }
+  if (
+    existing &&
+    optimistic &&
+    optimistic.baseUpdatedAtMs !== existing.updatedAtMs
+  ) {
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      "The bitcoin buy changed after it was read.",
+      "btcBuy",
+      buyId,
+    );
+  }
+  await lockRuntimeSource(ctx, sourceFile);
+  if (existing) await ctx.db.delete(existing._id);
+  await upsertRowTombstone(
+    ctx,
+    "btcBuy",
+    sourceFile,
+    buyId,
+    owner,
+    optimistic?.baseUpdatedAtMs,
+  );
+  return existing !== null;
+}
+
+async function deleteBtcBillPayCore(
+  ctx: MutationCtx,
+  owner: FamilyMember,
+  billPayId: string,
+  optimistic?: OptimisticWrite,
+) {
+  const sourceFile = "bitcoin-bill-pays";
+  const existing = await ctx.db
+    .query("btcBillPays")
+    .withIndex("by_source_bill_pay_id", (q) =>
+      q.eq("sourceFile", sourceFile).eq("billPayId", billPayId),
+    )
+    .unique();
+  const tombstone = optimistic
+    ? await findRowTombstone(ctx, "btcBillPay", sourceFile, billPayId)
+    : null;
+  if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
+    deviceFailure(
+      "REVISION_REQUIRED",
+      "baseUpdatedAtMs is required to delete a bitcoin bill pay.",
+      "btcBillPay",
+      billPayId,
+    );
+  }
+  if (!existing && optimistic) {
+    if (tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs) {
+      return false;
+    }
+    deviceFailure(
+      tombstone ? "ENTITY_CONFLICT" : "ENTITY_NOT_FOUND",
+      tombstone
+        ? "The bill pay deletion does not match the current revision."
+        : "The bitcoin bill pay to delete does not exist.",
+      "btcBillPay",
+      billPayId,
+    );
+  }
+  if (existing && existing.owner !== owner) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Bitcoin bill pay ${billPayId} belongs to ${existing.owner}, not ${owner}.`,
+      "btcBillPay",
+      billPayId,
+    );
+  }
+  if (
+    existing &&
+    optimistic &&
+    optimistic.baseUpdatedAtMs !== existing.updatedAtMs
+  ) {
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      "The bitcoin bill pay changed after it was read.",
+      "btcBillPay",
+      billPayId,
+    );
+  }
+  await lockRuntimeSource(ctx, sourceFile);
+  if (existing) await ctx.db.delete(existing._id);
+  await upsertRowTombstone(
+    ctx,
+    "btcBillPay",
+    sourceFile,
+    billPayId,
+    owner,
+    optimistic?.baseUpdatedAtMs,
+  );
+  return existing !== null;
+}
+
+function btcAccountTotals(
+  accounts: Array<{
+    custody: "exchange" | "self_custody";
+    sats: bigint;
+    fiatCents?: bigint;
+    fiatValuation?: { cents: bigint };
+  }>,
+) {
+  const totals = accounts.reduce(
+    (totals, account) => ({
+      sats: totals.sats + account.sats,
+      exchangeSats:
+        totals.exchangeSats +
+        (account.custody === "exchange" ? account.sats : 0n),
+      selfCustodySats:
+        totals.selfCustodySats +
+        (account.custody === "self_custody" ? account.sats : 0n),
+    }),
+    {
+      sats: 0n,
+      exchangeSats: 0n,
+      selfCustodySats: 0n,
+    },
+  );
+  const fiatValues = accounts.map(
+    (account) => account.fiatValuation?.cents ?? account.fiatCents,
+  );
+  return {
+    ...totals,
+    fiatCents: fiatValues.every((value): value is bigint => value !== undefined)
+      ? fiatValues.reduce((sum, value) => sum + value, 0n)
+      : undefined,
+  };
+}
+
+function btcAccountMirrorKey(
+  sourceFile: "btc-balance-snapshot" | "son-balances",
+  canonicalKey: string,
+) {
+  return sourceFile === "son-balances"
+    ? `son-${canonicalKey}-mason`
+    : canonicalKey;
+}
+
+async function upsertBtcAccountCore(
+  ctx: MutationCtx,
+  sourceFile: "btc-balance-snapshot" | "son-balances",
+  account: {
+    key: string;
+    owner: FamilyMember;
+    label: string;
+    custody: "exchange" | "self_custody";
+    sats: bigint;
+    asOf: string;
+    schemaVersion?: bigint;
+    fiatValuation?: {
+      cents: bigint;
+      priceCents?: bigint;
+      quotedAt?: string;
+      source?: string;
+      confidence?: string;
+    };
+  },
+  optimistic?: OptimisticWrite,
+): Promise<UpsertOutcome> {
+  requireSourceOwner(sourceFile, "btcAccounts", account.owner);
+  const key = account.key.trim();
+  if (!key) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Bitcoin account key must not be empty.",
+      "btcAccount",
+      account.key,
+    );
+  }
+  const existingDocument = await ctx.db
+    .query("btcBalanceDocuments")
+    .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
+    .unique();
+  const tombstone = optimistic
+    ? await findRowTombstone(ctx, "btcAccount", sourceFile, key)
+    : null;
+  if (existingDocument && existingDocument.owner !== account.owner) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Bitcoin document "${sourceFile}" belongs to ` +
+        `${existingDocument.owner}, not ${account.owner}.`,
+      "btcAccount",
+      key,
+    );
+  }
+  if (
+    optimistic &&
+    existingDocument &&
+    optimistic.baseUpdatedAtMs === undefined
+  ) {
+    deviceFailure(
+      "REVISION_REQUIRED",
+      "baseUpdatedAtMs is required to edit an existing bitcoin document.",
+      "btcAccount",
+      key,
+    );
+  }
+  if (
+    optimistic &&
+    existingDocument &&
+    optimistic.baseUpdatedAtMs !== existingDocument.updatedAtMs
+  ) {
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      "The bitcoin balance document changed after it was read.",
+      "btcAccount",
+      key,
+    );
+  }
+  if (
+    optimistic &&
+    !existingDocument &&
+    optimistic.baseUpdatedAtMs !== undefined
+  ) {
+    deviceFailure(
+      tombstone ? "ENTITY_DELETED" : "ENTITY_NOT_FOUND",
+      tombstone
+        ? "The bitcoin account was deleted after it was read."
+        : "The bitcoin account document to update does not exist.",
+      "btcAccount",
+      key,
+    );
+  }
+  if (optimistic && !existingDocument && tombstone) {
+    deviceFailure(
+      "ENTITY_DELETED",
+      "A deleted bitcoin account id cannot be silently resurrected.",
+      "btcAccount",
+      key,
+    );
+  }
+  const accounts = existingDocument ? [...existingDocument.accounts] : [];
+  const index = accounts.findIndex((candidate) => candidate.key === key);
+  const previousAccount = index === -1 ? undefined : accounts[index];
+  const fiatValuation =
+    account.fiatValuation ??
+    previousAccount?.fiatValuation ??
+    (previousAccount?.fiatCents === undefined
+      ? undefined
+      : { cents: previousAccount.fiatCents });
+  const normalizedAccount = {
+    key,
+    label: account.label,
+    custody: account.custody,
+    sats: account.sats,
+    fiatCents: fiatValuation?.cents,
+    fiatValuation,
+  };
+  const outcome: UpsertOutcome = index === -1 ? "inserted" : "updated";
+  if (index === -1) accounts.push(normalizedAccount);
+  else accounts[index] = normalizedAccount;
+  const now =
+    existingDocument && optimistic
+      ? nextUpdatedAtMs(existingDocument.updatedAtMs)
+      : Date.now();
+  const documentPatch = {
+    owner: account.owner,
+    schemaVersion:
+      account.schemaVersion ?? existingDocument?.schemaVersion ?? 0n,
+    asOf: account.asOf,
+    accounts,
+    totals: btcAccountTotals(accounts),
+    updatedAtMs: now,
+  };
+  if (existingDocument) {
+    await lockRuntimeSource(ctx, sourceFile);
+    await ctx.db.patch(existingDocument._id, documentPatch);
+  } else {
+    await lockRuntimeSource(ctx, sourceFile);
+    await ctx.db.insert("btcBalanceDocuments", {
+      sourceFile,
+      ...documentPatch,
+    });
+  }
+
+  const mirror = await ctx.db
+    .query("btcAccounts")
+    .withIndex("by_owner_key", (q) =>
+      q
+        .eq("owner", account.owner)
+        .eq("key", btcAccountMirrorKey(sourceFile, key)),
+    )
+    .unique();
+  const mirrorRow = {
+    ...normalizedAccount,
+    key: btcAccountMirrorKey(sourceFile, key),
+    owner: account.owner,
+    asOf: account.asOf,
+    schemaVersion: documentPatch.schemaVersion,
+    sourceFile,
+    updatedAtMs: now,
+  };
+  if (mirror) await ctx.db.patch(mirror._id, mirrorRow);
+  else await ctx.db.insert("btcAccounts", mirrorRow);
+  await clearRowTombstone(ctx, "btcAccount", sourceFile, key);
+  return outcome;
+}
+
+async function deleteBtcAccountCore(
+  ctx: MutationCtx,
+  sourceFile: "btc-balance-snapshot" | "son-balances",
+  owner: FamilyMember,
+  key: string,
+  optimistic?: OptimisticWrite,
+) {
+  requireSourceOwner(sourceFile, "btcAccounts", owner);
+  const accountKey = key.trim();
+  if (!accountKey) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Bitcoin account key must not be empty.",
+      "btcAccount",
+      key,
+    );
+  }
+  const document = await ctx.db
+    .query("btcBalanceDocuments")
+    .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
+    .unique();
+  const tombstone = optimistic
+    ? await findRowTombstone(ctx, "btcAccount", sourceFile, accountKey)
+    : null;
+  if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
+    deviceFailure(
+      "REVISION_REQUIRED",
+      "baseUpdatedAtMs is required to delete a bitcoin account.",
+      "btcAccount",
+      accountKey,
+    );
+  }
+  if (document && document.owner !== owner) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Bitcoin document "${sourceFile}" belongs to ${document.owner}, not ${owner}.`,
+      "btcAccount",
+      accountKey,
+    );
+  }
+  const accounts = document
+    ? document.accounts.filter((account) => account.key !== accountKey)
+    : [];
+  const removed =
+    document !== null && accounts.length !== document.accounts.length;
+  if (!removed && optimistic) {
+    if (tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs) {
+      return false;
+    }
+    deviceFailure(
+      tombstone ? "ENTITY_CONFLICT" : "ENTITY_NOT_FOUND",
+      tombstone
+        ? "The account deletion does not match the current revision."
+        : "The bitcoin account to delete does not exist.",
+      "btcAccount",
+      accountKey,
+    );
+  }
+  if (
+    document &&
+    optimistic &&
+    optimistic.baseUpdatedAtMs !== document.updatedAtMs
+  ) {
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      "The bitcoin balance document changed after it was read.",
+      "btcAccount",
+      accountKey,
+    );
+  }
+  if (document && removed) {
+    await lockRuntimeSource(ctx, sourceFile);
+    await ctx.db.patch(document._id, {
+      accounts,
+      totals: btcAccountTotals(accounts),
+      updatedAtMs: optimistic
+        ? nextUpdatedAtMs(document.updatedAtMs)
+        : Date.now(),
+    });
+  }
+  if (!removed) await lockRuntimeSource(ctx, sourceFile);
+  const mirror = await ctx.db
+    .query("btcAccounts")
+    .withIndex("by_owner_key", (q) =>
+      q
+        .eq("owner", owner)
+        .eq("key", btcAccountMirrorKey(sourceFile, accountKey)),
+    )
+    .unique();
+  if (mirror) await ctx.db.delete(mirror._id);
+  await upsertRowTombstone(
+    ctx,
+    "btcAccount",
+    sourceFile,
+    accountKey,
+    owner,
+    optimistic?.baseUpdatedAtMs,
+  );
+  return removed;
+}
+
+export const upsertTransactionFromDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    owner: familyMemberValidator,
+    sourceFile: transactionSourceValidator,
+    baseUpdatedAtMs: v.optional(v.float64()),
+    transaction: transactionDeviceInput,
+  },
+  returns: deviceUpsertResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+      "transactions:write",
+    );
+    requireDeviceRevision(args.baseUpdatedAtMs, false);
+    requireDeviceIdentifier(args.transaction.id, "transaction.id");
+    requireDeviceText(args.transaction.merchant, "transaction.merchant");
+    requireDeviceText(args.transaction.category, "transaction.category");
+    requireDeviceOptionalText(args.transaction.card, "transaction.card");
+    requireDeviceOptionalText(args.transaction.note, "transaction.note");
+    const ledgerOwner = canonicalLedgerOwner(args.owner);
+    requireSourceOwner(args.sourceFile, "transactions", ledgerOwner);
+    if (args.transaction.owner !== args.owner) {
+      deviceFailure(
+        "OWNER_MISMATCH",
+        "Transaction owner does not match request owner.",
+        "transaction",
+        args.transaction.id,
+      );
+    }
+    const now = Date.now();
+    const date = requireIsoDate(
+      args.transaction.date,
+      "date",
+      now,
+      30,
+      rejectDeviceDate,
+    );
+    requireSignAgrees(
+      args.transaction.amountCents,
+      ledgerOwner,
+      args.transaction.kind,
+      args.transaction.category,
+    );
+    const outcome = await upsertTransactionRow(
+      ctx,
+      {
+        txId: args.transaction.id,
+        owner: ledgerOwner,
+        date,
+        month: monthOf(date),
+        merchant: args.transaction.merchant,
+        amountCents: args.transaction.amountCents,
+        category: args.transaction.category,
+        card: optionalText(args.transaction.card),
+        note: optionalText(args.transaction.note),
+        sourceFile: args.sourceFile,
+        updatedAtMs: now,
+      },
+      { baseUpdatedAtMs: args.baseUpdatedAtMs },
+    );
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, entityId: args.transaction.id, outcome };
+  },
+});
+
+export const deleteTransactionFromDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    owner: familyMemberValidator,
+    sourceFile: transactionSourceValidator,
+    entityId: v.string(),
+    baseUpdatedAtMs: v.float64(),
+  },
+  returns: deviceDeleteResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+      "transactions:write",
+    );
+    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    requireDeviceIdentifier(args.entityId, "entityId");
+    const removed = await deleteTransactionCore(
+      ctx,
+      args.sourceFile,
+      canonicalLedgerOwner(args.owner),
+      args.entityId,
+      { baseUpdatedAtMs: args.baseUpdatedAtMs },
+    );
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, entityId: args.entityId, removed };
+  },
+});
+
+export const upsertTodoFromDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    owner: familyMemberValidator,
+    sourceFile: v.literal("todos"),
+    baseUpdatedAtMs: v.optional(v.float64()),
+    todo: todoDeviceInput,
+  },
+  returns: deviceUpsertResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+      "todos:write",
+    );
+    requireDeviceRevision(args.baseUpdatedAtMs, false);
+    requireDeviceIdentifier(args.todo.id, "todo.id");
+    requireDeviceText(args.todo.title, "todo.title");
+    requireDeviceOptionalText(args.todo.lane, "todo.lane");
+    requireDeviceOptionalText(args.todo.project, "todo.project");
+    requireDeviceOptionalText(args.todo.area, "todo.area");
+    requireDeviceCalendarDate(args.todo.due, "todo.due");
+    requireDeviceOptionalText(args.todo.notes, "todo.notes");
+    requireDeviceTimestamp(args.todo.createdAt, "todo.createdAt");
+    requireDeviceTimestamp(args.todo.updatedAt, "todo.updatedAt");
+    requireDeviceTimestamp(args.todo.completedAt, "todo.completedAt");
+    if (args.todo.owner !== args.owner) {
+      deviceFailure(
+        "OWNER_MISMATCH",
+        "Todo owner does not match request owner.",
+        "todo",
+        args.todo.id,
+      );
+    }
+    const outcome = await upsertTodoRow(
+      ctx,
+      deviceTodoRow(args.todo, Date.now()),
+      { baseUpdatedAtMs: args.baseUpdatedAtMs },
+    );
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, entityId: args.todo.id, outcome };
+  },
+});
+
+export const deleteTodoFromDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    owner: familyMemberValidator,
+    sourceFile: v.literal("todos"),
+    entityId: v.string(),
+    baseUpdatedAtMs: v.float64(),
+  },
+  returns: deviceDeleteResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+      "todos:write",
+    );
+    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    requireDeviceIdentifier(args.entityId, "entityId");
+    const removed = await deleteTodoCore(ctx, args.owner, args.entityId, {
+      baseUpdatedAtMs: args.baseUpdatedAtMs,
+    });
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, entityId: args.entityId, removed };
+  },
+});
+
+export const upsertBudgetCategoryFromDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    owner: familyMemberValidator,
+    sourceFile: budgetSourceValidator,
+    month: v.string(),
+    previousName: v.optional(v.string()),
+    baseUpdatedAtMs: v.optional(v.float64()),
+    category: budgetCategoryDeviceInput,
+  },
+  returns: deviceUpsertResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+      "budget:write",
+    );
+    requireDeviceRevision(args.baseUpdatedAtMs, false);
+    requireDeviceMonth(args.month);
+    requireDeviceIdentifier(args.category.name, "category.name");
+    requireDeviceOptionalText(args.category.icon, "category.icon");
+    requireDeviceNonnegative(args.category.budgetCents, "category.budgetCents");
+    if (args.previousName !== undefined) {
+      requireDeviceIdentifier(args.previousName, "previousName");
+    }
+    const result = await upsertBudgetCategoryCore(
+      ctx,
+      args.sourceFile,
+      canonicalLedgerOwner(args.owner),
+      args.month,
+      args.category,
+      args.previousName,
+      { baseUpdatedAtMs: args.baseUpdatedAtMs },
+    );
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, ...result };
+  },
+});
+
+export const deleteBudgetCategoryFromDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    owner: familyMemberValidator,
+    sourceFile: budgetSourceValidator,
+    month: v.string(),
+    entityId: v.string(),
+    baseUpdatedAtMs: v.float64(),
+  },
+  returns: deviceDeleteResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+      "budget:write",
+    );
+    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    requireDeviceMonth(args.month);
+    requireDeviceIdentifier(args.entityId, "entityId");
+    const removed = await deleteBudgetCategoryCore(
+      ctx,
+      args.sourceFile,
+      canonicalLedgerOwner(args.owner),
+      args.month,
+      args.entityId,
+      { baseUpdatedAtMs: args.baseUpdatedAtMs },
+    );
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, entityId: args.entityId, removed };
+  },
+});
+
+export const upsertBtcBuyFromDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    owner: familyMemberValidator,
+    sourceFile: btcBuySourceValidator,
+    baseUpdatedAtMs: v.optional(v.float64()),
+    buy: btcBuyDeviceInput,
+  },
+  returns: deviceUpsertResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+      "bitcoin:write",
+    );
+    requireDeviceRevision(args.baseUpdatedAtMs, false);
+    requireDeviceIdentifier(args.buy.id, "buy.id");
+    requireDeviceText(args.buy.source, "buy.source");
+    requireDevicePositive(args.buy.sats, "buy.sats");
+    requireDevicePositive(args.buy.priceUsdCents, "buy.priceUsdCents");
+    requireDevicePositive(args.buy.usdCents, "buy.usdCents");
+    requireDeviceOptionalText(args.buy.note, "buy.note");
+    requireDeviceOptionalText(args.buy.status, "buy.status");
+    requireDeviceOptionalText(args.buy.costBasisStatus, "buy.costBasisStatus");
+    requireDeviceOptionalText(args.buy.loggedBy, "buy.loggedBy");
+    requireDeviceOptionalText(
+      args.buy.archimedesRequestId,
+      "buy.archimedesRequestId",
+    );
+    const ledgerOwner = canonicalLedgerOwner(args.owner);
+    requireSourceOwner(args.sourceFile, "btcBuys", ledgerOwner);
+    if (args.buy.owner !== args.owner) {
+      deviceFailure(
+        "OWNER_MISMATCH",
+        "Bitcoin buy owner does not match request owner.",
+        "btcBuy",
+        args.buy.id,
+      );
+    }
+    const now = Date.now();
+    const date = requireIsoDate(
+      args.buy.date,
+      "date",
+      now,
+      30,
+      rejectDeviceDate,
+    );
+    const outcome = await upsertBtcBuyRow(
+      ctx,
+      {
+        buyId: args.buy.id,
+        owner: ledgerOwner,
+        date,
+        month: monthOf(date),
+        source: args.buy.source,
+        sats: args.buy.sats,
+        priceUsdCents: args.buy.priceUsdCents,
+        usdCents: args.buy.usdCents,
+        note: optionalText(args.buy.note),
+        status: optionalText(args.buy.status),
+        costBasisStatus: optionalText(args.buy.costBasisStatus),
+        loggedBy: optionalText(args.buy.loggedBy),
+        archimedesRequestId: optionalText(args.buy.archimedesRequestId),
+        sourceFile: args.sourceFile,
+        updatedAtMs: now,
+      },
+      { baseUpdatedAtMs: args.baseUpdatedAtMs },
+    );
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, entityId: args.buy.id, outcome };
+  },
+});
+
+export const deleteBtcBuyFromDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    owner: familyMemberValidator,
+    sourceFile: btcBuySourceValidator,
+    entityId: v.string(),
+    baseUpdatedAtMs: v.float64(),
+  },
+  returns: deviceDeleteResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+      "bitcoin:write",
+    );
+    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    requireDeviceIdentifier(args.entityId, "entityId");
+    const removed = await deleteBtcBuyCore(
+      ctx,
+      args.sourceFile,
+      canonicalLedgerOwner(args.owner),
+      args.entityId,
+      { baseUpdatedAtMs: args.baseUpdatedAtMs },
+    );
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, entityId: args.entityId, removed };
+  },
+});
+
+export const upsertBtcBillPayFromDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    owner: familyMemberValidator,
+    sourceFile: v.literal("bitcoin-bill-pays"),
+    baseUpdatedAtMs: v.optional(v.float64()),
+    billPay: btcBillPayDeviceInput,
+  },
+  returns: deviceUpsertResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+      "bitcoin:write",
+    );
+    requireDeviceRevision(args.baseUpdatedAtMs, false);
+    requireDeviceIdentifier(args.billPay.id, "billPay.id");
+    requireDeviceText(args.billPay.merchant, "billPay.merchant");
+    requireDeviceText(args.billPay.category, "billPay.category");
+    requireDeviceOptionalText(args.billPay.platform, "billPay.platform");
+    requireDeviceOptionalText(args.billPay.note, "billPay.note");
+    requireDeviceOptionalText(args.billPay.reference, "billPay.reference");
+    if (args.billPay.owner !== args.owner) {
+      deviceFailure(
+        "OWNER_MISMATCH",
+        "Bitcoin bill pay owner does not match request owner.",
+        "btcBillPay",
+        args.billPay.id,
+      );
+    }
+    const ledgerOwner = canonicalLedgerOwner(args.owner);
+    requireSourceOwner(args.sourceFile, "btcBillPays", ledgerOwner);
+    requireBillPayAmounts(args.billPay);
+    const now = Date.now();
+    const date = requireIsoDate(
+      args.billPay.date,
+      "date",
+      now,
+      30,
+      rejectDeviceDate,
+    );
+    const outcome = await upsertBtcBillPayRow(
+      ctx,
+      {
+        billPayId: args.billPay.id,
+        owner: ledgerOwner,
+        date,
+        month: monthOf(date),
+        merchant: args.billPay.merchant,
+        category: args.billPay.category,
+        amountUsdCents: args.billPay.amountUsdCents,
+        btcSpentSats: args.billPay.btcSpentSats,
+        btcPriceCents: args.billPay.btcPriceCents,
+        platform: optionalText(args.billPay.platform),
+        note: optionalText(args.billPay.note),
+        feeUsdCents: args.billPay.feeUsdCents,
+        reference: optionalText(args.billPay.reference),
+        sourceFile: args.sourceFile,
+        updatedAtMs: now,
+      },
+      { baseUpdatedAtMs: args.baseUpdatedAtMs },
+    );
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, entityId: args.billPay.id, outcome };
+  },
+});
+
+export const deleteBtcBillPayFromDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    owner: familyMemberValidator,
+    sourceFile: v.literal("bitcoin-bill-pays"),
+    entityId: v.string(),
+    baseUpdatedAtMs: v.float64(),
+  },
+  returns: deviceDeleteResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+      "bitcoin:write",
+    );
+    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    requireDeviceIdentifier(args.entityId, "entityId");
+    const ledgerOwner = canonicalLedgerOwner(args.owner);
+    requireSourceOwner(args.sourceFile, "btcBillPays", ledgerOwner);
+    const removed = await deleteBtcBillPayCore(
+      ctx,
+      ledgerOwner,
+      args.entityId,
+      { baseUpdatedAtMs: args.baseUpdatedAtMs },
+    );
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, entityId: args.entityId, removed };
+  },
+});
+
+export const upsertBtcAccountFromDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    owner: familyMemberValidator,
+    sourceFile: btcAccountSourceValidator,
+    baseUpdatedAtMs: v.optional(v.float64()),
+    account: btcAccountDeviceInput,
+  },
+  returns: deviceUpsertResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+      "bitcoin:write",
+    );
+    requireDeviceRevision(args.baseUpdatedAtMs, false);
+    requireDeviceIdentifier(args.account.key, "account.key");
+    requireDeviceText(args.account.label, "account.label");
+    requireDeviceNonnegative(args.account.sats, "account.sats");
+    requireDeviceTimestamp(args.account.asOf, "account.asOf");
+    if (args.account.schemaVersion !== undefined) {
+      requireDeviceNonnegative(
+        args.account.schemaVersion,
+        "account.schemaVersion",
+      );
+    }
+    if (args.account.fiatValuation !== undefined) {
+      requireDeviceNonnegative(
+        args.account.fiatValuation.cents,
+        "account.fiatValuation.cents",
+      );
+      if (args.account.fiatValuation.priceCents !== undefined) {
+        requireDeviceNonnegative(
+          args.account.fiatValuation.priceCents,
+          "account.fiatValuation.priceCents",
+        );
+      }
+      requireDeviceTimestamp(
+        args.account.fiatValuation.quotedAt,
+        "account.fiatValuation.quotedAt",
+      );
+      requireDeviceOptionalText(
+        args.account.fiatValuation.source,
+        "account.fiatValuation.source",
+      );
+      requireDeviceOptionalText(
+        args.account.fiatValuation.confidence,
+        "account.fiatValuation.confidence",
+      );
+    }
+    if (args.account.owner !== args.owner) {
+      deviceFailure(
+        "OWNER_MISMATCH",
+        "Bitcoin account owner does not match request owner.",
+        "btcAccount",
+        args.account.key,
+      );
+    }
+    const account = {
+      ...args.account,
+      owner: canonicalLedgerOwner(args.account.owner),
+    };
+    const outcome = await upsertBtcAccountCore(ctx, args.sourceFile, account, {
+      baseUpdatedAtMs: args.baseUpdatedAtMs,
+    });
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, entityId: args.account.key, outcome };
+  },
+});
+
+export const deleteBtcAccountFromDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    owner: familyMemberValidator,
+    sourceFile: btcAccountSourceValidator,
+    entityId: v.string(),
+    baseUpdatedAtMs: v.float64(),
+  },
+  returns: deviceDeleteResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+      "bitcoin:write",
+    );
+    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    requireDeviceIdentifier(args.entityId, "entityId");
+    const entityId = args.entityId;
+    const removed = await deleteBtcAccountCore(
+      ctx,
+      args.sourceFile,
+      canonicalLedgerOwner(args.owner),
+      entityId,
+      { baseUpdatedAtMs: args.baseUpdatedAtMs },
+    );
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, entityId, removed };
   },
 });
 
@@ -2041,11 +4108,7 @@ export const upsertBudgetCategory = mutation({
 // ─────────────────────────────────────────────────────────────────────────────
 
 type BlobKind =
-  | "transactions"
-  | "todos"
-  | "btcBuys"
-  | "btcBillPays"
-  | "btcAccounts";
+  "transactions" | "todos" | "btcBuys" | "btcBillPays" | "btcAccounts";
 
 /**
  * Every source file the runtime upserts accept, and the owner its records

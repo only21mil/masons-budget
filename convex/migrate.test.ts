@@ -90,6 +90,7 @@ interface MigrateResult {
   applied: boolean;
   blobPresent: boolean;
   blobRowCount: number;
+  projectedRowCount: number;
   scanned: number;
   inserted: number;
   updated: number;
@@ -119,6 +120,7 @@ const api = {
         migratedRowCount: number;
         targetTables: { table: string; rows: number }[];
         planFingerprint: string;
+        runtimeLocked: boolean;
       }[];
       skippedDocumentShapedFiles: string[];
       frozenPlanFingerprint: string;
@@ -188,7 +190,14 @@ const MERCHANTS = [
   "Strike",
   "Chick-fil-A",
 ];
-const CATEGORIES = ["Groceries", "Gas", "Shopping", "Dining", "Utilities", "Income"];
+const CATEGORIES = [
+  "Groceries",
+  "Gas",
+  "Shopping",
+  "Dining",
+  "Utilities",
+  "Income",
+];
 
 /**
  * 905 adult transactions in the exact MC2Transaction shape.
@@ -206,7 +215,8 @@ function makeTransactions(): Record<string, unknown>[] {
   const rows: Record<string, unknown>[] = [];
 
   for (let index = 0; index < 897; index += 1) {
-    const generatedCategory = CATEGORIES[Math.floor(random() * CATEGORIES.length)]!;
+    const generatedCategory =
+      CATEGORIES[Math.floor(random() * CATEGORIES.length)]!;
     // Production has 16 refunds among 904 non-zero adult transactions. Fifteen
     // regular generated rows plus the half-cent edge case below preserve that
     // measured proportion while keeping every purchase positive.
@@ -268,11 +278,33 @@ function makeTransactions(): Record<string, unknown>[] {
   });
   // Two byte-identical rows with no id. These are two real transactions
   // (same coffee, same day) and must not collapse into one.
-  rows.push({ date: "2026-03-05", merchant: "Café Grumpy", amount: 4.75, category: "Dining" });
-  rows.push({ date: "2026-03-05", merchant: "Café Grumpy", amount: 4.75, category: "Dining" });
+  rows.push({
+    date: "2026-03-05",
+    merchant: "Café Grumpy",
+    amount: 4.75,
+    category: "Dining",
+  });
+  rows.push({
+    date: "2026-03-05",
+    merchant: "Café Grumpy",
+    amount: 4.75,
+    category: "Dining",
+  });
   // A duplicated id — MC2 has shipped these.
-  rows.push({ id: "t-dupe", date: "2026-03-06", merchant: "Shell", amount: 30.0, category: "Gas" });
-  rows.push({ id: "t-dupe", date: "2026-03-06", merchant: "Shell", amount: 31.5, category: "Gas" });
+  rows.push({
+    id: "t-dupe",
+    date: "2026-03-06",
+    merchant: "Shell",
+    amount: 30.0,
+    category: "Gas",
+  });
+  rows.push({
+    id: "t-dupe",
+    date: "2026-03-06",
+    merchant: "Shell",
+    amount: 31.5,
+    category: "Gas",
+  });
 
   return rows;
 }
@@ -338,7 +370,9 @@ function makeTodos(): Record<string, unknown>[] {
     );
   }
   // JSON has no `undefined`; strip it the way a real export would.
-  return rows.map((row) => JSON.parse(JSON.stringify(row)) as Record<string, unknown>);
+  return rows.map(
+    (row) => JSON.parse(JSON.stringify(row)) as Record<string, unknown>,
+  );
 }
 
 /**
@@ -346,9 +380,27 @@ function makeTodos(): Record<string, unknown>[] {
  */
 function makeMasonTransactions(): Record<string, unknown>[] {
   return [
-    { id: "m001", date: "2026-07-02", merchant: "Game Store", amount: 60.0, category: "Fun" },
-    { id: "m002", date: "2026-07-09", merchant: "Allowance", amount: 20.0, category: "Income" },
-    { id: "m003", date: "2026-07-11", merchant: "Snacks", amount: 4.25, category: "Food" },
+    {
+      id: "m001",
+      date: "2026-07-02",
+      merchant: "Game Store",
+      amount: 60.0,
+      category: "Fun",
+    },
+    {
+      id: "m002",
+      date: "2026-07-09",
+      merchant: "Allowance",
+      amount: 20.0,
+      category: "Income",
+    },
+    {
+      id: "m003",
+      date: "2026-07-11",
+      merchant: "Snacks",
+      amount: 4.25,
+      category: "Food",
+    },
   ];
 }
 
@@ -588,8 +640,17 @@ const FINANCES = {
 
 async function seedBlob(t: Harness, name: string, data: unknown, version = 7) {
   await t.run(async (ctx) => {
-    await ctx.db.insert("dataFiles", { name, data, version, updatedAt: 1_700_000_000_000 });
-    await ctx.db.insert("syncVersions", { name, version, updatedAt: 1_700_000_000_000 });
+    await ctx.db.insert("dataFiles", {
+      name,
+      data,
+      version,
+      updatedAt: 1_700_000_000_000,
+    });
+    await ctx.db.insert("syncVersions", {
+      name,
+      version,
+      updatedAt: 1_700_000_000_000,
+    });
   });
 }
 
@@ -597,7 +658,10 @@ async function seedAll(t: Harness) {
   await seedBlob(t, "transactions", TRANSACTIONS);
   await seedBlob(t, "mason-transactions", MASON_TRANSACTIONS);
   await seedBlob(t, "bitcoin-buys", BTC_BUYS);
-  await seedBlob(t, "bitcoin-bill-pays", { bill_pays: BILL_PAYS, generated_at: "2026-07-18" });
+  await seedBlob(t, "bitcoin-bill-pays", {
+    bill_pays: BILL_PAYS,
+    generated_at: "2026-07-18",
+  });
   await seedBlob(t, "todos", { todos: TODOS });
   await seedBlob(t, "income", INCOME);
   await seedBlob(t, "balances", BALANCES);
@@ -643,10 +707,23 @@ async function rowsIn<TableName extends MigratedTableName>(
 async function snapshotBlobWorld(t: Harness) {
   return await t.run(async (ctx) => {
     const files = (await ctx.db.query("dataFiles").collect())
-      .map((doc) => canonicalJson({ name: doc.name, version: doc.version, updatedAt: doc.updatedAt, data: doc.data }))
+      .map((doc) =>
+        canonicalJson({
+          name: doc.name,
+          version: doc.version,
+          updatedAt: doc.updatedAt,
+          data: doc.data,
+        }),
+      )
       .sort();
     const versions = (await ctx.db.query("syncVersions").collect())
-      .map((doc) => canonicalJson({ name: doc.name, version: doc.version, updatedAt: doc.updatedAt }))
+      .map((doc) =>
+        canonicalJson({
+          name: doc.name,
+          version: doc.version,
+          updatedAt: doc.updatedAt,
+        }),
+      )
       .sort();
     const tombstones = (await ctx.db.query("todoTombstones").collect())
       .map((doc) => canonicalJson({ id: doc.id, deletedAt: doc.deletedAt }))
@@ -698,7 +775,9 @@ describe("money survives exactly", () => {
 
   test("the copy in convex/migrate.ts agrees with shared/domain", () => {
     for (const [value, scale] of CASES) {
-      expect(migrateParseMinorUnits(value, scale)).toBe(domainParseMinorUnits(value, scale));
+      expect(migrateParseMinorUnits(value, scale)).toBe(
+        domainParseMinorUnits(value, scale),
+      );
     }
   });
 
@@ -716,9 +795,9 @@ describe("money survives exactly", () => {
       );
     }
 
-    expect(() =>
-      migrateJsonNumberToMinorUnits(90_071_992.54740992, 8),
-    ).toThrow(RangeError);
+    expect(() => migrateJsonNumberToMinorUnits(90_071_992.54740992, 8)).toThrow(
+      RangeError,
+    );
   });
 
   test("the float trap does not reach the ledger", () => {
@@ -811,8 +890,14 @@ describe("source keys are deterministic and total", () => {
   });
 
   test("key order does not depend on JSON key order", () => {
-    const a = sourceKeyFor({ merchant: "Shell", amount: -1, date: "2026-01-01" }, new Map());
-    const b = sourceKeyFor({ date: "2026-01-01", amount: -1, merchant: "Shell" }, new Map());
+    const a = sourceKeyFor(
+      { merchant: "Shell", amount: -1, date: "2026-01-01" },
+      new Map(),
+    );
+    const b = sourceKeyFor(
+      { date: "2026-01-01", amount: -1, merchant: "Shell" },
+      new Map(),
+    );
     expect(a.sourceKey).toBe(b.sourceKey);
   });
 
@@ -840,8 +925,12 @@ describe("owner resolution is closed", () => {
   });
 
   test("Mason's rows land on mason and adult rows on victor", async () => {
-    const mason = MIGRATION_SOURCES.find((source) => source.file === "mason-transactions")!;
-    const adult = MIGRATION_SOURCES.find((source) => source.file === "transactions")!;
+    const mason = MIGRATION_SOURCES.find(
+      (source) => source.file === "mason-transactions",
+    )!;
+    const adult = MIGRATION_SOURCES.find(
+      (source) => source.file === "transactions",
+    )!;
     const masonDocs = projectFile(mason, MASON_TRANSACTIONS)!.docs;
     const adultDocs = projectFile(adult, TRANSACTIONS)!.docs;
 
@@ -852,14 +941,18 @@ describe("owner resolution is closed", () => {
   });
 
   test("new adult sources use the closed union and refuse disagreement", () => {
-    expect(resolveClosedAdultOwner(undefined, "victor", "income")).toBe("victor");
-    expect(resolveClosedAdultOwner("rachel", "victor", "income")).toBe("rachel");
-    expect(() =>
-      resolveClosedAdultOwner("Victor", "victor", "income"),
-    ).toThrow(/not a known family member/);
-    expect(() =>
-      resolveClosedAdultOwner("mason", "victor", "income"),
-    ).toThrow(/adult-household source/);
+    expect(resolveClosedAdultOwner(undefined, "victor", "income")).toBe(
+      "victor",
+    );
+    expect(resolveClosedAdultOwner("rachel", "victor", "income")).toBe(
+      "rachel",
+    );
+    expect(() => resolveClosedAdultOwner("Victor", "victor", "income")).toThrow(
+      /not a known family member/,
+    );
+    expect(() => resolveClosedAdultOwner("mason", "victor", "income")).toThrow(
+      /adult-household source/,
+    );
 
     const incomeSource = MIGRATION_SOURCES.find(
       (source) => source.file === "income",
@@ -878,7 +971,9 @@ describe("owner resolution is closed", () => {
 describe("blob shapes", () => {
   test("bare arrays, wrapped arrays and both todo dialects", () => {
     expect(extractRows([{ id: "a" }], null)).toHaveLength(1);
-    expect(extractRows({ bill_pays: [{ id: "a" }] }, "bill_pays")).toHaveLength(1);
+    expect(extractRows({ bill_pays: [{ id: "a" }] }, "bill_pays")).toHaveLength(
+      1,
+    );
     expect(extractRows({ todos: [{ id: "a" }] }, "todos")).toHaveLength(1);
     expect(extractRows([{ id: "a" }], "todos")).toHaveLength(1);
   });
@@ -935,7 +1030,10 @@ describe("dry run", () => {
   test("the plan equals what the write then does", async () => {
     const t = harness();
     await seedAll(t);
-    const planned = await t.mutation(api.migrateFile, { file: "transactions", apply: false });
+    const planned = await t.mutation(api.migrateFile, {
+      file: "transactions",
+      apply: false,
+    });
     const applied = await t.mutation(api.migrateFile, {
       file: "transactions",
       apply: true,
@@ -952,10 +1050,7 @@ describe("dry run", () => {
 
 describe("frozen plan fingerprint", () => {
   test.each([
-    [
-      "abc",
-      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-    ],
+    ["abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"],
     [
       "Café Grumpy",
       "2f8153f064a983f7bd75f2f0bfb690bf5c7a5e19cd3ee16961984f22ce2f50ef",
@@ -1006,9 +1101,7 @@ describe("frozen plan fingerprint", () => {
     });
 
     expect(applied.inserted).toBe(905);
-    expect(applied.frozenPlanFingerprint).toBe(
-      dryRun.frozenPlanFingerprint,
-    );
+    expect(applied.frozenPlanFingerprint).toBe(dryRun.frozenPlanFingerprint);
     expect(await rowsIn(t, "transactions")).toHaveLength(905);
   });
 
@@ -1065,7 +1158,9 @@ describe("migrating every file", () => {
       dryRuns.push(await t.mutation(api.migrateFile, { file: source.file }));
     }
 
-    expect(dryRuns.find((result) => result.file === "transactions")).toMatchObject({
+    expect(
+      dryRuns.find((result) => result.file === "transactions"),
+    ).toMatchObject({
       applied: false,
       blobRowCount: 905,
       inserted: 905,
@@ -1073,7 +1168,9 @@ describe("migrating every file", () => {
       unchanged: 0,
       verification: null,
     });
-    expect(dryRuns.find((result) => result.file === "bitcoin-buys")).toMatchObject({
+    expect(
+      dryRuns.find((result) => result.file === "bitcoin-buys"),
+    ).toMatchObject({
       blobRowCount: 31,
       inserted: 31,
     });
@@ -1180,6 +1277,101 @@ describe("migrating every file", () => {
     expect(await rowsIn(t, "financeDocuments")).toHaveLength(1);
   });
 
+  test("indexed row tombstones suppress legacy transaction resurrection", async () => {
+    const t = harness();
+    await seedBlob(t, "transactions", TRANSACTIONS.slice(0, 2));
+    const deletedId = String(TRANSACTIONS[0]!.id);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("rowTombstones", {
+        entityType: "transaction",
+        sourceFile: "transactions",
+        entityId: deletedId,
+        owner: "victor",
+        deletedAtMs: Date.now(),
+      });
+    });
+
+    const result = await applyFile(t, { file: "transactions" });
+    expect(result).toMatchObject({
+      blobRowCount: 1,
+      projectedRowCount: 1,
+      inserted: 1,
+      verifiedInTransaction: true,
+    });
+    expect(
+      (await rowsIn(t, "transactions")).map((row) => row.txId),
+    ).not.toContain(deletedId);
+  });
+
+  test("budget and BTC document projections honor indexed nested tombstones", async () => {
+    const t = harness();
+    await seedBlob(t, "budget", ADULT_BUDGET);
+    await seedBlob(t, "btc-balance-snapshot", BTC_SNAPSHOT);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("rowTombstones", {
+        entityType: "budgetCategory",
+        sourceFile: "budget",
+        entityId: "adult category 0",
+        owner: "victor",
+        deletedAtMs: Date.now(),
+      });
+      await ctx.db.insert("rowTombstones", {
+        entityType: "btcAccount",
+        sourceFile: "btc-balance-snapshot",
+        entityId: "coldcard",
+        owner: "victor",
+        deletedAtMs: Date.now(),
+      });
+    });
+
+    await applyFile(t, { file: "budget" });
+    const btcResult = await applyFile(t, {
+      file: "btc-balance-snapshot",
+    });
+    expect(btcResult.projectedRowCount).toBe(5);
+
+    const [budget] = await rowsIn(t, "budgetDocuments");
+    expect(
+      (budget!.categories as Array<{ name: string }>).map(
+        (category) => category.name,
+      ),
+    ).not.toContain("Adult category 0");
+    const [document] = await rowsIn(t, "btcBalanceDocuments");
+    const accounts = document!.accounts as Array<{
+      key: string;
+      sats: bigint;
+      fiatCents: bigint;
+    }>;
+    expect(accounts.map((account) => account.key)).not.toContain("coldcard");
+    expect(document!.totals).toMatchObject({
+      sats: accounts.reduce((sum, account) => sum + account.sats, 0n),
+      fiatCents: accounts.reduce((sum, account) => sum + account.fiatCents, 0n),
+    });
+    expect(
+      (await rowsIn(t, "btcAccounts")).map((row) => row.key),
+    ).not.toContain("coldcard");
+  });
+
+  test("migration refuses more than the bounded indexed tombstone window", async () => {
+    const t = harness();
+    await seedBlob(t, "transactions", TRANSACTIONS.slice(0, 1));
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 257; index += 1) {
+        await ctx.db.insert("rowTombstones", {
+          entityType: "transaction",
+          sourceFile: "transactions",
+          entityId: `deleted-${index}`,
+          owner: "victor",
+          deletedAtMs: index,
+        });
+      }
+    });
+    await expect(
+      t.mutation(api.migrateFile, { file: "transactions" }),
+    ).rejects.toThrow(/More than 256 transaction tombstones/);
+    expect(await rowsIn(t, "transactions")).toHaveLength(0);
+  });
+
   test("the summed amounts equal the blob, computed independently", async () => {
     const t = harness();
     await seedAll(t);
@@ -1196,10 +1388,16 @@ describe("migrating every file", () => {
 
     expect(actual).toBe(expected);
 
-    const verification = await t.query(api.verifyFile, { file: "transactions" });
+    const verification = await t.query(api.verifyFile, {
+      file: "transactions",
+    });
     expect(verification.ok).toBe(true);
-    expect(verification.tableSums.amountCents).toBe(formatMinorUnits(expected, 2));
-    expect(verification.blobSums.amountCents).toBe(verification.tableSums.amountCents);
+    expect(verification.tableSums.amountCents).toBe(
+      formatMinorUnits(expected, 2),
+    );
+    expect(verification.blobSums.amountCents).toBe(
+      verification.tableSums.amountCents,
+    );
   });
 
   test("BTC sats and USD both survive, and amount_sats beats amount_btc", async () => {
@@ -1214,9 +1412,15 @@ describe("migrating every file", () => {
     for (const row of BTC_BUYS) expectedSats += BigInt(String(row.amount_sats));
     expect(sats).toBe(expectedSats);
 
-    const verification = await t.query(api.verifyFile, { file: "bitcoin-buys" });
+    const verification = await t.query(api.verifyFile, {
+      file: "bitcoin-buys",
+    });
     expect(verification.ok).toBe(true);
-    expect(Object.keys(verification.tableSums).sort()).toEqual(["priceUsdCents", "sats", "usdCents"]);
+    expect(Object.keys(verification.tableSums).sort()).toEqual([
+      "priceUsdCents",
+      "sats",
+      "usdCents",
+    ]);
   });
 
   test("income and balances preserve exact cents, sats, and reconciliation provenance", async () => {
@@ -1235,7 +1439,9 @@ describe("migrating every file", () => {
     );
     expect(new Set(incomeRows.map((row) => row.sourceKey)).size).toBe(16);
     expect(incomeRows.every((row) => row.owner === "victor")).toBe(true);
-    expect(incomeRows.find((row) => row.incomeId === "income-01")).toMatchObject({
+    expect(
+      incomeRows.find((row) => row.incomeId === "income-01"),
+    ).toMatchObject({
       month: "2026-01",
       amountCents: 123456n,
       source: "payroll",
@@ -1265,7 +1471,9 @@ describe("migrating every file", () => {
       },
     });
 
-    const incomeVerification = await t.query(api.verifyFile, { file: "income" });
+    const incomeVerification = await t.query(api.verifyFile, {
+      file: "income",
+    });
     expect(incomeVerification).toMatchObject({
       ok: true,
       exactRoundTrip: true,
@@ -1288,9 +1496,7 @@ describe("migrating every file", () => {
     expect(balanceVerification.tableSums.coldcardSats).toBe("0.12345678");
     expect(balanceVerification.tableSums.totalFiatCents).toBe("99999.99");
     expect(
-      balanceVerification.tableSums[
-        "btcSync.anchorBalancesSats.coldcardSats"
-      ],
+      balanceVerification.tableSums["btcSync.anchorBalancesSats.coldcardSats"],
     ).toBe("0.12345677");
     expect(canonicalJson(balance!.raw)).toBe(canonicalJson(BALANCES));
   });
@@ -1310,9 +1516,7 @@ describe("migrating every file", () => {
 
     const budgets = await rowsIn(t, "budgetDocuments");
     expect(budgets).toHaveLength(2);
-    expect(
-      budgets.find((row) => row.sourceFile === "budget"),
-    ).toMatchObject({
+    expect(budgets.find((row) => row.sourceFile === "budget")).toMatchObject({
       owner: "victor",
       migrationRawJson: expect.any(String),
       categories: expect.arrayContaining([
@@ -1334,9 +1538,7 @@ describe("migrating every file", () => {
     const balanceDocuments = await rowsIn(t, "btcBalanceDocuments");
     expect(balanceDocuments).toHaveLength(2);
     expect(
-      balanceDocuments.find(
-        (row) => row.sourceFile === "btc-balance-snapshot",
-      ),
+      balanceDocuments.find((row) => row.sourceFile === "btc-balance-snapshot"),
     ).toMatchObject({
       owner: "victor",
       schemaVersion: 2n,
@@ -1369,16 +1571,11 @@ describe("migrating every file", () => {
         .filter((row) => row.owner === "mason")
         .map((row) => row.key)
         .sort(),
-    ).toEqual([
-      "son-coldcard-mason",
-      "son-river-mason",
-      "son-strike-mason",
-    ]);
+    ).toEqual(["son-coldcard-mason", "son-river-mason", "son-strike-mason"]);
     expect(
       btcAccounts.every(
         (row) =>
-          typeof row.sats === "bigint" &&
-          typeof row.fiatCents === "bigint",
+          typeof row.sats === "bigint" && typeof row.fiatCents === "bigint",
       ),
     ).toBe(true);
 
@@ -1431,13 +1628,14 @@ describe("migrating every file", () => {
     const mason = rows.filter((row) => row.sourceFile === "mason-transactions");
     // 60.00 at the Game Store is spend recorded as +6000, exactly as MC2 wrote
     // it. Normalising the sign here would change what every client displays.
-    expect(mason.find((row) => row.merchant === "Game Store")!.amountCents).toBe(6000n);
+    expect(
+      mason.find((row) => row.merchant === "Game Store")!.amountCents,
+    ).toBe(6000n);
     expect(mason.every((row) => row.amountCents >= 0n)).toBe(true);
 
     const adult = rows.filter((row) => row.sourceFile === "transactions");
     const adultRefunds = adult.filter(
-      (row) =>
-        (row.migrationRaw as Record<string, unknown>).note === "refund",
+      (row) => (row.migrationRaw as Record<string, unknown>).note === "refund",
     );
     const positiveAdultRows = adult.filter((row) => row.amountCents > 0n);
     const zeroAdultRows = adult.filter((row) => row.amountCents === 0n);
@@ -1458,8 +1656,7 @@ describe("migrating every file", () => {
     const rows = await rowsIn(t, "btcBuys");
     for (const row of rows) {
       expect(
-        (row.migrationRaw as Record<string, unknown>)
-          .archimedes_request_id,
+        (row.migrationRaw as Record<string, unknown>).archimedes_request_id,
       ).toMatch(/^arch-2026-/);
     }
   });
@@ -1590,7 +1787,9 @@ describe("running it twice", () => {
     expect(batches).toBe(10);
     expect(inserted).toBe(905);
     expect(await rowsIn(t, "transactions")).toHaveLength(905);
-    expect((await t.query(api.verifyFile, { file: "transactions" })).ok).toBe(true);
+    expect((await t.query(api.verifyFile, { file: "transactions" })).ok).toBe(
+      true,
+    );
 
     const rerun = await applyFile(t, { file: "transactions" });
     expect(rerun.inserted).toBe(0);
@@ -1673,8 +1872,10 @@ describe("dataFiles is left alone", () => {
     const t = harness();
     await seedAll(t);
     const beforeFiles = await snapshotBlobWorld(t);
-    const beforeVersions = await t.run(
-      async (ctx) => (await ctx.db.query("syncVersions").collect()).map((doc) => canonicalJson({ n: doc.name, v: doc.version })).sort(),
+    const beforeVersions = await t.run(async (ctx) =>
+      (await ctx.db.query("syncVersions").collect())
+        .map((doc) => canonicalJson({ n: doc.name, v: doc.version }))
+        .sort(),
     );
 
     for (const source of MIGRATION_SOURCES) {
@@ -1684,7 +1885,9 @@ describe("dataFiles is left alone", () => {
     expect(await snapshotBlobWorld(t)).toEqual(beforeFiles);
     expect(
       await t.run(async (ctx) =>
-        (await ctx.db.query("syncVersions").collect()).map((doc) => canonicalJson({ n: doc.name, v: doc.version })).sort(),
+        (await ctx.db.query("syncVersions").collect())
+          .map((doc) => canonicalJson({ n: doc.name, v: doc.version }))
+          .sort(),
       ),
     ).toEqual(beforeVersions);
   });
@@ -1726,10 +1929,14 @@ describe("verification is a real check, not a formality", () => {
     const t = await migrated();
     await t.run(async (ctx) => {
       const rows = await ctx.db.query("transactions").collect();
-      await ctx.db.patch(rows[3]!._id, { amountCents: rows[3]!.amountCents + 1n });
+      await ctx.db.patch(rows[3]!._id, {
+        amountCents: rows[3]!.amountCents + 1n,
+      });
     });
 
-    const verification = await t.query(api.verifyFile, { file: "transactions" });
+    const verification = await t.query(api.verifyFile, {
+      file: "transactions",
+    });
     expect(verification.ok).toBe(false);
     expect(verification.rowCountMatches).toBe(true);
     expect(verification.moneySumsMatch).toBe(false);
@@ -1754,7 +1961,9 @@ describe("verification is a real check, not a formality", () => {
       });
     });
 
-    const verification = await t.query(api.verifyFile, { file: "transactions" });
+    const verification = await t.query(api.verifyFile, {
+      file: "transactions",
+    });
     expect(verification.ok).toBe(false);
     expect(verification.rowCountMatches).toBe(true);
     expect(verification.moneySumsMatch).toBe(true);
@@ -1762,7 +1971,9 @@ describe("verification is a real check, not a formality", () => {
     expect(verification.exactRoundTrip).toBe(false);
     expect(verification.firstMismatchIndex).toBe(5);
     expect(verification.tableRowCount).toBe(verification.blobRowCount);
-    expect(verification.tableSums.amountCents).toBe(verification.blobSums.amountCents);
+    expect(verification.tableSums.amountCents).toBe(
+      verification.blobSums.amountCents,
+    );
     expect(verification.problems).toHaveLength(1);
   });
 
@@ -1788,9 +1999,9 @@ describe("verification is a real check, not a formality", () => {
       });
     });
 
-    await expect(
-      applyFile(t, { file: "transactions" }),
-    ).rejects.toThrow(/did not verify/);
+    await expect(applyFile(t, { file: "transactions" })).rejects.toThrow(
+      /did not verify/,
+    );
 
     // Nothing committed: the ghost is still alone, the 905 rows never landed.
     expect(await rowsIn(t, "transactions")).toHaveLength(1);
@@ -1815,7 +2026,9 @@ describe("verification is a real check, not a formality", () => {
       });
     });
 
-    const verification = await t.query(api.verifyFile, { file: "bitcoin-buys" });
+    const verification = await t.query(api.verifyFile, {
+      file: "bitcoin-buys",
+    });
     expect(verification.ok).toBe(false);
     expect(verification.problems.join(" ")).toContain("no bitcoin-buys blob");
   });
@@ -1824,6 +2037,88 @@ describe("verification is a real check, not a formality", () => {
 // ─── Refusals ────────────────────────────────────────────────────────────────
 
 describe("refusals", () => {
+  test("dry-run, apply, and verify fail closed before reading or writing a runtime-owned source", async () => {
+    const t = harness();
+    await seedBlob(t, "transactions", { deliberately: "unreadable" });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("runtimeSourceLocks", {
+        sourceFile: "transactions",
+        lockedAtMs: 1,
+      });
+      await ctx.db.insert("transactions", {
+        sourceFile: "transactions",
+        txId: "runtime-row",
+        owner: "victor",
+        date: "2026-07-30",
+        month: "2026-07",
+        merchant: "Runtime truth",
+        amountCents: 100n,
+        category: "Food",
+        updatedAtMs: 2,
+      });
+    });
+
+    await expect(
+      t.mutation(api.migrateFile, { file: "transactions" }),
+    ).rejects.toThrow(/RUNTIME_SOURCE_LOCKED/);
+    await expect(
+      t.mutation(api.migrateFile, {
+        file: "transactions",
+        apply: true,
+        expectedPlanFingerprint: "not-a-reviewed-plan",
+      }),
+    ).rejects.toThrow(/RUNTIME_SOURCE_LOCKED/);
+    await expect(
+      t.query(api.verifyFile, { file: "transactions" }),
+    ).rejects.toThrow(/RUNTIME_SOURCE_LOCKED/);
+
+    const rows = await rowsIn(t, "transactions");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      txId: "runtime-row",
+      merchant: "Runtime truth",
+      updatedAtMs: 2,
+    });
+  });
+
+  test("duplicate physical natural keys are refused instead of collapsed in a map", async () => {
+    const t = harness();
+    await seedBlob(t, "transactions", [TRANSACTIONS[0]]);
+    await t.run(async (ctx) => {
+      for (const merchant of ["First physical row", "Second physical row"]) {
+        await ctx.db.insert("transactions", {
+          sourceFile: "transactions",
+          txId: String(TRANSACTIONS[0]!.id),
+          owner: "victor",
+          date: "2026-07-01",
+          month: "2026-07",
+          merchant,
+          amountCents: 100n,
+          category: "Food",
+          updatedAtMs: 1,
+        });
+      }
+    });
+
+    await expect(
+      t.mutation(api.migrateFile, { file: "transactions" }),
+    ).rejects.toThrow(/Duplicate migrated natural key/);
+    expect(
+      (await rowsIn(t, "transactions")).map((row) => row.merchant),
+    ).toEqual(["First physical row", "Second physical row"]);
+  });
+
+  test("duplicate source blobs are refused instead of selecting one arbitrarily", async () => {
+    const t = harness();
+    await seedBlob(t, "transactions", [TRANSACTIONS[0]], 1);
+    await seedBlob(t, "transactions", [TRANSACTIONS[1]], 2);
+
+    await expect(
+      t.mutation(api.migrateFile, { file: "transactions" }),
+    ).rejects.toThrow();
+    expect(await rowsIn(t, "transactions")).toEqual([]);
+  });
+
   test("a shape it does not understand is refused, not guessed at", async () => {
     const t = harness();
     await seedBlob(t, "transactions", { month: "2026-07", total: 1234 });
@@ -1882,15 +2177,20 @@ describe("status", () => {
         projectedRowCount: projectedRows,
         migratedRowCount: 0,
         blobUnreadable: false,
+        runtimeLocked: false,
       });
     }
 
-    const transactions = status.files.find((file) => file.file === "transactions")!;
+    const transactions = status.files.find(
+      (file) => file.file === "transactions",
+    )!;
     expect(transactions.blobRowCount).toBe(905);
     expect(transactions.migratedRowCount).toBe(0);
     expect(transactions.blobUnreadable).toBe(false);
 
-    const missing = status.files.find((file) => file.file === "maddox-transactions")!;
+    const missing = status.files.find(
+      (file) => file.file === "maddox-transactions",
+    )!;
     expect(missing.blobPresent).toBe(false);
     expect(missing.blobRowCount).toBeNull();
   });
@@ -1899,7 +2199,29 @@ describe("status", () => {
     const t = harness();
     await seedBlob(t, "todos", { not: "a todo list" });
     const status = await t.query(api.status, {});
-    expect(status.files.find((file) => file.file === "todos")!.blobUnreadable).toBe(true);
+    expect(
+      status.files.find((file) => file.file === "todos")!.blobUnreadable,
+    ).toBe(true);
+  });
+
+  test("reports source-level runtime ownership without mutating it", async () => {
+    const t = harness();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("runtimeSourceLocks", {
+        sourceFile: "transactions",
+        lockedAtMs: 1,
+      });
+    });
+    const status = await t.query(api.status, {});
+    expect(
+      status.files.find((file) => file.file === "transactions")!.runtimeLocked,
+    ).toBe(true);
+    expect(
+      status.files.find((file) => file.file === "todos")!.runtimeLocked,
+    ).toBe(false);
+    expect(
+      await t.run(async (ctx) => ctx.db.query("runtimeSourceLocks").collect()),
+    ).toHaveLength(1);
   });
 });
 

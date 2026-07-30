@@ -1,8 +1,8 @@
 // Admin / system page slice.
 //
 // These pages describe the app's own state — profiles, sync health, export, and
-// settings. Row reads are runtime-gated and writeback is absent; every surface
-// that would mutate real data says so instead of offering a control that no-ops.
+// settings. Row reads and writeback are runtime-gated; the renderer receives
+// only closed state/capability results and never a device credential.
 
 import { useMemo, useState } from "react"
 
@@ -31,6 +31,7 @@ import {
   Button,
   type Column,
   DataTable,
+  DialogFrame,
   Field,
   FreshnessTag,
   IconGlyph,
@@ -550,7 +551,7 @@ function CSVImportPage() {
         <StateBlock
           state="empty"
           title="Import unavailable"
-          detail="There is no file picker, preview parser, or mutation bridge in this build."
+          detail="There is no reviewed file picker, preview parser, or bulk-import mutation path in this build."
         />
       </Panel>
     </>
@@ -603,11 +604,12 @@ function SettingsPage() {
             </Select>
           </Field>
         </Panel>
+        <PairingPanel />
       </PageGrid>
       <Panel title="Data boundaries" source="What this client will and will not do">
         <ul className="vv-muted" style={{ margin: 0, paddingLeft: "1.2rem", lineHeight: 1.8 }}>
-          <li>The renderer holds no credentials and cannot reach the network directly.</li>
-          <li>Writeback is disabled; this client performs read-only Convex queries.</li>
+          <li>The renderer holds no durable device credential and cannot reach the network directly.</li>
+          <li>Writeback is available only for paired devices and explicitly supported row operations.</li>
           <li>
             Figures currently come from {readsRows ? "the bounded Convex row API" : "sanitized fallback fixtures"}.
           </li>
@@ -615,6 +617,220 @@ function SettingsPage() {
       </Panel>
     </>
   )
+}
+
+function PairingPanel() {
+  const {
+    pairDevice,
+    pairingStatus,
+    unpairDevice,
+  } = useAppState()
+  const [pairingInput, setPairingInput] = useState("")
+  const [deviceName, setDeviceName] = useState("Vogel Vault Linux")
+  const [busy, setBusy] = useState(false)
+  const [confirmingUnpair, setConfirmingUnpair] = useState(false)
+  const [message, setMessage] = useState<{
+    tone: BannerTone
+    title: string
+    detail?: string
+  } | null>(null)
+
+  async function pair() {
+    const input = pairingInput.trim()
+    const name = deviceName.trim()
+    if (!input || input.length > 2_048 || !name || name.length > 80) {
+      setMessage({
+        tone: "negative",
+        title: "Pairing details are invalid",
+        detail: "Paste or scan a pairing value and use a device name of 80 characters or fewer.",
+      })
+      return
+    }
+    setBusy(true)
+    const result = await pairDevice({ pairingInput: input, deviceName: name })
+    setBusy(false)
+    if (result.status === "paired") {
+      setPairingInput("")
+      setMessage({ tone: "positive", title: "Device paired" })
+      return
+    }
+    setMessage({
+      tone: "negative",
+      title: result.status === "disabled" ? "Pairing is unavailable" : pairingFailureMessage(result.code),
+      detail: "No durable device credential or backend response details were exposed to this screen.",
+    })
+  }
+
+  async function unpair() {
+    setBusy(true)
+    const result = await unpairDevice()
+    setBusy(false)
+    if (result.status === "ok" || result.status === "unpaired") {
+      setConfirmingUnpair(false)
+      setMessage({ tone: "positive", title: "Device unpaired" })
+      return
+    }
+    if (result.status === "cancelled") {
+      setConfirmingUnpair(false)
+      setMessage({
+        tone: "info",
+        title: "Unpair cancelled",
+        detail: "The device remains paired and local write state was not changed.",
+      })
+      return
+    }
+    setMessage({
+      tone: "negative",
+      title: "Could not unpair this device",
+      detail: "The remote revocation did not complete, so local pairing state was retained. Try again.",
+    })
+  }
+
+  return (
+    <Panel title="Paired-device write access" source="Protected by the desktop main process">
+      <div className="vv-stack">
+        {message ? (
+          <StatusBanner tone={message.tone} title={message.title} detail={message.detail} />
+        ) : null}
+        {pairingStatus.status === "loading" ? <StateBlock state="loading" /> : null}
+        {pairingStatus.status === "unavailable" ? (
+          <StateBlock
+            state="empty"
+            title="Pairing status unavailable"
+            detail="The secure pairing bridge is not available in this runtime."
+          />
+        ) : null}
+        {pairingStatus.status === "paired" ? (
+          <>
+            <StatusBanner
+              tone={pairingStatus.writesEnabled ? "positive" : "warning"}
+              title={pairingStatus.writesEnabled ? "Paired" : "Paired · writes disabled"}
+              detail={
+                pairingStatus.writesEnabled
+                  ? `Paired ${new Date(pairingStatus.pairedAt).toLocaleString()}.`
+                  : "The credential remains available to unpair, but this runtime is not accepting writes."
+              }
+            />
+            <div aria-label="Enabled write capabilities">
+              {pairingStatus.capabilities.length === 0
+                ? <span className="vv-muted">No write capabilities granted.</span>
+                : pairingStatus.capabilities.map((capability) => (
+                    <Badge key={capability} tone="info">{capability}</Badge>
+                  ))}
+            </div>
+            <Button variant="danger" onClick={() => setConfirmingUnpair(true)} disabled={busy}>
+              Unpair device
+            </Button>
+          </>
+        ) : null}
+        {pairingStatus.status === "unpaired" ? (
+          <>
+            {!pairingStatus.writesEnabled ? (
+              <StatusBanner
+                tone="warning"
+                title="Paired-device writes are disabled"
+                detail="Pairing is unavailable until the desktop runtime enables its local write switch."
+              />
+            ) : null}
+            <form onSubmit={(event) => {
+              event.preventDefault()
+              void pair()
+            }} className="vv-form-grid">
+              <Field
+                label="One-time pairing code"
+                hint="Copy only the pairingCode secret from the protected pairing file."
+              >
+                <TextInput
+                  data-autofocus
+                  type="password"
+                  value={pairingInput}
+                  onChange={(event) => setPairingInput(event.target.value)}
+                  maxLength={2_048}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </Field>
+              <Field
+                label="Device name"
+                hint="Sent during claim and stored by the server as this device's display label."
+              >
+                <TextInput
+                  value={deviceName}
+                  onChange={(event) => setDeviceName(event.target.value)}
+                  maxLength={80}
+                />
+              </Field>
+              <div className="vv-form-grid__wide">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={
+                    busy ||
+                    !pairingStatus.writesEnabled ||
+                    !pairingInput.trim() ||
+                    !deviceName.trim()
+                  }
+                  title={
+                    pairingStatus.writesEnabled
+                      ? undefined
+                      : "Paired-device writes are disabled in this runtime."
+                  }
+                >
+                  {busy ? "Pairing…" : "Pair device"}
+                </Button>
+              </div>
+            </form>
+          </>
+        ) : null}
+      </div>
+      <DialogFrame
+        open={confirmingUnpair}
+        title="Unpair this device?"
+        description="Remote revocation must succeed before protected local pairing state is cleared."
+        onClose={() => setConfirmingUnpair(false)}
+        busy={busy}
+        footer={
+          <>
+            <Button onClick={() => setConfirmingUnpair(false)} disabled={busy}>Cancel</Button>
+            <Button variant="danger" onClick={() => void unpair()} disabled={busy} data-autofocus>
+              {busy ? "Unpairing…" : "Unpair device"}
+            </Button>
+          </>
+        }
+      >
+        <p>Ledger edits will be disabled immediately after a successful unpair.</p>
+      </DialogFrame>
+    </Panel>
+  )
+}
+
+function pairingFailureMessage(
+  code:
+    | "invalid-input"
+    | "expired"
+    | "already-claimed"
+    | "cancelled"
+    | "server-rejected"
+    | "unavailable"
+    | "invalid-response"
+    | "credential-storage",
+): string {
+  switch (code) {
+    case "invalid-input":
+      return "The pairing input is invalid"
+    case "expired":
+      return "The pairing input has expired"
+    case "already-claimed":
+      return "The pairing input was already used"
+    case "cancelled":
+      return "Pairing was cancelled"
+    case "credential-storage":
+      return "Protected credential storage is unavailable"
+    case "server-rejected":
+    case "unavailable":
+    case "invalid-response":
+      return "The device could not be paired"
+  }
 }
 
 function RuntimeRow({ label, value }: { label: string; value: string }) {

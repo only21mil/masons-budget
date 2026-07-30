@@ -55,6 +55,7 @@ import {
   internalMutation,
   internalQuery,
   type MutationCtx,
+  type QueryCtx,
 } from "./_generated/server";
 import {
   DOCUMENT_SOURCE_FILES,
@@ -423,18 +424,16 @@ function assertScale(scale: number): void {
  * exceed Number.MAX_SAFE_INTEGER are refused because their source double can no
  * longer reliably distinguish adjacent ledger units.
  */
-export function jsonNumberToMinorUnits(
-  value: number,
-  scale: number,
-): bigint {
+export function jsonNumberToMinorUnits(value: number, scale: number): bigint {
   if (!Number.isFinite(value)) {
     throw new RangeError(`Not a finite number: ${value}`);
   }
   assertScale(scale);
 
   const shortestDecimal = value.toString();
-  const match =
-    /^(-)?(\d+)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(shortestDecimal);
+  const match = /^(-)?(\d+)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(
+    shortestDecimal,
+  );
   if (!match) {
     throw new RangeError(
       `Number has no decimal representation: ${shortestDecimal}`,
@@ -615,21 +614,14 @@ function requiredString(value: unknown, path: string): string {
   return value;
 }
 
-function requiredMoney(
-  value: unknown,
-  scale: number,
-  path: string,
-): bigint {
+function requiredMoney(value: unknown, scale: number, path: string): bigint {
   if (value === null || value === undefined || value === "") {
     throw new ConvexError(`${path} is required`);
   }
   return parseMinorUnits(value, scale);
 }
 
-function optionalMoney(
-  value: unknown,
-  scale: number,
-): bigint | undefined {
+function optionalMoney(value: unknown, scale: number): bigint | undefined {
   if (value === null || value === undefined || value === "") return undefined;
   return parseMinorUnits(value, scale);
 }
@@ -660,26 +652,21 @@ export function canonicalJson(value: unknown): string {
 // ─── Frozen plan fingerprint ─────────────────────────────────────────────────
 
 const SHA256_INITIAL = [
-  0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-  0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+  0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c,
+  0x1f83d9ab, 0x5be0cd19,
 ] as const;
 
 const SHA256_ROUND = [
-  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
-  0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
-  0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
-  0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-  0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
-  0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
-  0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
-  0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
+  0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+  0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
+  0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
+  0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+  0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+  0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
+  0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
   0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ] as const;
 
@@ -713,15 +700,14 @@ export function sha256(text: string): string {
         ((bytes[start]! << 24) |
           (bytes[start + 1]! << 16) |
           (bytes[start + 2]! << 8) |
-          bytes[start + 3]!) >>> 0;
+          bytes[start + 3]!) >>>
+        0;
     }
     for (let index = 16; index < 64; index += 1) {
       const a = words[index - 15]!;
       const b = words[index - 2]!;
-      const sigma0 =
-        rotateRight(a, 7) ^ rotateRight(a, 18) ^ (a >>> 3);
-      const sigma1 =
-        rotateRight(b, 17) ^ rotateRight(b, 19) ^ (b >>> 10);
+      const sigma0 = rotateRight(a, 7) ^ rotateRight(a, 18) ^ (a >>> 3);
+      const sigma1 = rotateRight(b, 17) ^ rotateRight(b, 19) ^ (b >>> 10);
       words[index] =
         (words[index - 16]! + sigma0 + words[index - 7]! + sigma1) >>> 0;
     }
@@ -798,8 +784,7 @@ export function sourceKeyFor(
   seen: Map<string, number>,
 ): { sourceKey: string; externalId: string | null } {
   const rawId = raw.id;
-  const id =
-    rawId === undefined || rawId === null ? "" : String(rawId).trim();
+  const id = rawId === undefined || rawId === null ? "" : String(rawId).trim();
   const base = id !== "" ? `id:${id}` : `hash:${fnv1a64(canonicalJson(raw))}`;
 
   const ordinal = seen.get(base) ?? 0;
@@ -907,10 +892,7 @@ function projectBalanceDocument(
     strikeFiatCents: optionalMoney(raw.strike_fiat, 2),
     zeusFiatCents: optionalMoney(raw.zeus_fiat, 2),
     totalFiatCents: optionalMoney(raw.total_fiat, 2),
-    lastRefreshed: requiredString(
-      raw.lastRefreshed,
-      "balances.lastRefreshed",
-    ),
+    lastRefreshed: requiredString(raw.lastRefreshed, "balances.lastRefreshed"),
     btcSync: {
       anchorBalancesSats: projectBalanceSats(
         anchorBalances,
@@ -1057,7 +1039,9 @@ export function projectRow(
         due: optionalString(raw.due ?? raw.due_date ?? raw.dueDate),
         notes: optionalString(raw.notes ?? raw.note),
         priority:
-          raw.priority === null || raw.priority === undefined || raw.priority === ""
+          raw.priority === null ||
+          raw.priority === undefined ||
+          raw.priority === ""
             ? undefined
             : BigInt(Math.trunc(Number(raw.priority) || 0)),
         createdAt: optionalString(raw.created_at ?? raw.createdAt),
@@ -1160,10 +1144,7 @@ export function projectFile(
           source as Extract<
             MigrationSource,
             {
-              kind:
-                | "budgetDocument"
-                | "btcBalanceDocument"
-                | "financeDocument";
+              kind: "budgetDocument" | "btcBalanceDocument" | "financeDocument";
             }
           >,
           raw,
@@ -1206,9 +1187,7 @@ export function projectBtcAccountRows(
 ): Record<string, unknown>[] {
   return document.accounts.map((account, sourceIndex) => ({
     key:
-      sourceFile === "son-balances"
-        ? `son-${account.key}-mason`
-        : account.key,
+      sourceFile === "son-balances" ? `son-${account.key}-mason` : account.key,
     owner: document.owner,
     label: account.label,
     custody: account.custody,
@@ -1239,7 +1218,10 @@ export function contentFingerprint(doc: Record<string, unknown>): string {
 
 // ─── Sums ────────────────────────────────────────────────────────────────────
 
-function valuesAtColumnPath(value: unknown, path: readonly string[]): unknown[] {
+function valuesAtColumnPath(
+  value: unknown,
+  path: readonly string[],
+): unknown[] {
   if (path.length === 0) return [value];
   if (typeof value !== "object" || value === null) return [];
 
@@ -1251,10 +1233,7 @@ function valuesAtColumnPath(value: unknown, path: readonly string[]): unknown[] 
     return entries.flatMap((entry) => valuesAtColumnPath(entry, tail));
   }
 
-  return valuesAtColumnPath(
-    (value as Record<string, unknown>)[head!],
-    tail,
-  );
+  return valuesAtColumnPath((value as Record<string, unknown>)[head!], tail);
 }
 
 export function sumMoneyColumns(
@@ -1277,7 +1256,9 @@ export function sumMoneyColumns(
 }
 
 /** Sums as exact decimal text, safe to send over the wire and to compare. */
-export function formatSums(totals: Record<string, bigint>): Record<string, string> {
+export function formatSums(
+  totals: Record<string, bigint>,
+): Record<string, string> {
   const formatted: Record<string, string> = {};
   for (const [column, total] of Object.entries(totals)) {
     formatted[column] = formatMinorUnits(total, MONEY_SCALES[column] ?? 0);
@@ -1339,8 +1320,7 @@ export function verifyProjection(
 
   const ordered = [...storedDocs].sort(
     (a, b) =>
-      Number(a.migrationSourceIndex ?? 0) -
-      Number(b.migrationSourceIndex ?? 0),
+      Number(a.migrationSourceIndex ?? 0) - Number(b.migrationSourceIndex ?? 0),
   );
 
   const rowCountMatches = ordered.length === blobRows.length;
@@ -1368,14 +1348,13 @@ export function verifyProjection(
   let firstMismatchIndex: number | null = null;
   const compared = Math.min(ordered.length, blobRows.length);
   for (let index = 0; index < compared; index += 1) {
-    const storedCanonical =
-      isAtomicDocumentKind(source.kind)
-        ? ordered[index]!.migrationRawJson
-        : canonicalJson(
-            source.kind === "income" || source.kind === "balanceDocument"
-              ? ordered[index]!.raw
-              : ordered[index]!.migrationRaw,
-          );
+    const storedCanonical = isAtomicDocumentKind(source.kind)
+      ? ordered[index]!.migrationRawJson
+      : canonicalJson(
+          source.kind === "income" || source.kind === "balanceDocument"
+            ? ordered[index]!.raw
+            : ordered[index]!.migrationRaw,
+        );
     if (storedCanonical !== canonicalJson(blobRows[index]!)) {
       firstMismatchIndex = index;
       problems.push(
@@ -1409,11 +1388,12 @@ export function verifyProjection(
 function verifyMigrationTargets(
   source: MigrationSource,
   projected: NonNullable<ReturnType<typeof projectFile>>,
-  storedByTable: Map<MigrationTargetTable, Map<string, Record<string, unknown>>>,
+  storedByTable: Map<
+    MigrationTargetTable,
+    Map<string, Record<string, unknown>>
+  >,
 ): VerificationReport {
-  const primaryStored = [
-    ...(storedByTable.get(source.table)?.values() ?? []),
-  ];
+  const primaryStored = [...(storedByTable.get(source.table)?.values() ?? [])];
   const report = verifyProjection(
     source,
     projected.rows,
@@ -1473,9 +1453,7 @@ function verifyMigrationTargets(
         storedDocument.fiatCents,
         "btcAccounts.fiatCents",
       );
-      if (
-        contentFingerprint(document) !== contentFingerprint(storedDocument)
-      ) {
+      if (contentFingerprint(document) !== contentFingerprint(storedDocument)) {
         accountRowsMatch = false;
       }
     }
@@ -1493,8 +1471,7 @@ function verifyMigrationTargets(
       );
     }
     report.moneySumsMatch = report.moneySumsMatch && accountSumsMatch;
-    report.roundTripRowsMatch =
-      report.roundTripRowsMatch && accountRowsMatch;
+    report.roundTripRowsMatch = report.roundTripRowsMatch && accountRowsMatch;
     report.exactRoundTrip = report.exactRoundTrip && accountRowsMatch;
   }
 
@@ -1518,7 +1495,7 @@ async function readBlob(ctx: any, file: string): Promise<unknown | undefined> {
   const doc = await ctx.db
     .query("dataFiles")
     .withIndex("by_name", (q: any) => q.eq("name", file))
-    .first();
+    .unique();
   return doc?.data;
 }
 
@@ -1543,7 +1520,8 @@ function rowKey(source: MigrationSource, doc: Record<string, unknown>): string {
   }
 }
 
-type MigrationTargetTable = MigrationSource["table"] | typeof BTC_ACCOUNTS_TABLE;
+type MigrationTargetTable =
+  MigrationSource["table"] | typeof BTC_ACCOUNTS_TABLE;
 
 interface MigrationTarget {
   table: MigrationTargetTable;
@@ -1560,19 +1538,182 @@ function migrationTargets(
     key: rowKey(source, document),
     document,
   }));
-  if (source.kind !== "btcBalanceDocument") return primary;
+  let targets = primary;
+  if (source.kind === "btcBalanceDocument") {
+    const auxiliary: MigrationTarget[] = projectBtcAccountRows(
+      source.file as BtcBalanceSourceFile,
+      projected.docs[0] as unknown as BtcBalanceDocumentRow,
+    ).map((document) => ({
+      table: BTC_ACCOUNTS_TABLE,
+      key: `${String(document.owner)}:${String(document.key)}`,
+      document,
+    }));
+    targets = [...primary, ...auxiliary];
+  }
+  const seen = new Set<string>();
+  for (const target of targets) {
+    const identity = `${target.table}\u0000${target.key}`;
+    if (seen.has(identity)) {
+      throw new ConvexError(
+        `Duplicate projected natural key ${JSON.stringify(target.key)} for ` +
+          `${target.table} from ${source.file}; refusing to create ambiguous rows.`,
+      );
+    }
+    seen.add(identity);
+  }
+  return targets;
+}
 
-  const balanceDocument = projected.docs[0] as unknown as BtcBalanceDocumentRow;
-  const accounts = projectBtcAccountRows(
-    source.file as BtcBalanceSourceFile,
-    balanceDocument,
+const MAX_TOMBSTONES_PER_SOURCE = 256;
+
+type SuppressedEntityType =
+  | "transaction"
+  | "todo"
+  | "budgetCategory"
+  | "btcBuy"
+  | "btcBillPay"
+  | "btcAccount";
+
+async function tombstonedIds(
+  ctx: MutationCtx | QueryCtx,
+  entityType: SuppressedEntityType,
+  sourceFile: string,
+): Promise<Set<string>> {
+  const rows = await ctx.db
+    .query("rowTombstones")
+    .withIndex("by_type_source", (q) =>
+      q.eq("entityType", entityType).eq("sourceFile", sourceFile),
+    )
+    .take(MAX_TOMBSTONES_PER_SOURCE + 1);
+  if (rows.length > MAX_TOMBSTONES_PER_SOURCE) {
+    throw new ConvexError(
+      `More than ${MAX_TOMBSTONES_PER_SOURCE} ${entityType} tombstones exist ` +
+        `for ${sourceFile}; refusing an unbounded migration projection.`,
+    );
+  }
+  return new Set(rows.map((row) => row.entityId));
+}
+
+function projectedEntityId(
+  source: MigrationSource,
+  document: Record<string, unknown>,
+): string | null {
+  switch (source.kind) {
+    case "transaction":
+      return String(document.txId);
+    case "todo":
+      return String(document.todoId);
+    case "btcBuy":
+      return String(document.buyId);
+    case "btcBillPay":
+      return String(document.billPayId);
+    default:
+      return null;
+  }
+}
+
+function entityTypeForSource(
+  source: MigrationSource,
+): SuppressedEntityType | null {
+  switch (source.kind) {
+    case "transaction":
+      return "transaction";
+    case "todo":
+      return "todo";
+    case "btcBuy":
+      return "btcBuy";
+    case "btcBillPay":
+      return "btcBillPay";
+    default:
+      return null;
+  }
+}
+
+function btcTotals(
+  accounts: Array<{
+    custody: "exchange" | "self_custody";
+    sats: bigint;
+    fiatCents: bigint;
+  }>,
+) {
+  return accounts.reduce(
+    (totals, account) => ({
+      sats: totals.sats + account.sats,
+      fiatCents: totals.fiatCents + account.fiatCents,
+      exchangeSats:
+        totals.exchangeSats +
+        (account.custody === "exchange" ? account.sats : 0n),
+      selfCustodySats:
+        totals.selfCustodySats +
+        (account.custody === "self_custody" ? account.sats : 0n),
+    }),
+    {
+      sats: 0n,
+      fiatCents: 0n,
+      exchangeSats: 0n,
+      selfCustodySats: 0n,
+    },
   );
-  const auxiliary: MigrationTarget[] = accounts.map((document) => ({
-    table: BTC_ACCOUNTS_TABLE,
-    key: `${String(document.owner)}:${String(document.key)}`,
-    document,
-  }));
-  return [...primary, ...auxiliary];
+}
+
+async function applyTombstoneSuppression(
+  ctx: MutationCtx | QueryCtx,
+  source: MigrationSource,
+  projected: NonNullable<ReturnType<typeof projectFile>>,
+): Promise<NonNullable<ReturnType<typeof projectFile>>> {
+  const rowEntityType = entityTypeForSource(source);
+  if (rowEntityType !== null) {
+    const ids = await tombstonedIds(ctx, rowEntityType, source.file);
+    if (ids.size === 0) return projected;
+    const rows: Record<string, unknown>[] = [];
+    const docs: Record<string, unknown>[] = [];
+    projected.docs.forEach((document, index) => {
+      const entityId = projectedEntityId(source, document);
+      if (entityId !== null && ids.has(entityId)) return;
+      rows.push(projected.rows[index]!);
+      docs.push(document);
+    });
+    return { rows, docs };
+  }
+
+  if (source.kind === "budgetDocument") {
+    const ids = await tombstonedIds(ctx, "budgetCategory", source.file);
+    if (ids.size === 0) return projected;
+    const document = projected.docs[0]!;
+    const categories = (
+      document.categories as Array<Record<string, unknown>>
+    ).filter((category) => {
+      const name = String(category.name);
+      const folded = name.trim().toLocaleLowerCase("en-US");
+      // Exact matching preserves compatibility with tombstones written before
+      // folded category identities; folded matching is the canonical path.
+      return !ids.has(name) && !ids.has(folded);
+    });
+    return {
+      rows: projected.rows,
+      docs: [{ ...document, categories }],
+    };
+  }
+
+  if (source.kind === "btcBalanceDocument") {
+    const ids = await tombstonedIds(ctx, "btcAccount", source.file);
+    if (ids.size === 0) return projected;
+    const document = projected.docs[0]!;
+    const accounts = (
+      document.accounts as Array<{
+        key: string;
+        custody: "exchange" | "self_custody";
+        sats: bigint;
+        fiatCents: bigint;
+      }>
+    ).filter((account) => !ids.has(account.key));
+    return {
+      rows: projected.rows,
+      docs: [{ ...document, accounts, totals: btcTotals(accounts) }],
+    };
+  }
+
+  return projected;
 }
 
 /**
@@ -1611,16 +1752,22 @@ interface FrozenSourcePlan {
   unreadableBlob?: unknown;
 }
 
-function frozenSourcePlan(
+async function frozenSourcePlan(
+  ctx: MutationCtx | QueryCtx,
   source: MigrationSource,
   data: unknown | undefined,
-): FrozenSourcePlan {
+): Promise<FrozenSourcePlan> {
   if (data === undefined) {
-    return { file: source.file, table: source.table, state: "missing", rows: [] };
+    return {
+      file: source.file,
+      table: source.table,
+      state: "missing",
+      rows: [],
+    };
   }
 
-  const projected = projectFile(source, data);
-  if (projected === null) {
+  const rawProjected = projectFile(source, data);
+  if (rawProjected === null) {
     // An unreadable source can never be applied, but hashing its exact value
     // keeps a change elsewhere in the source set from evading the global bind.
     return {
@@ -1630,6 +1777,7 @@ function frozenSourcePlan(
       unreadableBlob: data,
     };
   }
+  const projected = await applyTombstoneSuppression(ctx, source, rawProjected);
 
   return {
     file: source.file,
@@ -1656,14 +1804,16 @@ interface FrozenPlan {
   dataByFile: Map<string, unknown | undefined>;
 }
 
-async function buildFrozenPlan(ctx: any): Promise<FrozenPlan> {
+async function buildFrozenPlan(
+  ctx: MutationCtx | QueryCtx,
+): Promise<FrozenPlan> {
   const plans: FrozenSourcePlan[] = [];
   const sourceFingerprints = new Map<string, string>();
   const dataByFile = new Map<string, unknown | undefined>();
 
   for (const source of MIGRATION_SOURCES) {
     const data = await readBlob(ctx, source.file);
-    const plan = frozenSourcePlan(source, data);
+    const plan = await frozenSourcePlan(ctx, source, data);
     plans.push(plan);
     dataByFile.set(source.file, data);
     sourceFingerprints.set(source.file, fingerprintSourcePlan(plan));
@@ -1690,7 +1840,14 @@ async function readMigrated(
   const byKey = new Map<string, Record<string, unknown>>();
   for (const doc of existing) {
     if (doc.sourceFile !== source.file) continue;
-    byKey.set(rowKey(source, doc), doc);
+    const key = rowKey(source, doc);
+    if (byKey.has(key)) {
+      throw new ConvexError(
+        `Duplicate migrated natural key ${JSON.stringify(key)} exists for ` +
+          `${source.file}; refusing to select one row arbitrarily.`,
+      );
+    }
+    byKey.set(key, doc);
   }
   return byKey;
 }
@@ -1709,9 +1866,43 @@ async function readMigratedTarget(
   const byKey = new Map<string, Record<string, unknown>>();
   for (const doc of existing) {
     if (doc.sourceFile !== source.file) continue;
-    byKey.set(`${String(doc.owner)}:${String(doc.key)}`, doc);
+    const key = `${String(doc.owner)}:${String(doc.key)}`;
+    if (byKey.has(key)) {
+      throw new ConvexError(
+        `Duplicate BTC account natural key ${JSON.stringify(key)} exists for ` +
+          `${source.file}; refusing to select one row arbitrarily.`,
+      );
+    }
+    byKey.set(key, doc);
   }
   return byKey;
+}
+
+async function runtimeSourceLock(
+  ctx: MutationCtx | QueryCtx,
+  sourceFile: string,
+) {
+  return await ctx.db
+    .query("runtimeSourceLocks")
+    .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
+    .unique();
+}
+
+async function refuseRuntimeOwnedSource(
+  ctx: MutationCtx | QueryCtx,
+  sourceFile: string,
+) {
+  const lock = await runtimeSourceLock(ctx, sourceFile);
+  if (lock) {
+    throw new ConvexError({
+      code: "RUNTIME_SOURCE_LOCKED",
+      sourceFile,
+      message:
+        `${sourceFile} has accepted runtime writes since row cutover. ` +
+        "Legacy migration is one-shot bootstrap, not synchronization; refusing " +
+        "to overwrite runtime-owned creates, edits, deletes, documents, or mirrors.",
+    });
+  }
 }
 
 // ─── Internal administrative surface ────────────────────────────────────────
@@ -1742,12 +1933,7 @@ export async function writeProjectedDocument(
   document: Record<string, unknown>,
   existing: Record<string, unknown> | undefined,
 ): Promise<void> {
-  await writeMigrationTarget(
-    ctx,
-    source.table,
-    document,
-    existing,
-  );
+  await writeMigrationTarget(ctx, source.table, document, existing);
 }
 
 async function writeMigrationTarget(
@@ -1805,9 +1991,14 @@ export const status = internalQuery({
     const files = [];
     for (const source of MIGRATION_SOURCES) {
       const data = plan.dataByFile.get(source.file);
-      const projected =
+      const rawProjected =
         data === undefined ? null : projectFile(source, data);
-      const targets = projected === null ? [] : migrationTargets(source, projected);
+      const projected =
+        rawProjected === null
+          ? null
+          : await applyTombstoneSuppression(ctx, source, rawProjected);
+      const targets =
+        projected === null ? [] : migrationTargets(source, projected);
       const targetTables: MigrationTargetTable[] =
         source.kind === "btcBalanceDocument"
           ? [source.table, BTC_ACCOUNTS_TABLE]
@@ -1831,6 +2022,7 @@ export const status = internalQuery({
         ),
         targetTables: migratedByTable,
         planFingerprint: plan.sourceFingerprints.get(source.file)!,
+        runtimeLocked: (await runtimeSourceLock(ctx, source.file)) !== null,
       });
     }
 
@@ -1872,15 +2064,20 @@ export const migrateFile = internalMutation({
   },
   handler: async (ctx, args) => {
     const source = sourceFor(args.file);
+    await refuseRuntimeOwnedSource(ctx, source.file);
     const apply = args.apply ?? false;
     const cursor = args.cursor ?? 0;
     const batchSize = args.batchSize ?? DEFAULT_BATCH_SIZE;
 
     if (!Number.isInteger(cursor) || cursor < 0) {
-      throw new ConvexError(`cursor must be a non-negative integer, got ${cursor}`);
+      throw new ConvexError(
+        `cursor must be a non-negative integer, got ${cursor}`,
+      );
     }
     if (!Number.isInteger(batchSize) || batchSize < 1) {
-      throw new ConvexError(`batchSize must be a positive integer, got ${batchSize}`);
+      throw new ConvexError(
+        `batchSize must be a positive integer, got ${batchSize}`,
+      );
     }
 
     const plan = await buildFrozenPlan(ctx);
@@ -1921,11 +2118,10 @@ export const migrateFile = internalMutation({
       };
     }
 
-    const projected = projectFile(source, data);
-    if (projected === null) {
+    const rawProjected = projectFile(source, data);
+    if (rawProjected === null) {
       const documentSource =
-        source.kind === "balanceDocument" ||
-        isAtomicDocumentKind(source.kind);
+        source.kind === "balanceDocument" || isAtomicDocumentKind(source.kind);
       throw new ConvexError(
         `The ${source.file} blob ${documentSource ? "is not a document" : "is not a row collection"}` +
           (documentSource
@@ -1936,6 +2132,11 @@ export const migrateFile = internalMutation({
           ". Refusing to migrate a shape this migration does not understand.",
       );
     }
+    const projected = await applyTombstoneSuppression(
+      ctx,
+      source,
+      rawProjected,
+    );
 
     const { rows } = projected;
     const targets = migrationTargets(source, projected);
@@ -1945,10 +2146,7 @@ export const migrateFile = internalMutation({
       Map<string, Record<string, unknown>>
     >();
     for (const table of tables) {
-      existingByTable.set(
-        table,
-        await readMigratedTarget(ctx, source, table),
-      );
+      existingByTable.set(table, await readMigratedTarget(ctx, source, table));
     }
 
     const end = Math.min(cursor + batchSize, targets.length);
@@ -1974,8 +2172,7 @@ export const migrateFile = internalMutation({
       }
 
       if (
-        contentFingerprint(existing) ===
-        contentFingerprint(target.document)
+        contentFingerprint(existing) === contentFingerprint(target.document)
       ) {
         unchanged += 1;
         continue;
@@ -2004,10 +2201,7 @@ export const migrateFile = internalMutation({
         Map<string, Record<string, unknown>>
       >();
       for (const table of tables) {
-        storedByTable.set(
-          table,
-          await readMigratedTarget(ctx, source, table),
-        );
+        storedByTable.set(table, await readMigratedTarget(ctx, source, table));
       }
       verification = verifyMigrationTargets(source, projected, storedByTable);
       if (!verification.ok) {
@@ -2051,6 +2245,7 @@ export const verifyFile = internalQuery({
   args: { file: v.string() },
   handler: async (ctx, { file }) => {
     const source = sourceFor(file);
+    await refuseRuntimeOwnedSource(ctx, source.file);
 
     const data = await readBlob(ctx, source.file);
     if (data === undefined) {
@@ -2097,12 +2292,17 @@ export const verifyFile = internalQuery({
       } satisfies VerificationReport;
     }
 
-    const projected = projectFile(source, data);
-    if (projected === null) {
+    const rawProjected = projectFile(source, data);
+    if (rawProjected === null) {
       throw new ConvexError(
         `The ${source.file} blob has an unsupported shape; nothing to verify against.`,
       );
     }
+    const projected = await applyTombstoneSuppression(
+      ctx,
+      source,
+      rawProjected,
+    );
 
     const targets = migrationTargets(source, projected);
     const tables = [...new Set(targets.map((target) => target.table))];
@@ -2111,10 +2311,7 @@ export const verifyFile = internalQuery({
       Map<string, Record<string, unknown>>
     >();
     for (const table of tables) {
-      storedByTable.set(
-        table,
-        await readMigratedTarget(ctx, source, table),
-      );
+      storedByTable.set(table, await readMigratedTarget(ctx, source, table));
     }
     return verifyMigrationTargets(source, projected, storedByTable);
   },

@@ -15,6 +15,7 @@ export interface DialogFrameProps {
   children: ReactNode
   footer?: ReactNode
   className?: string
+  busy?: boolean
 }
 
 export function DialogFrame({
@@ -25,6 +26,7 @@ export function DialogFrame({
   children,
   footer,
   className,
+  busy = false,
 }: DialogFrameProps) {
   const ref = useRef<HTMLDialogElement>(null)
   // Point at the rendered heading rather than stringifying the title: aria-label
@@ -36,7 +38,13 @@ export function DialogFrame({
   useEffect(() => {
     const dialog = ref.current
     if (!dialog) return
-    if (open && !dialog.open) dialog.showModal()
+    if (open && !dialog.open) {
+      dialog.showModal()
+      const first =
+        dialog.querySelector<HTMLElement>("[data-autofocus]") ??
+        dialog.querySelector<HTMLElement>("input, select, button")
+      first?.focus()
+    }
     if (!open && dialog.open) dialog.close()
   }, [open])
 
@@ -46,11 +54,11 @@ export function DialogFrame({
     // Escape fires `cancel`; route it through onClose so state stays in sync.
     const handleCancel = (event: Event) => {
       event.preventDefault()
-      onClose()
+      if (!busy) onClose()
     }
     dialog.addEventListener("cancel", handleCancel)
     return () => dialog.removeEventListener("cancel", handleCancel)
-  }, [onClose])
+  }, [busy, onClose])
 
   return (
     <dialog
@@ -58,9 +66,10 @@ export function DialogFrame({
       className={cx("vv-dialog", className)}
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}
+      aria-busy={busy || undefined}
       onClick={(event) => {
         // Backdrop clicks land on the dialog element itself.
-        if (event.target === ref.current) onClose()
+        if (!busy && event.target === ref.current) onClose()
       }}
     >
       <div className="vv-dialog__inner">
@@ -75,7 +84,7 @@ export function DialogFrame({
               </p>
             ) : null}
           </div>
-          <Button variant="ghost" icon="x" iconOnly onClick={onClose}>
+          <Button variant="ghost" icon="x" iconOnly onClick={onClose} disabled={busy}>
             Close
           </Button>
         </header>

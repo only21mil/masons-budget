@@ -2,7 +2,15 @@
 // the money screens are reporting on, and the QA state override that lets every
 // page be inspected in all five states.
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import type { ReactNode } from "react"
 
 import { type FamilyMember, allowedSwitchTargets } from "@vogel-vault/domain/family"
@@ -14,6 +22,26 @@ import {
   type DisplayUnit,
   displayUnitFromStorageKey,
 } from "../data/bitcoinDisplay.ts"
+import {
+  EMPTY_MUTATION_CONTROLLER,
+  type DataOrigin,
+  type MutationControllerState,
+  type MutationGate,
+  type PairingRequest,
+  type PairingResult,
+  type PairingStatus,
+  type RendererMutationAdapter,
+  type RendererMutationKind,
+  type RendererMutationRequest,
+  type RendererMutationResult,
+  type UnpairResult,
+  beginMutation,
+  finishRefresh,
+  isEntityPending,
+  mutationGate,
+  optimisticEnvelope,
+  settleMutation,
+} from "../data/mutations.ts"
 
 export type StateOverride = Freshness | "normal"
 
@@ -41,6 +69,27 @@ interface AppStateValue {
   readonly displayUnit: DisplayUnit
   readonly setDisplayUnit: (unit: DisplayUnit) => void
   readonly data: FixtureEnvelope
+  readonly dataOrigin: DataOrigin
+  readonly mutationCapabilities: readonly RendererMutationKind[]
+  readonly pairingStatus: PairingStatus | { readonly status: "loading" }
+  readonly pairDevice: (request: PairingRequest) => Promise<PairingResult>
+  readonly unpairDevice: () => Promise<UnpairResult>
+  readonly mutationNotice: MutationControllerState["notice"]
+  readonly mutationGate: (
+    kind: RendererMutationKind,
+    freshness: string,
+    owner?: FamilyMember,
+    selectedMonth?: string,
+    persistedMonth?: string,
+  ) => MutationGate
+  readonly submitMutation: (request: RendererMutationRequest) => Promise<RendererMutationResult>
+  readonly isMutationPending: (
+    kind: RendererMutationKind,
+    owner: FamilyMember,
+    id: string,
+    month?: string,
+  ) => boolean
+  readonly refresh: () => Promise<boolean>
 }
 
 const AppStateContext = createContext<AppStateValue | null>(null)
@@ -59,6 +108,14 @@ export interface AppStateProviderProps {
   initialDisplayUnit?: DisplayUnit
   /** Exact envelope for headless financial-state regression tests. */
   initialData?: FixtureEnvelope
+  /** Tests may opt into writable seeded rows explicitly; fixtures stay read-only. */
+  initialDataOrigin?: DataOrigin
+  /** Renderer-local adapter until the preload contract is joined by the parent lane. */
+  mutationAdapter?: RendererMutationAdapter | null
+  /** Optional deterministic capability seed for static and interaction tests. */
+  initialMutationCapabilities?: readonly RendererMutationKind[]
+  /** Optional credential-free pairing seed for static Settings tests. */
+  initialPairingStatus?: PairingStatus
 }
 
 export function AppStateProvider({
@@ -69,6 +126,10 @@ export function AppStateProvider({
   initialSelectedMonth = null,
   initialDisplayUnit,
   initialData,
+  initialDataOrigin = "fixture",
+  mutationAdapter,
+  initialMutationCapabilities = [],
+  initialPairingStatus,
 }: AppStateProviderProps) {
   const [activeProfile, setActiveProfile] = useState<FamilyMember>(initialProfile)
   const [route, setRoute] = useState(initialRoute)
@@ -81,7 +142,46 @@ export function AppStateProvider({
   const [remoteData, setRemoteData] = useState<{
     readonly profile: FamilyMember
     readonly data: FixtureEnvelope
-  } | null>(() => initialData ? { profile: initialProfile, data: initialData } : null)
+    readonly origin: DataOrigin
+  } | null>(() =>
+    initialData
+      ? { profile: initialProfile, data: initialData, origin: initialDataOrigin }
+      : null,
+  )
+  const [mutationCapabilities, setMutationCapabilities] = useState<
+    readonly RendererMutationKind[]
+  >(initialMutationCapabilities)
+  const [pairingStatus, setPairingStatus] = useState<
+    PairingStatus | { readonly status: "loading" }
+  >(
+    initialPairingStatus ??
+    (initialMutationCapabilities.length > 0
+      ? {
+          status: "paired",
+          pairedAt: 0,
+          capabilities: initialMutationCapabilities,
+          writesEnabled: true,
+        }
+      : { status: "loading" }),
+  )
+  const [mutationController, setMutationController] =
+    useState<MutationControllerState>(EMPTY_MUTATION_CONTROLLER)
+  const [generation, setGeneration] = useState(0)
+  const controllerRef = useRef(mutationController)
+  const generationRef = useRef(0)
+
+  const adapter = useMemo(
+    () => mutationAdapter === undefined ? mutationAdapterFromWindow() : mutationAdapter,
+    [mutationAdapter],
+  )
+
+  const updateController = useCallback(
+    (next: MutationControllerState) => {
+      controllerRef.current = next
+      setMutationController(next)
+    },
+    [],
+  )
 
   const switchTargets = useMemo(() => allowedSwitchTargets(activeProfile), [activeProfile])
 
@@ -108,14 +208,10 @@ export function AppStateProvider({
     [],
   )
 
-  useEffect(() => {
-    if (stateOverride !== "normal") return
+  const loadRemote = useCallback(async (profile: FamilyMember, generation: number) => {
     const bridge = window.vogelVault
-    if (!bridge) return
-
-    let current = true
-    setRemoteData(null)
-    void loadConvexRowEnvelope(
+    if (!bridge) return false
+    const result = await loadConvexRowEnvelope(
       async (request) => {
         try {
           return await bridge.queryConvexRows(request)
@@ -123,25 +219,243 @@ export function AppStateProvider({
           return { status: "error", code: "unavailable" }
         }
       },
-      activeProfile,
-    ).then((result) => {
-      if (!current) return
-      setRemoteData(result.status === "loaded" ? { profile: activeProfile, data: result.data } : null)
-    })
+      profile,
+    )
+    if (generationRef.current !== generation) return false
+    if (result.status !== "loaded") return false
+    setRemoteData({ profile, data: result.data, origin: "remote" })
+    return true
+  }, [])
 
+  useEffect(() => {
+    if (stateOverride !== "normal") return
+    const generation = ++generationRef.current
+    setGeneration(generation)
+    if (controllerRef.current !== EMPTY_MUTATION_CONTROLLER) {
+      updateController({
+        ...controllerRef.current,
+        pending: {},
+        committed: [],
+        notice: null,
+      })
+    }
+    void loadRemote(activeProfile, generation)
+  }, [activeProfile, loadRemote, stateOverride, updateController])
+
+  useEffect(() => {
+    if (!adapter) {
+      setMutationCapabilities([])
+      setPairingStatus({ status: "unavailable" })
+      return
+    }
+    let current = true
+    void adapter.getPairingStatus().then(
+      (status) => {
+        if (current) {
+          setMutationCapabilities(
+            status.status === "paired" && status.writesEnabled
+              ? status.capabilities
+              : [],
+          )
+          setPairingStatus(status)
+        }
+      },
+      () => {
+        if (current) {
+          setMutationCapabilities([])
+          setPairingStatus({ status: "unavailable" })
+        }
+      },
+    )
     return () => {
       current = false
     }
-  }, [activeProfile, stateOverride])
+  }, [adapter])
 
-  const data = useMemo(
-    () =>
-      stateOverride === "normal"
+  const pairDevice = useCallback(
+    async (request: PairingRequest): Promise<PairingResult> => {
+      if (!adapter) return { status: "disabled" }
+      let result: PairingResult
+      try {
+        result = await adapter.pairDevice(request)
+      } catch {
+        result = { status: "failed", code: "unavailable" }
+      }
+      if (result.status === "paired") {
+        setPairingStatus({ ...result, writesEnabled: true })
+        setMutationCapabilities(result.capabilities)
+      }
+      return result
+    },
+    [adapter],
+  )
+
+  const unpairDevice = useCallback(async (): Promise<UnpairResult> => {
+    if (!adapter) return { status: "unavailable" }
+    let result: UnpairResult
+    try {
+      // Main revokes remotely before clearing protected local state.
+      result = await adapter.unpairDevice()
+    } catch {
+      result = { status: "unavailable" }
+    }
+    if (result.status === "ok" || result.status === "unpaired") {
+      setPairingStatus({ status: "unpaired", writesEnabled: false })
+      setMutationCapabilities([])
+    }
+    return result
+  }, [adapter])
+
+  const baseData = useMemo(
+    () => stateOverride === "normal"
         ? remoteData?.profile === activeProfile
           ? remoteData.data
           : buildSanitizedFixtureEnvelope(activeProfile)
         : fixtureEnvelopeInState(activeProfile, stateOverride),
     [activeProfile, remoteData, stateOverride],
+  )
+  const dataOrigin: DataOrigin =
+    stateOverride === "normal" && remoteData?.profile === activeProfile
+      ? remoteData.origin
+      : "fixture"
+  const data = useMemo(
+    () => optimisticEnvelope(baseData, mutationController, activeProfile, generation),
+    [activeProfile, baseData, generation, mutationController],
+  )
+
+  const refresh = useCallback(async () => {
+    if (stateOverride !== "normal") return false
+    const nextGeneration = generationRef.current
+    const loaded = await loadRemote(activeProfile, nextGeneration)
+    updateController(
+      finishRefresh(
+        controllerRef.current,
+        activeProfile,
+        nextGeneration,
+        loaded,
+      ),
+    )
+    return loaded
+  }, [activeProfile, loadRemote, stateOverride, updateController])
+
+  const gateMutation = useCallback(
+    (
+      kind: RendererMutationKind,
+      freshness: string,
+      owner?: FamilyMember,
+      selected?: string,
+      persisted?: string,
+    ) =>
+      mutationGate({
+        dataOrigin,
+        bridgeAvailable: Boolean(adapter),
+        writesEnabled:
+          pairingStatus.status === "paired" && pairingStatus.writesEnabled,
+        capabilities: mutationCapabilities,
+        kind,
+        actor: activeProfile,
+        owner,
+        freshness,
+        selectedMonth: selected,
+        persistedMonth: persisted,
+      }),
+    [activeProfile, adapter, dataOrigin, mutationCapabilities, pairingStatus],
+  )
+
+  const submitMutation = useCallback(
+    async (request: RendererMutationRequest): Promise<RendererMutationResult> => {
+      const owner = "owner" in request ? request.owner : data.budget.value?.owner
+      const freshness = mutationFreshness(data, request.kind)
+      const persistedMonth = data.budget.value?.month
+      const requestMonth = "month" in request ? request.month : undefined
+      const gate = mutationGate({
+        dataOrigin,
+        bridgeAvailable: Boolean(adapter),
+        writesEnabled:
+          pairingStatus.status === "paired" && pairingStatus.writesEnabled,
+        capabilities: mutationCapabilities,
+        kind: request.kind,
+        actor: activeProfile,
+        owner,
+        freshness,
+        selectedMonth: requestMonth,
+        persistedMonth,
+      })
+      if (!adapter || request.actor !== activeProfile || !gate.allowed) {
+        return {
+          status: adapter ? "disabled" : "not-configured",
+          requestId: request.requestId,
+          kind: request.kind,
+        }
+      }
+      const generationAtStart = generationRef.current
+      const started = beginMutation(
+        controllerRef.current,
+        request,
+        data,
+        activeProfile,
+        generationAtStart,
+      )
+      if (started.status === "busy") {
+        return {
+          status: "failed",
+          requestId: request.requestId,
+          kind: request.kind,
+          code: "conflict",
+        }
+      }
+      updateController(started.state)
+      let result: RendererMutationResult
+      try {
+        result = await adapter.mutateConvexRow(request)
+      } catch {
+        result = {
+          status: "failed",
+          requestId: request.requestId,
+          kind: request.kind,
+          code: "unavailable",
+        }
+      }
+      const settled = settleMutation(
+        controllerRef.current,
+        started.pending,
+        result,
+        activeProfile,
+        generationAtStart,
+      )
+      updateController(settled)
+      if (result.status === "ok") {
+        const refreshed = await loadRemote(activeProfile, generationAtStart)
+        updateController(
+          finishRefresh(
+            controllerRef.current,
+            activeProfile,
+            generationAtStart,
+            refreshed,
+            [started.pending.request.requestId],
+          ),
+        )
+      } else if (result.status === "missing") {
+        await loadRemote(activeProfile, generationAtStart)
+      }
+      return result
+    },
+    [
+      activeProfile,
+      adapter,
+      data,
+      dataOrigin,
+      loadRemote,
+      mutationCapabilities,
+      pairingStatus,
+      updateController,
+    ],
+  )
+
+  const mutationPending = useCallback(
+    (kind: RendererMutationKind, owner: FamilyMember, id: string, month?: string) =>
+      isEntityPending(controllerRef.current, kind, owner, id, month),
+    [],
   )
 
   const value = useMemo(
@@ -160,6 +474,16 @@ export function AppStateProvider({
       displayUnit,
       setDisplayUnit,
       data,
+      dataOrigin,
+      mutationCapabilities,
+      pairingStatus,
+      pairDevice,
+      unpairDevice,
+      mutationNotice: mutationController.notice,
+      mutationGate: gateMutation,
+      submitMutation,
+      isMutationPending: mutationPending,
+      refresh,
     }),
     [
       activeProfile,
@@ -172,10 +496,48 @@ export function AppStateProvider({
       displayUnit,
       setDisplayUnit,
       data,
+      dataOrigin,
+      mutationCapabilities,
+      pairingStatus,
+      pairDevice,
+      unpairDevice,
+      mutationController.notice,
+      gateMutation,
+      submitMutation,
+      mutationPending,
+      refresh,
     ],
   )
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>
+}
+
+function mutationAdapterFromWindow(): RendererMutationAdapter | null {
+  if (typeof window === "undefined") return null
+  const candidate = window.vogelVault as unknown as Partial<RendererMutationAdapter> | undefined
+  if (
+    typeof candidate?.getPairingStatus !== "function" ||
+    typeof candidate.pairDevice !== "function" ||
+    typeof candidate.mutateConvexRow !== "function" ||
+    typeof candidate.unpairDevice !== "function"
+  ) {
+    return null
+  }
+  return {
+    getPairingStatus: () => candidate.getPairingStatus!(),
+    pairDevice: (request) => candidate.pairDevice!(request),
+    mutateConvexRow: (request) => candidate.mutateConvexRow!(request),
+    unpairDevice: () => candidate.unpairDevice!(),
+  }
+}
+
+function mutationFreshness(data: FixtureEnvelope, kind: RendererMutationKind): string {
+  if (kind.startsWith("transaction.")) return data.transactions.status
+  if (kind.startsWith("todo.")) return data.todos.status
+  if (kind.startsWith("budgetCategory.")) return data.budget.status
+  if (kind.startsWith("btcBuy.")) return data.btcBuys.status
+  if (kind.startsWith("btcBillPay.")) return data.billPays.status
+  return data.btcBalanceDocument.status
 }
 
 export function useAppState(): AppStateValue {

@@ -1,6 +1,15 @@
 import { ConvexError, v } from "convex/values";
 import { query, mutation, type MutationCtx } from "./_generated/server";
 import {
+  authenticateDevice,
+  authenticateDeviceForSelfRevoke,
+  deviceCapabilityValidator,
+  markDeviceSeen,
+  normalizeDeviceCapabilities,
+  sha256Hex,
+  validateDeviceCredentialShape,
+} from "./deviceAuth";
+import {
   mergeTodoPayload,
   normalizeTodoRecord,
   todoUpdatedMs,
@@ -75,7 +84,11 @@ function warnPermissive(hatchVar: string, tokenVar: string, tokenSet: boolean) {
 function validateSyncToken(token?: string) {
   const expected = process.env.CONVEX_SYNC_TOKEN;
   if (process.env.ALLOW_TOKENLESS_SYNC === "true") {
-    warnPermissive("ALLOW_TOKENLESS_SYNC", "CONVEX_SYNC_TOKEN", Boolean(expected));
+    warnPermissive(
+      "ALLOW_TOKENLESS_SYNC",
+      "CONVEX_SYNC_TOKEN",
+      Boolean(expected),
+    );
     return;
   }
   if (!expected) {
@@ -100,7 +113,11 @@ function validateSyncToken(token?: string) {
 function validateReadToken(token?: string) {
   const expected = process.env.CONVEX_READ_TOKEN;
   if (process.env.ALLOW_TOKENLESS_READ === "true") {
-    warnPermissive("ALLOW_TOKENLESS_READ", "CONVEX_READ_TOKEN", Boolean(expected));
+    warnPermissive(
+      "ALLOW_TOKENLESS_READ",
+      "CONVEX_READ_TOKEN",
+      Boolean(expected),
+    );
     return;
   }
   if (!expected) {
@@ -121,12 +138,54 @@ function validateReadToken(token?: string) {
 function validateConfiguredSyncToken(token?: string) {
   const expected = process.env.CONVEX_SYNC_TOKEN;
   if (!expected) {
-    throw new ConvexError(
-      "Unauthorized: CONVEX_SYNC_TOKEN is required for mobile pairing",
-    );
+    throw new ConvexError({
+      code: "CONFIG_MISSING",
+      message: "CONVEX_SYNC_TOKEN is required for mobile pairing",
+    });
+  }
+  if (token !== undefined && (token.length < 16 || token.length > 512)) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: "Malformed sync credential.",
+    });
   }
   if (!token || token !== expected) {
-    throw new ConvexError("Unauthorized: invalid sync token");
+    throw new ConvexError({
+      code: "DEVICE_UNAUTHORIZED",
+      message: "Unauthorized: invalid sync token",
+    });
+  }
+}
+
+type PairingErrorCode =
+  | "DEVICE_ID_CONFLICT"
+  | "PAIRING_ID_CONFLICT"
+  | "PAIRING_ALREADY_CLAIMED"
+  | "PAIRING_EXPIRED"
+  | "PAIRING_NOT_FOUND"
+  | "PAIRING_PROOF_INVALID"
+  | "VALIDATION_FAILED";
+
+function pairingFailure(code: PairingErrorCode, message: string): never {
+  throw new ConvexError({ code, message });
+}
+
+function validatePairingInput(
+  pairId: string,
+  proofHash: string,
+  createdBy?: string,
+) {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(pairId)) {
+    pairingFailure("VALIDATION_FAILED", "pairId is malformed");
+  }
+  if (!/^[0-9a-f]{64}$/.test(proofHash)) {
+    pairingFailure("VALIDATION_FAILED", "proofHash must be lowercase sha256");
+  }
+  if (createdBy !== undefined && (!createdBy.trim() || createdBy.length > 80)) {
+    pairingFailure(
+      "VALIDATION_FAILED",
+      "createdBy must contain 1-80 characters",
+    );
   }
 }
 
@@ -212,30 +271,6 @@ const appTodoValidator = v.object({
   completedAt: v.optional(v.union(v.string(), v.null())),
   completed_by: v.optional(v.union(v.string(), v.null())),
 });
-
-async function sha256Hex(value: string): Promise<string> {
-  const data = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-async function authenticateMobileDevice(
-  ctx: MutationCtx,
-  deviceId: string,
-  deviceToken: string,
-) {
-  const device = await ctx.db
-    .query("mobileDevices")
-    .withIndex("by_device_id", (q: any) => q.eq("deviceId", deviceId))
-    .first();
-
-  if (!device || device.revokedAt) return null;
-  const tokenHash = await sha256Hex(deviceToken);
-  if (tokenHash !== device.tokenHash) return null;
-  return device;
-}
 
 async function bumpSyncVersion(
   ctx: MutationCtx,
@@ -468,7 +503,9 @@ async function applyTodoUpsert(
       applied = false;
     }
   } else {
-    currentTodos.push(normalizeTodoRecord(todo as Record<string, any>, { now }));
+    currentTodos.push(
+      normalizeTodoRecord(todo as Record<string, any>, { now }),
+    );
   }
 
   // A discarded write leaves the payload identical, so bumping the version here
@@ -522,7 +559,11 @@ export const upsertTodo = mutation({
   },
   handler: async (ctx, { name: fileName, todo, token }) => {
     validateSyncToken(token);
-    return await applyTodoUpsert(ctx, todo as Record<string, any>, fileName ?? "todos");
+    return await applyTodoUpsert(
+      ctx,
+      todo as Record<string, any>,
+      fileName ?? "todos",
+    );
   },
 });
 
@@ -533,17 +574,28 @@ export const upsertTodoFromMobile = mutation({
     deviceToken: v.string(),
     todo: appTodoValidator,
   },
+  returns: v.object({
+    ok: v.literal(true),
+    name: v.string(),
+    version: v.float64(),
+    id: v.string(),
+    applied: v.boolean(),
+  }),
   handler: async (ctx, { deviceId, deviceToken, todo }) => {
-    const device = await authenticateMobileDevice(ctx, deviceId, deviceToken);
-    if (!device) throw new ConvexError("Unauthorized mobile device");
+    const device = await authenticateDevice(
+      ctx,
+      deviceId,
+      deviceToken,
+      "todos:write",
+    );
 
     const record: Record<string, any> = {
       ...(todo as Record<string, any>),
       sync_source: "vogel-vault",
     };
     const result = await applyTodoUpsert(ctx, record, "todos");
-    await ctx.db.patch(device._id, { lastSeenAt: Date.now() });
-    return { ok: true, ...result };
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, ...result };
   },
 });
 
@@ -554,22 +606,34 @@ export const createMobilePairing = mutation({
     proofHash: v.string(),
     expiresAt: v.float64(),
     createdBy: v.optional(v.string()),
+    capabilities: v.optional(v.array(deviceCapabilityValidator)),
     token: v.optional(v.string()),
   },
-  handler: async (ctx, { pairId, proofHash, expiresAt, createdBy, token }) => {
+  returns: v.object({
+    pairId: v.string(),
+    expiresAt: v.float64(),
+  }),
+  handler: async (
+    ctx,
+    { pairId, proofHash, expiresAt, createdBy, capabilities, token },
+  ) => {
     validateConfiguredSyncToken(token);
     const now = Date.now();
-    if (!pairId.trim() || !proofHash.trim()) {
-      throw new ConvexError("pairId and proofHash required");
-    }
+    validatePairingInput(pairId, proofHash, createdBy);
     if (!Number.isFinite(expiresAt) || expiresAt <= now) {
-      throw new ConvexError("expiresAt must be in the future");
+      pairingFailure("VALIDATION_FAILED", "expiresAt must be in the future");
+    }
+    if (expiresAt > now + 366 * 24 * 60 * 60 * 1000) {
+      pairingFailure("VALIDATION_FAILED", "expiresAt must be within 366 days");
     }
 
     const existing = await ctx.db
       .query("mobilePairings")
       .withIndex("by_pair_id", (q) => q.eq("pairId", pairId))
-      .first();
+      .unique();
+    if (existing) {
+      pairingFailure("PAIRING_ID_CONFLICT", "Pairing id is already in use");
+    }
     const record = {
       pairId,
       proofHash,
@@ -578,10 +642,13 @@ export const createMobilePairing = mutation({
       createdBy: createdBy || "sats",
       claimedAt: undefined,
       deviceId: undefined,
+      capabilities:
+        capabilities === undefined
+          ? undefined
+          : normalizeDeviceCapabilities(capabilities),
     };
 
-    if (existing) await ctx.db.patch(existing._id, record);
-    else await ctx.db.insert("mobilePairings", record);
+    await ctx.db.insert("mobilePairings", record);
     return { pairId, expiresAt };
   },
 });
@@ -595,33 +662,51 @@ export const claimMobilePairing = mutation({
     deviceId: v.string(),
     deviceToken: v.string(),
   },
+  returns: v.object({
+    ok: v.literal(true),
+    deviceId: v.string(),
+    pairedAt: v.float64(),
+    capabilities: v.array(deviceCapabilityValidator),
+  }),
   handler: async (
     ctx,
     { pairId, proofHash, deviceName, deviceId, deviceToken },
   ) => {
     const now = Date.now();
+    validatePairingInput(pairId, proofHash);
+    validateDeviceCredentialShape(deviceId, deviceToken);
+    if (!deviceName.trim() || deviceName.length > 80) {
+      pairingFailure(
+        "VALIDATION_FAILED",
+        "deviceName must contain 1-80 characters",
+      );
+    }
     const pairing = await ctx.db
       .query("mobilePairings")
       .withIndex("by_pair_id", (q) => q.eq("pairId", pairId))
-      .first();
+      .unique();
 
-    if (!pairing) throw new ConvexError("Pairing expired or not found");
-    if (pairing.claimedAt) throw new ConvexError("Pairing already claimed");
+    if (!pairing) {
+      pairingFailure("PAIRING_NOT_FOUND", "Pairing not found");
+    }
+    if (pairing.claimedAt) {
+      pairingFailure("PAIRING_ALREADY_CLAIMED", "Pairing already claimed");
+    }
     if (pairing.expiresAt <= now) {
-      throw new ConvexError("Pairing expired or not found");
+      pairingFailure("PAIRING_EXPIRED", "Pairing expired");
     }
     if (pairing.proofHash !== proofHash) {
-      throw new ConvexError("Invalid pairing proof");
-    }
-    if (!deviceId.trim() || !deviceToken.trim()) {
-      throw new ConvexError("deviceId and deviceToken required");
+      pairingFailure("PAIRING_PROOF_INVALID", "Invalid pairing proof");
     }
 
     const tokenHash = await sha256Hex(deviceToken);
     const existingDevice = await ctx.db
       .query("mobileDevices")
       .withIndex("by_device_id", (q) => q.eq("deviceId", deviceId))
-      .first();
+      .unique();
+    if (existingDevice) {
+      pairingFailure("DEVICE_ID_CONFLICT", "Device id is already paired");
+    }
 
     const deviceRecord = {
       deviceId,
@@ -631,13 +716,42 @@ export const claimMobilePairing = mutation({
       lastSeenAt: now,
       revokedAt: undefined,
       pairId,
+      capabilities: pairing.capabilities,
     };
 
-    if (existingDevice) await ctx.db.patch(existingDevice._id, deviceRecord);
-    else await ctx.db.insert("mobileDevices", deviceRecord);
+    await ctx.db.insert("mobileDevices", deviceRecord);
 
     await ctx.db.patch(pairing._id, { claimedAt: now, deviceId });
-    return { ok: true, deviceId, pairedAt: now };
+    return {
+      ok: true as const,
+      deviceId,
+      pairedAt: now,
+      capabilities: normalizeDeviceCapabilities(pairing.capabilities),
+    };
+  },
+});
+
+/** Revoke the calling device without requiring a household sync credential. */
+export const revokeMobileDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+  },
+  returns: v.object({
+    ok: v.literal(true),
+    revoked: v.boolean(),
+  }),
+  handler: async (ctx, { deviceId, deviceToken }) => {
+    const device = await authenticateDeviceForSelfRevoke(
+      ctx,
+      deviceId,
+      deviceToken,
+    );
+    if (device.revokedAt !== undefined) {
+      return { ok: true as const, revoked: false };
+    }
+    await ctx.db.patch(device._id, { revokedAt: Date.now() });
+    return { ok: true as const, revoked: true };
   },
 });
 
@@ -650,9 +764,21 @@ export const completeTodoFromMobile = mutation({
     title: v.optional(v.string()),
     done: v.optional(v.boolean()),
   },
+  returns: v.object({
+    ok: v.literal(true),
+    id: v.string(),
+    done: v.boolean(),
+    completedAt: v.union(v.string(), v.null()),
+    version: v.float64(),
+    titleMatched: v.boolean(),
+  }),
   handler: async (ctx, { deviceId, deviceToken, id, title, done }) => {
-    const device = await authenticateMobileDevice(ctx, deviceId, deviceToken);
-    if (!device) throw new ConvexError("Unauthorized mobile device");
+    const device = await authenticateDevice(
+      ctx,
+      deviceId,
+      deviceToken,
+      "todos:write",
+    );
 
     const name = "todos";
     const now = Date.now();
@@ -674,7 +800,8 @@ export const completeTodoFromMobile = mutation({
         : [];
 
     const idx = currentTodos.findIndex(
-      (item) => item && typeof item === "object" && "id" in item && item.id === id,
+      (item) =>
+        item && typeof item === "object" && "id" in item && item.id === id,
     );
 
     // SAT-1508: tolerate ids missing from the todos file (e.g. an app-created
@@ -708,10 +835,10 @@ export const completeTodoFromMobile = mutation({
     }
 
     const result = await applyTodoUpsert(ctx, record, name);
-    await ctx.db.patch(device._id, { lastSeenAt: now });
+    await markDeviceSeen(ctx, device);
 
     return {
-      ok: true,
+      ok: true as const,
       id,
       done: isDone,
       completedAt,
@@ -761,12 +888,7 @@ async function removeTodoById(ctx: MutationCtx, todoId: string) {
   const beforeCount = currentTodos.length;
   const filtered = currentTodos.filter(
     (item) =>
-      !(
-        item &&
-        typeof item === "object" &&
-        "id" in item &&
-        item.id === todoId
-      ),
+      !(item && typeof item === "object" && "id" in item && item.id === todoId),
   );
 
   if (filtered.length === beforeCount) {
@@ -821,13 +943,23 @@ export const removeTodoFromMobile = mutation({
     deviceToken: v.string(),
     id: v.string(),
   },
+  returns: v.object({
+    ok: v.literal(true),
+    name: v.string(),
+    version: v.float64(),
+    removed: v.boolean(),
+  }),
   handler: async (ctx, { deviceId, deviceToken, id }) => {
-    const device = await authenticateMobileDevice(ctx, deviceId, deviceToken);
-    if (!device) throw new ConvexError("Unauthorized mobile device");
+    const device = await authenticateDevice(
+      ctx,
+      deviceId,
+      deviceToken,
+      "todos:write",
+    );
 
     const result = await removeTodoById(ctx, id);
-    await ctx.db.patch(device._id, { lastSeenAt: Date.now() });
-    return { ok: true, ...result };
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, ...result };
   },
 });
 

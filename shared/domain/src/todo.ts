@@ -419,14 +419,21 @@ export function reconcileTodos(input: {
  * two is how a blank due-date chip gets rendered.
  */
 export function toTodoItem(todo: CanonicalTodo): TodoItem {
+  const parsedUpdatedAt = Date.parse(todo.updatedAt)
   return {
     id: todo.id,
+    updatedAtMs: Number.isFinite(parsedUpdatedAt) ? parsedUpdatedAt : 0,
     title: todo.title,
     done: todo.done,
     project: emptyToNull(todo.project),
     area: emptyToNull(todo.area),
     due: emptyToNull(todo.dueDate),
     flagged: todo.flagged,
+    lane: todo.lane,
+    priority: BigInt(todo.priority),
+    createdAt: emptyToNull(todo.createdAt),
+    updatedAt: emptyToNull(todo.updatedAt),
+    completedAt: todo.completedAt,
     notes: emptyToNull(todo.notes),
     owner: todo.owner,
   }

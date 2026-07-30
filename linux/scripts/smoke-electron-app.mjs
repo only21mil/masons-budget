@@ -46,7 +46,16 @@ const EXPECTED = {
   breakpointHoldsAt: 1366,
   minWidth: 1100,
   minHeight: 700,
-  bridgeKeys: ["exportCsv", "getRemoteSnapshot", "getRuntimeInfo", "queryConvexRows"],
+  bridgeKeys: [
+    "exportCsv",
+    "getPairingStatus",
+    "getRemoteSnapshot",
+    "getRuntimeInfo",
+    "mutateConvexRow",
+    "pairDevice",
+    "queryConvexRows",
+    "unpairDevice",
+  ],
 }
 
 const checks = []
@@ -273,10 +282,12 @@ async function inspect(window) {
   await capture(window, "window-1365x900-compact.png")
 
   // ── Scrolling ────────────────────────────────────────────────────────────
-  // At the default size the dashboard fits, so scrolling proves nothing there.
-  // Shrink to the smallest window the app allows, which is the size a real user
-  // on a small laptop actually gets, and check the content well both overflows
-  // and moves.
+  // The current dashboard can legitimately fit exactly at the minimum window,
+  // so fixture volume is not evidence that overflow works. Shrink to the
+  // smallest allowed viewport, append a hidden test-only sentinel that is
+  // taller than the real content well, prove the real well moves, then restore
+  // and remove the sentinel. This holds the shell's scroll contract without
+  // coupling packaging health to a particular route or data-rich fixture.
   await setViewport(window, EXPECTED.minWidth, EXPECTED.minHeight)
   const scroll = await run(
     contents,
@@ -284,24 +295,48 @@ async function inspect(window) {
       const well = document.querySelector(".vv-content")
       if (!well) return { found: false }
       const overflowY = getComputedStyle(well).overflowY
+      const baselineScrollHeight = well.scrollHeight
+      const clientHeight = well.clientHeight
+      const sentinel = document.createElement("div")
+      sentinel.dataset.vvSmokeScrollSentinel = "true"
+      sentinel.setAttribute("aria-hidden", "true")
+      sentinel.style.cssText =
+        "display:block;width:1px;height:" + (clientHeight + 64) +
+        "px;min-height:" + (clientHeight + 64) +
+        "px;visibility:hidden;pointer-events:none"
+      well.append(sentinel)
       well.scrollTop = 0
       const start = well.scrollTop
       well.scrollTop = 10_000
       const max = well.scrollTop
+      const scrollHeight = well.scrollHeight
       well.scrollTop = 0
-      return { found: true, overflowY, start, max, restored: well.scrollTop,
-               scrollHeight: well.scrollHeight, clientHeight: well.clientHeight }
+      const restored = well.scrollTop
+      sentinel.remove()
+      return {
+        found: true,
+        overflowY,
+        start,
+        max,
+        restored,
+        scrollHeight,
+        clientHeight,
+        baselineScrollHeight,
+        sentinelRemoved:
+          document.querySelector("[data-vv-smoke-scroll-sentinel]") === null,
+      }
     })()`,
   )
   record(
-    "content well scrolls at the minimum window size",
+    "content well permits scrolling at the minimum window size",
     scroll.found &&
       scroll.overflowY === "auto" &&
       scroll.scrollHeight > scroll.clientHeight &&
       scroll.max > 0 &&
-      scroll.restored === 0,
+      scroll.restored === 0 &&
+      scroll.sentinelRemoved,
     scroll.found
-      ? `overflow-y ${scroll.overflowY}, content ${scroll.scrollHeight}px in a ${scroll.clientHeight}px well, scrolled to ${scroll.max}`
+      ? `overflow-y ${scroll.overflowY}, baseline ${scroll.baselineScrollHeight}px, test content ${scroll.scrollHeight}px in a ${scroll.clientHeight}px well, scrolled to ${scroll.max}, sentinel removed ${scroll.sentinelRemoved}`
       : "no .vv-content element",
   )
 

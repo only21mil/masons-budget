@@ -57,6 +57,9 @@ function validateAsar(archive, label) {
 
   const packaged = JSON.parse(asar.extractFile(archive, "package.json").toString("utf8"))
   if (packaged.main !== "dist-electron/main.js") fail(`${label} package main is ${JSON.stringify(packaged.main)}.`)
+  if (packaged.desktopName !== "vogel-vault") {
+    fail(`${label} package desktopName is ${JSON.stringify(packaged.desktopName)}.`)
+  }
   if (packaged.author?.name !== "Victor Vogel") fail(`${label} package author is not Victor Vogel.`)
   if (packaged.homepage !== "https://github.com/only21mil/masons-budget") {
     fail(`${label} package homepage is ${JSON.stringify(packaged.homepage)}.`)
@@ -85,6 +88,12 @@ try {
   execFileSync("dpkg-deb", ["--extract", deb, debRoot], { stdio: "inherit" })
   const debAsars = (await filesUnder(debRoot)).filter((file) => file.endsWith(`${path.sep}resources${path.sep}app.asar`))
   if (debAsars.length !== 1) fail(`deb extraction contained ${debAsars.length} app.asar files.`)
+  const debDesktop = path.join(debRoot, "usr", "share", "applications", "vogel-vault.desktop")
+  if (!existsSync(debDesktop)) fail("deb is missing vogel-vault.desktop.")
+  const desktopBody = await readFile(debDesktop, "utf8")
+  if (!desktopBody.includes("\nStartupWMClass=vogel-vault\n")) {
+    fail("deb desktop entry does not bind StartupWMClass to vogel-vault.")
+  }
 
   await chmod(appImage, 0o755)
   const appImageRoot = path.join(temp, "appimage")

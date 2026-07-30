@@ -28,6 +28,7 @@ import {
 function tx(date: string, category: string, amount: string, id = date + category): Transaction {
   return {
     id,
+    updatedAtMs: 1,
     date,
     merchant: "Sample",
     amount: parseCents(amount),
@@ -40,6 +41,7 @@ function tx(date: string, category: string, amount: string, id = date + category
 
 function budget(month: string, categories: Array<[string, string]>): Budget {
   return {
+    updatedAtMs: 1,
     month,
     coinbaseOneBalance: 0n,
     categories: categories.map(([name, planned]) => ({
@@ -87,6 +89,7 @@ const monthFixtures = JSON.parse(
 ) as MonthFixtures
 const ownerTransactions: Transaction[] = monthFixtures.transactions.map((transaction) => ({
   ...transaction,
+  updatedAtMs: 1,
   amount: parseCents(transaction.amount),
   card: null,
   note: null,

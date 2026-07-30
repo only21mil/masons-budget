@@ -12,6 +12,7 @@ import {
 function tx(id: string, owner: Transaction["owner"], amount: bigint): Transaction {
   return {
     id,
+    updatedAtMs: 1,
     owner,
     amount,
     date: "2026-07-01",
@@ -23,6 +24,7 @@ function tx(id: string, owner: Transaction["owner"], amount: bigint): Transactio
 }
 
 const budget: Budget = {
+  updatedAtMs: 1,
   month: "2026-07",
   coinbaseOneBalance: 0n,
   categories: [{ name: "Food", icon: null, budget: 10_000n, spent: 99_999n }],

@@ -18,3 +18,15 @@ export const CONVEX_READ_CHANNEL = "vogel-vault:read-remote-snapshot"
 
 /** Renderer → main, invoke/handle. Closed typed row/document request union. */
 export const CONVEX_ROWS_CHANNEL = "vogel-vault:query-convex-rows"
+
+/** Renderer → main, invoke/handle. Claims one user-supplied device pairing. */
+export const DEVICE_PAIR_CHANNEL = "vogel-vault:pair-device"
+
+/** Renderer → main, invoke/handle. Returns credential-free pairing state. */
+export const DEVICE_PAIRING_STATUS_CHANNEL = "vogel-vault:get-pairing-status"
+
+/** Renderer → main, invoke/handle. Closed domain mutation request union. */
+export const CONVEX_MUTATION_CHANNEL = "vogel-vault:mutate-convex-row"
+
+/** Renderer → main, invoke/handle. Revokes and removes the local pairing. */
+export const DEVICE_UNPAIR_CHANNEL = "vogel-vault:unpair-device"

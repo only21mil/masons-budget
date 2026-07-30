@@ -1,6 +1,8 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+import { deviceCapabilityValidator } from "./deviceAuth";
+
 // The Vogel Vault — Convex Schema
 //
 // TWO STORAGE SHAPES LIVE HERE AT THE SAME TIME, ON PURPOSE.
@@ -119,12 +121,23 @@ const monthlyHistoryValidator = v.object({
   savingsBps: v.int64(),
 });
 
+const fiatValuationValidator = v.object({
+  cents: v.int64(),
+  priceCents: v.optional(v.int64()),
+  quotedAt: v.optional(v.string()),
+  source: v.optional(v.string()),
+  confidence: v.optional(v.string()),
+});
+
 const btcBalanceAccountValidator = v.object({
   key: v.string(),
   label: v.string(),
   custody: custodyValidator,
   sats: v.int64(),
-  fiatCents: v.int64(),
+  // Legacy projections carry fiatCents. Device writes retain the complete
+  // quote when supplied and may leave valuation absent rather than inventing 0.
+  fiatCents: v.optional(v.int64()),
+  fiatValuation: v.optional(fiatValuationValidator),
 });
 
 const financeLotValidator = v.object({
@@ -192,6 +205,36 @@ export default defineSchema({
     deletedAt: v.float64(), // Unix timestamp (ms) of the delete
   }).index("by_todo_id", ["id"]),
 
+  // Row-native delete suppression. Runtime deletes upsert one natural-key
+  // tombstone; migration consults the indexed key before projecting a row so a
+  // surviving legacy blob cannot resurrect an explicitly deleted entity.
+  rowTombstones: defineTable({
+    entityType: v.union(
+      v.literal("transaction"),
+      v.literal("todo"),
+      v.literal("budgetCategory"),
+      v.literal("btcBuy"),
+      v.literal("btcBillPay"),
+      v.literal("btcAccount"),
+    ),
+    sourceFile: v.string(),
+    entityId: v.string(),
+    owner: familyMemberValidator,
+    deletedAtMs: v.float64(),
+    deletedFromUpdatedAtMs: v.optional(v.float64()),
+  })
+    .index("by_entity", ["entityType", "sourceFile", "entityId"])
+    .index("by_type_source", ["entityType", "sourceFile"]),
+
+  // Once any runtime client writes a migrated source, the surviving legacy blob
+  // is no longer allowed to project over it. This source-level cutover lock is
+  // deliberately separate from row tombstones: tombstones defend individual
+  // deletes, while this lock protects creates and edits from stale blob replay.
+  runtimeSourceLocks: defineTable({
+    sourceFile: v.string(),
+    lockedAtMs: v.float64(),
+  }).index("by_source_file", ["sourceFile"]),
+
   // ── Mobile writeback pairing (SAT-1429) ──
   // Public iPhones cannot reach DGX/Tailscale, so they complete existing MC2
   // todos through Convex using per-device tokens. Pairings are one-time secrets
@@ -205,6 +248,7 @@ export default defineSchema({
     createdBy: v.string(),
     claimedAt: v.optional(v.float64()),
     deviceId: v.optional(v.string()),
+    capabilities: v.optional(v.array(deviceCapabilityValidator)),
   }).index("by_pair_id", ["pairId"]),
 
   mobileDevices: defineTable({
@@ -215,6 +259,7 @@ export default defineSchema({
     lastSeenAt: v.float64(),
     revokedAt: v.optional(v.float64()),
     pairId: v.string(),
+    capabilities: v.optional(v.array(deviceCapabilityValidator)),
   }).index("by_device_id", ["deviceId"]),
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -392,7 +437,8 @@ export default defineSchema({
     label: v.string(),
     custody: custodyValidator,
     sats: v.int64(),
-    fiatCents: v.int64(),
+    fiatCents: v.optional(v.int64()),
+    fiatValuation: v.optional(fiatValuationValidator),
     asOf: v.string(), // snapshot timestamp, verbatim from MC2
     schemaVersion: v.int64(),
     sourceFile: v.string(),
@@ -479,7 +525,7 @@ export default defineSchema({
     accounts: v.array(btcBalanceAccountValidator),
     totals: v.object({
       sats: v.int64(),
-      fiatCents: v.int64(),
+      fiatCents: v.optional(v.int64()),
       exchangeSats: v.int64(),
       selfCustodySats: v.int64(),
     }),

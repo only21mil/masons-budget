@@ -10,6 +10,7 @@
   },
   "license": "UNLICENSED",
   "main": "dist-electron/main.js",
+  "desktopName": "vogel-vault",
   "scripts": {
     "dev": "vite",
     "build": "npm run typecheck && vite build",
@@ -58,6 +59,7 @@
     "extraMetadata": {
       "name": "vogel-vault",
       "description": "The Vogel Vault — private family Bitcoin and budget dashboard",
+      "desktopName": "vogel-vault",
       "homepage": "https://github.com/only21mil/masons-budget",
       "author": {
         "name": "Victor Vogel"
@@ -94,6 +96,7 @@
       "executableName": "vogel-vault",
       "icon": "build/icon.png",
       "maintainer": "Victor Vogel",
+      "syncDesktopName": true,
       "synopsis": "Private family Bitcoin and budget dashboard"
     }
   }
