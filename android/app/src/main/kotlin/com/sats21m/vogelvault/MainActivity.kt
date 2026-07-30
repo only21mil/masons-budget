@@ -1,12 +1,15 @@
 package com.sats21m.vogelvault
 
+import android.app.KeyguardManager
 import android.os.Bundle
 import android.os.Build
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import androidx.biometric.BiometricPrompt
+import androidx.core.content.getSystemService
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -16,9 +19,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.fragment.app.FragmentActivity
 import com.sats21m.vogelvault.domain.DisplayUnit
-import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.notifications.BudgetNotificationController
 import com.sats21m.vogelvault.ui.OnboardingView
+import com.sats21m.vogelvault.ui.ProfileSwitchAuthenticationGate
+import com.sats21m.vogelvault.ui.ProfileSwitchRefusal
 import com.sats21m.vogelvault.ui.VaultApp
 import com.sats21m.vogelvault.ui.VaultLockController
 import com.sats21m.vogelvault.ui.VaultLockSnapshot
@@ -30,8 +34,29 @@ import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
 class MainActivity : FragmentActivity() {
     private val lockController = VaultLockController()
     private val lockState = mutableStateOf(VaultLockSnapshot())
+    private val profileSwitchRefusal = mutableStateOf<ProfileSwitchRefusal?>(null)
     private lateinit var biometricPrompt: BiometricPrompt
     private lateinit var model: VaultViewModel
+
+    /**
+     * The receiver of a profile-switch request.
+     *
+     * This connection is the whole feature: the prompt machinery below only runs
+     * because the shell hands its request here. It shipped once with the shell
+     * side defaulted to a no-op, so any profile could be selected — and nothing
+     * ever reached the prompt.
+     */
+    private val profileSwitchGate by lazy {
+        ProfileSwitchAuthenticationGate(
+            authenticationAvailable = ::deviceAuthenticationAvailable,
+            beginAuthentication = lockController::beginProfileSwitch,
+            showPrompt = {
+                publishLockState()
+                biometricPrompt.authenticate(promptInfo(forProfileSwitch = true))
+            },
+            onRefusalChanged = { cause -> profileSwitchRefusal.value = cause },
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,7 +71,12 @@ class MainActivity : FragmentActivity() {
                         result: BiometricPrompt.AuthenticationResult,
                     ) {
                         super.onAuthenticationSucceeded(result)
-                        lockController.authenticationSucceeded()?.let(model::switchProfile)
+                        // The controller releases the authenticated profile; the
+                        // gate applies it, and only if it is the one the user
+                        // asked for. An app unlock releases nothing.
+                        profileSwitchGate.authenticationApproved(
+                            lockController.authenticationSucceeded(),
+                        )
                         publishLockState()
                     }
 
@@ -56,6 +86,9 @@ class MainActivity : FragmentActivity() {
                     ) {
                         super.onAuthenticationError(errorCode, errString)
                         lockController.authenticationErrored(getString(R.string.vault_auth_error))
+                        // A cancelled or failed prompt refuses the switch and says
+                        // so. There is no fallback that applies it anyway.
+                        profileSwitchGate.authenticationRefused()
                         publishLockState()
                     }
                 },
@@ -110,9 +143,13 @@ class MainActivity : FragmentActivity() {
                         VaultApp(
                             state = state,
                             onNavigate = model::navigate,
-                            onSwitchProfile = { target ->
-                                requestProfileSwitch(state.activeProfile, target)
-                            },
+                            // Applies a switch the gate has already authenticated,
+                            // and doubles as the shell's refresh of the active
+                            // profile. VaultViewModel.switchProfile still refuses a
+                            // target this profile may not reach.
+                            onSwitchProfile = model::switchProfile,
+                            onRequestProfileSwitchAuthentication = profileSwitchGate::authenticate,
+                            profileSwitchRefusal = profileSwitchRefusal.value,
                             onEnableRemoteRows = model::enableRemoteRows,
                             // A completed edit or delete has to be reflected by the
                             // ledger the shell reads. Re-selecting the active profile
@@ -151,20 +188,28 @@ class MainActivity : FragmentActivity() {
         biometricPrompt.authenticate(promptInfo(forProfileSwitch = false))
     }
 
-    private fun requestProfileSwitch(
-        current: FamilyMember,
-        target: FamilyMember,
-    ) {
-        if (target == current) {
-            // The shell currently uses this same callback to refresh the active
-            // profile. Refreshing does not cross a visibility boundary.
-            model.switchProfile(target)
-            return
+    /**
+     * Whether this device can authenticate a profile switch at all.
+     *
+     * Checked before the prompt so an unenrolled device is told why the switch was
+     * refused, rather than being shown a prompt that cannot succeed. A device with
+     * no screen lock cannot switch profiles: there is deliberately no fallback
+     * that lets the switch through, because that would open a child's ledger — or
+     * the household's — to whoever is holding the phone.
+     */
+    private fun deviceAuthenticationAvailable(): Boolean {
+        val manager = BiometricManager.from(this)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return manager.canAuthenticate(BIOMETRIC_STRONG or DEVICE_CREDENTIAL) ==
+                BiometricManager.BIOMETRIC_SUCCESS
         }
-        if (target !in current.allowedSwitchTargets) return
-        if (!lockController.beginProfileSwitch(current, target)) return
-        publishLockState()
-        biometricPrompt.authenticate(promptInfo(forProfileSwitch = true))
+        // On API 29 canAuthenticate cannot be asked about DEVICE_CREDENTIAL, while
+        // the prompt itself still accepts one via setDeviceCredentialAllowed. A
+        // secured keyguard is exactly what that path authenticates against.
+        if (manager.canAuthenticate(BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS) {
+            return true
+        }
+        return getSystemService<KeyguardManager>()?.isDeviceSecure == true
     }
 
     @Suppress("DEPRECATION")

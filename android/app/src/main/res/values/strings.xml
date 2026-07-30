@@ -109,6 +109,21 @@
     <string name="tasks_saving">Saving…</string>
     <string name="profile_switcher_open">Choose profile</string>
     <string name="profile_switcher_child_profile">Child profile</string>
+    <!--
+      A refused profile switch names its cause. One title/detail pair per cause in
+      ProfileSwitchRefusal, because a switch that silently does nothing is the
+      defect these messages exist to prevent.
+    -->
+    <string name="profile_switch_not_connected_title">Profile switching is not wired up</string>
+    <string name="profile_switch_not_connected_detail">This screen has no connection to the authentication prompt, so no profile can be opened. This is a defect in the app, not a setting.</string>
+    <string name="profile_switch_unavailable_title">No device authentication</string>
+    <string name="profile_switch_unavailable_detail">Profiles are protected by your screen lock. Add a fingerprint, face unlock, PIN, pattern, or password in system settings, then try again.</string>
+    <string name="profile_switch_not_required_title">Profile switch refused</string>
+    <string name="profile_switch_not_required_detail">The request arrived without an authentication requirement. Every profile switch must be authenticated, so it was refused.</string>
+    <string name="profile_switch_already_authenticating_title">Authentication already in progress</string>
+    <string name="profile_switch_already_authenticating_detail">Finish or dismiss the open authentication prompt, then choose the profile again.</string>
+    <string name="profile_switch_incomplete_title">Profile not switched</string>
+    <string name="profile_switch_incomplete_detail">Authentication was cancelled or did not succeed, so the active profile did not change.</string>
     <string name="export_reports_title">CSV reports</string>
     <string name="export_reports_scope">Shared household or this child only</string>
     <string name="export_transactions">Share transactions CSV</string>
