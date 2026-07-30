@@ -136,6 +136,12 @@ function TodoActionsCell({ todo }: { todo: TodoItem }) {
       area: todo.area ?? undefined,
       due: todo.due ?? undefined,
       notes: todo.notes ?? undefined,
+      lane: todo.lane ?? undefined,
+      priority: todo.priority ?? undefined,
+      createdAt: todo.createdAt ?? undefined,
+      updatedAt: todo.updatedAt ?? undefined,
+      completedAt: todo.completedAt ?? undefined,
+      baseUpdatedAtMs: todo.updatedAtMs,
     })
   }
 
@@ -147,6 +153,7 @@ function TodoActionsCell({ todo }: { todo: TodoItem }) {
       actor: activeProfile,
       id: todo.id,
       owner: todo.owner,
+      baseUpdatedAtMs: todo.updatedAtMs,
     })
     setDeleting(false)
     if (result.status === "ok") setConfirming(false)

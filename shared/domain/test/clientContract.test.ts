@@ -145,6 +145,7 @@ test("signed spend contract is pinned by all four language-neutral vectors", () 
   for (const testCase of fixtures.spendContract.cases) {
     const transaction: Transaction = {
       id: testCase.name,
+      updatedAtMs: 1,
       date: "2026-07-27",
       merchant: testCase.name,
       amount: BigInt(testCase.input.amountCents),
@@ -183,6 +184,7 @@ test("production signs keep purchases positive and refunds negative in budget ac
     amount: bigint,
   ): Transaction => ({
     id,
+    updatedAtMs: 1,
     date: "2026-03-15",
     merchant: id,
     amount,

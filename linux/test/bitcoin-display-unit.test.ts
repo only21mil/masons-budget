@@ -149,6 +149,7 @@ test("the production-shaped stack remains exact in BTC and SATS modes", () => {
 function buy(id: string, date: string, priceUsd: bigint, owner: FamilyMember): BTCBuy {
   return {
     id,
+    updatedAtMs: 1,
     date,
     source: "Test",
     sats: 1n,
@@ -158,6 +159,7 @@ function buy(id: string, date: string, priceUsd: bigint, owner: FamilyMember): B
     status: "settled",
     costBasisStatus: "confirmed",
     loggedBy: "test",
+    archimedesRequestId: null,
     owner,
   }
 }

@@ -272,6 +272,7 @@ test("visible spend retains child rows for adult oversight", () => {
 test("budget spend uses adult household scope and child self scope", () => {
   const transactions: Transaction[] = fixtures.sampleTransactions.map((transaction) => ({
     id: transaction.id,
+    updatedAtMs: 1,
     date: "2026-07-01",
     merchant: transaction.merchant,
     amount: parseCents(transaction.amount),

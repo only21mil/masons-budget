@@ -124,6 +124,7 @@ function emptyEnvelope(now: number): FixtureEnvelope {
 function transaction(row: VogelVaultTransactionRow): Transaction {
   return {
     id: row.txId,
+    updatedAtMs: row.updatedAtMs,
     date: row.date,
     merchant: row.merchant,
     amount: row.amountCents,
@@ -137,12 +138,18 @@ function transaction(row: VogelVaultTransactionRow): Transaction {
 function todo(row: VogelVaultTodoRow): TodoItem {
   return {
     id: row.todoId,
+    updatedAtMs: row.updatedAtMs,
     title: row.title,
     done: row.done,
     project: row.project ?? null,
     area: row.area ?? null,
     due: row.due ?? null,
     flagged: row.flagged,
+    lane: row.lane ?? null,
+    priority: row.priority ?? null,
+    createdAt: row.createdAt ?? null,
+    updatedAt: row.updatedAt ?? null,
+    completedAt: row.completedAt ?? null,
     notes: row.notes ?? null,
     owner: row.owner,
   }
@@ -164,6 +171,7 @@ function income(row: VogelVaultIncomeRow): IncomeRecord {
 function btcBuy(row: VogelVaultBtcBuyRow): BTCBuy {
   return {
     id: row.buyId,
+    updatedAtMs: row.updatedAtMs,
     date: row.date,
     source: row.source,
     sats: row.sats,
@@ -173,6 +181,7 @@ function btcBuy(row: VogelVaultBtcBuyRow): BTCBuy {
     status: row.status ?? null,
     costBasisStatus: row.costBasisStatus ?? null,
     loggedBy: row.loggedBy ?? null,
+    archimedesRequestId: row.archimedesRequestId ?? null,
     owner: row.owner,
   }
 }
@@ -212,6 +221,8 @@ function ipcFiatValuation(row: {
 function btcAccount(row: VogelVaultBtcAccountRow): BTCAccountWithFiatValuation {
   return {
     key: row.key,
+    updatedAtMs: row.updatedAtMs,
+    asOf: row.asOf,
     label: row.label,
     custody: row.custody,
     sats: row.sats,
@@ -224,6 +235,7 @@ function btcAccount(row: VogelVaultBtcAccountRow): BTCAccountWithFiatValuation {
 function billPay(row: VogelVaultBtcBillPayRow): BTCBillPay {
   return {
     id: row.billPayId,
+    updatedAtMs: row.updatedAtMs,
     date: row.date,
     merchant: row.merchant,
     category: row.category,
@@ -249,10 +261,13 @@ function btcBalanceDocument(
     selfCustodySats: document.totals.selfCustodySats,
   }
   return {
+    updatedAtMs: document.updatedAtMs,
     schemaVersion: Number(document.schemaVersion),
     asOf: document.asOf,
     accounts: document.accounts.map((account): BTCAccountWithFiatValuation => ({
       key: account.key,
+      updatedAtMs: document.updatedAtMs,
+      asOf: document.asOf,
       label: account.label,
       custody: account.custody,
       sats: account.sats,
@@ -316,6 +331,7 @@ function budget(document: VogelVaultBudgetDocument): Budget | null {
   }
 
   return {
+    updatedAtMs: document.updatedAtMs,
     month,
     coinbaseOneBalance: document.coinbaseOneBalanceCents,
     categories: document.categories.map((category) => ({
