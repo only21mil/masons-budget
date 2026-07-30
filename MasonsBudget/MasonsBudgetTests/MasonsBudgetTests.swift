@@ -619,8 +619,18 @@ final class MasonsBudgetTests: XCTestCase {
         try context.save()
         let originalPersistentID = todo.persistentModelID
 
-        context.delete(todo)
-        TaskUndoStore.restoreFailedDelete(todo, in: context)
+        let unrelated = TodoItem(
+            id: "unrelated-pending-edit",
+            title: "Original title",
+            owner: .victor,
+            createdBy: "app",
+        )
+        context.insert(unrelated)
+        try context.save()
+        unrelated.title = "Keep this pending edit"
+
+        let rollback = TaskUndoStore.beginTrackedDelete(todo, in: context)
+        TaskUndoStore.restoreFailedDelete(rollback)
         try context.save()
 
         let restored = try XCTUnwrap(
@@ -630,6 +640,7 @@ final class MasonsBudgetTests: XCTestCase {
         )
         XCTAssertTrue(restored === todo)
         XCTAssertEqual(restored.persistentModelID, originalPersistentID)
+        XCTAssertEqual(unrelated.title, "Keep this pending edit")
     }
 
     @MainActor

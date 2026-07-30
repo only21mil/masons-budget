@@ -284,7 +284,7 @@ final class ConvexRowMutationTests: XCTestCase {
             transactionRow["amountCents"] as? [String: String],
             ["$integer": "4Pz///////8="],
         )
-        XCTAssertNil(transactionRow["owner"])
+        XCTAssertEqual(transactionRow["owner"] as? String, "mason")
 
         let buyArgs = try XCTUnwrap(requests[2]["args"] as? [String: Any])
         XCTAssertEqual(buyArgs["sourceFile"] as? String, "bitcoin-buys")

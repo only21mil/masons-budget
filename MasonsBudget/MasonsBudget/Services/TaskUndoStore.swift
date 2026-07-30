@@ -65,6 +65,52 @@ struct DeletedTodoSnapshot: Identifiable {
     }
 }
 
+/// Owns the narrow SwiftData undo group for one attempted todo deletion.
+///
+/// A temporary undo manager restores the registered model instance if the save
+/// fails, without rolling back unrelated pending edits or changing the caller's
+/// existing undo history.
+@MainActor
+final class TodoDeleteRollback {
+    private let modelContext: ModelContext
+    private let undoManager: UndoManager
+    private let previousUndoManager: UndoManager?
+    private var isActive = true
+
+    init(todo: TodoItem, in modelContext: ModelContext) {
+        self.modelContext = modelContext
+        previousUndoManager = modelContext.undoManager
+        undoManager = UndoManager()
+        undoManager.groupsByEvent = false
+
+        // Flush earlier edits before installing the operation-local manager so
+        // the delete is the only change captured by this undo group.
+        modelContext.processPendingChanges()
+        modelContext.undoManager = undoManager
+        undoManager.beginUndoGrouping()
+        modelContext.delete(todo)
+        modelContext.processPendingChanges()
+        undoManager.endUndoGrouping()
+    }
+
+    func restore() {
+        guard isActive else { return }
+        undoManager.undo()
+        modelContext.processPendingChanges()
+        finish()
+    }
+
+    func commit() {
+        guard isActive else { return }
+        finish()
+    }
+
+    private func finish() {
+        modelContext.undoManager = previousUndoManager
+        isActive = false
+    }
+}
+
 @MainActor
 final class TaskUndoStore: ObservableObject {
     static let shared = TaskUndoStore()
@@ -78,13 +124,11 @@ final class TaskUndoStore: ObservableObject {
     @discardableResult
     func delete(_ todo: TodoItem, in modelContext: ModelContext) -> Bool {
         let snapshot = DeletedTodoSnapshot(todo: todo)
-        modelContext.delete(todo)
+        let rollback = Self.beginTrackedDelete(todo, in: modelContext)
         return LocalMutationSave.perform(operation: "Delete todo", in: modelContext, rollbackMutation: {
-            // Reinsert the same tracked model. Creating a snapshot clone here
-            // changes SwiftData identity and can collide with the still-tracked
-            // deleted object after a failed save.
-            Self.restoreFailedDelete(todo, in: modelContext)
+            Self.restoreFailedDelete(rollback)
         }) {
+            rollback.commit()
             clearPending()
             present(snapshot)
             AppWriteSyncService.deleteTodo(id: snapshot.id)
@@ -149,7 +193,14 @@ final class TaskUndoStore: ObservableObject {
         return try? modelContext.fetch(descriptor).first
     }
 
-    static func restoreFailedDelete(_ todo: TodoItem, in modelContext: ModelContext) {
-        modelContext.insert(todo)
+    static func beginTrackedDelete(
+        _ todo: TodoItem,
+        in modelContext: ModelContext,
+    ) -> TodoDeleteRollback {
+        TodoDeleteRollback(todo: todo, in: modelContext)
+    }
+
+    static func restoreFailedDelete(_ rollback: TodoDeleteRollback) {
+        rollback.restore()
     }
 }
