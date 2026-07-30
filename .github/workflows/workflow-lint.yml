@@ -95,7 +95,9 @@ jobs:
         run: python3 .github/workflows/scripts/check_secret_inventory.py
 
       - name: App Store Connect preflight tests
-        run: node --test .github/workflows/scripts/tests/app_store_connect_preflight.test.mjs
+        run: |
+          node --test .github/workflows/scripts/tests/app_store_connect_preflight.test.mjs
+          node --test .github/workflows/scripts/tests/release_check_gate.test.mjs
 
       - name: Secret presence reporter tests
         run: python3 .github/workflows/scripts/tests/test_report_secret_presence.py
