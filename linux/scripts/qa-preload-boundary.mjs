@@ -60,6 +60,12 @@ const preloadSource = stripComments(readFileSync(join(root, "electron", "preload
 const channelSource = stripComments(readFileSync(join(root, "electron", "ipcChannels.ts"), "utf8"))
 const convexReadSource = stripComments(readFileSync(join(root, "electron", "convexRead.ts"), "utf8"))
 const convexRowsSource = stripComments(readFileSync(join(root, "electron", "convexRows.ts"), "utf8"))
+const convexMutationsSource = stripComments(
+  readFileSync(join(root, "electron", "convexMutations.ts"), "utf8"),
+)
+const credentialStoreSource = stripComments(
+  readFileSync(join(root, "electron", "deviceCredentialStore.ts"), "utf8"),
+)
 const sharedIpcSource = stripComments(readFileSync(join(root, "shared", "ipc.ts"), "utf8"))
 const rendererTypes = stripComments(readFileSync(join(root, "src", "types", "vogel-vault.d.ts"), "utf8"))
 
@@ -145,7 +151,16 @@ require_(
  * made at all. The executed section at the bottom of this file is where that
  * claim is checked rather than asserted.
  */
-const ALLOWED_BRIDGE_METHODS = ["getRuntimeInfo", "exportCsv", "getRemoteSnapshot", "queryConvexRows"]
+const ALLOWED_BRIDGE_METHODS = [
+  "getRuntimeInfo",
+  "exportCsv",
+  "getRemoteSnapshot",
+  "queryConvexRows",
+  "pairDevice",
+  "getPairingStatus",
+  "mutateConvexRow",
+  "unpairDevice",
+]
 
 const bridgeBody = preloadSource.slice(preloadSource.indexOf("exposeInMainWorld"))
 const exposedMethods = [...bridgeBody.matchAll(/^\s{2}(\w+)[:,\n]/gm)].map((m) => m[1])
@@ -200,7 +215,15 @@ require_(
  * Reviewed 2026-07-26: CSV_EXPORT_CHANNEL (rows in, a user-chosen file out) and
  * CONVEX_READ_CHANNEL (no argument in, file metadata out).
  */
-const ALLOWED_CHANNEL_CONSTANTS = ["CSV_EXPORT_CHANNEL", "CONVEX_READ_CHANNEL", "CONVEX_ROWS_CHANNEL"]
+const ALLOWED_CHANNEL_CONSTANTS = [
+  "CSV_EXPORT_CHANNEL",
+  "CONVEX_READ_CHANNEL",
+  "CONVEX_ROWS_CHANNEL",
+  "DEVICE_PAIR_CHANNEL",
+  "DEVICE_PAIRING_STATUS_CHANNEL",
+  "CONVEX_MUTATION_CHANNEL",
+  "DEVICE_UNPAIR_CHANNEL",
+]
 
 const declaredChannels = [...channelSource.matchAll(/export const (\w+) = "([^"]+)"/g)]
 const declaredChannelNames = declaredChannels.map(([, name]) => name)
@@ -269,6 +292,41 @@ for (const [pattern, label] of [
 // A redirect would hand the read credential to whatever host the response named.
 require_(/redirect:\s*"error"/.test(mainSource), "main: the deployment request refuses redirects")
 require_(/AbortSignal\.timeout\(/.test(mainSource), "main: the deployment request is time-bounded")
+
+// Paired-device credentials must stay in main and safeStorage must be usable
+// before a pairing can be claimed. Linux's plaintext fallback is explicitly
+// refused rather than silently weakening the store.
+require_(mainSource.includes("safeStorage"), "main: paired credentials use Electron safeStorage")
+require_(mainSource.includes("app.isReady()"), "main: safeStorage is guarded by Electron readiness")
+require_(
+  /app\.whenReady\(\)\.then\([\s\S]*registerPairedDeviceWrites\(\)/.test(mainSource) &&
+    /function registerPairedDeviceWrites\(\)[\s\S]*app\.getPath\("userData"\)/.test(mainSource),
+  "main: credential storage is registered only after Electron is ready",
+)
+require_(
+  credentialStoreSource.includes('"basic_text"') &&
+    credentialStoreSource.includes('"unknown"'),
+  "credential store: unsafe Linux encryption backends are refused",
+)
+require_(
+  credentialStoreSource.includes('open(temporaryPath, "wx", 0o600)') &&
+    credentialStoreSource.includes("rename(temporaryPath, storePath)") &&
+    credentialStoreSource.includes("chmod(directory, 0o700)"),
+  "credential store: private atomic file replacement is preserved",
+)
+require_(
+  !/https?:\/\//.test(convexMutationsSource),
+  "convexMutations: no deployment URL is hard-coded",
+)
+require_(
+  convexMutationsSource.includes('"convex_encoded_json"') &&
+    convexMutationsSource.includes("/api/mutation"),
+  "convexMutations: requests use the fixed Convex mutation endpoint and encoding",
+)
+require_(
+  convexMutationsSource.includes("clearIfCurrent(snapshot.revision)"),
+  "convexMutations: rejected credentials are cleared revision-safely",
+)
 
 // ── File writes ────────────────────────────────────────────────────────────
 //

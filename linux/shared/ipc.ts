@@ -416,6 +416,8 @@ export type VogelVaultMutationRequest =
       readonly kind: "budgetCategory.upsert"
       readonly month: string
       readonly name: string
+      /** Previous category name when this write is an atomic rename. */
+      readonly originalName?: string
       readonly icon?: string
       readonly budgetCents: bigint
     })
