@@ -32,10 +32,16 @@ class BudgetNotificationController(context: Context) {
 
     fun setEnabled(profile: FamilyMember, enabled: Boolean) {
         preferences.edit().putBoolean(enabledKey(profile), enabled).apply()
+        if (!enabled) cancelVisibleAlerts()
     }
 
     fun evaluateAndNotify(state: VaultUiState) {
         dispatcher.dispatch(state, enabled = isEnabled(state.activeProfile))
+    }
+
+    /** Removes budget amounts from the notification shade when privacy closes. */
+    fun cancelVisibleAlerts() {
+        AndroidBudgetAlertPublisher.cancelVisibleAlerts(appContext)
     }
 
     private fun enabledKey(profile: FamilyMember): String =
@@ -134,8 +140,15 @@ private class AndroidBudgetAlertPublisher(
         )
     }
 
-    private companion object {
+    companion object {
         const val CHANNEL_ID = "budget_alerts"
         const val NOTIFICATION_ID = 1
+
+        fun cancelVisibleAlerts(context: Context) {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            manager.activeNotifications
+                .filter { it.notification.channelId == CHANNEL_ID }
+                .forEach { manager.cancel(it.tag, it.id) }
+        }
     }
 }

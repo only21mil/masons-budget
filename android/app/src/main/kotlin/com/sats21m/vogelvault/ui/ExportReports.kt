@@ -49,11 +49,11 @@ internal object ExportReports {
             for (transaction in rows) {
                 appendCsvRow(
                     transaction.date,
-                    transaction.merchant,
+                    formulaSafeText(transaction.merchant),
                     exactUsd(transaction.amount),
-                    transaction.category,
-                    transaction.card.orEmpty(),
-                    transaction.note.orEmpty(),
+                    formulaSafeText(transaction.category),
+                    formulaSafeText(transaction.card.orEmpty()),
+                    formulaSafeText(transaction.note.orEmpty()),
                     transaction.owner.key,
                 )
             }
@@ -73,7 +73,7 @@ internal object ExportReports {
             appendLine("Category,Budget,Actual,Remaining,Percent Used")
             derived?.categories?.forEach { category ->
                 appendCsvRow(
-                    category.name,
+                    formulaSafeText(category.name),
                     exactUsd(category.budgetCents),
                     exactUsd(category.spentCents),
                     exactUsd(category.remainingCents),
@@ -123,6 +123,21 @@ internal object ExportReports {
             value
         }
 
+    /**
+     * Spreadsheet programs evaluate cells beginning with these characters as
+     * formulas. Prefix only user-controlled text fields so signed numeric export
+     * values remain numeric.
+     */
+    private fun formulaSafeText(value: String): String =
+        if (
+            value.firstOrNull() in FORMULA_CONTROL_PREFIXES ||
+            value.trimStart().firstOrNull() in FORMULA_PREFIXES
+        ) {
+            "'$value"
+        } else {
+            value
+        }
+
     private fun exactUsd(cents: Long): String =
         BigDecimal.valueOf(cents, 2).toPlainString()
 
@@ -133,6 +148,9 @@ internal object ExportReports {
             .divide(BigInteger.valueOf(budgetCents))
         return "$percent%"
     }
+
+    private val FORMULA_PREFIXES = setOf('=', '+', '-', '@')
+    private val FORMULA_CONTROL_PREFIXES = setOf('\t', '\r', '\n')
 }
 
 @Composable

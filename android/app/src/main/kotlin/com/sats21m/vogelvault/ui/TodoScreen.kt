@@ -87,6 +87,7 @@ private fun filing(todo: TodoItem): String? =
 @Composable
 internal fun TodoScreen(
     state: VaultUiState,
+    onWriteSucceeded: () -> Unit,
     modifier: Modifier = Modifier,
     /**
      * Wall clock behind the undo window, injectable exactly as VaultViewModel's
@@ -149,6 +150,7 @@ internal fun TodoScreen(
             val failure = write(action) { it.upsert(todo) }
             if (failure == null) {
                 localTodos = (localTodos.filterNot { it.id == todo.id } + todo).sortedWith(TODO_ORDER)
+                onWriteSucceeded()
             } else {
                 report(failure)
             }
@@ -287,6 +289,9 @@ internal fun TodoScreen(
                                     val feedback = awaitTodoDeleteFeedback(
                                         delete = {
                                             write(TodoWriteAction.DELETE) { it.delete(todo.id) }
+                                                .also { failure ->
+                                                    if (failure == null) onWriteSucceeded()
+                                                }
                                         },
                                         deletedMessage =
                                             context.getString(R.string.todo_deleted, todo.title),
@@ -338,6 +343,7 @@ internal fun TodoScreen(
                                                 localTodos = (localTodos + todo)
                                                     .distinctBy(TodoItem::id)
                                                     .sortedWith(TODO_ORDER)
+                                                onWriteSucceeded()
                                             } else {
                                                 report(restoreFailure)
                                             }

@@ -139,6 +139,43 @@ class ExportReportsTest {
         assertEquals("transactions-2026-07-29.csv", csv.filename)
     }
 
+    @Test
+    fun `user controlled cells are formula neutralized without changing signed money`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR)
+        val dangerous =
+            Transaction(
+                id = "formula",
+                date = "2026-07-20",
+                merchant = "=HYPERLINK(\"https://example.invalid\")",
+                amount = -250L,
+                spendAmount = -250L,
+                category = "+SUM(A1:A2)",
+                card = "@command",
+                note = "  -2+3",
+                owner = FamilyMember.VICTOR,
+            )
+        val data = fixture.copy(
+            transactions = fixture.transactions.copy(value = listOf(dangerous)),
+        )
+
+        val csv = ExportReports.transactions(
+            FamilyMember.VICTOR,
+            data,
+            LocalDate.parse("2026-07-29"),
+        )
+
+        assertContains(csv.content, "\"'=HYPERLINK(\"\"https://example.invalid\"\")\"")
+        assertContains(
+            csv.content,
+            "-2.50",
+            message = "signed numeric columns must remain numeric",
+        )
+        assertContains(csv.content, "'+SUM(A1:A2)")
+        assertContains(csv.content, "'@command")
+        assertContains(csv.content, "'  -2+3")
+        assertFalse(csv.content.contains(",'-2.50,"), csv.content)
+    }
+
     private fun transaction(
         merchant: String,
         amount: Long,

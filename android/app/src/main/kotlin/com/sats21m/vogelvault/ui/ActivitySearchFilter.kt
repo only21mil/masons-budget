@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Transaction
 import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultAccentDim
@@ -130,9 +131,12 @@ private data class SearchResult(
 @Composable
 internal fun rememberActivitySearchProjection(
     transactions: List<Transaction>,
+    profile: FamilyMember,
 ): ActivitySearchProjection {
-    var query by rememberSaveable { mutableStateOf("") }
-    var filterName by rememberSaveable { mutableStateOf(ActivityTransactionFilter.ALL.name) }
+    var query by rememberSaveable(profile) { mutableStateOf("") }
+    var filterName by rememberSaveable(profile) {
+        mutableStateOf(ActivityTransactionFilter.ALL.name)
+    }
     val filter = ActivityTransactionFilter.valueOf(filterName)
 
     var index by remember(transactions) {

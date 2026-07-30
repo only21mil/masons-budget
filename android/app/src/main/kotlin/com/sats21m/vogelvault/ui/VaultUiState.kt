@@ -200,6 +200,19 @@ class VaultViewModel(
         if (remoteEnabled && rowSource != null && _state.value.activeProfile == next) connectRows(next)
     }
 
+    /**
+     * Reloads the active profile after an accepted write without pretending the
+     * user switched profiles.
+     *
+     * A real switch clears profile-scoped navigation state and replaces the
+     * current rows with a loading projection. A write refresh keeps both the
+     * screen state and its last trustworthy rows visible until the reload lands.
+     */
+    fun refreshActiveProfile() {
+        if (!remoteEnabled || rowSource == null) return
+        connectRows(_state.value.activeProfile)
+    }
+
     fun simulate(status: Freshness) {
         _state.update {
             it.copy(

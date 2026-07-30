@@ -178,6 +178,7 @@ class WriteCredentialAccessorTest {
                 VogelVaultTheme {
                     TodoScreen(
                         state = VaultUiState.of(FamilyMember.VICTOR, Destination.TODAY),
+                        onWriteSucceeded = {},
                     )
                 }
             }
