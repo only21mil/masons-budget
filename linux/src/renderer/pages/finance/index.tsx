@@ -16,8 +16,10 @@ import {
 import { basisPoints, formatSats, formatUsd, satsToUsdCents, sum } from "@vogel-vault/domain/money"
 import {
   type BTCAccount,
+  type BTCBillPay,
   type BTCSnapshot,
   type BTCBuy,
+  type BudgetCategory,
   type CategorySpend,
   type Freshness,
   type MonthKey,
@@ -28,6 +30,7 @@ import {
   resolveBudgetMonth,
   transactionsInMonth,
 } from "@vogel-vault/domain/readModel"
+import { useMemo, useState } from "react"
 
 import { useAppState } from "../../app/AppState.tsx"
 import {
@@ -49,19 +52,29 @@ import {
 } from "../../data/btcFiatValuation.ts"
 import {
   Badge,
+  BillPayFormDialog,
+  BtcAccountFormDialog,
+  BtcBuyFormDialog,
+  BudgetCategoryFormDialog,
+  Button,
   type Column,
   DataTable,
+  DeleteConfirmDialog,
   FreshnessTag,
   type KPI,
   KPIStrip,
   PageGrid,
   PageHeader,
   Panel,
+  MutationNotice,
+  RowActions,
   SUPPRESSED,
   Select,
   StateBlock,
   StatusBanner,
+  TransactionFormDialog,
 } from "../../components/index.ts"
+import { stableId } from "../../data/mutations.ts"
 import type { PageManifest } from "../types.ts"
 
 // ── shared helpers ──────────────────────────────────────────────────────────
@@ -197,6 +210,236 @@ function AmountCell({ transaction }: { transaction: Transaction }) {
     )
   }
   return <span className="vv-positive">{formatUsd(incomeOf(transaction))}</span>
+}
+
+function TransactionActions({ transaction }: { transaction: Transaction }) {
+  const {
+    activeProfile,
+    data,
+    isMutationPending,
+    mutationGate,
+    submitMutation,
+  } = useAppState()
+  const [editing, setEditing] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const editGate = mutationGate("transaction.upsert", data.transactions.status, transaction.owner)
+  const deleteGate = mutationGate("transaction.delete", data.transactions.status, transaction.owner)
+  const pending = isMutationPending(
+    "transaction.upsert",
+    transaction.owner,
+    transaction.id,
+  )
+
+  async function remove() {
+    setDeleting(true)
+    const result = await submitMutation({
+      kind: "transaction.delete",
+      requestId: stableId("request"),
+      actor: activeProfile,
+      id: transaction.id,
+      owner: transaction.owner,
+    })
+    setDeleting(false)
+    if (result.status === "ok") setConfirming(false)
+  }
+
+  return (
+    <>
+      <RowActions
+        label={transaction.merchant}
+        onEdit={() => setEditing(true)}
+        onDelete={() => setConfirming(true)}
+        editDisabled={!editGate.allowed}
+        deleteDisabled={!deleteGate.allowed}
+        pending={pending || deleting}
+      />
+      <TransactionFormDialog
+        open={editing}
+        transaction={transaction}
+        onClose={() => setEditing(false)}
+      />
+      <DeleteConfirmDialog
+        open={confirming}
+        label={transaction.merchant}
+        busy={deleting}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => void remove()}
+      />
+    </>
+  )
+}
+
+function BudgetCategoryActions({
+  category,
+  month,
+  selectedMonth,
+  owner,
+}: {
+  category: BudgetCategory
+  month: string
+  selectedMonth: string
+  owner: FamilyMember
+}) {
+  const {
+    activeProfile,
+    data,
+    isMutationPending,
+    mutationGate,
+    submitMutation,
+  } = useAppState()
+  const [editing, setEditing] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const editGate = mutationGate(
+    "budgetCategory.upsert",
+    data.budget.status,
+    owner,
+    selectedMonth,
+    month,
+  )
+  const deleteGate = mutationGate(
+    "budgetCategory.delete",
+    data.budget.status,
+    owner,
+    selectedMonth,
+    month,
+  )
+  const pending = isMutationPending(
+    "budgetCategory.upsert",
+    owner,
+    category.name,
+    month,
+  )
+
+  async function remove() {
+    setDeleting(true)
+    const result = await submitMutation({
+      kind: "budgetCategory.delete",
+      requestId: stableId("request"),
+      actor: activeProfile,
+      month,
+      name: category.name,
+    })
+    setDeleting(false)
+    if (result.status === "ok") setConfirming(false)
+  }
+
+  return (
+    <>
+      <RowActions
+        label={category.name}
+        onEdit={() => setEditing(true)}
+        onDelete={() => setConfirming(true)}
+        editDisabled={!editGate.allowed}
+        deleteDisabled={!deleteGate.allowed}
+        pending={pending || deleting}
+      />
+      <BudgetCategoryFormDialog
+        open={editing}
+        category={category}
+        month={month}
+        onClose={() => setEditing(false)}
+      />
+      <DeleteConfirmDialog
+        open={confirming}
+        label={category.name}
+        busy={deleting}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => void remove()}
+      />
+    </>
+  )
+}
+
+function BtcBuyActions({ buy }: { buy: BTCBuy }) {
+  const { activeProfile, data, isMutationPending, mutationGate, submitMutation } = useAppState()
+  const [editing, setEditing] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const editGate = mutationGate("btcBuy.upsert", data.btcBuys.status, buy.owner)
+  const deleteGate = mutationGate("btcBuy.delete", data.btcBuys.status, buy.owner)
+  const pending = isMutationPending("btcBuy.upsert", buy.owner, buy.id)
+
+  async function remove() {
+    setDeleting(true)
+    const result = await submitMutation({
+      kind: "btcBuy.delete",
+      requestId: stableId("request"),
+      actor: activeProfile,
+      id: buy.id,
+      owner: buy.owner,
+    })
+    setDeleting(false)
+    if (result.status === "ok") setConfirming(false)
+  }
+  return (
+    <>
+      <RowActions label={`${buy.source} buy`} onEdit={() => setEditing(true)} onDelete={() => setConfirming(true)} editDisabled={!editGate.allowed} deleteDisabled={!deleteGate.allowed} pending={pending || deleting} />
+      <BtcBuyFormDialog open={editing} buy={buy} onClose={() => setEditing(false)} />
+      <DeleteConfirmDialog open={confirming} label={`${buy.source} buy`} busy={deleting} onCancel={() => setConfirming(false)} onConfirm={() => void remove()} />
+    </>
+  )
+}
+
+function BillPayActions({ payment }: { payment: BTCBillPay }) {
+  const { activeProfile, data, isMutationPending, mutationGate, submitMutation } = useAppState()
+  const [editing, setEditing] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const editGate = mutationGate("btcBillPay.upsert", data.billPays.status, payment.owner)
+  const deleteGate = mutationGate("btcBillPay.delete", data.billPays.status, payment.owner)
+  const pending = isMutationPending("btcBillPay.upsert", payment.owner, payment.id)
+
+  async function remove() {
+    setDeleting(true)
+    const result = await submitMutation({
+      kind: "btcBillPay.delete",
+      requestId: stableId("request"),
+      actor: activeProfile,
+      id: payment.id,
+      owner: payment.owner,
+    })
+    setDeleting(false)
+    if (result.status === "ok") setConfirming(false)
+  }
+  return (
+    <>
+      <RowActions label={payment.merchant} onEdit={() => setEditing(true)} onDelete={() => setConfirming(true)} editDisabled={!editGate.allowed} deleteDisabled={!deleteGate.allowed} pending={pending || deleting} />
+      <BillPayFormDialog open={editing} payment={payment} onClose={() => setEditing(false)} />
+      <DeleteConfirmDialog open={confirming} label={payment.merchant} busy={deleting} onCancel={() => setConfirming(false)} onConfirm={() => void remove()} />
+    </>
+  )
+}
+
+function BtcAccountActions({ account }: { account: BTCAccount }) {
+  const { activeProfile, data, isMutationPending, mutationGate, submitMutation } = useAppState()
+  const [editing, setEditing] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const editGate = mutationGate("btcAccount.upsert", data.btcAccounts.status, account.owner)
+  const deleteGate = mutationGate("btcAccount.delete", data.btcAccounts.status, account.owner)
+  const pending = isMutationPending("btcAccount.upsert", account.owner, account.key)
+
+  async function remove() {
+    setDeleting(true)
+    const result = await submitMutation({
+      kind: "btcAccount.delete",
+      requestId: stableId("request"),
+      actor: activeProfile,
+      key: account.key,
+      owner: account.owner,
+    })
+    setDeleting(false)
+    if (result.status === "ok") setConfirming(false)
+  }
+  return (
+    <>
+      <RowActions label={account.label} onEdit={() => setEditing(true)} onDelete={() => setConfirming(true)} editDisabled={!editGate.allowed} deleteDisabled={!deleteGate.allowed} pending={pending || deleting} />
+      <BtcAccountFormDialog open={editing} account={account} onClose={() => setEditing(false)} />
+      <DeleteConfirmDialog open={confirming} label={account.label} busy={deleting} onCancel={() => setConfirming(false)} onConfirm={() => void remove()} />
+    </>
+  )
 }
 
 // ── Month scoping ───────────────────────────────────────────────────────────
@@ -419,7 +662,15 @@ function stackColumns(
 // ── Budget ──────────────────────────────────────────────────────────────────
 
 function BudgetPage() {
-  const { activeProfile, data, selectedMonth } = useAppState()
+  const {
+    activeProfile,
+    data,
+    mutationGate,
+    mutationNotice,
+    refresh,
+    selectedMonth,
+  } = useAppState()
+  const [adding, setAdding] = useState(false)
   const budget = data.budget.value
 
   if (!budget) {
@@ -448,6 +699,32 @@ function BudgetPage() {
   const actualsStatus = budgetActualsStatus(data.budget.status, data.transactions.status)
   const actualsUnavailable =
     actualsStatus === "error" || actualsStatus === "loading" || actualsStatus === "empty"
+  const addGate = mutationGate(
+    "budgetCategory.upsert",
+    data.budget.status,
+    budget.owner,
+    scope.month,
+    budget.month,
+  )
+  const interactiveBudgetColumns: ReadonlyArray<Column<CategorySpend>> = [
+    ...budgetColumns,
+    {
+      key: "actions",
+      header: "Actions",
+      render: (row) => {
+        const sourceCategory = budget.categories.find((item) => item.name === row.name)
+        return sourceCategory ? (
+          <BudgetCategoryActions
+            category={sourceCategory}
+            month={budget.month}
+            selectedMonth={scope.month}
+            owner={budget.owner}
+          />
+        ) : null
+      },
+      width: "150px",
+    },
+  ]
 
   return (
     <>
@@ -456,11 +733,20 @@ function BudgetPage() {
         subtitle={monthLabel(scope.month)}
         actions={
           <>
+            <Button
+              variant="primary"
+              onClick={() => setAdding(true)}
+              disabled={!addGate.allowed}
+              title={addGate.reason ?? undefined}
+            >
+              Add category
+            </Button>
             {actualsUnavailable ? null : <MonthPicker scope={scope} label="Budget month" />}
             <FreshnessTag status={data.budget.status} updatedAt={data.budget.updatedAt} />
           </>
         }
       />
+      <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
       <StaleNotice status={data.budget.status} />
       {scope.month === budget.month ? null : (
         <StatusBanner
@@ -500,7 +786,7 @@ function BudgetPage() {
         flush
       >
         <DataTable
-          columns={budgetColumns}
+          columns={interactiveBudgetColumns}
           rows={spend.categories}
           rowKey={(row) => row.name}
           state={
@@ -512,6 +798,12 @@ function BudgetPage() {
           }
         />
       </Panel>
+      <BudgetCategoryFormDialog
+        open={adding}
+        category={null}
+        month={budget.month}
+        onClose={() => setAdding(false)}
+      />
     </>
   )
 }
@@ -550,26 +842,60 @@ const budgetColumns: ReadonlyArray<Column<CategorySpend>> = [
 // ── Activity ────────────────────────────────────────────────────────────────
 
 function ActivityPage() {
-  const { activeProfile, data } = useAppState()
+  const {
+    activeProfile,
+    data,
+    mutationGate,
+    mutationNotice,
+    refresh,
+  } = useAppState()
+  const [adding, setAdding] = useState(false)
   const transactions = visibleTo(activeProfile, data.transactions.value)
+  const addGate = mutationGate("transaction.upsert", data.transactions.status, activeProfile)
+  const columns = useMemo<ReadonlyArray<Column<Transaction>>>(
+    () => [
+      ...activityColumns,
+      {
+        key: "actions",
+        header: "Actions",
+        render: (row) => <TransactionActions transaction={row} />,
+        width: "150px",
+      },
+    ],
+    [],
+  )
 
   return (
     <>
       <PageHeader
         title="Activity"
         subtitle="All transactions visible to this profile"
-        actions={<FreshnessTag status={data.transactions.status} updatedAt={data.transactions.updatedAt} />}
+        actions={
+          <>
+            <Button
+              variant="primary"
+              onClick={() => setAdding(true)}
+              disabled={!addGate.allowed}
+              title={addGate.reason ?? undefined}
+            >
+              Add transaction
+            </Button>
+            <FreshnessTag status={data.transactions.status} updatedAt={data.transactions.updatedAt} />
+          </>
+        }
       />
+      <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
       <StaleNotice status={data.transactions.status} />
       <Panel source={data.transactions.source} flush>
         <DataTable
-          columns={activityColumns}
+          columns={columns}
           rows={transactions}
           rowKey={(row) => row.id}
           state={tableState(data.transactions.status)}
           footer={`${transactions.length} of ${data.transactions.value.length} records visible to ${activeProfile}`}
         />
       </Panel>
+      <TransactionFormDialog open={adding} transaction={null} onClose={() => setAdding(false)} />
     </>
   )
 }
@@ -591,7 +917,15 @@ const activityColumns: ReadonlyArray<Column<Transaction>> = [
 // ── Bitcoin Overview ────────────────────────────────────────────────────────
 
 function BitcoinOverviewPage() {
-  const { activeProfile, data, displayUnit } = useAppState()
+  const {
+    activeProfile,
+    data,
+    displayUnit,
+    mutationGate,
+    mutationNotice,
+    refresh,
+  } = useAppState()
+  const [adding, setAdding] = useState(false)
   const visible = visibleTo(activeProfile, data.btcAccounts.value)
   const projectionInScope = netWorthScopeFor(activeProfile, visible)
   const document = data.btcBalanceDocument.value
@@ -603,6 +937,17 @@ function BitcoinOverviewPage() {
   const selfCustody = document?.totals.selfCustodySats ?? 0n
   const exchange = document?.totals.exchangeSats ?? 0n
   const status = data.btcBalanceDocument.status
+  const addGate = mutationGate("btcAccount.upsert", data.btcAccounts.status, activeProfile)
+  const syncedColumns: ReadonlyArray<Column<BTCAccount>> = [
+    ...stackColumns(displayUnit),
+    { key: "owner", header: "Owner", render: (row) => <Badge>{row.owner}</Badge>, secondary: true },
+    {
+      key: "actions",
+      header: "Actions",
+      render: (row) => <BtcAccountActions account={row} />,
+      width: "150px",
+    },
+  ]
 
   // Adults can see a child's stack but it is not part of their net worth. Say so
   // rather than letting the difference look like a bug.
@@ -613,12 +958,23 @@ function BitcoinOverviewPage() {
       <PageHeader
         title="Bitcoin Overview"
         actions={
-          <FreshnessTag
-            status={data.btcBalanceDocument.status}
-            updatedAt={data.btcBalanceDocument.updatedAt}
-          />
+          <>
+            <Button
+              variant="primary"
+              onClick={() => setAdding(true)}
+              disabled={!addGate.allowed}
+              title={addGate.reason ?? undefined}
+            >
+              Add synced account
+            </Button>
+            <FreshnessTag
+              status={data.btcBalanceDocument.status}
+              updatedAt={data.btcBalanceDocument.updatedAt}
+            />
+          </>
         }
       />
+      <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
       <StaleNotice status={data.btcBalanceDocument.status} />
       {displayUnit === "usd" ? (
         <BitcoinSnapshotNotice status={status} document={document} />
@@ -694,7 +1050,28 @@ function BitcoinOverviewPage() {
             state={tableState(data.btcBalanceDocument.status)}
           />
         </Panel>
+        <Panel
+          title="Synced accounts"
+          source={`${data.btcAccounts.source} · managed rows, separate from canonical totals`}
+          flush
+          className="vv-span-2"
+        >
+          <StatusBanner
+            tone="info"
+            title="Account edits do not fabricate a USD value"
+            detail="The canonical balance document remains the source for totals above. A quantity edit is shown here until the backend reconciles that document."
+          />
+          <DataTable
+            columns={syncedColumns}
+            rows={visible}
+            rowKey={(row) => row.key}
+            state={tableState(data.btcAccounts.status)}
+            emptyTitle="No synced accounts"
+            emptyDetail="No editable account rows are visible to this profile."
+          />
+        </Panel>
       </PageGrid>
+      <BtcAccountFormDialog open={adding} account={null} onClose={() => setAdding(false)} />
     </>
   )
 }
@@ -702,18 +1079,40 @@ function BitcoinOverviewPage() {
 // ── Bitcoin Buys ────────────────────────────────────────────────────────────
 
 function BitcoinBuysPage() {
-  const { activeProfile, data, displayUnit } = useAppState()
+  const {
+    activeProfile,
+    data,
+    displayUnit,
+    mutationGate,
+    mutationNotice,
+    refresh,
+  } = useAppState()
+  const [adding, setAdding] = useState(false)
   const buys = visibleTo(activeProfile, data.btcBuys.value)
   const totalSats = sum(buys.map((buy) => buy.sats))
   const totalUsd = sum(buys.map((buy) => buy.usd))
   const price = referencePrice(activeProfile, data.btcBuys.status, data.btcBuys.value)
+  const addGate = mutationGate("btcBuy.upsert", data.btcBuys.status, activeProfile)
 
   return (
     <>
       <PageHeader
         title="Bitcoin Buys"
-        actions={<FreshnessTag status={data.btcBuys.status} updatedAt={data.btcBuys.updatedAt} />}
+        actions={
+          <>
+            <Button
+              variant="primary"
+              onClick={() => setAdding(true)}
+              disabled={!addGate.allowed}
+              title={addGate.reason ?? undefined}
+            >
+              Add buy
+            </Button>
+            <FreshnessTag status={data.btcBuys.status} updatedAt={data.btcBuys.updatedAt} />
+          </>
+        }
       />
+      <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
       <StaleNotice status={data.btcBuys.status} />
       {displayUnit === "usd" ? <BitcoinFiatNotice price={price} /> : null}
       <KPIStrip
@@ -758,12 +1157,19 @@ function BitcoinBuysPage() {
               render: (row) => <Badge tone={row.costBasisStatus === "confirmed" ? "positive" : "warning"}>{row.costBasisStatus ?? "unknown"}</Badge>,
               secondary: true,
             },
+            {
+              key: "actions",
+              header: "Actions",
+              render: (row) => <BtcBuyActions buy={row} />,
+              width: "150px",
+            },
           ]}
           rows={buys}
           rowKey={(row) => row.id}
           state={tableState(data.btcBuys.status)}
         />
       </Panel>
+      <BtcBuyFormDialog open={adding} buy={null} onClose={() => setAdding(false)} />
     </>
   )
 }
@@ -771,16 +1177,37 @@ function BitcoinBuysPage() {
 // ── Bills ───────────────────────────────────────────────────────────────────
 
 function BillsPage() {
-  const { activeProfile, data } = useAppState()
+  const {
+    activeProfile,
+    data,
+    mutationGate,
+    mutationNotice,
+    refresh,
+  } = useAppState()
+  const [adding, setAdding] = useState(false)
   const pays = visibleTo(activeProfile, data.billPays.value)
+  const addGate = mutationGate("btcBillPay.upsert", data.billPays.status, activeProfile)
 
   return (
     <>
       <PageHeader
         title="Bills"
         subtitle="Bills settled in Bitcoin"
-        actions={<FreshnessTag status={data.billPays.status} updatedAt={data.billPays.updatedAt} />}
+        actions={
+          <>
+            <Button
+              variant="primary"
+              onClick={() => setAdding(true)}
+              disabled={!addGate.allowed}
+              title={addGate.reason ?? undefined}
+            >
+              Add bill payment
+            </Button>
+            <FreshnessTag status={data.billPays.status} updatedAt={data.billPays.updatedAt} />
+          </>
+        }
       />
+      <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
       <StaleNotice status={data.billPays.status} />
       <KPIStrip
         items={[
@@ -802,6 +1229,12 @@ function BillsPage() {
             { key: "usd", header: "Amount", numeric: true, render: (row) => formatUsd(row.amountUsd) },
             { key: "sats", header: "Sats", numeric: true, render: (row) => formatSats(row.btcSpentSats) },
             { key: "fee", header: "Fee", numeric: true, render: (row) => formatUsd(row.feeUsd), secondary: true },
+            {
+              key: "actions",
+              header: "Actions",
+              render: (row) => <BillPayActions payment={row} />,
+              width: "150px",
+            },
           ]}
           rows={pays}
           rowKey={(row) => row.id}
@@ -810,6 +1243,7 @@ function BillsPage() {
           emptyDetail="Nothing has been settled in Bitcoin for this profile."
         />
       </Panel>
+      <BillPayFormDialog open={adding} payment={null} onClose={() => setAdding(false)} />
     </>
   )
 }
