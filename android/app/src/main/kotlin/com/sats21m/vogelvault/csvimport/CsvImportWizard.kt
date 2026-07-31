@@ -46,10 +46,10 @@ import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.ConvexValue
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.MarketQuote
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.Transaction
 import com.sats21m.vogelvault.ui.FinancialAmount
-import com.sats21m.vogelvault.ui.RecordedBitcoinQuote
 import com.sats21m.vogelvault.ui.formatFinancialAmount
 import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultCream
@@ -119,7 +119,7 @@ internal fun CsvImportLauncher(
     owner: FamilyMember,
     existingTransactions: List<Transaction>,
     displayUnit: DisplayUnit,
-    quote: RecordedBitcoinQuote?,
+    quote: MarketQuote?,
     onWriteSucceeded: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -136,7 +136,7 @@ internal fun CsvImportLauncher(
         CsvImportWizard(
             owner = owner,
             existingTransactions = existingTransactions,
-            btcPriceCents = quote?.cents,
+            btcPriceCents = quote?.priceCents,
             displayUnit = displayUnit,
             quote = quote,
             onDismiss = { open = false },
@@ -151,7 +151,7 @@ private fun CsvImportWizard(
     existingTransactions: List<Transaction>,
     btcPriceCents: Long?,
     displayUnit: DisplayUnit,
-    quote: RecordedBitcoinQuote?,
+    quote: MarketQuote?,
     onDismiss: () -> Unit,
     onWriteSucceeded: () -> Unit,
 ) {
@@ -370,7 +370,7 @@ private fun CsvPreviewStep(
     selectedIds: Set<String>,
     btcPriceCents: Long?,
     displayUnit: DisplayUnit,
-    quote: RecordedBitcoinQuote?,
+    quote: MarketQuote?,
     loading: Boolean,
     error: String?,
     onToggle: (String) -> Unit,
@@ -490,7 +490,7 @@ private fun CsvPreviewRow(
     selected: Boolean,
     enabled: Boolean,
     displayUnit: DisplayUnit,
-    quote: RecordedBitcoinQuote?,
+    quote: MarketQuote?,
     onToggle: () -> Unit,
 ) {
     val formattedAmount = formatFinancialAmount(

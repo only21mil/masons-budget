@@ -28,6 +28,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.DisplayUnit
+import com.sats21m.vogelvault.domain.MarketQuote
+import com.sats21m.vogelvault.domain.MarketSymbol
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.netWorthScopeFor
 import com.sats21m.vogelvault.ui.components.Kpi
@@ -63,13 +65,22 @@ private val MONTHLY_BTC_GROWTH = BigDecimal("0.15").divide(MONTHS_PER_YEAR)
 
 internal data class RetirementProjectionInputs(
     val startingSats: Long,
-    val btcPriceCents: Long,
-    val btcPriceAsOf: String,
+    val btcQuote: MarketQuote,
     val balanceAsOf: String,
     val monthlyIncomeCents: Long,
     val monthlyBudgetCents: Long,
     val adultAnnualBonusCents: Long,
 ) {
+    init {
+        require(btcQuote.symbol == MarketSymbol.BTC && btcQuote.isUsable)
+    }
+
+    val btcPriceCents: Long
+        get() = checkNotNull(btcQuote.priceCents)
+
+    val btcPriceAsOf: String
+        get() = checkNotNull(btcQuote.fetchedAt)
+
     val monthlySurplusCents: Long
         get() = (monthlyIncomeCents - monthlyBudgetCents).coerceAtLeast(0L)
 }
@@ -89,7 +100,7 @@ internal sealed interface RetirementInputResult {
 
 internal enum class RetirementUnavailableReason {
     BITCOIN_BALANCE,
-    RECORDED_PRICE,
+    MARKET_QUOTE,
     INCOME,
     BUDGET,
 }
@@ -97,9 +108,8 @@ internal enum class RetirementUnavailableReason {
 /**
  * Builds only checkable inputs.
  *
- * Canonical BTC fiat is intentionally ignored: production's positive balance is
- * stored with `fiat: 0` and has no valuation evidence. The only accepted price
- * is the dated, profile-scoped recorded-buy price already exposed by ReadModel.
+ * Canonical BTC fiat and recorded buys are intentionally ignored as conversion
+ * sources. The only accepted price is the operational BTC market quote.
  */
 internal fun retirementInputs(state: VaultUiState): RetirementInputResult {
     val data = state.data
@@ -109,8 +119,8 @@ internal fun retirementInputs(state: VaultUiState): RetirementInputResult {
         return RetirementInputResult.Unavailable(RetirementUnavailableReason.BITCOIN_BALANCE)
     }
 
-    val quote = data.recordedBitcoinQuote()
-        ?: return RetirementInputResult.Unavailable(RetirementUnavailableReason.RECORDED_PRICE)
+    val quote = state.operationalBitcoinQuote()
+        ?: return RetirementInputResult.Unavailable(RetirementUnavailableReason.MARKET_QUOTE)
 
     val incomeRows = data.income.value.netWorthScopeFor(state.activeProfile)
     if (data.incomeFiguresUnavailable || incomeRows.isEmpty()) {
@@ -138,8 +148,7 @@ internal fun retirementInputs(state: VaultUiState): RetirementInputResult {
     return RetirementInputResult.Available(
         RetirementProjectionInputs(
             startingSats = balance.totalSats,
-            btcPriceCents = quote.cents,
-            btcPriceAsOf = quote.asOf,
+            btcQuote = quote,
             balanceAsOf = balance.asOf,
             monthlyIncomeCents = monthlyIncome,
             monthlyBudgetCents = budget.plannedCents,
@@ -153,7 +162,7 @@ internal fun retirementInputs(state: VaultUiState): RetirementInputResult {
  * Port of RetirementView.projectBtc.
  *
  * Values remain BigDecimal until the final satoshi boundary. The scenario uses
- * the recorded price as a constant conversion rate and applies 15% / 12 monthly
+ * the operational quote as a constant conversion rate and applies 15% / 12 monthly
  * growth, matching Apple; that is an assumption, not a market forecast.
  */
 internal fun projectRetirement(
@@ -245,7 +254,7 @@ private fun RetirementUnavailable(reason: RetirementUnavailableReason) {
             title = stringResource(R.string.retirement_balance_unavailable_title)
             detail = stringResource(R.string.retirement_balance_unavailable_detail)
         }
-        RetirementUnavailableReason.RECORDED_PRICE -> {
+        RetirementUnavailableReason.MARKET_QUOTE -> {
             title = stringResource(R.string.retirement_price_unavailable_title)
             detail = stringResource(R.string.retirement_price_unavailable_detail)
         }
@@ -314,7 +323,7 @@ private fun ProjectionSummary(
     projection: RetirementProjection,
     displayUnit: DisplayUnit,
 ) {
-    val quote = RecordedBitcoinQuote(inputs.btcPriceCents, inputs.btcPriceAsOf)
+    val quote = inputs.btcQuote
     KpiStrip(
         listOf(
             Kpi(
@@ -346,7 +355,7 @@ private fun ProjectionBreakdown(
     projection: RetirementProjection,
     displayUnit: DisplayUnit,
 ) {
-    val quote = RecordedBitcoinQuote(inputs.btcPriceCents, inputs.btcPriceAsOf)
+    val quote = inputs.btcQuote
     Panel(stringResource(R.string.retirement_monthly_inputs_title)) {
         LedgerRow(
             primary = stringResource(R.string.retirement_dca_label),

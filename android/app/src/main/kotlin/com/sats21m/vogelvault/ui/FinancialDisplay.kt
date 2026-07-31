@@ -1,17 +1,11 @@
 package com.sats21m.vogelvault.ui
 
 import com.sats21m.vogelvault.domain.DisplayUnit
-import com.sats21m.vogelvault.domain.Freshness
+import com.sats21m.vogelvault.domain.MarketQuote
+import com.sats21m.vogelvault.domain.MarketQuoteStatus
+import com.sats21m.vogelvault.domain.MarketSymbol
 import com.sats21m.vogelvault.domain.Money
-import com.sats21m.vogelvault.domain.ReadModel
-import java.math.BigDecimal
-import java.math.RoundingMode
-
-/** A dated, profile-scoped recorded buy price that may support a conversion. */
-internal data class RecordedBitcoinQuote(
-    val cents: Long,
-    val asOf: String,
-)
+import com.sats21m.vogelvault.domain.usableQuote
 
 /**
  * Native values available for one financial amount.
@@ -28,39 +22,33 @@ internal data class FinancialAmount(
     }
 }
 
-/** Error/loading/empty reads cannot lend stale rows the authority of a quote. */
-internal fun ReadModel.recordedBitcoinQuote(): RecordedBitcoinQuote? {
-    if (btcBuys.status !in setOf(Freshness.LIVE, Freshness.STALE, Freshness.DEMO)) return null
-    val asOf = btcPriceAsOf?.takeIf(String::isNotBlank) ?: return null
-    return btcPriceCents.takeIf { it > 0L }?.let { RecordedBitcoinQuote(it, asOf) }
-}
+/** Global display conversion consumes only the operational market-quote feed. */
+internal fun VaultUiState.operationalBitcoinQuote(): MarketQuote? =
+    marketQuotes?.quotes?.usableQuote(MarketSymbol.BTC)
 
 internal fun formatFinancialAmount(
     amount: FinancialAmount,
     unit: DisplayUnit,
-    quote: RecordedBitcoinQuote? = null,
-): String =
-    when (unit) {
+    quote: MarketQuote? = null,
+): String {
+    val btcQuote = quote?.takeIf {
+        it.symbol == MarketSymbol.BTC &&
+            (it.status == MarketQuoteStatus.LIVE || it.status == MarketQuoteStatus.STALE)
+    }
+    val priceCents = btcQuote?.priceCents
+    return when (unit) {
         DisplayUnit.USD ->
             amount.usdCents?.let(Money::formatUsd)
                 ?: amount.sats
-                    ?.takeIf { quote != null }
-                    ?.let { Money.formatBitcoin(it, DisplayUnit.USD, quote?.cents) }
+                    ?.takeIf { priceCents != null }
+                    ?.let { Money.formatBitcoin(it, DisplayUnit.USD, priceCents) }
                 ?: Money.PRICE_UNAVAILABLE
 
         DisplayUnit.BTC, DisplayUnit.SATS ->
             amount.sats?.let { Money.formatBitcoin(it, unit) }
                 ?: amount.usdCents
-                    ?.let { cents -> quote?.let { usdCentsToSats(cents, it.cents) } }
+                    ?.let { cents -> priceCents?.let { Money.usdCentsToSats(cents, it) } }
                     ?.let { Money.formatBitcoin(it, unit) }
                 ?: Money.PRICE_UNAVAILABLE
     }
-
-/** Decimal-only conversion with one intentional, deterministic satoshi rounding boundary. */
-private fun usdCentsToSats(usdCents: Long, btcPriceCents: Long): Long? =
-    runCatching {
-        BigDecimal(usdCents)
-            .multiply(BigDecimal(Money.SATS_PER_BTC))
-            .divide(BigDecimal(btcPriceCents), 0, RoundingMode.HALF_UP)
-            .longValueExact()
-    }.getOrNull()
+}

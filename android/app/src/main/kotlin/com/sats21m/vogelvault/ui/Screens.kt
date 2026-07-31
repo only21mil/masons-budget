@@ -48,6 +48,8 @@ import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.IncomeEntry
+import com.sats21m.vogelvault.domain.MarketQuote
+import com.sats21m.vogelvault.domain.MarketQuoteStatus
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.ReadModel
 import com.sats21m.vogelvault.domain.TodoItem
@@ -332,7 +334,7 @@ fun ScreenHost(
                             owner = state.activeProfile,
                             existingTransactions = collections.visibleTransactions,
                             displayUnit = displayUnit,
-                            quote = state.data.recordedBitcoinQuote(),
+                            quote = state.operationalBitcoinQuote(),
                             onWriteSucceeded = onWriteSucceeded,
                         )
                     }
@@ -503,17 +505,17 @@ private fun BitcoinUnitToggle(
 
 @Composable
 private fun BitcoinFiatNotice(state: VaultUiState) {
-    val quote = state.data.recordedBitcoinQuote()
+    val quote = state.operationalBitcoinQuote()
     if (quote != null) {
         StatusBanner(
-            text = "USD estimate",
-            detail = "Uses the last recorded Bitcoin buy price from ${quote.asOf}. This is not a live price.",
-            tone = VaultTextMuted,
+            text = if (quote.status == MarketQuoteStatus.STALE) "USD estimate · stale quote" else "USD estimate",
+            detail = "Uses the operational BTC market quote from ${quote.source} fetched at ${quote.fetchedAt}.",
+            tone = if (quote.status == MarketQuoteStatus.STALE) VaultWarning else VaultTextMuted,
         )
     } else {
         StatusBanner(
             text = "USD unavailable",
-            detail = "No recorded Bitcoin buy price is available. BTC and SATS remain exact.",
+            detail = "No usable operational BTC market quote is available. Recorded buys are execution metadata only.",
             tone = VaultWarning,
         )
     }
@@ -528,7 +530,7 @@ private fun VaultLazyListScope.dashboard(
 ) {
     val incomeUnavailable = projection.incomeCents == null
     val balanceUnavailable = projection.balance == null
-    val quote = state.data.recordedBitcoinQuote()
+    val quote = state.operationalBitcoinQuote()
 
     item {
         KpiStrip(
@@ -629,7 +631,6 @@ private fun VaultLazyListScope.dashboard(
         accounts = projection.accounts,
         status = state.data.btcBalance.status,
         displayUnit = displayUnit,
-        btcPriceCents = state.data.btcPriceCents,
     )
 }
 
@@ -641,7 +642,7 @@ private fun VaultLazyListScope.activity(
     displayUnit: DisplayUnit,
     onSelectTransaction: (Transaction) -> Unit,
 ) {
-    val quote = state.data.recordedBitcoinQuote()
+    val quote = state.operationalBitcoinQuote()
     item { StaleNotice(state.data.transactions.status) }
     if (state.data.transactions.suppressFigures) {
         item { Panel { StateBlock(state.data.transactions.status) } }
@@ -709,7 +710,7 @@ private val Transaction.selectionKey: String
 private fun TransactionRow(
     transaction: Transaction,
     displayUnit: DisplayUnit,
-    quote: RecordedBitcoinQuote?,
+    quote: MarketQuote?,
 ) {
     val isSpend = transaction.isSpend
     val isCreditOrWrongSign = transaction.hasOppositeSpendSign
@@ -724,7 +725,7 @@ private fun TransactionRow(
 internal fun formatTransactionAmount(
     transaction: Transaction,
     displayUnit: DisplayUnit,
-    quote: RecordedBitcoinQuote?,
+    quote: MarketQuote?,
 ): String {
     val displaySpend = transaction.displaySpendAmount
     val cents = when {
@@ -1015,7 +1016,6 @@ private fun VaultLazyListScope.bitcoin(
         accounts = projection.accounts,
         status = slice.status,
         displayUnit = displayUnit,
-        btcPriceCents = state.data.btcPriceCents,
     )
     if (state.data.btcBuys.status == Freshness.LIVE) {
         item { BtcBuyEntryAction(onAddBuy) }
@@ -1111,7 +1111,6 @@ private fun VaultLazyListScope.netWorth(
         accounts = projection.accounts,
         status = slice.status,
         displayUnit = displayUnit,
-        btcPriceCents = state.data.btcPriceCents,
     )
     if (projection.excludedAccounts.isNotEmpty()) {
         item {
@@ -1128,7 +1127,6 @@ private fun VaultLazyListScope.netWorth(
             accounts = projection.excludedAccounts,
             status = slice.status,
             displayUnit = displayUnit,
-            btcPriceCents = state.data.btcPriceCents,
         )
     }
 }
@@ -1140,7 +1138,6 @@ private fun VaultLazyListScope.accountList(
     accounts: List<BtcAccount>,
     status: Freshness,
     displayUnit: DisplayUnit,
-    btcPriceCents: Long,
 ) {
     if (status == Freshness.ERROR || status == Freshness.LOADING) {
         item {
@@ -1172,7 +1169,7 @@ private fun VaultLazyListScope.accountList(
         LedgerRow(
             primary = account.label,
             secondary = account.owner.displayName,
-            figure = formatCanonicalAccount(account, displayUnit, btcPriceCents),
+            figure = formatCanonicalAccount(account, displayUnit),
             figureColor = VaultCream,
             badge = account.custody.label,
             badgeAccented = account.custody.key == "self_custody",
@@ -1184,16 +1181,15 @@ private fun VaultUiState.formatBitcoin(sats: Long, unit: DisplayUnit): String =
     formatFinancialAmount(
         FinancialAmount(sats = sats),
         unit,
-        data.recordedBitcoinQuote(),
+        operationalBitcoinQuote(),
     )
 
 private fun VaultUiState.formatBalance(balance: BtcBalance, unit: DisplayUnit): String =
-    formatCanonicalBalance(balance, unit, data.btcPriceCents)
+    formatCanonicalBalance(balance, unit)
 
 internal fun formatCanonicalBalance(
     balance: BtcBalance,
     unit: DisplayUnit,
-    _recordedBuyPriceCents: Long,
 ): String =
     formatFinancialAmount(
         FinancialAmount(
@@ -1209,7 +1205,6 @@ internal fun formatCanonicalBalance(
 internal fun formatCanonicalAccount(
     account: BtcAccount,
     unit: DisplayUnit,
-    _recordedBuyPriceCents: Long,
 ): String =
     formatFinancialAmount(
         FinancialAmount(

@@ -6,62 +6,37 @@ import com.sats21m.vogelvault.domain.Custody
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
+import com.sats21m.vogelvault.domain.MarketQuote
+import com.sats21m.vogelvault.domain.MarketQuoteSnapshot
+import com.sats21m.vogelvault.domain.MarketQuoteStatus
+import com.sats21m.vogelvault.domain.MarketSymbol
 import com.sats21m.vogelvault.domain.Slice
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class RetirementScreenTest {
     @Test
-    fun `production shaped positive sats and zero fiat refuse a zero-price projection`() {
+    fun `production shaped balance requires an operational btc quote`() {
         val usable = stateWithProductionBalance()
 
-        // Control: the production-shaped balance — real sats, fiat 0 — is usable as
-        // soon as a dated recorded price exists. Every refusal below therefore has
-        // to come from the price itself, not from an inert fixture.
         val inputs = assertIs<RetirementInputResult.Available>(retirementInputs(usable)).inputs
         assertEquals(541_782_856L, inputs.startingSats)
         assertEquals(11_500_000L, inputs.btcPriceCents)
 
-        // A zero price with a perfectly good date. Nothing else in this state hints
-        // at the gap, because fiat 0 is how production stores the balance.
         assertEquals(
-            RetirementInputResult.Unavailable(RetirementUnavailableReason.RECORDED_PRICE),
-            retirementInputs(usable.withRecordedPrice(cents = 0L, asOf = "2026-07-01")),
-            "a zero recorded price cannot value a positive stack",
+            RetirementInputResult.Unavailable(RetirementUnavailableReason.MARKET_QUOTE),
+            retirementInputs(usable.copy(marketQuotes = null, marketQuoteStatus = Freshness.ERROR)),
+            "a missing operational snapshot cannot value a positive stack",
         )
         assertEquals(
-            RetirementInputResult.Unavailable(RetirementUnavailableReason.RECORDED_PRICE),
-            retirementInputs(usable.withRecordedPrice(cents = -1L, asOf = "2026-07-01")),
-            "a negative recorded price cannot value a positive stack",
+            RetirementInputResult.Unavailable(RetirementUnavailableReason.MARKET_QUOTE),
+            retirementInputs(usable.withBtcQuote(unavailableBtcQuote())),
+            "an unavailable operational BTC quote cannot value a positive stack",
         )
-        assertEquals(
-            RetirementInputResult.Unavailable(RetirementUnavailableReason.RECORDED_PRICE),
-            retirementInputs(usable.withRecordedPrice(cents = 11_500_000L, asOf = null)),
-            "an undated price is not evidence",
-        )
-        assertEquals(
-            RetirementInputResult.Unavailable(RetirementUnavailableReason.RECORDED_PRICE),
-            retirementInputs(usable.withRecordedPrice(cents = 11_500_000L, asOf = "   ")),
-            "a blank price date is not evidence",
-        )
-        assertEquals(
-            RetirementInputResult.Unavailable(RetirementUnavailableReason.RECORDED_PRICE),
-            retirementInputs(
-                usable.copy(
-                    data = usable.data.copy(
-                        btcBuys = usable.data.btcBuys.copy(status = Freshness.ERROR),
-                    ),
-                ),
-            ),
-            "a failed buy-price read cannot authorize a fiat conversion",
-        )
-
-        assertNull(
-            projectRetirement(inputs.copy(btcPriceCents = 0L), 10),
-            "the projection refuses a zero price on its own too",
+        assertIs<RetirementInputResult.Available>(
+            retirementInputs(usable.withBtcQuote(btcQuote(11_500_000L, MarketQuoteStatus.STALE))),
         )
     }
 
@@ -69,8 +44,7 @@ class RetirementScreenTest {
     fun `projection matches Apple monthly growth and contribution semantics`() {
         val inputs = RetirementProjectionInputs(
             startingSats = 541_782_856L,
-            btcPriceCents = 11_500_000L,
-            btcPriceAsOf = "2026-07-01",
+            btcQuote = btcQuote(11_500_000L),
             balanceAsOf = "2026-07-16",
             monthlyIncomeCents = 3_489_347L,
             monthlyBudgetCents = 2_500_000L,
@@ -108,8 +82,7 @@ class RetirementScreenTest {
     fun `negative surplus is floored at zero and child bonuses stay excluded`() {
         val inputs = RetirementProjectionInputs(
             startingSats = 100_000_000L,
-            btcPriceCents = 10_000_000L,
-            btcPriceAsOf = "2026-07-01",
+            btcQuote = btcQuote(10_000_000L),
             balanceAsOf = "2026-07-16",
             monthlyIncomeCents = 100_000L,
             monthlyBudgetCents = 200_000L,
@@ -124,8 +97,8 @@ class RetirementScreenTest {
         assertTrue(projection.projectedSats > inputs.startingSats)
     }
 
-    private fun VaultUiState.withRecordedPrice(cents: Long, asOf: String?): VaultUiState =
-        copy(data = data.copy(btcPriceCents = cents, btcPriceAsOf = asOf))
+    private fun VaultUiState.withBtcQuote(quote: MarketQuote): VaultUiState =
+        copy(marketQuotes = quoteSnapshot(quote), marketQuoteStatus = Freshness.LIVE)
 
     private fun stateWithProductionBalance(): VaultUiState {
         val original = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
@@ -152,9 +125,39 @@ class RetirementScreenTest {
             destination = Destination.RETIREMENT,
             data = original.copy(
                 btcBalance = Slice(Freshness.LIVE, balance, 1L, "production-shaped test"),
-                btcPriceCents = 11_500_000L,
-                btcPriceAsOf = "2026-07-01",
+                // A newer execution price must remain irrelevant to retirement conversion.
+                btcPriceCents = 20_000_000L,
+                btcPriceAsOf = "2026-07-31",
             ),
+            marketQuotes = quoteSnapshot(btcQuote(11_500_000L)),
+            marketQuoteStatus = Freshness.LIVE,
         )
     }
+
+    private fun btcQuote(
+        cents: Long,
+        status: MarketQuoteStatus = MarketQuoteStatus.LIVE,
+    ) = MarketQuote(
+        MarketSymbol.BTC,
+        cents,
+        "market adapter",
+        "2026-07-30T12:00:00Z",
+        status,
+    )
+
+    private fun unavailableBtcQuote() = MarketQuote(
+        MarketSymbol.BTC,
+        null,
+        "market adapter",
+        null,
+        MarketQuoteStatus.UNAVAILABLE,
+    )
+
+    private fun quoteSnapshot(btc: MarketQuote) = MarketQuoteSnapshot(
+        listOf(
+            btc,
+            MarketQuote(MarketSymbol.VOO, null, "market adapter", null, MarketQuoteStatus.UNAVAILABLE),
+            MarketQuote(MarketSymbol.IBIT, null, "market adapter", null, MarketQuoteStatus.UNAVAILABLE),
+        ),
+    )
 }

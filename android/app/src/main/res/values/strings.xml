@@ -65,16 +65,16 @@
     <string name="retirement_bonus_label">Adult bonuses</string>
     <string name="retirement_bonus_detail">%1$s/year spread evenly across 12 months</string>
     <string name="retirement_assumptions_title">Assumptions and exclusions</string>
-    <string name="retirement_price_assumption">%1$s/BTC from the last recorded buy on %2$s; constant for conversions and not a live quote</string>
+    <string name="retirement_price_assumption">%1$s/BTC from the operational market quote fetched at %2$s; constant for this scenario</string>
     <string name="retirement_growth_assumption" formatted="false">Bitcoin grows 15%/year, compounded monthly at 15% ÷ 12</string>
-    <string name="retirement_contribution_assumption">Every contribution buys Bitcoin at the same recorded price</string>
+    <string name="retirement_contribution_assumption">Every contribution buys Bitcoin at the same operational quote</string>
     <string name="retirement_securities_excluded">401(k), WAP, VOO, IBIT, employer match, taxes, fees, and inflation are excluded because Android has no canonical retirement-account rows</string>
     <string name="retirement_scenario_warning_title">Assumption-driven scenario</string>
     <string name="retirement_scenario_warning_detail">This is arithmetic over the listed inputs, not financial advice or a prediction. Change in price, income, spending, contributions, or returns changes the result.</string>
     <string name="retirement_balance_unavailable_title">Bitcoin balance unavailable</string>
     <string name="retirement_balance_unavailable_detail">A projection requires the canonical Bitcoin quantity for this profile. No zero balance was assumed.</string>
     <string name="retirement_price_unavailable_title">Sats known; fiat valuation unavailable</string>
-    <string name="retirement_price_unavailable_detail">The canonical fiat field is not a price source. Add a dated recorded-buy price before converting surplus or bonuses; the app will not project from $0.00.</string>
+    <string name="retirement_price_unavailable_detail">No usable live or stale operational BTC market quote is available. Recorded buys and canonical fiat are not conversion sources.</string>
     <string name="retirement_income_unavailable_title">Income unavailable</string>
     <string name="retirement_income_unavailable_detail">A projection requires a profile-scoped income month. No zero income was assumed.</string>
     <string name="retirement_budget_unavailable_title">Budget unavailable</string>
@@ -154,7 +154,7 @@
     <string name="csv_import_select_none">Select none</string>
     <string name="csv_import_no_unique_rows">No new transactions. Every parsed row already exists.</string>
     <string name="csv_import_price_unavailable">Bitcoin price is unavailable. Sats are shown, but import is blocked so fiat spend cannot become a confident zero.</string>
-    <string name="csv_import_price_basis">Fiat preview uses the app\'s recorded BTC price of %1$s, not a historical price from each row. Review every amount.</string>
+    <string name="csv_import_price_basis">Fiat preview uses the operational BTC market quote of %1$s, not a historical execution price from each row. Review every amount.</string>
     <string name="csv_import_price_short">Price unavailable</string>
     <string name="csv_import_back">Back</string>
     <string name="csv_import_confirm">Import %1$d</string>
