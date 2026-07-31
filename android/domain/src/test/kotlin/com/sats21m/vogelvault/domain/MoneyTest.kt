@@ -139,7 +139,14 @@ class MoneyTest {
             Money.usdCentsToSats(Long.MAX_VALUE, 1L)
         }
         assertFailsWith<ArithmeticException> {
-            Money.sharesToValueCents(Long.MAX_VALUE.toString(), 2L)
+            Money.sharesToValueCents("999999999999.999999999999", 10_000_000L)
+        }
+    }
+
+    @Test
+    fun `share quantities reject overbound values before arithmetic`() {
+        assertFailsWith<IllegalArgumentException> {
+            Money.sharesToValueCents("1000000000000", 1L)
         }
     }
 
