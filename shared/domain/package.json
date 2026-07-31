@@ -7,9 +7,11 @@
   "exports": {
     ".": "./src/index.ts",
     "./family": "./src/family.ts",
+    "./finance": "./src/finance.ts",
     "./money": "./src/money.ts",
     "./readModel": "./src/readModel.ts",
     "./todo": "./src/todo.ts",
+    "./fixtures/finance-market-cases.json": "./fixtures/finance-market-cases.json",
     "./fixtures/visibility-cases.json": "./fixtures/visibility-cases.json"
   },
   "scripts": {
