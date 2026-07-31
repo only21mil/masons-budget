@@ -368,6 +368,13 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - name: Android read-bootstrap tooling tests
+        if: steps.probe.outputs.app == 'true'
+        run: >-
+          node --test
+          scripts/tests/mint-android-read-bootstrap.test.mjs
+          scripts/tests/build-android-read-bootstrap.test.mjs
+
       # setup-gradle configures caching; the committed, checksummed wrapper owns
       # the Gradle version. The domain module is plain Kotlin/JVM and needs no
       # Android SDK — only the app module does. v5.0.2 is the latest Node 24
@@ -475,12 +482,34 @@ jobs:
             build_config="app/build/generated/source/buildConfig/$variant/com/sats21m/vogelvault/BuildConfig.java"
             test -f "$build_config"
             grep -Fqx '  public static final String CONVEX_READ_TOKEN = "";' "$build_config"
+            grep -Fqx '  public static final String CONVEX_READ_BOOTSTRAP_PAIR = "";' "$build_config"
 
             if grep -Fq "$injection_marker" "$build_config"; then
               echo "::error::Android $variant BuildConfig accepted a build-time read credential."
               exit 1
             fi
           done
+
+          guard_dir="$HOME/work/android-bootstrap-ci-guard"
+          guard_file="$guard_dir/pairing.txt"
+          mkdir -p "$guard_dir"
+          chmod 700 "$guard_dir"
+          trap 'rm -f "$guard_file"; rmdir "$guard_dir" 2>/dev/null || true' EXIT
+          printf '%s' \
+            'android-read-AAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
+            > "$guard_file"
+          chmod 600 "$guard_file"
+
+          if CI=true \
+            VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE="$guard_file" \
+            ./gradlew \
+              :app:generateDebugBuildConfig \
+              --no-build-cache \
+              --no-configuration-cache \
+              --no-daemon; then
+            echo "::error::Android CI accepted a local bootstrap input."
+            exit 1
+          fi
         working-directory: android
 
       # Pull requests and other untrusted refs deliberately stay on AGP's
