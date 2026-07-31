@@ -42,8 +42,8 @@ export interface MarketQuoteSnapshot {
   readonly quotes: readonly MarketQuote[]
 }
 
-export function isMarketSymbol(value: string): value is MarketSymbol {
-  return (MARKET_SYMBOLS as readonly string[]).includes(value)
+export function isMarketSymbol(value: unknown): value is MarketSymbol {
+  return typeof value === "string" && (MARKET_SYMBOLS as readonly string[]).includes(value)
 }
 
 /** Refuse contradictory quote states at the adapter boundary. */
@@ -66,10 +66,25 @@ export function assertMarketQuote(quote: MarketQuote): MarketQuote {
   if (quote.priceCents === null || quote.priceCents <= 0n) {
     throw new RangeError(`${quote.status} ${quote.symbol} quote must carry a positive price`)
   }
-  if (quote.fetchedAt === null || quote.fetchedAt.trim() === "") {
-    throw new RangeError(`${quote.status} ${quote.symbol} quote must carry fetchedAt`)
+  if (quote.fetchedAt === null || !isCanonicalIsoInstant(quote.fetchedAt)) {
+    throw new RangeError(
+      `${quote.status} ${quote.symbol} quote must carry a canonical ISO-8601 fetchedAt`,
+    )
   }
   return quote
+}
+
+const CANONICAL_ISO_INSTANT =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?Z$/
+
+/** Accept canonical UTC whole seconds or exactly three millisecond digits. */
+function isCanonicalIsoInstant(value: string): boolean {
+  if (!CANONICAL_ISO_INSTANT.test(value)) return false
+
+  const millis = Date.parse(value)
+  if (!Number.isFinite(millis)) return false
+  const normalized = new Date(millis).toISOString()
+  return value === normalized || value === normalized.replace(".000Z", "Z")
 }
 
 /**
@@ -95,14 +110,21 @@ export function assertMarketQuoteSnapshot(snapshot: MarketQuoteSnapshot): Market
   return snapshot
 }
 
+/** Return an observation including explicit unavailable state, or null if absent. */
+export function marketQuoteFor(
+  quotes: readonly MarketQuote[],
+  symbol: MarketSymbol,
+): MarketQuote | null {
+  const quote = quotes.find((candidate) => candidate.symbol === symbol) ?? null
+  return quote === null ? null : assertMarketQuote(quote)
+}
+
 export function usableMarketQuote(
   quotes: readonly MarketQuote[],
   symbol: MarketSymbol,
 ): MarketQuote | null {
-  const quote = quotes.find((candidate) => candidate.symbol === symbol)
-  if (!quote) return null
-  assertMarketQuote(quote)
-  return quote.status === "unavailable" ? null : quote
+  const quote = marketQuoteFor(quotes, symbol)
+  return quote?.status === "live" || quote?.status === "stale" ? quote : null
 }
 
 // ── Synced finance document ─────────────────────────────────────────────────
@@ -176,20 +198,28 @@ export function valueFinanceHolding(
   quotes: readonly MarketQuote[],
 ): HoldingValuation {
   const ticker = holding.ticker?.trim().toUpperCase() ?? ""
-  if (ticker === "VOO" || ticker === "IBIT") {
-    const quote = usableMarketQuote(quotes, ticker)
-    if (quote) {
-      const priceCents = quote.priceCents
-      if (priceCents === null) throw new RangeError(`${ticker} quote lost its validated price`)
-      return {
-        holding,
-        valueCents: sharesToValueCents(holding.sharesDecimal, priceCents),
-        basis: "market-quote",
-        quote,
-      }
+  const symbol: MarketSymbol | null = ticker === "VOO" || ticker === "IBIT" ? ticker : null
+  const observation = symbol === null ? null : marketQuoteFor(quotes, symbol)
+  const quote = observation?.status === "live" || observation?.status === "stale"
+    ? observation
+    : null
+
+  if (quote !== null) {
+    const priceCents = quote.priceCents
+    if (priceCents === null) throw new RangeError(`${quote.symbol} quote lost its validated price`)
+    return {
+      holding,
+      valueCents: sharesToValueCents(holding.sharesDecimal, priceCents),
+      basis: "market-quote",
+      quote,
     }
   }
-  return { holding, valueCents: holding.valueCents, basis: "stored-value", quote: null }
+  return {
+    holding,
+    valueCents: holding.valueCents,
+    basis: "stored-value",
+    quote: observation,
+  }
 }
 
 /**
@@ -237,7 +267,10 @@ export function selectNetWorth(input: {
   const scopedAccounts = netWorthScopeFor(input.viewer, input.financeAccounts)
   const accounts = scopedAccounts.map((account) => valueFinanceAccount(account, input.quotes))
   const retirementValueCents = sum(accounts.map((account) => account.valueCents))
-  const btcQuote = usableMarketQuote(input.quotes, "BTC")
+  const btcObservation = marketQuoteFor(input.quotes, "BTC")
+  const btcQuote = btcObservation?.status === "live" || btcObservation?.status === "stale"
+    ? btcObservation
+    : null
 
   if (!btcQuote) {
     return {
@@ -248,7 +281,7 @@ export function selectNetWorth(input: {
       totalValueCents: null,
       totalValueSats: null,
       accounts,
-      btcQuote: null,
+      btcQuote: btcObservation,
     }
   }
 

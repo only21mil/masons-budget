@@ -97,3 +97,20 @@ boundary are documented in
 Net worth uses the canonical scoped BTC satoshi balance plus net-worth-scoped
 finance accounts. Holdings are valued once; the document-level retirement
 projection is never added on top of the same accounts.
+
+Quote fetch times use canonical UTC ISO-8601: `YYYY-MM-DDTHH:mm:ssZ` or the
+same form with exactly three millisecond digits. Live and stale observations
+must carry a real timestamp in that form; calendar rollovers, offsets, and
+other normalized spellings are rejected. Unavailable observations remain in
+valuation results so clients can distinguish them from a snapshot that has not
+loaded.
+
+The shared display contract persists `btc | sats | usd`, defaults unknown keys
+to `btc`, and keeps the Budget surface in USD regardless of that preference.
+Clients should import these helpers rather than repeat conversion formulas.
+
+`FinanceParityTest` reads `fixtures/finance-market-cases.json` outside the
+Android Gradle root. Integration must retain that exact path in
+`sharedDomainParityFixtures` in `android/domain/build.gradle.kts` (introduced by
+`e798cd7`) so fixture edits invalidate `:domain:test`; the verification task
+must remain a dependency of the domain test task.

@@ -33,18 +33,21 @@ MarketQuoteSnapshot
     - symbol: BTC | VOO | IBIT
       priceCents: integer cents | null
       source: non-empty string
-      fetchedAt: ISO-8601 string | null
+      fetchedAt: canonical UTC ISO-8601 string | null
       status: live | stale | unavailable
 ```
 
-`live` and `stale` require a positive price, source, and fetch time.
+`live` and `stale` require a positive price, source, and real canonical UTC
+fetch time (`YYYY-MM-DDTHH:mm:ssZ`, optionally with exactly three millisecond
+digits).
 `unavailable` requires `priceCents: null`. A recorded Bitcoin buy price, a
 hard-coded fallback, and a stored holding value must never be labeled `live`.
 
 The shared selectors accept stale quotes because stale data is still evidenced
-data, but preserve the status so the client can label it. An unavailable BTC
-quote makes combined USD/BTC net-worth conversions unavailable; it does not
-turn them into zero.
+data, but preserve the status so the client can label it. An unavailable quote
+also remains explicit through fallback valuations rather than collapsing into
+an absent observation. An unavailable BTC quote makes combined USD/BTC
+net-worth conversions unavailable; it does not turn them into zero.
 
 ## Selected Convex boundary
 
