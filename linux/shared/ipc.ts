@@ -276,60 +276,52 @@ export interface VogelVaultRowCounts {
   readonly financeDocuments: number
 }
 
+/** Renderer-selected query shape. Main injects its per-sender profile after validation. */
 export type VogelVaultRowRequest =
   | {
       readonly kind: "rowCounts"
     }
   | {
       readonly kind: "transactions"
-      readonly viewer: VogelVaultMember
       readonly month?: string
       readonly limit?: number
     }
   | {
       readonly kind: "todos"
-      readonly viewer: VogelVaultMember
       readonly done?: boolean
       readonly limit?: number
     }
   | {
       readonly kind: "income"
-      readonly viewer: VogelVaultMember
       readonly month?: string
       readonly limit?: number
     }
   | {
       readonly kind: "btcBuys"
-      readonly viewer: VogelVaultMember
       readonly scope: VogelVaultBtcScope
       readonly month?: string
       readonly limit?: number
     }
   | {
       readonly kind: "btcAccounts"
-      readonly viewer: VogelVaultMember
       readonly scope: VogelVaultBtcScope
     }
   | {
       readonly kind: "btcBillPays"
-      readonly viewer: VogelVaultMember
       readonly scope: VogelVaultBtcScope
       readonly month?: string
       readonly limit?: number
     }
   | {
       readonly kind: "budget"
-      readonly viewer: VogelVaultMember
       readonly scope: "netWorth"
     }
   | {
       readonly kind: "btcSnapshotMeta"
-      readonly viewer: VogelVaultMember
       readonly scope: VogelVaultBtcScope
     }
   | {
       readonly kind: "btcBalanceDocuments"
-      readonly viewer: VogelVaultMember
       readonly scope: VogelVaultBtcScope
     }
   | {

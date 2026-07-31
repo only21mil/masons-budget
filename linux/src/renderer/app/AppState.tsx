@@ -248,7 +248,7 @@ export function AppStateProvider({
       }
     }
     const [result, financeModel] = await Promise.all([
-      loadConvexRowEnvelope(query, profile),
+      loadConvexRowEnvelope(query),
       loadLinuxFinanceReadModel(query),
     ])
     if (generationRef.current !== generation) return false

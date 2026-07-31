@@ -750,14 +750,16 @@ require_(
   "rows: rowCounts is metadata-only and accepts no renderer-selected scope",
 )
 require_(
-  validateRowRequest({ kind: "transactions", viewer: "victor" })?.kind === "transactions",
-  "rows: accepts a full transaction request with no limit",
+  validateRowRequest({ kind: "transactions" })?.kind === "transactions" &&
+    validateRowRequest({ kind: "transactions", viewer: "victor" }) === null,
+  "rows: accepts a full transaction request but no renderer-selected viewer",
 )
 require_(
-  validateRowRequest({ kind: "btcAccounts", viewer: "victor" }) === null &&
-    validateRowRequest({ kind: "btcBillPays", viewer: "victor" }) === null &&
-    validateRowRequest({ kind: "budget", viewer: "victor" }) === null &&
-    validateRowRequest({ kind: "budget", viewer: "victor", scope: "netWorth" })?.kind === "budget",
+  validateRowRequest({ kind: "btcAccounts" }) === null &&
+    validateRowRequest({ kind: "btcBillPays" }) === null &&
+    validateRowRequest({ kind: "budget" }) === null &&
+    validateRowRequest({ kind: "budget", scope: "netWorth" })?.kind === "budget" &&
+    validateRowRequest({ kind: "budget", viewer: "victor", scope: "netWorth" }) === null,
   "rows: BTC and budget scopes are explicit",
 )
 require_(
@@ -808,7 +810,7 @@ const rowRepository = createConvexRowRepository({
   now: () => 1,
 })
 
-const rowResult = await rowRepository.query({ kind: "transactions", viewer: "victor" })
+const rowResult = await rowRepository.query({ kind: "transactions" }, "victor")
 require_(
   rowResult.status === "ok" &&
     rowResult.kind === "transactions" &&
@@ -823,7 +825,9 @@ require_(
   "rows: configuration never reaches a result",
 )
 require_(
-  rowResponses[0]?.path === "tables:listTransactions" && rowResponses[0]?.args?.token === SAMPLE_CREDENTIAL,
+  rowResponses[0]?.path === "tables:listTransactions" &&
+    rowResponses[0]?.args?.viewer === "victor" &&
+    rowResponses[0]?.args?.token === SAMPLE_CREDENTIAL,
   "rows: a fixed path carries the credential only on the wire",
 )
 
@@ -841,7 +845,7 @@ const tokenlessRows = createConvexRowRepository({
     return { httpStatus: 200, body: "{}" }
   },
 })
-const tokenlessResult = await tokenlessRows.query({ kind: "rowCounts" })
+const tokenlessResult = await tokenlessRows.query({ kind: "rowCounts" }, "victor")
 require_(
   tokenlessResult.status === "error" &&
     tokenlessResult.code === "unauthorized" &&
@@ -849,13 +853,13 @@ require_(
   "rows: missing read credentials classify as auth without opening a socket",
 )
 
-await rowRepository.query({ kind: "transactions", viewer: "victor" })
+await rowRepository.query({ kind: "transactions" }, "victor")
 require_(rowResponses.length === 1, "rows: an identical request is cached within one config generation")
 rowGeneration = 2
-await rowRepository.query({ kind: "transactions", viewer: "victor" })
+await rowRepository.query({ kind: "transactions" }, "victor")
 require_(rowResponses.length === 2, "rows: a new config generation cannot reuse the old cache")
 
-const rowFailure = async (value, request = { kind: "transactions", viewer: "victor" }) => {
+const rowFailure = async (value, request = { kind: "transactions" }, profile = "victor") => {
   const repository = createConvexRowRepository({
     configuration: () => ({ generation: 1, settings: readySettings }),
     post: async () => ({
@@ -863,7 +867,7 @@ const rowFailure = async (value, request = { kind: "transactions", viewer: "vict
       body: JSON.stringify({ status: "success", value }),
     }),
   })
-  return repository.query(request)
+  return repository.query(request, profile)
 }
 
 require_(
@@ -901,7 +905,7 @@ require_(
       hasOppositeSpendSign: false, category: "Other",
       updatedAtMs: 1,
     }],
-  }, { kind: "transactions", viewer: "mason" })).status === "error",
+  }, { kind: "transactions" }, "mason")).status === "error",
   "rows: main asserts row visibility instead of trusting the server",
 )
 

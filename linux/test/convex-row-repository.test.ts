@@ -7,6 +7,7 @@ import {
   createConvexRowRepository,
   validateRowRequest,
 } from "../electron/convexRows.ts"
+import type { VogelVaultRowRequest } from "../shared/ipc.ts"
 
 const SECRET = "not-a-real-row-read-secret"
 const settings = resolveRemoteReadSettings({
@@ -14,6 +15,19 @@ const settings = resolveRemoteReadSettings({
   VOGEL_VAULT_CONVEX_URL: "https://example.invalid",
   VOGEL_VAULT_CONVEX_READ_TOKEN: SECRET,
 })
+
+const PROFILE_SCOPED_REQUESTS: readonly VogelVaultRowRequest[] = [
+  { kind: "transactions" },
+  { kind: "todos" },
+  { kind: "income" },
+  { kind: "btcBuys", scope: "visible" },
+  { kind: "btcAccounts", scope: "netWorth" },
+  { kind: "btcBillPays", scope: "visible" },
+  { kind: "budget", scope: "netWorth" },
+  { kind: "btcSnapshotMeta", scope: "visible" },
+  { kind: "btcBalanceDocuments", scope: "netWorth" },
+  { kind: "finance", scope: "netWorth" },
+]
 
 function int64(value: bigint): { readonly $integer: string } {
   const bytes = Buffer.alloc(8)
@@ -100,44 +114,96 @@ describe("row request validation", () => {
   it("accepts only the closed request union", () => {
     expect(validateRowRequest({ kind: "rowCounts" })).toEqual({ kind: "rowCounts" })
     expect(validateRowRequest({ kind: "rowCounts", viewer: "victor" })).toBeNull()
-    expect(validateRowRequest({ kind: "transactions", viewer: "victor" })).toEqual({
-      kind: "transactions",
-      viewer: "victor",
-    })
+    expect(validateRowRequest({ kind: "transactions" })).toEqual({ kind: "transactions" })
     expect(validateRowRequest({ kind: "transactions", viewer: "victor", query: "anything" })).toBeNull()
     expect(validateRowRequest({ kind: "transactions", viewer: "Mason" })).toBeNull()
-    expect(validateRowRequest({ kind: "transactions", viewer: "victor", limit: 0 })).toBeNull()
+    expect(validateRowRequest({ kind: "transactions", limit: 0 })).toBeNull()
   })
 
   it("requires explicit visibility and budget scopes", () => {
-    expect(validateRowRequest({ kind: "btcAccounts", viewer: "victor" })).toBeNull()
-    expect(validateRowRequest({ kind: "btcAccounts", viewer: "victor", scope: "netWorth" })).toEqual({
+    expect(validateRowRequest({ kind: "btcAccounts" })).toBeNull()
+    expect(validateRowRequest({ kind: "btcAccounts", scope: "netWorth" })).toEqual({
       kind: "btcAccounts",
-      viewer: "victor",
       scope: "netWorth",
     })
-    expect(validateRowRequest({ kind: "btcBillPays", viewer: "victor" })).toBeNull()
-    expect(validateRowRequest({ kind: "btcBillPays", viewer: "victor", scope: "visible" })).toEqual({
+    expect(validateRowRequest({ kind: "btcBillPays" })).toBeNull()
+    expect(validateRowRequest({ kind: "btcBillPays", scope: "visible" })).toEqual({
       kind: "btcBillPays",
-      viewer: "victor",
       scope: "visible",
     })
-    expect(validateRowRequest({ kind: "budget", viewer: "victor" })).toBeNull()
-    expect(validateRowRequest({ kind: "budget", viewer: "victor", scope: "netWorth" })).toEqual({
+    expect(validateRowRequest({ kind: "budget" })).toBeNull()
+    expect(validateRowRequest({ kind: "budget", scope: "netWorth" })).toEqual({
       kind: "budget",
-      viewer: "victor",
       scope: "netWorth",
     })
-    expect(validateRowRequest({ kind: "btcBalanceDocuments", viewer: "victor" })).toBeNull()
-    expect(validateRowRequest({ kind: "btcBalanceDocuments", viewer: "victor", scope: "netWorth" })).toEqual({
+    expect(validateRowRequest({ kind: "btcBalanceDocuments" })).toBeNull()
+    expect(validateRowRequest({ kind: "btcBalanceDocuments", scope: "netWorth" })).toEqual({
       kind: "btcBalanceDocuments",
-      viewer: "victor",
       scope: "netWorth",
     })
   })
 })
 
 describe("main-process row repository", () => {
+  it("injects the main-owned Mason profile across every scoped route and rejects renderer spoofing", async () => {
+    const sent: Array<Record<string, unknown>> = []
+    const repository = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async (_endpoint, body) => {
+        sent.push(JSON.parse(body) as Record<string, unknown>)
+        return success({ complete: true, rows: [] })
+      },
+    })
+
+    for (const request of PROFILE_SCOPED_REQUESTS) {
+      await repository.query(request, "mason")
+    }
+
+    expect(sent).toHaveLength(PROFILE_SCOPED_REQUESTS.length)
+    for (const body of sent) {
+      expect(body).toMatchObject({ args: { viewer: "mason", token: SECRET } })
+      expect(body).not.toMatchObject({ args: { viewer: "victor" } })
+    }
+
+    for (const request of PROFILE_SCOPED_REQUESTS) {
+      await expect(repository.query({ ...request, viewer: "victor" }, "mason")).resolves.toEqual({
+        status: "error",
+        code: "invalid-request",
+      })
+    }
+    expect(sent).toHaveLength(PROFILE_SCOPED_REQUESTS.length)
+  })
+
+  it("fails every route before configuration or network use without valid main-owned authority", async () => {
+    let configured = 0
+    let calls = 0
+    const repository = createConvexRowRepository({
+      configuration: () => {
+        configured += 1
+        return { generation: 1, settings }
+      },
+      post: async () => {
+        calls += 1
+        return success({ complete: true, rows: [] })
+      },
+    })
+    const everyRoute: readonly VogelVaultRowRequest[] = [
+      { kind: "rowCounts" },
+      ...PROFILE_SCOPED_REQUESTS,
+      { kind: "marketQuotes" },
+    ]
+
+    for (const request of everyRoute) {
+      await expect(repository.query(request)).resolves.toEqual({ status: "error", code: "invalid-request" })
+      await expect(repository.query(request, "unknown")).resolves.toEqual({
+        status: "error",
+        code: "invalid-request",
+      })
+    }
+    expect(configured).toBe(0)
+    expect(calls).toBe(0)
+  })
+
   it("opens no socket while remote reads are disabled", async () => {
     let calls = 0
     const repository = createConvexRowRepository({
@@ -147,7 +213,7 @@ describe("main-process row repository", () => {
         return success({ complete: true, rows: [] })
       },
     })
-    await expect(repository.query({ kind: "transactions", viewer: "victor" })).resolves.toEqual({
+    await expect(repository.query({ kind: "transactions" }, "victor")).resolves.toEqual({
       status: "error",
       code: "disabled",
     })
@@ -180,7 +246,7 @@ describe("main-process row repository", () => {
         })
       },
     })
-    await expect(repository.query({ kind: "rowCounts" })).resolves.toEqual({
+    await expect(repository.query({ kind: "rowCounts" }, "victor")).resolves.toEqual({
       status: "error",
       code: "unauthorized",
     })
@@ -208,7 +274,7 @@ describe("main-process row repository", () => {
         })
       },
     })
-    await expect(repository.query({ kind: "rowCounts" })).resolves.toEqual({
+    await expect(repository.query({ kind: "rowCounts" }, "victor")).resolves.toEqual({
       status: "ok",
       kind: "rowCounts",
       value: {
@@ -241,7 +307,7 @@ describe("main-process row repository", () => {
       },
     })
 
-    const result = await repository.query({ kind: "transactions", viewer: "rachel" })
+    const result = await repository.query({ kind: "transactions" }, "rachel")
     expect(result).toEqual({
       status: "ok",
       kind: "transactions",
@@ -286,15 +352,15 @@ describe("main-process row repository", () => {
     })
 
     await Promise.all([
-      repository.query({ kind: "transactions", viewer: "victor" }),
-      repository.query({ kind: "transactions", viewer: "victor" }),
+      repository.query({ kind: "transactions" }, "victor"),
+      repository.query({ kind: "transactions" }, "victor"),
     ])
     expect(calls).toBe(1)
-    await repository.query({ kind: "transactions", viewer: "victor" })
+    await repository.query({ kind: "transactions" }, "victor")
     expect(calls).toBe(1)
 
     generation = 2
-    await repository.query({ kind: "transactions", viewer: "victor" })
+    await repository.query({ kind: "transactions" }, "victor")
     expect(calls).toBe(2)
   })
 
@@ -310,18 +376,18 @@ describe("main-process row repository", () => {
       },
     })
     const requests = [
-      { kind: "transactions", viewer: "victor" },
-      { kind: "todos", viewer: "victor" },
-      { kind: "income", viewer: "victor" },
-      { kind: "btcBuys", viewer: "victor", scope: "visible" },
-      { kind: "btcAccounts", viewer: "victor", scope: "visible" },
-      { kind: "btcBillPays", viewer: "victor", scope: "visible" },
-      { kind: "budget", viewer: "victor", scope: "netWorth" },
-      { kind: "btcSnapshotMeta", viewer: "victor", scope: "visible" },
-      { kind: "btcBalanceDocuments", viewer: "victor", scope: "netWorth" },
+      { kind: "transactions" },
+      { kind: "todos" },
+      { kind: "income" },
+      { kind: "btcBuys", scope: "visible" },
+      { kind: "btcAccounts", scope: "visible" },
+      { kind: "btcBillPays", scope: "visible" },
+      { kind: "budget", scope: "netWorth" },
+      { kind: "btcSnapshotMeta", scope: "visible" },
+      { kind: "btcBalanceDocuments", scope: "netWorth" },
     ]
 
-    const pending = requests.map((request) => repository.query(request))
+    const pending = requests.map((request) => repository.query(request, "victor"))
     expect(calls).toBe(9)
     for (const release of releases) release()
 
@@ -339,7 +405,7 @@ describe("main-process row repository", () => {
       configuration: () => ({ generation: 1, settings }),
       post: async () => success({ complete: false, rows: [transaction()] }),
     })
-    await expect(repository.query({ kind: "transactions", viewer: "victor" })).resolves.toEqual({
+    await expect(repository.query({ kind: "transactions" }, "victor")).resolves.toEqual({
       status: "error",
       code: "incomplete-response",
     })
@@ -350,7 +416,7 @@ describe("main-process row repository", () => {
       configuration: () => ({ generation: 1, settings }),
       post: async () => success({ complete: false, rows: [transaction()] }),
     })
-    await expect(repository.query({ kind: "transactions", viewer: "victor", limit: 1 })).resolves.toMatchObject({
+    await expect(repository.query({ kind: "transactions", limit: 1 }, "victor")).resolves.toMatchObject({
       status: "ok",
       kind: "transactions",
       complete: false,
@@ -371,7 +437,7 @@ describe("main-process row repository", () => {
       }),
     })
 
-    const result = await repository.query({ kind: "transactions", viewer: "victor" })
+    const result = await repository.query({ kind: "transactions" }, "victor")
     expect(result).toMatchObject({
       status: "ok",
       kind: "transactions",
@@ -398,7 +464,7 @@ describe("main-process row repository", () => {
         configuration: () => ({ generation: 1, settings }),
         post: async () => success({ complete: true, rows: [invalid] }),
       })
-      await expect(repository.query({ kind: "transactions", viewer: "victor" })).resolves.toEqual({
+      await expect(repository.query({ kind: "transactions" }, "victor")).resolves.toEqual({
         status: "error",
         code: "invalid-response",
       })
@@ -438,7 +504,7 @@ describe("main-process row repository", () => {
       }),
     })
 
-    await expect(repository.query({ kind: "transactions", viewer: "victor" })).resolves.toMatchObject({
+    await expect(repository.query({ kind: "transactions" }, "victor")).resolves.toMatchObject({
       status: "ok",
       rows: [
         {
@@ -468,7 +534,7 @@ describe("main-process row repository", () => {
       configuration: () => ({ generation: 1, settings }),
       post: async () => success({ complete: true, rows: [transaction({ owner: "victor" })] }),
     })
-    await expect(repository.query({ kind: "transactions", viewer: "mason" })).resolves.toEqual({
+    await expect(repository.query({ kind: "transactions" }, "mason")).resolves.toEqual({
       status: "error",
       code: "invalid-response",
     })
@@ -482,7 +548,7 @@ describe("main-process row repository", () => {
       readonly expected: Record<string, unknown>
     }> = [
       {
-        request: { kind: "todos", viewer: "victor" },
+        request: { kind: "todos" },
         path: "tables:listTodos",
         row: {
           todoId: "todo-1",
@@ -496,7 +562,7 @@ describe("main-process row repository", () => {
         expected: { todoId: "todo-1", owner: "mason", priority: 2n },
       },
       {
-        request: { kind: "btcBuys", viewer: "victor", scope: "visible" },
+        request: { kind: "btcBuys", scope: "visible" },
         path: "tables:listBtcBuys",
         row: {
           buyId: "buy-1",
@@ -512,7 +578,7 @@ describe("main-process row repository", () => {
         expected: { buyId: "buy-1", owner: "mason", sats: 100n },
       },
       {
-        request: { kind: "btcAccounts", viewer: "victor", scope: "netWorth" },
+        request: { kind: "btcAccounts", scope: "netWorth" },
         path: "tables:listBtcAccounts",
         row: {
           key: "coldcard",
@@ -528,7 +594,7 @@ describe("main-process row repository", () => {
         expected: { key: "coldcard", sats: 1_000n, schemaVersion: 2n },
       },
       {
-        request: { kind: "btcBillPays", viewer: "victor", scope: "visible" },
+        request: { kind: "btcBillPays", scope: "visible" },
         path: "tables:listBtcBillPays",
         row: {
           billPayId: "pay-1",
@@ -556,7 +622,7 @@ describe("main-process row repository", () => {
           return success({ complete: true, rows: [entry.row] })
         },
       })
-      const result = await repository.query(entry.request)
+      const result = await repository.query(entry.request, "victor")
       expect(result).toMatchObject({ status: "ok", rows: [entry.expected], complete: true })
       expect(requestBody).toMatchObject({
         path: entry.path,
@@ -610,7 +676,7 @@ describe("main-process row repository", () => {
       },
     })
 
-    await expect(repository.query({ kind: "budget", viewer: "rachel", scope: "netWorth" })).resolves.toMatchObject({
+    await expect(repository.query({ kind: "budget", scope: "netWorth" }, "rachel")).resolves.toMatchObject({
       status: "ok",
       kind: "budget",
       value: {
@@ -621,7 +687,7 @@ describe("main-process row repository", () => {
       },
     })
     await expect(
-      repository.query({ kind: "btcSnapshotMeta", viewer: "rachel", scope: "netWorth" }),
+      repository.query({ kind: "btcSnapshotMeta", scope: "netWorth" }, "rachel"),
     ).resolves.toMatchObject({
       status: "ok",
       kind: "btcSnapshotMeta",
@@ -660,7 +726,7 @@ describe("main-process row repository", () => {
       }),
     })
     await expect(
-      malformedBudget.query({ kind: "budget", viewer: "victor", scope: "netWorth" }),
+      malformedBudget.query({ kind: "budget", scope: "netWorth" }, "victor"),
     ).resolves.toEqual({ status: "error", code: "invalid-response" })
 
     const malformedTransaction = createConvexRowRepository({
@@ -671,7 +737,7 @@ describe("main-process row repository", () => {
       }),
     })
     await expect(
-      malformedTransaction.query({ kind: "transactions", viewer: "victor" }),
+      malformedTransaction.query({ kind: "transactions" }, "victor"),
     ).resolves.toEqual({ status: "error", code: "invalid-response" })
   })
 
@@ -686,7 +752,7 @@ describe("main-process row repository", () => {
     })
 
     await expect(
-      repository.query({ kind: "income", viewer: "rachel", month: "2026-01" }),
+      repository.query({ kind: "income", month: "2026-01" }, "rachel"),
     ).resolves.toEqual({
       status: "ok",
       kind: "income",
@@ -715,7 +781,7 @@ describe("main-process row repository", () => {
       post: async () => success({ complete: true, rows: [income({ amountCents: "123456" })] }),
     })
     await expect(
-      malformed.query({ kind: "income", viewer: "rachel" }),
+      malformed.query({ kind: "income" }, "rachel"),
     ).resolves.toEqual({ status: "error", code: "invalid-response" })
   })
 
@@ -730,7 +796,7 @@ describe("main-process row repository", () => {
     })
 
     await expect(
-      repository.query({ kind: "btcBalanceDocuments", viewer: "rachel", scope: "netWorth" }),
+      repository.query({ kind: "btcBalanceDocuments", scope: "netWorth" }, "rachel"),
     ).resolves.toMatchObject({
       status: "ok",
       kind: "btcBalanceDocuments",
@@ -771,7 +837,7 @@ describe("main-process row repository", () => {
       }),
     })
     await expect(
-      malformed.query({ kind: "btcBalanceDocuments", viewer: "rachel", scope: "netWorth" }),
+      malformed.query({ kind: "btcBalanceDocuments", scope: "netWorth" }, "rachel"),
     ).resolves.toEqual({ status: "error", code: "invalid-response" })
   })
 
@@ -847,9 +913,8 @@ describe("main-process row repository", () => {
     await expect(
       repository(legacyUnavailableDocument).query({
         kind: "btcBalanceDocuments",
-        viewer: "victor",
         scope: "netWorth",
-      }),
+      }, "victor"),
     ).resolves.toMatchObject({
       status: "ok",
       rows: [{
@@ -861,9 +926,8 @@ describe("main-process row repository", () => {
     await expect(
       repository(explicitUnavailableDocument).query({
         kind: "btcBalanceDocuments",
-        viewer: "victor",
         scope: "netWorth",
-      }),
+      }, "victor"),
     ).resolves.toMatchObject({
       status: "ok",
       rows: [{
@@ -874,9 +938,8 @@ describe("main-process row repository", () => {
     await expect(
       repository(tinyExplicitZero).query({
         kind: "btcBalanceDocuments",
-        viewer: "victor",
         scope: "netWorth",
-      }),
+      }, "victor"),
     ).resolves.toMatchObject({
       status: "ok",
       rows: [{
@@ -911,7 +974,7 @@ describe("main-process row repository", () => {
     })
 
     await expect(
-      repository.query({ kind: "btcBalanceDocuments", viewer: "victor", scope: "netWorth" }),
+      repository.query({ kind: "btcBalanceDocuments", scope: "netWorth" }, "victor"),
     ).resolves.toEqual({ status: "error", code: "invalid-response" })
   })
 
@@ -933,7 +996,7 @@ describe("main-process row repository", () => {
       }),
     })
     await expect(
-      badBudget.query({ kind: "budget", viewer: "victor", scope: "netWorth" }),
+      badBudget.query({ kind: "budget", scope: "netWorth" }, "victor"),
     ).resolves.toEqual({ status: "error", code: "invalid-response" })
 
     const badBillPay = createConvexRowRepository({
@@ -956,7 +1019,7 @@ describe("main-process row repository", () => {
       }),
     })
     await expect(
-      badBillPay.query({ kind: "btcBillPays", viewer: "victor", scope: "netWorth" }),
+      badBillPay.query({ kind: "btcBillPays", scope: "netWorth" }, "victor"),
     ).resolves.toEqual({ status: "error", code: "invalid-response" })
   })
 
@@ -965,7 +1028,7 @@ describe("main-process row repository", () => {
       configuration: () => ({ generation: 1, settings }),
       post: async () => ({ httpStatus: 200, body: "{}", truncated: true }),
     })
-    await expect(truncated.query({ kind: "transactions", viewer: "victor" })).resolves.toEqual({
+    await expect(truncated.query({ kind: "transactions" }, "victor")).resolves.toEqual({
       status: "error",
       code: "response-too-large",
     })
@@ -977,7 +1040,7 @@ describe("main-process row repository", () => {
         rows: Array.from({ length: 2_001 }, (_, index) => transaction({ txId: `tx-${index}` })),
       }),
     })
-    await expect(tooMany.query({ kind: "transactions", viewer: "victor" })).resolves.toEqual({
+    await expect(tooMany.query({ kind: "transactions" }, "victor")).resolves.toEqual({
       status: "error",
       code: "invalid-response",
     })
@@ -990,7 +1053,7 @@ describe("main-process row repository", () => {
         throw new Error(`failed at https://example.invalid with ${SECRET}`)
       },
     })
-    await expect(thrown.query({ kind: "transactions", viewer: "victor" })).resolves.toEqual({
+    await expect(thrown.query({ kind: "transactions" }, "victor")).resolves.toEqual({
       status: "error",
       code: "unavailable",
     })
@@ -1002,7 +1065,7 @@ describe("main-process row repository", () => {
         body: JSON.stringify({ status: "error", errorData: "balance 424218 at private bank" }),
       }),
     })
-    await expect(server.query({ kind: "transactions", viewer: "victor" })).resolves.toEqual({
+    await expect(server.query({ kind: "transactions" }, "victor")).resolves.toEqual({
       status: "error",
       code: "invalid-response",
     })
@@ -1014,7 +1077,7 @@ describe("main-process row repository", () => {
         body: JSON.stringify({ status: "error", errorData: `Unauthorized: ${SECRET}` }),
       }),
     })
-    await expect(unauthorized.query({ kind: "transactions", viewer: "victor" })).resolves.toEqual({
+    await expect(unauthorized.query({ kind: "transactions" }, "victor")).resolves.toEqual({
       status: "error",
       code: "unauthorized",
     })

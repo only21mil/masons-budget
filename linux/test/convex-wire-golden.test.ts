@@ -24,12 +24,12 @@ const queryNames = new Map<string, string>([
 
 const requests: VogelVaultRowRequest[] = [
   { kind: "rowCounts" },
-  { kind: "transactions", viewer: "victor", limit: 3 },
-  { kind: "todos", viewer: "victor", limit: 3 },
-  { kind: "btcBuys", viewer: "victor", scope: "visible", limit: 3 },
-  { kind: "btcAccounts", viewer: "victor", scope: "visible" },
-  { kind: "btcBillPays", viewer: "victor", scope: "visible", limit: 3 },
-  { kind: "budget", viewer: "victor", scope: "netWorth" },
+  { kind: "transactions", limit: 3 },
+  { kind: "todos", limit: 3 },
+  { kind: "btcBuys", scope: "visible", limit: 3 },
+  { kind: "btcAccounts", scope: "visible" },
+  { kind: "btcBillPays", scope: "visible", limit: 3 },
+  { kind: "budget", scope: "netWorth" },
 ]
 
 describe("production Convex wire captures", () => {
@@ -59,7 +59,7 @@ describe("production Convex wire captures", () => {
     })
 
     for (const request of requests) {
-      const result = await repository.query(request)
+      const result = await repository.query(request, "victor")
       if (request.kind === "transactions") {
         // The client derives presentation fields from the canonical amount,
         // even though the current production capture now agrees with them.
