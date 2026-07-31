@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { mkdirSync, writeFileSync } from "node:fs";
 import {
   chmod,
   mkdir,
@@ -14,6 +15,7 @@ import path from "node:path";
 import { after, test } from "node:test";
 
 import {
+  GITHUB_ACTIONS_READ_BOOTSTRAP_PURPOSE,
   buildAndroidReadBootstrap,
   readPrivatePairingFile,
   validatePrivateOutputPath,
@@ -100,38 +102,58 @@ test("output must be new and beneath HOME work", async () => {
   );
 });
 
-test("build invokes only uncached local debug assembly, copies exclusively, and cleans intermediates", async () => {
+test("approved manual CI builds bootstrap then scrubbed clean APK with exact uncached assembly", async () => {
   const directory = await privateDirectory("vv-android-bootstrap-invoke-");
   const input = await pairingFile(directory);
-  const fakeGeneratedApk = path.join(directory, "generated.apk");
+  const intermediates = path.join(directory, "intermediates");
+  const fakeGeneratedApk = path.join(intermediates, "generated.apk");
+  const fakeBuildConfig = path.join(intermediates, "BuildConfig.java");
   const stableDebugKeystore = path.join(directory, "stable-debug.keystore");
-  const output = path.join(directory, "bootstrap.apk");
-  await writeFile(fakeGeneratedApk, "test-apk-bytes");
+  const output = path.join(directory, "vogel-vault-read-bootstrap.apk");
+  const cleanOutput = path.join(directory, "vogel-vault-clean.apk");
   await writeFile(stableDebugKeystore, "test-keystore", { mode: 0o600 });
   await chmod(stableDebugKeystore, 0o600);
   const calls = [];
   const spawn = (command, args, options) => {
     calls.push({ command, args, options });
+    if (String(command).endsWith("gradlew")) {
+      mkdirSync(intermediates, { recursive: true });
+      writeFileSync(fakeGeneratedApk, "test-apk-bytes");
+      writeFileSync(
+        fakeBuildConfig,
+        [
+          'public static final String CONVEX_READ_TOKEN = "";',
+          'public static final String CONVEX_READ_BOOTSTRAP_PAIR = "";',
+        ].join("\n"),
+      );
+    }
     return { status: 0, error: undefined };
   };
 
   const result = buildAndroidReadBootstrap({
     pairingFile: input,
     output,
+    cleanOutput,
     processEnv: {
       ...process.env,
       HOME: os.homedir(),
-      CI: "",
+      CI: "true",
+      GITHUB_ACTIONS: "true",
+      GITHUB_EVENT_NAME: "workflow_dispatch",
+      VOGEL_VAULT_ANDROID_BOOTSTRAP_CI_PURPOSE:
+        GITHUB_ACTIONS_READ_BOOTSTRAP_PURPOSE,
       CONVEX_READ_TOKEN: "must-not-reach-gradle",
       CONVEX_SYNC_TOKEN: "must-not-reach-gradle",
       VOGEL_DEBUG_KEYSTORE: stableDebugKeystore,
     },
     spawn,
     generatedApkPath: fakeGeneratedApk,
+    generatedBuildConfigPath: fakeBuildConfig,
+    intermediatesPath: intermediates,
   });
 
-  assert.deepEqual(result, { output });
-  assert.equal(calls.length, 2);
+  assert.deepEqual(result, { output, cleanOutput });
+  assert.equal(calls.length, 4);
   assert.deepEqual(calls[0].args, [
     ":app:assembleDebug",
     "--no-build-cache",
@@ -144,17 +166,81 @@ test("build invokes only uncached local debug assembly, copies exclusively, and 
   assert.equal(calls[0].options.env.CONVEX_SYNC_TOKEN, "");
   assert.equal(calls[0].options.env.VOGEL_DEBUG_KEYSTORE, stableDebugKeystore);
   assert.equal(calls[0].args.join(" ").includes(validPairingCode()), false);
-  assert.deepEqual(calls[1].args, [
-    ":app:clean",
+  assert.equal(calls[1].command, "find");
+  assert.deepEqual(calls[2].args, [
+    ":app:assembleDebug",
     "--no-build-cache",
     "--no-configuration-cache",
     "--no-daemon",
+    "--rerun-tasks",
   ]);
-  assert.equal(calls[1].options.env.VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE, "");
-  assert.equal(calls[1].options.env.CONVEX_READ_TOKEN, "");
-  assert.equal(calls[1].options.env.CONVEX_SYNC_TOKEN, "");
+  assert.equal(calls[2].options.env.VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE, "");
+  assert.equal(
+    calls[2].options.env.VOGEL_VAULT_ANDROID_BOOTSTRAP_CI_PURPOSE,
+    "",
+  );
+  assert.equal(calls[2].options.env.CONVEX_READ_TOKEN, "");
+  assert.equal(calls[2].options.env.CONVEX_SYNC_TOKEN, "");
+  assert.equal(calls[2].options.env.VOGEL_DEBUG_KEYSTORE, stableDebugKeystore);
+  assert.equal(calls[3].command, "find");
   assert.equal(await readFile(output, "utf8"), "test-apk-bytes");
+  assert.equal(await readFile(cleanOutput, "utf8"), "test-apk-bytes");
   assert.equal((await stat(output)).mode & 0o777, 0o600);
+  assert.equal((await stat(cleanOutput)).mode & 0o777, 0o600);
+});
+
+test("clean replacement fails closed if generated fields retain the bootstrap", async () => {
+  const directory = await privateDirectory("vv-android-bootstrap-clean-guard-");
+  const input = await pairingFile(directory);
+  const intermediates = path.join(directory, "intermediates");
+  const fakeGeneratedApk = path.join(intermediates, "generated.apk");
+  const fakeBuildConfig = path.join(intermediates, "BuildConfig.java");
+  const stableDebugKeystore = path.join(directory, "stable-debug.keystore");
+  await writeFile(stableDebugKeystore, "test-keystore", { mode: 0o600 });
+  await chmod(stableDebugKeystore, 0o600);
+  let assemblies = 0;
+  const spawn = (command) => {
+    if (String(command).endsWith("gradlew")) {
+      assemblies += 1;
+      mkdirSync(intermediates, { recursive: true });
+      writeFileSync(fakeGeneratedApk, "test-apk-bytes");
+      writeFileSync(
+        fakeBuildConfig,
+        [
+          'public static final String CONVEX_READ_TOKEN = "";',
+          `public static final String CONVEX_READ_BOOTSTRAP_PAIR = "${validPairingCode()}";`,
+        ].join("\n"),
+      );
+    }
+    return { status: 0, error: undefined };
+  };
+
+  assert.throws(
+    () =>
+      buildAndroidReadBootstrap({
+        pairingFile: input,
+        output: path.join(directory, "bootstrap.apk"),
+        cleanOutput: path.join(directory, "clean.apk"),
+        processEnv: {
+          ...process.env,
+          HOME: os.homedir(),
+          CI: "true",
+          GITHUB_ACTIONS: "true",
+          GITHUB_EVENT_NAME: "workflow_dispatch",
+          VOGEL_VAULT_ANDROID_BOOTSTRAP_CI_PURPOSE:
+            GITHUB_ACTIONS_READ_BOOTSTRAP_PURPOSE,
+          VOGEL_DEBUG_KEYSTORE: stableDebugKeystore,
+        },
+        spawn,
+        generatedApkPath: fakeGeneratedApk,
+        generatedBuildConfigPath: fakeBuildConfig,
+        intermediatesPath: intermediates,
+      }),
+    /retained read-bootstrap material/,
+  );
+  assert.equal(assemblies, 2);
+  await assert.rejects(stat(path.join(directory, "clean.apk")), /ENOENT/);
+  await assert.rejects(stat(intermediates), /ENOENT/);
 });
 
 test("build refuses CI before invoking Gradle", async () => {
@@ -175,6 +261,43 @@ test("build refuses CI before invoking Gradle", async () => {
     /forbidden in CI/,
   );
   assert.equal(calls, 0);
+});
+
+test("CI allowance rejects every near miss of the exact manual GitHub Actions shape", async () => {
+  const directory = await privateDirectory("vv-android-bootstrap-ci-shape-");
+  const input = await pairingFile(directory);
+  const approved = {
+    ...process.env,
+    HOME: os.homedir(),
+    CI: "true",
+    GITHUB_ACTIONS: "true",
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    VOGEL_VAULT_ANDROID_BOOTSTRAP_CI_PURPOSE:
+      GITHUB_ACTIONS_READ_BOOTSTRAP_PURPOSE,
+  };
+
+  for (const [name, value] of [
+    ["CI", "1"],
+    ["GITHUB_ACTIONS", "false"],
+    ["GITHUB_EVENT_NAME", "push"],
+    ["VOGEL_VAULT_ANDROID_BOOTSTRAP_CI_PURPOSE", "android-read-bootstrap"],
+  ]) {
+    let calls = 0;
+    assert.throws(
+      () =>
+        buildAndroidReadBootstrap({
+          pairingFile: input,
+          output: path.join(directory, `${name}.apk`),
+          processEnv: { ...approved, [name]: value },
+          spawn: () => {
+            calls += 1;
+            return { status: 0 };
+          },
+        }),
+      /forbidden in CI/,
+    );
+    assert.equal(calls, 0);
+  }
 });
 
 test("build refuses to create an uninstall-only APK without the stable signing key", async () => {

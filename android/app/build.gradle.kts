@@ -43,18 +43,28 @@ val ciDebugKeyPassword = providers.environmentVariable("VOGEL_DEBUG_KEY_PASSWORD
     .orNull?.takeIf { it.isNotBlank() } ?: "android"
 
 /**
- * One local bootstrap build may carry a short-lived one-use pairing capability.
- * Normal and CI builds always receive the empty default below. The value comes
- * only from an owned mode-0600 file under $HOME/work; no command-line property,
- * Gradle cache, release variant, or read-token environment variable can supply it.
+ * One guarded bootstrap build may carry a short-lived one-use pairing capability.
+ * Normal builds still receive the empty default below. The value comes only from
+ * an owned mode-0600 file under $HOME/work; no command-line property, Gradle cache,
+ * release variant, or read-token environment variable can supply it. CI remains
+ * forbidden except for the exact manual GitHub Actions purpose below.
  */
 fun localAndroidReadBootstrap(): String? {
     val rawPath = providers.environmentVariable("VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE")
         .orNull
         ?.takeIf { it.isNotBlank() }
         ?: return null
-    check(providers.environmentVariable("CI").orNull.isNullOrBlank()) {
-        "Android read-bootstrap builds are forbidden in CI."
+    val ci = providers.environmentVariable("CI").orNull
+    if (!ci.isNullOrBlank()) {
+        val approved =
+            ci == "true" &&
+                providers.environmentVariable("GITHUB_ACTIONS").orNull == "true" &&
+                providers.environmentVariable("GITHUB_EVENT_NAME").orNull == "workflow_dispatch" &&
+                providers.environmentVariable("VOGEL_VAULT_ANDROID_BOOTSTRAP_CI_PURPOSE").orNull ==
+                "android-read-bootstrap-apk-v1"
+        check(approved) {
+            "Android read-bootstrap builds are forbidden in CI outside the approved GitHub Actions workflow_dispatch path."
+        }
     }
     check(gradle.startParameter.taskNames == listOf(":app:assembleDebug")) {
         "A bootstrap input is accepted only for the exact :app:assembleDebug task."
