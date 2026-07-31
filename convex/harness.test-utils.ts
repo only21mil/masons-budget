@@ -22,6 +22,8 @@ const modules: Record<string, () => Promise<unknown>> = {
   "./dataFiles.ts": () => import("./dataFiles"),
   "./dateValidation.ts": () => import("./dateValidation"),
   "./deviceAuth.ts": () => import("./deviceAuth"),
+  "./marketQuoteAcquire.ts": () => import("./marketQuoteAcquire"),
+  "./marketQuotes.ts": () => import("./marketQuotes"),
   "./tables.ts": () => import("./tables"),
   "./todoNormalize.ts": () => import("./todoNormalize"),
 };
@@ -63,6 +65,29 @@ export const api = {
       "public",
       { token?: string },
       { id: string; deletedAt: number }[]
+    >,
+  getMarketQuoteSnapshot:
+    "marketQuotes:getSnapshot" as unknown as FunctionReference<
+      "query",
+      "public",
+      { token?: string },
+      {
+        quotes: {
+          symbol: "BTC" | "VOO" | "IBIT";
+          priceCents: bigint | null;
+          source: string;
+          fetchedAt: string | null;
+          status: "live" | "stale" | "unavailable";
+          lastAttemptedAt: string | null;
+          errorCode:
+            | "timeout"
+            | "http_error"
+            | "invalid_response"
+            | "network_error"
+            | null;
+        }[];
+        complete: true;
+      }
     >,
   sync: "dataFiles:sync" as unknown as FunctionReference<
     "mutation",
@@ -190,6 +215,60 @@ export const api = {
       { deviceId: string; deviceToken: string },
       { ok: true; revoked: boolean }
     >,
+};
+
+export const internalApi = {
+  recordMarketQuoteSuccess:
+    "marketQuotes:recordSuccess" as unknown as FunctionReference<
+      "mutation",
+      "internal",
+      {
+        symbol: "BTC" | "VOO" | "IBIT";
+        priceCents: bigint;
+        source: string;
+        fetchedAt: string;
+      },
+      "live"
+    >,
+  recordMarketQuoteFailure:
+    "marketQuotes:recordFailure" as unknown as FunctionReference<
+      "mutation",
+      "internal",
+      {
+        symbol: "BTC" | "VOO" | "IBIT";
+        attemptedAt: string;
+        errorCode:
+          | "timeout"
+          | "http_error"
+          | "invalid_response"
+          | "network_error";
+      },
+      "stale" | "unavailable"
+    >,
+  expireLiveMarketQuote:
+    "marketQuotes:expireLiveQuote" as unknown as FunctionReference<
+      "mutation",
+      "internal",
+      { symbol: "BTC" | "VOO" | "IBIT"; fetchedAt: string },
+      boolean
+    >,
+  refreshMarketQuotes: "marketQuotes:refresh" as unknown as FunctionReference<
+    "action",
+    "internal",
+    Record<string, never>,
+    {
+      quotes: {
+        symbol: "BTC" | "VOO" | "IBIT";
+        status: "live" | "stale" | "unavailable";
+        errorCode:
+          | "timeout"
+          | "http_error"
+          | "invalid_response"
+          | "network_error"
+          | null;
+      }[];
+    }
+  >,
 };
 
 // ── Deployment environment ──

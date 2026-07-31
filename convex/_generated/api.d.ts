@@ -8,10 +8,13 @@
  * @module
  */
 
+import type * as crons from "../crons.js";
 import type * as dataFiles from "../dataFiles.js";
 import type * as dateValidation from "../dateValidation.js";
 import type * as deviceAuth from "../deviceAuth.js";
 import type * as documentProjection from "../documentProjection.js";
+import type * as marketQuoteAcquire from "../marketQuoteAcquire.js";
+import type * as marketQuotes from "../marketQuotes.js";
 import type * as migrate from "../migrate.js";
 import type * as tables from "../tables.js";
 import type * as todoNormalize from "../todoNormalize.js";
@@ -24,10 +27,13 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  crons: typeof crons;
   dataFiles: typeof dataFiles;
   dateValidation: typeof dateValidation;
   deviceAuth: typeof deviceAuth;
   documentProjection: typeof documentProjection;
+  marketQuoteAcquire: typeof marketQuoteAcquire;
+  marketQuotes: typeof marketQuotes;
   migrate: typeof migrate;
   tables: typeof tables;
   todoNormalize: typeof todoNormalize;
