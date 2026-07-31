@@ -11,6 +11,7 @@ import {
 } from "../src/renderer/pages/tasks/taskClock.tsx"
 import {
   taskFiltersFor,
+  taskToggleRequest,
   taskWriteStatusMessage,
 } from "../src/renderer/pages/tasks/index.tsx"
 
@@ -63,6 +64,52 @@ describe("task clock", () => {
     expect(filters.upcoming(todo("2026-07-31"))).toBe(true)
     expect(filters.upcoming(todo("2026-07-30"))).toBe(false)
     expect(filters.today(todo("2026-07-29", true))).toBe(false)
+  })
+
+  it("stamps completion from the injected clock and clears the stamp on reopen", () => {
+    const open = {
+      ...todo("2031-11-09"),
+      updatedAtMs: 41,
+      updatedAt: "2031-11-08T09:00:00.000Z",
+      owner: "mason" as const,
+    }
+    const completed = taskToggleRequest(
+      open,
+      "victor",
+      { done: true },
+      () => new Date("2031-11-09T15:16:17.123Z"),
+      "complete-1",
+    )
+    expect(completed).toMatchObject({
+      actor: "victor",
+      owner: "mason",
+      baseUpdatedAtMs: 41,
+      done: true,
+      updatedAt: "2031-11-09T15:16:17.123Z",
+      completedAt: "2031-11-09T15:16:17.123Z",
+    })
+
+    const reopened = taskToggleRequest(
+      {
+        ...open,
+        done: true,
+        updatedAtMs: 42,
+        updatedAt: completed.updatedAt ?? null,
+        completedAt: completed.completedAt ?? null,
+      },
+      "victor",
+      { done: false },
+      () => new Date("2031-11-09T15:16:18.456Z"),
+      "reopen-1",
+    )
+    expect(reopened).toMatchObject({
+      actor: "victor",
+      owner: "mason",
+      baseUpdatedAtMs: 42,
+      done: false,
+      updatedAt: "2031-11-09T15:16:18.456Z",
+    })
+    expect(reopened).not.toHaveProperty("completedAt")
   })
 })
 

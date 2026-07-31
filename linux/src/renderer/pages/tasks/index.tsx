@@ -6,7 +6,7 @@
 
 import { useMemo, useState } from "react"
 
-import { visibleTo } from "@vogel-vault/domain/family"
+import { type FamilyMember, visibleTo } from "@vogel-vault/domain/family"
 import type { TodoItem } from "@vogel-vault/domain/readModel"
 
 import { useAppState } from "../../app/AppState.tsx"
@@ -26,9 +26,13 @@ import {
   TodoFormDialog,
   Toolbar,
 } from "../../components/index.ts"
-import { type MutationGate, stableId } from "../../data/mutations.ts"
+import {
+  type MutationGate,
+  type RendererMutationRequest,
+  stableId,
+} from "../../data/mutations.ts"
 import type { PageManifest } from "../types.ts"
-import { useTaskToday } from "./taskClock.tsx"
+import { type TaskNow, useTaskNow, useTaskToday } from "./taskClock.tsx"
 
 /**
  * The retained default project for a todo nobody filed.
@@ -73,6 +77,48 @@ function useVisibleTodos(): readonly TodoItem[] {
 function tableState(status: string): "normal" | "empty" | "error" | "stale" | "loading" {
   if (status === "loading" || status === "error" || status === "empty") return status
   return "normal"
+}
+
+type TodoUpsertRequest = Extract<RendererMutationRequest, { kind: "todo.upsert" }>
+
+/** Build one task toggle without weakening actor, owner, or revision identity. */
+export function taskToggleRequest(
+  todo: TodoItem,
+  actor: FamilyMember,
+  changes: Partial<Pick<TodoItem, "done" | "flagged">>,
+  now: TaskNow,
+  requestId: string,
+): TodoUpsertRequest {
+  const done = changes.done ?? todo.done
+  const completionChanged = changes.done !== undefined && changes.done !== todo.done
+  const completionStamp = completionChanged ? now().toISOString() : null
+  const timestamps = completionStamp === null
+    ? {
+        ...(todo.updatedAt === null ? {} : { updatedAt: todo.updatedAt }),
+        ...(done && todo.completedAt !== null ? { completedAt: todo.completedAt } : {}),
+      }
+    : done
+      ? { updatedAt: completionStamp, completedAt: completionStamp }
+      : { updatedAt: completionStamp }
+  return {
+    kind: "todo.upsert",
+    requestId,
+    actor,
+    id: todo.id,
+    owner: todo.owner,
+    title: todo.title,
+    done,
+    flagged: changes.flagged ?? todo.flagged,
+    project: todo.project ?? undefined,
+    area: todo.area ?? undefined,
+    due: todo.due ?? undefined,
+    notes: todo.notes ?? undefined,
+    lane: todo.lane ?? undefined,
+    priority: todo.priority ?? undefined,
+    createdAt: todo.createdAt ?? undefined,
+    ...timestamps,
+    baseUpdatedAtMs: todo.updatedAtMs,
+  }
 }
 
 export function taskWriteStatusMessage(
@@ -147,32 +193,20 @@ function TodoActionsCell({ todo }: { todo: TodoItem }) {
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const now = useTaskNow()
   const upsertGate = mutationGate("todo.upsert", data.todos.status, todo.owner)
   const deleteGate = mutationGate("todo.delete", data.todos.status, todo.owner)
   const pending = isMutationPending("todo.upsert", todo.owner, todo.id)
 
   async function update(changes: Partial<Pick<TodoItem, "done" | "flagged">>) {
     if (!upsertGate.allowed) return
-    await submitMutation({
-      kind: "todo.upsert",
-      requestId: stableId("request"),
-      actor: activeProfile,
-      id: todo.id,
-      owner: todo.owner,
-      title: todo.title,
-      done: changes.done ?? todo.done,
-      flagged: changes.flagged ?? todo.flagged,
-      project: todo.project ?? undefined,
-      area: todo.area ?? undefined,
-      due: todo.due ?? undefined,
-      notes: todo.notes ?? undefined,
-      lane: todo.lane ?? undefined,
-      priority: todo.priority ?? undefined,
-      createdAt: todo.createdAt ?? undefined,
-      updatedAt: todo.updatedAt ?? undefined,
-      completedAt: todo.completedAt ?? undefined,
-      baseUpdatedAtMs: todo.updatedAtMs,
-    })
+    await submitMutation(taskToggleRequest(
+      todo,
+      activeProfile,
+      changes,
+      now,
+      stableId("request"),
+    ))
   }
 
   async function remove() {

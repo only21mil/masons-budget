@@ -416,7 +416,9 @@ export function applyOptimisticMutation(
         priority: request.priority ?? existing?.priority ?? null,
         createdAt: request.createdAt ?? existing?.createdAt ?? null,
         updatedAt: request.updatedAt ?? existing?.updatedAt ?? null,
-        completedAt: request.completedAt ?? existing?.completedAt ?? null,
+        completedAt: request.done
+          ? request.completedAt ?? existing?.completedAt ?? null
+          : null,
         project: request.project ?? null,
         area: request.area ?? null,
         due: request.due ?? null,

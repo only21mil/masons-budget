@@ -12,6 +12,7 @@ import {
   type RendererMutationRequest,
   type RendererMutationResult,
 } from "../src/renderer/data/mutations.ts"
+import { taskToggleRequest } from "../src/renderer/pages/tasks/index.tsx"
 
 const request: RendererMutationRequest = {
   kind: "todo.upsert",
@@ -182,5 +183,100 @@ describe("renderer mutation controller", () => {
     const after = changed.budget.value!.categories.find((row) => row.name === "Groceries")!
     expect(after.budget).toBe(123_45n)
     expect(after.spent).toBe(before.spent)
+  })
+
+  it("serializes rapid completion toggles and rolls a failed reopen back exactly", () => {
+    const data = buildSanitizedFixtureEnvelope("victor")
+    const open = data.todos.value.find((todo) => !todo.done)!
+    const complete = taskToggleRequest(
+      open,
+      "rachel",
+      { done: true },
+      () => new Date("2032-01-02T03:04:05.006Z"),
+      "rapid-complete",
+    )
+    const startedComplete = beginMutation(
+      EMPTY_MUTATION_CONTROLLER,
+      complete,
+      data,
+      "rachel",
+      12,
+    )
+    expect(startedComplete.status).toBe("started")
+    if (startedComplete.status !== "started") return
+
+    const completedOverlay = optimisticEnvelope(data, startedComplete.state, "rachel", 12)
+    const completedTodo = completedOverlay.todos.value.find((todo) => todo.id === open.id)!
+    expect(completedTodo).toMatchObject({
+      done: true,
+      updatedAt: "2032-01-02T03:04:05.006Z",
+      completedAt: "2032-01-02T03:04:05.006Z",
+      owner: open.owner,
+    })
+
+    const impatientReopen = taskToggleRequest(
+      { ...completedTodo, updatedAtMs: open.updatedAtMs + 1 },
+      "rachel",
+      { done: false },
+      () => new Date("2032-01-02T03:04:05.007Z"),
+      "rapid-reopen-busy",
+    )
+    expect(beginMutation(
+      startedComplete.state,
+      impatientReopen,
+      completedOverlay,
+      "rachel",
+      12,
+    ).status).toBe("busy")
+
+    const refreshedData = {
+      ...completedOverlay,
+      todos: {
+        ...completedOverlay.todos,
+        value: completedOverlay.todos.value.map((todo) =>
+          todo.id === open.id ? { ...todo, updatedAtMs: open.updatedAtMs + 1 } : todo
+        ),
+      },
+    }
+    const refreshedTodo = refreshedData.todos.value.find((todo) => todo.id === open.id)!
+    const reopen = taskToggleRequest(
+      refreshedTodo,
+      "rachel",
+      { done: false },
+      () => new Date("2032-01-02T03:04:06.000Z"),
+      "rapid-reopen",
+    )
+    expect(reopen).toMatchObject({
+      actor: "rachel",
+      owner: open.owner,
+      baseUpdatedAtMs: open.updatedAtMs + 1,
+    })
+    expect(reopen).not.toHaveProperty("completedAt")
+
+    const startedReopen = beginMutation(
+      EMPTY_MUTATION_CONTROLLER,
+      reopen,
+      refreshedData,
+      "rachel",
+      13,
+    )
+    expect(startedReopen.status).toBe("started")
+    if (startedReopen.status !== "started") return
+    const reopenedOverlay = optimisticEnvelope(refreshedData, startedReopen.state, "rachel", 13)
+    expect(reopenedOverlay.todos.value.find((todo) => todo.id === open.id)?.completedAt).toBeNull()
+
+    const failed = settleMutation(
+      startedReopen.state,
+      startedReopen.pending,
+      {
+        status: "failed",
+        requestId: reopen.requestId,
+        kind: reopen.kind,
+        code: "unavailable",
+      },
+      "rachel",
+      13,
+    )
+    expect(optimisticEnvelope(refreshedData, failed, "rachel", 13)).toBe(refreshedData)
   })
 })
