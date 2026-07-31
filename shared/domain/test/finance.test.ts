@@ -14,8 +14,11 @@ import {
   assertMarketQuoteSnapshot,
   budgetCategoryTransactionsFor,
   budgetHealth,
+  marketQuoteFor,
   selectNetWorth,
+  usableMarketQuote,
   valueFinanceAccount,
+  valueFinanceHolding,
 } from "../src/finance.ts"
 import { type FamilyMember } from "../src/family.ts"
 import { sharesToValueCents, usdCentsToSats } from "../src/money.ts"
@@ -173,6 +176,49 @@ test("shared quote snapshot is a closed BTC, VOO, and IBIT set", () => {
   )
 })
 
+test("live and stale quotes require real canonical UTC ISO-8601 instants", () => {
+  for (const status of ["live", "stale"] as const) {
+    assert.equal(
+      assertMarketQuote({ ...quotes[0]!, status, fetchedAt: "2026-07-30T15:00:00Z" })
+        .fetchedAt,
+      "2026-07-30T15:00:00Z",
+    )
+    assert.equal(
+      assertMarketQuote({ ...quotes[0]!, status, fetchedAt: "2024-02-29T23:59:59.123Z" })
+        .fetchedAt,
+      "2024-02-29T23:59:59.123Z",
+    )
+    assert.equal(
+      assertMarketQuote({ ...quotes[0]!, status, fetchedAt: "2026-07-30T15:00:00.000Z" })
+        .fetchedAt,
+      "2026-07-30T15:00:00.000Z",
+    )
+  }
+})
+
+test("quote timestamps reject invalid dates and noncanonical normalized forms", () => {
+  const invalid = [
+    "",
+    "2026-02-30T15:00:00Z",
+    "2026-13-01T15:00:00Z",
+    "2026-07-30T24:00:00Z",
+    "2026-07-30 15:00:00Z",
+    "2026-07-30T15:00:00z",
+    "2026-07-30T15:00:00",
+    "2026-07-30T10:00:00-05:00",
+    "2026-07-30T15:00:00.12Z",
+    " 2026-07-30T15:00:00Z ",
+  ]
+
+  for (const fetchedAt of invalid) {
+    assert.throws(
+      () => assertMarketQuote({ ...quotes[0]!, fetchedAt }),
+      /canonical ISO-8601 fetchedAt/,
+      fetchedAt,
+    )
+  }
+})
+
 test("shared exact conversion vectors match half-away rounding", () => {
   assert.equal(fixtures.rounding, "half away from zero")
   for (const row of fixtures.usdToSats) {
@@ -294,4 +340,31 @@ test("account total is fallback-only and missing BTC quote suppresses combined t
   assert.equal(result.retirementValueSats, null)
   assert.equal(result.totalValueCents, null)
   assert.equal(result.totalValueSats, null)
+  assert.equal(result.btcQuote?.status, "unavailable")
+})
+
+test("unavailable equity quote preserves explicit state through stored valuation", () => {
+  const unavailableIbit: MarketQuote[] = quotes.map((entry) =>
+    entry.symbol === "IBIT"
+      ? {
+          symbol: "IBIT",
+          priceCents: null,
+          source: "Vogel Vault",
+          fetchedAt: null,
+          status: "unavailable",
+        }
+      : entry,
+  )
+  const ibit = accounts[0]!.holdings[1]!
+  const valuation = valueFinanceHolding(ibit, unavailableIbit)
+
+  assert.equal(valuation.basis, "stored-value")
+  assert.equal(valuation.valueCents, ibit.valueCents)
+  assert.equal(valuation.quote?.status, "unavailable")
+  assert.equal(marketQuoteFor(unavailableIbit, "IBIT")?.status, "unavailable")
+  assert.equal(usableMarketQuote(unavailableIbit, "IBIT"), null)
+
+  const absent = valueFinanceHolding(ibit, unavailableIbit.slice(0, 2))
+  assert.equal(absent.basis, "stored-value")
+  assert.equal(absent.quote, null)
 })

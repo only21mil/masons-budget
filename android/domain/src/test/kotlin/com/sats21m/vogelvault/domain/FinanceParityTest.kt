@@ -94,6 +94,46 @@ class FinanceParityTest {
     }
 
     @Test
+    fun `live and stale quotes require real canonical UTC ISO instants`() {
+        for (status in listOf(MarketQuoteStatus.LIVE, MarketQuoteStatus.STALE)) {
+            assertEquals(
+                "2026-07-30T15:00:00Z",
+                quotes[0].copy(status = status, fetchedAt = "2026-07-30T15:00:00Z").fetchedAt,
+            )
+            assertEquals(
+                "2024-02-29T23:59:59.123Z",
+                quotes[0].copy(status = status, fetchedAt = "2024-02-29T23:59:59.123Z").fetchedAt,
+            )
+            assertEquals(
+                "2026-07-30T15:00:00.000Z",
+                quotes[0].copy(status = status, fetchedAt = "2026-07-30T15:00:00.000Z").fetchedAt,
+            )
+        }
+    }
+
+    @Test
+    fun `quote timestamps reject invalid dates and noncanonical normalized forms`() {
+        val invalid = listOf(
+            "",
+            "2026-02-30T15:00:00Z",
+            "2026-13-01T15:00:00Z",
+            "2026-07-30T24:00:00Z",
+            "2026-07-30 15:00:00Z",
+            "2026-07-30T15:00:00z",
+            "2026-07-30T15:00:00",
+            "2026-07-30T10:00:00-05:00",
+            "2026-07-30T15:00:00.12Z",
+            " 2026-07-30T15:00:00Z ",
+        )
+
+        for (fetchedAt in invalid) {
+            assertFailsWith<IllegalArgumentException>(fetchedAt) {
+                quotes[0].copy(fetchedAt = fetchedAt)
+            }
+        }
+    }
+
+    @Test
     fun `shared exact conversion vectors match half-away rounding`() {
         assertEquals("half away from zero", fixtures["rounding"].asString)
         for (entry in fixtures.getAsJsonArray("usdToSats")) {
@@ -241,5 +281,35 @@ class FinanceParityTest {
         assertEquals(null, result.retirementValueSats)
         assertEquals(null, result.totalValueCents)
         assertEquals(null, result.totalValueSats)
+        assertEquals(MarketQuoteStatus.UNAVAILABLE, result.btcQuote?.status)
+    }
+
+    @Test
+    fun `unavailable equity quote remains distinct from an absent observation`() {
+        val unavailableIbit = quotes.map {
+            if (it.symbol == MarketSymbol.IBIT) {
+                MarketQuote(
+                    MarketSymbol.IBIT,
+                    null,
+                    "Vogel Vault",
+                    null,
+                    MarketQuoteStatus.UNAVAILABLE,
+                )
+            } else {
+                it
+            }
+        }
+        val ibit = accounts[0].holdings[1]
+        val valuation = ibit.marketValue(unavailableIbit)
+
+        assertEquals(HoldingValuationBasis.STORED_VALUE, valuation.basis)
+        assertEquals(ibit.valueCents, valuation.valueCents)
+        assertEquals(MarketQuoteStatus.UNAVAILABLE, valuation.quote?.status)
+        assertEquals(MarketQuoteStatus.UNAVAILABLE, unavailableIbit.marketQuoteFor(MarketSymbol.IBIT)?.status)
+        assertEquals(null, unavailableIbit.usableQuote(MarketSymbol.IBIT))
+
+        val absent = ibit.marketValue(unavailableIbit.take(2))
+        assertEquals(HoldingValuationBasis.STORED_VALUE, absent.basis)
+        assertEquals(null, absent.quote)
     }
 }

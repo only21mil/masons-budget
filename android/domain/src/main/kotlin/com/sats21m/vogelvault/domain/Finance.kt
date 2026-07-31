@@ -1,6 +1,7 @@
 package com.sats21m.vogelvault.domain
 
 import java.math.BigInteger
+import java.time.Instant
 
 /**
  * Synced retirement data and operational quotes intentionally use different
@@ -26,13 +27,28 @@ data class MarketQuote(
                 require(priceCents != null && priceCents > 0L) {
                     "$status $symbol quote must carry a positive price"
                 }
-                require(!fetchedAt.isNullOrBlank()) { "$status $symbol quote must carry fetchedAt" }
+                require(fetchedAt != null && fetchedAt.isCanonicalQuoteInstant()) {
+                    "$status $symbol quote must carry a canonical ISO-8601 fetchedAt"
+                }
             }
         }
     }
 
     val isUsable: Boolean
         get() = status != MarketQuoteStatus.UNAVAILABLE
+}
+
+private val canonicalQuoteInstant =
+    Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z""")
+
+private fun String.isCanonicalQuoteInstant(): Boolean {
+    if (!canonicalQuoteInstant.matches(this)) return false
+    val normalized = try {
+        Instant.parse(this).toString()
+    } catch (_: java.time.format.DateTimeParseException) {
+        return false
+    }
+    return this == normalized || this == normalized.removeSuffix("Z") + ".000Z"
 }
 
 data class MarketQuoteSnapshot(val quotes: List<MarketQuote>) {
@@ -46,8 +62,11 @@ data class MarketQuoteSnapshot(val quotes: List<MarketQuote>) {
     }
 }
 
+fun List<MarketQuote>.marketQuoteFor(symbol: MarketSymbol): MarketQuote? =
+    firstOrNull { it.symbol == symbol }
+
 fun List<MarketQuote>.usableQuote(symbol: MarketSymbol): MarketQuote? =
-    firstOrNull { it.symbol == symbol }?.takeIf { it.isUsable }
+    marketQuoteFor(symbol)?.takeIf { it.isUsable }
 
 data class FinanceLot(
     val date: String,
@@ -116,7 +135,8 @@ fun FinanceHolding.marketValue(quotes: List<MarketQuote>): HoldingValuation {
         "IBIT" -> MarketSymbol.IBIT
         else -> null
     }
-    val quote = symbol?.let(quotes::usableQuote)
+    val observation = symbol?.let(quotes::marketQuoteFor)
+    val quote = observation?.takeIf { it.isUsable }
     return if (quote != null) {
         HoldingValuation(
             holding = this,
@@ -125,7 +145,7 @@ fun FinanceHolding.marketValue(quotes: List<MarketQuote>): HoldingValuation {
             quote = quote,
         )
     } else {
-        HoldingValuation(this, valueCents, HoldingValuationBasis.STORED_VALUE, null)
+        HoldingValuation(this, valueCents, HoldingValuationBasis.STORED_VALUE, observation)
     }
 }
 
@@ -166,7 +186,8 @@ fun selectNetWorth(
     val retirementCents = accounts.fold(0L) { total, account ->
         Math.addExact(total, account.valueCents)
     }
-    val btcQuote = quotes.usableQuote(MarketSymbol.BTC)
+    val btcObservation = quotes.marketQuoteFor(MarketSymbol.BTC)
+    val btcQuote = btcObservation?.takeIf { it.isUsable }
         ?: return NetWorthSelection(
             bitcoinSats = bitcoinSats,
             bitcoinValueCents = null,
@@ -175,7 +196,7 @@ fun selectNetWorth(
             totalValueCents = null,
             totalValueSats = null,
             accounts = accounts,
-            btcQuote = null,
+            btcQuote = btcObservation,
         )
 
     val price = checkNotNull(btcQuote.priceCents)

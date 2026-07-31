@@ -7,9 +7,14 @@ import { readFileSync } from "node:fs"
 import { test } from "node:test"
 
 import {
+  DISPLAY_UNITS,
+  PRICE_UNAVAILABLE,
   SATS_PER_BTC,
   basisPoints,
+  displayUnitForSurface,
+  displayUnitFromStorageKey,
   formatBtc,
+  formatBitcoin,
   formatSats,
   formatUsd,
   jsonNumberToCents,
@@ -200,6 +205,31 @@ test("converts sats to USD at a given price", () => {
   assert.equal(satsToUsdCents(0n, 10_000_000n), 0n)
   assert.equal(satsToUsdCents(SATS_PER_BTC, 6_543_21n), 654_321n)
   assert.equal(satsToUsdCents(-SATS_PER_BTC, 10_000_000n), -10_000_000n)
+})
+
+test("display units share storage keys, labels, fallback, and Budget USD semantics", () => {
+  assert.deepEqual(DISPLAY_UNITS, [
+    { storageKey: "btc", label: "BTC" },
+    { storageKey: "sats", label: "SATS" },
+    { storageKey: "usd", label: "USD" },
+  ])
+  assert.equal(displayUnitFromStorageKey("sats"), "sats")
+  assert.equal(displayUnitFromStorageKey("unknown"), "btc")
+  assert.equal(displayUnitFromStorageKey(null), "btc")
+  assert.equal(displayUnitForSurface("bitcoin", "sats"), "sats")
+  assert.equal(displayUnitForSurface("net-worth", "btc"), "btc")
+  assert.equal(displayUnitForSurface("budget", "btc"), "usd")
+  assert.equal(displayUnitForSurface("budget", "sats"), "usd")
+})
+
+test("formats Bitcoin units without treating an unavailable USD quote as zero", () => {
+  const sats = 123_456_789n
+  assert.equal(formatBitcoin(sats, "btc"), "1.23456789 BTC")
+  assert.equal(formatBitcoin(sats, "sats"), "123 456 789 sats")
+  assert.equal(formatBitcoin(sats, "usd", 9_500_000n), "$117,283.95")
+  assert.equal(formatBitcoin(1n, "usd"), PRICE_UNAVAILABLE)
+  assert.equal(formatBitcoin(1n, "usd", 0n), PRICE_UNAVAILABLE)
+  assert.equal(formatBitcoin(1n, "usd", -1n), PRICE_UNAVAILABLE)
 })
 
 test("sums exactly across many values", () => {
