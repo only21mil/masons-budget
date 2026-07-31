@@ -32,6 +32,16 @@ internal data class RetirementHoldingRow(
     val key: String get() = "${account.account.owner.key}:${account.account.key}:${holding.holding.name}"
 }
 
+internal enum class RetirementSection {
+    ACCOUNTS_AND_HOLDINGS,
+    QUOTE_PROVENANCE,
+}
+
+internal val retirementSectionOrder = listOf(
+    RetirementSection.ACCOUNTS_AND_HOLDINGS,
+    RetirementSection.QUOTE_PROVENANCE,
+)
+
 private val retirementMarketTickers = setOf("VOO", "IBIT")
 
 internal fun VaultUiState.retirementAccountsResult(): Result<List<AccountValuation>> {
@@ -51,8 +61,8 @@ internal fun VaultUiState.retirementAccountsResult(): Result<List<AccountValuati
 internal fun VaultUiState.retirementAccounts(): List<AccountValuation> =
     retirementAccountsResult().getOrDefault(emptyList())
 
-internal fun VaultUiState.adultNetWorthSelectionResult(): Result<NetWorthSelection?> {
-    if (!activeProfile.isAdult || financeStatus != Freshness.LIVE) return Result.success(null)
+internal fun VaultUiState.netWorthSelectionResult(): Result<NetWorthSelection?> {
+    if (financeStatus != Freshness.LIVE) return Result.success(null)
     val document = financeDocument ?: return Result.success(null)
     val quotes = marketQuotes?.quotes ?: return Result.success(null)
     val balance = data.netWorthBalanceForDisplay()
@@ -65,16 +75,45 @@ internal fun VaultUiState.adultNetWorthSelectionResult(): Result<NetWorthSelecti
     }
 }
 
-internal fun VaultUiState.adultNetWorthSelection(): NetWorthSelection? {
-    return adultNetWorthSelectionResult().getOrNull()
+internal fun VaultUiState.netWorthSelection(): NetWorthSelection? {
+    return netWorthSelectionResult().getOrNull()
 }
+
+internal data class NetWorthPresentationLabels(
+    val total: String,
+    val retirementHint: String,
+    val unavailableTotal: String,
+    val unavailableFinanceDetail: String,
+    val emptyRetirementDetail: String,
+)
+
+internal fun VaultUiState.netWorthPresentationLabels(): NetWorthPresentationLabels =
+    if (activeProfile.isAdult) {
+        NetWorthPresentationLabels(
+            total = "Adult net worth",
+            retirementHint = "Adult accounts only",
+            unavailableTotal = "Adult total unavailable",
+            unavailableFinanceDetail =
+                "The retirement document is unavailable or incomplete. Bitcoin alone is not shown as household net worth.",
+            emptyRetirementDetail = "No retirement accounts are available for the adult household.",
+        )
+    } else {
+        NetWorthPresentationLabels(
+            total = "Net worth",
+            retirementHint = "This profile only",
+            unavailableTotal = "Net worth unavailable",
+            unavailableFinanceDetail =
+                "The retirement document is unavailable or incomplete. Bitcoin alone is not shown as this profile's net worth.",
+            emptyRetirementDetail = "No retirement accounts are available for this profile.",
+        )
+    }
 
 internal fun VaultLazyListScope.financeNetWorthSummary(
     state: VaultUiState,
     displayUnit: DisplayUnit,
 ) {
-    if (!state.activeProfile.isAdult) return
-    val selectionResult = state.adultNetWorthSelectionResult()
+    val labels = state.netWorthPresentationLabels()
+    val selectionResult = state.netWorthSelectionResult()
     val accountsResult = state.retirementAccountsResult()
     val selection = selectionResult.getOrNull()
     val retirementFallback = accountsResult.getOrNull()?.sumAccountValuesOrNull()
@@ -87,7 +126,7 @@ internal fun VaultLazyListScope.financeNetWorthSummary(
         KpiStrip(
             listOf(
                 Kpi(
-                    label = "Adult net worth",
+                    label = labels.total,
                     value = selection?.let { selected ->
                         when (displayUnit) {
                             DisplayUnit.USD -> selected.totalValueCents?.let(Money::formatUsd)
@@ -107,7 +146,7 @@ internal fun VaultLazyListScope.financeNetWorthSummary(
                     } else {
                         SUPPRESSED
                     },
-                    hint = "Adult accounts only",
+                    hint = labels.retirementHint,
                     provenance = Provenance.ESTIMATED,
                 ),
             ),
@@ -116,12 +155,12 @@ internal fun VaultLazyListScope.financeNetWorthSummary(
     if (selection?.totalValueCents == null || calculationFailed) {
         item {
             StatusBanner(
-                text = "Adult total unavailable",
+                text = labels.unavailableTotal,
                 detail = when {
                     calculationFailed ->
                         "The finance values exceed Android's supported numeric range. No partial total was shown."
                     state.financeStatus != Freshness.LIVE ->
-                        "The retirement document is unavailable or incomplete. Bitcoin alone is not shown as household net worth."
+                        labels.unavailableFinanceDetail
                     state.marketQuoteStatus != Freshness.LIVE ->
                         "The market quote snapshot is unavailable or incomplete. No live value was invented."
                     else -> "The BTC quote is unavailable. Retirement remains visible, but the combined USD total does not."
@@ -136,7 +175,19 @@ internal fun VaultLazyListScope.retirementHoldings(
     state: VaultUiState,
     displayUnit: DisplayUnit,
 ) {
-    item { QuotePanel(state) }
+    retirementSectionOrder.forEach { section ->
+        when (section) {
+            RetirementSection.ACCOUNTS_AND_HOLDINGS ->
+                retirementAccountAndHoldingContent(state, displayUnit)
+            RetirementSection.QUOTE_PROVENANCE -> item { QuotePanel(state) }
+        }
+    }
+}
+
+private fun VaultLazyListScope.retirementAccountAndHoldingContent(
+    state: VaultUiState,
+    displayUnit: DisplayUnit,
+) {
     when (state.financeStatus) {
         Freshness.LOADING, Freshness.ERROR -> item {
             Panel("Retirement holdings", "Convex finance document") {
@@ -173,7 +224,7 @@ internal fun VaultLazyListScope.retirementHoldings(
                         StateBlock(
                             Freshness.EMPTY,
                             title = "No retirement accounts in scope",
-                            detail = "Child profiles cannot consume adult retirement accounts.",
+                            detail = state.netWorthPresentationLabels().emptyRetirementDetail,
                         )
                     }
                 }

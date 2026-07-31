@@ -4,6 +4,8 @@ import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.key
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -15,7 +17,10 @@ import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.data.ReadBootstrapStatus
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -37,6 +42,7 @@ class ReadBootstrapConfigurationTest {
     private lateinit var controller: ActivityController<ComponentActivity>
     private lateinit var application: RecordingReadBootstrapApplication
     private var connectedCalls = 0
+    private var connectedAccess: BootstrapAccess? = null
     private var contentKey = 0
 
     @Before
@@ -44,6 +50,7 @@ class ReadBootstrapConfigurationTest {
         application = RuntimeEnvironment.getApplication() as RecordingReadBootstrapApplication
         application.reset()
         connectedCalls = 0
+        connectedAccess = null
         contentKey = 0
         controller = Robolectric.buildActivity(ComponentActivity::class.java)
         controller.get().setTheme(R.style.Theme_VogelVault)
@@ -67,8 +74,9 @@ class ReadBootstrapConfigurationTest {
 
         assertEquals(1, application.connectCalls)
         assertEquals(1, connectedCalls)
-        compose.onNodeWithText("Connected securely. The stored credential is never shown.")
+        compose.onNodeWithText("Connected for household data. Todo changes are not enabled.")
             .fetchSemanticsNode()
+        assertEquals(BootstrapAccess.READ_ONLY, connectedAccess)
         assertEquals(0, compose.onAllNodesWithText(bundleSecret).fetchSemanticsNodes().size)
         assertEquals(0, compose.onAllNodesWithText(responseSecret).fetchSemanticsNodes().size)
     }
@@ -83,9 +91,9 @@ class ReadBootstrapConfigurationTest {
         assertEquals(0, compose.onAllNodesWithText("Connect securely").fetchSemanticsNodes().size)
         assertEquals(0, application.connectCalls)
 
-        application.stored = true
+        application.ready = true
         show()
-        compose.onNodeWithText("Connected securely. The stored credential is never shown.")
+        compose.onNodeWithText("Connected for household data. Todo changes are not enabled.")
             .fetchSemanticsNode()
         assertEquals(0, application.connectCalls)
     }
@@ -116,6 +124,7 @@ class ReadBootstrapConfigurationTest {
     @Test
     fun `busy state disables replay and reset is presence only`() {
         application.pending = CompletableDeferred()
+        application.todoCredentialPresent = true
         show(allowReset = true)
         compose.onNodeWithText("Connect securely").performClick()
         settle()
@@ -133,18 +142,119 @@ class ReadBootstrapConfigurationTest {
         compose.onNodeWithText("Confirm reset").performClick()
         settle()
         assertEquals(1, application.removeCalls)
+        assertFalse(application.todoCredentialPresent)
+        assertEquals(BootstrapAccess.NONE, ReadOnlyBootstrapEnrollment(application).currentAccess())
         compose.onNodeWithText("This installation is not connected to household data.")
             .fetchSemanticsNode()
     }
 
-    private fun show(allowReset: Boolean = false) {
+    @Test
+    fun `already cleared enrollment reset succeeds as a no-op`() {
+        val enrollment = ReadOnlyBootstrapEnrollment(application)
+
+        assertEquals(BootstrapAccess.NONE, enrollment.reset())
+        assertEquals(BootstrapAccess.NONE, enrollment.currentAccess())
+        assertEquals(1, application.removeCalls)
+    }
+
+    @Test
+    fun `combined enrollment reports todo write only from durable capability state`() {
+        val enrollment = RecordingEnrollment(
+            next = BootstrapConnectionResult(
+                status = ReadBootstrapStatus.CONNECTED,
+                access = BootstrapAccess.READ_AND_TODO_WRITE,
+            ),
+        )
+        show(enrollment = enrollment)
+
+        compose.onNodeWithText("Connect securely").performClick()
+        settle()
+
+        compose.onNodeWithText("Connected for household data and todo changes.")
+            .fetchSemanticsNode()
+        assertEquals(BootstrapAccess.READ_AND_TODO_WRITE, connectedAccess)
+    }
+
+    @Test
+    fun `connected status without durable access does not claim todo access`() {
+        val enrollment = RecordingEnrollment(
+            next = BootstrapConnectionResult(
+                status = ReadBootstrapStatus.CONNECTED,
+                access = BootstrapAccess.NONE,
+            ),
+        )
+        show(enrollment = enrollment)
+
+        compose.onNodeWithText("Connect securely").performClick()
+        settle()
+
+        compose.onNodeWithText("This installation is not connected to household data.")
+            .fetchSemanticsNode()
+        assertEquals(null, connectedAccess)
+        assertEquals(0, connectedCalls)
+        assertEquals(0, compose.onAllNodesWithText("todo changes", substring = true).fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun `effective rejection leaves connected state and returns to enrollment`() {
+        application.ready = true
+        show()
+        compose.onNodeWithText("Connected for household data. Todo changes are not enabled.")
+            .fetchSemanticsNode()
+
+        application.ready = false
+        settle()
+
+        compose.onNodeWithText("This installation is not connected to household data.")
+            .fetchSemanticsNode()
+        compose.onNodeWithText("Connect securely").fetchSemanticsNode()
+    }
+
+    @Test
+    fun `settings status uses effective readiness rather than row source labels`() {
+        application.ready = false
+        val convexLabeledState =
+            VaultViewModel(remoteInitiallyEnabled = true).state.value.copy(
+                destination = Destination.SETTINGS,
+            )
+        controller.get().setContent {
+            VogelVaultTheme {
+                ScreenHost(
+                    destination = Destination.SETTINGS,
+                    state = convexLabeledState,
+                )
+            }
+        }
+        settle()
+
+        compose.onNodeWithText("Convex row reads are not active").fetchSemanticsNode()
+        assertEquals(
+            0,
+            compose.onAllNodesWithText("Convex row reads are enabled").fetchSemanticsNodes().size,
+        )
+
+        application.ready = true
+        settle()
+        compose.onNodeWithText("Convex row reads are enabled").fetchSemanticsNode()
+    }
+
+    private fun show(
+        allowReset: Boolean = false,
+        enrollment: BootstrapEnrollment? = null,
+    ) {
         contentKey += 1
         controller.get().setContent {
             VogelVaultTheme {
                 key(contentKey) {
+                    val remoteReadReady by application.effectiveReadReady.collectAsState()
                     ReadBootstrapConfiguration(
-                        onConnected = { connectedCalls += 1 },
+                        remoteReadReady = remoteReadReady,
+                        onConnected = {
+                            connectedCalls += 1
+                            connectedAccess = it
+                        },
                         allowReset = allowReset,
+                        enrollment = enrollment,
                     )
                 }
             }
@@ -158,37 +268,67 @@ class ReadBootstrapConfigurationTest {
     }
 }
 
+private class RecordingEnrollment(
+    private val next: BootstrapConnectionResult,
+) : BootstrapEnrollment {
+    private var access = BootstrapAccess.NONE
+
+    override fun isBundledEnrollmentAvailable(): Boolean = true
+
+    override fun currentAccess(): BootstrapAccess = access
+
+    override suspend fun connect(): BootstrapConnectionResult {
+        access = next.access
+        return next
+    }
+
+    override fun reset(): BootstrapAccess {
+        access = BootstrapAccess.NONE
+        return access
+    }
+}
+
 class RecordingReadBootstrapApplication : VaultApplication() {
     var available = true
-    var stored = false
+    private val readReady = MutableStateFlow(false)
+    override val effectiveReadReady: StateFlow<Boolean>
+        get() = readReady
+    var ready: Boolean
+        get() = readReady.value
+        set(value) {
+            readReady.value = value
+        }
     internal var next = ReadBootstrapStatus.CONNECTED
     internal var pending: CompletableDeferred<ReadBootstrapStatus>? = null
     var connectCalls = 0
     var removeCalls = 0
+    var todoCredentialPresent = false
 
     override fun hasBundledReadBootstrap(): Boolean = available
-
-    override fun hasStoredConvexCredential(): Boolean = stored
 
     override suspend fun connectBundledReadBootstrap(): ReadBootstrapStatus {
         connectCalls += 1
         val result = pending?.await() ?: next
-        if (result == ReadBootstrapStatus.CONNECTED) stored = true
+        if (result == ReadBootstrapStatus.CONNECTED) ready = true
         return result
     }
 
+    override fun hasTodoWriteCredential(): Boolean = todoCredentialPresent
+
     override fun removeStoredConvexCredential(): Boolean {
         removeCalls += 1
-        stored = false
+        ready = false
+        todoCredentialPresent = false
         return true
     }
 
     fun reset() {
         available = true
-        stored = false
+        ready = false
         next = ReadBootstrapStatus.CONNECTED
         pending = null
         connectCalls = 0
         removeCalls = 0
+        todoCredentialPresent = false
     }
 }

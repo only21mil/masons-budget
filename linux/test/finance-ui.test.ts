@@ -241,6 +241,19 @@ test("child net worth remains self-only even when the injected document contains
   assert.ok(markup.includes("$620.00"), "Mason's BTC and custodial account were not totaled")
   assert.ok(!markup.includes("$125,106.79"))
   assert.ok(!markup.includes("Adult net worth"))
+  assert.ok(markup.includes("BTC plus retirement · self only"))
+  assert.ok(!markup.includes("no child balances"))
+})
+
+test("child net-worth failure copy stays profile-generic", () => {
+  const unavailableFinance: LinuxFinanceReadModel = {
+    ...model(),
+    finance: { status: "error", value: null, code: "unavailable" },
+  }
+  const markup = renderFinancePage("net-worth", "mason", unavailableFinance)
+
+  assert.ok(markup.includes("Net-worth total unavailable"))
+  assert.ok(!markup.includes("Adult net-worth total unavailable"))
 })
 
 test("an unavailable BTC quote withholds combined totals without hiding retirement", () => {

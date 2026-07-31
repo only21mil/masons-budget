@@ -31,6 +31,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -186,6 +187,9 @@ fun ScreenHost(
     // The write surface owns its own client, per the house write pattern: nothing
     // threads suspend write callbacks through MainActivity -> VaultApp -> ScreenHost.
     val vaultApplication = LocalContext.current.applicationContext as? VaultApplication
+    val remoteReadReady by
+        vaultApplication?.effectiveReadReady?.collectAsStateWithLifecycle()
+            ?: remember { mutableStateOf(false) }
     val transactionActions = remember(vaultApplication) { vaultApplication?.transactionActions }
     val budgetMonth = state.data.budget.value?.month
     val profile = state.activeProfile
@@ -417,7 +421,7 @@ fun ScreenHost(
                     taskListsContent(state, collections.visibleTodos)
                 }
                 Destination.FAMILY -> family(state)
-                Destination.SETTINGS -> settings(state, onRemoteRowsConnected)
+                Destination.SETTINGS -> settings(state, remoteReadReady, onRemoteRowsConnected)
             }
         }
     }
@@ -704,6 +708,7 @@ private fun VaultLazyListScope.dashboard(
         accounts = projection.accounts,
         status = state.data.btcBalance.status,
         displayUnit = displayUnit,
+        quote = quote,
     )
 }
 
@@ -1158,6 +1163,7 @@ private fun VaultLazyListScope.bitcoin(
 ) {
     val slice = state.data.btcBalance
     val unavailable = projection.balance == null
+    val quote = state.operationalBitcoinQuote()
 
     if (displayUnit == DisplayUnit.USD && !unavailable) {
         item { BitcoinConversionNotice(state) }
@@ -1171,16 +1177,16 @@ private fun VaultLazyListScope.bitcoin(
                     figure(unavailable) {
                         state.formatBalance(requireNotNull(projection.balance), displayUnit)
                     },
+                    provenance = canonicalBitcoinProvenance(
+                        projection.balance?.fiatValuation != null,
+                        displayUnit,
+                        quote,
+                    ),
                 ),
                 Kpi(
                     "Reference price",
-                    figure(unavailable) {
-                        state.data.btcPriceCents
-                            .takeIf { it > 0L }
-                            ?.let { Money.formatUsd(it) }
-                            ?: Money.PRICE_UNAVAILABLE
-                    },
-                    hint = figure(unavailable) { priceBasis(state) },
+                    formatOperationalBitcoinPrice(quote),
+                    hint = operationalBitcoinPriceBasis(quote),
                     provenance = Provenance.ESTIMATED,
                 ),
                 Kpi(
@@ -1207,6 +1213,7 @@ private fun VaultLazyListScope.bitcoin(
         accounts = projection.accounts,
         status = slice.status,
         displayUnit = displayUnit,
+        quote = quote,
     )
     if (state.data.btcBuys.status == Freshness.LIVE) {
         item { BtcBuyEntryAction(onAddBuy) }
@@ -1274,6 +1281,14 @@ private fun VaultLazyListScope.netWorth(
     financeNetWorthSummary(state, displayUnit)
     val slice = state.data.btcBalance
     val unavailable = projection.balance == null
+    val quote = state.operationalBitcoinQuote()
+    val requiresOperationalQuote = projection.balance?.let { balance ->
+        balance.fiatValuation == null || projection.accounts.any { it.fiatValuation == null }
+    } == true
+
+    if (displayUnit == DisplayUnit.USD && requiresOperationalQuote) {
+        item { BitcoinConversionNotice(state) }
+    }
 
     item {
         KpiStrip(
@@ -1283,6 +1298,11 @@ private fun VaultLazyListScope.netWorth(
                     figure(unavailable) {
                         state.formatBalance(requireNotNull(projection.balance), displayUnit)
                     },
+                    provenance = canonicalBitcoinProvenance(
+                        projection.balance?.fiatValuation != null,
+                        displayUnit,
+                        quote,
+                    ),
                 ),
                 Kpi(
                     "Accounts",
@@ -1302,6 +1322,7 @@ private fun VaultLazyListScope.netWorth(
         accounts = projection.accounts,
         status = slice.status,
         displayUnit = displayUnit,
+        quote = quote,
     )
     if (projection.excludedAccounts.isNotEmpty()) {
         item {
@@ -1318,6 +1339,7 @@ private fun VaultLazyListScope.netWorth(
             accounts = projection.excludedAccounts,
             status = slice.status,
             displayUnit = displayUnit,
+            quote = quote,
         )
     }
 }
@@ -1329,6 +1351,7 @@ private fun VaultLazyListScope.accountList(
     accounts: List<BtcAccount>,
     status: Freshness,
     displayUnit: DisplayUnit,
+    quote: MarketQuote?,
 ) {
     if (status == Freshness.ERROR || status == Freshness.LOADING) {
         item {
@@ -1359,8 +1382,19 @@ private fun VaultLazyListScope.accountList(
     ) { account ->
         LedgerRow(
             primary = account.label,
-            secondary = account.owner.displayName,
-            figure = formatCanonicalAccount(account, displayUnit),
+            secondary = buildString {
+                append(account.owner.displayName)
+                if (
+                    canonicalBitcoinProvenance(
+                        account.fiatValuation != null,
+                        displayUnit,
+                        quote,
+                    ) == Provenance.ESTIMATED
+                ) {
+                    append(" · Estimated")
+                }
+            },
+            figure = formatCanonicalAccount(account, displayUnit, quote),
             figureColor = VaultCream,
             badge = account.custody.label,
             badgeAccented = account.custody.key == "self_custody",
@@ -1376,11 +1410,12 @@ private fun VaultUiState.formatBitcoin(sats: Long, unit: DisplayUnit): String =
     )
 
 private fun VaultUiState.formatBalance(balance: BtcBalance, unit: DisplayUnit): String =
-    formatCanonicalBalance(balance, unit)
+    formatCanonicalBalance(balance, unit, operationalBitcoinQuote())
 
 internal fun formatCanonicalBalance(
     balance: BtcBalance,
     unit: DisplayUnit,
+    quote: MarketQuote? = null,
 ): String =
     formatFinancialAmount(
         FinancialAmount(
@@ -1388,14 +1423,15 @@ internal fun formatCanonicalBalance(
             sats = balance.totalSats,
         ),
         unit,
-        // A canonical snapshot without its own fiat value stays unavailable in
-        // USD; a last-buy price does not upgrade the snapshot's evidence.
-        quote = null,
+        // Embedded canonical fiat wins inside formatFinancialAmount. Only a
+        // separately supplied operational quote may fill a missing USD side.
+        quote = quote,
     )
 
 internal fun formatCanonicalAccount(
     account: BtcAccount,
     unit: DisplayUnit,
+    quote: MarketQuote? = null,
 ): String =
     formatFinancialAmount(
         FinancialAmount(
@@ -1403,13 +1439,33 @@ internal fun formatCanonicalAccount(
             sats = account.sats,
         ),
         unit,
-        quote = null,
+        quote = quote,
     )
 
-internal fun balanceSnapshotBasis(balance: BtcBalance): String = "Balance snapshot · ${balance.asOf}"
+private fun canonicalBitcoinProvenance(
+    hasEmbeddedFiat: Boolean,
+    unit: DisplayUnit,
+    quote: MarketQuote?,
+): Provenance =
+    if (unit == DisplayUnit.USD && !hasEmbeddedFiat && quote != null) {
+        Provenance.ESTIMATED
+    } else {
+        Provenance.ACTUAL
+    }
 
-private fun priceBasis(state: VaultUiState): String =
-    state.data.btcPriceAsOf?.let { "Last buy · $it" } ?: "No recorded price"
+internal fun formatOperationalBitcoinPrice(quote: MarketQuote?): String =
+    quote?.priceCents?.let(Money::formatUsd) ?: Money.PRICE_UNAVAILABLE
+
+internal fun operationalBitcoinPriceBasis(quote: MarketQuote?): String =
+    quote?.let {
+        buildString {
+            append(it.source)
+            if (it.status == MarketQuoteStatus.STALE) append(" · stale")
+            append(" · ${it.fetchedAt}")
+        }
+    } ?: "No operational quote"
+
+internal fun balanceSnapshotBasis(balance: BtcBalance): String = "Balance snapshot · ${balance.asOf}"
 
 // Today lives in TodoScreen.kt: it edits rows, so it owns its own scaffold.
 
@@ -1460,11 +1516,11 @@ private fun VaultLazyListScope.family(state: VaultUiState) {
 
 private fun VaultLazyListScope.settings(
     state: VaultUiState,
+    remoteReadReady: Boolean,
     onRemoteRowsConnected: () -> Unit,
 ) {
-    val readsConvexRows = state.data.transactions.source.startsWith("Convex")
     item {
-        if (readsConvexRows) {
+        if (remoteReadReady) {
             StatusBanner(
                 "Convex row reads are enabled",
                 "Every query is authenticated. Writes require the separate sync credential below.",
@@ -1493,7 +1549,8 @@ private fun VaultLazyListScope.settings(
     item {
         Panel(stringResource(R.string.read_bootstrap_title)) {
             ReadBootstrapConfiguration(
-                onConnected = onRemoteRowsConnected,
+                remoteReadReady = remoteReadReady,
+                onConnected = { onRemoteRowsConnected() },
                 modifier = Modifier.padding(VaultSpace.md),
                 allowReset = true,
             )

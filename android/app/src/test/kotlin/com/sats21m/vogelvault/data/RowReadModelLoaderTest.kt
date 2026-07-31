@@ -359,9 +359,14 @@ class RowReadModelLoaderTest {
             ConvexResult.Unauthorized to RowReadFailure.UNAUTHORIZED,
             ConvexResult.Disabled to RowReadFailure.DISABLED,
             ConvexResult.NotConfigured to RowReadFailure.NOT_CONFIGURED,
-            ConvexResult.Failed("transport failure (SocketTimeoutException)") to
+            ConvexResult.Failed(ConvexFailure.Transport) to
                 RowReadFailure.TRANSPORT,
-            ConvexResult.Failed("unexpected payload shape") to
+            ConvexResult.Failed(ConvexFailure.Http(503)) to RowReadFailure.HTTP,
+            ConvexResult.Failed(ConvexFailure.DeploymentMisconfigured) to
+                RowReadFailure.DEPLOYMENT_MISCONFIGURED,
+            ConvexResult.Failed(ConvexFailure.ServerRejected()) to
+                RowReadFailure.SERVER_REJECTED,
+            ConvexResult.Failed(ConvexFailure.InvalidResponse) to
                 RowReadFailure.MALFORMED_PAYLOAD,
         )
 
@@ -372,9 +377,27 @@ class RowReadModelLoaderTest {
 
             assertEquals(Freshness.ERROR, model.transactions.status)
             assertEquals(setOf(expected), model.rowReadFailures)
+            assertEquals(
+                setOf(RowReadDiagnostic(RowReadProjection.TRANSACTIONS, expected)),
+                model.rowReadDiagnostics,
+            )
             assertTrue(model.transactions.source.endsWith("failure=${expected.sourceTag}"))
             assertTrue("SocketTimeoutException" !in model.transactions.source)
         }
+    }
+
+    @Test
+    fun `one failed projection does not hide or implicate successful slices`() = runBlocking {
+        val model = RowReadModelLoader(
+            FakeRows(transactions = ConvexResult.Failed(ConvexFailure.Http(503))),
+        ).load(FamilyMember.VICTOR)
+
+        assertEquals(Freshness.ERROR, model.transactions.status)
+        assertEquals(Freshness.EMPTY, model.todos.status)
+        assertEquals(
+            setOf(RowReadDiagnostic(RowReadProjection.TRANSACTIONS, RowReadFailure.HTTP)),
+            model.rowReadDiagnostics,
+        )
     }
 
     @Test
@@ -409,7 +432,7 @@ class RowReadModelLoaderTest {
             RowReadModelLoader(
                 FakeRows(
                     transactions =
-                        ConvexResult.Failed("transport failure (CredentialEchoException)"),
+                        ConvexResult.Failed(ConvexFailure.Transport),
                 ),
             ).load(FamilyMember.VICTOR)
         } finally {
@@ -421,7 +444,7 @@ class RowReadModelLoaderTest {
                 "projection=transactions" in it && "cause=TRANSPORT" in it
             },
         )
-        assertTrue(messages.none { "CredentialEchoException" in it })
+        assertTrue(messages.none { "IOException" in it })
     }
 
     @Test
@@ -444,12 +467,27 @@ class RowReadModelLoaderTest {
                     R.string.convex_row_failure_not_configured_title,
                     R.string.convex_row_failure_not_configured_detail,
                 ),
-            ConvexResult.Failed("http 503") to
+            ConvexResult.Failed(ConvexFailure.Transport) to
                 Pair(
                     R.string.convex_row_failure_transport_title,
                     R.string.convex_row_failure_transport_detail,
                 ),
-            ConvexResult.Failed("malformed response envelope") to
+            ConvexResult.Failed(ConvexFailure.Http(503)) to
+                Pair(
+                    R.string.convex_row_failure_http_title,
+                    R.string.convex_row_failure_http_detail,
+                ),
+            ConvexResult.Failed(ConvexFailure.DeploymentMisconfigured) to
+                Pair(
+                    R.string.convex_row_failure_deployment_misconfigured_title,
+                    R.string.convex_row_failure_deployment_misconfigured_detail,
+                ),
+            ConvexResult.Failed(ConvexFailure.ServerRejected()) to
+                Pair(
+                    R.string.convex_row_failure_server_rejected_title,
+                    R.string.convex_row_failure_server_rejected_detail,
+                ),
+            ConvexResult.Failed(ConvexFailure.MalformedResponse) to
                 Pair(
                     R.string.convex_row_failure_malformed_payload_title,
                     R.string.convex_row_failure_malformed_payload_detail,
@@ -464,6 +502,7 @@ class RowReadModelLoaderTest {
 
             assertEquals(expectedResources.first, state.rowReadFailureTitleRes)
             assertEquals(expectedResources.second, state.rowReadFailureDetailRes)
+            assertEquals(R.string.convex_projection_transactions, state.rowReadFailureProjectionRes)
         }
     }
 

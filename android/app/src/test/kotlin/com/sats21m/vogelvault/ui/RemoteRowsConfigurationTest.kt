@@ -22,6 +22,29 @@ import kotlin.test.assertTrue
 @Config(sdk = [35])
 class RemoteRowsConfigurationTest {
     @Test
+    fun `effective source publishes only allowsRemoteRead transitions`() {
+        val effective = MutableConvexConfigSource()
+        assertFalse(effective.allowsRemoteRead.value)
+
+        effective.update(
+            ConvexConfig(
+                deploymentUrl = "https://example.convex.cloud",
+                readToken = "test-token",
+                remoteReadEnabled = true,
+            ),
+        )
+        assertTrue(effective.allowsRemoteRead.value)
+
+        effective.update(
+            ConvexConfig(
+                deploymentUrl = "https://example.convex.cloud",
+                remoteReadEnabled = true,
+            ),
+        )
+        assertFalse(effective.allowsRemoteRead.value)
+    }
+
+    @Test
     fun `remove clears encrypted storage and the process configuration`() {
         val context: Application = RuntimeEnvironment.getApplication()
         val preferences =

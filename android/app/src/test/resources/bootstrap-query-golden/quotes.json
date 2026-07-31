@@ -1,0 +1,29 @@
+{
+  "status": "success",
+  "value": {
+    "quotes": [
+      {
+        "symbol": "BTC",
+        "priceCents": { "$integer": "oC5jAAAAAAA=" },
+        "source": "synthetic-redacted-golden",
+        "fetchedAt": "2026-07-31T12:00:00Z",
+        "status": "live"
+      },
+      {
+        "symbol": "VOO",
+        "priceCents": { "$integer": "cBEBAAAAAAA=" },
+        "source": "synthetic-redacted-golden",
+        "fetchedAt": "2026-07-31T12:00:00Z",
+        "status": "live"
+      },
+      {
+        "symbol": "IBIT",
+        "priceCents": null,
+        "source": "synthetic-redacted-golden",
+        "fetchedAt": null,
+        "status": "unavailable"
+      }
+    ],
+    "complete": true
+  }
+}

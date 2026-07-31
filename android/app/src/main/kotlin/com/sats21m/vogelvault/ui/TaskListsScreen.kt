@@ -167,8 +167,10 @@ private fun ProfileTaskListsScreen(
         onDelete = { todo ->
             writes.delete(
                 todo = todo,
-                onRemoved = { localTodos = localTodos.filterNot { row -> row.id == todo.id } },
-                onRestored = { localTodos = localTodos.replaceTodo(todo) },
+                onRemoved = { removed ->
+                    localTodos = localTodos.filterNot { row -> row.id == removed.id }
+                },
+                onRestored = { restored -> localTodos = localTodos.replaceTodo(restored) },
             )
         },
     )
@@ -194,10 +196,13 @@ private fun ProfileTaskListsScreen(
     editing?.let { todo ->
         TodoEditDialog(
             todo = todo,
+            writeEnabled = credentialStored,
+            busy = todo.id in writes.busyIds,
             onDismiss = { editing = null },
             onSave = { changed ->
                 writes.upsert(changed, todo.updatedAtMs) { accepted ->
                     localTodos = localTodos.replaceTodo(accepted)
+                    editing = null
                 }
             },
         )

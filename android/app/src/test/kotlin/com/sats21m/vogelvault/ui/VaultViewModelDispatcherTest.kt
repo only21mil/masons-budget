@@ -1,6 +1,7 @@
 package com.sats21m.vogelvault.ui
 
 import android.app.Application
+import android.os.Looper
 import androidx.room.Room
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.RowQueryRepository
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -92,6 +94,46 @@ class VaultViewModelDispatcherTest {
             assertTrue(refreshLoad.await(5, TimeUnit.SECONDS), "refresh never started a new row load")
             assertEquals(Destination.BUDGET, model.state.value.destination)
             assertEquals("2026-06", model.state.value.selectedMonth)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun `effective rejection blocks later remote refreshes`() {
+        val loadStarted = CountDownLatch(1)
+        val transactionReads = java.util.concurrent.atomic.AtomicInteger()
+        val remote =
+            proxy<RowQueryRepository> { methodName ->
+                if (methodName == "listTransactions") {
+                    transactionReads.incrementAndGet()
+                    loadStarted.countDown()
+                }
+                ConvexResult.Failed("readiness probe")
+            }
+        val context: Application = RuntimeEnvironment.getApplication()
+        val database =
+            Room
+                .inMemoryDatabaseBuilder(context, VaultDatabase::class.java)
+                .allowMainThreadQueries()
+                .build()
+        try {
+            val effectiveReadReady = MutableStateFlow(true)
+            val model =
+                VaultViewModel(
+                    rowSource = CachedRowDataSource(remote, database.cacheDao()),
+                    effectiveReadReady = effectiveReadReady,
+                )
+            assertTrue(loadStarted.await(5, TimeUnit.SECONDS), "initial row load never started")
+
+            effectiveReadReady.value = false
+            shadowOf(Looper.getMainLooper()).idle()
+            val readsAfterRejection = transactionReads.get()
+
+            model.refreshActiveProfile()
+            shadowOf(Looper.getMainLooper()).idle()
+
+            assertEquals(readsAfterRejection, transactionReads.get())
         } finally {
             database.close()
         }

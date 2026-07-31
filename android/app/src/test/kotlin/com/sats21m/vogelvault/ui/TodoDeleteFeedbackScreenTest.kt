@@ -3,6 +3,9 @@ package com.sats21m.vogelvault.ui
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -60,6 +63,7 @@ class TodoDeleteFeedbackScreenTest {
     private lateinit var activityController: ActivityController<ComponentActivity>
     private lateinit var application: GatedTodoWriteApplication
     private var refreshCount: Int = 0
+    private var displayedTodos by mutableStateOf(listOf<TodoItem>())
 
     /**
      * The screen's undo clock, controlled here rather than read from the host.
@@ -88,6 +92,7 @@ class TodoDeleteFeedbackScreenTest {
         application = RuntimeEnvironment.getApplication() as GatedTodoWriteApplication
         application.poster.reset()
         refreshCount = 0
+        displayedTodos = listOf(todo)
         activityController = Robolectric.buildActivity(ComponentActivity::class.java)
         activityController.get().setTheme(R.style.Theme_VogelVault)
         activityController.setup()
@@ -141,6 +146,24 @@ class TodoDeleteFeedbackScreenTest {
     }
 
     @Test
+    fun `failed delete restores a newer authoritative row received while in flight`() {
+        showToday()
+        deleteTheTodo()
+        val newer = todo.copy(
+            title = "Pay electric bill after rate update",
+            updatedAtMs = todo.updatedAtMs + 1,
+        )
+
+        publishTodos(listOf(newer))
+        assertEquals(0, nodesWithText(newer.title), "the optimistic tombstone leaked the refreshed row")
+        application.poster.answer(HttpTextResponse(500, ""))
+        settle()
+
+        assertEquals(1, nodesWithText(newer.title), "rollback ignored the authoritative refreshed row")
+        assertEquals(0, nodesWithText(todo.title), "rollback resurrected the captured pre-delete row")
+    }
+
+    @Test
     fun `a slow successful delete starts a full undo window at acceptance`() {
         showToday()
         deleteTheTodo()
@@ -186,6 +209,18 @@ class TodoDeleteFeedbackScreenTest {
         settle()
         assertEquals(2, refreshCount)
         assertEquals(1, nodesWithText(todo.title))
+
+        screenNowMillis += TODO_UNDO_WINDOW_MILLIS + 1
+        compose.mainClock.advanceTimeBy(TODO_UNDO_WINDOW_MILLIS + 1)
+        settle()
+        compose.onNodeWithContentDescription(
+            application.getString(R.string.todo_mark_complete_named, todo.title),
+        ).performScrollTo().performClick()
+        settle()
+        assertTrue(
+            checkNotNull(application.poster.lastBody).contains("\"baseUpdatedAtMs\":1800000000001"),
+            "the restored row discarded the server receipt revision",
+        )
     }
 
     private fun deleteTheTodo() {
@@ -213,15 +248,15 @@ class TodoDeleteFeedbackScreenTest {
 
     private fun showToday() {
         val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
-        val state = VaultUiState(
-            activeProfile = FamilyMember.VICTOR,
-            destination = Destination.TODAY,
-            data = base.copy(
-                todos = base.todos.copy(status = Freshness.LIVE, value = listOf(todo)),
-            ),
-        )
         compose.runOnUiThread {
             activityController.get().setContent {
+                val state = VaultUiState(
+                    activeProfile = FamilyMember.VICTOR,
+                    destination = Destination.TODAY,
+                    data = base.copy(
+                        todos = base.todos.copy(status = Freshness.LIVE, value = displayedTodos),
+                    ),
+                )
                 VogelVaultTheme {
                     TodoScreen(
                         state = state,
@@ -233,6 +268,11 @@ class TodoDeleteFeedbackScreenTest {
         }
         settle()
         assertEquals(1, nodesWithText(todo.title), "the todo under test never rendered")
+    }
+
+    private fun publishTodos(todos: List<TodoItem>) {
+        compose.runOnUiThread { displayedTodos = todos }
+        settle()
     }
 
     private fun settle() {
@@ -255,8 +295,13 @@ class GatedPoster : HttpPoster {
     var requestCount: Int = 0
         private set
 
+    @Volatile
+    var lastBody: String? = null
+        private set
+
     override suspend fun postJson(url: String, body: String): HttpTextResponse {
         requestCount += 1
+        lastBody = body
         return answers.receive()
     }
 
@@ -266,6 +311,7 @@ class GatedPoster : HttpPoster {
 
     fun reset() {
         requestCount = 0
+        lastBody = null
         while (answers.tryReceive().isSuccess) {
             // Clear any unconsumed answer if Robolectric reuses this application.
         }

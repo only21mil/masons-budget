@@ -24,6 +24,7 @@ const modules: Record<string, () => Promise<unknown>> = {
   "./deviceAuth.ts": () => import("./deviceAuth"),
   "./marketQuoteAcquire.ts": () => import("./marketQuoteAcquire"),
   "./marketQuotes.ts": () => import("./marketQuotes"),
+  "./readCanary.ts": () => import("./readCanary"),
   "./tables.ts": () => import("./tables"),
   "./todoNormalize.ts": () => import("./todoNormalize"),
 };

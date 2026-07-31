@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.sats21m.vogelvault.initialConvexConfig
 import com.sats21m.vogelvault.recoverRejectedStoredConvexConfig
+import com.sats21m.vogelvault.resetStoredConvexBootstrap
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -65,6 +66,155 @@ class SecureConvexConfigSourceTest {
             assertNotEquals(token, value)
             assertNotEquals("https://example.convex.cloud", value)
         }
+    }
+
+    @Test
+    fun `combined bootstrap commit survives reconstructed source restart`() {
+        val readToken = "vv-read-${UUID.randomUUID()}"
+        val readConfig =
+            ConvexConfig(
+                deploymentUrl = "https://example.convex.cloud",
+                readToken = readToken,
+                remoteReadEnabled = true,
+            )
+        val device = ConvexDeviceCredential("android-device", "d".repeat(43))
+
+        val committed = source.commitBootstrap(readConfig, device)
+        val restarted = reconstructedSource()
+        val restored = restarted.currentBootstrap()
+
+        assertEquals(readToken, committed.readConfig.readTokenOrNull())
+        assertEquals(device, committed.deviceCredential)
+        assertEquals(readToken, restored.readConfig.readTokenOrNull())
+        assertEquals(ReadReadiness.READY, restored.readConfig.readiness)
+        assertEquals(device, restored.deviceCredential)
+        assertFalse(committed.toString().contains(readToken))
+        assertFalse(committed.toString().contains(device.deviceToken))
+    }
+
+    @Test
+    fun `read-only bootstrap preserves an existing valid device credential across restart`() {
+        val existingDevice = ConvexDeviceCredential("existing-device", "e".repeat(43))
+        source.updateDeviceCredential(existingDevice)
+        val nextRead =
+            ConvexConfig(
+                deploymentUrl = "https://example.convex.cloud",
+                readToken = "vv-read-${UUID.randomUUID()}",
+                remoteReadEnabled = true,
+            )
+
+        val committed = source.commitBootstrap(nextRead)
+        val restored = reconstructedSource().currentBootstrap()
+
+        assertEquals(existingDevice, committed.deviceCredential)
+        assertEquals(existingDevice, restored.deviceCredential)
+        assertEquals(nextRead.readTokenOrNull(), restored.readConfig.readTokenOrNull())
+        assertEquals(ReadReadiness.READY, restored.readConfig.readiness)
+    }
+
+    @Test
+    fun `reconstructed source keeps read and device credentials independently removable`() {
+        val readToken = "vv-read-${UUID.randomUUID()}"
+        val readConfig =
+            ConvexConfig(
+                deploymentUrl = "https://example.convex.cloud",
+                readToken = readToken,
+                remoteReadEnabled = true,
+            )
+        val device = ConvexDeviceCredential("android-device", "d".repeat(43))
+        source.commitBootstrap(readConfig, device)
+
+        source.clearDeviceCredential()
+        var restored = reconstructedSource().currentBootstrap()
+        assertEquals(readToken, restored.readConfig.readTokenOrNull())
+        assertNull(restored.deviceCredential)
+
+        source.updateDeviceCredential(device)
+        source.clear()
+        restored = reconstructedSource().currentBootstrap()
+        assertEquals(ReadReadiness.DISABLED, restored.readConfig.readiness)
+        assertEquals(device, restored.deviceCredential)
+    }
+
+    @Test
+    fun `bootstrap reset clears read and device credentials and empty reset succeeds`() {
+        val readConfig =
+            ConvexConfig(
+                deploymentUrl = "https://example.convex.cloud",
+                readToken = "vv-read-${UUID.randomUUID()}",
+                remoteReadEnabled = true,
+            )
+        val device = ConvexDeviceCredential("android-device", "d".repeat(43))
+        val effective = MutableConvexConfigSource(readConfig)
+        source.commitBootstrap(readConfig, device)
+
+        assertTrue(resetStoredConvexBootstrap(source, effective))
+
+        val restored = reconstructedSource().currentBootstrap()
+        assertEquals(ReadReadiness.DISABLED, restored.readConfig.readiness)
+        assertNull(restored.deviceCredential)
+        assertEquals(ReadReadiness.DISABLED, effective.current().readiness)
+        assertTrue(resetStoredConvexBootstrap(source, effective))
+    }
+
+    @Test
+    fun `partial combined storage fails closed after restart`() {
+        source.commitBootstrap(
+            readConfig =
+                ConvexConfig(
+                    deploymentUrl = "https://example.convex.cloud",
+                    readToken = "vv-read-${UUID.randomUUID()}",
+                    remoteReadEnabled = true,
+                ),
+            deviceCredential = ConvexDeviceCredential("android-device", "d".repeat(43)),
+        )
+        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+            .edit()
+            .remove("read_token")
+            .remove("device_token")
+            .commit()
+
+        val restored = reconstructedSource().currentBootstrap()
+
+        assertFalse(restored.readConfig.allowsRemoteRead)
+        assertNull(restored.deviceCredential)
+    }
+
+    @Test
+    fun `failed combined commit activates neither new read nor new device state`() {
+        val oldRead =
+            ConvexConfig(
+                deploymentUrl = "https://example.convex.cloud",
+                readToken = "vv-old-${UUID.randomUUID()}",
+                remoteReadEnabled = true,
+            )
+        val oldDevice = ConvexDeviceCredential("old-device", "o".repeat(43))
+        source.commitBootstrap(oldRead, oldDevice)
+        val failingSource =
+            SecureConvexConfigSource(
+                preferences =
+                    ClearCommitFailingPreferences(
+                        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE),
+                    ),
+                cipher = TestConfigCipher,
+            )
+
+        assertFailsWith<IOException> {
+            failingSource.commitBootstrap(
+                readConfig =
+                    ConvexConfig(
+                        deploymentUrl = "https://new.example.convex.cloud",
+                        readToken = "vv-new-${UUID.randomUUID()}",
+                        remoteReadEnabled = true,
+                    ),
+                deviceCredential = ConvexDeviceCredential("new-device", "n".repeat(43)),
+            )
+        }
+
+        val restored = reconstructedSource().currentBootstrap()
+        assertEquals(oldRead.readTokenOrNull(), restored.readConfig.readTokenOrNull())
+        assertEquals(oldRead.deploymentUrl, restored.readConfig.deploymentUrl)
+        assertEquals(oldDevice, restored.deviceCredential)
     }
 
     @Test
@@ -431,6 +581,12 @@ class SecureConvexConfigSourceTest {
         assertNull(SecureConvexSyncTokenSource(writeSource).currentSyncToken())
         assertFalse(writeSource.hasSyncToken())
     }
+
+    private fun reconstructedSource(): SecureConvexConfigSource =
+        SecureConvexConfigSource(
+            preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE),
+            cipher = TestConfigCipher,
+        )
 }
 
 private class ClearCommitFailingPreferences(

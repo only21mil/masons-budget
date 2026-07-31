@@ -6,11 +6,13 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URI
 import java.nio.charset.StandardCharsets
+import java.security.SecureRandom
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -136,9 +138,37 @@ internal class ProductionReadBootstrapPoster : ReadBootstrapPoster {
     }
 }
 
-/** Holds a credential only long enough for the repository to persist it. */
-internal class BootstrapCredential(val readToken: String) {
+/** Holds credentials only long enough for the repository to persist them. */
+internal class BootstrapCredential(
+    val readToken: String,
+    val deviceCredential: ConvexDeviceCredential? = null,
+) {
     override fun toString(): String = "BootstrapCredential(redacted)"
+}
+
+internal fun interface ReadBootstrapDeviceCredentialGenerator {
+    fun generate(): ConvexDeviceCredential
+}
+
+/** Generates both components locally; neither component is derived from a read or sync token. */
+private object SecureReadBootstrapDeviceCredentialGenerator : ReadBootstrapDeviceCredentialGenerator {
+    private val random = SecureRandom()
+
+    override fun generate(): ConvexDeviceCredential =
+        ConvexDeviceCredential(
+            deviceId = randomBase64Url(READ_BOOTSTRAP_DEVICE_ID_BYTES),
+            deviceToken = randomBase64Url(READ_BOOTSTRAP_DEVICE_TOKEN_BYTES),
+        )
+
+    private fun randomBase64Url(byteCount: Int): String =
+        ByteArray(byteCount)
+            .also(random::nextBytes)
+            .let {
+                Base64.encodeToString(
+                    it,
+                    Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING,
+                )
+            }
 }
 
 internal sealed interface BootstrapClientResult {
@@ -152,17 +182,39 @@ internal sealed interface BootstrapClientResult {
 /** Dedicated client: it never creates a [ConvexValue] or retains raw response JSON. */
 internal class ConvexReadBootstrapClient(
     private val poster: ReadBootstrapPoster = ProductionReadBootstrapPoster(),
+    private val credentialGenerator: ReadBootstrapDeviceCredentialGenerator =
+        SecureReadBootstrapDeviceCredentialGenerator,
 ) {
-    suspend fun claim(claim: ReadBootstrapClaim): BootstrapClientResult {
+    suspend fun claim(
+        claim: ReadBootstrapClaim,
+        requestTodoWrite: Boolean = false,
+    ): BootstrapClientResult {
+        val requestedDeviceCredential = if (requestTodoWrite) {
+            val generated = try {
+                credentialGenerator.generate()
+            } catch (_: Exception) {
+                return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_BUNDLE)
+            }
+            if (!isCanonicalGeneratedCredential(generated)) {
+                return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_BUNDLE)
+            }
+            generated
+        } else {
+            null
+        }
+        val args = linkedMapOf<String, JsonElement>(
+            "pairId" to JsonPrimitive(claim.pairId),
+            "proof" to JsonPrimitive(claim.proof),
+        ).apply {
+            requestedDeviceCredential?.let { credential ->
+                put("deviceId", JsonPrimitive(credential.deviceId))
+                put("deviceToken", JsonPrimitive(credential.deviceToken))
+            }
+        }
         val body = JsonObject(
             linkedMapOf(
                 "path" to JsonPrimitive(BOOTSTRAP_PATH),
-                "args" to JsonObject(
-                    linkedMapOf(
-                        "pairId" to JsonPrimitive(claim.pairId),
-                        "proof" to JsonPrimitive(claim.proof),
-                    ),
-                ),
+                "args" to JsonObject(args),
                 "format" to JsonPrimitive(CONVEX_RESPONSE_FORMAT),
             ),
         ).let { JSON.encodeToString(JsonElement.serializer(), it) }
@@ -191,19 +243,27 @@ internal class ConvexReadBootstrapClient(
         } ?: return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
 
         return when ((envelope["status"] as? JsonPrimitive)?.contentOrNull) {
-            "success" -> parseSuccess(envelope)
+            "success" -> parseSuccess(envelope, requestedDeviceCredential)
             "error" -> BootstrapClientResult.Failure(parseError(envelope))
             else -> BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
         }
     }
 
-    private fun parseSuccess(envelope: JsonObject): BootstrapClientResult {
+    private fun parseSuccess(
+        envelope: JsonObject,
+        requestedDeviceCredential: ConvexDeviceCredential?,
+    ): BootstrapClientResult {
         if (envelope.keys != setOf("status", "value")) {
             return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
         }
         val value = envelope["value"] as? JsonObject
             ?: return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
-        if (value.keys != setOf("ok", "readToken", "pairedAt")) {
+        val expectedKeys = if (requestedDeviceCredential == null) {
+            setOf("ok", "readToken", "pairedAt", "capabilities")
+        } else {
+            setOf("ok", "readToken", "pairedAt", "deviceId", "capabilities")
+        }
+        if (value.keys != expectedKeys) {
             return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
         }
         val ok = value["ok"] as? JsonPrimitive
@@ -220,7 +280,32 @@ internal class ConvexReadBootstrapClient(
         if (pairedAt == null || !pairedAt.isFinite() || pairedAt < 0.0) {
             return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
         }
-        return BootstrapClientResult.Success(BootstrapCredential(token))
+        val capabilities = (value["capabilities"] as? JsonArray)
+            ?.map { capability ->
+                (capability as? JsonPrimitive)
+                    ?.takeIf(JsonPrimitive::isString)
+                    ?.contentOrNull
+                    ?: return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
+            }
+            ?: return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
+        if (requestedDeviceCredential == null) {
+            if (capabilities.isNotEmpty()) {
+                return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
+            }
+        } else {
+            val returnedDeviceId = (value["deviceId"] as? JsonPrimitive)
+                ?.takeIf(JsonPrimitive::isString)
+                ?.contentOrNull
+            if (
+                returnedDeviceId != requestedDeviceCredential.deviceId ||
+                capabilities != listOf(TODO_WRITE_CAPABILITY)
+            ) {
+                return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
+            }
+        }
+        return BootstrapClientResult.Success(
+            BootstrapCredential(token, requestedDeviceCredential),
+        )
     }
 
     private fun parseError(envelope: JsonObject): ReadBootstrapStatus {
@@ -259,26 +344,50 @@ internal class ConvexReadBootstrapClient(
     private companion object {
         const val BOOTSTRAP_PATH = "dataFiles:claimAndroidReadBootstrap"
         const val CONVEX_RESPONSE_FORMAT = "convex_encoded_json"
+        const val TODO_WRITE_CAPABILITY = "todos:write"
         const val MAX_ERROR_DATA_BYTES = 4_096
         val JSON = Json { isLenient = false; allowSpecialFloatingPointValues = false }
 
         fun isBoundedReadToken(value: String): Boolean =
             value.length in 32..512 && value.all { it.code in 0x21..0x7e }
+
+        fun isCanonicalGeneratedCredential(credential: ConvexDeviceCredential): Boolean =
+            isCanonicalBase64Url(credential.deviceId, READ_BOOTSTRAP_DEVICE_ID_BYTES) &&
+                isCanonicalBase64Url(
+                    credential.deviceToken,
+                    READ_BOOTSTRAP_DEVICE_TOKEN_BYTES,
+                )
+
+        fun isCanonicalBase64Url(value: String, expectedBytes: Int): Boolean {
+            val decoded = try {
+                Base64.decode(value, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+            } catch (_: IllegalArgumentException) {
+                return false
+            }
+            if (decoded.size != expectedBytes) return false
+            return Base64.encodeToString(
+                decoded,
+                Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING,
+            ) == value
+        }
     }
 }
 
 /** Owns the only transition from a response credential into durable app configuration. */
 internal class ConvexReadBootstrapRepository(
-    private val stored: SecureConvexConfigSource,
+    private val stored: ConvexBootstrapCredentialStore,
     private val effective: MutableConvexConfigSource,
     private val client: ConvexReadBootstrapClient = ConvexReadBootstrapClient(),
     private val storageLock: Any = Any(),
 ) {
-    suspend fun connect(bundledPair: String): ReadBootstrapStatus {
+    suspend fun connect(
+        bundledPair: String,
+        requestTodoWrite: Boolean = false,
+    ): ReadBootstrapStatus {
         if (bundledPair.isEmpty()) return ReadBootstrapStatus.UNAVAILABLE
         val claim = ReadBootstrapClaim.parse(bundledPair)
             ?: return ReadBootstrapStatus.INVALID_BUNDLE
-        return when (val result = client.claim(claim)) {
+        return when (val result = client.claim(claim, requestTodoWrite)) {
             is BootstrapClientResult.Failure -> result.status
             is BootstrapClientResult.Success -> persist(result.credential)
         }
@@ -292,12 +401,17 @@ internal class ConvexReadBootstrapRepository(
         )
         return synchronized(storageLock) {
             try {
-                // SecureConvexConfigSource.update writes the complete read config with
-                // one synchronous SharedPreferences commit. Sync/device fields are untouched.
-                stored.update(next)
-                val durable = stored.current()
-                if (!durable.hasSameReadCredential(next)) return@synchronized ReadBootstrapStatus.STORAGE_ERROR
-                effective.update(durable)
+                val durable = stored.commitBootstrap(next, credential.deviceCredential)
+                if (!durable.readConfig.hasSameReadCredential(next)) {
+                    return@synchronized ReadBootstrapStatus.STORAGE_ERROR
+                }
+                if (
+                    credential.deviceCredential != null &&
+                    durable.deviceCredential != credential.deviceCredential
+                ) {
+                    return@synchronized ReadBootstrapStatus.STORAGE_ERROR
+                }
+                effective.update(durable.readConfig)
                 ReadBootstrapStatus.CONNECTED
             } catch (_: Exception) {
                 ReadBootstrapStatus.STORAGE_ERROR
@@ -312,3 +426,5 @@ private fun ConvexConfig.hasSameReadCredential(other: ConvexConfig): Boolean =
         remoteReadEnabled == other.remoteReadEnabled
 
 private const val PRODUCTION_DEPLOYMENT = "https://keen-elephant-452.convex.cloud"
+private const val READ_BOOTSTRAP_DEVICE_ID_BYTES = 16
+private const val READ_BOOTSTRAP_DEVICE_TOKEN_BYTES = 32

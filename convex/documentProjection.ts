@@ -543,7 +543,10 @@ function projectFinanceAccount(
     weeklyContributionDay: optionalText(
       raw.weeklyContributionDay ?? raw.weekly_contribution_day,
     ),
-    holdings: asRecordArray(raw.holdings).map((holding, holdingIndex) => ({
+    holdings: optionalRecordArray(
+      raw.holdings,
+      `finances.${key}.holdings`,
+    ).map((holding, holdingIndex) => ({
       name: text(holding.name),
       category: text(holding.category ?? "Uncategorized"),
       ticker: optionalText(holding.ticker),
@@ -578,7 +581,10 @@ function projectFinanceAccount(
       ),
       isProxy: Boolean(holding.proxy),
       proxyNote: optionalText(holding.proxyNote ?? holding.proxy_note),
-      lots: asRecordArray(holding.lots).map((lot, lotIndex) => ({
+      lots: optionalRecordArray(
+        holding.lots,
+        `finances.${key}.holdings[${holdingIndex}].lots`,
+      ).map((lot, lotIndex) => ({
         date: text(lot.date),
         type: text(lot.type),
         pricePerShareCents: parseMinorUnits(
@@ -740,6 +746,19 @@ function asRecordArray(value: unknown): Record<string, unknown>[] {
   if (!Array.isArray(value)) return [];
   return value.map((entry, index) =>
     requireRecord(entry, `array entry ${index}`),
+  );
+}
+
+function optionalRecordArray(
+  value: unknown,
+  context: string,
+): Record<string, unknown>[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new TypeError(`${context} must be a JSON array`);
+  }
+  return value.map((entry, index) =>
+    requireRecord(entry, `${context}[${index}]`),
   );
 }
 
