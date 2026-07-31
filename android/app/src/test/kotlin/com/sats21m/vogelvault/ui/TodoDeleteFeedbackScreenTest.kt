@@ -192,7 +192,9 @@ class TodoDeleteFeedbackScreenTest {
 
     private fun deleteTheTodo() {
         compose
-            .onNodeWithContentDescription(application.getString(R.string.todo_delete))
+            .onNodeWithContentDescription(
+                application.getString(R.string.todo_delete_named, todo.title),
+            )
             .performScrollTo()
             .performClick()
         settle()
