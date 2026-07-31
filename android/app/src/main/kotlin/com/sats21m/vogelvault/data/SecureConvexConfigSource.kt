@@ -15,6 +15,30 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
+/** Atomic persistence boundary used by one-time bootstrap enrollment. */
+internal interface ConvexBootstrapCredentialStore {
+    /**
+     * Atomically replaces read configuration and, when supplied, the paired-device credential.
+     *
+     * A null [deviceCredential] is a read-only enrollment: an existing valid device credential
+     * is preserved. The returned value is a durable readback, not the caller's input.
+     */
+    fun commitBootstrap(
+        readConfig: ConvexConfig,
+        deviceCredential: ConvexDeviceCredential? = null,
+    ): StoredConvexBootstrap
+}
+
+/** Durable bootstrap state with a deliberately redacted string representation. */
+internal class StoredConvexBootstrap(
+    val readConfig: ConvexConfig,
+    val deviceCredential: ConvexDeviceCredential?,
+) {
+    override fun toString(): String =
+        "StoredConvexBootstrap(read=${readConfig.readiness}, " +
+            "deviceCredential=${if (deviceCredential == null) "absent" else "present"})"
+}
+
 /**
  * Durable Convex configuration encrypted with an AndroidKeyStore AES/GCM key.
  *
@@ -23,10 +47,11 @@ import javax.crypto.spec.GCMParameterSpec
  * additional authenticated data, so ciphertext cannot be swapped between fields.
  * Any missing/corrupt/invalidated value fails closed to disabled configuration.
  */
-class SecureConvexConfigSource internal constructor(
+internal class SecureConvexConfigSource internal constructor(
     private val preferences: SharedPreferences,
     private val cipher: ConfigCipher,
-) : ConvexConfigSource {
+) : ConvexConfigSource,
+    ConvexBootstrapCredentialStore {
     constructor(context: Context) : this(
         preferences =
             context.applicationContext.getSharedPreferences(
@@ -40,21 +65,7 @@ class SecureConvexConfigSource internal constructor(
 
     override fun current(): ConvexConfig =
         synchronized(lock) {
-            if (!preferences.contains(KEY_REMOTE_READ_ENABLED)) return@synchronized ConvexConfig()
-
-            runCatching {
-                ConvexConfig(
-                    deploymentUrl = read(KEY_DEPLOYMENT_URL),
-                    readToken = read(KEY_READ_TOKEN),
-                    remoteReadEnabled =
-                        read(KEY_REMOTE_READ_ENABLED)?.toBooleanStrictOrNull()
-                            ?: throw GeneralSecurityException("invalid encrypted boolean"),
-                )
-            }.getOrElse {
-                // Keystore invalidation, tampering and partial writes all have the same
-                // safe answer: remote reads remain off and no secret is exposed.
-                ConvexConfig()
-            }
+            readConfigLocked()
         }
 
     /** Encrypt and atomically persist a complete configuration replacement. */
@@ -65,6 +76,41 @@ class SecureConvexConfigSource internal constructor(
             putOrRemove(editor, KEY_READ_TOKEN, next.readTokenOrNull())
             putOrRemove(editor, KEY_REMOTE_READ_ENABLED, next.remoteReadEnabled.toString())
             if (!editor.commit()) throw IOException("encrypted Convex configuration was not persisted")
+        }
+
+    override fun commitBootstrap(
+        readConfig: ConvexConfig,
+        deviceCredential: ConvexDeviceCredential?,
+    ): StoredConvexBootstrap =
+        synchronized(lock) {
+            val preservedDeviceCredential = deviceCredential ?: readDeviceCredentialLocked()
+            val editor = preferences.edit()
+            putOrRemove(editor, KEY_DEPLOYMENT_URL, readConfig.deploymentUrl)
+            putOrRemove(editor, KEY_READ_TOKEN, readConfig.readTokenOrNull())
+            putOrRemove(editor, KEY_REMOTE_READ_ENABLED, readConfig.remoteReadEnabled.toString())
+            if (deviceCredential != null) {
+                putOrRemove(editor, KEY_DEVICE_ID, deviceCredential.deviceId)
+                putOrRemove(editor, KEY_DEVICE_TOKEN, deviceCredential.deviceToken)
+            } else if (preservedDeviceCredential == null) {
+                // Do not carry a partial or unauthenticated old pair into a new enrollment.
+                editor.remove(KEY_DEVICE_ID)
+                editor.remove(KEY_DEVICE_TOKEN)
+            }
+            if (!editor.commit()) throw IOException("encrypted Convex bootstrap was not persisted")
+
+            val durable = readBootstrapLocked()
+            if (
+                !durable.readConfig.hasSameCredentialAs(readConfig) ||
+                durable.deviceCredential != preservedDeviceCredential
+            ) {
+                throw IOException("encrypted Convex bootstrap failed durable readback")
+            }
+            durable
+        }
+
+    internal fun currentBootstrap(): StoredConvexBootstrap =
+        synchronized(lock) {
+            readBootstrapLocked()
         }
 
     /**
@@ -140,6 +186,30 @@ class SecureConvexConfigSource internal constructor(
         }
 
     private fun read(key: String): String? = preferences.getString(key, null)?.let { cipher.decrypt(key, it) }
+
+    private fun readConfigLocked(): ConvexConfig {
+        if (!preferences.contains(KEY_REMOTE_READ_ENABLED)) return ConvexConfig()
+
+        return runCatching {
+            ConvexConfig(
+                deploymentUrl = read(KEY_DEPLOYMENT_URL),
+                readToken = read(KEY_READ_TOKEN),
+                remoteReadEnabled =
+                    read(KEY_REMOTE_READ_ENABLED)?.toBooleanStrictOrNull()
+                        ?: throw GeneralSecurityException("invalid encrypted boolean"),
+            )
+        }.getOrElse {
+            // Keystore invalidation, tampering and partial writes all have the same
+            // safe answer: remote reads remain off and no secret is exposed.
+            ConvexConfig()
+        }
+    }
+
+    private fun readBootstrapLocked(): StoredConvexBootstrap =
+        StoredConvexBootstrap(
+            readConfig = readConfigLocked(),
+            deviceCredential = readDeviceCredentialLocked(),
+        )
 
     internal fun currentSyncToken(): String? =
         synchronized(lock) {
