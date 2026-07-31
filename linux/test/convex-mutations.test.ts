@@ -97,6 +97,64 @@ describe("paired-device main controller", () => {
     )).toBeNull()
   })
 
+  it("enables pairing for an unpaired device with the local switch and an approved origin", async () => {
+    const controller = createPairedDeviceController({
+      store: store(null),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: vi.fn(),
+    })
+
+    await expect(controller.status()).resolves.toEqual({
+      status: "unpaired",
+      writesEnabled: true,
+    })
+  })
+
+  it("keeps pairing disabled for an unpaired device when the local switch is off", async () => {
+    const controller = createPairedDeviceController({
+      store: store(null),
+      writesEnabled: () => false,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: vi.fn(),
+    })
+
+    await expect(controller.status()).resolves.toEqual({
+      status: "unpaired",
+      writesEnabled: false,
+    })
+  })
+
+  it("keeps pairing disabled for an unpaired device without an approved origin", async () => {
+    const controller = createPairedDeviceController({
+      store: store(null),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => null,
+      post: vi.fn(),
+    })
+
+    await expect(controller.status()).resolves.toEqual({
+      status: "unpaired",
+      writesEnabled: false,
+    })
+  })
+
+  it("disables paired-device grants when the stored origin no longer matches", async () => {
+    const controller = createPairedDeviceController({
+      store: store(),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => "https://replacement.convex.cloud",
+      post: vi.fn(),
+    })
+
+    await expect(controller.status()).resolves.toEqual({
+      status: "paired",
+      pairedAt: snapshot.pairedAt,
+      capabilities: [],
+      writesEnabled: false,
+    })
+  })
+
   it("validates closed requests, including atomic budget-category renames", () => {
     expect(validateMutationRequest({
       kind: "budgetCategory.upsert",
