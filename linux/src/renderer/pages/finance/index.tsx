@@ -57,6 +57,7 @@ import {
 } from "../../data/btcFiatValuation.ts"
 import {
   type FinanceReadSlice,
+  type LinuxFinanceReadModel,
   selectFinanceNetWorth,
 } from "../../data/financeReadModel.ts"
 import {
@@ -103,16 +104,20 @@ function quoteTone(quote: MarketQuote): "positive" | "warning" | "neutral" {
   return "neutral"
 }
 
-function quotePrice(quote: MarketQuote): string {
-  return quote.priceCents === null ? PRICE_UNAVAILABLE : formatUsd(quote.priceCents)
-}
-
 function quoteDetail(quote: MarketQuote): string {
   if (quote.status === "unavailable") return `${quote.source} · price unavailable`
   return `${quote.source} · ${quote.fetchedAt ?? "timestamp unavailable"}`
 }
 
-function QuoteSnapshot({ quotes }: { quotes: FinanceReadSlice<{ readonly quotes: readonly MarketQuote[] }> }) {
+function QuoteSnapshot({
+  quotes,
+  displayUnit,
+  btcPriceCents,
+}: {
+  quotes: FinanceReadSlice<{ readonly quotes: readonly MarketQuote[] }>
+  displayUnit: DisplayUnit
+  btcPriceCents: bigint | null
+}) {
   if (quotes.status !== "live") {
     return (
       <StateBlock
@@ -126,7 +131,18 @@ function QuoteSnapshot({ quotes }: { quotes: FinanceReadSlice<{ readonly quotes:
     <DataTable
       columns={[
         { key: "symbol", header: "Symbol", render: (quote) => <strong>{quote.symbol}</strong> },
-        { key: "price", header: "Price", numeric: true, render: quotePrice },
+        {
+          key: "price",
+          header: `Price (${displayUnit === "sats" ? "SATS" : displayUnit.toUpperCase()})`,
+          numeric: true,
+          render: (quote) => quote.priceCents === null
+            ? PRICE_UNAVAILABLE
+            : formatDisplayAmount(
+                { usdCents: quote.priceCents },
+                displayUnit,
+                btcPriceCents,
+              ),
+        },
         {
           key: "status",
           header: "Status",
@@ -160,6 +176,16 @@ function formatNetWorth(selection: NetWorthSelection, unit: DisplayUnit): string
   return selection.totalValueSats === null
     ? PRICE_UNAVAILABLE
     : formatBitcoin(selection.totalValueSats, unit)
+}
+
+function operationalBtcQuote(model: LinuxFinanceReadModel): MarketQuote | null {
+  return model.marketQuotes.status === "live"
+    ? availableBtcQuote(model.marketQuotes.value.quotes)
+    : null
+}
+
+function operationalBtcPrice(model: LinuxFinanceReadModel): bigint | null {
+  return operationalBtcQuote(model)?.priceCents ?? null
 }
 
 /**
@@ -204,7 +230,7 @@ function BitcoinQuoteNotice({ available }: { available: boolean }) {
     <StatusBanner
       tone="warning"
       title={PRICE_UNAVAILABLE}
-      detail="No live or stale canonical BTC quote is available. Native USD and satoshi values remain exact."
+      detail="No live or explicitly stale operational BTC market quote is available. Native USD and satoshi values remain exact."
     />
   )
 }
@@ -212,23 +238,33 @@ function BitcoinQuoteNotice({ available }: { available: boolean }) {
 function BitcoinSnapshotNotice({
   status,
   document,
+  quote,
 }: {
   status: Freshness
   document: BTCSnapshot | null
+  quote: MarketQuote | null
 }) {
-  const available =
+  const snapshotAvailable =
     status !== "error" &&
     status !== "loading" &&
     status !== "empty" &&
     document !== null &&
     fiatValuationOf(document.totals) !== null
 
-  return available ? (
+  if (snapshotAvailable) return (
     <StatusBanner
       title="USD snapshot"
       detail={`Uses the canonical BTC balance document from ${document.asOf}. This is not a live price.`}
     />
-  ) : (
+  )
+  if (document !== null && quote !== null) return (
+    <StatusBanner
+      tone={quote.status === "stale" ? "warning" : "info"}
+      title={`${quote.status === "stale" ? "Stale" : "Live"} BTC market conversion`}
+      detail={quoteDetail(quote)}
+    />
+  )
+  return (
     <StatusBanner
       tone="warning"
       title={PRICE_UNAVAILABLE}
@@ -245,10 +281,9 @@ function formatSnapshotBitcoin(
   sats: bigint,
   fiatCents: bigint | null,
   unit: DisplayUnit,
+  btcPriceCents: bigint | null,
 ): string {
-  return unit === "usd"
-    ? fiatCents === null ? PRICE_UNAVAILABLE : formatUsd(fiatCents)
-    : formatBitcoin(sats, unit)
+  return formatDisplayAmount({ sats, usdCents: fiatCents }, unit, btcPriceCents)
 }
 
 function incomeOf(transaction: Transaction): bigint {
@@ -671,12 +706,13 @@ function StaleNotice({ status }: { status: string }) {
 // ── Dashboard ───────────────────────────────────────────────────────────────
 
 function DashboardPage() {
-  const { activeProfile, data, displayUnit, selectedMonth } = useAppState()
+  const { activeProfile, data, displayUnit, financeModel, selectedMonth } = useAppState()
   const visibleTransactions = visibleTo(activeProfile, data.transactions.value)
   const budgetTransactions = budgetTransactionsFor(activeProfile, data.transactions.value)
   const accounts = data.btcBalanceDocument.value?.accounts ?? []
   const todos = visibleTo(activeProfile, data.todos.value).filter((todo) => !todo.done)
-  const btcPriceCents = availableBtcQuote(data.btcBalanceDocument.status, data.btcPriceUsd)
+  const btcQuote = operationalBtcQuote(financeModel)
+  const btcPriceCents = btcQuote?.priceCents ?? null
 
   // The headline follows budget scope: adults share only adult-owned rows while
   // retaining child rows in Recent activity for oversight. Children remain
@@ -717,7 +753,7 @@ function DashboardPage() {
       label: "Stack",
       value: requiredFigure(
         btcStatus,
-        () => formatSnapshotBitcoin(stackSats, stackValue, displayUnit),
+        () => formatSnapshotBitcoin(stackSats, stackValue, displayUnit, btcPriceCents),
       ),
       tone: "accent",
       hint: requiredFigure(
@@ -732,14 +768,17 @@ function DashboardPage() {
     <>
       <PageHeader
         title="Dashboard"
+        showDisplayUnit
         subtitle={`${isAdult(activeProfile) ? "Household command center" : `${displayName(activeProfile)}'s money`} · ${monthLabel(month)}`}
         actions={<FreshnessTag status={data.transactions.status} updatedAt={data.transactions.updatedAt} />}
       />
       <StaleNotice status={data.transactions.status} />
+      <BitcoinQuoteNotice available={displayUnit === "usd" || btcPriceCents !== null} />
       {displayUnit === "usd" ? (
         <BitcoinSnapshotNotice
           status={data.btcBalanceDocument.status}
           document={data.btcBalanceDocument.value}
+          quote={btcQuote}
         />
       ) : null}
       <KPIStrip items={kpis} />
@@ -754,7 +793,7 @@ function DashboardPage() {
         </Panel>
         <Panel title="Bitcoin" source={data.btcBalanceDocument.source} flush>
           <DataTable
-            columns={stackColumns(displayUnit)}
+            columns={stackColumns(displayUnit, btcPriceCents)}
             rows={accounts}
             rowKey={(row) => row.key}
             state={tableState(data.btcBalanceDocument.status)}
@@ -797,6 +836,7 @@ function transactionColumns(
 
 function stackColumns(
   displayUnit: DisplayUnit,
+  btcPriceCents: bigint | null,
 ): ReadonlyArray<Column<BTCAccount>> {
   return [
     { key: "label", header: "Account", render: (row) => row.label },
@@ -814,7 +854,12 @@ function stackColumns(
       key: "amount",
       header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),
       numeric: true,
-      render: (row) => formatSnapshotBitcoin(row.sats, fiatCentsOf(row), displayUnit),
+      render: (row) => formatSnapshotBitcoin(
+        row.sats,
+        fiatCentsOf(row),
+        displayUnit,
+        btcPriceCents,
+      ),
     },
   ]
 }
@@ -1006,13 +1051,14 @@ function ActivityPage() {
     activeProfile,
     data,
     displayUnit,
+    financeModel,
     mutationGate,
     mutationNotice,
     refresh,
   } = useAppState()
   const [adding, setAdding] = useState(false)
   const transactions = visibleTo(activeProfile, data.transactions.value)
-  const btcPriceCents = availableBtcQuote(data.btcBalanceDocument.status, data.btcPriceUsd)
+  const btcPriceCents = operationalBtcPrice(financeModel)
   const addGate = mutationGate(
     "transaction.upsert",
     data.transactions.status,
@@ -1035,6 +1081,7 @@ function ActivityPage() {
     <>
       <PageHeader
         title="Activity"
+        showDisplayUnit
         subtitle="All transactions visible to this profile"
         actions={
           <>
@@ -1052,6 +1099,7 @@ function ActivityPage() {
       />
       <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
       <StaleNotice status={data.transactions.status} />
+      <BitcoinQuoteNotice available={displayUnit === "usd" || btcPriceCents !== null} />
       <Panel source={data.transactions.source} flush>
         <DataTable
           columns={columns}
@@ -1073,6 +1121,7 @@ function BitcoinOverviewPage() {
     activeProfile,
     data,
     displayUnit,
+    financeModel,
     mutationGate,
     mutationNotice,
     refresh,
@@ -1085,18 +1134,18 @@ function BitcoinOverviewPage() {
   const totalSats = document?.totals.sats ?? 0n
   const totalValuation = document ? fiatValuationOf(document.totals) : null
   const totalFiat = totalValuation?.cents ?? null
-  const valuationPrice = totalValuation?.priceCents ?? null
   const selfCustody = document?.totals.selfCustodySats ?? 0n
   const exchange = document?.totals.exchangeSats ?? 0n
   const status = data.btcBalanceDocument.status
-  const btcPriceCents = availableBtcQuote(status, data.btcPriceUsd)
+  const btcQuote = operationalBtcQuote(financeModel)
+  const btcPriceCents = btcQuote?.priceCents ?? null
   const addGate = mutationGate(
     "btcAccount.upsert",
     data.btcBalanceDocument.status,
     mutationOwner("btcAccount.upsert", activeProfile),
   )
   const syncedColumns: ReadonlyArray<Column<BTCAccount>> = [
-    ...stackColumns(displayUnit),
+    ...stackColumns(displayUnit, btcPriceCents),
     { key: "owner", header: "Owner", render: (row) => <Badge>{row.owner}</Badge>, secondary: true },
     {
       key: "actions",
@@ -1114,6 +1163,7 @@ function BitcoinOverviewPage() {
     <>
       <PageHeader
         title="Bitcoin Overview"
+        showDisplayUnit
         actions={
           <>
             <Button
@@ -1133,8 +1183,9 @@ function BitcoinOverviewPage() {
       />
       <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
       <StaleNotice status={data.btcBalanceDocument.status} />
+      <BitcoinQuoteNotice available={displayUnit !== "usd" || btcPriceCents !== null} />
       {displayUnit === "usd" ? (
-        <BitcoinSnapshotNotice status={status} document={document} />
+        <BitcoinSnapshotNotice status={status} document={document} quote={btcQuote} />
       ) : null}
       <KPIStrip
         items={[
@@ -1142,7 +1193,7 @@ function BitcoinOverviewPage() {
             label: "Total stack",
             value: requiredFigure(
               status,
-              () => formatSnapshotBitcoin(totalSats, totalFiat, displayUnit),
+              () => formatSnapshotBitcoin(totalSats, totalFiat, displayUnit, btcPriceCents),
             ),
             tone: "accent",
           },
@@ -1168,10 +1219,11 @@ function BitcoinOverviewPage() {
               status,
               () => formatSnapshotBitcoin(
                 selfCustody,
-                valuationPrice && valuationPrice > 0n
-                  ? satsToUsdCents(selfCustody, valuationPrice)
+                btcPriceCents
+                  ? satsToUsdCents(selfCustody, btcPriceCents)
                   : null,
                 displayUnit,
+                btcPriceCents,
               ),
             ),
           },
@@ -1181,10 +1233,11 @@ function BitcoinOverviewPage() {
               status,
               () => formatSnapshotBitcoin(
                 exchange,
-                valuationPrice && valuationPrice > 0n
-                  ? satsToUsdCents(exchange, valuationPrice)
+                btcPriceCents
+                  ? satsToUsdCents(exchange, btcPriceCents)
                   : null,
                 displayUnit,
+                btcPriceCents,
               ),
             ),
           },
@@ -1228,6 +1281,7 @@ function BitcoinBuysPage() {
     activeProfile,
     data,
     displayUnit,
+    financeModel,
     mutationGate,
     mutationNotice,
     refresh,
@@ -1236,7 +1290,7 @@ function BitcoinBuysPage() {
   const buys = visibleTo(activeProfile, data.btcBuys.value)
   const totalSats = sum(buys.map((buy) => buy.sats))
   const totalUsd = sum(buys.map((buy) => buy.usd))
-  const quote = availableBtcQuote(data.btcBalanceDocument.status, data.btcPriceUsd)
+  const quote = operationalBtcPrice(financeModel)
   const addGate = mutationGate(
     "btcBuy.upsert",
     data.btcBuys.status,
@@ -1247,6 +1301,7 @@ function BitcoinBuysPage() {
     <>
       <PageHeader
         title="Bitcoin Buys"
+        showDisplayUnit
         actions={
           <>
             <Button
@@ -1263,7 +1318,7 @@ function BitcoinBuysPage() {
       />
       <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
       <StaleNotice status={data.btcBuys.status} />
-      <BitcoinQuoteNotice available={quote !== null} />
+      <BitcoinQuoteNotice available={displayUnit === "usd" || quote !== null} />
       <KPIStrip
         items={[
           {
@@ -1358,13 +1413,14 @@ function BillsPage() {
     activeProfile,
     data,
     displayUnit,
+    financeModel,
     mutationGate,
     mutationNotice,
     refresh,
   } = useAppState()
   const [adding, setAdding] = useState(false)
   const pays = visibleTo(activeProfile, data.billPays.value)
-  const quote = availableBtcQuote(data.btcBalanceDocument.status, data.btcPriceUsd)
+  const quote = operationalBtcPrice(financeModel)
   const totalUsd = sum(pays.map((pay) => pay.amountUsd))
   const totalSats = sum(pays.map((pay) => pay.btcSpentSats))
   const addGate = mutationGate(
@@ -1377,6 +1433,7 @@ function BillsPage() {
     <>
       <PageHeader
         title="Bills"
+        showDisplayUnit
         subtitle="Bills settled in Bitcoin"
         actions={
           <>
@@ -1394,6 +1451,7 @@ function BillsPage() {
       />
       <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
       <StaleNotice status={data.billPays.status} />
+      <BitcoinQuoteNotice available={displayUnit === "usd" || quote !== null} />
       <KPIStrip
         items={[
           {
@@ -1411,7 +1469,11 @@ function BillsPage() {
             label: "Bitcoin spent",
             value: figure(
               data.billPays.status,
-              () => formatDisplayAmount({ sats: totalSats }, displayUnit, quote),
+              () => formatDisplayAmount(
+                { sats: totalSats, usdCents: totalUsd },
+                displayUnit,
+                quote,
+              ),
             ),
             tone: "accent",
           },
@@ -1473,7 +1535,7 @@ function BillsPage() {
 // ── Retirement ──────────────────────────────────────────────────────────────
 
 function RetirementPage() {
-  const { activeProfile, financeModel, stateOverride } = useAppState()
+  const { activeProfile, displayUnit, financeModel, stateOverride } = useAppState()
   const selection = selectFinanceNetWorth({
     viewer: activeProfile,
     bitcoinSats: 0n,
@@ -1489,6 +1551,7 @@ function RetirementPage() {
     })),
   )
   const showFinance = stateOverride === "normal" && financeModel.finance.status === "live"
+  const btcPriceCents = operationalBtcPrice(financeModel)
   const financeBlockState = stateOverride === "loading" || stateOverride === "stale" ||
       stateOverride === "error" || stateOverride === "empty"
     ? stateOverride
@@ -1498,9 +1561,17 @@ function RetirementPage() {
     <>
       <PageHeader
         title="Retirement"
+        showDisplayUnit
         subtitle="Long-horizon accounts"
         actions={
           <FreshnessTag status={financeFreshness(financeModel.finance)} updatedAt={updatedAt} />
+        }
+      />
+      <BitcoinQuoteNotice
+        available={
+          displayUnit === "usd" ||
+          btcPriceCents !== null ||
+          (!showFinance && financeModel.marketQuotes.status !== "live")
         }
       />
       <KPIStrip
@@ -1508,7 +1579,11 @@ function RetirementPage() {
           {
             label: "Retirement total",
             value: showFinance
-              ? formatUsd(selection.retirementValueCents)
+              ? formatDisplayAmount(
+                  { usdCents: selection.retirementValueCents },
+                  displayUnit,
+                  btcPriceCents,
+                )
               : SUPPRESSED,
             provenance: "actual",
           },
@@ -1535,7 +1610,16 @@ function RetirementPage() {
               { key: "holding", header: "Holding", render: (row) => row.holding.holding.name },
               { key: "ticker", header: "Ticker", render: (row) => row.holding.holding.ticker ?? "—" },
               { key: "shares", header: "Shares", numeric: true, render: (row) => row.holding.holding.sharesDecimal },
-              { key: "value", header: "Value", numeric: true, render: (row) => formatUsd(row.holding.valueCents) },
+              {
+                key: "value",
+                header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),
+                numeric: true,
+                render: (row) => formatDisplayAmount(
+                  { usdCents: row.holding.valueCents },
+                  displayUnit,
+                  btcPriceCents,
+                ),
+              },
               {
                 key: "basis",
                 header: "Valuation basis",
@@ -1561,7 +1645,11 @@ function RetirementPage() {
       </Panel>
       <Panel title="Market quote snapshot" source="Operational prices · separate from the finance ledger" flush>
         {stateOverride === "normal" ? (
-          <QuoteSnapshot quotes={financeModel.marketQuotes} />
+          <QuoteSnapshot
+            quotes={financeModel.marketQuotes}
+            displayUnit={displayUnit}
+            btcPriceCents={btcPriceCents}
+          />
         ) : (
           <StateBlock state={financeBlockState} detail="No QA fixture is presented as a market quote." />
         )}
@@ -1591,6 +1679,7 @@ function NetWorthPage() {
     data.btcBalanceDocument.status !== "empty"
   const totalAvailable = bitcoinLoaded && financeLoaded && quotesLoaded &&
     selection.totalValueCents !== null
+  const btcPriceCents = selection.btcQuote?.priceCents ?? null
 
   const projectedInScope = netWorthScopeFor(activeProfile, data.btcAccounts.value)
   const excluded = data.btcAccounts.value.filter(
@@ -1602,6 +1691,7 @@ function NetWorthPage() {
     <>
       <PageHeader
         title="Net Worth"
+        showDisplayUnit
         subtitle="Household scope for adults; self only for children"
         actions={
           <FreshnessTag
@@ -1611,11 +1701,20 @@ function NetWorthPage() {
         }
       />
       <StaleNotice status={data.btcBalanceDocument.status} />
+      {displayUnit === "usd" ? null : (
+        <BitcoinQuoteNotice
+          available={
+            btcPriceCents !== null ||
+            (!financeLoaded && financeModel.marketQuotes.status !== "live")
+          }
+        />
+      )}
       {displayUnit === "usd" ? (
         <>
           <BitcoinSnapshotNotice
             status={data.btcBalanceDocument.status}
             document={document}
+            quote={selection.btcQuote}
           />
           {selection.btcQuote ? (
             <StatusBanner
@@ -1648,7 +1747,13 @@ function NetWorthPage() {
           },
           {
             label: "Retirement",
-            value: financeLoaded ? formatUsd(selection.retirementValueCents) : SUPPRESSED,
+            value: financeLoaded
+              ? formatDisplayAmount(
+                  { usdCents: selection.retirementValueCents },
+                  displayUnit,
+                  btcPriceCents,
+                )
+              : SUPPRESSED,
             hint: financeLoaded ? `${selection.accounts.length} scoped account(s)` : undefined,
             provenance: "estimated",
           },
@@ -1663,10 +1768,14 @@ function NetWorthPage() {
             value: requiredFigure(data.btcBalanceDocument.status, () => String(inScope.length)),
           },
           {
-            label: "Canonical account fiat",
+            label: "Canonical accounts",
             value: requiredFigure(
               data.btcBalanceDocument.status,
-              () => canonicalStackValue === null ? PRICE_UNAVAILABLE : formatUsd(canonicalStackValue),
+              () => formatDisplayAmount(
+                { sats: stackSats, usdCents: canonicalStackValue },
+                displayUnit,
+                btcPriceCents,
+              ),
             ),
             hint: requiredFigure(
               data.btcBalanceDocument.status,
@@ -1729,7 +1838,11 @@ function NetWorthPage() {
         </Panel>
       </PageGrid>
       <Panel title="Market quote snapshot" source="Operational prices · never inferred from buys" flush>
-        <QuoteSnapshot quotes={financeModel.marketQuotes} />
+        <QuoteSnapshot
+          quotes={financeModel.marketQuotes}
+          displayUnit={displayUnit}
+          btcPriceCents={btcPriceCents}
+        />
       </Panel>
     </>
   )

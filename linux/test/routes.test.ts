@@ -79,6 +79,26 @@ test("every page appears in the nav for an adult", () => {
   }
 })
 
+test("the unit selector appears only on opted-in non-Budget financial pages", () => {
+  const optedIn = new Set([
+    "dashboard",
+    "activity",
+    "bitcoin",
+    "bitcoin-buys",
+    "bills",
+    "retirement",
+    "net-worth",
+  ])
+  for (const page of ALL_PAGES) {
+    const markup = renderPage(page, "victor", "normal")
+    assert.equal(
+      markup.includes('aria-label="Bitcoin display unit"'),
+      optedIn.has(page.id),
+      `${page.id} has the wrong unit-selector visibility`,
+    )
+  }
+})
+
 test("children get a reduced nav and cannot resolve adult-only routes", () => {
   const adultOnly = ALL_PAGES.filter((page) => page.adultOnly)
   assert.ok(adultOnly.length > 0, "expected at least one adult-only page")
