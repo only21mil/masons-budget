@@ -13,12 +13,25 @@ import com.sats21m.vogelvault.ui.components.Panel
 import com.sats21m.vogelvault.ui.components.StateBlock
 import com.sats21m.vogelvault.ui.components.VaultLazyListScope
 import com.sats21m.vogelvault.ui.theme.VaultCream
+import java.math.BigDecimal
+import java.math.RoundingMode
 
 internal data class BtcBuysScreenSummary(
     val rows: List<BtcBuy>,
     val totalSats: Long,
     val totalUsdCents: Long,
-)
+) {
+    val averageExecutionPriceCents: Long?
+        get() =
+            totalSats.takeIf { it > 0L }?.let {
+                runCatching {
+                    BigDecimal(totalUsdCents)
+                        .multiply(BigDecimal(Money.SATS_PER_BTC))
+                        .divide(BigDecimal(it), 0, RoundingMode.HALF_UP)
+                        .longValueExact()
+                }.getOrNull()
+            }
+}
 
 internal fun btcBuysScreenSummary(
     rows: List<BtcBuy>,
@@ -35,20 +48,18 @@ internal fun btcBuysScreenSummary(
 internal fun formatBtcBuyAmount(
     buy: BtcBuy,
     displayUnit: DisplayUnit,
-): String =
-    when (displayUnit) {
-        DisplayUnit.USD -> Money.formatUsd(buy.usdCents)
-        DisplayUnit.BTC, DisplayUnit.SATS -> Money.formatBitcoin(buy.sats, displayUnit)
-    }
+): String = formatFinancialAmount(
+    FinancialAmount(usdCents = buy.usdCents, sats = buy.sats),
+    displayUnit,
+)
 
 internal fun formatBtcBuyTotal(
     summary: BtcBuysScreenSummary,
     displayUnit: DisplayUnit,
-): String =
-    when (displayUnit) {
-        DisplayUnit.USD -> Money.formatUsd(summary.totalUsdCents)
-        DisplayUnit.BTC, DisplayUnit.SATS -> Money.formatBitcoin(summary.totalSats, displayUnit)
-    }
+): String = formatFinancialAmount(
+    FinancialAmount(usdCents = summary.totalUsdCents, sats = summary.totalSats),
+    displayUnit,
+)
 
 internal fun VaultLazyListScope.btcBuysScreen(
     state: VaultUiState,
@@ -76,11 +87,16 @@ internal fun VaultLazyListScope.btcBuysScreen(
     }
 
     item {
+        val selectedTotal = formatBtcBuyTotal(summary, displayUnit)
         KpiStrip(
             listOf(
-                Kpi("Total bought", formatBtcBuyTotal(summary, displayUnit)),
-                Kpi("Fiat invested", Money.formatUsd(summary.totalUsdCents)),
-                Kpi("Sats acquired", Money.formatSats(summary.totalSats)),
+                Kpi("Total bought", selectedTotal),
+                Kpi(
+                    "Average price",
+                    summary.averageExecutionPriceCents
+                        ?.let { "${Money.formatUsd(it)}/BTC" }
+                        ?: Money.PRICE_UNAVAILABLE,
+                ),
                 Kpi("Buys", summary.rows.size.toString()),
             ),
         )

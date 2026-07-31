@@ -109,10 +109,8 @@ internal fun retirementInputs(state: VaultUiState): RetirementInputResult {
         return RetirementInputResult.Unavailable(RetirementUnavailableReason.BITCOIN_BALANCE)
     }
 
-    val priceAsOf = data.btcPriceAsOf?.takeIf { it.isNotBlank() }
-    if (data.btcPriceCents <= 0L || priceAsOf == null) {
-        return RetirementInputResult.Unavailable(RetirementUnavailableReason.RECORDED_PRICE)
-    }
+    val quote = data.recordedBitcoinQuote()
+        ?: return RetirementInputResult.Unavailable(RetirementUnavailableReason.RECORDED_PRICE)
 
     val incomeRows = data.income.value.netWorthScopeFor(state.activeProfile)
     if (data.incomeFiguresUnavailable || incomeRows.isEmpty()) {
@@ -140,8 +138,8 @@ internal fun retirementInputs(state: VaultUiState): RetirementInputResult {
     return RetirementInputResult.Available(
         RetirementProjectionInputs(
             startingSats = balance.totalSats,
-            btcPriceCents = data.btcPriceCents,
-            btcPriceAsOf = priceAsOf,
+            btcPriceCents = quote.cents,
+            btcPriceAsOf = quote.asOf,
             balanceAsOf = balance.asOf,
             monthlyIncomeCents = monthlyIncome,
             monthlyBudgetCents = budget.plannedCents,
@@ -315,17 +313,26 @@ private fun ProjectionSummary(
     projection: RetirementProjection,
     displayUnit: DisplayUnit,
 ) {
+    val quote = RecordedBitcoinQuote(inputs.btcPriceCents, inputs.btcPriceAsOf)
     KpiStrip(
         listOf(
             Kpi(
                 stringResource(R.string.retirement_projected_bitcoin_label, projection.years),
-                Money.formatBitcoin(projection.projectedSats, displayUnit, inputs.btcPriceCents),
+                formatFinancialAmount(
+                    FinancialAmount(sats = projection.projectedSats),
+                    displayUnit,
+                    quote,
+                ),
                 stringResource(R.string.retirement_scenario_hint),
                 provenance = Provenance.ESTIMATED,
             ),
             Kpi(
                 stringResource(R.string.retirement_starting_bitcoin_label),
-                Money.formatBitcoin(inputs.startingSats, displayUnit, inputs.btcPriceCents),
+                formatFinancialAmount(
+                    FinancialAmount(sats = inputs.startingSats),
+                    displayUnit,
+                    quote,
+                ),
                 stringResource(R.string.retirement_balance_as_of_hint, inputs.balanceAsOf),
             ),
         ),
@@ -338,23 +345,39 @@ private fun ProjectionBreakdown(
     projection: RetirementProjection,
     displayUnit: DisplayUnit,
 ) {
+    val quote = RecordedBitcoinQuote(inputs.btcPriceCents, inputs.btcPriceAsOf)
     Panel(stringResource(R.string.retirement_monthly_inputs_title)) {
         LedgerRow(
             primary = stringResource(R.string.retirement_dca_label),
             secondary = stringResource(R.string.retirement_dca_detail),
-            figure = Money.formatBitcoin(projection.monthlyDcaSats, displayUnit, inputs.btcPriceCents),
+            figure = formatFinancialAmount(
+                FinancialAmount(sats = projection.monthlyDcaSats),
+                displayUnit,
+                quote,
+            ),
         )
         LedgerRow(
             primary = stringResource(R.string.retirement_surplus_label),
             secondary = stringResource(
                 R.string.retirement_surplus_detail,
-                Money.formatUsd(inputs.monthlyIncomeCents),
-                Money.formatUsd(inputs.monthlyBudgetCents),
+                formatFinancialAmount(
+                    FinancialAmount(usdCents = inputs.monthlyIncomeCents),
+                    displayUnit,
+                    quote,
+                ),
+                formatFinancialAmount(
+                    FinancialAmount(usdCents = inputs.monthlyBudgetCents),
+                    displayUnit,
+                    quote,
+                ),
             ),
-            figure = Money.formatBitcoin(
-                projection.monthlySurplusSats,
+            figure = formatFinancialAmount(
+                FinancialAmount(
+                    usdCents = inputs.monthlySurplusCents,
+                    sats = projection.monthlySurplusSats,
+                ),
                 displayUnit,
-                inputs.btcPriceCents,
+                quote,
             ),
         )
         if (inputs.adultAnnualBonusCents > 0L) {
@@ -362,12 +385,16 @@ private fun ProjectionBreakdown(
                 primary = stringResource(R.string.retirement_bonus_label),
                 secondary = stringResource(
                     R.string.retirement_bonus_detail,
-                    Money.formatUsd(inputs.adultAnnualBonusCents),
+                    formatFinancialAmount(
+                        FinancialAmount(usdCents = inputs.adultAnnualBonusCents),
+                        displayUnit,
+                        quote,
+                    ),
                 ),
-                figure = Money.formatBitcoin(
-                    projection.monthlyBonusSats,
+                figure = formatFinancialAmount(
+                    FinancialAmount(sats = projection.monthlyBonusSats),
                     displayUnit,
-                    inputs.btcPriceCents,
+                    quote,
                 ),
             )
         }

@@ -47,6 +47,17 @@ class RetirementScreenTest {
             retirementInputs(usable.withRecordedPrice(cents = 11_500_000L, asOf = "   ")),
             "a blank price date is not evidence",
         )
+        assertEquals(
+            RetirementInputResult.Unavailable(RetirementUnavailableReason.RECORDED_PRICE),
+            retirementInputs(
+                usable.copy(
+                    data = usable.data.copy(
+                        btcBuys = usable.data.btcBuys.copy(status = Freshness.ERROR),
+                    ),
+                ),
+            ),
+            "a failed buy-price read cannot authorize a fiat conversion",
+        )
 
         assertNull(
             projectRetirement(inputs.copy(btcPriceCents = 0L), 10),

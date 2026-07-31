@@ -36,6 +36,7 @@ class BtcLedgerScreensTest {
         assertEquals(listOf(adultBuy, childBuy), summary.rows)
         assertEquals(125_000_000L, summary.totalSats)
         assertEquals(8_000_200L, summary.totalUsdCents)
+        assertEquals(6_400_160L, summary.averageExecutionPriceCents)
         assertEquals(
             listOf(adultBuy),
             allRows.netWorthScopeFor(FamilyMember.RACHEL),
@@ -80,6 +81,19 @@ class BtcLedgerScreensTest {
         assertEquals("-$1,234.56", formatBtcBillPayAmount(payment, DisplayUnit.USD))
         assertEquals("-0.01500000 BTC", formatBtcBillPayAmount(payment, DisplayUnit.BTC))
         assertEquals("-1 500 000 sats", formatBtcBillPayAmount(payment, DisplayUnit.SATS))
+        assertEquals("$0.99", formatBtcBillPayFee(99L, DisplayUnit.USD, null))
+        assertEquals(
+            "990 sats",
+            formatBtcBillPayFee(
+                99L,
+                DisplayUnit.SATS,
+                RecordedBitcoinQuote(10_000_000L, "2026-07-03"),
+            ),
+        )
+        assertEquals(
+            com.sats21m.vogelvault.domain.Money.PRICE_UNAVAILABLE,
+            formatBtcBillPayFee(99L, DisplayUnit.BTC, null),
+        )
     }
 
     @Test

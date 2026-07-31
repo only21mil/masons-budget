@@ -44,9 +44,13 @@ import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.ConvexValue
+import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.Transaction
+import com.sats21m.vogelvault.ui.FinancialAmount
+import com.sats21m.vogelvault.ui.RecordedBitcoinQuote
+import com.sats21m.vogelvault.ui.formatFinancialAmount
 import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultCream
 import com.sats21m.vogelvault.ui.theme.VaultLine
@@ -114,7 +118,8 @@ internal suspend fun writeCsvImport(
 internal fun CsvImportLauncher(
     owner: FamilyMember,
     existingTransactions: List<Transaction>,
-    btcPriceCents: Long,
+    displayUnit: DisplayUnit,
+    quote: RecordedBitcoinQuote?,
     onWriteSucceeded: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -131,7 +136,9 @@ internal fun CsvImportLauncher(
         CsvImportWizard(
             owner = owner,
             existingTransactions = existingTransactions,
-            btcPriceCents = btcPriceCents.takeIf { it > 0L },
+            btcPriceCents = quote?.cents,
+            displayUnit = displayUnit,
+            quote = quote,
             onDismiss = { open = false },
             onWriteSucceeded = onWriteSucceeded,
         )
@@ -143,6 +150,8 @@ private fun CsvImportWizard(
     owner: FamilyMember,
     existingTransactions: List<Transaction>,
     btcPriceCents: Long?,
+    displayUnit: DisplayUnit,
+    quote: RecordedBitcoinQuote?,
     onDismiss: () -> Unit,
     onWriteSucceeded: () -> Unit,
 ) {
@@ -212,6 +221,8 @@ private fun CsvImportWizard(
                     rows = rows,
                     selectedIds = selectedIds,
                     btcPriceCents = btcPriceCents,
+                    displayUnit = displayUnit,
+                    quote = quote,
                     loading = loading,
                     error = error,
                     onToggle = { id ->
@@ -358,6 +369,8 @@ private fun CsvPreviewStep(
     rows: List<CsvImportedTransaction>,
     selectedIds: Set<String>,
     btcPriceCents: Long?,
+    displayUnit: DisplayUnit,
+    quote: RecordedBitcoinQuote?,
     loading: Boolean,
     error: String?,
     onToggle: (String) -> Unit,
@@ -431,6 +444,8 @@ private fun CsvPreviewStep(
                         row = row,
                         selected = row.id in selectedIds,
                         enabled = !loading,
+                        displayUnit = displayUnit,
+                        quote = quote,
                         onToggle = { onToggle(row.id) },
                     )
                     HorizontalDivider(color = VaultLine)
@@ -474,8 +489,15 @@ private fun CsvPreviewRow(
     row: CsvImportedTransaction,
     selected: Boolean,
     enabled: Boolean,
+    displayUnit: DisplayUnit,
+    quote: RecordedBitcoinQuote?,
     onToggle: () -> Unit,
 ) {
+    val formattedAmount = formatFinancialAmount(
+        FinancialAmount(usdCents = row.amountUsdCents, sats = row.sats),
+        displayUnit,
+        quote,
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -491,18 +513,12 @@ private fun CsvPreviewRow(
                 color = VaultTextMuted,
                 style = MaterialTheme.typography.bodySmall,
             )
-            Text(
-                Money.formatSats(row.sats),
-                color = VaultTextDim,
-                style = MaterialTheme.typography.labelSmall,
-            )
         }
         Text(
-            row.amountUsdCents?.let(Money::formatUsd)
-                ?: stringResource(R.string.csv_import_price_short),
+            formattedAmount,
             color = when {
-                row.amountUsdCents == null -> VaultWarning
-                row.isIncome || row.amountUsdCents < 0L -> VaultPositive
+                formattedAmount == Money.PRICE_UNAVAILABLE -> VaultWarning
+                row.isIncome || row.sats < 0L -> VaultPositive
                 else -> VaultNegative
             },
             style = MaterialTheme.typography.bodyMedium,
