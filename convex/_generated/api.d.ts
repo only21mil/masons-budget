@@ -16,6 +16,7 @@ import type * as documentProjection from "../documentProjection.js";
 import type * as marketQuoteAcquire from "../marketQuoteAcquire.js";
 import type * as marketQuotes from "../marketQuotes.js";
 import type * as migrate from "../migrate.js";
+import type * as readCanary from "../readCanary.js";
 import type * as tables from "../tables.js";
 import type * as todoNormalize from "../todoNormalize.js";
 import type * as writeback from "../writeback.js";
@@ -35,6 +36,7 @@ declare const fullApi: ApiFromModules<{
   marketQuoteAcquire: typeof marketQuoteAcquire;
   marketQuotes: typeof marketQuotes;
   migrate: typeof migrate;
+  readCanary: typeof readCanary;
   tables: typeof tables;
   todoNormalize: typeof todoNormalize;
   writeback: typeof writeback;
