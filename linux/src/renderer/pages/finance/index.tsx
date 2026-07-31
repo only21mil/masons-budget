@@ -39,7 +39,7 @@ import {
   resolveBudgetMonth,
   transactionsInMonth,
 } from "@vogel-vault/domain/readModel"
-import { useMemo, useState } from "react"
+import { useId, useMemo, useState } from "react"
 
 import { useAppState } from "../../app/AppState.tsx"
 import {
@@ -90,6 +90,7 @@ import {
   TransactionFormDialog,
 } from "../../components/index.ts"
 import { mutationOwner, stableId } from "../../data/mutations.ts"
+import type { MutationGate } from "../../data/mutations.ts"
 import type { PageManifest } from "../types.ts"
 
 // ── shared helpers ──────────────────────────────────────────────────────────
@@ -757,6 +758,19 @@ function TransactionDrilldownStatus({ status }: { status: Freshness }) {
   return null
 }
 
+export function budgetDrilldownTransactionEditGate(
+  status: Freshness,
+  gate: MutationGate,
+): MutationGate {
+  if (status !== "live") {
+    return {
+      allowed: false,
+      reason: "Current live transaction rows are required before editing.",
+    }
+  }
+  return gate
+}
+
 // ── Dashboard ───────────────────────────────────────────────────────────────
 
 function DashboardPage() {
@@ -1116,6 +1130,7 @@ export function BudgetCategoryTransactionsDialog({
   const countLabel = transactions.length === 1
     ? "1 transaction"
     : `${transactions.length} transactions`
+  const summary = `${countLabel} · ${formatUsd(signedActual)} signed actual`
   const columns: ReadonlyArray<Column<Transaction>> = [
     { key: "date", header: "Date", render: (row) => row.date, width: "104px" },
     { key: "merchant", header: "Merchant", render: (row) => row.merchant },
@@ -1143,7 +1158,7 @@ export function BudgetCategoryTransactionsDialog({
     <DialogFrame
       open={open}
       title={`${category} · ${monthLabel(month)}`}
-      description={`${countLabel} · ${formatUsd(signedActual)} signed actual`}
+      description={data.transactions.status === "error" ? "Transaction details unavailable." : summary}
       onClose={onClose}
       footer={<Button onClick={onClose}>Close</Button>}
       className="vv-dialog--wide"
@@ -1157,7 +1172,7 @@ export function BudgetCategoryTransactionsDialog({
         state={tableState(data.transactions.status)}
         emptyTitle={`No ${category} transactions`}
         emptyDetail={`Nothing in the budget scope for ${monthLabel(month)}.`}
-        footer={`${countLabel} · ${formatUsd(signedActual)} signed actual`}
+        footer={summary}
       />
     </DialogFrame>
   )
@@ -1166,35 +1181,42 @@ export function BudgetCategoryTransactionsDialog({
 function BudgetDrilldownEditAction({ transaction }: { transaction: Transaction }) {
   const { data, isMutationPending, mutationGate } = useAppState()
   const [editing, setEditing] = useState(false)
-  const editGate = mutationGate(
-    "transaction.upsert",
+  const disabledReasonId = useId()
+  const editGate = budgetDrilldownTransactionEditGate(
     data.transactions.status,
-    transaction.owner,
+    mutationGate(
+      "transaction.upsert",
+      data.transactions.status,
+      transaction.owner,
+    ),
   )
   const pending = isMutationPending(
     "transaction.upsert",
     transaction.owner,
     transaction.id,
   )
-  const liveRows = data.transactions.status === "live"
-  const disabledReason = liveRows
-    ? editGate.reason
-    : "Current live transaction rows are required before editing."
+  const disabled = !editGate.allowed || pending
 
   return (
     <div className="vv-row-actions" aria-busy={pending || undefined}>
       <Button
         variant="ghost"
         onClick={() => setEditing(true)}
-        disabled={!liveRows || !editGate.allowed || pending}
-        title={disabledReason ?? undefined}
+        disabled={disabled}
+        aria-describedby={disabled ? disabledReasonId : undefined}
         aria-label={`Edit ${transaction.merchant}`}
       >
         Edit
       </Button>
+      {disabled ? (
+        <span id={disabledReasonId} className="vv-sr-only">
+          {pending ? "This transaction edit is already in progress." : editGate.reason}
+        </span>
+      ) : null}
       <TransactionFormDialog
         open={editing}
         transaction={transaction}
+        submissionGate={editGate}
         onClose={() => setEditing(false)}
       />
     </div>
