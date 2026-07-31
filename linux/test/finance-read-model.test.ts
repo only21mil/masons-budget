@@ -221,7 +221,7 @@ describe("main-process finance and quote transport", () => {
         }],
       },
     })
-    await expect(repository.query({ kind: "marketQuotes" })).resolves.toMatchObject({
+    await expect(repository.query({ kind: "marketQuotes" }, "rachel")).resolves.toMatchObject({
       status: "ok",
       kind: "marketQuotes",
       value: {
@@ -299,7 +299,7 @@ describe("main-process finance and quote transport", () => {
       configuration: () => ({ generation: 1, settings }),
       post: async () => success({ complete: true, quotes: wireQuotes }),
     })
-    await expect(repository.query({ kind: "marketQuotes" })).resolves.toEqual({
+    await expect(repository.query({ kind: "marketQuotes" }, "victor")).resolves.toEqual({
       status: "error",
       code,
     })

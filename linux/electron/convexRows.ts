@@ -92,13 +92,14 @@ const MARKET_STATUSES = ["live", "stale", "unavailable"] as const
 const CANONICAL_ISO_INSTANT =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?Z$/
 
+type UnscopedRowRequest = Extract<
+  VogelVaultRowRequest,
+  { readonly kind: "rowCounts" | "marketQuotes" }
+>
+type ProfileScopedRowRequest = Exclude<VogelVaultRowRequest, UnscopedRowRequest>
 type ResolvedRowRequest =
-  | Exclude<VogelVaultRowRequest, { readonly kind: "finance" }>
-  | {
-      readonly kind: "finance"
-      readonly viewer: VogelVaultMember
-      readonly scope: "netWorth"
-    }
+  | UnscopedRowRequest
+  | (ProfileScopedRowRequest & { readonly viewer: VogelVaultMember })
 
 class InvalidValue extends Error {}
 
@@ -816,11 +817,9 @@ export function validateRowRequest(value: unknown): VogelVaultRowRequest | null 
         exactObject(value, ["kind"])
         return { kind }
       case "transactions": {
-        const viewer = member(value, "viewer")
-        const row = exactObject(value, ["kind", "viewer"], ["month", "limit"])
+        const row = exactObject(value, ["kind"], ["month", "limit"])
         return {
           kind,
-          viewer,
           ...optionalField("month", Object.hasOwn(row, "month") ? monthValue(row) : undefined),
           ...optionalField(
             "limit",
@@ -829,11 +828,9 @@ export function validateRowRequest(value: unknown): VogelVaultRowRequest | null 
         }
       }
       case "income": {
-        const viewer = member(value, "viewer")
-        const row = exactObject(value, ["kind", "viewer"], ["month", "limit"])
+        const row = exactObject(value, ["kind"], ["month", "limit"])
         return {
           kind,
-          viewer,
           ...optionalField("month", Object.hasOwn(row, "month") ? monthValue(row) : undefined),
           ...optionalField(
             "limit",
@@ -842,12 +839,10 @@ export function validateRowRequest(value: unknown): VogelVaultRowRequest | null 
         }
       }
       case "todos": {
-        const viewer = member(value, "viewer")
-        const row = exactObject(value, ["kind", "viewer"], ["done", "limit"])
+        const row = exactObject(value, ["kind"], ["done", "limit"])
         const done = Object.hasOwn(row, "done") ? booleanValue(row, "done") : undefined
         return {
           kind,
-          viewer,
           ...optionalField("done", done),
           ...optionalField(
             "limit",
@@ -856,11 +851,9 @@ export function validateRowRequest(value: unknown): VogelVaultRowRequest | null 
         }
       }
       case "btcBuys": {
-        const viewer = member(value, "viewer")
-        const row = exactObject(value, ["kind", "viewer", "scope"], ["month", "limit"])
+        const row = exactObject(value, ["kind", "scope"], ["month", "limit"])
         return {
           kind,
-          viewer,
           scope: scopeValue(row["scope"]),
           ...optionalField("month", Object.hasOwn(row, "month") ? monthValue(row) : undefined),
           ...optionalField(
@@ -870,16 +863,13 @@ export function validateRowRequest(value: unknown): VogelVaultRowRequest | null 
         }
       }
       case "btcAccounts": {
-        const viewer = member(value, "viewer")
-        const row = exactObject(value, ["kind", "viewer", "scope"])
-        return { kind, viewer, scope: scopeValue(row["scope"]) }
+        const row = exactObject(value, ["kind", "scope"])
+        return { kind, scope: scopeValue(row["scope"]) }
       }
       case "btcBillPays": {
-        const viewer = member(value, "viewer")
-        const row = exactObject(value, ["kind", "viewer", "scope"], ["month", "limit"])
+        const row = exactObject(value, ["kind", "scope"], ["month", "limit"])
         return {
           kind,
-          viewer,
           scope: scopeValue(row["scope"]),
           ...optionalField("month", Object.hasOwn(row, "month") ? monthValue(row) : undefined),
           ...optionalField(
@@ -889,20 +879,17 @@ export function validateRowRequest(value: unknown): VogelVaultRowRequest | null 
         }
       }
       case "budget": {
-        const viewer = member(value, "viewer")
-        const row = exactObject(value, ["kind", "viewer", "scope"])
+        const row = exactObject(value, ["kind", "scope"])
         if (row["scope"] !== "netWorth") throw new InvalidValue()
-        return { kind, viewer, scope: "netWorth" }
+        return { kind, scope: "netWorth" }
       }
       case "btcSnapshotMeta": {
-        const viewer = member(value, "viewer")
-        const row = exactObject(value, ["kind", "viewer", "scope"])
-        return { kind, viewer, scope: scopeValue(row["scope"]) }
+        const row = exactObject(value, ["kind", "scope"])
+        return { kind, scope: scopeValue(row["scope"]) }
       }
       case "btcBalanceDocuments": {
-        const viewer = member(value, "viewer")
-        const row = exactObject(value, ["kind", "viewer", "scope"])
-        return { kind, viewer, scope: scopeValue(row["scope"]) }
+        const row = exactObject(value, ["kind", "scope"])
+        return { kind, scope: scopeValue(row["scope"]) }
       }
       case "finance": {
         const row = exactObject(value, ["kind", "scope"])
@@ -1128,7 +1115,7 @@ function parseResponse(
 }
 
 export interface ConvexRowRepository {
-  query(request: unknown, activeProfile?: VogelVaultMember): Promise<VogelVaultRowResult>
+  query(request: unknown, activeProfile?: unknown): Promise<VogelVaultRowResult>
 }
 
 export interface ConvexRowRepositoryOptions {
@@ -1149,16 +1136,15 @@ export function createConvexRowRepository(options: ConvexRowRepositoryOptions): 
   let activeGeneration = -1
 
   return {
-    query(input: unknown, activeProfile?: VogelVaultMember): Promise<VogelVaultRowResult> {
+    query(input: unknown, activeProfile?: unknown): Promise<VogelVaultRowResult> {
       const request = validateRowRequest(input)
       if (request === null) return Promise.resolve({ status: "error", code: "invalid-request" })
-      if (request.kind === "finance" &&
-          !(MEMBERS as readonly unknown[]).includes(activeProfile)) {
+      if (!(MEMBERS as readonly unknown[]).includes(activeProfile)) {
         return Promise.resolve({ status: "error", code: "invalid-request" })
       }
-      const resolvedRequest: ResolvedRowRequest = request.kind === "finance"
-        ? { ...request, viewer: activeProfile as VogelVaultMember }
-        : request
+      const resolvedRequest: ResolvedRowRequest = request.kind === "rowCounts" || request.kind === "marketQuotes"
+        ? request
+        : { ...request, viewer: activeProfile as VogelVaultMember }
 
       const configuration = options.configuration()
       if (configuration.generation !== activeGeneration) {

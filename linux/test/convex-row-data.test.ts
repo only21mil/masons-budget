@@ -207,7 +207,6 @@ describe("renderer Convex row adapter", () => {
   ])("derives non-zero June actuals from a %s budget month (%s form)", async (budgetMonth) => {
     const result = await loadConvexRowEnvelope(
       async (request) => response(request, budgetMonth, "2026-06-18"),
-      "victor",
     )
 
     expect(result.status).toBe("loaded")
@@ -223,7 +222,6 @@ describe("renderer Convex row adapter", () => {
   it("marks an unparseable budget month unavailable instead of deriving zero actuals", async () => {
     const result = await loadConvexRowEnvelope(
       async (request) => response(request, "Juny 2026", "2026-06-18"),
-      "victor",
     )
 
     expect(result.status).toBe("loaded")
@@ -242,21 +240,21 @@ describe("renderer Convex row adapter", () => {
     const result = await loadConvexRowEnvelope(async (request) => {
       requests.push(request)
       return response(request)
-    }, "rachel")
+    })
 
     expect(result.status).toBe("loaded")
     if (result.status !== "loaded") return
     expect(requests).toEqual([
       { kind: "rowCounts" },
-      { kind: "transactions", viewer: "rachel" },
-      { kind: "todos", viewer: "rachel" },
-      { kind: "income", viewer: "rachel" },
-      { kind: "btcBuys", viewer: "rachel", scope: "visible" },
-      { kind: "btcAccounts", viewer: "rachel", scope: "visible" },
-      { kind: "btcBillPays", viewer: "rachel", scope: "visible" },
-      { kind: "budget", viewer: "rachel", scope: "netWorth" },
-      { kind: "btcSnapshotMeta", viewer: "rachel", scope: "visible" },
-      { kind: "btcBalanceDocuments", viewer: "rachel", scope: "netWorth" },
+      { kind: "transactions" },
+      { kind: "todos" },
+      { kind: "income" },
+      { kind: "btcBuys", scope: "visible" },
+      { kind: "btcAccounts", scope: "visible" },
+      { kind: "btcBillPays", scope: "visible" },
+      { kind: "budget", scope: "netWorth" },
+      { kind: "btcSnapshotMeta", scope: "visible" },
+      { kind: "btcBalanceDocuments", scope: "netWorth" },
     ])
     expect("income" in result.data).toBe(true)
     expect("btcBalanceDocument" in result.data).toBe(true)
@@ -299,7 +297,7 @@ describe("renderer Convex row adapter", () => {
           financeDocuments: 0,
         },
       }
-    }, "victor", () => 123)
+    }, () => 123)
 
     expect(requests).toEqual([{ kind: "rowCounts" }])
     expect(result).toMatchObject({
@@ -316,12 +314,11 @@ describe("renderer Convex row adapter", () => {
 
   it("keeps disabled reads on fixtures and classifies missing auth separately", async () => {
     await expect(
-      loadConvexRowEnvelope(async () => ({ status: "error", code: "disabled" }), "victor"),
+      loadConvexRowEnvelope(async () => ({ status: "error", code: "disabled" })),
     ).resolves.toEqual({ status: "fallback" })
 
     const unauthorized = await loadConvexRowEnvelope(
       async () => ({ status: "error", code: "unauthorized" }),
-      "victor",
       () => 456,
     )
     expect(unauthorized).toMatchObject({
@@ -343,7 +340,6 @@ describe("renderer Convex row adapter", () => {
         request.kind === "transactions"
           ? { status: "error", code: "unavailable" }
           : response(request),
-      "victor",
       () => 999,
     )
 
@@ -365,7 +361,6 @@ describe("renderer Convex row adapter", () => {
           ? { ...base, rows: [] }
           : base
       },
-      "victor",
       () => 999,
     )
 
@@ -385,7 +380,6 @@ describe("renderer Convex row adapter", () => {
         if (!document) return base
         return { ...base, rows: [document, document] }
       },
-      "victor",
     )
 
     expect(result.status).toBe("loaded")

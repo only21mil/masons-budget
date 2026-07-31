@@ -100,7 +100,7 @@ function getRemoteSnapshot(): Promise<RemoteSnapshotResult> {
   return ipcRenderer.invoke(CONVEX_READ_CHANNEL) as Promise<RemoteSnapshotResult>
 }
 
-/** One closed request union; main validates it again before any network use. */
+/** One identity-free request union; main validates it and injects its per-sender profile. */
 function queryConvexRows(request: VogelVaultRowRequest): Promise<VogelVaultRowResult> {
   return ipcRenderer.invoke(CONVEX_ROWS_CHANNEL, request) as Promise<VogelVaultRowResult>
 }

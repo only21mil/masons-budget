@@ -1,4 +1,3 @@
-import type { FamilyMember } from "@vogel-vault/domain/family"
 import type {
   BTCAccount,
   BTCBillPay,
@@ -379,7 +378,6 @@ function priceFromBalanceDocument(document: BTCSnapshot | null): bigint | null {
 
 export async function loadConvexRowEnvelope(
   query: QueryConvexRows,
-  viewer: FamilyMember,
   now: () => number = Date.now,
 ): Promise<ConvexEnvelopeLoad> {
   const counts = await query({ kind: "rowCounts" })
@@ -395,15 +393,15 @@ export async function loadConvexRowEnvelope(
   if (!anyRows) return { status: "loaded", data: emptyEnvelope(now()) }
 
   const results = await Promise.all([
-    query({ kind: "transactions", viewer }),
-    query({ kind: "todos", viewer }),
-    query({ kind: "income", viewer }),
-    query({ kind: "btcBuys", viewer, scope: "visible" }),
-    query({ kind: "btcAccounts", viewer, scope: "visible" }),
-    query({ kind: "btcBillPays", viewer, scope: "visible" }),
-    query({ kind: "budget", viewer, scope: "netWorth" }),
-    query({ kind: "btcSnapshotMeta", viewer, scope: "visible" }),
-    query({ kind: "btcBalanceDocuments", viewer, scope: "netWorth" }),
+    query({ kind: "transactions" }),
+    query({ kind: "todos" }),
+    query({ kind: "income" }),
+    query({ kind: "btcBuys", scope: "visible" }),
+    query({ kind: "btcAccounts", scope: "visible" }),
+    query({ kind: "btcBillPays", scope: "visible" }),
+    query({ kind: "budget", scope: "netWorth" }),
+    query({ kind: "btcSnapshotMeta", scope: "visible" }),
+    query({ kind: "btcBalanceDocuments", scope: "netWorth" }),
   ])
   const [
     transactionsResult,
