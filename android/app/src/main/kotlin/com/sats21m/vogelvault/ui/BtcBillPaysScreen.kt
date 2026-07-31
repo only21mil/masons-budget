@@ -4,7 +4,6 @@ import com.sats21m.vogelvault.domain.BtcBillPay
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
-import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.visibleTo
 import com.sats21m.vogelvault.ui.components.Kpi
 import com.sats21m.vogelvault.ui.components.KpiStrip
@@ -37,21 +36,31 @@ internal fun btcBillPaysScreenSummary(
 internal fun formatBtcBillPayAmount(
     payment: BtcBillPay,
     displayUnit: DisplayUnit,
-): String =
-    when (displayUnit) {
-        DisplayUnit.USD -> Money.formatUsd(Math.negateExact(payment.amountUsdCents))
-        DisplayUnit.BTC, DisplayUnit.SATS ->
-            Money.formatBitcoin(Math.negateExact(payment.btcSpentSats), displayUnit)
-    }
+): String = formatFinancialAmount(
+    FinancialAmount(
+        usdCents = Math.negateExact(payment.amountUsdCents),
+        sats = Math.negateExact(payment.btcSpentSats),
+    ),
+    displayUnit,
+)
 
 internal fun formatBtcBillPayTotal(
     summary: BtcBillPaysScreenSummary,
     displayUnit: DisplayUnit,
-): String =
-    when (displayUnit) {
-        DisplayUnit.USD -> Money.formatUsd(summary.totalUsdCents)
-        DisplayUnit.BTC, DisplayUnit.SATS -> Money.formatBitcoin(summary.totalSats, displayUnit)
-    }
+): String = formatFinancialAmount(
+    FinancialAmount(usdCents = summary.totalUsdCents, sats = summary.totalSats),
+    displayUnit,
+)
+
+internal fun formatBtcBillPayFee(
+    feeUsdCents: Long,
+    displayUnit: DisplayUnit,
+    quote: RecordedBitcoinQuote?,
+): String = formatFinancialAmount(
+    FinancialAmount(usdCents = feeUsdCents),
+    displayUnit,
+    quote,
+)
 
 internal fun VaultLazyListScope.btcBillPaysScreen(
     state: VaultUiState,
@@ -79,11 +88,12 @@ internal fun VaultLazyListScope.btcBillPaysScreen(
     }
 
     item {
+        val selectedTotal = formatBtcBillPayTotal(summary, displayUnit)
+        val quote = state.data.recordedBitcoinQuote()
         KpiStrip(
             listOf(
-                Kpi("Total paid", formatBtcBillPayTotal(summary, displayUnit)),
-                Kpi("Fiat paid", Money.formatUsd(summary.totalUsdCents)),
-                Kpi("Fees", Money.formatUsd(summary.totalFeeUsdCents)),
+                Kpi("Total paid", selectedTotal),
+                Kpi("Fees", formatBtcBillPayFee(summary.totalFeeUsdCents, displayUnit, quote)),
                 Kpi("Payments", summary.rows.size.toString()),
             ),
         )
@@ -95,9 +105,10 @@ internal fun VaultLazyListScope.btcBillPaysScreen(
         rows = summary.rows,
         rowKey = BtcBillPay::id,
     ) { payment ->
+        val quote = state.data.recordedBitcoinQuote()
         val fee = payment.feeUsdCents
             .takeIf { it != 0L }
-            ?.let { " · fee ${Money.formatUsd(it)}" }
+            ?.let { " · fee ${formatBtcBillPayFee(it, displayUnit, quote)}" }
             .orEmpty()
         LedgerRow(
             primary = payment.merchant,

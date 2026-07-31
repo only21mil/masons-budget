@@ -331,11 +331,12 @@ fun ScreenHost(
                         CsvImportLauncher(
                             owner = state.activeProfile,
                             existingTransactions = collections.visibleTransactions,
-                            btcPriceCents = state.data.btcPriceCents,
+                            displayUnit = displayUnit,
+                            quote = state.data.recordedBitcoinQuote(),
                             onWriteSucceeded = onWriteSucceeded,
                         )
                     }
-                    activity(state, checkNotNull(activitySearch)) {
+                    activity(state, checkNotNull(activitySearch), displayUnit) {
                         selectedTransactionKey = it.selectionKey
                     }
                 }
@@ -461,10 +462,24 @@ private fun ScreenHeader(
                     Text(stringResource(R.string.add_transaction_action))
                 }
             }
-            BitcoinUnitToggle(displayUnit, onDisplayUnitChange)
+            if (destination.supportsFinancialDisplayUnit) {
+                BitcoinUnitToggle(displayUnit, onDisplayUnitChange)
+            }
         }
     }
 }
+
+internal val Destination.supportsFinancialDisplayUnit: Boolean
+    get() =
+        this in setOf(
+            Destination.DASHBOARD,
+            Destination.ACTIVITY,
+            Destination.BITCOIN,
+            Destination.BTC_BUYS,
+            Destination.BTC_BILL_PAYS,
+            Destination.NET_WORTH,
+            Destination.RETIREMENT,
+        )
 
 @Composable
 private fun BitcoinUnitToggle(
@@ -488,11 +503,11 @@ private fun BitcoinUnitToggle(
 
 @Composable
 private fun BitcoinFiatNotice(state: VaultUiState) {
-    val asOf = state.data.btcPriceAsOf
-    if (state.data.btcPriceCents > 0L && asOf != null) {
+    val quote = state.data.recordedBitcoinQuote()
+    if (quote != null) {
         StatusBanner(
             text = "USD estimate",
-            detail = "Uses the last recorded Bitcoin buy price from $asOf. This is not a live price.",
+            detail = "Uses the last recorded Bitcoin buy price from ${quote.asOf}. This is not a live price.",
             tone = VaultTextMuted,
         )
     } else {
@@ -513,6 +528,7 @@ private fun VaultLazyListScope.dashboard(
 ) {
     val incomeUnavailable = projection.incomeCents == null
     val balanceUnavailable = projection.balance == null
+    val quote = state.data.recordedBitcoinQuote()
 
     item {
         KpiStrip(
@@ -520,14 +536,22 @@ private fun VaultLazyListScope.dashboard(
                 Kpi(
                     "Spend",
                     figure(state.data.transactions.requiredProjectionUnavailable) {
-                        Money.formatUsd(projection.spendCents)
+                        formatFinancialAmount(
+                            FinancialAmount(usdCents = projection.spendCents),
+                            displayUnit,
+                            quote,
+                        )
                     },
                     tone = VaultNegative,
                 ),
                 Kpi(
                     "Income",
                     figure(incomeUnavailable) {
-                        Money.formatUsd(requireNotNull(projection.incomeCents))
+                        formatFinancialAmount(
+                            FinancialAmount(usdCents = requireNotNull(projection.incomeCents)),
+                            displayUnit,
+                            quote,
+                        )
                     },
                     tone = VaultPositive,
                 ),
@@ -537,11 +561,7 @@ private fun VaultLazyListScope.dashboard(
                         state.formatBalance(requireNotNull(projection.balance), displayUnit)
                     },
                     hint = figure(balanceUnavailable) {
-                        if (displayUnit == DisplayUnit.USD) {
-                            balanceSnapshotBasis(requireNotNull(projection.balance))
-                        } else {
-                            state.formatBalance(requireNotNull(projection.balance), DisplayUnit.USD)
-                        }
+                        balanceSnapshotBasis(requireNotNull(projection.balance))
                     },
                 ),
                 Kpi(
@@ -573,7 +593,7 @@ private fun VaultLazyListScope.dashboard(
             source = state.data.transactions.source,
             rows = projection.activity,
             rowKey = Transaction::id,
-            rowContent = { TransactionRow(it) },
+            rowContent = { TransactionRow(it, displayUnit, quote) },
         )
     }
     if (incomeUnavailable) {
@@ -593,7 +613,11 @@ private fun VaultLazyListScope.dashboard(
             LedgerRow(
                 primary = entry.sourceName,
                 secondary = entry.date,
-                figure = Money.formatUsd(entry.amountCents),
+                figure = formatFinancialAmount(
+                    FinancialAmount(usdCents = entry.amountCents),
+                    displayUnit,
+                    quote,
+                ),
                 figureColor = VaultPositive,
             )
         }
@@ -614,8 +638,10 @@ private fun VaultLazyListScope.dashboard(
 private fun VaultLazyListScope.activity(
     state: VaultUiState,
     search: ActivitySearchProjection,
+    displayUnit: DisplayUnit,
     onSelectTransaction: (Transaction) -> Unit,
 ) {
+    val quote = state.data.recordedBitcoinQuote()
     item { StaleNotice(state.data.transactions.status) }
     if (state.data.transactions.suppressFigures) {
         item { Panel { StateBlock(state.data.transactions.status) } }
@@ -670,7 +696,7 @@ private fun VaultLazyListScope.activity(
                     .fillMaxWidth()
                     .clickable { onSelectTransaction(it) },
             ) {
-                TransactionRow(it)
+                TransactionRow(it, displayUnit, quote)
             }
         },
     )
@@ -680,20 +706,33 @@ private val Transaction.selectionKey: String
     get() = "${owner.key}\u0000$id"
 
 @Composable
-private fun TransactionRow(transaction: Transaction) {
+private fun TransactionRow(
+    transaction: Transaction,
+    displayUnit: DisplayUnit,
+    quote: RecordedBitcoinQuote?,
+) {
     val isSpend = transaction.isSpend
     val isCreditOrWrongSign = transaction.hasOppositeSpendSign
-    val displaySpend = transaction.displaySpendAmount
     LedgerRow(
         primary = transaction.merchant,
         secondary = "${transaction.date} · ${transaction.category}",
-        figure = when {
-            !isSpend -> Money.formatUsd(transaction.incomeAmount)
-            isCreditOrWrongSign -> Money.formatUsd(displaySpend)
-            else -> "-${Money.formatUsd(displaySpend)}"
-        },
+        figure = formatTransactionAmount(transaction, displayUnit, quote),
         figureColor = if (isSpend && !isCreditOrWrongSign) VaultNegative else VaultPositive,
     )
+}
+
+internal fun formatTransactionAmount(
+    transaction: Transaction,
+    displayUnit: DisplayUnit,
+    quote: RecordedBitcoinQuote?,
+): String {
+    val displaySpend = transaction.displaySpendAmount
+    val cents = when {
+        !transaction.isSpend -> transaction.incomeAmount
+        transaction.hasOppositeSpendSign -> displaySpend
+        else -> Math.negateExact(displaySpend)
+    }
+    return formatFinancialAmount(FinancialAmount(usdCents = cents), displayUnit, quote)
 }
 
 // ── Budget ──────────────────────────────────────────────────────────────────
@@ -1003,12 +1042,8 @@ private fun VaultLazyListScope.bitcoin(
         ) { buy ->
             LedgerRow(
                 primary = buy.source,
-                secondary = "${buy.date} · ${Money.formatUsd(buy.priceUsdCents)}",
-                figure = Money.formatBitcoin(
-                    buy.sats,
-                    displayUnit,
-                    buy.priceUsdCents,
-                ),
+                secondary = "${buy.date} · ${Money.formatUsd(buy.priceUsdCents)}/BTC",
+                figure = formatBtcBuyAmount(buy, displayUnit),
                 figureColor = VaultCream,
             )
         }
@@ -1030,7 +1065,7 @@ private fun VaultLazyListScope.bitcoin(
             LedgerRow(
                 primary = payment.merchant,
                 secondary = "${payment.date} · ${payment.category}",
-                figure = "-${Money.formatUsd(payment.amountUsdCents)}",
+                figure = formatBtcBillPayAmount(payment, displayUnit),
                 figureColor = VaultNegative,
                 badge = payment.platform,
             )
@@ -1058,14 +1093,8 @@ private fun VaultLazyListScope.netWorth(
                     },
                 ),
                 Kpi(
-                    "Fiat estimate",
-                    figure(unavailable) {
-                        formatCanonicalBalance(
-                            requireNotNull(projection.balance),
-                            DisplayUnit.USD,
-                            state.data.btcPriceCents,
-                        )
-                    },
+                    "Accounts",
+                    figure(unavailable) { projection.accounts.size.toString() },
                     hint = figure(unavailable) {
                         balanceSnapshotBasis(requireNotNull(projection.balance))
                     },
@@ -1151,7 +1180,11 @@ private fun VaultLazyListScope.accountList(
 }
 
 private fun VaultUiState.formatBitcoin(sats: Long, unit: DisplayUnit): String =
-    Money.formatBitcoin(sats, unit, data.btcPriceCents)
+    formatFinancialAmount(
+        FinancialAmount(sats = sats),
+        unit,
+        data.recordedBitcoinQuote(),
+    )
 
 private fun VaultUiState.formatBalance(balance: BtcBalance, unit: DisplayUnit): String =
     formatCanonicalBalance(balance, unit, data.btcPriceCents)
@@ -1159,24 +1192,32 @@ private fun VaultUiState.formatBalance(balance: BtcBalance, unit: DisplayUnit): 
 internal fun formatCanonicalBalance(
     balance: BtcBalance,
     unit: DisplayUnit,
-    recordedBuyPriceCents: Long,
+    _recordedBuyPriceCents: Long,
 ): String =
-    if (unit == DisplayUnit.USD) {
-        balance.fiatValuation?.let { Money.formatUsd(it.cents) } ?: Money.PRICE_UNAVAILABLE
-    } else {
-        Money.formatBitcoin(balance.totalSats, unit, recordedBuyPriceCents)
-    }
+    formatFinancialAmount(
+        FinancialAmount(
+            usdCents = balance.fiatValuation?.cents,
+            sats = balance.totalSats,
+        ),
+        unit,
+        // A canonical snapshot without its own fiat value stays unavailable in
+        // USD; a last-buy price does not upgrade the snapshot's evidence.
+        quote = null,
+    )
 
 internal fun formatCanonicalAccount(
     account: BtcAccount,
     unit: DisplayUnit,
-    recordedBuyPriceCents: Long,
+    _recordedBuyPriceCents: Long,
 ): String =
-    if (unit == DisplayUnit.USD) {
-        account.fiatValuation?.let { Money.formatUsd(it.cents) } ?: Money.PRICE_UNAVAILABLE
-    } else {
-        Money.formatBitcoin(account.sats, unit, recordedBuyPriceCents)
-    }
+    formatFinancialAmount(
+        FinancialAmount(
+            usdCents = account.fiatValuation?.cents,
+            sats = account.sats,
+        ),
+        unit,
+        quote = null,
+    )
 
 internal fun balanceSnapshotBasis(balance: BtcBalance): String = "Balance snapshot · ${balance.asOf}"
 
