@@ -105,7 +105,7 @@ data class BudgetCategory(
     val spentCents: Long,
     val icon: String? = null,
 ) {
-    val remainingCents: Long get() = budgetCents - spentCents
+    val remainingCents: Long? get() = subtractExactOrNull(budgetCents, spentCents)
     val isOverBudget: Boolean get() = spentCents > budgetCents
 }
 
@@ -124,9 +124,14 @@ data class Budget(
     val strategyNote: String? = null,
     override val owner: FamilyMember,
 ) : Owned {
-    val plannedCents: Long get() = categories.sumOf { it.budgetCents }
-    val actualCents: Long get() = categories.sumOf { it.spentCents }
-    val remainingCents: Long get() = plannedCents - actualCents
+    val plannedCents: Long? get() = categories.sumExactOrNull(BudgetCategory::budgetCents)
+    val actualCents: Long? get() = categories.sumExactOrNull(BudgetCategory::spentCents)
+    val remainingCents: Long?
+        get() {
+            val planned = plannedCents ?: return null
+            val actual = actualCents ?: return null
+            return subtractExactOrNull(planned, actual)
+        }
     val overBudgetCount: Int get() = categories.count { it.isOverBudget }
 }
 
@@ -344,6 +349,7 @@ data class CategorySpend(
     val spentCents: Long,
     val icon: String? = null,
 ) {
+    /** Exact because [deriveBudgetSpend] rejects the projection before constructing this row. */
     val remainingCents: Long get() = budgetCents - spentCents
     val isOverBudget: Boolean get() = spentCents > budgetCents
 }
@@ -357,10 +363,10 @@ data class BudgetSpend(
      * Activity screen for no visible reason.
      */
     val uncategorisedCents: Long,
+    val plannedCents: Long,
+    val actualCents: Long,
+    val remainingCents: Long,
 ) {
-    val plannedCents: Long get() = categories.sumOf { it.budgetCents }
-    val actualCents: Long get() = categories.sumOf { it.spentCents }
-    val remainingCents: Long get() = plannedCents - actualCents
     val overBudgetCount: Int get() = categories.count { it.isOverBudget }
 }
 
@@ -369,18 +375,22 @@ data class BudgetSpend(
  *
  * [transactions] must already be filtered to what the viewer may see. Visibility
  * is deliberately not applied here so the two rules stay separate and testable.
+ * Returns null when any category, aggregate, remaining, or uncategorised value
+ * cannot be represented as exact signed 64-bit cents.
  */
-fun deriveBudgetSpend(budget: Budget, transactions: List<Transaction>): BudgetSpend {
+fun deriveBudgetSpend(budget: Budget, transactions: List<Transaction>): BudgetSpend? {
     val spentByCategory = mutableMapOf<String, Long>()
     for (transaction in transactions.inMonth(budget.month)) {
         val contribution = transaction.spendAmount
         if (contribution == 0L) continue
         spentByCategory[transaction.category] =
-            (spentByCategory[transaction.category] ?: 0L) + contribution
+            addExactOrNull(spentByCategory[transaction.category] ?: 0L, contribution)
+                ?: return null
     }
 
     val categories = budget.categories.map { category ->
         val spent = spentByCategory.remove(category.name) ?: 0L
+        subtractExactOrNull(category.budgetCents, spent) ?: return null
         CategorySpend(
             name = category.name,
             budgetCents = category.budgetCents,
@@ -389,9 +399,39 @@ fun deriveBudgetSpend(budget: Budget, transactions: List<Transaction>): BudgetSp
         )
     }
 
+    val planned = categories.sumExactOrNull(CategorySpend::budgetCents) ?: return null
+    val actual = categories.sumExactOrNull(CategorySpend::spentCents) ?: return null
+    val remaining = subtractExactOrNull(planned, actual) ?: return null
+    val uncategorised = spentByCategory.values.sumExactOrNull { it } ?: return null
+
     return BudgetSpend(
         month = budget.month,
         categories = categories,
-        uncategorisedCents = spentByCategory.values.sum(),
+        uncategorisedCents = uncategorised,
+        plannedCents = planned,
+        actualCents = actual,
+        remainingCents = remaining,
     )
+}
+
+private fun addExactOrNull(left: Long, right: Long): Long? =
+    try {
+        Math.addExact(left, right)
+    } catch (_: ArithmeticException) {
+        null
+    }
+
+private fun subtractExactOrNull(left: Long, right: Long): Long? =
+    try {
+        Math.subtractExact(left, right)
+    } catch (_: ArithmeticException) {
+        null
+    }
+
+private inline fun <T> Iterable<T>.sumExactOrNull(value: (T) -> Long): Long? {
+    var total = 0L
+    for (item in this) {
+        total = addExactOrNull(total, value(item)) ?: return null
+    }
+    return total
 }

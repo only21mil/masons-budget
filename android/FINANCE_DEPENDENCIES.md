@@ -9,6 +9,6 @@ Until both functions exist in the deployed backend, Android reports the correspo
 
 Finance reads stay direct until an Android Room schema can preserve the full document safely. They still use the row reader's credential-rejection contract: snapshot the request credential, invoke the application recovery callback once for an unauthorized attempt, retry both finance reads when a fallback is installed, and retain `UNAUTHORIZED` distinctly when recovery fails.
 
-The Kotlin finance selectors were reproduced from the Android portion of shared finance PR #248. The shared JSON parity fixture remains owned by that PR and is deliberately not copied into this client branch; Android-local tests cover the integrated selector and presentation boundary here.
+The Kotlin finance selectors are checked against the committed `shared/domain/fixtures/finance-market-cases.json` contract. `FinanceParityTest` consumes that same fixture as the TypeScript suite, and `domain/build.gradle.kts` registers it as a `:domain:test` input. The `verifySharedFixtureTestInputs` guard fails the build if a listed shared parity fixture stops invalidating the cached domain test task.
 
 Display-unit conversion for retirement holdings and adult net worth uses only the operational BTC quote from the paired quote snapshot. Canonical account fiat remains canonical, and budget values remain USD-only.

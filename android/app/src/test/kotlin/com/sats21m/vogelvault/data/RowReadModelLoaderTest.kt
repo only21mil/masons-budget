@@ -43,9 +43,11 @@ class RowReadModelLoaderTest {
 
             val model = RowReadModelLoader(repository) { 456L }.load(FamilyMember.VICTOR)
             val adaptedBudget = requireNotNull(model.budget.value)
-            val actual = deriveBudgetSpend(
-                adaptedBudget,
-                model.transactions.value.budgetTransactionsFor(FamilyMember.VICTOR),
+            val actual = requireNotNull(
+                deriveBudgetSpend(
+                    adaptedBudget,
+                    model.transactions.value.budgetTransactionsFor(FamilyMember.VICTOR),
+                ),
             ).actualCents
 
             assertEquals(Freshness.LIVE, model.budget.status, wireMonth)
@@ -80,7 +82,7 @@ class RowReadModelLoaderTest {
             deriveBudgetSpend(
                 it,
                 model.transactions.value.budgetTransactionsFor(FamilyMember.VICTOR),
-            ).actualCents
+            )?.actualCents
         }
         assertNull(actual)
         assertNotEquals(0L, actual)
@@ -275,9 +277,11 @@ class RowReadModelLoaderTest {
 
         val model = RowReadModelLoader(repository) { 456L }.load(FamilyMember.VICTOR)
         val budget = requireNotNull(model.budget.value)
-        val spend = deriveBudgetSpend(
-            budget,
-            model.transactions.value.budgetTransactionsFor(FamilyMember.VICTOR),
+        val spend = requireNotNull(
+            deriveBudgetSpend(
+                budget,
+                model.transactions.value.budgetTransactionsFor(FamilyMember.VICTOR),
+            ),
         )
 
         assertEquals(-2_500L, spend.actualCents)
