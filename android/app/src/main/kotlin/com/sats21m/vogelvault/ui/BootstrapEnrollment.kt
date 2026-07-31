@@ -35,7 +35,7 @@ internal interface BootstrapEnrollment {
     fun reset(): BootstrapAccess?
 }
 
-/** Compatibility adapter for the legacy read-only bootstrap. */
+/** Application adapter exposing only effective, non-secret access state. */
 internal class ReadOnlyBootstrapEnrollment(
     private val application: VaultApplication,
 ) : BootstrapEnrollment {
@@ -43,10 +43,12 @@ internal class ReadOnlyBootstrapEnrollment(
         application.hasBundledReadBootstrap()
 
     override fun currentAccess(): BootstrapAccess =
-        if (application.hasStoredConvexCredential()) {
-            BootstrapAccess.READ_ONLY
-        } else {
+        if (!application.effectiveReadReady.value) {
             BootstrapAccess.NONE
+        } else if (application.hasTodoWriteCredential()) {
+            BootstrapAccess.READ_AND_TODO_WRITE
+        } else {
+            BootstrapAccess.READ_ONLY
         }
 
     override suspend fun connect(): BootstrapConnectionResult {

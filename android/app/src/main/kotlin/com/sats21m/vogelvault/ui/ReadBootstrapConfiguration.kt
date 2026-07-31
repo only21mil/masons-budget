@@ -7,6 +7,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,6 +29,7 @@ import kotlinx.coroutines.launch
  */
 @Composable
 internal fun ReadBootstrapConfiguration(
+    remoteReadReady: Boolean,
     onConnected: (BootstrapAccess) -> Unit,
     modifier: Modifier = Modifier,
     allowReset: Boolean = false,
@@ -41,7 +43,21 @@ internal fun ReadBootstrapConfiguration(
         activeEnrollment?.isBundledEnrollmentAvailable() == true
     }
     var access by remember(activeEnrollment) {
-        mutableStateOf(activeEnrollment?.currentAccess() ?: BootstrapAccess.NONE)
+        mutableStateOf(
+            if (remoteReadReady) {
+                activeEnrollment?.currentAccess() ?: BootstrapAccess.NONE
+            } else {
+                BootstrapAccess.NONE
+            },
+        )
+    }
+    LaunchedEffect(remoteReadReady, activeEnrollment) {
+        access =
+            if (remoteReadReady) {
+                activeEnrollment?.currentAccess() ?: BootstrapAccess.NONE
+            } else {
+                BootstrapAccess.NONE
+            }
     }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<ReadBootstrapStatus?>(null) }

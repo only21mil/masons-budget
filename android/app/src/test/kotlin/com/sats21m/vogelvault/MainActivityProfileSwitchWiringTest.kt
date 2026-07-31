@@ -11,9 +11,9 @@ import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.lifecycle.Lifecycle
-import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.notifications.BudgetNotificationController
 import com.sats21m.vogelvault.ui.ProfileSwitchRefusal
@@ -23,6 +23,8 @@ import com.sats21m.vogelvault.ui.titleRes
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -40,28 +42,22 @@ import org.robolectric.annotation.Config
  * test owns that last boundary by creating MainActivity itself.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [34], application = MainActivityReadinessTestApplication::class)
 class MainActivityProfileSwitchWiringTest {
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
-    private lateinit var application: VaultApplication
-    private lateinit var originalConfig: ConvexConfig
+    private lateinit var application: MainActivityReadinessTestApplication
+    private var originalReadiness = false
 
     private val context: Context
         get() = compose.activity
 
     @Before
     fun openProductionShell() {
-        application = compose.activity.application as VaultApplication
-        originalConfig = application.convexConfigSource.current()
-        application.convexConfigSource.update(
-            ConvexConfig(
-                deploymentUrl = "https://keen-elephant-452.convex.cloud",
-                readToken = "unit-test-placeholder",
-                remoteReadEnabled = true,
-            ),
-        )
+        application = compose.activity.application as MainActivityReadinessTestApplication
+        originalReadiness = application.readReady
+        application.readReady = true
         compose.activityRule.scenario.recreate()
 
         val activity = compose.activity
@@ -74,7 +70,7 @@ class MainActivityProfileSwitchWiringTest {
     @After
     fun restoreReadConfiguration() {
         notificationManager.cancelAll()
-        application.convexConfigSource.update(originalConfig)
+        application.readReady = originalReadiness
     }
 
     @Test
@@ -134,6 +130,15 @@ class MainActivityProfileSwitchWiringTest {
         )
     }
 
+    @Test
+    fun `effective read rejection returns the unlocked shell to enrollment`() {
+        application.readReady = false
+        compose.waitForIdle()
+
+        compose.onNodeWithText(context.getString(R.string.onboarding_title))
+            .fetchSemanticsNode()
+    }
+
     private val notificationManager: NotificationManager
         get() = context.getSystemService(NotificationManager::class.java)
 
@@ -172,4 +177,16 @@ class MainActivityProfileSwitchWiringTest {
     private companion object {
         const val BUDGET_CHANNEL_ID = "budget_alerts"
     }
+}
+
+class MainActivityReadinessTestApplication : VaultApplication() {
+    private val readiness = MutableStateFlow(false)
+    override val effectiveReadReady: StateFlow<Boolean>
+        get() = readiness
+
+    var readReady: Boolean
+        get() = readiness.value
+        set(value) {
+            readiness.value = value
+        }
 }

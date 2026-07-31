@@ -26,6 +26,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -188,12 +189,16 @@ class VaultViewModel(
     private val rowSource: CachedRowDataSource? = null,
     private val financeSource: FinanceReadSource? = null,
     remoteInitiallyEnabled: Boolean = rowSource != null || financeSource != null,
+    effectiveReadReady: StateFlow<Boolean>? = null,
     private val enableRemote: ((String) -> Unit)? = null,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
+    private val observeEffectiveReadReady = effectiveReadReady != null
+    private val readReady = effectiveReadReady ?: MutableStateFlow(remoteInitiallyEnabled)
+
     private val _state = MutableStateFlow(
-        if (!remoteInitiallyEnabled) {
+        if (!readReady.value) {
             VaultUiState(now = clock())
         } else {
             VaultUiState(data = loadingModel(FamilyMember.VICTOR), now = clock())
@@ -201,15 +206,28 @@ class VaultViewModel(
     )
     val state: StateFlow<VaultUiState> = _state.asStateFlow()
     private var rowJob: Job? = null
-    private var remoteEnabled = remoteInitiallyEnabled
+    private var appliedReadReady = readReady.value
     private var cachedModel: CachedReadModel? = null
     private var liveModel: ReadModel? = null
     private var liveUnauthorized = false
     private var loadGeneration = 0L
 
     init {
-        if (remoteInitiallyEnabled && (rowSource != null || financeSource != null)) {
+        if (readReady.value && (rowSource != null || financeSource != null)) {
             connectRows(FamilyMember.VICTOR)
+        }
+        if (observeEffectiveReadReady) {
+            viewModelScope.launch {
+                readReady.collect { ready ->
+                    if (ready == appliedReadReady) return@collect
+                    appliedReadReady = ready
+                    if (ready) {
+                        activateRemoteRows()
+                    } else {
+                        deactivateRemoteRows()
+                    }
+                }
+            }
         }
     }
 
@@ -225,11 +243,11 @@ class VaultViewModel(
 
             current.copy(
                 activeProfile = next,
-                data = if (!remoteEnabled) Fixtures.envelope(next) else loadingModel(next),
+                data = if (!readReady.value) Fixtures.envelope(next) else loadingModel(next),
                 financeDocument = null,
-                financeStatus = if (remoteEnabled) Freshness.LOADING else Freshness.EMPTY,
+                financeStatus = if (readReady.value) Freshness.LOADING else Freshness.EMPTY,
                 marketQuotes = null,
-                marketQuoteStatus = if (remoteEnabled) Freshness.LOADING else Freshness.EMPTY,
+                marketQuoteStatus = if (readReady.value) Freshness.LOADING else Freshness.EMPTY,
                 financeReadFailures = emptySet(),
                 staleAuthorization = false,
                 rowUnauthorized = false,
@@ -241,7 +259,7 @@ class VaultViewModel(
             )
         }
         if (
-            remoteEnabled &&
+            readReady.value &&
             (rowSource != null || financeSource != null) &&
             _state.value.activeProfile == next
         ) {
@@ -258,7 +276,7 @@ class VaultViewModel(
      * screen state and its last trustworthy rows visible until the reload lands.
      */
     fun refreshActiveProfile() {
-        if (!remoteEnabled || (rowSource == null && financeSource == null)) return
+        if (!readReady.value || (rowSource == null && financeSource == null)) return
         connectRows(_state.value.activeProfile)
     }
 
@@ -288,12 +306,23 @@ class VaultViewModel(
             }
             return
         }
+        if (!readReady.value) {
+            _state.update {
+                it.copy(remoteConfigurationError = REMOTE_CONFIGURATION_ERROR)
+            }
+            return
+        }
         enableStoredRemoteRows()
     }
 
     /** Activates a credential that was already committed by the bootstrap repository. */
     fun enableStoredRemoteRows() {
-        remoteEnabled = true
+        if (!readReady.value) return
+        appliedReadReady = true
+        activateRemoteRows()
+    }
+
+    private fun activateRemoteRows() {
         val profile = _state.value.activeProfile
         _state.update {
             it.copy(
@@ -313,7 +342,32 @@ class VaultViewModel(
         if (rowSource != null || financeSource != null) connectRows(profile)
     }
 
+    private fun deactivateRemoteRows() {
+        loadGeneration += 1
+        rowJob?.cancel()
+        rowJob = null
+        cachedModel = null
+        liveModel = null
+        liveUnauthorized = false
+        _state.update { current ->
+            current.copy(
+                data = Fixtures.envelope(current.activeProfile),
+                financeDocument = null,
+                financeStatus = Freshness.EMPTY,
+                marketQuotes = null,
+                marketQuoteStatus = Freshness.EMPTY,
+                financeReadFailures = emptySet(),
+                remoteConfigurationError = null,
+                staleAuthorization = false,
+                rowUnauthorized = false,
+                financeUnauthorized = false,
+                rowReadFailures = emptySet(),
+            )
+        }
+    }
+
     private fun connectRows(profile: FamilyMember) {
+        if (!readReady.value) return
         val generation = ++loadGeneration
         rowJob?.cancel()
         cachedModel = null
@@ -403,13 +457,19 @@ class VaultViewModel(
     private fun isCurrentLoad(
         profile: FamilyMember,
         generation: Long,
-    ): Boolean = loadGeneration == generation && _state.value.activeProfile == profile
+    ): Boolean =
+        readReady.value &&
+            loadGeneration == generation &&
+            _state.value.activeProfile == profile
 
     private fun isCurrentLoad(
         state: VaultUiState,
         profile: FamilyMember,
         generation: Long,
-    ): Boolean = loadGeneration == generation && state.activeProfile == profile
+    ): Boolean =
+        readReady.value &&
+            loadGeneration == generation &&
+            state.activeProfile == profile
 
     private companion object {
         const val REMOTE_CONFIGURATION_ERROR =

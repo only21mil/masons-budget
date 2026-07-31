@@ -24,6 +24,7 @@ import com.sats21m.vogelvault.ui.ConvexTransactionActions
 import com.sats21m.vogelvault.ui.TodoMutationGateway
 import com.sats21m.vogelvault.ui.VaultViewModel
 import java.io.IOException
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Process-scoped infrastructure and the ViewModel composition root.
@@ -52,6 +53,10 @@ open class VaultApplication : Application() {
             initial = initialConvexConfig(storedConvexConfigSource.current()),
         )
     }
+
+    /** One non-secret source of truth for this process's effective read access. */
+    internal open val effectiveReadReady: StateFlow<Boolean>
+        get() = convexConfigSource.allowsRemoteRead
 
     private val readBootstrapRepository: ConvexReadBootstrapRepository by lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,
@@ -197,7 +202,7 @@ open class VaultApplication : Application() {
                         configSource = convexConfigSource,
                         onUnauthorized = ::recoverRejectedConvexConfig,
                     ),
-                    remoteInitiallyEnabled = convexConfigSource.current().allowsRemoteRead,
+                    effectiveReadReady = effectiveReadReady,
                     enableRemote = ::enableRemoteRows,
                 ) as T
             }
@@ -215,11 +220,6 @@ open class VaultApplication : Application() {
             convexConfigSource.update(next)
         }
     }
-
-    internal open fun hasStoredConvexCredential(): Boolean =
-        synchronized(convexConfigLock) {
-            storedConvexConfigSource.current().hasReadToken
-        }
 
     /**
      * Settings removal shares the same process lock as Save and unauthorized
@@ -301,7 +301,7 @@ internal fun removeStoredConvexConfigIfPresent(
     effective: MutableConvexConfigSource,
 ): Boolean {
     val currentStored = stored.current()
-    if (!currentStored.hasReadToken) return false
+    if (!currentStored.allowsRemoteRead) return false
 
     stored.clear()
     if (effective.current().hasSameCredentialAs(currentStored)) {
