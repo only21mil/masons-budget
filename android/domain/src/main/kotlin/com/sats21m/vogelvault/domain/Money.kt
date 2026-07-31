@@ -36,9 +36,14 @@ object Money {
 
     const val SATS_PER_BTC: Long = 100_000_000L
     const val PRICE_UNAVAILABLE = "Price unavailable"
+    const val SHARES_DECIMAL_MAX_INTEGER_DIGITS = 12
+    const val SHARES_DECIMAL_MAX_SCALE = 12
+    const val SHARES_DECIMAL_MAX_PRECISION = 24
+    const val SHARES_DECIMAL_MAX_LENGTH = 25
 
     private const val USD_SCALE = 2
     private const val BTC_SCALE = 8
+    private val sharesDecimalPattern = Regex("^(0|[1-9]\\d*)(?:\\.(\\d+))?$")
 
     /** Parse a decimal value into integer minor units at [scale]. */
     fun parseMinorUnits(value: String?, scale: Int): Long {
@@ -126,9 +131,26 @@ object Money {
             .longValueExact()
     }
 
+    /** Return [value] only when it matches the bounded exact shares wire contract. */
+    fun sharesDecimalOrNull(value: String?): String? {
+        if (value == null || value.length > SHARES_DECIMAL_MAX_LENGTH) return null
+        val match = sharesDecimalPattern.matchEntire(value) ?: return null
+        val whole = match.groupValues[1]
+        val fraction = match.groupValues[2]
+        if (
+            whole.length > SHARES_DECIMAL_MAX_INTEGER_DIGITS ||
+            fraction.length > SHARES_DECIMAL_MAX_SCALE ||
+            whole.length + fraction.length > SHARES_DECIMAL_MAX_PRECISION
+        ) return null
+        return value
+    }
+
+    fun requireSharesDecimal(value: String): String =
+        requireNotNull(sharesDecimalOrNull(value)) { "Not a canonical share quantity: $value" }
+
     /** Value an exact lexical share quantity at an integer-cent share price. */
     fun sharesToValueCents(sharesDecimal: String, pricePerShareCents: Long): Long =
-        BigDecimal(sharesDecimal.trim())
+        BigDecimal(requireSharesDecimal(sharesDecimal))
             .multiply(BigDecimal(pricePerShareCents))
             .setScale(0, RoundingMode.HALF_UP)
             .longValueExact()

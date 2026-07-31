@@ -13,7 +13,12 @@ export type Sats = bigint
 
 export const SATS_PER_BTC = 100_000_000n
 export const PRICE_UNAVAILABLE = "Price unavailable"
+export const SHARES_DECIMAL_MAX_INTEGER_DIGITS = 12
+export const SHARES_DECIMAL_MAX_SCALE = 12
+export const SHARES_DECIMAL_MAX_PRECISION = 24
+export const SHARES_DECIMAL_MAX_LENGTH = 25
 const MAX_SAFE_MINOR_UNITS = BigInt(Number.MAX_SAFE_INTEGER)
+const SHARES_DECIMAL_PATTERN = /^(0|[1-9]\d*)(?:\.(\d+))?$/
 
 export const DISPLAY_UNITS = [
   { storageKey: "btc", label: "BTC" },
@@ -203,16 +208,32 @@ export function usdCentsToSats(cents: Cents, btcPriceCents: Cents): Sats {
  * fractional shares out of IEEE-754 arithmetic and rounds the final cent half
  * away from zero, matching Swift Decimal and Kotlin BigDecimal.
  */
-export function sharesToValueCents(sharesDecimal: string, pricePerShareCents: Cents): Cents {
-  const raw = sharesDecimal.trim()
-  const match = /^(-)?(\d+)(?:\.(\d*))?$/.exec(raw)
-  if (!match) throw new RangeError(`Not a decimal share quantity: ${JSON.stringify(sharesDecimal)}`)
+export function assertSharesDecimal(value: unknown): string {
+  if (typeof value !== "string" || value.length > SHARES_DECIMAL_MAX_LENGTH) {
+    throw new RangeError(`Not a canonical share quantity: ${JSON.stringify(value)}`)
+  }
+  const match = SHARES_DECIMAL_PATTERN.exec(value)
+  if (!match) {
+    throw new RangeError(`Not a canonical share quantity: ${JSON.stringify(value)}`)
+  }
+  const whole = match[1]!
+  const fraction = match[2] ?? ""
+  if (
+    whole.length > SHARES_DECIMAL_MAX_INTEGER_DIGITS ||
+    fraction.length > SHARES_DECIMAL_MAX_SCALE ||
+    whole.length + fraction.length > SHARES_DECIMAL_MAX_PRECISION
+  ) {
+    throw new RangeError(`Share quantity exceeds bounds: ${JSON.stringify(value)}`)
+  }
+  return value
+}
 
-  const [, sign, whole = "", fraction = ""] = match
+export function sharesToValueCents(sharesDecimal: string, pricePerShareCents: Cents): Cents {
+  const raw = assertSharesDecimal(sharesDecimal)
+  const [whole = "0", fraction = ""] = raw.split(".")
   const magnitude = BigInt(`${whole}${fraction}`)
-  const signedMagnitude = sign === "-" ? -magnitude : magnitude
   return divideRoundedHalfAwayFromZero(
-    signedMagnitude * pricePerShareCents,
+    magnitude * pricePerShareCents,
     10n ** BigInt(fraction.length),
   )
 }

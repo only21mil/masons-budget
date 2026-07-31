@@ -43,6 +43,7 @@ import type { Doc } from "./_generated/dataModel";
 import { query, mutation, type MutationCtx } from "./_generated/server";
 import { isRealIsoDate, requireIsoDate } from "./dateValidation";
 import { authenticateDevice, markDeviceSeen } from "./deviceAuth";
+import { assertSharesDecimal } from "./documentProjection";
 import { custodyValidator, familyMemberValidator } from "./schema";
 import { normalizeTodoRecord, todoUpdatedMs } from "./todoNormalize";
 
@@ -784,7 +785,10 @@ function publicFinanceAccount(row: {
       valueCents: holding.valueCents,
       costBasisCents: holding.costBasisCents,
       gainBps: holding.gainBps,
-      sharesDecimal: holding.sharesDecimal,
+      sharesDecimal: assertSharesDecimal(
+        holding.sharesDecimal,
+        `financeDocuments.${row.key}.${holding.name}.sharesDecimal`,
+      ),
       avgCostCents: holding.avgCostCents,
       currentPricePerShareCents: holding.currentPricePerShareCents,
       isProxy: holding.isProxy,
@@ -793,7 +797,10 @@ function publicFinanceAccount(row: {
         date: lot.date,
         type: lot.type,
         pricePerShareCents: lot.pricePerShareCents,
-        sharesDecimal: lot.sharesDecimal,
+        sharesDecimal: assertSharesDecimal(
+          lot.sharesDecimal,
+          `financeDocuments.${row.key}.${holding.name}.lots.sharesDecimal`,
+        ),
         amountInvestedCents: lot.amountInvestedCents,
         note: lot.note,
       })),
