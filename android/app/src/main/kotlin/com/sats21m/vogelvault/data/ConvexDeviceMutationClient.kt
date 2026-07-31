@@ -21,13 +21,17 @@ internal data class ConvexDeviceCredential(
     }
 
     companion object {
-        private val DEVICE_ID = Regex("^[A-Za-z0-9._:-]{1,128}$")
-        private val DEVICE_TOKEN = Regex("^[A-Za-z0-9._-]{32,256}$")
+        // Server-minted components are Base64URL. Retain colon compatibility
+        // for legacy IDs, but reserve dot exclusively for the envelope separator.
+        private val DEVICE_ID = Regex("^[A-Za-z0-9_:-]{1,128}$")
+        private val DEVICE_TOKEN = Regex("^[A-Za-z0-9_-]{32,256}$")
 
         /** Provisioning format: `<device id>.<device token>`. */
         fun parse(value: String): ConvexDeviceCredential {
             val separator = value.indexOf('.')
-            require(separator in 1 until value.lastIndex) { "device credential is malformed" }
+            require(
+                separator in 1 until value.lastIndex && separator == value.lastIndexOf('.'),
+            ) { "device credential is malformed" }
             return ConvexDeviceCredential(
                 deviceId = value.substring(0, separator),
                 deviceToken = value.substring(separator + 1),
