@@ -2022,7 +2022,11 @@ function NetWorthPage() {
           {
             label: isAdult(activeProfile) ? "Adult net worth" : "Net worth",
             value: totalAvailable && selection ? formatNetWorth(selection, displayUnit) : SUPPRESSED,
-            hint: totalAvailable ? "BTC plus retirement · no child balances" : undefined,
+            hint: totalAvailable
+              ? isAdult(activeProfile)
+                ? "BTC plus retirement · no child balances"
+                : "BTC plus retirement · self only"
+              : undefined,
             provenance: "estimated",
           },
           {
@@ -2049,7 +2053,7 @@ function NetWorthPage() {
       {!financeLoaded ? (
         <StatusBanner
           tone="warning"
-          title="Adult net-worth total unavailable"
+          title="Net-worth total unavailable"
           detail="The synchronized finance document did not load. Bitcoin remains visible without inventing a retirement balance."
         />
       ) : null}
