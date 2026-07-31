@@ -770,6 +770,10 @@
   width: calc(100vw - 4rem);
 }
 
+.vv-dialog--wide {
+  max-width: 960px;
+}
+
 .vv-dialog::backdrop {
   background: var(--vv-overlay);
 }

@@ -47,6 +47,7 @@ import {
   formatBitcoin,
 } from "../../data/bitcoinDisplay.ts"
 import {
+  budgetCategoryTransactions,
   deriveBudgetSpend,
   displaySpendAmount,
   hasOppositeSpendSign,
@@ -71,6 +72,7 @@ import {
   type Column,
   DataTable,
   DeleteConfirmDialog,
+  DialogFrame,
   FreshnessTag,
   type KPI,
   KPIStrip,
@@ -904,6 +906,7 @@ function BudgetPage() {
     selectedMonth,
   } = useAppState()
   const [adding, setAdding] = useState(false)
+  const [drilldownCategory, setDrilldownCategory] = useState<string | null>(null)
   const budget = data.budget.value
 
   if (!budget) {
@@ -940,7 +943,20 @@ function BudgetPage() {
     budget.month,
   )
   const interactiveBudgetColumns: ReadonlyArray<Column<CategorySpend>> = [
-    ...budgetColumns,
+    {
+      key: "name",
+      header: "Category",
+      render: (row) => (
+        <Button
+          variant="ghost"
+          onClick={() => setDrilldownCategory(row.name)}
+          aria-label={`Open ${row.name} transactions for ${monthLabel(scope.month)}`}
+        >
+          {row.name}
+        </Button>
+      ),
+    },
+    ...budgetColumns.slice(1),
     {
       key: "actions",
       header: "Actions",
@@ -1037,7 +1053,122 @@ function BudgetPage() {
         month={budget.month}
         onClose={() => setAdding(false)}
       />
+      {drilldownCategory ? (
+        <BudgetCategoryTransactionsDialog
+          open
+          category={drilldownCategory}
+          month={scope.month}
+          onClose={() => setDrilldownCategory(null)}
+        />
+      ) : null}
     </>
+  )
+}
+
+/**
+ * Budget-owned transaction ledger for one category and one selected month.
+ * Exported so the scoped/editable contract can be regression-tested without
+ * opening an Electron window.
+ */
+export function BudgetCategoryTransactionsDialog({
+  open,
+  category,
+  month,
+  onClose,
+}: {
+  open: boolean
+  category: string
+  month: MonthKey
+  onClose: () => void
+}) {
+  const { activeProfile, data } = useAppState()
+  const transactions = budgetCategoryTransactions(
+    activeProfile,
+    data.transactions.value,
+    month,
+    category,
+  )
+  const signedActual = sum(transactions.map(spendAmount))
+  const countLabel = transactions.length === 1
+    ? "1 transaction"
+    : `${transactions.length} transactions`
+  const columns: ReadonlyArray<Column<Transaction>> = [
+    { key: "date", header: "Date", render: (row) => row.date, width: "104px" },
+    { key: "merchant", header: "Merchant", render: (row) => row.merchant },
+    {
+      key: "owner",
+      header: "Owner",
+      render: (row) => <Badge tone="neutral">{row.owner}</Badge>,
+      secondary: true,
+    },
+    {
+      key: "amount",
+      header: "Amount",
+      numeric: true,
+      render: (row) => <AmountCell transaction={row} />,
+    },
+    {
+      key: "actions",
+      header: "Actions",
+      render: (row) => <BudgetDrilldownEditAction transaction={row} />,
+      width: "96px",
+    },
+  ]
+
+  return (
+    <DialogFrame
+      open={open}
+      title={`${category} · ${monthLabel(month)}`}
+      description={`${countLabel} · ${formatUsd(signedActual)} signed actual`}
+      onClose={onClose}
+      footer={<Button onClick={onClose}>Close</Button>}
+      className="vv-dialog--wide"
+    >
+      <DataTable
+        caption={`${category} transactions for ${monthLabel(month)}`}
+        columns={columns}
+        rows={transactions}
+        rowKey={(row) => row.id}
+        state={tableState(data.transactions.status)}
+        emptyTitle={`No ${category} transactions`}
+        emptyDetail={`Nothing in the budget scope for ${monthLabel(month)}.`}
+        footer={`${countLabel} · ${formatUsd(signedActual)} signed actual`}
+      />
+    </DialogFrame>
+  )
+}
+
+function BudgetDrilldownEditAction({ transaction }: { transaction: Transaction }) {
+  const { data, isMutationPending, mutationGate } = useAppState()
+  const [editing, setEditing] = useState(false)
+  const editGate = mutationGate(
+    "transaction.upsert",
+    data.transactions.status,
+    transaction.owner,
+  )
+  const pending = isMutationPending(
+    "transaction.upsert",
+    transaction.owner,
+    transaction.id,
+  )
+
+  return (
+    <div className="vv-row-actions" aria-busy={pending || undefined}>
+      <Button
+        variant="ghost"
+        onClick={() => setEditing(true)}
+        disabled={!editGate.allowed || pending}
+        title={editGate.reason ?? undefined}
+        aria-label={`Edit ${transaction.merchant}`}
+      >
+        Edit
+      </Button>
+      <TransactionFormDialog
+        open={editing}
+        transaction={transaction}
+        onClose={() => setEditing(false)}
+      />
+    </div>
   )
 }
 
