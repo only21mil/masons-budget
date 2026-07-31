@@ -140,6 +140,9 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.biometric:biometric:1.1.0")
+    // Biometric 1.1.0 otherwise resolves Fragment 1.2.5. Activity 1.2.0+ requires
+    // Fragment 1.3.0+ so ActivityResultRegistry permission codes are not rejected.
+    implementation("androidx.fragment:fragment:1.8.9")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
