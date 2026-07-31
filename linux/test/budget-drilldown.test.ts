@@ -4,7 +4,7 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 
 import type { FamilyMember } from "@vogel-vault/domain/family"
-import type { Transaction } from "@vogel-vault/domain/readModel"
+import type { Freshness, Transaction } from "@vogel-vault/domain/readModel"
 
 import { AppStateProvider, useAppState } from "../src/renderer/app/AppState.tsx"
 import {
@@ -12,7 +12,6 @@ import {
   buildSanitizedFixtureEnvelope,
 } from "../src/renderer/data/fixtures.ts"
 import type { RendererMutationAdapter } from "../src/renderer/data/mutations.ts"
-import { budgetCategoryTransactions } from "../src/renderer/data/transactionAmounts.ts"
 import { BudgetCategoryTransactionsDialog } from "../src/renderer/pages/finance/index.tsx"
 import { resolvePage } from "../src/renderer/pages/index.ts"
 
@@ -44,13 +43,13 @@ const ROWS: readonly Transaction[] = [
   tx("Other month", "victor", "2026-06-30", "Groceries", 9_000n),
 ]
 
-function dataWith(rows: readonly Transaction[]): FixtureEnvelope {
+function dataWith(rows: readonly Transaction[], status: Freshness): FixtureEnvelope {
   const data = buildSanitizedFixtureEnvelope("victor")
   return {
     ...data,
     transactions: {
       ...data.transactions,
-      status: "live",
+      status,
       value: rows,
     },
   }
@@ -87,11 +86,15 @@ function BudgetHarness() {
   return page ? createElement(page.Component) : null
 }
 
-function renderDialog(profile: FamilyMember, origin: "remote" | "fixture" = "remote"): string {
+function renderDialog(
+  profile: FamilyMember,
+  origin: "remote" | "fixture" = "remote",
+  status: Freshness = "live",
+): string {
   return renderToStaticMarkup(
     createElement(AppStateProvider, {
       initialProfile: profile,
-      initialData: dataWith(ROWS),
+      initialData: dataWith(ROWS, status),
       initialDataOrigin: origin,
       mutationAdapter: adapter,
       initialMutationCapabilities: ["transaction.upsert"],
@@ -106,32 +109,7 @@ function renderDialog(profile: FamilyMember, origin: "remote" | "fixture" = "rem
 }
 
 describe("Budget category transaction drilldown", () => {
-  it("filters to the selected category", () => {
-    const rows = budgetCategoryTransactions("victor", ROWS, "2026-07", "Utilities")
-    expect(rows.map((row) => row.id)).toEqual(["Other category"])
-  })
-
-  it("filters to the selected month", () => {
-    const rows = budgetCategoryTransactions("victor", ROWS, "2026-06", "Groceries")
-    expect(rows.map((row) => row.id)).toEqual(["Other month"])
-  })
-
-  it("keeps the adult shared-budget scope narrower than oversight visibility", () => {
-    const rows = budgetCategoryTransactions("victor", ROWS, "2026-07", "Groceries")
-    expect(rows.map((row) => row.id)).toEqual(["Adult spend", "Adult credit"])
-  })
-
-  it("keeps a child drilldown self-only", () => {
-    const rows = budgetCategoryTransactions("mason", ROWS, "2026-07", "Groceries")
-    expect(rows.map((row) => row.id)).toEqual(["Child spend"])
-  })
-
-  it("preserves signed cents for purchases and credits", () => {
-    const rows = budgetCategoryTransactions("rachel", ROWS, "2026-07", "Groceries")
-    expect(rows.map((row) => row.amount)).toEqual([5_000n, -1_000n])
-  })
-
-  it("renders scoped USD rows with an enabled edit path only on remote capable data", () => {
+  it("renders shared-scoped signed USD rows with an enabled edit path on live remote data", () => {
     const remote = renderDialog("victor")
     expect(remote).toContain("Groceries · July 2026")
     expect(remote).toContain("2 transactions · $40.00 signed actual")
@@ -149,6 +127,28 @@ describe("Budget category transaction drilldown", () => {
     const fixture = renderDialog("victor", "fixture")
     const disabledEdit = fixture.match(/<button[^>]*aria-label="Edit Adult spend"[^>]*>/)?.[0]
     expect(disabledEdit).toContain("disabled")
+  })
+
+  it("uses shared child visibility in the rendered drilldown", () => {
+    const markup = renderDialog("mason")
+    expect(markup).toContain("Child spend")
+    expect(markup).not.toContain("Adult spend")
+    expect(markup).not.toContain("Adult credit")
+  })
+
+  it("discloses stale transaction rows and disables editing", () => {
+    const markup = renderDialog("victor", "remote", "stale")
+    expect(markup).toContain("Transaction rows are stale")
+    expect(markup).toContain("Editing stays disabled until live rows return")
+    const edit = markup.match(/<button[^>]*aria-label="Edit Adult spend"[^>]*>/)?.[0]
+    expect(edit).toContain("disabled")
+  })
+
+  it("discloses transaction read errors inside the drilldown", () => {
+    const markup = renderDialog("victor", "remote", "error")
+    expect(markup).toContain("Transactions could not load")
+    expect(markup).toContain("No category detail is available")
+    expect(markup).toContain("Could not load")
   })
 
   it("exposes each Budget category as a month-labelled drilldown control", () => {

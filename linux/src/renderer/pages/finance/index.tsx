@@ -14,6 +14,7 @@ import {
   visibleTo,
 } from "@vogel-vault/domain/family"
 import { basisPoints, formatSats, formatUsd, satsToUsdCents, sum } from "@vogel-vault/domain/money"
+import { budgetCategoryTransactionsFor } from "@vogel-vault/domain/finance"
 import {
   type BTCAccount,
   type BTCBillPay,
@@ -41,7 +42,6 @@ import {
   newestVisibleBuyPrice,
 } from "../../data/bitcoinDisplay.ts"
 import {
-  budgetCategoryTransactions,
   deriveBudgetSpend,
   displaySpendAmount,
   hasOppositeSpendSign,
@@ -547,6 +547,28 @@ function StaleNotice({ status }: { status: string }) {
   )
 }
 
+function TransactionDrilldownStatus({ status }: { status: Freshness }) {
+  if (status === "stale") {
+    return (
+      <StatusBanner
+        tone="warning"
+        title="Transaction rows are stale"
+        detail="This drilldown may not include recent changes. Editing stays disabled until live rows return."
+      />
+    )
+  }
+  if (status === "error") {
+    return (
+      <StatusBanner
+        tone="negative"
+        title="Transactions could not load"
+        detail="No category detail is available until the transaction read recovers."
+      />
+    )
+  }
+  return null
+}
+
 // ── Dashboard ───────────────────────────────────────────────────────────────
 
 function DashboardPage() {
@@ -867,7 +889,7 @@ export function BudgetCategoryTransactionsDialog({
   onClose: () => void
 }) {
   const { activeProfile, data } = useAppState()
-  const transactions = budgetCategoryTransactions(
+  const transactions = budgetCategoryTransactionsFor(
     activeProfile,
     data.transactions.value,
     month,
@@ -909,6 +931,7 @@ export function BudgetCategoryTransactionsDialog({
       footer={<Button onClick={onClose}>Close</Button>}
       className="vv-dialog--wide"
     >
+      <TransactionDrilldownStatus status={data.transactions.status} />
       <DataTable
         caption={`${category} transactions for ${monthLabel(month)}`}
         columns={columns}
@@ -936,14 +959,18 @@ function BudgetDrilldownEditAction({ transaction }: { transaction: Transaction }
     transaction.owner,
     transaction.id,
   )
+  const liveRows = data.transactions.status === "live"
+  const disabledReason = liveRows
+    ? editGate.reason
+    : "Current live transaction rows are required before editing."
 
   return (
     <div className="vv-row-actions" aria-busy={pending || undefined}>
       <Button
         variant="ghost"
         onClick={() => setEditing(true)}
-        disabled={!editGate.allowed || pending}
-        title={editGate.reason ?? undefined}
+        disabled={!liveRows || !editGate.allowed || pending}
+        title={disabledReason ?? undefined}
         aria-label={`Edit ${transaction.merchant}`}
       >
         Edit
