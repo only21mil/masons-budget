@@ -122,8 +122,8 @@ class MainActivity : FragmentActivity() {
                     onboardingRequired ->
                         OnboardingView(
                             configurationError = state.remoteConfigurationError,
-                            onConfigure = { readToken ->
-                                model.enableRemoteRows(readToken)
+                            onConnected = {
+                                model.enableStoredRemoteRows()
                                 onboardingRequired =
                                     requiresOnboarding(app.convexConfigSource.current().readiness)
                             },
@@ -152,6 +152,7 @@ class MainActivity : FragmentActivity() {
                             onRequestProfileSwitchAuthentication = profileSwitchGate::authenticate,
                             profileSwitchRefusal = profileSwitchRefusal.value,
                             onEnableRemoteRows = model::enableRemoteRows,
+                            onRemoteRowsConnected = model::enableStoredRemoteRows,
                             // Every accepted write reaches this one authoritative
                             // row-refresh trigger without resetting profile-scoped
                             // navigation state as a real profile switch does.
