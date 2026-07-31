@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Build one local-only bootstrap APK. The pairing value is read by Gradle from
+// Build one private bootstrap APK. The pairing value is read by Gradle from
 // a validated private file path in VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE; it is
 // never accepted in argv or printed by this helper.
 
@@ -23,6 +23,21 @@ const generatedApk = path.join(
   "debug",
   "app-debug.apk",
 );
+const appBuildRoot = path.join(androidRoot, "app", "build");
+const generatedBuildConfig = path.join(
+  appBuildRoot,
+  "generated",
+  "source",
+  "buildConfig",
+  "debug",
+  "com",
+  "sats21m",
+  "vogelvault",
+  "BuildConfig.java",
+);
+
+export const GITHUB_ACTIONS_READ_BOOTSTRAP_PURPOSE =
+  "android-read-bootstrap-apk-v1";
 
 function pathInside(parent, candidate) {
   const relative = path.relative(parent, candidate);
@@ -124,25 +139,84 @@ function runGradle(args, environment, spawn = spawnSync) {
     stdio: "inherit",
   });
   if (result.error || result.status !== 0) {
-    throw new Error("The local bootstrap Gradle operation failed.");
+    throw new Error("The bootstrap Gradle operation failed.");
+  }
+}
+
+function validateCiBuildEnvironment(environment) {
+  if (!environment.CI) return;
+  const approved =
+    environment.CI === "true" &&
+    environment.GITHUB_ACTIONS === "true" &&
+    environment.GITHUB_EVENT_NAME === "workflow_dispatch" &&
+    environment.VOGEL_VAULT_ANDROID_BOOTSTRAP_CI_PURPOSE ===
+      GITHUB_ACTIONS_READ_BOOTSTRAP_PURPOSE;
+  if (!approved) {
+    throw new Error(
+      "Android read-bootstrap builds are forbidden in CI outside the approved GitHub Actions workflow_dispatch path.",
+    );
+  }
+}
+
+function scrubIntermediates(directory, spawn = spawnSync) {
+  if (!fs.existsSync(directory)) return;
+  const metadata = fs.lstatSync(directory);
+  if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+    throw new Error("Refusing to scrub an unexpected Android build path.");
+  }
+  const result = spawn(
+    "find",
+    [directory, "-xdev", "-type", "f", "-exec", "shred", "-u", "--", "{}", "+"],
+    { encoding: "utf8", stdio: "inherit" },
+  );
+  if (result.error || result.status !== 0) {
+    throw new Error("Could not shred Android read-bootstrap intermediates.");
+  }
+  fs.rmSync(directory, { recursive: true, force: true });
+  if (fs.existsSync(directory)) {
+    throw new Error("Android read-bootstrap intermediates remained after cleanup.");
+  }
+}
+
+function validateCleanBuildConfig(file, pairingCode) {
+  const buildConfig = fs.readFileSync(file, "utf8");
+  const emptyReadToken = 'public static final String CONVEX_READ_TOKEN = "";';
+  const emptyBootstrap =
+    'public static final String CONVEX_READ_BOOTSTRAP_PAIR = "";';
+  if (
+    !buildConfig.includes(emptyReadToken) ||
+    !buildConfig.includes(emptyBootstrap) ||
+    buildConfig.includes(pairingCode)
+  ) {
+    throw new Error("The clean replacement build retained read-bootstrap material.");
   }
 }
 
 export function buildAndroidReadBootstrap({
   pairingFile,
   output,
+  cleanOutput,
   processEnv = process.env,
   spawn = spawnSync,
   generatedApkPath = generatedApk,
+  generatedBuildConfigPath = generatedBuildConfig,
+  intermediatesPath = appBuildRoot,
 }) {
-  if (processEnv.CI) {
-    throw new Error("Android read-bootstrap builds are forbidden in CI.");
-  }
-  const { file } = readPrivatePairingFile(pairingFile, processEnv.HOME);
+  validateCiBuildEnvironment(processEnv);
+  const { file, pairingCode } = readPrivatePairingFile(
+    pairingFile,
+    processEnv.HOME,
+  );
   const stableDebugKeystore = validateStableDebugKeystore(
     processEnv.VOGEL_DEBUG_KEYSTORE,
   );
   const destination = validatePrivateOutputPath(output, processEnv.HOME);
+  const cleanDestination = cleanOutput
+    ? validatePrivateOutputPath(cleanOutput, processEnv.HOME)
+    : undefined;
+  if (cleanDestination === destination) {
+    throw new Error("Bootstrap and clean APK outputs must be different paths.");
+  }
   const buildEnvironment = {
     ...processEnv,
     CONVEX_READ_TOKEN: "",
@@ -157,42 +231,56 @@ export function buildAndroidReadBootstrap({
     "--no-daemon",
     "--rerun-tasks",
   ];
-  let buildSucceeded = false;
   try {
     runGradle(gradleFlags, buildEnvironment, spawn);
-    buildSucceeded = true;
     if (!fs.statSync(generatedApkPath).isFile()) {
       throw new Error("Gradle did not produce the expected bootstrap APK.");
     }
     fs.copyFileSync(generatedApkPath, destination, fs.constants.COPYFILE_EXCL);
     fs.chmodSync(destination, 0o600);
-  } finally {
-    try {
+
+    if (cleanDestination) {
+      scrubIntermediates(intermediatesPath, spawn);
       runGradle(
-        [":app:clean", "--no-build-cache", "--no-configuration-cache", "--no-daemon"],
+        gradleFlags,
         {
           ...processEnv,
           CONVEX_READ_TOKEN: "",
           CONVEX_SYNC_TOKEN: "",
+          VOGEL_DEBUG_KEYSTORE: stableDebugKeystore,
           VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE: "",
+          VOGEL_VAULT_ANDROID_BOOTSTRAP_CI_PURPOSE: "",
         },
         spawn,
       );
-    } catch (cleanupError) {
-      if (buildSucceeded) throw cleanupError;
+      if (!fs.statSync(generatedApkPath).isFile()) {
+        throw new Error("Gradle did not produce the expected clean APK.");
+      }
+      validateCleanBuildConfig(generatedBuildConfigPath, pairingCode);
+      fs.copyFileSync(
+        generatedApkPath,
+        cleanDestination,
+        fs.constants.COPYFILE_EXCL,
+      );
+      fs.chmodSync(cleanDestination, 0o600);
     }
+  } finally {
+    scrubIntermediates(intermediatesPath, spawn);
   }
-  return { output: destination };
+  return { output: destination, cleanOutput: cleanDestination };
 }
 
 function usage() {
   console.log(`Usage:
   VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE="$HOME/work/.../pairing.txt" \\
-    node scripts/build-android-read-bootstrap.mjs --out "$HOME/work/.../vogel-vault-bootstrap.apk"
+    node scripts/build-android-read-bootstrap.mjs \\
+      --out "$HOME/work/.../vogel-vault-bootstrap.apk" \\
+      --clean-out "$HOME/work/.../vogel-vault-clean.apk"
 
 The input and output paths must be absolute and beneath $HOME/work. The input
-must be an owned, regular, non-symlink mode-0600 file. CI and Gradle caches are
-forbidden. The pairing value itself is never accepted in argv.
+must be an owned, regular, non-symlink mode-0600 file. CI is allowed only through
+the exact manual GitHub Actions path, and Gradle caches are forbidden. The
+pairing value itself is never accepted in argv.
 `);
 }
 
@@ -201,8 +289,15 @@ export function main(args = process.argv.slice(2), processEnv = process.env) {
     usage();
     return;
   }
-  if (args.length !== 2 || args[0] !== "--out") {
-    throw new Error("Expected exactly --out <absolute-path>.");
+  if (
+    !(
+      (args.length === 2 && args[0] === "--out") ||
+      (args.length === 4 && args[0] === "--out" && args[2] === "--clean-out")
+    )
+  ) {
+    throw new Error(
+      "Expected --out <absolute-path> and optional --clean-out <absolute-path>.",
+    );
   }
   const pairingFile = processEnv.VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE;
   if (!pairingFile) {
@@ -211,10 +306,14 @@ export function main(args = process.argv.slice(2), processEnv = process.env) {
   const result = buildAndroidReadBootstrap({
     pairingFile,
     output: args[1],
+    cleanOutput: args[3],
     processEnv,
   });
-  console.log(`Wrote one local bootstrap APK to ${result.output}.`);
-  console.log("No pairing value was printed; Gradle intermediates were cleaned.");
+  console.log(`Wrote one private bootstrap APK to ${result.output}.`);
+  if (result.cleanOutput) {
+    console.log(`Wrote one clean replacement APK to ${result.cleanOutput}.`);
+  }
+  console.log("No pairing value was printed; Gradle intermediates were shredded.");
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === scriptPath) {
