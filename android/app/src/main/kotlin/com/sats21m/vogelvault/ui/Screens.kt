@@ -62,6 +62,7 @@ import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.ReadModel
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.domain.Transaction
+import com.sats21m.vogelvault.domain.budgetCategoryTransactionsFor
 import com.sats21m.vogelvault.domain.budgetMonthsFor
 import com.sats21m.vogelvault.domain.budgetTransactionsFor
 import com.sats21m.vogelvault.domain.deriveBudgetSpend
@@ -137,15 +138,6 @@ internal data class BudgetCategoryDrilldownScope(
     val month: String,
     val category: String,
 )
-
-internal fun budgetCategoryTransactionsFor(
-    viewer: FamilyMember,
-    transactions: List<Transaction>,
-    scope: BudgetCategoryDrilldownScope,
-): List<Transaction> =
-    transactions
-        .budgetTransactionsFor(viewer)
-        .filter { it.date.take(7) == scope.month && it.category == scope.category }
 
 internal fun ReadModel.dashboardIncomeEntries(
     viewer: FamilyMember,
@@ -380,10 +372,10 @@ fun ScreenHost(
                             state = state,
                             scope = drilldownScope,
                             transactions =
-                                budgetCategoryTransactionsFor(
+                                transactionsInput.budgetCategoryTransactionsFor(
                                     viewer = state.activeProfile,
-                                    transactions = transactionsInput,
-                                    scope = drilldownScope,
+                                    month = drilldownScope.month,
+                                    category = drilldownScope.category,
                                 ),
                             onBack = {
                                 budgetDrilldownMonth = null
