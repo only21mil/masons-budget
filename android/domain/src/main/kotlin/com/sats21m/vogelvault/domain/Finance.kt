@@ -138,9 +138,21 @@ fun FinanceHolding.marketValue(quotes: List<MarketQuote>): HoldingValuation {
     val observation = symbol?.let(quotes::marketQuoteFor)
     val quote = observation?.takeIf { it.isUsable }
     return if (quote != null) {
+        val marketValueCents = Money.sharesToValueCents(
+            sharesDecimal,
+            checkNotNull(quote.priceCents),
+        )
+        if (valueCents > 0L && zeroShares.matches(sharesDecimal)) {
+            return HoldingValuation(
+                holding = this,
+                valueCents = valueCents,
+                basis = HoldingValuationBasis.STORED_VALUE,
+                quote = quote,
+            )
+        }
         HoldingValuation(
             holding = this,
-            valueCents = Money.sharesToValueCents(sharesDecimal, checkNotNull(quote.priceCents)),
+            valueCents = marketValueCents,
             basis = HoldingValuationBasis.MARKET_QUOTE,
             quote = quote,
         )
@@ -148,6 +160,8 @@ fun FinanceHolding.marketValue(quotes: List<MarketQuote>): HoldingValuation {
         HoldingValuation(this, valueCents, HoldingValuationBasis.STORED_VALUE, observation)
     }
 }
+
+private val zeroShares = Regex("""0(?:\.0+)?""")
 
 fun FinanceAccount.marketValue(quotes: List<MarketQuote>): AccountValuation {
     val holdingValues = holdings.map { it.marketValue(quotes) }
