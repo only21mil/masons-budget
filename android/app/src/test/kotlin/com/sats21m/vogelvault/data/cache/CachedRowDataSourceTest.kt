@@ -144,7 +144,7 @@ class CachedRowDataSourceTest {
         }
 
     @Test
-    fun `usable fallback is retried once after stored token rejection`() =
+    fun `usable replacement configuration is retried once after token rejection`() =
         runBlocking {
             val remote = FakeRows().apply { unauthorized = true }
             val manualConfig =
@@ -153,10 +153,10 @@ class CachedRowDataSourceTest {
                     readToken = "manual-test-token",
                     remoteReadEnabled = true,
                 )
-            val bakedConfig =
+            val replacementConfig =
                 ConvexConfig(
                     deploymentUrl = "https://example.convex.cloud",
-                    readToken = "baked-test-token",
+                    readToken = "replacement-test-token",
                     remoteReadEnabled = true,
                 )
             val configSource = MutableConvexConfigSource(manualConfig)
@@ -168,7 +168,7 @@ class CachedRowDataSourceTest {
                     configSource = configSource,
                     onUnauthorized = {
                         rejectionCount.incrementAndGet()
-                        configSource.update(bakedConfig)
+                        configSource.update(replacementConfig)
                         remote.unauthorized = false
                         true
                     },
@@ -178,11 +178,11 @@ class CachedRowDataSourceTest {
 
             assertFalse(loaded.unauthorized)
             assertEquals(1, rejectionCount.get())
-            assertEquals(bakedConfig, configSource.current())
+            assertEquals(replacementConfig, configSource.current())
         }
 
     @Test
-    fun `fallback installed by concurrent finance read still retries rows`() =
+    fun `replacement installed by concurrent finance read still retries rows`() =
         runBlocking {
             val remote = FakeRows().apply { unauthorized = true }
             val rejected =
@@ -191,10 +191,10 @@ class CachedRowDataSourceTest {
                     readToken = "manual-test-token",
                     remoteReadEnabled = true,
                 )
-            val fallback =
+            val replacementConfig =
                 ConvexConfig(
                     deploymentUrl = "https://example.convex.cloud",
-                    readToken = "baked-test-token",
+                    readToken = "replacement-test-token",
                     remoteReadEnabled = true,
                 )
             val configSource = MutableConvexConfigSource(rejected)
@@ -205,7 +205,7 @@ class CachedRowDataSourceTest {
                     configSource = configSource,
                     onUnauthorized = {
                         // Mirrors finance winning the shared compare-and-clear lock.
-                        configSource.update(fallback)
+                        configSource.update(replacementConfig)
                         remote.unauthorized = false
                         false
                     },
@@ -215,7 +215,7 @@ class CachedRowDataSourceTest {
 
             assertFalse(loaded.unauthorized)
             assertEquals(Freshness.LIVE, loaded.data.transactions.status)
-            assertEquals(fallback, configSource.current())
+            assertEquals(replacementConfig, configSource.current())
         }
 
     @Test

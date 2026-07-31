@@ -59,7 +59,7 @@ class WriteCredentialAccessorTest {
     @Test
     fun `settings sync token and today device credential use separate verified accessors`() {
         showSettings()
-        compose.onNodeWithText("Write credential").performTextInput("settings-token")
+        compose.onNodeWithText("Sync credential").performTextInput("settings-token")
         compose.onNodeWithText("Save securely").performClick()
         settle()
 
@@ -78,9 +78,9 @@ class WriteCredentialAccessorTest {
         showSettingsDestination()
         compose
             .onNode(hasScrollAction())
-            .performScrollToNode(hasText("Write credential"))
+            .performScrollToNode(hasText("Sync credential"))
         compose
-            .onNodeWithText("Write credential")
+            .onNodeWithText("Sync credential")
             .performTextInput("settings-destination-token")
         compose.onNodeWithText("Save securely").performScrollTo().performClick()
         settle()
@@ -91,7 +91,10 @@ class WriteCredentialAccessorTest {
             "The Settings destination did not cross VaultApplication.saveConvexWriteCredential",
         )
         compose
-            .onNodeWithText("A write credential is stored securely on this device.")
+            .onNodeWithText(
+                "A sync credential for transaction, budget, and Bitcoin writes is stored securely on this device. " +
+                    "Todo writes use a separate paired-device credential.",
+            )
             .performScrollTo()
             .fetchSemanticsNode()
         assertEquals(
@@ -131,7 +134,7 @@ class WriteCredentialAccessorTest {
         failures.forEachIndexed { index, (failure, expectedMessage) ->
             application.nextSaveFailure = failure
             showSettings()
-            compose.onNodeWithText("Write credential").performTextInput("token-$index")
+            compose.onNodeWithText("Sync credential").performTextInput("token-$index")
             compose.onNodeWithText("Save securely").performClick()
             settle()
 

@@ -35,24 +35,6 @@ val ciDebugKeyAlias = providers.environmentVariable("VOGEL_DEBUG_KEY_ALIAS")
 val ciDebugKeyPassword = providers.environmentVariable("VOGEL_DEBUG_KEY_PASSWORD")
     .orNull?.takeIf { it.isNotBlank() } ?: "android"
 
-// The read credential is injected only into debug BuildConfig at build time.
-// A missing or whitespace-only environment value becomes an actual empty
-// string, which keeps the existing fixture-only, remote-disabled startup path.
-// Do not print this provider or its value: BuildConfig is the only intended sink.
-val convexReadToken =
-    providers.environmentVariable("CONVEX_READ_TOKEN")
-        .orNull
-        ?.takeIf { it.isNotBlank() }
-        .orEmpty()
-
-fun String.asBuildConfigString(): String =
-    "\"" +
-        replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r") +
-        "\""
-
 android {
     namespace = "com.sats21m.vogelvault"
     compileSdk = 35
@@ -64,7 +46,8 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
-        // Release variants never receive the debug read credential.
+        // No variant receives a read credential at build time. Users configure
+        // it manually and Android keeps it in encrypted app storage.
         buildConfigField("String", "CONVEX_READ_TOKEN", "\"\"")
     }
 
@@ -83,10 +66,9 @@ android {
 
     buildTypes {
         debug {
-            // Debug-signed only. Release signing is not configured here on
-            // purpose — distribution is an approval-gated step, not a build flag.
+            // Release signing is not configured here on purpose — distribution
+            // is an approval-gated step, not a build flag.
             isMinifyEnabled = false
-            buildConfigField("String", "CONVEX_READ_TOKEN", convexReadToken.asBuildConfigString())
         }
         release {
             isMinifyEnabled = true

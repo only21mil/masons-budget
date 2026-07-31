@@ -57,7 +57,10 @@ class TodoWriteOutcomeTest {
         }
 
         assertEquals(perAction.size, perAction.distinct().size, "one sentence per action: $perAction")
-        assertTrue(perAction.all { it.contains("credential") }, "the shared cause still has to be visible")
+        assertTrue(
+            perAction.all { it.contains("paired-device credential") },
+            "the shared cause still has to name the todo credential",
+        )
     }
 
     @Test
@@ -67,7 +70,7 @@ class TodoWriteOutcomeTest {
             todoWriteFailureMessage(TodoWriteAction.UPDATE, ConvexResult.Failed("transport failure (IOException)")),
         )
 
-        assertTrue(unauthorized.contains("missing or was rejected"))
+        assertTrue(unauthorized.contains("paired-device credential is missing or was rejected"))
         assertTrue(failed.contains("transport failure (IOException)"))
     }
 
