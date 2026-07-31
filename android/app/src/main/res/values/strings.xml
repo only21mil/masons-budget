@@ -140,10 +140,11 @@
     <string name="vault_profile_prompt_subtitle">Authenticate before opening another family member’s profile</string>
     <string name="vault_auth_error">Authentication did not complete. The vault remains locked.</string>
     <string name="onboarding_title">Connect Vogel Vault</string>
-    <string name="onboarding_detail">This installation is not configured for the family ledger, so household data is unavailable.</string>
-    <string name="onboarding_token_help">Connect this approved installation to enable authenticated, read-only household data.</string>
-    <string name="read_bootstrap_title">Secure read connection</string>
-    <string name="read_bootstrap_connected">Connected securely. The stored credential is never shown.</string>
+    <string name="onboarding_detail">Connect once to load household data securely on this device.</string>
+    <string name="onboarding_token_help">Setup grants only the access approved for this installation. Credentials are never displayed or entered here.</string>
+    <string name="read_bootstrap_title">Secure connection</string>
+    <string name="read_bootstrap_connected_read_only">Connected for household data. Todo changes are not enabled.</string>
+    <string name="read_bootstrap_connected_full">Connected for household data and todo changes.</string>
     <string name="read_bootstrap_unconfigured">This installation is not connected to household data.</string>
     <string name="read_bootstrap_connect">Connect securely</string>
     <string name="read_bootstrap_connecting">Connecting…</string>

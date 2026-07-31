@@ -1493,7 +1493,7 @@ private fun VaultLazyListScope.settings(
     item {
         Panel(stringResource(R.string.read_bootstrap_title)) {
             ReadBootstrapConfiguration(
-                onConnected = onRemoteRowsConnected,
+                onConnected = { onRemoteRowsConnected() },
                 modifier = Modifier.padding(VaultSpace.md),
                 allowReset = true,
             )
