@@ -3,6 +3,9 @@ package com.sats21m.vogelvault.data
 import java.net.URI
 import java.net.URISyntaxException
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * The Vogel Vault — Android Convex read configuration.
@@ -171,10 +174,21 @@ object DisabledConvexConfigSource : ConvexConfigSource {
  */
 class MutableConvexConfigSource(initial: ConvexConfig = ConvexConfig()) : ConvexConfigSource {
     private val config = AtomicReference(initial)
+    private val _allowsRemoteRead = MutableStateFlow(initial.allowsRemoteRead)
+
+    /**
+     * Effective, non-secret read readiness for UI and lifecycle consumers.
+     *
+     * This is updated only from [ConvexConfig.allowsRemoteRead], so credential
+     * presence, cached row provenance, and UI-local flags cannot claim a
+     * connection after the effective configuration has failed closed.
+     */
+    val allowsRemoteRead: StateFlow<Boolean> = _allowsRemoteRead.asStateFlow()
 
     override fun current(): ConvexConfig = config.get()
 
     fun update(next: ConvexConfig) {
         config.set(next)
+        _allowsRemoteRead.value = next.allowsRemoteRead
     }
 }

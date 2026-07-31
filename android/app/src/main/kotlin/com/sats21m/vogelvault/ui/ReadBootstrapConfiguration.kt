@@ -7,6 +7,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,14 +29,35 @@ import kotlinx.coroutines.launch
  */
 @Composable
 internal fun ReadBootstrapConfiguration(
-    onConnected: () -> Unit,
+    remoteReadReady: Boolean,
+    onConnected: (BootstrapAccess) -> Unit,
     modifier: Modifier = Modifier,
     allowReset: Boolean = false,
+    enrollment: BootstrapEnrollment? = null,
 ) {
     val application = LocalContext.current.applicationContext as? VaultApplication
-    val available = remember(application) { application?.hasBundledReadBootstrap() == true }
-    var stored by remember(application) {
-        mutableStateOf(application?.hasStoredConvexCredential() == true)
+    val activeEnrollment = remember(application, enrollment) {
+        enrollment ?: application?.let(::ReadOnlyBootstrapEnrollment)
+    }
+    val available = remember(activeEnrollment) {
+        activeEnrollment?.isBundledEnrollmentAvailable() == true
+    }
+    var access by remember(activeEnrollment) {
+        mutableStateOf(
+            if (remoteReadReady) {
+                activeEnrollment?.currentAccess() ?: BootstrapAccess.NONE
+            } else {
+                BootstrapAccess.NONE
+            },
+        )
+    }
+    LaunchedEffect(remoteReadReady, activeEnrollment) {
+        access =
+            if (remoteReadReady) {
+                activeEnrollment?.currentAccess() ?: BootstrapAccess.NONE
+            } else {
+                BootstrapAccess.NONE
+            }
     }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<ReadBootstrapStatus?>(null) }
@@ -48,10 +70,10 @@ internal fun ReadBootstrapConfiguration(
         verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
     ) {
         Text(
-            text = stringResource(if (stored) R.string.read_bootstrap_connected else R.string.read_bootstrap_unconfigured),
+            text = stringResource(access.messageResource()),
         )
 
-        if (!stored && available && application != null) {
+        if (access == BootstrapAccess.NONE && available && activeEnrollment != null) {
             Button(
                 enabled = !busy,
                 onClick = {
@@ -60,12 +82,15 @@ internal fun ReadBootstrapConfiguration(
                     status = null
                     resetFailed = false
                     scope.launch {
-                        val next = application.connectBundledReadBootstrap()
+                        val result = activeEnrollment.connect()
                         busy = false
-                        status = next
-                        if (next == ReadBootstrapStatus.CONNECTED) {
-                            stored = application.hasStoredConvexCredential()
-                            if (stored) onConnected()
+                        status = result.status
+                        access = result.access
+                        if (
+                            result.status == ReadBootstrapStatus.CONNECTED &&
+                            result.access != BootstrapAccess.NONE
+                        ) {
+                            onConnected(result.access)
                         }
                     }
                 },
@@ -76,7 +101,7 @@ internal fun ReadBootstrapConfiguration(
                     ),
                 )
             }
-        } else if (!stored && !available) {
+        } else if (access == BootstrapAccess.NONE && !available) {
             Text(stringResource(R.string.read_bootstrap_unavailable))
         }
 
@@ -87,7 +112,7 @@ internal fun ReadBootstrapConfiguration(
             )
         }
 
-        if (stored && allowReset && application != null) {
+        if (access != BootstrapAccess.NONE && allowReset && activeEnrollment != null) {
             if (!confirmReset) {
                 OutlinedButton(
                     enabled = !busy,
@@ -100,11 +125,9 @@ internal fun ReadBootstrapConfiguration(
                 Button(
                     enabled = !busy,
                     onClick = {
-                        resetFailed = runCatching {
-                            application.removeStoredConvexCredential()
-                            stored = application.hasStoredConvexCredential()
-                            stored
-                        }.getOrDefault(true)
+                        val remaining = runCatching { activeEnrollment.reset() }.getOrNull()
+                        resetFailed = remaining == null
+                        if (remaining != null) access = remaining
                         confirmReset = false
                         status = null
                     },
@@ -122,8 +145,14 @@ internal fun ReadBootstrapConfiguration(
     }
 }
 
+private fun BootstrapAccess.messageResource(): Int = when (this) {
+    BootstrapAccess.NONE -> R.string.read_bootstrap_unconfigured
+    BootstrapAccess.READ_ONLY -> R.string.read_bootstrap_connected_read_only
+    BootstrapAccess.READ_AND_TODO_WRITE -> R.string.read_bootstrap_connected_full
+}
+
 private fun ReadBootstrapStatus.messageResource(): Int = when (this) {
-    ReadBootstrapStatus.CONNECTED -> R.string.read_bootstrap_connected
+    ReadBootstrapStatus.CONNECTED -> R.string.read_bootstrap_connected_read_only
     ReadBootstrapStatus.UNAVAILABLE -> R.string.read_bootstrap_unavailable
     ReadBootstrapStatus.INVALID_BUNDLE -> R.string.read_bootstrap_invalid_bundle
     ReadBootstrapStatus.ALREADY_CLAIMED -> R.string.read_bootstrap_already_claimed

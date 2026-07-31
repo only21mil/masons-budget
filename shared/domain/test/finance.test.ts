@@ -406,3 +406,18 @@ test("unavailable equity quote preserves explicit state through stored valuation
   assert.equal(absent.basis, "stored-value")
   assert.equal(absent.quote, null)
 })
+
+test("zero-share VOO and IBIT holdings retain positive stored values", () => {
+  for (const [ticker, sharesDecimal] of [["VOO", "0"], ["IBIT", "0.000"]] as const) {
+    const holding: FinanceHolding = {
+      ...accounts[0]!.holdings[0]!,
+      ticker,
+      sharesDecimal,
+      valueCents: 12_345n,
+    }
+    const valuation = valueFinanceHolding(holding, quotes)
+    assert.equal(valuation.valueCents, holding.valueCents, ticker)
+    assert.equal(valuation.basis, "stored-value", ticker)
+    assert.equal(valuation.quote?.symbol, ticker, ticker)
+  }
+})

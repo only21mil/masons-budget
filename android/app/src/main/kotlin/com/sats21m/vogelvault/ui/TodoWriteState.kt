@@ -291,34 +291,37 @@ internal fun rememberTodoWriteState(
 @Composable
 internal fun TodoEditDialog(
     todo: TodoItem,
+    writeEnabled: Boolean,
+    busy: Boolean,
     onDismiss: () -> Unit,
     onSave: (TodoItem) -> Unit,
 ) {
     var title by remember(todo.owner, todo.id) { mutableStateOf(todo.title) }
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!busy) onDismiss() },
         title = { Text(stringResource(R.string.todo_edit)) },
         text = {
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it },
+                enabled = !busy,
                 singleLine = true,
                 label = { Text(stringResource(R.string.todo_title)) },
             )
         },
         confirmButton = {
             Button(
-                enabled = title.isNotBlank(),
-                onClick = {
-                    onDismiss()
-                    onSave(todo.withTitle(title, Instant.now()))
-                },
+                enabled = writeEnabled && !busy && title.isNotBlank(),
+                onClick = { onSave(todo.withTitle(title, Instant.now())) },
             ) {
                 Text(stringResource(R.string.todo_save))
             }
         },
         dismissButton = {
-            OutlinedButton(onClick = onDismiss) {
+            OutlinedButton(
+                enabled = !busy,
+                onClick = onDismiss,
+            ) {
                 Text(stringResource(R.string.todo_cancel))
             }
         },

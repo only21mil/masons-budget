@@ -24,6 +24,7 @@ import com.sats21m.vogelvault.ui.ConvexTransactionActions
 import com.sats21m.vogelvault.ui.TodoMutationGateway
 import com.sats21m.vogelvault.ui.VaultViewModel
 import java.io.IOException
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Process-scoped infrastructure and the ViewModel composition root.
@@ -53,6 +54,10 @@ open class VaultApplication : Application() {
         )
     }
 
+    /** One non-secret source of truth for this process's effective read access. */
+    internal open val effectiveReadReady: StateFlow<Boolean>
+        get() = convexConfigSource.allowsRemoteRead
+
     private val readBootstrapRepository: ConvexReadBootstrapRepository by lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,
     ) {
@@ -69,7 +74,10 @@ open class VaultApplication : Application() {
 
     /** Claims and stores the generated one-time bootstrap without returning a secret. */
     internal open suspend fun connectBundledReadBootstrap(): ReadBootstrapStatus =
-        readBootstrapRepository.connect(bundledReadBootstrapPair())
+        readBootstrapRepository.connect(
+            bundledPair = bundledReadBootstrapPair(),
+            requestTodoWrite = bundledReadBootstrapRequestsTodoWrite(),
+        )
 
     /**
      * Shared write transport. Every mutation reads the latest encrypted sync
@@ -197,7 +205,7 @@ open class VaultApplication : Application() {
                         configSource = convexConfigSource,
                         onUnauthorized = ::recoverRejectedConvexConfig,
                     ),
-                    remoteInitiallyEnabled = convexConfigSource.current().allowsRemoteRead,
+                    effectiveReadReady = effectiveReadReady,
                     enableRemote = ::enableRemoteRows,
                 ) as T
             }
@@ -216,19 +224,14 @@ open class VaultApplication : Application() {
         }
     }
 
-    internal open fun hasStoredConvexCredential(): Boolean =
-        synchronized(convexConfigLock) {
-            storedConvexConfigSource.current().hasReadToken
-        }
-
     /**
-     * Settings removal shares the same process lock as Save and unauthorized
-     * recovery. If recovery already cleared the manual credential, a stale
-     * Settings button becomes a no-op.
+     * Reset removes both grants created by combined bootstrap enrollment.
+     * Clearing the device credential first prevents retained todo access if the
+     * later read-config commit fails. Repeating reset on empty storage succeeds.
      */
     internal open fun removeStoredConvexCredential(): Boolean =
         synchronized(convexConfigLock) {
-            removeStoredConvexConfigIfPresent(
+            resetStoredConvexBootstrap(
                 stored = storedConvexConfigSource,
                 effective = convexConfigSource,
             )
@@ -249,6 +252,10 @@ internal const val PRODUCTION_DEPLOYMENT = "https://keen-elephant-452.convex.clo
 
 internal fun bundledReadBootstrapPair(): String =
     BuildConfig.CONVEX_READ_BOOTSTRAP_PAIR
+
+/** Public build intent only; no credential or capability value enters UI state. */
+internal fun bundledReadBootstrapRequestsTodoWrite(): Boolean =
+    BuildConfig.CONVEX_READ_BOOTSTRAP_REQUEST_TODO_WRITE
 
 internal fun initialConvexConfig(stored: ConvexConfig): ConvexConfig =
     stored.takeIf(ConvexConfig::allowsRemoteRead) ?: ConvexConfig()
@@ -301,7 +308,7 @@ internal fun removeStoredConvexConfigIfPresent(
     effective: MutableConvexConfigSource,
 ): Boolean {
     val currentStored = stored.current()
-    if (!currentStored.hasReadToken) return false
+    if (!currentStored.allowsRemoteRead) return false
 
     stored.clear()
     if (effective.current().hasSameCredentialAs(currentStored)) {
@@ -309,6 +316,27 @@ internal fun removeStoredConvexConfigIfPresent(
     }
     return true
 }
+
+internal fun resetStoredConvexBootstrap(
+    stored: SecureConvexConfigSource,
+    effective: MutableConvexConfigSource,
+): Boolean =
+    try {
+        stored.clearDeviceCredential()
+        check(!stored.hasDeviceCredential()) {
+            "the reset todo device credential was still readable"
+        }
+        stored.clear()
+        check(!stored.current().allowsRemoteRead) {
+            "the reset read credential was still readable"
+        }
+        effective.update(ConvexConfig())
+        true
+    } catch (_: IOException) {
+        false
+    } catch (_: IllegalStateException) {
+        false
+    }
 
 internal fun ConvexConfig.hasSameCredentialAs(other: ConvexConfig): Boolean =
     deploymentUrl == other.deploymentUrl &&

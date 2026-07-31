@@ -1,0 +1,15 @@
+{
+  "status": "success",
+  "value": {
+    "transactions": 12,
+    "todos": 3,
+    "btcBuys": 4,
+    "btcBillPays": 1,
+    "btcAccounts": 2,
+    "income": 2,
+    "balanceDocuments": 1,
+    "budgetDocuments": 1,
+    "btcBalanceDocuments": 1,
+    "financeDocuments": 1
+  }
+}
