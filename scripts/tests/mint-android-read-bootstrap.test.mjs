@@ -7,6 +7,7 @@ import path from "node:path";
 import { after, test } from "node:test";
 
 import {
+  ANDROID_BOOTSTRAP_CAPABILITIES,
   APPROVED_CONVEX_ORIGIN,
   DEFAULT_TTL_MINUTES,
   MAX_TTL_MINUTES,
@@ -64,6 +65,7 @@ test("dry-run needs no token and creates no pairing material", async () => {
   );
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /no request, file write, or secret generation/);
+  assert.match(result.stdout, /capabilities=todos:write/);
   await assert.rejects(readFile(output), /ENOENT/);
 });
 
@@ -90,12 +92,16 @@ test("mint sends the exact locked wire shape and writes only pairId dot canonica
   assert.ok(requests[0].signal instanceof AbortSignal);
   const body = JSON.parse(requests[0].body);
   assert.deepEqual(Object.keys(body.args).sort(), [
+    "capabilities",
     "expiresAt",
     "pairId",
     "proofHash",
     "token",
   ]);
   assert.equal(body.path, "dataFiles:createAndroidReadBootstrap");
+  assert.deepEqual(body.args.capabilities, ["todos:write"]);
+  assert.deepEqual(ANDROID_BOOTSTRAP_CAPABILITIES, ["todos:write"]);
+  assert.equal(Object.isFrozen(ANDROID_BOOTSTRAP_CAPABILITIES), true);
   assert.equal(body.args.token, syncToken);
   assert.match(body.args.pairId, /^android-read-[A-Za-z0-9_-]{16,64}$/);
   assert.match(body.args.proofHash, /^[0-9a-f]{64}$/);

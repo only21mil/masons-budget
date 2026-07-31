@@ -43,7 +43,7 @@ val ciDebugKeyPassword = providers.environmentVariable("VOGEL_DEBUG_KEY_PASSWORD
     .orNull?.takeIf { it.isNotBlank() } ?: "android"
 
 /**
- * One guarded bootstrap build may carry a short-lived one-use pairing capability.
+ * One guarded bootstrap build may carry a short-lived read + todo-write pairing.
  * Normal builds still receive the empty default below. The value comes only from
  * an owned mode-0600 file under $HOME/work; no command-line property, Gradle cache,
  * release variant, or read-token environment variable can supply it. CI remains
@@ -143,6 +143,9 @@ android {
         // A normal build also contains no bootstrap capability. Only the exact
         // guarded local debug invocation above can override this field.
         buildConfigField("String", "CONVEX_READ_BOOTSTRAP_PAIR", "\"\"")
+        // Non-secret build intent. Only the guarded combined bootstrap variant
+        // requests a client-generated todo-write device credential.
+        buildConfigField("boolean", "CONVEX_READ_BOOTSTRAP_REQUEST_TODO_WRITE", "false")
     }
 
     signingConfigs {
@@ -170,6 +173,11 @@ android {
                     "String",
                     "CONVEX_READ_BOOTSTRAP_PAIR",
                     "\"$localAndroidReadBootstrap\"",
+                )
+                buildConfigField(
+                    "boolean",
+                    "CONVEX_READ_BOOTSTRAP_REQUEST_TODO_WRITE",
+                    "true",
                 )
             }
         }
