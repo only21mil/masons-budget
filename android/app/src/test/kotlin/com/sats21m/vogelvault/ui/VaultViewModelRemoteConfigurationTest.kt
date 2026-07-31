@@ -38,4 +38,14 @@ class VaultViewModelRemoteConfigurationTest {
         assertNull(model.state.value.remoteConfigurationError)
         assertEquals("Convex rows", model.state.value.data.transactions.source)
     }
+
+    @Test
+    fun `stored bootstrap activation enables loading without passing a credential`() {
+        val model = VaultViewModel(remoteInitiallyEnabled = false)
+
+        model.enableStoredRemoteRows()
+
+        assertNull(model.state.value.remoteConfigurationError)
+        assertEquals("Convex rows", model.state.value.data.transactions.source)
+    }
 }

@@ -288,6 +288,11 @@ class VaultViewModel(
             }
             return
         }
+        enableStoredRemoteRows()
+    }
+
+    /** Activates a credential that was already committed by the bootstrap repository. */
+    fun enableStoredRemoteRows() {
         remoteEnabled = true
         val profile = _state.value.activeProfile
         _state.update {
