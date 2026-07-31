@@ -199,6 +199,7 @@ internal fun VaultLazyListScope.retirement(
     state: VaultUiState,
     displayUnit: DisplayUnit,
 ) {
+    retirementHoldings(state, displayUnit)
     item { RetirementScreen(state, displayUnit) }
 }
 

@@ -3,13 +3,20 @@ package com.sats21m.vogelvault.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.FinanceDocumentSnapshot
+import com.sats21m.vogelvault.data.FinanceQueryRepository
+import com.sats21m.vogelvault.data.MarketQuoteReadSnapshot
 import com.sats21m.vogelvault.data.RowReadFailure
+import com.sats21m.vogelvault.data.RowVisibilityScope
 import com.sats21m.vogelvault.data.cache.CachedReadModel
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.rowReadFailures
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.FinanceDocument
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
+import com.sats21m.vogelvault.domain.MarketQuoteSnapshot
 import com.sats21m.vogelvault.domain.ReadModel
 import com.sats21m.vogelvault.domain.budgetMonthsFor
 import com.sats21m.vogelvault.domain.resolveBudgetMonth
@@ -47,6 +54,12 @@ data class VaultUiState(
     val remoteConfigurationError: String? = null,
     /** Distinct, non-secret causes retained before any stale-cache substitution. */
     val rowReadFailures: Set<RowReadFailure> = data.rowReadFailures,
+    /** Client-owned finance document; never inferred from legacy BTC rows. */
+    val financeDocument: FinanceDocument? = null,
+    val financeStatus: Freshness = Freshness.EMPTY,
+    /** BTC, VOO, and IBIT quote snapshot. Null means no complete snapshot arrived. */
+    val marketQuotes: MarketQuoteSnapshot? = null,
+    val marketQuoteStatus: Freshness = Freshness.EMPTY,
 ) {
     val switchTargets: List<FamilyMember> get() = activeProfile.allowedSwitchTargets
 
@@ -154,6 +167,7 @@ data class VaultUiState(
 
 class VaultViewModel(
     private val rowSource: CachedRowDataSource? = null,
+    private val financeSource: FinanceQueryRepository? = null,
     remoteInitiallyEnabled: Boolean = rowSource != null,
     private val enableRemote: ((String) -> Unit)? = null,
     private val clock: () -> Long = System::currentTimeMillis,
@@ -190,6 +204,10 @@ class VaultViewModel(
             current.copy(
                 activeProfile = next,
                 data = if (!remoteEnabled) Fixtures.envelope(next) else loadingModel(next),
+                financeDocument = null,
+                financeStatus = if (remoteEnabled) Freshness.LOADING else Freshness.EMPTY,
+                marketQuotes = null,
+                marketQuoteStatus = if (remoteEnabled) Freshness.LOADING else Freshness.EMPTY,
                 staleAuthorization = false,
                 rowReadFailures = emptySet(),
                 // A month picked against one profile's ledger means nothing on the
@@ -244,6 +262,10 @@ class VaultViewModel(
         _state.update {
             it.copy(
                 data = loadingModel(profile),
+                financeDocument = null,
+                financeStatus = Freshness.LOADING,
+                marketQuotes = null,
+                marketQuoteStatus = Freshness.LOADING,
                 remoteConfigurationError = null,
                 rowReadFailures = emptySet(),
             )
@@ -259,6 +281,7 @@ class VaultViewModel(
         liveUnauthorized = false
         rowJob =
             viewModelScope.launch {
+                launch { loadFinance(profile) }
                 launch {
                     source.observe(profile).collect { cached ->
                         cachedModel = cached
@@ -305,10 +328,63 @@ class VaultViewModel(
             }
     }
 
+    private suspend fun loadFinance(profile: FamilyMember) {
+        val source = financeSource ?: return
+        _state.update { current ->
+            if (current.activeProfile != profile) current else current.copy(
+                financeStatus = Freshness.LOADING,
+                marketQuoteStatus = Freshness.LOADING,
+            )
+        }
+        val finance = withContext(Dispatchers.Default) {
+            source.getFinanceDocument(profile, RowVisibilityScope.NET_WORTH)
+        }
+        val quotes = withContext(Dispatchers.Default) { source.getMarketQuoteSnapshot() }
+        val next = financeSurfaceState(finance, quotes)
+        _state.update { current ->
+            if (current.activeProfile != profile) current else current.copy(
+                financeDocument = next.financeDocument,
+                financeStatus = next.financeStatus,
+                marketQuotes = next.marketQuotes,
+                marketQuoteStatus = next.marketQuoteStatus,
+            )
+        }
+    }
+
     private companion object {
         const val REMOTE_CONFIGURATION_ERROR =
             "Authenticated row reads could not be saved securely. Remote reads remain disabled."
     }
+}
+
+internal data class FinanceSurfaceState(
+    val financeDocument: FinanceDocument?,
+    val financeStatus: Freshness,
+    val marketQuotes: MarketQuoteSnapshot?,
+    val marketQuoteStatus: Freshness,
+)
+
+internal fun financeSurfaceState(
+    finance: ConvexResult<FinanceDocumentSnapshot>,
+    quotes: ConvexResult<MarketQuoteReadSnapshot>,
+): FinanceSurfaceState {
+    val financeValue = (finance as? ConvexResult.Ok)?.value
+    val quoteValue = (quotes as? ConvexResult.Ok)?.value
+    return FinanceSurfaceState(
+        financeDocument = financeValue?.document?.takeIf { financeValue.complete },
+        financeStatus = when {
+            financeValue == null -> Freshness.ERROR
+            !financeValue.complete -> Freshness.ERROR
+            financeValue.document == null -> Freshness.EMPTY
+            else -> Freshness.LIVE
+        },
+        marketQuotes = quoteValue?.snapshot?.takeIf { quoteValue.complete },
+        marketQuoteStatus = when {
+            quoteValue == null -> Freshness.ERROR
+            !quoteValue.complete -> Freshness.ERROR
+            else -> Freshness.LIVE
+        },
+    )
 }
 
 private val FAILURE_DISPLAY_ORDER =

@@ -1080,6 +1080,7 @@ private fun VaultLazyListScope.netWorth(
     projection: NetWorthProjection,
     displayUnit: DisplayUnit,
 ) {
+    financeNetWorthSummary(state, displayUnit)
     val slice = state.data.btcBalance
     val unavailable = projection.balance == null
 
