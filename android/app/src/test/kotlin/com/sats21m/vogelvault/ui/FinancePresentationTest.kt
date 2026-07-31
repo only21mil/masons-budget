@@ -3,6 +3,7 @@ package com.sats21m.vogelvault.ui
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.FinanceDocumentSnapshot
 import com.sats21m.vogelvault.data.MarketQuoteReadSnapshot
+import com.sats21m.vogelvault.data.RowReadFailure
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcBalance
 import com.sats21m.vogelvault.domain.Custody
@@ -83,6 +84,19 @@ class FinancePresentationTest {
         assertEquals(Freshness.ERROR, result.marketQuoteStatus)
         assertNull(result.financeDocument)
         assertNull(result.marketQuotes)
+    }
+
+    @Test
+    fun `finance authorization rejection retains unauthorized taxonomy`() {
+        val result = financeSurfaceState(
+            ConvexResult.Unauthorized,
+            ConvexResult.Unauthorized,
+        )
+
+        assertEquals(setOf(RowReadFailure.UNAUTHORIZED), result.readFailures)
+        assertEquals(true, result.unauthorized)
+        assertEquals(Freshness.ERROR, result.financeStatus)
+        assertEquals(Freshness.ERROR, result.marketQuoteStatus)
     }
 
     private fun financeState(viewer: FamilyMember): VaultUiState {
