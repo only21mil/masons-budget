@@ -32,6 +32,7 @@ import {
   type CategorySpend,
   type Freshness,
   type MonthKey,
+  type SliceState,
   type Transaction,
   budgetMonthsFor,
   budgetTransactionsFor,
@@ -250,12 +251,17 @@ function requiredFigure(status: string, render: () => string): string {
  * spend comes from transactions. The projection is only usable when both reads
  * are usable.
  */
-function budgetActualsStatus(budget: Freshness, transactions: Freshness): Freshness {
+function budgetActualsStatus(
+  budget: SliceState<unknown>,
+  transactions: SliceState<readonly Transaction[]>,
+): Freshness {
   for (const unavailable of ["error", "loading", "empty"] as const) {
-    if (budget === unavailable || transactions === unavailable) return unavailable
+    if (budget.status === unavailable || transactions.status === unavailable) return unavailable
   }
-  if (budget === "stale" || transactions === "stale") return "stale"
-  if (budget === "demo" || transactions === "demo") return "demo"
+  // Completeness comes from the slice status, never the row count. A complete
+  // live or stale query with zero rows is an authoritative zero-spend month.
+  if (budget.status === "stale" || transactions.status === "stale") return "stale"
+  if (budget.status === "demo" || transactions.status === "demo") return "demo"
   return "live"
 }
 
@@ -971,7 +977,7 @@ function BudgetPage() {
   // cannot drift apart.
   const spend = deriveBudgetSpend({ ...budget, month: scope.month }, transactions)
   const { planned, actual, remaining, overBudgetCount: overCount } = spend
-  const actualsStatus = budgetActualsStatus(data.budget.status, data.transactions.status)
+  const actualsStatus = budgetActualsStatus(data.budget, data.transactions)
   const actualsUnavailable =
     actualsStatus === "error" || actualsStatus === "loading" || actualsStatus === "empty"
   const addGate = mutationGate(
@@ -1753,6 +1759,14 @@ function RetirementPage() {
   const accounts = financeAccounts(activeProfile, financeModel)
   const retirementValueCents = sum(accounts.map((account) => account.valueCents))
   const btcQuote = operationalBtcQuote(financeModel)
+  const staleQuoteSymbols = Array.from(new Set([
+    ...accounts.flatMap((account) => account.holdings.flatMap((holding) =>
+      holding.basis === "market-quote" && holding.quote?.status === "stale"
+        ? [holding.quote.symbol]
+        : [],
+    )),
+    ...(displayUnit !== "usd" && btcQuote?.status === "stale" ? [btcQuote.symbol] : []),
+  ]))
   const updatedAt = financeModel.finance.status === "live"
     ? financeModel.finance.value.updatedAtMs
     : null
@@ -1792,7 +1806,12 @@ function RetirementPage() {
             value: showFinance
               ? formatFinanceCents(retirementValueCents, displayUnit, btcQuote)
               : SUPPRESSED,
-            provenance: "actual",
+            provenance: staleQuoteSymbols.length > 0 ? "stale" : "actual",
+            hint: staleQuoteSymbols.length > 0
+              ? `Revalued with stale ${staleQuoteSymbols.join("/")} market ${
+                  staleQuoteSymbols.length === 1 ? "quote" : "quotes"
+                }`
+              : undefined,
           },
           {
             label: "Accounts",

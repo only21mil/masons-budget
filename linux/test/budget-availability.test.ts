@@ -59,16 +59,38 @@ test("budget actuals and category actuals are unavailable when transactions fail
   assert.ok(!markup.includes("Groceries"), "category rows rendered actuals from failed transactions")
 })
 
-test("a live transaction slice with no spending renders a genuine zero", () => {
-  const base = buildSanitizedFixtureEnvelope("victor")
-  const markup = renderBudget(liveBudgetEnvelope({
-    ...base.transactions,
-    status: "live",
-    value: [],
-    updatedAt: 1,
-  }))
+test.each(["live", "stale"] as const)(
+  "a complete %s transaction slice with no rows renders a genuine zero-spend month",
+  (status) => {
+    const base = buildSanitizedFixtureEnvelope("victor")
+    const markup = renderBudget(liveBudgetEnvelope({
+      ...base.transactions,
+      status,
+      value: [],
+      updatedAt: 1,
+    }))
 
-  assert.ok(markup.includes("$0.00"), "a genuine zero-spend month was suppressed")
-  assert.ok(markup.includes("Groceries"), "zero-spend category rows were suppressed")
-  assert.ok(!markup.includes("Could not load"), "a usable empty ledger was called unavailable")
-})
+    assert.ok(markup.includes("$0.00"), "a genuine zero-spend month was suppressed")
+    assert.ok(markup.includes("Groceries"), "zero-spend category rows were suppressed")
+    assert.ok(markup.includes("vv-budget-progress--on-track"), "zero spend was not green")
+    assert.ok(markup.includes('aria-valuetext="ON TRACK, 100% left"'))
+    assert.ok(!markup.includes("Could not load"), "a usable empty ledger was called unavailable")
+    assert.ok(!markup.includes("Unavailable"), "a complete empty ledger was called unavailable")
+  },
+)
+
+test.each(["empty", "error", "loading"] as const)(
+  "an incomplete %s transaction slice never becomes a confident zero",
+  (status) => {
+    const base = buildSanitizedFixtureEnvelope("victor")
+    const markup = renderBudget(liveBudgetEnvelope({
+      ...base.transactions,
+      status,
+      value: [],
+      updatedAt: null,
+    }))
+
+    assert.ok(!markup.includes("$0.00"))
+    assert.ok(markup.includes("Unavailable") || markup.includes("Loading"))
+  },
+)
