@@ -22,11 +22,10 @@
 //
 // WHAT THIS FILE DELIBERATELY DOES NOT DO
 //
-// It does not touch `dataFiles`, `syncVersions` or `todoTombstones` — not one
-// write. Every shipped client still reads the blobs and production is live, so
-// the blob path has to keep working byte-for-byte throughout the transition.
-// `dataFiles` gets deleted in a later change, after the clients have moved, not
-// in this one.
+// It does not touch `dataFiles` or `syncVersions`. Todo writes do maintain the
+// separate compatibility `todoTombstones` markers that keep shipped blob readers
+// from resurfacing stale content. The source blobs otherwise stay byte-identical
+// until clients have moved and a later cutover removes them.
 //
 // THREE MIRRORS LIVE IN THIS FILE, ALL FOR THE SAME REASON
 //
@@ -1661,6 +1660,14 @@ function nextUpdatedAtMs(previous: number): number {
 }
 
 type OptimisticWrite = { baseUpdatedAtMs?: number };
+type TodoRestoreCapsule = Omit<Doc<"todos">, "_id" | "_creationTime">;
+
+function captureTodoForRestore(row: Doc<"todos">): TodoRestoreCapsule {
+  const { _id, _creationTime, ...capsule } = row;
+  void _id;
+  void _creationTime;
+  return capsule;
+}
 
 async function findRowTombstone(
   ctx: MutationCtx,
@@ -1701,6 +1708,7 @@ async function upsertRowTombstone(
   entityId: string,
   owner: FamilyMember,
   deletedFromUpdatedAtMs?: number,
+  todoRestoreCapsule?: TodoRestoreCapsule,
 ) {
   const now = Date.now();
   const existing = await findRowTombstone(
@@ -1716,6 +1724,7 @@ async function upsertRowTombstone(
     owner,
     deletedAtMs: now,
     ...(deletedFromUpdatedAtMs === undefined ? {} : { deletedFromUpdatedAtMs }),
+    ...(todoRestoreCapsule === undefined ? {} : { todoRestoreCapsule }),
   };
   if (existing) await ctx.db.patch(existing._id, record);
   else await ctx.db.insert("rowTombstones", record);
@@ -1862,7 +1871,9 @@ async function upsertTodoRow(
         : row.updatedAtMs,
     });
     await clearRowTombstone(ctx, "todo", row.sourceFile, row.todoId);
-    await clearLegacyTodoTombstone(ctx, row.todoId);
+    // A compatibility tombstone retained by Undo must keep suppressing the
+    // surviving legacy blob. Row-native edits cannot clear it because they do
+    // not also rewrite that blob with the authoritative row.
     return "updated";
   }
   if (optimistic?.baseUpdatedAtMs !== undefined) {
@@ -2433,7 +2444,10 @@ export const deleteTodo = mutation({
       .unique();
     if (!existing) {
       await lockRuntimeSource(ctx, "todos");
-      await upsertRowTombstone(ctx, "todo", "todos", todoId, DEFAULT_OWNER);
+      const tombstone = await findRowTombstone(ctx, "todo", "todos", todoId);
+      if (!tombstone) {
+        await upsertRowTombstone(ctx, "todo", "todos", todoId, DEFAULT_OWNER);
+      }
       await upsertLegacyTodoTombstone(ctx, todoId);
       return { todoId, removed: false };
     }
@@ -3114,6 +3128,7 @@ async function deleteTodoCore(
     todoId,
     owner,
     optimistic?.baseUpdatedAtMs,
+    existing === null ? undefined : captureTodoForRestore(existing),
   );
   await upsertLegacyTodoTombstone(ctx, todoId);
   return existing !== null;
@@ -3122,27 +3137,27 @@ async function deleteTodoCore(
 async function restoreTodoCore(
   ctx: MutationCtx,
   owner: FamilyMember,
-  row: ReturnType<typeof deviceTodoRow>,
+  requestedRow: ReturnType<typeof deviceTodoRow>,
   baseUpdatedAtMs: number,
 ) {
   const existing = await ctx.db
     .query("todos")
-    .withIndex("by_todo_id", (q) => q.eq("todoId", row.todoId))
+    .withIndex("by_todo_id", (q) => q.eq("todoId", requestedRow.todoId))
     .unique();
   if (existing) {
     if (existing.owner !== owner) {
       deviceFailure(
         "OWNER_MISMATCH",
-        `Todo ${row.todoId} belongs to ${existing.owner}, not ${owner}.`,
+        `Todo ${requestedRow.todoId} belongs to ${existing.owner}, not ${owner}.`,
         "todo",
-        row.todoId,
+        requestedRow.todoId,
       );
     }
     deviceFailure(
       "ENTITY_CONFLICT",
       "The todo is not deleted and cannot be restored.",
       "todo",
-      row.todoId,
+      requestedRow.todoId,
     );
   }
 
@@ -3150,22 +3165,22 @@ async function restoreTodoCore(
     ctx,
     "todo",
     "todos",
-    row.todoId,
+    requestedRow.todoId,
   );
   if (!tombstone) {
     deviceFailure(
       "ENTITY_NOT_FOUND",
       "No deleted todo revision exists to restore.",
       "todo",
-      row.todoId,
+      requestedRow.todoId,
     );
   }
   if (tombstone.owner !== owner) {
     deviceFailure(
       "OWNER_MISMATCH",
-      `Deleted todo ${row.todoId} belongs to ${tombstone.owner}, not ${owner}.`,
+      `Deleted todo ${requestedRow.todoId} belongs to ${tombstone.owner}, not ${owner}.`,
       "todo",
-      row.todoId,
+      requestedRow.todoId,
     );
   }
   if (tombstone.deletedFromUpdatedAtMs !== baseUpdatedAtMs) {
@@ -3173,7 +3188,23 @@ async function restoreTodoCore(
       "ENTITY_CONFLICT",
       "The todo deletion does not match the revision being restored.",
       "todo",
-      row.todoId,
+      requestedRow.todoId,
+    );
+  }
+
+  const capsule = tombstone.todoRestoreCapsule;
+  if (
+    !capsule ||
+    capsule.todoId !== requestedRow.todoId ||
+    capsule.owner !== owner ||
+    capsule.sourceFile !== "todos" ||
+    capsule.updatedAtMs !== baseUpdatedAtMs
+  ) {
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      "The deleted todo revision has no matching authoritative restore data.",
+      "todo",
+      requestedRow.todoId,
     );
   }
 
@@ -3184,9 +3215,12 @@ async function restoreTodoCore(
     Math.max(baseUpdatedAtMs, tombstone.deletedAtMs),
   );
   await lockRuntimeSource(ctx, "todos");
-  await ctx.db.insert("todos", { ...row, updatedAtMs });
+  await ctx.db.insert("todos", { ...capsule, updatedAtMs });
   await ctx.db.delete(tombstone._id);
-  await clearLegacyTodoTombstone(ctx, row.todoId);
+  // The legacy blob still contains the pre-row-authority value. Keep its
+  // compatibility tombstone until a later cutover removes or rewrites that
+  // source; clearing it here would show stale content on Apple/legacy clients.
+  await upsertLegacyTodoTombstone(ctx, requestedRow.todoId);
   return updatedAtMs;
 }
 
@@ -3776,9 +3810,9 @@ export const upsertTodoFromDevice = mutation({
 /**
  * Restore one device-deleted todo without opening the normal upsert path.
  * `baseUpdatedAtMs` is the exact revision accepted by deleteTodoFromDevice;
- * it must still be recorded on the current tombstone. The complete todo value
- * comes from the client's just-deleted snapshot, while identity, owner and
- * deletion revision are independently fenced by server state.
+ * it must still be recorded on the current tombstone. The complete authoritative
+ * row comes from the server-owned restore capsule captured by delete; the client
+ * projection supplies only the compatible request identity/owner shape.
  */
 export const restoreTodoFromDevice = mutation({
   args: {

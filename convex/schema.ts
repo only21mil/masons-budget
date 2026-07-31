@@ -176,6 +176,32 @@ const financeAccountValidator = v.object({
   holdings: v.array(financeHoldingValidator),
 });
 
+// One authoritative Todo shape serves both the live row and the restore capsule
+// retained by an accepted delete. Keeping the validators shared prevents a new
+// hidden/provenance field from being silently omitted from future Undo data.
+const todoRowFields = {
+  todoId: v.string(),
+  owner: familyMemberValidator,
+  title: v.string(),
+  done: v.boolean(),
+  flagged: v.boolean(),
+  lane: v.optional(v.string()),
+  project: v.optional(v.string()),
+  area: v.optional(v.string()),
+  due: v.optional(v.string()),
+  notes: v.optional(v.string()),
+  priority: v.optional(v.int64()),
+  createdAt: v.optional(v.string()),
+  updatedAt: v.optional(v.string()),
+  completedAt: v.optional(v.string()),
+  updatedAtMs: v.float64(),
+  sourceFile: v.string(),
+  migrationRaw: v.optional(v.any()),
+  migrationSourceIndex: v.optional(v.float64()),
+};
+
+const todoRestoreCapsuleValidator = v.object(todoRowFields);
+
 export default defineSchema({
   // ── Core data store ──
   // Each MC2 JSON file maps to one document.
@@ -222,6 +248,10 @@ export default defineSchema({
     owner: familyMemberValidator,
     deletedAtMs: v.float64(),
     deletedFromUpdatedAtMs: v.optional(v.float64()),
+    // Present only for revision-fenced device Todo deletions that removed a live
+    // typed row. Undo is server-authoritative: the lossy device projection is
+    // never used to reconstruct hidden migration fields.
+    todoRestoreCapsule: v.optional(todoRestoreCapsuleValidator),
   })
     .index("by_entity", ["entityType", "sourceFile", "entityId"])
     .index("by_type_source", ["entityType", "sourceFile"]),
@@ -364,33 +394,10 @@ export default defineSchema({
     .index("by_date", ["date"]),
 
   // ── Todos ──
-  todos: defineTable({
-    // Globally unique: there is one todos file, unlike the per-member
-    // transaction files, so no sourceFile component is needed in the key.
-    todoId: v.string(),
-    owner: familyMemberValidator,
-    title: v.string(),
-    done: v.boolean(),
-    flagged: v.boolean(),
-    lane: v.optional(v.string()), // "work" | "personal" | "sats"
-    project: v.optional(v.string()),
-    area: v.optional(v.string()),
-    due: v.optional(v.string()),
-    notes: v.optional(v.string()),
-    priority: v.optional(v.int64()), // integral, so int64 rather than a double
-    // ISO strings exactly as the source carries them, kept so a row can be
-    // written back to MC2's shape without inventing a format.
-    createdAt: v.optional(v.string()),
-    updatedAt: v.optional(v.string()),
-    completedAt: v.optional(v.string()),
-    // Numeric mirror of `updatedAt`, derived by todoUpdatedMs() — the same
-    // function dataFiles.ts already uses to decide last-write-wins. Sortable and
-    // indexable, which an ISO string with mixed formats is not.
-    updatedAtMs: v.float64(),
-    sourceFile: v.string(),
-    migrationRaw: v.optional(v.any()),
-    migrationSourceIndex: v.optional(v.float64()),
-  })
+  // Globally unique: there is one todos file, unlike the per-member transaction
+  // files, so no sourceFile component is needed in the key. ISO strings remain
+  // exactly as supplied for MC2 round-trip; updatedAtMs is their sortable mirror.
+  todos: defineTable(todoRowFields)
     .index("by_todo_id", ["todoId"])
     .index("by_owner_done", ["owner", "done", "updatedAtMs"])
     .index("by_done_updated", ["done", "updatedAtMs"])
