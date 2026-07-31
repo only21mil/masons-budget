@@ -167,8 +167,10 @@ private fun ProfileTaskListsScreen(
         onDelete = { todo ->
             writes.delete(
                 todo = todo,
-                onRemoved = { localTodos = localTodos.filterNot { row -> row.id == todo.id } },
-                onRestored = { localTodos = localTodos.replaceTodo(todo) },
+                onRemoved = { removed ->
+                    localTodos = localTodos.filterNot { row -> row.id == removed.id }
+                },
+                onRestored = { restored -> localTodos = localTodos.replaceTodo(restored) },
             )
         },
     )

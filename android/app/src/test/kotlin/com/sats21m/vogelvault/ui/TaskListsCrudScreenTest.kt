@@ -5,6 +5,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsEnabled
@@ -66,6 +69,7 @@ class TaskListsCrudScreenTest {
     private lateinit var application: TaskListsCrudApplication
     private var refreshCount = 0
     private var screenNowMillis = 1_800_000_000_000L
+    private var displayedTasks by mutableStateOf(listOf<TodoItem>())
 
     private val todo = TodoItem(
         id = "task-lists-crud",
@@ -92,6 +96,7 @@ class TaskListsCrudScreenTest {
         application.poster.reset()
         application.resetCredential()
         refreshCount = 0
+        displayedTasks = listOf(todo)
         activityController = Robolectric.buildActivity(ComponentActivity::class.java)
         activityController.get().setTheme(R.style.Theme_VogelVault)
         activityController.setup()
@@ -221,6 +226,35 @@ class TaskListsCrudScreenTest {
         assertEquals(2, refreshCount)
         assertEquals(1, nodesWithText(todo.title))
         compose.onNodeWithText(allLists).fetchSemanticsNode()
+
+        screenNowMillis += TODO_UNDO_WINDOW_MILLIS + 1
+        compose.mainClock.advanceTimeBy(TODO_UNDO_WINDOW_MILLIS + 1)
+        settle()
+        compose.onNodeWithContentDescription(markCompleteDescription(todo.title))
+            .performScrollTo()
+            .performClick()
+        settle()
+        assertTrue(
+            checkNotNull(application.poster.lastBody).contains("\"baseUpdatedAtMs\":1800000000001"),
+            "the restored task discarded the server receipt revision",
+        )
+    }
+
+    @Test
+    fun `failed delete restores a newer authoritative task received while in flight`() {
+        val newer = todo.copy(
+            title = "Renew family insurance with new quote",
+            updatedAtMs = todo.updatedAtMs + 1,
+        )
+        deleteTodo(todo.title)
+
+        publishTasks(listOf(newer))
+        assertEquals(0, nodesWithText(newer.title), "the optimistic tombstone leaked the refreshed task")
+        application.poster.answer(HttpTextResponse(500, ""))
+        settle()
+
+        assertEquals(1, nodesWithText(newer.title), "rollback ignored the authoritative refreshed task")
+        assertEquals(0, nodesWithText(todo.title), "rollback resurrected the captured pre-delete task")
     }
 
     @Test
@@ -391,24 +425,26 @@ class TaskListsCrudScreenTest {
         compose.onAllNodesWithText(text).fetchSemanticsNodes().size
 
     private fun showTasks(tasks: List<TodoItem> = listOf(todo)) {
+        displayedTasks = tasks
         val now = Instant.parse("2026-07-30T12:00:00Z").toEpochMilli()
         val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
-        val state = VaultUiState(
-            activeProfile = FamilyMember.VICTOR,
-            destination = Destination.TASKS,
-            data = base.copy(
-                todos = base.todos.copy(status = Freshness.LIVE, value = tasks),
-            ),
-            now = now,
-        )
         compose.runOnUiThread {
             activityController.get().setContent {
+                val currentTasks = displayedTasks
+                val state = VaultUiState(
+                    activeProfile = FamilyMember.VICTOR,
+                    destination = Destination.TASKS,
+                    data = base.copy(
+                        todos = base.todos.copy(status = Freshness.LIVE, value = currentTasks),
+                    ),
+                    now = now,
+                )
                 VogelVaultTheme {
                     LazyColumn(Modifier.fillMaxSize()) {
                         item {
                             TaskListsScreen(
                                 state = state,
-                                todos = tasks,
+                                todos = currentTasks,
                                 onWriteSucceeded = { refreshCount++ },
                                 zoneId = ZoneOffset.UTC,
                                 nowMillis = { screenNowMillis },
@@ -418,6 +454,11 @@ class TaskListsCrudScreenTest {
                 }
             }
         }
+        settle()
+    }
+
+    private fun publishTasks(tasks: List<TodoItem>) {
+        compose.runOnUiThread { displayedTasks = tasks }
         settle()
     }
 

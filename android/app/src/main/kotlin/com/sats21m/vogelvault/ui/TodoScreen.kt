@@ -255,11 +255,11 @@ internal fun TodoScreen(
                         onDelete = {
                             writes.delete(
                                 todo = todo,
-                                onRemoved = {
-                                    localTodos = localTodos.filterNot { it.id == todo.id }
+                                onRemoved = { removed ->
+                                    localTodos = localTodos.filterNot { it.id == removed.id }
                                 },
-                                onRestored = {
-                                    localTodos = (localTodos + todo)
+                                onRestored = { restored ->
+                                    localTodos = (localTodos + restored)
                                         .distinctBy(TodoItem::id)
                                         .sortedWith(TODO_ORDER)
                                 },
