@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexMutationClient
+import com.sats21m.vogelvault.data.FinanceQueryRepositories
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.data.RowQueryRepositories
 import com.sats21m.vogelvault.data.SecureConvexConfigSource
@@ -152,6 +153,7 @@ open class VaultApplication : Application() {
                 @Suppress("UNCHECKED_CAST")
                 return VaultViewModel(
                     rowSource = rowDataSource,
+                    financeSource = FinanceQueryRepositories.convex(convexConfigSource),
                     remoteInitiallyEnabled = convexConfigSource.current().allowsRemoteRead,
                     enableRemote = ::enableRemoteRows,
                 ) as T
