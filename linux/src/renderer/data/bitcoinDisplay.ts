@@ -1,5 +1,6 @@
 import type { FamilyMember } from "@vogel-vault/domain/family"
 import { visibleTo } from "@vogel-vault/domain/family"
+import { type MarketQuote, usableMarketQuote } from "@vogel-vault/domain/finance"
 import {
   SATS_PER_BTC,
   formatBtc,
@@ -7,7 +8,7 @@ import {
   formatUsd,
   satsToUsdCents,
 } from "@vogel-vault/domain/money"
-import type { Freshness, BTCBuy } from "@vogel-vault/domain/readModel"
+import type { BTCBuy } from "@vogel-vault/domain/readModel"
 
 export const DISPLAY_UNITS = [
   { storageKey: "btc", label: "BTC" },
@@ -65,21 +66,15 @@ export function formatBitcoin(
 /**
  * The renderer's cross-unit quote contract.
  *
- * Only the explicit BTC quote delivered with a live or stale canonical balance
- * read may convert a value whose native unit differs from the selected unit.
- * Demo/loading/empty/error reads, absent quotes, and non-positive quotes do not
- * become an inferred price from buys, bill pays, or transaction arithmetic.
+ * Only the operational MarketQuote snapshot may convert a value whose native
+ * unit differs from the selected unit. The shared domain validator guarantees
+ * that returned quotes are live or explicitly stale with a positive price.
+ * Balance ratios, buys, bill pays, and transaction arithmetic are never quotes.
  */
 export function availableBtcQuote(
-  status: Freshness,
-  btcPriceCents: bigint | null | undefined,
-): bigint | null {
-  return (status === "live" || status === "stale") &&
-    btcPriceCents !== null &&
-    btcPriceCents !== undefined &&
-    btcPriceCents > 0n
-    ? btcPriceCents
-    : null
+  quotes: readonly MarketQuote[],
+): MarketQuote | null {
+  return usableMarketQuote(quotes, "BTC")
 }
 
 /** Convert cents to sats with the same half-away-from-zero rule as sats->USD. */

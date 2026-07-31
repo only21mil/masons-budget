@@ -4,6 +4,7 @@ import { test } from "vitest"
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 
+import type { MarketQuote } from "@vogel-vault/domain/finance"
 import type { FamilyMember } from "@vogel-vault/domain/family"
 import type { BTCBuy } from "@vogel-vault/domain/readModel"
 
@@ -23,6 +24,7 @@ import {
   buildKnownSatsUnavailableFiatEnvelope,
   buildSanitizedFixtureEnvelope,
 } from "../src/renderer/data/fixtures.ts"
+import type { LinuxFinanceReadModel } from "../src/renderer/data/financeReadModel.ts"
 import { dashboardIncomeMtd } from "../src/renderer/pages/finance/index.tsx"
 import { resolvePage } from "../src/renderer/pages/index.ts"
 
@@ -105,15 +107,16 @@ test("USD-to-sats rounds half away from zero without floating point", () => {
   assert.equal(usdCentsToSats(1n, 0n), null)
 })
 
-test("only positive live or stale canonical BTC quotes can convert", () => {
+test("only a live or explicitly stale operational BTC MarketQuote can convert", () => {
   for (const status of ["live", "stale"] as const) {
-    assert.equal(availableBtcQuote(status, REFERENCE_PRICE_CENTS), REFERENCE_PRICE_CENTS)
+    const quote = marketQuote("BTC", status, REFERENCE_PRICE_CENTS)
+    assert.deepEqual(availableBtcQuote([quote]), quote)
   }
-  for (const status of ["demo", "loading", "empty", "error"] as const) {
-    assert.equal(availableBtcQuote(status, REFERENCE_PRICE_CENTS), null)
-  }
-  assert.equal(availableBtcQuote("live", 0n), null)
-  assert.equal(availableBtcQuote("live", -1n), null)
+  assert.equal(
+    availableBtcQuote([marketQuote("BTC", "unavailable", null)]),
+    null,
+  )
+  assert.equal(availableBtcQuote([]), null)
 })
 
 test("Dashboard MTD uses month-scoped net-worth income rows with signed corrections", () => {
@@ -236,9 +239,16 @@ test.each([
   ["sats", "7 777 770 sats", "673 460 sats"],
   ["usd", "$7,777.77", "$673.46"],
 ] as const)(
-  "Dashboard income MTD and spend honor %s with a live canonical quote",
+  "Dashboard income MTD and spend honor %s with a live operational quote",
   (unit, expectedIncome, expectedSpend) => {
-    const markup = renderPage("dashboard", "victor", unit, "normal", liveQuoteEnvelope())
+    const markup = renderPage(
+      "dashboard",
+      "victor",
+      unit,
+      "normal",
+      liveQuoteEnvelope(),
+      marketQuoteModel(),
+    )
     assert.ok(markup.includes("Income MTD"))
     assert.ok(markup.includes(expectedIncome), `missing ${unit} MTD income`)
     assert.ok(markup.includes(expectedSpend), `missing ${unit} spend`)
@@ -269,29 +279,47 @@ test("Dashboard renders a valid nonempty zero-income month instead of a dash", (
   assert.ok(!markup.slice(incomeAt, stackAt).includes("Unavailable"))
 })
 
-test("a missing canonical quote makes conversion explicit instead of using transaction prices", () => {
+test("a canonical balance ratio cannot drive display conversion", () => {
   const data = liveQuoteEnvelope()
   const markup = renderPage(
     "activity",
     "victor",
     "btc",
     "normal",
-    {
-      ...data,
-      btcPriceUsd: null,
-    },
+    data,
   )
 
   assert.ok(markup.includes(PRICE_UNAVAILABLE))
+  assert.ok(markup.includes("No live or explicitly stale operational BTC market quote"))
   assert.ok(!markup.includes("0.00142180 BTC"), "a transaction amount inferred a BTC quote")
 })
 
-test("Budget remains USD under every selected display unit", () => {
+test("Budget remains USD and never renders the unit selector", () => {
   for (const unit of ["btc", "sats", "usd"] as const) {
     const markup = renderPage("budget", "victor", unit, "normal", liveQuoteEnvelope())
     assert.ok(markup.includes("$2,670.00"), `${unit} changed the planned Budget unit`)
     assert.ok(markup.includes("$673.46"), `${unit} changed the Budget actual unit`)
+    assert.ok(!markup.includes('aria-label="Bitcoin display unit"'))
   }
+})
+
+test("exact native USD does not warn when the operational quote is unavailable", () => {
+  const markup = renderPage("bitcoin-buys", "victor", "usd", "normal", liveQuoteEnvelope())
+  assert.ok(markup.includes("$803.74"))
+  assert.ok(!markup.includes("No live or explicitly stale operational BTC market quote"))
+})
+
+test("an explicitly stale operational BTC quote still drives conversion", () => {
+  const markup = renderPage(
+    "dashboard",
+    "victor",
+    "sats",
+    "normal",
+    liveQuoteEnvelope(),
+    marketQuoteModel("stale"),
+  )
+  assert.ok(markup.includes("7 777 770 sats"))
+  assert.ok(!markup.includes("No live or explicitly stale operational BTC market quote"))
 })
 
 test.each([
@@ -349,6 +377,42 @@ function liveQuoteEnvelope(): FixtureEnvelope {
   }
 }
 
+function marketQuote(
+  symbol: "BTC" | "VOO" | "IBIT",
+  status: "live" | "stale" | "unavailable",
+  priceCents: bigint | null,
+): MarketQuote {
+  return {
+    symbol,
+    status,
+    priceCents,
+    source: "operational test quote",
+    fetchedAt: status === "unavailable" ? null : "2026-07-31T12:00:00Z",
+  }
+}
+
+function marketQuoteModel(
+  btcStatus: "live" | "stale" | "unavailable" = "live",
+): LinuxFinanceReadModel {
+  return {
+    finance: { status: "empty", value: null },
+    marketQuotes: {
+      status: "live",
+      value: {
+        quotes: [
+          marketQuote(
+            "BTC",
+            btcStatus,
+            btcStatus === "unavailable" ? null : REFERENCE_PRICE_CENTS,
+          ),
+          marketQuote("VOO", "unavailable", null),
+          marketQuote("IBIT", "unavailable", null),
+        ],
+      },
+    },
+  }
+}
+
 function Harness({ route }: { route: string }) {
   const { activeProfile } = useAppState()
   const page = resolvePage(route, activeProfile)
@@ -361,6 +425,7 @@ function renderPage(
   displayUnit: "btc" | "sats" | "usd",
   state: "normal" | "empty" = "normal",
   initialData?: FixtureEnvelope,
+  initialFinanceModel?: LinuxFinanceReadModel,
 ): string {
   return renderToStaticMarkup(
     createElement(AppStateProvider, {
@@ -369,6 +434,7 @@ function renderPage(
       initialStateOverride: state,
       initialDisplayUnit: displayUnit,
       initialData,
+      initialFinanceModel,
       children: createElement(Harness, { route }),
     }),
   )

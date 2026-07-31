@@ -334,9 +334,16 @@ export interface PageHeaderProps {
   title: string
   subtitle?: ReactNode
   actions?: ReactNode
+  /** Financial pages opt in; operational/task/admin pages do not show money units. */
+  showDisplayUnit?: boolean
 }
 
-export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
+export function PageHeader({
+  title,
+  subtitle,
+  actions,
+  showDisplayUnit = false,
+}: PageHeaderProps) {
   const { displayUnit, setDisplayUnit } = useAppState()
 
   return (
@@ -346,22 +353,24 @@ export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
         {subtitle ? <p className="vv-page__subtitle">{subtitle}</p> : null}
       </div>
       <div className="vv-page__actions">
-        <div className="vv-unit-toggle" role="group" aria-label="Bitcoin display unit">
-          {DISPLAY_UNITS.map((unit) => (
-            <button
-              key={unit.storageKey}
-              type="button"
-              className={cx(
-                "vv-unit-toggle__option",
-                unit.storageKey === displayUnit && "vv-unit-toggle__option--selected",
-              )}
-              aria-pressed={unit.storageKey === displayUnit}
-              onClick={() => setDisplayUnit(unit.storageKey)}
-            >
-              {unit.label}
-            </button>
-          ))}
-        </div>
+        {showDisplayUnit ? (
+          <div className="vv-unit-toggle" role="group" aria-label="Bitcoin display unit">
+            {DISPLAY_UNITS.map((unit) => (
+              <button
+                key={unit.storageKey}
+                type="button"
+                className={cx(
+                  "vv-unit-toggle__option",
+                  unit.storageKey === displayUnit && "vv-unit-toggle__option--selected",
+                )}
+                aria-pressed={unit.storageKey === displayUnit}
+                onClick={() => setDisplayUnit(unit.storageKey)}
+              >
+                {unit.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
         {actions}
       </div>
     </header>
