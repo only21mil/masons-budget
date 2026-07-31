@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
@@ -218,8 +219,8 @@ private fun exactPositiveMinorUnits(
 internal fun EditableBudgetCategoryRow(
     category: CategorySpend,
     canEdit: Boolean,
-    transactionsContentDescription: String,
-    onOpenTransactions: () -> Unit,
+    transactionsContentDescription: String = "View ${category.name} transactions",
+    onOpenTransactions: () -> Unit = {},
     onEdit: () -> Unit,
 ) {
     val progress = budgetCategoryProgress(category.spentCents, category.budgetCents)
@@ -233,14 +234,17 @@ internal fun EditableBudgetCategoryRow(
                     role = Role.Button,
                     onClick = onOpenTransactions,
                 )
-                .semantics(mergeDescendants = true) {
-                    contentDescription =
-                        "$transactionsContentDescription. ${budgetProgressAccessibilityLabel(category, progress)}"
-                    progressBarRangeInfo = ProgressBarRangeInfo(progress.fillFraction, 0f..1f)
+                .semantics {
+                    contentDescription = transactionsContentDescription
                 },
         ) {
             Column(
-                Modifier.padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
+                Modifier
+                    .clearAndSetSemantics {
+                        contentDescription = budgetProgressAccessibilityLabel(category, progress)
+                        progressBarRangeInfo = ProgressBarRangeInfo(progress.fillFraction, 0f..1f)
+                    }
+                    .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
                 verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
             ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
