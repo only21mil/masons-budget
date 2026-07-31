@@ -24,6 +24,7 @@ const createAndroidReadBootstrap =
       pairId: string;
       proofHash: string;
       expiresAt: number;
+      capabilities?: Array<"todos:write">;
       token?: string;
     },
     { pairId: string; expiresAt: number }
@@ -33,8 +34,19 @@ const claimAndroidReadBootstrap =
   "dataFiles:claimAndroidReadBootstrap" as unknown as FunctionReference<
     "mutation",
     "public",
-    { pairId: string; proof: string },
-    { ok: true; readToken: string; pairedAt: number }
+    {
+      pairId: string;
+      proof: string;
+      deviceId?: string;
+      deviceToken?: string;
+    },
+    {
+      ok: true;
+      readToken: string;
+      pairedAt: number;
+      deviceId?: string;
+      capabilities: Array<"todos:write">;
+    }
   >;
 
 function newPairId(): string {
@@ -62,14 +74,25 @@ async function createBootstrap(
   pairId = newPairId(),
   proof = newProof(),
   expiresAt = Date.now() + 60_000,
+  capabilities?: Array<"todos:write">,
 ) {
   await t.mutation(createAndroidReadBootstrap, {
     pairId,
     proofHash: proofHash(proof),
     expiresAt,
+    capabilities,
     token: syncToken,
   });
   return { pairId, proof };
+}
+
+async function storedDevice(deviceId: string) {
+  return await t.run(async (ctx) =>
+    ctx.db
+      .query("mobileDevices")
+      .withIndex("by_device_id", (q) => q.eq("deviceId", deviceId))
+      .unique(),
+  );
 }
 
 async function storedBootstrap(pairId: string) {
@@ -186,6 +209,40 @@ describe("createAndroidReadBootstrap", () => {
     expect(await storedBootstrap(pairId)).toEqual(original);
   });
 
+  it("defaults to read-only and accepts only an explicit exact todo-write grant", async () => {
+    const readOnly = await createBootstrap();
+    expect((await storedBootstrap(readOnly.pairId))!.capabilities).toBeUndefined();
+
+    const todoWrite = await createBootstrap(
+      newPairId(),
+      newProof(),
+      Date.now() + 60_000,
+      ["todos:write"],
+    );
+    expect((await storedBootstrap(todoWrite.pairId))!.capabilities).toEqual([
+      "todos:write",
+    ]);
+
+    for (const capabilities of [
+      [],
+      ["todos:write", "todos:write"],
+      ["transactions:write"],
+      ["todos:write", "budget:write"],
+    ]) {
+      const pairId = newPairId();
+      await expect(
+        t.mutation(createAndroidReadBootstrap, {
+          pairId,
+          proofHash: freshProofHash(),
+          expiresAt: Date.now() + 60_000,
+          capabilities,
+          token: syncToken,
+        } as never),
+      ).rejects.toThrow(/VALIDATION_FAILED/);
+      await expect(storedBootstrap(pairId)).resolves.toBeNull();
+    }
+  });
+
   it("rejects extra arguments at the Convex boundary", async () => {
     await expect(
       t.mutation(createAndroidReadBootstrap, {
@@ -209,9 +266,240 @@ describe("claimAndroidReadBootstrap", () => {
       pairId,
       proof,
     });
-    expect(Object.keys(result).sort()).toEqual(["ok", "pairedAt", "readToken"]);
-    expect(result).toEqual({ ok: true, readToken, pairedAt: result.pairedAt });
+    expect(Object.keys(result).sort()).toEqual([
+      "capabilities",
+      "ok",
+      "pairedAt",
+      "readToken",
+    ]);
+    expect(result).toEqual({
+      ok: true,
+      readToken,
+      pairedAt: result.pairedAt,
+      capabilities: [],
+    });
     expect((await storedBootstrap(pairId))!.claimedAt).toBe(result.pairedAt);
+  });
+
+  it("atomically registers an exact todo-write device while returning the read credential", async () => {
+    const readToken = freshSecret();
+    const deviceId = "android-combined-device";
+    const deviceToken = freshSecret();
+    setDeploymentEnv({ CONVEX_READ_TOKEN: readToken });
+    const { pairId, proof } = await createBootstrap(
+      newPairId(),
+      newProof(),
+      Date.now() + 60_000,
+      ["todos:write"],
+    );
+
+    const result = await t.mutation(claimAndroidReadBootstrap, {
+      pairId,
+      proof,
+      deviceId,
+      deviceToken,
+    });
+
+    expect(Object.keys(result).sort()).toEqual([
+      "capabilities",
+      "deviceId",
+      "ok",
+      "pairedAt",
+      "readToken",
+    ]);
+    expect(result).toEqual({
+      ok: true,
+      readToken,
+      pairedAt: result.pairedAt,
+      deviceId,
+      capabilities: ["todos:write"],
+    });
+    expect((await storedBootstrap(pairId))!.claimedAt).toBe(result.pairedAt);
+    const device = await storedDevice(deviceId);
+    expect(device).toMatchObject({
+      deviceId,
+      pairId,
+      pairedAt: result.pairedAt,
+      lastSeenAt: result.pairedAt,
+      capabilities: ["todos:write"],
+    });
+    expect(device!.tokenHash).toBe(proofHash(deviceToken));
+    expect(JSON.stringify(device)).not.toContain(deviceToken);
+  });
+
+  it("requires write credentials only for explicitly write-enabled bootstraps", async () => {
+    setDeploymentEnv({ CONVEX_READ_TOKEN: freshSecret() });
+    const readOnly = await createBootstrap();
+    const todoWrite = await createBootstrap(
+      newPairId(),
+      newProof(),
+      Date.now() + 60_000,
+      ["todos:write"],
+    );
+    const deviceId = "android-purpose-device";
+    const deviceToken = freshSecret();
+
+    await expect(
+      t.mutation(claimAndroidReadBootstrap, {
+        ...readOnly,
+        deviceId,
+        deviceToken,
+      }),
+    ).rejects.toThrow(/VALIDATION_FAILED/);
+    await expect(
+      t.mutation(claimAndroidReadBootstrap, todoWrite),
+    ).rejects.toThrow(/VALIDATION_FAILED/);
+
+    expect((await storedBootstrap(readOnly.pairId))!.claimedAt).toBeUndefined();
+    expect((await storedBootstrap(todoWrite.pairId))!.claimedAt).toBeUndefined();
+    await expect(storedDevice(deviceId)).resolves.toBeNull();
+  });
+
+  it("rejects noncanonical stored capability state before claiming", async () => {
+    setDeploymentEnv({ CONVEX_READ_TOKEN: freshSecret() });
+    const bootstrap = await createBootstrap();
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("androidReadBootstraps")
+        .withIndex("by_pair_id", (q) => q.eq("pairId", bootstrap.pairId))
+        .unique();
+      await ctx.db.patch(row!._id, {
+        capabilities: ["transactions:write"],
+      });
+    });
+
+    await expect(
+      t.mutation(claimAndroidReadBootstrap, bootstrap),
+    ).rejects.toThrow(/VALIDATION_FAILED/);
+    expect((await storedBootstrap(bootstrap.pairId))!.claimedAt).toBeUndefined();
+  });
+
+  it("rejects malformed or partial device credentials without consuming the grant", async () => {
+    setDeploymentEnv({ CONVEX_READ_TOKEN: freshSecret() });
+    const invalidCredentials = [
+      { deviceId: "android-device" },
+      { deviceToken: freshSecret() },
+      { deviceId: "", deviceToken: freshSecret() },
+      { deviceId: "contains space", deviceToken: freshSecret() },
+      { deviceId: "android-device", deviceToken: "too-short" },
+      { deviceId: "android-device", deviceToken: `${"a".repeat(32)}!` },
+    ];
+
+    for (const credential of invalidCredentials) {
+      const bootstrap = await createBootstrap(
+        newPairId(),
+        newProof(),
+        Date.now() + 60_000,
+        ["todos:write"],
+      );
+      await expect(
+        t.mutation(claimAndroidReadBootstrap, {
+          ...bootstrap,
+          ...credential,
+        }),
+      ).rejects.toThrow(/VALIDATION_FAILED/);
+      expect(
+        (await storedBootstrap(bootstrap.pairId))!.claimedAt,
+      ).toBeUndefined();
+    }
+    expect(
+      await t.run(async (ctx) => ctx.db.query("mobileDevices").collect()),
+    ).toEqual([]);
+  });
+
+  it("leaves a write bootstrap unclaimed when the read token shape is unusable", async () => {
+    const deviceId = "android-config-device";
+    for (const readToken of [undefined, " ".repeat(32), "a".repeat(31)]) {
+      if (readToken === undefined) delete process.env.CONVEX_READ_TOKEN;
+      else setDeploymentEnv({ CONVEX_READ_TOKEN: readToken });
+      const bootstrap = await createBootstrap(
+        newPairId(),
+        newProof(),
+        Date.now() + 60_000,
+        ["todos:write"],
+      );
+      await expect(
+        t.mutation(claimAndroidReadBootstrap, {
+          ...bootstrap,
+          deviceId,
+          deviceToken: freshSecret(),
+        }),
+      ).rejects.toThrow(/CONFIG_MISSING/);
+      expect(
+        (await storedBootstrap(bootstrap.pairId))!.claimedAt,
+      ).toBeUndefined();
+      await expect(storedDevice(deviceId)).resolves.toBeNull();
+    }
+  });
+
+  it("rejects a device id conflict atomically and permits retry with a fresh id", async () => {
+    const readToken = freshSecret();
+    const conflictingId = "android-existing-device";
+    setDeploymentEnv({ CONVEX_READ_TOKEN: readToken });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("mobileDevices", {
+        deviceId: conflictingId,
+        name: "Existing device",
+        tokenHash: proofHash(freshSecret()),
+        pairedAt: 1,
+        lastSeenAt: 1,
+        pairId: "existing-pair",
+        capabilities: ["todos:write"],
+      });
+    });
+    const bootstrap = await createBootstrap(
+      newPairId(),
+      newProof(),
+      Date.now() + 60_000,
+      ["todos:write"],
+    );
+
+    await expect(
+      t.mutation(claimAndroidReadBootstrap, {
+        ...bootstrap,
+        deviceId: conflictingId,
+        deviceToken: freshSecret(),
+      }),
+    ).rejects.toThrow(/DEVICE_ID_CONFLICT/);
+    expect((await storedBootstrap(bootstrap.pairId))!.claimedAt).toBeUndefined();
+
+    const freshDeviceId = "android-retry-device";
+    await expect(
+      t.mutation(claimAndroidReadBootstrap, {
+        ...bootstrap,
+        deviceId: freshDeviceId,
+        deviceToken: freshSecret(),
+      }),
+    ).resolves.toMatchObject({ deviceId: freshDeviceId });
+    await expect(storedDevice(freshDeviceId)).resolves.not.toBeNull();
+  });
+
+  it("cannot create a second device by replaying a claimed write bootstrap", async () => {
+    setDeploymentEnv({ CONVEX_READ_TOKEN: freshSecret() });
+    const bootstrap = await createBootstrap(
+      newPairId(),
+      newProof(),
+      Date.now() + 60_000,
+      ["todos:write"],
+    );
+    await t.mutation(claimAndroidReadBootstrap, {
+      ...bootstrap,
+      deviceId: "android-first-device",
+      deviceToken: freshSecret(),
+    });
+    await expect(
+      t.mutation(claimAndroidReadBootstrap, {
+        ...bootstrap,
+        deviceId: "android-second-device",
+        deviceToken: freshSecret(),
+      }),
+    ).rejects.toThrow(/ANDROID_READ_BOOTSTRAP_ALREADY_CLAIMED/);
+    const devices = await t.run(async (ctx) =>
+      ctx.db.query("mobileDevices").collect(),
+    );
+    expect(devices.map((device) => device.deviceId)).toEqual([
+      "android-first-device",
+    ]);
   });
 
   it("requires the canonical raw 256-bit proof shape", async () => {
@@ -308,6 +596,7 @@ describe("claimAndroidReadBootstrap", () => {
         ok: true;
         readToken: string;
         pairedAt: number;
+        capabilities: Array<"todos:write">;
       }> => result.status === "fulfilled",
     );
     const rejected = results.filter(
