@@ -16,11 +16,11 @@ not separate device caches synchronized with each other:
 - Apple keeps its existing device-local quote cache until a later reviewed
   migration to the same snapshot.
 
-This foundation commit adds no Convex code or schema. The cache storage, refresh
-path, and authenticated query belong to a separate reviewed implementation
-lane. Synced account fields such as `weeklyContributionCents` and
-`weeklyContributionDay` remain projections and schedule labels only. No Vogel
-Vault client executes a brokerage market order.
+The reviewed Convex implementation stores only the latest operational quote
+state, refreshes it through an internal action, and exposes it through the
+authenticated fixed-symbol query below. Synced account fields such as
+`weeklyContributionCents` and `weeklyContributionDay` remain projections and
+schedule labels only. No Vogel Vault client executes a brokerage market order.
 
 ## Shared snapshot
 
@@ -51,7 +51,7 @@ net-worth conversions unavailable; it does not turn them into zero.
 
 ## Selected Convex boundary
 
-The implementation lane adds one authenticated, fixed-symbol read returning the
+The implementation exposes one authenticated, fixed-symbol read returning the
 shared snapshot:
 
 ```text
@@ -67,11 +67,17 @@ The read must:
 - return all three entries, using `unavailable` rather than omitting a symbol;
 - return exact `v.int64()` cents, the successful source, and the successful
   acquisition timestamp for every usable observation;
+- derive effective freshness from the canonical success timestamp when read,
+  treating an aged stored `live` row as `stale` even if scheduled expiry was
+  delayed, and refusing invalid or materially future timestamps;
 - contain no household read token, sync token, upstream credential, or other
   secret in its result.
 
 `complete` describes response structure, not quote freshness. A complete
 snapshot may contain stale or unavailable entries.
+
+Scheduled expiry keeps stored status useful but is only an optimization. Every
+read derives effective freshness again from the canonical success timestamp.
 
 An internal refresh action owns acquisition and cache updates. It must:
 
@@ -93,7 +99,6 @@ cache is only a presentation optimization and must preserve the server's
 source, success timestamp, and status.
 
 Do not add quote fields to `financeDocuments`, mutate production household
-finance data, or treat a cache refresh as a trade. The separate Convex
-implementation lane may add only the minimal quote-cache storage required for
-this boundary; durable quote history needs its own retention and provenance
-review.
+finance data, or treat a cache refresh as a trade. The Convex implementation
+contains only the minimal quote-cache storage required for this boundary;
+durable quote history needs its own retention and provenance review.

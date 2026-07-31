@@ -32,16 +32,31 @@ describe("exact quote response parsing", () => {
       ),
     ).toBe("681.795");
     expect(extractRootPriceDecimal('{"price":"36.70"}')).toBe("36.70");
+    expect(
+      extractRootPriceDecimal('{"price":9007199254740993.125}'),
+    ).toBe("9007199254740993.125");
   });
 
-  it("refuses missing, duplicate, nested-only, malformed, and trailing JSON", () => {
+  it("selects the semantic root price while allowing unrelated nested keys", () => {
+    expect(
+      extractRootPriceDecimal(
+        String.raw`{"nested":{"price":1},"pr\u0069ce":681.795}`,
+      ),
+    ).toBe("681.795");
+  });
+
+  it("refuses semantic root duplicates, nested-only prices, and invalid JSON", () => {
     for (const payload of [
       "{}",
       '{"nested":{"price":1}}',
-      '{"price":1,"nested":{"price":2}}',
       '{"price":1,"price":2}',
+      String.raw`{"price":1,"pr\u0069ce":2}`,
+      String.raw`{"pr\u0069ce":1,"price":2}`,
       '{"price":}',
       '{"price":1} trailing',
+      '[{"price":1}]',
+      '{"price":true}',
+      '{"price":1,}',
     ]) {
       expect(() => extractRootPriceDecimal(payload), payload).toThrow();
     }
@@ -274,7 +289,8 @@ describe("authenticated snapshot and cache transitions", () => {
   it("preserves a failed symbol as stale without changing other successes", async () => {
     const token = freshSecret();
     setDeploymentEnv({ CONVEX_READ_TOKEN: token });
-    const initial = "2026-07-30T14:45:00.000Z";
+    const initial = new Date(Date.now() - 10 * 60 * 1_000).toISOString();
+    const refreshed = new Date().toISOString();
     for (const [symbol, priceCents] of [
       ["BTC", 6_485_500n],
       ["VOO", 68_179n],
@@ -291,7 +307,7 @@ describe("authenticated snapshot and cache transitions", () => {
     await expect(
       t.mutation(internalApi.recordMarketQuoteFailure, {
         symbol: "VOO",
-        attemptedAt: FIXED_TIME,
+        attemptedAt: refreshed,
         errorCode: "http_error",
       }),
     ).resolves.toBe("stale");
@@ -299,7 +315,7 @@ describe("authenticated snapshot and cache transitions", () => {
       symbol: "BTC",
       priceCents: 6_500_000n,
       source: "Vogel Vault",
-      fetchedAt: FIXED_TIME,
+      fetchedAt: refreshed,
     });
 
     const snapshot = await t.query(api.getMarketQuoteSnapshot, { token });
@@ -308,9 +324,9 @@ describe("authenticated snapshot and cache transitions", () => {
         symbol: "BTC",
         priceCents: 6_500_000n,
         source: "Vogel Vault",
-        fetchedAt: FIXED_TIME,
+        fetchedAt: refreshed,
         status: "live",
-        lastAttemptedAt: FIXED_TIME,
+        lastAttemptedAt: refreshed,
         errorCode: null,
       },
       {
@@ -319,7 +335,7 @@ describe("authenticated snapshot and cache transitions", () => {
         source: "Vogel Vault",
         fetchedAt: initial,
         status: "stale",
-        lastAttemptedAt: FIXED_TIME,
+        lastAttemptedAt: refreshed,
         errorCode: "http_error",
       },
       {
@@ -486,6 +502,41 @@ describe("authenticated snapshot and cache transitions", () => {
         fetchedAt,
       ).rejects.toThrow(/canonical UTC/);
     }
+
+    await expect(
+      t.mutation(internalApi.recordMarketQuoteSuccess, {
+        symbol: "BTC",
+        priceCents: 1n,
+        source: "Vogel Vault",
+        fetchedAt: new Date(Date.now() + 6 * 60 * 1_000).toISOString(),
+      }),
+    ).rejects.toThrow(/materially future/);
+  });
+
+  it("stores only canonical UTC failure timestamps", async () => {
+    await expect(
+      t.mutation(internalApi.recordMarketQuoteFailure, {
+        symbol: "BTC",
+        attemptedAt: "2026-07-30T15:00:00Z",
+        errorCode: "network_error",
+      }),
+    ).resolves.toBe("unavailable");
+
+    for (const attemptedAt of [
+      "2026-07-30T10:00:00-05:00",
+      "2026-07-30T15:00:00.0Z",
+      "2026-07-30T15:00:00.0000Z",
+      "2026-02-30T15:00:00Z",
+    ]) {
+      await expect(
+        t.mutation(internalApi.recordMarketQuoteFailure, {
+          symbol: "BTC",
+          attemptedAt,
+          errorCode: "network_error",
+        }),
+        attemptedAt,
+      ).rejects.toThrow(/canonical UTC/);
+    }
   });
 
   it("does not emit a noncanonical cached success as a usable quote", async () => {
@@ -508,6 +559,61 @@ describe("authenticated snapshot and cache transitions", () => {
       priceCents: null,
       fetchedAt: null,
       status: "unavailable",
+    });
+  });
+
+  it("derives aged and materially future cache freshness when read", async () => {
+    const token = freshSecret();
+    setDeploymentEnv({ CONVEX_READ_TOKEN: token });
+    const nowMs = Date.now();
+    const aged = new Date(nowMs - 30 * 60 * 1_000 - 1).toISOString();
+    const future = new Date(nowMs + 5 * 60 * 1_000 + 60_000).toISOString();
+    const recent = new Date(nowMs - 60_000).toISOString();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("marketQuoteCache", {
+        symbol: "BTC",
+        priceCents: 6_485_500n,
+        source: "Vogel Vault",
+        fetchedAt: aged,
+        status: "live",
+        lastAttemptedAt: aged,
+      });
+      await ctx.db.insert("marketQuoteCache", {
+        symbol: "VOO",
+        priceCents: 68_179n,
+        source: "Vogel Vault",
+        fetchedAt: future,
+        status: "live",
+        lastAttemptedAt: future,
+      });
+      await ctx.db.insert("marketQuoteCache", {
+        symbol: "IBIT",
+        priceCents: 3_670n,
+        source: "Vogel Vault",
+        fetchedAt: recent,
+        status: "live",
+        lastAttemptedAt: recent,
+      });
+    });
+
+    const snapshot = await t.query(api.getMarketQuoteSnapshot, { token });
+    expect(snapshot.quotes[0]).toMatchObject({
+      symbol: "BTC",
+      priceCents: 6_485_500n,
+      fetchedAt: aged,
+      status: "stale",
+    });
+    expect(snapshot.quotes[1]).toMatchObject({
+      symbol: "VOO",
+      priceCents: null,
+      fetchedAt: null,
+      status: "unavailable",
+    });
+    expect(snapshot.quotes[2]).toMatchObject({
+      symbol: "IBIT",
+      priceCents: 3_670n,
+      fetchedAt: recent,
+      status: "live",
     });
   });
 });

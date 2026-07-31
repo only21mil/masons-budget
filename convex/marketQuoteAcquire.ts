@@ -36,6 +36,7 @@ type FetchImplementation = (
 const SOURCE = "Vogel Vault";
 const REQUEST_TIMEOUT_MS = 5_000;
 const MAX_RESPONSE_BYTES = 32 * 1024;
+const MAX_JSON_DEPTH = 64;
 const MAX_INT64 = 9_223_372_036_854_775_807n;
 
 class AcquisitionError extends Error {
@@ -57,48 +58,226 @@ const ENDPOINTS: Readonly<Record<MarketSymbol, string>> = Object.freeze({
   IBIT: "https://sats21m.com/api/price/ibit",
 });
 
-/**
- * Extract the exact lexical value of the root `price` property.
- *
- * JSON.parse turns a JSON number into an IEEE-754 number before callers can
- * inspect it. We use JSON.parse only to validate the object shape, then retain
- * the one unambiguous source lexeme. Nested, escaped, or duplicate `price` keys
- * are refused rather than ambiguously selected.
- */
-export function extractRootPriceDecimal(text: string): string {
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(text);
-  } catch {
+class QuoteJsonScanner {
+  private index = 0;
+
+  constructor(private readonly text: string) {}
+
+  extractRootPriceDecimal(): string {
+    this.skipWhitespace();
+    if (this.take() !== "{") this.invalid();
+
+    let foundPrice = false;
+    let price = "";
+    this.skipWhitespace();
+    if (this.peek() !== "}") {
+      while (true) {
+        const key = this.parseString();
+        this.skipWhitespace();
+        if (this.take() !== ":") this.invalid();
+        this.skipWhitespace();
+
+        if (key === "price") {
+          if (foundPrice) throw new Error("Quote response price is ambiguous");
+          foundPrice = true;
+          price = this.parsePrice();
+        } else {
+          this.parseValue(1);
+        }
+
+        this.skipWhitespace();
+        const delimiter = this.take();
+        if (delimiter === "}") break;
+        if (delimiter !== ",") this.invalid();
+        this.skipWhitespace();
+      }
+    } else {
+      this.take();
+    }
+
+    this.skipWhitespace();
+    if (this.index !== this.text.length) this.invalid();
+    if (!foundPrice) throw new Error("Quote response is missing a price");
+    return price;
+  }
+
+  private parsePrice(): string {
+    const next = this.peek();
+    if (next === '"') return this.parseString();
+    if (next === "-" || this.isDigit(next)) return this.parseNumber();
+    this.parseValue(1);
+    throw new Error("Quote response price is not a decimal");
+  }
+
+  private parseValue(depth: number): void {
+    if (depth > MAX_JSON_DEPTH) this.invalid();
+    this.skipWhitespace();
+    const next = this.peek();
+    if (next === "{") {
+      this.parseObject(depth);
+    } else if (next === "[") {
+      this.parseArray(depth);
+    } else if (next === '"') {
+      this.parseString();
+    } else if (next === "t") {
+      this.parseLiteral("true");
+    } else if (next === "f") {
+      this.parseLiteral("false");
+    } else if (next === "n") {
+      this.parseLiteral("null");
+    } else if (next === "-" || this.isDigit(next)) {
+      this.parseNumber();
+    } else {
+      this.invalid();
+    }
+  }
+
+  private parseObject(depth: number): void {
+    if (this.take() !== "{") this.invalid();
+    this.skipWhitespace();
+    if (this.peek() === "}") {
+      this.take();
+      return;
+    }
+    while (true) {
+      this.parseString();
+      this.skipWhitespace();
+      if (this.take() !== ":") this.invalid();
+      this.parseValue(depth + 1);
+      this.skipWhitespace();
+      const delimiter = this.take();
+      if (delimiter === "}") return;
+      if (delimiter !== ",") this.invalid();
+      this.skipWhitespace();
+    }
+  }
+
+  private parseArray(depth: number): void {
+    if (this.take() !== "[") this.invalid();
+    this.skipWhitespace();
+    if (this.peek() === "]") {
+      this.take();
+      return;
+    }
+    while (true) {
+      this.parseValue(depth + 1);
+      this.skipWhitespace();
+      const delimiter = this.take();
+      if (delimiter === "]") return;
+      if (delimiter !== ",") this.invalid();
+      this.skipWhitespace();
+    }
+  }
+
+  private parseString(): string {
+    if (this.take() !== '"') this.invalid();
+    let decoded = "";
+    while (this.index < this.text.length) {
+      const character = this.take();
+      if (character === '"') return decoded;
+      if (character === "\\") {
+        const escape = this.take();
+        const simpleEscapes: Record<string, string> = {
+          '"': '"',
+          "\\": "\\",
+          "/": "/",
+          b: "\b",
+          f: "\f",
+          n: "\n",
+          r: "\r",
+          t: "\t",
+        };
+        if (escape === "u") {
+          const hex = this.text.slice(this.index, this.index + 4);
+          if (!/^[0-9a-fA-F]{4}$/.test(hex)) this.invalid();
+          decoded += String.fromCharCode(Number.parseInt(hex, 16));
+          this.index += 4;
+        } else if (Object.prototype.hasOwnProperty.call(simpleEscapes, escape)) {
+          decoded += simpleEscapes[escape];
+        } else {
+          this.invalid();
+        }
+      } else {
+        if (character.charCodeAt(0) <= 0x1f) this.invalid();
+        decoded += character;
+      }
+    }
+    this.invalid();
+  }
+
+  private parseNumber(): string {
+    const start = this.index;
+    if (this.peek() === "-") this.take();
+
+    if (this.peek() === "0") {
+      this.take();
+    } else {
+      if (!this.isDigitOneToNine(this.peek())) this.invalid();
+      while (this.isDigit(this.peek())) this.take();
+    }
+
+    if (this.peek() === ".") {
+      this.take();
+      if (!this.isDigit(this.peek())) this.invalid();
+      while (this.isDigit(this.peek())) this.take();
+    }
+
+    if (this.peek() === "e" || this.peek() === "E") {
+      this.take();
+      if (this.peek() === "+" || this.peek() === "-") this.take();
+      if (!this.isDigit(this.peek())) this.invalid();
+      while (this.isDigit(this.peek())) this.take();
+    }
+    return this.text.slice(start, this.index);
+  }
+
+  private parseLiteral(literal: string): void {
+    if (this.text.slice(this.index, this.index + literal.length) !== literal) {
+      this.invalid();
+    }
+    this.index += literal.length;
+  }
+
+  private skipWhitespace(): void {
+    while (
+      this.peek() === " " ||
+      this.peek() === "\t" ||
+      this.peek() === "\n" ||
+      this.peek() === "\r"
+    ) {
+      this.index += 1;
+    }
+  }
+
+  private peek(): string {
+    return this.text[this.index] ?? "";
+  }
+
+  private take(): string {
+    const character = this.peek();
+    this.index += 1;
+    return character;
+  }
+
+  private isDigit(character: string): boolean {
+    return character >= "0" && character <= "9";
+  }
+
+  private isDigitOneToNine(character: string): boolean {
+    return character >= "1" && character <= "9";
+  }
+
+  private invalid(): never {
     throw new Error("Quote response is not valid JSON");
   }
-  if (
-    typeof decoded !== "object" ||
-    decoded === null ||
-    Array.isArray(decoded) ||
-    !Object.prototype.hasOwnProperty.call(decoded, "price")
-  ) {
-    throw new Error("Quote response is missing a price");
-  }
+}
 
-  const priceType = typeof (decoded as { price?: unknown }).price;
-  if (priceType !== "number" && priceType !== "string") {
-    throw new Error("Quote response price is not a decimal");
+/** Validate one bounded JSON object and retain its exact root price token. */
+export function extractRootPriceDecimal(text: string): string {
+  if (new TextEncoder().encode(text).byteLength > MAX_RESPONSE_BYTES) {
+    throw new Error("Quote response is too large");
   }
-
-  const matches = [
-    ...text.matchAll(
-      /"price"\s*:\s*(?:"([^"\\]*)"|(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?))/g,
-    ),
-  ];
-  if (matches.length !== 1) {
-    throw new Error("Quote response price is ambiguous");
-  }
-  const price = matches[0]?.[1] ?? matches[0]?.[2];
-  if (price === undefined) {
-    throw new Error("Quote response price is not a decimal");
-  }
-  return price;
+  return new QuoteJsonScanner(text).extractRootPriceDecimal();
 }
 
 /**
