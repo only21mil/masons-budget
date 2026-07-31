@@ -36,7 +36,6 @@ import {
   type Transaction,
   budgetMonthsFor,
   budgetTransactionsFor,
-  monthOf,
   resolveBudgetMonth,
   transactionsInMonth,
 } from "@vogel-vault/domain/readModel"
@@ -686,7 +685,7 @@ interface MonthScope {
 }
 
 /**
- * Resolve the month both money screens report on.
+ * Resolve the month the Budget screen reports on.
  *
  * A selection is honoured only when the budget-scoped transactions contain it.
  * Adults may still see child rows on Activity, but child-only months are not adult
@@ -781,7 +780,7 @@ export function budgetDrilldownTransactionEditGate(
 // ── Dashboard ───────────────────────────────────────────────────────────────
 
 function DashboardPage() {
-  const { activeProfile, data, displayUnit, financeModel, selectedMonth } = useAppState()
+  const { activeProfile, currentMonth: month, data, displayUnit, financeModel } = useAppState()
   const visibleTransactions = visibleTo(activeProfile, data.transactions.value)
   const budgetTransactions = budgetTransactionsFor(activeProfile, data.transactions.value)
   const accounts = data.btcBalanceDocument.value?.accounts ?? []
@@ -789,11 +788,9 @@ function DashboardPage() {
   const btcQuote = operationalBtcQuote(financeModel)
   const btcPriceCents = btcQuote?.priceCents ?? null
 
-  // The headline follows budget scope: adults share only adult-owned rows while
-  // retaining child rows in Recent activity for oversight. Children remain
-  // self-only. Both lists use the same selected month.
-  const defaultMonth = data.budget.value?.month ?? monthOf(new Date(data.generatedAt).toISOString().slice(0, 10))
-  const { month } = resolveMonthScope(activeProfile, selectedMonth, data.transactions.value, defaultMonth)
+  // Dashboard is always current-month reporting. Budget owns an independent
+  // historical picker, matching iOS/Android: visiting an older Budget month
+  // must not silently rewrite MTD income, spend, activity, or the headline.
   const budgetMonthTransactions = transactionsInMonth(budgetTransactions, month)
   const activityMonthTransactions = transactionsInMonth(visibleTransactions, month)
   const spend = sum(budgetMonthTransactions.map(spendAmount))
