@@ -5,18 +5,22 @@
 BTC, VOO, and IBIT prices are operational market observations. They are not
 retirement ledger records and do not belong in `financeDocuments`.
 
-The current implementation boundary remains client-owned:
+`MarketQuoteSnapshot` remains a transport-neutral domain contract. The selected
+Linux and Android implementation is one shared Convex-backed snapshot/cache,
+not separate device caches synchronized with each other:
 
-- Apple keeps its last successful quotes in device-local `UserDefaults`.
-- Linux must fetch through a closed Electron main/preload capability because
-  renderer networking is denied.
-- Android may fetch through its native repository.
-- Every client emits the shared `MarketQuoteSnapshot` contract before finance
-  selectors consume a price.
+- Linux and Android read the same Convex snapshot through an authenticated path
+  consistent with the existing runtime-injected client read authentication.
+- Only an internal, bounded Convex refresh path acquires upstream quotes.
+- Clients cannot supply a ticker, hostname, URL, or redirect target.
+- Apple keeps its existing device-local quote cache until a later reviewed
+  migration to the same snapshot.
 
-This requires no Convex schema change or deployment. Synced account fields such
-as `weeklyContributionCents` and `weeklyContributionDay` remain projections and
-schedule labels only. No Vogel Vault client executes a brokerage market order.
+This foundation commit adds no Convex code or schema. The cache storage, refresh
+path, and authenticated query belong to a separate reviewed implementation
+lane. Synced account fields such as `weeklyContributionCents` and
+`weeklyContributionDay` remain projections and schedule labels only. No Vogel
+Vault client executes a brokerage market order.
 
 ## Shared snapshot
 
@@ -42,30 +46,51 @@ data, but preserve the status so the client can label it. An unavailable BTC
 quote makes combined USD/BTC net-worth conversions unavailable; it does not
 turn them into zero.
 
-## Minimal future Convex boundary
+## Selected Convex boundary
 
-If quote acquisition is centralized later, add one fixed-symbol Convex action
-that returns the same snapshot:
+The implementation lane adds one authenticated, fixed-symbol read returning the
+shared snapshot:
 
 ```text
-marketQuotes:getSnapshot({})
+marketQuotes:getSnapshot({ token })
   -> { quotes: MarketQuote[3], complete: true }
 ```
 
-The action must:
+The read must:
 
-- accept no ticker, hostname, URL, or redirect target from a caller;
-- fetch only reviewed HTTPS endpoints for the three fixed symbols;
-- cap time and response size and validate positive decimal prices;
-- convert prices to `v.int64()` cents before returning them;
+- validate the same runtime-injected read credential pattern used by the
+  existing client read boundary;
+- accept no symbol, ticker, hostname, URL, or redirect target from a caller;
 - return all three entries, using `unavailable` rather than omitting a symbol;
-- retain source and fetch time for every usable observation;
-- contain no household read token, sync token, or vendor secret in its result.
+- return exact `v.int64()` cents, the successful source, and the successful
+  acquisition timestamp for every usable observation;
+- contain no household read token, sync token, upstream credential, or other
+  secret in its result.
 
-`complete` would describe response structure, not quote freshness. A complete
+`complete` describes response structure, not quote freshness. A complete
 snapshot may contain stale or unavailable entries.
 
+An internal refresh action owns acquisition and cache updates. It must:
+
+- fetch only reviewed HTTPS endpoints for BTC, VOO, and IBIT;
+- use fixed redirect policy, bounded timeout and response size, and validate a
+  positive decimal price before exact integer-cent conversion;
+- update each symbol's price, source, and success timestamp only after that
+  symbol succeeds;
+- preserve a prior successful observation as `stale` when a later acquisition
+  fails;
+- return `unavailable` when acquisition fails and no prior successful
+  observation exists;
+- allow one symbol to fail without discarding successful observations for the
+  other two.
+
+Linux and Android consume this server snapshot directly. They do not replicate
+or synchronize quote state device-to-device. Any short-lived in-memory client
+cache is only a presentation optimization and must preserve the server's
+source, success timestamp, and status.
+
 Do not add quote fields to `financeDocuments`, mutate production household
-data, or persist a quote history merely to support this boundary. A durable
-quote table would be a separate reviewed feature with retention and provenance
-requirements, not an extension of this contract.
+finance data, or treat a cache refresh as a trade. The separate Convex
+implementation lane may add only the minimal quote-cache storage required for
+this boundary; durable quote history needs its own retention and provenance
+review.
