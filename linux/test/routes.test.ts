@@ -19,6 +19,7 @@ import { FAMILY_MEMBERS, type FamilyMember, isAdult } from "@vogel-vault/domain/
 import type { Freshness } from "@vogel-vault/domain/readModel"
 
 import { AppStateProvider, useAppState } from "../src/renderer/app/AppState.tsx"
+import type { DisplayUnit } from "../src/renderer/data/bitcoinDisplay.ts"
 import { ALL_PAGES, navSectionsFor, resolvePage } from "../src/renderer/pages/index.ts"
 import type { PageDefinition } from "../src/renderer/pages/types.ts"
 
@@ -41,7 +42,12 @@ function Harness({ route }: { route: string }) {
   return createElement(page.Component)
 }
 
-function renderPage(page: PageDefinition, profile: FamilyMember, state: PageState): string {
+function renderPage(
+  page: PageDefinition,
+  profile: FamilyMember,
+  state: PageState,
+  displayUnit: DisplayUnit = "btc",
+): string {
   // children goes in the props object: createElement's variadic children
   // overload does not satisfy a props type that requires `children`.
   return renderToStaticMarkup(
@@ -49,6 +55,7 @@ function renderPage(page: PageDefinition, profile: FamilyMember, state: PageStat
       initialProfile: profile,
       initialRoute: page.id,
       initialStateOverride: state,
+      initialDisplayUnit: displayUnit,
       children: createElement(Harness, { route: page.id }),
     }),
   )
@@ -269,23 +276,23 @@ test("dashboard and net worth use canonical income and BTC document totals", () 
   assert.ok(dashboard)
   assert.ok(netWorth)
 
-  const dashboardMarkup = renderPage(dashboard, "victor", "normal")
+  const dashboardMarkup = renderPage(dashboard, "victor", "normal", "usd")
   assert.ok(
     dashboardMarkup.includes("$7,777.77"),
     "dashboard did not render the dedicated income-table total",
   )
   assert.ok(
-    dashboardMarkup.includes("1.23456789 BTC"),
+    renderPage(dashboard, "victor", "normal", "btc").includes("1.23456789 BTC"),
     "dashboard did not render the canonical BTC balance document total",
   )
 
-  const netWorthMarkup = renderPage(netWorth, "victor", "normal")
+  const netWorthMarkup = renderPage(netWorth, "victor", "normal", "usd")
   assert.ok(
     netWorthMarkup.includes("$120,000.00"),
     "net worth did not render the canonical BTC balance document fiat total",
   )
   assert.ok(
-    netWorthMarkup.includes("1.23456789 BTC"),
+    renderPage(netWorth, "victor", "normal", "btc").includes("1.23456789 BTC"),
     "net worth did not render the canonical BTC balance document sats total",
   )
 })

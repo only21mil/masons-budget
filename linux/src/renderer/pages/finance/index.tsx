@@ -13,7 +13,7 @@ import {
   netWorthScopeFor,
   visibleTo,
 } from "@vogel-vault/domain/family"
-import { basisPoints, formatSats, formatUsd, satsToUsdCents, sum } from "@vogel-vault/domain/money"
+import { basisPoints, formatUsd, satsToUsdCents, sum } from "@vogel-vault/domain/money"
 import {
   type BTCAccount,
   type BTCBillPay,
@@ -35,10 +35,10 @@ import { useMemo, useState } from "react"
 import { useAppState } from "../../app/AppState.tsx"
 import {
   type DisplayUnit,
-  type RecordedBitcoinPrice,
   PRICE_UNAVAILABLE,
+  availableBtcQuote,
+  formatDisplayAmount,
   formatBitcoin,
-  newestVisibleBuyPrice,
 } from "../../data/bitcoinDisplay.ts"
 import {
   deriveBudgetSpend,
@@ -121,26 +121,12 @@ function budgetActualsStatus(budget: Freshness, transactions: Freshness): Freshn
   return "live"
 }
 
-function referencePrice(
-  viewer: FamilyMember,
-  status: Freshness,
-  buys: readonly BTCBuy[],
-): RecordedBitcoinPrice | null {
-  if (status === "error" || status === "loading" || status === "empty") return null
-  return newestVisibleBuyPrice(viewer, buys)
-}
-
-function BitcoinFiatNotice({ price }: { price: RecordedBitcoinPrice | null }) {
-  return price ? (
-    <StatusBanner
-      title="USD estimate"
-      detail={`Uses the last recorded Bitcoin buy price from ${price.date}. This is not a live price.`}
-    />
-  ) : (
+function BitcoinQuoteNotice({ available }: { available: boolean }) {
+  return available ? null : (
     <StatusBanner
       tone="warning"
       title={PRICE_UNAVAILABLE}
-      detail="No recorded Bitcoin buy price is available. BTC and SATS remain exact."
+      detail="No live or stale canonical BTC quote is available. Native USD and satoshi values remain exact."
     />
   )
 }
@@ -188,7 +174,49 @@ function formatSnapshotBitcoin(
 }
 
 function incomeOf(transaction: Transaction): bigint {
-  return transaction.category === "Income" && transaction.amount > 0n ? transaction.amount : 0n
+  return transaction.category === "Income" ? transaction.amount : 0n
+}
+
+const INT64_MIN = -(1n << 63n)
+const INT64_MAX = (1n << 63n) - 1n
+const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/
+const ISO_DATE = /^\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/
+
+interface DashboardIncomeRow {
+  readonly date: string
+  readonly month: string
+  readonly amount: bigint
+  readonly owner: FamilyMember
+}
+
+function isCanonicalDateInMonth(date: string, month: string): boolean {
+  if (!MONTH_KEY.test(month) || !ISO_DATE.test(date) || !date.startsWith(`${month}-`)) return false
+  const parsed = new Date(`${date}T00:00:00.000Z`)
+  return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === date
+}
+
+/** Canonical MTD income: dedicated rows, net-worth owner scope, checked int64 sum. */
+export function dashboardIncomeMtd(
+  viewer: FamilyMember,
+  month: string,
+  status: Freshness,
+  rows: readonly DashboardIncomeRow[],
+): bigint | null {
+  if (status === "loading" || status === "empty" || status === "error" || !MONTH_KEY.test(month)) {
+    return null
+  }
+
+  const scoped = netWorthScopeFor(viewer, rows).filter((row) => row.month === month)
+  if (scoped.length === 0) return null
+
+  let total = 0n
+  for (const row of scoped) {
+    if (!isCanonicalDateInMonth(row.date, row.month) ||
+        row.amount < INT64_MIN || row.amount > INT64_MAX) return null
+    total += row.amount
+    if (total < INT64_MIN || total > INT64_MAX) return null
+  }
+  return total
 }
 
 /**
@@ -197,19 +225,36 @@ function incomeOf(transaction: Transaction): bigint {
  * Income is category-based; for non-Income rows, positive is spend and negative
  * is a credit/refund. Route through the same helpers the totals use.
  */
-function AmountCell({ transaction }: { transaction: Transaction }) {
+function AmountCell({
+  transaction,
+  displayUnit,
+  btcPriceCents,
+}: {
+  transaction: Transaction
+  displayUnit: DisplayUnit
+  btcPriceCents: bigint | null
+}) {
   if (transaction.category !== "Income" && transaction.amount !== 0n) {
     const oppositeSign = hasOppositeSpendSign(transaction)
+    const amount = formatDisplayAmount(
+      { usdCents: displaySpendAmount(transaction) },
+      displayUnit,
+      btcPriceCents,
+    )
     return (
       <span title={oppositeSign ? "Credit/refund, or a stored sign that needs review" : undefined}>
         <span className={oppositeSign ? "vv-positive" : "vv-negative"}>
-          {oppositeSign ? "" : "-"}{formatUsd(displaySpendAmount(transaction))}
+          {!oppositeSign && amount !== PRICE_UNAVAILABLE ? "-" : ""}{amount}
         </span>
         {oppositeSign ? <> <Badge tone="warning">credit / check sign</Badge></> : null}
       </span>
     )
   }
-  return <span className="vv-positive">{formatUsd(incomeOf(transaction))}</span>
+  return (
+    <span className="vv-positive">
+      {formatDisplayAmount({ usdCents: incomeOf(transaction) }, displayUnit, btcPriceCents)}
+    </span>
+  )
 }
 
 function TransactionActions({ transaction }: { transaction: Transaction }) {
@@ -552,8 +597,8 @@ function DashboardPage() {
   const visibleTransactions = visibleTo(activeProfile, data.transactions.value)
   const budgetTransactions = budgetTransactionsFor(activeProfile, data.transactions.value)
   const accounts = data.btcBalanceDocument.value?.accounts ?? []
-  const incomeRows = visibleTo(activeProfile, data.income.value)
   const todos = visibleTo(activeProfile, data.todos.value).filter((todo) => !todo.done)
+  const btcPriceCents = availableBtcQuote(data.btcBalanceDocument.status, data.btcPriceUsd)
 
   // The headline follows budget scope: adults share only adult-owned rows while
   // retaining child rows in Recent activity for oversight. Children remain
@@ -563,26 +608,31 @@ function DashboardPage() {
   const budgetMonthTransactions = transactionsInMonth(budgetTransactions, month)
   const activityMonthTransactions = transactionsInMonth(visibleTransactions, month)
   const spend = sum(budgetMonthTransactions.map(spendAmount))
-  const income = sum(incomeRows.filter((row) => row.month === month).map((row) => row.amount))
+  const income = dashboardIncomeMtd(activeProfile, month, data.income.status, data.income.value)
   const stackSats = data.btcBalanceDocument.value?.totals.sats ?? 0n
   const stackValue = data.btcBalanceDocument.value
     ? fiatCentsOf(data.btcBalanceDocument.value.totals)
     : null
 
   const txStatus = data.transactions.status
-  const incomeStatus = data.income.status
   const btcStatus = data.btcBalanceDocument.status
   const todoStatus = data.todos.status
 
   const kpis: KPI[] = [
     {
       label: "Spend (visible)",
-      value: figure(txStatus, () => formatUsd(spend), true),
+      value: figure(
+        txStatus,
+        () => formatDisplayAmount({ usdCents: spend }, displayUnit, btcPriceCents),
+        true,
+      ),
       tone: "negative",
     },
     {
-      label: "Income (visible)",
-      value: figure(incomeStatus, () => formatUsd(income), true),
+      label: "Income MTD",
+      value: income === null
+        ? SUPPRESSED
+        : formatDisplayAmount({ usdCents: income }, displayUnit, btcPriceCents),
       tone: "positive",
     },
     {
@@ -594,9 +644,7 @@ function DashboardPage() {
       tone: "accent",
       hint: requiredFigure(
         btcStatus,
-        () => displayUnit === "usd"
-          ? `Canonical snapshot · ${data.btcBalanceDocument.value?.asOf ?? "date unavailable"}`
-          : stackValue === null ? PRICE_UNAVAILABLE : formatUsd(stackValue),
+        () => `Canonical snapshot · ${data.btcBalanceDocument.value?.asOf ?? "date unavailable"}`,
       ),
     },
     { label: "Open tasks", value: figure(todoStatus, () => String(todos.length)) },
@@ -620,7 +668,7 @@ function DashboardPage() {
       <PageGrid>
         <Panel title="Recent activity" source={data.transactions.source} flush>
           <DataTable
-            columns={recentColumns}
+            columns={transactionColumns(displayUnit, btcPriceCents, false)}
             rows={activityMonthTransactions.slice(0, 8)}
             rowKey={(row) => row.id}
             state={tableState(data.transactions.status)}
@@ -641,17 +689,33 @@ function DashboardPage() {
   )
 }
 
-const recentColumns: ReadonlyArray<Column<Transaction>> = [
-  { key: "date", header: "Date", render: (row) => row.date, width: "104px" },
-  { key: "merchant", header: "Merchant", render: (row) => row.merchant },
-  { key: "category", header: "Category", render: (row) => <Badge>{row.category}</Badge>, secondary: true },
-  {
-    key: "amount",
-    header: "Amount",
-    numeric: true,
-    render: (row) => <AmountCell transaction={row} />,
-  },
-]
+function transactionColumns(
+  displayUnit: DisplayUnit,
+  btcPriceCents: bigint | null,
+  detailed: boolean,
+): ReadonlyArray<Column<Transaction>> {
+  return [
+    { key: "date", header: "Date", render: (row) => row.date, width: "104px" },
+    { key: "merchant", header: "Merchant", render: (row) => row.merchant },
+    { key: "category", header: "Category", render: (row) => <Badge>{row.category}</Badge>, secondary: !detailed },
+    ...(detailed ? [
+      { key: "card", header: "Card", render: (row: Transaction) => row.card ?? "—", secondary: true },
+      { key: "owner", header: "Owner", render: (row: Transaction) => <Badge tone="neutral">{row.owner}</Badge>, secondary: true },
+    ] : []),
+    {
+      key: "amount",
+      header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),
+      numeric: true,
+      render: (row) => (
+        <AmountCell
+          transaction={row}
+          displayUnit={displayUnit}
+          btcPriceCents={btcPriceCents}
+        />
+      ),
+    },
+  ]
+}
 
 function stackColumns(
   displayUnit: DisplayUnit,
@@ -863,12 +927,14 @@ function ActivityPage() {
   const {
     activeProfile,
     data,
+    displayUnit,
     mutationGate,
     mutationNotice,
     refresh,
   } = useAppState()
   const [adding, setAdding] = useState(false)
   const transactions = visibleTo(activeProfile, data.transactions.value)
+  const btcPriceCents = availableBtcQuote(data.btcBalanceDocument.status, data.btcPriceUsd)
   const addGate = mutationGate(
     "transaction.upsert",
     data.transactions.status,
@@ -876,7 +942,7 @@ function ActivityPage() {
   )
   const columns = useMemo<ReadonlyArray<Column<Transaction>>>(
     () => [
-      ...activityColumns,
+      ...transactionColumns(displayUnit, btcPriceCents, true),
       {
         key: "actions",
         header: "Actions",
@@ -884,7 +950,7 @@ function ActivityPage() {
         width: "150px",
       },
     ],
-    [],
+    [btcPriceCents, displayUnit],
   )
 
   return (
@@ -922,20 +988,6 @@ function ActivityPage() {
   )
 }
 
-const activityColumns: ReadonlyArray<Column<Transaction>> = [
-  { key: "date", header: "Date", render: (row) => row.date, width: "104px" },
-  { key: "merchant", header: "Merchant", render: (row) => row.merchant },
-  { key: "category", header: "Category", render: (row) => <Badge>{row.category}</Badge> },
-  { key: "card", header: "Card", render: (row) => row.card ?? "—", secondary: true },
-  { key: "owner", header: "Owner", render: (row) => <Badge tone="neutral">{row.owner}</Badge>, secondary: true },
-  {
-    key: "amount",
-    header: "Amount",
-    numeric: true,
-    render: (row) => <AmountCell transaction={row} />,
-  },
-]
-
 // ── Bitcoin Overview ────────────────────────────────────────────────────────
 
 function BitcoinOverviewPage() {
@@ -959,6 +1011,7 @@ function BitcoinOverviewPage() {
   const selfCustody = document?.totals.selfCustodySats ?? 0n
   const exchange = document?.totals.exchangeSats ?? 0n
   const status = data.btcBalanceDocument.status
+  const btcPriceCents = availableBtcQuote(status, data.btcPriceUsd)
   const addGate = mutationGate(
     "btcAccount.upsert",
     data.btcBalanceDocument.status,
@@ -1019,7 +1072,11 @@ function BitcoinOverviewPage() {
             label: "Value",
             value: requiredFigure(
               status,
-              () => totalFiat === null ? PRICE_UNAVAILABLE : formatUsd(totalFiat),
+              () => formatDisplayAmount(
+                { sats: totalSats, usdCents: totalFiat },
+                displayUnit,
+                btcPriceCents,
+              ),
             ),
             provenance: "estimated",
           },
@@ -1101,7 +1158,7 @@ function BitcoinBuysPage() {
   const buys = visibleTo(activeProfile, data.btcBuys.value)
   const totalSats = sum(buys.map((buy) => buy.sats))
   const totalUsd = sum(buys.map((buy) => buy.usd))
-  const price = referencePrice(activeProfile, data.btcBuys.status, data.btcBuys.value)
+  const quote = availableBtcQuote(data.btcBalanceDocument.status, data.btcPriceUsd)
   const addGate = mutationGate(
     "btcBuy.upsert",
     data.btcBuys.status,
@@ -1128,27 +1185,40 @@ function BitcoinBuysPage() {
       />
       <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
       <StaleNotice status={data.btcBuys.status} />
-      {displayUnit === "usd" ? <BitcoinFiatNotice price={price} /> : null}
+      <BitcoinQuoteNotice available={quote !== null} />
       <KPIStrip
         items={[
           {
             label: "Accumulated",
             value: requiredFigure(
               data.btcBuys.status,
-              () => formatBitcoin(totalSats, displayUnit, price?.cents),
+              () => formatDisplayAmount(
+                { sats: totalSats, usdCents: totalUsd },
+                displayUnit,
+                quote,
+              ),
             ),
             tone: "accent",
           },
-          { label: "Invested", value: requiredFigure(data.btcBuys.status, () => formatUsd(totalUsd)) },
+          {
+            label: "Invested",
+            value: requiredFigure(
+              data.btcBuys.status,
+              () => formatDisplayAmount({ usdCents: totalUsd }, displayUnit, quote),
+            ),
+          },
           {
             label: "Average cost",
             value: figure(data.btcBuys.status, () =>
               totalSats > 0n
-                ? formatUsd(satsToUsdCents(100_000_000n, (totalUsd * 100_000_000n) / totalSats))
+                ? `${formatDisplayAmount(
+                    { usdCents: (totalUsd * 100_000_000n) / totalSats },
+                    displayUnit,
+                    quote,
+                  )}/BTC`
                 : "—",
             ),
             provenance: "estimated",
-            hint: "per BTC",
           },
         ]}
       />
@@ -1161,10 +1231,25 @@ function BitcoinBuysPage() {
               key: "amount",
               header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),
               numeric: true,
-              render: (row) => formatBitcoin(row.sats, displayUnit, row.priceUsd),
+              render: (row) => formatDisplayAmount(
+                { sats: row.sats, usdCents: row.usd },
+                displayUnit,
+                quote,
+              ),
             },
-            { key: "price", header: "Price", numeric: true, render: (row) => formatUsd(row.priceUsd), secondary: true },
-            { key: "usd", header: "Cost", numeric: true, render: (row) => formatUsd(row.usd) },
+            {
+              key: "price",
+              header: `Price (${displayUnit === "sats" ? "SATS" : displayUnit.toUpperCase()}/BTC)`,
+              numeric: true,
+              render: (row) => formatDisplayAmount({ usdCents: row.priceUsd }, displayUnit, quote),
+              secondary: true,
+            },
+            {
+              key: "cost",
+              header: `Cost (${displayUnit === "sats" ? "SATS" : displayUnit.toUpperCase()})`,
+              numeric: true,
+              render: (row) => formatDisplayAmount({ usdCents: row.usd }, displayUnit, quote),
+            },
             {
               key: "status",
               header: "Basis",
@@ -1194,12 +1279,16 @@ function BillsPage() {
   const {
     activeProfile,
     data,
+    displayUnit,
     mutationGate,
     mutationNotice,
     refresh,
   } = useAppState()
   const [adding, setAdding] = useState(false)
   const pays = visibleTo(activeProfile, data.billPays.value)
+  const quote = availableBtcQuote(data.btcBalanceDocument.status, data.btcPriceUsd)
+  const totalUsd = sum(pays.map((pay) => pay.amountUsd))
+  const totalSats = sum(pays.map((pay) => pay.btcSpentSats))
   const addGate = mutationGate(
     "btcBillPay.upsert",
     data.billPays.status,
@@ -1229,13 +1318,36 @@ function BillsPage() {
       <StaleNotice status={data.billPays.status} />
       <KPIStrip
         items={[
-          { label: "Paid", value: figure(data.billPays.status, () => formatUsd(sum(pays.map((pay) => pay.amountUsd)))) },
           {
-            label: "Sats spent",
-            value: figure(data.billPays.status, () => formatSats(sum(pays.map((pay) => pay.btcSpentSats)))),
+            label: "Paid",
+            value: figure(
+              data.billPays.status,
+              () => formatDisplayAmount(
+                { sats: totalSats, usdCents: totalUsd },
+                displayUnit,
+                quote,
+              ),
+            ),
+          },
+          {
+            label: "Bitcoin spent",
+            value: figure(
+              data.billPays.status,
+              () => formatDisplayAmount({ sats: totalSats }, displayUnit, quote),
+            ),
             tone: "accent",
           },
-          { label: "Fees", value: figure(data.billPays.status, () => formatUsd(sum(pays.map((pay) => pay.feeUsd)))) },
+          {
+            label: "Fees",
+            value: figure(
+              data.billPays.status,
+              () => formatDisplayAmount(
+                { usdCents: sum(pays.map((pay) => pay.feeUsd)) },
+                displayUnit,
+                quote,
+              ),
+            ),
+          },
         ]}
       />
       <Panel source={data.billPays.source} flush>
@@ -1244,9 +1356,23 @@ function BillsPage() {
             { key: "date", header: "Date", render: (row) => row.date, width: "104px" },
             { key: "merchant", header: "Payee", render: (row) => row.merchant },
             { key: "category", header: "Category", render: (row) => <Badge>{row.category}</Badge>, secondary: true },
-            { key: "usd", header: "Amount", numeric: true, render: (row) => formatUsd(row.amountUsd) },
-            { key: "sats", header: "Sats", numeric: true, render: (row) => formatSats(row.btcSpentSats) },
-            { key: "fee", header: "Fee", numeric: true, render: (row) => formatUsd(row.feeUsd), secondary: true },
+            {
+              key: "amount",
+              header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),
+              numeric: true,
+              render: (row) => formatDisplayAmount(
+                { sats: row.btcSpentSats, usdCents: row.amountUsd },
+                displayUnit,
+                quote,
+              ),
+            },
+            {
+              key: "fee",
+              header: `Fee (${displayUnit === "sats" ? "SATS" : displayUnit.toUpperCase()})`,
+              numeric: true,
+              render: (row) => formatDisplayAmount({ usdCents: row.feeUsd }, displayUnit, quote),
+              secondary: true,
+            },
             {
               key: "actions",
               header: "Actions",
@@ -1269,8 +1395,9 @@ function BillsPage() {
 // ── Retirement ──────────────────────────────────────────────────────────────
 
 function RetirementPage() {
-  const { activeProfile, data } = useAppState()
+  const { activeProfile, data, displayUnit } = useAppState()
   const incomeRows = visibleTo(activeProfile, data.income.value)
+  const quote = availableBtcQuote(data.btcBalanceDocument.status, data.btcPriceUsd)
   const currentMonth =
     data.budget.value?.month ?? monthOf(new Date(data.generatedAt).toISOString().slice(0, 10))
   const currentYear = currentMonth.slice(0, 4)
@@ -1293,12 +1420,20 @@ function RetirementPage() {
         items={[
           {
             label: "YTD income",
-            value: figure(data.income.status, () => formatUsd(ytdIncome), true),
+            value: figure(
+              data.income.status,
+              () => formatDisplayAmount({ usdCents: ytdIncome }, displayUnit, quote),
+              true,
+            ),
             provenance: "actual",
           },
           {
             label: "MTD income",
-            value: figure(data.income.status, () => formatUsd(mtdIncome), true),
+            value: figure(
+              data.income.status,
+              () => formatDisplayAmount({ usdCents: mtdIncome }, displayUnit, quote),
+              true,
+            ),
             provenance: "actual",
           },
         ]}
@@ -1331,6 +1466,7 @@ function NetWorthPage() {
   const inScope = document?.accounts ?? []
   const stackSats = document?.totals.sats ?? 0n
   const stackValue = document ? fiatCentsOf(document.totals) : null
+  const quote = availableBtcQuote(data.btcBalanceDocument.status, data.btcPriceUsd)
 
   const projectedInScope = netWorthScopeFor(activeProfile, data.btcAccounts.value)
   const excluded = data.btcAccounts.value.filter(
@@ -1368,10 +1504,14 @@ function NetWorthPage() {
             tone: "accent",
           },
           {
-            label: "Fiat estimate",
+            label: "Value",
             value: requiredFigure(
               data.btcBalanceDocument.status,
-              () => stackValue === null ? PRICE_UNAVAILABLE : formatUsd(stackValue),
+              () => formatDisplayAmount(
+                { sats: stackSats, usdCents: stackValue },
+                displayUnit,
+                quote,
+              ),
             ),
             hint: requiredFigure(
               data.btcBalanceDocument.status,

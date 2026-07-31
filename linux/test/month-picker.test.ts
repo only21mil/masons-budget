@@ -46,6 +46,7 @@ function render(route: string, profile: FamilyMember, month: MonthKey | null): s
       initialProfile: profile,
       initialRoute: route,
       initialSelectedMonth: month,
+      initialDisplayUnit: "usd",
       children: createElement(Harness, { route }),
     }),
   )

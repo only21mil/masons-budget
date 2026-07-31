@@ -1,12 +1,13 @@
 import type { FamilyMember } from "@vogel-vault/domain/family"
 import { visibleTo } from "@vogel-vault/domain/family"
 import {
+  SATS_PER_BTC,
   formatBtc,
   formatSats,
   formatUsd,
   satsToUsdCents,
 } from "@vogel-vault/domain/money"
-import type { BTCBuy } from "@vogel-vault/domain/readModel"
+import type { Freshness, BTCBuy } from "@vogel-vault/domain/readModel"
 
 export const DISPLAY_UNITS = [
   { storageKey: "btc", label: "BTC" },
@@ -17,6 +18,13 @@ export const DISPLAY_UNITS = [
 export type DisplayUnit = (typeof DISPLAY_UNITS)[number]["storageKey"]
 
 export const PRICE_UNAVAILABLE = "Price unavailable"
+
+export interface DisplayAmount {
+  /** Exact ledger quantity, when the source records sats. */
+  readonly sats?: bigint | null
+  /** Exact ledger quantity, when the source records USD cents. */
+  readonly usdCents?: bigint | null
+}
 
 export interface RecordedBitcoinPrice {
   readonly cents: bigint
@@ -52,6 +60,68 @@ export function formatBitcoin(
         ? formatUsd(satsToUsdCents(sats, btcPriceCents))
         : PRICE_UNAVAILABLE
   }
+}
+
+/**
+ * The renderer's cross-unit quote contract.
+ *
+ * Only the explicit BTC quote delivered with a live or stale canonical balance
+ * read may convert a value whose native unit differs from the selected unit.
+ * Demo/loading/empty/error reads, absent quotes, and non-positive quotes do not
+ * become an inferred price from buys, bill pays, or transaction arithmetic.
+ */
+export function availableBtcQuote(
+  status: Freshness,
+  btcPriceCents: bigint | null | undefined,
+): bigint | null {
+  return (status === "live" || status === "stale") &&
+    btcPriceCents !== null &&
+    btcPriceCents !== undefined &&
+    btcPriceCents > 0n
+    ? btcPriceCents
+    : null
+}
+
+/** Convert cents to sats with the same half-away-from-zero rule as sats->USD. */
+export function usdCentsToSats(
+  usdCents: bigint,
+  btcPriceCents: bigint,
+): bigint | null {
+  if (btcPriceCents <= 0n) return null
+  const numerator = usdCents * SATS_PER_BTC
+  const half = btcPriceCents / 2n
+  return numerator >= 0n
+    ? (numerator + half) / btcPriceCents
+    : -((-numerator + half) / btcPriceCents)
+}
+
+/**
+ * Format an amount in the selected unit, preferring the source's exact native
+ * value and converting only through the explicit quote contract.
+ */
+export function formatDisplayAmount(
+  amount: DisplayAmount,
+  unit: DisplayUnit,
+  btcPriceCents: bigint | null,
+): string {
+  if (unit === "usd") {
+    if (amount.usdCents !== null && amount.usdCents !== undefined) {
+      return formatUsd(amount.usdCents)
+    }
+    return amount.sats !== null && amount.sats !== undefined && btcPriceCents !== null
+      ? formatUsd(satsToUsdCents(amount.sats, btcPriceCents))
+      : PRICE_UNAVAILABLE
+  }
+
+  let sats = amount.sats
+  if ((sats === null || sats === undefined) &&
+      amount.usdCents !== null &&
+      amount.usdCents !== undefined &&
+      btcPriceCents !== null) {
+    sats = usdCentsToSats(amount.usdCents, btcPriceCents)
+  }
+  if (sats === null || sats === undefined) return PRICE_UNAVAILABLE
+  return unit === "btc" ? formatBtc(sats) : formatSats(sats)
 }
 
 /**
