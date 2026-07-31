@@ -12,7 +12,11 @@ import {
   buildSanitizedFixtureEnvelope,
 } from "../src/renderer/data/fixtures.ts"
 import type { RendererMutationAdapter } from "../src/renderer/data/mutations.ts"
-import { BudgetCategoryTransactionsDialog } from "../src/renderer/pages/finance/index.tsx"
+import { TransactionFormDialog } from "../src/renderer/components/MutationForms.tsx"
+import {
+  BudgetCategoryTransactionsDialog,
+  budgetDrilldownTransactionEditGate,
+} from "../src/renderer/pages/finance/index.tsx"
 import { resolvePage } from "../src/renderer/pages/index.ts"
 
 function tx(
@@ -142,6 +146,33 @@ describe("Budget category transaction drilldown", () => {
     expect(markup).toContain("Editing stays disabled until live rows return")
     const edit = markup.match(/<button[^>]*aria-label="Edit Adult spend"[^>]*>/)?.[0]
     expect(edit).toContain("disabled")
+    expect(edit).toContain("aria-describedby")
+    expect(markup).toContain("Current live transaction rows are required before editing.")
+  })
+
+  it("re-checks freshness before an edit opened live can submit", () => {
+    const writeGate = { allowed: true, reason: null }
+    expect(budgetDrilldownTransactionEditGate("live", writeGate)).toEqual(writeGate)
+    const staleGate = budgetDrilldownTransactionEditGate("stale", writeGate)
+    expect(staleGate).toEqual({
+      allowed: false,
+      reason: "Current live transaction rows are required before editing.",
+    })
+
+    const markup = renderToStaticMarkup(
+      createElement(AppStateProvider, {
+        children: createElement(TransactionFormDialog, {
+          open: true,
+          transaction: ROWS[0]!,
+          submissionGate: staleGate,
+          onClose: () => undefined,
+        }),
+      }),
+    )
+    const save = markup.match(/<button[^>]*type="submit"[^>]*>/)?.[0]
+    expect(save).toContain("disabled")
+    expect(save).toContain("aria-describedby")
+    expect(markup).toContain("Current live transaction rows are required before editing.")
   })
 
   it("discloses transaction read errors inside the drilldown", () => {
@@ -149,6 +180,9 @@ describe("Budget category transaction drilldown", () => {
     expect(markup).toContain("Transactions could not load")
     expect(markup).toContain("No category detail is available")
     expect(markup).toContain("Could not load")
+    expect(markup).toContain("Transaction details unavailable.")
+    expect(markup).not.toContain("2 transactions")
+    expect(markup).not.toContain("$40.00 signed actual")
   })
 
   it("exposes each Budget category as a month-labelled drilldown control", () => {
