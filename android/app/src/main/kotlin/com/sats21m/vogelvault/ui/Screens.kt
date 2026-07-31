@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -132,6 +133,20 @@ private data class NetWorthProjection(
     val balance: BtcBalance?,
 )
 
+internal data class BudgetCategoryDrilldownScope(
+    val month: String,
+    val category: String,
+)
+
+internal fun budgetCategoryTransactionsFor(
+    viewer: FamilyMember,
+    transactions: List<Transaction>,
+    scope: BudgetCategoryDrilldownScope,
+): List<Transaction> =
+    transactions
+        .budgetTransactionsFor(viewer)
+        .filter { it.date.take(7) == scope.month && it.category == scope.category }
+
 internal fun ReadModel.dashboardIncomeEntries(
     viewer: FamilyMember,
     month: String?,
@@ -206,6 +221,8 @@ fun ScreenHost(
         mutableStateOf(initialMonth)
     }
     var budgetEditor by remember { mutableStateOf<BudgetCategoryEditorSeed?>(null) }
+    var budgetDrilldownMonth by rememberSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
+    var budgetDrilldownCategory by rememberSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
     var showBtcBuyEditor by rememberSaveable { mutableStateOf(false) }
     // A refresh can retire the picked month. Fall back rather than render a month
     // the ledger no longer contains.
@@ -339,14 +356,43 @@ fun ScreenHost(
                         selectedTransactionKey = it.selectionKey
                     }
                 }
-                Destination.BUDGET ->
-                    budget(
-                        state,
-                        months,
-                        budgetSpend,
-                        onSelectMonth = { picked = it },
-                        onEditCategory = { budgetEditor = it },
-                    )
+                Destination.BUDGET -> {
+                    val drilldownScope =
+                        budgetDrilldownMonth?.let { selectedMonth ->
+                            budgetDrilldownCategory?.let { category ->
+                                BudgetCategoryDrilldownScope(selectedMonth, category)
+                            }
+                        }
+                    if (drilldownScope == null) {
+                        budget(
+                            state,
+                            months,
+                            budgetSpend,
+                            onSelectMonth = { picked = it },
+                            onEditCategory = { budgetEditor = it },
+                            onOpenCategory = { scope ->
+                                budgetDrilldownMonth = scope.month
+                                budgetDrilldownCategory = scope.category
+                            },
+                        )
+                    } else {
+                        budgetCategoryDrilldown(
+                            state = state,
+                            scope = drilldownScope,
+                            transactions =
+                                budgetCategoryTransactionsFor(
+                                    viewer = state.activeProfile,
+                                    transactions = transactionsInput,
+                                    scope = drilldownScope,
+                                ),
+                            onBack = {
+                                budgetDrilldownMonth = null
+                                budgetDrilldownCategory = null
+                            },
+                            onSelectTransaction = { selectedTransactionKey = it.selectionKey },
+                        )
+                    }
+                }
                 Destination.BITCOIN ->
                     bitcoin(
                         state,
@@ -738,12 +784,13 @@ private fun TransactionRow(
     transaction: Transaction,
     displayUnit: DisplayUnit,
     quote: MarketQuote?,
+    secondary: String = "${transaction.date} · ${transaction.category}",
 ) {
     val isSpend = transaction.isSpend
     val isCreditOrWrongSign = transaction.hasOppositeSpendSign
     LedgerRow(
         primary = transaction.merchant,
-        secondary = "${transaction.date} · ${transaction.category}",
+        secondary = secondary,
         figure = formatTransactionAmount(transaction, displayUnit, quote),
         figureColor = if (isSpend && !isCreditOrWrongSign) VaultNegative else VaultPositive,
     )
@@ -771,6 +818,7 @@ private fun VaultLazyListScope.budget(
     spend: BudgetSpend?,
     onSelectMonth: (String) -> Unit,
     onEditCategory: (BudgetCategoryEditorSeed) -> Unit,
+    onOpenCategory: (BudgetCategoryDrilldownScope) -> Unit,
 ) {
     val slice = state.data.budget
     val budget = slice.value
@@ -881,6 +929,14 @@ private fun VaultLazyListScope.budget(
                 canEdit =
                     derived.month == budget.month &&
                         slice.status == Freshness.LIVE,
+                onOpenTransactions = {
+                    onOpenCategory(
+                        BudgetCategoryDrilldownScope(
+                            month = derived.month,
+                            category = category.name,
+                        ),
+                    )
+                },
                 onEdit = {
                     onEditCategory(
                         BudgetCategoryEditorSeed(
@@ -894,6 +950,73 @@ private fun VaultLazyListScope.budget(
             )
         }
     }
+}
+
+private fun VaultLazyListScope.budgetCategoryDrilldown(
+    state: VaultUiState,
+    scope: BudgetCategoryDrilldownScope,
+    transactions: List<Transaction>,
+    onBack: () -> Unit,
+    onSelectTransaction: (Transaction) -> Unit,
+) {
+    item {
+        TextButton(onClick = onBack) {
+            Text(stringResource(R.string.budget_category_transactions_back))
+        }
+    }
+    item { StaleNotice(state.data.transactions.status) }
+    if (state.data.transactions.suppressFigures) {
+        item {
+            Panel(
+                title = stringResource(R.string.budget_category_transactions_title, scope.category),
+                source = "${state.data.transactions.source} · ${scope.month}",
+            ) {
+                StateBlock(state.data.transactions.status)
+            }
+        }
+        return
+    }
+    if (transactions.isEmpty()) {
+        item {
+            Panel(
+                title = stringResource(R.string.budget_category_transactions_title, scope.category),
+                source = "${state.data.transactions.source} · ${scope.month}",
+            ) {
+                Column(Modifier.padding(VaultSpace.md)) {
+                    Text(stringResource(R.string.budget_category_transactions_empty), color = VaultCream)
+                    Text(
+                        stringResource(R.string.budget_category_transactions_empty_detail),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VaultTextMuted,
+                    )
+                }
+            }
+        }
+        return
+    }
+    keyedPanel(
+        sectionKey = "budget-category-transactions",
+        title =
+            "${scope.category} · ${transactions.size} " +
+                if (transactions.size == 1) "transaction" else "transactions",
+        source = "${state.data.transactions.source} · ${scope.month}",
+        rows = transactions,
+        rowKey = Transaction::selectionKey,
+        rowContent = { transaction ->
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelectTransaction(transaction) },
+            ) {
+                TransactionRow(
+                    transaction = transaction,
+                    displayUnit = DisplayUnit.USD,
+                    quote = null,
+                    secondary = "${transaction.date} · ${transaction.owner.displayName}",
+                )
+            }
+        },
+    )
 }
 
 /**

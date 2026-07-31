@@ -160,6 +160,7 @@ private fun exactPositiveMinorUnits(
 internal fun EditableBudgetCategoryRow(
     category: CategorySpend,
     canEdit: Boolean,
+    onOpenTransactions: () -> Unit,
     onEdit: () -> Unit,
 ) {
     Column {
@@ -170,9 +171,14 @@ internal fun EditableBudgetCategoryRow(
             figureColor = if (category.isOverBudget) VaultNegative else VaultCream,
             badge = if (category.isOverBudget) "over" else null,
         )
-        if (canEdit) {
-            TextButton(onClick = onEdit, modifier = Modifier.padding(horizontal = VaultSpace.sm)) {
-                Text(stringResource(R.string.budget_category_edit_action))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
+            TextButton(onClick = onOpenTransactions) {
+                Text(stringResource(R.string.budget_category_transactions_action))
+            }
+            if (canEdit) {
+                TextButton(onClick = onEdit, modifier = Modifier.padding(horizontal = VaultSpace.sm)) {
+                    Text(stringResource(R.string.budget_category_edit_action))
+                }
             }
         }
     }
