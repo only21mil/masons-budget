@@ -89,6 +89,16 @@ const TWO_64 = 1n << 64n
 const SIGN_64 = 1n << 63n
 const MARKET_SYMBOLS = ["BTC", "VOO", "IBIT"] as const
 const MARKET_STATUSES = ["live", "stale", "unavailable"] as const
+const CANONICAL_ISO_INSTANT =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?Z$/
+
+type ResolvedRowRequest =
+  | Exclude<VogelVaultRowRequest, { readonly kind: "finance" }>
+  | {
+      readonly kind: "finance"
+      readonly viewer: VogelVaultMember
+      readonly scope: "netWorth"
+    }
 
 class InvalidValue extends Error {}
 
@@ -187,6 +197,14 @@ function dateAndMonth(record: Record<string, unknown>): { readonly date: string;
   const month = monthValue(record)
   if (date.slice(0, 7) !== month) throw new InvalidValue()
   return { date, month }
+}
+
+function canonicalIsoInstant(value: string): boolean {
+  if (!CANONICAL_ISO_INSTANT.test(value)) return false
+  const millis = Date.parse(value)
+  if (!Number.isFinite(millis)) return false
+  const normalized = new Date(millis).toISOString()
+  return value === normalized || value === normalized.replace(".000Z", "Z")
 }
 
 function scopeValue(value: unknown): VogelVaultBtcScope {
@@ -634,6 +652,7 @@ function marketQuote(value: unknown): VogelVaultMarketQuote {
   const source = text(row, "source")
   const priceCents = row["priceCents"] === null ? null : int64(row, "priceCents")
   const fetchedAt = row["fetchedAt"] === null ? null : text(row, "fetchedAt")
+  if (fetchedAt !== null && !canonicalIsoInstant(fetchedAt)) throw new InvalidValue()
   if (status === "unavailable") {
     if (priceCents !== null) throw new InvalidValue()
   } else if (priceCents === null || priceCents <= 0n || fetchedAt === null) {
@@ -886,10 +905,9 @@ export function validateRowRequest(value: unknown): VogelVaultRowRequest | null 
         return { kind, viewer, scope: scopeValue(row["scope"]) }
       }
       case "finance": {
-        const viewer = member(value, "viewer")
-        const row = exactObject(value, ["kind", "viewer", "scope"])
+        const row = exactObject(value, ["kind", "scope"])
         if (row["scope"] !== "netWorth") throw new InvalidValue()
-        return { kind, viewer, scope: "netWorth" }
+        return { kind, scope: "netWorth" }
       }
       case "marketQuotes":
         exactObject(value, ["kind"])
@@ -902,7 +920,7 @@ export function validateRowRequest(value: unknown): VogelVaultRowRequest | null 
   }
 }
 
-function requestArgs(request: VogelVaultRowRequest, credential: string | null): Record<string, unknown> {
+function requestArgs(request: ResolvedRowRequest, credential: string | null): Record<string, unknown> {
   const args: Record<string, unknown> = {}
   switch (request.kind) {
     case "rowCounts":
@@ -995,7 +1013,7 @@ function successValue(response: JsonPostResponse): unknown | "unauthorized" {
 }
 
 function parseResponse(
-  request: VogelVaultRowRequest,
+  request: ResolvedRowRequest,
   response: JsonPostResponse,
 ): VogelVaultRowResult {
   let value: unknown | "unauthorized"
@@ -1110,7 +1128,7 @@ function parseResponse(
 }
 
 export interface ConvexRowRepository {
-  query(request: unknown): Promise<VogelVaultRowResult>
+  query(request: unknown, activeProfile?: VogelVaultMember): Promise<VogelVaultRowResult>
 }
 
 export interface ConvexRowRepositoryOptions {
@@ -1131,9 +1149,16 @@ export function createConvexRowRepository(options: ConvexRowRepositoryOptions): 
   let activeGeneration = -1
 
   return {
-    query(input: unknown): Promise<VogelVaultRowResult> {
+    query(input: unknown, activeProfile?: VogelVaultMember): Promise<VogelVaultRowResult> {
       const request = validateRowRequest(input)
       if (request === null) return Promise.resolve({ status: "error", code: "invalid-request" })
+      if (request.kind === "finance" &&
+          !(MEMBERS as readonly unknown[]).includes(activeProfile)) {
+        return Promise.resolve({ status: "error", code: "invalid-request" })
+      }
+      const resolvedRequest: ResolvedRowRequest = request.kind === "finance"
+        ? { ...request, viewer: activeProfile as VogelVaultMember }
+        : request
 
       const configuration = options.configuration()
       if (configuration.generation !== activeGeneration) {
@@ -1155,7 +1180,7 @@ export function createConvexRowRepository(options: ConvexRowRepositoryOptions): 
       const endpoint = configuration.settings.endpoint
       if (endpoint === null) return Promise.resolve({ status: "error", code: "unconfigured" })
 
-      const cacheKey = `${configuration.generation}:${JSON.stringify(request)}`
+      const cacheKey = `${configuration.generation}:${JSON.stringify(resolvedRequest)}`
       const cached = cache.get(cacheKey)
       const currentTime = now()
       if (cached !== undefined && cached.expiresAt > currentTime) return Promise.resolve(cached.result)
@@ -1167,13 +1192,13 @@ export function createConvexRowRepository(options: ConvexRowRepositoryOptions): 
       }
 
       const body = JSON.stringify({
-        path: ROW_QUERY_PATHS[request.kind],
-        args: requestArgs(request, configuration.settings.credentialOrNull()),
+        path: ROW_QUERY_PATHS[resolvedRequest.kind],
+        args: requestArgs(resolvedRequest, configuration.settings.credentialOrNull()),
         format: "convex_encoded_json",
       })
       const started = options
         .post(endpoint, body, CONVEX_ROW_LIMITS.maxResponseBytes)
-        .then((response) => parseResponse(request, response))
+        .then((response) => parseResponse(resolvedRequest, response))
         .catch((): VogelVaultRowResult => ({ status: "error", code: "unavailable" }))
         .then((result) => {
           cache.set(cacheKey, { expiresAt: now() + CONVEX_ROW_LIMITS.cacheMs, result })

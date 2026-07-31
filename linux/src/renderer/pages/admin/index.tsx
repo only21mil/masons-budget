@@ -198,12 +198,12 @@ function SyncHealthPage() {
     ? financeModel.finance.value.updatedAtMs
     : null
   const quoteUpdatedAt = financeModel.marketQuotes.status === "live"
-    ? Math.max(
-        ...financeModel.marketQuotes.value.quotes
-          .map((quote) => quote.fetchedAt === null ? Number.NaN : Date.parse(quote.fetchedAt))
-          .filter(Number.isFinite),
-        0,
-      ) || null
+    ? financeModel.marketQuotes.value.quotes.some((quote) => quote.fetchedAt === null)
+      ? null
+      : Math.min(
+          ...financeModel.marketQuotes.value.quotes
+            .map((quote) => Date.parse(quote.fetchedAt ?? "")),
+        )
     : null
   const financeReadsFailed = financeStatus === "error" || quoteStatus === "error"
 

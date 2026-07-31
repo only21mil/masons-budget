@@ -4,6 +4,11 @@
 export type VogelVaultMember = "victor" | "rachel" | "mason" | "maddox"
 export type VogelVaultBtcScope = "visible" | "netWorth"
 
+/** Main-owned profile session result; it carries no credential or capability value. */
+export type VogelVaultReadProfileResult =
+  | { readonly status: "active"; readonly profile: VogelVaultMember }
+  | { readonly status: "rejected" }
+
 export interface VogelVaultFiatValuation {
   readonly cents: bigint
   readonly priceCents?: bigint
@@ -329,7 +334,6 @@ export type VogelVaultRowRequest =
     }
   | {
       readonly kind: "finance"
-      readonly viewer: VogelVaultMember
       readonly scope: "netWorth"
     }
   | {

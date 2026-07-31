@@ -19,6 +19,9 @@ export const CONVEX_READ_CHANNEL = "vogel-vault:read-remote-snapshot"
 /** Renderer → main, invoke/handle. Closed typed row/document request union. */
 export const CONVEX_ROWS_CHANNEL = "vogel-vault:query-convex-rows"
 
+/** Renderer → main, invoke/handle. Requests one closed active-profile transition. */
+export const READ_PROFILE_CHANNEL = "vogel-vault:set-read-profile"
+
 /** Renderer → main, invoke/handle. Claims one user-supplied device pairing. */
 export const DEVICE_PAIR_CHANNEL = "vogel-vault:pair-device"
 
