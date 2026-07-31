@@ -44,7 +44,7 @@ class FinancePresentationTest {
     fun `adult total uses quote-valued retirement once and excludes child accounts`() {
         val state = financeState(FamilyMember.VICTOR)
 
-        val selection = requireNotNull(state.adultNetWorthSelection())
+        val selection = requireNotNull(state.netWorthSelection())
 
         assertEquals(1, selection.accounts.size)
         assertEquals(12_000L, selection.retirementValueCents)
@@ -54,6 +54,28 @@ class FinancePresentationTest {
             "market service · 2026-07-31T12:00:00Z",
             selection.valuationQualityHint(),
         )
+    }
+
+    @Test
+    fun `rachel net worth retains the shared adult household scope`() {
+        val state = financeState(FamilyMember.RACHEL).copy(
+            financeDocument = document().copy(
+                accounts = listOf(
+                    account("victor_401k", FamilyMember.VICTOR),
+                    account("rachel_401k", FamilyMember.RACHEL),
+                    account("mason_401k", FamilyMember.MASON),
+                ),
+            ),
+        )
+
+        val selection = requireNotNull(state.netWorthSelection())
+
+        assertEquals(
+            listOf("victor_401k", "rachel_401k"),
+            selection.accounts.map { it.account.key },
+        )
+        assertEquals(24_000L, selection.retirementValueCents)
+        assertEquals(10_024_000L, selection.totalValueCents)
     }
 
     @Test
@@ -93,7 +115,7 @@ class FinancePresentationTest {
             ),
         )
 
-        val selection = requireNotNull(state.adultNetWorthSelection())
+        val selection = requireNotNull(state.netWorthSelection())
 
         assertEquals(
             "market service · 2026-07-31T12:00:00Z · Retirement: 1 stale quote · 1 stored value",
@@ -106,11 +128,41 @@ class FinancePresentationTest {
     }
 
     @Test
-    fun `child profile sees only self-owned retirement and no household total`() {
+    fun `mason net worth includes only his BTC and mason 401k`() {
         val state = financeState(FamilyMember.MASON)
 
         assertEquals(listOf(FamilyMember.MASON), state.retirementAccounts().map { it.account.owner })
-        assertNull(state.adultNetWorthSelection())
+        val selection = requireNotNull(state.netWorthSelection())
+        assertEquals(listOf("mason_401k"), selection.accounts.map { it.account.key })
+        assertEquals(12_000L, selection.retirementValueCents)
+        assertEquals(10_000_000L, selection.bitcoinValueCents)
+        assertEquals(10_012_000L, selection.totalValueCents)
+    }
+
+    @Test
+    fun `net worth labels preserve adult wording and use profile-neutral child wording`() {
+        assertEquals(
+            NetWorthPresentationLabels(
+                total = "Adult net worth",
+                retirementHint = "Adult accounts only",
+                unavailableTotal = "Adult total unavailable",
+                unavailableFinanceDetail =
+                    "The retirement document is unavailable or incomplete. Bitcoin alone is not shown as household net worth.",
+                emptyRetirementDetail = "No retirement accounts are available for the adult household.",
+            ),
+            financeState(FamilyMember.VICTOR).netWorthPresentationLabels(),
+        )
+        assertEquals(
+            NetWorthPresentationLabels(
+                total = "Net worth",
+                retirementHint = "This profile only",
+                unavailableTotal = "Net worth unavailable",
+                unavailableFinanceDetail =
+                    "The retirement document is unavailable or incomplete. Bitcoin alone is not shown as this profile's net worth.",
+                emptyRetirementDetail = "No retirement accounts are available for this profile.",
+            ),
+            financeState(FamilyMember.MASON).netWorthPresentationLabels(),
+        )
     }
 
     @Test
@@ -126,7 +178,7 @@ class FinancePresentationTest {
             marketQuotes = MarketQuoteSnapshot(quotes),
         )
 
-        val selection = requireNotNull(state.adultNetWorthSelection())
+        val selection = requireNotNull(state.netWorthSelection())
 
         assertNull(selection.totalValueCents)
         assertEquals(12_000L, selection.retirementValueCents)
@@ -176,8 +228,8 @@ class FinancePresentationTest {
             financeDocument = document().copy(accounts = listOf(first, second)),
         )
 
-        assertTrue(state.adultNetWorthSelectionResult().isFailure)
-        assertNull(state.adultNetWorthSelection())
+        assertTrue(state.netWorthSelectionResult().isFailure)
+        assertNull(state.netWorthSelection())
         assertEquals(
             "Price unavailable",
             state.formatFinanceCents(Long.MAX_VALUE, DisplayUnit.SATS),
@@ -211,8 +263,9 @@ class FinancePresentationTest {
     }
 
     private fun financeState(viewer: FamilyMember): VaultUiState {
+        val balanceOwner = viewer.ledgerOwner
         val balance = BtcBalance(
-            owner = FamilyMember.VICTOR,
+            owner = balanceOwner,
             asOf = "2026-07-31",
             accounts = listOf(
                 BtcAccount(
@@ -221,7 +274,7 @@ class FinancePresentationTest {
                     custody = Custody.SELF_CUSTODY,
                     sats = 100_000_000L,
                     fiatCents = 0L,
-                    owner = FamilyMember.VICTOR,
+                    owner = balanceOwner,
                 ),
             ),
             totalSats = 100_000_000L,
@@ -247,7 +300,7 @@ class FinancePresentationTest {
         retirementTotalCents = 999_999L,
         accounts = listOf(
             account("adult", FamilyMember.VICTOR),
-            account("child", FamilyMember.MASON),
+            account("mason_401k", FamilyMember.MASON),
         ),
     )
 
