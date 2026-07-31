@@ -3,13 +3,21 @@ package com.sats21m.vogelvault.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.FinanceDocumentSnapshot
+import com.sats21m.vogelvault.data.FinanceReadSource
+import com.sats21m.vogelvault.data.LoadedFinanceRead
+import com.sats21m.vogelvault.data.MarketQuoteReadSnapshot
 import com.sats21m.vogelvault.data.RowReadFailure
 import com.sats21m.vogelvault.data.cache.CachedReadModel
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.rowReadFailures
+import com.sats21m.vogelvault.data.toRowReadFailure
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.FinanceDocument
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
+import com.sats21m.vogelvault.domain.MarketQuoteSnapshot
 import com.sats21m.vogelvault.domain.ReadModel
 import com.sats21m.vogelvault.domain.budgetMonthsFor
 import com.sats21m.vogelvault.domain.resolveBudgetMonth
@@ -41,12 +49,21 @@ data class VaultUiState(
      * a tap.
      */
     val selectedMonth: String? = null,
-    /** A rejected read token invalidated the last complete Room snapshot. */
+    /** A row or finance read rejected the active credential. */
     val staleAuthorization: Boolean = false,
+    internal val rowUnauthorized: Boolean = staleAuthorization,
+    internal val financeUnauthorized: Boolean = false,
     /** Fixed, non-secret explanation when enabling authenticated reads fails. */
     val remoteConfigurationError: String? = null,
     /** Distinct, non-secret causes retained before any stale-cache substitution. */
     val rowReadFailures: Set<RowReadFailure> = data.rowReadFailures,
+    /** Client-owned finance document; never inferred from legacy BTC rows. */
+    val financeDocument: FinanceDocument? = null,
+    val financeStatus: Freshness = Freshness.EMPTY,
+    /** BTC, VOO, and IBIT quote snapshot. Null means no complete snapshot arrived. */
+    val marketQuotes: MarketQuoteSnapshot? = null,
+    val marketQuoteStatus: Freshness = Freshness.EMPTY,
+    val financeReadFailures: Set<RowReadFailure> = emptySet(),
 ) {
     val switchTargets: List<FamilyMember> get() = activeProfile.allowedSwitchTargets
 
@@ -57,7 +74,10 @@ data class VaultUiState(
      * different reasons.
      */
     val primaryRowReadFailure: RowReadFailure?
-        get() = FAILURE_DISPLAY_ORDER.firstOrNull(rowReadFailures::contains)
+        get() {
+            val failures = rowReadFailures + financeReadFailures
+            return FAILURE_DISPLAY_ORDER.firstOrNull(failures::contains)
+        }
 
     val rowReadFailureTitleRes: Int?
         get() = primaryRowReadFailure?.titleRes
@@ -87,11 +107,18 @@ data class VaultUiState(
         get() = resolveBudgetMonth(selectedMonth, budgetMonths, data.budget.value?.month)
 
     private val slices
-        get() = listOf(data.transactions.status to data.transactions.updatedAt,
+        get() = listOf(
+            data.transactions.status to data.transactions.updatedAt,
             data.budget.status to data.budget.updatedAt,
             data.btcAccounts.status to data.btcAccounts.updatedAt,
             data.btcBuys.status to data.btcBuys.updatedAt,
-            data.todos.status to data.todos.updatedAt)
+            data.todos.status to data.todos.updatedAt,
+            data.income.status to data.income.updatedAt,
+            data.btcBalance.status to data.btcBalance.updatedAt,
+            data.btcBillPays.status to data.btcBillPays.updatedAt,
+            financeStatus to financeDocument?.updatedAtMs,
+            marketQuoteStatus to null,
+        )
 
     private val hasArrivedData: Boolean
         get() =
@@ -99,7 +126,12 @@ data class VaultUiState(
                 data.budget.value != null ||
                 data.btcAccounts.value.isNotEmpty() ||
                 data.btcBuys.value.isNotEmpty() ||
-                data.todos.value.isNotEmpty()
+                data.todos.value.isNotEmpty() ||
+                data.income.value.isNotEmpty() ||
+                data.btcBalance.value != null ||
+                data.btcBillPays.value.isNotEmpty() ||
+                financeDocument != null ||
+                marketQuotes != null
 
     /**
      * Empty slices do not disown rows that arrived in another slice.
@@ -154,7 +186,8 @@ data class VaultUiState(
 
 class VaultViewModel(
     private val rowSource: CachedRowDataSource? = null,
-    remoteInitiallyEnabled: Boolean = rowSource != null,
+    private val financeSource: FinanceReadSource? = null,
+    remoteInitiallyEnabled: Boolean = rowSource != null || financeSource != null,
     private val enableRemote: ((String) -> Unit)? = null,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
@@ -172,9 +205,12 @@ class VaultViewModel(
     private var cachedModel: CachedReadModel? = null
     private var liveModel: ReadModel? = null
     private var liveUnauthorized = false
+    private var loadGeneration = 0L
 
     init {
-        if (rowSource != null && remoteInitiallyEnabled) connectRows(FamilyMember.VICTOR)
+        if (remoteInitiallyEnabled && (rowSource != null || financeSource != null)) {
+            connectRows(FamilyMember.VICTOR)
+        }
     }
 
     fun navigate(destination: Destination) {
@@ -190,14 +226,27 @@ class VaultViewModel(
             current.copy(
                 activeProfile = next,
                 data = if (!remoteEnabled) Fixtures.envelope(next) else loadingModel(next),
+                financeDocument = null,
+                financeStatus = if (remoteEnabled) Freshness.LOADING else Freshness.EMPTY,
+                marketQuotes = null,
+                marketQuoteStatus = if (remoteEnabled) Freshness.LOADING else Freshness.EMPTY,
+                financeReadFailures = emptySet(),
                 staleAuthorization = false,
+                rowUnauthorized = false,
+                financeUnauthorized = false,
                 rowReadFailures = emptySet(),
                 // A month picked against one profile's ledger means nothing on the
                 // next one, so the scope goes back to that profile's budget month.
                 selectedMonth = null,
             )
         }
-        if (remoteEnabled && rowSource != null && _state.value.activeProfile == next) connectRows(next)
+        if (
+            remoteEnabled &&
+            (rowSource != null || financeSource != null) &&
+            _state.value.activeProfile == next
+        ) {
+            connectRows(next)
+        }
     }
 
     /**
@@ -209,7 +258,7 @@ class VaultViewModel(
      * screen state and its last trustworthy rows visible until the reload lands.
      */
     fun refreshActiveProfile() {
-        if (!remoteEnabled || rowSource == null) return
+        if (!remoteEnabled || (rowSource == null && financeSource == null)) return
         connectRows(_state.value.activeProfile)
     }
 
@@ -244,26 +293,37 @@ class VaultViewModel(
         _state.update {
             it.copy(
                 data = loadingModel(profile),
+                financeDocument = null,
+                financeStatus = Freshness.LOADING,
+                marketQuotes = null,
+                marketQuoteStatus = Freshness.LOADING,
+                financeReadFailures = emptySet(),
                 remoteConfigurationError = null,
+                staleAuthorization = false,
+                rowUnauthorized = false,
+                financeUnauthorized = false,
                 rowReadFailures = emptySet(),
             )
         }
-        connectRows(profile)
+        if (rowSource != null || financeSource != null) connectRows(profile)
     }
 
     private fun connectRows(profile: FamilyMember) {
-        val source = rowSource ?: return
+        val generation = ++loadGeneration
         rowJob?.cancel()
         cachedModel = null
         liveModel = null
         liveUnauthorized = false
         rowJob =
-            viewModelScope.launch {
+            viewModelScope.launch load@{
+                launch { loadFinance(profile, generation) }
+                val source = rowSource ?: return@load
                 launch {
                     source.observe(profile).collect { cached ->
+                        if (!isCurrentLoad(profile, generation)) return@collect
                         cachedModel = cached
                         _state.update { current ->
-                            if (current.activeProfile != profile) {
+                            if (!isCurrentLoad(current, profile, generation)) {
                                 current
                             } else {
                                 val unauthorized = liveUnauthorized || cached.staleAuthorization
@@ -275,7 +335,8 @@ class VaultViewModel(
                                             unauthorized -> live
                                             else -> live.withCacheFallback(cached.data)
                                         },
-                                    staleAuthorization = unauthorized,
+                                    rowUnauthorized = unauthorized,
+                                    staleAuthorization = unauthorized || current.financeUnauthorized,
                                     rowReadFailures = live?.rowReadFailures.orEmpty(),
                                 )
                             }
@@ -283,10 +344,11 @@ class VaultViewModel(
                     }
                 }
                 val loaded = withContext(Dispatchers.Default) { source.load(profile) }
+                if (!isCurrentLoad(profile, generation)) return@load
                 liveModel = loaded.data
                 liveUnauthorized = loaded.unauthorized
                 _state.update { current ->
-                    if (current.activeProfile != profile) {
+                    if (!isCurrentLoad(current, profile, generation)) {
                         current
                     } else {
                         // Financial snapshots rejected by authorization are
@@ -296,7 +358,8 @@ class VaultViewModel(
                         val cached = cachedModel?.takeUnless { loaded.unauthorized }
                         current.copy(
                             data = loaded.data.withCacheFallback(cached?.data),
-                            staleAuthorization = loaded.unauthorized,
+                            staleAuthorization = loaded.unauthorized || current.financeUnauthorized,
+                            rowUnauthorized = loaded.unauthorized,
                             rowReadFailures = loaded.data.rowReadFailures,
                             now = clock(),
                         )
@@ -305,10 +368,98 @@ class VaultViewModel(
             }
     }
 
+    private suspend fun loadFinance(
+        profile: FamilyMember,
+        generation: Long,
+    ) {
+        val source = financeSource ?: return
+        _state.update { current ->
+            if (!isCurrentLoad(current, profile, generation)) current else current.copy(
+                financeStatus = Freshness.LOADING,
+                marketQuoteStatus = Freshness.LOADING,
+            )
+        }
+        val loaded = source.load(profile)
+        if (!isCurrentLoad(profile, generation)) return
+        val next = financeSurfaceState(loaded)
+        _state.update { current ->
+            if (!isCurrentLoad(current, profile, generation)) current else current.copy(
+                financeDocument = next.financeDocument,
+                financeStatus = next.financeStatus,
+                marketQuotes = next.marketQuotes,
+                marketQuoteStatus = next.marketQuoteStatus,
+                financeReadFailures = next.readFailures,
+                financeUnauthorized = next.unauthorized,
+                staleAuthorization = current.rowUnauthorized || next.unauthorized,
+            )
+        }
+    }
+
+    private fun isCurrentLoad(
+        profile: FamilyMember,
+        generation: Long,
+    ): Boolean = loadGeneration == generation && _state.value.activeProfile == profile
+
+    private fun isCurrentLoad(
+        state: VaultUiState,
+        profile: FamilyMember,
+        generation: Long,
+    ): Boolean = loadGeneration == generation && state.activeProfile == profile
+
     private companion object {
         const val REMOTE_CONFIGURATION_ERROR =
             "Authenticated row reads could not be saved securely. Remote reads remain disabled."
     }
+}
+
+internal data class FinanceSurfaceState(
+    val financeDocument: FinanceDocument?,
+    val financeStatus: Freshness,
+    val marketQuotes: MarketQuoteSnapshot?,
+    val marketQuoteStatus: Freshness,
+    val readFailures: Set<RowReadFailure>,
+    val unauthorized: Boolean,
+)
+
+internal fun financeSurfaceState(loaded: LoadedFinanceRead): FinanceSurfaceState =
+    financeSurfaceState(loaded.finance, loaded.quotes, loaded.unauthorized)
+
+internal fun financeSurfaceState(
+    finance: ConvexResult<FinanceDocumentSnapshot>,
+    quotes: ConvexResult<MarketQuoteReadSnapshot>,
+    unauthorized: Boolean =
+        finance === ConvexResult.Unauthorized || quotes === ConvexResult.Unauthorized,
+): FinanceSurfaceState {
+    val financeValue = (finance as? ConvexResult.Ok)?.value
+    val quoteValue = (quotes as? ConvexResult.Ok)?.value
+    return FinanceSurfaceState(
+        financeDocument = financeValue?.document?.takeIf { financeValue.complete },
+        financeStatus = when {
+            financeValue == null -> Freshness.ERROR
+            !financeValue.complete -> Freshness.ERROR
+            financeValue.document == null -> Freshness.EMPTY
+            else -> Freshness.LIVE
+        },
+        marketQuotes = quoteValue?.snapshot?.takeIf { quoteValue.complete },
+        marketQuoteStatus = when {
+            quoteValue == null -> Freshness.ERROR
+            !quoteValue.complete -> Freshness.ERROR
+            else -> Freshness.LIVE
+        },
+        readFailures = buildSet {
+            if (finance !is ConvexResult.Ok && finance !== ConvexResult.Missing) {
+                add(finance.toRowReadFailure())
+            } else if (financeValue?.complete == false) {
+                add(RowReadFailure.MALFORMED_PAYLOAD)
+            }
+            if (quotes !is ConvexResult.Ok) {
+                add(quotes.toRowReadFailure())
+            } else if (!quotes.value.complete) {
+                add(RowReadFailure.MALFORMED_PAYLOAD)
+            }
+        },
+        unauthorized = unauthorized,
+    )
 }
 
 private val FAILURE_DISPLAY_ORDER =

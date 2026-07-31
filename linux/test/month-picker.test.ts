@@ -3,8 +3,8 @@
 // The Budget page used to be pinned to whatever month the legacy budget record said,
 // which made June unreachable even though the transactions were sitting right
 // there. These tests hold the fix: the picker offers the months that are
-// actually present, selecting one re-derives the totals from that month, and
-// the Dashboard headline moves with it so the two screens never disagree.
+// actually present and selecting one re-derives the Budget totals from that
+// month. Dashboard remains current-month reporting independently.
 //
 // createElement rather than JSX for the same reason as routes.test.ts: this
 // suite runs with no transform step.
@@ -45,7 +45,9 @@ function render(route: string, profile: FamilyMember, month: MonthKey | null): s
     createElement(AppStateProvider, {
       initialProfile: profile,
       initialRoute: route,
+      initialCurrentMonth: JULY,
       initialSelectedMonth: month,
+      initialDisplayUnit: "usd",
       children: createElement(Harness, { route }),
     }),
   )
@@ -123,28 +125,23 @@ test("viewing a month other than the budget's own says where planned came from",
   assert.ok(!july.includes("Planned amounts are from"), "notice should not show on the budget's own month")
 })
 
-// ── The Dashboard follows ───────────────────────────────────────────────────
+// ── Dashboard remains current ───────────────────────────────────────────────
 
-test("the Dashboard headline moves with the Budget month", () => {
-  const july = render("dashboard", "victor", JULY)
-  const june = render("dashboard", "victor", JUNE)
+test("an older Budget selection cannot change the current-month Dashboard", () => {
+  const juneBudget = render("budget", "victor", JUNE)
+  assert.ok(juneBudget.includes("June 2026"), "the older Budget month was not selected")
+  assert.ok(juneBudget.includes("$741.05"), "the selected Budget month lost its June actual")
 
-  assert.ok(july.includes("July 2026"), "Dashboard should name the month it is reporting")
-  assert.ok(june.includes("June 2026"), "Dashboard did not follow the selection")
-
-  // Spend: the same adult-only 741.05 the Budget screen derives for June.
-  assert.ok(june.includes("$741.05"), "Dashboard June spend disagrees with the Budget screen")
-  assert.ok(!june.includes("$673.46"), "Dashboard is still totalling July")
-
-  // Income: two July paycheques, one in June.
-  assert.ok(july.includes("$7,777.77"), "July canonical income missing")
-  assert.ok(june.includes("$3,333.33"), "June canonical income missing")
-})
-
-test("the Dashboard activity list is scoped to the selected month", () => {
-  const june = render("dashboard", "victor", JUNE)
-  assert.ok(june.includes("Book Fair"), "a June row should be listed")
-  assert.ok(!june.includes("Hardware Store"), "a July row leaked into June")
+  // Render Dashboard with the same persisted selection, as after navigation.
+  // The canonical current/server month seed is July 2026.
+  const dashboard = render("dashboard", "victor", JUNE)
+  assert.ok(dashboard.includes("July 2026"), "Dashboard did not retain the current month")
+  assert.ok(!dashboard.includes("June 2026"), "the Budget month leaked into Dashboard")
+  assert.ok(dashboard.includes("$7,777.77"), "current-month canonical income is missing")
+  assert.ok(!dashboard.includes("$3,333.33"), "older-month income leaked into MTD")
+  assert.ok(dashboard.includes("$673.46"), "Dashboard spend did not remain current-month")
+  assert.ok(dashboard.includes("Hardware Store"), "current-month activity is missing")
+  assert.ok(!dashboard.includes("Book Fair"), "older-month activity leaked into Dashboard")
 })
 
 // ── Children ────────────────────────────────────────────────────────────────

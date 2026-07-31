@@ -9,6 +9,7 @@ import type {
   RendererMutationKind,
 } from "../src/renderer/data/mutations.ts"
 import { ALL_PAGES } from "../src/renderer/pages/index.ts"
+import { TaskClockProvider } from "../src/renderer/pages/tasks/taskClock.tsx"
 
 const capabilities: readonly RendererMutationKind[] = [
   "transaction.upsert",
@@ -43,6 +44,8 @@ const adapter: RendererMutationAdapter = {
   unpairDevice: async () => ({ status: "ok", revoked: true }),
 }
 
+const fixtureNow = () => new Date(2026, 6, 26, 12, 0, 0)
+
 function liveEnvelope(profile: "victor" | "rachel" | "mason" | "maddox" = "victor") {
   const data = buildSanitizedFixtureEnvelope(profile)
   return {
@@ -69,7 +72,11 @@ function renderRoute(
       initialDataOrigin: "remote",
       initialMutationCapabilities: capabilities,
       mutationAdapter: adapter,
-      children: createElement(page.Component),
+      children: createElement(
+        TaskClockProvider,
+        { now: fixtureNow },
+        createElement(page.Component),
+      ),
     }),
   )
 }
@@ -92,12 +99,31 @@ describe("renderer CRUD routes", () => {
     expect(markup).toContain("<dialog")
   })
 
-  it("provides named task completion, flag, edit, and delete controls", () => {
-    const markup = renderRoute("projects")
-    expect(markup).toContain("Complete Reconcile July statements")
-    expect(markup).toContain("Unflag Reconcile July statements")
-    expect(markup).toContain("Edit Reconcile July statements")
-    expect(markup).toContain("Delete Reconcile July statements")
+  it.each(["today", "inbox", "upcoming", "flagged", "projects"])(
+    "%s keeps completion, edit, and delete controls in a sticky task-action column",
+    (route) => {
+      const markup = renderRoute(route)
+      expect(markup).toContain("Task actions")
+      expect(markup).toContain("vv-task-table")
+      expect(markup).toMatch(/aria-label="(?:Complete|Reopen) [^"]+"/)
+      expect(markup).toMatch(/aria-label="Edit [^"]+"/)
+      expect(markup).toMatch(/aria-label="Delete [^"]+"/)
+    },
+  )
+
+  it("keeps task controls inside the active profile visibility boundary", () => {
+    const adultMarkup = renderRoute("projects", "victor")
+    expect(adultMarkup).toContain("Reconcile July statements")
+    expect(adultMarkup).toContain("Finish reading assignment")
+
+    const masonMarkup = renderRoute("projects", "mason")
+    expect(masonMarkup).toContain("Finish reading assignment")
+    expect(masonMarkup).toContain("Tidy room")
+    expect(masonMarkup).not.toContain("Reconcile July statements")
+    expect(masonMarkup).not.toContain("Plan birthday weekend")
+    expect(masonMarkup).not.toContain("Practice piano")
+    expect(masonMarkup).toMatch(/aria-label="Complete Finish reading assignment"/)
+    expect(masonMarkup).toMatch(/aria-label="Reopen Tidy room"/)
   })
 
   it("keeps BTC account fiat valuation out of the editable form", () => {
@@ -149,10 +175,41 @@ describe("renderer CRUD routes", () => {
         initialDataOrigin: "fixture",
         initialMutationCapabilities: capabilities,
         mutationAdapter: adapter,
-        children: createElement(page.Component),
+        children: createElement(
+          TaskClockProvider,
+          { now: fixtureNow },
+          createElement(page.Component),
+        ),
       }),
     )
     expect(markup).toMatch(/<button[^>]*disabled[^>]*>Add transaction<\/button>/)
+  })
+
+  it("visibly explains why task edit and delete actions are disabled", () => {
+    const page = ALL_PAGES.find((candidate) => candidate.id === "projects")!
+    const markup = renderToStaticMarkup(
+      createElement(AppStateProvider, {
+        initialData: liveEnvelope(),
+        initialDataOrigin: "fixture",
+        initialMutationCapabilities: capabilities,
+        mutationAdapter: adapter,
+        children: createElement(
+          TaskClockProvider,
+          { now: fixtureNow },
+          createElement(page.Component),
+        ),
+      }),
+    )
+    expect(markup).toContain("Task actions are limited")
+    expect(markup).toContain(
+      "Editing and deleting tasks are unavailable: Sample and fallback data cannot be edited.",
+    )
+    expect(markup).toMatch(
+      /<button[^>]*disabled[^>]*title="Sample and fallback data cannot be edited\."[^>]*aria-label="Edit [^"]+"/,
+    )
+    expect(markup).toMatch(
+      /<button[^>]*disabled[^>]*title="Sample and fallback data cannot be edited\."[^>]*aria-label="Delete [^"]+"/,
+    )
   })
 
   it("renders bounded, credential-free pairing controls in Settings", () => {

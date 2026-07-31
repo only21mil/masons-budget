@@ -13,12 +13,25 @@ import com.sats21m.vogelvault.ui.components.Panel
 import com.sats21m.vogelvault.ui.components.StateBlock
 import com.sats21m.vogelvault.ui.components.VaultLazyListScope
 import com.sats21m.vogelvault.ui.theme.VaultCream
+import java.math.BigDecimal
+import java.math.RoundingMode
 
 internal data class BtcBuysScreenSummary(
     val rows: List<BtcBuy>,
-    val totalSats: Long,
-    val totalUsdCents: Long,
-)
+    val totalSats: Long?,
+    val totalUsdCents: Long?,
+) {
+    val averageExecutionPriceCents: Long?
+        get() =
+            totalSats?.takeIf { it > 0L }?.let { sats ->
+                runCatching {
+                    BigDecimal(checkNotNull(totalUsdCents))
+                        .multiply(BigDecimal(Money.SATS_PER_BTC))
+                        .divide(BigDecimal(sats), 0, RoundingMode.HALF_UP)
+                        .longValueExact()
+                }.getOrNull()
+            }
+}
 
 internal fun btcBuysScreenSummary(
     rows: List<BtcBuy>,
@@ -27,28 +40,29 @@ internal fun btcBuysScreenSummary(
     val visibleRows = rows.visibleTo(viewer)
     return BtcBuysScreenSummary(
         rows = visibleRows,
-        totalSats = visibleRows.sumExact(BtcBuy::sats),
-        totalUsdCents = visibleRows.sumExact(BtcBuy::usdCents),
+        totalSats = visibleRows.sumLongOrNull(BtcBuy::sats),
+        totalUsdCents = visibleRows.sumLongOrNull(BtcBuy::usdCents),
     )
 }
 
 internal fun formatBtcBuyAmount(
     buy: BtcBuy,
     displayUnit: DisplayUnit,
-): String =
-    when (displayUnit) {
-        DisplayUnit.USD -> Money.formatUsd(buy.usdCents)
-        DisplayUnit.BTC, DisplayUnit.SATS -> Money.formatBitcoin(buy.sats, displayUnit)
-    }
+): String = formatFinancialAmount(
+    FinancialAmount(usdCents = buy.usdCents, sats = buy.sats),
+    displayUnit,
+)
 
 internal fun formatBtcBuyTotal(
     summary: BtcBuysScreenSummary,
     displayUnit: DisplayUnit,
-): String =
-    when (displayUnit) {
-        DisplayUnit.USD -> Money.formatUsd(summary.totalUsdCents)
-        DisplayUnit.BTC, DisplayUnit.SATS -> Money.formatBitcoin(summary.totalSats, displayUnit)
-    }
+): String {
+    val amount = when (displayUnit) {
+        DisplayUnit.USD -> summary.totalUsdCents?.let { FinancialAmount(usdCents = it) }
+        DisplayUnit.BTC, DisplayUnit.SATS -> summary.totalSats?.let { FinancialAmount(sats = it) }
+    } ?: return Money.PRICE_UNAVAILABLE
+    return formatFinancialAmount(amount, displayUnit)
+}
 
 internal fun VaultLazyListScope.btcBuysScreen(
     state: VaultUiState,
@@ -76,11 +90,16 @@ internal fun VaultLazyListScope.btcBuysScreen(
     }
 
     item {
+        val selectedTotal = formatBtcBuyTotal(summary, displayUnit)
         KpiStrip(
             listOf(
-                Kpi("Total bought", formatBtcBuyTotal(summary, displayUnit)),
-                Kpi("Fiat invested", Money.formatUsd(summary.totalUsdCents)),
-                Kpi("Sats acquired", Money.formatSats(summary.totalSats)),
+                Kpi("Total bought", selectedTotal),
+                Kpi(
+                    "Average price",
+                    summary.averageExecutionPriceCents
+                        ?.let { "${Money.formatUsd(it)}/BTC" }
+                        ?: Money.PRICE_UNAVAILABLE,
+                ),
                 Kpi("Buys", summary.rows.size.toString()),
             ),
         )
@@ -101,6 +120,3 @@ internal fun VaultLazyListScope.btcBuysScreen(
         )
     }
 }
-
-private inline fun <T> List<T>.sumExact(value: (T) -> Long): Long =
-    fold(0L) { total, row -> Math.addExact(total, value(row)) }

@@ -9,11 +9,18 @@ import java.util.UUID
 internal const val TODO_UNDO_WINDOW_MILLIS = 6_000L
 
 internal data class PendingTodoDeletion(
+    val operationToken: String,
     val todo: TodoItem,
     val expiresAtMillis: Long,
 ) {
     fun canUndo(nowMillis: Long): Boolean = nowMillis < expiresAtMillis
 }
+
+internal fun List<TodoItem>.filterActiveTodoTombstone(todoId: String?): List<TodoItem> =
+    if (todoId == null) this else filterNot { it.id == todoId }
+
+internal fun newestTodo(captured: TodoItem, authoritative: TodoItem?): TodoItem =
+    authoritative?.takeIf { it.updatedAtMs >= captured.updatedAtMs } ?: captured
 
 /**
  * One order for the list, shared by the initial read and every optimistic edit.

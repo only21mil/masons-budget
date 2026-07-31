@@ -213,6 +213,8 @@
 }
 
 .vv-unit-toggle__option {
+  min-width: 24px;
+  min-height: 24px;
   padding: 3px 8px;
   border: 0;
   border-radius: calc(var(--vv-radius) - 2px);
@@ -577,6 +579,65 @@
   color: var(--vv-text-muted);
 }
 
+/* ── Budget progress ─────────────────────────────────────────────────── */
+
+.vv-budget-progress {
+  display: grid;
+  gap: var(--vv-space-1);
+  min-width: 158px;
+}
+
+.vv-budget-progress__labels {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--vv-space-2);
+  color: var(--vv-positive);
+  white-space: nowrap;
+}
+
+.vv-budget-progress__status {
+  font-size: var(--vv-text-2xs);
+  font-weight: var(--vv-weight-semibold);
+  letter-spacing: 0.06em;
+}
+
+.vv-budget-progress__percentage {
+  font-family: var(--vv-font-mono);
+  font-size: var(--vv-text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.vv-budget-progress__track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--vv-surface-raised);
+}
+
+.vv-budget-progress__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--vv-positive);
+}
+
+.vv-budget-progress--close .vv-budget-progress__labels {
+  color: var(--vv-warning);
+}
+
+.vv-budget-progress--close .vv-budget-progress__fill {
+  background: var(--vv-warning);
+}
+
+.vv-budget-progress--over .vv-budget-progress__labels {
+  color: var(--vv-negative);
+}
+
+.vv-budget-progress--over .vv-budget-progress__fill {
+  background: var(--vv-negative);
+}
+
 @media (max-width: 1365px) {
   .vv-table__cell--secondary {
     display: none;
@@ -748,6 +809,33 @@
   white-space: nowrap;
 }
 
+/* Keep task mutations reachable when a compact window scrolls wide tables. */
+.vv-task-table {
+  overflow-x: auto;
+}
+
+.vv-task-table .vv-table {
+  min-width: 760px;
+}
+
+.vv-task-table .vv-table th:last-child,
+.vv-task-table .vv-table td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: var(--vv-surface);
+  box-shadow: -1px 0 0 var(--vv-line);
+}
+
+.vv-task-table .vv-table th:last-child {
+  z-index: 2;
+  background: var(--vv-surface-sunken);
+}
+
+.vv-task-table .vv-table tbody tr:hover td:last-child {
+  background: var(--vv-surface-raised);
+}
+
 @media (max-width: 700px) {
   .vv-form-grid {
     grid-template-columns: 1fr;
@@ -768,6 +856,10 @@
   color: var(--vv-text);
   max-width: 560px;
   width: calc(100vw - 4rem);
+}
+
+.vv-dialog--wide {
+  max-width: 960px;
 }
 
 .vv-dialog::backdrop {

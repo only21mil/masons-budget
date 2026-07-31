@@ -18,6 +18,11 @@ type UpsertResult = {
   outcome: "inserted" | "updated";
 };
 type DeleteResult = { ok: true; entityId: string; removed: boolean };
+type RestoreResult = {
+  ok: true;
+  entityId: string;
+  updatedAtMs: number;
+};
 
 const mutation = <Args extends Record<string, unknown>, Result>(path: string) =>
   path as unknown as FunctionReference<"mutation", "public", Args, Result>;
@@ -34,6 +39,9 @@ const api = {
   ),
   deleteTodo: mutation<Record<string, unknown>, DeleteResult>(
     "tables:deleteTodoFromDevice",
+  ),
+  restoreTodo: mutation<Record<string, unknown>, RestoreResult>(
+    "tables:restoreTodoFromDevice",
   ),
   upsertBudgetCategory: mutation<Record<string, unknown>, UpsertResult>(
     "tables:upsertBudgetCategoryFromDevice",
@@ -787,6 +795,383 @@ describe("device transaction and todo mutations", () => {
     }));
     expect(markers.row).toHaveLength(1);
     expect(markers.legacy.map((row) => row.id)).toEqual(["todo-1"]);
+  });
+
+  it("restores only the matching device-deleted todo revision", async () => {
+    const device = await fullDevice("todo-restore-device");
+    const todo = {
+      id: "todo-restore",
+      owner: "mason" as const,
+      title: "Homework",
+      done: false,
+      flagged: true,
+      lane: "personal",
+      project: "School",
+      area: "Home",
+      due: "2026-08-01",
+      notes: "Bring the worksheet",
+      priority: 2n,
+      createdAt: "2026-07-30T12:00:00.000Z",
+      updatedAt: "2026-07-30T12:01:00.000Z",
+    };
+    const request = {
+      ...authArgs(device),
+      owner: "mason" as const,
+      sourceFile: "todos" as const,
+      todo,
+    };
+    await t.mutation(api.upsertTodo, request);
+    const baseUpdatedAtMs = await todoRevision(todo.id);
+    await t.mutation(api.deleteTodo, {
+      ...authArgs(device),
+      owner: "mason",
+      sourceFile: "todos",
+      entityId: todo.id,
+      baseUpdatedAtMs,
+    });
+
+    // Normal upsert remains fenced; only the restore endpoint may consume the
+    // exact tombstone created by the accepted delete.
+    await expectDeviceError(
+      t.mutation(api.upsertTodo, request),
+      "ENTITY_DELETED",
+      todo.id,
+    );
+    const restored = await t.mutation(api.restoreTodo, {
+      ...request,
+      baseUpdatedAtMs,
+    });
+    expect(restored).toMatchObject({
+      ok: true,
+      entityId: todo.id,
+    });
+    expect(restored.updatedAtMs).toBeGreaterThan(baseUpdatedAtMs);
+
+    const state = await t.run(async (ctx) => ({
+      row: await ctx.db
+        .query("todos")
+        .withIndex("by_todo_id", (q) => q.eq("todoId", todo.id))
+        .unique(),
+      rowTombstones: await ctx.db.query("rowTombstones").collect(),
+      legacyTombstones: await ctx.db.query("todoTombstones").collect(),
+    }));
+    expect(state.row).toMatchObject({
+      todoId: todo.id,
+      owner: todo.owner,
+      title: todo.title,
+      done: todo.done,
+      flagged: todo.flagged,
+      lane: todo.lane,
+      project: todo.project,
+      area: todo.area,
+      due: todo.due,
+      notes: todo.notes,
+      priority: todo.priority,
+      createdAt: todo.createdAt,
+      updatedAt: todo.updatedAt,
+      updatedAtMs: restored.updatedAtMs,
+      sourceFile: "todos",
+    });
+    expect(state.rowTombstones).toEqual([]);
+    expect(state.legacyTombstones.map((row) => row.id)).toEqual([todo.id]);
+  });
+
+  it("restores the exact migrated server row and keeps its stale blob suppressed", async () => {
+    const device = await fullDevice("todo-provenance-restore-device");
+    const todoId = "todo-migrated-restore";
+    const migrationRaw = {
+      id: todoId,
+      text: "Stale legacy title",
+      completed: false,
+      owner: "mason",
+      archimedes_request_id: "hidden-field",
+      extension: { retained: true },
+    };
+    const original = {
+      todoId,
+      owner: "mason" as const,
+      title: "Authoritative row title",
+      done: false,
+      flagged: true,
+      lane: "personal",
+      project: "School",
+      area: "Home",
+      due: "2026-08-03",
+      notes: "Typed row is newer than the blob",
+      priority: 3n,
+      createdAt: "2026-07-20T12:00:00.000Z",
+      updatedAt: "2026-07-30T12:01:00.000Z",
+      updatedAtMs: 1_750_000_000_000,
+      sourceFile: "todos",
+      migrationRaw,
+      migrationSourceIndex: 17,
+    };
+    await t.run(async (ctx) => {
+      await ctx.db.insert("todos", original);
+      await ctx.db.insert("dataFiles", {
+        name: "todos",
+        data: [{ id: todoId, title: "Stale legacy title", owner: "mason" }],
+        version: 1,
+        updatedAt: 1,
+      });
+    });
+
+    await t.mutation(api.deleteTodo, {
+      ...authArgs(device),
+      owner: "mason",
+      sourceFile: "todos",
+      entityId: todoId,
+      baseUpdatedAtMs: original.updatedAtMs,
+    });
+
+    const deleted = await t.run(async (ctx) => ({
+      row: await ctx.db
+        .query("todos")
+        .withIndex("by_todo_id", (q) => q.eq("todoId", todoId))
+        .unique(),
+      tombstone: await ctx.db
+        .query("rowTombstones")
+        .withIndex("by_entity", (q) =>
+          q.eq("entityType", "todo").eq("sourceFile", "todos").eq("entityId", todoId),
+        )
+        .unique(),
+      legacy: await ctx.db
+        .query("todoTombstones")
+        .withIndex("by_todo_id", (q) => q.eq("id", todoId))
+        .unique(),
+    }));
+    expect(deleted.row).toBeNull();
+    expect(deleted.tombstone).toMatchObject({
+      owner: original.owner,
+      deletedFromUpdatedAtMs: original.updatedAtMs,
+      todoRestoreCapsule: original,
+    });
+    expect(deleted.legacy).toMatchObject({ id: todoId });
+
+    // The request remains the compatible public shape, but its lossy/tampered
+    // value is not authoritative. Only identity/owner and the accepted revision
+    // select the server-owned capsule.
+    const restored = await t.mutation(api.restoreTodo, {
+      ...authArgs(device),
+      owner: "mason",
+      sourceFile: "todos",
+      baseUpdatedAtMs: original.updatedAtMs,
+      todo: {
+        id: todoId,
+        owner: "mason",
+        title: "Client snapshot must not win",
+        done: true,
+        flagged: false,
+        notes: "Lossy client copy",
+      },
+    });
+
+    const restoredState = await t.run(async (ctx) => ({
+      row: await ctx.db
+        .query("todos")
+        .withIndex("by_todo_id", (q) => q.eq("todoId", todoId))
+        .unique(),
+      rowTombstone: await ctx.db
+        .query("rowTombstones")
+        .withIndex("by_entity", (q) =>
+          q.eq("entityType", "todo").eq("sourceFile", "todos").eq("entityId", todoId),
+        )
+        .unique(),
+      legacy: await ctx.db
+        .query("todoTombstones")
+        .withIndex("by_todo_id", (q) => q.eq("id", todoId))
+        .unique(),
+      blob: await ctx.db
+        .query("dataFiles")
+        .withIndex("by_name", (q) => q.eq("name", "todos"))
+        .unique(),
+    }));
+    expect(restoredState.row).toMatchObject({
+      ...original,
+      updatedAtMs: restored.updatedAtMs,
+    });
+    expect(restoredState.row!.migrationRaw).toEqual(migrationRaw);
+    expect(restoredState.rowTombstone).toBeNull();
+    expect(restoredState.legacy).toMatchObject({ id: todoId });
+    expect(restoredState.blob!.data).toEqual([
+      { id: todoId, title: "Stale legacy title", owner: "mason" },
+    ]);
+
+    // Later row-native edits must not clear the compatibility marker and expose
+    // the unchanged stale blob.
+    await t.mutation(api.upsertTodo, {
+      ...authArgs(device),
+      owner: "mason",
+      sourceFile: "todos",
+      baseUpdatedAtMs: restored.updatedAtMs,
+      todo: {
+        id: todoId,
+        owner: "mason",
+        title: "Edited after restore",
+        done: false,
+        flagged: true,
+      },
+    });
+    const legacyAfterEdit = await t.run(async (ctx) =>
+      ctx.db
+        .query("todoTombstones")
+        .withIndex("by_todo_id", (q) => q.eq("id", todoId))
+        .unique(),
+    );
+    expect(legacyAfterEdit).toMatchObject({ id: todoId });
+  });
+
+  it("rejects unauthorized, wrong-owner, stale, and non-deleted restores", async () => {
+    const device = await fullDevice("todo-restore-conflict-device");
+    const unauthorized = await pairMobileDevice(
+      t,
+      syncToken,
+      "transaction-only-restore-device",
+      ["transactions:write"],
+    );
+    const todo = {
+      id: "todo-restore-conflict",
+      owner: "mason" as const,
+      title: "Original",
+      done: false,
+      flagged: false,
+    };
+    const request = {
+      ...authArgs(device),
+      owner: "mason" as const,
+      sourceFile: "todos" as const,
+      todo,
+    };
+    await t.mutation(api.upsertTodo, request);
+    const firstRevision = await todoRevision(todo.id);
+    await t.mutation(api.deleteTodo, {
+      ...authArgs(device),
+      owner: "mason",
+      sourceFile: "todos",
+      entityId: todo.id,
+      baseUpdatedAtMs: firstRevision,
+    });
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("mobileDevices")
+        .withIndex("by_device_id", (q) => q.eq("deviceId", device.deviceId))
+        .unique();
+      await ctx.db.patch(row!._id, { lastSeenAt: 0 });
+    });
+
+    await expectDeviceError(
+      t.mutation(api.restoreTodo, {
+        ...request,
+        ...authArgs(unauthorized),
+        baseUpdatedAtMs: firstRevision,
+      }),
+      "DEVICE_UNAUTHORIZED",
+    );
+    await expectDeviceError(
+      t.mutation(api.restoreTodo, {
+        ...request,
+        owner: "victor",
+        todo: { ...todo, owner: "victor" },
+        baseUpdatedAtMs: firstRevision,
+      }),
+      "OWNER_MISMATCH",
+      todo.id,
+    );
+    await expectDeviceError(
+      t.mutation(api.restoreTodo, {
+        ...request,
+        baseUpdatedAtMs: firstRevision + 1,
+      }),
+      "ENTITY_CONFLICT",
+      todo.id,
+    );
+    await expectDeviceError(
+      t.mutation(api.restoreTodo, {
+        ...request,
+        todo: { ...todo, id: "never-deleted" },
+        baseUpdatedAtMs: firstRevision,
+      }),
+      "ENTITY_NOT_FOUND",
+      "never-deleted",
+    );
+    await t.run(async (ctx) => {
+      await ctx.db.insert("rowTombstones", {
+        entityType: "todo",
+        sourceFile: "todos",
+        entityId: "deleted-without-capsule",
+        owner: "mason",
+        deletedAtMs: firstRevision + 1,
+        deletedFromUpdatedAtMs: firstRevision,
+      });
+    });
+    await expectDeviceError(
+      t.mutation(api.restoreTodo, {
+        ...request,
+        todo: { ...todo, id: "deleted-without-capsule" },
+        baseUpdatedAtMs: firstRevision,
+      }),
+      "ENTITY_CONFLICT",
+      "deleted-without-capsule",
+    );
+
+    const firstRestore = await t.mutation(api.restoreTodo, {
+      ...request,
+      baseUpdatedAtMs: firstRevision,
+    });
+    await expectDeviceError(
+      t.mutation(api.restoreTodo, {
+        ...request,
+        baseUpdatedAtMs: firstRevision,
+      }),
+      "ENTITY_CONFLICT",
+      todo.id,
+    );
+
+    await t.mutation(api.upsertTodo, {
+      ...request,
+      baseUpdatedAtMs: firstRestore.updatedAtMs,
+      todo: { ...todo, title: "Newer" },
+    });
+    const newerRevision = await todoRevision(todo.id);
+    await t.mutation(api.deleteTodo, {
+      ...authArgs(device),
+      owner: "mason",
+      sourceFile: "todos",
+      entityId: todo.id,
+      baseUpdatedAtMs: newerRevision,
+    });
+    await expectDeviceError(
+      t.mutation(api.restoreTodo, {
+        ...request,
+        baseUpdatedAtMs: firstRevision,
+      }),
+      "ENTITY_CONFLICT",
+      todo.id,
+    );
+
+    const state = await t.run(async (ctx) => ({
+      row: await ctx.db
+        .query("todos")
+        .withIndex("by_todo_id", (q) => q.eq("todoId", todo.id))
+        .unique(),
+      tombstone: await ctx.db
+        .query("rowTombstones")
+        .withIndex("by_entity", (q) =>
+          q
+            .eq("entityType", "todo")
+            .eq("sourceFile", "todos")
+            .eq("entityId", todo.id),
+        )
+        .unique(),
+      device: await ctx.db
+        .query("mobileDevices")
+        .withIndex("by_device_id", (q) => q.eq("deviceId", device.deviceId))
+        .unique(),
+    }));
+    expect(state.row).toBeNull();
+    expect(state.tombstone!.owner).toBe("mason");
+    expect(state.tombstone!.deletedFromUpdatedAtMs).toBe(newerRevision);
+    expect(state.device!.lastSeenAt).toBeGreaterThan(0);
   });
 
   it("rejects stale todo writes without changing the row, tombstones, or lastSeen", async () => {

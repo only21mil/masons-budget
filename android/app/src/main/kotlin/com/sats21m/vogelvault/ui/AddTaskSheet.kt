@@ -29,17 +29,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
-import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.ui.theme.VaultNegative
 import com.sats21m.vogelvault.ui.theme.VaultSpace
+import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 
 internal data class AddTaskDraft(
     val title: String,
@@ -53,7 +51,8 @@ internal data class AddTaskDraft(
 internal fun prepareTask(
     draft: AddTaskDraft,
     id: String = "android-${UUID.randomUUID()}",
-): Result<JsonObject> = runCatching {
+    now: Instant = Instant.now(),
+): Result<TodoItem> = runCatching {
     val title = draft.title.trim()
     require(title.isNotEmpty()) { "Enter a task title" }
     require(id.isNotBlank()) { "Task id is missing" }
@@ -64,22 +63,21 @@ internal fun prepareTask(
             .getOrElse { throw IllegalArgumentException("Enter the due date as YYYY-MM-DD") }
     }
 
-    buildMap<String, JsonElement> {
-        put("id", JsonPrimitive(id))
-        put("title", JsonPrimitive(title))
-        put("done", JsonPrimitive(false))
-        put("owner", JsonPrimitive(draft.owner.key))
-        put("flagged", JsonPrimitive(draft.flagged))
-        draft.project.trim().takeIf(String::isNotEmpty)?.let {
-            put("project", JsonPrimitive(it))
-        }
-        draft.area.trim().takeIf(String::isNotEmpty)?.let {
-            put("area", JsonPrimitive(it))
-        }
-        due.takeIf(String::isNotEmpty)?.let {
-            put("dueDate", JsonPrimitive(it))
-        }
-    }.let(::JsonObject)
+    val stamp = now.toString()
+    TodoItem(
+        id = id,
+        title = title,
+        project = draft.project.trim().takeIf(String::isNotEmpty),
+        area = draft.area.trim().takeIf(String::isNotEmpty),
+        due = due.takeIf(String::isNotEmpty),
+        flagged = draft.flagged,
+        owner = draft.owner,
+        lane = "sats",
+        priority = 0L,
+        createdAt = stamp,
+        updatedAt = stamp,
+        updatedAtMs = now.toEpochMilli(),
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -89,9 +87,10 @@ internal fun AddTaskSheet(
     onDismiss: () -> Unit,
     onSaved: (String) -> Unit,
     onWriteSucceeded: () -> Unit,
+    onCredentialRejected: () -> String?,
 ) {
     val application = LocalContext.current.applicationContext as? VaultApplication
-    val mutationClient = remember(application) { application?.convexMutationClient }
+    val gateway = remember(application) { application?.todoMutationGateway }
     val scope = rememberCoroutineScope()
 
     var title by rememberSaveable(owner) { mutableStateOf("") }
@@ -100,6 +99,7 @@ internal fun AddTaskSheet(
     var due by rememberSaveable(owner) { mutableStateOf("") }
     var flagged by rememberSaveable(owner) { mutableStateOf(false) }
     var saving by rememberSaveable(owner) { mutableStateOf(false) }
+    var credentialRejected by rememberSaveable(owner) { mutableStateOf(false) }
     var message by rememberSaveable(owner) { mutableStateOf<String?>(null) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -175,34 +175,29 @@ internal fun AddTaskSheet(
                             message = it.message ?: "Task is invalid"
                             return@Button
                         }
-                        val client = mutationClient
+                        val client = gateway
                         if (client == null) {
-                            message = "Task not added: Convex is not configured for this device."
+                            message = todoWriteUnavailableMessage(TodoWriteAction.ADD)
                             return@Button
                         }
                         saving = true
                         scope.launch {
-                            val result = client.mutate(ConvexMutation.UpsertTodo(task))
+                            val result = client.upsert(task, baseUpdatedAtMs = null)
                             saving = false
-                            when (result) {
-                                is ConvexResult.Ok -> {
-                                    onWriteSucceeded()
-                                    onSaved(taskTitle)
-                                }
-                                ConvexResult.Unauthorized ->
-                                    message = "Task not added: the sync token is missing or unauthorized."
-                                ConvexResult.NotConfigured ->
-                                    message = "Task not added: the Convex deployment is not configured."
-                                ConvexResult.Disabled ->
-                                    message = "Task not added: writes are disabled for this build."
-                                ConvexResult.Missing ->
-                                    message = "Task not added: Convex returned no write result."
-                                is ConvexResult.Failed ->
-                                    message = "Task not added: Convex rejected the write (${result.reason})."
+                            val recoveryFailure = if (result === ConvexResult.Unauthorized) {
+                                credentialRejected = true
+                                onCredentialRejected()
+                            } else null
+                            val failure = todoWriteFailureMessage(TodoWriteAction.ADD, result)
+                            if (failure == null) {
+                                onWriteSucceeded()
+                                onSaved(taskTitle)
+                            } else {
+                                message = recoveryFailure ?: failure
                             }
                         }
                     },
-                    enabled = !saving,
+                    enabled = !saving && !credentialRejected,
                     modifier = Modifier.weight(1f),
                 ) {
                     Text(

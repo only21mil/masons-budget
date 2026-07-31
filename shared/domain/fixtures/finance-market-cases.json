@@ -1,0 +1,373 @@
+{
+  "rounding": "half away from zero",
+  "marketSnapshot": {
+    "quotes": [
+      {
+        "symbol": "BTC",
+        "priceCents": "10000000",
+        "source": "Vogel Vault",
+        "fetchedAt": "2026-07-30T15:00:00Z",
+        "status": "live"
+      },
+      {
+        "symbol": "VOO",
+        "priceCents": "55000",
+        "source": "Vogel Vault",
+        "fetchedAt": "2026-07-30T15:00:00Z",
+        "status": "live"
+      },
+      {
+        "symbol": "IBIT",
+        "priceCents": "6000",
+        "source": "Vogel Vault",
+        "fetchedAt": "2026-07-30T14:55:00Z",
+        "status": "stale"
+      }
+    ]
+  },
+  "usdToSats": [
+    {
+      "label": "$100 at $100,000/BTC",
+      "cents": "10000",
+      "btcPriceCents": "10000000",
+      "expectedSats": "100000"
+    },
+    {
+      "label": "one cent rounds against a three-cent BTC",
+      "cents": "1",
+      "btcPriceCents": "3",
+      "expectedSats": "33333333"
+    },
+    {
+      "label": "negative value rounds away symmetrically",
+      "cents": "-1",
+      "btcPriceCents": "3",
+      "expectedSats": "-33333333"
+    }
+  ],
+  "shareValuations": [
+    {
+      "label": "fractional VOO shares",
+      "sharesDecimal": "2.5",
+      "pricePerShareCents": "55000",
+      "expectedValueCents": "137500"
+    },
+    {
+      "label": "fractional IBIT shares",
+      "sharesDecimal": "10.125",
+      "pricePerShareCents": "6000",
+      "expectedValueCents": "60750"
+    },
+    {
+      "label": "half cent rounds away from zero",
+      "sharesDecimal": "0.005",
+      "pricePerShareCents": "100",
+      "expectedValueCents": "1"
+    }
+  ],
+  "sharesDecimalContract": {
+    "maxLength": 25,
+    "maxPrecision": 24,
+    "maxScale": 12,
+    "maxIntegerDigits": 12,
+    "valid": [
+      "0",
+      "0.0",
+      "2.5000",
+      "12.34567890",
+      "1393.9646307166",
+      "999999999999.999999999999"
+    ],
+    "invalid": [
+      "",
+      "-0.005",
+      "+1",
+      "1e3",
+      " 1",
+      "1 ",
+      "01",
+      "00.1",
+      ".5",
+      "1.",
+      "1.1234567890123",
+      "1000000000000",
+      "999999999999.9999999999990"
+    ]
+  },
+  "budgetHealth": [
+    {
+      "label": "empty",
+      "plannedCents": "10000",
+      "spentCents": "0",
+      "expected": {
+        "status": "on-track",
+        "label": "ON TRACK",
+        "usedPercent": 0,
+        "barBasisPoints": 0,
+        "remainingPercent": 100,
+        "overPercent": null
+      }
+    },
+    {
+      "label": "just below close",
+      "plannedCents": "10000",
+      "spentCents": "8499",
+      "expected": {
+        "status": "on-track",
+        "label": "ON TRACK",
+        "usedPercent": 84,
+        "barBasisPoints": 8499,
+        "remainingPercent": 15,
+        "overPercent": null
+      }
+    },
+    {
+      "label": "close boundary",
+      "plannedCents": "10000",
+      "spentCents": "8500",
+      "expected": {
+        "status": "close",
+        "label": "CLOSE",
+        "usedPercent": 85,
+        "barBasisPoints": 8500,
+        "remainingPercent": 15,
+        "overPercent": null
+      }
+    },
+    {
+      "label": "exactly at budget",
+      "plannedCents": "10000",
+      "spentCents": "10000",
+      "expected": {
+        "status": "close",
+        "label": "CLOSE",
+        "usedPercent": 100,
+        "barBasisPoints": 10000,
+        "remainingPercent": 0,
+        "overPercent": null
+      }
+    },
+    {
+      "label": "just over",
+      "plannedCents": "10000",
+      "spentCents": "10001",
+      "expected": {
+        "status": "over",
+        "label": "OVER",
+        "usedPercent": 100,
+        "barBasisPoints": 10000,
+        "remainingPercent": null,
+        "overPercent": 0
+      }
+    },
+    {
+      "label": "fifty percent over",
+      "plannedCents": "10000",
+      "spentCents": "15000",
+      "expected": {
+        "status": "over",
+        "label": "OVER",
+        "usedPercent": 150,
+        "barBasisPoints": 10000,
+        "remainingPercent": null,
+        "overPercent": 50
+      }
+    },
+    {
+      "label": "over display cap",
+      "plannedCents": "10000",
+      "spentCents": "25000",
+      "expected": {
+        "status": "over",
+        "label": "OVER",
+        "usedPercent": 200,
+        "barBasisPoints": 10000,
+        "remainingPercent": null,
+        "overPercent": 100
+      }
+    },
+    {
+      "label": "refund credit",
+      "plannedCents": "10000",
+      "spentCents": "-1000",
+      "expected": {
+        "status": "on-track",
+        "label": "ON TRACK",
+        "usedPercent": 0,
+        "barBasisPoints": 0,
+        "remainingPercent": 110,
+        "overPercent": null
+      }
+    },
+    {
+      "label": "zero limit with no spend",
+      "plannedCents": "0",
+      "spentCents": "0",
+      "expected": {
+        "status": "on-track",
+        "label": "ON TRACK",
+        "usedPercent": 0,
+        "barBasisPoints": 0,
+        "remainingPercent": 100,
+        "overPercent": null
+      }
+    },
+    {
+      "label": "zero limit with spend",
+      "plannedCents": "0",
+      "spentCents": "1",
+      "expected": {
+        "status": "over",
+        "label": "OVER",
+        "usedPercent": 200,
+        "barBasisPoints": 10000,
+        "remainingPercent": null,
+        "overPercent": 100
+      }
+    }
+  ],
+  "categoryScope": {
+    "month": "2026-07",
+    "category": "Groceries",
+    "transactions": [
+      {
+        "id": "victor-july-purchase",
+        "date": "2026-07-03",
+        "merchant": "Market",
+        "amountCents": "10000",
+        "category": "Groceries",
+        "owner": "victor"
+      },
+      {
+        "id": "rachel-july-purchase",
+        "date": "2026-07-04",
+        "merchant": "Market",
+        "amountCents": "5000",
+        "category": "Groceries",
+        "owner": "rachel"
+      },
+      {
+        "id": "victor-july-refund",
+        "date": "2026-07-05",
+        "merchant": "Market refund",
+        "amountCents": "-2500",
+        "category": "Groceries",
+        "owner": "victor"
+      },
+      {
+        "id": "victor-june-purchase",
+        "date": "2026-06-30",
+        "merchant": "Market",
+        "amountCents": "99900",
+        "category": "Groceries",
+        "owner": "victor"
+      },
+      {
+        "id": "mason-july-purchase",
+        "date": "2026-07-06",
+        "merchant": "Snack shop",
+        "amountCents": "1200",
+        "category": "Groceries",
+        "owner": "mason"
+      },
+      {
+        "id": "victor-july-dining",
+        "date": "2026-07-07",
+        "merchant": "Cafe",
+        "amountCents": "2200",
+        "category": "Dining",
+        "owner": "victor"
+      }
+    ],
+    "profiles": [
+      {
+        "viewer": "victor",
+        "expectedIds": [
+          "victor-july-purchase",
+          "rachel-july-purchase",
+          "victor-july-refund"
+        ]
+      },
+      {
+        "viewer": "rachel",
+        "expectedIds": [
+          "victor-july-purchase",
+          "rachel-july-purchase",
+          "victor-july-refund"
+        ]
+      },
+      {
+        "viewer": "mason",
+        "expectedIds": [
+          "mason-july-purchase"
+        ]
+      }
+    ]
+  },
+  "netWorth": {
+    "bitcoinSats": "100000000",
+    "storedRetirementTotalCents": "999999999",
+    "accounts": [
+      {
+        "key": "victor-401k",
+        "owner": "victor",
+        "provider": "Adult Provider",
+        "totalValueCents": "999999",
+        "weeklyContributionCents": "25000",
+        "weeklyContributionDay": "Friday",
+        "holdings": [
+          {
+            "name": "VOO holding",
+            "category": "Equity",
+            "ticker": "VOO",
+            "valueCents": "100000",
+            "sharesDecimal": "2.5"
+          },
+          {
+            "name": "IBIT holding",
+            "category": "Equity",
+            "ticker": "IBIT",
+            "valueCents": "50000",
+            "sharesDecimal": "10.125"
+          },
+          {
+            "name": "Cash holding",
+            "category": "Cash",
+            "ticker": null,
+            "valueCents": "25000",
+            "sharesDecimal": "0"
+          }
+        ]
+      },
+      {
+        "key": "rachel-401k",
+        "owner": "rachel",
+        "provider": "Adult Provider",
+        "totalValueCents": "100000",
+        "weeklyContributionCents": "0",
+        "weeklyContributionDay": null,
+        "holdings": []
+      },
+      {
+        "key": "mason-401k",
+        "owner": "mason",
+        "provider": "Child Provider",
+        "totalValueCents": "50000",
+        "weeklyContributionCents": "2500",
+        "weeklyContributionDay": "Friday",
+        "holdings": []
+      }
+    ],
+    "expectedAdult": {
+      "accountKeys": [
+        "victor-401k",
+        "rachel-401k"
+      ],
+      "retirementValueCents": "323250",
+      "bitcoinValueCents": "10000000",
+      "retirementValueSats": "3232500",
+      "totalValueCents": "10323250",
+      "totalValueSats": "103232500"
+    }
+  }
+}

@@ -18,6 +18,7 @@ import { FAMILY_MEMBERS, type FamilyMember } from "@vogel-vault/domain/family"
 
 import App from "./App.tsx"
 import type { StateOverride } from "./renderer/app/AppState.tsx"
+import { TaskClockProvider } from "./renderer/pages/tasks/taskClock.tsx"
 
 const VALID_STATES: StateOverride[] = ["normal", "stale", "error", "empty", "loading"]
 
@@ -43,10 +44,13 @@ const container = document.getElementById("root")
 if (!container) throw new Error("Root container missing from screenshots.html")
 
 const { page, profile, state } = readParams()
+const fixtureNow = () => new Date(2026, 6, 26, 12, 0, 0)
 
 createRoot(container).render(
   <StrictMode>
-    <App initialProfile={profile} initialRoute={page} initialStateOverride={state} />
+    <TaskClockProvider now={fixtureNow}>
+      <App initialProfile={profile} initialRoute={page} initialStateOverride={state} />
+    </TaskClockProvider>
   </StrictMode>,
 )
 

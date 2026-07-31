@@ -13,14 +13,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -31,9 +34,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
@@ -48,10 +56,13 @@ import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.IncomeEntry
+import com.sats21m.vogelvault.domain.MarketQuote
+import com.sats21m.vogelvault.domain.MarketQuoteStatus
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.ReadModel
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.domain.Transaction
+import com.sats21m.vogelvault.domain.budgetCategoryTransactionsFor
 import com.sats21m.vogelvault.domain.budgetMonthsFor
 import com.sats21m.vogelvault.domain.budgetTransactionsFor
 import com.sats21m.vogelvault.domain.deriveBudgetSpend
@@ -96,12 +107,14 @@ private data class ScreenCollections(
     val visibleTodos: List<TodoItem>,
 )
 
+internal const val BITCOIN_UNIT_TOGGLE_TEST_TAG = "bitcoin-unit-toggle"
+
 private data class DashboardProjection(
     val activity: List<Transaction>,
     val accounts: List<BtcAccount>,
     val balance: BtcBalance?,
     val incomeEntries: List<IncomeEntry>,
-    val spendCents: Long,
+    val spendCents: Long?,
     val incomeCents: Long?,
     val openTodos: Int,
 )
@@ -121,6 +134,11 @@ private data class NetWorthProjection(
     val balance: BtcBalance?,
 )
 
+internal data class BudgetCategoryDrilldownScope(
+    val month: String,
+    val category: String,
+)
+
 internal fun ReadModel.dashboardIncomeEntries(
     viewer: FamilyMember,
     month: String?,
@@ -134,7 +152,7 @@ internal fun ReadModel.dashboardIncomeCents(
     month: String?,
 ): Long? {
     val rows = dashboardIncomeEntries(viewer, month)
-    return if (incomeFiguresUnavailable || rows.isEmpty()) null else rows.sumOf { it.amountCents }
+    return if (incomeFiguresUnavailable || rows.isEmpty()) null else rows.sumLongOrNull { it.amountCents }
 }
 
 internal fun ReadModel.netWorthBalanceForDisplay(): BtcBalance? =
@@ -186,6 +204,10 @@ fun ScreenHost(
     val initialMonth = remember(state.selectedMonth, months, budgetMonth) {
         resolveBudgetMonth(state.selectedMonth, months, budgetMonth)
     }
+    // Dashboard MTD follows the canonical seeded/current month. Budget owns a
+    // separate live picker, matching iOS where BudgetView's month offset cannot
+    // silently change DashboardView's current-month figures.
+    val dashboardMonth = initialMonth
     // The Budget screen's month scope. Held here rather than in the ViewModel
     // because it is view state, and because every row of the list has to agree on
     // it — the KPI strip, the banners and the categories all read the same month.
@@ -194,11 +216,13 @@ fun ScreenHost(
     var picked by rememberSaveable(state.activeProfile, state.selectedMonth) {
         mutableStateOf(initialMonth)
     }
-    var budgetEditor by remember { mutableStateOf<BudgetCategoryEditorSeed?>(null) }
+    var budgetEditor by remember(state.activeProfile) { mutableStateOf<BudgetCategoryEditorSeed?>(null) }
+    var budgetDrilldownMonth by rememberSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
+    var budgetDrilldownCategory by rememberSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
     var showBtcBuyEditor by rememberSaveable { mutableStateOf(false) }
     // A refresh can retire the picked month. Fall back rather than render a month
     // the ledger no longer contains.
-    val month = resolveBudgetMonth(picked, months, budgetMonth)
+    val budgetSelectedMonth = resolveBudgetMonth(picked, months, budgetMonth)
     val collections = remember(
         profile,
         transactionsInput,
@@ -227,25 +251,30 @@ fun ScreenHost(
     } else {
         null
     }
-    val dashboardIncomeEntries = remember(profile, month, incomeInput) {
-        state.data.dashboardIncomeEntries(profile, month)
+    val dashboardIncomeEntries = remember(profile, dashboardMonth, incomeInput) {
+        state.data.dashboardIncomeEntries(profile, dashboardMonth)
     }
-    val dashboardProjection = remember(month, collections, dashboardIncomeEntries, incomeFiguresUnavailable) {
-        val budgetTransactions = collections.budgetTransactions.inMonth(month ?: "")
-        val activity = collections.visibleTransactions.inMonth(month ?: "").take(6)
+    val dashboardProjection = remember(dashboardMonth, collections, dashboardIncomeEntries, incomeFiguresUnavailable) {
+        val budgetTransactions = collections.budgetTransactions.inMonth(dashboardMonth ?: "")
+        val activity = collections.visibleTransactions.inMonth(dashboardMonth ?: "").take(6)
         DashboardProjection(
             activity = activity,
             accounts = collections.netWorthAccounts,
             balance = collections.netWorthBalance,
             incomeEntries = dashboardIncomeEntries,
-            spendCents = budgetTransactions.sumOf { it.spendAmount },
-            incomeCents = state.data.dashboardIncomeCents(profile, month),
+            spendCents = budgetTransactions.sumLongOrNull { it.spendAmount },
+            incomeCents = state.data.dashboardIncomeCents(profile, dashboardMonth),
             openTodos = collections.visibleTodos.count { !it.done },
         )
     }
-    val budgetSpend = remember(state.data.budget.value, month, collections.budgetTransactions) {
+    val budgetSpend = remember(state.data.budget.value, budgetSelectedMonth, collections.budgetTransactions) {
         state.data.budget.value?.let { budget ->
-            val scoped = if (month == null || month == budget.month) budget else budget.copy(month = month)
+            val scoped =
+                if (budgetSelectedMonth == null || budgetSelectedMonth == budget.month) {
+                    budget
+                } else {
+                    budget.copy(month = budgetSelectedMonth)
+                }
             deriveBudgetSpend(scoped, collections.budgetTransactions)
         }
     }
@@ -306,23 +335,11 @@ fun ScreenHost(
                 ScreenHeader(
                     destination,
                     state,
-                    month,
+                    budgetSelectedMonth,
                     displayUnit,
                     onDisplayUnitChange,
                     onAddTransaction = { addingTransaction = true },
                 )
-            }
-            if (
-                displayUnit == DisplayUnit.USD &&
-                destination in setOf(
-                    Destination.DASHBOARD,
-                    Destination.BITCOIN,
-                    Destination.BTC_BUYS,
-                    Destination.BTC_BILL_PAYS,
-                    Destination.NET_WORTH,
-                )
-            ) {
-                item { BitcoinFiatNotice(state) }
             }
             when (destination) {
                 Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit)
@@ -331,22 +348,52 @@ fun ScreenHost(
                         CsvImportLauncher(
                             owner = state.activeProfile,
                             existingTransactions = collections.visibleTransactions,
-                            btcPriceCents = state.data.btcPriceCents,
+                            displayUnit = displayUnit,
+                            quote = state.operationalBitcoinQuote(),
                             onWriteSucceeded = onWriteSucceeded,
                         )
                     }
-                    activity(state, checkNotNull(activitySearch)) {
+                    activity(state, checkNotNull(activitySearch), displayUnit) {
                         selectedTransactionKey = it.selectionKey
                     }
                 }
-                Destination.BUDGET ->
-                    budget(
-                        state,
-                        months,
-                        budgetSpend,
-                        onSelectMonth = { picked = it },
-                        onEditCategory = { budgetEditor = it },
-                    )
+                Destination.BUDGET -> {
+                    val drilldownScope =
+                        budgetDrilldownMonth?.let { selectedMonth ->
+                            budgetDrilldownCategory?.let { category ->
+                                BudgetCategoryDrilldownScope(selectedMonth, category)
+                            }
+                        }
+                    if (drilldownScope == null) {
+                        budget(
+                            state,
+                            months,
+                            budgetSpend,
+                            onSelectMonth = { picked = it },
+                            onEditCategory = { budgetEditor = it },
+                            onOpenCategory = { scope ->
+                                budgetDrilldownMonth = scope.month
+                                budgetDrilldownCategory = scope.category
+                            },
+                        )
+                    } else {
+                        budgetCategoryDrilldown(
+                            state = state,
+                            scope = drilldownScope,
+                            transactions =
+                                transactionsInput.budgetCategoryTransactionsFor(
+                                    viewer = state.activeProfile,
+                                    month = drilldownScope.month,
+                                    category = drilldownScope.category,
+                                ),
+                            onBack = {
+                                budgetDrilldownMonth = null
+                                budgetDrilldownCategory = null
+                            },
+                            onSelectTransaction = { selectedTransactionKey = it.selectionKey },
+                        )
+                    }
+                }
                 Destination.BITCOIN ->
                     bitcoin(
                         state,
@@ -461,23 +508,48 @@ private fun ScreenHeader(
                     Text(stringResource(R.string.add_transaction_action))
                 }
             }
-            BitcoinUnitToggle(displayUnit, onDisplayUnitChange)
+            if (destination.supportsFinancialDisplayUnit) {
+                BitcoinUnitToggle(
+                    selected = displayUnit,
+                    onSelect = onDisplayUnitChange,
+                    modifier = Modifier.widthIn(max = 168.dp),
+                )
+            }
         }
     }
 }
 
+internal val Destination.supportsFinancialDisplayUnit: Boolean
+    get() =
+        this in setOf(
+            Destination.DASHBOARD,
+            Destination.ACTIVITY,
+            Destination.BITCOIN,
+            Destination.BTC_BUYS,
+            Destination.BTC_BILL_PAYS,
+            Destination.NET_WORTH,
+            Destination.RETIREMENT,
+        )
+
 @Composable
-private fun BitcoinUnitToggle(
+internal fun BitcoinUnitToggle(
     selected: DisplayUnit,
     onSelect: (DisplayUnit) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(VaultSpace.xs),
+        modifier = modifier
+            .horizontalScroll(rememberScrollState())
+            .selectableGroup()
+            .testTag(BITCOIN_UNIT_TOGGLE_TEST_TAG),
+        horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         DisplayUnit.entries.forEach { unit ->
             SelectionChip(
                 label = unit.label,
+                semanticLabel = "${unit.label} display unit",
+                actionLabel = "Show amounts in ${unit.label}",
                 selected = unit == selected,
                 compact = true,
                 onSelect = { onSelect(unit) },
@@ -487,22 +559,31 @@ private fun BitcoinUnitToggle(
 }
 
 @Composable
-private fun BitcoinFiatNotice(state: VaultUiState) {
-    val asOf = state.data.btcPriceAsOf
-    if (state.data.btcPriceCents > 0L && asOf != null) {
+internal fun BitcoinConversionNotice(state: VaultUiState) {
+    val quote = state.operationalBitcoinQuote()
+    if (quote != null) {
         StatusBanner(
-            text = "USD estimate",
-            detail = "Uses the last recorded Bitcoin buy price from $asOf. This is not a live price.",
-            tone = VaultTextMuted,
+            text = if (quote.status == MarketQuoteStatus.STALE) "BTC conversion · stale quote" else "BTC conversion",
+            detail = "Uses the operational BTC market quote from ${quote.source} fetched at ${quote.fetchedAt}.",
+            tone = if (quote.status == MarketQuoteStatus.STALE) VaultWarning else VaultTextMuted,
         )
     } else {
         StatusBanner(
-            text = "USD unavailable",
-            detail = "No recorded Bitcoin buy price is available. BTC and SATS remain exact.",
+            text = "BTC conversion unavailable",
+            detail = "No usable operational BTC market quote is available. Recorded buys are execution metadata only.",
             tone = VaultWarning,
         )
     }
 }
+
+internal fun VaultUiState.bitcoinConversionProvenance(): String =
+    operationalBitcoinQuote()?.let { quote ->
+        buildString {
+            append("BTC conversion: ${quote.source} · ")
+            if (quote.status == MarketQuoteStatus.STALE) append("stale · ")
+            append(quote.fetchedAt)
+        }
+    } ?: "BTC conversion unavailable"
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
 
@@ -513,21 +594,38 @@ private fun VaultLazyListScope.dashboard(
 ) {
     val incomeUnavailable = projection.incomeCents == null
     val balanceUnavailable = projection.balance == null
+    val quote = state.operationalBitcoinQuote()
+    val convertsUsd = displayUnit != DisplayUnit.USD &&
+        (
+            (!state.data.transactions.requiredProjectionUnavailable &&
+                (projection.spendCents != null || projection.activity.isNotEmpty())) ||
+                !incomeUnavailable
+        )
+
+    if (convertsUsd) item { BitcoinConversionNotice(state) }
 
     item {
         KpiStrip(
             listOf(
                 Kpi(
                     "Spend",
-                    figure(state.data.transactions.requiredProjectionUnavailable) {
-                        Money.formatUsd(projection.spendCents)
+                    figure(state.data.transactions.requiredProjectionUnavailable || projection.spendCents == null) {
+                        formatFinancialAmount(
+                            FinancialAmount(usdCents = requireNotNull(projection.spendCents)),
+                            displayUnit,
+                            quote,
+                        )
                     },
                     tone = VaultNegative,
                 ),
                 Kpi(
                     "Income",
                     figure(incomeUnavailable) {
-                        Money.formatUsd(requireNotNull(projection.incomeCents))
+                        formatFinancialAmount(
+                            FinancialAmount(usdCents = requireNotNull(projection.incomeCents)),
+                            displayUnit,
+                            quote,
+                        )
                     },
                     tone = VaultPositive,
                 ),
@@ -537,11 +635,7 @@ private fun VaultLazyListScope.dashboard(
                         state.formatBalance(requireNotNull(projection.balance), displayUnit)
                     },
                     hint = figure(balanceUnavailable) {
-                        if (displayUnit == DisplayUnit.USD) {
-                            balanceSnapshotBasis(requireNotNull(projection.balance))
-                        } else {
-                            state.formatBalance(requireNotNull(projection.balance), DisplayUnit.USD)
-                        }
+                        balanceSnapshotBasis(requireNotNull(projection.balance))
                     },
                 ),
                 Kpi(
@@ -573,7 +667,7 @@ private fun VaultLazyListScope.dashboard(
             source = state.data.transactions.source,
             rows = projection.activity,
             rowKey = Transaction::id,
-            rowContent = { TransactionRow(it) },
+            rowContent = { TransactionRow(it, displayUnit, quote) },
         )
     }
     if (incomeUnavailable) {
@@ -593,7 +687,11 @@ private fun VaultLazyListScope.dashboard(
             LedgerRow(
                 primary = entry.sourceName,
                 secondary = entry.date,
-                figure = Money.formatUsd(entry.amountCents),
+                figure = formatFinancialAmount(
+                    FinancialAmount(usdCents = entry.amountCents),
+                    displayUnit,
+                    quote,
+                ),
                 figureColor = VaultPositive,
             )
         }
@@ -605,7 +703,6 @@ private fun VaultLazyListScope.dashboard(
         accounts = projection.accounts,
         status = state.data.btcBalance.status,
         displayUnit = displayUnit,
-        btcPriceCents = state.data.btcPriceCents,
     )
 }
 
@@ -614,8 +711,10 @@ private fun VaultLazyListScope.dashboard(
 private fun VaultLazyListScope.activity(
     state: VaultUiState,
     search: ActivitySearchProjection,
+    displayUnit: DisplayUnit,
     onSelectTransaction: (Transaction) -> Unit,
 ) {
+    val quote = state.operationalBitcoinQuote()
     item { StaleNotice(state.data.transactions.status) }
     if (state.data.transactions.suppressFigures) {
         item { Panel { StateBlock(state.data.transactions.status) } }
@@ -661,7 +760,11 @@ private fun VaultLazyListScope.activity(
         } else {
             "${transactions.size} of ${search.totalCount} records"
         },
-        source = state.data.transactions.source,
+        source = if (displayUnit == DisplayUnit.USD) {
+            state.data.transactions.source
+        } else {
+            "${state.data.transactions.source} · ${state.bitcoinConversionProvenance()}"
+        },
         rows = transactions,
         rowKey = Transaction::selectionKey,
         rowContent = {
@@ -670,7 +773,7 @@ private fun VaultLazyListScope.activity(
                     .fillMaxWidth()
                     .clickable { onSelectTransaction(it) },
             ) {
-                TransactionRow(it)
+                TransactionRow(it, displayUnit, quote)
             }
         },
     )
@@ -680,20 +783,34 @@ private val Transaction.selectionKey: String
     get() = "${owner.key}\u0000$id"
 
 @Composable
-private fun TransactionRow(transaction: Transaction) {
+private fun TransactionRow(
+    transaction: Transaction,
+    displayUnit: DisplayUnit,
+    quote: MarketQuote?,
+    secondary: String = "${transaction.date} · ${transaction.category}",
+) {
     val isSpend = transaction.isSpend
     val isCreditOrWrongSign = transaction.hasOppositeSpendSign
-    val displaySpend = transaction.displaySpendAmount
     LedgerRow(
         primary = transaction.merchant,
-        secondary = "${transaction.date} · ${transaction.category}",
-        figure = when {
-            !isSpend -> Money.formatUsd(transaction.incomeAmount)
-            isCreditOrWrongSign -> Money.formatUsd(displaySpend)
-            else -> "-${Money.formatUsd(displaySpend)}"
-        },
+        secondary = secondary,
+        figure = formatTransactionAmount(transaction, displayUnit, quote),
         figureColor = if (isSpend && !isCreditOrWrongSign) VaultNegative else VaultPositive,
     )
+}
+
+internal fun formatTransactionAmount(
+    transaction: Transaction,
+    displayUnit: DisplayUnit,
+    quote: MarketQuote?,
+): String {
+    val displaySpend = transaction.displaySpendAmount
+    val cents = when {
+        !transaction.isSpend -> transaction.incomeAmount
+        transaction.hasOppositeSpendSign -> displaySpend
+        else -> displaySpend.negateOrNull() ?: return Money.PRICE_UNAVAILABLE
+    }
+    return formatFinancialAmount(FinancialAmount(usdCents = cents), displayUnit, quote)
 }
 
 // ── Budget ──────────────────────────────────────────────────────────────────
@@ -704,6 +821,7 @@ private fun VaultLazyListScope.budget(
     spend: BudgetSpend?,
     onSelectMonth: (String) -> Unit,
     onEditCategory: (BudgetCategoryEditorSeed) -> Unit,
+    onOpenCategory: (BudgetCategoryDrilldownScope) -> Unit,
 ) {
     val slice = state.data.budget
     val budget = slice.value
@@ -814,6 +932,20 @@ private fun VaultLazyListScope.budget(
                 canEdit =
                     derived.month == budget.month &&
                         slice.status == Freshness.LIVE,
+                transactionsContentDescription =
+                    stringResource(
+                        R.string.budget_category_transactions_accessibility,
+                        category.name,
+                        derived.month,
+                    ),
+                onOpenTransactions = {
+                    onOpenCategory(
+                        BudgetCategoryDrilldownScope(
+                            month = derived.month,
+                            category = category.name,
+                        ),
+                    )
+                },
                 onEdit = {
                     onEditCategory(
                         BudgetCategoryEditorSeed(
@@ -827,6 +959,87 @@ private fun VaultLazyListScope.budget(
             )
         }
     }
+}
+
+private fun VaultLazyListScope.budgetCategoryDrilldown(
+    state: VaultUiState,
+    scope: BudgetCategoryDrilldownScope,
+    transactions: List<Transaction>,
+    onBack: () -> Unit,
+    onSelectTransaction: (Transaction) -> Unit,
+) {
+    item {
+        TextButton(onClick = onBack) {
+            Text(stringResource(R.string.budget_category_transactions_back))
+        }
+    }
+    item { StaleNotice(state.data.transactions.status) }
+    if (state.data.transactions.suppressFigures) {
+        item {
+            Panel(
+                title = stringResource(R.string.budget_category_transactions_title, scope.category),
+                source = "${state.data.transactions.source} · ${scope.month}",
+            ) {
+                StateBlock(state.data.transactions.status)
+            }
+        }
+        return
+    }
+    if (transactions.isEmpty()) {
+        item {
+            Panel(
+                title = stringResource(R.string.budget_category_transactions_title, scope.category),
+                source = "${state.data.transactions.source} · ${scope.month}",
+            ) {
+                Column(Modifier.padding(VaultSpace.md)) {
+                    Text(stringResource(R.string.budget_category_transactions_empty), color = VaultCream)
+                    Text(
+                        stringResource(R.string.budget_category_transactions_empty_detail),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VaultTextMuted,
+                    )
+                }
+            }
+        }
+        return
+    }
+    keyedPanel(
+        sectionKey = "budget-category-transactions",
+        title =
+            "${scope.category} · ${transactions.size} " +
+                if (transactions.size == 1) "transaction" else "transactions",
+        source = "${state.data.transactions.source} · ${scope.month}",
+        rows = transactions,
+        rowKey = Transaction::selectionKey,
+        rowContent = { transaction ->
+            val accessibilityLabel =
+                stringResource(
+                    R.string.budget_transaction_edit_accessibility,
+                    transaction.merchant,
+                    transaction.date,
+                    transaction.owner.displayName,
+                )
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        onClickLabel = accessibilityLabel,
+                        role = Role.Button,
+                        onClick = { onSelectTransaction(transaction) },
+                    )
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = accessibilityLabel
+                    },
+            ) {
+                TransactionRow(
+                    transaction = transaction,
+                    displayUnit = DisplayUnit.USD,
+                    quote = null,
+                    secondary = "${transaction.date} · ${transaction.owner.displayName}",
+                )
+            }
+        },
+    )
 }
 
 /**
@@ -858,9 +1071,12 @@ private fun MonthPicker(months: List<String>, selected: String, onSelect: (Strin
 }
 
 @Composable
-private fun MonthChip(month: String, selected: Boolean, onSelect: () -> Unit) {
+internal fun MonthChip(month: String, selected: Boolean, onSelect: () -> Unit) {
+    val label = monthLabel(month)
     SelectionChip(
-        label = monthLabel(month),
+        label = label,
+        semanticLabel = "$label budget month",
+        actionLabel = "Show budget month $label",
         selected = selected,
         onSelect = onSelect,
     )
@@ -873,6 +1089,8 @@ private fun MonthChip(month: String, selected: Boolean, onSelect: () -> Unit) {
 @Composable
 private fun SelectionChip(
     label: String,
+    semanticLabel: String,
+    actionLabel: String,
     selected: Boolean,
     compact: Boolean = false,
     onSelect: () -> Unit,
@@ -880,11 +1098,19 @@ private fun SelectionChip(
     val shape = RoundedCornerShape(99.dp)
     Box(
         Modifier
-            .heightIn(min = if (compact) 32.dp else 40.dp)
+            .heightIn(min = 48.dp)
             .clip(shape)
             // selectable, not clickable: this is one choice out of a set, and a
             // screen reader should say so.
             .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
+            .semantics {
+                contentDescription = semanticLabel
+                stateDescription = if (selected) "Selected" else "Not selected"
+                onClick(label = actionLabel) {
+                    onSelect()
+                    true
+                }
+            }
             .background(if (selected) VaultAccentDim else VaultSurface, shape)
             .border(1.dp, if (selected) VaultAccent.copy(alpha = 0.42f) else VaultLine, shape)
             .padding(
@@ -932,6 +1158,10 @@ private fun VaultLazyListScope.bitcoin(
     val slice = state.data.btcBalance
     val unavailable = projection.balance == null
 
+    if (displayUnit == DisplayUnit.USD && !unavailable) {
+        item { BitcoinConversionNotice(state) }
+    }
+
     item {
         KpiStrip(
             listOf(
@@ -976,7 +1206,6 @@ private fun VaultLazyListScope.bitcoin(
         accounts = projection.accounts,
         status = slice.status,
         displayUnit = displayUnit,
-        btcPriceCents = state.data.btcPriceCents,
     )
     if (state.data.btcBuys.status == Freshness.LIVE) {
         item { BtcBuyEntryAction(onAddBuy) }
@@ -1003,12 +1232,8 @@ private fun VaultLazyListScope.bitcoin(
         ) { buy ->
             LedgerRow(
                 primary = buy.source,
-                secondary = "${buy.date} · ${Money.formatUsd(buy.priceUsdCents)}",
-                figure = Money.formatBitcoin(
-                    buy.sats,
-                    displayUnit,
-                    buy.priceUsdCents,
-                ),
+                secondary = "${buy.date} · ${Money.formatUsd(buy.priceUsdCents)}/BTC",
+                figure = formatBtcBuyAmount(buy, displayUnit),
                 figureColor = VaultCream,
             )
         }
@@ -1030,7 +1255,7 @@ private fun VaultLazyListScope.bitcoin(
             LedgerRow(
                 primary = payment.merchant,
                 secondary = "${payment.date} · ${payment.category}",
-                figure = "-${Money.formatUsd(payment.amountUsdCents)}",
+                figure = formatBtcBillPayAmount(payment, displayUnit),
                 figureColor = VaultNegative,
                 badge = payment.platform,
             )
@@ -1045,6 +1270,7 @@ private fun VaultLazyListScope.netWorth(
     projection: NetWorthProjection,
     displayUnit: DisplayUnit,
 ) {
+    financeNetWorthSummary(state, displayUnit)
     val slice = state.data.btcBalance
     val unavailable = projection.balance == null
 
@@ -1058,14 +1284,8 @@ private fun VaultLazyListScope.netWorth(
                     },
                 ),
                 Kpi(
-                    "Fiat estimate",
-                    figure(unavailable) {
-                        formatCanonicalBalance(
-                            requireNotNull(projection.balance),
-                            DisplayUnit.USD,
-                            state.data.btcPriceCents,
-                        )
-                    },
+                    "Accounts",
+                    figure(unavailable) { projection.accounts.size.toString() },
                     hint = figure(unavailable) {
                         balanceSnapshotBasis(requireNotNull(projection.balance))
                     },
@@ -1081,7 +1301,6 @@ private fun VaultLazyListScope.netWorth(
         accounts = projection.accounts,
         status = slice.status,
         displayUnit = displayUnit,
-        btcPriceCents = state.data.btcPriceCents,
     )
     if (projection.excludedAccounts.isNotEmpty()) {
         item {
@@ -1098,7 +1317,6 @@ private fun VaultLazyListScope.netWorth(
             accounts = projection.excludedAccounts,
             status = slice.status,
             displayUnit = displayUnit,
-            btcPriceCents = state.data.btcPriceCents,
         )
     }
 }
@@ -1110,7 +1328,6 @@ private fun VaultLazyListScope.accountList(
     accounts: List<BtcAccount>,
     status: Freshness,
     displayUnit: DisplayUnit,
-    btcPriceCents: Long,
 ) {
     if (status == Freshness.ERROR || status == Freshness.LOADING) {
         item {
@@ -1142,7 +1359,7 @@ private fun VaultLazyListScope.accountList(
         LedgerRow(
             primary = account.label,
             secondary = account.owner.displayName,
-            figure = formatCanonicalAccount(account, displayUnit, btcPriceCents),
+            figure = formatCanonicalAccount(account, displayUnit),
             figureColor = VaultCream,
             badge = account.custody.label,
             badgeAccented = account.custody.key == "self_custody",
@@ -1151,32 +1368,42 @@ private fun VaultLazyListScope.accountList(
 }
 
 private fun VaultUiState.formatBitcoin(sats: Long, unit: DisplayUnit): String =
-    Money.formatBitcoin(sats, unit, data.btcPriceCents)
+    formatFinancialAmount(
+        FinancialAmount(sats = sats),
+        unit,
+        operationalBitcoinQuote(),
+    )
 
 private fun VaultUiState.formatBalance(balance: BtcBalance, unit: DisplayUnit): String =
-    formatCanonicalBalance(balance, unit, data.btcPriceCents)
+    formatCanonicalBalance(balance, unit)
 
 internal fun formatCanonicalBalance(
     balance: BtcBalance,
     unit: DisplayUnit,
-    recordedBuyPriceCents: Long,
 ): String =
-    if (unit == DisplayUnit.USD) {
-        balance.fiatValuation?.let { Money.formatUsd(it.cents) } ?: Money.PRICE_UNAVAILABLE
-    } else {
-        Money.formatBitcoin(balance.totalSats, unit, recordedBuyPriceCents)
-    }
+    formatFinancialAmount(
+        FinancialAmount(
+            usdCents = balance.fiatValuation?.cents,
+            sats = balance.totalSats,
+        ),
+        unit,
+        // A canonical snapshot without its own fiat value stays unavailable in
+        // USD; a last-buy price does not upgrade the snapshot's evidence.
+        quote = null,
+    )
 
 internal fun formatCanonicalAccount(
     account: BtcAccount,
     unit: DisplayUnit,
-    recordedBuyPriceCents: Long,
 ): String =
-    if (unit == DisplayUnit.USD) {
-        account.fiatValuation?.let { Money.formatUsd(it.cents) } ?: Money.PRICE_UNAVAILABLE
-    } else {
-        Money.formatBitcoin(account.sats, unit, recordedBuyPriceCents)
-    }
+    formatFinancialAmount(
+        FinancialAmount(
+            usdCents = account.fiatValuation?.cents,
+            sats = account.sats,
+        ),
+        unit,
+        quote = null,
+    )
 
 internal fun balanceSnapshotBasis(balance: BtcBalance): String = "Balance snapshot · ${balance.asOf}"
 

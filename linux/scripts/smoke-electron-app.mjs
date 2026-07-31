@@ -54,6 +54,7 @@ const EXPECTED = {
     "mutateConvexRow",
     "pairDevice",
     "queryConvexRows",
+    "setReadProfile",
     "unpairDevice",
   ],
 }

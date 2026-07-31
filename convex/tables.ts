@@ -22,11 +22,10 @@
 //
 // WHAT THIS FILE DELIBERATELY DOES NOT DO
 //
-// It does not touch `dataFiles`, `syncVersions` or `todoTombstones` — not one
-// write. Every shipped client still reads the blobs and production is live, so
-// the blob path has to keep working byte-for-byte throughout the transition.
-// `dataFiles` gets deleted in a later change, after the clients have moved, not
-// in this one.
+// It does not touch `dataFiles` or `syncVersions`. Todo writes do maintain the
+// separate compatibility `todoTombstones` markers that keep shipped blob readers
+// from resurfacing stale content. The source blobs otherwise stay byte-identical
+// until clients have moved and a later cutover removes them.
 //
 // THREE MIRRORS LIVE IN THIS FILE, ALL FOR THE SAME REASON
 //
@@ -44,6 +43,7 @@ import type { Doc } from "./_generated/dataModel";
 import { query, mutation, type MutationCtx } from "./_generated/server";
 import { isRealIsoDate, requireIsoDate } from "./dateValidation";
 import { authenticateDevice, markDeviceSeen } from "./deviceAuth";
+import { assertSharesDecimal } from "./documentProjection";
 import { custodyValidator, familyMemberValidator } from "./schema";
 import { normalizeTodoRecord, todoUpdatedMs } from "./todoNormalize";
 
@@ -785,7 +785,10 @@ function publicFinanceAccount(row: {
       valueCents: holding.valueCents,
       costBasisCents: holding.costBasisCents,
       gainBps: holding.gainBps,
-      sharesDecimal: holding.sharesDecimal,
+      sharesDecimal: assertSharesDecimal(
+        holding.sharesDecimal,
+        `financeDocuments.${row.key}.${holding.name}.sharesDecimal`,
+      ),
       avgCostCents: holding.avgCostCents,
       currentPricePerShareCents: holding.currentPricePerShareCents,
       isProxy: holding.isProxy,
@@ -794,7 +797,10 @@ function publicFinanceAccount(row: {
         date: lot.date,
         type: lot.type,
         pricePerShareCents: lot.pricePerShareCents,
-        sharesDecimal: lot.sharesDecimal,
+        sharesDecimal: assertSharesDecimal(
+          lot.sharesDecimal,
+          `financeDocuments.${row.key}.${holding.name}.lots.sharesDecimal`,
+        ),
         amountInvestedCents: lot.amountInvestedCents,
         note: lot.note,
       })),
@@ -1661,6 +1667,14 @@ function nextUpdatedAtMs(previous: number): number {
 }
 
 type OptimisticWrite = { baseUpdatedAtMs?: number };
+type TodoRestoreCapsule = Omit<Doc<"todos">, "_id" | "_creationTime">;
+
+function captureTodoForRestore(row: Doc<"todos">): TodoRestoreCapsule {
+  const { _id, _creationTime, ...capsule } = row;
+  void _id;
+  void _creationTime;
+  return capsule;
+}
 
 async function findRowTombstone(
   ctx: MutationCtx,
@@ -1701,6 +1715,7 @@ async function upsertRowTombstone(
   entityId: string,
   owner: FamilyMember,
   deletedFromUpdatedAtMs?: number,
+  todoRestoreCapsule?: TodoRestoreCapsule,
 ) {
   const now = Date.now();
   const existing = await findRowTombstone(
@@ -1716,6 +1731,7 @@ async function upsertRowTombstone(
     owner,
     deletedAtMs: now,
     ...(deletedFromUpdatedAtMs === undefined ? {} : { deletedFromUpdatedAtMs }),
+    ...(todoRestoreCapsule === undefined ? {} : { todoRestoreCapsule }),
   };
   if (existing) await ctx.db.patch(existing._id, record);
   else await ctx.db.insert("rowTombstones", record);
@@ -1862,7 +1878,9 @@ async function upsertTodoRow(
         : row.updatedAtMs,
     });
     await clearRowTombstone(ctx, "todo", row.sourceFile, row.todoId);
-    await clearLegacyTodoTombstone(ctx, row.todoId);
+    // A compatibility tombstone retained by Undo must keep suppressing the
+    // surviving legacy blob. Row-native edits cannot clear it because they do
+    // not also rewrite that blob with the authoritative row.
     return "updated";
   }
   if (optimistic?.baseUpdatedAtMs !== undefined) {
@@ -2281,6 +2299,12 @@ const deviceDeleteResultValidator = v.object({
   removed: v.boolean(),
 });
 
+const deviceRestoreResultValidator = v.object({
+  ok: v.literal(true),
+  entityId: v.string(),
+  updatedAtMs: v.float64(),
+});
+
 /** Insert or replace ONE transaction. Compare with dataFiles:appendTransaction,
  *  which rewrites all 905 to do this. */
 export const upsertTransaction = mutation({
@@ -2427,7 +2451,10 @@ export const deleteTodo = mutation({
       .unique();
     if (!existing) {
       await lockRuntimeSource(ctx, "todos");
-      await upsertRowTombstone(ctx, "todo", "todos", todoId, DEFAULT_OWNER);
+      const tombstone = await findRowTombstone(ctx, "todo", "todos", todoId);
+      if (!tombstone) {
+        await upsertRowTombstone(ctx, "todo", "todos", todoId, DEFAULT_OWNER);
+      }
       await upsertLegacyTodoTombstone(ctx, todoId);
       return { todoId, removed: false };
     }
@@ -2959,6 +2986,21 @@ function deviceTodoRow(
   );
 }
 
+function validateDeviceTodo(
+  todo: Parameters<typeof deviceTodoRow>[0],
+) {
+  requireDeviceIdentifier(todo.id, "todo.id");
+  requireDeviceText(todo.title, "todo.title");
+  requireDeviceOptionalText(todo.lane, "todo.lane");
+  requireDeviceOptionalText(todo.project, "todo.project");
+  requireDeviceOptionalText(todo.area, "todo.area");
+  requireDeviceCalendarDate(todo.due, "todo.due");
+  requireDeviceOptionalText(todo.notes, "todo.notes");
+  requireDeviceTimestamp(todo.createdAt, "todo.createdAt");
+  requireDeviceTimestamp(todo.updatedAt, "todo.updatedAt");
+  requireDeviceTimestamp(todo.completedAt, "todo.completedAt");
+}
+
 async function deleteTransactionCore(
   ctx: MutationCtx,
   sourceFile: string,
@@ -3093,9 +3135,100 @@ async function deleteTodoCore(
     todoId,
     owner,
     optimistic?.baseUpdatedAtMs,
+    existing === null ? undefined : captureTodoForRestore(existing),
   );
   await upsertLegacyTodoTombstone(ctx, todoId);
   return existing !== null;
+}
+
+async function restoreTodoCore(
+  ctx: MutationCtx,
+  owner: FamilyMember,
+  requestedRow: ReturnType<typeof deviceTodoRow>,
+  baseUpdatedAtMs: number,
+) {
+  const existing = await ctx.db
+    .query("todos")
+    .withIndex("by_todo_id", (q) => q.eq("todoId", requestedRow.todoId))
+    .unique();
+  if (existing) {
+    if (existing.owner !== owner) {
+      deviceFailure(
+        "OWNER_MISMATCH",
+        `Todo ${requestedRow.todoId} belongs to ${existing.owner}, not ${owner}.`,
+        "todo",
+        requestedRow.todoId,
+      );
+    }
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      "The todo is not deleted and cannot be restored.",
+      "todo",
+      requestedRow.todoId,
+    );
+  }
+
+  const tombstone = await findRowTombstone(
+    ctx,
+    "todo",
+    "todos",
+    requestedRow.todoId,
+  );
+  if (!tombstone) {
+    deviceFailure(
+      "ENTITY_NOT_FOUND",
+      "No deleted todo revision exists to restore.",
+      "todo",
+      requestedRow.todoId,
+    );
+  }
+  if (tombstone.owner !== owner) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Deleted todo ${requestedRow.todoId} belongs to ${tombstone.owner}, not ${owner}.`,
+      "todo",
+      requestedRow.todoId,
+    );
+  }
+  if (tombstone.deletedFromUpdatedAtMs !== baseUpdatedAtMs) {
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      "The todo deletion does not match the revision being restored.",
+      "todo",
+      requestedRow.todoId,
+    );
+  }
+
+  const capsule = tombstone.todoRestoreCapsule;
+  if (
+    !capsule ||
+    capsule.todoId !== requestedRow.todoId ||
+    capsule.owner !== owner ||
+    capsule.sourceFile !== "todos" ||
+    capsule.updatedAtMs !== baseUpdatedAtMs
+  ) {
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      "The deleted todo revision has no matching authoritative restore data.",
+      "todo",
+      requestedRow.todoId,
+    );
+  }
+
+  // The restored row receives a new revision above both the deleted row and
+  // its tombstone. A later delete therefore cannot be undone by replaying this
+  // restore request with the old base revision.
+  const updatedAtMs = nextUpdatedAtMs(
+    Math.max(baseUpdatedAtMs, tombstone.deletedAtMs),
+  );
+  await lockRuntimeSource(ctx, "todos");
+  await ctx.db.insert("todos", { ...capsule, updatedAtMs });
+  await ctx.db.delete(tombstone._id);
+  // The legacy blob still contains the pre-row-authority value. Keep its
+  // compatibility tombstone until a later cutover removes or rewrites that
+  // source; clearing it here would show stale content on Apple/legacy clients.
+  await upsertLegacyTodoTombstone(ctx, requestedRow.todoId);
+  return updatedAtMs;
 }
 
 async function deleteBtcBuyCore(
@@ -3662,16 +3795,7 @@ export const upsertTodoFromDevice = mutation({
       "todos:write",
     );
     requireDeviceRevision(args.baseUpdatedAtMs, false);
-    requireDeviceIdentifier(args.todo.id, "todo.id");
-    requireDeviceText(args.todo.title, "todo.title");
-    requireDeviceOptionalText(args.todo.lane, "todo.lane");
-    requireDeviceOptionalText(args.todo.project, "todo.project");
-    requireDeviceOptionalText(args.todo.area, "todo.area");
-    requireDeviceCalendarDate(args.todo.due, "todo.due");
-    requireDeviceOptionalText(args.todo.notes, "todo.notes");
-    requireDeviceTimestamp(args.todo.createdAt, "todo.createdAt");
-    requireDeviceTimestamp(args.todo.updatedAt, "todo.updatedAt");
-    requireDeviceTimestamp(args.todo.completedAt, "todo.completedAt");
+    validateDeviceTodo(args.todo);
     if (args.todo.owner !== args.owner) {
       deviceFailure(
         "OWNER_MISMATCH",
@@ -3687,6 +3811,51 @@ export const upsertTodoFromDevice = mutation({
     );
     await markDeviceSeen(ctx, device);
     return { ok: true as const, entityId: args.todo.id, outcome };
+  },
+});
+
+/**
+ * Restore one device-deleted todo without opening the normal upsert path.
+ * `baseUpdatedAtMs` is the exact revision accepted by deleteTodoFromDevice;
+ * it must still be recorded on the current tombstone. The complete authoritative
+ * row comes from the server-owned restore capsule captured by delete; the client
+ * projection supplies only the compatible request identity/owner shape.
+ */
+export const restoreTodoFromDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    owner: familyMemberValidator,
+    sourceFile: v.literal("todos"),
+    baseUpdatedAtMs: v.float64(),
+    todo: todoDeviceInput,
+  },
+  returns: deviceRestoreResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+      "todos:write",
+    );
+    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    validateDeviceTodo(args.todo);
+    if (args.todo.owner !== args.owner) {
+      deviceFailure(
+        "OWNER_MISMATCH",
+        "Todo owner does not match request owner.",
+        "todo",
+        args.todo.id,
+      );
+    }
+    const updatedAtMs = await restoreTodoCore(
+      ctx,
+      args.owner,
+      deviceTodoRow(args.todo, Date.now()),
+      args.baseUpdatedAtMs,
+    );
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, entityId: args.todo.id, updatedAtMs };
   },
 });
 

@@ -90,9 +90,8 @@ describe("real Convex wire values", () => {
     const result = requireOk(
       await derivationRepository.query({
         kind: "transactions",
-        viewer: "victor",
         limit: 3,
-      }),
+      }, "victor"),
       "listTransactions",
     )
     if (result.kind !== "transactions") {
@@ -110,9 +109,8 @@ describe("real Convex wire values", () => {
     const result = requireOk(
       await repository.query({
         kind: "todos",
-        viewer: "victor",
         limit: 3,
-      }),
+      }, "victor"),
       "listTodos",
     )
     if (result.kind !== "todos") {
@@ -128,10 +126,9 @@ describe("real Convex wire values", () => {
     const result = requireOk(
       await repository.query({
         kind: "btcBuys",
-        viewer: "victor",
         scope: "visible",
         limit: 3,
-      }),
+      }, "victor"),
       "listBtcBuys",
     )
     if (result.kind !== "btcBuys") {
@@ -148,10 +145,9 @@ describe("real Convex wire values", () => {
     const result = requireOk(
       await repository.query({
         kind: "btcBillPays",
-        viewer: "victor",
         scope: "visible",
         limit: 3,
-      }),
+      }, "victor"),
       "listBtcBillPays",
     )
     if (result.kind !== "btcBillPays") {
@@ -167,7 +163,7 @@ describe("real Convex wire values", () => {
 
   it("decodes the production row counts", async () => {
     const result = requireOk(
-      await repository.query({ kind: "rowCounts" }),
+      await repository.query({ kind: "rowCounts" }, "victor"),
       "rowCounts",
     )
     if (result.kind !== "rowCounts") {
@@ -191,9 +187,8 @@ describe("real Convex wire values", () => {
     const result = requireOk(
       await repository.query({
         kind: "budget",
-        viewer: "victor",
         scope: "netWorth",
-      }),
+      }, "victor"),
       "getBudgetDocument",
     )
     if (result.kind !== "budget") {
@@ -233,9 +228,8 @@ describe("real Convex wire values", () => {
     const result = requireOk(
       await nullRepository.query({
         kind: "budget",
-        viewer: "victor",
         scope: "netWorth",
-      }),
+      }, "victor"),
       "synthetic null getBudgetDocument",
     )
     if (result.kind !== "budget") {
@@ -247,8 +241,7 @@ describe("real Convex wire values", () => {
   it("retains the bounded empty BTC-account signal", async () => {
     await expect(repository.query({
       kind: "btcAccounts",
-      viewer: "victor",
       scope: "visible",
-    })).resolves.toEqual({ status: "error", code: "incomplete-response" })
+    }, "victor")).resolves.toEqual({ status: "error", code: "incomplete-response" })
   })
 })

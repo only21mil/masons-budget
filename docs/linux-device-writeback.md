@@ -30,7 +30,7 @@ The existing `dataFiles:{upsert,complete,remove}TodoFromMobile` functions
 explicitly require `todos:write`. Linux row writes use:
 
 - `tables:{upsert,delete}TransactionFromDevice`
-- `tables:{upsert,delete}TodoFromDevice`
+- `tables:{upsert,delete,restore}TodoFromDevice`
 - `tables:{upsert,delete}BudgetCategoryFromDevice`
 - `tables:{upsert,delete}BtcBuyFromDevice`
 - `tables:{upsert,delete}BtcBillPayFromDevice`
@@ -76,7 +76,12 @@ Row deletes upsert an indexed natural-key tombstone even when the target was
 already absent. The internal migration consults at most 256 tombstones per
 entity/source through `rowTombstones.by_type_source`; exceeding that bound fails
 closed. Todo deletes also retain `todoTombstones` while shipped clients still
-read the legacy blob.
+read the legacy blob. An accepted Todo delete stores the complete authoritative
+typed row in its revision-bound row tombstone. Undo restores only that server
+capsule, never the lossy client projection, then removes the row tombstone so the
+same deletion cannot be replayed. The compatibility `todoTombstones` marker stays
+until a later reviewed cutover rewrites or removes the stale legacy blob; restore
+and later row-native edits cannot clear it and re-expose stale Apple content.
 
 Budget category renames replace the original array position atomically, reject
 case-insensitive collisions, require the displayed month to match the stored

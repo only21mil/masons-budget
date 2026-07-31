@@ -1,6 +1,6 @@
-// App-wide state: which profile is active, which route is showing, which month
-// the money screens are reporting on, and the QA state override that lets every
-// page be inspected in all five states.
+// App-wide state: which profile is active, which route is showing, which Budget
+// month is selected, and the QA state override that lets every page be inspected
+// in all five states.
 
 import {
   createContext,
@@ -14,10 +14,14 @@ import {
 import type { ReactNode } from "react"
 
 import { type FamilyMember, allowedSwitchTargets } from "@vogel-vault/domain/family"
-import type { Freshness, MonthKey } from "@vogel-vault/domain/readModel"
+import { type Freshness, type MonthKey, monthOf } from "@vogel-vault/domain/readModel"
 
 import { type FixtureEnvelope, buildSanitizedFixtureEnvelope, fixtureEnvelopeInState } from "../data/fixtures.ts"
 import { loadConvexRowEnvelope } from "../data/convexRows.ts"
+import {
+  type LinuxFinanceReadModel,
+  loadLinuxFinanceReadModel,
+} from "../data/financeReadModel.ts"
 import {
   type DisplayUnit,
   displayUnitFromStorageKey,
@@ -55,12 +59,11 @@ interface AppStateValue {
   readonly navigate: (id: string) => void
   readonly locked: boolean
   readonly setLocked: (locked: boolean) => void
+  /** Canonical current UTC/server month used by Dashboard MTD. */
+  readonly currentMonth: MonthKey
   /**
-   * Month the money screens report on, or null to follow the data's own month.
-   *
-   * Held app-wide rather than inside the Budget page so the Dashboard headline
-   * moves with it. Two screens quoting different months for one household is
-   * how a number gets trusted when it should not be.
+   * Month the Budget screen reports on, or null to follow the budget document.
+   * Dashboard MTD remains anchored to the current UTC/server month.
    */
   readonly selectedMonth: MonthKey | null
   readonly selectMonth: (month: MonthKey | null) => void
@@ -69,6 +72,8 @@ interface AppStateValue {
   readonly displayUnit: DisplayUnit
   readonly setDisplayUnit: (unit: DisplayUnit) => void
   readonly data: FixtureEnvelope
+  /** Finance/quote rows are remote-only and never synthesized from QA fixtures. */
+  readonly financeModel: LinuxFinanceReadModel
   readonly dataOrigin: DataOrigin
   readonly mutationCapabilities: readonly RendererMutationKind[]
   readonly pairingStatus: PairingStatus | { readonly status: "loading" }
@@ -104,10 +109,14 @@ export interface AppStateProviderProps {
   initialProfile?: FamilyMember
   initialRoute?: string
   initialStateOverride?: StateOverride
+  /** Canonical server month override for deterministic/bootstrap rendering. */
+  initialCurrentMonth?: MonthKey
   initialSelectedMonth?: MonthKey | null
   initialDisplayUnit?: DisplayUnit
   /** Exact envelope for headless financial-state regression tests. */
   initialData?: FixtureEnvelope
+  /** Exact remote finance state for deterministic renderer tests. */
+  initialFinanceModel?: LinuxFinanceReadModel
   /** Tests may opt into writable seeded rows explicitly; fixtures stay read-only. */
   initialDataOrigin?: DataOrigin
   /** Renderer-local adapter until the preload contract is joined by the parent lane. */
@@ -123,9 +132,11 @@ export function AppStateProvider({
   initialProfile = "victor",
   initialRoute = "dashboard",
   initialStateOverride = "normal",
+  initialCurrentMonth,
   initialSelectedMonth = null,
   initialDisplayUnit,
   initialData,
+  initialFinanceModel,
   initialDataOrigin = "fixture",
   mutationAdapter,
   initialMutationCapabilities = [],
@@ -134,6 +145,7 @@ export function AppStateProvider({
   const [activeProfile, setActiveProfile] = useState<FamilyMember>(initialProfile)
   const [route, setRoute] = useState(initialRoute)
   const [locked, setLocked] = useState(false)
+  const currentMonth = initialCurrentMonth ?? monthOf(new Date().toISOString().slice(0, 10))
   const [stateOverride, setStateOverride] = useState<StateOverride>(initialStateOverride)
   const [selectedMonth, setSelectedMonth] = useState<MonthKey | null>(initialSelectedMonth)
   const [displayUnit, setStoredDisplayUnit] = useState<DisplayUnit>(
@@ -146,6 +158,14 @@ export function AppStateProvider({
   } | null>(() =>
     initialData
       ? { profile: initialProfile, data: initialData, origin: initialDataOrigin }
+      : null,
+  )
+  const [remoteFinance, setRemoteFinance] = useState<{
+    readonly profile: FamilyMember
+    readonly model: LinuxFinanceReadModel
+  } | null>(() =>
+    initialFinanceModel
+      ? { profile: initialProfile, model: initialFinanceModel }
       : null,
   )
   const [mutationCapabilities, setMutationCapabilities] = useState<
@@ -211,20 +231,34 @@ export function AppStateProvider({
   const loadRemote = useCallback(async (profile: FamilyMember, generation: number) => {
     const bridge = window.vogelVault
     if (!bridge) return false
-    const result = await loadConvexRowEnvelope(
-      async (request) => {
-        try {
-          return await bridge.queryConvexRows(request)
-        } catch {
-          return { status: "error", code: "unavailable" }
-        }
-      },
-      profile,
-    )
+    let profileResult: Awaited<ReturnType<typeof bridge.setReadProfile>>
+    try {
+      profileResult = await bridge.setReadProfile(profile)
+    } catch {
+      profileResult = { status: "rejected" as const }
+    }
+    if (profileResult.status !== "active" || profileResult.profile !== profile) {
+      if (generationRef.current === generation) {
+        setRemoteFinance({ profile, model: ERROR_FINANCE_MODEL })
+      }
+      return false
+    }
+    const query = async (request: Parameters<typeof bridge.queryConvexRows>[0]) => {
+      try {
+        return await bridge.queryConvexRows(request)
+      } catch {
+        return { status: "error" as const, code: "unavailable" as const }
+      }
+    }
+    const [result, financeModel] = await Promise.all([
+      loadConvexRowEnvelope(query),
+      loadLinuxFinanceReadModel(query),
+    ])
     if (generationRef.current !== generation) return false
+    setRemoteFinance({ profile, model: financeModel })
     if (result.status !== "loaded") return false
     setRemoteData({ profile, data: result.data, origin: "remote" })
-    return true
+    return financeReadSucceeded(financeModel)
   }, [])
 
   useEffect(() => {
@@ -318,6 +352,12 @@ export function AppStateProvider({
     stateOverride === "normal" && remoteData?.profile === activeProfile
       ? remoteData.origin
       : "fixture"
+  const financeModel =
+    stateOverride === "normal" && remoteFinance?.profile === activeProfile
+      ? remoteFinance.model
+      : stateOverride === "normal" && typeof window !== "undefined" && window.vogelVault
+        ? LOADING_FINANCE_MODEL
+        : EMPTY_FINANCE_MODEL
   const data = useMemo(
     () => optimisticEnvelope(baseData, mutationController, activeProfile, generation),
     [activeProfile, baseData, generation, mutationController],
@@ -467,6 +507,7 @@ export function AppStateProvider({
       navigate: setRoute,
       locked,
       setLocked,
+      currentMonth,
       selectedMonth,
       selectMonth: setSelectedMonth,
       stateOverride,
@@ -474,6 +515,7 @@ export function AppStateProvider({
       displayUnit,
       setDisplayUnit,
       data,
+      financeModel,
       dataOrigin,
       mutationCapabilities,
       pairingStatus,
@@ -491,11 +533,13 @@ export function AppStateProvider({
       switchTargets,
       route,
       locked,
+      currentMonth,
       selectedMonth,
       stateOverride,
       displayUnit,
       setDisplayUnit,
       data,
+      financeModel,
       dataOrigin,
       mutationCapabilities,
       pairingStatus,
@@ -510,6 +554,27 @@ export function AppStateProvider({
   )
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>
+}
+
+const EMPTY_FINANCE_MODEL: LinuxFinanceReadModel = {
+  finance: { status: "empty", value: null },
+  marketQuotes: { status: "empty", value: null },
+}
+
+const LOADING_FINANCE_MODEL: LinuxFinanceReadModel = {
+  finance: { status: "loading", value: null },
+  marketQuotes: { status: "loading", value: null },
+}
+
+const ERROR_FINANCE_MODEL: LinuxFinanceReadModel = {
+  finance: { status: "error", value: null, code: "invalid-request" },
+  marketQuotes: { status: "error", value: null, code: "invalid-request" },
+}
+
+/** Global refresh succeeds only after both finance reads reach a terminal non-error state. */
+export function financeReadSucceeded(model: LinuxFinanceReadModel): boolean {
+  return model.finance.status !== "error" && model.finance.status !== "loading" &&
+    model.marketQuotes.status !== "error" && model.marketQuotes.status !== "loading"
 }
 
 function mutationAdapterFromWindow(): RendererMutationAdapter | null {

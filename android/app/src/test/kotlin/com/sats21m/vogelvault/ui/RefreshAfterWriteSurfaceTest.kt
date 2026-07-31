@@ -25,6 +25,9 @@ import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.ConvexSyncTokenSource
+import com.sats21m.vogelvault.data.ConvexDeviceCredential
+import com.sats21m.vogelvault.data.ConvexDeviceCredentialSource
+import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.HttpPoster
 import com.sats21m.vogelvault.data.HttpTextResponse
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
@@ -174,6 +177,7 @@ class RefreshAfterWriteSurfaceTest {
                 onDismiss = {},
                 onSaved = {},
                 onWriteSucceeded = onWriteSucceeded,
+                onCredentialRejected = { null },
             )
         }
         val interact = {
@@ -190,7 +194,7 @@ class RefreshAfterWriteSurfaceTest {
                 REJECTION,
                 content,
                 interact,
-                rejectionText = "Task not added: Convex rejected the write (http 500).",
+                rejectionText = "Task not added (http 500)",
             ),
         )
     }
@@ -253,7 +257,9 @@ class RefreshAfterWriteSurfaceTest {
             )
         }
         val interact = {
-            compose.onNodeWithContentDescription(application.getString(R.string.todo_edit))
+            compose.onNodeWithContentDescription(
+                application.getString(R.string.todo_edit_named, todo.title),
+            )
                 .performScrollTo()
                 .performClick()
             compose.onNodeWithText(application.getString(R.string.todo_title))
@@ -376,7 +382,7 @@ class RefreshAfterWriteSurfaceTest {
                 REJECTION,
                 content,
                 interact,
-                rejectionText = "Task not added: Convex rejected the write (http 500).",
+                rejectionText = "Task not added (http 500)",
             ),
         )
     }
@@ -481,6 +487,14 @@ internal class RefreshAfterWritePoster : HttpPoster {
 
     override suspend fun postJson(url: String, body: String): HttpTextResponse {
         requestCount++
+        if (response.code == 200 && body.contains("tables:upsertTodoFromDevice")) {
+            val id = Regex("\\\"id\\\":\\\"([^\\\"]+)\\\"")
+                .find(body)?.groupValues?.get(1) ?: error("todo request had no id")
+            return HttpTextResponse(
+                200,
+                """{"status":"success","value":{"ok":true,"entityId":"$id","outcome":"updated"}}""",
+            )
+        }
         return response
     }
 }
@@ -489,6 +503,21 @@ internal class RefreshAfterWriteApplication : VaultApplication() {
     val poster = RefreshAfterWritePoster()
 
     override fun hasConvexWriteCredential(): Boolean = true
+    override fun hasTodoWriteCredential(): Boolean = true
+
+    override val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        TodoMutationGateway(
+            ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(
+                    ConvexConfig(deploymentUrl = "https://refresh-after-write-test.convex.cloud"),
+                ),
+                credentialSource = ConvexDeviceCredentialSource {
+                    ConvexDeviceCredential("test-device", "t".repeat(43))
+                },
+                http = poster,
+            ),
+        )
+    }
 
     override val convexMutationClient: ConvexMutationClient by lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,

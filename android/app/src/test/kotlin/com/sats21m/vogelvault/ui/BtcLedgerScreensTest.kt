@@ -4,6 +4,9 @@ import com.sats21m.vogelvault.domain.BtcBillPay
 import com.sats21m.vogelvault.domain.BtcBuy
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.MarketQuote
+import com.sats21m.vogelvault.domain.MarketQuoteStatus
+import com.sats21m.vogelvault.domain.MarketSymbol
 import com.sats21m.vogelvault.domain.netWorthScopeFor
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -36,6 +39,7 @@ class BtcLedgerScreensTest {
         assertEquals(listOf(adultBuy, childBuy), summary.rows)
         assertEquals(125_000_000L, summary.totalSats)
         assertEquals(8_000_200L, summary.totalUsdCents)
+        assertEquals(6_400_160L, summary.averageExecutionPriceCents)
         assertEquals(
             listOf(adultBuy),
             allRows.netWorthScopeFor(FamilyMember.RACHEL),
@@ -80,6 +84,25 @@ class BtcLedgerScreensTest {
         assertEquals("-$1,234.56", formatBtcBillPayAmount(payment, DisplayUnit.USD))
         assertEquals("-0.01500000 BTC", formatBtcBillPayAmount(payment, DisplayUnit.BTC))
         assertEquals("-1 500 000 sats", formatBtcBillPayAmount(payment, DisplayUnit.SATS))
+        assertEquals("$0.99", formatBtcBillPayFee(99L, DisplayUnit.USD, null))
+        assertEquals(
+            "990 sats",
+            formatBtcBillPayFee(
+                99L,
+                DisplayUnit.SATS,
+                MarketQuote(
+                    MarketSymbol.BTC,
+                    10_000_000L,
+                    "market adapter",
+                    "2026-07-03T12:00:00Z",
+                    MarketQuoteStatus.LIVE,
+                ),
+            ),
+        )
+        assertEquals(
+            com.sats21m.vogelvault.domain.Money.PRICE_UNAVAILABLE,
+            formatBtcBillPayFee(99L, DisplayUnit.BTC, null),
+        )
     }
 
     @Test
@@ -100,6 +123,40 @@ class BtcLedgerScreensTest {
         assertEquals(
             emptyList(),
             btcBillPaysScreenSummary(listOf(adultPayment), FamilyMember.MADDOX).rows,
+        )
+    }
+
+    @Test
+    fun `bill pay arithmetic overflow is unavailable instead of throwing`() {
+        val extreme = BtcBillPay(
+            id = "extreme",
+            date = "2026-07-03",
+            merchant = "Boundary",
+            category = "Bills",
+            amountUsdCents = Long.MIN_VALUE,
+            btcSpentSats = Long.MIN_VALUE,
+            feeUsdCents = Long.MAX_VALUE,
+            platform = null,
+            note = null,
+            owner = FamilyMember.VICTOR,
+        )
+        assertEquals(
+            com.sats21m.vogelvault.domain.Money.PRICE_UNAVAILABLE,
+            formatBtcBillPayAmount(extreme, DisplayUnit.USD),
+        )
+        assertEquals(
+            com.sats21m.vogelvault.domain.Money.PRICE_UNAVAILABLE,
+            formatBtcBillPayAmount(extreme, DisplayUnit.SATS),
+        )
+
+        val overflow = btcBillPaysScreenSummary(
+            listOf(extreme.copy(amountUsdCents = Long.MAX_VALUE), extreme.copy(id = "two", amountUsdCents = 1L)),
+            FamilyMember.VICTOR,
+        )
+        assertEquals(null, overflow.totalUsdCents)
+        assertEquals(
+            com.sats21m.vogelvault.domain.Money.PRICE_UNAVAILABLE,
+            formatBtcBillPayTotal(overflow, DisplayUnit.USD),
         )
     }
 }

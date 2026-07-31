@@ -2,6 +2,7 @@ package com.sats21m.vogelvault.domain
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 /**
  * Money is Decimal, never Double (AGENTS.md). These cases mirror the TypeScript
@@ -69,6 +70,18 @@ class MoneyTest {
     }
 
     @Test
+    fun `formats Long MIN exactly in BTC SATS and USD`() {
+        assertEquals("-92233720368.54775808", Money.formatMinorUnits(Long.MIN_VALUE, 8))
+        assertEquals("-92233720368.54775808 BTC", Money.formatBtc(Long.MIN_VALUE))
+        assertEquals("-9 223 372 036 854 775 808 sats", Money.formatSats(Long.MIN_VALUE))
+        assertEquals("-$92,233,720,368,547,758.08", Money.formatUsd(Long.MIN_VALUE))
+        assertEquals(
+            "-$92,233,720,368,547,758.08",
+            Money.formatBitcoin(Long.MIN_VALUE, DisplayUnit.USD, Money.SATS_PER_BTC),
+        )
+    }
+
+    @Test
     fun `display unit names match the Apple client and survive persistence`() {
         assertEquals(listOf("btc", "sats", "usd"), DisplayUnit.entries.map { it.storageKey })
         assertEquals(listOf("BTC", "SATS", "USD"), DisplayUnit.entries.map { it.label })
@@ -115,6 +128,26 @@ class MoneyTest {
         assertEquals(0L, Money.satsToUsdCents(0L, 10_000_000L))
         assertEquals(654_321L, Money.satsToUsdCents(Money.SATS_PER_BTC, 654_321L))
         assertEquals(-10_000_000L, Money.satsToUsdCents(-Money.SATS_PER_BTC, 10_000_000L))
+    }
+
+    @Test
+    fun `conversion overflow fails instead of wrapping`() {
+        assertFailsWith<ArithmeticException> {
+            Money.satsToUsdCents(Long.MAX_VALUE, Long.MAX_VALUE)
+        }
+        assertFailsWith<ArithmeticException> {
+            Money.usdCentsToSats(Long.MAX_VALUE, 1L)
+        }
+        assertFailsWith<ArithmeticException> {
+            Money.sharesToValueCents("999999999999.999999999999", 10_000_000L)
+        }
+    }
+
+    @Test
+    fun `share quantities reject overbound values before arithmetic`() {
+        assertFailsWith<IllegalArgumentException> {
+            Money.sharesToValueCents("1000000000000", 1L)
+        }
     }
 
     @Test

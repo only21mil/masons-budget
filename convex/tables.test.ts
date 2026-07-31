@@ -1840,6 +1840,36 @@ describe("public Linux/Android read contract", () => {
     expect(mason.document?.retirementTotalCents).toBeUndefined();
   });
 
+  it("fails the whole finance snapshot when a schema-valid stored share string is invalid", async () => {
+    await t.run(async (ctx) => {
+      const document = await ctx.db
+        .query("financeDocuments")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "finances"))
+        .unique();
+      if (!document) throw new Error("missing seeded finance document");
+      const accounts = document.accounts.map((account, accountIndex) =>
+        accountIndex === 0
+          ? {
+              ...account,
+              holdings: account.holdings.map((holding, holdingIndex) =>
+                holdingIndex === 0
+                  ? { ...holding, sharesDecimal: "1e3" }
+                  : holding,
+              ),
+            }
+          : account,
+      );
+      await ctx.db.patch(document._id, { accounts });
+    });
+
+    await expect(
+      t.query(fn.getFinanceDocument, {
+        viewer: "victor",
+        scope: "netWorth",
+      }),
+    ).rejects.toThrow(/canonical share quantity/);
+  });
+
   it("lists Bitcoin bill payments and includes them in row counts", async () => {
     const response = await t.query(fn.listBtcBillPays, {
       viewer: "victor",

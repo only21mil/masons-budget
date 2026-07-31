@@ -328,8 +328,12 @@ private fun <T> liveSlice(value: T, source: String, stamp: Long): Slice<T> =
 private fun <T> emptySlice(value: T, source: String): Slice<T> =
     Slice(Freshness.EMPTY, value, null, source)
 
-private fun <T> ConvexResult<*>.failureSlice(value: T, source: String): Slice<T> {
-    val failure = when (this) {
+private fun <T> ConvexResult<*>.failureSlice(value: T, source: String): Slice<T> =
+    errorSlice(value, source, toRowReadFailure())
+
+/** Shared non-secret failure taxonomy for row and finance reads. */
+internal fun ConvexResult<*>.toRowReadFailure(): RowReadFailure =
+    when (this) {
         ConvexResult.Unauthorized -> RowReadFailure.UNAUTHORIZED
         ConvexResult.Disabled -> RowReadFailure.DISABLED
         ConvexResult.NotConfigured -> RowReadFailure.NOT_CONFIGURED
@@ -338,8 +342,6 @@ private fun <T> ConvexResult<*>.failureSlice(value: T, source: String): Slice<T>
         ConvexResult.Missing,
         -> RowReadFailure.MALFORMED_PAYLOAD
     }
-    return errorSlice(value, source, failure)
-}
 
 private fun String.toRowReadFailure(): RowReadFailure =
     if (

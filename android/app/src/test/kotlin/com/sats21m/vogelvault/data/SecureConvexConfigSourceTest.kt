@@ -83,7 +83,15 @@ class SecureConvexConfigSourceTest {
                 http = poster,
             )
 
-        val result = runBlocking { client.mutate(ConvexMutation.DeleteTodo("todo-1")) }
+        val result = runBlocking {
+            client.mutate(
+                ConvexMutation.UpsertBudgetCategory(
+                    viewer = com.sats21m.vogelvault.domain.FamilyMember.VICTOR,
+                    month = "2026-07",
+                    category = BudgetCategoryInput("Food", 1L),
+                ),
+            )
+        }
 
         assertTrue(result.isOk)
         val body = Json.parseToJsonElement(poster.body).jsonObject
@@ -131,6 +139,36 @@ class SecureConvexConfigSourceTest {
         assertEquals(ReadReadiness.READY, source.current().readiness)
         assertEquals(readToken, source.current().readTokenOrNull())
         assertFalse(source.hasSyncToken())
+    }
+
+    @Test
+    fun `paired device credential is encrypted atomic and independent of sync token`() {
+        val device = ConvexDeviceCredential("android-device", "d".repeat(43))
+        val syncToken = "vv-sync-${UUID.randomUUID()}"
+        source.updateSyncToken(syncToken)
+        source.updateDeviceCredential(device)
+
+        assertEquals(device, SecureConvexDeviceCredentialSource(source).currentDeviceCredential())
+        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).all.values.forEach { stored ->
+            assertNotEquals(device.deviceId, stored)
+            assertNotEquals(device.deviceToken, stored)
+        }
+
+        source.clearDeviceCredential()
+        assertFalse(source.hasDeviceCredential())
+        assertEquals(syncToken, SecureConvexSyncTokenSource(source).currentSyncToken())
+    }
+
+    @Test
+    fun `partial or tampered paired credential fails closed`() {
+        source.updateDeviceCredential(ConvexDeviceCredential("android-device", "d".repeat(43)))
+        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+            .edit()
+            .remove("device_token")
+            .commit()
+
+        assertFalse(source.hasDeviceCredential())
+        assertNull(SecureConvexDeviceCredentialSource(source).currentDeviceCredential())
     }
 
     @Test

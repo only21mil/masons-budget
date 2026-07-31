@@ -47,16 +47,47 @@ internal sealed class ConvexMutation(val path: String) {
         )
     }
 
-    data class UpsertTodo(val todo: JsonObject) : ConvexMutation("tables:upsertTodo") {
-        override fun arguments(): JsonObject = jsonObject("todo" to todo)
+    data class UpsertTodoFromDevice(
+        val owner: FamilyMember,
+        val todo: JsonObject,
+        val baseUpdatedAtMs: Long?,
+    ) : ConvexMutation("tables:upsertTodoFromDevice") {
+        override fun arguments(): JsonObject = buildMap<String, JsonElement> {
+            put("owner", JsonPrimitive(owner.key))
+            put("sourceFile", JsonPrimitive("todos"))
+            put("todo", todo)
+            baseUpdatedAtMs?.let { put("baseUpdatedAtMs", JsonPrimitive(it)) }
+        }.let(::JsonObject)
     }
 
-    data class DeleteTodo(val todoId: String) : ConvexMutation("tables:deleteTodo") {
+    data class DeleteTodoFromDevice(
+        val todoId: String,
+        val owner: FamilyMember,
+        val baseUpdatedAtMs: Long,
+    ) : ConvexMutation("tables:deleteTodoFromDevice") {
         init {
             require(todoId.isNotBlank()) { "todo id must not be blank" }
         }
 
-        override fun arguments(): JsonObject = jsonObject("todoId" to JsonPrimitive(todoId))
+        override fun arguments(): JsonObject = jsonObject(
+            "entityId" to JsonPrimitive(todoId),
+            "owner" to JsonPrimitive(owner.key),
+            "sourceFile" to JsonPrimitive("todos"),
+            "baseUpdatedAtMs" to JsonPrimitive(baseUpdatedAtMs),
+        )
+    }
+
+    data class RestoreTodoFromDevice(
+        val owner: FamilyMember,
+        val todo: JsonObject,
+        val baseUpdatedAtMs: Long,
+    ) : ConvexMutation("tables:restoreTodoFromDevice") {
+        override fun arguments(): JsonObject = jsonObject(
+            "owner" to JsonPrimitive(owner.key),
+            "sourceFile" to JsonPrimitive("todos"),
+            "todo" to todo,
+            "baseUpdatedAtMs" to JsonPrimitive(baseUpdatedAtMs),
+        )
     }
 
     data class UpsertBtcBuy(
@@ -226,7 +257,7 @@ internal data class BudgetCategoryInput(
     }.let(::JsonObject)
 }
 
-private fun Long.toConvexInt64(): JsonObject {
+internal fun Long.toConvexInt64(): JsonObject {
     var remaining = this
     val bytes = ByteArray(Long.SIZE_BYTES) {
         (remaining and 0xffL).toByte().also { remaining = remaining shr Byte.SIZE_BITS }

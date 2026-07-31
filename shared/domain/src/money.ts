@@ -12,7 +12,36 @@ export type Cents = bigint
 export type Sats = bigint
 
 export const SATS_PER_BTC = 100_000_000n
+export const PRICE_UNAVAILABLE = "Price unavailable"
+export const SHARES_DECIMAL_MAX_INTEGER_DIGITS = 12
+export const SHARES_DECIMAL_MAX_SCALE = 12
+export const SHARES_DECIMAL_MAX_PRECISION = 24
+export const SHARES_DECIMAL_MAX_LENGTH = 25
 const MAX_SAFE_MINOR_UNITS = BigInt(Number.MAX_SAFE_INTEGER)
+const SHARES_DECIMAL_PATTERN = /^(0|[1-9]\d*)(?:\.(\d+))?$/
+
+export const DISPLAY_UNITS = [
+  { storageKey: "btc", label: "BTC" },
+  { storageKey: "sats", label: "SATS" },
+  { storageKey: "usd", label: "USD" },
+] as const
+
+export type DisplayUnit = (typeof DISPLAY_UNITS)[number]["storageKey"]
+export type DisplaySurface = "bitcoin" | "net-worth" | "retirement" | "budget"
+
+export function displayUnitFromStorageKey(value: unknown): DisplayUnit {
+  return DISPLAY_UNITS.some((unit) => unit.storageKey === value)
+    ? value as DisplayUnit
+    : "btc"
+}
+
+/** Budget amounts remain USD regardless of the persisted Bitcoin preference. */
+export function displayUnitForSurface(
+  surface: DisplaySurface,
+  preferredUnit: DisplayUnit,
+): DisplayUnit {
+  return surface === "budget" ? "usd" : preferredUnit
+}
 
 /**
  * Parse a decimal value into integer minor units without going through Number.
@@ -156,9 +185,77 @@ export function formatBtc(sats: Sats): string {
 export function satsToUsdCents(sats: Sats, btcPriceCents: Cents): Cents {
   // (sats / 1e8) * price → integer math, rounded half away from zero.
   const numerator = sats * btcPriceCents
-  const half = SATS_PER_BTC / 2n
-  if (numerator >= 0n) return (numerator + half) / SATS_PER_BTC
-  return -((-numerator + half) / SATS_PER_BTC)
+  return divideRoundedHalfAwayFromZero(numerator, SATS_PER_BTC)
+}
+
+/**
+ * Convert USD cents to satoshis at an integer-cent BTC price.
+ *
+ * A missing or non-positive market price is not zero-valued evidence, so it is
+ * rejected rather than converted to a confident zero.
+ */
+export function usdCentsToSats(cents: Cents, btcPriceCents: Cents): Sats {
+  if (btcPriceCents <= 0n) {
+    throw new RangeError(`BTC price must be positive integer cents: ${btcPriceCents}`)
+  }
+  return divideRoundedHalfAwayFromZero(cents * SATS_PER_BTC, btcPriceCents)
+}
+
+/**
+ * Value an exact decimal share quantity at an integer-cent per-share price.
+ *
+ * `sharesDecimal` is the Convex wire representation. Parsing it lexically keeps
+ * fractional shares out of IEEE-754 arithmetic and rounds the final cent half
+ * away from zero, matching Swift Decimal and Kotlin BigDecimal.
+ */
+export function assertSharesDecimal(value: unknown): string {
+  if (typeof value !== "string" || value.length > SHARES_DECIMAL_MAX_LENGTH) {
+    throw new RangeError(`Not a canonical share quantity: ${JSON.stringify(value)}`)
+  }
+  const match = SHARES_DECIMAL_PATTERN.exec(value)
+  if (!match) {
+    throw new RangeError(`Not a canonical share quantity: ${JSON.stringify(value)}`)
+  }
+  const whole = match[1]!
+  const fraction = match[2] ?? ""
+  if (
+    whole.length > SHARES_DECIMAL_MAX_INTEGER_DIGITS ||
+    fraction.length > SHARES_DECIMAL_MAX_SCALE ||
+    whole.length + fraction.length > SHARES_DECIMAL_MAX_PRECISION
+  ) {
+    throw new RangeError(`Share quantity exceeds bounds: ${JSON.stringify(value)}`)
+  }
+  return value
+}
+
+export function sharesToValueCents(sharesDecimal: string, pricePerShareCents: Cents): Cents {
+  const raw = assertSharesDecimal(sharesDecimal)
+  const [whole = "0", fraction = ""] = raw.split(".")
+  const magnitude = BigInt(`${whole}${fraction}`)
+  return divideRoundedHalfAwayFromZero(
+    magnitude * pricePerShareCents,
+    10n ** BigInt(fraction.length),
+  )
+}
+
+/** Format exact satoshis using the shared Apple/Android/Linux unit contract. */
+export function formatBitcoin(
+  sats: Sats,
+  unit: DisplayUnit,
+  btcPriceCents?: Cents | null,
+): string {
+  switch (unit) {
+    case "btc":
+      return formatBtc(sats)
+    case "sats":
+      return formatSats(sats)
+    case "usd":
+      return btcPriceCents !== null &&
+        btcPriceCents !== undefined &&
+        btcPriceCents > 0n
+        ? formatUsd(satsToUsdCents(sats, btcPriceCents))
+        : PRICE_UNAVAILABLE
+  }
 }
 
 export function sum(values: Iterable<bigint>): bigint {
@@ -171,4 +268,13 @@ export function sum(values: Iterable<bigint>): bigint {
 export function basisPoints(part: bigint, whole: bigint): number {
   if (whole === 0n) return 0
   return Number((part * 10_000n) / whole)
+}
+
+function divideRoundedHalfAwayFromZero(numerator: bigint, positiveDenominator: bigint): bigint {
+  if (positiveDenominator <= 0n) {
+    throw new RangeError(`Denominator must be positive: ${positiveDenominator}`)
+  }
+  const magnitude = numerator < 0n ? -numerator : numerator
+  const rounded = (magnitude + positiveDenominator / 2n) / positiveDenominator
+  return numerator < 0n ? -rounded : rounded
 }

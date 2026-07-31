@@ -8,11 +8,13 @@
 // match the ones the preload actually exposes.
 
 import type {
+  VogelVaultMember,
   VogelVaultMutationRequest,
   VogelVaultMutationResult,
   VogelVaultPairingRequest,
   VogelVaultPairingResult,
   VogelVaultPairingStatus,
+  VogelVaultReadProfileResult,
   VogelVaultRowRequest,
   VogelVaultRowResult,
   VogelVaultUnpairResult,
@@ -91,6 +93,8 @@ declare global {
       getRemoteSnapshot(): Promise<VogelVaultRemoteSnapshot>
       /** Closed row/document request union; main re-validates every field. */
       queryConvexRows(request: VogelVaultRowRequest): Promise<VogelVaultRowResult>
+      /** Transition the main-owned finance-read profile under the family switch rules. */
+      setReadProfile(profile: VogelVaultMember): Promise<VogelVaultReadProfileResult>
       /** Claim a one-time pairing without exposing the resulting credential. */
       pairDevice(request: VogelVaultPairingRequest): Promise<VogelVaultPairingResult>
       /** Credential-free local pairing state and closed mutation capabilities. */

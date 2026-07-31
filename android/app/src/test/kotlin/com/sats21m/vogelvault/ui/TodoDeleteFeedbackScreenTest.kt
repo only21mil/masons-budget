@@ -12,8 +12,9 @@ import androidx.compose.ui.test.performScrollTo
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.data.ConvexConfig
-import com.sats21m.vogelvault.data.ConvexMutationClient
-import com.sats21m.vogelvault.data.ConvexSyncTokenSource
+import com.sats21m.vogelvault.data.ConvexDeviceCredential
+import com.sats21m.vogelvault.data.ConvexDeviceCredentialSource
+import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.HttpPoster
 import com.sats21m.vogelvault.data.HttpTextResponse
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
@@ -22,7 +23,6 @@ import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
-import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.channels.Channel
@@ -141,15 +141,15 @@ class TodoDeleteFeedbackScreenTest {
     }
 
     @Test
-    fun `a successful delete still confirms after the undo window has closed`() {
+    fun `a slow successful delete starts a full undo window at acceptance`() {
         showToday()
         deleteTheTodo()
 
-        // The server is slower than the six-second undo window: the answer below
-        // arrives after the window has closed.
+        // The server is slower than six seconds. That time must not consume the
+        // post-acceptance Undo session.
         screenNowMillis += TODO_UNDO_WINDOW_MILLIS + 1_000
 
-        application.poster.answer(HttpTextResponse(200, """{"status":"success","value":"deleted"}"""))
+        application.poster.answer(deleteSuccess())
         settle()
 
         assertEquals(
@@ -158,9 +158,9 @@ class TodoDeleteFeedbackScreenTest {
             "a slow but successful delete announced nothing at all",
         )
         assertEquals(
-            0,
+            1,
             nodesWithText(undoLabel),
-            "an expired undo window still offered Undo",
+            "network latency consumed the post-acceptance Undo window",
         )
         assertEquals(
             0,
@@ -171,28 +171,28 @@ class TodoDeleteFeedbackScreenTest {
     }
 
     @Test
-    fun `a successful undo refreshes after both accepted writes`() {
+    fun `a successful undo uses the safe restore route and refreshes both writes`() {
         showToday()
         deleteTheTodo()
 
-        application.poster.answer(HttpTextResponse(200, """{"status":"success","value":"deleted"}"""))
+        application.poster.answer(deleteSuccess())
         settle()
         assertEquals(1, refreshCount, "the accepted delete did not refresh")
 
         compose.onNodeWithText(undoLabel).performClick()
         settle()
-        assertEquals(2, application.poster.requestCount, "Undo never reached the write transport")
-
-        application.poster.answer(HttpTextResponse(200, """{"status":"success","value":"restored"}"""))
+        assertEquals(2, application.poster.requestCount)
+        application.poster.answer(restoreSuccess())
         settle()
-
-        assertEquals(2, refreshCount, "the accepted restore did not refresh")
-        assertEquals(1, nodesWithText(todo.title), "the restored task did not return")
+        assertEquals(2, refreshCount)
+        assertEquals(1, nodesWithText(todo.title))
     }
 
     private fun deleteTheTodo() {
         compose
-            .onNodeWithContentDescription(application.getString(R.string.todo_delete))
+            .onNodeWithContentDescription(
+                application.getString(R.string.todo_delete_named, todo.title),
+            )
             .performScrollTo()
             .performClick()
         settle()
@@ -200,6 +200,16 @@ class TodoDeleteFeedbackScreenTest {
 
     private fun nodesWithText(text: String): Int =
         compose.onAllNodesWithText(text).fetchSemanticsNodes().size
+
+    private fun deleteSuccess(): HttpTextResponse = HttpTextResponse(
+        200,
+        """{"status":"success","value":{"ok":true,"entityId":"${todo.id}","removed":true}}""",
+    )
+
+    private fun restoreSuccess(): HttpTextResponse = HttpTextResponse(
+        200,
+        """{"status":"success","value":{"ok":true,"entityId":"${todo.id}","updatedAtMs":1800000000001}}""",
+    )
 
     private fun showToday() {
         val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
@@ -266,16 +276,18 @@ class GatedPoster : HttpPoster {
 class GatedTodoWriteApplication : VaultApplication() {
     val poster = GatedPoster()
 
-    override fun hasConvexWriteCredential(): Boolean = true
+    override fun hasTodoWriteCredential(): Boolean = true
 
     override val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         TodoMutationGateway(
-            ConvexMutationClient(
+            ConvexDeviceMutationClient(
                 configSource = MutableConvexConfigSource(
                     ConvexConfig(deploymentUrl = "https://gated-todo-test.convex.cloud"),
                 ),
                 // Invented per run, so no string here can be mistaken for a real one.
-                syncTokenSource = ConvexSyncTokenSource { "vv-test-" + UUID.randomUUID() },
+                credentialSource = ConvexDeviceCredentialSource {
+                    ConvexDeviceCredential("test-device", "t".repeat(43))
+                },
                 http = poster,
             ),
         )

@@ -1,6 +1,8 @@
 import type { FamilyMember } from "@vogel-vault/domain/family"
 import { visibleTo } from "@vogel-vault/domain/family"
+import { type MarketQuote, usableMarketQuote } from "@vogel-vault/domain/finance"
 import {
+  SATS_PER_BTC,
   formatBtc,
   formatSats,
   formatUsd,
@@ -17,6 +19,13 @@ export const DISPLAY_UNITS = [
 export type DisplayUnit = (typeof DISPLAY_UNITS)[number]["storageKey"]
 
 export const PRICE_UNAVAILABLE = "Price unavailable"
+
+export interface DisplayAmount {
+  /** Exact ledger quantity, when the source records sats. */
+  readonly sats?: bigint | null
+  /** Exact ledger quantity, when the source records USD cents. */
+  readonly usdCents?: bigint | null
+}
 
 export interface RecordedBitcoinPrice {
   readonly cents: bigint
@@ -52,6 +61,62 @@ export function formatBitcoin(
         ? formatUsd(satsToUsdCents(sats, btcPriceCents))
         : PRICE_UNAVAILABLE
   }
+}
+
+/**
+ * The renderer's cross-unit quote contract.
+ *
+ * Only the operational MarketQuote snapshot may convert a value whose native
+ * unit differs from the selected unit. The shared domain validator guarantees
+ * that returned quotes are live or explicitly stale with a positive price.
+ * Balance ratios, buys, bill pays, and transaction arithmetic are never quotes.
+ */
+export function availableBtcQuote(
+  quotes: readonly MarketQuote[],
+): MarketQuote | null {
+  return usableMarketQuote(quotes, "BTC")
+}
+
+/** Convert cents to sats with the same half-away-from-zero rule as sats->USD. */
+export function usdCentsToSats(
+  usdCents: bigint,
+  btcPriceCents: bigint,
+): bigint | null {
+  if (btcPriceCents <= 0n) return null
+  const numerator = usdCents * SATS_PER_BTC
+  const half = btcPriceCents / 2n
+  return numerator >= 0n
+    ? (numerator + half) / btcPriceCents
+    : -((-numerator + half) / btcPriceCents)
+}
+
+/**
+ * Format an amount in the selected unit, preferring the source's exact native
+ * value and converting only through the explicit quote contract.
+ */
+export function formatDisplayAmount(
+  amount: DisplayAmount,
+  unit: DisplayUnit,
+  btcPriceCents: bigint | null,
+): string {
+  if (unit === "usd") {
+    if (amount.usdCents !== null && amount.usdCents !== undefined) {
+      return formatUsd(amount.usdCents)
+    }
+    return amount.sats !== null && amount.sats !== undefined && btcPriceCents !== null
+      ? formatUsd(satsToUsdCents(amount.sats, btcPriceCents))
+      : PRICE_UNAVAILABLE
+  }
+
+  let sats = amount.sats
+  if ((sats === null || sats === undefined) &&
+      amount.usdCents !== null &&
+      amount.usdCents !== undefined &&
+      btcPriceCents !== null) {
+    sats = usdCentsToSats(amount.usdCents, btcPriceCents)
+  }
+  if (sats === null || sats === undefined) return PRICE_UNAVAILABLE
+  return unit === "btc" ? formatBtc(sats) : formatSats(sats)
 }
 
 /**

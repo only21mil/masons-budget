@@ -108,10 +108,10 @@ class FinancialScreenValuesTest {
         val balance = Fixtures.btcBalanceWithoutFiatValuation()
         val account = balance.accounts.single()
 
-        assertEquals(Money.PRICE_UNAVAILABLE, formatCanonicalBalance(balance, DisplayUnit.USD, 0L))
-        assertEquals(Money.PRICE_UNAVAILABLE, formatCanonicalAccount(account, DisplayUnit.USD, 0L))
-        assertEquals("5.41782856 BTC", formatCanonicalBalance(balance, DisplayUnit.BTC, 0L))
-        assertEquals("541 782 856 sats", formatCanonicalBalance(balance, DisplayUnit.SATS, 0L))
+        assertEquals(Money.PRICE_UNAVAILABLE, formatCanonicalBalance(balance, DisplayUnit.USD))
+        assertEquals(Money.PRICE_UNAVAILABLE, formatCanonicalAccount(account, DisplayUnit.USD))
+        assertEquals("5.41782856 BTC", formatCanonicalBalance(balance, DisplayUnit.BTC))
+        assertEquals("541 782 856 sats", formatCanonicalBalance(balance, DisplayUnit.SATS))
         assertTrue(balanceSnapshotBasis(balance).startsWith("Balance snapshot"))
         assertFalse(balanceSnapshotBasis(balance).contains("quote", ignoreCase = true))
     }
@@ -131,7 +131,7 @@ class FinancialScreenValuesTest {
 
         assertEquals(
             "\$0.00",
-            formatCanonicalBalance(balance(0L, FiatValuation(0L)), DisplayUnit.USD, 0L),
+            formatCanonicalBalance(balance(0L, FiatValuation(0L)), DisplayUnit.USD),
         )
         assertEquals(
             "\$0.00",
@@ -147,7 +147,6 @@ class FinancialScreenValuesTest {
                     ),
                 ),
                 DisplayUnit.USD,
-                0L,
             ),
         )
     }

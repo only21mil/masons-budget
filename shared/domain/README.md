@@ -4,13 +4,17 @@ This directory is the language-neutral contract for every Vogel Vault client.
 Client authors must read this file before adding or replacing a server-response
 decoder. The executable vectors live in
 [`fixtures/visibility-cases.json`](fixtures/visibility-cases.json).
+Finance, quote, exact valuation, net-worth, budget-health, and category
+drill-down parity is pinned by
+[`fixtures/finance-market-cases.json`](fixtures/finance-market-cases.json).
 
 ## Current data boundary
 
 Convex is the system of record. Shipped clients read the Convex row tables over
 the HTTP API with a runtime-injected read token. Row decoders preserve the field
-aliases still present in stored records, but there is no live upstream service
-or separate sync system.
+aliases still present in stored records. A separate operational market-quote
+cache acquires fixed BTC, VOO, and IBIT prices through an internal Convex action;
+clients do not synchronize quote caches device-to-device.
 
 ## Server responses are open objects
 
@@ -78,3 +82,36 @@ and adult refund. Decoder and domain parity suites must run all four cases.
 
 `canSee` is wider than `sharesNetWorth`: adults may see child data, but adult net
 worth includes adults only. These rules remain pinned by the same fixture.
+
+## Retirement data and market quotes
+
+Convex finance accounts, holdings, contribution amounts, and contribution days
+are synchronized household data. Contribution schedules are projections and
+labels; they do not instruct a client to place a market order.
+
+BTC, VOO, and IBIT quotes are a separate operational snapshot. Each observation
+has integer-cent price evidence, source, fetch time, and an explicit
+`live | stale | unavailable` status. The live Convex boundary and its fixed,
+bounded upstream acquisition path are documented in
+[`../../docs/market-quote-boundary.md`](../../docs/market-quote-boundary.md).
+
+Net worth uses the canonical scoped BTC satoshi balance plus net-worth-scoped
+finance accounts. Holdings are valued once; the document-level retirement
+projection is never added on top of the same accounts.
+
+Quote fetch times use canonical UTC ISO-8601: `YYYY-MM-DDTHH:mm:ssZ` or the
+same form with exactly three millisecond digits. Live and stale observations
+must carry a real timestamp in that form; calendar rollovers, offsets, and
+other normalized spellings are rejected. Unavailable observations remain in
+valuation results so clients can distinguish them from a snapshot that has not
+loaded.
+
+The shared display contract persists `btc | sats | usd`, defaults unknown keys
+to `btc`, and keeps the Budget surface in USD regardless of that preference.
+Clients should import these helpers rather than repeat conversion formulas.
+
+`FinanceParityTest` reads `fixtures/finance-market-cases.json` outside the
+Android Gradle root. Integration must retain that exact path in
+`sharedDomainParityFixtures` in `android/domain/build.gradle.kts` so fixture
+edits invalidate `:domain:test`; the verification task must remain a dependency
+of the domain test task.

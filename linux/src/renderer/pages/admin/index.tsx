@@ -181,8 +181,31 @@ function VisibilityMatrix() {
 // ── Sync Health ─────────────────────────────────────────────────────────────
 
 function SyncHealthPage() {
-  const { data } = useAppState()
+  const { data, financeModel, stateOverride } = useAppState()
   const readsRows = data.transactions.source.startsWith("Convex row tables")
+  const forcedState = stateOverride === "normal" || stateOverride === "demo"
+    ? null
+    : stateOverride
+  const financeStatus: Freshness = forcedState ?? financeModel.finance.status
+  const quoteStatus: Freshness = forcedState ?? (
+    financeModel.marketQuotes.status === "live"
+      ? financeModel.marketQuotes.value.quotes.some((quote) => quote.status !== "live")
+        ? "stale"
+        : "live"
+      : financeModel.marketQuotes.status
+  )
+  const financeUpdatedAt = financeModel.finance.status === "live"
+    ? financeModel.finance.value.updatedAtMs
+    : null
+  const quoteUpdatedAt = financeModel.marketQuotes.status === "live"
+    ? financeModel.marketQuotes.value.quotes.some((quote) => quote.fetchedAt === null)
+      ? null
+      : Math.min(
+          ...financeModel.marketQuotes.value.quotes
+            .map((quote) => Date.parse(quote.fetchedAt ?? "")),
+        )
+    : null
+  const financeReadsFailed = financeStatus === "error" || quoteStatus === "error"
 
   const slices = [
     { name: "transactions", slice: data.transactions },
@@ -191,17 +214,43 @@ function SyncHealthPage() {
     { name: "bitcoin-buys", slice: data.btcBuys },
     { name: "bitcoin-bill-pays", slice: data.billPays },
     { name: "todos", slice: data.todos },
+    {
+      name: "finance-document",
+      slice: {
+        status: financeStatus,
+        updatedAt: forcedState ? null : financeUpdatedAt,
+        source: financeModel.finance.status === "live"
+          ? "Convex tables:getFinanceDocument"
+          : "Authenticated finance document unavailable",
+      },
+    },
+    {
+      name: "market-quotes",
+      slice: {
+        status: quoteStatus,
+        updatedAt: forcedState ? null : quoteUpdatedAt,
+        source: financeModel.marketQuotes.status === "live"
+          ? "Convex marketQuotes:getSnapshot"
+          : "Authenticated market quote snapshot unavailable",
+      },
+    },
   ]
 
   return (
     <>
       <PageHeader title="Sync Health" subtitle="Where every number came from, and when" />
       <StatusBanner
-        tone={readsRows ? "info" : "warning"}
-        title={readsRows ? "Runtime-gated Convex row reads are active" : "Sanitized fallback data is active"}
+        tone={readsRows && !financeReadsFailed ? "info" : "warning"}
+        title={readsRows
+          ? financeReadsFailed
+            ? "Some authenticated Convex reads failed"
+            : "Runtime-gated Convex row reads are active"
+          : "Sanitized fallback data is active"}
         detail={
           readsRows
-            ? "Every slice below came from Convex row tables over authenticated HTTP; the read token remains in the main process."
+            ? financeReadsFailed
+              ? "Ledger rows loaded, but the finance document or market quote snapshot failed. Global refresh remains incomplete."
+              : "Every slice below came from Convex row tables over authenticated HTTP; the read token remains in the main process."
             : "Configure authenticated reads from Convex row tables to replace the sanitized fixture envelope."
         }
       />

@@ -16,6 +16,7 @@ import {
   parseExactSats,
   stableId,
 } from "../data/mutations.ts"
+import type { MutationGate } from "../data/mutations.ts"
 import { localMutationError } from "./CrudControls.tsx"
 import { DialogFrame } from "./DialogFrame.tsx"
 import { Button, Field, Select, TextInput } from "./primitives.tsx"
@@ -32,18 +33,28 @@ function today(): string {
 function FormFooter({
   formId,
   busy,
+  blocked,
+  blockedReasonId,
   onCancel,
   verb,
 }: {
   formId: string
   busy: boolean
+  blocked?: boolean
+  blockedReasonId?: string
   onCancel: () => void
   verb: string
 }) {
   return (
     <>
       <Button onClick={onCancel} disabled={busy}>Cancel</Button>
-      <Button variant="primary" type="submit" form={formId} disabled={busy}>
+      <Button
+        variant="primary"
+        type="submit"
+        form={formId}
+        disabled={busy || blocked}
+        aria-describedby={blocked ? blockedReasonId : undefined}
+      >
         {busy ? "Saving…" : verb}
       </Button>
     </>
@@ -57,14 +68,17 @@ function ErrorSummary({ error }: { error: string | null }) {
 export function TransactionFormDialog({
   open,
   transaction,
+  submissionGate,
   onClose,
 }: {
   open: boolean
   transaction: Transaction | null
+  submissionGate?: MutationGate
   onClose: () => void
 }) {
   const { activeProfile, submitMutation } = useAppState()
   const formId = useId()
+  const blockedReasonId = useId()
   const [id, setId] = useState(() => transaction?.id ?? stableId("transaction"))
   const [date, setDate] = useState(transaction?.date ?? today())
   const [merchant, setMerchant] = useState(transaction?.merchant ?? "")
@@ -98,6 +112,10 @@ export function TransactionFormDialog({
   }, [open, transaction])
 
   async function submit() {
+    if (submissionGate && !submissionGate.allowed) {
+      setError(submissionGate.reason ?? "Current live transaction rows are required before editing.")
+      return
+    }
     const cents = parseExactCents(amount)
     if (!merchant.trim() || !date || cents === null || cents <= 0n || !category.trim()) {
       setError("Enter a date, merchant, category, and a positive amount with at most two decimals.")
@@ -134,12 +152,26 @@ export function TransactionFormDialog({
       description="Stored amounts use exact cents. Purchases are positive; credits reduce spend."
       onClose={onClose}
       busy={busy}
-      footer={<FormFooter formId={formId} busy={busy} onCancel={onClose} verb="Save transaction" />}
+      footer={(
+        <FormFooter
+          formId={formId}
+          busy={busy}
+          blocked={submissionGate ? !submissionGate.allowed : false}
+          blockedReasonId={blockedReasonId}
+          onCancel={onClose}
+          verb="Save transaction"
+        />
+      )}
     >
       <form id={formId} className="vv-form-grid" onSubmit={(event) => {
         event.preventDefault()
         void submit()
       }}>
+        {submissionGate && !submissionGate.allowed ? (
+          <p id={blockedReasonId} className="vv-form-error" role="status">
+            {submissionGate.reason ?? "Current live transaction rows are required before editing."}
+          </p>
+        ) : null}
         <ErrorSummary error={error} />
         <Field label="Record ID" hint="Stable and immutable after creation.">
           <TextInput value={id} readOnly />

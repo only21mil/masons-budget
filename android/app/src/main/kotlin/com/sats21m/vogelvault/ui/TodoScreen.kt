@@ -13,41 +13,28 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.outlined.RadioButtonUnchecked
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.style.TextDecoration
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
-import com.sats21m.vogelvault.data.ConvexResult
-import com.sats21m.vogelvault.data.ConvexValue
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.ui.components.StateBlock
@@ -60,9 +47,6 @@ import com.sats21m.vogelvault.ui.theme.VaultSurface
 import com.sats21m.vogelvault.ui.theme.VaultTextDim
 import java.time.Instant
 import java.time.ZoneId
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
  * The normaliser fills `project` with "Inbox" for an unfiled todo rather than
@@ -73,8 +57,11 @@ import kotlinx.coroutines.launch
 private const val UNFILED_TODO_PROJECT = "Inbox"
 
 /** Where a todo is filed: its project, else its area, else nowhere. */
-private fun filing(todo: TodoItem): String? =
-    todo.project?.takeIf { it != UNFILED_TODO_PROJECT } ?: todo.area
+internal fun filing(todo: TodoItem): String? =
+    todo.project
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() && !it.equals(UNFILED_TODO_PROJECT, ignoreCase = true) }
+        ?: todo.area?.trim()?.takeIf(String::isNotEmpty)
 
 /**
  * Today: the one editable list in the app.
@@ -110,51 +97,36 @@ internal fun TodoScreen(
     }
     var localTodos by remember(viewer) { mutableStateOf(todosForToday(todos, viewer, today)) }
     var credentialStored by remember(application) {
-        mutableStateOf(application?.hasConvexWriteCredential() == true)
+        mutableStateOf(application?.hasTodoWriteCredential() == true)
     }
     var draft by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<TodoItem?>(null) }
-    var editTitle by remember { mutableStateOf("") }
-    var busyIds by remember { mutableStateOf(emptySet<String>()) }
-    var pendingDeletion by remember { mutableStateOf<PendingTodoDeletion?>(null) }
-    var expiryJob by remember { mutableStateOf<Job?>(null) }
     val snackbar = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val undoLabel = stringResource(R.string.todo_undo)
+    val writes = rememberTodoWriteState(
+        gateway = gateway,
+        snackbar = snackbar,
+        onWriteSucceeded = onWriteSucceeded,
+        onCredentialRejected = {
+            credentialStored = false
+            application?.removeTodoWriteCredential()?.exceptionOrNull()?.let {
+                credentialRemovalFailureMessage(it).resolve(context)
+            }
+        },
+        nowMillis = nowMillis,
+    )
 
     LaunchedEffect(todos, viewer, today) {
-        localTodos = todosForToday(todos, viewer, today)
-    }
-
-    fun report(message: String) {
-        scope.launch { snackbar.showSnackbar(message = message) }
-    }
-
-    /** Runs one write and returns the sentence to show, or null on success. */
-    suspend fun write(
-        action: TodoWriteAction,
-        call: suspend (TodoMutationGateway) -> ConvexResult<ConvexValue>,
-    ): String? {
-        val client = gateway ?: return todoWriteUnavailableMessage(action)
-        return todoWriteFailureMessage(action, call(client))
+        localTodos = todosForToday(writes.filterIncoming(todos), viewer, today)
     }
 
     fun mutate(
         todo: TodoItem,
         action: TodoWriteAction,
+        baseUpdatedAtMs: Long?,
     ) {
-        if (todo.id in busyIds) return
-        busyIds = busyIds + todo.id
-        scope.launch {
-            val failure = write(action) { it.upsert(todo) }
-            if (failure == null) {
-                localTodos = (localTodos.filterNot { it.id == todo.id } + todo).sortedWith(TODO_ORDER)
-                onWriteSucceeded()
-            } else {
-                report(failure)
-            }
-            busyIds = busyIds - todo.id
+        writes.upsert(todo, baseUpdatedAtMs, action) {
+            localTodos = (localTodos.filterNot { it.id == todo.id } + todo).sortedWith(TODO_ORDER)
         }
     }
 
@@ -184,7 +156,7 @@ internal fun TodoScreen(
                     TodoWriteCredentialCard { token ->
                         val app = application
                             ?: return@TodoWriteCredentialCard "This build cannot store a credential"
-                        app.saveConvexWriteCredential(token).fold(
+                        app.saveTodoWriteCredential(token).fold(
                             onSuccess = {
                                 credentialStored = true
                                 null
@@ -222,7 +194,7 @@ internal fun TodoScreen(
                                 now = Instant.now(),
                             )
                             draft = ""
-                            mutate(todo, TodoWriteAction.ADD)
+                            mutate(todo, TodoWriteAction.ADD, null)
                         },
                     ) {
                         Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.todo_add))
@@ -253,106 +225,45 @@ internal fun TodoScreen(
                 items(localTodos, key = TodoItem::id) { todo ->
                     TodoRow(
                         todo = todo,
-                        enabled = credentialStored && todo.id !in busyIds,
+                        viewer = viewer,
+                        enabled = credentialStored && todo.id !in writes.busyIds,
+                        deleteEnabled = credentialStored &&
+                            todo.id !in writes.busyIds &&
+                            !writes.deletePending,
+                        deleteDisabledReason = if (writes.deletePending) {
+                            stringResource(R.string.todo_delete_pending_named, todo.title)
+                        } else {
+                            null
+                        },
                         onToggleDone = {
-                            mutate(todo.withCompletion(!todo.done, Instant.now()), TodoWriteAction.UPDATE)
+                            mutate(
+                                todo.withCompletion(!todo.done, Instant.now()),
+                                TodoWriteAction.UPDATE,
+                                todo.updatedAtMs,
+                            )
                         },
                         onToggleFlag = {
-                            mutate(todo.withFlag(!todo.flagged, Instant.now()), TodoWriteAction.UPDATE)
+                            mutate(
+                                todo.withFlag(!todo.flagged, Instant.now()),
+                                TodoWriteAction.UPDATE,
+                                todo.updatedAtMs,
+                            )
                         },
                         onEdit = {
                             editing = todo
-                            editTitle = todo.title
                         },
                         onDelete = {
-                            if (todo.id in busyIds) return@TodoRow
-                            val pending = PendingTodoDeletion(
-                                todo,
-                                nowMillis() + TODO_UNDO_WINDOW_MILLIS,
+                            writes.delete(
+                                todo = todo,
+                                onRemoved = {
+                                    localTodos = localTodos.filterNot { it.id == todo.id }
+                                },
+                                onRestored = {
+                                    localTodos = (localTodos + todo)
+                                        .distinctBy(TodoItem::id)
+                                        .sortedWith(TODO_ORDER)
+                                },
                             )
-                            busyIds = busyIds + todo.id
-                            localTodos = localTodos.filterNot { it.id == todo.id }
-                            snackbar.currentSnackbarData?.dismiss()
-                            pendingDeletion = pending
-                            expiryJob?.cancel()
-                            scope.launch {
-                                // The six-second window starts at the deletion, not at
-                                // whenever the server answers.
-                                expiryJob = launch {
-                                    delay(TODO_UNDO_WINDOW_MILLIS)
-                                    if (pendingDeletion?.todo?.id == todo.id) {
-                                        pendingDeletion = null
-                                        snackbar.currentSnackbarData?.dismiss()
-                                    }
-                                }
-                                when (
-                                    val feedback = awaitTodoDeleteFeedback(
-                                        delete = {
-                                            write(TodoWriteAction.DELETE) { it.delete(todo.id) }
-                                                .also { failure ->
-                                                    if (failure == null) onWriteSucceeded()
-                                                }
-                                        },
-                                        deletedMessage =
-                                            context.getString(R.string.todo_deleted, todo.title),
-                                        showDeleted = { message ->
-                                            if (
-                                                pendingDeletion?.todo?.id == todo.id &&
-                                                pending.canUndo(nowMillis())
-                                            ) {
-                                                snackbar.showSnackbar(
-                                                    message = message,
-                                                    actionLabel = undoLabel,
-                                                    duration = SnackbarDuration.Indefinite,
-                                                )
-                                            } else {
-                                                // A slow server answered after the undo window
-                                                // closed. The row really is gone, so say so:
-                                                // trading a false success for a silent success
-                                                // is not an improvement, it just moves which
-                                                // sentence the user never gets. No Undo action,
-                                                // because that offer has genuinely expired.
-                                                snackbar.showSnackbar(
-                                                    message = message,
-                                                    duration = SnackbarDuration.Short,
-                                                )
-                                            }
-                                        },
-                                    )
-                                ) {
-                                    is TodoDeleteFeedback.Failed -> {
-                                        localTodos = (localTodos + todo)
-                                            .distinctBy(TodoItem::id)
-                                            .sortedWith(TODO_ORDER)
-                                        pendingDeletion = null
-                                        expiryJob?.cancel()
-                                        snackbar.currentSnackbarData?.dismiss()
-                                        report(feedback.message)
-                                    }
-
-                                    is TodoDeleteFeedback.Deleted -> {
-                                        if (
-                                            feedback.snackbarResult == SnackbarResult.ActionPerformed &&
-                                            pendingDeletion?.todo?.id == todo.id &&
-                                            pending.canUndo(nowMillis())
-                                        ) {
-                                            expiryJob?.cancel()
-                                            val restoreFailure =
-                                                write(TodoWriteAction.RESTORE) { it.upsert(todo) }
-                                            if (restoreFailure == null) {
-                                                localTodos = (localTodos + todo)
-                                                    .distinctBy(TodoItem::id)
-                                                    .sortedWith(TODO_ORDER)
-                                                onWriteSucceeded()
-                                            } else {
-                                                report(restoreFailure)
-                                            }
-                                            pendingDeletion = null
-                                        }
-                                    }
-                                }
-                                busyIds = busyIds - todo.id
-                            }
                         },
                     )
                 }
@@ -361,92 +272,11 @@ internal fun TodoScreen(
     }
 
     editing?.let { todo ->
-        AlertDialog(
-            onDismissRequest = { editing = null },
-            title = { Text(stringResource(R.string.todo_edit)) },
-            text = {
-                OutlinedTextField(
-                    value = editTitle,
-                    onValueChange = { editTitle = it },
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.todo_title)) },
-                )
-            },
-            confirmButton = {
-                Button(
-                    enabled = editTitle.isNotBlank(),
-                    onClick = {
-                        val changed = todo.withTitle(editTitle, Instant.now())
-                        editing = null
-                        mutate(changed, TodoWriteAction.UPDATE)
-                    },
-                ) { Text(stringResource(R.string.todo_save)) }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { editing = null }) {
-                    Text(stringResource(R.string.todo_cancel))
-                }
-            },
+        TodoEditDialog(
+            todo = todo,
+            onDismiss = { editing = null },
+            onSave = { mutate(it, TodoWriteAction.UPDATE, todo.updatedAtMs) },
         )
-    }
-}
-
-@Composable
-private fun TodoRow(
-    todo: TodoItem,
-    enabled: Boolean,
-    onToggleDone: () -> Unit,
-    onToggleFlag: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(VaultSurface)
-            .padding(horizontal = VaultSpace.sm, vertical = VaultSpace.xs),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(enabled = enabled, onClick = onToggleDone) {
-            Icon(
-                if (todo.done) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
-                contentDescription = stringResource(
-                    if (todo.done) R.string.todo_mark_open else R.string.todo_mark_complete,
-                ),
-                tint = if (todo.done) VaultAccent else VaultTextDim,
-            )
-        }
-        Column(Modifier.weight(1f)) {
-            Text(
-                todo.title,
-                color = VaultCream,
-                textDecoration = if (todo.done) TextDecoration.LineThrough else null,
-            )
-            listOfNotNull(filing(todo), todo.due)
-                .takeIf { it.isNotEmpty() }
-                ?.let {
-                    Text(
-                        it.joinToString(" · "),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = VaultTextDim,
-                    )
-                }
-        }
-        IconButton(enabled = enabled, onClick = onToggleFlag) {
-            Icon(
-                Icons.Filled.Flag,
-                contentDescription = stringResource(
-                    if (todo.flagged) R.string.todo_remove_flag else R.string.todo_add_flag,
-                ),
-                tint = if (todo.flagged) VaultAccent else VaultTextDim,
-            )
-        }
-        IconButton(enabled = enabled, onClick = onEdit) {
-            Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.todo_edit))
-        }
-        IconButton(enabled = enabled, onClick = onDelete) {
-            Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.todo_delete))
-        }
     }
 }
 
@@ -459,7 +289,7 @@ private fun TodoRow(
  * never read back, never saved into instance state, and never shown again.
  */
 @Composable
-private fun TodoWriteCredentialCard(save: (String) -> String?) {
+internal fun TodoWriteCredentialCard(save: (String) -> String?) {
     var token by remember { mutableStateOf("") }
     var failure by remember { mutableStateOf<String?>(null) }
     Column(

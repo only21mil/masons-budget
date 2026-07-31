@@ -96,6 +96,28 @@ class SecureConvexConfigSource internal constructor(
             if (!editor.commit()) throw IOException("encrypted Convex sync token was not cleared")
         }
 
+    internal fun hasDeviceCredential(): Boolean =
+        synchronized(lock) {
+            readDeviceCredentialLocked() != null
+        }
+
+    /** Atomically store the two-part credential required by safe row mutations. */
+    internal fun updateDeviceCredential(credential: ConvexDeviceCredential) =
+        synchronized(lock) {
+            val editor = preferences.edit()
+            putOrRemove(editor, KEY_DEVICE_ID, credential.deviceId)
+            putOrRemove(editor, KEY_DEVICE_TOKEN, credential.deviceToken)
+            if (!editor.commit()) throw IOException("encrypted Convex device credential was not persisted")
+        }
+
+    internal fun clearDeviceCredential() =
+        synchronized(lock) {
+            val editor = preferences.edit()
+            editor.remove(KEY_DEVICE_ID)
+            editor.remove(KEY_DEVICE_TOKEN)
+            if (!editor.commit()) throw IOException("encrypted Convex device credential was not cleared")
+        }
+
     fun clear() =
         synchronized(lock) {
             clearReadConfigurationLocked()
@@ -124,9 +146,21 @@ class SecureConvexConfigSource internal constructor(
             readSyncTokenLocked()
         }
 
+    internal fun currentDeviceCredential(): ConvexDeviceCredential? =
+        synchronized(lock) {
+            readDeviceCredentialLocked()
+        }
+
     private fun readSyncTokenLocked(): String? =
         runCatching {
             read(KEY_SYNC_TOKEN)?.trim()?.takeIf { it.isNotEmpty() }
+        }.getOrNull()
+
+    private fun readDeviceCredentialLocked(): ConvexDeviceCredential? =
+        runCatching {
+            val deviceId = read(KEY_DEVICE_ID)?.trim()?.takeIf { it.isNotEmpty() } ?: return@runCatching null
+            val deviceToken = read(KEY_DEVICE_TOKEN)?.trim()?.takeIf { it.isNotEmpty() } ?: return@runCatching null
+            ConvexDeviceCredential(deviceId, deviceToken)
         }.getOrNull()
 
     private fun clearReadConfigurationLocked() {
@@ -163,7 +197,15 @@ class SecureConvexConfigSource internal constructor(
         const val KEY_READ_TOKEN = "read_token"
         const val KEY_REMOTE_READ_ENABLED = "remote_read_enabled"
         const val KEY_SYNC_TOKEN = "sync_token"
+        const val KEY_DEVICE_ID = "device_id"
+        const val KEY_DEVICE_TOKEN = "device_token"
     }
+}
+
+internal class SecureConvexDeviceCredentialSource(
+    private val stored: SecureConvexConfigSource,
+) : ConvexDeviceCredentialSource {
+    override fun currentDeviceCredential(): ConvexDeviceCredential? = stored.currentDeviceCredential()
 }
 
 /**

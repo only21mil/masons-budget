@@ -44,7 +44,7 @@ class ReadModelTest {
         assertTrue(adultRefund.hasOppositeSpendSign)
         assertEquals(3_762L, childPurchase.spendAmount)
         assertFalse(childPurchase.hasOppositeSpendSign)
-        assertEquals(3_762L, deriveBudgetSpend(budget, monthRows).actualCents)
+        assertEquals(3_762L, requireNotNull(deriveBudgetSpend(budget, monthRows)).actualCents)
     }
 
     @Test
@@ -76,7 +76,7 @@ class ReadModelTest {
         assertEquals(-2_500L, rows.last().spendAmount)
         assertEquals(2_500L, rows.last().displaySpendAmount)
         assertTrue(rows.last().hasOppositeSpendSign)
-        assertEquals(7_500L, deriveBudgetSpend(budget, rows).actualCents)
+        assertEquals(7_500L, requireNotNull(deriveBudgetSpend(budget, rows)).actualCents)
     }
 
 
@@ -251,13 +251,130 @@ class ReadModelTest {
         val budget = Fixtures.envelope(FamilyMember.VICTOR).budget.value!!
         assertEquals(budget.categories.sumOf { it.budgetCents }, budget.plannedCents)
         assertEquals(budget.categories.sumOf { it.spentCents }, budget.actualCents)
-        assertEquals(budget.plannedCents - budget.actualCents, budget.remainingCents)
+        assertEquals(
+            requireNotNull(budget.plannedCents) - requireNotNull(budget.actualCents),
+            budget.remainingCents,
+        )
         assertEquals(
             budget.categories.count { it.spentCents > it.budgetCents },
             budget.overBudgetCount,
         )
         assertTrue(budget.overBudgetCount > 0, "fixture should exercise the over-budget path")
     }
+
+    @Test
+    fun `reported budget overflow is unavailable rather than wrapped`() {
+        val summed = Budget(
+            month = "2026-07",
+            categories = listOf(
+                BudgetCategory("First", Long.MAX_VALUE, Long.MAX_VALUE),
+                BudgetCategory("Second", 1L, 1L),
+            ),
+            owner = FamilyMember.VICTOR,
+        )
+        val remainingOverflow = Budget(
+            month = "2026-07",
+            categories = listOf(BudgetCategory("Refund", Long.MAX_VALUE, -1L)),
+            owner = FamilyMember.VICTOR,
+        )
+        val summedUnderflow = Budget(
+            month = "2026-07",
+            categories = listOf(
+                BudgetCategory("First", Long.MIN_VALUE, Long.MIN_VALUE),
+                BudgetCategory("Second", -1L, -1L),
+            ),
+            owner = FamilyMember.VICTOR,
+        )
+
+        assertNull(summed.plannedCents)
+        assertNull(summed.actualCents)
+        assertNull(summed.remainingCents)
+        assertNull(summedUnderflow.plannedCents)
+        assertNull(summedUnderflow.actualCents)
+        assertNull(summedUnderflow.remainingCents)
+        assertNull(remainingOverflow.categories.single().remainingCents)
+        assertNull(remainingOverflow.remainingCents)
+    }
+
+    @Test
+    fun `derived category accumulation overflow is unavailable`() {
+        val budget = Budget(
+            month = "2026-07",
+            categories = listOf(BudgetCategory("Groceries", Long.MAX_VALUE, 0L)),
+            owner = FamilyMember.VICTOR,
+        )
+        val rows = listOf(
+            budgetTransaction("first", "Groceries", Long.MAX_VALUE),
+            budgetTransaction("second", "Groceries", 1L),
+        )
+
+        assertNull(deriveBudgetSpend(budget, rows))
+        assertNull(
+            deriveBudgetSpend(
+                budget,
+                listOf(
+                    budgetTransaction("first", "Groceries", Long.MIN_VALUE),
+                    budgetTransaction("second", "Groceries", -1L),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `derived totals remaining and uncategorised overflow are unavailable`() {
+        val actualOverflowBudget = Budget(
+            month = "2026-07",
+            categories = listOf(
+                BudgetCategory("First", Long.MAX_VALUE, 0L),
+                BudgetCategory("Second", 1L, 0L),
+            ),
+            owner = FamilyMember.VICTOR,
+        )
+        val remainingOverflowBudget = Budget(
+            month = "2026-07",
+            categories = listOf(BudgetCategory("Refund", Long.MAX_VALUE, 0L)),
+            owner = FamilyMember.VICTOR,
+        )
+        val ordinaryBudget = Budget(
+            month = "2026-07",
+            categories = emptyList(),
+            owner = FamilyMember.VICTOR,
+        )
+
+        assertNull(
+            deriveBudgetSpend(
+                actualOverflowBudget,
+                listOf(
+                    budgetTransaction("first", "First", Long.MAX_VALUE),
+                    budgetTransaction("second", "Second", 1L),
+                ),
+            ),
+        )
+        assertNull(
+            deriveBudgetSpend(
+                remainingOverflowBudget,
+                listOf(budgetTransaction("refund", "Refund", -1L)),
+            ),
+        )
+        assertNull(
+            deriveBudgetSpend(
+                ordinaryBudget,
+                listOf(
+                    budgetTransaction("first", "Outside one", Long.MAX_VALUE),
+                    budgetTransaction("second", "Outside two", 1L),
+                ),
+            ),
+        )
+    }
+
+    private fun budgetTransaction(id: String, category: String, amount: Long) = Transaction(
+        id = id,
+        date = "2026-07-15",
+        merchant = id,
+        amount = amount,
+        category = category,
+        owner = FamilyMember.VICTOR,
+    )
 
     @Test
     fun `fixture instant is fixed so tests and screenshots are deterministic`() {

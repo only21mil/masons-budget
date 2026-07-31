@@ -1,6 +1,7 @@
 package com.sats21m.vogelvault.domain
 
 import java.math.BigDecimal
+import java.math.BigInteger
 import java.math.RoundingMode
 
 /**
@@ -35,9 +36,14 @@ object Money {
 
     const val SATS_PER_BTC: Long = 100_000_000L
     const val PRICE_UNAVAILABLE = "Price unavailable"
+    const val SHARES_DECIMAL_MAX_INTEGER_DIGITS = 12
+    const val SHARES_DECIMAL_MAX_SCALE = 12
+    const val SHARES_DECIMAL_MAX_PRECISION = 24
+    const val SHARES_DECIMAL_MAX_LENGTH = 25
 
     private const val USD_SCALE = 2
     private const val BTC_SCALE = 8
+    private val sharesDecimalPattern = Regex("^(0|[1-9]\\d*)(?:\\.(\\d+))?$")
 
     /** Parse a decimal value into integer minor units at [scale]. */
     fun parseMinorUnits(value: String?, scale: Int): Long {
@@ -55,7 +61,7 @@ object Money {
 
     fun formatMinorUnits(amount: Long, scale: Int): String {
         val negative = amount < 0
-        val digits = kotlin.math.abs(amount).toString().padStart(scale + 1, '0')
+        val digits = magnitudeDigits(amount).padStart(scale + 1, '0')
         val whole = digits.substring(0, digits.length - scale)
         val frac = if (scale > 0) "." + digits.substring(digits.length - scale) else ""
         return (if (negative) "-" else "") + whole + frac
@@ -63,7 +69,7 @@ object Money {
 
     fun formatUsd(cents: Long, showSign: Boolean = false): String {
         val negative = cents < 0
-        val plain = formatMinorUnits(kotlin.math.abs(cents), USD_SCALE)
+        val plain = formatMinorUnits(cents, USD_SCALE).removePrefix("-")
         val parts = plain.split(".")
         val grouped = group(parts[0], ",")
         val sign = if (negative) "-" else if (showSign) "+" else ""
@@ -78,7 +84,7 @@ object Money {
      */
     fun formatSats(sats: Long): String {
         val negative = sats < 0
-        val grouped = group(kotlin.math.abs(sats).toString(), " ")
+        val grouped = group(magnitudeDigits(sats), " ")
         return (if (negative) "-" else "") + grouped + " sats"
     }
 
@@ -109,8 +115,45 @@ object Money {
         val numerator = BigDecimal(sats).multiply(BigDecimal(btcPriceCents))
         return numerator
             .divide(BigDecimal(SATS_PER_BTC), 0, RoundingMode.HALF_UP)
-            .toLong()
+            .longValueExact()
     }
+
+    /**
+     * Convert USD cents to satoshis at a positive integer-cent BTC price.
+     *
+     * Unknown/non-positive prices are refused rather than presented as zero.
+     */
+    fun usdCentsToSats(cents: Long, btcPriceCents: Long): Long {
+        require(btcPriceCents > 0L) { "BTC price must be positive integer cents: $btcPriceCents" }
+        return BigDecimal(cents)
+            .multiply(BigDecimal(SATS_PER_BTC))
+            .divide(BigDecimal(btcPriceCents), 0, RoundingMode.HALF_UP)
+            .longValueExact()
+    }
+
+    /** Return [value] only when it matches the bounded exact shares wire contract. */
+    fun sharesDecimalOrNull(value: String?): String? {
+        if (value == null || value.length > SHARES_DECIMAL_MAX_LENGTH) return null
+        val match = sharesDecimalPattern.matchEntire(value) ?: return null
+        val whole = match.groupValues[1]
+        val fraction = match.groupValues[2]
+        if (
+            whole.length > SHARES_DECIMAL_MAX_INTEGER_DIGITS ||
+            fraction.length > SHARES_DECIMAL_MAX_SCALE ||
+            whole.length + fraction.length > SHARES_DECIMAL_MAX_PRECISION
+        ) return null
+        return value
+    }
+
+    fun requireSharesDecimal(value: String): String =
+        requireNotNull(sharesDecimalOrNull(value)) { "Not a canonical share quantity: $value" }
+
+    /** Value an exact lexical share quantity at an integer-cent share price. */
+    fun sharesToValueCents(sharesDecimal: String, pricePerShareCents: Long): Long =
+        BigDecimal(requireSharesDecimal(sharesDecimal))
+            .multiply(BigDecimal(pricePerShareCents))
+            .setScale(0, RoundingMode.HALF_UP)
+            .longValueExact()
 
     /** Percentage of [part] against [whole] in basis points, guarding zero. */
     fun basisPoints(part: Long, whole: Long): Int {
@@ -129,4 +172,8 @@ object Money {
         }
         return builder.toString()
     }
+
+    /** `Long.MIN_VALUE` has no positive `Long`; take its magnitude outside Long arithmetic. */
+    private fun magnitudeDigits(value: Long): String =
+        BigInteger.valueOf(value).abs().toString()
 }

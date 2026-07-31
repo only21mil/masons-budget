@@ -19,12 +19,15 @@ import { FAMILY_MEMBERS, type FamilyMember, isAdult } from "@vogel-vault/domain/
 import type { Freshness } from "@vogel-vault/domain/readModel"
 
 import { AppStateProvider, useAppState } from "../src/renderer/app/AppState.tsx"
+import type { DisplayUnit } from "../src/renderer/data/bitcoinDisplay.ts"
 import { ALL_PAGES, navSectionsFor, resolvePage } from "../src/renderer/pages/index.ts"
+import { TaskClockProvider } from "../src/renderer/pages/tasks/taskClock.tsx"
 import type { PageDefinition } from "../src/renderer/pages/types.ts"
 
 type PageState = Freshness | "normal"
 
 const STATES: PageState[] = ["normal", "stale", "error", "empty", "loading"]
+const fixtureNow = () => new Date(2026, 6, 26, 12, 0, 0)
 
 /**
  * Renders whichever page the seeded state resolves to.
@@ -41,7 +44,12 @@ function Harness({ route }: { route: string }) {
   return createElement(page.Component)
 }
 
-function renderPage(page: PageDefinition, profile: FamilyMember, state: PageState): string {
+function renderPage(
+  page: PageDefinition,
+  profile: FamilyMember,
+  state: PageState,
+  displayUnit: DisplayUnit = "btc",
+): string {
   // children goes in the props object: createElement's variadic children
   // overload does not satisfy a props type that requires `children`.
   return renderToStaticMarkup(
@@ -49,7 +57,12 @@ function renderPage(page: PageDefinition, profile: FamilyMember, state: PageStat
       initialProfile: profile,
       initialRoute: page.id,
       initialStateOverride: state,
-      children: createElement(Harness, { route: page.id }),
+      initialDisplayUnit: displayUnit,
+      children: createElement(
+        TaskClockProvider,
+        { now: fixtureNow },
+        createElement(Harness, { route: page.id }),
+      ),
     }),
   )
 }
@@ -69,6 +82,26 @@ test("every page appears in the nav for an adult", () => {
   const navIds = navSectionsFor("victor").flatMap((section) => section.items.map((item) => item.id))
   for (const page of ALL_PAGES) {
     assert.ok(navIds.includes(page.id), `${page.id} missing from adult nav`)
+  }
+})
+
+test("the unit selector appears only on opted-in non-Budget financial pages", () => {
+  const optedIn = new Set([
+    "dashboard",
+    "activity",
+    "bitcoin",
+    "bitcoin-buys",
+    "bills",
+    "retirement",
+    "net-worth",
+  ])
+  for (const page of ALL_PAGES) {
+    const markup = renderPage(page, "victor", "normal")
+    assert.equal(
+      markup.includes('aria-label="Bitcoin display unit"'),
+      optedIn.has(page.id),
+      `${page.id} has the wrong unit-selector visibility`,
+    )
   }
 })
 
@@ -269,23 +302,23 @@ test("dashboard and net worth use canonical income and BTC document totals", () 
   assert.ok(dashboard)
   assert.ok(netWorth)
 
-  const dashboardMarkup = renderPage(dashboard, "victor", "normal")
+  const dashboardMarkup = renderPage(dashboard, "victor", "normal", "usd")
   assert.ok(
     dashboardMarkup.includes("$7,777.77"),
     "dashboard did not render the dedicated income-table total",
   )
   assert.ok(
-    dashboardMarkup.includes("1.23456789 BTC"),
+    renderPage(dashboard, "victor", "normal", "btc").includes("1.23456789 BTC"),
     "dashboard did not render the canonical BTC balance document total",
   )
 
-  const netWorthMarkup = renderPage(netWorth, "victor", "normal")
+  const netWorthMarkup = renderPage(netWorth, "victor", "normal", "usd")
   assert.ok(
     netWorthMarkup.includes("$120,000.00"),
     "net worth did not render the canonical BTC balance document fiat total",
   )
   assert.ok(
-    netWorthMarkup.includes("1.23456789 BTC"),
+    renderPage(netWorth, "victor", "normal", "btc").includes("1.23456789 BTC"),
     "net worth did not render the canonical BTC balance document sats total",
   )
 })

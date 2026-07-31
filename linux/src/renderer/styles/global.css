@@ -59,8 +59,13 @@ body {
   border-bottom: 1px dashed var(--vv-line-strong);
 }
 
+.vv-stale {
+  color: var(--vv-stale);
+  border-bottom: 1px dashed var(--vv-warning);
+}
+
 .vv-scroll {
-  overflow-y: auto;
+  overflow: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--vv-line-strong) transparent;
 }

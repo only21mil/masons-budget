@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -7,7 +9,27 @@ import {
   projectBudgetDocument,
   projectDocumentFile,
   projectFinanceDocument,
+  SHARES_DECIMAL_MAX_INTEGER_DIGITS,
+  SHARES_DECIMAL_MAX_LENGTH,
+  SHARES_DECIMAL_MAX_PRECISION,
+  SHARES_DECIMAL_MAX_SCALE,
 } from "./documentProjection";
+
+const sharesContract = JSON.parse(
+  readFileSync(
+    new URL("../shared/domain/fixtures/finance-market-cases.json", import.meta.url),
+    "utf8",
+  ),
+) as {
+  sharesDecimalContract: {
+    maxLength: number;
+    maxPrecision: number;
+    maxScale: number;
+    maxIntegerDigits: number;
+    valid: string[];
+    invalid: string[];
+  };
+};
 
 describe("document projections preserve money lexically", () => {
   it("rounds raw JSON decimal tokens without passing through a number", () => {
@@ -258,6 +280,46 @@ describe("all five source documents have typed projections", () => {
       totalValueCents: 5001n,
       weeklyContributionCents: 501n,
     });
+  });
+
+  it("enforces the shared shares contract before finance storage projection", () => {
+    const contract = sharesContract.sharesDecimalContract;
+    expect({
+      maxLength: SHARES_DECIMAL_MAX_LENGTH,
+      maxPrecision: SHARES_DECIMAL_MAX_PRECISION,
+      maxScale: SHARES_DECIMAL_MAX_SCALE,
+      maxIntegerDigits: SHARES_DECIMAL_MAX_INTEGER_DIGITS,
+    }).toEqual({
+      maxLength: contract.maxLength,
+      maxPrecision: contract.maxPrecision,
+      maxScale: contract.maxScale,
+      maxIntegerDigits: contract.maxIntegerDigits,
+    });
+
+    const rawFinance = (shares: string) => JSON.stringify({
+      retirement: {
+        accounts: {
+          adult_401k: {
+            holdings: [{
+              name: "Fund",
+              shares,
+              lots: [{ shares }],
+            }],
+          },
+        },
+      },
+    });
+
+    for (const value of contract.valid) {
+      const holding = projectFinanceDocument(rawFinance(value), 0)
+        .accounts[0]!.holdings[0]!;
+      expect(holding.sharesDecimal, value).toBe(value);
+      expect(holding.lots[0]!.sharesDecimal, value).toBe(value);
+    }
+    for (const value of contract.invalid) {
+      expect(() => projectFinanceDocument(rawFinance(value), 0), value)
+        .toThrow(/share quantity/);
+    }
   });
 
   it("accepts the live direct retirement shape without treating its total as an account", () => {

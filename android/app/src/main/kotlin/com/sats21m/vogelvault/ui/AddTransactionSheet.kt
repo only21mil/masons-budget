@@ -115,18 +115,13 @@ internal fun prepareTransaction(
     val (amountCents, sats) = when (draft.inputUnit) {
         DisplayUnit.USD -> {
             val cents = parsed.toMinorUnitsExact(scale = 2, unitName = "USD")
-            cents to btcPriceCents.takeIf { it > 0L }?.let { price ->
-                BigDecimal(cents)
-                    .multiply(BigDecimal(Money.SATS_PER_BTC))
-                    .divide(BigDecimal(price), 0, RoundingMode.HALF_UP)
-                    .longValueExact()
-            }
+            cents to btcPriceCents.takeIf { it > 0L }?.let { Money.usdCentsToSats(cents, it) }
         }
 
         DisplayUnit.BTC -> {
             val exactSats = parsed.toMinorUnitsExact(scale = 8, unitName = "BTC")
             require(btcPriceCents > 0L) {
-                "A recorded Bitcoin price is required to save BTC input as USD cents"
+                "An operational Bitcoin market quote is required to save BTC input as USD cents"
             }
             satsToCentsExact(exactSats, btcPriceCents) to exactSats
         }
@@ -134,7 +129,7 @@ internal fun prepareTransaction(
         DisplayUnit.SATS -> {
             val exactSats = parsed.toMinorUnitsExact(scale = 0, unitName = "sats")
             require(btcPriceCents > 0L) {
-                "A recorded Bitcoin price is required to save sats input as USD cents"
+                "An operational Bitcoin market quote is required to save sats input as USD cents"
             }
             satsToCentsExact(exactSats, btcPriceCents) to exactSats
         }
@@ -181,10 +176,7 @@ internal fun conversionPreview(
             if (btcPriceCents <= 0L) {
                 Money.PRICE_UNAVAILABLE
             } else {
-                val sats = BigDecimal(cents)
-                    .multiply(BigDecimal(Money.SATS_PER_BTC))
-                    .divide(BigDecimal(btcPriceCents), 0, RoundingMode.HALF_UP)
-                    .longValueExact()
+                val sats = Money.usdCentsToSats(cents, btcPriceCents)
                 "${Money.formatSats(sats)} / ${Money.formatBtc(sats)}"
             }
         }
@@ -221,10 +213,7 @@ internal fun convertAmountForUnit(
         DisplayUnit.USD -> {
             require(btcPriceCents > 0L) { "Bitcoin price unavailable" }
             val cents = parsed.toMinorUnitsExact(2, "USD")
-            BigDecimal(cents)
-                .multiply(BigDecimal(Money.SATS_PER_BTC))
-                .divide(BigDecimal(btcPriceCents), 0, RoundingMode.HALF_UP)
-                .longValueExact()
+            Money.usdCentsToSats(cents, btcPriceCents)
         }
         DisplayUnit.BTC -> parsed.toMinorUnitsExact(8, "BTC")
         DisplayUnit.SATS -> parsed.toMinorUnitsExact(0, "sats")
@@ -314,6 +303,7 @@ internal fun AddTransactionSheet(
 
     val type = AddTransactionType.valueOf(typeName)
     val inputUnit = DisplayUnit.valueOf(inputUnitName)
+    val operationalBtcPriceCents = state.operationalBitcoinQuote()?.priceCents ?: 0L
     val categories = remember(state.data.budget.value, type) {
         when (type) {
             AddTransactionType.INCOME -> listOf("Income")
@@ -382,7 +372,7 @@ internal fun AddTransactionSheet(
                         amount = amount,
                         from = inputUnit,
                         to = it,
-                        btcPriceCents = state.data.btcPriceCents,
+                        btcPriceCents = operationalBtcPriceCents,
                     )?.let { converted -> amount = converted }
                     inputUnitName = it.name
                     errorMessage = null
@@ -397,7 +387,7 @@ internal fun AddTransactionSheet(
                 },
                 label = { Text(stringResource(R.string.add_transaction_amount)) },
                 supportingText = {
-                    conversionPreview(amount, inputUnit, state.data.btcPriceCents)?.let { Text(it) }
+                    conversionPreview(amount, inputUnit, operationalBtcPriceCents)?.let { Text(it) }
                 },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth(),
@@ -458,7 +448,7 @@ internal fun AddTransactionSheet(
                             note = note,
                             owner = state.activeProfile,
                         )
-                        val prepared = prepareTransaction(draft, state.data.btcPriceCents)
+                        val prepared = prepareTransaction(draft, operationalBtcPriceCents)
                         val row = prepared.getOrElse {
                             errorMessage = it.message ?: "Transaction is invalid"
                             return@Button
