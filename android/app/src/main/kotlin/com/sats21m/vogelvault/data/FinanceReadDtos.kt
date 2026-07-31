@@ -27,6 +27,11 @@ data class MarketQuoteReadSnapshot(
 )
 
 internal object FinanceReadDecoder {
+    // Keep these aligned with linux/electron/convexRows.ts CONVEX_ROW_LIMITS.
+    private const val MAX_FINANCE_ACCOUNTS = 64
+    private const val MAX_FINANCE_HOLDINGS = 512
+    private const val MAX_FINANCE_LOTS = 2_000
+
     fun financeDocument(element: JsonElement): FinanceDocumentSnapshot? {
         val envelope = element as? JsonObject ?: return null
         val complete = envelope.requiredBoolean("complete") ?: return null
@@ -56,7 +61,11 @@ internal object FinanceReadDecoder {
             updatedAtMs = row.requiredLong("updatedAtMs") ?: return null,
             lastUpdated = row.nonEmptyString("lastUpdated") ?: return null,
             retirementTotalCents = retirementTotal.value,
-            accounts = row.objectArray("accounts", ::decodeFinanceAccount) ?: return null,
+            accounts = row.objectArray(
+                "accounts",
+                MAX_FINANCE_ACCOUNTS,
+                ::decodeFinanceAccount,
+            ) ?: return null,
         )
     }
 
@@ -69,7 +78,11 @@ internal object FinanceReadDecoder {
             totalValueCents = row.int64("totalValueCents") ?: return null,
             weeklyContributionCents = row.int64("weeklyContributionCents") ?: return null,
             weeklyContributionDay = contributionDay.value,
-            holdings = row.objectArray("holdings", ::decodeFinanceHolding) ?: return null,
+            holdings = row.objectArray(
+                "holdings",
+                MAX_FINANCE_HOLDINGS,
+                ::decodeFinanceHolding,
+            ) ?: return null,
         )
     }
 
@@ -88,7 +101,11 @@ internal object FinanceReadDecoder {
             currentPricePerShareCents = row.int64("currentPricePerShareCents") ?: return null,
             isProxy = row.requiredBoolean("isProxy") ?: return null,
             proxyNote = proxyNote.value,
-            lots = row.objectArray("lots", ::decodeFinanceLot) ?: return null,
+            lots = row.objectArray(
+                "lots",
+                MAX_FINANCE_LOTS,
+                ::decodeFinanceLot,
+            ) ?: return null,
         )
     }
 
@@ -163,9 +180,11 @@ private fun JsonObject.exactDecimal(key: String): String? {
 
 private fun <T> JsonObject.objectArray(
     key: String,
+    maxSize: Int,
     decode: (JsonObject) -> T?,
 ): List<T>? {
     val encoded = get(key) as? JsonArray ?: return null
+    if (encoded.size > maxSize) return null
     val decoded = ArrayList<T>(encoded.size)
     for (element in encoded) {
         decoded += decode(element as? JsonObject ?: return null) ?: return null
