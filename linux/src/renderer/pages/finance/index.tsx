@@ -126,7 +126,9 @@ function QuoteSnapshot({ quotes }: { quotes: FinanceReadSlice<{ readonly quotes:
     return (
       <StateBlock
         state={quotes.status}
-        title={quotes.status === "error" ? "Market quotes unavailable" : "No market quote snapshot"}
+        title={quotes.status === "error"
+          ? "Market quotes unavailable"
+          : quotes.status === "empty" ? "No market quote snapshot" : undefined}
         detail="BTC, VOO, and IBIT prices are withheld until the authenticated quote snapshot is available."
       />
     )
@@ -294,7 +296,7 @@ function BitcoinSnapshotNotice({
   ) : (
     <StatusBanner
       tone="warning"
-      title={PRICE_UNAVAILABLE}
+      title={document ? PRICE_UNAVAILABLE : `Bitcoin balance unavailable · ${PRICE_UNAVAILABLE}`}
       detail={
         document
           ? "The BTC balance is known, but no supported USD valuation exists. BTC and SATS remain exact."
@@ -1407,7 +1409,9 @@ function RetirementPage() {
   const overrideState = financeOverrideState(stateOverride)
   const financeBlockState = overrideState
     ? overrideState
-    : financeModel.finance.status === "error" ? "error" : "empty"
+    : financeModel.finance.status === "error"
+      ? "error"
+      : financeModel.finance.status === "loading" ? "loading" : "empty"
   const financeStatus = stateOverride === "normal"
     ? financeFreshness(financeModel.finance)
     : stateOverride === "demo" ? "empty" : stateOverride
@@ -1556,6 +1560,7 @@ function NetWorthPage() {
   const totalAvailable = selection !== null && financeLoaded && quotesLoaded &&
     selection.totalValueCents !== null
   const overrideState = financeOverrideState(stateOverride)
+  const displayedBtcQuote = selection?.btcQuote ?? btcQuote
 
   const projectedInScope = netWorthScopeFor(activeProfile, data.btcAccounts.value)
   const excluded = data.btcAccounts.value.filter(
@@ -1582,11 +1587,13 @@ function NetWorthPage() {
             status={data.btcBalanceDocument.status}
             document={document}
           />
-          {selection?.btcQuote && selection.btcQuote.status !== "unavailable" ? (
+          {displayedBtcQuote && displayedBtcQuote.status !== "unavailable" ? (
             <StatusBanner
-              tone={selection.btcQuote.status === "stale" ? "warning" : "positive"}
-              title={`${selection.btcQuote.status === "stale" ? "Stale" : "Live"} BTC quote · ${formatUsd(selection.btcQuote.priceCents ?? 0n)}`}
-              detail={quoteDetail(selection.btcQuote)}
+              tone={displayedBtcQuote.status === "stale" ? "warning" : "positive"}
+              title={`${displayedBtcQuote.status === "stale" ? "Stale" : "Live"} BTC quote · ${formatUsd(displayedBtcQuote.priceCents ?? 0n)}`}
+              detail={bitcoinLoaded
+                ? quoteDetail(displayedBtcQuote)
+                : `${quoteDetail(displayedBtcQuote)} · no canonical BTC balance is available to value.`}
             />
           ) : (
             <StatusBanner

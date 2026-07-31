@@ -132,19 +132,18 @@ describe("main-process finance and quote transport", () => {
   it("keeps finance scoped and market quotes fixed-symbol", () => {
     expect(validateRowRequest({
       kind: "finance",
-      viewer: "rachel",
       scope: "netWorth",
     })).toEqual({
       kind: "finance",
-      viewer: "rachel",
       scope: "netWorth",
     })
-    expect(validateRowRequest({ kind: "finance", viewer: "rachel" })).toBeNull()
+    expect(validateRowRequest({ kind: "finance" })).toBeNull()
     expect(validateRowRequest({
       kind: "finance",
       viewer: "rachel",
-      scope: "visible",
+      scope: "netWorth",
     })).toBeNull()
+    expect(validateRowRequest({ kind: "finance", scope: "visible" })).toBeNull()
     expect(validateRowRequest({ kind: "marketQuotes" })).toEqual({ kind: "marketQuotes" })
     expect(validateRowRequest({ kind: "marketQuotes", symbol: "BTC" })).toBeNull()
     expect(validateRowRequest({
@@ -202,9 +201,8 @@ describe("main-process finance and quote transport", () => {
 
     await expect(repository.query({
       kind: "finance",
-      viewer: "rachel",
       scope: "netWorth",
-    })).resolves.toMatchObject({
+    }, "rachel")).resolves.toMatchObject({
       status: "ok",
       kind: "finance",
       value: {
@@ -262,30 +260,39 @@ describe("main-process finance and quote transport", () => {
     })
     await expect(repository.query({
       kind: "finance",
-      viewer: "victor",
       scope: "netWorth",
-    })).resolves.toEqual({ status: "error", code: "invalid-response" })
+    }, "victor")).resolves.toEqual({ status: "error", code: "invalid-response" })
+
+    await expect(repository.query({
+      kind: "finance",
+      scope: "netWorth",
+    })).resolves.toEqual({ status: "error", code: "invalid-request" })
   })
 
   it.each([
     ["missing symbol", [
-      { symbol: "BTC", priceCents: int64(6_000_000n), source: "a", fetchedAt: "now", status: "live" },
-      { symbol: "VOO", priceCents: int64(40_000n), source: "b", fetchedAt: "now", status: "live" },
+      { symbol: "BTC", priceCents: int64(6_000_000n), source: "a", fetchedAt: "2026-07-30T12:00:00Z", status: "live" },
+      { symbol: "VOO", priceCents: int64(40_000n), source: "b", fetchedAt: "2026-07-30T12:00:00Z", status: "live" },
     ], "incomplete-response"],
     ["duplicate symbol", [
-      { symbol: "BTC", priceCents: int64(6_000_000n), source: "a", fetchedAt: "now", status: "live" },
-      { symbol: "VOO", priceCents: int64(40_000n), source: "b", fetchedAt: "now", status: "live" },
-      { symbol: "VOO", priceCents: int64(41_000n), source: "b", fetchedAt: "now", status: "stale" },
+      { symbol: "BTC", priceCents: int64(6_000_000n), source: "a", fetchedAt: "2026-07-30T12:00:00Z", status: "live" },
+      { symbol: "VOO", priceCents: int64(40_000n), source: "b", fetchedAt: "2026-07-30T12:00:00Z", status: "live" },
+      { symbol: "VOO", priceCents: int64(41_000n), source: "b", fetchedAt: "2026-07-30T12:00:00Z", status: "stale" },
     ], "incomplete-response"],
     ["float price", [
-      { symbol: "BTC", priceCents: 6_000_000, source: "a", fetchedAt: "now", status: "live" },
-      { symbol: "VOO", priceCents: int64(40_000n), source: "b", fetchedAt: "now", status: "live" },
+      { symbol: "BTC", priceCents: 6_000_000, source: "a", fetchedAt: "2026-07-30T12:00:00Z", status: "live" },
+      { symbol: "VOO", priceCents: int64(40_000n), source: "b", fetchedAt: "2026-07-30T12:00:00Z", status: "live" },
       { symbol: "IBIT", priceCents: null, source: "b", fetchedAt: null, status: "unavailable" },
     ], "invalid-response"],
     ["contradictory unavailable price", [
-      { symbol: "BTC", priceCents: int64(6_000_000n), source: "a", fetchedAt: "now", status: "live" },
-      { symbol: "VOO", priceCents: int64(40_000n), source: "b", fetchedAt: "now", status: "live" },
+      { symbol: "BTC", priceCents: int64(6_000_000n), source: "a", fetchedAt: "2026-07-30T12:00:00Z", status: "live" },
+      { symbol: "VOO", priceCents: int64(40_000n), source: "b", fetchedAt: "2026-07-30T12:00:00Z", status: "live" },
       { symbol: "IBIT", priceCents: int64(3_000n), source: "b", fetchedAt: null, status: "unavailable" },
+    ], "invalid-response"],
+    ["noncanonical timestamp", [
+      { symbol: "BTC", priceCents: int64(6_000_000n), source: "a", fetchedAt: "2026-07-30T07:00:00-05:00", status: "live" },
+      { symbol: "VOO", priceCents: int64(40_000n), source: "b", fetchedAt: "2026-07-30T12:00:00Z", status: "live" },
+      { symbol: "IBIT", priceCents: null, source: "b", fetchedAt: null, status: "unavailable" },
     ], "invalid-response"],
   ])("rejects a %s quote snapshot", async (_label, wireQuotes, code) => {
     const repository = createConvexRowRepository({
@@ -314,7 +321,7 @@ describe("renderer finance read model", () => {
           ? { status: "ok", kind: "marketQuotes", value: quotes }
           : { status: "error", code: "invalid-request" }
 
-    const model = await loadLinuxFinanceReadModel(query, "victor")
+    const model = await loadLinuxFinanceReadModel(query)
     expect(model.finance.status).toBe("live")
     expect(model.marketQuotes.status).toBe("live")
 
@@ -345,7 +352,6 @@ describe("renderer finance read model", () => {
         request.kind === "finance"
           ? { status: "ok", kind: "finance", value: document }
           : { status: "error", code: "unavailable" },
-      "rachel",
     )
     expect(model.finance.status).toBe("live")
     expect(model.marketQuotes).toEqual({

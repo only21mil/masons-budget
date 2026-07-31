@@ -160,6 +160,7 @@ const ALLOWED_BRIDGE_METHODS = [
   "exportCsv",
   "getRemoteSnapshot",
   "queryConvexRows",
+  "setReadProfile",
   "pairDevice",
   "getPairingStatus",
   "mutateConvexRow",
@@ -223,6 +224,7 @@ const ALLOWED_CHANNEL_CONSTANTS = [
   "CSV_EXPORT_CHANNEL",
   "CONVEX_READ_CHANNEL",
   "CONVEX_ROWS_CHANNEL",
+  "READ_PROFILE_CHANNEL",
   "DEVICE_PAIR_CHANNEL",
   "DEVICE_PAIRING_STATUS_CHANNEL",
   "CONVEX_MUTATION_CHANNEL",
@@ -757,6 +759,11 @@ require_(
     validateRowRequest({ kind: "budget", viewer: "victor" }) === null &&
     validateRowRequest({ kind: "budget", viewer: "victor", scope: "netWorth" })?.kind === "budget",
   "rows: BTC and budget scopes are explicit",
+)
+require_(
+  validateRowRequest({ kind: "finance", scope: "netWorth" })?.kind === "finance" &&
+    validateRowRequest({ kind: "finance", viewer: "victor", scope: "netWorth" }) === null,
+  "rows: finance scope is fixed and its viewer cannot be renderer-selected",
 )
 require_(
   validateRowRequest({ kind: "transactions", viewer: "victor", path: "dataFiles:get" }) === null,
