@@ -3,7 +3,6 @@ package com.sats21m.vogelvault.data
 import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
-import com.sats21m.vogelvault.buildTimeConvexConfig
 import com.sats21m.vogelvault.initialConvexConfig
 import com.sats21m.vogelvault.recoverRejectedStoredConvexConfig
 import org.junit.runner.RunWith
@@ -213,9 +212,8 @@ class SecureConvexConfigSourceTest {
     }
 
     @Test
-    fun `manually entered token wins until rejected then baked token takes over`() {
+    fun `manually entered token survives restart until rejection clears it`() {
         val manuallyEnteredToken = "vv-manual-${UUID.randomUUID()}"
-        val bakedToken = "vv-baked-${UUID.randomUUID()}"
         source.update(
             ConvexConfig(
                 deploymentUrl = "https://example.convex.cloud",
@@ -229,31 +227,26 @@ class SecureConvexConfigSourceTest {
                 preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE),
                 cipher = TestConfigCipher,
             )
-        val startupConfig =
-            initialConvexConfig(
-                buildTime = buildTimeConvexConfig(bakedToken),
-                stored = restartedSource.current(),
-            )
+        val startupConfig = initialConvexConfig(restartedSource.current())
         val effective = MutableConvexConfigSource(startupConfig)
 
         assertTrue(startupConfig.allowsRemoteRead)
         assertEquals(manuallyEnteredToken, startupConfig.readTokenOrNull())
 
-        assertTrue(
+        assertFalse(
             recoverRejectedStoredConvexConfig(
                 rejected = startupConfig,
                 stored = restartedSource,
                 effective = effective,
-                fallback = buildTimeConvexConfig(bakedToken),
             ),
         )
         assertEquals(ReadReadiness.DISABLED, restartedSource.current().readiness)
-        assertEquals(bakedToken, effective.current().readTokenOrNull())
-        assertTrue(effective.current().allowsRemoteRead)
+        assertEquals(ReadReadiness.DISABLED, effective.current().readiness)
+        assertFalse(effective.current().hasReadToken)
     }
 
     @Test
-    fun `rejected stored token fails closed when release build has no baked token`() {
+    fun `rejected stored token fails closed`() {
         val storedConfig =
             ConvexConfig(
                 deploymentUrl = "https://example.convex.cloud",
@@ -265,16 +258,13 @@ class SecureConvexConfigSourceTest {
 
         // The return value answers "is there a usable credential to retry with?",
         // not "was the rejection handled" -- CachedRowDataSource feeds it straight
-        // into retryWithFallback. A release build has no baked token, so there is
-        // nothing to retry and a second load would be wasted. The recovery itself
-        // still happens: both sources below must end up DISABLED rather than
-        // holding a credential the server has already rejected.
+        // into retryWithFallback. There is no automatic fallback, so a second load
+        // would be wasted.
         assertFalse(
             recoverRejectedStoredConvexConfig(
                 rejected = storedConfig,
                 stored = source,
                 effective = effective,
-                fallback = buildTimeConvexConfig(""),
             ),
         )
 
@@ -300,39 +290,19 @@ class SecureConvexConfigSourceTest {
                     ),
                 cipher = TestConfigCipher,
             )
-        val fallback = buildTimeConvexConfig("vv-baked-${UUID.randomUUID()}")
         val effective = MutableConvexConfigSource(storedConfig)
 
-        assertTrue(
+        assertFalse(
             recoverRejectedStoredConvexConfig(
                 rejected = storedConfig,
                 stored = failingSource,
                 effective = effective,
-                fallback = fallback,
             ),
         )
 
-        assertEquals(fallback.readTokenOrNull(), effective.current().readTokenOrNull())
-        assertEquals(ReadReadiness.READY, effective.current().readiness)
-        assertEquals(storedConfig.readTokenOrNull(), failingSource.current().readTokenOrNull())
-    }
-
-    @Test
-    fun `rejected baked token is disabled when no stored credential remains`() {
-        val bakedConfig = buildTimeConvexConfig("vv-baked-${UUID.randomUUID()}")
-        val effective = MutableConvexConfigSource(bakedConfig)
-
-        assertFalse(
-            recoverRejectedStoredConvexConfig(
-                rejected = bakedConfig,
-                stored = source,
-                effective = effective,
-                fallback = bakedConfig,
-            ),
-        )
-
-        assertEquals(ReadReadiness.DISABLED, effective.current().readiness)
         assertFalse(effective.current().hasReadToken)
+        assertEquals(ReadReadiness.DISABLED, effective.current().readiness)
+        assertEquals(storedConfig.readTokenOrNull(), failingSource.current().readTokenOrNull())
     }
 
     @Test
@@ -360,7 +330,6 @@ class SecureConvexConfigSourceTest {
                 rejected = rejectedConfig,
                 stored = source,
                 effective = effective,
-                fallback = buildTimeConvexConfig("vv-baked-${UUID.randomUUID()}"),
             ),
         )
         assertEquals(newerToken, source.current().readTokenOrNull())

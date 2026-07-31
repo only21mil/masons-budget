@@ -14,13 +14,10 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * Three rules this type exists to enforce:
  *
- *  1. **The token is never committed.** Debug builds may receive it through the
- *     `CONVEX_READ_TOKEN` build environment and carry it in `BuildConfig`/the APK.
- *     This narrowly scoped exception exists so the family Android app can read
- *     real data after reinstall without manually transferring a desktop secret
- *     to a phone. Source, resources, tracked properties and fixtures must never
- *     contain the value; builds without the environment variable remain
- *     unconfigured.
+ *  1. **The token is never committed or built into the APK.** Users enter it in
+ *     Settings, where [SecureConvexConfigSource] encrypts it with an
+ *     AndroidKeyStore AES/GCM key before writing authenticated ciphertext to
+ *     private SharedPreferences. A fresh install remains unconfigured.
  *  2. **Off by default.** [remoteReadEnabled] defaults to `false`, so wiring this
  *     package into the app changes nothing observable: the UI keeps rendering
  *     the sanitized fixtures in `:domain`.
@@ -144,12 +141,9 @@ enum class ReadReadiness {
 /**
  * Where configuration comes from.
  *
- * An interface, not a concrete store, because the storage decision is not this
- * lane's to make: persisting a read token wants `EncryptedSharedPreferences`,
- * that needs a new Gradle dependency, and adding one silently is how a secret
- * ends up sitting in plain `SharedPreferences` forever. iOS keeps the equivalent
- * settings under the `convex_deployment_url` / `convex_read_token` UserDefaults
- * keys; whatever Android grows should mirror those names.
+ * Persistence stays outside this interface. [SecureConvexConfigSource] owns the
+ * custom AndroidKeyStore AES/GCM encryption and stores only authenticated
+ * ciphertext in private SharedPreferences.
  */
 interface ConvexConfigSource {
     fun current(): ConvexConfig
@@ -169,8 +163,7 @@ object DisabledConvexConfigSource : ConvexConfigSource {
 /**
  * In-memory configuration, replaceable at runtime.
  *
- * Deliberately not persisted itself: the application uses this as its effective
- * source for a build-time token, while manual entry is durably encrypted by
+ * Deliberately not persisted itself: manual entry is durably encrypted by
  * [SecureConvexConfigSource] before replacing this value for the running process.
  *
  * [AtomicReference] because the config is read from whatever thread a fetch

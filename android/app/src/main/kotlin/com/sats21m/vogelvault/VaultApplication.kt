@@ -40,22 +40,14 @@ open class VaultApplication : Application() {
         SecureConvexConfigSource(this)
     }
 
-    private val bakedConvexConfig: ConvexConfig by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        buildTimeConvexConfig(BuildConfig.CONVEX_READ_TOKEN)
-    }
-
     /**
-     * A valid manually entered credential wins across restarts. The baked debug
-     * credential remains an in-memory seed for a fresh install or unusable
-     * encrypted state; it is never copied into storage. A stored credential
-     * keeps that precedence only until Convex rejects it.
+     * A valid manually entered credential is restored from encrypted storage.
+     * Fresh installs and unusable stored state remain disabled until Settings
+     * saves a credential.
      */
     val convexConfigSource: MutableConvexConfigSource by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         MutableConvexConfigSource(
-            initial = initialConvexConfig(
-                buildTime = bakedConvexConfig,
-                stored = storedConvexConfigSource.current(),
-            ),
+            initial = initialConvexConfig(storedConvexConfigSource.current()),
         )
     }
 
@@ -211,9 +203,8 @@ open class VaultApplication : Application() {
 
     /**
      * Settings removal shares the same process lock as Save and unauthorized
-     * recovery. If recovery already cleared the manual credential and installed
-     * a working baked fallback, a stale Settings button becomes a no-op instead
-     * of disabling that fallback.
+     * recovery. If recovery already cleared the manual credential, a stale
+     * Settings button becomes a no-op.
      */
     internal fun removeStoredConvexCredential(): Boolean =
         synchronized(convexConfigLock) {
@@ -229,7 +220,6 @@ open class VaultApplication : Application() {
                 rejected = rejected,
                 stored = storedConvexConfigSource,
                 effective = convexConfigSource,
-                fallback = bakedConvexConfig,
             )
         }
 }
@@ -237,28 +227,20 @@ open class VaultApplication : Application() {
 // Public routing configuration, not a credential.
 internal const val PRODUCTION_DEPLOYMENT = "https://keen-elephant-452.convex.cloud"
 
-internal fun initialConvexConfig(
-    buildTime: ConvexConfig,
-    stored: ConvexConfig,
-): ConvexConfig =
-    if (stored.allowsRemoteRead) {
-        stored
-    } else {
-        buildTime
-    }
+internal fun initialConvexConfig(stored: ConvexConfig): ConvexConfig =
+    stored.takeIf(ConvexConfig::allowsRemoteRead) ?: ConvexConfig()
 
 /**
  * Stops a server-rejected stored credential from winning startup precedence.
  *
  * The compare-and-clear protects a newer manual entry from a late response to
- * an older request. A blank release-build fallback deliberately leaves remote
- * reads disabled after the rejected stored credential is removed.
+ * an older request. A rejected active credential always leaves this process
+ * disabled; there is no build-time credential to retry.
  */
 internal fun recoverRejectedStoredConvexConfig(
     rejected: ConvexConfig,
     stored: SecureConvexConfigSource,
     effective: MutableConvexConfigSource,
-    fallback: ConvexConfig,
 ): Boolean {
     val cleared =
         try {
@@ -266,25 +248,27 @@ internal fun recoverRejectedStoredConvexConfig(
         } catch (_: IOException) {
             // A failed synchronous SharedPreferences commit must not escape a
             // viewModelScope coroutine. The durable credential may need another
-            // removal attempt after restart, but this process can still fail
-            // closed or install a distinct baked fallback safely.
+            // removal attempt after restart, but this process still fails
+            // closed instead of retrying a rejected credential.
             if (effective.current().hasSameCredentialAs(rejected)) {
-                val next = fallbackAfterRejection(rejected, fallback)
-                effective.update(next)
-                return next.allowsRemoteRead
+                effective.update(ConvexConfig())
             }
             return false
         }
     if (cleared) {
-        val next = fallbackAfterRejection(rejected, fallback)
-        effective.update(next)
-        return next.allowsRemoteRead
+        if (effective.current().hasSameCredentialAs(rejected)) {
+            effective.update(ConvexConfig())
+        }
+        return false
     }
 
-    if (!stored.current().allowsRemoteRead && effective.current().hasSameCredentialAs(rejected)) {
-        // The in-memory baked fallback was itself rejected. Disable it so the
-        // next refresh cannot keep sending a credential known to be invalid.
-        effective.update(ConvexConfig())
+    if (effective.current().hasSameCredentialAs(rejected)) {
+        val currentStored = stored.current()
+        effective.update(
+            currentStored.takeIf {
+                it.allowsRemoteRead && !it.hasSameCredentialAs(rejected)
+            } ?: ConvexConfig(),
+        )
     }
     return false
 }
@@ -303,33 +287,11 @@ internal fun removeStoredConvexConfigIfPresent(
     return true
 }
 
-private fun fallbackAfterRejection(
-    rejected: ConvexConfig,
-    fallback: ConvexConfig,
-): ConvexConfig =
-    if (fallback.hasSameCredentialAs(rejected)) {
-        ConvexConfig()
-    } else {
-        fallback
-    }
-
 internal fun ConvexConfig.hasSameCredentialAs(other: ConvexConfig): Boolean =
     deploymentUrl == other.deploymentUrl &&
         readTokenOrNull() == other.readTokenOrNull() &&
         remoteReadEnabled == other.remoteReadEnabled
 
-/**
- * Turns the debug BuildConfig field into a fail-closed runtime configuration.
- *
- * Blank (including whitespace-only) build input is deliberately indistinguishable
- * from the pre-injection build: remote reads remain disabled and fixtures render.
- */
-internal fun buildTimeConvexConfig(readToken: String): ConvexConfig =
-    ConvexConfig(
-        deploymentUrl = PRODUCTION_DEPLOYMENT,
-        readToken = readToken,
-        remoteReadEnabled = readToken.isNotBlank(),
-    )
 internal fun writeConvexConfig(): ConvexConfig =
     ConvexConfig(deploymentUrl = PRODUCTION_DEPLOYMENT)
 
