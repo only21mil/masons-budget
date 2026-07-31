@@ -228,6 +228,16 @@
     <string name="todo_remove_flag">Remove task flag</string>
     <string name="todo_edit">Edit task</string>
     <string name="todo_delete">Delete task</string>
+    <string name="todo_mark_complete_named">Mark “%1$s” complete</string>
+    <string name="todo_mark_open_named">Mark “%1$s” open</string>
+    <string name="todo_add_flag_named">Flag “%1$s”</string>
+    <string name="todo_remove_flag_named">Remove flag from “%1$s”</string>
+    <string name="todo_edit_named">Edit “%1$s”</string>
+    <string name="todo_delete_named">Delete “%1$s”</string>
+    <string name="todo_state_open">Open</string>
+    <string name="todo_state_open_flagged">Open and flagged</string>
+    <string name="todo_state_completed">Completed</string>
+    <string name="todo_state_completed_flagged">Completed and flagged</string>
     <string name="todo_title">Task title</string>
     <string name="todo_save">Save</string>
     <string name="todo_cancel">Cancel</string>

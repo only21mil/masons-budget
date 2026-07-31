@@ -18,9 +18,13 @@ import androidx.compose.material.icons.filled.Upcoming
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -28,12 +32,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.ui.components.HorizontalHairline
@@ -60,6 +69,28 @@ internal fun TaskListsScreen(
     todos: List<TodoItem>,
     onWriteSucceeded: () -> Unit,
     zoneId: ZoneId = ZoneId.systemDefault(),
+    nowMillis: () -> Long = System::currentTimeMillis,
+) {
+    // Disposing this subtree on a profile change cancels in-flight UI work and
+    // removes drafts/snackbars before another family member's Tasks screen draws.
+    key(state.activeProfile) {
+        ProfileTaskListsScreen(
+            state = state,
+            todos = todos,
+            onWriteSucceeded = onWriteSucceeded,
+            zoneId = zoneId,
+            nowMillis = nowMillis,
+        )
+    }
+}
+
+@Composable
+private fun ProfileTaskListsScreen(
+    state: VaultUiState,
+    todos: List<TodoItem>,
+    onWriteSucceeded: () -> Unit,
+    zoneId: ZoneId,
+    nowMillis: () -> Long,
 ) {
     // ScreenHost has already scoped this handoff to the active profile.
     // TaskListModel deliberately checks again as defense in depth because the
@@ -75,9 +106,27 @@ internal fun TaskListsScreen(
     val date = remember(state.now, zoneId) {
         Instant.ofEpochMilli(state.now).atZone(zoneId).toLocalDate()
     }
-    val model = remember(todos, state.activeProfile, date) {
-        TaskListModel.build(todos, state.activeProfile, date)
+    var localTodos by remember { mutableStateOf(todos) }
+    LaunchedEffect(todos) {
+        localTodos = todos
     }
+    val model = remember(localTodos, state.activeProfile, date) {
+        TaskListModel.build(localTodos, state.activeProfile, date)
+    }
+
+    val application = LocalContext.current.applicationContext as? VaultApplication
+    val gateway = remember(application) { application?.todoMutationGateway }
+    var credentialStored by remember(application) {
+        mutableStateOf(application?.hasConvexWriteCredential() == true)
+    }
+    val snackbar = remember { SnackbarHostState() }
+    val writes = rememberTodoWriteState(
+        gateway = gateway,
+        snackbar = snackbar,
+        onWriteSucceeded = onWriteSucceeded,
+        nowMillis = nowMillis,
+    )
+    val context = LocalContext.current
 
     var routeName by rememberSaveable(state.activeProfile) {
         mutableStateOf(TaskListRoute.HUB.name)
@@ -93,7 +142,29 @@ internal fun TaskListsScreen(
     var writeNotice by rememberSaveable(state.activeProfile) {
         mutableStateOf<String?>(null)
     }
+    var editing by remember { mutableStateOf<TodoItem?>(null) }
     val route = TaskListRoute.entries.firstOrNull { it.name == routeName } ?: TaskListRoute.HUB
+    val actions = TaskRowActions(
+        enabled = { credentialStored && it.id !in writes.busyIds },
+        onToggleDone = { todo ->
+            writes.upsert(todo.withCompletion(!todo.done, Instant.now())) { changed ->
+                localTodos = localTodos.replaceTodo(changed)
+            }
+        },
+        onToggleFlag = { todo ->
+            writes.upsert(todo.withFlag(!todo.flagged, Instant.now())) { changed ->
+                localTodos = localTodos.replaceTodo(changed)
+            }
+        },
+        onEdit = { editing = it },
+        onDelete = { todo ->
+            writes.delete(
+                todo = todo,
+                onRemoved = { localTodos = localTodos.filterNot { row -> row.id == todo.id } },
+                onRestored = { localTodos = localTodos.replaceTodo(todo) },
+            )
+        },
+    )
 
     if (addingTask) {
         AddTaskSheet(
@@ -107,73 +178,128 @@ internal fun TaskListsScreen(
         )
     }
 
+    editing?.let { todo ->
+        TodoEditDialog(
+            todo = todo,
+            onDismiss = { editing = null },
+            onSave = { changed ->
+                writes.upsert(changed) { accepted ->
+                    localTodos = localTodos.replaceTodo(accepted)
+                }
+            },
+        )
+    }
+
+    // ScreenHost owns the scrolling container, so a flow-positioned snackbar
+    // could be off-screen when a lower task is changed. The window popup keeps
+    // accepted/rejected write feedback and Undo reachable at the viewport edge.
+    Popup(
+        alignment = Alignment.BottomCenter,
+        properties = PopupProperties(focusable = false),
+    ) {
+        SnackbarHost(
+            hostState = snackbar,
+            modifier = Modifier.padding(VaultSpace.md),
+        )
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.md)) {
         Button(onClick = { addingTask = true }) {
             Text(stringResource(R.string.tasks_add))
+        }
+        if (!credentialStored) {
+            TodoWriteCredentialCard { token ->
+                val app = application
+                    ?: return@TodoWriteCredentialCard "This build cannot store a credential"
+                app.saveConvexWriteCredential(token).fold(
+                    onSuccess = {
+                        credentialStored = true
+                        null
+                    },
+                    onFailure = { credentialSaveFailureMessage(it).resolve(context) },
+                )
+            }
         }
         writeNotice?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = VaultAccent)
         }
 
-    when (route) {
-        TaskListRoute.HUB ->
-            TaskHub(
-                model = model,
-                viewer = state.activeProfile,
-                onSmartList = {
-                    selectedKind = it.name
-                    routeName = TaskListRoute.SMART.name
-                },
-                onProject = {
-                    selectedOwner = it.owner.key
-                    selectedName = it.name
-                    routeName = TaskListRoute.PROJECT.name
-                },
-                onArea = {
-                    selectedOwner = it.owner.key
-                    selectedName = it.name
-                    routeName = TaskListRoute.AREA.name
-                },
-            )
+        when (route) {
+            TaskListRoute.HUB ->
+                TaskHub(
+                    model = model,
+                    viewer = state.activeProfile,
+                    actions = actions,
+                    onSmartList = {
+                        selectedKind = it.name
+                        routeName = TaskListRoute.SMART.name
+                    },
+                    onProject = {
+                        selectedOwner = it.owner.key
+                        selectedName = it.name
+                        routeName = TaskListRoute.PROJECT.name
+                    },
+                    onArea = {
+                        selectedOwner = it.owner.key
+                        selectedName = it.name
+                        routeName = TaskListRoute.AREA.name
+                    },
+                )
 
-        TaskListRoute.SMART -> {
-            val kind = TaskSmartList.entries.firstOrNull { it.name == selectedKind } ?: TaskSmartList.TODAY
-            TaskDetailList(
-                title = kind.title(),
-                tasks = model.tasksFor(kind),
-                viewer = state.activeProfile,
-                onBack = { routeName = TaskListRoute.HUB.name },
-            )
-        }
+            TaskListRoute.SMART -> {
+                val kind =
+                    TaskSmartList.entries.firstOrNull { it.name == selectedKind }
+                        ?: TaskSmartList.TODAY
+                TaskDetailList(
+                    title = kind.title(),
+                    tasks = model.tasksFor(kind),
+                    viewer = state.activeProfile,
+                    actions = actions,
+                    onBack = { routeName = TaskListRoute.HUB.name },
+                )
+            }
 
-        TaskListRoute.PROJECT, TaskListRoute.AREA -> {
-            val owner = FamilyMember.fromKeyOrNull(selectedOwner)
-            val groups = if (route == TaskListRoute.PROJECT) model.projects else model.areas
-            val group = groups.firstOrNull { it.owner == owner && it.name == selectedName }
-            TaskDetailList(
-                title = selectedName,
-                tasks = group?.tasks.orEmpty(),
-                viewer = state.activeProfile,
-                onBack = { routeName = TaskListRoute.HUB.name },
-            )
+            TaskListRoute.PROJECT, TaskListRoute.AREA -> {
+                val owner = FamilyMember.fromKeyOrNull(selectedOwner)
+                val groups = if (route == TaskListRoute.PROJECT) model.projects else model.areas
+                val group = groups.firstOrNull { it.owner == owner && it.name == selectedName }
+                TaskDetailList(
+                    title = selectedName,
+                    tasks = group?.tasks.orEmpty(),
+                    viewer = state.activeProfile,
+                    actions = actions,
+                    onBack = { routeName = TaskListRoute.HUB.name },
+                )
+            }
         }
-    }
     }
 }
+
+private data class TaskRowActions(
+    val enabled: (TodoItem) -> Boolean,
+    val onToggleDone: (TodoItem) -> Unit,
+    val onToggleFlag: (TodoItem) -> Unit,
+    val onEdit: (TodoItem) -> Unit,
+    val onDelete: (TodoItem) -> Unit,
+)
+
+private fun List<TodoItem>.replaceTodo(todo: TodoItem): List<TodoItem> =
+    (filterNot { it.id == todo.id } + todo).sortedWith(TODO_ORDER)
 
 @Composable
 private fun TaskHub(
     model: TaskListModel,
     viewer: FamilyMember,
+    actions: TaskRowActions,
     onSmartList: (TaskSmartList) -> Unit,
     onProject: (TaskGroup) -> Unit,
     onArea: (TaskGroup) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.md)) {
         SmartListGrid(model, onSmartList)
-        TaskSection(stringResource(R.string.tasks_today), model.today, viewer)
-        TaskSection(stringResource(R.string.tasks_this_week), model.thisWeek, viewer)
-        TaskSection(stringResource(R.string.tasks_long_term), model.longTerm, viewer)
+        TaskSection(stringResource(R.string.tasks_today), model.today, viewer, actions)
+        TaskSection(stringResource(R.string.tasks_this_week), model.thisWeek, viewer, actions)
+        TaskSection(stringResource(R.string.tasks_long_term), model.longTerm, viewer, actions)
         TaskGroupSection(
             title = stringResource(R.string.tasks_projects),
             groups = model.projects,
@@ -240,12 +366,13 @@ private fun TaskSection(
     title: String,
     tasks: List<TodoItem>,
     viewer: FamilyMember,
+    actions: TaskRowActions,
 ) {
     if (tasks.isEmpty()) return
     TaskPanel(title) {
         tasks.forEachIndexed { index, task ->
             if (index > 0) HorizontalHairline()
-            TaskReadOnlyRow(task, viewer)
+            TaskEditableRow(task, viewer, actions)
         }
     }
 }
@@ -269,9 +396,11 @@ private fun TaskGroupSection(
         } else {
             groups.forEachIndexed { index, group ->
                 if (index > 0) HorizontalHairline()
+                val openDescription = stringResource(R.string.tasks_open_group, group.name)
                 Row(
                     Modifier
                         .fillMaxWidth()
+                        .semantics { contentDescription = openDescription }
                         .clickable(role = Role.Button) { onSelect(group) }
                         .padding(VaultSpace.md),
                     verticalAlignment = Alignment.CenterVertically,
@@ -293,7 +422,7 @@ private fun TaskGroupSection(
                     )
                     Icon(
                         Icons.Filled.ChevronRight,
-                        contentDescription = stringResource(R.string.tasks_open_group, group.name),
+                        contentDescription = null,
                         tint = VaultTextDim,
                     )
                 }
@@ -307,6 +436,7 @@ private fun TaskDetailList(
     title: String,
     tasks: List<TodoItem>,
     viewer: FamilyMember,
+    actions: TaskRowActions,
     onBack: () -> Unit,
 ) {
     TaskPanel(title) {
@@ -336,54 +466,27 @@ private fun TaskDetailList(
         } else {
             tasks.forEachIndexed { index, task ->
                 if (index > 0) HorizontalHairline()
-                TaskReadOnlyRow(task, viewer)
+                TaskEditableRow(task, viewer, actions)
             }
         }
     }
 }
 
 @Composable
-private fun TaskReadOnlyRow(
+private fun TaskEditableRow(
     task: TodoItem,
     viewer: FamilyMember,
+    actions: TaskRowActions,
 ) {
-    Row(
-        Modifier.fillMaxWidth().padding(VaultSpace.md),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(VaultSpace.md),
-    ) {
-        Text(if (task.done) "✓" else "○", color = if (task.done) VaultTextDim else VaultAccent)
-        Column(Modifier.weight(1f)) {
-            Text(
-                task.title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (task.done) VaultTextDim else VaultCream,
-            )
-            val filing = task.project
-                ?.trim()
-                ?.takeIf { it.isNotEmpty() && !it.equals("Inbox", ignoreCase = true) }
-                ?: task.area?.trim()?.takeIf(String::isNotEmpty)
-            val details = listOfNotNull(
-                filing,
-                task.due,
-                task.owner.displayName.takeIf { task.owner != viewer },
-            )
-            if (details.isNotEmpty()) {
-                Text(
-                    details.joinToString(" · "),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = VaultTextMuted,
-                )
-            }
-        }
-        if (task.flagged) {
-            Icon(
-                Icons.Filled.Flag,
-                contentDescription = stringResource(R.string.tasks_flagged),
-                tint = VaultAccent,
-            )
-        }
-    }
+    TodoRow(
+        todo = task,
+        viewer = viewer,
+        enabled = actions.enabled(task),
+        onToggleDone = { actions.onToggleDone(task) },
+        onToggleFlag = { actions.onToggleFlag(task) },
+        onEdit = { actions.onEdit(task) },
+        onDelete = { actions.onDelete(task) },
+    )
 }
 
 @Composable
