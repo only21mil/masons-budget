@@ -28,6 +28,17 @@ import kotlin.test.assertTrue
 
 class FinancePresentationTest {
     @Test
+    fun `retirement content precedes quote provenance`() {
+        assertEquals(
+            listOf(
+                RetirementSection.ACCOUNTS_AND_HOLDINGS,
+                RetirementSection.QUOTE_PROVENANCE,
+            ),
+            retirementSectionOrder,
+        )
+    }
+
+    @Test
     fun `finance conversion overflow renders unavailable`() {
         val state = financeState(FamilyMember.VICTOR).copy(
             marketQuotes = MarketQuoteSnapshot(
