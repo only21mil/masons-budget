@@ -1,0 +1,150 @@
+name: Android read bootstrap APKs
+
+# This is an exceptional, one-time-capability path. It is manual-only and uses
+# the existing stable debug signing identity so both APKs update the installed
+# Fold app without an uninstall. The temporary pairing secret must be removed
+# by a repository administrator after the run; this workflow never changes it.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-read-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build bootstrap and clean replacement APKs
+    if: github.repository == 'only21mil/masons-budget'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Require the default branch
+        env:
+          ACTUAL_REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [ "$ACTUAL_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+            echo "::error::Android read-bootstrap APKs may be built only from the default branch."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Materialize and validate private inputs
+        id: private_inputs
+        env:
+          PAIRING: ${{ secrets.ANDROID_READ_BOOTSTRAP_PAIR }}
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+          VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
+          VOGEL_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
+          VOGEL_DEBUG_KEY_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          private_root="$HOME/work/vogel-vault-android-read-bootstrap"
+          pairing_file="$private_root/pairing.txt"
+          keystore_file="$private_root/vogel-debug.keystore"
+
+          if [ -z "${PAIRING:-}" ]; then
+            echo "::error::ANDROID_READ_BOOTSTRAP_PAIR is required for this manual run."
+            exit 1
+          fi
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 is required for this manual run."
+            exit 1
+          fi
+
+          mkdir -p "$private_root/artifacts"
+          chmod 700 "$private_root" "$private_root/artifacts"
+          printf '%s' "$PAIRING" > "$pairing_file"
+          if ! printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keystore_file"; then
+            echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 is not valid base64."
+            exit 1
+          fi
+          chmod 600 "$pairing_file" "$keystore_file"
+
+          KEYSTORE_PATH="$keystore_file" \
+            .github/workflows/scripts/validate_android_debug_keystore.sh
+          echo "artifacts=$private_root/artifacts" >> "$GITHUB_OUTPUT"
+
+      - name: Build same-signed bootstrap and clean APKs
+        env:
+          CONVEX_READ_TOKEN: ""
+          CONVEX_SYNC_TOKEN: ""
+          VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
+          VOGEL_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
+          VOGEL_DEBUG_KEY_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEY_PASSWORD }}
+          VOGEL_VAULT_ANDROID_BOOTSTRAP_CI_PURPOSE: android-read-bootstrap-apk-v1
+        run: |
+          set -euo pipefail
+          private_root="$HOME/work/vogel-vault-android-read-bootstrap"
+          artifacts="$private_root/artifacts"
+          bootstrap_apk="$artifacts/vogel-vault-read-bootstrap.apk"
+          clean_apk="$artifacts/vogel-vault-clean-replacement.apk"
+          export VOGEL_DEBUG_KEYSTORE="$private_root/vogel-debug.keystore"
+          export VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE="$private_root/pairing.txt"
+
+          node scripts/build-android-read-bootstrap.mjs \
+            --out "$bootstrap_apk" \
+            --clean-out "$clean_apk"
+
+          # The helper deletes the entire app build tree between assemblies and
+          # clears both read fields. Inspect decompressed dex strings without
+          # placing the pairing in argv or output: bootstrap must carry it and
+          # the fresh replacement must not.
+          unzip -p "$bootstrap_apk" 'classes*.dex' > "$private_root/bootstrap.dex"
+          unzip -p "$clean_apk" 'classes*.dex' > "$private_root/clean.dex"
+          if ! grep --binary-files=text --fixed-strings --quiet \
+            --file="$VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE" \
+            "$private_root/bootstrap.dex"; then
+            echo "::error::The bootstrap APK does not contain the requested one-time capability."
+            exit 1
+          fi
+          if grep --binary-files=text --fixed-strings --quiet \
+            --file="$VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE" \
+            "$private_root/clean.dex"; then
+            echo "::error::The clean replacement APK inherited the one-time capability."
+            exit 1
+          fi
+
+      - name: Upload both same-signed APKs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vogel-vault-read-bootstrap-and-clean
+          path: |
+            ${{ steps.private_inputs.outputs.artifacts }}/vogel-vault-read-bootstrap.apk
+            ${{ steps.private_inputs.outputs.artifacts }}/vogel-vault-clean-replacement.apk
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Shred private inputs, APKs, and intermediates
+        if: always()
+        run: |
+          set -euo pipefail
+          private_root="$HOME/work/vogel-vault-android-read-bootstrap"
+
+          if [ -d "$private_root" ]; then
+            find "$private_root" -xdev -type f -exec shred -u -- {} +
+            rm -rf "$private_root"
+          fi
+          if [ -d android/app/build ]; then
+            find android/app/build -xdev -type f -exec shred -u -- {} +
+            rm -rf android/app/build
+          fi
+          if [ -e "$private_root" ] || [ -e android/app/build ]; then
+            echo "::error::Private Android read-bootstrap material remained after cleanup."
+            exit 1
+          fi
