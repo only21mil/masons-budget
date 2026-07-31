@@ -12,7 +12,6 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -32,6 +31,8 @@ class ConvexReadBootstrapClientTest {
     )
     private val bundle = "$pairId.$proof"
     private val readToken = "r".repeat(43)
+    private val deviceId = canonicalBase64Url(ByteArray(16) { (it + 1).toByte() })
+    private val deviceToken = canonicalBase64Url(ByteArray(32) { (it + 17).toByte() })
 
     @Test
     fun `parser accepts only locked canonical wire format`() {
@@ -59,7 +60,10 @@ class ConvexReadBootstrapClientTest {
     @Test
     fun `claim sends exact fixed mutation args and returns a redacted credential result`() = runBlocking {
         val poster = RecordingBootstrapPoster(success(readToken))
-        val result = ConvexReadBootstrapClient(poster).claim(requireNotNull(ReadBootstrapClaim.parse(bundle)))
+        val result = ConvexReadBootstrapClient(
+            poster,
+            ReadBootstrapDeviceCredentialGenerator { error("read-only claim generated a device credential") },
+        ).claim(requireNotNull(ReadBootstrapClaim.parse(bundle)))
 
         val success = assertIs<BootstrapClientResult.Success>(result)
         assertEquals(readToken, success.credential.readToken)
@@ -74,23 +78,111 @@ class ConvexReadBootstrapClientTest {
         assertEquals(setOf("pairId", "proof"), args.keys)
         assertEquals(pairId, args["pairId"]!!.jsonPrimitive.content)
         assertEquals(proof, args["proof"]!!.jsonPrimitive.content)
+        assertFalse("readToken" in args)
+        assertFalse("syncToken" in args)
+        assertFalse("token" in args)
         assertFalse(poster.toString().contains(proof))
+    }
+
+    @Test
+    fun `todo write claim generates canonical local credential and requires matching response`() = runBlocking {
+        val poster = EchoingWriteBootstrapPoster(readToken)
+        val result = ConvexReadBootstrapClient(poster).claim(
+            requireNotNull(ReadBootstrapClaim.parse(bundle)),
+            requestTodoWrite = true,
+        )
+
+        val success = assertIs<BootstrapClientResult.Success>(result)
+        val wire = Json.parseToJsonElement(requireNotNull(poster.body)).jsonObject
+        val args = wire["args"]!!.jsonObject
+        assertEquals(setOf("pairId", "proof", "deviceId", "deviceToken"), args.keys)
+        val deviceId = args["deviceId"]!!.jsonPrimitive.content
+        val deviceToken = args["deviceToken"]!!.jsonPrimitive.content
+        assertEquals(22, deviceId.length)
+        assertEquals(16, decodeCanonicalBase64Url(deviceId).size)
+        assertEquals(43, deviceToken.length)
+        assertEquals(32, decodeCanonicalBase64Url(deviceToken).size)
+        assertEquals(deviceId, success.credential.deviceCredential?.deviceId)
+        assertEquals(deviceToken, success.credential.deviceCredential?.deviceToken)
+        assertFalse("readToken" in args)
+        assertFalse("syncToken" in args)
+        assertFalse("token" in args)
+        assertFalse(success.toString().contains(deviceToken))
+        assertFalse(success.credential.toString().contains(deviceToken))
+        assertFalse(poster.toString().contains(deviceToken))
+    }
+
+    @Test
+    fun `todo write claim fails closed before transport for a malformed local credential`() = runBlocking {
+        val poster = RecordingBootstrapPoster(writeSuccess(readToken, deviceId))
+        val result = ConvexReadBootstrapClient(
+            poster,
+            ReadBootstrapDeviceCredentialGenerator {
+                ConvexDeviceCredential("legacy:device", deviceToken)
+            },
+        ).claim(
+            requireNotNull(ReadBootstrapClaim.parse(bundle)),
+            requestTodoWrite = true,
+        )
+
+        assertEquals(
+            ReadBootstrapStatus.INVALID_BUNDLE,
+            assertIs<BootstrapClientResult.Failure>(result).status,
+        )
+        assertNull(poster.body)
     }
 
     @Test
     fun `strict success decoder rejects extras coercions and malformed credentials`() = runBlocking {
         val invalidBodies = listOf(
-            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":1,"extra":true}}""",
-            """{"status":"success","value":{"ok":"true","readToken":"$readToken","pairedAt":1}}""",
-            """{"status":"success","value":{"ok":true,"readToken":"short","pairedAt":1}}""",
-            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":"1"}}""",
-            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":-1}}""",
-            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":1},"extra":true}""",
+            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":1}}""",
+            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":1,"capabilities":[],"extra":true}}""",
+            """{"status":"success","value":{"ok":"true","readToken":"$readToken","pairedAt":1,"capabilities":[]}}""",
+            """{"status":"success","value":{"ok":true,"readToken":"short","pairedAt":1,"capabilities":[]}}""",
+            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":"1","capabilities":[]}}""",
+            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":-1,"capabilities":[]}}""",
+            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":1,"capabilities":["todos:write"]}}""",
+            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":1,"capabilities":[],"deviceId":"unexpected"}}""",
+            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":1,"capabilities":{}},"extra":true}""",
+            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":1,"capabilities":[]},"extra":true}""",
         )
 
         invalidBodies.forEach { body ->
             val result = clientResult(HttpTextResponseFixture(200, body))
             assertEquals(ReadBootstrapStatus.INVALID_RESPONSE, assertIs<BootstrapClientResult.Failure>(result).status)
+        }
+    }
+
+    @Test
+    fun `todo write success rejects device and capability confusion`() = runBlocking {
+        val requested = ConvexDeviceCredential(
+            deviceId = deviceId,
+            deviceToken = deviceToken,
+        )
+        val validValue =
+            """{"ok":true,"readToken":"$readToken","pairedAt":1,"deviceId":"${requested.deviceId}","capabilities":["todos:write"]}"""
+        val invalidValues = listOf(
+            """{"ok":true,"readToken":"$readToken","pairedAt":1,"capabilities":["todos:write"]}""",
+            validValue.replace(requested.deviceId, "different-device"),
+            validValue.replace("[\"todos:write\"]", "[]"),
+            validValue.replace("[\"todos:write\"]", "[\"todos:write\",\"todos:write\"]"),
+            validValue.replace("todos:write", "budget:write"),
+            validValue.replace("[\"todos:write\"]", "\"todos:write\""),
+            validValue.dropLast(1) + ",\"extra\":true}",
+        )
+
+        invalidValues.forEach { value ->
+            val result = ConvexReadBootstrapClient(
+                RecordingBootstrapPoster("""{"status":"success","value":$value}"""),
+                ReadBootstrapDeviceCredentialGenerator { requested },
+            ).claim(
+                requireNotNull(ReadBootstrapClaim.parse(bundle)),
+                requestTodoWrite = true,
+            )
+            assertEquals(
+                ReadBootstrapStatus.INVALID_RESPONSE,
+                assertIs<BootstrapClientResult.Failure>(result).status,
+            )
         }
     }
 
@@ -158,6 +250,32 @@ class ConvexReadBootstrapClientTest {
     }
 
     @Test
+    fun `repository hands combined credential to atomic storage and uses durable readback`() = runBlocking {
+        val device = ConvexDeviceCredential(
+            deviceId = deviceId,
+            deviceToken = deviceToken,
+        )
+        val store = RecordingBootstrapCredentialStore()
+        val effective = MutableConvexConfigSource(ConvexConfig())
+        val repository = ConvexReadBootstrapRepository(
+            store,
+            effective,
+            ConvexReadBootstrapClient(
+                RecordingBootstrapPoster(writeSuccess(readToken, device.deviceId)),
+                ReadBootstrapDeviceCredentialGenerator { device },
+            ),
+        )
+
+        assertEquals(
+            ReadBootstrapStatus.CONNECTED,
+            repository.connect(bundle, requestTodoWrite = true),
+        )
+        assertEquals(device, store.deviceCredential)
+        assertEquals(readToken, store.readConfig?.readTokenOrNull())
+        assertEquals(readToken, effective.current().readTokenOrNull())
+    }
+
+    @Test
     fun `empty bundle is inert and failed commit never updates effective config`() = runBlocking {
         val context: Application = RuntimeEnvironment.getApplication()
         val delegate = context.getSharedPreferences("bootstrap-fail-${UUID.randomUUID()}", Context.MODE_PRIVATE)
@@ -185,7 +303,10 @@ class ConvexReadBootstrapClientTest {
         ).claim(requireNotNull(ReadBootstrapClaim.parse(bundle)))
 
     private fun success(token: String): String =
-        """{"status":"success","value":{"ok":true,"readToken":"$token","pairedAt":1800000000000}}"""
+        """{"status":"success","value":{"ok":true,"readToken":"$token","pairedAt":1800000000000,"capabilities":[]}}"""
+
+    private fun writeSuccess(token: String, deviceId: String): String =
+        """{"status":"success","value":{"ok":true,"readToken":"$token","pairedAt":1800000000000,"deviceId":"$deviceId","capabilities":["todos:write"]}}"""
 }
 
 private data class HttpTextResponseFixture(
@@ -205,6 +326,57 @@ private class RecordingBootstrapPoster(private val responseBody: String) : ReadB
 
     override fun toString(): String = "RecordingBootstrapPoster(bytes=${body?.length ?: 0})"
 }
+
+private class EchoingWriteBootstrapPoster(private val readToken: String) : ReadBootstrapPoster {
+    var body: String? = null
+        private set
+
+    override suspend fun post(body: String): ReadBootstrapHttpResponse {
+        this.body = body
+        val args = Json.parseToJsonElement(body).jsonObject["args"]!!.jsonObject
+        val deviceId = args["deviceId"]!!.jsonPrimitive.content
+        return ReadBootstrapHttpResponse(
+            200,
+            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":1,"deviceId":"$deviceId","capabilities":["todos:write"]}}""",
+        )
+    }
+
+    override fun toString(): String = "EchoingWriteBootstrapPoster(bytes=${body?.length ?: 0})"
+}
+
+private class RecordingBootstrapCredentialStore : ConvexBootstrapCredentialStore {
+    var readConfig: ConvexConfig? = null
+        private set
+    var deviceCredential: ConvexDeviceCredential? = null
+        private set
+
+    override fun commitBootstrap(
+        readConfig: ConvexConfig,
+        deviceCredential: ConvexDeviceCredential?,
+    ): StoredConvexBootstrap {
+        this.readConfig = readConfig
+        this.deviceCredential = deviceCredential
+        return StoredConvexBootstrap(readConfig, deviceCredential)
+    }
+}
+
+private fun decodeCanonicalBase64Url(value: String): ByteArray {
+    val decoded = Base64.decode(value, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+    assertEquals(
+        value,
+        Base64.encodeToString(
+            decoded,
+            Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING,
+        ),
+    )
+    return decoded
+}
+
+private fun canonicalBase64Url(value: ByteArray): String =
+    Base64.encodeToString(
+        value,
+        Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING,
+    )
 
 private object TestCipher : ConfigCipher {
     override fun encrypt(field: String, plaintext: String): String =
