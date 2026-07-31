@@ -501,6 +501,8 @@ internal fun BitcoinUnitToggle(
         DisplayUnit.entries.forEach { unit ->
             SelectionChip(
                 label = unit.label,
+                semanticLabel = "${unit.label} display unit",
+                actionLabel = "Show amounts in ${unit.label}",
                 selected = unit == selected,
                 compact = true,
                 onSelect = { onSelect(unit) },
@@ -925,9 +927,12 @@ private fun MonthPicker(months: List<String>, selected: String, onSelect: (Strin
 }
 
 @Composable
-private fun MonthChip(month: String, selected: Boolean, onSelect: () -> Unit) {
+internal fun MonthChip(month: String, selected: Boolean, onSelect: () -> Unit) {
+    val label = monthLabel(month)
     SelectionChip(
-        label = monthLabel(month),
+        label = label,
+        semanticLabel = "$label budget month",
+        actionLabel = "Show budget month $label",
         selected = selected,
         onSelect = onSelect,
     )
@@ -940,6 +945,8 @@ private fun MonthChip(month: String, selected: Boolean, onSelect: () -> Unit) {
 @Composable
 private fun SelectionChip(
     label: String,
+    semanticLabel: String,
+    actionLabel: String,
     selected: Boolean,
     compact: Boolean = false,
     onSelect: () -> Unit,
@@ -953,9 +960,9 @@ private fun SelectionChip(
             // screen reader should say so.
             .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
             .semantics {
-                contentDescription = "$label display unit"
+                contentDescription = semanticLabel
                 stateDescription = if (selected) "Selected" else "Not selected"
-                onClick(label = "Show amounts in $label") {
+                onClick(label = actionLabel) {
                     onSelect()
                     true
                 }
