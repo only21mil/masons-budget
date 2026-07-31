@@ -23,8 +23,9 @@ import androidx.compose.ui.test.performTextReplacement
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.data.ConvexConfig
-import com.sats21m.vogelvault.data.ConvexMutationClient
-import com.sats21m.vogelvault.data.ConvexSyncTokenSource
+import com.sats21m.vogelvault.data.ConvexDeviceCredential
+import com.sats21m.vogelvault.data.ConvexDeviceCredentialSource
+import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.HttpPoster
 import com.sats21m.vogelvault.data.HttpTextResponse
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
@@ -35,7 +36,6 @@ import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
 import java.time.Instant
 import java.time.ZoneOffset
-import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -147,7 +147,8 @@ class TaskListsCrudScreenTest {
         val body = assertNotNull(application.poster.lastBody)
         assertTrue(body.contains("\"notes\":\"Keep this private note\""), body)
         assertTrue(body.contains("\"priority\""), body)
-        assertTrue(body.contains("\"category\":\"personal\""), body)
+        assertTrue(body.contains("\"lane\":\"personal\""), body)
+        assertTrue(body.contains("\"baseUpdatedAtMs\":1800000000000"), body)
         assertTrue(body.contains("\"createdAt\":\"2026-07-01T12:00:00Z\""), body)
 
         application.poster.answer(success("updated"))
@@ -173,7 +174,7 @@ class TaskListsCrudScreenTest {
         assertEquals(1, application.poster.requestCount)
         val body = assertNotNull(application.poster.lastBody)
         assertTrue(body.contains("\"done\":true"), body)
-        assertTrue(body.contains("\"status\":\"completed\""), body)
+        assertTrue(body.contains("\"baseUpdatedAtMs\":1800000000000"), body)
         assertEquals(0, refreshCount)
 
         application.poster.answer(success("completed"))
@@ -185,7 +186,7 @@ class TaskListsCrudScreenTest {
     }
 
     @Test
-    fun `delete announces success and offers undo only after Convex accepts it`() {
+    fun `delete announces success and restores only through safe undo`() {
         openGroup(todo.area!!)
         val deletedMessage = application.getString(R.string.todo_deleted, todo.title)
 
@@ -213,14 +214,31 @@ class TaskListsCrudScreenTest {
         assertEquals(1, nodesWithText(deletedMessage))
         compose.onNodeWithText(application.getString(R.string.todo_undo)).performClick()
         settle()
-        assertEquals(3, application.poster.requestCount, "Undo did not use the shared upsert gateway")
-
+        assertEquals(3, application.poster.requestCount)
+        assertTrue(checkNotNull(application.poster.lastBody).contains("tables:restoreTodoFromDevice"))
         application.poster.answer(success("restored"))
         settle()
-
         assertEquals(2, refreshCount)
         assertEquals(1, nodesWithText(todo.title))
         compose.onNodeWithText(allLists).fetchSemanticsNode()
+    }
+
+    @Test
+    fun `server missing delete stays locally deleted instead of resurrecting captured row`() {
+        openGroup(todo.area!!)
+        deleteTodo(todo.title)
+
+        application.poster.answer(
+            HttpTextResponse(
+                200,
+                """{"status":"error","errorData":{"code":"ENTITY_NOT_FOUND","message":"gone"}}""",
+            ),
+        )
+        settle()
+
+        assertEquals(0, nodesWithText(todo.title))
+        assertEquals(1, nodesWithText("Task was already deleted"))
+        assertEquals(0, refreshCount)
     }
 
     @Test
@@ -250,6 +268,11 @@ class TaskListsCrudScreenTest {
         settle()
         application.poster.answer(success("restored"))
         settle()
+        compose.onNodeWithContentDescription(
+            application.getString(R.string.todo_delete_pending_named, second.title),
+        ).assertIsNotEnabled()
+        compose.mainClock.advanceTimeBy(TODO_UNDO_WINDOW_MILLIS + 1)
+        settle()
 
         compose.onNodeWithContentDescription(
             application.getString(R.string.todo_delete_named, second.title),
@@ -271,19 +294,21 @@ class TaskListsCrudScreenTest {
 
         val body = assertNotNull(application.poster.lastBody)
         assertTrue(body.contains("\"title\":\"Schedule annual physical\""), body)
-        assertTrue(body.contains("\"text\":\"Schedule annual physical\""), body)
-        assertTrue(body.contains("\"sync_source\":\"android-app\""), body)
+        assertTrue(body.contains("\"path\":\"tables:upsertTodoFromDevice\""), body)
+        assertTrue(body.contains("\"owner\":\"victor\""), body)
+        assertTrue(body.contains("\"sourceFile\":\"todos\""), body)
+        assertFalse(body.contains("baseUpdatedAtMs"), body)
 
         application.poster.answer(
             HttpTextResponse(
                 200,
-                """{"status":"error","errorData":"Unauthorized: invalid sync token"}""",
+                """{"status":"error","errorData":{"code":"DEVICE_UNAUTHORIZED","message":"rejected"}}""",
             ),
         )
         settle()
 
         assertEquals(1, application.credentialRemovalCalls)
-        assertFalse(application.hasConvexWriteCredential())
+        assertFalse(application.hasTodoWriteCredential())
         compose.onNodeWithText("Task not added: the sync credential is missing or was rejected")
             .fetchSemanticsNode()
         compose.onNodeWithText(application.getString(R.string.tasks_save)).assertIsNotEnabled()
@@ -306,13 +331,13 @@ class TaskListsCrudScreenTest {
         application.poster.answer(
             HttpTextResponse(
                 200,
-                """{"status":"error","errorData":"Unauthorized: invalid sync token"}""",
+                """{"status":"error","errorData":{"code":"DEVICE_UNAUTHORIZED","message":"rejected"}}""",
             ),
         )
         settle()
 
         assertEquals(1, application.credentialRemovalCalls)
-        assertFalse(application.hasConvexWriteCredential())
+        assertFalse(application.hasTodoWriteCredential())
         assertEquals(0, refreshCount)
         compose.onNodeWithText("Change not saved: the sync credential is missing or was rejected")
             .fetchSemanticsNode()
@@ -403,8 +428,17 @@ class TaskListsCrudScreenTest {
         }
     }
 
-    private fun success(value: String) =
-        HttpTextResponse(200, """{"status":"success","value":"$value"}""")
+    private fun success(value: String): HttpTextResponse {
+        val body = checkNotNull(application.poster.lastBody)
+        val id = Regex("\\\"(?:entityId|id)\\\":\\\"([^\\\"]+)\\\"")
+            .find(body)?.groupValues?.get(1) ?: error("request had no todo id")
+        val result = when (value) {
+            "deleted" -> """{"ok":true,"entityId":"$id","removed":true}"""
+            "restored" -> """{"ok":true,"entityId":"$id","updatedAtMs":1800000000001}"""
+            else -> """{"ok":true,"entityId":"$id","outcome":"updated"}"""
+        }
+        return HttpTextResponse(200, """{"status":"success","value":$result}""")
+    }
 }
 
 class TaskListsCrudPoster : HttpPoster {
@@ -444,9 +478,9 @@ class TaskListsCrudApplication : VaultApplication() {
     var credentialRemovalCalls = 0
         private set
 
-    override fun hasConvexWriteCredential(): Boolean = credentialPresent
+    override fun hasTodoWriteCredential(): Boolean = credentialPresent
 
-    override fun removeConvexWriteCredential(): Result<Unit> {
+    override fun removeTodoWriteCredential(): Result<Unit> {
         credentialRemovalCalls += 1
         credentialPresent = false
         return Result.success(Unit)
@@ -459,11 +493,13 @@ class TaskListsCrudApplication : VaultApplication() {
 
     override val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         TodoMutationGateway(
-            ConvexMutationClient(
+            ConvexDeviceMutationClient(
                 configSource = MutableConvexConfigSource(
                     ConvexConfig(deploymentUrl = "https://task-lists-test.convex.cloud"),
                 ),
-                syncTokenSource = ConvexSyncTokenSource { "vv-test-" + UUID.randomUUID() },
+                credentialSource = ConvexDeviceCredentialSource {
+                    ConvexDeviceCredential("test-device", "t".repeat(43))
+                },
                 http = poster,
             ),
         )

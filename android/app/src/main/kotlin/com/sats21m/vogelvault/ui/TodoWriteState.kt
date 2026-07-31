@@ -41,7 +41,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextDecoration
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.data.ConvexResult
-import com.sats21m.vogelvault.data.ConvexValue
+import com.sats21m.vogelvault.data.DEVICE_ENTITY_DELETED_REASON
+import com.sats21m.vogelvault.data.DEVICE_ENTITY_NOT_FOUND_REASON
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.ui.theme.VaultAccent
@@ -54,6 +55,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 /**
  * One mutation session shared by Today and every Tasks route.
@@ -70,7 +72,7 @@ internal class TodoWriteState(
     private val snackbar: SnackbarHostState,
     private val nowMillis: () -> Long,
     private val onWriteSucceeded: () -> Unit,
-    private val onCredentialRejected: () -> Unit,
+    private val onCredentialRejected: () -> String?,
     private val deletedMessage: (TodoItem) -> String,
     private val undoLabel: String,
 ) {
@@ -79,20 +81,21 @@ internal class TodoWriteState(
 
     private var pendingDeletion by mutableStateOf<PendingTodoDeletion?>(null)
     private var expiryJob: Job? = null
+    private var restoreInFlightToken: String? = null
+    private var restoredOperationToken: String? = null
+    private val authoritativeRows = mutableMapOf<String, TodoItem>()
 
     val deletePending: Boolean
         get() = pendingDeletion != null
 
-    private suspend fun write(
-        call: suspend (TodoMutationGateway) -> ConvexResult<ConvexValue>,
-    ): ConvexResult<ConvexValue>? = gateway?.let { call(it) }
-
     /** Preserve the sealed transport outcome until credential recovery runs. */
-    private fun failureMessage(
+    private fun <T> failureMessage(
         action: TodoWriteAction,
-        result: ConvexResult<ConvexValue>?,
+        result: ConvexResult<T>?,
     ): String? {
-        if (result === ConvexResult.Unauthorized) onCredentialRejected()
+        if (result === ConvexResult.Unauthorized) {
+            onCredentialRejected()?.let(::report)
+        }
         return if (result == null) {
             todoWriteUnavailableMessage(action)
         } else {
@@ -106,13 +109,14 @@ internal class TodoWriteState(
 
     fun upsert(
         todo: TodoItem,
+        baseUpdatedAtMs: Long?,
         action: TodoWriteAction = TodoWriteAction.UPDATE,
         onAccepted: (TodoItem) -> Unit,
     ) {
         if (todo.id in busyIds) return
         busyIds = busyIds + todo.id
         scope.launch {
-            val result = write { it.upsert(todo) }
+            val result = gateway?.upsert(todo, baseUpdatedAtMs)
             val failure = failureMessage(action, result)
             if (failure == null) {
                 onAccepted(todo)
@@ -126,7 +130,8 @@ internal class TodoWriteState(
 
     /**
      * Remove immediately, but announce success and offer Undo only after Convex
-     * accepts the deletion. A rejected write restores the exact untouched row.
+     * accepts the deletion. A rejected write restores the newest row known from
+     * authority, never an older captured snapshot over a newer refresh.
      */
     fun delete(
         todo: TodoItem,
@@ -137,85 +142,112 @@ internal class TodoWriteState(
         // guard, deleting another row replaces the first pending record and
         // silently removes its rollback opportunity.
         if (todo.id in busyIds || pendingDeletion != null) return
+        val operationToken = UUID.randomUUID().toString()
         val pending = PendingTodoDeletion(
+            operationToken = operationToken,
             todo = todo,
-            expiresAtMillis = nowMillis() + TODO_UNDO_WINDOW_MILLIS,
+            expiresAtMillis = Long.MAX_VALUE,
         )
         busyIds = busyIds + todo.id
         onRemoved(todo)
         snackbar.currentSnackbarData?.dismiss()
         pendingDeletion = pending
+        restoredOperationToken = null
         expiryJob?.cancel()
 
         scope.launch {
-            // The window starts at the user's delete action, not when the
-            // network happens to answer.
-            expiryJob = launch {
-                delay(TODO_UNDO_WINDOW_MILLIS)
-                if (pendingDeletion?.todo?.id == todo.id) {
-                    pendingDeletion = null
-                    snackbar.currentSnackbarData?.dismiss()
-                }
+            val result = gateway?.delete(todo)
+            if (pendingDeletion?.operationToken != operationToken) {
+                busyIds = busyIds - todo.id
+                return@launch
             }
-
-            when (
-                val feedback = awaitTodoDeleteFeedback(
-                    delete = {
-                        val result = write { it.delete(todo.id) }
-                        failureMessage(TodoWriteAction.DELETE, result)
-                            .also { failure ->
-                                if (failure == null) onWriteSucceeded()
+            when (result) {
+                is ConvexResult.Ok -> {
+                    onWriteSucceeded()
+                    if (result.value.removed) {
+                        val accepted = pending.copy(
+                            expiresAtMillis = nowMillis() + TODO_UNDO_WINDOW_MILLIS,
+                        )
+                        pendingDeletion = accepted
+                        expiryJob = launch {
+                            delay(TODO_UNDO_WINDOW_MILLIS)
+                            if (pendingDeletion?.operationToken == operationToken) {
+                                snackbar.currentSnackbarData?.dismiss()
+                                if (restoreInFlightToken != operationToken) {
+                                    pendingDeletion = null
+                                    restoredOperationToken = null
+                                }
                             }
-                    },
-                    deletedMessage = deletedMessage(todo),
-                    showDeleted = { message ->
+                        }
+                        val feedback = snackbar.showSnackbar(
+                            message = deletedMessage(todo),
+                            actionLabel = undoLabel,
+                            duration = SnackbarDuration.Indefinite,
+                        )
                         if (
-                            pendingDeletion?.todo?.id == todo.id &&
-                            pending.canUndo(nowMillis())
+                            feedback == SnackbarResult.ActionPerformed &&
+                            pendingDeletion?.operationToken == operationToken &&
+                            accepted.canUndo(nowMillis())
                         ) {
-                            snackbar.showSnackbar(
-                                message = message,
-                                actionLabel = undoLabel,
-                                duration = SnackbarDuration.Indefinite,
-                            )
-                        } else {
-                            snackbar.showSnackbar(
-                                message = message,
-                                duration = SnackbarDuration.Short,
-                            )
+                            restoreInFlightToken = operationToken
+                            val restoreResult = gateway?.restore(todo)
+                            if (pendingDeletion?.operationToken == operationToken) {
+                                when (restoreResult) {
+                                    is ConvexResult.Ok -> {
+                                        restoredOperationToken = operationToken
+                                        onRestored(todo.copy(updatedAtMs = restoreResult.value.updatedAtMs))
+                                        onWriteSucceeded()
+                                    }
+                                    else -> failureMessage(TodoWriteAction.RESTORE, restoreResult)?.let(::report)
+                                }
+                            }
+                            restoreInFlightToken = null
+                            val remaining = accepted.expiresAtMillis - nowMillis()
+                            if (remaining > 0) delay(remaining)
                         }
-                    },
-                )
-            ) {
-                is TodoDeleteFeedback.Failed -> {
-                    onRestored(todo)
-                    pendingDeletion = null
-                    expiryJob?.cancel()
-                    snackbar.currentSnackbarData?.dismiss()
-                    report(feedback.message)
-                }
-
-                is TodoDeleteFeedback.Deleted -> {
-                    if (
-                        feedback.snackbarResult == SnackbarResult.ActionPerformed &&
-                        pendingDeletion?.todo?.id == todo.id &&
-                        pending.canUndo(nowMillis())
-                    ) {
-                        expiryJob?.cancel()
-                        val restoreResult = write { it.upsert(todo) }
-                        val restoreFailure = failureMessage(TodoWriteAction.RESTORE, restoreResult)
-                        if (restoreFailure == null) {
-                            onRestored(todo)
-                            onWriteSucceeded()
-                        } else {
-                            report(restoreFailure)
+                        if (pendingDeletion?.operationToken == operationToken) {
+                            pendingDeletion = null
+                            restoredOperationToken = null
                         }
+                    } else {
                         pendingDeletion = null
+                        report("Task was already deleted")
                     }
+                }
+                else -> {
+                    val failureReason = (result as? ConvexResult.Failed)?.reason
+                    val alreadyGone =
+                        failureReason == DEVICE_ENTITY_DELETED_REASON ||
+                            failureReason == DEVICE_ENTITY_NOT_FOUND_REASON
+                    if (!alreadyGone) {
+                        val restore = newestTodo(todo, authoritativeRows[todo.id])
+                        onRestored(restore)
+                    }
+                    pendingDeletion = null
+                    restoredOperationToken = null
+                    snackbar.currentSnackbarData?.dismiss()
+                    val message = if (alreadyGone) {
+                        "Task was already deleted"
+                    } else {
+                        failureMessage(TodoWriteAction.DELETE, result)
+                    }
+                    message?.let(::report)
                 }
             }
             busyIds = busyIds - todo.id
         }
+    }
+
+    /** Record fresh authority while keeping the active optimistic tombstone. */
+    fun filterIncoming(rows: List<TodoItem>): List<TodoItem> {
+        rows.forEach { row ->
+            val known = authoritativeRows[row.id]
+            if (known == null || row.updatedAtMs >= known.updatedAtMs) authoritativeRows[row.id] = row
+        }
+        val pending = pendingDeletion
+        val tombstonedId = pending?.todo?.id
+            ?.takeUnless { restoredOperationToken == pending.operationToken }
+        return rows.filterActiveTodoTombstone(tombstonedId)
     }
 
     fun close() {
@@ -229,7 +261,7 @@ internal fun rememberTodoWriteState(
     gateway: TodoMutationGateway?,
     snackbar: SnackbarHostState,
     onWriteSucceeded: () -> Unit,
-    onCredentialRejected: () -> Unit,
+    onCredentialRejected: () -> String?,
     nowMillis: () -> Long,
 ): TodoWriteState {
     val scope = rememberCoroutineScope()

@@ -192,7 +192,7 @@ class TaskStateProfileSwitchTest {
                         // This case asserts profile-switch state clearing, not the
                         // ledger refresh; RefreshAfterWriteSurfaceTest owns that.
                         onWriteSucceeded = {},
-                        onCredentialRejected = {},
+                        onCredentialRejected = { null },
                     )
                 }
             }
@@ -221,5 +221,5 @@ class TaskStateProfileSwitchTest {
 }
 
 class ProfileScopedTaskStateApplication : VaultApplication() {
-    override fun hasConvexWriteCredential(): Boolean = true
+    override fun hasTodoWriteCredential(): Boolean = true
 }

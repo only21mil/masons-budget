@@ -57,7 +57,7 @@ class WriteCredentialAccessorTest {
     }
 
     @Test
-    fun `settings and today save through the same verified application accessor`() {
+    fun `settings sync token and today device credential use separate verified accessors`() {
         showSettings()
         compose.onNodeWithText("Write credential").performTextInput("settings-token")
         compose.onNodeWithText("Save securely").performClick()
@@ -65,15 +65,12 @@ class WriteCredentialAccessorTest {
 
         application.forgetCredential()
         showToday()
-        compose.onNodeWithText("Sync credential").performScrollTo().performTextInput("today-token")
+        compose.onNodeWithText("Paired-device credential").performScrollTo().performTextInput("today-device." + "t".repeat(43))
         compose.onNodeWithText("Save write access").performScrollTo().performClick()
         settle()
 
-        assertEquals(
-            2,
-            application.verifiedSaveCalls,
-            "Settings and Today must both cross VaultApplication.saveConvexWriteCredential",
-        )
+        assertEquals(1, application.verifiedSaveCalls)
+        assertEquals(1, application.todoSaveCalls)
     }
 
     @Test
@@ -197,10 +194,13 @@ class RecordingWriteCredentialApplication : VaultApplication() {
         private set
     var verifiedRemovalCalls: Int = 0
         private set
+    var todoSaveCalls: Int = 0
+        private set
     var nextSaveFailure: Throwable? = null
     private var credentialPresent: Boolean = false
 
     override fun hasConvexWriteCredential(): Boolean = credentialPresent
+    override fun hasTodoWriteCredential(): Boolean = credentialPresent
 
     override fun saveConvexWriteCredential(token: String): Result<Unit> {
         verifiedSaveCalls += 1
@@ -209,6 +209,15 @@ class RecordingWriteCredentialApplication : VaultApplication() {
         credentialPresent = true
         return Result.success(Unit)
     }
+
+    override fun saveTodoWriteCredential(value: String): Result<Unit> {
+        todoSaveCalls += 1
+        credentialPresent = true
+        return Result.success(Unit)
+    }
+
+    override fun removeTodoWriteCredential(): Result<Unit> =
+        removeConvexWriteCredential()
 
     override fun removeConvexWriteCredential(): Result<Unit> {
         verifiedRemovalCalls += 1
@@ -227,6 +236,7 @@ class RecordingWriteCredentialApplication : VaultApplication() {
     fun reset() {
         verifiedSaveCalls = 0
         verifiedRemovalCalls = 0
+        todoSaveCalls = 0
         nextSaveFailure = null
         credentialPresent = false
     }

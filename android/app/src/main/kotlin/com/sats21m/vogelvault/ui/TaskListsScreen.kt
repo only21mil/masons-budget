@@ -107,17 +107,15 @@ private fun ProfileTaskListsScreen(
         Instant.ofEpochMilli(state.now).atZone(zoneId).toLocalDate()
     }
     var localTodos by remember { mutableStateOf(todos) }
-    LaunchedEffect(todos) {
-        localTodos = todos
-    }
     val model = remember(localTodos, state.activeProfile, date) {
         TaskListModel.build(localTodos, state.activeProfile, date)
     }
 
-    val application = LocalContext.current.applicationContext as? VaultApplication
+    val context = LocalContext.current
+    val application = context.applicationContext as? VaultApplication
     val gateway = remember(application) { application?.todoMutationGateway }
     var credentialStored by remember(application) {
-        mutableStateOf(application?.hasConvexWriteCredential() == true)
+        mutableStateOf(application?.hasTodoWriteCredential() == true)
     }
     val snackbar = remember { SnackbarHostState() }
     val writes = rememberTodoWriteState(
@@ -126,11 +124,15 @@ private fun ProfileTaskListsScreen(
         onWriteSucceeded = onWriteSucceeded,
         onCredentialRejected = {
             credentialStored = false
-            application?.removeConvexWriteCredential()
+            application?.removeTodoWriteCredential()?.exceptionOrNull()?.let {
+                credentialRemovalFailureMessage(it).resolve(context)
+            }
         },
         nowMillis = nowMillis,
     )
-    val context = LocalContext.current
+    LaunchedEffect(todos, writes) {
+        localTodos = writes.filterIncoming(todos)
+    }
 
     var routeName by rememberSaveable(state.activeProfile) {
         mutableStateOf(TaskListRoute.HUB.name)
@@ -152,12 +154,12 @@ private fun ProfileTaskListsScreen(
         enabled = { credentialStored && it.id !in writes.busyIds },
         deletePending = writes.deletePending,
         onToggleDone = { todo ->
-            writes.upsert(todo.withCompletion(!todo.done, Instant.now())) { changed ->
+            writes.upsert(todo.withCompletion(!todo.done, Instant.now()), todo.updatedAtMs) { changed ->
                 localTodos = localTodos.replaceTodo(changed)
             }
         },
         onToggleFlag = { todo ->
-            writes.upsert(todo.withFlag(!todo.flagged, Instant.now())) { changed ->
+            writes.upsert(todo.withFlag(!todo.flagged, Instant.now()), todo.updatedAtMs) { changed ->
                 localTodos = localTodos.replaceTodo(changed)
             }
         },
@@ -182,7 +184,9 @@ private fun ProfileTaskListsScreen(
             onWriteSucceeded = onWriteSucceeded,
             onCredentialRejected = {
                 credentialStored = false
-                application?.removeConvexWriteCredential()
+                application?.removeTodoWriteCredential()?.exceptionOrNull()?.let {
+                    credentialRemovalFailureMessage(it).resolve(context)
+                }
             },
         )
     }
@@ -192,7 +196,7 @@ private fun ProfileTaskListsScreen(
             todo = todo,
             onDismiss = { editing = null },
             onSave = { changed ->
-                writes.upsert(changed) { accepted ->
+                writes.upsert(changed, todo.updatedAtMs) { accepted ->
                     localTodos = localTodos.replaceTodo(accepted)
                 }
             },
@@ -223,7 +227,7 @@ private fun ProfileTaskListsScreen(
             TodoWriteCredentialCard { token ->
                 val app = application
                     ?: return@TodoWriteCredentialCard "This build cannot store a credential"
-                app.saveConvexWriteCredential(token).fold(
+                app.saveTodoWriteCredential(token).fold(
                     onSuccess = {
                         credentialStored = true
                         null

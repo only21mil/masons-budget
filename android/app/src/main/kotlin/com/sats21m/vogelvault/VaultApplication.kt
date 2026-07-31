@@ -6,11 +6,14 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexMutationClient
+import com.sats21m.vogelvault.data.ConvexDeviceCredential
+import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.FinanceQueryRepositories
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.data.RecoveringFinanceReadSource
 import com.sats21m.vogelvault.data.RowQueryRepositories
 import com.sats21m.vogelvault.data.SecureConvexConfigSource
+import com.sats21m.vogelvault.data.SecureConvexDeviceCredentialSource
 import com.sats21m.vogelvault.data.SecureConvexSyncTokenSource
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.cache.VaultDatabase
@@ -89,22 +92,45 @@ open class VaultApplication : Application() {
         ConvexTransactionActions(convexMutationClient)
     }
 
-    /**
-     * Todo writes ride the one shared mutation transport.
-     *
-     * A second client with its own credential store was the original shape here,
-     * and it would have been invisible: a token saved from the Today screen would
-     * have landed in a file [convexMutationClient] never reads, so the save would
-     * look successful while every write stayed unauthorized.
-     *
-     * Open so a test can substitute a gateway whose transport it controls. That
-     * is the only way to drive TodoScreen's real delete path — including the
-     * ordering of its snackbar against the mutation result — instead of testing
-     * a helper in isolation and calling it screen coverage.
-     */
+    /** Capability-scoped todo writes, isolated from the legacy sync-token transport. */
     internal open val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        TodoMutationGateway(convexMutationClient)
+        TodoMutationGateway(
+            ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(writeConvexConfig()),
+                credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
+            ),
+        )
     }
+
+    /** Whether the capability-scoped todo device credential exists. */
+    internal open fun hasTodoWriteCredential(): Boolean =
+        synchronized(convexConfigLock) {
+            storedConvexConfigSource.hasDeviceCredential()
+        }
+
+    /**
+     * Stores a provisioned `<device id>.<device token>` pair. Provisioning is
+     * intentionally separate from the legacy sync token used by other editors.
+     */
+    internal open fun saveTodoWriteCredential(value: String): Result<Unit> =
+        synchronized(convexConfigLock) {
+            runCatching {
+                storedConvexConfigSource.updateDeviceCredential(ConvexDeviceCredential.parse(value.trim()))
+                check(storedConvexConfigSource.hasDeviceCredential()) {
+                    "the stored todo device credential could not be read back"
+                }
+            }
+        }
+
+    internal open fun removeTodoWriteCredential(): Result<Unit> =
+        synchronized(convexConfigLock) {
+            runCatching {
+                storedConvexConfigSource.clearDeviceCredential()
+                check(!storedConvexConfigSource.hasDeviceCredential()) {
+                    "the removed todo device credential was still readable"
+                }
+            }
+        }
 
     /** Whether a write credential exists. The value itself never reaches the UI. */
     internal open fun hasConvexWriteCredential(): Boolean =

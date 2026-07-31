@@ -97,7 +97,7 @@ internal fun TodoScreen(
     }
     var localTodos by remember(viewer) { mutableStateOf(todosForToday(todos, viewer, today)) }
     var credentialStored by remember(application) {
-        mutableStateOf(application?.hasConvexWriteCredential() == true)
+        mutableStateOf(application?.hasTodoWriteCredential() == true)
     }
     var draft by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<TodoItem?>(null) }
@@ -109,20 +109,23 @@ internal fun TodoScreen(
         onWriteSucceeded = onWriteSucceeded,
         onCredentialRejected = {
             credentialStored = false
-            application?.removeConvexWriteCredential()
+            application?.removeTodoWriteCredential()?.exceptionOrNull()?.let {
+                credentialRemovalFailureMessage(it).resolve(context)
+            }
         },
         nowMillis = nowMillis,
     )
 
     LaunchedEffect(todos, viewer, today) {
-        localTodos = todosForToday(todos, viewer, today)
+        localTodos = todosForToday(writes.filterIncoming(todos), viewer, today)
     }
 
     fun mutate(
         todo: TodoItem,
         action: TodoWriteAction,
+        baseUpdatedAtMs: Long?,
     ) {
-        writes.upsert(todo, action) {
+        writes.upsert(todo, baseUpdatedAtMs, action) {
             localTodos = (localTodos.filterNot { it.id == todo.id } + todo).sortedWith(TODO_ORDER)
         }
     }
@@ -153,7 +156,7 @@ internal fun TodoScreen(
                     TodoWriteCredentialCard { token ->
                         val app = application
                             ?: return@TodoWriteCredentialCard "This build cannot store a credential"
-                        app.saveConvexWriteCredential(token).fold(
+                        app.saveTodoWriteCredential(token).fold(
                             onSuccess = {
                                 credentialStored = true
                                 null
@@ -191,7 +194,7 @@ internal fun TodoScreen(
                                 now = Instant.now(),
                             )
                             draft = ""
-                            mutate(todo, TodoWriteAction.ADD)
+                            mutate(todo, TodoWriteAction.ADD, null)
                         },
                     ) {
                         Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.todo_add))
@@ -233,10 +236,18 @@ internal fun TodoScreen(
                             null
                         },
                         onToggleDone = {
-                            mutate(todo.withCompletion(!todo.done, Instant.now()), TodoWriteAction.UPDATE)
+                            mutate(
+                                todo.withCompletion(!todo.done, Instant.now()),
+                                TodoWriteAction.UPDATE,
+                                todo.updatedAtMs,
+                            )
                         },
                         onToggleFlag = {
-                            mutate(todo.withFlag(!todo.flagged, Instant.now()), TodoWriteAction.UPDATE)
+                            mutate(
+                                todo.withFlag(!todo.flagged, Instant.now()),
+                                TodoWriteAction.UPDATE,
+                                todo.updatedAtMs,
+                            )
                         },
                         onEdit = {
                             editing = todo
@@ -264,7 +275,7 @@ internal fun TodoScreen(
         TodoEditDialog(
             todo = todo,
             onDismiss = { editing = null },
-            onSave = { mutate(it, TodoWriteAction.UPDATE) },
+            onSave = { mutate(it, TodoWriteAction.UPDATE, todo.updatedAtMs) },
         )
     }
 }
