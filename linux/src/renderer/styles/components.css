@@ -620,19 +620,19 @@
   background: var(--vv-positive);
 }
 
-.vv-budget-progress--warning .vv-budget-progress__labels {
+.vv-budget-progress--close .vv-budget-progress__labels {
   color: var(--vv-warning);
 }
 
-.vv-budget-progress--warning .vv-budget-progress__fill {
+.vv-budget-progress--close .vv-budget-progress__fill {
   background: var(--vv-warning);
 }
 
-.vv-budget-progress--negative .vv-budget-progress__labels {
+.vv-budget-progress--over .vv-budget-progress__labels {
   color: var(--vv-negative);
 }
 
-.vv-budget-progress--negative .vv-budget-progress__fill {
+.vv-budget-progress--over .vv-budget-progress__fill {
   background: var(--vv-negative);
 }
 

@@ -5,11 +5,11 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 
 import type { MonthKey } from "@vogel-vault/domain/readModel"
+import { budgetHealth } from "@vogel-vault/domain/finance"
 
 import { AppStateProvider, useAppState } from "../src/renderer/app/AppState.tsx"
 import {
   BudgetProgress,
-  budgetProgressState,
 } from "../src/renderer/components/BudgetProgress.tsx"
 import { resolvePage } from "../src/renderer/pages/index.ts"
 
@@ -30,64 +30,39 @@ function renderBudgetMonth(month: MonthKey): string {
   )
 }
 
-test("budget progress uses the exact iOS 85% and over-budget thresholds", () => {
-  assert.deepEqual(budgetProgressState(8_499n, 10_000n), {
-    tone: "positive",
-    statusLabel: "ON TRACK",
-    percentageLabel: "15% left",
-    progressPercent: 84.99,
-    hasPositiveLimit: true,
-  })
-  assert.deepEqual(budgetProgressState(8_500n, 10_000n), {
-    tone: "warning",
-    statusLabel: "CLOSE",
-    percentageLabel: "15% left",
-    progressPercent: 85,
-    hasPositiveLimit: true,
-  })
-  assert.deepEqual(budgetProgressState(10_000n, 10_000n), {
-    tone: "warning",
-    statusLabel: "CLOSE",
-    percentageLabel: "0% left",
-    progressPercent: 100,
-    hasPositiveLimit: true,
-  })
-  assert.deepEqual(budgetProgressState(10_001n, 10_000n), {
-    tone: "negative",
-    statusLabel: "OVER",
-    percentageLabel: "+0% over",
-    progressPercent: 100,
-    hasPositiveLimit: true,
-  })
+test("budget progress presents the shared health contract without recalculating it", () => {
+  for (const [spent, limit] of [
+    [8_499n, 10_000n],
+    [8_500n, 10_000n],
+    [10_000n, 10_000n],
+    [10_001n, 10_000n],
+    [25_000n, 10_000n],
+  ] as const) {
+    const health = budgetHealth(limit, spent)
+    const percentage = health.overPercent === null
+      ? `${health.remainingPercent}% left`
+      : `+${health.overPercent}% over`
+    const markup = renderToStaticMarkup(
+      createElement(BudgetProgress, { category: "Food", spent, limit }),
+    )
+
+    assert.ok(markup.includes(`vv-budget-progress--${health.status}`))
+    assert.ok(markup.includes(`aria-valuenow="${health.barBasisPoints / 100}"`))
+    assert.ok(markup.includes(`aria-valuetext="${health.label}, ${percentage}"`))
+  }
 })
 
-test("budget progress matches iOS truncation and its 200% percentage cap", () => {
-  assert.equal(budgetProgressState(19_999n, 10_000n).percentageLabel, "+99% over")
-  assert.equal(budgetProgressState(20_000n, 10_000n).percentageLabel, "+100% over")
-  assert.deepEqual(budgetProgressState(25_000n, 10_000n), {
-    tone: "negative",
-    statusLabel: "OVER",
-    percentageLabel: "+100% over",
-    progressPercent: 100,
-    hasPositiveLimit: true,
-  })
-})
+test("non-positive limits retain safe accessible copy around the shared state", () => {
+  for (const [spent, limit] of [[500n, 0n], [-500n, -100n]] as const) {
+    const health = budgetHealth(limit, spent)
+    const markup = renderToStaticMarkup(
+      createElement(BudgetProgress, { category: "Food", spent, limit }),
+    )
 
-test("non-positive limits remain deterministic without a fake percentage", () => {
-  assert.deepEqual(budgetProgressState(500n, 0n), {
-    tone: "negative",
-    statusLabel: "OVER",
-    percentageLabel: "No positive limit",
-    progressPercent: 0,
-    hasPositiveLimit: false,
-  })
-  assert.deepEqual(budgetProgressState(-500n, -100n), {
-    tone: "positive",
-    statusLabel: "ON TRACK",
-    percentageLabel: "No positive limit",
-    progressPercent: 0,
-    hasPositiveLimit: false,
-  })
+    assert.ok(markup.includes(`vv-budget-progress--${health.status}`))
+    assert.ok(markup.includes("No positive limit"))
+    assert.ok(markup.includes(`${health.label}, no positive limit`))
+  }
 })
 
 test("budget progress exposes its status and percentage to assistive technology", () => {
@@ -103,7 +78,7 @@ test("budget progress exposes its status and percentage to assistive technology"
   assert.ok(markup.includes('aria-label="Groceries budget use"'))
   assert.ok(markup.includes('aria-valuenow="85"'))
   assert.ok(markup.includes('aria-valuetext="CLOSE, 15% left"'))
-  assert.ok(markup.includes("vv-budget-progress--warning"))
+  assert.ok(markup.includes("vv-budget-progress--close"))
 })
 
 test("the category progress follows the selected Budget month", () => {
