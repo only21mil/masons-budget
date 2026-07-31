@@ -168,6 +168,19 @@ test("retirement renders scoped holdings with honest live, stale, and ledger val
   assert.ok(markup.includes("STALE"))
 })
 
+test("retirement headline discloses stale quote revaluation provenance", () => {
+  const markup = renderFinancePage("retirement", "victor", model())
+  const totalAt = markup.indexOf("Retirement total")
+  const accountsAt = markup.indexOf("Accounts", totalAt)
+
+  assert.ok(totalAt >= 0 && accountsAt > totalAt)
+  const totalMarkup = markup.slice(totalAt, accountsAt)
+  assert.ok(totalMarkup.includes("vv-stale"))
+  assert.ok(totalMarkup.includes("Stale quote revaluation"))
+  assert.ok(totalMarkup.includes("Revalued with stale IBIT market quote"))
+  assert.ok(!totalMarkup.includes("vv-actual"))
+})
+
 test("retirement preserves accounts without holdings and exposes contribution schedules", () => {
   const accountOnly: FinanceAccount = {
     key: "solo-pension",

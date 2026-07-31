@@ -213,6 +213,8 @@
 }
 
 .vv-unit-toggle__option {
+  min-width: 24px;
+  min-height: 24px;
   padding: 3px 8px;
   border: 0;
   border-radius: calc(var(--vv-radius) - 2px);

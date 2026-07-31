@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import { test } from "vitest"
 
 import { createElement } from "react"
@@ -196,6 +197,22 @@ test("USD UI labels the canonical BTC snapshot date and plainly says it is not l
   assert.ok(markup.includes('aria-pressed="true">USD</button>'))
   assert.ok(markup.includes("Uses the canonical BTC balance document from 2026-07-16."))
   assert.ok(markup.includes("This is not a live price."))
+})
+
+test("display-unit buttons expose pressed semantics and 24px minimum targets", () => {
+  const markup = renderPage("dashboard", "victor", "usd")
+  const css = readFileSync(
+    new URL("../src/renderer/styles/components.css", import.meta.url),
+    "utf8",
+  )
+  const optionRule = /\.vv-unit-toggle__option\s*\{([^}]*)\}/.exec(css)?.[1] ?? ""
+
+  assert.ok(markup.includes('role="group" aria-label="Bitcoin display unit"'))
+  assert.equal((markup.match(/type="button"/g) ?? []).length, 3)
+  assert.equal((markup.match(/aria-pressed="true"/g) ?? []).length, 1)
+  assert.equal((markup.match(/aria-pressed="false"/g) ?? []).length, 2)
+  assert.match(optionRule, /\bmin-width:\s*24px\s*;/)
+  assert.match(optionRule, /\bmin-height:\s*24px\s*;/)
 })
 
 test("USD UI shows Price unavailable when the required BTC document source is empty", () => {

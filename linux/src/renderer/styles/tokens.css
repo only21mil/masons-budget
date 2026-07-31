@@ -54,6 +54,7 @@
   --vv-actual: var(--vv-text);
   --vv-planned: var(--vv-text-muted);
   --vv-estimated: var(--vv-text-dim);
+  --vv-stale: var(--vv-warning);
 
   /* ── Type ───────────────────────────────────────────────────────────── */
   --vv-font-ui:

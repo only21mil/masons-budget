@@ -147,7 +147,7 @@ export function StatusBanner({ tone = "info", title, detail, action, className }
 
 // ── KPIStrip ────────────────────────────────────────────────────────────────
 
-export type Provenance = "actual" | "planned" | "estimated"
+export type Provenance = "actual" | "planned" | "estimated" | "stale"
 
 /**
  * Placeholder for a figure that could not be read.
@@ -179,6 +179,7 @@ const PROVENANCE_WORD: Record<Provenance, string | null> = {
   actual: null,
   planned: "Planned figure",
   estimated: "Estimated figure",
+  stale: "Stale quote revaluation",
 }
 
 export function KPIStrip({ items, className }: KPIStripProps) {
