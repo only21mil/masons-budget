@@ -1,6 +1,8 @@
 package com.sats21m.vogelvault.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -44,6 +46,7 @@ import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
@@ -108,6 +112,7 @@ const val UNFOLDED_MIN_WIDTH_DP = 600
 
 private const val FOLDED_MAX_ITEMS = 5
 private const val FOLDED_PRIMARY_ITEMS_WITH_OVERFLOW = FOLDED_MAX_ITEMS - 1
+internal const val VAULT_RAIL_TEST_TAG = "vault-navigation-rail"
 
 internal fun foldedPrimaryDestinations(destinations: List<Destination>): List<Destination> =
     if (destinations.size <= FOLDED_MAX_ITEMS) {
@@ -269,6 +274,15 @@ private fun VaultRail(
     current: Destination,
     onNavigate: (Destination) -> Unit,
 ) {
+    val currentIndex = destinations.indexOf(current).coerceAtLeast(0)
+    val railState = rememberLazyListState(initialFirstVisibleItemIndex = currentIndex)
+
+    LaunchedEffect(currentIndex) {
+        if (railState.layoutInfo.visibleItemsInfo.none { it.index == currentIndex }) {
+            railState.scrollToItem(currentIndex)
+        }
+    }
+
     NavigationRail(
         containerColor = VaultSurfaceSunken,
         header = {
@@ -276,20 +290,32 @@ private fun VaultRail(
             Icon(Icons.Filled.AccountBalance, contentDescription = null, tint = VaultAccent)
         },
     ) {
-        destinations.forEach { destination ->
-            NavigationRailItem(
-                selected = destination == current,
-                onClick = { onNavigate(destination) },
-                icon = { Icon(destination.icon, contentDescription = destination.label) },
-                label = { Text(destination.label, style = MaterialTheme.typography.labelSmall) },
-                colors = NavigationRailItemDefaults.colors(
-                    selectedIconColor = VaultCream,
-                    selectedTextColor = VaultCream,
-                    indicatorColor = VaultAccentDim,
-                    unselectedIconColor = VaultTextMuted,
-                    unselectedTextColor = VaultTextDim,
-                ),
-            )
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .testTag(VAULT_RAIL_TEST_TAG),
+            state = railState,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            items(
+                count = destinations.size,
+                key = { index -> destinations[index].name },
+            ) { index ->
+                val destination = destinations[index]
+                NavigationRailItem(
+                    selected = destination == current,
+                    onClick = { onNavigate(destination) },
+                    icon = { Icon(destination.icon, contentDescription = destination.label) },
+                    label = { Text(destination.label, style = MaterialTheme.typography.labelSmall) },
+                    colors = NavigationRailItemDefaults.colors(
+                        selectedIconColor = VaultCream,
+                        selectedTextColor = VaultCream,
+                        indicatorColor = VaultAccentDim,
+                        unselectedIconColor = VaultTextMuted,
+                        unselectedTextColor = VaultTextDim,
+                    ),
+                )
+            }
         }
     }
 }
