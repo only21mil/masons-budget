@@ -330,7 +330,7 @@ export type VogelVaultRowRequest =
   | {
       readonly kind: "finance"
       readonly viewer: VogelVaultMember
-      readonly scope: VogelVaultBtcScope
+      readonly scope: "netWorth"
     }
   | {
       /** Fixed BTC/VOO/IBIT query: the renderer cannot choose a symbol or URL. */

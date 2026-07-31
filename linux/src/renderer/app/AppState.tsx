@@ -243,7 +243,7 @@ export function AppStateProvider({
     setRemoteFinance({ profile, model: financeModel })
     if (result.status !== "loaded") return false
     setRemoteData({ profile, data: result.data, origin: "remote" })
-    return true
+    return financeReadSucceeded(financeModel)
   }, [])
 
   useEffect(() => {
@@ -540,6 +540,11 @@ export function AppStateProvider({
 const EMPTY_FINANCE_MODEL: LinuxFinanceReadModel = {
   finance: { status: "empty", value: null },
   marketQuotes: { status: "empty", value: null },
+}
+
+/** Global refresh succeeds only when both finance reads avoided transport/validation failure. */
+export function financeReadSucceeded(model: LinuxFinanceReadModel): boolean {
+  return model.finance.status !== "error" && model.marketQuotes.status !== "error"
 }
 
 function mutationAdapterFromWindow(): RendererMutationAdapter | null {
