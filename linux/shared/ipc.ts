@@ -190,6 +190,64 @@ export interface VogelVaultBudgetDocument {
   readonly updatedAtMs: number
 }
 
+export interface VogelVaultFinanceLot {
+  readonly date: string
+  readonly type: string
+  readonly pricePerShareCents: bigint
+  readonly sharesDecimal: string
+  readonly amountInvestedCents: bigint
+  readonly note?: string
+}
+
+export interface VogelVaultFinanceHolding {
+  readonly name: string
+  readonly category: string
+  readonly ticker?: string
+  readonly valueCents: bigint
+  readonly costBasisCents: bigint
+  readonly gainBps: bigint
+  readonly sharesDecimal: string
+  readonly avgCostCents: bigint
+  readonly currentPricePerShareCents: bigint
+  readonly isProxy: boolean
+  readonly proxyNote?: string
+  readonly lots: readonly VogelVaultFinanceLot[]
+}
+
+export interface VogelVaultFinanceAccount {
+  readonly key: string
+  readonly owner: VogelVaultMember
+  readonly provider: string
+  readonly totalValueCents: bigint
+  readonly weeklyContributionCents: bigint
+  readonly weeklyContributionDay?: string
+  readonly holdings: readonly VogelVaultFinanceHolding[]
+}
+
+/** Already account-scoped by the authenticated Convex query. */
+export interface VogelVaultFinanceDocument {
+  readonly lastUpdated: string
+  readonly retirementTotalCents?: bigint
+  readonly accounts: readonly VogelVaultFinanceAccount[]
+  readonly updatedAtMs: number
+}
+
+export type VogelVaultMarketSymbol = "BTC" | "VOO" | "IBIT"
+export type VogelVaultMarketQuoteStatus = "live" | "stale" | "unavailable"
+
+export interface VogelVaultMarketQuote {
+  readonly symbol: VogelVaultMarketSymbol
+  readonly priceCents: bigint | null
+  readonly source: string
+  readonly fetchedAt: string | null
+  readonly status: VogelVaultMarketQuoteStatus
+}
+
+/** Structurally complete even when one or more observations are unavailable. */
+export interface VogelVaultMarketQuoteSnapshot {
+  readonly quotes: readonly VogelVaultMarketQuote[]
+}
+
 export interface VogelVaultBtcSnapshotMeta {
   readonly owner: VogelVaultMember
   readonly schemaVersion: bigint
@@ -269,6 +327,15 @@ export type VogelVaultRowRequest =
       readonly viewer: VogelVaultMember
       readonly scope: VogelVaultBtcScope
     }
+  | {
+      readonly kind: "finance"
+      readonly viewer: VogelVaultMember
+      readonly scope: VogelVaultBtcScope
+    }
+  | {
+      /** Fixed BTC/VOO/IBIT query: the renderer cannot choose a symbol or URL. */
+      readonly kind: "marketQuotes"
+    }
 
 export type VogelVaultRowSuccess =
   | {
@@ -328,6 +395,16 @@ export type VogelVaultRowSuccess =
       readonly kind: "btcBalanceDocuments"
       readonly rows: readonly VogelVaultBtcBalanceDocument[]
       readonly complete: boolean
+    }
+  | {
+      readonly status: "ok"
+      readonly kind: "finance"
+      readonly value: VogelVaultFinanceDocument | null
+    }
+  | {
+      readonly status: "ok"
+      readonly kind: "marketQuotes"
+      readonly value: VogelVaultMarketQuoteSnapshot
     }
 
 /** Closed, locally authored failures. No remote text or configuration detail crosses IPC. */
