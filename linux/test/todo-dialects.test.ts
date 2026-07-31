@@ -24,10 +24,11 @@ import type { TodoItem } from "@vogel-vault/domain/readModel"
 import { type RawTodo, normalizeTodoRecord, toTodoItem } from "@vogel-vault/domain/todo"
 
 import { buildSanitizedFixtureEnvelope } from "../src/renderer/data/fixtures.ts"
-import { UNFILED_PROJECT, filingOf, taskFilters, todoColumns } from "../src/renderer/pages/tasks/index.tsx"
+import { UNFILED_PROJECT, filingOf, taskFiltersFor, todoColumns } from "../src/renderer/pages/tasks/index.tsx"
 
 /** The fixture clock, so a minted id or stamped timestamp cannot drift a run. */
 const NOW = Date.UTC(2026, 6, 26, 14, 30, 0)
+const TASK_FILTERS = taskFiltersFor("2026-07-26")
 
 function read(raw: RawTodo): TodoItem {
   return toTodoItem(normalizeTodoRecord(raw, { nowMillis: NOW }))
@@ -42,7 +43,7 @@ function renderCells(todo: TodoItem): string {
 
 /** Which views a todo appears in, in a stable order. */
 function viewsFor(todo: TodoItem): string[] {
-  return Object.entries(taskFilters)
+  return Object.entries(TASK_FILTERS)
     .filter(([, matches]) => matches(todo))
     .map(([name]) => name)
     .sort()
@@ -200,11 +201,11 @@ test("an unfiled todo is not filed under a project called Inbox", () => {
   // the Inbox list at the same time.
   assert.equal(unfiled.project, UNFILED_PROJECT)
   assert.equal(filingOf(unfiled), null)
-  assert.equal(taskFilters.inbox(unfiled), true)
+  assert.equal(TASK_FILTERS.inbox(unfiled), true)
 
   const filed = read({ id: "d-6", title: "Book the dentist", project: "Health Admin", owner: "victor" })
   assert.equal(filingOf(filed), "Health Admin")
-  assert.equal(taskFilters.inbox(filed), false)
+  assert.equal(TASK_FILTERS.inbox(filed), false)
 })
 
 test("the fixture envelope is built through the contract, not around it", () => {
@@ -216,8 +217,8 @@ test("the fixture envelope is built through the contract, not around it", () => 
   for (const todo of todos) assert.notEqual(todo.project, null)
 
   // And the mixed dialects in the fixture actually reach the views they should.
-  assert.ok(todos.some((todo) => taskFilters.inbox(todo)), "no fixture todo reaches the Inbox view")
-  assert.ok(todos.some((todo) => taskFilters.flagged(todo)), "no fixture todo reaches the Flagged view")
+  assert.ok(todos.some((todo) => TASK_FILTERS.inbox(todo)), "no fixture todo reaches the Inbox view")
+  assert.ok(todos.some((todo) => TASK_FILTERS.flagged(todo)), "no fixture todo reaches the Flagged view")
   assert.ok(todos.some((todo) => todo.done), "no fixture todo is complete")
 
   // todo-0004 carries `when: "anytime"`. A Things bucket word is not a due date.
