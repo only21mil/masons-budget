@@ -13,6 +13,11 @@ import {
   netWorthScopeFor,
   visibleTo,
 } from "@vogel-vault/domain/family"
+import type {
+  AccountValuation,
+  MarketQuote,
+  NetWorthSelection,
+} from "@vogel-vault/domain/finance"
 import { basisPoints, formatSats, formatUsd, satsToUsdCents, sum } from "@vogel-vault/domain/money"
 import {
   type BTCAccount,
@@ -51,6 +56,10 @@ import {
   fiatValuationOf,
 } from "../../data/btcFiatValuation.ts"
 import {
+  type FinanceReadSlice,
+  selectFinanceNetWorth,
+} from "../../data/financeReadModel.ts"
+import {
   Badge,
   BillPayFormDialog,
   BtcAccountFormDialog,
@@ -82,6 +91,75 @@ import type { PageManifest } from "../types.ts"
 function tableState(status: string): "normal" | "empty" | "error" | "stale" | "loading" {
   if (status === "loading" || status === "error" || status === "empty") return status
   return "normal"
+}
+
+function financeFreshness<T>(slice: FinanceReadSlice<T>): Freshness {
+  return slice.status
+}
+
+function quoteTone(quote: MarketQuote): "positive" | "warning" | "neutral" {
+  if (quote.status === "live") return "positive"
+  if (quote.status === "stale") return "warning"
+  return "neutral"
+}
+
+function quotePrice(quote: MarketQuote): string {
+  return quote.priceCents === null ? PRICE_UNAVAILABLE : formatUsd(quote.priceCents)
+}
+
+function quoteDetail(quote: MarketQuote): string {
+  if (quote.status === "unavailable") return `${quote.source} · price unavailable`
+  return `${quote.source} · ${quote.fetchedAt ?? "timestamp unavailable"}`
+}
+
+function QuoteSnapshot({ quotes }: { quotes: FinanceReadSlice<{ readonly quotes: readonly MarketQuote[] }> }) {
+  if (quotes.status !== "live") {
+    return (
+      <StateBlock
+        state={quotes.status}
+        title={quotes.status === "error" ? "Market quotes unavailable" : "No market quote snapshot"}
+        detail="BTC, VOO, and IBIT prices are withheld until the authenticated quote snapshot is available."
+      />
+    )
+  }
+  return (
+    <DataTable
+      columns={[
+        { key: "symbol", header: "Symbol", render: (quote) => <strong>{quote.symbol}</strong> },
+        { key: "price", header: "Price", numeric: true, render: quotePrice },
+        {
+          key: "status",
+          header: "Status",
+          render: (quote) => <Badge tone={quoteTone(quote)}>{quote.status.toUpperCase()}</Badge>,
+        },
+        { key: "source", header: "Source", render: quoteDetail, secondary: true },
+      ] satisfies ReadonlyArray<Column<MarketQuote>>}
+      rows={quotes.value.quotes}
+      rowKey={(quote) => quote.symbol}
+      state="normal"
+    />
+  )
+}
+
+function holdingBasis(account: AccountValuation, ticker: string | null): string {
+  const valuation = account.holdings.find((item) => item.holding.ticker === ticker)
+  if (!valuation) return "Stored value"
+  const symbol = ticker?.trim().toUpperCase() ?? ""
+  if (valuation.basis === "stored-value") {
+    return symbol === "VOO" || symbol === "IBIT"
+      ? "Stored value · quote unavailable"
+      : "Stored value"
+  }
+  return `${valuation.quote?.status === "stale" ? "Stale" : "Live"} ${symbol} quote`
+}
+
+function formatNetWorth(selection: NetWorthSelection, unit: DisplayUnit): string {
+  if (unit === "usd") {
+    return selection.totalValueCents === null ? PRICE_UNAVAILABLE : formatUsd(selection.totalValueCents)
+  }
+  return selection.totalValueSats === null
+    ? PRICE_UNAVAILABLE
+    : formatBitcoin(selection.totalValueSats, unit)
 }
 
 /**
@@ -1269,55 +1347,98 @@ function BillsPage() {
 // ── Retirement ──────────────────────────────────────────────────────────────
 
 function RetirementPage() {
-  const { activeProfile, data } = useAppState()
-  const incomeRows = visibleTo(activeProfile, data.income.value)
-  const currentMonth =
-    data.budget.value?.month ?? monthOf(new Date(data.generatedAt).toISOString().slice(0, 10))
-  const currentYear = currentMonth.slice(0, 4)
-  const ytdIncome = sum(
-    incomeRows.filter((row) => row.month.startsWith(currentYear)).map((row) => row.amount),
+  const { activeProfile, financeModel, stateOverride } = useAppState()
+  const selection = selectFinanceNetWorth({
+    viewer: activeProfile,
+    bitcoinSats: 0n,
+    model: financeModel,
+  })
+  const updatedAt = financeModel.finance.status === "live"
+    ? financeModel.finance.value.updatedAtMs
+    : null
+  const holdingRows = selection.accounts.flatMap((valuation) =>
+    valuation.holdings.map((holding) => ({
+      account: valuation,
+      holding,
+    })),
   )
-  const mtdIncome = sum(
-    incomeRows.filter((row) => row.month === currentMonth).map((row) => row.amount),
-  )
+  const showFinance = stateOverride === "normal" && financeModel.finance.status === "live"
+  const financeBlockState = stateOverride === "loading" || stateOverride === "stale" ||
+      stateOverride === "error" || stateOverride === "empty"
+    ? stateOverride
+    : financeModel.finance.status === "error" ? "error" : "empty"
 
   return (
     <>
       <PageHeader
         title="Retirement"
         subtitle="Long-horizon accounts"
-        actions={<FreshnessTag status={data.income.status} updatedAt={data.income.updatedAt} />}
+        actions={
+          <FreshnessTag status={financeFreshness(financeModel.finance)} updatedAt={updatedAt} />
+        }
       />
-      <StaleNotice status={data.income.status} />
       <KPIStrip
         items={[
           {
-            label: "YTD income",
-            value: figure(data.income.status, () => formatUsd(ytdIncome), true),
+            label: "Retirement total",
+            value: showFinance
+              ? formatUsd(selection.retirementValueCents)
+              : SUPPRESSED,
             provenance: "actual",
           },
           {
-            label: "MTD income",
-            value: figure(data.income.status, () => formatUsd(mtdIncome), true),
+            label: "Accounts",
+            value: showFinance
+              ? String(selection.accounts.length)
+              : SUPPRESSED,
             provenance: "actual",
           },
         ]}
       />
       <Panel
         title="Retirement accounts"
-        source="Unavailable in this client"
+        source={showFinance
+          ? `Synced finance document · ${financeModel.finance.value.lastUpdated}`
+          : "Authenticated finance document unavailable"}
         flush
       >
-        {/*
-          The retirement account slice is not part of the renderer envelope yet.
-          Showing an explicit unavailable state is correct here; inventing
-          numbers would be worse.
-        */}
-        <StateBlock
-          state="empty"
-          title="Not wired to the live read yet"
-          detail="Retirement rows are not wired into this client yet. No placeholder figures are shown on purpose."
-        />
+        {showFinance ? (
+          <DataTable
+            columns={[
+              { key: "provider", header: "Account", render: (row) => row.account.account.provider },
+              { key: "holding", header: "Holding", render: (row) => row.holding.holding.name },
+              { key: "ticker", header: "Ticker", render: (row) => row.holding.holding.ticker ?? "—" },
+              { key: "shares", header: "Shares", numeric: true, render: (row) => row.holding.holding.sharesDecimal },
+              { key: "value", header: "Value", numeric: true, render: (row) => formatUsd(row.holding.valueCents) },
+              {
+                key: "basis",
+                header: "Valuation basis",
+                render: (row) => holdingBasis(row.account, row.holding.holding.ticker),
+                secondary: true,
+              },
+            ] satisfies ReadonlyArray<Column<(typeof holdingRows)[number]>>}
+            rows={holdingRows}
+            rowKey={(row) => `${row.account.account.key}:${row.holding.holding.name}`}
+            state={holdingRows.length > 0 ? "normal" : "empty"}
+            emptyTitle="No retirement holdings"
+            emptyDetail="No net-worth-scoped retirement holdings were returned for this profile."
+          />
+        ) : (
+          <StateBlock
+            state={financeBlockState}
+            title={financeBlockState === "error"
+              ? "Retirement read failed"
+              : financeBlockState === "empty" ? "No retirement document" : undefined}
+            detail="No fixture balances are substituted for synchronized retirement holdings."
+          />
+        )}
+      </Panel>
+      <Panel title="Market quote snapshot" source="Operational prices · separate from the finance ledger" flush>
+        {stateOverride === "normal" ? (
+          <QuoteSnapshot quotes={financeModel.marketQuotes} />
+        ) : (
+          <StateBlock state={financeBlockState} detail="No QA fixture is presented as a market quote." />
+        )}
       </Panel>
     </>
   )
@@ -1326,11 +1447,24 @@ function RetirementPage() {
 // ── Net Worth ───────────────────────────────────────────────────────────────
 
 function NetWorthPage() {
-  const { activeProfile, data, displayUnit } = useAppState()
+  const { activeProfile, data, displayUnit, financeModel } = useAppState()
   const document = data.btcBalanceDocument.value
   const inScope = document?.accounts ?? []
   const stackSats = document?.totals.sats ?? 0n
-  const stackValue = document ? fiatCentsOf(document.totals) : null
+  const canonicalStackValue = document ? fiatCentsOf(document.totals) : null
+  const selection = selectFinanceNetWorth({
+    viewer: activeProfile,
+    bitcoinSats: stackSats,
+    model: financeModel,
+  })
+  const financeLoaded = financeModel.finance.status === "live"
+  const quotesLoaded = financeModel.marketQuotes.status === "live"
+  const bitcoinLoaded = document !== null &&
+    data.btcBalanceDocument.status !== "error" &&
+    data.btcBalanceDocument.status !== "loading" &&
+    data.btcBalanceDocument.status !== "empty"
+  const totalAvailable = bitcoinLoaded && financeLoaded && quotesLoaded &&
+    selection.totalValueCents !== null
 
   const projectedInScope = netWorthScopeFor(activeProfile, data.btcAccounts.value)
   const excluded = data.btcAccounts.value.filter(
@@ -1352,10 +1486,25 @@ function NetWorthPage() {
       />
       <StaleNotice status={data.btcBalanceDocument.status} />
       {displayUnit === "usd" ? (
-        <BitcoinSnapshotNotice
-          status={data.btcBalanceDocument.status}
-          document={document}
-        />
+        <>
+          <BitcoinSnapshotNotice
+            status={data.btcBalanceDocument.status}
+            document={document}
+          />
+          {selection.btcQuote ? (
+            <StatusBanner
+              tone={selection.btcQuote.status === "stale" ? "warning" : "positive"}
+              title={`${selection.btcQuote.status === "stale" ? "Stale" : "Live"} BTC quote · ${formatUsd(selection.btcQuote.priceCents ?? 0n)}`}
+              detail={quoteDetail(selection.btcQuote)}
+            />
+          ) : (
+            <StatusBanner
+              tone="warning"
+              title="BTC market price unavailable"
+              detail="USD Bitcoin and combined net-worth totals are withheld. Canonical account fiat remains visible only in the account table."
+            />
+          )}
+        </>
       ) : null}
       <KPIStrip
         items={[
@@ -1363,28 +1512,50 @@ function NetWorthPage() {
             label: "Bitcoin",
             value: requiredFigure(
               data.btcBalanceDocument.status,
-              () => formatSnapshotBitcoin(stackSats, stackValue, displayUnit),
+              () => displayUnit === "usd"
+                ? selection.bitcoinValueCents === null
+                  ? PRICE_UNAVAILABLE
+                  : formatUsd(selection.bitcoinValueCents)
+                : formatBitcoin(stackSats, displayUnit),
             ),
             tone: "accent",
           },
           {
-            label: "Fiat estimate",
-            value: requiredFigure(
-              data.btcBalanceDocument.status,
-              () => stackValue === null ? PRICE_UNAVAILABLE : formatUsd(stackValue),
-            ),
-            hint: requiredFigure(
-              data.btcBalanceDocument.status,
-              () => `Canonical snapshot · ${document?.asOf ?? "date unavailable"}`,
-            ),
+            label: "Retirement",
+            value: financeLoaded ? formatUsd(selection.retirementValueCents) : SUPPRESSED,
+            hint: financeLoaded ? `${selection.accounts.length} scoped account(s)` : undefined,
             provenance: "estimated",
           },
           {
-            label: "Accounts",
+            label: isAdult(activeProfile) ? "Adult net worth" : "Net worth",
+            value: totalAvailable ? formatNetWorth(selection, displayUnit) : SUPPRESSED,
+            hint: totalAvailable ? "BTC plus retirement · no child balances" : undefined,
+            provenance: "estimated",
+          },
+          {
+            label: "BTC accounts",
             value: requiredFigure(data.btcBalanceDocument.status, () => String(inScope.length)),
+          },
+          {
+            label: "Canonical account fiat",
+            value: requiredFigure(
+              data.btcBalanceDocument.status,
+              () => canonicalStackValue === null ? PRICE_UNAVAILABLE : formatUsd(canonicalStackValue),
+            ),
+            hint: requiredFigure(
+              data.btcBalanceDocument.status,
+              () => `Synchronized snapshot · ${document?.asOf ?? "date unavailable"}`,
+            ),
           },
         ]}
       />
+      {!financeLoaded ? (
+        <StatusBanner
+          tone="warning"
+          title="Adult net-worth total unavailable"
+          detail="The synchronized finance document did not load. Bitcoin remains visible without inventing a retirement balance."
+        />
+      ) : null}
       <PageGrid>
         <Panel title="In scope" source={data.btcBalanceDocument.source} flush>
           <DataTable
@@ -1395,7 +1566,9 @@ function NetWorthPage() {
                 key: "amount",
                 header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),
                 numeric: true,
-                render: (row) => formatSnapshotBitcoin(row.sats, fiatCentsOf(row), displayUnit),
+                render: (row) => displayUnit === "usd"
+                  ? fiatCentsOf(row) === null ? PRICE_UNAVAILABLE : formatUsd(fiatCentsOf(row) ?? 0n)
+                  : formatBitcoin(row.sats, displayUnit),
               },
             ]}
             rows={inScope}
@@ -1416,7 +1589,9 @@ function NetWorthPage() {
                 key: "amount",
                 header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),
                 numeric: true,
-                render: (row) => formatSnapshotBitcoin(row.sats, fiatCentsOf(row), displayUnit),
+                render: (row) => displayUnit === "usd"
+                  ? fiatCentsOf(row) === null ? PRICE_UNAVAILABLE : formatUsd(fiatCentsOf(row) ?? 0n)
+                  : formatBitcoin(row.sats, displayUnit),
               },
             ]}
             rows={excluded}
@@ -1427,6 +1602,9 @@ function NetWorthPage() {
           />
         </Panel>
       </PageGrid>
+      <Panel title="Market quote snapshot" source="Operational prices · never inferred from buys" flush>
+        <QuoteSnapshot quotes={financeModel.marketQuotes} />
+      </Panel>
     </>
   )
 }
