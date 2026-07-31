@@ -111,6 +111,21 @@ describe("renderer CRUD routes", () => {
     },
   )
 
+  it("keeps task controls inside the active profile visibility boundary", () => {
+    const adultMarkup = renderRoute("projects", "victor")
+    expect(adultMarkup).toContain("Reconcile July statements")
+    expect(adultMarkup).toContain("Finish reading assignment")
+
+    const masonMarkup = renderRoute("projects", "mason")
+    expect(masonMarkup).toContain("Finish reading assignment")
+    expect(masonMarkup).toContain("Tidy room")
+    expect(masonMarkup).not.toContain("Reconcile July statements")
+    expect(masonMarkup).not.toContain("Plan birthday weekend")
+    expect(masonMarkup).not.toContain("Practice piano")
+    expect(masonMarkup).toMatch(/aria-label="Complete Finish reading assignment"/)
+    expect(masonMarkup).toMatch(/aria-label="Reopen Tidy room"/)
+  })
+
   it("keeps BTC account fiat valuation out of the editable form", () => {
     const markup = renderRoute("bitcoin")
     expect(markup).toContain("USD valuation requires independent provenance")

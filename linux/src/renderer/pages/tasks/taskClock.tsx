@@ -7,6 +7,11 @@ export type TaskNow = () => Date
 const systemNow: TaskNow = () => new Date()
 const TaskClockContext = createContext<TaskNow>(systemNow)
 
+/** Read the injected task clock without scheduling a calendar-day refresh. */
+export function useTaskNow(): TaskNow {
+  return useContext(TaskClockContext)
+}
+
 /** Format a local calendar day without converting through UTC. */
 export function localDateKey(now: Date): string {
   const year = now.getFullYear().toString().padStart(4, "0")
@@ -20,7 +25,7 @@ export function localDateKey(now: Date): string {
  * Injected clocks stay deterministic and intentionally do not start timers.
  */
 export function useTaskToday(): string {
-  const now = useContext(TaskClockContext)
+  const now = useTaskNow()
   const [today, setToday] = useState(() => localDateKey(now()))
 
   useEffect(() => {
