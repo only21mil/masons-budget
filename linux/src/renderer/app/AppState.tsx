@@ -1,6 +1,6 @@
-// App-wide state: which profile is active, which route is showing, which month
-// the money screens are reporting on, and the QA state override that lets every
-// page be inspected in all five states.
+// App-wide state: which profile is active, which route is showing, which Budget
+// month is selected, and the QA state override that lets every page be inspected
+// in all five states.
 
 import {
   createContext,
@@ -14,7 +14,7 @@ import {
 import type { ReactNode } from "react"
 
 import { type FamilyMember, allowedSwitchTargets } from "@vogel-vault/domain/family"
-import type { Freshness, MonthKey } from "@vogel-vault/domain/readModel"
+import { type Freshness, type MonthKey, monthOf } from "@vogel-vault/domain/readModel"
 
 import { type FixtureEnvelope, buildSanitizedFixtureEnvelope, fixtureEnvelopeInState } from "../data/fixtures.ts"
 import { loadConvexRowEnvelope } from "../data/convexRows.ts"
@@ -59,12 +59,11 @@ interface AppStateValue {
   readonly navigate: (id: string) => void
   readonly locked: boolean
   readonly setLocked: (locked: boolean) => void
+  /** Canonical current UTC/server month used by Dashboard MTD. */
+  readonly currentMonth: MonthKey
   /**
-   * Month the money screens report on, or null to follow the data's own month.
-   *
-   * Held app-wide rather than inside the Budget page so the Dashboard headline
-   * moves with it. Two screens quoting different months for one household is
-   * how a number gets trusted when it should not be.
+   * Month the Budget screen reports on, or null to follow the budget document.
+   * Dashboard MTD remains anchored to the current UTC/server month.
    */
   readonly selectedMonth: MonthKey | null
   readonly selectMonth: (month: MonthKey | null) => void
@@ -110,6 +109,8 @@ export interface AppStateProviderProps {
   initialProfile?: FamilyMember
   initialRoute?: string
   initialStateOverride?: StateOverride
+  /** Canonical server month override for deterministic/bootstrap rendering. */
+  initialCurrentMonth?: MonthKey
   initialSelectedMonth?: MonthKey | null
   initialDisplayUnit?: DisplayUnit
   /** Exact envelope for headless financial-state regression tests. */
@@ -131,6 +132,7 @@ export function AppStateProvider({
   initialProfile = "victor",
   initialRoute = "dashboard",
   initialStateOverride = "normal",
+  initialCurrentMonth,
   initialSelectedMonth = null,
   initialDisplayUnit,
   initialData,
@@ -143,6 +145,7 @@ export function AppStateProvider({
   const [activeProfile, setActiveProfile] = useState<FamilyMember>(initialProfile)
   const [route, setRoute] = useState(initialRoute)
   const [locked, setLocked] = useState(false)
+  const currentMonth = initialCurrentMonth ?? monthOf(new Date().toISOString().slice(0, 10))
   const [stateOverride, setStateOverride] = useState<StateOverride>(initialStateOverride)
   const [selectedMonth, setSelectedMonth] = useState<MonthKey | null>(initialSelectedMonth)
   const [displayUnit, setStoredDisplayUnit] = useState<DisplayUnit>(
@@ -504,6 +507,7 @@ export function AppStateProvider({
       navigate: setRoute,
       locked,
       setLocked,
+      currentMonth,
       selectedMonth,
       selectMonth: setSelectedMonth,
       stateOverride,
@@ -529,6 +533,7 @@ export function AppStateProvider({
       switchTargets,
       route,
       locked,
+      currentMonth,
       selectedMonth,
       stateOverride,
       displayUnit,
