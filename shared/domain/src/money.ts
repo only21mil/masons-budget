@@ -156,9 +156,41 @@ export function formatBtc(sats: Sats): string {
 export function satsToUsdCents(sats: Sats, btcPriceCents: Cents): Cents {
   // (sats / 1e8) * price → integer math, rounded half away from zero.
   const numerator = sats * btcPriceCents
-  const half = SATS_PER_BTC / 2n
-  if (numerator >= 0n) return (numerator + half) / SATS_PER_BTC
-  return -((-numerator + half) / SATS_PER_BTC)
+  return divideRoundedHalfAwayFromZero(numerator, SATS_PER_BTC)
+}
+
+/**
+ * Convert USD cents to satoshis at an integer-cent BTC price.
+ *
+ * A missing or non-positive market price is not zero-valued evidence, so it is
+ * rejected rather than converted to a confident zero.
+ */
+export function usdCentsToSats(cents: Cents, btcPriceCents: Cents): Sats {
+  if (btcPriceCents <= 0n) {
+    throw new RangeError(`BTC price must be positive integer cents: ${btcPriceCents}`)
+  }
+  return divideRoundedHalfAwayFromZero(cents * SATS_PER_BTC, btcPriceCents)
+}
+
+/**
+ * Value an exact decimal share quantity at an integer-cent per-share price.
+ *
+ * `sharesDecimal` is the Convex wire representation. Parsing it lexically keeps
+ * fractional shares out of IEEE-754 arithmetic and rounds the final cent half
+ * away from zero, matching Swift Decimal and Kotlin BigDecimal.
+ */
+export function sharesToValueCents(sharesDecimal: string, pricePerShareCents: Cents): Cents {
+  const raw = sharesDecimal.trim()
+  const match = /^(-)?(\d+)(?:\.(\d*))?$/.exec(raw)
+  if (!match) throw new RangeError(`Not a decimal share quantity: ${JSON.stringify(sharesDecimal)}`)
+
+  const [, sign, whole = "", fraction = ""] = match
+  const magnitude = BigInt(`${whole}${fraction}`)
+  const signedMagnitude = sign === "-" ? -magnitude : magnitude
+  return divideRoundedHalfAwayFromZero(
+    signedMagnitude * pricePerShareCents,
+    10n ** BigInt(fraction.length),
+  )
 }
 
 export function sum(values: Iterable<bigint>): bigint {
@@ -171,4 +203,13 @@ export function sum(values: Iterable<bigint>): bigint {
 export function basisPoints(part: bigint, whole: bigint): number {
   if (whole === 0n) return 0
   return Number((part * 10_000n) / whole)
+}
+
+function divideRoundedHalfAwayFromZero(numerator: bigint, positiveDenominator: bigint): bigint {
+  if (positiveDenominator <= 0n) {
+    throw new RangeError(`Denominator must be positive: ${positiveDenominator}`)
+  }
+  const magnitude = numerator < 0n ? -numerator : numerator
+  const rounded = (magnitude + positiveDenominator / 2n) / positiveDenominator
+  return numerator < 0n ? -rounded : rounded
 }

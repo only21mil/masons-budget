@@ -4,6 +4,9 @@ This directory is the language-neutral contract for every Vogel Vault client.
 Client authors must read this file before adding or replacing a server-response
 decoder. The executable vectors live in
 [`fixtures/visibility-cases.json`](fixtures/visibility-cases.json).
+Finance, quote, exact valuation, net-worth, budget-health, and category
+drill-down parity is pinned by
+[`fixtures/finance-market-cases.json`](fixtures/finance-market-cases.json).
 
 ## Current data boundary
 
@@ -78,3 +81,19 @@ and adult refund. Decoder and domain parity suites must run all four cases.
 
 `canSee` is wider than `sharesNetWorth`: adults may see child data, but adult net
 worth includes adults only. These rules remain pinned by the same fixture.
+
+## Retirement data and market quotes
+
+Convex finance accounts, holdings, contribution amounts, and contribution days
+are synchronized household data. Contribution schedules are projections and
+labels; they do not instruct a client to place a market order.
+
+BTC, VOO, and IBIT quotes are a separate operational snapshot. Each observation
+has integer-cent price evidence, source, fetch time, and an explicit
+`live | stale | unavailable` status. The minimal transport and future Convex
+boundary are documented in
+[`../../docs/market-quote-boundary.md`](../../docs/market-quote-boundary.md).
+
+Net worth uses the canonical scoped BTC satoshi balance plus net-worth-scoped
+finance accounts. Holdings are valued once; the document-level retirement
+projection is never added on top of the same accounts.
