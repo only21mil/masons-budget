@@ -2281,6 +2281,12 @@ const deviceDeleteResultValidator = v.object({
   removed: v.boolean(),
 });
 
+const deviceRestoreResultValidator = v.object({
+  ok: v.literal(true),
+  entityId: v.string(),
+  updatedAtMs: v.float64(),
+});
+
 /** Insert or replace ONE transaction. Compare with dataFiles:appendTransaction,
  *  which rewrites all 905 to do this. */
 export const upsertTransaction = mutation({
@@ -2959,6 +2965,21 @@ function deviceTodoRow(
   );
 }
 
+function validateDeviceTodo(
+  todo: Parameters<typeof deviceTodoRow>[0],
+) {
+  requireDeviceIdentifier(todo.id, "todo.id");
+  requireDeviceText(todo.title, "todo.title");
+  requireDeviceOptionalText(todo.lane, "todo.lane");
+  requireDeviceOptionalText(todo.project, "todo.project");
+  requireDeviceOptionalText(todo.area, "todo.area");
+  requireDeviceCalendarDate(todo.due, "todo.due");
+  requireDeviceOptionalText(todo.notes, "todo.notes");
+  requireDeviceTimestamp(todo.createdAt, "todo.createdAt");
+  requireDeviceTimestamp(todo.updatedAt, "todo.updatedAt");
+  requireDeviceTimestamp(todo.completedAt, "todo.completedAt");
+}
+
 async function deleteTransactionCore(
   ctx: MutationCtx,
   sourceFile: string,
@@ -3096,6 +3117,77 @@ async function deleteTodoCore(
   );
   await upsertLegacyTodoTombstone(ctx, todoId);
   return existing !== null;
+}
+
+async function restoreTodoCore(
+  ctx: MutationCtx,
+  owner: FamilyMember,
+  row: ReturnType<typeof deviceTodoRow>,
+  baseUpdatedAtMs: number,
+) {
+  const existing = await ctx.db
+    .query("todos")
+    .withIndex("by_todo_id", (q) => q.eq("todoId", row.todoId))
+    .unique();
+  if (existing) {
+    if (existing.owner !== owner) {
+      deviceFailure(
+        "OWNER_MISMATCH",
+        `Todo ${row.todoId} belongs to ${existing.owner}, not ${owner}.`,
+        "todo",
+        row.todoId,
+      );
+    }
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      "The todo is not deleted and cannot be restored.",
+      "todo",
+      row.todoId,
+    );
+  }
+
+  const tombstone = await findRowTombstone(
+    ctx,
+    "todo",
+    "todos",
+    row.todoId,
+  );
+  if (!tombstone) {
+    deviceFailure(
+      "ENTITY_NOT_FOUND",
+      "No deleted todo revision exists to restore.",
+      "todo",
+      row.todoId,
+    );
+  }
+  if (tombstone.owner !== owner) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Deleted todo ${row.todoId} belongs to ${tombstone.owner}, not ${owner}.`,
+      "todo",
+      row.todoId,
+    );
+  }
+  if (tombstone.deletedFromUpdatedAtMs !== baseUpdatedAtMs) {
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      "The todo deletion does not match the revision being restored.",
+      "todo",
+      row.todoId,
+    );
+  }
+
+  // The restored row receives a new revision above both the deleted row and
+  // its tombstone. A later delete therefore cannot be undone by replaying this
+  // restore request with the old base revision.
+  const updatedAtMs = nextUpdatedAtMs(
+    Math.max(baseUpdatedAtMs, tombstone.deletedAtMs),
+  );
+  await lockRuntimeSource(ctx, "todos");
+  await ctx.db.insert("todos", { ...row, updatedAtMs });
+  await ctx.db.delete(tombstone._id);
+  await clearLegacyTodoTombstone(ctx, row.todoId);
+  return updatedAtMs;
 }
 
 async function deleteBtcBuyCore(
@@ -3662,16 +3754,7 @@ export const upsertTodoFromDevice = mutation({
       "todos:write",
     );
     requireDeviceRevision(args.baseUpdatedAtMs, false);
-    requireDeviceIdentifier(args.todo.id, "todo.id");
-    requireDeviceText(args.todo.title, "todo.title");
-    requireDeviceOptionalText(args.todo.lane, "todo.lane");
-    requireDeviceOptionalText(args.todo.project, "todo.project");
-    requireDeviceOptionalText(args.todo.area, "todo.area");
-    requireDeviceCalendarDate(args.todo.due, "todo.due");
-    requireDeviceOptionalText(args.todo.notes, "todo.notes");
-    requireDeviceTimestamp(args.todo.createdAt, "todo.createdAt");
-    requireDeviceTimestamp(args.todo.updatedAt, "todo.updatedAt");
-    requireDeviceTimestamp(args.todo.completedAt, "todo.completedAt");
+    validateDeviceTodo(args.todo);
     if (args.todo.owner !== args.owner) {
       deviceFailure(
         "OWNER_MISMATCH",
@@ -3687,6 +3770,51 @@ export const upsertTodoFromDevice = mutation({
     );
     await markDeviceSeen(ctx, device);
     return { ok: true as const, entityId: args.todo.id, outcome };
+  },
+});
+
+/**
+ * Restore one device-deleted todo without opening the normal upsert path.
+ * `baseUpdatedAtMs` is the exact revision accepted by deleteTodoFromDevice;
+ * it must still be recorded on the current tombstone. The complete todo value
+ * comes from the client's just-deleted snapshot, while identity, owner and
+ * deletion revision are independently fenced by server state.
+ */
+export const restoreTodoFromDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    owner: familyMemberValidator,
+    sourceFile: v.literal("todos"),
+    baseUpdatedAtMs: v.float64(),
+    todo: todoDeviceInput,
+  },
+  returns: deviceRestoreResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+      "todos:write",
+    );
+    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    validateDeviceTodo(args.todo);
+    if (args.todo.owner !== args.owner) {
+      deviceFailure(
+        "OWNER_MISMATCH",
+        "Todo owner does not match request owner.",
+        "todo",
+        args.todo.id,
+      );
+    }
+    const updatedAtMs = await restoreTodoCore(
+      ctx,
+      args.owner,
+      deviceTodoRow(args.todo, Date.now()),
+      args.baseUpdatedAtMs,
+    );
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, entityId: args.todo.id, updatedAtMs };
   },
 });
 
