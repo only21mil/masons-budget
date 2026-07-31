@@ -21,6 +21,7 @@ import {
   validatePrivateOutputPath,
 } from "../build-android-read-bootstrap.mjs";
 
+const repoRoot = path.resolve(import.meta.dirname, "../..");
 const testRoots = [];
 
 async function privateDirectory(prefix = "vv-android-bootstrap-build-") {
@@ -102,6 +103,43 @@ test("output must be new and beneath HOME work", async () => {
   );
 });
 
+test("Gradle locks combined intent to guarded bootstrap builds", async () => {
+  const source = await readFile(
+    path.join(repoRoot, "android/app/build.gradle.kts"),
+    "utf8",
+  );
+  const field = "CONVEX_READ_BOOTSTRAP_REQUEST_TODO_WRITE";
+  assert.equal(source.match(new RegExp(field, "g"))?.length, 2);
+  assert.match(
+    source,
+    new RegExp(
+      `buildConfigField\\("boolean", "${field}", "false"\\)`,
+    ),
+  );
+  assert.match(
+    source,
+    new RegExp(`"boolean",\\s*"${field}",\\s*"true"`),
+  );
+});
+
+test("manual workflow retains branch signer cleanup and retention gates", async () => {
+  const source = await readFile(
+    path.join(repoRoot, ".github/workflows/android-read-bootstrap.yml"),
+    "utf8",
+  );
+  for (const invariant of [
+    "workflow_dispatch:",
+    "github.event.repository.default_branch",
+    "ANDROID_DEBUG_KEYSTORE_BASE64",
+    "VOGEL_VAULT_ANDROID_BOOTSTRAP_CI_PURPOSE: android-read-bootstrap-apk-v1",
+    "retention-days: 1",
+    "if: always()",
+    "find \"$private_root\" -xdev -type f -exec shred -u -- {} +",
+  ]) {
+    assert.equal(source.includes(invariant), true, invariant);
+  }
+});
+
 test("approved manual CI builds bootstrap then scrubbed clean APK with exact uncached assembly", async () => {
   const directory = await privateDirectory("vv-android-bootstrap-invoke-");
   const input = await pairingFile(directory);
@@ -117,13 +155,19 @@ test("approved manual CI builds bootstrap then scrubbed clean APK with exact unc
   const spawn = (command, args, options) => {
     calls.push({ command, args, options });
     if (String(command).endsWith("gradlew")) {
+      const combined = Boolean(
+        options.env.VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE,
+      );
       mkdirSync(intermediates, { recursive: true });
       writeFileSync(fakeGeneratedApk, "test-apk-bytes");
       writeFileSync(
         fakeBuildConfig,
         [
           'public static final String CONVEX_READ_TOKEN = "";',
-          'public static final String CONVEX_READ_BOOTSTRAP_PAIR = "";',
+          `public static final String CONVEX_READ_BOOTSTRAP_PAIR = "${
+            combined ? validPairingCode() : ""
+          }";`,
+          `public static final boolean CONVEX_READ_BOOTSTRAP_REQUEST_TODO_WRITE = ${combined};`,
         ].join("\n"),
       );
     }
@@ -189,7 +233,7 @@ test("approved manual CI builds bootstrap then scrubbed clean APK with exact unc
   assert.equal((await stat(cleanOutput)).mode & 0o777, 0o600);
 });
 
-test("clean replacement fails closed if generated fields retain the bootstrap", async () => {
+test("clean replacement fails closed if generated todo-write intent remains true", async () => {
   const directory = await privateDirectory("vv-android-bootstrap-clean-guard-");
   const input = await pairingFile(directory);
   const intermediates = path.join(directory, "intermediates");
@@ -208,7 +252,10 @@ test("clean replacement fails closed if generated fields retain the bootstrap", 
         fakeBuildConfig,
         [
           'public static final String CONVEX_READ_TOKEN = "";',
-          `public static final String CONVEX_READ_BOOTSTRAP_PAIR = "${validPairingCode()}";`,
+          `public static final String CONVEX_READ_BOOTSTRAP_PAIR = "${
+            assemblies === 1 ? validPairingCode() : ""
+          }";`,
+          "public static final boolean CONVEX_READ_BOOTSTRAP_REQUEST_TODO_WRITE = true;",
         ].join("\n"),
       );
     }
@@ -240,6 +287,53 @@ test("clean replacement fails closed if generated fields retain the bootstrap", 
   );
   assert.equal(assemblies, 2);
   await assert.rejects(stat(path.join(directory, "clean.apk")), /ENOENT/);
+  await assert.rejects(stat(intermediates), /ENOENT/);
+});
+
+test("bootstrap copy fails closed when generated todo-write intent is false", async () => {
+  const directory = await privateDirectory("vv-android-bootstrap-intent-guard-");
+  const input = await pairingFile(directory);
+  const intermediates = path.join(directory, "intermediates");
+  const fakeGeneratedApk = path.join(intermediates, "generated.apk");
+  const fakeBuildConfig = path.join(intermediates, "BuildConfig.java");
+  const stableDebugKeystore = path.join(directory, "stable-debug.keystore");
+  const output = path.join(directory, "bootstrap.apk");
+  await writeFile(stableDebugKeystore, "test-keystore", { mode: 0o600 });
+  await chmod(stableDebugKeystore, 0o600);
+
+  assert.throws(
+    () =>
+      buildAndroidReadBootstrap({
+        pairingFile: input,
+        output,
+        processEnv: {
+          ...process.env,
+          HOME: os.homedir(),
+          CI: "",
+          VOGEL_DEBUG_KEYSTORE: stableDebugKeystore,
+        },
+        spawn: (command) => {
+          if (String(command).endsWith("gradlew")) {
+            mkdirSync(intermediates, { recursive: true });
+            writeFileSync(fakeGeneratedApk, "test-apk-bytes");
+            writeFileSync(
+              fakeBuildConfig,
+              [
+                'public static final String CONVEX_READ_TOKEN = "";',
+                `public static final String CONVEX_READ_BOOTSTRAP_PAIR = "${validPairingCode()}";`,
+                "public static final boolean CONVEX_READ_BOOTSTRAP_REQUEST_TODO_WRITE = false;",
+              ].join("\n"),
+            );
+          }
+          return { status: 0, error: undefined };
+        },
+        generatedApkPath: fakeGeneratedApk,
+        generatedBuildConfigPath: fakeBuildConfig,
+        intermediatesPath: intermediates,
+      }),
+    /combined enrollment intent/,
+  );
+  await assert.rejects(stat(output), /ENOENT/);
   await assert.rejects(stat(intermediates), /ENOENT/);
 });
 

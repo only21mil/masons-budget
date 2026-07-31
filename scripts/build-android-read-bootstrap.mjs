@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-// Build one private bootstrap APK. The pairing value is read by Gradle from
-// a validated private file path in VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE; it is
+// Build one private combined bootstrap APK. Gradle reads the pairing value from
+// a validated private path in VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE; it is
 // never accepted in argv or printed by this helper.
 
 import fs from "node:fs";
@@ -183,12 +183,33 @@ function validateCleanBuildConfig(file, pairingCode) {
   const emptyReadToken = 'public static final String CONVEX_READ_TOKEN = "";';
   const emptyBootstrap =
     'public static final String CONVEX_READ_BOOTSTRAP_PAIR = "";';
+  const readOnlyIntent =
+    "public static final boolean CONVEX_READ_BOOTSTRAP_REQUEST_TODO_WRITE = false;";
   if (
     !buildConfig.includes(emptyReadToken) ||
     !buildConfig.includes(emptyBootstrap) ||
+    !buildConfig.includes(readOnlyIntent) ||
     buildConfig.includes(pairingCode)
   ) {
     throw new Error("The clean replacement build retained read-bootstrap material.");
+  }
+}
+
+function validateCombinedBootstrapBuildConfig(file, pairingCode) {
+  const buildConfig = fs.readFileSync(file, "utf8");
+  const emptyReadToken = 'public static final String CONVEX_READ_TOKEN = "";';
+  const embeddedBootstrap =
+    `public static final String CONVEX_READ_BOOTSTRAP_PAIR = "${pairingCode}";`;
+  const todoWriteIntent =
+    "public static final boolean CONVEX_READ_BOOTSTRAP_REQUEST_TODO_WRITE = true;";
+  if (
+    !buildConfig.includes(emptyReadToken) ||
+    !buildConfig.includes(embeddedBootstrap) ||
+    !buildConfig.includes(todoWriteIntent)
+  ) {
+    throw new Error(
+      "The bootstrap build did not contain the exact combined enrollment intent.",
+    );
   }
 }
 
@@ -236,6 +257,10 @@ export function buildAndroidReadBootstrap({
     if (!fs.statSync(generatedApkPath).isFile()) {
       throw new Error("Gradle did not produce the expected bootstrap APK.");
     }
+    validateCombinedBootstrapBuildConfig(
+      generatedBuildConfigPath,
+      pairingCode,
+    );
     fs.copyFileSync(generatedApkPath, destination, fs.constants.COPYFILE_EXCL);
     fs.chmodSync(destination, 0o600);
 
