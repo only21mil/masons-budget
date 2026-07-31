@@ -1,0 +1,351 @@
+package com.sats21m.vogelvault.ui
+
+import android.os.Looper
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
+import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.data.ConvexConfig
+import com.sats21m.vogelvault.data.ConvexMutationClient
+import com.sats21m.vogelvault.data.ConvexSyncTokenSource
+import com.sats21m.vogelvault.data.HttpPoster
+import com.sats21m.vogelvault.data.HttpTextResponse
+import com.sats21m.vogelvault.data.MutableConvexConfigSource
+import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.Fixtures
+import com.sats21m.vogelvault.domain.Freshness
+import com.sats21m.vogelvault.domain.TodoItem
+import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
+import java.time.Instant
+import java.time.ZoneOffset
+import java.util.UUID
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+import kotlinx.coroutines.channels.Channel
+import org.junit.After
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.android.controller.ActivityController
+import org.robolectric.annotation.Config
+
+@RunWith(RobolectricTestRunner::class)
+@Config(
+    sdk = [34],
+    application = TaskListsCrudApplication::class,
+)
+class TaskListsCrudScreenTest {
+    @get:Rule
+    val compose = createEmptyComposeRule()
+
+    private lateinit var activityController: ActivityController<ComponentActivity>
+    private lateinit var application: TaskListsCrudApplication
+    private var refreshCount = 0
+    private var screenNowMillis = 1_800_000_000_000L
+
+    private val todo = TodoItem(
+        id = "task-lists-crud",
+        title = "Renew family insurance",
+        project = "Annual planning",
+        area = "Household",
+        due = "2026-08-02",
+        flagged = true,
+        owner = FamilyMember.VICTOR,
+        lane = "personal",
+        notes = "Keep this private note",
+        priority = 3L,
+        createdAt = "2026-07-01T12:00:00Z",
+        updatedAt = "2026-07-29T12:00:00Z",
+        updatedAtMs = 1_800_000_000_000L,
+    )
+
+    private val allLists: String
+        get() = application.getString(R.string.tasks_all_lists)
+
+    @Before
+    fun startComposeHost() {
+        application = RuntimeEnvironment.getApplication() as TaskListsCrudApplication
+        application.poster.reset()
+        refreshCount = 0
+        activityController = Robolectric.buildActivity(ComponentActivity::class.java)
+        activityController.get().setTheme(R.style.Theme_VogelVault)
+        activityController.setup()
+        showTasks()
+    }
+
+    @After
+    fun stopComposeHost() {
+        activityController.pause().stop().destroy()
+    }
+
+    @Test
+    fun `hub smart project and area routes expose distinct accessible task actions`() {
+        assertTaskActions(todo.title)
+
+        compose.onNode(hasText(application.getString(R.string.tasks_upcoming)) and hasClickAction())
+            .performScrollTo()
+            .performClick()
+        settle()
+        compose.onNodeWithText(allLists).fetchSemanticsNode()
+        assertTaskActions(todo.title)
+
+        backToHub()
+        openGroup(todo.project!!)
+        compose.onNodeWithText(allLists).fetchSemanticsNode()
+        assertTaskActions(todo.title)
+
+        backToHub()
+        openGroup(todo.area!!)
+        compose.onNodeWithText(allLists).fetchSemanticsNode()
+        assertTaskActions(todo.title)
+    }
+
+    @Test
+    fun `full row edit preserves metadata disables the busy row and retains project route`() {
+        openGroup(todo.project!!)
+
+        compose.onNodeWithContentDescription(editDescription(todo.title))
+            .performScrollTo()
+            .performClick()
+        settle()
+        compose.onNodeWithText(application.getString(R.string.todo_title))
+            .performTextReplacement("Renew every insurance policy")
+        compose.onNode(hasText(application.getString(R.string.todo_save)) and hasClickAction())
+            .performClick()
+        settle()
+
+        assertEquals(1, application.poster.requestCount, "edit did not reach the shared todo gateway")
+        compose.onNodeWithContentDescription(markCompleteDescription(todo.title))
+            .assertIsNotEnabled()
+        assertEquals(0, refreshCount, "an in-flight edit refreshed authoritative rows")
+
+        val body = assertNotNull(application.poster.lastBody)
+        assertTrue(body.contains("\"notes\":\"Keep this private note\""), body)
+        assertTrue(body.contains("\"priority\""), body)
+        assertTrue(body.contains("\"category\":\"personal\""), body)
+        assertTrue(body.contains("\"createdAt\":\"2026-07-01T12:00:00Z\""), body)
+
+        application.poster.answer(success("updated"))
+        settle()
+
+        assertEquals(1, refreshCount)
+        compose.onNodeWithText(allLists).fetchSemanticsNode()
+        compose.onNodeWithText("Renew every insurance policy").fetchSemanticsNode()
+    }
+
+    @Test
+    fun `completion is a distinct accepted mutation and retains the smart list route`() {
+        compose.onNode(hasText(application.getString(R.string.tasks_upcoming)) and hasClickAction())
+            .performScrollTo()
+            .performClick()
+        settle()
+
+        compose.onNodeWithContentDescription(markCompleteDescription(todo.title))
+            .performScrollTo()
+            .performClick()
+        settle()
+
+        assertEquals(1, application.poster.requestCount)
+        val body = assertNotNull(application.poster.lastBody)
+        assertTrue(body.contains("\"done\":true"), body)
+        assertTrue(body.contains("\"status\":\"completed\""), body)
+        assertEquals(0, refreshCount)
+
+        application.poster.answer(success("completed"))
+        settle()
+
+        assertEquals(1, refreshCount)
+        assertEquals(0, nodesWithText(todo.title), "a completed task stayed in the open smart list")
+        compose.onNodeWithText(allLists).fetchSemanticsNode()
+    }
+
+    @Test
+    fun `delete announces success and offers undo only after Convex accepts it`() {
+        openGroup(todo.area!!)
+        val deletedMessage = application.getString(R.string.todo_deleted, todo.title)
+
+        deleteTodo(todo.title)
+
+        assertEquals(1, application.poster.requestCount)
+        assertEquals(0, nodesWithText(deletedMessage))
+        assertEquals(0, nodesWithText(application.getString(R.string.todo_undo)))
+        assertEquals(0, nodesWithText(todo.title), "the local delete was not reflected")
+        assertEquals(0, refreshCount)
+
+        application.poster.answer(HttpTextResponse(500, ""))
+        settle()
+
+        assertEquals(1, nodesWithText("Task not deleted (http 500)"))
+        assertEquals(1, nodesWithText(todo.title), "a rejected delete did not restore the exact row")
+        assertEquals(0, refreshCount)
+        compose.onNodeWithText(allLists).fetchSemanticsNode()
+
+        deleteTodo(todo.title)
+        application.poster.answer(success("deleted"))
+        settle()
+
+        assertEquals(1, refreshCount)
+        assertEquals(1, nodesWithText(deletedMessage))
+        compose.onNodeWithText(application.getString(R.string.todo_undo)).performClick()
+        settle()
+        assertEquals(3, application.poster.requestCount, "Undo did not use the shared upsert gateway")
+
+        application.poster.answer(success("restored"))
+        settle()
+
+        assertEquals(2, refreshCount)
+        assertEquals(1, nodesWithText(todo.title))
+        compose.onNodeWithText(allLists).fetchSemanticsNode()
+    }
+
+    private fun assertTaskActions(title: String) {
+        compose.onNodeWithContentDescription(editDescription(title))
+            .performScrollTo()
+            .fetchSemanticsNode()
+        compose.onNodeWithContentDescription(markCompleteDescription(title))
+            .performScrollTo()
+            .fetchSemanticsNode()
+        compose.onNodeWithContentDescription(
+            application.getString(R.string.todo_remove_flag_named, title),
+        ).performScrollTo().fetchSemanticsNode()
+        compose.onNodeWithContentDescription(
+            application.getString(R.string.todo_delete_named, title),
+        ).performScrollTo().fetchSemanticsNode()
+    }
+
+    private fun openGroup(name: String) {
+        compose.onNodeWithContentDescription(
+            application.getString(R.string.tasks_open_group, name),
+        ).performScrollTo().performClick()
+        settle()
+    }
+
+    private fun backToHub() {
+        compose.onNodeWithText(allLists).performScrollTo().performClick()
+        settle()
+    }
+
+    private fun deleteTodo(title: String) {
+        compose.onNodeWithContentDescription(
+            application.getString(R.string.todo_delete_named, title),
+        ).performScrollTo().performClick()
+        settle()
+    }
+
+    private fun editDescription(title: String): String =
+        application.getString(R.string.todo_edit_named, title)
+
+    private fun markCompleteDescription(title: String): String =
+        application.getString(R.string.todo_mark_complete_named, title)
+
+    private fun nodesWithText(text: String): Int =
+        compose.onAllNodesWithText(text).fetchSemanticsNodes().size
+
+    private fun showTasks() {
+        val now = Instant.parse("2026-07-30T12:00:00Z").toEpochMilli()
+        val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+        val state = VaultUiState(
+            activeProfile = FamilyMember.VICTOR,
+            destination = Destination.TASKS,
+            data = base.copy(
+                todos = base.todos.copy(status = Freshness.LIVE, value = listOf(todo)),
+            ),
+            now = now,
+        )
+        compose.runOnUiThread {
+            activityController.get().setContent {
+                VogelVaultTheme {
+                    LazyColumn(Modifier.fillMaxSize()) {
+                        item {
+                            TaskListsScreen(
+                                state = state,
+                                todos = listOf(todo),
+                                onWriteSucceeded = { refreshCount++ },
+                                zoneId = ZoneOffset.UTC,
+                                nowMillis = { screenNowMillis },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        settle()
+    }
+
+    private fun settle() {
+        repeat(3) {
+            shadowOf(Looper.getMainLooper()).idle()
+            compose.waitForIdle()
+        }
+    }
+
+    private fun success(value: String) =
+        HttpTextResponse(200, """{"status":"success","value":"$value"}""")
+}
+
+class TaskListsCrudPoster : HttpPoster {
+    private val answers = Channel<HttpTextResponse>(Channel.UNLIMITED)
+
+    @Volatile
+    var requestCount = 0
+        private set
+
+    @Volatile
+    var lastBody: String? = null
+        private set
+
+    override suspend fun postJson(url: String, body: String): HttpTextResponse {
+        requestCount += 1
+        lastBody = body
+        return answers.receive()
+    }
+
+    fun answer(response: HttpTextResponse) {
+        check(answers.trySend(response).isSuccess)
+    }
+
+    fun reset() {
+        requestCount = 0
+        lastBody = null
+        while (answers.tryReceive().isSuccess) {
+            // Robolectric can retain the Application between test methods.
+        }
+    }
+}
+
+class TaskListsCrudApplication : VaultApplication() {
+    val poster = TaskListsCrudPoster()
+
+    override fun hasConvexWriteCredential(): Boolean = true
+
+    override val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        TodoMutationGateway(
+            ConvexMutationClient(
+                configSource = MutableConvexConfigSource(
+                    ConvexConfig(deploymentUrl = "https://task-lists-test.convex.cloud"),
+                ),
+                syncTokenSource = ConvexSyncTokenSource { "vv-test-" + UUID.randomUUID() },
+                http = poster,
+            ),
+        )
+    }
+}

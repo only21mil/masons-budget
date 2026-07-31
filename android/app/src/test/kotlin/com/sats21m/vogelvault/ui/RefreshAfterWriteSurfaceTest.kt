@@ -253,7 +253,9 @@ class RefreshAfterWriteSurfaceTest {
             )
         }
         val interact = {
-            compose.onNodeWithContentDescription(application.getString(R.string.todo_edit))
+            compose.onNodeWithContentDescription(
+                application.getString(R.string.todo_edit_named, todo.title),
+            )
                 .performScrollTo()
                 .performClick()
             compose.onNodeWithText(application.getString(R.string.todo_title))
