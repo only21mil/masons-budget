@@ -21,7 +21,48 @@ dependencies {
     testImplementation("com.google.code.gson:gson:2.11.0")
 }
 
+// These files live outside the Android Gradle root, so Gradle cannot infer them
+// from the test sources. Keep the list exact: each entry is a contract consumed
+// by a domain parity test. finance-market-cases.json is included before PR #248
+// lands so adding that fixture invalidates any previously cached test result.
+val sharedDomainFixtureNames =
+    listOf(
+        "btc-fiat-availability-cases.json",
+        "finance-market-cases.json",
+        "month-cases.json",
+        "todo-cases.json",
+        "visibility-cases.json",
+    )
+val repositoryRoot = rootProject.layout.projectDirectory.dir("..")
+val sharedDomainFixtures =
+    objects.fileCollection().from(
+        sharedDomainFixtureNames.map { name ->
+            repositoryRoot.file("shared/domain/fixtures/$name")
+        },
+    )
+
+val verifySharedFixtureTestInputs =
+    tasks.register("verifySharedFixtureTestInputs") {
+        group = "verification"
+        description = "Verifies that every shared domain parity fixture invalidates :domain:test."
+
+        doLast {
+            val expected = sharedDomainFixtures.files.mapTo(linkedSetOf()) { it.canonicalFile }
+            val registered = tasks.test.get().inputs.files.files.mapTo(linkedSetOf()) { it.canonicalFile }
+            val missing = expected - registered
+            check(missing.isEmpty()) {
+                val relative = missing.map { it.relativeTo(repositoryRoot.asFile).invariantSeparatorsPath }
+                "Shared domain fixtures missing from :domain:test inputs: ${relative.sorted()}"
+            }
+        }
+    }
+
 tasks.test {
+    dependsOn(verifySharedFixtureTestInputs)
+    inputs.files(sharedDomainFixtures)
+        .withPropertyName("sharedDomainParityFixtures")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
     useJUnitPlatform()
     testLogging {
         events("passed", "failed", "skipped")
