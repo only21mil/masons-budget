@@ -32,6 +32,16 @@ internal data class RetirementHoldingRow(
     val key: String get() = "${account.account.owner.key}:${account.account.key}:${holding.holding.name}"
 }
 
+internal enum class RetirementSection {
+    ACCOUNTS_AND_HOLDINGS,
+    QUOTE_PROVENANCE,
+}
+
+internal val retirementSectionOrder = listOf(
+    RetirementSection.ACCOUNTS_AND_HOLDINGS,
+    RetirementSection.QUOTE_PROVENANCE,
+)
+
 private val retirementMarketTickers = setOf("VOO", "IBIT")
 
 internal fun VaultUiState.retirementAccountsResult(): Result<List<AccountValuation>> {
@@ -165,7 +175,19 @@ internal fun VaultLazyListScope.retirementHoldings(
     state: VaultUiState,
     displayUnit: DisplayUnit,
 ) {
-    item { QuotePanel(state) }
+    retirementSectionOrder.forEach { section ->
+        when (section) {
+            RetirementSection.ACCOUNTS_AND_HOLDINGS ->
+                retirementAccountAndHoldingContent(state, displayUnit)
+            RetirementSection.QUOTE_PROVENANCE -> item { QuotePanel(state) }
+        }
+    }
+}
+
+private fun VaultLazyListScope.retirementAccountAndHoldingContent(
+    state: VaultUiState,
+    displayUnit: DisplayUnit,
+) {
     when (state.financeStatus) {
         Freshness.LOADING, Freshness.ERROR -> item {
             Panel("Retirement holdings", "Convex finance document") {
