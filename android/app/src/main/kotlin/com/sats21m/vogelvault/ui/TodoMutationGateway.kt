@@ -4,17 +4,19 @@ import android.content.Context
 import androidx.annotation.StringRes
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.data.ConvexMutation
-import com.sats21m.vogelvault.data.ConvexMutationClient
+import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
-import com.sats21m.vogelvault.data.ConvexValue
+import com.sats21m.vogelvault.data.toConvexInt64
 import com.sats21m.vogelvault.domain.TodoItem
 import java.io.IOException
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 
 /**
- * Todo writes over the one shared Convex mutation transport.
+ * Todo writes over the capability-scoped Convex device transport.
  *
  * The whole result is handed back rather than a Boolean. "Switched off", "no
  * deployment", "credential rejected" and "the server refused the row" are four
@@ -22,14 +24,90 @@ import kotlinx.serialization.json.JsonPrimitive
  * into the same shrug.
  */
 internal class TodoMutationGateway(
-    private val client: ConvexMutationClient,
+    private val client: ConvexDeviceMutationClient,
 ) {
-    suspend fun upsert(todo: TodoItem): ConvexResult<ConvexValue> =
-        client.mutate(ConvexMutation.UpsertTodo(todo.toMutationJson()))
+    suspend fun upsert(
+        todo: TodoItem,
+        baseUpdatedAtMs: Long?,
+    ): ConvexResult<TodoUpsertReceipt> =
+        client.mutate(
+            ConvexMutation.UpsertTodoFromDevice(
+                owner = todo.owner,
+                todo = todo.toDeviceMutationJson(),
+                baseUpdatedAtMs = baseUpdatedAtMs,
+            ),
+        ).mapSuccess { value ->
+            val objectValue = value.parsed as? JsonObject ?: return@mapSuccess null
+            val entityId = objectValue.string("entityId") ?: return@mapSuccess null
+            val outcome = objectValue.string("outcome") ?: return@mapSuccess null
+            if (objectValue.boolean("ok") != true || entityId != todo.id) return@mapSuccess null
+            val parsedOutcome = when (outcome) {
+                "inserted" -> TodoUpsertOutcome.INSERTED
+                "updated" -> TodoUpsertOutcome.UPDATED
+                else -> return@mapSuccess null
+            }
+            TodoUpsertReceipt(entityId, parsedOutcome)
+        }
 
-    suspend fun delete(todoId: String): ConvexResult<ConvexValue> =
-        client.mutate(ConvexMutation.DeleteTodo(todoId))
+    suspend fun delete(todo: TodoItem): ConvexResult<TodoDeleteReceipt> =
+        client.mutate(
+            ConvexMutation.DeleteTodoFromDevice(
+                todoId = todo.id,
+                owner = todo.owner,
+                baseUpdatedAtMs = todo.updatedAtMs,
+            ),
+        ).mapSuccess { value ->
+            val objectValue = value.parsed as? JsonObject ?: return@mapSuccess null
+            val entityId = objectValue.string("entityId") ?: return@mapSuccess null
+            val removed = objectValue.boolean("removed") ?: return@mapSuccess null
+            if (objectValue.boolean("ok") != true || entityId != todo.id) return@mapSuccess null
+            TodoDeleteReceipt(entityId, removed)
+        }
+
+    suspend fun restore(todo: TodoItem): ConvexResult<TodoRestoreReceipt> =
+        client.mutate(
+            ConvexMutation.RestoreTodoFromDevice(
+                owner = todo.owner,
+                todo = todo.toDeviceMutationJson(),
+                baseUpdatedAtMs = todo.updatedAtMs,
+            ),
+        ).mapSuccess { value ->
+            val objectValue = value.parsed as? JsonObject ?: return@mapSuccess null
+            val entityId = objectValue.string("entityId") ?: return@mapSuccess null
+            val updatedAtNumber = (objectValue["updatedAtMs"] as? JsonPrimitive)
+                ?.contentOrNull?.toDoubleOrNull() ?: return@mapSuccess null
+            if (
+                !updatedAtNumber.isFinite() ||
+                updatedAtNumber % 1.0 != 0.0 ||
+                updatedAtNumber < 0.0 ||
+                updatedAtNumber > Long.MAX_VALUE.toDouble()
+            ) return@mapSuccess null
+            val updatedAtMs = updatedAtNumber.toLong()
+            if (objectValue.boolean("ok") != true || entityId != todo.id) return@mapSuccess null
+            TodoRestoreReceipt(entityId, updatedAtMs)
+        }
 }
+
+internal enum class TodoUpsertOutcome { INSERTED, UPDATED }
+internal data class TodoUpsertReceipt(val entityId: String, val outcome: TodoUpsertOutcome)
+internal data class TodoDeleteReceipt(val entityId: String, val removed: Boolean)
+internal data class TodoRestoreReceipt(val entityId: String, val updatedAtMs: Long)
+
+private inline fun <T, R> ConvexResult<T>.mapSuccess(transform: (T) -> R?): ConvexResult<R> = when (this) {
+    is ConvexResult.Ok -> transform(value)?.let { ConvexResult.Ok(it) }
+        ?: ConvexResult.Failed("invalid write response")
+    ConvexResult.Disabled -> ConvexResult.Disabled
+    ConvexResult.NotConfigured -> ConvexResult.NotConfigured
+    ConvexResult.Unauthorized -> ConvexResult.Unauthorized
+    ConvexResult.Missing -> ConvexResult.Missing
+    is ConvexResult.Failed -> this
+}
+
+private fun JsonObject.string(key: String): String? =
+    (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
+
+private fun JsonObject.boolean(key: String): Boolean? =
+    (get(key) as? JsonPrimitive)?.booleanOrNull
 
 /** What the user just tried to do, so a failure can name the action it lost. */
 internal enum class TodoWriteAction(val summary: String) {
@@ -161,4 +239,23 @@ internal fun TodoItem.toMutationJson(): JsonObject =
         completedAt?.let { put("completedAt", JsonPrimitive(it)) }
         put("created_by", JsonPrimitive("android-app"))
         put("sync_source", JsonPrimitive("android-app"))
+    }.let(::JsonObject)
+
+/** Exact payload accepted by `tables:upsertTodoFromDevice`. */
+internal fun TodoItem.toDeviceMutationJson(): JsonObject =
+    buildMap<String, JsonElement> {
+        put("id", JsonPrimitive(id))
+        put("owner", JsonPrimitive(owner.key))
+        put("title", JsonPrimitive(title))
+        put("done", JsonPrimitive(done))
+        put("flagged", JsonPrimitive(flagged))
+        lane?.let { put("lane", JsonPrimitive(it)) }
+        project?.let { put("project", JsonPrimitive(it)) }
+        area?.let { put("area", JsonPrimitive(it)) }
+        due?.let { put("due", JsonPrimitive(it)) }
+        notes?.let { put("notes", JsonPrimitive(it)) }
+        priority?.let { put("priority", it.toConvexInt64()) }
+        createdAt?.let { put("createdAt", JsonPrimitive(it)) }
+        updatedAt?.let { put("updatedAt", JsonPrimitive(it)) }
+        completedAt?.let { put("completedAt", JsonPrimitive(it)) }
     }.let(::JsonObject)

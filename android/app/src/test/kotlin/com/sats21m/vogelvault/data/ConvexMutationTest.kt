@@ -12,7 +12,6 @@ import kotlin.test.fail
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -26,8 +25,6 @@ class ConvexMutationTest {
                 owner = FamilyMember.MASON,
                 sourceFile = "mason-transactions",
             ),
-            ConvexMutation.UpsertTodo(JsonObject(mapOf("id" to JsonPrimitive("todo-1")))),
-            ConvexMutation.DeleteTodo("todo-1"),
             ConvexMutation.UpsertBtcBuy(
                 BtcBuyInput(
                     id = "buy-1",
@@ -58,8 +55,6 @@ class ConvexMutationTest {
         val expectedPaths = listOf(
             "tables:upsertTransaction",
             "tables:deleteTransaction",
-            "tables:upsertTodo",
-            "tables:deleteTodo",
             "tables:upsertBtcBuy",
             "tables:upsertBtcAccount",
             "tables:upsertBudgetCategory",
@@ -90,7 +85,7 @@ class ConvexMutationTest {
             http = poster,
         )
 
-        runBlocking { client.mutate(ConvexMutation.DeleteTodo("todo-1")) }
+        runBlocking { client.mutate(ConvexMutation.UpsertTransaction(transaction())) }
 
         val sent = sentArgs(poster)["token"]?.jsonPrimitive?.content
         assertEquals(syncToken, sent)
@@ -106,7 +101,7 @@ class ConvexMutationTest {
             http = poster,
         )
 
-        val result = runBlocking { client.mutate(ConvexMutation.DeleteTodo("todo-1")) }
+        val result = runBlocking { client.mutate(ConvexMutation.UpsertTransaction(transaction())) }
 
         assertEquals(ConvexResult.Unauthorized, result)
         assertTrue(poster.urls.isEmpty())
@@ -124,7 +119,7 @@ class ConvexMutationTest {
             http = poster,
         )
 
-        val result = runBlocking { client.mutate(ConvexMutation.DeleteTodo("todo-1")) }
+        val result = runBlocking { client.mutate(ConvexMutation.UpsertTransaction(transaction())) }
 
         assertEquals(ConvexResult.NotConfigured, result)
         assertTrue(poster.urls.isEmpty())
@@ -269,11 +264,11 @@ class ConvexMutationTest {
 
         assertEquals(
             ConvexResult.Failed("convex rejection"),
-            runBlocking { client(rejected).mutate(ConvexMutation.DeleteTodo("todo-1")) },
+            runBlocking { client(rejected).mutate(ConvexMutation.UpsertTransaction(transaction())) },
         )
         assertEquals(
             ConvexResult.Failed("http 503"),
-            runBlocking { client(unavailable).mutate(ConvexMutation.DeleteTodo("todo-1")) },
+            runBlocking { client(unavailable).mutate(ConvexMutation.UpsertTransaction(transaction())) },
         )
     }
 
@@ -287,7 +282,7 @@ class ConvexMutationTest {
             ),
         )
 
-        val result = runBlocking { client(poster, token).mutate(ConvexMutation.DeleteTodo("todo-1")) }
+        val result = runBlocking { client(poster, token).mutate(ConvexMutation.UpsertTransaction(transaction())) }
 
         assertEquals(ConvexResult.Unauthorized, result)
         assertFalse(result.toString().contains(token))
@@ -301,7 +296,7 @@ class ConvexMutationTest {
                     configSource = source(readToken = testToken()),
                     syncTokenSource = DisabledConvexSyncTokenSource,
                     http = RecordingPoster(success()),
-                ).mutate(ConvexMutation.DeleteTodo("todo-1"))
+                ).mutate(ConvexMutation.UpsertTransaction(transaction()))
             }
         val rejectedToken =
             runBlocking {
@@ -312,7 +307,7 @@ class ConvexMutationTest {
                             """{"status":"error","errorData":"Unauthorized: invalid sync token"}""",
                         ),
                     ),
-                ).mutate(ConvexMutation.DeleteTodo("todo-1"))
+                ).mutate(ConvexMutation.UpsertTransaction(transaction()))
             }
         val networkFailure =
             runBlocking {
@@ -326,7 +321,7 @@ class ConvexMutationTest {
                                 body: String,
                             ): HttpTextResponse = throw IOException("offline")
                         },
-                ).mutate(ConvexMutation.DeleteTodo("todo-1"))
+                ).mutate(ConvexMutation.UpsertTransaction(transaction()))
             }
 
         assertEquals(ConvexResult.Unauthorized, missingToken)
@@ -338,7 +333,7 @@ class ConvexMutationTest {
     fun `malformed success response fails rather than being swallowed`() {
         val result = runBlocking {
             client(RecordingPoster(HttpTextResponse(200, "<html>")))
-                .mutate(ConvexMutation.DeleteTodo("todo-1"))
+                .mutate(ConvexMutation.UpsertTransaction(transaction()))
         }
 
         val failure = result as? ConvexResult.Failed ?: fail("expected Failed, got $result")

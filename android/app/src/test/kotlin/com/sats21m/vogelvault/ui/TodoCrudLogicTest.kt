@@ -82,11 +82,31 @@ class TodoCrudLogicTest {
 
     @Test
     fun `delete undo expires at exactly the Apple six second boundary`() {
-        val pending = PendingTodoDeletion(todo(), expiresAtMillis = 7_000L)
+        val pending = PendingTodoDeletion("operation-1", todo(), expiresAtMillis = 7_000L)
 
         assertTrue(pending.canUndo(6_999L))
         assertFalse(pending.canUndo(7_000L))
         assertEquals(6_000L, TODO_UNDO_WINDOW_MILLIS)
+    }
+
+    @Test
+    fun `active local tombstone filters refreshed upstream row`() {
+        val deleted = todo().copy(id = "deleted", updatedAtMs = 10)
+        val visible = todo().copy(id = "visible", updatedAtMs = 20)
+
+        assertEquals(listOf(visible), listOf(deleted, visible).filterActiveTodoTombstone("deleted"))
+        assertEquals(listOf(deleted, visible), listOf(deleted, visible).filterActiveTodoTombstone(null))
+    }
+
+    @Test
+    fun `failed delete never restores captured stale row over newer authority`() {
+        val captured = todo().copy(title = "captured", updatedAtMs = 10)
+        val newer = captured.copy(title = "newer", updatedAtMs = 11)
+        val older = captured.copy(title = "older", updatedAtMs = 9)
+
+        assertEquals(newer, newestTodo(captured, newer))
+        assertEquals(captured, newestTodo(captured, older))
+        assertEquals(captured, newestTodo(captured, null))
     }
 
     private fun todo(

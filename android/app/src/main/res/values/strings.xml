@@ -237,8 +237,8 @@
     <string name="todo_save">Save</string>
     <string name="todo_cancel">Cancel</string>
     <string name="todo_write_access_title">Todo write access</string>
-    <string name="todo_write_access_detail">Paste the approved sync credential once. It is encrypted with AndroidKeyStore and is never shown again.</string>
-    <string name="todo_sync_token">Sync credential</string>
+    <string name="todo_write_access_detail">Paste the approved paired-device credential once (device ID, a dot, then device token). It is encrypted with AndroidKeyStore and is never shown again.</string>
+    <string name="todo_sync_token">Paired-device credential</string>
     <string name="todo_save_access">Save write access</string>
     <string name="todo_deleted">Deleted “%1$s”</string>
     <string name="todo_undo">Undo</string>

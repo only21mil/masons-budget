@@ -87,7 +87,7 @@ internal fun AddTaskSheet(
     onDismiss: () -> Unit,
     onSaved: (String) -> Unit,
     onWriteSucceeded: () -> Unit,
-    onCredentialRejected: () -> Unit,
+    onCredentialRejected: () -> String?,
 ) {
     val application = LocalContext.current.applicationContext as? VaultApplication
     val gateway = remember(application) { application?.todoMutationGateway }
@@ -182,18 +182,18 @@ internal fun AddTaskSheet(
                         }
                         saving = true
                         scope.launch {
-                            val result = client.upsert(task)
+                            val result = client.upsert(task, baseUpdatedAtMs = null)
                             saving = false
-                            if (result === ConvexResult.Unauthorized) {
+                            val recoveryFailure = if (result === ConvexResult.Unauthorized) {
                                 credentialRejected = true
                                 onCredentialRejected()
-                            }
+                            } else null
                             val failure = todoWriteFailureMessage(TodoWriteAction.ADD, result)
                             if (failure == null) {
                                 onWriteSucceeded()
                                 onSaved(taskTitle)
                             } else {
-                                message = failure
+                                message = recoveryFailure ?: failure
                             }
                         }
                     },
