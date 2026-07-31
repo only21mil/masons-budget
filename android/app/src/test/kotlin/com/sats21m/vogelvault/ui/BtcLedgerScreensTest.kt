@@ -4,6 +4,9 @@ import com.sats21m.vogelvault.domain.BtcBillPay
 import com.sats21m.vogelvault.domain.BtcBuy
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.MarketQuote
+import com.sats21m.vogelvault.domain.MarketQuoteStatus
+import com.sats21m.vogelvault.domain.MarketSymbol
 import com.sats21m.vogelvault.domain.netWorthScopeFor
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -87,7 +90,13 @@ class BtcLedgerScreensTest {
             formatBtcBillPayFee(
                 99L,
                 DisplayUnit.SATS,
-                RecordedBitcoinQuote(10_000_000L, "2026-07-03"),
+                MarketQuote(
+                    MarketSymbol.BTC,
+                    10_000_000L,
+                    "market adapter",
+                    "2026-07-03T12:00:00Z",
+                    MarketQuoteStatus.LIVE,
+                ),
             ),
         )
         assertEquals(

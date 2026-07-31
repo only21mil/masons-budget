@@ -4,6 +4,7 @@ import com.sats21m.vogelvault.domain.BtcBillPay
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
+import com.sats21m.vogelvault.domain.MarketQuote
 import com.sats21m.vogelvault.domain.visibleTo
 import com.sats21m.vogelvault.ui.components.Kpi
 import com.sats21m.vogelvault.ui.components.KpiStrip
@@ -55,7 +56,7 @@ internal fun formatBtcBillPayTotal(
 internal fun formatBtcBillPayFee(
     feeUsdCents: Long,
     displayUnit: DisplayUnit,
-    quote: RecordedBitcoinQuote?,
+    quote: MarketQuote?,
 ): String = formatFinancialAmount(
     FinancialAmount(usdCents = feeUsdCents),
     displayUnit,
@@ -89,7 +90,7 @@ internal fun VaultLazyListScope.btcBillPaysScreen(
 
     item {
         val selectedTotal = formatBtcBillPayTotal(summary, displayUnit)
-        val quote = state.data.recordedBitcoinQuote()
+        val quote = state.operationalBitcoinQuote()
         KpiStrip(
             listOf(
                 Kpi("Total paid", selectedTotal),
@@ -105,7 +106,7 @@ internal fun VaultLazyListScope.btcBillPaysScreen(
         rows = summary.rows,
         rowKey = BtcBillPay::id,
     ) { payment ->
-        val quote = state.data.recordedBitcoinQuote()
+        val quote = state.operationalBitcoinQuote()
         val fee = payment.feeUsdCents
             .takeIf { it != 0L }
             ?.let { " · fee ${formatBtcBillPayFee(it, displayUnit, quote)}" }

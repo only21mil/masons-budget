@@ -4,16 +4,19 @@ import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
+import com.sats21m.vogelvault.domain.MarketQuote
+import com.sats21m.vogelvault.domain.MarketQuoteSnapshot
+import com.sats21m.vogelvault.domain.MarketQuoteStatus
+import com.sats21m.vogelvault.domain.MarketSymbol
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.Transaction
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class FinancialDisplayTest {
-    private val quote = RecordedBitcoinQuote(cents = 10_000_000L, asOf = "2026-07-30")
+    private val quote = marketQuote(10_000_000L)
 
     @Test
     fun `paired amounts prefer each exact native side`() {
@@ -70,14 +73,44 @@ class FinancialDisplayTest {
     }
 
     @Test
-    fun `quote accepts stale recorded rows but rejects failed rows`() {
-        val model = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
-        val stale = model.copy(btcBuys = model.btcBuys.copy(status = Freshness.STALE))
-        val failed = model.copy(btcBuys = model.btcBuys.copy(status = Freshness.ERROR))
+    fun `operational quote accepts stale but rejects unavailable`() {
+        val stale = marketQuote(10_000_000L, MarketQuoteStatus.STALE)
+        val unavailable = MarketQuote(
+            symbol = MarketSymbol.BTC,
+            priceCents = null,
+            source = "market adapter",
+            fetchedAt = null,
+            status = MarketQuoteStatus.UNAVAILABLE,
+        )
 
-        assertEquals(model.btcPriceCents, stale.recordedBitcoinQuote()?.cents)
-        assertEquals(model.btcPriceAsOf, stale.recordedBitcoinQuote()?.asOf)
-        assertNull(failed.recordedBitcoinQuote())
+        assertEquals(
+            "1 000 sats",
+            formatFinancialAmount(FinancialAmount(usdCents = 100L), DisplayUnit.SATS, stale),
+        )
+        assertEquals(
+            Money.PRICE_UNAVAILABLE,
+            formatFinancialAmount(FinancialAmount(usdCents = 100L), DisplayUnit.SATS, unavailable),
+        )
+    }
+
+    @Test
+    fun `newer buy execution price cannot override operational quote`() {
+        val data = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE).copy(
+            btcPriceCents = 20_000_000L,
+            btcPriceAsOf = "2026-07-31",
+        )
+        val state = VaultUiState(
+            data = data,
+            marketQuotes = quoteSnapshot(marketQuote(10_000_000L, fetchedAt = "2026-07-30T12:00:00Z")),
+            marketQuoteStatus = Freshness.LIVE,
+        )
+
+        val selectedQuote = state.operationalBitcoinQuote()
+        assertEquals(10_000_000L, selectedQuote?.priceCents)
+        assertEquals(
+            "1 000 sats",
+            formatFinancialAmount(FinancialAmount(usdCents = 100L), DisplayUnit.SATS, selectedQuote),
+        )
     }
 
     @Test
@@ -98,4 +131,24 @@ class FinancialDisplayTest {
         assertFalse(Destination.BUDGET.supportsFinancialDisplayUnit)
         assertTrue(Destination.ACTIVITY.supportsFinancialDisplayUnit)
     }
+
+    private fun marketQuote(
+        priceCents: Long,
+        status: MarketQuoteStatus = MarketQuoteStatus.LIVE,
+        fetchedAt: String = "2026-07-30T10:00:00Z",
+    ) = MarketQuote(
+        symbol = MarketSymbol.BTC,
+        priceCents = priceCents,
+        source = "market adapter",
+        fetchedAt = fetchedAt,
+        status = status,
+    )
+
+    private fun quoteSnapshot(btc: MarketQuote) = MarketQuoteSnapshot(
+        listOf(
+            btc,
+            MarketQuote(MarketSymbol.VOO, null, "market adapter", null, MarketQuoteStatus.UNAVAILABLE),
+            MarketQuote(MarketSymbol.IBIT, null, "market adapter", null, MarketQuoteStatus.UNAVAILABLE),
+        ),
+    )
 }
