@@ -62,7 +62,7 @@ class BudgetNotificationEvaluator {
             deriveBudgetSpend(
                 budget = budget,
                 transactions = transactions,
-            )
+            ) ?: return emptyList()
 
         return spend.categories
             .mapNotNull { category ->

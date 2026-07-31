@@ -14,6 +14,7 @@ import com.sats21m.vogelvault.domain.FinanceDocument
 import com.sats21m.vogelvault.domain.FinanceHolding
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
+import com.sats21m.vogelvault.domain.HoldingValuationBasis
 import com.sats21m.vogelvault.domain.MarketQuote
 import com.sats21m.vogelvault.domain.MarketQuoteSnapshot
 import com.sats21m.vogelvault.domain.MarketQuoteStatus
@@ -49,6 +50,59 @@ class FinancePresentationTest {
         assertEquals(12_000L, selection.retirementValueCents)
         assertEquals(10_000_000L, selection.bitcoinValueCents)
         assertEquals(10_012_000L, selection.totalValueCents)
+        assertEquals(
+            "market service · 2026-07-31T12:00:00Z",
+            selection.valuationQualityHint(),
+        )
+    }
+
+    @Test
+    fun `adult total discloses stale and stored retirement valuation inputs`() {
+        val voo = account("adult", FamilyMember.VICTOR).holdings.single()
+        val ibit = voo.copy(name = "IBIT holding", ticker = "IBIT", sharesDecimal = "3")
+        val state = financeState(FamilyMember.VICTOR).copy(
+            financeDocument = document().copy(
+                accounts = listOf(
+                    account("adult", FamilyMember.VICTOR).copy(holdings = listOf(voo, ibit)),
+                ),
+            ),
+            marketQuotes = MarketQuoteSnapshot(
+                listOf(
+                    MarketQuote(
+                        MarketSymbol.BTC,
+                        10_000_000L,
+                        "market service",
+                        "2026-07-31T12:00:00Z",
+                        MarketQuoteStatus.LIVE,
+                    ),
+                    MarketQuote(
+                        MarketSymbol.VOO,
+                        6_000L,
+                        "market service",
+                        "2026-07-30T12:00:00Z",
+                        MarketQuoteStatus.STALE,
+                    ),
+                    MarketQuote(
+                        MarketSymbol.IBIT,
+                        null,
+                        "market service",
+                        null,
+                        MarketQuoteStatus.UNAVAILABLE,
+                    ),
+                ),
+            ),
+        )
+
+        val selection = requireNotNull(state.adultNetWorthSelection())
+
+        assertEquals(
+            "market service · 2026-07-31T12:00:00Z · Retirement: 1 stale quote · 1 stored value",
+            selection.valuationQualityHint(),
+        )
+        assertEquals(
+            listOf(HoldingValuationBasis.MARKET_QUOTE, HoldingValuationBasis.STORED_VALUE),
+            selection.accounts.single().holdings.map { it.basis },
+        )
     }
 
     @Test

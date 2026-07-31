@@ -32,6 +32,8 @@ internal data class RetirementHoldingRow(
     val key: String get() = "${account.account.owner.key}:${account.account.key}:${holding.holding.name}"
 }
 
+private val retirementMarketTickers = setOf("VOO", "IBIT")
+
 internal fun VaultUiState.retirementAccountsResult(): Result<List<AccountValuation>> {
     if (financeStatus != Freshness.LIVE) return Result.success(emptyList())
     return try {
@@ -93,7 +95,7 @@ internal fun VaultLazyListScope.financeNetWorthSummary(
                             DisplayUnit.SATS -> selected.totalValueSats?.let(Money::formatSats)
                         }
                     } ?: SUPPRESSED,
-                    hint = selection?.btcQuote?.quoteHint(),
+                    hint = selection?.valuationQualityHint(),
                     provenance = Provenance.ESTIMATED,
                 ),
                 Kpi(
@@ -274,6 +276,28 @@ private fun List<AccountValuation>.sumAccountValuesOrNull(): Long? =
     } catch (_: ArithmeticException) {
         null
     }
+
+internal fun NetWorthSelection.valuationQualityHint(): String? {
+    val retirementHoldings = accounts.flatMap(AccountValuation::holdings)
+        .filter { holding ->
+            holding.holding.ticker?.trim()?.uppercase() in retirementMarketTickers
+        }
+    val staleQuotes = retirementHoldings.count {
+        it.basis == HoldingValuationBasis.MARKET_QUOTE &&
+            it.quote?.status == MarketQuoteStatus.STALE
+    }
+    val storedValues = retirementHoldings.count {
+        it.basis == HoldingValuationBasis.STORED_VALUE
+    }
+    val retirementQuality = buildList {
+        if (staleQuotes > 0) add("$staleQuotes stale quote${if (staleQuotes == 1) "" else "s"}")
+        if (storedValues > 0) add("$storedValues stored value${if (storedValues == 1) "" else "s"}")
+    }.takeIf { it.isNotEmpty() }?.joinToString(" · ", prefix = "Retirement: ")
+
+    return listOfNotNull(btcQuote?.quoteHint(), retirementQuality)
+        .takeIf { it.isNotEmpty() }
+        ?.joinToString(" · ")
+}
 
 @androidx.compose.runtime.Composable
 private fun QuotePanel(state: VaultUiState) {
