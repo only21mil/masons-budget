@@ -309,7 +309,7 @@ class TaskListsCrudScreenTest {
 
         assertEquals(1, application.credentialRemovalCalls)
         assertFalse(application.hasTodoWriteCredential())
-        compose.onNodeWithText("Task not added: the sync credential is missing or was rejected")
+        compose.onNodeWithText("Task not added: the paired-device credential is missing or was rejected")
             .fetchSemanticsNode()
         compose.onNodeWithText(application.getString(R.string.tasks_save)).assertIsNotEnabled()
         compose.onNodeWithText(application.getString(R.string.tasks_cancel)).performClick()
@@ -339,7 +339,7 @@ class TaskListsCrudScreenTest {
         assertEquals(1, application.credentialRemovalCalls)
         assertFalse(application.hasTodoWriteCredential())
         assertEquals(0, refreshCount)
-        compose.onNodeWithText("Change not saved: the sync credential is missing or was rejected")
+        compose.onNodeWithText("Change not saved: the paired-device credential is missing or was rejected")
             .fetchSemanticsNode()
         compose.onNodeWithContentDescription(markCompleteDescription(todo.title))
             .assertIsNotEnabled()

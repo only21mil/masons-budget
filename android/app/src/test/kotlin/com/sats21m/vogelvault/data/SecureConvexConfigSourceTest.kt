@@ -141,6 +141,36 @@ class SecureConvexConfigSourceTest {
     }
 
     @Test
+    fun `rejected read recovery preserves sync and paired device credentials`() {
+        val readToken = "vv-read-${UUID.randomUUID()}"
+        val syncToken = "vv-sync-${UUID.randomUUID()}"
+        val device = ConvexDeviceCredential("android-device", "d".repeat(43))
+        val rejected =
+            ConvexConfig(
+                deploymentUrl = "https://example.convex.cloud",
+                readToken = readToken,
+                remoteReadEnabled = true,
+            )
+        source.update(rejected)
+        source.updateSyncToken(syncToken)
+        source.updateDeviceCredential(device)
+        val effective = MutableConvexConfigSource(rejected)
+
+        assertFalse(
+            recoverRejectedStoredConvexConfig(
+                rejected = rejected,
+                stored = source,
+                effective = effective,
+            ),
+        )
+
+        assertEquals(ReadReadiness.DISABLED, source.current().readiness)
+        assertEquals(ReadReadiness.DISABLED, effective.current().readiness)
+        assertEquals(syncToken, SecureConvexSyncTokenSource(source).currentSyncToken())
+        assertEquals(device, SecureConvexDeviceCredentialSource(source).currentDeviceCredential())
+    }
+
+    @Test
     fun `paired device credential is encrypted atomic and independent of sync token`() {
         val device = ConvexDeviceCredential("android-device", "d".repeat(43))
         val syncToken = "vv-sync-${UUID.randomUUID()}"
