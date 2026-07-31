@@ -15,6 +15,10 @@ import type {
   VogelVaultBtcScope,
   VogelVaultBtcSnapshotMeta,
   VogelVaultFiatValuation,
+  VogelVaultFinanceAccount,
+  VogelVaultFinanceDocument,
+  VogelVaultFinanceHolding,
+  VogelVaultFinanceLot,
   VogelVaultBudgetCategory,
   VogelVaultBudgetDocument,
   VogelVaultBudgetHistoryEntry,
@@ -22,6 +26,8 @@ import type {
   VogelVaultBudgetPaycheck,
   VogelVaultMember,
   VogelVaultIncomeRow,
+  VogelVaultMarketQuote,
+  VogelVaultMarketQuoteSnapshot,
   VogelVaultRowRequest,
   VogelVaultRowCounts,
   VogelVaultRowResult,
@@ -46,6 +52,8 @@ export const ROW_QUERY_PATHS = {
   budget: "tables:getBudgetDocument",
   btcSnapshotMeta: "tables:getBtcSnapshotMetadata",
   btcBalanceDocuments: "tables:listBtcBalanceDocuments",
+  finance: "tables:getFinanceDocument",
+  marketQuotes: "marketQuotes:getSnapshot",
 } as const
 
 export const CONVEX_ROW_LIMITS = {
@@ -60,12 +68,15 @@ export const CONVEX_ROW_LIMITS = {
   maxBudgetCategories: 256,
   maxBudgetPaychecks: 512,
   maxBudgetHistory: 240,
+  maxFinanceAccounts: 64,
+  maxFinanceHoldings: 512,
+  maxFinanceLots: 2_000,
   maxStringLength: 16_384,
   cacheMs: 5_000,
   maxCachedRequests: 64,
-  // One renderer refresh fans out to nine independent row queries after
+  // One renderer refresh may fan out to eleven independent row queries after
   // rowCounts. Keep the guard large enough for that single trusted load.
-  maxInFlightRequests: 9,
+  maxInFlightRequests: 11,
 } as const
 
 const MEMBERS = ["victor", "rachel", "mason", "maddox"] as const
@@ -76,6 +87,8 @@ const DATE = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/
 const BASE64_INT64 = /^(?:[A-Za-z0-9+/]{4}){2}[A-Za-z0-9+/]{3}=$/
 const TWO_64 = 1n << 64n
 const SIGN_64 = 1n << 63n
+const MARKET_SYMBOLS = ["BTC", "VOO", "IBIT"] as const
+const MARKET_STATUSES = ["live", "stale", "unavailable"] as const
 
 class InvalidValue extends Error {}
 
@@ -515,6 +528,142 @@ function budgetDocument(value: unknown, viewer: VogelVaultMember): VogelVaultBud
   }
 }
 
+function decimalText(record: Record<string, unknown>, key: string): string {
+  const value = text(record, key, 256)
+  if (!/^\d+(?:\.\d*)?$/.test(value)) throw new InvalidValue()
+  return value
+}
+
+function financeLot(value: unknown): VogelVaultFinanceLot {
+  const row = responseObject(
+    value,
+    ["date", "type", "pricePerShareCents", "sharesDecimal", "amountInvestedCents"],
+  )
+  return {
+    date: text(row, "date"),
+    type: text(row, "type"),
+    pricePerShareCents: int64(row, "pricePerShareCents"),
+    sharesDecimal: decimalText(row, "sharesDecimal"),
+    amountInvestedCents: int64(row, "amountInvestedCents"),
+    ...optionalField("note", optionalText(row, "note")),
+  }
+}
+
+function financeHolding(value: unknown): VogelVaultFinanceHolding {
+  const row = responseObject(
+    value,
+    [
+      "name", "category", "valueCents", "costBasisCents", "gainBps",
+      "sharesDecimal", "avgCostCents", "currentPricePerShareCents", "isProxy", "lots",
+    ],
+  )
+  const lots = row["lots"]
+  if (!Array.isArray(lots) || lots.length > CONVEX_ROW_LIMITS.maxFinanceLots) {
+    throw new InvalidValue()
+  }
+  return {
+    name: text(row, "name"),
+    category: text(row, "category"),
+    ...optionalField("ticker", optionalText(row, "ticker")),
+    valueCents: int64(row, "valueCents"),
+    costBasisCents: int64(row, "costBasisCents"),
+    gainBps: int64(row, "gainBps"),
+    sharesDecimal: decimalText(row, "sharesDecimal"),
+    avgCostCents: int64(row, "avgCostCents"),
+    currentPricePerShareCents: int64(row, "currentPricePerShareCents"),
+    isProxy: booleanValue(row, "isProxy"),
+    ...optionalField("proxyNote", optionalText(row, "proxyNote")),
+    lots: lots.map(financeLot),
+  }
+}
+
+function financeAccount(
+  value: unknown,
+  viewer: VogelVaultMember,
+  scope: VogelVaultBtcScope,
+): VogelVaultFinanceAccount {
+  const row = responseObject(
+    value,
+    [
+      "key", "owner", "provider", "totalValueCents", "weeklyContributionCents",
+      "holdings",
+    ],
+  )
+  const owner = member(row)
+  assertVisible(viewer, owner, scope)
+  const holdings = row["holdings"]
+  if (!Array.isArray(holdings) || holdings.length > CONVEX_ROW_LIMITS.maxFinanceHoldings) {
+    throw new InvalidValue()
+  }
+  return {
+    key: text(row, "key", 256),
+    owner,
+    provider: text(row, "provider"),
+    totalValueCents: int64(row, "totalValueCents"),
+    weeklyContributionCents: int64(row, "weeklyContributionCents"),
+    ...optionalField("weeklyContributionDay", optionalText(row, "weeklyContributionDay")),
+    holdings: holdings.map(financeHolding),
+  }
+}
+
+function financeDocument(
+  value: unknown,
+  viewer: VogelVaultMember,
+  scope: VogelVaultBtcScope,
+): VogelVaultFinanceDocument | null {
+  if (value === null) return null
+  const row = responseObject(value, ["lastUpdated", "accounts", "updatedAtMs"])
+  const accounts = row["accounts"]
+  if (!Array.isArray(accounts) || accounts.length > CONVEX_ROW_LIMITS.maxFinanceAccounts) {
+    throw new InvalidValue()
+  }
+  return {
+    lastUpdated: text(row, "lastUpdated"),
+    ...optionalField("retirementTotalCents", optionalInt64(row, "retirementTotalCents")),
+    accounts: accounts.map((account) => financeAccount(account, viewer, scope)),
+    updatedAtMs: timestampValue(row),
+  }
+}
+
+function marketQuote(value: unknown): VogelVaultMarketQuote {
+  const row = responseObject(value, ["symbol", "priceCents", "source", "fetchedAt", "status"])
+  const symbol = row["symbol"]
+  const status = row["status"]
+  if (!(MARKET_SYMBOLS as readonly unknown[]).includes(symbol)) throw new InvalidValue()
+  if (!(MARKET_STATUSES as readonly unknown[]).includes(status)) throw new InvalidValue()
+  const source = text(row, "source")
+  const priceCents = row["priceCents"] === null ? null : int64(row, "priceCents")
+  const fetchedAt = row["fetchedAt"] === null ? null : text(row, "fetchedAt")
+  if (status === "unavailable") {
+    if (priceCents !== null) throw new InvalidValue()
+  } else if (priceCents === null || priceCents <= 0n || fetchedAt === null) {
+    throw new InvalidValue()
+  }
+  return {
+    symbol: symbol as VogelVaultMarketQuote["symbol"],
+    priceCents,
+    source,
+    fetchedAt,
+    status: status as VogelVaultMarketQuote["status"],
+  }
+}
+
+function marketQuoteSnapshot(value: unknown): VogelVaultMarketQuoteSnapshot {
+  const envelope = responseObject(value, ["quotes", "complete"])
+  if (envelope["complete"] !== true) throw new InvalidValue("incomplete")
+  const quotes = envelope["quotes"]
+  if (!Array.isArray(quotes) || quotes.length !== MARKET_SYMBOLS.length) {
+    throw new InvalidValue("incomplete")
+  }
+  const parsed = quotes.map(marketQuote)
+  const symbols = new Set(parsed.map((quote) => quote.symbol))
+  if (symbols.size !== MARKET_SYMBOLS.length ||
+      MARKET_SYMBOLS.some((symbol) => !symbols.has(symbol))) {
+    throw new InvalidValue("incomplete")
+  }
+  return { quotes: parsed }
+}
+
 function snapshotMeta(
   value: unknown,
   viewer: VogelVaultMember,
@@ -736,6 +885,14 @@ export function validateRowRequest(value: unknown): VogelVaultRowRequest | null 
         const row = exactObject(value, ["kind", "viewer", "scope"])
         return { kind, viewer, scope: scopeValue(row["scope"]) }
       }
+      case "finance": {
+        const viewer = member(value, "viewer")
+        const row = exactObject(value, ["kind", "viewer", "scope"])
+        return { kind, viewer, scope: scopeValue(row["scope"]) }
+      }
+      case "marketQuotes":
+        exactObject(value, ["kind"])
+        return { kind }
       default:
         throw new InvalidValue()
     }
@@ -775,8 +932,11 @@ function requestArgs(request: VogelVaultRowRequest, credential: string | null): 
     case "btcAccounts":
     case "btcSnapshotMeta":
     case "btcBalanceDocuments":
+    case "finance":
       args.viewer = request.viewer
       args.scope = request.scope
+      break
+    case "marketQuotes":
       break
     case "budget":
       args.viewer = request.viewer
@@ -927,6 +1087,18 @@ function parseResponse(
         )
         return { status: "ok", kind: request.kind, ...list }
       }
+      case "finance":
+        return {
+          status: "ok",
+          kind: request.kind,
+          value: parseDocumentEnvelope(
+            value,
+            "document",
+            (document) => financeDocument(document, request.viewer, request.scope),
+          ),
+        }
+      case "marketQuotes":
+        return { status: "ok", kind: request.kind, value: marketQuoteSnapshot(value) }
     }
   } catch (error) {
     if (error instanceof InvalidValue && error.message === "incomplete") {

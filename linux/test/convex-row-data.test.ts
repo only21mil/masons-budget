@@ -183,6 +183,20 @@ function response(
           updatedAtMs: 80,
         }],
       }
+    case "finance":
+      return { status: "ok", kind: "finance", value: null }
+    case "marketQuotes":
+      return {
+        status: "ok",
+        kind: "marketQuotes",
+        value: {
+          quotes: [
+            { symbol: "BTC", priceCents: null, source: "fixture", fetchedAt: null, status: "unavailable" },
+            { symbol: "VOO", priceCents: null, source: "fixture", fetchedAt: null, status: "unavailable" },
+            { symbol: "IBIT", priceCents: null, source: "fixture", fetchedAt: null, status: "unavailable" },
+          ],
+        },
+      }
   }
 }
 
