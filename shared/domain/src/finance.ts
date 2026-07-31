@@ -62,10 +62,30 @@ export function assertMarketQuote(quote: MarketQuote): MarketQuote {
   if (quote.priceCents === null || quote.priceCents <= 0n) {
     throw new RangeError(`${quote.status} ${quote.symbol} quote must carry a positive price`)
   }
-  if (quote.fetchedAt === null || quote.fetchedAt.trim() === "") {
-    throw new RangeError(`${quote.status} ${quote.symbol} quote must carry fetchedAt`)
+  if (quote.fetchedAt === null || !isCanonicalIsoInstant(quote.fetchedAt)) {
+    throw new RangeError(
+      `${quote.status} ${quote.symbol} quote must carry a canonical ISO-8601 fetchedAt`,
+    )
   }
   return quote
+}
+
+const CANONICAL_ISO_INSTANT =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?Z$/
+
+/**
+ * Accept the two UTC forms emitted by the quote boundary: whole seconds or
+ * exactly three millisecond digits. The round trip rejects values that
+ * JavaScript would otherwise normalize, such as February 30.
+ */
+function isCanonicalIsoInstant(value: string): boolean {
+  const match = CANONICAL_ISO_INSTANT.exec(value)
+  if (!match) return false
+
+  const millis = Date.parse(value)
+  if (!Number.isFinite(millis)) return false
+  const normalized = new Date(millis).toISOString()
+  return value === normalized || value === normalized.replace(".000Z", "Z")
 }
 
 /** Require exactly one BTC, VOO, and IBIT entry. */

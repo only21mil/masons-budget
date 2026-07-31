@@ -54,12 +54,50 @@ test("quote snapshot is exactly BTC, VOO, and IBIT with explicit states", () => 
   )
   assert.throws(
     () => assertMarketQuote({ ...quotes[0]!, fetchedAt: null }),
-    /carry fetchedAt/,
+    /canonical ISO-8601 fetchedAt/,
   )
   assert.throws(
     () => assertMarketQuote({ ...quotes[0]!, status: "fresh" as MarketQuoteStatus }),
     /Unsupported market quote status/,
   )
+})
+
+test("live and stale quotes require real canonical UTC ISO-8601 instants", () => {
+  for (const status of ["live", "stale"] as const) {
+    assert.equal(
+      assertMarketQuote({ ...quotes[0]!, status, fetchedAt: "2026-07-30T15:00:00Z" })
+        .fetchedAt,
+      "2026-07-30T15:00:00Z",
+    )
+    assert.equal(
+      assertMarketQuote({ ...quotes[0]!, status, fetchedAt: "2024-02-29T23:59:59.123Z" })
+        .fetchedAt,
+      "2024-02-29T23:59:59.123Z",
+    )
+  }
+})
+
+test("quote timestamps reject invalid dates and noncanonical normalized forms", () => {
+  const invalid = [
+    "",
+    "2026-02-30T15:00:00Z",
+    "2026-13-01T15:00:00Z",
+    "2026-07-30T24:00:00Z",
+    "2026-07-30 15:00:00Z",
+    "2026-07-30T15:00:00z",
+    "2026-07-30T15:00:00",
+    "2026-07-30T10:00:00-05:00",
+    "2026-07-30T15:00:00.12Z",
+    " 2026-07-30T15:00:00Z ",
+  ]
+
+  for (const fetchedAt of invalid) {
+    assert.throws(
+      () => assertMarketQuote({ ...quotes[0]!, fetchedAt }),
+      /canonical ISO-8601 fetchedAt/,
+      fetchedAt,
+    )
+  }
 })
 
 test("holding valuation uses live and stale quotes while preserving their provenance", () => {
