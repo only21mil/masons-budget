@@ -70,21 +70,34 @@ internal class TodoWriteState(
     private val snackbar: SnackbarHostState,
     private val nowMillis: () -> Long,
     private val onWriteSucceeded: () -> Unit,
+    private val onCredentialRejected: () -> Unit,
     private val deletedMessage: (TodoItem) -> String,
     private val undoLabel: String,
 ) {
     var busyIds by mutableStateOf(emptySet<String>())
         private set
 
-    private var pendingDeletion: PendingTodoDeletion? = null
+    private var pendingDeletion by mutableStateOf<PendingTodoDeletion?>(null)
     private var expiryJob: Job? = null
 
+    val deletePending: Boolean
+        get() = pendingDeletion != null
+
     private suspend fun write(
-        action: TodoWriteAction,
         call: suspend (TodoMutationGateway) -> ConvexResult<ConvexValue>,
+    ): ConvexResult<ConvexValue>? = gateway?.let { call(it) }
+
+    /** Preserve the sealed transport outcome until credential recovery runs. */
+    private fun failureMessage(
+        action: TodoWriteAction,
+        result: ConvexResult<ConvexValue>?,
     ): String? {
-        val client = gateway ?: return todoWriteUnavailableMessage(action)
-        return todoWriteFailureMessage(action, call(client))
+        if (result === ConvexResult.Unauthorized) onCredentialRejected()
+        return if (result == null) {
+            todoWriteUnavailableMessage(action)
+        } else {
+            todoWriteFailureMessage(action, result)
+        }
     }
 
     private fun report(message: String) {
@@ -99,7 +112,8 @@ internal class TodoWriteState(
         if (todo.id in busyIds) return
         busyIds = busyIds + todo.id
         scope.launch {
-            val failure = write(action) { it.upsert(todo) }
+            val result = write { it.upsert(todo) }
+            val failure = failureMessage(action, result)
             if (failure == null) {
                 onAccepted(todo)
                 onWriteSucceeded()
@@ -119,7 +133,10 @@ internal class TodoWriteState(
         onRemoved: (TodoItem) -> Unit,
         onRestored: (TodoItem) -> Unit,
     ) {
-        if (todo.id in busyIds) return
+        // Only one deletion may own the process-wide Undo surface. Without this
+        // guard, deleting another row replaces the first pending record and
+        // silently removes its rollback opportunity.
+        if (todo.id in busyIds || pendingDeletion != null) return
         val pending = PendingTodoDeletion(
             todo = todo,
             expiresAtMillis = nowMillis() + TODO_UNDO_WINDOW_MILLIS,
@@ -144,7 +161,8 @@ internal class TodoWriteState(
             when (
                 val feedback = awaitTodoDeleteFeedback(
                     delete = {
-                        write(TodoWriteAction.DELETE) { it.delete(todo.id) }
+                        val result = write { it.delete(todo.id) }
+                        failureMessage(TodoWriteAction.DELETE, result)
                             .also { failure ->
                                 if (failure == null) onWriteSucceeded()
                             }
@@ -184,8 +202,8 @@ internal class TodoWriteState(
                         pending.canUndo(nowMillis())
                     ) {
                         expiryJob?.cancel()
-                        val restoreFailure =
-                            write(TodoWriteAction.RESTORE) { it.upsert(todo) }
+                        val restoreResult = write { it.upsert(todo) }
+                        val restoreFailure = failureMessage(TodoWriteAction.RESTORE, restoreResult)
                         if (restoreFailure == null) {
                             onRestored(todo)
                             onWriteSucceeded()
@@ -211,11 +229,13 @@ internal fun rememberTodoWriteState(
     gateway: TodoMutationGateway?,
     snackbar: SnackbarHostState,
     onWriteSucceeded: () -> Unit,
+    onCredentialRejected: () -> Unit,
     nowMillis: () -> Long,
 ): TodoWriteState {
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
     val currentRefresh = rememberUpdatedState(onWriteSucceeded)
+    val currentCredentialRejected = rememberUpdatedState(onCredentialRejected)
     val currentClock = rememberUpdatedState(nowMillis)
     val undoLabel = stringResource(R.string.todo_undo)
     val state = remember(gateway, scope, snackbar, context, undoLabel) {
@@ -225,6 +245,7 @@ internal fun rememberTodoWriteState(
             snackbar = snackbar,
             nowMillis = { currentClock.value() },
             onWriteSucceeded = { currentRefresh.value() },
+            onCredentialRejected = { currentCredentialRejected.value() },
             deletedMessage = { context.getString(R.string.todo_deleted, it.title) },
             undoLabel = undoLabel,
         )
@@ -284,6 +305,8 @@ internal fun TodoRow(
     todo: TodoItem,
     viewer: FamilyMember,
     enabled: Boolean,
+    deleteEnabled: Boolean = enabled,
+    deleteDisabledReason: String? = null,
     onToggleDone: () -> Unit,
     onToggleFlag: () -> Unit,
     onEdit: () -> Unit,
@@ -354,10 +377,11 @@ internal fun TodoRow(
                 tint = if (todo.flagged) VaultAccent else VaultTextDim,
             )
         }
-        IconButton(enabled = enabled, onClick = onDelete) {
+        IconButton(enabled = deleteEnabled, onClick = onDelete) {
             Icon(
                 Icons.Filled.Delete,
-                contentDescription = stringResource(R.string.todo_delete_named, todo.title),
+                contentDescription = deleteDisabledReason
+                    ?: stringResource(R.string.todo_delete_named, todo.title),
             )
         }
     }

@@ -3,6 +3,8 @@ package com.sats21m.vogelvault
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.ui.AddTaskDraft
 import com.sats21m.vogelvault.ui.prepareTask
+import com.sats21m.vogelvault.ui.toMutationJson
+import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -22,16 +24,21 @@ class AddTaskSheetTest {
                 owner = FamilyMember.MASON,
             ),
             id = "android-task-1",
+            now = Instant.parse("2026-07-31T12:00:00Z"),
         ).getOrThrow()
+        val payload = task.toMutationJson()
 
-        assertEquals("android-task-1", task["id"]?.jsonPrimitive?.content)
-        assertEquals("Book dentist", task["title"]?.jsonPrimitive?.content)
-        assertEquals("mason", task["owner"]?.jsonPrimitive?.content)
-        assertEquals("Health", task["project"]?.jsonPrimitive?.content)
-        assertEquals("Family", task["area"]?.jsonPrimitive?.content)
-        assertEquals("2026-08-03", task["dueDate"]?.jsonPrimitive?.content)
-        assertTrue(task["flagged"]?.jsonPrimitive?.content?.toBooleanStrict() == true)
-        assertFalse(task["done"]?.jsonPrimitive?.content?.toBooleanStrict() == true)
+        assertEquals("android-task-1", task.id)
+        assertEquals("Book dentist", task.title)
+        assertEquals(FamilyMember.MASON, task.owner)
+        assertEquals("Health", task.project)
+        assertEquals("Family", task.area)
+        assertEquals("2026-08-03", task.due)
+        assertTrue(task.flagged)
+        assertFalse(task.done)
+        assertEquals("Book dentist", payload["text"]?.jsonPrimitive?.content)
+        assertEquals("2026-08-03", payload["due_date"]?.jsonPrimitive?.content)
+        assertEquals("android-app", payload["sync_source"]?.jsonPrimitive?.content)
     }
 
     @Test
@@ -48,10 +55,10 @@ class AddTaskSheetTest {
             id = "android-task-2",
         ).getOrThrow()
 
-        assertEquals("maddox", task["owner"]?.jsonPrimitive?.content)
-        assertFalse("project" in task)
-        assertFalse("area" in task)
-        assertFalse("dueDate" in task)
+        assertEquals(FamilyMember.MADDOX, task.owner)
+        assertEquals(null, task.project)
+        assertEquals(null, task.area)
+        assertEquals(null, task.due)
     }
 
     @Test

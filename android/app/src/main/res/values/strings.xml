@@ -234,6 +234,7 @@
     <string name="todo_remove_flag_named">Remove flag from “%1$s”</string>
     <string name="todo_edit_named">Edit “%1$s”</string>
     <string name="todo_delete_named">Delete “%1$s”</string>
+    <string name="todo_delete_pending_named">Delete “%1$s” unavailable while another task can be undone</string>
     <string name="todo_state_open">Open</string>
     <string name="todo_state_open_flagged">Open and flagged</string>
     <string name="todo_state_completed">Completed</string>
