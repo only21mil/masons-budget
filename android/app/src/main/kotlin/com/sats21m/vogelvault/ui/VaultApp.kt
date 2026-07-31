@@ -248,9 +248,10 @@ private fun AuthorizationNotice(state: VaultUiState) {
 private fun RowReadFailureNotice(state: VaultUiState) {
     val titleRes = state.rowReadFailureTitleRes ?: return
     val detailRes = state.rowReadFailureDetailRes ?: return
+    val projectionRes = state.rowReadFailureProjectionRes ?: return
     StatusBanner(
         text = stringResource(titleRes),
-        detail = stringResource(detailRes),
+        detail = stringResource(detailRes, stringResource(projectionRes)),
         tone = com.sats21m.vogelvault.ui.theme.VaultWarning,
     )
 }
