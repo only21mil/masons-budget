@@ -577,6 +577,65 @@
   color: var(--vv-text-muted);
 }
 
+/* ── Budget progress ─────────────────────────────────────────────────── */
+
+.vv-budget-progress {
+  display: grid;
+  gap: var(--vv-space-1);
+  min-width: 158px;
+}
+
+.vv-budget-progress__labels {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--vv-space-2);
+  color: var(--vv-positive);
+  white-space: nowrap;
+}
+
+.vv-budget-progress__status {
+  font-size: var(--vv-text-2xs);
+  font-weight: var(--vv-weight-semibold);
+  letter-spacing: 0.06em;
+}
+
+.vv-budget-progress__percentage {
+  font-family: var(--vv-font-mono);
+  font-size: var(--vv-text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.vv-budget-progress__track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--vv-surface-raised);
+}
+
+.vv-budget-progress__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--vv-positive);
+}
+
+.vv-budget-progress--warning .vv-budget-progress__labels {
+  color: var(--vv-warning);
+}
+
+.vv-budget-progress--warning .vv-budget-progress__fill {
+  background: var(--vv-warning);
+}
+
+.vv-budget-progress--negative .vv-budget-progress__labels {
+  color: var(--vv-negative);
+}
+
+.vv-budget-progress--negative .vv-budget-progress__fill {
+  background: var(--vv-negative);
+}
+
 @media (max-width: 1365px) {
   .vv-table__cell--secondary {
     display: none;
