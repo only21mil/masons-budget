@@ -171,9 +171,10 @@
     <string name="csv_import_missing">Import stopped after %1$d rows: Convex accepted the request but returned no write result.</string>
     <string name="csv_import_failed">Import stopped after %1$d rows: the write failed (%2$s).</string>
     <string name="budget_category_edit_action">Edit budget</string>
-    <string name="budget_category_transactions_action">View transactions</string>
     <string name="budget_category_transactions_back">Back to categories</string>
     <string name="budget_category_transactions_title">%1$s transactions</string>
+    <string name="budget_category_transactions_accessibility">View %1$s transactions for %2$s</string>
+    <string name="budget_transaction_edit_accessibility">Edit %1$s transaction from %2$s, owned by %3$s</string>
     <string name="budget_category_transactions_empty">No transactions in this category</string>
     <string name="budget_category_transactions_empty_detail">The selected budget month and category have no matching ledger rows.</string>
     <string name="budget_category_editor_title">Edit %1$s budget</string>

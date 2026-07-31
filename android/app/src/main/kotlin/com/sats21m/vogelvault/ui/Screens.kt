@@ -220,7 +220,7 @@ fun ScreenHost(
     var picked by rememberSaveable(state.activeProfile, state.selectedMonth) {
         mutableStateOf(initialMonth)
     }
-    var budgetEditor by remember { mutableStateOf<BudgetCategoryEditorSeed?>(null) }
+    var budgetEditor by remember(state.activeProfile) { mutableStateOf<BudgetCategoryEditorSeed?>(null) }
     var budgetDrilldownMonth by rememberSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
     var budgetDrilldownCategory by rememberSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
     var showBtcBuyEditor by rememberSaveable { mutableStateOf(false) }
@@ -929,6 +929,12 @@ private fun VaultLazyListScope.budget(
                 canEdit =
                     derived.month == budget.month &&
                         slice.status == Freshness.LIVE,
+                transactionsContentDescription =
+                    stringResource(
+                        R.string.budget_category_transactions_accessibility,
+                        category.name,
+                        derived.month,
+                    ),
                 onOpenTransactions = {
                     onOpenCategory(
                         BudgetCategoryDrilldownScope(
@@ -1003,10 +1009,24 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
         rows = transactions,
         rowKey = Transaction::selectionKey,
         rowContent = { transaction ->
+            val accessibilityLabel =
+                stringResource(
+                    R.string.budget_transaction_edit_accessibility,
+                    transaction.merchant,
+                    transaction.date,
+                    transaction.owner.displayName,
+                )
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .clickable { onSelectTransaction(transaction) },
+                    .clickable(
+                        onClickLabel = accessibilityLabel,
+                        role = Role.Button,
+                        onClick = { onSelectTransaction(transaction) },
+                    )
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = accessibilityLabel
+                    },
             ) {
                 TransactionRow(
                     transaction = transaction,

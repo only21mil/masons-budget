@@ -1,6 +1,8 @@
 package com.sats21m.vogelvault.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +23,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
@@ -160,22 +165,33 @@ private fun exactPositiveMinorUnits(
 internal fun EditableBudgetCategoryRow(
     category: CategorySpend,
     canEdit: Boolean,
+    transactionsContentDescription: String,
     onOpenTransactions: () -> Unit,
     onEdit: () -> Unit,
 ) {
     Column {
-        LedgerRow(
-            primary = category.name,
-            secondary = "planned ${Money.formatUsd(category.budgetCents)}",
-            figure = Money.formatUsd(category.spentCents),
-            figureColor = if (category.isOverBudget) VaultNegative else VaultCream,
-            badge = if (category.isOverBudget) "over" else null,
-        )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
-            TextButton(onClick = onOpenTransactions) {
-                Text(stringResource(R.string.budget_category_transactions_action))
-            }
-            if (canEdit) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clickable(
+                    onClickLabel = transactionsContentDescription,
+                    role = Role.Button,
+                    onClick = onOpenTransactions,
+                )
+                .semantics(mergeDescendants = true) {
+                    contentDescription = transactionsContentDescription
+                },
+        ) {
+            LedgerRow(
+                primary = category.name,
+                secondary = "planned ${Money.formatUsd(category.budgetCents)}",
+                figure = Money.formatUsd(category.spentCents),
+                figureColor = if (category.isOverBudget) VaultNegative else VaultCream,
+                badge = if (category.isOverBudget) "over" else null,
+            )
+        }
+        if (canEdit) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
                 TextButton(onClick = onEdit, modifier = Modifier.padding(horizontal = VaultSpace.sm)) {
                     Text(stringResource(R.string.budget_category_edit_action))
                 }
