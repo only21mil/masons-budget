@@ -204,6 +204,10 @@ fun ScreenHost(
     val initialMonth = remember(state.selectedMonth, months, budgetMonth) {
         resolveBudgetMonth(state.selectedMonth, months, budgetMonth)
     }
+    // Dashboard MTD follows the canonical seeded/current month. Budget owns a
+    // separate live picker, matching iOS where BudgetView's month offset cannot
+    // silently change DashboardView's current-month figures.
+    val dashboardMonth = initialMonth
     // The Budget screen's month scope. Held here rather than in the ViewModel
     // because it is view state, and because every row of the list has to agree on
     // it — the KPI strip, the banners and the categories all read the same month.
@@ -218,7 +222,7 @@ fun ScreenHost(
     var showBtcBuyEditor by rememberSaveable { mutableStateOf(false) }
     // A refresh can retire the picked month. Fall back rather than render a month
     // the ledger no longer contains.
-    val month = resolveBudgetMonth(picked, months, budgetMonth)
+    val budgetSelectedMonth = resolveBudgetMonth(picked, months, budgetMonth)
     val collections = remember(
         profile,
         transactionsInput,
@@ -247,25 +251,30 @@ fun ScreenHost(
     } else {
         null
     }
-    val dashboardIncomeEntries = remember(profile, month, incomeInput) {
-        state.data.dashboardIncomeEntries(profile, month)
+    val dashboardIncomeEntries = remember(profile, dashboardMonth, incomeInput) {
+        state.data.dashboardIncomeEntries(profile, dashboardMonth)
     }
-    val dashboardProjection = remember(month, collections, dashboardIncomeEntries, incomeFiguresUnavailable) {
-        val budgetTransactions = collections.budgetTransactions.inMonth(month ?: "")
-        val activity = collections.visibleTransactions.inMonth(month ?: "").take(6)
+    val dashboardProjection = remember(dashboardMonth, collections, dashboardIncomeEntries, incomeFiguresUnavailable) {
+        val budgetTransactions = collections.budgetTransactions.inMonth(dashboardMonth ?: "")
+        val activity = collections.visibleTransactions.inMonth(dashboardMonth ?: "").take(6)
         DashboardProjection(
             activity = activity,
             accounts = collections.netWorthAccounts,
             balance = collections.netWorthBalance,
             incomeEntries = dashboardIncomeEntries,
             spendCents = budgetTransactions.sumLongOrNull { it.spendAmount },
-            incomeCents = state.data.dashboardIncomeCents(profile, month),
+            incomeCents = state.data.dashboardIncomeCents(profile, dashboardMonth),
             openTodos = collections.visibleTodos.count { !it.done },
         )
     }
-    val budgetSpend = remember(state.data.budget.value, month, collections.budgetTransactions) {
+    val budgetSpend = remember(state.data.budget.value, budgetSelectedMonth, collections.budgetTransactions) {
         state.data.budget.value?.let { budget ->
-            val scoped = if (month == null || month == budget.month) budget else budget.copy(month = month)
+            val scoped =
+                if (budgetSelectedMonth == null || budgetSelectedMonth == budget.month) {
+                    budget
+                } else {
+                    budget.copy(month = budgetSelectedMonth)
+                }
             deriveBudgetSpend(scoped, collections.budgetTransactions)
         }
     }
@@ -326,7 +335,7 @@ fun ScreenHost(
                 ScreenHeader(
                     destination,
                     state,
-                    month,
+                    budgetSelectedMonth,
                     displayUnit,
                     onDisplayUnitChange,
                     onAddTransaction = { addingTransaction = true },

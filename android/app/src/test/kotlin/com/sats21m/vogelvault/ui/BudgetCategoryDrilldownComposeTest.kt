@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -20,6 +21,7 @@ import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
 import kotlin.test.assertEquals
@@ -57,7 +59,11 @@ class BudgetCategoryDrilldownComposeTest {
                 VogelVaultTheme {
                     Box(Modifier.size(width = 411.dp, height = 900.dp)) {
                         val state by model.state.collectAsState()
-                        ScreenHost(destination = state.destination, state = state)
+                        ScreenHost(
+                            destination = state.destination,
+                            state = state,
+                            displayUnit = DisplayUnit.USD,
+                        )
                     }
                 }
             }
@@ -103,6 +109,19 @@ class BudgetCategoryDrilldownComposeTest {
 
         assertEquals(0, nodesWithText("Transaction detail"))
         assertEquals(0, nodesWithText("Back to categories"))
+    }
+
+    @Test
+    fun `older Budget selection does not change Dashboard MTD`() {
+        compose.onNodeWithContentDescription("Jun 2026 budget month").performClick()
+        settle()
+        compose.onNodeWithContentDescription("Jun 2026 budget month").assertIsSelected()
+
+        compose.runOnUiThread { model.navigate(Destination.DASHBOARD) }
+        settle()
+
+        compose.onNodeWithContentDescription("Spend, \$611.17").fetchSemanticsNode()
+        compose.onNodeWithContentDescription("Income, \$4,960.00").fetchSemanticsNode()
     }
 
     private fun assertNamedButton(contentDescription: String) {
