@@ -748,6 +748,37 @@
   white-space: nowrap;
 }
 
+/*
+ * Task mutation controls are the last table column. Keep them visible when a
+ * compact window needs horizontal table scrolling instead of clipping the
+ * right edge outside the app's overflow-hidden shell.
+ */
+.vv-task-table {
+  overflow-x: auto;
+}
+
+.vv-task-table .vv-table {
+  min-width: 760px;
+}
+
+.vv-task-table .vv-table th:last-child,
+.vv-task-table .vv-table td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: var(--vv-surface);
+  box-shadow: -1px 0 0 var(--vv-line);
+}
+
+.vv-task-table .vv-table th:last-child {
+  z-index: 2;
+  background: var(--vv-surface-sunken);
+}
+
+.vv-task-table .vv-table tbody tr:hover td:last-child {
+  background: var(--vv-surface-raised);
+}
+
 @media (max-width: 700px) {
   .vv-form-grid {
     grid-template-columns: 1fr;

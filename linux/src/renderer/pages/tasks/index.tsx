@@ -21,14 +21,14 @@ import {
   PageHeader,
   Panel,
   StateBlock,
+  StatusBanner,
   TextInput,
   TodoFormDialog,
   Toolbar,
 } from "../../components/index.ts"
-import { stableId } from "../../data/mutations.ts"
+import { type MutationGate, stableId } from "../../data/mutations.ts"
 import type { PageManifest } from "../types.ts"
-
-const TODAY = "2026-07-26"
+import { useTaskToday } from "./taskClock.tsx"
 
 /**
  * The retained default project for a todo nobody filed.
@@ -56,12 +56,14 @@ export function filingOf(todo: TodoItem): string | null {
  * routes differently is invisible to the shared parity fixture, which pins the
  * normaliser rather than the screens.
  */
-export const taskFilters = {
-  today: (todo: TodoItem) => !todo.done && todo.due !== null && todo.due <= TODAY,
-  inbox: (todo: TodoItem) => !todo.done && filingOf(todo) === null,
-  upcoming: (todo: TodoItem) => !todo.done && todo.due !== null && todo.due > TODAY,
-  flagged: (todo: TodoItem) => todo.flagged && !todo.done,
-} satisfies Record<string, (todo: TodoItem) => boolean>
+export function taskFiltersFor(today: string) {
+  return {
+    today: (todo: TodoItem) => !todo.done && todo.due !== null && todo.due <= today,
+    inbox: (todo: TodoItem) => !todo.done && filingOf(todo) === null,
+    upcoming: (todo: TodoItem) => !todo.done && todo.due !== null && todo.due > today,
+    flagged: (todo: TodoItem) => todo.flagged && !todo.done,
+  } satisfies Record<string, (todo: TodoItem) => boolean>
+}
 
 function useVisibleTodos(): readonly TodoItem[] {
   const { activeProfile, data } = useAppState()
@@ -71,6 +73,40 @@ function useVisibleTodos(): readonly TodoItem[] {
 function tableState(status: string): "normal" | "empty" | "error" | "stale" | "loading" {
   if (status === "loading" || status === "error" || status === "empty") return status
   return "normal"
+}
+
+export function taskWriteStatusMessage(
+  upsertGate: MutationGate,
+  deleteGate: MutationGate,
+): string | null {
+  if (upsertGate.allowed && deleteGate.allowed) return null
+  if (!upsertGate.allowed && !deleteGate.allowed && upsertGate.reason === deleteGate.reason) {
+    return `Editing and deleting tasks are unavailable: ${upsertGate.reason ?? "This action is unavailable."}`
+  }
+  const reasons: string[] = []
+  if (!upsertGate.allowed) {
+    reasons.push(`Editing tasks: ${upsertGate.reason ?? "This action is unavailable."}`)
+  }
+  if (!deleteGate.allowed) {
+    reasons.push(`Deleting tasks: ${deleteGate.reason ?? "This action is unavailable."}`)
+  }
+  return reasons.join(" ")
+}
+
+function TaskWriteStatus() {
+  const { activeProfile, data, mutationGate } = useAppState()
+  const message = taskWriteStatusMessage(
+    mutationGate("todo.upsert", data.todos.status, activeProfile),
+    mutationGate("todo.delete", data.todos.status, activeProfile),
+  )
+  if (!message) return null
+  return (
+    <StatusBanner
+      tone="warning"
+      title="Task actions are limited"
+      detail={message}
+    />
+  )
 }
 
 export const todoColumns: ReadonlyArray<Column<TodoItem>> = [
@@ -146,6 +182,7 @@ function TodoActionsCell({ todo }: { todo: TodoItem }) {
   }
 
   async function remove() {
+    if (!deleteGate.allowed) return
     setDeleting(true)
     const result = await submitMutation({
       kind: "todo.delete",
@@ -166,6 +203,7 @@ function TodoActionsCell({ todo }: { todo: TodoItem }) {
           variant="ghost"
           onClick={() => void update({ done: !todo.done })}
           disabled={!upsertGate.allowed || pending}
+          title={!upsertGate.allowed ? upsertGate.reason ?? undefined : undefined}
           aria-label={`${todo.done ? "Reopen" : "Complete"} ${todo.title}`}
         >
           {todo.done ? "Reopen" : "Complete"}
@@ -174,6 +212,7 @@ function TodoActionsCell({ todo }: { todo: TodoItem }) {
           variant="ghost"
           onClick={() => void update({ flagged: !todo.flagged })}
           disabled={!upsertGate.allowed || pending}
+          title={!upsertGate.allowed ? upsertGate.reason ?? undefined : undefined}
           aria-pressed={todo.flagged}
           aria-label={`${todo.flagged ? "Unflag" : "Flag"} ${todo.title}`}
         >
@@ -183,6 +222,7 @@ function TodoActionsCell({ todo }: { todo: TodoItem }) {
           variant="ghost"
           onClick={() => setEditing(true)}
           disabled={!upsertGate.allowed || pending}
+          title={!upsertGate.allowed ? upsertGate.reason ?? undefined : undefined}
           aria-label={`Edit ${todo.title}`}
         >
           Edit
@@ -191,6 +231,7 @@ function TodoActionsCell({ todo }: { todo: TodoItem }) {
           variant="ghost"
           onClick={() => setConfirming(true)}
           disabled={!deleteGate.allowed || deleting}
+          title={!deleteGate.allowed ? deleteGate.reason ?? undefined : undefined}
           aria-label={`Delete ${todo.title}`}
         >
           Delete
@@ -214,7 +255,7 @@ function useInteractiveTodoColumns(): ReadonlyArray<Column<TodoItem>> {
       ...todoColumns,
       {
         key: "actions",
-        header: "Actions",
+        header: "Task actions",
         render: (row: TodoItem) => <TodoActionsCell todo={row} />,
         width: "284px",
       },
@@ -231,6 +272,7 @@ function TodoListPage({
   emptyTitle,
   emptyDetail,
   showComposer = false,
+  defaultDue,
 }: {
   title: string
   subtitle?: string
@@ -238,6 +280,7 @@ function TodoListPage({
   emptyTitle: string
   emptyDetail: string
   showComposer?: boolean
+  defaultDue?: string
 }) {
   const {
     activeProfile,
@@ -267,7 +310,7 @@ function TodoListPage({
       title: draft.trim(),
       done: false,
       flagged: false,
-      due: title === "Today" ? TODAY : undefined,
+      due: defaultDue,
     })
     if (result.status === "ok") {
       setDraft("")
@@ -297,6 +340,7 @@ function TodoListPage({
         }
       />
       <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
+      <TaskWriteStatus />
       {showComposer ? (
         <Toolbar>
           <TextInput
@@ -325,12 +369,14 @@ function TodoListPage({
           emptyTitle={emptyTitle}
           emptyDetail={emptyDetail}
           footer={`${rows.length} shown · ${todos.length} visible to this profile`}
+          caption={`${title} tasks with task actions`}
+          className="vv-task-table"
         />
       </Panel>
       <TodoFormDialog
         open={adding}
         todo={null}
-        defaultDue={title === "Today" ? TODAY : undefined}
+        defaultDue={defaultDue}
         onClose={() => setAdding(false)}
       />
     </>
@@ -338,24 +384,29 @@ function TodoListPage({
 }
 
 function TodayPage() {
+  const today = useTaskToday()
+  const filters = useMemo(() => taskFiltersFor(today), [today])
   return (
     <TodoListPage
       title="Today"
       subtitle="Due today or overdue"
-      filter={taskFilters.today}
+      filter={filters.today}
       emptyTitle="Nothing due today"
       emptyDetail="No open tasks are due on or before today for this profile."
       showComposer
+      defaultDue={today}
     />
   )
 }
 
 function InboxPage() {
+  const today = useTaskToday()
+  const filters = useMemo(() => taskFiltersFor(today), [today])
   return (
     <TodoListPage
       title="Inbox"
       subtitle="Unsorted — still in the default Inbox"
-      filter={taskFilters.inbox}
+      filter={filters.inbox}
       emptyTitle="Inbox is clear"
       emptyDetail="Every open task has been filed under a project or area."
       showComposer
@@ -364,11 +415,13 @@ function InboxPage() {
 }
 
 function UpcomingPage() {
+  const today = useTaskToday()
+  const filters = useMemo(() => taskFiltersFor(today), [today])
   return (
     <TodoListPage
       title="Upcoming"
       subtitle="Scheduled beyond today"
-      filter={taskFilters.upcoming}
+      filter={filters.upcoming}
       emptyTitle="Nothing scheduled"
       emptyDetail="No open tasks have a due date after today."
     />
@@ -376,11 +429,13 @@ function UpcomingPage() {
 }
 
 function FlaggedPage() {
+  const today = useTaskToday()
+  const filters = useMemo(() => taskFiltersFor(today), [today])
   return (
     <TodoListPage
       title="Flagged"
       subtitle="Marked for attention"
-      filter={taskFilters.flagged}
+      filter={filters.flagged}
       emptyTitle="Nothing flagged"
       emptyDetail="No open tasks are currently flagged for this profile."
     />
@@ -418,6 +473,7 @@ function ProjectsPage() {
           title="Projects"
           actions={<Button disabled title={addGate.reason ?? undefined}>Add task</Button>}
         />
+        <TaskWriteStatus />
         <StateBlock state="loading" />
       </>
     )
@@ -439,6 +495,7 @@ function ProjectsPage() {
             </Button>
           }
         />
+        <TaskWriteStatus />
         <StateBlock
           state={data.todos.status === "error" ? "error" : "empty"}
           title="No projects"
@@ -469,6 +526,7 @@ function ProjectsPage() {
         }
       />
       <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
+      <TaskWriteStatus />
       <div className="vv-stack">
         {groups.map(([name, items]) => {
           const open = items.filter((item) => !item.done).length
@@ -484,6 +542,8 @@ function ProjectsPage() {
                 rows={items}
                 rowKey={(row) => row.id}
                 state="normal"
+                caption={`${name} tasks with task actions`}
+                className="vv-task-table"
               />
             </Panel>
           )
