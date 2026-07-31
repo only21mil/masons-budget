@@ -327,4 +327,19 @@ class FinanceParityTest {
         assertEquals(HoldingValuationBasis.STORED_VALUE, absent.basis)
         assertEquals(null, absent.quote)
     }
+
+    @Test
+    fun `zero-share VOO and IBIT holdings retain positive stored values`() {
+        for ((ticker, shares) in listOf("VOO" to "0", "IBIT" to "0.000")) {
+            val holding = accounts[0].holdings[0].copy(
+                ticker = ticker,
+                sharesDecimal = shares,
+                valueCents = 12_345L,
+            )
+            val valuation = holding.marketValue(quotes)
+            assertEquals(holding.valueCents, valuation.valueCents, ticker)
+            assertEquals(HoldingValuationBasis.STORED_VALUE, valuation.basis, ticker)
+            assertEquals(MarketSymbol.valueOf(ticker), valuation.quote?.symbol, ticker)
+        }
+    }
 }

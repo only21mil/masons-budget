@@ -322,6 +322,33 @@ describe("all five source documents have typed projections", () => {
     }
   });
 
+  it("rejects present non-array finance holdings and lots without rejecting omission", () => {
+    const account = (fields: string) => `{
+      "retirement": {"accounts": {"adult_401k": {${fields}}}}
+    }`;
+
+    expect(projectFinanceDocument(account(""), 0).accounts[0]!.holdings)
+      .toEqual([]);
+    for (const value of ["{}", "null", '"not-an-array"']) {
+      expect(
+        () => projectFinanceDocument(account(`"holdings": ${value}`), 0),
+        value,
+      ).toThrow(/finances\.adult_401k\.holdings must be a JSON array/);
+    }
+
+    const holding = (lots: string) => account(`
+      "holdings": [{"name": "VOO", "shares": 0${lots}}]
+    `);
+    expect(projectFinanceDocument(holding(""), 0).accounts[0]!.holdings[0]!.lots)
+      .toEqual([]);
+    for (const value of ["{}", "null", '"not-an-array"']) {
+      expect(
+        () => projectFinanceDocument(holding(`, "lots": ${value}`), 0),
+        value,
+      ).toThrow(/finances\.adult_401k\.holdings\[0\]\.lots must be a JSON array/);
+    }
+  });
+
   it("accepts the live direct retirement shape without treating its total as an account", () => {
     const finances = projectFinanceDocument(
       `{

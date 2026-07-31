@@ -207,9 +207,18 @@ export function valueFinanceHolding(
   if (quote !== null) {
     const priceCents = quote.priceCents
     if (priceCents === null) throw new RangeError(`${quote.symbol} quote lost its validated price`)
+    const marketValueCents = sharesToValueCents(holding.sharesDecimal, priceCents)
+    if (holding.valueCents > 0n && /^0(?:\.0+)?$/.test(holding.sharesDecimal)) {
+      return {
+        holding,
+        valueCents: holding.valueCents,
+        basis: "stored-value",
+        quote,
+      }
+    }
     return {
       holding,
-      valueCents: sharesToValueCents(holding.sharesDecimal, priceCents),
+      valueCents: marketValueCents,
       basis: "market-quote",
       quote,
     }
