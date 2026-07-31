@@ -74,7 +74,10 @@ open class VaultApplication : Application() {
 
     /** Claims and stores the generated one-time bootstrap without returning a secret. */
     internal open suspend fun connectBundledReadBootstrap(): ReadBootstrapStatus =
-        readBootstrapRepository.connect(bundledReadBootstrapPair())
+        readBootstrapRepository.connect(
+            bundledPair = bundledReadBootstrapPair(),
+            requestTodoWrite = bundledReadBootstrapRequestsTodoWrite(),
+        )
 
     /**
      * Shared write transport. Every mutation reads the latest encrypted sync
@@ -249,6 +252,10 @@ internal const val PRODUCTION_DEPLOYMENT = "https://keen-elephant-452.convex.clo
 
 internal fun bundledReadBootstrapPair(): String =
     BuildConfig.CONVEX_READ_BOOTSTRAP_PAIR
+
+/** Public build intent only; no credential or capability value enters UI state. */
+internal fun bundledReadBootstrapRequestsTodoWrite(): Boolean =
+    BuildConfig.CONVEX_READ_BOOTSTRAP_REQUEST_TODO_WRITE
 
 internal fun initialConvexConfig(stored: ConvexConfig): ConvexConfig =
     stored.takeIf(ConvexConfig::allowsRemoteRead) ?: ConvexConfig()

@@ -122,7 +122,7 @@ private class SingleUseClaimPoster(
         check(path == "dataFiles:claimAndroidReadBootstrap")
         return ReadBootstrapHttpResponse(
             200,
-            """{"status":"success","value":{"ok":true,"readToken":"$token","pairedAt":1800000000000}}""",
+            """{"status":"success","value":{"ok":true,"readToken":"$token","pairedAt":1800000000000,"capabilities":[]}}""",
         )
     }
 }

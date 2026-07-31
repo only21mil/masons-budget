@@ -371,12 +371,12 @@ class VaultViewModel(
                 financeStatus = Freshness.EMPTY,
                 marketQuotes = null,
                 marketQuoteStatus = Freshness.EMPTY,
-                financeReadFailures = emptySet(),
+                financeReadDiagnostics = emptySet(),
                 remoteConfigurationError = null,
                 staleAuthorization = false,
                 rowUnauthorized = false,
                 financeUnauthorized = false,
-                rowReadFailures = emptySet(),
+                rowReadDiagnostics = emptySet(),
             )
         }
     }
