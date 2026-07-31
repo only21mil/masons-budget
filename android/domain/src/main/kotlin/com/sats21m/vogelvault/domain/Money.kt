@@ -109,8 +109,28 @@ object Money {
         val numerator = BigDecimal(sats).multiply(BigDecimal(btcPriceCents))
         return numerator
             .divide(BigDecimal(SATS_PER_BTC), 0, RoundingMode.HALF_UP)
-            .toLong()
+            .longValueExact()
     }
+
+    /**
+     * Convert USD cents to satoshis at a positive integer-cent BTC price.
+     *
+     * Unknown/non-positive prices are refused rather than presented as zero.
+     */
+    fun usdCentsToSats(cents: Long, btcPriceCents: Long): Long {
+        require(btcPriceCents > 0L) { "BTC price must be positive integer cents: $btcPriceCents" }
+        return BigDecimal(cents)
+            .multiply(BigDecimal(SATS_PER_BTC))
+            .divide(BigDecimal(btcPriceCents), 0, RoundingMode.HALF_UP)
+            .longValueExact()
+    }
+
+    /** Value an exact lexical share quantity at an integer-cent share price. */
+    fun sharesToValueCents(sharesDecimal: String, pricePerShareCents: Long): Long =
+        BigDecimal(sharesDecimal.trim())
+            .multiply(BigDecimal(pricePerShareCents))
+            .setScale(0, RoundingMode.HALF_UP)
+            .longValueExact()
 
     /** Percentage of [part] against [whole] in basis points, guarding zero. */
     fun basisPoints(part: Long, whole: Long): Int {
