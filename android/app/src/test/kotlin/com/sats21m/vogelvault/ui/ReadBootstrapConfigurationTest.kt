@@ -4,6 +4,8 @@ import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.key
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -16,6 +18,8 @@ import com.sats21m.vogelvault.data.ReadBootstrapStatus
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
 import kotlin.test.assertEquals
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -83,7 +87,7 @@ class ReadBootstrapConfigurationTest {
         assertEquals(0, compose.onAllNodesWithText("Connect securely").fetchSemanticsNodes().size)
         assertEquals(0, application.connectCalls)
 
-        application.stored = true
+        application.ready = true
         show()
         compose.onNodeWithText("Connected securely. The stored credential is never shown.")
             .fetchSemanticsNode()
@@ -137,12 +141,57 @@ class ReadBootstrapConfigurationTest {
             .fetchSemanticsNode()
     }
 
+    @Test
+    fun `effective rejection leaves connected state and returns to enrollment`() {
+        application.ready = true
+        show()
+        compose.onNodeWithText("Connected securely. The stored credential is never shown.")
+            .fetchSemanticsNode()
+
+        application.ready = false
+        settle()
+
+        compose.onNodeWithText("This installation is not connected to household data.")
+            .fetchSemanticsNode()
+        compose.onNodeWithText("Connect securely").fetchSemanticsNode()
+    }
+
+    @Test
+    fun `settings status uses effective readiness rather than row source labels`() {
+        application.ready = false
+        val convexLabeledState =
+            VaultViewModel(remoteInitiallyEnabled = true).state.value.copy(
+                destination = Destination.SETTINGS,
+            )
+        controller.get().setContent {
+            VogelVaultTheme {
+                ScreenHost(
+                    destination = Destination.SETTINGS,
+                    state = convexLabeledState,
+                )
+            }
+        }
+        settle()
+
+        compose.onNodeWithText("Convex row reads are not active").fetchSemanticsNode()
+        assertEquals(
+            0,
+            compose.onAllNodesWithText("Convex row reads are enabled").fetchSemanticsNodes().size,
+        )
+
+        application.ready = true
+        settle()
+        compose.onNodeWithText("Convex row reads are enabled").fetchSemanticsNode()
+    }
+
     private fun show(allowReset: Boolean = false) {
         contentKey += 1
         controller.get().setContent {
             VogelVaultTheme {
                 key(contentKey) {
+                    val remoteReadReady by application.effectiveReadReady.collectAsState()
                     ReadBootstrapConfiguration(
+                        remoteReadReady = remoteReadReady,
                         onConnected = { connectedCalls += 1 },
                         allowReset = allowReset,
                     )
@@ -160,7 +209,14 @@ class ReadBootstrapConfigurationTest {
 
 class RecordingReadBootstrapApplication : VaultApplication() {
     var available = true
-    var stored = false
+    private val readReady = MutableStateFlow(false)
+    override val effectiveReadReady: StateFlow<Boolean>
+        get() = readReady
+    var ready: Boolean
+        get() = readReady.value
+        set(value) {
+            readReady.value = value
+        }
     internal var next = ReadBootstrapStatus.CONNECTED
     internal var pending: CompletableDeferred<ReadBootstrapStatus>? = null
     var connectCalls = 0
@@ -168,24 +224,22 @@ class RecordingReadBootstrapApplication : VaultApplication() {
 
     override fun hasBundledReadBootstrap(): Boolean = available
 
-    override fun hasStoredConvexCredential(): Boolean = stored
-
     override suspend fun connectBundledReadBootstrap(): ReadBootstrapStatus {
         connectCalls += 1
         val result = pending?.await() ?: next
-        if (result == ReadBootstrapStatus.CONNECTED) stored = true
+        if (result == ReadBootstrapStatus.CONNECTED) ready = true
         return result
     }
 
     override fun removeStoredConvexCredential(): Boolean {
         removeCalls += 1
-        stored = false
+        ready = false
         return true
     }
 
     fun reset() {
         available = true
-        stored = false
+        ready = false
         next = ReadBootstrapStatus.CONNECTED
         pending = null
         connectCalls = 0

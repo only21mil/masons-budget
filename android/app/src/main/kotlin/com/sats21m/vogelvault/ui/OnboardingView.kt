@@ -15,7 +15,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.sats21m.vogelvault.R
-import com.sats21m.vogelvault.data.ReadReadiness
 import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultBlack
 import com.sats21m.vogelvault.ui.theme.VaultCream
@@ -23,12 +22,12 @@ import com.sats21m.vogelvault.ui.theme.VaultSpace
 import com.sats21m.vogelvault.ui.theme.VaultTextDim
 import com.sats21m.vogelvault.ui.theme.VaultWarning
 
-internal fun requiresOnboarding(readiness: ReadReadiness): Boolean =
-    readiness != ReadReadiness.READY
+internal fun requiresOnboarding(remoteReadReady: Boolean): Boolean = !remoteReadReady
 
 @Composable
 internal fun OnboardingView(
     configurationError: String?,
+    remoteReadReady: Boolean,
     onConnected: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -68,6 +67,9 @@ internal fun OnboardingView(
                 color = VaultWarning,
             )
         }
-        ReadBootstrapConfiguration(onConnected = onConnected)
+        ReadBootstrapConfiguration(
+            remoteReadReady = remoteReadReady,
+            onConnected = onConnected,
+        )
     }
 }

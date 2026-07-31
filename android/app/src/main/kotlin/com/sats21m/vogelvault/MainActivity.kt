@@ -100,6 +100,7 @@ class MainActivity : FragmentActivity() {
         setContent {
             VogelVaultTheme {
                 val state by model.state.collectAsStateWithLifecycle()
+                val effectiveReadReady by app.effectiveReadReady.collectAsStateWithLifecycle()
                 val currentLockState by lockState
                 var displayUnit by remember {
                     mutableStateOf(
@@ -108,10 +109,6 @@ class MainActivity : FragmentActivity() {
                         ),
                     )
                 }
-                var onboardingRequired by remember {
-                    mutableStateOf(requiresOnboarding(app.convexConfigSource.current().readiness))
-                }
-
                 when {
                     !currentLockState.isUnlocked ->
                         VaultLockedScreen(
@@ -119,14 +116,11 @@ class MainActivity : FragmentActivity() {
                             onUnlock = ::requestAppUnlock,
                         )
 
-                    onboardingRequired ->
+                    requiresOnboarding(effectiveReadReady) ->
                         OnboardingView(
                             configurationError = state.remoteConfigurationError,
-                            onConnected = {
-                                model.enableStoredRemoteRows()
-                                onboardingRequired =
-                                    requiresOnboarding(app.convexConfigSource.current().readiness)
-                            },
+                            remoteReadReady = effectiveReadReady,
+                            onConnected = model::enableStoredRemoteRows,
                         )
 
                     else -> {

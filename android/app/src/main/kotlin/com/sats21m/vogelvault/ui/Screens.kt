@@ -31,6 +31,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -186,6 +187,9 @@ fun ScreenHost(
     // The write surface owns its own client, per the house write pattern: nothing
     // threads suspend write callbacks through MainActivity -> VaultApp -> ScreenHost.
     val vaultApplication = LocalContext.current.applicationContext as? VaultApplication
+    val remoteReadReady by
+        vaultApplication?.effectiveReadReady?.collectAsStateWithLifecycle()
+            ?: remember { mutableStateOf(false) }
     val transactionActions = remember(vaultApplication) { vaultApplication?.transactionActions }
     val budgetMonth = state.data.budget.value?.month
     val profile = state.activeProfile
@@ -417,7 +421,7 @@ fun ScreenHost(
                     taskListsContent(state, collections.visibleTodos)
                 }
                 Destination.FAMILY -> family(state)
-                Destination.SETTINGS -> settings(state, onRemoteRowsConnected)
+                Destination.SETTINGS -> settings(state, remoteReadReady, onRemoteRowsConnected)
             }
         }
     }
@@ -1460,11 +1464,11 @@ private fun VaultLazyListScope.family(state: VaultUiState) {
 
 private fun VaultLazyListScope.settings(
     state: VaultUiState,
+    remoteReadReady: Boolean,
     onRemoteRowsConnected: () -> Unit,
 ) {
-    val readsConvexRows = state.data.transactions.source.startsWith("Convex")
     item {
-        if (readsConvexRows) {
+        if (remoteReadReady) {
             StatusBanner(
                 "Convex row reads are enabled",
                 "Every query is authenticated. Writes require the separate sync credential below.",
@@ -1493,6 +1497,7 @@ private fun VaultLazyListScope.settings(
     item {
         Panel(stringResource(R.string.read_bootstrap_title)) {
             ReadBootstrapConfiguration(
+                remoteReadReady = remoteReadReady,
                 onConnected = onRemoteRowsConnected,
                 modifier = Modifier.padding(VaultSpace.md),
                 allowReset = true,

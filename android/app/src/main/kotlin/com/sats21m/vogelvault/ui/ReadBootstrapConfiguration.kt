@@ -28,15 +28,13 @@ import kotlinx.coroutines.launch
  */
 @Composable
 internal fun ReadBootstrapConfiguration(
+    remoteReadReady: Boolean,
     onConnected: () -> Unit,
     modifier: Modifier = Modifier,
     allowReset: Boolean = false,
 ) {
     val application = LocalContext.current.applicationContext as? VaultApplication
     val available = remember(application) { application?.hasBundledReadBootstrap() == true }
-    var stored by remember(application) {
-        mutableStateOf(application?.hasStoredConvexCredential() == true)
-    }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<ReadBootstrapStatus?>(null) }
     var resetFailed by remember { mutableStateOf(false) }
@@ -48,10 +46,17 @@ internal fun ReadBootstrapConfiguration(
         verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
     ) {
         Text(
-            text = stringResource(if (stored) R.string.read_bootstrap_connected else R.string.read_bootstrap_unconfigured),
+            text =
+                stringResource(
+                    if (remoteReadReady) {
+                        R.string.read_bootstrap_connected
+                    } else {
+                        R.string.read_bootstrap_unconfigured
+                    },
+                ),
         )
 
-        if (!stored && available && application != null) {
+        if (!remoteReadReady && available && application != null) {
             Button(
                 enabled = !busy,
                 onClick = {
@@ -64,8 +69,7 @@ internal fun ReadBootstrapConfiguration(
                         busy = false
                         status = next
                         if (next == ReadBootstrapStatus.CONNECTED) {
-                            stored = application.hasStoredConvexCredential()
-                            if (stored) onConnected()
+                            if (application.effectiveReadReady.value) onConnected()
                         }
                     }
                 },
@@ -76,7 +80,7 @@ internal fun ReadBootstrapConfiguration(
                     ),
                 )
             }
-        } else if (!stored && !available) {
+        } else if (!remoteReadReady && !available) {
             Text(stringResource(R.string.read_bootstrap_unavailable))
         }
 
@@ -87,7 +91,7 @@ internal fun ReadBootstrapConfiguration(
             )
         }
 
-        if (stored && allowReset && application != null) {
+        if (remoteReadReady && allowReset && application != null) {
             if (!confirmReset) {
                 OutlinedButton(
                     enabled = !busy,
@@ -102,8 +106,7 @@ internal fun ReadBootstrapConfiguration(
                     onClick = {
                         resetFailed = runCatching {
                             application.removeStoredConvexCredential()
-                            stored = application.hasStoredConvexCredential()
-                            stored
+                            application.effectiveReadReady.value
                         }.getOrDefault(true)
                         confirmReset = false
                         status = null

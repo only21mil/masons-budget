@@ -1,6 +1,5 @@
 package com.sats21m.vogelvault.ui
 
-import com.sats21m.vogelvault.data.ReadReadiness
 import com.sats21m.vogelvault.domain.FamilyMember
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -51,9 +50,8 @@ class VaultLockControllerTest {
 
     @Test
     fun `unconfigured clients require onboarding and ready clients do not`() {
-        assertTrue(requiresOnboarding(ReadReadiness.DISABLED))
-        assertTrue(requiresOnboarding(ReadReadiness.NO_READ_TOKEN))
-        assertFalse(requiresOnboarding(ReadReadiness.READY))
+        assertTrue(requiresOnboarding(remoteReadReady = false))
+        assertFalse(requiresOnboarding(remoteReadReady = true))
     }
 
     private fun unlockedController(): VaultLockController =
