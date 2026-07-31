@@ -85,6 +85,12 @@ internal data class RetirementProjectionInputs(
         get() = (monthlyIncomeCents - monthlyBudgetCents).coerceAtLeast(0L)
 }
 
+internal data class RetirementBitcoinStack(
+    val sats: Long,
+    val balanceAsOf: String,
+    val btcQuote: MarketQuote?,
+)
+
 internal data class RetirementProjection(
     val years: Int,
     val projectedSats: Long,
@@ -107,6 +113,20 @@ internal enum class RetirementUnavailableReason {
 }
 
 /**
+ * The current in-scope Bitcoin position is useful even when scenario inputs are not.
+ * A quote is optional because native BTC/sat display never needs a fiat conversion.
+ */
+internal fun retirementBitcoinStack(state: VaultUiState): RetirementBitcoinStack? {
+    val balance = state.data.netWorthBalanceForDisplay() ?: return null
+    if (!state.activeProfile.sharesNetWorth(balance.owner)) return null
+    return RetirementBitcoinStack(
+        sats = balance.totalSats,
+        balanceAsOf = balance.asOf,
+        btcQuote = state.operationalBitcoinQuote(),
+    )
+}
+
+/**
  * Builds only checkable inputs.
  *
  * Canonical BTC fiat and recorded buys are intentionally ignored as conversion
@@ -114,13 +134,9 @@ internal enum class RetirementUnavailableReason {
  */
 internal fun retirementInputs(state: VaultUiState): RetirementInputResult {
     val data = state.data
-    val balance = data.netWorthBalanceForDisplay()
+    val stack = retirementBitcoinStack(state)
         ?: return RetirementInputResult.Unavailable(RetirementUnavailableReason.BITCOIN_BALANCE)
-    if (!state.activeProfile.sharesNetWorth(balance.owner)) {
-        return RetirementInputResult.Unavailable(RetirementUnavailableReason.BITCOIN_BALANCE)
-    }
-
-    val quote = state.operationalBitcoinQuote()
+    val quote = stack.btcQuote
         ?: return RetirementInputResult.Unavailable(RetirementUnavailableReason.MARKET_QUOTE)
 
     val incomeRows = data.income.value.netWorthScopeFor(state.activeProfile)
@@ -154,9 +170,9 @@ internal fun retirementInputs(state: VaultUiState): RetirementInputResult {
     }
     return RetirementInputResult.Available(
         RetirementProjectionInputs(
-            startingSats = balance.totalSats,
+            startingSats = stack.sats,
             btcQuote = quote,
-            balanceAsOf = balance.asOf,
+            balanceAsOf = stack.balanceAsOf,
             monthlyIncomeCents = monthlyIncome,
             monthlyBudgetCents = monthlyBudget,
             adultAnnualBonusCents =
@@ -225,9 +241,11 @@ private fun RetirementScreen(
     displayUnit: DisplayUnit,
 ) {
     var horizon by rememberSaveable { mutableIntStateOf(DEFAULT_HORIZON_YEARS) }
+    val stack = retirementBitcoinStack(state)
     val inputResult = retirementInputs(state)
 
     Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.md)) {
+        if (stack != null) CurrentBitcoinStack(stack, displayUnit)
         when (inputResult) {
             is RetirementInputResult.Unavailable -> RetirementUnavailable(inputResult.reason)
             is RetirementInputResult.Available -> {
@@ -250,6 +268,26 @@ private fun RetirementScreen(
             }
         }
     }
+}
+
+@Composable
+private fun CurrentBitcoinStack(
+    stack: RetirementBitcoinStack,
+    displayUnit: DisplayUnit,
+) {
+    KpiStrip(
+        listOf(
+            Kpi(
+                "Current Bitcoin stack",
+                formatFinancialAmount(
+                    FinancialAmount(sats = stack.sats),
+                    displayUnit,
+                    stack.btcQuote,
+                ),
+                stringResource(R.string.retirement_balance_as_of_hint, stack.balanceAsOf),
+            ),
+        ),
+    )
 }
 
 @Composable
@@ -346,15 +384,6 @@ private fun ProjectionSummary(
                 ),
                 stringResource(R.string.retirement_scenario_hint),
                 provenance = Provenance.ESTIMATED,
-            ),
-            Kpi(
-                stringResource(R.string.retirement_starting_bitcoin_label),
-                formatFinancialAmount(
-                    FinancialAmount(sats = inputs.startingSats),
-                    displayUnit,
-                    quote,
-                ),
-                stringResource(R.string.retirement_balance_as_of_hint, inputs.balanceAsOf),
             ),
         ),
     )

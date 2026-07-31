@@ -14,6 +14,7 @@ import com.sats21m.vogelvault.domain.Slice
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class RetirementScreenTest {
@@ -31,12 +32,44 @@ class RetirementScreenTest {
             "a missing operational snapshot cannot value a positive stack",
         )
         assertEquals(
+            RetirementBitcoinStack(541_782_856L, "2026-07-16", null),
+            retirementBitcoinStack(usable.copy(marketQuotes = null, marketQuoteStatus = Freshness.ERROR)),
+            "the native Bitcoin stack remains present when fiat conversion is unavailable",
+        )
+        assertEquals(
             RetirementInputResult.Unavailable(RetirementUnavailableReason.MARKET_QUOTE),
             retirementInputs(usable.withBtcQuote(unavailableBtcQuote())),
             "an unavailable operational BTC quote cannot value a positive stack",
         )
         assertIs<RetirementInputResult.Available>(
             retirementInputs(usable.withBtcQuote(btcQuote(11_500_000L, MarketQuoteStatus.STALE))),
+        )
+    }
+
+    @Test
+    fun `income and budget availability gate only the projection`() {
+        val usable = stateWithProductionBalance()
+        val expectedStack = requireNotNull(retirementBitcoinStack(usable))
+        val missingIncome = usable.copy(
+            data = usable.data.copy(
+                income = usable.data.income.copy(status = Freshness.ERROR),
+            ),
+        )
+        val missingBudget = usable.copy(
+            data = usable.data.copy(
+                budget = usable.data.budget.copy(status = Freshness.EMPTY),
+            ),
+        )
+
+        assertEquals(expectedStack, retirementBitcoinStack(missingIncome))
+        assertEquals(
+            RetirementInputResult.Unavailable(RetirementUnavailableReason.INCOME),
+            retirementInputs(missingIncome),
+        )
+        assertEquals(expectedStack, retirementBitcoinStack(missingBudget))
+        assertEquals(
+            RetirementInputResult.Unavailable(RetirementUnavailableReason.BUDGET),
+            retirementInputs(missingBudget),
         )
     }
 
@@ -72,6 +105,8 @@ class RetirementScreenTest {
         val mason = victorState.copy(activeProfile = FamilyMember.MASON)
 
         assertIs<RetirementInputResult.Available>(retirementInputs(rachel))
+        assertEquals(retirementBitcoinStack(victorState), retirementBitcoinStack(rachel))
+        assertNull(retirementBitcoinStack(mason))
         assertEquals(
             RetirementInputResult.Unavailable(RetirementUnavailableReason.BITCOIN_BALANCE),
             retirementInputs(mason),
