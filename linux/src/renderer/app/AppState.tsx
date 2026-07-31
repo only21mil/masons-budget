@@ -19,6 +19,10 @@ import type { Freshness, MonthKey } from "@vogel-vault/domain/readModel"
 import { type FixtureEnvelope, buildSanitizedFixtureEnvelope, fixtureEnvelopeInState } from "../data/fixtures.ts"
 import { loadConvexRowEnvelope } from "../data/convexRows.ts"
 import {
+  type LinuxFinanceReadModel,
+  loadLinuxFinanceReadModel,
+} from "../data/financeReadModel.ts"
+import {
   type DisplayUnit,
   displayUnitFromStorageKey,
 } from "../data/bitcoinDisplay.ts"
@@ -69,6 +73,8 @@ interface AppStateValue {
   readonly displayUnit: DisplayUnit
   readonly setDisplayUnit: (unit: DisplayUnit) => void
   readonly data: FixtureEnvelope
+  /** Finance/quote rows are remote-only and never synthesized from QA fixtures. */
+  readonly financeModel: LinuxFinanceReadModel
   readonly dataOrigin: DataOrigin
   readonly mutationCapabilities: readonly RendererMutationKind[]
   readonly pairingStatus: PairingStatus | { readonly status: "loading" }
@@ -108,6 +114,8 @@ export interface AppStateProviderProps {
   initialDisplayUnit?: DisplayUnit
   /** Exact envelope for headless financial-state regression tests. */
   initialData?: FixtureEnvelope
+  /** Exact remote finance state for deterministic renderer tests. */
+  initialFinanceModel?: LinuxFinanceReadModel
   /** Tests may opt into writable seeded rows explicitly; fixtures stay read-only. */
   initialDataOrigin?: DataOrigin
   /** Renderer-local adapter until the preload contract is joined by the parent lane. */
@@ -126,6 +134,7 @@ export function AppStateProvider({
   initialSelectedMonth = null,
   initialDisplayUnit,
   initialData,
+  initialFinanceModel,
   initialDataOrigin = "fixture",
   mutationAdapter,
   initialMutationCapabilities = [],
@@ -146,6 +155,14 @@ export function AppStateProvider({
   } | null>(() =>
     initialData
       ? { profile: initialProfile, data: initialData, origin: initialDataOrigin }
+      : null,
+  )
+  const [remoteFinance, setRemoteFinance] = useState<{
+    readonly profile: FamilyMember
+    readonly model: LinuxFinanceReadModel
+  } | null>(() =>
+    initialFinanceModel
+      ? { profile: initialProfile, model: initialFinanceModel }
       : null,
   )
   const [mutationCapabilities, setMutationCapabilities] = useState<
@@ -211,17 +228,19 @@ export function AppStateProvider({
   const loadRemote = useCallback(async (profile: FamilyMember, generation: number) => {
     const bridge = window.vogelVault
     if (!bridge) return false
-    const result = await loadConvexRowEnvelope(
-      async (request) => {
-        try {
-          return await bridge.queryConvexRows(request)
-        } catch {
-          return { status: "error", code: "unavailable" }
-        }
-      },
-      profile,
-    )
+    const query = async (request: Parameters<typeof bridge.queryConvexRows>[0]) => {
+      try {
+        return await bridge.queryConvexRows(request)
+      } catch {
+        return { status: "error" as const, code: "unavailable" as const }
+      }
+    }
+    const [result, financeModel] = await Promise.all([
+      loadConvexRowEnvelope(query, profile),
+      loadLinuxFinanceReadModel(query, profile),
+    ])
     if (generationRef.current !== generation) return false
+    setRemoteFinance({ profile, model: financeModel })
     if (result.status !== "loaded") return false
     setRemoteData({ profile, data: result.data, origin: "remote" })
     return true
@@ -318,6 +337,10 @@ export function AppStateProvider({
     stateOverride === "normal" && remoteData?.profile === activeProfile
       ? remoteData.origin
       : "fixture"
+  const financeModel =
+    stateOverride === "normal" && remoteFinance?.profile === activeProfile
+      ? remoteFinance.model
+      : EMPTY_FINANCE_MODEL
   const data = useMemo(
     () => optimisticEnvelope(baseData, mutationController, activeProfile, generation),
     [activeProfile, baseData, generation, mutationController],
@@ -474,6 +497,7 @@ export function AppStateProvider({
       displayUnit,
       setDisplayUnit,
       data,
+      financeModel,
       dataOrigin,
       mutationCapabilities,
       pairingStatus,
@@ -496,6 +520,7 @@ export function AppStateProvider({
       displayUnit,
       setDisplayUnit,
       data,
+      financeModel,
       dataOrigin,
       mutationCapabilities,
       pairingStatus,
@@ -510,6 +535,11 @@ export function AppStateProvider({
   )
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>
+}
+
+const EMPTY_FINANCE_MODEL: LinuxFinanceReadModel = {
+  finance: { status: "empty", value: null },
+  marketQuotes: { status: "empty", value: null },
 }
 
 function mutationAdapterFromWindow(): RendererMutationAdapter | null {
