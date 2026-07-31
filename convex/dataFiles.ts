@@ -189,6 +189,75 @@ function validatePairingInput(
   }
 }
 
+const ANDROID_READ_BOOTSTRAP_MAX_TTL_MS = 30 * 60 * 1000;
+const ANDROID_READ_BOOTSTRAP_PAIR_ID = /^android-read-[A-Za-z0-9_-]{16,64}$/;
+// A canonical, unpadded Base64URL encoding of exactly 32 bytes is 43 characters.
+// The final character has two zero padding bits, so only these 16 values are valid.
+const ANDROID_READ_BOOTSTRAP_PROOF = /^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/;
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+type AndroidReadBootstrapErrorCode =
+  | "ANDROID_READ_BOOTSTRAP_NOT_FOUND"
+  | "ANDROID_READ_BOOTSTRAP_EXPIRED"
+  | "ANDROID_READ_BOOTSTRAP_ALREADY_CLAIMED"
+  | "ANDROID_READ_BOOTSTRAP_PROOF_INVALID"
+  | "CONFIG_MISSING"
+  | "DEVICE_UNAUTHORIZED"
+  | "PAIRING_ID_CONFLICT"
+  | "VALIDATION_FAILED";
+
+function androidReadBootstrapFailure(
+  code: AndroidReadBootstrapErrorCode,
+): never {
+  throw new ConvexError({
+    code,
+    message: "Android read bootstrap request was rejected.",
+  });
+}
+
+function validateAndroidReadBootstrapPairId(pairId: string) {
+  if (!ANDROID_READ_BOOTSTRAP_PAIR_ID.test(pairId)) {
+    androidReadBootstrapFailure("VALIDATION_FAILED");
+  }
+}
+
+function validateAndroidReadBootstrapProofHash(proofHash: string) {
+  if (!SHA256_HEX.test(proofHash)) {
+    androidReadBootstrapFailure("VALIDATION_FAILED");
+  }
+}
+
+function validateAndroidReadBootstrapProof(proof: string) {
+  if (!ANDROID_READ_BOOTSTRAP_PROOF.test(proof)) {
+    androidReadBootstrapFailure("VALIDATION_FAILED");
+  }
+}
+
+function validateAndroidReadBootstrapSyncToken(token?: string) {
+  const expected = process.env.CONVEX_SYNC_TOKEN;
+  if (!expected || !expected.trim()) {
+    androidReadBootstrapFailure("CONFIG_MISSING");
+  }
+  if (
+    token !== undefined &&
+    (token.length < 16 || token.length > 512 || !token.trim())
+  ) {
+    androidReadBootstrapFailure("VALIDATION_FAILED");
+  }
+  if (!token || token !== expected) {
+    androidReadBootstrapFailure("DEVICE_UNAUTHORIZED");
+  }
+}
+
+function equalSha256Hex(left: string, right: string): boolean {
+  if (left.length !== 64 || right.length !== 64) return false;
+  let difference = 0;
+  for (let index = 0; index < 64; index += 1) {
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return difference === 0;
+}
+
 // ── Queries (called by the iOS app) ──
 
 /** Fetch a single data file by name. Returns the raw JSON data. */
@@ -596,6 +665,107 @@ export const upsertTodoFromMobile = mutation({
     const result = await applyTodoUpsert(ctx, record, "todos");
     await markDeviceSeen(ctx, device);
     return { ok: true as const, ...result };
+  },
+});
+
+/**
+ * Mint one short-lived, one-purpose Android read bootstrap.
+ *
+ * This is deliberately separate from mobileDevices/mobilePairings. A bootstrap
+ * grants no write capability and stores neither its raw proof nor a read token.
+ */
+export const createAndroidReadBootstrap = mutation({
+  args: {
+    pairId: v.string(),
+    proofHash: v.string(),
+    expiresAt: v.float64(),
+    token: v.optional(v.string()),
+  },
+  returns: v.object({
+    pairId: v.string(),
+    expiresAt: v.float64(),
+  }),
+  handler: async (ctx, { pairId, proofHash, expiresAt, token }) => {
+    validateAndroidReadBootstrapSyncToken(token);
+    validateAndroidReadBootstrapPairId(pairId);
+    validateAndroidReadBootstrapProofHash(proofHash);
+
+    const now = Date.now();
+    if (
+      !Number.isFinite(expiresAt) ||
+      expiresAt <= now ||
+      expiresAt > now + ANDROID_READ_BOOTSTRAP_MAX_TTL_MS
+    ) {
+      androidReadBootstrapFailure("VALIDATION_FAILED");
+    }
+
+    const existing = await ctx.db
+      .query("androidReadBootstraps")
+      .withIndex("by_pair_id", (q) => q.eq("pairId", pairId))
+      .unique();
+    if (existing) {
+      androidReadBootstrapFailure("PAIRING_ID_CONFLICT");
+    }
+
+    await ctx.db.insert("androidReadBootstraps", {
+      pairId,
+      proofHash,
+      createdAt: now,
+      expiresAt,
+      claimedAt: undefined,
+    });
+    return { pairId, expiresAt };
+  },
+});
+
+/**
+ * Redeem a raw 256-bit Android proof for the deployment's current read token.
+ *
+ * The proof is hashed on the server. A successful mutation marks the row before
+ * returning, so Convex transaction serialization permits exactly one claimant.
+ */
+export const claimAndroidReadBootstrap = mutation({
+  args: {
+    pairId: v.string(),
+    proof: v.string(),
+  },
+  returns: v.object({
+    ok: v.literal(true),
+    readToken: v.string(),
+    pairedAt: v.float64(),
+  }),
+  handler: async (ctx, { pairId, proof }) => {
+    validateAndroidReadBootstrapPairId(pairId);
+    validateAndroidReadBootstrapProof(proof);
+
+    const bootstrap = await ctx.db
+      .query("androidReadBootstraps")
+      .withIndex("by_pair_id", (q) => q.eq("pairId", pairId))
+      .unique();
+    if (!bootstrap) {
+      androidReadBootstrapFailure("ANDROID_READ_BOOTSTRAP_NOT_FOUND");
+    }
+    if (bootstrap.claimedAt !== undefined) {
+      androidReadBootstrapFailure("ANDROID_READ_BOOTSTRAP_ALREADY_CLAIMED");
+    }
+
+    const now = Date.now();
+    if (bootstrap.expiresAt <= now) {
+      androidReadBootstrapFailure("ANDROID_READ_BOOTSTRAP_EXPIRED");
+    }
+
+    const suppliedProofHash = await sha256Hex(proof);
+    if (!equalSha256Hex(bootstrap.proofHash, suppliedProofHash)) {
+      androidReadBootstrapFailure("ANDROID_READ_BOOTSTRAP_PROOF_INVALID");
+    }
+
+    const readToken = process.env.CONVEX_READ_TOKEN;
+    if (!readToken || !readToken.trim()) {
+      androidReadBootstrapFailure("CONFIG_MISSING");
+    }
+
+    await ctx.db.patch(bootstrap._id, { claimedAt: now });
+    return { ok: true as const, readToken, pairedAt: now };
   },
 });
 

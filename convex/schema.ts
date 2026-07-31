@@ -265,6 +265,17 @@ export default defineSchema({
     lockedAtMs: v.float64(),
   }).index("by_source_file", ["sourceFile"]),
 
+  // One-purpose, short-lived bootstrap for installing the deployment's current
+  // read credential on an Android device. The raw proof and read credential are
+  // never stored here: only SHA-256(raw proof) and one-time claim state persist.
+  androidReadBootstraps: defineTable({
+    pairId: v.string(),
+    proofHash: v.string(),
+    createdAt: v.float64(),
+    expiresAt: v.float64(),
+    claimedAt: v.optional(v.float64()),
+  }).index("by_pair_id", ["pairId"]),
+
   // ── Mobile writeback pairing (SAT-1429) ──
   // Public iPhones cannot reach DGX/Tailscale, so they complete existing MC2
   // todos through Convex using per-device tokens. Pairings are one-time secrets
