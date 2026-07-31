@@ -205,6 +205,7 @@ class VaultViewModel(
     private var cachedModel: CachedReadModel? = null
     private var liveModel: ReadModel? = null
     private var liveUnauthorized = false
+    private var loadGeneration = 0L
 
     init {
         if (remoteInitiallyEnabled && (rowSource != null || financeSource != null)) {
@@ -308,19 +309,21 @@ class VaultViewModel(
     }
 
     private fun connectRows(profile: FamilyMember) {
+        val generation = ++loadGeneration
         rowJob?.cancel()
         cachedModel = null
         liveModel = null
         liveUnauthorized = false
         rowJob =
-            viewModelScope.launch {
-                launch { loadFinance(profile) }
-                val source = rowSource ?: return@launch
+            viewModelScope.launch load@{
+                launch { loadFinance(profile, generation) }
+                val source = rowSource ?: return@load
                 launch {
                     source.observe(profile).collect { cached ->
+                        if (!isCurrentLoad(profile, generation)) return@collect
                         cachedModel = cached
                         _state.update { current ->
-                            if (current.activeProfile != profile) {
+                            if (!isCurrentLoad(current, profile, generation)) {
                                 current
                             } else {
                                 val unauthorized = liveUnauthorized || cached.staleAuthorization
@@ -341,10 +344,11 @@ class VaultViewModel(
                     }
                 }
                 val loaded = withContext(Dispatchers.Default) { source.load(profile) }
+                if (!isCurrentLoad(profile, generation)) return@load
                 liveModel = loaded.data
                 liveUnauthorized = loaded.unauthorized
                 _state.update { current ->
-                    if (current.activeProfile != profile) {
+                    if (!isCurrentLoad(current, profile, generation)) {
                         current
                     } else {
                         // Financial snapshots rejected by authorization are
@@ -364,18 +368,22 @@ class VaultViewModel(
             }
     }
 
-    private suspend fun loadFinance(profile: FamilyMember) {
+    private suspend fun loadFinance(
+        profile: FamilyMember,
+        generation: Long,
+    ) {
         val source = financeSource ?: return
         _state.update { current ->
-            if (current.activeProfile != profile) current else current.copy(
+            if (!isCurrentLoad(current, profile, generation)) current else current.copy(
                 financeStatus = Freshness.LOADING,
                 marketQuoteStatus = Freshness.LOADING,
             )
         }
         val loaded = source.load(profile)
+        if (!isCurrentLoad(profile, generation)) return
         val next = financeSurfaceState(loaded)
         _state.update { current ->
-            if (current.activeProfile != profile) current else current.copy(
+            if (!isCurrentLoad(current, profile, generation)) current else current.copy(
                 financeDocument = next.financeDocument,
                 financeStatus = next.financeStatus,
                 marketQuotes = next.marketQuotes,
@@ -386,6 +394,17 @@ class VaultViewModel(
             )
         }
     }
+
+    private fun isCurrentLoad(
+        profile: FamilyMember,
+        generation: Long,
+    ): Boolean = loadGeneration == generation && _state.value.activeProfile == profile
+
+    private fun isCurrentLoad(
+        state: VaultUiState,
+        profile: FamilyMember,
+        generation: Long,
+    ): Boolean = loadGeneration == generation && state.activeProfile == profile
 
     private companion object {
         const val REMOTE_CONFIGURATION_ERROR =

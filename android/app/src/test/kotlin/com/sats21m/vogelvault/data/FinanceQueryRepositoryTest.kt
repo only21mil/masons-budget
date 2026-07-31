@@ -175,6 +175,32 @@ class FinanceQueryRepositoryTest {
     }
 
     @Test
+    fun `share quantities reject exponent and unbounded lexical forms`() {
+        val malformed = listOf(
+            financeEnvelope().replace(
+                "\"sharesDecimal\":\"12.34567890\"",
+                "\"sharesDecimal\":\"1e3\"",
+            ),
+            financeEnvelope().replace(
+                "\"sharesDecimal\":\"12.34567890\"",
+                "\"sharesDecimal\":\"${"1".repeat(65)}\"",
+            ),
+        )
+
+        for (payload in malformed) {
+            assertEquals(
+                ConvexResult.Failed("unexpected payload shape"),
+                runBlocking {
+                    repositoryWith(RecordingPoster(success(payload))).getFinanceDocument(
+                        FamilyMember.VICTOR,
+                        RowVisibilityScope.NET_WORTH,
+                    )
+                },
+            )
+        }
+    }
+
+    @Test
     fun `missing finance document remains an explicit complete empty snapshot`() {
         val result = assertIs<ConvexResult.Ok<FinanceDocumentSnapshot>>(
             runBlocking {

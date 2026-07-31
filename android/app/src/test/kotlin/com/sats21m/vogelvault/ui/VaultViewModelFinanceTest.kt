@@ -10,6 +10,7 @@ import com.sats21m.vogelvault.domain.FinanceAccount
 import com.sats21m.vogelvault.domain.FinanceDocument
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
@@ -44,6 +45,60 @@ class VaultViewModelFinanceTest {
         assertEquals(FamilyMember.RACHEL, model.state.value.activeProfile)
         assertEquals("rachel-account", model.state.value.financeDocument?.accounts?.single()?.key)
     }
+
+    @Test
+    fun `late finance response cannot overwrite a newer load after profile ABA`() {
+        val source = AbaFinanceSource()
+        val model = VaultViewModel(financeSource = source, remoteInitiallyEnabled = true)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(source.firstVictorStarted.await(5, TimeUnit.SECONDS), "First Victor read never started")
+
+        model.switchProfile(FamilyMember.RACHEL)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(source.rachelReturned.await(5, TimeUnit.SECONDS), "Rachel read never returned")
+
+        model.switchProfile(FamilyMember.VICTOR)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(source.secondVictorReturned.await(5, TimeUnit.SECONDS), "Second Victor read never returned")
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("victor-new", model.state.value.financeDocument?.accounts?.single()?.key)
+
+        source.releaseFirstVictor.countDown()
+        assertTrue(source.firstVictorReturned.await(5, TimeUnit.SECONDS), "First Victor read never returned")
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertEquals(FamilyMember.VICTOR, model.state.value.activeProfile)
+        assertEquals("victor-new", model.state.value.financeDocument?.accounts?.single()?.key)
+    }
+}
+
+private class AbaFinanceSource : FinanceReadSource {
+    val firstVictorStarted = CountDownLatch(1)
+    val releaseFirstVictor = CountDownLatch(1)
+    val firstVictorReturned = CountDownLatch(1)
+    val rachelReturned = CountDownLatch(1)
+    val secondVictorReturned = CountDownLatch(1)
+    private val victorReads = AtomicInteger()
+
+    override suspend fun load(viewer: FamilyMember): LoadedFinanceRead {
+        if (viewer == FamilyMember.RACHEL) {
+            rachelReturned.countDown()
+            return loadedFinance("rachel", FamilyMember.RACHEL)
+        }
+        return if (victorReads.incrementAndGet() == 1) {
+            suspendCoroutine { continuation ->
+                firstVictorStarted.countDown()
+                thread(name = "aba-finance-test", isDaemon = true) {
+                    releaseFirstVictor.await()
+                    continuation.resume(loadedFinance("victor-old", FamilyMember.VICTOR))
+                    firstVictorReturned.countDown()
+                }
+            }
+        } else {
+            secondVictorReturned.countDown()
+            loadedFinance("victor-new", FamilyMember.VICTOR)
+        }
+    }
 }
 
 private class DelayedVictorFinanceSource : FinanceReadSource {
@@ -67,7 +122,11 @@ private class DelayedVictorFinanceSource : FinanceReadSource {
             loaded("rachel-account", FamilyMember.RACHEL)
         }
 
-    private fun loaded(key: String, owner: FamilyMember) = LoadedFinanceRead(
+    private fun loaded(key: String, owner: FamilyMember) = loadedFinance(key, owner)
+}
+
+private fun loadedFinance(key: String, owner: FamilyMember) =
+    LoadedFinanceRead(
         finance = ConvexResult.Ok(
             FinanceDocumentSnapshot(
                 document = FinanceDocument(
@@ -92,4 +151,3 @@ private class DelayedVictorFinanceSource : FinanceReadSource {
         quotes = ConvexResult.Missing,
         unauthorized = false,
     )
-}

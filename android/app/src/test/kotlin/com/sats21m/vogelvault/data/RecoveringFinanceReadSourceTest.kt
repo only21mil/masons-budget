@@ -56,8 +56,61 @@ class RecoveringFinanceReadSourceTest {
         assertSame(ConvexResult.Unauthorized, loaded.quotes)
     }
 
+    @Test
+    fun `recovery completed by a concurrent reader retries both queries with one new config`() = runBlocking {
+        val rejected = configured("rejected-token")
+        val fallback = configured("fallback-token")
+        val config = MutableConvexConfigSource(rejected)
+        val attemptConfigs = mutableListOf<ConvexConfig>()
+        val repositories = mutableListOf<FixedResultFinanceRepository>()
+        val source = RecoveringFinanceReadSource(
+            remoteForConfig = { attemptConfig ->
+                attemptConfigs += attemptConfig
+                FixedResultFinanceRepository(
+                    if (attemptConfig === rejected) ConvexResult.Unauthorized else ConvexResult.Missing,
+                ).also(repositories::add)
+            },
+            configSource = config,
+            onUnauthorized = {
+                // Mirrors the row lane winning the compare-and-clear race first.
+                config.update(fallback)
+                false
+            },
+        )
+
+        val loaded = source.load(FamilyMember.VICTOR)
+
+        assertEquals(2, attemptConfigs.size)
+        assertSame(rejected, attemptConfigs[0])
+        assertSame(fallback, attemptConfigs[1])
+        assertTrue(repositories.all { it.financeReads == 1 && it.quoteReads == 1 })
+        assertFalse(loaded.unauthorized)
+        assertSame(ConvexResult.Missing, loaded.finance)
+        assertSame(ConvexResult.Missing, loaded.quotes)
+    }
+
     private fun configured(token: String) =
         ConvexConfig("https://finance-test.example", token, remoteReadEnabled = true)
+}
+
+private class FixedResultFinanceRepository(
+    private val result: ConvexResult<Nothing>,
+) : FinanceQueryRepository {
+    var financeReads = 0
+    var quoteReads = 0
+
+    override suspend fun getFinanceDocument(
+        viewer: FamilyMember,
+        scope: RowVisibilityScope,
+    ): ConvexResult<FinanceDocumentSnapshot> {
+        financeReads += 1
+        return result
+    }
+
+    override suspend fun getMarketQuoteSnapshot(): ConvexResult<MarketQuoteReadSnapshot> {
+        quoteReads += 1
+        return result
+    }
 }
 
 private class SequencedFinanceRepository(

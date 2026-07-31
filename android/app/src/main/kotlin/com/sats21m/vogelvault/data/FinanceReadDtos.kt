@@ -158,6 +158,7 @@ private inline fun <T> JsonObject.optional(
 
 private fun JsonObject.exactDecimal(key: String): String? {
     val value = nonEmptyString(key) ?: return null
+    if (value.length > MAX_EXACT_DECIMAL_LENGTH || !EXACT_DECIMAL.matches(value)) return null
     return try {
         BigDecimal(value)
         value
@@ -165,6 +166,10 @@ private fun JsonObject.exactDecimal(key: String): String? {
         null
     }
 }
+
+/** Prevent a server string from driving unbounded decimal allocation on-device. */
+private const val MAX_EXACT_DECIMAL_LENGTH = 64
+private val EXACT_DECIMAL = Regex("^-?\\d+(?:\\.\\d*)?$")
 
 private fun <T> JsonObject.objectArray(
     key: String,
