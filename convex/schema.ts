@@ -262,6 +262,24 @@ export default defineSchema({
     capabilities: v.optional(v.array(deviceCapabilityValidator)),
   }).index("by_device_id", ["deviceId"]),
 
+  // ── Operational market quote cache ──
+  // This is deliberately separate from household finance data. Each row is the
+  // latest observation/attempt for one fixed symbol; it is neither a holding
+  // value nor a price history. Failed refreshes keep the last successful
+  // observation and only move its status to stale.
+  marketQuoteCache: defineTable({
+    symbol: v.union(v.literal("BTC"), v.literal("VOO"), v.literal("IBIT")),
+    priceCents: v.optional(v.int64()),
+    source: v.string(),
+    fetchedAt: v.optional(v.string()),
+    status: v.union(
+      v.literal("live"),
+      v.literal("stale"),
+      v.literal("unavailable"),
+    ),
+    lastAttemptedAt: v.string(),
+  }).index("by_symbol", ["symbol"]),
+
   // ══════════════════════════════════════════════════════════════════════════
   // ROW TABLES — see the banner at the top of this file. Nothing reads these
   // yet; `dataFiles` above stays authoritative until the clients move.

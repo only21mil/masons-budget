@@ -16,11 +16,11 @@ not separate device caches synchronized with each other:
 - Apple keeps its existing device-local quote cache until a later reviewed
   migration to the same snapshot.
 
-This foundation commit adds no Convex code or schema. The cache storage, refresh
-path, and authenticated query belong to a separate reviewed implementation
-lane. Synced account fields such as `weeklyContributionCents` and
-`weeklyContributionDay` remain projections and schedule labels only. No Vogel
-Vault client executes a brokerage market order.
+The original foundation commit added no Convex code or schema. The follow-up
+implementation lane adds only `marketQuoteCache`, the authenticated snapshot
+query, and an internal scheduled refresh. Synced account fields such as
+`weeklyContributionCents` and `weeklyContributionDay` remain projections and
+schedule labels only. No Vogel Vault client executes a brokerage market order.
 
 ## Shared snapshot
 
@@ -83,6 +83,23 @@ An internal refresh action owns acquisition and cache updates. It must:
   observation exists;
 - allow one symbol to fail without discarding successful observations for the
   other two.
+
+The implemented refresh runs every 15 minutes and requests only these reviewed
+literal endpoints:
+
+```text
+https://sats21m.com/api/price/btc
+https://sats21m.com/api/price/voo
+https://sats21m.com/api/price/ibit
+```
+
+Requests time out after five seconds, refuse redirects, and reject response
+bodies larger than 32 KiB. The response price is converted from its original
+decimal JSON text to signed-64-bit integer cents without passing through an
+IEEE-754 number. A successful attempt marks that symbol `live`; a failed attempt
+marks a prior success `stale`, or `unavailable` if that symbol has never
+succeeded. Deploying this code and performing the first production refresh are
+separate operational steps.
 
 Linux and Android consume this server snapshot directly. They do not replicate
 or synchronize quote state device-to-device. Any short-lived in-memory client
