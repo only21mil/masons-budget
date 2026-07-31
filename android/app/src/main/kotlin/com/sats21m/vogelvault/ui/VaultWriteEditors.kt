@@ -1,14 +1,21 @@
 package com.sats21m.vogelvault.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -18,10 +25,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.explicitBtcBuyOwner
@@ -29,13 +44,21 @@ import com.sats21m.vogelvault.data.BtcBuyInput
 import com.sats21m.vogelvault.data.BudgetCategoryInput
 import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.domain.BudgetHealth
+import com.sats21m.vogelvault.domain.BudgetHealthStatus
 import com.sats21m.vogelvault.domain.CategorySpend
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Money
-import com.sats21m.vogelvault.ui.components.LedgerRow
+import com.sats21m.vogelvault.domain.budgetHealth
+import com.sats21m.vogelvault.ui.components.Badge
+import com.sats21m.vogelvault.ui.theme.LedgerNumeral
 import com.sats21m.vogelvault.ui.theme.VaultCream
 import com.sats21m.vogelvault.ui.theme.VaultNegative
+import com.sats21m.vogelvault.ui.theme.VaultPositive
 import com.sats21m.vogelvault.ui.theme.VaultSpace
+import com.sats21m.vogelvault.ui.theme.VaultSurfaceRaised
+import com.sats21m.vogelvault.ui.theme.VaultTextDim
+import com.sats21m.vogelvault.ui.theme.VaultWarning
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
@@ -107,6 +130,39 @@ internal fun budgetCategoryWriteRequest(
     )
 }
 
+internal data class BudgetCategoryProgress(
+    val health: BudgetHealth,
+    val percentageLabel: String,
+    val fillFraction: Float,
+) {
+    val statusLabel: String get() = health.label
+}
+
+/**
+ * Presentation-only mapping over the canonical Android domain selector.
+ * Negative stored limits are invalid targets and normalize to the domain's
+ * zero-limit state, preserving the safe no-division behavior at this boundary.
+ */
+internal fun budgetCategoryProgress(spentCents: Long, limitCents: Long): BudgetCategoryProgress {
+    val health = budgetHealth(limitCents.coerceAtLeast(0L), spentCents)
+    val percentageLabel =
+        health.overPercent?.let { "+$it% over" }
+            ?: "${health.remainingPercent ?: 0}% left"
+    return BudgetCategoryProgress(
+        health = health,
+        percentageLabel = percentageLabel,
+        fillFraction = health.barBasisPoints / 10_000f,
+    )
+}
+
+internal fun budgetProgressAccessibilityLabel(
+    category: CategorySpend,
+    progress: BudgetCategoryProgress,
+): String =
+    "${category.name}, ${Money.formatUsd(category.spentCents)} spent of " +
+        "${Money.formatUsd(category.budgetCents)} planned, " +
+        "${progress.statusLabel}, ${progress.percentageLabel}"
+
 internal fun btcBuyWriteRequest(
     owner: FamilyMember,
     id: String,
@@ -162,14 +218,61 @@ internal fun EditableBudgetCategoryRow(
     canEdit: Boolean,
     onEdit: () -> Unit,
 ) {
+    val progress = budgetCategoryProgress(category.spentCents, category.budgetCents)
+    val progressColor = progress.health.status.color
     Column {
-        LedgerRow(
-            primary = category.name,
-            secondary = "planned ${Money.formatUsd(category.budgetCents)}",
-            figure = Money.formatUsd(category.spentCents),
-            figureColor = if (category.isOverBudget) VaultNegative else VaultCream,
-            badge = if (category.isOverBudget) "over" else null,
-        )
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clearAndSetSemantics {
+                    contentDescription = budgetProgressAccessibilityLabel(category, progress)
+                    progressBarRangeInfo = ProgressBarRangeInfo(progress.fillFraction, 0f..1f)
+                }
+                .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
+            verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(category.name, style = MaterialTheme.typography.bodyMedium, color = VaultCream)
+                        Box(Modifier.width(VaultSpace.sm))
+                        Badge(progress.statusLabel, tone = progressColor)
+                    }
+                    Text(
+                        "planned ${Money.formatUsd(category.budgetCents)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = VaultTextDim,
+                    )
+                }
+                Text(
+                    Money.formatUsd(category.spentCents),
+                    style = LedgerNumeral,
+                    color = VaultCream,
+                )
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(VaultSurfaceRaised),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(progress.fillFraction)
+                            .background(progressColor),
+                    )
+                }
+                Box(Modifier.width(VaultSpace.md))
+                Text(
+                    progress.percentageLabel,
+                    style = LedgerNumeral,
+                    color = progressColor,
+                )
+            }
+        }
         if (canEdit) {
             TextButton(onClick = onEdit, modifier = Modifier.padding(horizontal = VaultSpace.sm)) {
                 Text(stringResource(R.string.budget_category_edit_action))
@@ -177,6 +280,13 @@ internal fun EditableBudgetCategoryRow(
         }
     }
 }
+
+private val BudgetHealthStatus.color: Color
+    get() = when (this) {
+        BudgetHealthStatus.ON_TRACK -> VaultPositive
+        BudgetHealthStatus.CLOSE -> VaultWarning
+        BudgetHealthStatus.OVER -> VaultNegative
+    }
 
 @Composable
 internal fun BtcBuyEntryAction(onClick: () -> Unit) {
