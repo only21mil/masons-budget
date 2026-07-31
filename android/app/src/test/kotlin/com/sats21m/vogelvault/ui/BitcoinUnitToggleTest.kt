@@ -12,6 +12,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.DisplayUnit
@@ -72,5 +73,23 @@ class BitcoinUnitToggleTest {
         val group = compose.onNodeWithTag(BITCOIN_UNIT_TOGGLE_TEST_TAG).fetchSemanticsNode().config
         assertTrue(group.contains(SemanticsProperties.SelectableGroup))
         assertTrue(group.contains(SemanticsProperties.HorizontalScrollAxisRange))
+    }
+
+    @Test
+    fun `budget month semantics never describe a display unit`() {
+        compose.runOnUiThread {
+            activityController.get().setContent {
+                VogelVaultTheme {
+                    MonthChip(month = "2026-07", selected = true, onSelect = {})
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        val month = compose.onNodeWithContentDescription("Jul 2026 budget month")
+        month.assertIsSelected().assertHasClickAction()
+        val config = month.fetchSemanticsNode().config
+        assertEquals("Show budget month Jul 2026", config[SemanticsActions.OnClick].label)
+        assertEquals(0, compose.onAllNodesWithContentDescription("display unit", substring = true).fetchSemanticsNodes().size)
     }
 }
