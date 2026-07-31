@@ -1,3 +1,10 @@
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
+import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     kotlin("android")
@@ -35,6 +42,80 @@ val ciDebugKeyAlias = providers.environmentVariable("VOGEL_DEBUG_KEY_ALIAS")
 val ciDebugKeyPassword = providers.environmentVariable("VOGEL_DEBUG_KEY_PASSWORD")
     .orNull?.takeIf { it.isNotBlank() } ?: "android"
 
+/**
+ * One local bootstrap build may carry a short-lived one-use pairing capability.
+ * Normal and CI builds always receive the empty default below. The value comes
+ * only from an owned mode-0600 file under $HOME/work; no command-line property,
+ * Gradle cache, release variant, or read-token environment variable can supply it.
+ */
+fun localAndroidReadBootstrap(): String? {
+    val rawPath = providers.environmentVariable("VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE")
+        .orNull
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+    check(providers.environmentVariable("CI").orNull.isNullOrBlank()) {
+        "Android read-bootstrap builds are forbidden in CI."
+    }
+    check(gradle.startParameter.taskNames == listOf(":app:assembleDebug")) {
+        "A bootstrap input is accepted only for the exact :app:assembleDebug task."
+    }
+    check(!gradle.startParameter.isBuildCacheEnabled) {
+        "Android read-bootstrap builds require --no-build-cache."
+    }
+    check(!gradle.startParameter.isConfigurationCacheRequested) {
+        "Android read-bootstrap builds require --no-configuration-cache."
+    }
+    check(ciDebugKeystore != null) {
+        "Android read-bootstrap builds require the stable debug signing keystore."
+    }
+
+    val home = providers.environmentVariable("HOME").orNull
+        ?.takeIf { it.isNotBlank() }
+        ?.let(Path::of)
+        ?: error("HOME is required for an Android read-bootstrap build.")
+    check(home.isAbsolute) { "HOME must be an absolute path." }
+    val workRoot = home.resolve("work").toRealPath()
+    val requested = Path.of(rawPath)
+    check(requested.isAbsolute) {
+        "VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE must be an absolute path."
+    }
+    check(!Files.isSymbolicLink(requested) && Files.isRegularFile(requested, NOFOLLOW_LINKS)) {
+        "Android read-bootstrap input must be a regular file, not a symlink."
+    }
+    val resolved = requested.toRealPath()
+    check(resolved.startsWith(workRoot) && resolved != workRoot) {
+        "Android read-bootstrap input must resolve beneath HOME/work."
+    }
+    check(Files.getOwner(requested, NOFOLLOW_LINKS) == Files.getOwner(home, NOFOLLOW_LINKS)) {
+        "Android read-bootstrap input must be owned by the current user."
+    }
+    check(
+        Files.getPosixFilePermissions(requested, NOFOLLOW_LINKS) ==
+            PosixFilePermissions.fromString("rw-------"),
+    ) {
+        "Android read-bootstrap input must have exact mode 0600."
+    }
+    val bytes = Files.readAllBytes(resolved)
+    check(bytes.isNotEmpty() && bytes.size <= 160 && bytes.all { it >= 0 }) {
+        "Android read-bootstrap input must contain 1-160 ASCII bytes."
+    }
+    val pairing = String(bytes, StandardCharsets.US_ASCII)
+    check(Regex("^android-read-[A-Za-z0-9_-]{16,64}\\.[A-Za-z0-9_-]{43}$").matches(pairing)) {
+        "Android read-bootstrap input does not match the required pairing format."
+    }
+    val proof = pairing.substringAfterLast('.')
+    val decoded = runCatching { Base64.getUrlDecoder().decode(proof) }.getOrNull()
+    check(
+        decoded?.size == 32 &&
+            Base64.getUrlEncoder().withoutPadding().encodeToString(decoded) == proof,
+    ) {
+        "Android read-bootstrap proof must canonically encode exactly 32 bytes."
+    }
+    return pairing
+}
+
+val localAndroidReadBootstrap = localAndroidReadBootstrap()
+
 android {
     namespace = "com.sats21m.vogelvault"
     compileSdk = 35
@@ -49,6 +130,9 @@ android {
         // No variant receives a read credential at build time. Users configure
         // it manually and Android keeps it in encrypted app storage.
         buildConfigField("String", "CONVEX_READ_TOKEN", "\"\"")
+        // A normal build also contains no bootstrap capability. Only the exact
+        // guarded local debug invocation above can override this field.
+        buildConfigField("String", "CONVEX_READ_BOOTSTRAP_PAIR", "\"\"")
     }
 
     signingConfigs {
@@ -69,6 +153,15 @@ android {
             // Release signing is not configured here on purpose — distribution
             // is an approval-gated step, not a build flag.
             isMinifyEnabled = false
+            if (localAndroidReadBootstrap != null) {
+                // The wire alphabet excludes quotes and backslashes, so this is
+                // already safe as a generated Java string literal.
+                buildConfigField(
+                    "String",
+                    "CONVEX_READ_BOOTSTRAP_PAIR",
+                    "\"$localAndroidReadBootstrap\"",
+                )
+            }
         }
         release {
             isMinifyEnabled = true
