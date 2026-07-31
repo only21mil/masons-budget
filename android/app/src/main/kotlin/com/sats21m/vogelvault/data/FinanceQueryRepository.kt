@@ -29,24 +29,40 @@ interface FinanceReadSource {
  * and retries both reads when the application installs an eligible fallback.
  */
 class RecoveringFinanceReadSource(
-    private val remote: FinanceQueryRepository,
-    private val configSource: ConvexConfigSource? = null,
+    private val remoteForConfig: (ConvexConfig) -> FinanceQueryRepository,
+    private val configSource: ConvexConfigSource,
     private val onUnauthorized: (ConvexConfig) -> Boolean = { false },
 ) : FinanceReadSource {
+    constructor(
+        remote: FinanceQueryRepository,
+        configSource: ConvexConfigSource? = null,
+        onUnauthorized: (ConvexConfig) -> Boolean = { false },
+    ) : this(
+        remoteForConfig = { remote },
+        configSource = configSource ?: DisabledConvexConfigSource,
+        onUnauthorized = onUnauthorized,
+    )
+
     override suspend fun load(viewer: FamilyMember): LoadedFinanceRead {
         val first = loadOnce(viewer)
         return if (first.retryWithFallback) loadOnce(viewer).loaded else first.loaded
     }
 
     private suspend fun loadOnce(viewer: FamilyMember): FinanceLoadAttempt {
-        val requestConfig = configSource?.current()
+        val requestConfig = configSource.current()
+        val remote = remoteForConfig(requestConfig)
         val finance = remote.getFinanceDocument(viewer, RowVisibilityScope.NET_WORTH)
         val quotes = remote.getMarketQuoteSnapshot()
         val unauthorized = finance === ConvexResult.Unauthorized || quotes === ConvexResult.Unauthorized
-        val retry = unauthorized && requestConfig != null && onUnauthorized(requestConfig)
+        val recoveredHere = unauthorized && onUnauthorized(requestConfig)
+        val currentConfig = configSource.current()
+        val recoveredConcurrently =
+            unauthorized &&
+                currentConfig.allowsRemoteRead &&
+                !currentConfig.hasSameReadConfigurationAs(requestConfig)
         return FinanceLoadAttempt(
             loaded = LoadedFinanceRead(finance, quotes, unauthorized),
-            retryWithFallback = retry,
+            retryWithFallback = recoveredHere || recoveredConcurrently,
         )
     }
 }
@@ -91,4 +107,16 @@ object FinanceQueryRepositories {
         http: HttpPoster = UrlConnectionHttpPoster(),
     ): FinanceQueryRepository =
         ConvexFinanceQueryRepository(ConvexQueryClient(configSource, http))
+
+    /** One immutable request configuration shared by every query in an attempt. */
+    fun convex(
+        config: ConvexConfig,
+        http: HttpPoster = UrlConnectionHttpPoster(),
+    ): FinanceQueryRepository =
+        convex(
+            configSource = object : ConvexConfigSource {
+                override fun current(): ConvexConfig = config
+            },
+            http = http,
+        )
 }

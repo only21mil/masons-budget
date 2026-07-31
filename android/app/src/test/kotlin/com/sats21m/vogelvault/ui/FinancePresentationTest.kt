@@ -22,6 +22,7 @@ import com.sats21m.vogelvault.domain.Slice
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class FinancePresentationTest {
     @Test
@@ -71,6 +72,48 @@ class FinancePresentationTest {
         assertEquals("120 000 sats", state.formatFinanceCents(12_000L, DisplayUnit.SATS))
         assertEquals("0.00120000 BTC", state.formatFinanceCents(12_000L, DisplayUnit.BTC))
         assertEquals("\$120.00", state.formatFinanceCents(12_000L, DisplayUnit.USD))
+    }
+
+    @Test
+    fun `retirement accounts retain weekly schedule even without holding detail`() {
+        val scheduled = account("scheduled", FamilyMember.VICTOR).copy(
+            weeklyContributionCents = 25_000L,
+            weeklyContributionDay = "Friday",
+            holdings = emptyList(),
+        )
+        val state = financeState(FamilyMember.VICTOR).copy(
+            financeDocument = document().copy(accounts = listOf(scheduled)),
+        )
+
+        val account = state.retirementAccountsResult().getOrThrow().single()
+
+        assertEquals("scheduled", account.account.key)
+        assertEquals(25_000L, account.account.weeklyContributionCents)
+        assertEquals("Friday", account.account.weeklyContributionDay)
+        assertTrue(account.holdings.isEmpty())
+        assertEquals(9_999L, account.valueCents)
+    }
+
+    @Test
+    fun `overflowing retirement arithmetic becomes unavailable instead of throwing`() {
+        val first = account("first", FamilyMember.VICTOR).copy(
+            totalValueCents = Long.MAX_VALUE,
+            holdings = emptyList(),
+        )
+        val second = account("second", FamilyMember.RACHEL).copy(
+            totalValueCents = Long.MAX_VALUE,
+            holdings = emptyList(),
+        )
+        val state = financeState(FamilyMember.VICTOR).copy(
+            financeDocument = document().copy(accounts = listOf(first, second)),
+        )
+
+        assertTrue(state.adultNetWorthSelectionResult().isFailure)
+        assertNull(state.adultNetWorthSelection())
+        assertEquals(
+            "Price unavailable",
+            state.formatFinanceCents(Long.MAX_VALUE, DisplayUnit.SATS),
+        )
     }
 
     @Test

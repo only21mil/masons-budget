@@ -182,6 +182,43 @@ class CachedRowDataSourceTest {
         }
 
     @Test
+    fun `fallback installed by concurrent finance read still retries rows`() =
+        runBlocking {
+            val remote = FakeRows().apply { unauthorized = true }
+            val rejected =
+                ConvexConfig(
+                    deploymentUrl = "https://example.convex.cloud",
+                    readToken = "manual-test-token",
+                    remoteReadEnabled = true,
+                )
+            val fallback =
+                ConvexConfig(
+                    deploymentUrl = "https://example.convex.cloud",
+                    readToken = "baked-test-token",
+                    remoteReadEnabled = true,
+                )
+            val configSource = MutableConvexConfigSource(rejected)
+            val source =
+                CachedRowDataSource(
+                    remote = remote,
+                    dao = dao,
+                    configSource = configSource,
+                    onUnauthorized = {
+                        // Mirrors finance winning the shared compare-and-clear lock.
+                        configSource.update(fallback)
+                        remote.unauthorized = false
+                        false
+                    },
+                )
+
+            val loaded = source.load(FamilyMember.VICTOR)
+
+            assertFalse(loaded.unauthorized)
+            assertEquals(Freshness.LIVE, loaded.data.transactions.status)
+            assertEquals(fallback, configSource.current())
+        }
+
+    @Test
     fun `bare http 401 reports unauthorized and invokes credential rejection`() =
         runBlocking {
             val rejectionCount = AtomicInteger()

@@ -155,7 +155,7 @@ open class VaultApplication : Application() {
                 return VaultViewModel(
                     rowSource = rowDataSource,
                     financeSource = RecoveringFinanceReadSource(
-                        remote = FinanceQueryRepositories.convex(convexConfigSource),
+                        remoteForConfig = { config -> FinanceQueryRepositories.convex(config) },
                         configSource = convexConfigSource,
                         onUnauthorized = ::recoverRejectedConvexConfig,
                     ),

@@ -128,9 +128,15 @@ class CachedRowDataSource(
                 },
             )
         val data = RowReadModelLoader(cachingRepository, clock).load(viewer)
+        val currentConfig = configSource?.current()
+        val recoveredConcurrently =
+            unauthorized.get() &&
+                requestConfig != null &&
+                currentConfig?.allowsRemoteRead == true &&
+                !currentConfig.hasSameReadConfigurationAs(requestConfig)
         return LoadAttempt(
             loaded = LoadedReadModel(data, unauthorized.get()),
-            retryWithFallback = retryWithFallback.get(),
+            retryWithFallback = retryWithFallback.get() || recoveredConcurrently,
         )
     }
 }

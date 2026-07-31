@@ -87,6 +87,12 @@ class ConvexConfig(
     val allowsRemoteRead: Boolean
         get() = readiness == ReadReadiness.READY
 
+    /** Compare a rejected attempt without exposing either credential. */
+    internal fun hasSameReadConfigurationAs(other: ConvexConfig): Boolean =
+        deploymentUrl == other.deploymentUrl &&
+            readToken == other.readToken &&
+            remoteReadEnabled == other.remoteReadEnabled
+
     /**
      * Redacted on purpose.
      *
