@@ -46,10 +46,8 @@ internal class ConvexQueryClient(
 
         val response = try {
             http.postJson(endpoint, body)
-        } catch (error: IOException) {
-            // The class name, not the message: an IOException message can carry
-            // the URL and whatever a proxy chose to echo.
-            return ConvexResult.Failed("transport failure (${error.javaClass.simpleName})")
+        } catch (_: IOException) {
+            return ConvexResult.Failed(ConvexFailure.Transport)
         }
 
         return parse(response)
@@ -74,13 +72,15 @@ internal class ConvexQueryClient(
             // rejection is recoverable, so fail toward credential self-healing.
             return ConvexResult.Unauthorized
         }
-        if (response.code != HTTP_OK) return ConvexResult.Failed("http ${response.code}")
+        if (response.code != HTTP_OK) {
+            return ConvexResult.Failed(ConvexFailure.Http(response.code))
+        }
 
         val envelope = try {
             JSON.parseToJsonElement(response.body) as? JsonObject
         } catch (error: SerializationException) {
             null
-        } ?: return ConvexResult.Failed("malformed response envelope")
+        } ?: return ConvexResult.Failed(ConvexFailure.MalformedResponse)
 
         return when (envelope.string("status")) {
             "success" -> {
@@ -104,7 +104,7 @@ internal class ConvexQueryClient(
                 classifyConvexError(message)
             }
 
-            else -> ConvexResult.Failed("unrecognised response envelope")
+            else -> ConvexResult.Failed(ConvexFailure.InvalidResponse)
         }
     }
 
@@ -141,10 +141,10 @@ internal class ConvexQueryClient(
  */
 internal fun <T> classifyConvexError(message: String?): ConvexResult<T> {
     if (message?.contains("is not configured", ignoreCase = true) == true) {
-        return ConvexResult.Failed("convex deployment misconfigured")
+        return ConvexResult.Failed(ConvexFailure.DeploymentMisconfigured)
     }
     if (message?.contains("Unauthorized", ignoreCase = true) == true) {
         return ConvexResult.Unauthorized
     }
-    return ConvexResult.Failed("convex error")
+    return ConvexResult.Failed(ConvexFailure.ServerRejected())
 }
