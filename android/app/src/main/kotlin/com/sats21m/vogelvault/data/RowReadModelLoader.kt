@@ -29,13 +29,16 @@ enum class RowReadFailure(
     DISABLED("disabled"),
     NOT_CONFIGURED("not_configured"),
     TRANSPORT("transport"),
+    HTTP("http"),
+    DEPLOYMENT_MISCONFIGURED("deployment_misconfigured"),
+    SERVER_REJECTED("server_rejected"),
     MALFORMED_PAYLOAD("malformed_payload"),
     ;
 
     internal fun attachTo(source: String): String = "$source$FAILURE_MARKER$sourceTag"
 
     companion object {
-        private const val FAILURE_MARKER = " · failure="
+        internal const val FAILURE_MARKER = " · failure="
 
         internal fun fromSource(source: String): RowReadFailure? {
             val tag = source.substringAfterLast(FAILURE_MARKER, missingDelimiterValue = "")
@@ -44,8 +47,44 @@ enum class RowReadFailure(
     }
 }
 
-/** Every distinct failed-read cause retained by this model's slices. */
-val ReadModel.rowReadFailures: Set<RowReadFailure>
+/** A stable projection identity that contains no request arguments or row data. */
+enum class RowReadProjection(internal val sourceName: String) {
+    TRANSACTIONS("Convex rows · transactions"),
+    BUDGET("Convex rows · budget"),
+    BITCOIN_ACCOUNTS("Convex rows · bitcoin accounts"),
+    BITCOIN_BUYS("Convex rows · bitcoin buys"),
+    TODOS("Convex rows · todos"),
+    INCOME("Convex rows · income"),
+    BITCOIN_BALANCE("Convex rows · bitcoin balance"),
+    BITCOIN_BILL_PAYS("Convex rows · bitcoin bill pays"),
+    FINANCE("Convex finance"),
+    MARKET_QUOTES("Convex market quotes"),
+    ;
+
+    companion object {
+        internal fun fromSource(source: String): RowReadProjection? {
+            val base = source.substringBefore(RowReadFailure.FAILURE_MARKER)
+            return entries.firstOrNull { it.sourceName == base }
+        }
+    }
+}
+
+/** One failed projection and its closed, secret-free diagnosis. */
+data class RowReadDiagnostic(
+    val projection: RowReadProjection,
+    val failure: RowReadFailure,
+) {
+    companion object {
+        internal fun fromSource(source: String): RowReadDiagnostic? {
+            val projection = RowReadProjection.fromSource(source) ?: return null
+            val failure = RowReadFailure.fromSource(source) ?: return null
+            return RowReadDiagnostic(projection, failure)
+        }
+    }
+}
+
+/** Every failed projection retained by this model's slices. */
+val ReadModel.rowReadDiagnostics: Set<RowReadDiagnostic>
     get() =
         listOf(
             transactions.source,
@@ -56,7 +95,11 @@ val ReadModel.rowReadFailures: Set<RowReadFailure>
             income.source,
             btcBalance.source,
             btcBillPays.source,
-        ).mapNotNullTo(linkedSetOf()) { RowReadFailure.fromSource(it) }
+        ).mapNotNullTo(linkedSetOf()) { RowReadDiagnostic.fromSource(it) }
+
+/** Compatibility cause-only view. Prefer [rowReadDiagnostics]. */
+val ReadModel.rowReadFailures: Set<RowReadFailure>
+    get() = rowReadDiagnostics.mapTo(linkedSetOf()) { it.failure }
 
 /**
  * Builds the UI read model from bounded public row queries.
@@ -93,20 +136,26 @@ class RowReadModelLoader(
 
         val stamp = nowMillis()
         val transactionSlice = transactions.await().toTransactionSlice(stamp)
-        val todoSlice = todos.await().toSlice(emptyList(), "Convex rows · todos", stamp)
-        val buySlice = btcBuys.await().toSlice(emptyList(), "Convex rows · bitcoin buys", stamp)
+        val todoSlice =
+            todos.await().toSlice(emptyList(), RowReadProjection.TODOS.sourceName, stamp)
+        val buySlice =
+            btcBuys.await().toSlice(emptyList(), RowReadProjection.BITCOIN_BUYS.sourceName, stamp)
         val accountSlice =
-            btcAccounts.await().toSlice(emptyList(), "Convex rows · bitcoin accounts", stamp)
+            btcAccounts.await().toSlice(
+                emptyList(),
+                RowReadProjection.BITCOIN_ACCOUNTS.sourceName,
+                stamp,
+            )
         val balanceSlice = btcBalance.await().toBtcBalanceSlice(stamp)
         val incomeSlice = income.await().toMappedSlice(
             emptyList(),
-            "Convex rows · income",
+            RowReadProjection.INCOME.sourceName,
             stamp,
             IncomeRow::toDomain,
         )
         val billPaySlice = btcBillPays.await().toMappedSlice(
             emptyList(),
-            "Convex rows · bitcoin bill pays",
+            RowReadProjection.BITCOIN_BILL_PAYS.sourceName,
             stamp,
             BtcBillPayRow::toDomain,
         )
@@ -243,18 +292,22 @@ private fun ConvexResult<BudgetDocumentSnapshot>.toBudgetSlice(stamp: Long): Sli
     when (this) {
         is ConvexResult.Ok -> when {
             !value.complete ->
-                errorSlice(null, "Convex rows · budget", RowReadFailure.MALFORMED_PAYLOAD)
-            value.document == null -> emptySlice(null, "Convex rows · budget")
+                errorSlice(
+                    null,
+                    RowReadProjection.BUDGET.sourceName,
+                    RowReadFailure.MALFORMED_PAYLOAD,
+                )
+            value.document == null -> emptySlice(null, RowReadProjection.BUDGET.sourceName)
             else -> value.document.toDomain()?.let {
-                liveSlice(it, "Convex rows · budget", stamp)
+                liveSlice(it, RowReadProjection.BUDGET.sourceName, stamp)
             } ?: errorSlice(
                 null,
-                "Convex rows · budget",
+                RowReadProjection.BUDGET.sourceName,
                 RowReadFailure.MALFORMED_PAYLOAD,
             )
         }
-        ConvexResult.Missing -> emptySlice(null, "Convex rows · budget")
-        else -> failureSlice(null, "Convex rows · budget")
+        ConvexResult.Missing -> emptySlice(null, RowReadProjection.BUDGET.sourceName)
+        else -> failureSlice(null, RowReadProjection.BUDGET.sourceName)
     }
 
 /**
@@ -266,7 +319,7 @@ private fun ConvexResult<BudgetDocumentSnapshot>.toBudgetSlice(stamp: Long): Sli
 private fun ConvexResult<RowSnapshot<com.sats21m.vogelvault.domain.Transaction>>.toTransactionSlice(
     stamp: Long,
 ): Slice<List<com.sats21m.vogelvault.domain.Transaction>> {
-    val source = "Convex rows · transactions"
+    val source = RowReadProjection.TRANSACTIONS.sourceName
     return when (this) {
         is ConvexResult.Ok ->
             if (value.complete) liveSlice(value.rows, source, stamp)
@@ -308,7 +361,7 @@ private fun <T, R> ConvexResult<RowSnapshot<T>>.toMappedSlice(
 private fun ConvexResult<RowSnapshot<BtcBalanceDocumentRow>>.toBtcBalanceSlice(
     stamp: Long,
 ): Slice<BtcBalance?> {
-    val source = "Convex rows · bitcoin balance"
+    val source = RowReadProjection.BITCOIN_BALANCE.sourceName
     return when (this) {
         is ConvexResult.Ok -> when {
             !value.complete -> errorSlice(null, source, RowReadFailure.MALFORMED_PAYLOAD)
@@ -337,22 +390,18 @@ internal fun ConvexResult<*>.toRowReadFailure(): RowReadFailure =
         ConvexResult.Unauthorized -> RowReadFailure.UNAUTHORIZED
         ConvexResult.Disabled -> RowReadFailure.DISABLED
         ConvexResult.NotConfigured -> RowReadFailure.NOT_CONFIGURED
-        is ConvexResult.Failed -> reason.toRowReadFailure()
+        is ConvexResult.Failed -> when (failure) {
+            ConvexFailure.Transport -> RowReadFailure.TRANSPORT
+            is ConvexFailure.Http -> RowReadFailure.HTTP
+            ConvexFailure.DeploymentMisconfigured -> RowReadFailure.DEPLOYMENT_MISCONFIGURED
+            is ConvexFailure.ServerRejected -> RowReadFailure.SERVER_REJECTED
+            ConvexFailure.MalformedResponse,
+            ConvexFailure.InvalidResponse,
+            -> RowReadFailure.MALFORMED_PAYLOAD
+        }
         is ConvexResult.Ok,
         ConvexResult.Missing,
         -> RowReadFailure.MALFORMED_PAYLOAD
-    }
-
-private fun String.toRowReadFailure(): RowReadFailure =
-    if (
-        contains("malformed", ignoreCase = true) ||
-        contains("unrecognised", ignoreCase = true) ||
-        contains("unexpected payload", ignoreCase = true) ||
-        contains("decode", ignoreCase = true)
-    ) {
-        RowReadFailure.MALFORMED_PAYLOAD
-    } else {
-        RowReadFailure.TRANSPORT
     }
 
 private fun <T> errorSlice(

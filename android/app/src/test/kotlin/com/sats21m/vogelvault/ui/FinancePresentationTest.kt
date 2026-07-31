@@ -3,7 +3,9 @@ package com.sats21m.vogelvault.ui
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.FinanceDocumentSnapshot
 import com.sats21m.vogelvault.data.MarketQuoteReadSnapshot
+import com.sats21m.vogelvault.data.RowReadDiagnostic
 import com.sats21m.vogelvault.data.RowReadFailure
+import com.sats21m.vogelvault.data.RowReadProjection
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcBalance
 import com.sats21m.vogelvault.domain.Custody
@@ -204,7 +206,13 @@ class FinancePresentationTest {
             ConvexResult.Unauthorized,
         )
 
-        assertEquals(setOf(RowReadFailure.UNAUTHORIZED), result.readFailures)
+        assertEquals(
+            setOf(
+                RowReadDiagnostic(RowReadProjection.FINANCE, RowReadFailure.UNAUTHORIZED),
+                RowReadDiagnostic(RowReadProjection.MARKET_QUOTES, RowReadFailure.UNAUTHORIZED),
+            ),
+            result.readDiagnostics,
+        )
         assertEquals(true, result.unauthorized)
         assertEquals(Freshness.ERROR, result.financeStatus)
         assertEquals(Freshness.ERROR, result.marketQuoteStatus)

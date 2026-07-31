@@ -10,7 +10,9 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.data.RowReadDiagnostic
 import com.sats21m.vogelvault.data.RowReadFailure
+import com.sats21m.vogelvault.data.RowReadProjection
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.ui.components.StateBlock
@@ -71,6 +73,21 @@ class RowReadFailureNoticeTest {
                         R.string.convex_row_failure_transport_title,
                         R.string.convex_row_failure_transport_detail,
                     ),
+                RowReadFailure.HTTP to
+                    Pair(
+                        R.string.convex_row_failure_http_title,
+                        R.string.convex_row_failure_http_detail,
+                    ),
+                RowReadFailure.DEPLOYMENT_MISCONFIGURED to
+                    Pair(
+                        R.string.convex_row_failure_deployment_misconfigured_title,
+                        R.string.convex_row_failure_deployment_misconfigured_detail,
+                    ),
+                RowReadFailure.SERVER_REJECTED to
+                    Pair(
+                        R.string.convex_row_failure_server_rejected_title,
+                        R.string.convex_row_failure_server_rejected_detail,
+                    ),
                 RowReadFailure.MALFORMED_PAYLOAD to
                     Pair(
                         R.string.convex_row_failure_malformed_payload_title,
@@ -86,7 +103,8 @@ class RowReadFailureNoticeTest {
                     status = Freshness.ERROR,
                 ).copy(
                     staleAuthorization = failure == RowReadFailure.UNAUTHORIZED,
-                    rowReadFailures = setOf(failure),
+                    rowReadDiagnostics =
+                        setOf(RowReadDiagnostic(RowReadProjection.TRANSACTIONS, failure)),
                 )
 
             compose.runOnUiThread {
@@ -110,7 +128,12 @@ class RowReadFailureNoticeTest {
                 "The ${failure.name} title was not rendered.",
             )
             assertTrue(
-                compose.onAllNodesWithText(context.getString(resources.second))
+                compose.onAllNodesWithText(
+                    context.getString(
+                        resources.second,
+                        context.getString(R.string.convex_projection_transactions),
+                    ),
+                )
                     .fetchSemanticsNodes().isNotEmpty(),
                 "The ${failure.name} detail was not rendered.",
             )
@@ -120,6 +143,45 @@ class RowReadFailureNoticeTest {
                 "The generic refresh notice rendered over the ${failure.name} diagnosis.",
             )
         }
+    }
+
+    @Test
+    fun `only transport uses could not reach Convex copy`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val state = VaultUiState.of(
+            profile = FamilyMember.VICTOR,
+            status = Freshness.ERROR,
+        ).copy(
+            rowReadDiagnostics =
+                setOf(
+                    RowReadDiagnostic(
+                        RowReadProjection.TRANSACTIONS,
+                        RowReadFailure.HTTP,
+                    ),
+                ),
+        )
+
+        compose.runOnUiThread {
+            activityController.get().setContent {
+                VogelVaultTheme {
+                    Box(Modifier.size(width = 411.dp, height = 640.dp)) {
+                        VaultApp(state = state, onNavigate = {}, onSwitchProfile = {})
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        assertTrue(
+            compose.onAllNodesWithText(context.getString(R.string.convex_row_failure_http_title))
+                .fetchSemanticsNodes().isNotEmpty(),
+        )
+        assertTrue(
+            compose.onAllNodesWithText(
+                context.getString(R.string.convex_row_failure_transport_title),
+            ).fetchSemanticsNodes().isEmpty(),
+            "An HTTP response was incorrectly presented as a connection failure.",
+        )
     }
 
     @Test
