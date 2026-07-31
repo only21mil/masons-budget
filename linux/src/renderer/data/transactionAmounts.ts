@@ -1,9 +1,12 @@
 import type { Cents } from "@vogel-vault/domain/money"
+import type { FamilyMember } from "@vogel-vault/domain/family"
 import {
   type Budget,
   type BudgetSpend,
   type CategorySpend,
+  type MonthKey,
   type Transaction,
+  budgetTransactionsFor,
   transactionsInMonth,
 } from "@vogel-vault/domain/readModel"
 
@@ -21,6 +24,25 @@ export function displaySpendAmount(transaction: Transaction): Cents {
 
 export function hasOppositeSpendSign(transaction: Transaction): boolean {
   return spendAmount(transaction) < 0n
+}
+
+/**
+ * Rows behind one Budget category drilldown.
+ *
+ * Scope ownership before month/category filtering. Adults may oversee child
+ * activity elsewhere, but a household budget drilldown follows the narrower
+ * shared-budget rule; a child remains self-only.
+ */
+export function budgetCategoryTransactions(
+  viewer: FamilyMember,
+  transactions: readonly Transaction[],
+  month: MonthKey,
+  category: string,
+): Transaction[] {
+  return transactionsInMonth(
+    budgetTransactionsFor(viewer, transactions),
+    month,
+  ).filter((transaction) => transaction.category === category)
 }
 
 /** Derive the selected month's actuals exclusively from signed transaction contributions. */
