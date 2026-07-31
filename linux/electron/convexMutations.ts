@@ -1253,15 +1253,16 @@ export function createPairedDeviceController(
           const snapshot = await options.store.load()
           const approvedOrigin = options.approvedDeploymentOrigin()
           const writesEnabled = options.writesEnabled() &&
-            approvedOrigin !== null &&
-            snapshot?.deploymentOrigin === approvedOrigin
+            approvedOrigin !== null
           if (snapshot === null) return { status: "unpaired", writesEnabled }
+          const pairedWritesEnabled = writesEnabled &&
+            snapshot.deploymentOrigin === approvedOrigin
           const capabilities = storedCapabilities(snapshot.capabilities)
           return {
             status: "paired",
             pairedAt: snapshot.pairedAt,
-            capabilities: writesEnabled ? capabilities : [],
-            writesEnabled,
+            capabilities: pairedWritesEnabled ? capabilities : [],
+            writesEnabled: pairedWritesEnabled,
           }
         } catch {
           return { status: "unavailable" }
