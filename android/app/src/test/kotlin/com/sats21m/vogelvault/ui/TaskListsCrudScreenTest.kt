@@ -133,18 +133,22 @@ class TaskListsCrudScreenTest {
     @Test
     fun `full row edit preserves metadata disables the busy row and retains project route`() {
         openGroup(todo.project!!)
+        val changedTitle = "Renew every insurance policy"
 
         compose.onNodeWithContentDescription(editDescription(todo.title))
             .performScrollTo()
             .performClick()
         settle()
         compose.onNodeWithText(application.getString(R.string.todo_title))
-            .performTextReplacement("Renew every insurance policy")
+            .performTextReplacement(changedTitle)
         compose.onNode(hasText(application.getString(R.string.todo_save)) and hasClickAction())
             .performClick()
         settle()
 
         assertEquals(1, application.poster.requestCount, "edit did not reach the shared todo gateway")
+        compose.onNodeWithText(changedTitle).assertIsNotEnabled()
+        compose.onNodeWithText(application.getString(R.string.todo_save)).assertIsNotEnabled()
+        compose.onNodeWithText(application.getString(R.string.todo_cancel)).assertIsNotEnabled()
         compose.onNodeWithContentDescription(markCompleteDescription(todo.title))
             .assertIsNotEnabled()
         assertEquals(0, refreshCount, "an in-flight edit refreshed authoritative rows")
@@ -161,7 +165,58 @@ class TaskListsCrudScreenTest {
 
         assertEquals(1, refreshCount)
         compose.onNodeWithText(allLists).fetchSemanticsNode()
-        compose.onNodeWithText("Renew every insurance policy").fetchSemanticsNode()
+        compose.onNodeWithText(changedTitle).fetchSemanticsNode()
+        assertEquals(0, nodesWithText(application.getString(R.string.todo_edit)))
+    }
+
+    @Test
+    fun `rejected edit keeps its typed title and can retry after an HTTP failure`() {
+        val changedTitle = "Renew insurance without losing this draft"
+        openEditorWithTitle(changedTitle)
+
+        application.poster.answer(HttpTextResponse(500, "private server detail"))
+        settle()
+
+        assertEquals(0, refreshCount)
+        compose.onNodeWithText("Change not saved (http 500)").fetchSemanticsNode()
+        compose.onNodeWithText(changedTitle).assertIsEnabled()
+        compose.onNodeWithText(application.getString(R.string.todo_save)).assertIsEnabled()
+            .performClick()
+        settle()
+
+        assertEquals(2, application.poster.requestCount)
+        val retriedBody = assertNotNull(application.poster.lastBody)
+        assertTrue(retriedBody.contains("\"title\":\"$changedTitle\""), retriedBody)
+        assertTrue(retriedBody.contains("\"baseUpdatedAtMs\":1800000000000"), retriedBody)
+
+        application.poster.answer(success("updated"))
+        settle()
+
+        assertEquals(1, refreshCount)
+        assertEquals(0, nodesWithText(application.getString(R.string.todo_edit)))
+        compose.onNodeWithText(changedTitle).fetchSemanticsNode()
+    }
+
+    @Test
+    fun `conflicted edit keeps its typed title and original revision fence`() {
+        val changedTitle = "Keep conflicted insurance draft"
+        openEditorWithTitle(changedTitle)
+
+        application.poster.answer(
+            HttpTextResponse(
+                200,
+                """{"status":"error","errorData":{"code":"ENTITY_CONFLICT","message":"private"}}""",
+            ),
+        )
+        settle()
+
+        assertEquals(0, refreshCount)
+        compose.onNodeWithText("Change not saved (task changed on another device)")
+            .fetchSemanticsNode()
+        compose.onNodeWithText(changedTitle).assertIsEnabled()
+        compose.onNodeWithText(application.getString(R.string.todo_save)).assertIsEnabled()
+        val body = assertNotNull(application.poster.lastBody)
+        assertTrue(body.contains("\"baseUpdatedAtMs\":1800000000000"), body)
     }
 
     @Test
@@ -356,11 +411,9 @@ class TaskListsCrudScreenTest {
     }
 
     @Test
-    fun `structured unauthorized edit result clears the credential and disables rows`() {
-        compose.onNodeWithContentDescription(markCompleteDescription(todo.title))
-            .performScrollTo()
-            .performClick()
-        settle()
+    fun `structured unauthorized edit keeps its draft while clearing the credential`() {
+        val changedTitle = "Keep title through credential recovery"
+        openEditorWithTitle(changedTitle)
 
         application.poster.answer(
             HttpTextResponse(
@@ -375,6 +428,9 @@ class TaskListsCrudScreenTest {
         assertEquals(0, refreshCount)
         compose.onNodeWithText("Change not saved: the paired-device credential is missing or was rejected")
             .fetchSemanticsNode()
+        compose.onNodeWithText(changedTitle).assertIsEnabled()
+        compose.onNodeWithText(application.getString(R.string.todo_save)).assertIsNotEnabled()
+        compose.onNodeWithText(application.getString(R.string.todo_cancel)).assertIsEnabled()
         compose.onNodeWithContentDescription(markCompleteDescription(todo.title))
             .assertIsNotEnabled()
         compose.onNodeWithText(application.getString(R.string.todo_write_access_title))
@@ -413,6 +469,19 @@ class TaskListsCrudScreenTest {
             application.getString(R.string.todo_delete_named, title),
         ).performScrollTo().performClick()
         settle()
+    }
+
+    private fun openEditorWithTitle(title: String) {
+        compose.onNodeWithContentDescription(editDescription(todo.title))
+            .performScrollTo()
+            .performClick()
+        settle()
+        compose.onNodeWithText(application.getString(R.string.todo_title))
+            .performTextReplacement(title)
+        compose.onNode(hasText(application.getString(R.string.todo_save)) and hasClickAction())
+            .performClick()
+        settle()
+        assertEquals(1, application.poster.requestCount)
     }
 
     private fun editDescription(title: String): String =
