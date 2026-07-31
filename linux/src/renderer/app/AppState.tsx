@@ -228,6 +228,18 @@ export function AppStateProvider({
   const loadRemote = useCallback(async (profile: FamilyMember, generation: number) => {
     const bridge = window.vogelVault
     if (!bridge) return false
+    let profileResult: Awaited<ReturnType<typeof bridge.setReadProfile>>
+    try {
+      profileResult = await bridge.setReadProfile(profile)
+    } catch {
+      profileResult = { status: "rejected" as const }
+    }
+    if (profileResult.status !== "active" || profileResult.profile !== profile) {
+      if (generationRef.current === generation) {
+        setRemoteFinance({ profile, model: ERROR_FINANCE_MODEL })
+      }
+      return false
+    }
     const query = async (request: Parameters<typeof bridge.queryConvexRows>[0]) => {
       try {
         return await bridge.queryConvexRows(request)
@@ -237,7 +249,7 @@ export function AppStateProvider({
     }
     const [result, financeModel] = await Promise.all([
       loadConvexRowEnvelope(query, profile),
-      loadLinuxFinanceReadModel(query, profile),
+      loadLinuxFinanceReadModel(query),
     ])
     if (generationRef.current !== generation) return false
     setRemoteFinance({ profile, model: financeModel })
@@ -340,7 +352,9 @@ export function AppStateProvider({
   const financeModel =
     stateOverride === "normal" && remoteFinance?.profile === activeProfile
       ? remoteFinance.model
-      : EMPTY_FINANCE_MODEL
+      : stateOverride === "normal" && typeof window !== "undefined" && window.vogelVault
+        ? LOADING_FINANCE_MODEL
+        : EMPTY_FINANCE_MODEL
   const data = useMemo(
     () => optimisticEnvelope(baseData, mutationController, activeProfile, generation),
     [activeProfile, baseData, generation, mutationController],
@@ -542,9 +556,20 @@ const EMPTY_FINANCE_MODEL: LinuxFinanceReadModel = {
   marketQuotes: { status: "empty", value: null },
 }
 
-/** Global refresh succeeds only when both finance reads avoided transport/validation failure. */
+const LOADING_FINANCE_MODEL: LinuxFinanceReadModel = {
+  finance: { status: "loading", value: null },
+  marketQuotes: { status: "loading", value: null },
+}
+
+const ERROR_FINANCE_MODEL: LinuxFinanceReadModel = {
+  finance: { status: "error", value: null, code: "invalid-request" },
+  marketQuotes: { status: "error", value: null, code: "invalid-request" },
+}
+
+/** Global refresh succeeds only after both finance reads reach a terminal non-error state. */
 export function financeReadSucceeded(model: LinuxFinanceReadModel): boolean {
-  return model.finance.status !== "error" && model.marketQuotes.status !== "error"
+  return model.finance.status !== "error" && model.finance.status !== "loading" &&
+    model.marketQuotes.status !== "error" && model.marketQuotes.status !== "loading"
 }
 
 function mutationAdapterFromWindow(): RendererMutationAdapter | null {

@@ -12,6 +12,7 @@ import {
   DEVICE_PAIR_CHANNEL,
   DEVICE_PAIRING_STATUS_CHANNEL,
   DEVICE_UNPAIR_CHANNEL,
+  READ_PROFILE_CHANNEL,
 } from "../electron/ipcChannels.ts"
 import type {
   VogelVaultMutationFailureCode,
@@ -173,11 +174,12 @@ const pairingFailureCodes = [
 ] as const satisfies readonly VogelVaultPairingFailureCode[]
 
 describe("paired-device IPC contract", () => {
-  it("keeps the existing channels and appends four fixed device channels in order", () => {
+  it("keeps the closed channel list in reviewed order", () => {
     expect([
       CSV_EXPORT_CHANNEL,
       CONVEX_READ_CHANNEL,
       CONVEX_ROWS_CHANNEL,
+      READ_PROFILE_CHANNEL,
       DEVICE_PAIR_CHANNEL,
       DEVICE_PAIRING_STATUS_CHANNEL,
       CONVEX_MUTATION_CHANNEL,
@@ -186,6 +188,7 @@ describe("paired-device IPC contract", () => {
       "vogel-vault:export-csv",
       "vogel-vault:read-remote-snapshot",
       "vogel-vault:query-convex-rows",
+      "vogel-vault:set-read-profile",
       "vogel-vault:pair-device",
       "vogel-vault:get-pairing-status",
       "vogel-vault:mutate-convex-row",
@@ -268,7 +271,7 @@ describe("paired-device IPC contract", () => {
     expect(pairingFailureCodes).toHaveLength(8)
   })
 
-  it("exposes only the four named device methods and no generic IPC primitive", () => {
+  it("exposes only the reviewed named methods and no generic IPC primitive", () => {
     const preload = readFileSync(join(root, "electron", "preload.ts"), "utf8")
     const bridgeBody = preload.slice(preload.indexOf("contextBridge.exposeInMainWorld"))
     const methods = [...bridgeBody.matchAll(/^\s{2}(\w+)[,:]/gm)].map((match) => match[1])
@@ -278,6 +281,7 @@ describe("paired-device IPC contract", () => {
       "exportCsv",
       "getRemoteSnapshot",
       "queryConvexRows",
+      "setReadProfile",
       "pairDevice",
       "getPairingStatus",
       "mutateConvexRow",

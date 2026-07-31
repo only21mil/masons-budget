@@ -35,15 +35,18 @@ import {
   DEVICE_PAIR_CHANNEL,
   DEVICE_PAIRING_STATUS_CHANNEL,
   DEVICE_UNPAIR_CHANNEL,
+  READ_PROFILE_CHANNEL,
 } from "./ipcChannels.ts"
 import type { CsvExportRequest, CsvExportResult } from "./csvExport.ts"
 import type { RemoteSnapshotResult } from "./convexRead.ts"
 import type {
+  VogelVaultMember,
   VogelVaultMutationRequest,
   VogelVaultMutationResult,
   VogelVaultPairingRequest,
   VogelVaultPairingResult,
   VogelVaultPairingStatus,
+  VogelVaultReadProfileResult,
   VogelVaultRowRequest,
   VogelVaultRowResult,
   VogelVaultUnpairResult,
@@ -102,6 +105,11 @@ function queryConvexRows(request: VogelVaultRowRequest): Promise<VogelVaultRowRe
   return ipcRenderer.invoke(CONVEX_ROWS_CHANNEL, request) as Promise<VogelVaultRowResult>
 }
 
+/** Ask main to transition its finance-read profile; no credential or capability is returned. */
+function setReadProfile(profile: VogelVaultMember): Promise<VogelVaultReadProfileResult> {
+  return ipcRenderer.invoke(READ_PROFILE_CHANNEL, profile) as Promise<VogelVaultReadProfileResult>
+}
+
 /** Claim a single user-provided pairing value; no credential is returned. */
 function pairDevice(request: VogelVaultPairingRequest): Promise<VogelVaultPairingResult> {
   return ipcRenderer.invoke(DEVICE_PAIR_CHANNEL, request) as Promise<VogelVaultPairingResult>
@@ -127,6 +135,7 @@ contextBridge.exposeInMainWorld("vogelVault", {
   exportCsv,
   getRemoteSnapshot,
   queryConvexRows,
+  setReadProfile,
   pairDevice,
   getPairingStatus,
   mutateConvexRow,

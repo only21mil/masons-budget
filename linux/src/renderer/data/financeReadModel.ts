@@ -25,6 +25,7 @@ export type QueryFinanceRows = (request: VogelVaultRowRequest) => Promise<VogelV
 
 export type FinanceReadSlice<T> =
   | { readonly status: "live"; readonly value: T }
+  | { readonly status: "loading"; readonly value: null }
   | { readonly status: "empty"; readonly value: null }
   | { readonly status: "error"; readonly value: null; readonly code: VogelVaultRowErrorCode }
 
@@ -110,10 +111,9 @@ export function adaptMarketQuoteSnapshot(
  */
 export async function loadLinuxFinanceReadModel(
   query: QueryFinanceRows,
-  viewer: FamilyMember,
 ): Promise<LinuxFinanceReadModel> {
   const [financeResult, quotesResult] = await Promise.all([
-    query({ kind: "finance", viewer, scope: "netWorth" }),
+    query({ kind: "finance", scope: "netWorth" }),
     query({ kind: "marketQuotes" }),
   ])
 

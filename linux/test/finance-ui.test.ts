@@ -267,6 +267,9 @@ test("a missing canonical BTC document cannot become a zero-BTC combined total",
   assert.ok(!totalMarkup.includes("$1,650.00"),
     "retirement-only value was presented as combined net worth")
   assert.ok(!markup.includes("0.00000000 BTC"))
+  assert.ok(markup.includes("Bitcoin balance unavailable"))
+  assert.ok(markup.includes("Live BTC quote"), "the available quote was incorrectly blamed")
+  assert.ok(!markup.includes("BTC market price unavailable"))
 })
 
 test("a demo BTC document never combines with live finance and quotes", () => {
@@ -299,6 +302,18 @@ test("QA finance overrides use one consistent state for tags, ledger, and quotes
   assert.ok(!loading.includes("authenticated quote cache"))
 })
 
+test("pending authenticated finance reads render loading rather than authoritative empty", () => {
+  const loading: LinuxFinanceReadModel = {
+    finance: { status: "loading", value: null },
+    marketQuotes: { status: "loading", value: null },
+  }
+  const markup = renderFinancePage("retirement", "victor", loading)
+
+  assert.ok(markup.includes("Loading"))
+  assert.ok(!markup.includes("No retirement document"))
+  assert.ok(!markup.includes("No market quote snapshot"))
+})
+
 test("finance or quote errors fail the global refresh result", () => {
   assert.equal(financeReadSucceeded(model()), true)
   assert.equal(financeReadSucceeded({
@@ -308,6 +323,10 @@ test("finance or quote errors fail the global refresh result", () => {
   assert.equal(financeReadSucceeded({
     finance: model().finance,
     marketQuotes: { status: "error", value: null, code: "invalid-response" },
+  }), false)
+  assert.equal(financeReadSucceeded({
+    finance: { status: "loading", value: null },
+    marketQuotes: model().marketQuotes,
   }), false)
 })
 
@@ -343,6 +362,26 @@ test("sync health includes finance and market quote state", () => {
   assert.ok(markup.includes("Read failed"))
   assert.ok(markup.includes("Some authenticated Convex reads failed"))
   assert.ok(markup.includes("Stale"), "stale IBIT did not affect global quote freshness")
+})
+
+test("sync health does not timestamp a degraded snapshot from its newest quote", () => {
+  const page = resolvePage("sync-health", "victor")
+  assert.ok(page)
+  const degraded = QUOTES.map((quote) => quote.symbol === "IBIT"
+    ? { ...quote, priceCents: null, fetchedAt: null, status: "unavailable" as const }
+    : quote)
+  const markup = renderToStaticMarkup(
+    createElement(AppStateProvider, {
+      initialProfile: "victor",
+      initialRoute: "sync-health",
+      initialData: remoteData("victor"),
+      initialDataOrigin: "remote",
+      initialFinanceModel: model(degraded),
+      children: createElement(page.Component),
+    }),
+  )
+
+  assert.ok(markup.includes("Stale · never"))
 })
 
 test("default fixture mode never labels retirement or market quotes as live", () => {

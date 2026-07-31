@@ -60,7 +60,7 @@ body {
 }
 
 .vv-scroll {
-  overflow-y: auto;
+  overflow: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--vv-line-strong) transparent;
 }

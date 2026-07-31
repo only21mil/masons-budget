@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url"
 import path from "node:path"
 
 import { BrowserWindow, app, dialog, ipcMain, safeStorage, session } from "electron"
-import type { IpcMainInvokeEvent } from "electron"
+import type { IpcMainInvokeEvent, WebContents } from "electron"
 
 import {
   type CsvExportResult,
@@ -35,6 +35,7 @@ import {
 } from "./convexMutations.ts"
 import { createDeviceCredentialStore } from "./deviceCredentialStore.ts"
 import { createNativeConfirmationGuard } from "./nativeConfirmationGuard.ts"
+import { createReadProfileSessions } from "./readProfileSession.ts"
 import { createRendererSecurityPolicy } from "./rendererSecurity.ts"
 import {
   CONVEX_MUTATION_CHANNEL,
@@ -44,11 +45,13 @@ import {
   DEVICE_PAIR_CHANNEL,
   DEVICE_PAIRING_STATUS_CHANNEL,
   DEVICE_UNPAIR_CHANNEL,
+  READ_PROFILE_CHANNEL,
 } from "./ipcChannels.ts"
 import type {
   VogelVaultMutationResult,
   VogelVaultPairingResult,
   VogelVaultPairingStatus,
+  VogelVaultReadProfileResult,
   VogelVaultRowResult,
   VogelVaultUnpairResult,
 } from "../shared/ipc.ts"
@@ -242,12 +245,20 @@ function registerConvexRows(): void {
     configuration: remoteReadConfiguration,
     post: postJsonToDeployment,
   })
+  const profiles = createReadProfileSessions<WebContents>()
 
   ipcMain.handle(
     CONVEX_ROWS_CHANNEL,
     async (event, request: unknown): Promise<VogelVaultRowResult> => {
       if (!isTrustedSender(event)) return { status: "error", code: "invalid-request" }
-      return repository.query(request)
+      return repository.query(request, profiles.current(event.sender))
+    },
+  )
+  ipcMain.handle(
+    READ_PROFILE_CHANNEL,
+    async (event, profile: unknown): Promise<VogelVaultReadProfileResult> => {
+      if (!isTrustedSender(event)) return { status: "rejected" }
+      return profiles.activate(event.sender, profile)
     },
   )
 }
