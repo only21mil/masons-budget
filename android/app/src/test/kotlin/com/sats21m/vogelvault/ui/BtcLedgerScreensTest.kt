@@ -125,4 +125,38 @@ class BtcLedgerScreensTest {
             btcBillPaysScreenSummary(listOf(adultPayment), FamilyMember.MADDOX).rows,
         )
     }
+
+    @Test
+    fun `bill pay arithmetic overflow is unavailable instead of throwing`() {
+        val extreme = BtcBillPay(
+            id = "extreme",
+            date = "2026-07-03",
+            merchant = "Boundary",
+            category = "Bills",
+            amountUsdCents = Long.MIN_VALUE,
+            btcSpentSats = Long.MIN_VALUE,
+            feeUsdCents = Long.MAX_VALUE,
+            platform = null,
+            note = null,
+            owner = FamilyMember.VICTOR,
+        )
+        assertEquals(
+            com.sats21m.vogelvault.domain.Money.PRICE_UNAVAILABLE,
+            formatBtcBillPayAmount(extreme, DisplayUnit.USD),
+        )
+        assertEquals(
+            com.sats21m.vogelvault.domain.Money.PRICE_UNAVAILABLE,
+            formatBtcBillPayAmount(extreme, DisplayUnit.SATS),
+        )
+
+        val overflow = btcBillPaysScreenSummary(
+            listOf(extreme.copy(amountUsdCents = Long.MAX_VALUE), extreme.copy(id = "two", amountUsdCents = 1L)),
+            FamilyMember.VICTOR,
+        )
+        assertEquals(null, overflow.totalUsdCents)
+        assertEquals(
+            com.sats21m.vogelvault.domain.Money.PRICE_UNAVAILABLE,
+            formatBtcBillPayTotal(overflow, DisplayUnit.USD),
+        )
+    }
 }

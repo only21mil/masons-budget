@@ -32,13 +32,18 @@ internal data class RetirementHoldingRow(
     val key: String get() = "${account.account.owner.key}:${account.account.key}:${holding.holding.name}"
 }
 
-internal fun VaultUiState.retirementAccounts(): List<AccountValuation> {
+private fun VaultUiState.retirementAccountsOrNull(): List<AccountValuation>? {
     if (financeStatus != Freshness.LIVE) return emptyList()
     val quotes = marketQuotes?.quotes.orEmpty()
-    return financeDocument?.accounts.orEmpty()
-        .netWorthScopeFor(activeProfile)
-        .map { it.marketValue(quotes) }
+    return runCatching {
+        financeDocument?.accounts.orEmpty()
+            .netWorthScopeFor(activeProfile)
+            .map { it.marketValue(quotes) }
+    }.getOrNull()
 }
+
+internal fun VaultUiState.retirementAccounts(): List<AccountValuation> =
+    retirementAccountsOrNull().orEmpty()
 
 internal fun VaultUiState.adultNetWorthSelection(): NetWorthSelection? {
     if (!activeProfile.isAdult || financeStatus != Freshness.LIVE) return null
@@ -47,7 +52,9 @@ internal fun VaultUiState.adultNetWorthSelection(): NetWorthSelection? {
     val balance = data.netWorthBalanceForDisplay()
         ?.takeIf { activeProfile.sharesNetWorth(it.owner) }
         ?: return null
-    return selectNetWorth(activeProfile, balance.totalSats, document.accounts, quotes)
+    return runCatching {
+        selectNetWorth(activeProfile, balance.totalSats, document.accounts, quotes)
+    }.getOrNull()
 }
 
 internal fun VaultLazyListScope.financeNetWorthSummary(
@@ -56,6 +63,7 @@ internal fun VaultLazyListScope.financeNetWorthSummary(
 ) {
     if (!state.activeProfile.isAdult) return
     val selection = state.adultNetWorthSelection()
+    if (selection != null) item { BitcoinConversionNotice(state) }
     item {
         KpiStrip(
             listOf(
@@ -74,13 +82,9 @@ internal fun VaultLazyListScope.financeNetWorthSummary(
                 Kpi(
                     label = "Retirement",
                     value = if (state.financeStatus == Freshness.LIVE) {
-                        state.formatFinanceCents(
-                            selection?.retirementValueCents
-                                ?: state.retirementAccounts().fold(0L) { total, account ->
-                                    Math.addExact(total, account.valueCents)
-                                },
-                            displayUnit,
-                        )
+                        val retirementCents = selection?.retirementValueCents
+                            ?: state.retirementAccountsOrNull()?.sumLongOrNull { it.valueCents }
+                        retirementCents?.let { state.formatFinanceCents(it, displayUnit) } ?: SUPPRESSED
                     } else {
                         SUPPRESSED
                     },
@@ -128,7 +132,20 @@ internal fun VaultLazyListScope.retirementHoldings(
             }
         }
         else -> {
-            val rows = state.retirementAccounts().flatMap { account ->
+            val accounts = state.retirementAccountsOrNull()
+            if (accounts == null) {
+                item {
+                    Panel("Retirement holdings", "Convex finance document") {
+                        StateBlock(
+                            Freshness.ERROR,
+                            title = "Retirement valuation unavailable",
+                            detail = "A holding or account total exceeded the supported integer range.",
+                        )
+                    }
+                }
+                return
+            }
+            val rows = accounts.flatMap { account ->
                 account.holdings.map { RetirementHoldingRow(account, it) }
             }
             if (rows.isEmpty()) {
@@ -176,12 +193,11 @@ internal fun VaultUiState.formatFinanceCents(
     cents: Long,
     displayUnit: DisplayUnit,
 ): String {
-    if (displayUnit == DisplayUnit.USD) return Money.formatUsd(cents)
-    val btcQuote = marketQuotes?.quotes
-        ?.firstOrNull { it.symbol == MarketSymbol.BTC && it.status != MarketQuoteStatus.UNAVAILABLE }
-        ?: return Money.PRICE_UNAVAILABLE
-    val sats = Money.usdCentsToSats(cents, checkNotNull(btcQuote.priceCents))
-    return Money.formatBitcoin(sats, displayUnit, btcQuote.priceCents)
+    return formatFinancialAmount(
+        FinancialAmount(usdCents = cents),
+        displayUnit,
+        operationalBitcoinQuote(),
+    )
 }
 
 @androidx.compose.runtime.Composable

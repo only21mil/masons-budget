@@ -103,6 +103,7 @@ internal enum class RetirementUnavailableReason {
     MARKET_QUOTE,
     INCOME,
     BUDGET,
+    MATH,
 }
 
 /**
@@ -144,14 +145,20 @@ internal fun retirementInputs(state: VaultUiState): RetirementInputResult {
     if (currentIncomeRows.isEmpty()) {
         return RetirementInputResult.Unavailable(RetirementUnavailableReason.INCOME)
     }
-    val monthlyIncome = currentIncomeRows.sumOf { it.amountCents }
+    val monthlyIncome = currentIncomeRows.sumLongOrNull { it.amountCents }
+        ?: return RetirementInputResult.Unavailable(RetirementUnavailableReason.MATH)
+    val monthlyBudget = budget.categories.sumLongOrNull { it.budgetCents }
+        ?: return RetirementInputResult.Unavailable(RetirementUnavailableReason.MATH)
+    if (runCatching { Math.subtractExact(monthlyIncome, monthlyBudget) }.isFailure) {
+        return RetirementInputResult.Unavailable(RetirementUnavailableReason.MATH)
+    }
     return RetirementInputResult.Available(
         RetirementProjectionInputs(
             startingSats = balance.totalSats,
             btcQuote = quote,
             balanceAsOf = balance.asOf,
             monthlyIncomeCents = monthlyIncome,
-            monthlyBudgetCents = budget.plannedCents,
+            monthlyBudgetCents = monthlyBudget,
             adultAnnualBonusCents =
                 if (state.activeProfile.isAdult) ADULT_ANNUAL_BONUS_CENTS else 0L,
         ),
@@ -265,6 +272,10 @@ private fun RetirementUnavailable(reason: RetirementUnavailableReason) {
         RetirementUnavailableReason.BUDGET -> {
             title = stringResource(R.string.retirement_budget_unavailable_title)
             detail = stringResource(R.string.retirement_budget_unavailable_detail)
+        }
+        RetirementUnavailableReason.MATH -> {
+            title = stringResource(R.string.retirement_math_unavailable_title)
+            detail = stringResource(R.string.retirement_math_unavailable_detail)
         }
     }
     Panel(stringResource(R.string.retirement_projection_title)) {

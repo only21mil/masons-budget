@@ -22,6 +22,12 @@ internal data class FinancialAmount(
     }
 }
 
+internal fun FinancialAmount.requiresOperationalQuote(unit: DisplayUnit): Boolean =
+    when (unit) {
+        DisplayUnit.USD -> usdCents == null
+        DisplayUnit.BTC, DisplayUnit.SATS -> sats == null
+    }
+
 /** Global display conversion consumes only the operational market-quote feed. */
 internal fun VaultUiState.operationalBitcoinQuote(): MarketQuote? =
     marketQuotes?.quotes?.usableQuote(MarketSymbol.BTC)
@@ -36,7 +42,7 @@ internal fun formatFinancialAmount(
             (it.status == MarketQuoteStatus.LIVE || it.status == MarketQuoteStatus.STALE)
     }
     val priceCents = btcQuote?.priceCents
-    return when (unit) {
+    return runCatching { when (unit) {
         DisplayUnit.USD ->
             amount.usdCents?.let(Money::formatUsd)
                 ?: amount.sats
@@ -50,5 +56,10 @@ internal fun formatFinancialAmount(
                     ?.let { cents -> priceCents?.let { Money.usdCentsToSats(cents, it) } }
                     ?.let { Money.formatBitcoin(it, unit) }
                 ?: Money.PRICE_UNAVAILABLE
-    }
+    } }.getOrDefault(Money.PRICE_UNAVAILABLE)
 }
+
+internal inline fun <T> Iterable<T>.sumLongOrNull(value: (T) -> Long): Long? =
+    runCatching { fold(0L) { total, row -> Math.addExact(total, value(row)) } }.getOrNull()
+
+internal fun Long.negateOrNull(): Long? = runCatching { Math.negateExact(this) }.getOrNull()
