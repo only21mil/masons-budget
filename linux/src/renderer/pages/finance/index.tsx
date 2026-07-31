@@ -69,6 +69,7 @@ import {
   BillPayFormDialog,
   BtcAccountFormDialog,
   BtcBuyFormDialog,
+  BudgetProgress,
   BudgetCategoryFormDialog,
   Button,
   type Column,
@@ -1248,9 +1249,10 @@ const budgetColumns: ReadonlyArray<Column<CategorySpend>> = [
   {
     key: "use",
     header: "Used",
-    numeric: true,
-    secondary: true,
-    render: (row) => `${(basisPoints(row.spent, row.budget) / 100).toFixed(0)}%`,
+    render: (row) => (
+      <BudgetProgress category={row.name} spent={row.spent} limit={row.budget} />
+    ),
+    width: "190px",
   },
 ]
 

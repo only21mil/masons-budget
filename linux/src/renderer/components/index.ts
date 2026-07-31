@@ -7,6 +7,13 @@ export type { AppShellProps, NavItem, NavSection, TopBarProps } from "./AppShell
 export { DataTable } from "./DataTable.tsx"
 export type { Column, DataTableProps } from "./DataTable.tsx"
 
+export { BudgetProgress, budgetProgressState } from "./BudgetProgress.tsx"
+export type {
+  BudgetProgressProps,
+  BudgetProgressState,
+  BudgetProgressTone,
+} from "./BudgetProgress.tsx"
+
 export { DialogFrame } from "./DialogFrame.tsx"
 export type { DialogFrameProps } from "./DialogFrame.tsx"
 
