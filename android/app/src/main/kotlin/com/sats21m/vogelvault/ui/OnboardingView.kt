@@ -29,7 +29,7 @@ internal fun requiresOnboarding(readiness: ReadReadiness): Boolean =
 @Composable
 internal fun OnboardingView(
     configurationError: String?,
-    onConnected: () -> Unit,
+    onConnected: (BootstrapAccess) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(

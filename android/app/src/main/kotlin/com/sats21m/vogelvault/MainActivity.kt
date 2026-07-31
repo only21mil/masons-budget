@@ -122,7 +122,7 @@ class MainActivity : FragmentActivity() {
                     onboardingRequired ->
                         OnboardingView(
                             configurationError = state.remoteConfigurationError,
-                            onConnected = {
+                            onConnected = { _ ->
                                 model.enableStoredRemoteRows()
                                 onboardingRequired =
                                     requiresOnboarding(app.convexConfigSource.current().readiness)

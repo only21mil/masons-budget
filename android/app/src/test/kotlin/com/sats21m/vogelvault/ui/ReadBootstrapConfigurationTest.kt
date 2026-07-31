@@ -37,6 +37,7 @@ class ReadBootstrapConfigurationTest {
     private lateinit var controller: ActivityController<ComponentActivity>
     private lateinit var application: RecordingReadBootstrapApplication
     private var connectedCalls = 0
+    private var connectedAccess: BootstrapAccess? = null
     private var contentKey = 0
 
     @Before
@@ -44,6 +45,7 @@ class ReadBootstrapConfigurationTest {
         application = RuntimeEnvironment.getApplication() as RecordingReadBootstrapApplication
         application.reset()
         connectedCalls = 0
+        connectedAccess = null
         contentKey = 0
         controller = Robolectric.buildActivity(ComponentActivity::class.java)
         controller.get().setTheme(R.style.Theme_VogelVault)
@@ -67,8 +69,9 @@ class ReadBootstrapConfigurationTest {
 
         assertEquals(1, application.connectCalls)
         assertEquals(1, connectedCalls)
-        compose.onNodeWithText("Connected securely. The stored credential is never shown.")
+        compose.onNodeWithText("Connected for household data. Todo changes are not enabled.")
             .fetchSemanticsNode()
+        assertEquals(BootstrapAccess.READ_ONLY, connectedAccess)
         assertEquals(0, compose.onAllNodesWithText(bundleSecret).fetchSemanticsNodes().size)
         assertEquals(0, compose.onAllNodesWithText(responseSecret).fetchSemanticsNodes().size)
     }
@@ -85,7 +88,7 @@ class ReadBootstrapConfigurationTest {
 
         application.stored = true
         show()
-        compose.onNodeWithText("Connected securely. The stored credential is never shown.")
+        compose.onNodeWithText("Connected for household data. Todo changes are not enabled.")
             .fetchSemanticsNode()
         assertEquals(0, application.connectCalls)
     }
@@ -137,14 +140,59 @@ class ReadBootstrapConfigurationTest {
             .fetchSemanticsNode()
     }
 
-    private fun show(allowReset: Boolean = false) {
+    @Test
+    fun `combined enrollment reports todo write only from durable capability state`() {
+        val enrollment = RecordingEnrollment(
+            next = BootstrapConnectionResult(
+                status = ReadBootstrapStatus.CONNECTED,
+                access = BootstrapAccess.READ_AND_TODO_WRITE,
+            ),
+        )
+        show(enrollment = enrollment)
+
+        compose.onNodeWithText("Connect securely").performClick()
+        settle()
+
+        compose.onNodeWithText("Connected for household data and todo changes.")
+            .fetchSemanticsNode()
+        assertEquals(BootstrapAccess.READ_AND_TODO_WRITE, connectedAccess)
+    }
+
+    @Test
+    fun `connected status without durable access does not claim todo access`() {
+        val enrollment = RecordingEnrollment(
+            next = BootstrapConnectionResult(
+                status = ReadBootstrapStatus.CONNECTED,
+                access = BootstrapAccess.NONE,
+            ),
+        )
+        show(enrollment = enrollment)
+
+        compose.onNodeWithText("Connect securely").performClick()
+        settle()
+
+        compose.onNodeWithText("This installation is not connected to household data.")
+            .fetchSemanticsNode()
+        assertEquals(null, connectedAccess)
+        assertEquals(0, connectedCalls)
+        assertEquals(0, compose.onAllNodesWithText("todo changes", substring = true).fetchSemanticsNodes().size)
+    }
+
+    private fun show(
+        allowReset: Boolean = false,
+        enrollment: BootstrapEnrollment? = null,
+    ) {
         contentKey += 1
         controller.get().setContent {
             VogelVaultTheme {
                 key(contentKey) {
                     ReadBootstrapConfiguration(
-                        onConnected = { connectedCalls += 1 },
+                        onConnected = {
+                            connectedCalls += 1
+                            connectedAccess = it
+                        },
                         allowReset = allowReset,
+                        enrollment = enrollment,
                     )
                 }
             }
@@ -155,6 +203,26 @@ class ReadBootstrapConfigurationTest {
     private fun settle() {
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
+    }
+}
+
+private class RecordingEnrollment(
+    private val next: BootstrapConnectionResult,
+) : BootstrapEnrollment {
+    private var access = BootstrapAccess.NONE
+
+    override fun isBundledEnrollmentAvailable(): Boolean = true
+
+    override fun currentAccess(): BootstrapAccess = access
+
+    override suspend fun connect(): BootstrapConnectionResult {
+        access = next.access
+        return next
+    }
+
+    override fun reset(): BootstrapAccess {
+        access = BootstrapAccess.NONE
+        return access
     }
 }
 
