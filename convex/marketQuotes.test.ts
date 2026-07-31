@@ -459,4 +459,55 @@ describe("authenticated snapshot and cache transitions", () => {
       }),
     ).rejects.toThrow(/source/);
   });
+
+  it("stores only canonical UTC success timestamps", async () => {
+    await expect(
+      t.mutation(internalApi.recordMarketQuoteSuccess, {
+        symbol: "BTC",
+        priceCents: 1n,
+        source: "Vogel Vault",
+        fetchedAt: "2026-07-30T15:00:00Z",
+      }),
+    ).resolves.toBe("live");
+
+    for (const fetchedAt of [
+      "2026-07-30T10:00:00-05:00",
+      "2026-07-30T15:00:00.0Z",
+      "2026-07-30T15:00:00.0000Z",
+      "2026-02-30T15:00:00Z",
+    ]) {
+      await expect(
+        t.mutation(internalApi.recordMarketQuoteSuccess, {
+          symbol: "BTC",
+          priceCents: 1n,
+          source: "Vogel Vault",
+          fetchedAt,
+        }),
+        fetchedAt,
+      ).rejects.toThrow(/canonical UTC/);
+    }
+  });
+
+  it("does not emit a noncanonical cached success as a usable quote", async () => {
+    const token = freshSecret();
+    setDeploymentEnv({ CONVEX_READ_TOKEN: token });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("marketQuoteCache", {
+        symbol: "BTC",
+        priceCents: 6_485_500n,
+        source: "Vogel Vault",
+        fetchedAt: "2026-07-30T10:00:00-05:00",
+        status: "live",
+        lastAttemptedAt: FIXED_TIME,
+      });
+    });
+
+    const snapshot = await t.query(api.getMarketQuoteSnapshot, { token });
+    expect(snapshot.quotes[0]).toMatchObject({
+      symbol: "BTC",
+      priceCents: null,
+      fetchedAt: null,
+      status: "unavailable",
+    });
+  });
 });

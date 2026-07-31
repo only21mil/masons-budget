@@ -12,8 +12,9 @@ drill-down parity is pinned by
 
 Convex is the system of record. Shipped clients read the Convex row tables over
 the HTTP API with a runtime-injected read token. Row decoders preserve the field
-aliases still present in stored records, but there is no live upstream service
-or separate sync system.
+aliases still present in stored records. A separate operational market-quote
+cache acquires fixed BTC, VOO, and IBIT prices through an internal Convex action;
+clients do not synchronize quote caches device-to-device.
 
 ## Server responses are open objects
 
@@ -90,8 +91,8 @@ labels; they do not instruct a client to place a market order.
 
 BTC, VOO, and IBIT quotes are a separate operational snapshot. Each observation
 has integer-cent price evidence, source, fetch time, and an explicit
-`live | stale | unavailable` status. The minimal transport and future Convex
-boundary are documented in
+`live | stale | unavailable` status. The live Convex boundary and its fixed,
+bounded upstream acquisition path are documented in
 [`../../docs/market-quote-boundary.md`](../../docs/market-quote-boundary.md).
 
 Net worth uses the canonical scoped BTC satoshi balance plus net-worth-scoped
@@ -111,6 +112,6 @@ Clients should import these helpers rather than repeat conversion formulas.
 
 `FinanceParityTest` reads `fixtures/finance-market-cases.json` outside the
 Android Gradle root. Integration must retain that exact path in
-`sharedDomainParityFixtures` in `android/domain/build.gradle.kts` (introduced by
-`e798cd7`) so fixture edits invalidate `:domain:test`; the verification task
-must remain a dependency of the domain test task.
+`sharedDomainParityFixtures` in `android/domain/build.gradle.kts` so fixture
+edits invalidate `:domain:test`; the verification task must remain a dependency
+of the domain test task.
