@@ -18,16 +18,16 @@ import java.math.RoundingMode
 
 internal data class BtcBuysScreenSummary(
     val rows: List<BtcBuy>,
-    val totalSats: Long,
-    val totalUsdCents: Long,
+    val totalSats: Long?,
+    val totalUsdCents: Long?,
 ) {
     val averageExecutionPriceCents: Long?
         get() =
-            totalSats.takeIf { it > 0L }?.let {
+            totalSats?.takeIf { it > 0L }?.let { sats ->
                 runCatching {
-                    BigDecimal(totalUsdCents)
+                    BigDecimal(checkNotNull(totalUsdCents))
                         .multiply(BigDecimal(Money.SATS_PER_BTC))
-                        .divide(BigDecimal(it), 0, RoundingMode.HALF_UP)
+                        .divide(BigDecimal(sats), 0, RoundingMode.HALF_UP)
                         .longValueExact()
                 }.getOrNull()
             }
@@ -40,8 +40,8 @@ internal fun btcBuysScreenSummary(
     val visibleRows = rows.visibleTo(viewer)
     return BtcBuysScreenSummary(
         rows = visibleRows,
-        totalSats = visibleRows.sumExact(BtcBuy::sats),
-        totalUsdCents = visibleRows.sumExact(BtcBuy::usdCents),
+        totalSats = visibleRows.sumLongOrNull(BtcBuy::sats),
+        totalUsdCents = visibleRows.sumLongOrNull(BtcBuy::usdCents),
     )
 }
 
@@ -56,10 +56,13 @@ internal fun formatBtcBuyAmount(
 internal fun formatBtcBuyTotal(
     summary: BtcBuysScreenSummary,
     displayUnit: DisplayUnit,
-): String = formatFinancialAmount(
-    FinancialAmount(usdCents = summary.totalUsdCents, sats = summary.totalSats),
-    displayUnit,
-)
+): String {
+    val amount = when (displayUnit) {
+        DisplayUnit.USD -> summary.totalUsdCents?.let { FinancialAmount(usdCents = it) }
+        DisplayUnit.BTC, DisplayUnit.SATS -> summary.totalSats?.let { FinancialAmount(sats = it) }
+    } ?: return Money.PRICE_UNAVAILABLE
+    return formatFinancialAmount(amount, displayUnit)
+}
 
 internal fun VaultLazyListScope.btcBuysScreen(
     state: VaultUiState,
@@ -117,6 +120,3 @@ internal fun VaultLazyListScope.btcBuysScreen(
         )
     }
 }
-
-private inline fun <T> List<T>.sumExact(value: (T) -> Long): Long =
-    fold(0L) { total, row -> Math.addExact(total, value(row)) }

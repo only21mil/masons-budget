@@ -80,6 +80,7 @@ internal fun VaultLazyListScope.financeNetWorthSummary(
         selectionResult.isFailure ||
             accountsResult.isFailure ||
             (accountsResult.getOrNull()?.isNotEmpty() == true && retirementFallback == null)
+    if (selection != null) item { BitcoinConversionNotice(state) }
     item {
         KpiStrip(
             listOf(

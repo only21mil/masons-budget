@@ -18,6 +18,7 @@ import com.sats21m.vogelvault.domain.MarketQuote
 import com.sats21m.vogelvault.domain.MarketQuoteSnapshot
 import com.sats21m.vogelvault.domain.MarketQuoteStatus
 import com.sats21m.vogelvault.domain.MarketSymbol
+import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.Slice
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -25,6 +26,19 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class FinancePresentationTest {
+    @Test
+    fun `finance conversion overflow renders unavailable`() {
+        val state = financeState(FamilyMember.VICTOR).copy(
+            marketQuotes = MarketQuoteSnapshot(
+                listOf(
+                    MarketQuote(MarketSymbol.BTC, 1L, "market adapter", "2026-07-30T12:00:00Z", MarketQuoteStatus.LIVE),
+                    MarketQuote(MarketSymbol.VOO, null, "market adapter", null, MarketQuoteStatus.UNAVAILABLE),
+                    MarketQuote(MarketSymbol.IBIT, null, "market adapter", null, MarketQuoteStatus.UNAVAILABLE),
+                ),
+            ),
+        )
+        assertEquals(Money.PRICE_UNAVAILABLE, state.formatFinanceCents(Long.MAX_VALUE, DisplayUnit.SATS))
+    }
     @Test
     fun `adult total uses quote-valued retirement once and excludes child accounts`() {
         val state = financeState(FamilyMember.VICTOR)

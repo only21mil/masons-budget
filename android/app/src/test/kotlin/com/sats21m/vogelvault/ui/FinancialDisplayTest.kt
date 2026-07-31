@@ -28,6 +28,36 @@ class FinancialDisplayTest {
     }
 
     @Test
+    fun `paired sides never claim an operational conversion`() {
+        val paired = FinancialAmount(usdCents = 100L, sats = 1_000L)
+        assertFalse(paired.requiresOperationalQuote(DisplayUnit.USD))
+        assertFalse(paired.requiresOperationalQuote(DisplayUnit.BTC))
+        assertTrue(FinancialAmount(usdCents = 100L).requiresOperationalQuote(DisplayUnit.SATS))
+        assertTrue(FinancialAmount(sats = 1_000L).requiresOperationalQuote(DisplayUnit.USD))
+    }
+
+    @Test
+    fun `conversion overflow fails closed`() {
+        val oneCentQuote = marketQuote(1L)
+        assertEquals(
+            Money.PRICE_UNAVAILABLE,
+            formatFinancialAmount(
+                FinancialAmount(usdCents = Long.MAX_VALUE),
+                DisplayUnit.SATS,
+                oneCentQuote,
+            ),
+        )
+        assertEquals(
+            Money.PRICE_UNAVAILABLE,
+            formatFinancialAmount(
+                FinancialAmount(sats = Long.MAX_VALUE),
+                DisplayUnit.USD,
+                marketQuote(Long.MAX_VALUE),
+            ),
+        )
+    }
+
+    @Test
     fun `fiat only amounts require an explicit quote for bitcoin units`() {
         val amount = FinancialAmount(usdCents = 100L)
 

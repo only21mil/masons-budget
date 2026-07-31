@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Button
@@ -31,9 +33,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
@@ -98,12 +105,14 @@ private data class ScreenCollections(
     val visibleTodos: List<TodoItem>,
 )
 
+internal const val BITCOIN_UNIT_TOGGLE_TEST_TAG = "bitcoin-unit-toggle"
+
 private data class DashboardProjection(
     val activity: List<Transaction>,
     val accounts: List<BtcAccount>,
     val balance: BtcBalance?,
     val incomeEntries: List<IncomeEntry>,
-    val spendCents: Long,
+    val spendCents: Long?,
     val incomeCents: Long?,
     val openTodos: Int,
 )
@@ -136,7 +145,7 @@ internal fun ReadModel.dashboardIncomeCents(
     month: String?,
 ): Long? {
     val rows = dashboardIncomeEntries(viewer, month)
-    return if (incomeFiguresUnavailable || rows.isEmpty()) null else rows.sumOf { it.amountCents }
+    return if (incomeFiguresUnavailable || rows.isEmpty()) null else rows.sumLongOrNull { it.amountCents }
 }
 
 internal fun ReadModel.netWorthBalanceForDisplay(): BtcBalance? =
@@ -240,7 +249,7 @@ fun ScreenHost(
             accounts = collections.netWorthAccounts,
             balance = collections.netWorthBalance,
             incomeEntries = dashboardIncomeEntries,
-            spendCents = budgetTransactions.sumOf { it.spendAmount },
+            spendCents = budgetTransactions.sumLongOrNull { it.spendAmount },
             incomeCents = state.data.dashboardIncomeCents(profile, month),
             openTodos = collections.visibleTodos.count { !it.done },
         )
@@ -313,18 +322,6 @@ fun ScreenHost(
                     onDisplayUnitChange,
                     onAddTransaction = { addingTransaction = true },
                 )
-            }
-            if (
-                displayUnit == DisplayUnit.USD &&
-                destination in setOf(
-                    Destination.DASHBOARD,
-                    Destination.BITCOIN,
-                    Destination.BTC_BUYS,
-                    Destination.BTC_BILL_PAYS,
-                    Destination.NET_WORTH,
-                )
-            ) {
-                item { BitcoinFiatNotice(state) }
             }
             when (destination) {
                 Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit)
@@ -465,7 +462,11 @@ private fun ScreenHeader(
                 }
             }
             if (destination.supportsFinancialDisplayUnit) {
-                BitcoinUnitToggle(displayUnit, onDisplayUnitChange)
+                BitcoinUnitToggle(
+                    selected = displayUnit,
+                    onSelect = onDisplayUnitChange,
+                    modifier = Modifier.widthIn(max = 168.dp),
+                )
             }
         }
     }
@@ -484,12 +485,17 @@ internal val Destination.supportsFinancialDisplayUnit: Boolean
         )
 
 @Composable
-private fun BitcoinUnitToggle(
+internal fun BitcoinUnitToggle(
     selected: DisplayUnit,
     onSelect: (DisplayUnit) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(VaultSpace.xs),
+        modifier = modifier
+            .horizontalScroll(rememberScrollState())
+            .selectableGroup()
+            .testTag(BITCOIN_UNIT_TOGGLE_TEST_TAG),
+        horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         DisplayUnit.entries.forEach { unit ->
@@ -504,22 +510,31 @@ private fun BitcoinUnitToggle(
 }
 
 @Composable
-private fun BitcoinFiatNotice(state: VaultUiState) {
+internal fun BitcoinConversionNotice(state: VaultUiState) {
     val quote = state.operationalBitcoinQuote()
     if (quote != null) {
         StatusBanner(
-            text = if (quote.status == MarketQuoteStatus.STALE) "USD estimate · stale quote" else "USD estimate",
+            text = if (quote.status == MarketQuoteStatus.STALE) "BTC conversion · stale quote" else "BTC conversion",
             detail = "Uses the operational BTC market quote from ${quote.source} fetched at ${quote.fetchedAt}.",
             tone = if (quote.status == MarketQuoteStatus.STALE) VaultWarning else VaultTextMuted,
         )
     } else {
         StatusBanner(
-            text = "USD unavailable",
+            text = "BTC conversion unavailable",
             detail = "No usable operational BTC market quote is available. Recorded buys are execution metadata only.",
             tone = VaultWarning,
         )
     }
 }
+
+internal fun VaultUiState.bitcoinConversionProvenance(): String =
+    operationalBitcoinQuote()?.let { quote ->
+        buildString {
+            append("BTC conversion: ${quote.source} · ")
+            if (quote.status == MarketQuoteStatus.STALE) append("stale · ")
+            append(quote.fetchedAt)
+        }
+    } ?: "BTC conversion unavailable"
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
 
@@ -531,15 +546,23 @@ private fun VaultLazyListScope.dashboard(
     val incomeUnavailable = projection.incomeCents == null
     val balanceUnavailable = projection.balance == null
     val quote = state.operationalBitcoinQuote()
+    val convertsUsd = displayUnit != DisplayUnit.USD &&
+        (
+            (!state.data.transactions.requiredProjectionUnavailable &&
+                (projection.spendCents != null || projection.activity.isNotEmpty())) ||
+                !incomeUnavailable
+        )
+
+    if (convertsUsd) item { BitcoinConversionNotice(state) }
 
     item {
         KpiStrip(
             listOf(
                 Kpi(
                     "Spend",
-                    figure(state.data.transactions.requiredProjectionUnavailable) {
+                    figure(state.data.transactions.requiredProjectionUnavailable || projection.spendCents == null) {
                         formatFinancialAmount(
-                            FinancialAmount(usdCents = projection.spendCents),
+                            FinancialAmount(usdCents = requireNotNull(projection.spendCents)),
                             displayUnit,
                             quote,
                         )
@@ -688,7 +711,11 @@ private fun VaultLazyListScope.activity(
         } else {
             "${transactions.size} of ${search.totalCount} records"
         },
-        source = state.data.transactions.source,
+        source = if (displayUnit == DisplayUnit.USD) {
+            state.data.transactions.source
+        } else {
+            "${state.data.transactions.source} · ${state.bitcoinConversionProvenance()}"
+        },
         rows = transactions,
         rowKey = Transaction::selectionKey,
         rowContent = {
@@ -731,7 +758,7 @@ internal fun formatTransactionAmount(
     val cents = when {
         !transaction.isSpend -> transaction.incomeAmount
         transaction.hasOppositeSpendSign -> displaySpend
-        else -> Math.negateExact(displaySpend)
+        else -> displaySpend.negateOrNull() ?: return Money.PRICE_UNAVAILABLE
     }
     return formatFinancialAmount(FinancialAmount(usdCents = cents), displayUnit, quote)
 }
@@ -920,11 +947,19 @@ private fun SelectionChip(
     val shape = RoundedCornerShape(99.dp)
     Box(
         Modifier
-            .heightIn(min = if (compact) 32.dp else 40.dp)
+            .heightIn(min = 48.dp)
             .clip(shape)
             // selectable, not clickable: this is one choice out of a set, and a
             // screen reader should say so.
             .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
+            .semantics {
+                contentDescription = "$label display unit"
+                stateDescription = if (selected) "Selected" else "Not selected"
+                onClick(label = "Show amounts in $label") {
+                    onSelect()
+                    true
+                }
+            }
             .background(if (selected) VaultAccentDim else VaultSurface, shape)
             .border(1.dp, if (selected) VaultAccent.copy(alpha = 0.42f) else VaultLine, shape)
             .padding(
@@ -971,6 +1006,10 @@ private fun VaultLazyListScope.bitcoin(
 ) {
     val slice = state.data.btcBalance
     val unavailable = projection.balance == null
+
+    if (displayUnit == DisplayUnit.USD && !unavailable) {
+        item { BitcoinConversionNotice(state) }
+    }
 
     item {
         KpiStrip(
