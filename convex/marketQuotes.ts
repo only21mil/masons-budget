@@ -29,6 +29,8 @@ const marketQuoteErrorCodeValidator = v.union(
 );
 type MarketQuoteStatus = "live" | "stale" | "unavailable";
 const LIVE_WINDOW_MS = 30 * 60 * 1_000;
+const CANONICAL_QUOTE_INSTANT =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?Z$/;
 type RefreshSummary = {
   quotes: Array<{
     symbol: MarketSymbol;
@@ -45,6 +47,16 @@ const snapshotQuoteValidator = v.object({
   lastAttemptedAt: v.union(v.string(), v.null()),
   errorCode: v.union(marketQuoteErrorCodeValidator, v.null()),
 });
+
+/** Accept canonical UTC whole seconds or exactly three millisecond digits. */
+function isCanonicalQuoteInstant(value: string): boolean {
+  if (!CANONICAL_QUOTE_INSTANT.test(value)) return false;
+
+  const millis = Date.parse(value);
+  if (!Number.isFinite(millis)) return false;
+  const normalized = new Date(millis).toISOString();
+  return value === normalized || value === normalized.replace(".000Z", "Z");
+}
 
 function warnPermissive(hatchVar: string, tokenVar: string, tokenSet: boolean) {
   console.warn(
@@ -119,7 +131,7 @@ export const getSnapshot = query({
         cached.priceCents === undefined ||
         cached.priceCents <= 0n ||
         cached.fetchedAt === undefined ||
-        cached.fetchedAt.trim() === "" ||
+        !isCanonicalQuoteInstant(cached.fetchedAt) ||
         cached.source.trim() === ""
       ) {
         quotes.push(
@@ -157,10 +169,10 @@ export const recordSuccess = internalMutation({
   handler: async (ctx, args) => {
     if (args.priceCents <= 0n) throw new Error("Quote price must be positive");
     if (args.source.trim() === "") throw new Error("Quote source is required");
-    const fetchedAtMs = Date.parse(args.fetchedAt);
-    if (args.fetchedAt.trim() === "" || !Number.isFinite(fetchedAtMs)) {
-      throw new Error("Quote success timestamp is required");
+    if (!isCanonicalQuoteInstant(args.fetchedAt)) {
+      throw new Error("Quote success timestamp must be canonical UTC");
     }
+    const fetchedAtMs = Date.parse(args.fetchedAt);
     const existing = await ctx.db
       .query("marketQuoteCache")
       .withIndex("by_symbol", (q) => q.eq("symbol", args.symbol))

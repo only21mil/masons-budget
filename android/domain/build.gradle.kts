@@ -23,8 +23,8 @@ dependencies {
 
 // These files live outside the Android Gradle root, so Gradle cannot infer them
 // from the test sources. Keep the list exact: each entry is a contract consumed
-// by a domain parity test. finance-market-cases.json is included before PR #248
-// lands so adding that fixture invalidates any previously cached test result.
+// by a domain parity test, and edits to any listed fixture must invalidate a
+// previously cached test result.
 val sharedDomainFixtureNames =
     listOf(
         "btc-fiat-availability-cases.json",
