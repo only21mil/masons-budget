@@ -1,6 +1,7 @@
 package com.sats21m.vogelvault.domain
 
 import java.math.BigDecimal
+import java.math.BigInteger
 import java.math.RoundingMode
 
 /**
@@ -55,7 +56,7 @@ object Money {
 
     fun formatMinorUnits(amount: Long, scale: Int): String {
         val negative = amount < 0
-        val digits = kotlin.math.abs(amount).toString().padStart(scale + 1, '0')
+        val digits = magnitudeDigits(amount).padStart(scale + 1, '0')
         val whole = digits.substring(0, digits.length - scale)
         val frac = if (scale > 0) "." + digits.substring(digits.length - scale) else ""
         return (if (negative) "-" else "") + whole + frac
@@ -63,7 +64,7 @@ object Money {
 
     fun formatUsd(cents: Long, showSign: Boolean = false): String {
         val negative = cents < 0
-        val plain = formatMinorUnits(kotlin.math.abs(cents), USD_SCALE)
+        val plain = formatMinorUnits(cents, USD_SCALE).removePrefix("-")
         val parts = plain.split(".")
         val grouped = group(parts[0], ",")
         val sign = if (negative) "-" else if (showSign) "+" else ""
@@ -78,7 +79,7 @@ object Money {
      */
     fun formatSats(sats: Long): String {
         val negative = sats < 0
-        val grouped = group(kotlin.math.abs(sats).toString(), " ")
+        val grouped = group(magnitudeDigits(sats), " ")
         return (if (negative) "-" else "") + grouped + " sats"
     }
 
@@ -149,4 +150,8 @@ object Money {
         }
         return builder.toString()
     }
+
+    /** `Long.MIN_VALUE` has no positive `Long`; take its magnitude outside Long arithmetic. */
+    private fun magnitudeDigits(value: Long): String =
+        BigInteger.valueOf(value).abs().toString()
 }
