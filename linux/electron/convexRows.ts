@@ -888,7 +888,8 @@ export function validateRowRequest(value: unknown): VogelVaultRowRequest | null 
       case "finance": {
         const viewer = member(value, "viewer")
         const row = exactObject(value, ["kind", "viewer", "scope"])
-        return { kind, viewer, scope: scopeValue(row["scope"]) }
+        if (row["scope"] !== "netWorth") throw new InvalidValue()
+        return { kind, viewer, scope: "netWorth" }
       }
       case "marketQuotes":
         exactObject(value, ["kind"])

@@ -140,6 +140,11 @@ describe("main-process finance and quote transport", () => {
       scope: "netWorth",
     })
     expect(validateRowRequest({ kind: "finance", viewer: "rachel" })).toBeNull()
+    expect(validateRowRequest({
+      kind: "finance",
+      viewer: "rachel",
+      scope: "visible",
+    })).toBeNull()
     expect(validateRowRequest({ kind: "marketQuotes" })).toEqual({ kind: "marketQuotes" })
     expect(validateRowRequest({ kind: "marketQuotes", symbol: "BTC" })).toBeNull()
     expect(validateRowRequest({
