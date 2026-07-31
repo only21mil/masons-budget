@@ -10,6 +10,10 @@ import com.sats21m.vogelvault.domain.FiatValuation
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.IncomeEntry
+import com.sats21m.vogelvault.domain.MarketQuote
+import com.sats21m.vogelvault.domain.MarketQuoteSnapshot
+import com.sats21m.vogelvault.domain.MarketQuoteStatus
+import com.sats21m.vogelvault.domain.MarketSymbol
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.Slice
 import kotlin.test.Test
@@ -117,6 +121,76 @@ class FinancialScreenValuesTest {
     }
 
     @Test
+    fun `operational quote fills missing canonical fiat without changing native bitcoin`() {
+        val balance = Fixtures.btcBalanceWithoutFiatValuation()
+        val account = balance.accounts.single()
+        val live = marketQuote(10_000_000L)
+        val stale = marketQuote(10_000_000L, MarketQuoteStatus.STALE)
+        val unavailable = MarketQuote(
+            symbol = MarketSymbol.BTC,
+            priceCents = null,
+            source = "market adapter",
+            fetchedAt = null,
+            status = MarketQuoteStatus.UNAVAILABLE,
+        )
+
+        assertEquals("\$541,782.86", formatCanonicalBalance(balance, DisplayUnit.USD, live))
+        assertEquals("\$541,782.86", formatCanonicalAccount(account, DisplayUnit.USD, stale))
+        assertEquals(
+            Money.PRICE_UNAVAILABLE,
+            formatCanonicalBalance(balance, DisplayUnit.USD, unavailable),
+        )
+        assertEquals("5.41782856 BTC", formatCanonicalBalance(balance, DisplayUnit.BTC, live))
+        assertEquals("541 782 856 sats", formatCanonicalAccount(account, DisplayUnit.SATS, live))
+    }
+
+    @Test
+    fun `newest buy cannot replace the operational reference or value balances`() {
+        val balance = Fixtures.btcBalanceWithoutFiatValuation()
+        val operational = marketQuote(10_000_000L, MarketQuoteStatus.STALE)
+        val state = VaultUiState(
+            data = Fixtures.envelope(FamilyMember.VICTOR).copy(
+                btcPriceCents = 20_000_000L,
+                btcPriceAsOf = "2026-07-31",
+            ),
+            marketQuotes = quoteSnapshot(operational),
+            marketQuoteStatus = Freshness.STALE,
+        )
+        val selected = state.operationalBitcoinQuote()
+
+        assertEquals("\$100,000.00", formatOperationalBitcoinPrice(selected))
+        assertEquals(
+            "market adapter · stale · 2026-07-30T10:00:00Z",
+            operationalBitcoinPriceBasis(selected),
+        )
+        assertEquals("\$541,782.86", formatCanonicalBalance(balance, DisplayUnit.USD, selected))
+    }
+
+    @Test
+    fun `canonical bitcoin quote overflow fails closed`() {
+        val balance = Fixtures.btcBalanceWithoutFiatValuation()
+        val account = balance.accounts.single()
+        val extremeQuote = marketQuote(Long.MAX_VALUE)
+
+        assertEquals(
+            Money.PRICE_UNAVAILABLE,
+            formatCanonicalBalance(
+                balance.copy(totalSats = Long.MAX_VALUE),
+                DisplayUnit.USD,
+                extremeQuote,
+            ),
+        )
+        assertEquals(
+            Money.PRICE_UNAVAILABLE,
+            formatCanonicalAccount(
+                account.copy(sats = Long.MAX_VALUE),
+                DisplayUnit.USD,
+                extremeQuote,
+            ),
+        )
+    }
+
+    @Test
     fun `available zero fiat remains a real zero`() {
         fun balance(sats: Long, valuation: FiatValuation) = BtcBalance(
             owner = FamilyMember.VICTOR,
@@ -147,6 +221,7 @@ class FinancialScreenValuesTest {
                     ),
                 ),
                 DisplayUnit.USD,
+                marketQuote(10_000_000L),
             ),
         )
     }
@@ -188,4 +263,23 @@ class FinancialScreenValuesTest {
         assertTrue(model.billPaysAvailableTo(FamilyMember.VICTOR))
         assertEquals(2_563_405L, model.btcBillPays.value.single().amountUsdCents)
     }
+
+    private fun marketQuote(
+        priceCents: Long,
+        status: MarketQuoteStatus = MarketQuoteStatus.LIVE,
+    ) = MarketQuote(
+        symbol = MarketSymbol.BTC,
+        priceCents = priceCents,
+        source = "market adapter",
+        fetchedAt = "2026-07-30T10:00:00Z",
+        status = status,
+    )
+
+    private fun quoteSnapshot(btc: MarketQuote) = MarketQuoteSnapshot(
+        listOf(
+            btc,
+            MarketQuote(MarketSymbol.VOO, null, "market adapter", null, MarketQuoteStatus.UNAVAILABLE),
+            MarketQuote(MarketSymbol.IBIT, null, "market adapter", null, MarketQuoteStatus.UNAVAILABLE),
+        ),
+    )
 }
