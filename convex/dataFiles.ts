@@ -1,5 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { query, mutation, type MutationCtx } from "./_generated/server";
+import { isValidAndroidReadToken } from "./androidReadToken";
 import {
   authenticateDevice,
   authenticateDeviceForSelfRevoke,
@@ -195,6 +196,7 @@ const ANDROID_READ_BOOTSTRAP_PAIR_ID = /^android-read-[A-Za-z0-9_-]{16,64}$/;
 // The final character has two zero padding bits, so only these 16 values are valid.
 const ANDROID_READ_BOOTSTRAP_PROOF = /^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/;
 const SHA256_HEX = /^[0-9a-f]{64}$/;
+const ANDROID_TODO_WRITE_CAPABILITY = "todos:write" as const;
 
 type AndroidReadBootstrapErrorCode =
   | "ANDROID_READ_BOOTSTRAP_NOT_FOUND"
@@ -202,6 +204,7 @@ type AndroidReadBootstrapErrorCode =
   | "ANDROID_READ_BOOTSTRAP_ALREADY_CLAIMED"
   | "ANDROID_READ_BOOTSTRAP_PROOF_INVALID"
   | "CONFIG_MISSING"
+  | "DEVICE_ID_CONFLICT"
   | "DEVICE_UNAUTHORIZED"
   | "PAIRING_ID_CONFLICT"
   | "VALIDATION_FAILED";
@@ -229,6 +232,18 @@ function validateAndroidReadBootstrapProofHash(proofHash: string) {
 
 function validateAndroidReadBootstrapProof(proof: string) {
   if (!ANDROID_READ_BOOTSTRAP_PROOF.test(proof)) {
+    androidReadBootstrapFailure("VALIDATION_FAILED");
+  }
+}
+
+function validateAndroidReadBootstrapCapabilities(
+  capabilities?: readonly string[],
+) {
+  if (
+    capabilities !== undefined &&
+    (capabilities.length !== 1 ||
+      capabilities[0] !== ANDROID_TODO_WRITE_CAPABILITY)
+  ) {
     androidReadBootstrapFailure("VALIDATION_FAILED");
   }
 }
@@ -669,26 +684,32 @@ export const upsertTodoFromMobile = mutation({
 });
 
 /**
- * Mint one short-lived, one-purpose Android read bootstrap.
+ * Mint one short-lived Android bootstrap.
  *
- * This is deliberately separate from mobileDevices/mobilePairings. A bootstrap
- * grants no write capability and stores neither its raw proof nor a read token.
+ * This is deliberately separate from mobilePairings. Read-only is the default;
+ * only an explicit exact todos:write grant may also create one mobileDevices
+ * row at claim time. The bootstrap stores neither its raw proof nor a token.
  */
 export const createAndroidReadBootstrap = mutation({
   args: {
     pairId: v.string(),
     proofHash: v.string(),
     expiresAt: v.float64(),
+    capabilities: v.optional(v.array(deviceCapabilityValidator)),
     token: v.optional(v.string()),
   },
   returns: v.object({
     pairId: v.string(),
     expiresAt: v.float64(),
   }),
-  handler: async (ctx, { pairId, proofHash, expiresAt, token }) => {
+  handler: async (
+    ctx,
+    { pairId, proofHash, expiresAt, capabilities, token },
+  ) => {
     validateAndroidReadBootstrapSyncToken(token);
     validateAndroidReadBootstrapPairId(pairId);
     validateAndroidReadBootstrapProofHash(proofHash);
+    validateAndroidReadBootstrapCapabilities(capabilities);
 
     const now = Date.now();
     if (
@@ -713,6 +734,10 @@ export const createAndroidReadBootstrap = mutation({
       createdAt: now,
       expiresAt,
       claimedAt: undefined,
+      capabilities:
+        capabilities === undefined
+          ? undefined
+          : [ANDROID_TODO_WRITE_CAPABILITY],
     });
     return { pairId, expiresAt };
   },
@@ -721,22 +746,38 @@ export const createAndroidReadBootstrap = mutation({
 /**
  * Redeem a raw 256-bit Android proof for the deployment's current read token.
  *
- * The proof is hashed on the server. A successful mutation marks the row before
- * returning, so Convex transaction serialization permits exactly one claimant.
+ * A todo-write bootstrap must also present a client-generated device credential.
+ * Its raw token is hashed before storage. Device creation and claim state share
+ * one Convex transaction, so any failure leaves both sides unchanged.
  */
 export const claimAndroidReadBootstrap = mutation({
   args: {
     pairId: v.string(),
     proof: v.string(),
+    deviceId: v.optional(v.string()),
+    deviceToken: v.optional(v.string()),
   },
-  returns: v.object({
-    ok: v.literal(true),
-    readToken: v.string(),
-    pairedAt: v.float64(),
-  }),
-  handler: async (ctx, { pairId, proof }) => {
+  returns: v.union(
+    v.object({
+      ok: v.literal(true),
+      readToken: v.string(),
+      pairedAt: v.float64(),
+      capabilities: v.array(deviceCapabilityValidator),
+    }),
+    v.object({
+      ok: v.literal(true),
+      readToken: v.string(),
+      pairedAt: v.float64(),
+      deviceId: v.string(),
+      capabilities: v.array(deviceCapabilityValidator),
+    }),
+  ),
+  handler: async (ctx, { pairId, proof, deviceId, deviceToken }) => {
     validateAndroidReadBootstrapPairId(pairId);
     validateAndroidReadBootstrapProof(proof);
+    if ((deviceId === undefined) !== (deviceToken === undefined)) {
+      androidReadBootstrapFailure("VALIDATION_FAILED");
+    }
 
     const bootstrap = await ctx.db
       .query("androidReadBootstraps")
@@ -759,13 +800,59 @@ export const claimAndroidReadBootstrap = mutation({
       androidReadBootstrapFailure("ANDROID_READ_BOOTSTRAP_PROOF_INVALID");
     }
 
-    const readToken = process.env.CONVEX_READ_TOKEN;
-    if (!readToken || !readToken.trim()) {
-      androidReadBootstrapFailure("CONFIG_MISSING");
+    validateAndroidReadBootstrapCapabilities(bootstrap.capabilities);
+    const capabilities = bootstrap.capabilities ?? [];
+    const grantsTodoWrite = capabilities.length === 1;
+    if (grantsTodoWrite) {
+      if (deviceId === undefined || deviceToken === undefined) {
+        androidReadBootstrapFailure("VALIDATION_FAILED");
+      }
+      validateDeviceCredentialShape(deviceId, deviceToken);
+
+      const readToken = process.env.CONVEX_READ_TOKEN;
+      if (!isValidAndroidReadToken(readToken)) {
+        androidReadBootstrapFailure("CONFIG_MISSING");
+      }
+
+      const tokenHash = await sha256Hex(deviceToken);
+      const existingDevice = await ctx.db
+        .query("mobileDevices")
+        .withIndex("by_device_id", (q) => q.eq("deviceId", deviceId))
+        .unique();
+      if (existingDevice) {
+        androidReadBootstrapFailure("DEVICE_ID_CONFLICT");
+      }
+
+      await ctx.db.insert("mobileDevices", {
+        deviceId,
+        name: "Vogel Vault Android",
+        tokenHash,
+        pairedAt: now,
+        lastSeenAt: now,
+        revokedAt: undefined,
+        pairId,
+        capabilities: [ANDROID_TODO_WRITE_CAPABILITY],
+      });
+
+      await ctx.db.patch(bootstrap._id, { claimedAt: now });
+      return {
+        ok: true as const,
+        readToken,
+        pairedAt: now,
+        deviceId,
+        capabilities: [ANDROID_TODO_WRITE_CAPABILITY],
+      };
+    }
+    if (deviceId !== undefined || deviceToken !== undefined) {
+      androidReadBootstrapFailure("VALIDATION_FAILED");
     }
 
+    const readToken = process.env.CONVEX_READ_TOKEN;
+    if (!isValidAndroidReadToken(readToken)) {
+      androidReadBootstrapFailure("CONFIG_MISSING");
+    }
     await ctx.db.patch(bootstrap._id, { claimedAt: now });
-    return { ok: true as const, readToken, pairedAt: now };
+    return { ok: true as const, readToken, pairedAt: now, capabilities: [] };
   },
 });
 
