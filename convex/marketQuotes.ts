@@ -29,6 +29,7 @@ const marketQuoteErrorCodeValidator = v.union(
 );
 type MarketQuoteStatus = "live" | "stale" | "unavailable";
 const LIVE_WINDOW_MS = 30 * 60 * 1_000;
+const MAX_FUTURE_SKEW_MS = 5 * 60 * 1_000;
 const CANONICAL_QUOTE_INSTANT =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?Z$/;
 type RefreshSummary = {
@@ -48,14 +49,16 @@ const snapshotQuoteValidator = v.object({
   errorCode: v.union(marketQuoteErrorCodeValidator, v.null()),
 });
 
-/** Accept canonical UTC whole seconds or exactly three millisecond digits. */
-function isCanonicalQuoteInstant(value: string): boolean {
-  if (!CANONICAL_QUOTE_INSTANT.test(value)) return false;
+/** Parse canonical UTC whole seconds or exactly three millisecond digits. */
+function canonicalQuoteInstantMillis(value: string): number | null {
+  if (!CANONICAL_QUOTE_INSTANT.test(value)) return null;
 
   const millis = Date.parse(value);
-  if (!Number.isFinite(millis)) return false;
+  if (!Number.isFinite(millis)) return null;
   const normalized = new Date(millis).toISOString();
-  return value === normalized || value === normalized.replace(".000Z", "Z");
+  return value === normalized || value === normalized.replace(".000Z", "Z")
+    ? millis
+    : null;
 }
 
 function warnPermissive(hatchVar: string, tokenVar: string, tokenSet: boolean) {
@@ -120,18 +123,23 @@ export const getSnapshot = query({
   handler: async (ctx, { token }) => {
     validateReadToken(token);
     const quotes = [];
+    const nowMs = Date.now();
     for (const symbol of MARKET_SYMBOLS) {
       const cached = await ctx.db
         .query("marketQuoteCache")
         .withIndex("by_symbol", (q) => q.eq("symbol", symbol))
         .unique();
+      const fetchedAt = cached?.fetchedAt;
+      const fetchedAtMs =
+        fetchedAt === undefined ? null : canonicalQuoteInstantMillis(fetchedAt);
       if (
         !cached ||
         cached.status === "unavailable" ||
         cached.priceCents === undefined ||
         cached.priceCents <= 0n ||
-        cached.fetchedAt === undefined ||
-        !isCanonicalQuoteInstant(cached.fetchedAt) ||
+        fetchedAt === undefined ||
+        fetchedAtMs === null ||
+        fetchedAtMs > nowMs + MAX_FUTURE_SKEW_MS ||
         cached.source.trim() === ""
       ) {
         quotes.push(
@@ -142,12 +150,17 @@ export const getSnapshot = query({
           ),
         );
       } else {
+        const effectiveStatus: "live" | "stale" =
+          cached.status === "stale" ||
+          nowMs >= fetchedAtMs + LIVE_WINDOW_MS
+            ? "stale"
+            : "live";
         quotes.push({
           symbol,
           priceCents: cached.priceCents,
           source: cached.source,
-          fetchedAt: cached.fetchedAt,
-          status: cached.status,
+          fetchedAt,
+          status: effectiveStatus,
           lastAttemptedAt: cached.lastAttemptedAt,
           errorCode: cached.lastErrorCode ?? null,
         });
@@ -169,10 +182,13 @@ export const recordSuccess = internalMutation({
   handler: async (ctx, args) => {
     if (args.priceCents <= 0n) throw new Error("Quote price must be positive");
     if (args.source.trim() === "") throw new Error("Quote source is required");
-    if (!isCanonicalQuoteInstant(args.fetchedAt)) {
+    const fetchedAtMs = canonicalQuoteInstantMillis(args.fetchedAt);
+    if (fetchedAtMs === null) {
       throw new Error("Quote success timestamp must be canonical UTC");
     }
-    const fetchedAtMs = Date.parse(args.fetchedAt);
+    if (fetchedAtMs > Date.now() + MAX_FUTURE_SKEW_MS) {
+      throw new Error("Quote success timestamp must not be materially future");
+    }
     const existing = await ctx.db
       .query("marketQuoteCache")
       .withIndex("by_symbol", (q) => q.eq("symbol", args.symbol))
@@ -191,6 +207,8 @@ export const recordSuccess = internalMutation({
         symbol: args.symbol,
         ...value,
       });
+    // Read-time freshness is authoritative; this scheduled mutation keeps the
+    // stored status useful for reactive clients and operational inspection.
     await ctx.scheduler.runAt(
       fetchedAtMs + LIVE_WINDOW_MS,
       internal.marketQuotes.expireLiveQuote,
@@ -232,8 +250,8 @@ export const recordFailure = internalMutation({
   },
   returns: v.union(v.literal("stale"), v.literal("unavailable")),
   handler: async (ctx, args) => {
-    if (args.attemptedAt.trim() === "") {
-      throw new Error("Quote attempt timestamp is required");
+    if (canonicalQuoteInstantMillis(args.attemptedAt) === null) {
+      throw new Error("Quote attempt timestamp must be canonical UTC");
     }
     const existing = await ctx.db
       .query("marketQuoteCache")
