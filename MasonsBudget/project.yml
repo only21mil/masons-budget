@@ -119,21 +119,19 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.sats21m.masonsbudget.tests
         GENERATE_INFOPLIST_FILE: YES
 
-  # Minimal app-like host carrying only the test Keychain access group. Apple
-  # derives Data Protection Keychain access from the main executable rather
-  # than from an in-memory XCTest bundle.
+  # Minimal app-like host for the native test. It receives only an ad-hoc local
+  # signature; restricted Keychain entitlements are deliberately absent because
+  # Apple requires a provisioning profile to authorize them.
   MasonsBudgetMacKeychainTestHost:
     type: application
     platform: macOS
     sources:
       - path: MasonsBudgetMacKeychainTestHost
         excludes:
-          - MasonsBudgetMacKeychainTestHost.entitlements
           - "**/.DS_Store"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sats21m.masonsbudget.keychain-test-host
-        CODE_SIGN_ENTITLEMENTS: MasonsBudgetMacKeychainTestHost/MasonsBudgetMacKeychainTestHost.entitlements
         GENERATE_INFOPLIST_FILE: YES
 
   # Native macOS Security-framework integration tests. This target compiles

@@ -10,8 +10,8 @@ name: Swift CI
 # manual trigger, which is the app-build approval gate. Nothing here may become
 # a second route to a shipped build: product builds disable signing outright.
 # The isolated Keychain test host alone gets a local ad-hoc signature so macOS
-# can carry its test-only entitlement; ad-hoc signing uses no identity, profile,
-# team, account, archive, export, or upload.
+# can run an app-hosted test; it has no restricted entitlement and ad-hoc
+# signing uses no identity, profile, team, account, archive, export, or upload.
 #
 # Xcode policy matches deploy.yml: self-hosted routes assert the exact installed
 # version, while the Ubuntu consistency job regenerates with pinned XcodeGen and
@@ -394,8 +394,9 @@ jobs:
       # user to have unlocked their login Keychain once after boot. The XCTest
       # bundle runs inside a minimal app-like host because Apple derives Data
       # Protection access from the main executable. Xcode applies only a local
-      # ad-hoc signature (`-`) to carry the test-only access-group entitlement;
-      # that uses no certificate, profile, team, account, or release secret.
+      # ad-hoc signature (`-`) to give that host a code-signing identifier. No
+      # restricted entitlement, certificate, profile, team, account, or release
+      # secret is used.
       - name: Native macOS Keychain migration tests
         working-directory: MasonsBudget
         run: |
