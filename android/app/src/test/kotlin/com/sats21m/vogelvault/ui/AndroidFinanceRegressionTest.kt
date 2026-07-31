@@ -10,9 +10,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.dp
@@ -67,8 +69,8 @@ class AndroidFinanceRegressionTest {
 
     @Test
     fun `live BTC quote values Total stack and Coldcard when embedded fiat is absent`() {
-        // Intentionally red on main: the Bitcoin screen currently drops the live quote
-        // before formatting canonical balance and account quantities.
+        // A live operational quote may fill only the missing USD side, and the
+        // accessibility contract must identify that quote-derived value as estimated.
         val coldcard = bitcoinAccount(
             key = "coldcard",
             label = "Coldcard",
@@ -88,10 +90,12 @@ class AndroidFinanceRegressionTest {
 
         show(Destination.BITCOIN, state, DisplayUnit.USD)
 
-        compose.onNodeWithContentDescription("Total stack, \$100,000.00").fetchSemanticsNode()
+        compose.onNodeWithContentDescription(
+            "Total stack, \$100,000.00, estimated figure",
+        ).fetchSemanticsNode()
         contentList().performScrollToNode(hasContentDescription("Coldcard", substring = true))
         compose.onNodeWithContentDescription(
-            "Coldcard, Victor, Self custody, \$75,000.00",
+            "Coldcard, Victor · Estimated, Self custody, \$75,000.00",
         ).fetchSemanticsNode()
     }
 
@@ -127,8 +131,7 @@ class AndroidFinanceRegressionTest {
 
     @Test
     fun `Mason net worth combines only his Bitcoin and retirement`() {
-        // Intentionally red on main: financeNetWorthSummary returns before selecting
-        // Mason's retirement account, so no combined child total reaches the screen.
+        // The combined child total must use only the child's scoped sources.
         val balance = bitcoinBalance(
             owner = FamilyMember.MASON,
             totalSats = 25_000_000L,
@@ -159,8 +162,7 @@ class AndroidFinanceRegressionTest {
 
     @Test
     fun `retirement keeps holdings and current Bitcoin visible when income is unavailable`() {
-        // Intentionally red on main: current Bitcoin is rendered only inside the
-        // projection summary, which disappears when income or budget is unavailable.
+        // Current Bitcoin is factual snapshot data, independent from projection inputs.
         val balance = bitcoinBalance(
             owner = FamilyMember.VICTOR,
             totalSats = 100_000_000L,
@@ -205,9 +207,11 @@ class AndroidFinanceRegressionTest {
         compose.onNodeWithContentDescription("Index holding", substring = true)
             .fetchSemanticsNode()
         contentList().performScrollToNode(hasContentDescription("Current Bitcoin", substring = true))
-        compose.onNodeWithContentDescription("Current Bitcoin, 1.00000000 BTC", substring = true)
-            .fetchSemanticsNode()
-        contentList().performScrollToNode(hasContentDescription("Income unavailable", substring = true))
+        compose.onNodeWithContentDescription(
+            "Current Bitcoin stack, 1.00000000 BTC, balance as of 2026-07-31",
+        ).fetchSemanticsNode()
+        contentList().performScrollToNode(hasText("Income unavailable"))
+        compose.onNodeWithText("Income unavailable").fetchSemanticsNode()
     }
 
     @Test
