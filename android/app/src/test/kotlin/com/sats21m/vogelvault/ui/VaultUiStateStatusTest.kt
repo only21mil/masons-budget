@@ -57,4 +57,30 @@ class VaultUiStateStatusTest {
 
         assertEquals(Freshness.LIVE, VaultUiState(data = data).worstStatus)
     }
+
+    @Test
+    fun `global status includes late financial slices and finance quote reads`() {
+        val base = VaultUiState.of(FamilyMember.VICTOR, status = Freshness.LIVE)
+
+        assertEquals(
+            Freshness.ERROR,
+            base.copy(financeStatus = Freshness.ERROR).worstStatus,
+        )
+        assertEquals(
+            Freshness.LOADING,
+            base.copy(marketQuoteStatus = Freshness.LOADING).worstStatus,
+        )
+        assertEquals(
+            Freshness.STALE,
+            base.copy(data = base.data.copy(btcBalance = base.data.btcBalance.copy(status = Freshness.STALE))).worstStatus,
+        )
+        assertEquals(
+            Freshness.ERROR,
+            base.copy(data = base.data.copy(income = base.data.income.copy(status = Freshness.ERROR))).worstStatus,
+        )
+        assertEquals(
+            Freshness.ERROR,
+            base.copy(data = base.data.copy(btcBillPays = base.data.btcBillPays.copy(status = Freshness.ERROR))).worstStatus,
+        )
+    }
 }

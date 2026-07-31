@@ -8,6 +8,7 @@ import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.FinanceQueryRepositories
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
+import com.sats21m.vogelvault.data.RecoveringFinanceReadSource
 import com.sats21m.vogelvault.data.RowQueryRepositories
 import com.sats21m.vogelvault.data.SecureConvexConfigSource
 import com.sats21m.vogelvault.data.SecureConvexSyncTokenSource
@@ -153,7 +154,11 @@ open class VaultApplication : Application() {
                 @Suppress("UNCHECKED_CAST")
                 return VaultViewModel(
                     rowSource = rowDataSource,
-                    financeSource = FinanceQueryRepositories.convex(convexConfigSource),
+                    financeSource = RecoveringFinanceReadSource(
+                        remote = FinanceQueryRepositories.convex(convexConfigSource),
+                        configSource = convexConfigSource,
+                        onUnauthorized = ::recoverRejectedConvexConfig,
+                    ),
                     remoteInitiallyEnabled = convexConfigSource.current().allowsRemoteRead,
                     enableRemote = ::enableRemoteRows,
                 ) as T
