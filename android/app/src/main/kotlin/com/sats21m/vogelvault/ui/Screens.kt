@@ -97,13 +97,21 @@ private data class ScreenCollections(
 )
 
 private data class DashboardProjection(
+    val month: String?,
     val activity: List<Transaction>,
     val accounts: List<BtcAccount>,
     val balance: BtcBalance?,
-    val incomeEntries: List<IncomeEntry>,
+    val income: DashboardIncomeValues?,
     val spendCents: Long,
-    val incomeCents: Long?,
     val openTodos: Int,
+)
+
+internal data class DashboardIncomeValues(
+    val month: String,
+    val mtdCents: Long,
+    val ytdCents: Long,
+    val entries: List<IncomeEntry>,
+    val source: String,
 )
 
 private data class BitcoinProjection(
@@ -129,12 +137,40 @@ internal fun ReadModel.dashboardIncomeEntries(
         income.value.netWorthScopeFor(viewer).filter { it.month == selected }
     }.orEmpty()
 
-internal fun ReadModel.dashboardIncomeCents(
+internal fun ReadModel.dashboardIncomeValues(
     viewer: FamilyMember,
     month: String?,
-): Long? {
-    val rows = dashboardIncomeEntries(viewer, month)
-    return if (incomeFiguresUnavailable || rows.isEmpty()) null else rows.sumOf { it.amountCents }
+): DashboardIncomeValues? {
+    val selectedMonth = month ?: return null
+    val canonicalBudget = budget.value
+    if (selectedMonth == canonicalBudget?.month) {
+        if (budget.requiredProjectionUnavailable || !viewer.sharesNetWorth(canonicalBudget.owner)) {
+            return null
+        }
+        val summary = canonicalBudget.income ?: return null
+        return DashboardIncomeValues(
+            month = selectedMonth,
+            mtdCents = summary.mtdIncomeCents,
+            ytdCents = summary.ytdIncomeCents,
+            entries = dashboardIncomeEntries(viewer, selectedMonth),
+            source = budget.source,
+        )
+    }
+
+    if (income.requiredProjectionUnavailable) return null
+    val scopedEntries = income.value.netWorthScopeFor(viewer)
+    val monthEntries = scopedEntries.filter { it.month == selectedMonth }
+    if (monthEntries.isEmpty()) return null
+    val selectedYear = selectedMonth.take(4)
+    return DashboardIncomeValues(
+        month = selectedMonth,
+        mtdCents = monthEntries.sumOf { it.amountCents },
+        ytdCents = scopedEntries
+            .filter { it.month.take(4) == selectedYear && it.month <= selectedMonth }
+            .sumOf { it.amountCents },
+        entries = monthEntries,
+        source = income.source,
+    )
 }
 
 internal fun ReadModel.netWorthBalanceForDisplay(): BtcBalance? =
@@ -174,9 +210,7 @@ fun ScreenHost(
     val accountsInput = state.data.btcAccounts.value
     val buysInput = state.data.btcBuys.value
     val billPaysInput = state.data.btcBillPays.value
-    val incomeInput = state.data.income.value
     val todosInput = state.data.todos.value
-    val incomeFiguresUnavailable = state.data.incomeFiguresUnavailable
     val netWorthBalance = state.data.netWorthBalanceForDisplay()
     val btcBuysTitle = stringResource(R.string.btc_buys_screen_title)
     val btcBillPaysTitle = stringResource(R.string.btc_bill_pays_screen_title)
@@ -227,19 +261,19 @@ fun ScreenHost(
     } else {
         null
     }
-    val dashboardIncomeEntries = remember(profile, month, incomeInput) {
-        state.data.dashboardIncomeEntries(profile, month)
+    val dashboardIncome = remember(profile, month, state.data.budget, state.data.income) {
+        state.data.dashboardIncomeValues(profile, month)
     }
-    val dashboardProjection = remember(month, collections, dashboardIncomeEntries, incomeFiguresUnavailable) {
+    val dashboardProjection = remember(month, collections, dashboardIncome) {
         val budgetTransactions = collections.budgetTransactions.inMonth(month ?: "")
         val activity = collections.visibleTransactions.inMonth(month ?: "").take(6)
         DashboardProjection(
+            month = month,
             activity = activity,
             accounts = collections.netWorthAccounts,
             balance = collections.netWorthBalance,
-            incomeEntries = dashboardIncomeEntries,
+            income = dashboardIncome,
             spendCents = budgetTransactions.sumOf { it.spendAmount },
-            incomeCents = state.data.dashboardIncomeCents(profile, month),
             openTodos = collections.visibleTodos.count { !it.done },
         )
     }
@@ -511,7 +545,7 @@ private fun VaultLazyListScope.dashboard(
     projection: DashboardProjection,
     displayUnit: DisplayUnit,
 ) {
-    val incomeUnavailable = projection.incomeCents == null
+    val incomeUnavailable = projection.income == null
     val balanceUnavailable = projection.balance == null
 
     item {
@@ -525,9 +559,9 @@ private fun VaultLazyListScope.dashboard(
                     tone = VaultNegative,
                 ),
                 Kpi(
-                    "Income",
+                    "Income MTD",
                     figure(incomeUnavailable) {
-                        Money.formatUsd(requireNotNull(projection.incomeCents))
+                        Money.formatUsd(requireNotNull(projection.income).mtdCents)
                     },
                     tone = VaultPositive,
                 ),
@@ -578,24 +612,38 @@ private fun VaultLazyListScope.dashboard(
     }
     if (incomeUnavailable) {
         item {
-            Panel("Income", state.data.income.source) {
-                StateBlock(state.data.income.status)
+            val currentBudgetMonth = state.data.budget.value?.month == projection.month
+            Panel("Income", if (currentBudgetMonth) state.data.budget.source else state.data.income.source) {
+                StateBlock(if (currentBudgetMonth) state.data.budget.status else state.data.income.status)
             }
         }
     } else {
-        keyedPanel(
-            sectionKey = "dashboard-income",
-            title = "Income",
-            source = state.data.income.source,
-            rows = projection.incomeEntries.take(6),
-            rowKey = IncomeEntry::id,
-        ) { entry ->
-            LedgerRow(
-                primary = entry.sourceName,
-                secondary = entry.date,
-                figure = Money.formatUsd(entry.amountCents),
-                figureColor = VaultPositive,
-            )
+        item {
+            val income = requireNotNull(projection.income)
+            Panel("Income", income.source) {
+                LedgerRow(
+                    primary = "MTD",
+                    secondary = income.month,
+                    figure = Money.formatUsd(income.mtdCents),
+                    figureColor = VaultPositive,
+                )
+                HorizontalHairline()
+                LedgerRow(
+                    primary = "YTD",
+                    secondary = income.month.take(4),
+                    figure = Money.formatUsd(income.ytdCents),
+                    figureColor = VaultPositive,
+                )
+                income.entries.take(6).forEach { entry ->
+                    HorizontalHairline()
+                    LedgerRow(
+                        primary = entry.sourceName,
+                        secondary = entry.date,
+                        figure = Money.formatUsd(entry.amountCents),
+                        figureColor = VaultPositive,
+                    )
+                }
+            }
         }
     }
     accountList(
