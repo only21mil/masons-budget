@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer"
+import { readFileSync } from "node:fs"
 
 import { describe, expect, it } from "vitest"
 
@@ -25,6 +26,15 @@ const settings = resolveRemoteReadSettings({
   VOGEL_VAULT_CONVEX_URL: "https://example.invalid",
   VOGEL_VAULT_CONVEX_READ_TOKEN: "not-a-real-secret",
 })
+
+const sharesContract = JSON.parse(
+  readFileSync(
+    new URL("../../shared/domain/fixtures/finance-market-cases.json", import.meta.url),
+    "utf8",
+  ),
+) as {
+  sharesDecimalContract: { valid: string[]; invalid: string[] }
+}
 
 function int64(value: bigint): { readonly $integer: string } {
   const bytes = Buffer.alloc(8)
@@ -244,6 +254,51 @@ describe("main-process finance and quote transport", () => {
     })
     expect(JSON.stringify(bodies)).not.toContain("symbol")
     expect(JSON.stringify(bodies)).not.toContain("url")
+  })
+
+  it("enforces the shared shares fixture at the Electron main-process boundary", async () => {
+    const queryShares = async (sharesDecimal: string, lot = false) => {
+      const holding = lot
+        ? wireHolding({
+            lots: [{
+              date: "2026-07-01",
+              type: "401k contribution",
+              pricePerShareCents: int64(32_000n),
+              sharesDecimal,
+              amountInvestedCents: int64(80_000n),
+            }],
+          })
+        : wireHolding({ sharesDecimal })
+      const repository = createConvexRowRepository({
+        configuration: () => ({ generation: 1, settings }),
+        post: async () => success({
+          complete: true,
+          document: {
+            lastUpdated: "2026-07-30",
+            accounts: [wireAccount("victor", { holdings: [holding] })],
+            updatedAtMs: 1,
+          },
+        }),
+      })
+      return repository.query({ kind: "finance", scope: "netWorth" }, "victor")
+    }
+
+    for (const value of sharesContract.sharesDecimalContract.valid) {
+      await expect(queryShares(value)).resolves.toMatchObject({
+        status: "ok",
+        value: { accounts: [{ holdings: [{ sharesDecimal: value }] }] },
+      })
+    }
+    for (const value of sharesContract.sharesDecimalContract.invalid) {
+      await expect(queryShares(value)).resolves.toEqual({
+        status: "error",
+        code: "invalid-response",
+      })
+    }
+    await expect(queryShares("1e3", true)).resolves.toEqual({
+      status: "error",
+      code: "invalid-response",
+    })
   })
 
   it("rejects child accounts leaked into an adult net-worth response", async () => {

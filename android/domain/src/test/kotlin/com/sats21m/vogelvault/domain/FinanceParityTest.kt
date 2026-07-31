@@ -160,7 +160,22 @@ class FinanceParityTest {
                 row["label"].asString,
             )
         }
-        assertFailsWith<NumberFormatException> { Money.sharesToValueCents("1.2.3", 100L) }
+        assertFailsWith<IllegalArgumentException> { Money.sharesToValueCents("1.2.3", 100L) }
+    }
+
+    @Test
+    fun `shares use the bounded canonical decimal fixture contract`() {
+        val contract = fixtures.getAsJsonObject("sharesDecimalContract")
+        assertEquals(contract["maxLength"].asInt, Money.SHARES_DECIMAL_MAX_LENGTH)
+        assertEquals(contract["maxPrecision"].asInt, Money.SHARES_DECIMAL_MAX_PRECISION)
+        assertEquals(contract["maxScale"].asInt, Money.SHARES_DECIMAL_MAX_SCALE)
+        assertEquals(contract["maxIntegerDigits"].asInt, Money.SHARES_DECIMAL_MAX_INTEGER_DIGITS)
+        for (entry in contract.getAsJsonArray("valid")) {
+            assertEquals(entry.asString, Money.sharesDecimalOrNull(entry.asString))
+        }
+        for (entry in contract.getAsJsonArray("invalid")) {
+            assertEquals(null, Money.sharesDecimalOrNull(entry.asString), entry.asString)
+        }
     }
 
     @Test

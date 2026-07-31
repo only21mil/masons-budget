@@ -7,6 +7,11 @@
 
 import { Buffer } from "node:buffer"
 
+import {
+  SHARES_DECIMAL_MAX_LENGTH,
+  assertSharesDecimal,
+} from "@vogel-vault/domain/money"
+
 import type {
   VogelVaultBtcAccountRow,
   VogelVaultBtcBalanceDocument,
@@ -547,9 +552,11 @@ function budgetDocument(value: unknown, viewer: VogelVaultMember): VogelVaultBud
 }
 
 function decimalText(record: Record<string, unknown>, key: string): string {
-  const value = text(record, key, 256)
-  if (!/^\d+(?:\.\d*)?$/.test(value)) throw new InvalidValue()
-  return value
+  try {
+    return assertSharesDecimal(text(record, key, SHARES_DECIMAL_MAX_LENGTH))
+  } catch {
+    throw new InvalidValue()
+  }
 }
 
 function financeLot(value: unknown): VogelVaultFinanceLot {

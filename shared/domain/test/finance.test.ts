@@ -21,7 +21,15 @@ import {
   valueFinanceHolding,
 } from "../src/finance.ts"
 import { type FamilyMember } from "../src/family.ts"
-import { sharesToValueCents, usdCentsToSats } from "../src/money.ts"
+import {
+  SHARES_DECIMAL_MAX_INTEGER_DIGITS,
+  SHARES_DECIMAL_MAX_LENGTH,
+  SHARES_DECIMAL_MAX_PRECISION,
+  SHARES_DECIMAL_MAX_SCALE,
+  assertSharesDecimal,
+  sharesToValueCents,
+  usdCentsToSats,
+} from "../src/money.ts"
 import { type Transaction } from "../src/readModel.ts"
 
 interface FixtureQuote {
@@ -63,6 +71,14 @@ interface FinanceFixtures {
     pricePerShareCents: string
     expectedValueCents: string
   }>
+  sharesDecimalContract: {
+    maxLength: number
+    maxPrecision: number
+    maxScale: number
+    maxIntegerDigits: number
+    valid: string[]
+    invalid: string[]
+  }
   budgetHealth: Array<{
     label: string
     plannedCents: string
@@ -239,7 +255,29 @@ test("shared fractional-share vectors never use floating point", () => {
       row.label,
     )
   }
-  assert.throws(() => sharesToValueCents("1.2.3", 100n), /Not a decimal share quantity/)
+  assert.throws(() => sharesToValueCents("1.2.3", 100n), /canonical share quantity/)
+})
+
+test("shares use the bounded canonical decimal fixture contract", () => {
+  const contract = fixtures.sharesDecimalContract
+  assert.deepEqual(
+    {
+      maxLength: SHARES_DECIMAL_MAX_LENGTH,
+      maxPrecision: SHARES_DECIMAL_MAX_PRECISION,
+      maxScale: SHARES_DECIMAL_MAX_SCALE,
+      maxIntegerDigits: SHARES_DECIMAL_MAX_INTEGER_DIGITS,
+    },
+    {
+      maxLength: contract.maxLength,
+      maxPrecision: contract.maxPrecision,
+      maxScale: contract.maxScale,
+      maxIntegerDigits: contract.maxIntegerDigits,
+    },
+  )
+  for (const value of contract.valid) assert.equal(assertSharesDecimal(value), value)
+  for (const value of contract.invalid) {
+    assert.throws(() => assertSharesDecimal(value), /share quantity/i, value)
+  }
 })
 
 test("budget health matches iOS green, yellow, red, and percentage boundaries", () => {

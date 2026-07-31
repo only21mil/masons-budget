@@ -63,14 +63,37 @@
       "sharesDecimal": "0.005",
       "pricePerShareCents": "100",
       "expectedValueCents": "1"
-    },
-    {
-      "label": "negative half cent rounds away from zero",
-      "sharesDecimal": "-0.005",
-      "pricePerShareCents": "100",
-      "expectedValueCents": "-1"
     }
   ],
+  "sharesDecimalContract": {
+    "maxLength": 25,
+    "maxPrecision": 24,
+    "maxScale": 12,
+    "maxIntegerDigits": 12,
+    "valid": [
+      "0",
+      "0.0",
+      "2.5000",
+      "12.34567890",
+      "1393.9646307166",
+      "999999999999.999999999999"
+    ],
+    "invalid": [
+      "",
+      "-0.005",
+      "+1",
+      "1e3",
+      " 1",
+      "1 ",
+      "01",
+      "00.1",
+      ".5",
+      "1.",
+      "1.1234567890123",
+      "1000000000000",
+      "999999999999.9999999999990"
+    ]
+  },
   "budgetHealth": [
     {
       "label": "empty",

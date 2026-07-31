@@ -9,7 +9,7 @@ import com.sats21m.vogelvault.domain.MarketQuote
 import com.sats21m.vogelvault.domain.MarketQuoteSnapshot
 import com.sats21m.vogelvault.domain.MarketQuoteStatus
 import com.sats21m.vogelvault.domain.MarketSymbol
-import java.math.BigDecimal
+import com.sats21m.vogelvault.domain.Money
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -158,18 +158,8 @@ private inline fun <T> JsonObject.optional(
 
 private fun JsonObject.exactDecimal(key: String): String? {
     val value = nonEmptyString(key) ?: return null
-    if (value.length > MAX_EXACT_DECIMAL_LENGTH || !EXACT_DECIMAL.matches(value)) return null
-    return try {
-        BigDecimal(value)
-        value
-    } catch (_: NumberFormatException) {
-        null
-    }
+    return Money.sharesDecimalOrNull(value)
 }
-
-/** Prevent a server string from driving unbounded decimal allocation on-device. */
-private const val MAX_EXACT_DECIMAL_LENGTH = 64
-private val EXACT_DECIMAL = Regex("^-?\\d+(?:\\.\\d*)?$")
 
 private fun <T> JsonObject.objectArray(
     key: String,

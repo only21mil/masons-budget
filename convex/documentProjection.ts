@@ -23,6 +23,44 @@ export type BtcBalanceSourceFile =
 export type FamilyMember = "victor" | "rachel" | "mason" | "maddox";
 export type Custody = "exchange" | "self_custody";
 
+export const SHARES_DECIMAL_MAX_INTEGER_DIGITS = 12;
+export const SHARES_DECIMAL_MAX_SCALE = 12;
+export const SHARES_DECIMAL_MAX_PRECISION = 24;
+export const SHARES_DECIMAL_MAX_LENGTH = 25;
+
+const SHARES_DECIMAL_PATTERN = /^(0|[1-9]\d*)(?:\.(\d+))?$/;
+
+/**
+ * Exact share quantities use one bounded, language-neutral wire contract.
+ * Trailing fractional zeroes retain source precision; signs, exponents,
+ * whitespace, leading-zero ambiguity, and allocation-sized inputs are refused.
+ */
+export function assertSharesDecimal(
+  value: unknown,
+  context = "sharesDecimal",
+): string {
+  if (typeof value !== "string" || value.length > SHARES_DECIMAL_MAX_LENGTH) {
+    throw new RangeError(`${context} is not a canonical share quantity`);
+  }
+
+  const match = SHARES_DECIMAL_PATTERN.exec(value);
+  if (!match) {
+    throw new RangeError(`${context} is not a canonical share quantity`);
+  }
+
+  const whole = match[1]!;
+  const fraction = match[2] ?? "";
+  if (
+    whole.length > SHARES_DECIMAL_MAX_INTEGER_DIGITS ||
+    fraction.length > SHARES_DECIMAL_MAX_SCALE ||
+    whole.length + fraction.length > SHARES_DECIMAL_MAX_PRECISION
+  ) {
+    throw new RangeError(`${context} exceeds the share quantity bounds`);
+  }
+
+  return value;
+}
+
 const FAMILY_MEMBERS: readonly FamilyMember[] = [
   "victor",
   "rachel",
@@ -715,16 +753,9 @@ function optionalText(value: unknown): string | undefined {
 }
 
 function decimalText(value: unknown, context: string): string {
-  if (value === undefined || value === null || value === "") return "0";
-  const raw = String(value).trim();
-  if (!DECIMAL_PATTERN.test(raw)) {
-    throw new RangeError(`${context} is not a decimal value: ${JSON.stringify(value)}`);
-  }
-  return raw;
+  if (value === undefined || value === null) return "0";
+  return assertSharesDecimal(String(value), context);
 }
-
-const DECIMAL_PATTERN =
-  /^[+-]?(?:(?:\d+)(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 
 /**
  * Decimal text to integer minor units, rounded half away from zero without

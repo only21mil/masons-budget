@@ -5,6 +5,7 @@ import com.sats21m.vogelvault.domain.HoldingValuationBasis
 import com.sats21m.vogelvault.domain.MarketQuoteStatus
 import com.sats21m.vogelvault.domain.MarketSymbol
 import com.sats21m.vogelvault.domain.selectNetWorth
+import java.io.File
 import java.util.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -13,6 +14,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -175,19 +177,33 @@ class FinanceQueryRepositoryTest {
     }
 
     @Test
-    fun `share quantities reject exponent and unbounded lexical forms`() {
-        val malformed = listOf(
-            financeEnvelope().replace(
-                "\"sharesDecimal\":\"12.34567890\"",
-                "\"sharesDecimal\":\"1e3\"",
-            ),
-            financeEnvelope().replace(
-                "\"sharesDecimal\":\"12.34567890\"",
-                "\"sharesDecimal\":\"${"1".repeat(65)}\"",
-            ),
-        )
+    fun `share quantities enforce the shared fixture at the Android wire boundary`() {
+        val contract = loadSharesContract()
+        for (entry in contract["valid"]!!.jsonArray) {
+            val value = entry.jsonPrimitive.content
+            val result = assertIs<ConvexResult.Ok<FinanceDocumentSnapshot>>(
+                runBlocking {
+                    repositoryWith(
+                        RecordingPoster(
+                            success(
+                                financeEnvelope().replace(
+                                    "\"sharesDecimal\":\"12.34567890\"",
+                                    "\"sharesDecimal\":\"$value\"",
+                                ),
+                            ),
+                        ),
+                    ).getFinanceDocument(FamilyMember.VICTOR, RowVisibilityScope.NET_WORTH)
+                },
+            )
+            assertEquals(value, result.value.document!!.accounts.first().holdings.first().sharesDecimal)
+        }
 
-        for (payload in malformed) {
+        for (entry in contract["invalid"]!!.jsonArray) {
+            val value = entry.jsonPrimitive.content
+            val payload = financeEnvelope().replace(
+                "\"sharesDecimal\":\"12.34567890\"",
+                "\"sharesDecimal\":\"$value\"",
+            )
             assertEquals(
                 ConvexResult.Failed("unexpected payload shape"),
                 runBlocking {
@@ -196,6 +212,7 @@ class FinanceQueryRepositoryTest {
                         RowVisibilityScope.NET_WORTH,
                     )
                 },
+                value,
             )
         }
     }
@@ -221,6 +238,16 @@ class FinanceQueryRepositoryTest {
             ),
             http = poster,
         )
+
+    private fun loadSharesContract() = sequence<File> {
+        var directory: File? = File(checkNotNull(System.getProperty("user.dir")))
+        while (directory != null) {
+            yield(File(directory, "shared/domain/fixtures/finance-market-cases.json"))
+            directory = directory.parentFile
+        }
+    }.first { it.isFile }.let { file ->
+        Json.parseToJsonElement(file.readText()).jsonObject["sharesDecimalContract"]!!.jsonObject
+    }
 
     private fun financeEnvelope(): String =
         """{
