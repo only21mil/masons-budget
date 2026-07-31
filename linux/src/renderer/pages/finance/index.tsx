@@ -1145,7 +1145,9 @@ export function BudgetCategoryTransactionsDialog({
       key: "amount",
       header: "Amount",
       numeric: true,
-      render: (row) => <AmountCell transaction={row} />,
+      render: (row) => (
+        <AmountCell transaction={row} displayUnit="usd" btcPriceCents={null} />
+      ),
     },
     {
       key: "actions",
