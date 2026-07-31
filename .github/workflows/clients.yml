@@ -458,6 +458,31 @@ jobs:
             sha512sum --check
           mv "$partial_path" "$runtime_path"
 
+      - name: Verify Android builds cannot embed a read credential
+        if: steps.probe.outputs.app == 'true'
+        run: |
+          set -euo pipefail
+          injection_marker="ci-build-token-must-never-enter-apk"
+
+          CONVEX_READ_TOKEN="$injection_marker" \
+            ./gradlew \
+              :app:generateDebugBuildConfig \
+              :app:generateReleaseBuildConfig \
+              --no-daemon \
+              --rerun-tasks
+
+          for variant in debug release; do
+            build_config="app/build/generated/source/buildConfig/$variant/com/sats21m/vogelvault/BuildConfig.java"
+            test -f "$build_config"
+            grep -Fqx '  public static final String CONVEX_READ_TOKEN = "";' "$build_config"
+
+            if grep -Fq "$injection_marker" "$build_config"; then
+              echo "::error::Android $variant BuildConfig accepted a build-time read credential."
+              exit 1
+            fi
+          done
+        working-directory: android
+
       # Pull requests and other untrusted refs deliberately stay on AGP's
       # per-run debug key. Repository key material may exist only when the
       # default branch itself is built by a push or an explicit dispatch.
@@ -498,31 +523,6 @@ jobs:
       - name: Domain parity tests (shared fixture, no Android SDK)
         if: steps.probe.outputs.gradle == 'true'
         run: ./gradlew :domain:test --no-daemon
-        working-directory: android
-
-      - name: Verify Android builds cannot embed a read credential
-        if: steps.probe.outputs.app == 'true'
-        run: |
-          set -euo pipefail
-          injection_marker="ci-build-token-must-never-enter-apk"
-
-          CONVEX_READ_TOKEN="$injection_marker" \
-            ./gradlew \
-              :app:generateDebugBuildConfig \
-              :app:generateReleaseBuildConfig \
-              --no-daemon \
-              --rerun-tasks
-
-          for variant in debug release; do
-            build_config="app/build/generated/source/buildConfig/$variant/com/sats21m/vogelvault/BuildConfig.java"
-            test -f "$build_config"
-            grep -Fqx '  public static final String CONVEX_READ_TOKEN = "";' "$build_config"
-
-            if grep -Fq "$injection_marker" "$build_config"; then
-              echo "::error::Android $variant BuildConfig accepted a build-time read credential."
-              exit 1
-            fi
-          done
         working-directory: android
 
       - name: Assemble stable-signed debug APK
