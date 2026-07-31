@@ -147,6 +147,20 @@ internal sealed class ConvexQuery(val path: String) {
         )
     }
 
+    data class GetFinanceDocument(
+        val viewer: FamilyMember,
+        val scope: RowVisibilityScope,
+    ) : ConvexQuery("tables:getFinanceDocument") {
+        override fun arguments(): JsonObject = jsonArguments(
+            "viewer" to JsonPrimitive(viewer.key),
+            "scope" to JsonPrimitive(scope.wireValue),
+        )
+    }
+
+    data object GetMarketQuoteSnapshot : ConvexQuery("marketQuotes:getSnapshot") {
+        override fun arguments(): JsonObject = JsonObject(emptyMap())
+    }
+
     data object RowCounts : ConvexQuery("tables:rowCounts") {
         override fun arguments(): JsonObject = JsonObject(emptyMap())
     }
