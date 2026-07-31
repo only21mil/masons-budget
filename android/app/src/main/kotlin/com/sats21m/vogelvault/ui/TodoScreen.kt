@@ -107,6 +107,10 @@ internal fun TodoScreen(
         gateway = gateway,
         snackbar = snackbar,
         onWriteSucceeded = onWriteSucceeded,
+        onCredentialRejected = {
+            credentialStored = false
+            application?.removeConvexWriteCredential()
+        },
         nowMillis = nowMillis,
     )
 
@@ -220,6 +224,14 @@ internal fun TodoScreen(
                         todo = todo,
                         viewer = viewer,
                         enabled = credentialStored && todo.id !in writes.busyIds,
+                        deleteEnabled = credentialStored &&
+                            todo.id !in writes.busyIds &&
+                            !writes.deletePending,
+                        deleteDisabledReason = if (writes.deletePending) {
+                            stringResource(R.string.todo_delete_pending_named, todo.title)
+                        } else {
+                            null
+                        },
                         onToggleDone = {
                             mutate(todo.withCompletion(!todo.done, Instant.now()), TodoWriteAction.UPDATE)
                         },

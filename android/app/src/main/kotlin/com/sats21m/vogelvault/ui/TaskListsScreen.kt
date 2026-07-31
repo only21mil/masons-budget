@@ -124,6 +124,10 @@ private fun ProfileTaskListsScreen(
         gateway = gateway,
         snackbar = snackbar,
         onWriteSucceeded = onWriteSucceeded,
+        onCredentialRejected = {
+            credentialStored = false
+            application?.removeConvexWriteCredential()
+        },
         nowMillis = nowMillis,
     )
     val context = LocalContext.current
@@ -146,6 +150,7 @@ private fun ProfileTaskListsScreen(
     val route = TaskListRoute.entries.firstOrNull { it.name == routeName } ?: TaskListRoute.HUB
     val actions = TaskRowActions(
         enabled = { credentialStored && it.id !in writes.busyIds },
+        deletePending = writes.deletePending,
         onToggleDone = { todo ->
             writes.upsert(todo.withCompletion(!todo.done, Instant.now())) { changed ->
                 localTodos = localTodos.replaceTodo(changed)
@@ -175,6 +180,10 @@ private fun ProfileTaskListsScreen(
                 addingTask = false
             },
             onWriteSucceeded = onWriteSucceeded,
+            onCredentialRejected = {
+                credentialStored = false
+                application?.removeConvexWriteCredential()
+            },
         )
     }
 
@@ -204,7 +213,10 @@ private fun ProfileTaskListsScreen(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.md)) {
-        Button(onClick = { addingTask = true }) {
+        Button(
+            onClick = { addingTask = true },
+            enabled = credentialStored,
+        ) {
             Text(stringResource(R.string.tasks_add))
         }
         if (!credentialStored) {
@@ -277,6 +289,7 @@ private fun ProfileTaskListsScreen(
 
 private data class TaskRowActions(
     val enabled: (TodoItem) -> Boolean,
+    val deletePending: Boolean,
     val onToggleDone: (TodoItem) -> Unit,
     val onToggleFlag: (TodoItem) -> Unit,
     val onEdit: (TodoItem) -> Unit,
@@ -482,6 +495,12 @@ private fun TaskEditableRow(
         todo = task,
         viewer = viewer,
         enabled = actions.enabled(task),
+        deleteEnabled = actions.enabled(task) && !actions.deletePending,
+        deleteDisabledReason = if (actions.deletePending) {
+            stringResource(R.string.todo_delete_pending_named, task.title)
+        } else {
+            null
+        },
         onToggleDone = { actions.onToggleDone(task) },
         onToggleFlag = { actions.onToggleFlag(task) },
         onEdit = { actions.onEdit(task) },

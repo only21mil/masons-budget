@@ -6,6 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -15,6 +17,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
@@ -33,6 +37,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.channels.Channel
@@ -85,6 +90,7 @@ class TaskListsCrudScreenTest {
     fun startComposeHost() {
         application = RuntimeEnvironment.getApplication() as TaskListsCrudApplication
         application.poster.reset()
+        application.resetCredential()
         refreshCount = 0
         activityController = Robolectric.buildActivity(ComponentActivity::class.java)
         activityController.get().setTheme(R.style.Theme_VogelVault)
@@ -217,6 +223,105 @@ class TaskListsCrudScreenTest {
         compose.onNodeWithText(allLists).fetchSemanticsNode()
     }
 
+    @Test
+    fun `a second delete stays disabled until the first undo session closes`() {
+        val second = todo.copy(
+            id = "task-lists-second-delete",
+            title = "Archive tax receipts",
+            project = "Records",
+            area = "Finance",
+        )
+        showTasks(listOf(todo, second))
+
+        deleteTodo(todo.title)
+
+        compose.onNodeWithContentDescription(
+            application.getString(R.string.todo_delete_pending_named, second.title),
+        ).assertIsNotEnabled()
+        assertEquals(1, application.poster.requestCount, "a second delete displaced the first request")
+
+        application.poster.answer(success("deleted"))
+        settle()
+
+        compose.onNodeWithContentDescription(
+            application.getString(R.string.todo_delete_pending_named, second.title),
+        ).assertIsNotEnabled()
+        compose.onNodeWithText(application.getString(R.string.todo_undo)).performClick()
+        settle()
+        application.poster.answer(success("restored"))
+        settle()
+
+        compose.onNodeWithContentDescription(
+            application.getString(R.string.todo_delete_named, second.title),
+        ).assertIsEnabled()
+        assertEquals(2, application.poster.requestCount)
+    }
+
+    @Test
+    fun `add uses canonical gateway payload and rejected credentials disable recovery controls`() {
+        compose.onNodeWithText(application.getString(R.string.tasks_add)).performClick()
+        settle()
+        compose.onNodeWithText(application.getString(R.string.tasks_task_title))
+            .performTextInput("Schedule annual physical")
+        compose.onNode(
+            hasText(application.getString(R.string.tasks_save)) and hasClickAction(),
+        ).assertIsEnabled().performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        settle()
+        compose.waitUntil(timeoutMillis = 5_000L) { application.poster.requestCount > 0 }
+
+        val body = assertNotNull(application.poster.lastBody)
+        assertTrue(body.contains("\"title\":\"Schedule annual physical\""), body)
+        assertTrue(body.contains("\"text\":\"Schedule annual physical\""), body)
+        assertTrue(body.contains("\"sync_source\":\"android-app\""), body)
+
+        application.poster.answer(
+            HttpTextResponse(
+                200,
+                """{"status":"error","errorData":"Unauthorized: invalid sync token"}""",
+            ),
+        )
+        settle()
+
+        assertEquals(1, application.credentialRemovalCalls)
+        assertFalse(application.hasConvexWriteCredential())
+        compose.onNodeWithText("Task not added: the sync credential is missing or was rejected")
+            .fetchSemanticsNode()
+        compose.onNodeWithText(application.getString(R.string.tasks_save)).assertIsNotEnabled()
+        compose.onNodeWithText(application.getString(R.string.tasks_cancel)).performClick()
+        settle()
+        compose.onNodeWithText(application.getString(R.string.todo_write_access_title))
+            .fetchSemanticsNode()
+        compose.onNodeWithText(application.getString(R.string.tasks_add)).assertIsNotEnabled()
+        compose.onNodeWithContentDescription(markCompleteDescription(todo.title))
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun `structured unauthorized edit result clears the credential and disables rows`() {
+        compose.onNodeWithContentDescription(markCompleteDescription(todo.title))
+            .performScrollTo()
+            .performClick()
+        settle()
+
+        application.poster.answer(
+            HttpTextResponse(
+                200,
+                """{"status":"error","errorData":"Unauthorized: invalid sync token"}""",
+            ),
+        )
+        settle()
+
+        assertEquals(1, application.credentialRemovalCalls)
+        assertFalse(application.hasConvexWriteCredential())
+        assertEquals(0, refreshCount)
+        compose.onNodeWithText("Change not saved: the sync credential is missing or was rejected")
+            .fetchSemanticsNode()
+        compose.onNodeWithContentDescription(markCompleteDescription(todo.title))
+            .assertIsNotEnabled()
+        compose.onNodeWithText(application.getString(R.string.todo_write_access_title))
+            .fetchSemanticsNode()
+    }
+
     private fun assertTaskActions(title: String) {
         compose.onNodeWithContentDescription(editDescription(title))
             .performScrollTo()
@@ -260,14 +365,14 @@ class TaskListsCrudScreenTest {
     private fun nodesWithText(text: String): Int =
         compose.onAllNodesWithText(text).fetchSemanticsNodes().size
 
-    private fun showTasks() {
+    private fun showTasks(tasks: List<TodoItem> = listOf(todo)) {
         val now = Instant.parse("2026-07-30T12:00:00Z").toEpochMilli()
         val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
         val state = VaultUiState(
             activeProfile = FamilyMember.VICTOR,
             destination = Destination.TASKS,
             data = base.copy(
-                todos = base.todos.copy(status = Freshness.LIVE, value = listOf(todo)),
+                todos = base.todos.copy(status = Freshness.LIVE, value = tasks),
             ),
             now = now,
         )
@@ -278,7 +383,7 @@ class TaskListsCrudScreenTest {
                         item {
                             TaskListsScreen(
                                 state = state,
-                                todos = listOf(todo),
+                                todos = tasks,
                                 onWriteSucceeded = { refreshCount++ },
                                 zoneId = ZoneOffset.UTC,
                                 nowMillis = { screenNowMillis },
@@ -334,8 +439,23 @@ class TaskListsCrudPoster : HttpPoster {
 
 class TaskListsCrudApplication : VaultApplication() {
     val poster = TaskListsCrudPoster()
+    private var credentialPresent = true
 
-    override fun hasConvexWriteCredential(): Boolean = true
+    var credentialRemovalCalls = 0
+        private set
+
+    override fun hasConvexWriteCredential(): Boolean = credentialPresent
+
+    override fun removeConvexWriteCredential(): Result<Unit> {
+        credentialRemovalCalls += 1
+        credentialPresent = false
+        return Result.success(Unit)
+    }
+
+    fun resetCredential() {
+        credentialPresent = true
+        credentialRemovalCalls = 0
+    }
 
     override val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         TodoMutationGateway(

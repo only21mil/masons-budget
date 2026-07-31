@@ -174,6 +174,7 @@ class RefreshAfterWriteSurfaceTest {
                 onDismiss = {},
                 onSaved = {},
                 onWriteSucceeded = onWriteSucceeded,
+                onCredentialRejected = {},
             )
         }
         val interact = {
@@ -190,7 +191,7 @@ class RefreshAfterWriteSurfaceTest {
                 REJECTION,
                 content,
                 interact,
-                rejectionText = "Task not added: Convex rejected the write (http 500).",
+                rejectionText = "Task not added (http 500)",
             ),
         )
     }
@@ -378,7 +379,7 @@ class RefreshAfterWriteSurfaceTest {
                 REJECTION,
                 content,
                 interact,
-                rejectionText = "Task not added: Convex rejected the write (http 500).",
+                rejectionText = "Task not added (http 500)",
             ),
         )
     }
