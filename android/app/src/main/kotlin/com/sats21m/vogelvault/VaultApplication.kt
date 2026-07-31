@@ -8,6 +8,7 @@ import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexDeviceCredential
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
+import com.sats21m.vogelvault.data.ConvexReadBootstrapRepository
 import com.sats21m.vogelvault.data.FinanceQueryRepositories
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.data.RecoveringFinanceReadSource
@@ -15,6 +16,7 @@ import com.sats21m.vogelvault.data.RowQueryRepositories
 import com.sats21m.vogelvault.data.SecureConvexConfigSource
 import com.sats21m.vogelvault.data.SecureConvexDeviceCredentialSource
 import com.sats21m.vogelvault.data.SecureConvexSyncTokenSource
+import com.sats21m.vogelvault.data.ReadBootstrapStatus
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.cache.VaultDatabase
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -50,6 +52,24 @@ open class VaultApplication : Application() {
             initial = initialConvexConfig(storedConvexConfigSource.current()),
         )
     }
+
+    private val readBootstrapRepository: ConvexReadBootstrapRepository by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        ConvexReadBootstrapRepository(
+            stored = storedConvexConfigSource,
+            effective = convexConfigSource,
+            storageLock = convexConfigLock,
+        )
+    }
+
+    /** Presence only; the generated bootstrap value never crosses into UI state. */
+    internal open fun hasBundledReadBootstrap(): Boolean =
+        bundledReadBootstrapPair().isNotEmpty()
+
+    /** Claims and stores the generated one-time bootstrap without returning a secret. */
+    internal open suspend fun connectBundledReadBootstrap(): ReadBootstrapStatus =
+        readBootstrapRepository.connect(bundledReadBootstrapPair())
 
     /**
      * Shared write transport. Every mutation reads the latest encrypted sync
@@ -196,7 +216,7 @@ open class VaultApplication : Application() {
         }
     }
 
-    internal fun hasStoredConvexCredential(): Boolean =
+    internal open fun hasStoredConvexCredential(): Boolean =
         synchronized(convexConfigLock) {
             storedConvexConfigSource.current().hasReadToken
         }
@@ -206,7 +226,7 @@ open class VaultApplication : Application() {
      * recovery. If recovery already cleared the manual credential, a stale
      * Settings button becomes a no-op.
      */
-    internal fun removeStoredConvexCredential(): Boolean =
+    internal open fun removeStoredConvexCredential(): Boolean =
         synchronized(convexConfigLock) {
             removeStoredConvexConfigIfPresent(
                 stored = storedConvexConfigSource,
@@ -226,6 +246,9 @@ open class VaultApplication : Application() {
 
 // Public routing configuration, not a credential.
 internal const val PRODUCTION_DEPLOYMENT = "https://keen-elephant-452.convex.cloud"
+
+internal fun bundledReadBootstrapPair(): String =
+    BuildConfig.CONVEX_READ_BOOTSTRAP_PAIR
 
 internal fun initialConvexConfig(stored: ConvexConfig): ConvexConfig =
     stored.takeIf(ConvexConfig::allowsRemoteRead) ?: ConvexConfig()

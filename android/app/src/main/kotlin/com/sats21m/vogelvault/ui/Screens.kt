@@ -166,6 +166,7 @@ fun ScreenHost(
     destination: Destination,
     state: VaultUiState,
     onEnableRemoteRows: (String) -> Unit = {},
+    onRemoteRowsConnected: () -> Unit = {},
     onWriteSucceeded: () -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
@@ -416,7 +417,7 @@ fun ScreenHost(
                     taskListsContent(state, collections.visibleTodos)
                 }
                 Destination.FAMILY -> family(state)
-                Destination.SETTINGS -> settings(state, onEnableRemoteRows)
+                Destination.SETTINGS -> settings(state, onRemoteRowsConnected)
             }
         }
     }
@@ -1459,7 +1460,7 @@ private fun VaultLazyListScope.family(state: VaultUiState) {
 
 private fun VaultLazyListScope.settings(
     state: VaultUiState,
-    onEnableRemoteRows: (String) -> Unit,
+    onRemoteRowsConnected: () -> Unit,
 ) {
     val readsConvexRows = state.data.transactions.source.startsWith("Convex")
     item {
@@ -1489,7 +1490,15 @@ private fun VaultLazyListScope.settings(
     item {
         BudgetNotificationSettings(state)
     }
-    item { RemoteRowsConfiguration(onEnableRemoteRows) }
+    item {
+        Panel(stringResource(R.string.read_bootstrap_title)) {
+            ReadBootstrapConfiguration(
+                onConnected = onRemoteRowsConnected,
+                modifier = Modifier.padding(VaultSpace.md),
+                allowReset = true,
+            )
+        }
+    }
     item { SyncTokenConfiguration() }
     item {
         Panel("Slices") {
@@ -1512,91 +1521,6 @@ private fun VaultLazyListScope.settings(
         }
     }
     item { Spacer(Modifier.height(VaultSpace.lg)) }
-}
-
-@Composable
-private fun RemoteRowsConfiguration(onEnable: (String) -> Unit) {
-    // Deliberately not saveable: the plaintext token must not enter saved
-    // instance state. Submission immediately hands it to encrypted storage.
-    var token by remember { mutableStateOf("") }
-    val application =
-        androidx.compose.ui.platform.LocalContext.current.applicationContext
-            as? com.sats21m.vogelvault.VaultApplication
-    var hasStoredToken by remember(application) {
-        mutableStateOf(application?.hasStoredConvexCredential() == true)
-    }
-    var removalFailed by remember { mutableStateOf(false) }
-
-    Panel("Configure authenticated row reads") {
-        Column(
-            Modifier.padding(VaultSpace.md),
-            verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
-        ) {
-            Text(
-                text =
-                    stringResource(
-                        if (hasStoredToken) {
-                            R.string.convex_read_token_configured
-                        } else {
-                            R.string.convex_read_token_unconfigured
-                        },
-                    ),
-                color = VaultTextDim,
-                style = MaterialTheme.typography.bodySmall,
-            )
-            OutlinedTextField(
-                value = token,
-                onValueChange = { token = it },
-                label = { Text("Convex read token") },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-            )
-            Button(
-                enabled = token.isNotBlank(),
-                onClick = {
-                    onEnable(token)
-                    hasStoredToken = application?.hasStoredConvexCredential() == true
-                    removalFailed = false
-                    token = ""
-                },
-            ) {
-                Text("Save and refresh")
-            }
-            if (hasStoredToken && application != null) {
-                androidx.compose.material3.OutlinedButton(
-                    onClick = {
-                        runCatching {
-                            application.removeStoredConvexCredential()
-                        }.onSuccess {
-                            token = ""
-                            hasStoredToken = application.hasStoredConvexCredential()
-                            removalFailed = false
-                        }.onFailure {
-                            removalFailed = true
-                        }
-                    },
-                    border =
-                        androidx.compose.foundation.BorderStroke(
-                            width = 1.dp,
-                            color = VaultLine,
-                        ),
-                    colors =
-                        androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                            contentColor = VaultCream,
-                        ),
-                ) {
-                    Text(stringResource(R.string.convex_read_token_remove))
-                }
-            }
-            if (removalFailed) {
-                Text(
-                    text = stringResource(R.string.convex_read_token_remove_failed),
-                    color = VaultWarning,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-        }
-    }
 }
 
 @Composable
