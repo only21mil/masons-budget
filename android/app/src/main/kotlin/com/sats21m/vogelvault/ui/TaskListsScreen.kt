@@ -194,10 +194,13 @@ private fun ProfileTaskListsScreen(
     editing?.let { todo ->
         TodoEditDialog(
             todo = todo,
+            writeEnabled = credentialStored,
+            busy = todo.id in writes.busyIds,
             onDismiss = { editing = null },
             onSave = { changed ->
                 writes.upsert(changed, todo.updatedAtMs) { accepted ->
                     localTodos = localTodos.replaceTodo(accepted)
+                    editing = null
                 }
             },
         )

@@ -274,8 +274,16 @@ internal fun TodoScreen(
     editing?.let { todo ->
         TodoEditDialog(
             todo = todo,
+            writeEnabled = credentialStored,
+            busy = todo.id in writes.busyIds,
             onDismiss = { editing = null },
-            onSave = { mutate(it, TodoWriteAction.UPDATE, todo.updatedAtMs) },
+            onSave = { changed ->
+                writes.upsert(changed, todo.updatedAtMs, TodoWriteAction.UPDATE) { accepted ->
+                    localTodos = (localTodos.filterNot { it.id == accepted.id } + accepted)
+                        .sortedWith(TODO_ORDER)
+                    editing = null
+                }
+            },
         )
     }
 }
