@@ -20,11 +20,13 @@ import type { Freshness } from "@vogel-vault/domain/readModel"
 
 import { AppStateProvider, useAppState } from "../src/renderer/app/AppState.tsx"
 import { ALL_PAGES, navSectionsFor, resolvePage } from "../src/renderer/pages/index.ts"
+import { TaskClockProvider } from "../src/renderer/pages/tasks/taskClock.tsx"
 import type { PageDefinition } from "../src/renderer/pages/types.ts"
 
 type PageState = Freshness | "normal"
 
 const STATES: PageState[] = ["normal", "stale", "error", "empty", "loading"]
+const fixtureNow = () => new Date(2026, 6, 26, 12, 0, 0)
 
 /**
  * Renders whichever page the seeded state resolves to.
@@ -49,7 +51,11 @@ function renderPage(page: PageDefinition, profile: FamilyMember, state: PageStat
       initialProfile: profile,
       initialRoute: page.id,
       initialStateOverride: state,
-      children: createElement(Harness, { route: page.id }),
+      children: createElement(
+        TaskClockProvider,
+        { now: fixtureNow },
+        createElement(Harness, { route: page.id }),
+      ),
     }),
   )
 }

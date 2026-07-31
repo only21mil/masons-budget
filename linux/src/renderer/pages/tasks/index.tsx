@@ -28,8 +28,7 @@ import {
 } from "../../components/index.ts"
 import { type MutationGate, stableId } from "../../data/mutations.ts"
 import type { PageManifest } from "../types.ts"
-
-const TODAY = "2026-07-26"
+import { useTaskToday } from "./taskClock.tsx"
 
 /**
  * The retained default project for a todo nobody filed.
@@ -57,12 +56,14 @@ export function filingOf(todo: TodoItem): string | null {
  * routes differently is invisible to the shared parity fixture, which pins the
  * normaliser rather than the screens.
  */
-export const taskFilters = {
-  today: (todo: TodoItem) => !todo.done && todo.due !== null && todo.due <= TODAY,
-  inbox: (todo: TodoItem) => !todo.done && filingOf(todo) === null,
-  upcoming: (todo: TodoItem) => !todo.done && todo.due !== null && todo.due > TODAY,
-  flagged: (todo: TodoItem) => todo.flagged && !todo.done,
-} satisfies Record<string, (todo: TodoItem) => boolean>
+export function taskFiltersFor(today: string) {
+  return {
+    today: (todo: TodoItem) => !todo.done && todo.due !== null && todo.due <= today,
+    inbox: (todo: TodoItem) => !todo.done && filingOf(todo) === null,
+    upcoming: (todo: TodoItem) => !todo.done && todo.due !== null && todo.due > today,
+    flagged: (todo: TodoItem) => todo.flagged && !todo.done,
+  } satisfies Record<string, (todo: TodoItem) => boolean>
+}
 
 function useVisibleTodos(): readonly TodoItem[] {
   const { activeProfile, data } = useAppState()
@@ -265,6 +266,7 @@ function TodoListPage({
   emptyTitle,
   emptyDetail,
   showComposer = false,
+  defaultDue,
 }: {
   title: string
   subtitle?: string
@@ -272,6 +274,7 @@ function TodoListPage({
   emptyTitle: string
   emptyDetail: string
   showComposer?: boolean
+  defaultDue?: string
 }) {
   const {
     activeProfile,
@@ -301,7 +304,7 @@ function TodoListPage({
       title: draft.trim(),
       done: false,
       flagged: false,
-      due: title === "Today" ? TODAY : undefined,
+      due: defaultDue,
     })
     if (result.status === "ok") {
       setDraft("")
@@ -367,7 +370,7 @@ function TodoListPage({
       <TodoFormDialog
         open={adding}
         todo={null}
-        defaultDue={title === "Today" ? TODAY : undefined}
+        defaultDue={defaultDue}
         onClose={() => setAdding(false)}
       />
     </>
@@ -375,24 +378,29 @@ function TodoListPage({
 }
 
 function TodayPage() {
+  const today = useTaskToday()
+  const filters = useMemo(() => taskFiltersFor(today), [today])
   return (
     <TodoListPage
       title="Today"
       subtitle="Due today or overdue"
-      filter={taskFilters.today}
+      filter={filters.today}
       emptyTitle="Nothing due today"
       emptyDetail="No open tasks are due on or before today for this profile."
       showComposer
+      defaultDue={today}
     />
   )
 }
 
 function InboxPage() {
+  const today = useTaskToday()
+  const filters = useMemo(() => taskFiltersFor(today), [today])
   return (
     <TodoListPage
       title="Inbox"
       subtitle="Unsorted — still in the default Inbox"
-      filter={taskFilters.inbox}
+      filter={filters.inbox}
       emptyTitle="Inbox is clear"
       emptyDetail="Every open task has been filed under a project or area."
       showComposer
@@ -401,11 +409,13 @@ function InboxPage() {
 }
 
 function UpcomingPage() {
+  const today = useTaskToday()
+  const filters = useMemo(() => taskFiltersFor(today), [today])
   return (
     <TodoListPage
       title="Upcoming"
       subtitle="Scheduled beyond today"
-      filter={taskFilters.upcoming}
+      filter={filters.upcoming}
       emptyTitle="Nothing scheduled"
       emptyDetail="No open tasks have a due date after today."
     />
@@ -413,11 +423,13 @@ function UpcomingPage() {
 }
 
 function FlaggedPage() {
+  const today = useTaskToday()
+  const filters = useMemo(() => taskFiltersFor(today), [today])
   return (
     <TodoListPage
       title="Flagged"
       subtitle="Marked for attention"
-      filter={taskFilters.flagged}
+      filter={filters.flagged}
       emptyTitle="Nothing flagged"
       emptyDetail="No open tasks are currently flagged for this profile."
     />

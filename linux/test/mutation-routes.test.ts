@@ -9,6 +9,7 @@ import type {
   RendererMutationKind,
 } from "../src/renderer/data/mutations.ts"
 import { ALL_PAGES } from "../src/renderer/pages/index.ts"
+import { TaskClockProvider } from "../src/renderer/pages/tasks/taskClock.tsx"
 
 const capabilities: readonly RendererMutationKind[] = [
   "transaction.upsert",
@@ -43,6 +44,8 @@ const adapter: RendererMutationAdapter = {
   unpairDevice: async () => ({ status: "ok", revoked: true }),
 }
 
+const fixtureNow = () => new Date(2026, 6, 26, 12, 0, 0)
+
 function liveEnvelope(profile: "victor" | "rachel" | "mason" | "maddox" = "victor") {
   const data = buildSanitizedFixtureEnvelope(profile)
   return {
@@ -69,7 +72,11 @@ function renderRoute(
       initialDataOrigin: "remote",
       initialMutationCapabilities: capabilities,
       mutationAdapter: adapter,
-      children: createElement(page.Component),
+      children: createElement(
+        TaskClockProvider,
+        { now: fixtureNow },
+        createElement(page.Component),
+      ),
     }),
   )
 }
@@ -153,7 +160,11 @@ describe("renderer CRUD routes", () => {
         initialDataOrigin: "fixture",
         initialMutationCapabilities: capabilities,
         mutationAdapter: adapter,
-        children: createElement(page.Component),
+        children: createElement(
+          TaskClockProvider,
+          { now: fixtureNow },
+          createElement(page.Component),
+        ),
       }),
     )
     expect(markup).toMatch(/<button[^>]*disabled[^>]*>Add transaction<\/button>/)
@@ -167,7 +178,11 @@ describe("renderer CRUD routes", () => {
         initialDataOrigin: "fixture",
         initialMutationCapabilities: capabilities,
         mutationAdapter: adapter,
-        children: createElement(page.Component),
+        children: createElement(
+          TaskClockProvider,
+          { now: fixtureNow },
+          createElement(page.Component),
+        ),
       }),
     )
     expect(markup).toContain("Task actions are limited")
