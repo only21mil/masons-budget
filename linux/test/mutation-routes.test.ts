@@ -92,13 +92,17 @@ describe("renderer CRUD routes", () => {
     expect(markup).toContain("<dialog")
   })
 
-  it("provides named task completion, flag, edit, and delete controls", () => {
-    const markup = renderRoute("projects")
-    expect(markup).toContain("Complete Reconcile July statements")
-    expect(markup).toContain("Unflag Reconcile July statements")
-    expect(markup).toContain("Edit Reconcile July statements")
-    expect(markup).toContain("Delete Reconcile July statements")
-  })
+  it.each(["today", "inbox", "upcoming", "flagged", "projects"])(
+    "%s keeps completion, edit, and delete controls in a sticky task-action column",
+    (route) => {
+      const markup = renderRoute(route)
+      expect(markup).toContain("Task actions")
+      expect(markup).toContain("vv-task-table")
+      expect(markup).toMatch(/aria-label="(?:Complete|Reopen) [^"]+"/)
+      expect(markup).toMatch(/aria-label="Edit [^"]+"/)
+      expect(markup).toMatch(/aria-label="Delete [^"]+"/)
+    },
+  )
 
   it("keeps BTC account fiat valuation out of the editable form", () => {
     const markup = renderRoute("bitcoin")
@@ -153,6 +157,29 @@ describe("renderer CRUD routes", () => {
       }),
     )
     expect(markup).toMatch(/<button[^>]*disabled[^>]*>Add transaction<\/button>/)
+  })
+
+  it("visibly explains why task edit and delete actions are disabled", () => {
+    const page = ALL_PAGES.find((candidate) => candidate.id === "projects")!
+    const markup = renderToStaticMarkup(
+      createElement(AppStateProvider, {
+        initialData: liveEnvelope(),
+        initialDataOrigin: "fixture",
+        initialMutationCapabilities: capabilities,
+        mutationAdapter: adapter,
+        children: createElement(page.Component),
+      }),
+    )
+    expect(markup).toContain("Task actions are limited")
+    expect(markup).toContain(
+      "Editing and deleting tasks are unavailable: Sample and fallback data cannot be edited.",
+    )
+    expect(markup).toMatch(
+      /<button[^>]*disabled[^>]*title="Sample and fallback data cannot be edited\."[^>]*aria-label="Edit [^"]+"/,
+    )
+    expect(markup).toMatch(
+      /<button[^>]*disabled[^>]*title="Sample and fallback data cannot be edited\."[^>]*aria-label="Delete [^"]+"/,
+    )
   })
 
   it("renders bounded, credential-free pairing controls in Settings", () => {
