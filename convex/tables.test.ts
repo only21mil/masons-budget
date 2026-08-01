@@ -10,7 +10,7 @@
 //      directions are asserted, on the same data, in the same test.
 //   3. Money going through a float.
 //   4. The auth mirror in tables.ts drifting from the gates in dataFiles.ts.
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { convexTest } from "convex-test";
 import type { FunctionReference, OptionalRestArgs } from "convex/server";
 
@@ -304,6 +304,14 @@ const fn = {
             owner: Member;
             totalValueCents: bigint;
             weeklyContributionCents: bigint;
+            // Declared down to the lots because the share quantities are the
+            // part of this response with a contract of their own.
+            holdings: Array<{
+              name: string;
+              ticker?: string;
+              sharesDecimal: string;
+              lots: Array<{ type: string; sharesDecimal: string }>;
+            }>;
           }>;
           updatedAtMs: number;
         };
@@ -1840,6 +1848,229 @@ describe("public Linux/Android read contract", () => {
     expect(mason.document?.retirementTotalCents).toBeUndefined();
   });
 
+  it("returns stored canonical share quantities byte-identical", async () => {
+    const stored = await t.run(async (ctx) => {
+      const document = await ctx.db
+        .query("financeDocuments")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "finances"))
+        .unique();
+      if (!document) throw new Error("missing seeded finance document");
+      return document.accounts.flatMap((account) =>
+        account.holdings.flatMap((holding) => [
+          holding.sharesDecimal,
+          ...holding.lots.map((lot) => lot.sharesDecimal),
+        ]),
+      );
+    });
+
+    const response = await t.query(fn.getFinanceDocument, {
+      viewer: "victor",
+      scope: "visible",
+    });
+    const returned = (response.document?.accounts ?? []).flatMap((account) =>
+      account.holdings.flatMap((holding) => [
+        holding.sharesDecimal,
+        ...holding.lots.map((lot) => lot.sharesDecimal),
+      ]),
+    );
+    expect(returned).toEqual(stored);
+    expect(returned).toEqual(["321.125", "10.5"]);
+  });
+
+  // Pinned verbatim: the read path may emit this line and nothing else. Any
+  // future edit that appends an account, a ticker, a count or a quantity to the
+  // repair signal fails here and in the sentinel test below.
+  const REPAIR_WARNING =
+    "financeDocuments: repaired non-canonical stored share quantities at read " +
+    "time. Re-run the finances migration to canonicalize the stored row.";
+
+  /** Every console channel a Convex handler can reach, drained together. */
+  function captureConsole() {
+    const channels = ["warn", "error", "log", "info", "debug"] as const;
+    const spies = channels.map((channel) =>
+      vi.spyOn(console, channel).mockImplementation(() => {}),
+    );
+    return {
+      drain(): string[] {
+        // mockRestore clears the recorded calls, so read them first.
+        const lines = spies.flatMap((spy) =>
+          spy.mock.calls.map((call) => call.map(String).join(" ")),
+        );
+        for (const spy of spies) spy.mockRestore();
+        return lines;
+      },
+    };
+  }
+
+  /**
+   * Everything the read path logged that is not the unrelated auth-gate notice.
+   *
+   * The suite runs with ALLOW_TOKENLESS_READ, so every query also warns that
+   * the deployment is permissive. That line is not about the finance document
+   * and carries no identifier, so it is separated out rather than allowed to
+   * loosen the exact-match assertions below.
+   */
+  const financeLogLines = (lines: string[]) =>
+    lines.filter((line) => !line.startsWith("PERMISSIVE:"));
+
+  // A financeDocuments row written before both tightenings carries lot
+  // quantities straight from IEEE-754 doubles and a negative
+  // statement_reconciliation lot. Asserting those took every
+  // getFinanceDocument call down.
+  it("canonicalizes legacy float-noise and negative reconciliation lots instead of failing the snapshot", async () => {
+    await t.run(async (ctx) => {
+      const document = await ctx.db
+        .query("financeDocuments")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "finances"))
+        .unique();
+      if (!document) throw new Error("missing seeded finance document");
+      const accounts = document.accounts.map((account, accountIndex) =>
+        accountIndex === 0
+          ? {
+              ...account,
+              holdings: account.holdings.map((holding) => {
+                const lot = holding.lots[0]!;
+                return {
+                  ...holding,
+                  sharesDecimal: "321.1250000000000004",
+                  lots: [
+                    { ...lot, sharesDecimal: "10.4999999999999998" },
+                    {
+                      ...lot,
+                      type: "statement_reconciliation",
+                      sharesDecimal: "-2.3300000000000002",
+                    },
+                    { ...lot, sharesDecimal: "-0.0000000000004" },
+                  ],
+                };
+              }),
+            }
+          : account,
+      );
+      await ctx.db.patch(document._id, { accounts });
+    });
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let lines: string[] = [];
+    try {
+      for (const scope of ["visible", "netWorth"] as const) {
+        const response = await t.query(fn.getFinanceDocument, {
+          viewer: "victor",
+          scope,
+        });
+        expect(response.complete, scope).toBe(true);
+        const holding = response.document?.accounts.find(
+          (account) => account.key === "victor_401k",
+        )?.holdings[0];
+        expect(holding?.sharesDecimal, scope).toBe("321.125");
+        // Half away from zero at the 13th digit, the carry crossing back into
+        // the integer part, and a negative that rounds away to plain zero.
+        expect(holding?.lots.map((lot) => lot.sharesDecimal), scope).toEqual([
+          "10.5",
+          "-2.33",
+          "0",
+        ]);
+      }
+      // mockRestore clears the recorded calls, so read them first.
+      lines = warn.mock.calls.map((call) => String(call[0]));
+    } finally {
+      warn.mockRestore();
+    }
+
+    // Four values were repaired across two reads, and the log carries exactly
+    // two lines: one constant line per execution, fired because something was
+    // repaired and saying nothing about what.
+    expect(financeLogLines(lines)).toEqual([REPAIR_WARNING, REPAIR_WARNING]);
+  });
+
+  // Household financial metadata is exactly what a function log must not carry:
+  // which account holds which security, and how much of it. The repair path runs
+  // on every read of a pre-canonical row, so a leak there is a leak forever.
+  it("logs nothing identifying while repairing a document full of sentinel identifiers", async () => {
+    const SENTINELS = {
+      accountKey: "sentinelAccountKeyZulu",
+      holdingName: "Sentinel Holding Name Zulu",
+      ticker: "ZQSENTINEL",
+      provider: "Sentinel Provider Zulu",
+      category: "Sentinel Category Zulu",
+      note: "Sentinel Lot Note Zulu",
+    };
+
+    await t.run(async (ctx) => {
+      const document = await ctx.db
+        .query("financeDocuments")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "finances"))
+        .unique();
+      if (!document) throw new Error("missing seeded finance document");
+      const template = document.accounts[0]!;
+      const holding = template.holdings[0]!;
+      const lot = holding.lots[0]!;
+      await ctx.db.patch(document._id, {
+        accounts: [
+          {
+            ...template,
+            key: SENTINELS.accountKey,
+            provider: SENTINELS.provider,
+            holdings: [
+              {
+                ...holding,
+                name: SENTINELS.holdingName,
+                category: SENTINELS.category,
+                ticker: SENTINELS.ticker,
+                // Every quantity below needs repair, and every one of them
+                // carries a digit run that appears nowhere else in the suite.
+                sharesDecimal: "77.7770000000000004",
+                lots: [
+                  { ...lot, sharesDecimal: "88.8880000000000006", note: SENTINELS.note },
+                  {
+                    ...lot,
+                    type: "statement_reconciliation",
+                    sharesDecimal: "-99.9990000000000004",
+                  },
+                  { ...lot, sharesDecimal: "-0.0000000000004" },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+    });
+
+    const capture = captureConsole();
+    let lines: string[] = [];
+    let holding: { sharesDecimal: string; lots: { sharesDecimal: string }[] } | undefined;
+    try {
+      const response = await t.query(fn.getFinanceDocument, {
+        viewer: "victor",
+        scope: "visible",
+      });
+      expect(response.complete).toBe(true);
+      holding = response.document?.accounts[0]?.holdings[0];
+    } finally {
+      lines = capture.drain();
+    }
+
+    // The read still succeeds and still repairs, so the silence below is not
+    // silence about a no-op.
+    expect(holding?.sharesDecimal).toBe("77.777");
+    expect(holding?.lots.map((lot) => lot.sharesDecimal)).toEqual([
+      "88.888",
+      "-99.999",
+      "0",
+    ]);
+
+    expect(financeLogLines(lines)).toEqual([REPAIR_WARNING]);
+    // Checked over *everything* logged, not just the repair line: a leak that
+    // moved to another channel or another message would still be a leak.
+    for (const line of lines) {
+      for (const sentinel of Object.values(SENTINELS)) {
+        expect(line).not.toContain(sentinel);
+      }
+      // No quantity can survive a line with no digits in it at all.
+      expect(line).not.toMatch(/\d/);
+    }
+  });
+
   it("fails the whole finance snapshot when a schema-valid stored share string is invalid", async () => {
     await t.run(async (ctx) => {
       const document = await ctx.db
@@ -1862,12 +2093,21 @@ describe("public Linux/Android read contract", () => {
       await ctx.db.patch(document._id, { accounts });
     });
 
-    await expect(
-      t.query(fn.getFinanceDocument, {
-        viewer: "victor",
-        scope: "netWorth",
-      }),
-    ).rejects.toThrow(/canonical share quantity/);
+    // The thrown text is the other way this path can publish household data: a
+    // RangeError message reaches the Convex function log verbatim. It names the
+    // failing field positionally and carries no key, name, ticker or quantity.
+    const thrown = await t
+      .query(fn.getFinanceDocument, { viewer: "victor", scope: "netWorth" })
+      .then(
+        () => null,
+        (error: unknown) => String((error as { message?: unknown }).message),
+      );
+    expect(thrown).toContain(
+      "financeDocuments holding sharesDecimal is not a canonical share quantity",
+    );
+    for (const identifier of ["victor_401k", "Index Fund", "INDEX", "1e3"]) {
+      expect(thrown).not.toContain(identifier);
+    }
   });
 
   it("lists Bitcoin bill payments and includes them in row counts", async () => {

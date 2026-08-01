@@ -115,7 +115,7 @@ internal object FinanceReadDecoder {
             date = row.nonEmptyString("date") ?: return null,
             type = row.nonEmptyString("type") ?: return null,
             pricePerShareCents = row.int64("pricePerShareCents") ?: return null,
-            sharesDecimal = row.exactDecimal("sharesDecimal") ?: return null,
+            sharesDecimal = row.exactDecimal("sharesDecimal", signed = true) ?: return null,
             amountInvestedCents = row.int64("amountInvestedCents") ?: return null,
             note = note.value,
         )
@@ -173,9 +173,15 @@ private inline fun <T> JsonObject.optional(
     return OptionalValue(decode(getValue(key)) ?: return null)
 }
 
-private fun JsonObject.exactDecimal(key: String): String? {
+/**
+ * A holding quantity is a position size and stays unsigned; a lot passes
+ * [signed] = true, because a statement-reconciliation lot removes shares and
+ * arrives negative. Refusing one lot nulls the whole finance document, so the
+ * unsigned rule cannot be applied here by default.
+ */
+private fun JsonObject.exactDecimal(key: String, signed: Boolean = false): String? {
     val value = nonEmptyString(key) ?: return null
-    return Money.sharesDecimalOrNull(value)
+    return Money.sharesDecimalOrNull(value, signed)
 }
 
 private fun <T> JsonObject.objectArray(

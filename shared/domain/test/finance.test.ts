@@ -73,10 +73,15 @@ interface FinanceFixtures {
   }>
   sharesDecimalContract: {
     maxLength: number
+    signedMaxLength: number
     maxPrecision: number
     maxScale: number
     maxIntegerDigits: number
+    /** Canonical as a holding quantity and as a lot quantity alike. */
     valid: string[]
+    /** Canonical only as a lot quantity; a signed holding stays corruption. */
+    lotOnly: string[]
+    /** Refused by every layer that asserts rather than canonicalizes. */
     invalid: string[]
   }
   budgetHealth: Array<{
@@ -263,20 +268,33 @@ test("shares use the bounded canonical decimal fixture contract", () => {
   assert.deepEqual(
     {
       maxLength: SHARES_DECIMAL_MAX_LENGTH,
+      signedMaxLength: SHARES_DECIMAL_MAX_LENGTH + 1,
       maxPrecision: SHARES_DECIMAL_MAX_PRECISION,
       maxScale: SHARES_DECIMAL_MAX_SCALE,
       maxIntegerDigits: SHARES_DECIMAL_MAX_INTEGER_DIGITS,
     },
     {
       maxLength: contract.maxLength,
+      signedMaxLength: contract.signedMaxLength,
       maxPrecision: contract.maxPrecision,
       maxScale: contract.maxScale,
       maxIntegerDigits: contract.maxIntegerDigits,
     },
   )
-  for (const value of contract.valid) assert.equal(assertSharesDecimal(value), value)
+  // An unsigned quantity is canonical whichever side asks for it, so the signed
+  // reader accepts everything the unsigned reader does and nothing else gains
+  // entry: only the lot-only column may carry a minus.
+  for (const value of contract.valid) {
+    assert.equal(assertSharesDecimal(value), value)
+    assert.equal(assertSharesDecimal(value, { signed: true }), value)
+  }
+  for (const value of contract.lotOnly) {
+    assert.equal(assertSharesDecimal(value, { signed: true }), value)
+    assert.throws(() => assertSharesDecimal(value), /share quantity/i, value)
+  }
   for (const value of contract.invalid) {
     assert.throws(() => assertSharesDecimal(value), /share quantity/i, value)
+    assert.throws(() => assertSharesDecimal(value, { signed: true }), /share quantity/i, value)
   }
 })
 

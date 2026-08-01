@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  assertSharesDecimal,
+  canonicalizeSharesDecimal,
   parseLexicalJson,
   parseMinorUnits,
   projectBtcBalanceDocument,
@@ -23,10 +25,12 @@ const sharesContract = JSON.parse(
 ) as {
   sharesDecimalContract: {
     maxLength: number;
+    signedMaxLength: number;
     maxPrecision: number;
     maxScale: number;
     maxIntegerDigits: number;
     valid: string[];
+    lotOnly: string[];
     invalid: string[];
   };
 };
@@ -286,39 +290,161 @@ describe("all five source documents have typed projections", () => {
     const contract = sharesContract.sharesDecimalContract;
     expect({
       maxLength: SHARES_DECIMAL_MAX_LENGTH,
+      signedMaxLength: SHARES_DECIMAL_MAX_LENGTH + 1,
       maxPrecision: SHARES_DECIMAL_MAX_PRECISION,
       maxScale: SHARES_DECIMAL_MAX_SCALE,
       maxIntegerDigits: SHARES_DECIMAL_MAX_INTEGER_DIGITS,
     }).toEqual({
       maxLength: contract.maxLength,
+      signedMaxLength: contract.signedMaxLength,
       maxPrecision: contract.maxPrecision,
       maxScale: contract.maxScale,
       maxIntegerDigits: contract.maxIntegerDigits,
     });
 
-    const rawFinance = (shares: string) => JSON.stringify({
+    const rawFinance = (shares: string, lotShares = shares) => JSON.stringify({
       retirement: {
         accounts: {
           adult_401k: {
             holdings: [{
               name: "Fund",
               shares,
-              lots: [{ shares }],
+              lots: [{ shares: lotShares }],
             }],
           },
         },
       },
     });
 
+    const holdingOf = (shares: string, lotShares = shares) =>
+      projectFinanceDocument(rawFinance(shares, lotShares), 0).accounts[0]!.holdings[0]!;
+
+    // The fixture's `invalid` column is the *assert* contract every reading
+    // client enforces. The projection is the one layer allowed to repair a
+    // value instead of refusing it, so a few entries land on a canonical form
+    // here. `holding` is absent where the repair is lot-only: minus zero is a
+    // second spelling of a legitimate lot quantity, while any negative position
+    // size is corruption.
+    const repairedAtProjection: Record<string, { holding?: string; lot: string }> = {
+      "1.1234567890123": { holding: "1.123456789012", lot: "1.123456789012" },
+      "999999999999.9999999999990": {
+        holding: "999999999999.999999999999",
+        lot: "999999999999.999999999999",
+      },
+      "-0": { lot: "0" },
+      "-0.0": { lot: "0" },
+    };
+
     for (const value of contract.valid) {
-      const holding = projectFinanceDocument(rawFinance(value), 0)
-        .accounts[0]!.holdings[0]!;
+      const holding = holdingOf(value);
       expect(holding.sharesDecimal, value).toBe(value);
       expect(holding.lots[0]!.sharesDecimal, value).toBe(value);
     }
+    // Signed quantities are lot-only: a reconciliation lot removes shares, a
+    // position size never goes negative.
+    for (const value of contract.lotOnly) {
+      expect(() => holdingOf(value), value).toThrow(/share quantity/);
+      expect(holdingOf("1", value).lots[0]!.sharesDecimal, value).toBe(value);
+    }
     for (const value of contract.invalid) {
-      expect(() => projectFinanceDocument(rawFinance(value), 0), value)
-        .toThrow(/share quantity/);
+      const repaired = repairedAtProjection[value];
+      if (repaired?.holding !== undefined) {
+        expect(holdingOf(value).sharesDecimal, value).toBe(repaired.holding);
+      } else {
+        expect(() => holdingOf(value), value).toThrow(/share quantity/);
+      }
+      if (repaired !== undefined) {
+        expect(holdingOf("1", value).lots[0]!.sharesDecimal, value).toBe(repaired.lot);
+      } else {
+        expect(() => holdingOf("1", value), value).toThrow(/share quantity/);
+      }
+    }
+  });
+
+  it("projects the legacy stored shapes: float noise and negative reconciliation lots", () => {
+    // Boundary-equivalent to legacy pre-contract stored text: lot quantities
+    // written from IEEE-754 doubles (15-16 fractional digits), and
+    // statement_reconciliation lots that remove shares and are therefore
+    // negative. Identifiers and amounts are synthetic; only the shapes matter.
+    // Written out as JSON text, not JSON.stringify of JS numbers: the source
+    // tokens are the point, and JSON.stringify would re-encode a small negative
+    // as an exponent the contract rightly refuses.
+    const raw = `{
+      "retirement": {
+        "accounts": {
+          "alpha": {
+            "holdings": [{
+              "name": "Synthetic Index Fund",
+              "ticker": "SYNX",
+              "shares": 12.0000000000004,
+              "lots": [
+                {"date": "2026-03-02", "type": "buy", "shares": 1.7999999999999998},
+                {"date": "2026-04-01", "type": "buy", "shares": 0.5000000000005}
+              ]
+            }]
+          },
+          "omega": {
+            "provider": "Synthetic Retirement Provider",
+            "holdings": [{
+              "name": "Synthetic Index Fund",
+              "ticker": "SYNX",
+              "shares": 3.3000000000000003,
+              "lots": [
+                {"date": "2026-05-01", "type": "statement_reconciliation", "shares": -0.0000000000004},
+                {"date": "2026-05-02", "type": "statement_reconciliation", "shares": -1.2345678901239}
+              ]
+            }]
+          }
+        }
+      }
+    }`;
+
+    const accounts = projectFinanceDocument(raw, 0).accounts;
+    const alpha = accounts.find((account) => account.key === "alpha")!;
+    const omega = accounts.find((account) => account.key === "omega")!;
+
+    expect(alpha.holdings[0]!.sharesDecimal).toBe("12");
+    expect(alpha.holdings[0]!.lots.map((lot) => lot.sharesDecimal))
+      .toEqual(["1.8", "0.500000000001"]);
+    expect(omega.holdings[0]!.sharesDecimal).toBe("3.3");
+    // Minus zero has no canonical spelling of its own; a negative that rounds
+    // away to nothing becomes plain zero rather than "-0".
+    expect(omega.holdings[0]!.lots.map((lot) => lot.sharesDecimal))
+      .toEqual(["0", "-1.234567890124"]);
+  });
+
+  // A bigint is the obvious wrong guess for "an exact quantity". Rendering one
+  // into an error message with JSON.stringify throws a TypeError and replaces
+  // the RangeError this contract promises, so a caller catching RangeError sees
+  // nothing and crashes instead. These messages are positional by design and
+  // must stay that way — a stored quantity in a thrown message reaches the
+  // Convex function log.
+  it("raises RangeError for non-string quantities and never quotes the value", () => {
+    const nonStrings: unknown[] = [
+      1n,
+      -1n,
+      1.5,
+      true,
+      null,
+      undefined,
+      { sharesDecimal: "1.5" },
+      Symbol("shares"),
+    ];
+    for (const value of nonStrings) {
+      for (const call of [
+        () => assertSharesDecimal(value, "holding sharesDecimal"),
+        () => assertSharesDecimal(value, "lot sharesDecimal", { signed: true }),
+        () => canonicalizeSharesDecimal(value, "holding sharesDecimal"),
+        () =>
+          canonicalizeSharesDecimal(value, "lot sharesDecimal", {
+            signed: true,
+          }),
+      ]) {
+        expect(call, String(typeof value)).toThrow(RangeError);
+        expect(call, String(typeof value)).toThrow(
+          /^(holding|lot) sharesDecimal is not a canonical share quantity$/,
+        );
+      }
     }
   });
 

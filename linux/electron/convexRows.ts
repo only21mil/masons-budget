@@ -10,6 +10,7 @@ import { Buffer } from "node:buffer"
 import {
   SHARES_DECIMAL_MAX_LENGTH,
   assertSharesDecimal,
+  type SharesDecimalOptions,
 } from "@vogel-vault/domain/money"
 
 import type {
@@ -552,9 +553,25 @@ function budgetDocument(value: unknown, viewer: VogelVaultMember): VogelVaultBud
   }
 }
 
-function decimalText(record: Record<string, unknown>, key: string): string {
+/**
+ * Read one canonical share quantity, with the transport's own length cap kept
+ * in step with the shared contract's.
+ *
+ * A signed lot spends one extra character on the leading minus, so the cap here
+ * has to move with the flag — otherwise a legitimate 26-character
+ * reconciliation lot is refused by the transport before the shared assertion
+ * ever sees it, and one refused lot fails the whole finance query.
+ */
+function decimalText(
+  record: Record<string, unknown>,
+  key: string,
+  options: SharesDecimalOptions = {},
+): string {
+  const maxLength = options.signed === true
+    ? SHARES_DECIMAL_MAX_LENGTH + 1
+    : SHARES_DECIMAL_MAX_LENGTH
   try {
-    return assertSharesDecimal(text(record, key, SHARES_DECIMAL_MAX_LENGTH))
+    return assertSharesDecimal(text(record, key, maxLength), options)
   } catch {
     throw new InvalidValue()
   }
@@ -569,7 +586,8 @@ function financeLot(value: unknown): VogelVaultFinanceLot {
     date: text(row, "date"),
     type: text(row, "type"),
     pricePerShareCents: int64(row, "pricePerShareCents"),
-    sharesDecimal: decimalText(row, "sharesDecimal"),
+    // A statement-reconciliation lot removes shares and arrives negative.
+    sharesDecimal: decimalText(row, "sharesDecimal", { signed: true }),
     amountInvestedCents: int64(row, "amountInvestedCents"),
     ...optionalField("note", optionalText(row, "note")),
   }
