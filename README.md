@@ -110,7 +110,15 @@ New ledger integrations write rows. A new or reconstructed transaction uses
 `writeback:createTransaction`. Other row mutations are documented in
 [`docs/HANDOFF.md`](docs/HANDOFF.md#3-the-canonical-write-path).
 
-Every row mutation requires the runtime-injected sync token. Money is integer
+Routine statement ingestion, canonical income writes, and budget-month advance
+use the admin-only atomic operator described in
+[`docs/production-monthly-import.md`](docs/production-monthly-import.md). The
+operator writes typed rows only; it never uses table replacement, legacy blob
+writeback, or the completed migration as a monthly synchronization path.
+
+Public row mutations require the runtime-injected sync token; the monthly
+operator is an internal function reachable only with deployment-scoped admin
+auth. Money is integer
 minor units, and HTTP calls use `format: "convex_encoded_json"` so each int64 is
 tagged as `{"$integer":"<base64>"}`. Purchases are positive and refunds are
 negative for every owner; the server rejects a contradictory sign instead of

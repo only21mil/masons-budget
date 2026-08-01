@@ -265,6 +265,31 @@ export default defineSchema({
     lockedAtMs: v.float64(),
   }).index("by_source_file", ["sourceFile"]),
 
+  // Redacted administrative receipts for atomic operator imports. The table
+  // binds one batch id and one canonical manifest digest to the reviewed plan
+  // and pre-write state. It deliberately retains no row ids, source locators,
+  // descriptions, notes, raw records, or financial amounts.
+  operatorBatches: defineTable({
+    contractVersion: v.float64(),
+    batchId: v.string(),
+    manifestDigest: v.string(),
+    planFingerprint: v.string(),
+    stateFingerprint: v.string(),
+    untouchedFingerprint: v.string(),
+    counts: v.object({
+      transactions: v.float64(),
+      income: v.float64(),
+      btc_buys: v.float64(),
+      btc_bill_pays: v.float64(),
+    }),
+    budgetTargetFingerprint: v.optional(v.string()),
+    budgetExpectedUpdatedAtMs: v.optional(v.float64()),
+    budgetAppliedUpdatedAtMs: v.optional(v.float64()),
+    appliedAtMs: v.float64(),
+  })
+    .index("by_batch_id", ["batchId"])
+    .index("by_manifest_digest", ["manifestDigest"]),
+
   // Short-lived bootstrap for installing the deployment's current read
   // credential on Android. Existing/omitted capabilities remain read-only;
   // only an explicitly minted exact todos:write grant may atomically register
@@ -390,9 +415,11 @@ export default defineSchema({
     archimedesRequestId: v.optional(v.string()),
     sourceFile: v.literal("income"),
     updatedAtMs: v.float64(),
-    // Required, not optional: this is the canonical round-trip proof.
-    raw: v.any(),
-    migrationSourceIndex: v.float64(),
+    // Present only on rows projected from the retained legacy blob. Runtime
+    // operator income is canonical typed data and must not fabricate migration
+    // provenance merely to satisfy the table shape.
+    raw: v.optional(v.any()),
+    migrationSourceIndex: v.optional(v.float64()),
   })
     .index("by_source_key", ["sourceFile", "sourceKey"])
     .index("by_owner_month", ["owner", "month"])
