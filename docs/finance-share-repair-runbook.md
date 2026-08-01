@@ -66,12 +66,15 @@ All of these must hold before any command in the next section runs.
 
      The two digests must be byte-identical. Any mismatch, or any doubt about
      which workflow run produced `$reviewed_apk`, is a stop.
-   - Any active Linux client is running a build that contains the signed-lot
-     transport change, proven the same way: bind the running install to the
-     reviewed source (the packaged build's digest, or the exact commit of the
-     build tree it was produced from) rather than to a version string or
-     memory. If a stale Linux client is running anywhere, update or shut it
-     down before continuing.
+   - Every Linux client **installation** — running or not — is on a build that
+     contains the signed-lot transport change, proven the same way: bind the
+     install to the reviewed source (the packaged build's digest, or the exact
+     commit of the build tree it was produced from) rather than to a version
+     string or memory. A stale installation that is merely stopped is **not**
+     resolved: restarting it after the backend deploy fails the whole finance
+     document again. Every stale install must be updated in place or
+     permanently decommissioned (uninstalled, or its packaged build deleted)
+     before continuing.
 
 2. **The deployed code is the reviewed checkout.** Work from a clean, pinned
    worktree of the merge commit that contains the canonicalizing projection, run
