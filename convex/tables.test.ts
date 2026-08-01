@@ -2370,6 +2370,19 @@ describe("row mutations", () => {
 
   it("upserts a btc buy and a btc account idempotently", async () => {
     await seedPostingLedgers(t);
+    await expect(
+      t.mutation(fn.upsertBtcAccount, {
+        account: {
+          key: "river",
+          owner: "victor",
+          label: "River",
+          custody: "exchange",
+          sats: 99_000_000n,
+          fiatCents: 0n,
+          asOf: "2026-07-26T00:00:00Z",
+        },
+      }),
+    ).rejects.toThrow(/ledger-controlled after activation/);
     const inserted = await t.mutation(fn.upsertBtcBuy, {
       buy: {
         id: "app-b1",
@@ -2402,8 +2415,8 @@ describe("row mutations", () => {
         owner: "victor",
         label: "Strike",
         custody: "exchange",
-        sats: 35000000n,
-        fiatCents: 3430055n,
+        sats: 0n,
+        fiatCents: 0n,
         asOf: "2026-07-26T00:00:00Z",
       },
     });
@@ -2413,10 +2426,10 @@ describe("row mutations", () => {
           account: {
             key: "strike",
             owner: "victor",
-            label: "Strike",
+            label: "Strike account",
             custody: "exchange",
-            sats: 36000000n,
-            fiatCents: 3530055n,
+            sats: 0n,
+            fiatCents: 0n,
             asOf: "2026-07-26T01:00:00Z",
           },
         })
@@ -2428,7 +2441,17 @@ describe("row mutations", () => {
       scope: "visible",
     });
     expect(accounts.filter((a) => a.key === "strike")).toHaveLength(1);
-    expect(accounts.find((a) => a.key === "strike")?.sats).toBe(36000000n);
+    expect(accounts.find((a) => a.key === "strike")).toMatchObject({
+      label: "Strike account",
+      sats: 0n,
+    });
+    const documents = await t.query(fn.listBtcBalanceDocuments, {
+      viewer: "victor",
+      scope: "netWorth",
+    });
+    expect(
+      documents.rows[0]?.accounts.find((account) => account.key === "strike"),
+    ).toMatchObject({ label: "Strike account", sats: 0n });
   });
 
   it("updates and inserts categories without replacing the budget document", async () => {
@@ -3019,8 +3042,8 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
             owner: "victor",
             label: "Probe",
             custody: "exchange",
-            sats: 1n,
-            fiatCents: 1n,
+            sats: 0n,
+            fiatCents: 0n,
             asOf: "2026-07-25T00:00:00Z",
           },
           token,

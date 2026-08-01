@@ -1911,8 +1911,27 @@ async function upsertTransactionRow(
       const deltas = new Map<string, bigint>();
       addDelta(deltas, oldKey, -oldSats);
       if (row.category === "Income") {
-        const nextSats = row.amountSats ?? oldSats;
-        const nextKey = row.bitcoinAccountKey?.trim() || oldKey;
+        if (row.amountSats === undefined) {
+          deviceFailure(
+            "VALIDATION_FAILED",
+            "Editing posted sat-denominated Income requires explicit amountSats.",
+            "transaction",
+            row.txId,
+          );
+        }
+        const nextSats = row.amountSats;
+        const nextKey = await riverAccountKey(ctx, row.owner);
+        if (
+          row.bitcoinAccountKey !== undefined &&
+          row.bitcoinAccountKey.trim() !== nextKey
+        ) {
+          deviceFailure(
+            "VALIDATION_FAILED",
+            "Sat-denominated Income must post to the canonical River account.",
+            "transaction",
+            row.txId,
+          );
+        }
         addDelta(deltas, nextKey, nextSats);
         storedRow = {
           ...row,
@@ -1934,8 +1953,18 @@ async function upsertTransactionRow(
       row.category === "Income" &&
       row.amountSats !== undefined
     ) {
-      const key =
-        row.bitcoinAccountKey?.trim() || (await riverAccountKey(ctx, row.owner));
+      const key = await riverAccountKey(ctx, row.owner);
+      if (
+        row.bitcoinAccountKey !== undefined &&
+        row.bitcoinAccountKey.trim() !== key
+      ) {
+        deviceFailure(
+          "VALIDATION_FAILED",
+          "Sat-denominated Income must post to the canonical River account.",
+          "transaction",
+          row.txId,
+        );
+      }
       const deltas = new Map<string, bigint>();
       addDelta(deltas, key, row.amountSats);
       await applyBtcAccountDeltas(ctx, row.owner, deltas);
@@ -1979,7 +2008,18 @@ async function upsertTransactionRow(
     row.category === "Income" &&
     row.amountSats !== undefined
   ) {
-    const key = row.bitcoinAccountKey?.trim() || (await riverAccountKey(ctx, row.owner));
+    const key = await riverAccountKey(ctx, row.owner);
+    if (
+      row.bitcoinAccountKey !== undefined &&
+      row.bitcoinAccountKey.trim() !== key
+    ) {
+      deviceFailure(
+        "VALIDATION_FAILED",
+        "Sat-denominated Income must post to the canonical River account.",
+        "transaction",
+        row.txId,
+      );
+    }
     const deltas = new Map<string, bigint>();
     addDelta(deltas, key, row.amountSats);
     await applyBtcAccountDeltas(ctx, row.owner, deltas);
@@ -3107,9 +3147,32 @@ export const upsertBtcAccount = mutation({
     if (account.owner !== fileOwner) {
       throw new ConvexError(
         `upsertBtcAccount: source file "${file}" belongs to ${fileOwner}, ` +
-          `not ${account.owner}.`,
+        `not ${account.owner}.`,
       );
     }
+    if (file !== "btc-balance-snapshot" && file !== "son-balances") {
+      throw new ConvexError(`Unknown Bitcoin account source file "${file}".`);
+    }
+    const document = await ctx.db
+      .query("btcBalanceDocuments")
+      .withIndex("by_source_file", (q) => q.eq("sourceFile", file))
+      .unique();
+    if (document) {
+      const outcome = await upsertBtcAccountCore(ctx, file, {
+        key: account.key,
+        owner: account.owner,
+        label: account.label,
+        custody: account.custody,
+        sats: account.sats,
+        asOf: account.asOf,
+        schemaVersion: account.schemaVersion,
+        fiatValuation: { cents: account.fiatCents },
+      });
+      return { key: account.key.trim(), owner: account.owner, outcome };
+    }
+    // Legacy bootstrap may populate the compatibility table before the typed
+    // document migration creates its authority. Once that document exists,
+    // every sync-token write above is routed through the atomic document path.
     const row = {
       ...account,
       schemaVersion: account.schemaVersion ?? 0n,

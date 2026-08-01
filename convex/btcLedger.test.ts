@@ -180,6 +180,18 @@ describe("Bitcoin balance posting", () => {
     await t.mutation(api.transaction, {
       transaction: { ...fiatIncome, amountSats: 12_000n },
     });
+    await expect(
+      t.mutation(api.transaction, { transaction: fiatIncome }),
+    ).rejects.toThrow(/requires explicit amountSats/);
+    await expect(
+      t.mutation(api.transaction, {
+        transaction: {
+          ...fiatIncome,
+          amountSats: 12_000n,
+          bitcoinAccountKey: "coldcard",
+        },
+      }),
+    ).rejects.toThrow(/canonical River account/);
     await t.mutation(api.transaction, {
       transaction: { ...fiatIncome, amountSats: 12_000n },
     });
