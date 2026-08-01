@@ -386,6 +386,33 @@ describe("Bitcoin balance posting", () => {
       river: 1_000_000n,
       coldcard: 2_000_000n,
     });
+    await expect(
+      t.mutation(api.reconcile, {
+        owner: "victor",
+        expectedUpdatedAtMs: 10,
+        asOf: "2026-08-01T20:00:00.000Z",
+        accounts: [],
+      }),
+    ).rejects.toThrow(/must provide every canonical Bitcoin account/);
+    await expect(
+      t.mutation(api.reconcile, {
+        owner: "victor",
+        expectedUpdatedAtMs: 10,
+        asOf: "2026-08-01T20:00:00.000Z",
+        accounts: [
+          {
+            key: "river",
+            label: "River",
+            custody: "exchange",
+            sats: 1_250_000n,
+          },
+        ],
+      }),
+    ).rejects.toThrow(/must provide every canonical Bitcoin account/);
+    expect(satsByKey(await snapshot())).toEqual({
+      river: 1_000_000n,
+      coldcard: 2_000_000n,
+    });
     const reconciled = await t.mutation(api.reconcile, {
       owner: "victor",
       expectedUpdatedAtMs: 10,

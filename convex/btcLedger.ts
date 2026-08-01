@@ -165,7 +165,7 @@ export async function applyBtcAccountDeltas(
     throw new ConvexError(`Unknown Bitcoin account: ${missing.join(", ")}.`);
   }
 
-  const now = Date.now();
+  const now = Math.max(Date.now(), document.updatedAtMs + 1);
   const asOf = new Date(now).toISOString();
   await lockSource(ctx, sourceFile);
   await ctx.db.patch(document._id, {
@@ -278,8 +278,13 @@ export const reconcileBtcAccounts = internalMutation({
     if (changedKeys.size !== updates.size) {
       throw new ConvexError("Reconciliation may update existing accounts only.");
     }
+    if (changedKeys.size !== document.accounts.length) {
+      throw new ConvexError(
+        "Reconciliation must provide every canonical Bitcoin account.",
+      );
+    }
 
-    const now = Date.now();
+    const now = Math.max(Date.now(), document.updatedAtMs + 1);
     await lockSource(ctx, sourceFile);
     await ctx.db.patch(document._id, {
       accounts,
