@@ -27,6 +27,7 @@ import type { PageDefinition } from "../src/renderer/pages/types.ts"
 type PageState = Freshness | "normal"
 
 const STATES: PageState[] = ["normal", "stale", "error", "empty", "loading"]
+const FIXTURE_MONTH = "2026-07"
 const fixtureNow = () => new Date(2026, 6, 26, 12, 0, 0)
 
 /**
@@ -57,6 +58,7 @@ function renderPage(
       initialProfile: profile,
       initialRoute: page.id,
       initialStateOverride: state,
+      initialCurrentMonth: FIXTURE_MONTH,
       initialDisplayUnit: displayUnit,
       children: createElement(
         TaskClockProvider,
