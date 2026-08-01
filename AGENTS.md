@@ -4,8 +4,8 @@
 
 MC2 mission-control is gone. It lived only on the wiped DGX Spark, was never
 pushed, and is unrecoverable. **Convex (`keen-elephant-452`) is the system of
-record.** The surviving `dataFiles` JSON blobs are the only authoritative copy
-of the family ledger until the reviewed row migration is approved and applied.
+record.** Canonical typed rows are the current ledger authority. The surviving
+`dataFiles` JSON blobs are a load-bearing compatibility copy for shipped readers.
 Never describe MC2 as a live upstream or direct work toward a separate MC2 repo.
 
 ## Tracking — GitHub only (2026-07-26)
@@ -34,6 +34,12 @@ This is **The Vogel Vault** (internal repo name still "Mason's Budget App"). Swi
   TestFlight" below. Both schemes ship together.
 - Swift types retain `MC2` names for compatibility with the surviving blob schema. `MasonsBudget/MasonsBudget/Services/MC2DTOs.swift`, `MC2Mapper.swift`, `MC2Reader.swift`, and `MC2SyncService.swift` remain load-bearing until every shipped client has moved off `dataFiles`; do not rename, remove, or change their decoding contract casually.
 - Native app writeback exists through `AppWriteSyncService` for approved app-originated transactions/todos when `ConvexConfig.isConfigured` is true. Do **not** put shared Convex write tokens in Swift source, UserDefaults, or bundled config; app writeback must use the approved configured path only. Any production write or migration remains approval-gated.
+- The reviewed monthly-import route lives in
+  `docs/production-monthly-import.md`. It is the only admin ingestion path:
+  private fd-only manifests, deterministic typed-row writes, one atomic batch
+  of at most 100 ledger records, and redacted structural evidence. Never
+  substitute table replacement, a legacy blob writer, or a rerun of the
+  completed migration.
 
 ---
 

@@ -112,6 +112,26 @@ clients and could make a later blob fallback disagree with rows. Retirement
 requires an explicit convergence design, including row-native tombstones and
 proof that no shipped reader or writer depends on `dataFiles`.
 
+### Monthly import operator
+
+[`production-monthly-import.md`](production-monthly-import.md) defines the
+reviewed route for routine admin ingestion.
+
+The operator is admin-only and writes canonical typed rows from a private
+fd-only manifest. It uses deterministic stable IDs, create-or-identical-no-op
+semantics, canonical income rows, and an in-place budget-month advance that
+carries categories/configuration without inventing missing monthly history.
+Bill pays remain excluded from budget spending. Runtime source locks and
+tombstones stay enforced.
+
+Each manifest is capped at 100 ledger rows and commits with its optional month
+advance as one atomic operation. The required sequence is dry run, exact-plan
+apply, canonical readback using the same manifest, then a no-change replay
+check. Evidence is structural and redacted. A lost or malformed completion
+response is an unknown outcome that must be resolved by manifest-bound readback
+before any retry. Neither recovery nor rollback may use table replacement,
+legacy blob replay, or the completed migration.
+
 ## 4. Financial and visibility invariants
 
 1. **Victor and Rachel are one adult household.** Canonical adult records may
