@@ -361,20 +361,21 @@ describe("all five source documents have typed projections", () => {
     }
   });
 
-  it("projects the stored production shapes: float noise and negative reconciliation lots", () => {
-    // Both shapes come from the single live financeDocuments row. The lot
-    // quantities were written from IEEE-754 doubles (15-16 fractional digits)
-    // and the wap statement_reconciliation lot is negative.
+  it("projects the legacy stored shapes: float noise and negative reconciliation lots", () => {
+    // Boundary-equivalent to legacy pre-contract stored text: lot quantities
+    // written from IEEE-754 doubles (15-16 fractional digits), and
+    // statement_reconciliation lots that remove shares and are therefore
+    // negative. Identifiers and amounts are synthetic; only the shapes matter.
     // Written out as JSON text, not JSON.stringify of JS numbers: the source
     // tokens are the point, and JSON.stringify would re-encode a small negative
     // as an exponent the contract rightly refuses.
     const raw = `{
       "retirement": {
         "accounts": {
-          "adult_401k": {
+          "alpha": {
             "holdings": [{
-              "name": "Vanguard S&P 500 ETF",
-              "ticker": "VOO",
+              "name": "Synthetic Index Fund",
+              "ticker": "SYNX",
               "shares": 12.0000000000004,
               "lots": [
                 {"date": "2026-03-02", "type": "buy", "shares": 1.7999999999999998},
@@ -382,11 +383,11 @@ describe("all five source documents have typed projections", () => {
               ]
             }]
           },
-          "wap": {
-            "provider": "WAP",
+          "omega": {
+            "provider": "Synthetic Retirement Provider",
             "holdings": [{
-              "name": "Vanguard S&P 500 ETF",
-              "ticker": "VOO",
+              "name": "Synthetic Index Fund",
+              "ticker": "SYNX",
               "shares": 3.3000000000000003,
               "lots": [
                 {"date": "2026-05-01", "type": "statement_reconciliation", "shares": -0.0000000000004},
@@ -399,16 +400,16 @@ describe("all five source documents have typed projections", () => {
     }`;
 
     const accounts = projectFinanceDocument(raw, 0).accounts;
-    const retirement = accounts.find((account) => account.key === "adult_401k")!;
-    const wap = accounts.find((account) => account.key === "wap")!;
+    const alpha = accounts.find((account) => account.key === "alpha")!;
+    const omega = accounts.find((account) => account.key === "omega")!;
 
-    expect(retirement.holdings[0]!.sharesDecimal).toBe("12");
-    expect(retirement.holdings[0]!.lots.map((lot) => lot.sharesDecimal))
+    expect(alpha.holdings[0]!.sharesDecimal).toBe("12");
+    expect(alpha.holdings[0]!.lots.map((lot) => lot.sharesDecimal))
       .toEqual(["1.8", "0.500000000001"]);
-    expect(wap.holdings[0]!.sharesDecimal).toBe("3.3");
+    expect(omega.holdings[0]!.sharesDecimal).toBe("3.3");
     // Minus zero has no canonical spelling of its own; a negative that rounds
     // away to nothing becomes plain zero rather than "-0".
-    expect(wap.holdings[0]!.lots.map((lot) => lot.sharesDecimal))
+    expect(omega.holdings[0]!.lots.map((lot) => lot.sharesDecimal))
       .toEqual(["0", "-1.234567890124"]);
   });
 

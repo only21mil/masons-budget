@@ -1913,9 +1913,10 @@ describe("public Linux/Android read contract", () => {
   const financeLogLines = (lines: string[]) =>
     lines.filter((line) => !line.startsWith("PERMISSIVE:"));
 
-  // The single live financeDocuments row predates both tightenings: lots were
-  // written from IEEE-754 doubles, and the wap VOO statement_reconciliation lot
-  // is negative. Asserting those took every getFinanceDocument call down.
+  // A financeDocuments row written before both tightenings carries lot
+  // quantities straight from IEEE-754 doubles and a negative
+  // statement_reconciliation lot. Asserting those took every
+  // getFinanceDocument call down.
   it("canonicalizes legacy float-noise and negative reconciliation lots instead of failing the snapshot", async () => {
     await t.run(async (ctx) => {
       const document = await ctx.db

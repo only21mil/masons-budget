@@ -645,25 +645,27 @@ const FINANCES = {
 };
 
 /**
- * The blob the single live financeDocuments row was written from.
+ * A synthetic account carrying the two boundary shapes the strict shares
+ * contract refused, so the migration is exercised against both.
  *
- * It carries both shapes the strict shares contract refused: lot quantities
- * straight out of IEEE-754 doubles, and a statement_reconciliation lot that
- * removes shares and is therefore negative.
+ * The shapes are what matter and are reproduced exactly: lot quantities with
+ * the 16-fraction-digit noise of an IEEE-754 double, and a
+ * statement_reconciliation lot that removes shares and is therefore negative.
+ * Identifiers and amounts are invented.
  */
-const FINANCES_WITH_STORED_PRODUCTION_SHAPES = {
+const FINANCES_WITH_LEGACY_STORED_SHAPES = {
   ...FINANCES,
   retirement: {
     ...FINANCES.retirement,
-    wap: {
-      provider: "Adult WAP",
+    omega: {
+      provider: "Synthetic Retirement Provider",
       total: 50.05,
       weeklyContribution: 5.05,
       holdings: [
         {
-          name: "Vanguard S&P 500 ETF",
+          name: "Synthetic Index Fund",
           category: "Equity",
-          ticker: "VOO",
+          ticker: "SYNX",
           value: 50.05,
           shares: 3.3000000000000003,
           lots: [
@@ -689,10 +691,10 @@ const FINANCES_WITH_STORED_PRODUCTION_SHAPES = {
 };
 
 /**
- * The quantities exactly as the pre-contract projection stored them: the raw
+ * The quantities as a pre-contract projection stored them: the raw
  * `String(value)` of each source double, unquantized and unsigned-hostile.
  */
-const LEGACY_STORED_WAP_SHARES = {
+const LEGACY_STORED_OMEGA_SHARES = {
   holding: "3.3000000000000003",
   lots: ["1.7999999999999998", "-0.4200000000000001"],
 };
@@ -1677,21 +1679,21 @@ describe("migrating every file", () => {
     }
   });
 
-  // The live blob carries both shapes the strict shares contract refused: lot
+  // A blob carrying both shapes the strict shares contract refused: lot
   // quantities written from IEEE-754 doubles, and a statement_reconciliation lot
   // that removes shares and is therefore negative. The migration canonicalizes
   // them; migrationRawJson still holds the untouched source, so the round trip
   // and the money sums are unaffected.
   test("float-noise and negative reconciliation lots migrate to canonical quantities", async () => {
     const t = harness();
-    await seedBlob(t, "finances", FINANCES_WITH_STORED_PRODUCTION_SHAPES);
+    await seedBlob(t, "finances", FINANCES_WITH_LEGACY_STORED_SHAPES);
 
     await applyFile(t, { file: "finances" });
 
     const [finances] = await rowsIn(t, "financeDocuments");
-    const wap = finances!.accounts.find((account) => account.key === "wap")!;
-    expect(wap.holdings[0]!.sharesDecimal).toBe("3.3");
-    expect(wap.holdings[0]!.lots.map((lot) => lot.sharesDecimal)).toEqual([
+    const omega = finances!.accounts.find((account) => account.key === "omega")!;
+    expect(omega.holdings[0]!.sharesDecimal).toBe("3.3");
+    expect(omega.holdings[0]!.lots.map((lot) => lot.sharesDecimal)).toEqual([
       "1.8",
       "-0.42",
     ]);
@@ -1705,38 +1707,38 @@ describe("migrating every file", () => {
     });
   });
 
-  // Production is not an empty table: the finances row already exists, written
-  // by the projection that stored `String(someDouble)` verbatim. Insertion is
-  // therefore the path the repair will *not* take. This is the one that matters
-  // — the row must be patched in place, and `exactRoundTrip` cannot see the
-  // difference, because it compares migrationRawJson to the blob and never looks
-  // at a projected share string.
+  // The repair's target table is not empty: a finances row already exists,
+  // written by a projection that stored `String(someDouble)` verbatim.
+  // Insertion is therefore the path the repair will *not* take. This is the one
+  // that matters — the row must be patched in place, and `exactRoundTrip`
+  // cannot see the difference, because it compares migrationRawJson to the blob
+  // and never looks at a projected share string.
   test("an existing finance row with legacy quantities is updated in place, then idempotent", async () => {
     const t = harness();
-    await seedBlob(t, "finances", FINANCES_WITH_STORED_PRODUCTION_SHAPES);
+    await seedBlob(t, "finances", FINANCES_WITH_LEGACY_STORED_SHAPES);
 
-    // The stored row as it exists today: the current projection's own output
-    // with the raw float text put back, so the *only* difference from a fresh
-    // projection is the three share quantities.
+    // A pre-contract stored row: the current projection's own output with the
+    // raw float text put back, so the *only* difference from a fresh projection
+    // is the three share quantities.
     const source = MIGRATION_SOURCES.find((entry) => entry.file === "finances")!;
     const projected = projectFile(
       source,
-      FINANCES_WITH_STORED_PRODUCTION_SHAPES,
+      FINANCES_WITH_LEGACY_STORED_SHAPES,
     )!.docs[0]! as unknown as StoredFinanceDocument;
     await t.run(async (ctx) => {
       await ctx.db.insert("financeDocuments", {
         ...projected,
         accounts: projected.accounts.map((account) =>
-          account.key !== "wap"
+          account.key !== "omega"
             ? account
             : {
                 ...account,
                 holdings: account.holdings.map((holding) => ({
                   ...holding,
-                  sharesDecimal: LEGACY_STORED_WAP_SHARES.holding,
+                  sharesDecimal: LEGACY_STORED_OMEGA_SHARES.holding,
                   lots: holding.lots.map((lot, index) => ({
                     ...lot,
-                    sharesDecimal: LEGACY_STORED_WAP_SHARES.lots[index]!,
+                    sharesDecimal: LEGACY_STORED_OMEGA_SHARES.lots[index]!,
                   })),
                 })),
               },
@@ -1777,9 +1779,11 @@ describe("migrating every file", () => {
     // client read now serves.
     const stored = await rowsIn(t, "financeDocuments");
     expect(stored).toHaveLength(1);
-    const wap = stored[0]!.accounts.find((account) => account.key === "wap")!;
-    expect(wap.holdings[0]!.sharesDecimal).toBe("3.3");
-    expect(wap.holdings[0]!.lots.map((lot) => lot.sharesDecimal)).toEqual([
+    const omega = stored[0]!.accounts.find(
+      (account) => account.key === "omega",
+    )!;
+    expect(omega.holdings[0]!.sharesDecimal).toBe("3.3");
+    expect(omega.holdings[0]!.lots.map((lot) => lot.sharesDecimal)).toEqual([
       "1.8",
       // Quantized and still negative: the reconciliation lot removes shares.
       "-0.42",

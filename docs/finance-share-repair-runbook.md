@@ -41,7 +41,28 @@ writes to `dataFiles`, `syncVersions`, or `todoTombstones`.
 
 All of these must hold before any command in the next section runs.
 
-1. **The deployed code is the reviewed checkout.** Work from a clean, pinned
+1. **Clients ship first — before the backend deploy in precondition 2 and
+   before the repair.** Every client that has not been updated fails the whole
+   finance document closed the moment the backend emits a signed lot, so
+   backend-first ordering breaks every installed client at once.
+
+   - The updated, same-signed Android APK containing the signed-lot decoder is
+     **installed on the Fold**, and confirmed by reading the app's version and
+     build identity off the device — not from memory, and not from the fact that
+     a build was produced:
+
+     ```bash
+     adb shell dumpsys package com.sats21m.vogelvault \
+       | grep -E 'versionName|versionCode|firstInstallTime|lastUpdateTime'
+     ```
+
+     The reported `versionName`/`versionCode` must be the build produced from
+     the reviewed checkout. Anything older, or any doubt, is a stop.
+   - Any active Linux client is running a build that contains the signed-lot
+     transport change. If a stale Linux client is running anywhere, update or
+     shut it down before continuing.
+
+2. **The deployed code is the reviewed checkout.** Work from a clean, pinned
    worktree of the merge commit that contains the canonicalizing projection, run
    `npm ci`, and confirm generated types are not stale:
 
@@ -53,7 +74,7 @@ All of these must hold before any command in the next section runs.
    repair applied against an older deployed projection writes the *old* text
    back and silently undoes itself.
 
-2. **Read auth is enforced.**
+3. **Read auth is enforced.**
 
    ```bash
    read -rsp "Convex production read token: " vv_read_token
@@ -64,7 +85,7 @@ All of these must hold before any command in the next section runs.
 
    Good: exit 0 with `STATE: ENFORCED`. Anything else is a stop.
 
-3. **The backend agrees there is exactly one finances row to update.**
+4. **The backend agrees there is exactly one finances row to update.**
 
    ```bash
    run_dir="$(mktemp -d "$HOME/work/vogel-vault-finance-repair.XXXXXX")"
@@ -88,7 +109,7 @@ All of these must hold before any command in the next section runs.
    `finances` has accepted runtime writes since cutover; the migration refuses it
    by design and so does this repair.
 
-4. **`$run_dir` is not `/tmp`.** `/tmp` is a RAM-backed tmpfs on every fleet
+5. **`$run_dir` is not `/tmp`.** `/tmp` is a RAM-backed tmpfs on every fleet
    machine, and the snapshot below holds the complete household finance row.
 
 ## Blob-freshness proof — run this before the repair, not after
@@ -165,7 +186,7 @@ Bad, and a hard stop in each case:
   Diagnose the natural key with read-only inspection.
 - `unchanged: 1`. There is nothing to repair. Either the repair already ran or
   the deployed code is not the reviewed checkout. Stop and re-check
-  precondition 1.
+  precondition 2.
 - Any file other than `finances` appears in the plan. `--only finances` was
   dropped; re-run with it.
 
@@ -196,7 +217,10 @@ signed_lots_before="$(
 printf 'signed lots before: %s\n' "$signed_lots_before"
 ```
 
-The recorded production row has one: the `wap` `statement_reconciliation` lot.
+Record whatever number this prints. It is the baseline for step 5, which
+requires the count to be **equal** afterwards. Do not compare it against an
+expected value: this document states no expected per-account contents, and a
+count that differs from an operator's recollection is not by itself a finding.
 
 ### 3. Apply, bound to the reviewed plan
 
@@ -240,9 +264,15 @@ jq -e '
          and .counts.updated == 1
          and .counts.inserted == 0
          and .verification.ok == true
-         and (.verification.problems | length) == 0)
+         and .verification.problemCount == 0)
 ' "$run_dir/repair-apply.json"
 ```
+
+`problemCount`, not `problems`: the CLI redacts the backend verification down to
+counts and booleans before writing JSON (`safeVerification` in
+`scripts/convex-migrate.mjs`), so the problem *messages* never reach the file. A
+gate written against `.verification.problems` passes vacuously — jq gives `null`
+a length of `0` — and proves nothing.
 
 ### 4. Post-apply verification and idempotency
 
@@ -255,7 +285,7 @@ jq -e '
   and (.verification
        | .ok and .rowCountMatches and .moneySumsMatch
          and .roundTripRowsMatch and .exactRoundTrip
-         and (.problems | length) == 0)
+         and .problemCount == 0)
 ' "$run_dir/post-verify.json"
 
 node scripts/convex-migrate.mjs --only finances --prod --json \
@@ -303,12 +333,12 @@ is printed — only four integers.
 
 `signedLots` lower than `$before` has exactly one legitimate explanation: a
 negative lot whose magnitude was smaller than half the retained scale rounds away
-to plain `0`, because minus zero has no canonical spelling. The recorded
-production row contains no such lot, so treat a drop as a stop until you have
-identified which lot changed sign using the two `0600` snapshots and nothing
-else. `signedLots` *higher* than `$before` is never legitimate.
+to plain `0`, because minus zero has no canonical spelling. Treat any drop as a
+stop until you have identified which lot changed sign using the two `0600`
+snapshots and nothing else. `signedLots` *higher* than `$before` is never
+legitimate.
 
-Finally, repeat the enforced read-auth probe from precondition 2, and confirm a
+Finally, repeat the enforced read-auth probe from precondition 3, and confirm a
 `tables:getFinanceDocument` read from a client no longer emits the constant
 `financeDocuments: repaired non-canonical stored share quantities at read time`
 warning in the Convex function logs. That warning disappearing is the

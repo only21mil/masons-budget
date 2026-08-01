@@ -280,7 +280,7 @@ test("canonicalizing quantizes the 13th fractional digit half away from zero", (
     ["1.0000000000005", "1.000000000001"],
     ["1.0000000000006", "1.000000000001"],
     ["1.1234567890123", "1.123456789012"],
-    // The single live row: a VOO lot written straight from a double.
+    // A lot quantity written straight from a double, as legacy rows store it.
     ["1.7999999999999998", "1.8"],
     ["3.3000000000000003", "3.3"],
     ["999999999999.9999999999990", "999999999999.999999999999"],
