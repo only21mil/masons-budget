@@ -1618,6 +1618,69 @@ describe("migrating every file", () => {
     }
   });
 
+  // The live blob carries both shapes the strict shares contract refused: lot
+  // quantities written from IEEE-754 doubles, and a statement_reconciliation lot
+  // that removes shares and is therefore negative. The migration canonicalizes
+  // them; migrationRawJson still holds the untouched source, so the round trip
+  // and the money sums are unaffected.
+  test("float-noise and negative reconciliation lots migrate to canonical quantities", async () => {
+    const t = harness();
+    await seedBlob(t, "finances", {
+      ...FINANCES,
+      retirement: {
+        ...FINANCES.retirement,
+        wap: {
+          provider: "Adult WAP",
+          total: 50.05,
+          weeklyContribution: 5.05,
+          holdings: [
+            {
+              name: "Vanguard S&P 500 ETF",
+              category: "Equity",
+              ticker: "VOO",
+              value: 50.05,
+              shares: 3.3000000000000003,
+              lots: [
+                {
+                  date: "2026-05-01",
+                  type: "buy",
+                  pricePerShare: 300.05,
+                  shares: 1.7999999999999998,
+                  amountInvested: 540.09,
+                },
+                {
+                  date: "2026-05-02",
+                  type: "statement_reconciliation",
+                  pricePerShare: 300.05,
+                  shares: -0.4200000000000001,
+                  amountInvested: -126.02,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    await applyFile(t, { file: "finances" });
+
+    const [finances] = await rowsIn(t, "financeDocuments");
+    const wap = finances!.accounts.find((account) => account.key === "wap")!;
+    expect(wap.holdings[0]!.sharesDecimal).toBe("3.3");
+    expect(wap.holdings[0]!.lots.map((lot) => lot.sharesDecimal)).toEqual([
+      "1.8",
+      "-0.42",
+    ]);
+
+    expect(await t.query(api.verifyFile, { file: "finances" })).toMatchObject({
+      ok: true,
+      rowCountMatches: true,
+      moneySumsMatch: true,
+      exactRoundTrip: true,
+      problems: [],
+    });
+  });
+
   test("migration preserves source transaction signs verbatim", async () => {
     const t = harness();
     await seedAll(t);

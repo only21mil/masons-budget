@@ -10,6 +10,7 @@ import {
   DISPLAY_UNITS,
   PRICE_UNAVAILABLE,
   SATS_PER_BTC,
+  SHARES_DECIMAL_MAX_RAW_LENGTH,
   basisPoints,
   displayUnitForSurface,
   displayUnitFromStorageKey,
@@ -17,12 +18,15 @@ import {
   formatBitcoin,
   formatSats,
   formatUsd,
+  assertSharesDecimal,
+  canonicalizeSharesDecimal,
   jsonNumberToCents,
   jsonNumberToMinorUnits,
   jsonNumberToSats,
   parseBtcToSats,
   parseCents,
   satsToUsdCents,
+  sharesToValueCents,
   sum,
 } from "../src/money.ts"
 
@@ -242,4 +246,134 @@ test("basisPoints guards divide-by-zero", () => {
   assert.equal(basisPoints(50n, 100n), 5000)
   assert.equal(basisPoints(0n, 100n), 0)
   assert.equal(basisPoints(100n, 0n), 0)
+})
+
+// ── Share quantities ────────────────────────────────────────────────────────
+//
+// Two shapes reach us from blobs written before the contract tightened: IEEE-754
+// noise (15-16 fractional digits against a retained scale of 12) and negative
+// reconciliation lots. assertSharesDecimal still refuses both, because stored
+// text either is canonical or is not; canonicalizeSharesDecimal is the single
+// place allowed to repair one.
+
+test("canonicalizing an in-bounds share quantity is the identity", () => {
+  for (const value of [
+    "0",
+    "0.0",
+    "2.5000",
+    "12.34567890",
+    "1393.9646307166",
+    "999999999999.999999999999",
+  ]) {
+    assert.equal(canonicalizeSharesDecimal(value), value, value)
+    assert.equal(canonicalizeSharesDecimal(value, { signed: true }), value, value)
+    assert.equal(assertSharesDecimal(value), value, value)
+  }
+  // Trailing zeroes are retained source precision, not noise, so nothing trims
+  // them; only zeroes the quantizer itself creates are dropped.
+  assert.equal(canonicalizeSharesDecimal("-2.5000", { signed: true }), "-2.5000")
+})
+
+test("canonicalizing quantizes the 13th fractional digit half away from zero", () => {
+  const cases: Array<[string, string]> = [
+    ["1.0000000000004", "1"],
+    ["1.0000000000005", "1.000000000001"],
+    ["1.0000000000006", "1.000000000001"],
+    ["1.1234567890123", "1.123456789012"],
+    // The single live row: a VOO lot written straight from a double.
+    ["1.7999999999999998", "1.8"],
+    ["3.3000000000000003", "3.3"],
+    ["999999999999.9999999999990", "999999999999.999999999999"],
+  ]
+  for (const [raw, expected] of cases) {
+    assert.equal(canonicalizeSharesDecimal(raw), expected, raw)
+  }
+})
+
+test("a quantization carry crosses the decimal point", () => {
+  assert.equal(canonicalizeSharesDecimal("0.9999999999995"), "1")
+  assert.equal(canonicalizeSharesDecimal("9.9999999999995"), "10")
+  assert.equal(canonicalizeSharesDecimal("1.9999999999994"), "1.999999999999")
+})
+
+test("signed share quantities are lot-only and round away from zero", () => {
+  assert.equal(
+    canonicalizeSharesDecimal("-1.0000000000005", { signed: true }),
+    "-1.000000000001",
+  )
+  assert.equal(canonicalizeSharesDecimal("-0.4200000000000001", { signed: true }), "-0.42")
+  // 26 characters: the canonical maximum plus its sign.
+  const widest = "-999999999999.999999999999"
+  assert.equal(widest.length, 26)
+  assert.equal(canonicalizeSharesDecimal(widest, { signed: true }), widest)
+  // Unsigned is the default, and a position size never goes negative.
+  assert.throws(
+    () => canonicalizeSharesDecimal("-1.5"),
+    /canonical share quantity/,
+  )
+  assert.throws(() => assertSharesDecimal("-1.5"), /canonical share quantity/)
+  assert.equal(assertSharesDecimal("-1.5", { signed: true }), "-1.5")
+})
+
+test("minus zero normalizes to plain zero in every spelling", () => {
+  for (const value of ["-0", "-0.0", "-0.000000000000", "-0.0000000000004"]) {
+    assert.equal(canonicalizeSharesDecimal(value, { signed: true }), "0", value)
+    // "-0" is two spellings of one value, so it is never canonical *stored*
+    // text; the last case is out of bounds on its scale as well.
+    assert.throws(
+      () => assertSharesDecimal(value, { signed: true }),
+      /share quantity/i,
+      value,
+    )
+  }
+})
+
+test("canonicalizing still refuses corruption, before and after quantizing", () => {
+  for (const value of ["", "+1", "1e3", " 1", "1 ", "01", "00.1", ".5", "1.", "1,5"]) {
+    assert.throws(
+      () => canonicalizeSharesDecimal(value, { signed: true }),
+      /canonical share quantity/,
+      value,
+    )
+  }
+  assert.throws(() => canonicalizeSharesDecimal(1.5 as unknown), /canonical share quantity/)
+  // Longer than any double can justify: corruption, not float noise.
+  assert.throws(
+    () => canonicalizeSharesDecimal(`0.${"1".repeat(SHARES_DECIMAL_MAX_RAW_LENGTH)}`),
+    /canonical share quantity/,
+  )
+  // Bounds are enforced on the canonical result, so a rounding carry that
+  // overflows the integer digits is still loud.
+  assert.throws(() => canonicalizeSharesDecimal("1000000000000"), /exceeds bounds/)
+  assert.throws(
+    () => canonicalizeSharesDecimal("999999999999.9999999999995"),
+    /exceeds bounds/,
+  )
+})
+
+test("canonicalized output always satisfies the strict assertion", () => {
+  const raws = [
+    "0",
+    "2.5000",
+    "1.7999999999999998",
+    "0.9999999999995",
+    "-1.0000000000005",
+    "-0.0000000000004",
+  ]
+  for (const raw of raws) {
+    const canonical = canonicalizeSharesDecimal(raw, { signed: true })
+    assert.equal(assertSharesDecimal(canonical, { signed: true }), canonical, raw)
+    assert.equal(canonicalizeSharesDecimal(canonical, { signed: true }), canonical, raw)
+  }
+})
+
+test("valuing shares keeps the sign out of the magnitude digits", () => {
+  // Holdings are the only caller today, so signed input is refused by default.
+  assert.throws(() => sharesToValueCents("-1.5", 200n), /canonical share quantity/)
+  assert.equal(sharesToValueCents("1.5", 200n), 300n)
+  assert.equal(sharesToValueCents("-1.5", 200n, { signed: true }), -300n)
+  // Half a cent rounds away from zero on both sides, not toward negative.
+  assert.equal(sharesToValueCents("0.005", 100n), 1n)
+  assert.equal(sharesToValueCents("-0.005", 100n, { signed: true }), -1n)
+  assert.equal(sharesToValueCents("-0.004", 100n, { signed: true }), 0n)
 })

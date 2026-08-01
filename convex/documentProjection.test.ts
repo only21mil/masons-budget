@@ -296,19 +296,32 @@ describe("all five source documents have typed projections", () => {
       maxIntegerDigits: contract.maxIntegerDigits,
     });
 
-    const rawFinance = (shares: string) => JSON.stringify({
+    const rawFinance = (shares: string, lotShares = shares) => JSON.stringify({
       retirement: {
         accounts: {
           adult_401k: {
             holdings: [{
               name: "Fund",
               shares,
-              lots: [{ shares }],
+              lots: [{ shares: lotShares }],
             }],
           },
         },
       },
     });
+
+    // The shared fixture predates canonicalization and still classifies these as
+    // invalid, which they are *as stored text* — assertSharesDecimal refuses
+    // them, and the Linux/Swift/Kotlin readers that consume the same fixture
+    // keep refusing them. The projection is the one layer allowed to repair a
+    // value, so here they land on their canonical form instead of throwing.
+    const repairedAtProjection: Record<string, string> = {
+      "1.1234567890123": "1.123456789012",
+      "999999999999.9999999999990": "999999999999.999999999999",
+    };
+    // Signed quantities are lot-only: a reconciliation lot removes shares, a
+    // position size never goes negative.
+    const lotOnly = new Set(["-0.005"]);
 
     for (const value of contract.valid) {
       const holding = projectFinanceDocument(rawFinance(value), 0)
@@ -317,9 +330,78 @@ describe("all five source documents have typed projections", () => {
       expect(holding.lots[0]!.sharesDecimal, value).toBe(value);
     }
     for (const value of contract.invalid) {
+      const repaired = repairedAtProjection[value];
+      if (repaired !== undefined) {
+        const holding = projectFinanceDocument(rawFinance(value), 0)
+          .accounts[0]!.holdings[0]!;
+        expect(holding.sharesDecimal, value).toBe(repaired);
+        expect(holding.lots[0]!.sharesDecimal, value).toBe(repaired);
+        continue;
+      }
+      if (lotOnly.has(value)) {
+        expect(() => projectFinanceDocument(rawFinance(value), 0), value)
+          .toThrow(/share quantity/);
+        const holding = projectFinanceDocument(rawFinance("1", value), 0)
+          .accounts[0]!.holdings[0]!;
+        expect(holding.lots[0]!.sharesDecimal, value).toBe(value);
+        continue;
+      }
       expect(() => projectFinanceDocument(rawFinance(value), 0), value)
         .toThrow(/share quantity/);
+      expect(() => projectFinanceDocument(rawFinance("1", value), 0), value)
+        .toThrow(/share quantity/);
     }
+  });
+
+  it("projects the stored production shapes: float noise and negative reconciliation lots", () => {
+    // Both shapes come from the single live financeDocuments row. The lot
+    // quantities were written from IEEE-754 doubles (15-16 fractional digits)
+    // and the wap statement_reconciliation lot is negative.
+    // Written out as JSON text, not JSON.stringify of JS numbers: the source
+    // tokens are the point, and JSON.stringify would re-encode a small negative
+    // as an exponent the contract rightly refuses.
+    const raw = `{
+      "retirement": {
+        "accounts": {
+          "adult_401k": {
+            "holdings": [{
+              "name": "Vanguard S&P 500 ETF",
+              "ticker": "VOO",
+              "shares": 12.0000000000004,
+              "lots": [
+                {"date": "2026-03-02", "type": "buy", "shares": 1.7999999999999998},
+                {"date": "2026-04-01", "type": "buy", "shares": 0.5000000000005}
+              ]
+            }]
+          },
+          "wap": {
+            "provider": "WAP",
+            "holdings": [{
+              "name": "Vanguard S&P 500 ETF",
+              "ticker": "VOO",
+              "shares": 3.3000000000000003,
+              "lots": [
+                {"date": "2026-05-01", "type": "statement_reconciliation", "shares": -0.0000000000004},
+                {"date": "2026-05-02", "type": "statement_reconciliation", "shares": -1.2345678901239}
+              ]
+            }]
+          }
+        }
+      }
+    }`;
+
+    const accounts = projectFinanceDocument(raw, 0).accounts;
+    const retirement = accounts.find((account) => account.key === "adult_401k")!;
+    const wap = accounts.find((account) => account.key === "wap")!;
+
+    expect(retirement.holdings[0]!.sharesDecimal).toBe("12");
+    expect(retirement.holdings[0]!.lots.map((lot) => lot.sharesDecimal))
+      .toEqual(["1.8", "0.500000000001"]);
+    expect(wap.holdings[0]!.sharesDecimal).toBe("3.3");
+    // Minus zero has no canonical spelling of its own; a negative that rounds
+    // away to nothing becomes plain zero rather than "-0".
+    expect(wap.holdings[0]!.lots.map((lot) => lot.sharesDecimal))
+      .toEqual(["0", "-1.234567890124"]);
   });
 
   it("rejects present non-array finance holdings and lots without rejecting omission", () => {

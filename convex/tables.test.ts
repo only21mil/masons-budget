@@ -10,7 +10,7 @@
 //      directions are asserted, on the same data, in the same test.
 //   3. Money going through a float.
 //   4. The auth mirror in tables.ts drifting from the gates in dataFiles.ts.
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { convexTest } from "convex-test";
 import type { FunctionReference, OptionalRestArgs } from "convex/server";
 
@@ -304,6 +304,14 @@ const fn = {
             owner: Member;
             totalValueCents: bigint;
             weeklyContributionCents: bigint;
+            // Declared down to the lots because the share quantities are the
+            // part of this response with a contract of their own.
+            holdings: Array<{
+              name: string;
+              ticker?: string;
+              sharesDecimal: string;
+              lots: Array<{ type: string; sharesDecimal: string }>;
+            }>;
           }>;
           updatedAtMs: number;
         };
@@ -1838,6 +1846,111 @@ describe("public Linux/Android read contract", () => {
       "mason",
     ]);
     expect(mason.document?.retirementTotalCents).toBeUndefined();
+  });
+
+  it("returns stored canonical share quantities byte-identical", async () => {
+    const stored = await t.run(async (ctx) => {
+      const document = await ctx.db
+        .query("financeDocuments")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "finances"))
+        .unique();
+      if (!document) throw new Error("missing seeded finance document");
+      return document.accounts.flatMap((account) =>
+        account.holdings.flatMap((holding) => [
+          holding.sharesDecimal,
+          ...holding.lots.map((lot) => lot.sharesDecimal),
+        ]),
+      );
+    });
+
+    const response = await t.query(fn.getFinanceDocument, {
+      viewer: "victor",
+      scope: "visible",
+    });
+    const returned = (response.document?.accounts ?? []).flatMap((account) =>
+      account.holdings.flatMap((holding) => [
+        holding.sharesDecimal,
+        ...holding.lots.map((lot) => lot.sharesDecimal),
+      ]),
+    );
+    expect(returned).toEqual(stored);
+    expect(returned).toEqual(["321.125", "10.5"]);
+  });
+
+  // The single live financeDocuments row predates both tightenings: lots were
+  // written from IEEE-754 doubles, and the wap VOO statement_reconciliation lot
+  // is negative. Asserting those took every getFinanceDocument call down.
+  it("canonicalizes legacy float-noise and negative reconciliation lots instead of failing the snapshot", async () => {
+    await t.run(async (ctx) => {
+      const document = await ctx.db
+        .query("financeDocuments")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "finances"))
+        .unique();
+      if (!document) throw new Error("missing seeded finance document");
+      const accounts = document.accounts.map((account, accountIndex) =>
+        accountIndex === 0
+          ? {
+              ...account,
+              holdings: account.holdings.map((holding) => {
+                const lot = holding.lots[0]!;
+                return {
+                  ...holding,
+                  sharesDecimal: "321.1250000000000004",
+                  lots: [
+                    { ...lot, sharesDecimal: "10.4999999999999998" },
+                    {
+                      ...lot,
+                      type: "statement_reconciliation",
+                      sharesDecimal: "-2.3300000000000002",
+                    },
+                    { ...lot, sharesDecimal: "-0.0000000000004" },
+                  ],
+                };
+              }),
+            }
+          : account,
+      );
+      await ctx.db.patch(document._id, { accounts });
+    });
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let lines: string[] = [];
+    try {
+      for (const scope of ["visible", "netWorth"] as const) {
+        const response = await t.query(fn.getFinanceDocument, {
+          viewer: "victor",
+          scope,
+        });
+        expect(response.complete, scope).toBe(true);
+        const holding = response.document?.accounts.find(
+          (account) => account.key === "victor_401k",
+        )?.holdings[0];
+        expect(holding?.sharesDecimal, scope).toBe("321.125");
+        // Half away from zero at the 13th digit, the carry crossing back into
+        // the integer part, and a negative that rounds away to plain zero.
+        expect(holding?.lots.map((lot) => lot.sharesDecimal), scope).toEqual([
+          "10.5",
+          "-2.33",
+          "0",
+        ]);
+      }
+      // mockRestore clears the recorded calls, so read them first.
+      lines = warn.mock.calls.map((call) => String(call[0]));
+    } finally {
+      warn.mockRestore();
+    }
+
+    // The repair signal names the account, the public ticker and the lot slot
+    // and stops there: no quantity, no cents, no holding name, no owner.
+    expect(lines).toContain(
+      "financeDocuments canonicalized shares: account=victor_401k ticker=INDEX reason=excess-precision",
+    );
+    expect(lines).toContain(
+      "financeDocuments canonicalized shares: account=victor_401k ticker=INDEX lot=2 reason=negative-zero",
+    );
+    for (const line of lines) {
+      expect(line).not.toMatch(/321|10\.4|2\.33|Index Fund|victor\b(?!_401k)/);
+    }
   });
 
   it("fails the whole finance snapshot when a schema-valid stored share string is invalid", async () => {

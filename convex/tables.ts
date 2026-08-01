@@ -43,7 +43,10 @@ import type { Doc } from "./_generated/dataModel";
 import { query, mutation, type MutationCtx } from "./_generated/server";
 import { isRealIsoDate, requireIsoDate } from "./dateValidation";
 import { authenticateDevice, markDeviceSeen } from "./deviceAuth";
-import { assertSharesDecimal } from "./documentProjection";
+import {
+  type SharesDecimalOptions,
+  canonicalizeSharesDecimal,
+} from "./documentProjection";
 import { custodyValidator, familyMemberValidator } from "./schema";
 import { normalizeTodoRecord, todoUpdatedMs } from "./todoNormalize";
 
@@ -785,27 +788,66 @@ function publicFinanceAccount(row: {
       valueCents: holding.valueCents,
       costBasisCents: holding.costBasisCents,
       gainBps: holding.gainBps,
-      sharesDecimal: assertSharesDecimal(
+      sharesDecimal: canonicalStoredShares(
         holding.sharesDecimal,
         `financeDocuments.${row.key}.${holding.name}.sharesDecimal`,
+        {},
+        { accountKey: row.key, ticker: holding.ticker },
       ),
       avgCostCents: holding.avgCostCents,
       currentPricePerShareCents: holding.currentPricePerShareCents,
       isProxy: holding.isProxy,
       proxyNote: holding.proxyNote,
-      lots: holding.lots.map((lot) => ({
+      lots: holding.lots.map((lot, lotIndex) => ({
         date: lot.date,
         type: lot.type,
         pricePerShareCents: lot.pricePerShareCents,
-        sharesDecimal: assertSharesDecimal(
+        sharesDecimal: canonicalStoredShares(
           lot.sharesDecimal,
           `financeDocuments.${row.key}.${holding.name}.lots.sharesDecimal`,
+          { signed: true },
+          { accountKey: row.key, ticker: holding.ticker, lotIndex },
         ),
         amountInvestedCents: lot.amountInvestedCents,
         note: lot.note,
       })),
     })),
   };
+}
+
+/**
+ * Read-time repair for quantities written before the shares contract tightened.
+ *
+ * The stored finance document predates both rules it now breaks: lots carry
+ * IEEE-754 noise (15-16 fractional digits against a retained scale of 12) and a
+ * statement-reconciliation lot is stored negative. Asserting made every
+ * getFinanceDocument call throw and took the whole Fold finance screen down, so
+ * the read canonicalizes and stays loud only for genuine corruption — an
+ * exponent, padding, or 13 integer digits still throws exactly as before.
+ *
+ * The warning is the repair signal for the source blob, so it names the account,
+ * the public ticker and the lot position and nothing else. Quantities, cents,
+ * holding names and owners never reach the log.
+ */
+function canonicalStoredShares(
+  value: string,
+  context: string,
+  options: SharesDecimalOptions,
+  telemetry: { accountKey: string; ticker?: string; lotIndex?: number },
+): string {
+  const canonical = canonicalizeSharesDecimal(value, context, options);
+  if (canonical === value) return canonical;
+
+  const reason =
+    canonical === "0" && value.startsWith("-")
+      ? "negative-zero"
+      : "excess-precision";
+  const lot = telemetry.lotIndex === undefined ? "" : ` lot=${telemetry.lotIndex}`;
+  console.warn(
+    `financeDocuments canonicalized shares: account=${telemetry.accountKey} ` +
+      `ticker=${telemetry.ticker ?? "none"}${lot} reason=${reason}`,
+  );
+  return canonical;
 }
 
 function budgetSourceFor(
