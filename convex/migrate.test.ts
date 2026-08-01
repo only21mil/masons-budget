@@ -67,6 +67,12 @@ type MigratedTableName =
   | "btcBalanceDocuments"
   | "financeDocuments";
 
+/** A financeDocuments row as it may be inserted, without the system fields. */
+type StoredFinanceDocument = Omit<
+  DocumentByName<DataModel, "financeDocuments">,
+  "_id" | "_creationTime"
+>;
+
 interface Verification {
   file: string;
   table: string;
@@ -636,6 +642,59 @@ const FINANCES = {
     weeklyContribution: 5.05,
     holdings: [],
   },
+};
+
+/**
+ * The blob the single live financeDocuments row was written from.
+ *
+ * It carries both shapes the strict shares contract refused: lot quantities
+ * straight out of IEEE-754 doubles, and a statement_reconciliation lot that
+ * removes shares and is therefore negative.
+ */
+const FINANCES_WITH_STORED_PRODUCTION_SHAPES = {
+  ...FINANCES,
+  retirement: {
+    ...FINANCES.retirement,
+    wap: {
+      provider: "Adult WAP",
+      total: 50.05,
+      weeklyContribution: 5.05,
+      holdings: [
+        {
+          name: "Vanguard S&P 500 ETF",
+          category: "Equity",
+          ticker: "VOO",
+          value: 50.05,
+          shares: 3.3000000000000003,
+          lots: [
+            {
+              date: "2026-05-01",
+              type: "buy",
+              pricePerShare: 300.05,
+              shares: 1.7999999999999998,
+              amountInvested: 540.09,
+            },
+            {
+              date: "2026-05-02",
+              type: "statement_reconciliation",
+              pricePerShare: 300.05,
+              shares: -0.4200000000000001,
+              amountInvested: -126.02,
+            },
+          ],
+        },
+      ],
+    },
+  },
+};
+
+/**
+ * The quantities exactly as the pre-contract projection stored them: the raw
+ * `String(value)` of each source double, unquantized and unsigned-hostile.
+ */
+const LEGACY_STORED_WAP_SHARES = {
+  holding: "3.3000000000000003",
+  lots: ["1.7999999999999998", "-0.4200000000000001"],
 };
 
 async function seedBlob(t: Harness, name: string, data: unknown, version = 7) {
@@ -1625,42 +1684,7 @@ describe("migrating every file", () => {
   // and the money sums are unaffected.
   test("float-noise and negative reconciliation lots migrate to canonical quantities", async () => {
     const t = harness();
-    await seedBlob(t, "finances", {
-      ...FINANCES,
-      retirement: {
-        ...FINANCES.retirement,
-        wap: {
-          provider: "Adult WAP",
-          total: 50.05,
-          weeklyContribution: 5.05,
-          holdings: [
-            {
-              name: "Vanguard S&P 500 ETF",
-              category: "Equity",
-              ticker: "VOO",
-              value: 50.05,
-              shares: 3.3000000000000003,
-              lots: [
-                {
-                  date: "2026-05-01",
-                  type: "buy",
-                  pricePerShare: 300.05,
-                  shares: 1.7999999999999998,
-                  amountInvested: 540.09,
-                },
-                {
-                  date: "2026-05-02",
-                  type: "statement_reconciliation",
-                  pricePerShare: 300.05,
-                  shares: -0.4200000000000001,
-                  amountInvested: -126.02,
-                },
-              ],
-            },
-          ],
-        },
-      },
-    });
+    await seedBlob(t, "finances", FINANCES_WITH_STORED_PRODUCTION_SHAPES);
 
     await applyFile(t, { file: "finances" });
 
@@ -1679,6 +1703,98 @@ describe("migrating every file", () => {
       exactRoundTrip: true,
       problems: [],
     });
+  });
+
+  // Production is not an empty table: the finances row already exists, written
+  // by the projection that stored `String(someDouble)` verbatim. Insertion is
+  // therefore the path the repair will *not* take. This is the one that matters
+  // — the row must be patched in place, and `exactRoundTrip` cannot see the
+  // difference, because it compares migrationRawJson to the blob and never looks
+  // at a projected share string.
+  test("an existing finance row with legacy quantities is updated in place, then idempotent", async () => {
+    const t = harness();
+    await seedBlob(t, "finances", FINANCES_WITH_STORED_PRODUCTION_SHAPES);
+
+    // The stored row as it exists today: the current projection's own output
+    // with the raw float text put back, so the *only* difference from a fresh
+    // projection is the three share quantities.
+    const source = MIGRATION_SOURCES.find((entry) => entry.file === "finances")!;
+    const projected = projectFile(
+      source,
+      FINANCES_WITH_STORED_PRODUCTION_SHAPES,
+    )!.docs[0]! as unknown as StoredFinanceDocument;
+    await t.run(async (ctx) => {
+      await ctx.db.insert("financeDocuments", {
+        ...projected,
+        accounts: projected.accounts.map((account) =>
+          account.key !== "wap"
+            ? account
+            : {
+                ...account,
+                holdings: account.holdings.map((holding) => ({
+                  ...holding,
+                  sharesDecimal: LEGACY_STORED_WAP_SHARES.holding,
+                  lots: holding.lots.map((lot, index) => ({
+                    ...lot,
+                    sharesDecimal: LEGACY_STORED_WAP_SHARES.lots[index]!,
+                  })),
+                })),
+              },
+        ),
+      });
+    });
+
+    const before = await snapshotBlobWorld(t);
+
+    const dryRun = await t.mutation(api.migrateFile, { file: "finances" });
+    expect(dryRun).toMatchObject({
+      applied: false,
+      blobPresent: true,
+      inserted: 0,
+      updated: 1,
+      unchanged: 0,
+      done: true,
+    });
+    // A dry run that reports an insert is reporting a *different* row and would
+    // leave the legacy one behind; the runbook aborts on it.
+    expect(await rowsIn(t, "financeDocuments")).toHaveLength(1);
+
+    const applied = await t.mutation(api.migrateFile, {
+      file: "finances",
+      apply: true,
+      expectedPlanFingerprint: dryRun.frozenPlanFingerprint,
+    });
+    expect(applied).toMatchObject({
+      applied: true,
+      inserted: 0,
+      updated: 1,
+      unchanged: 0,
+      verifiedInTransaction: true,
+    });
+    expect(applied.verification).toMatchObject({ ok: true, problems: [] });
+
+    // The stored row itself, not a projection of the blob: this is what every
+    // client read now serves.
+    const stored = await rowsIn(t, "financeDocuments");
+    expect(stored).toHaveLength(1);
+    const wap = stored[0]!.accounts.find((account) => account.key === "wap")!;
+    expect(wap.holdings[0]!.sharesDecimal).toBe("3.3");
+    expect(wap.holdings[0]!.lots.map((lot) => lot.sharesDecimal)).toEqual([
+      "1.8",
+      // Quantized and still negative: the reconciliation lot removes shares.
+      "-0.42",
+    ]);
+
+    const second = await t.mutation(api.migrateFile, { file: "finances" });
+    expect(second).toMatchObject({
+      inserted: 0,
+      updated: 0,
+      unchanged: 1,
+      done: true,
+    });
+
+    // The repair rewrites a row and never the source it was projected from.
+    expect(await snapshotBlobWorld(t)).toEqual(before);
   });
 
   test("migration preserves source transaction signs verbatim", async () => {

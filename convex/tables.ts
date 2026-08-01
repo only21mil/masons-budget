@@ -745,35 +745,60 @@ function publicBtcBalanceDocument(row: {
   };
 }
 
-function publicFinanceAccount(row: {
-  key: string;
-  owner: FamilyMember;
-  provider: string;
-  totalValueCents: bigint;
-  weeklyContributionCents: bigint;
-  weeklyContributionDay?: string;
-  holdings: Array<{
-    name: string;
-    category: string;
-    ticker?: string;
-    valueCents: bigint;
-    costBasisCents: bigint;
-    gainBps: bigint;
-    sharesDecimal: string;
-    avgCostCents: bigint;
-    currentPricePerShareCents: bigint;
-    isProxy: boolean;
-    proxyNote?: string;
-    lots: Array<{
-      date: string;
-      type: string;
-      pricePerShareCents: bigint;
+/**
+ * Positional, non-private labels for the two share sites.
+ *
+ * These strings are the only text that survives into a thrown RangeError, and a
+ * thrown RangeError reaches the Convex function log. They therefore say *which
+ * field* failed and nothing about whose money it is: no account key, no holding
+ * name, no ticker, no index, no quantity.
+ */
+const HOLDING_SHARES_CONTEXT = "financeDocuments holding sharesDecimal";
+const LOT_SHARES_CONTEXT = "financeDocuments lot sharesDecimal";
+
+/**
+ * One repaired-or-not flag for a whole getFinanceDocument execution.
+ *
+ * Mutable rather than returned because the accounts are produced by a `map`; the
+ * flag is a boolean and never a count, since a count of repaired lots is itself
+ * a fact about the household's positions.
+ */
+interface SharesRepairTally {
+  repaired: boolean;
+}
+
+function publicFinanceAccount(
+  row: {
+    key: string;
+    owner: FamilyMember;
+    provider: string;
+    totalValueCents: bigint;
+    weeklyContributionCents: bigint;
+    weeklyContributionDay?: string;
+    holdings: Array<{
+      name: string;
+      category: string;
+      ticker?: string;
+      valueCents: bigint;
+      costBasisCents: bigint;
+      gainBps: bigint;
       sharesDecimal: string;
-      amountInvestedCents: bigint;
-      note?: string;
+      avgCostCents: bigint;
+      currentPricePerShareCents: bigint;
+      isProxy: boolean;
+      proxyNote?: string;
+      lots: Array<{
+        date: string;
+        type: string;
+        pricePerShareCents: bigint;
+        sharesDecimal: string;
+        amountInvestedCents: bigint;
+        note?: string;
+      }>;
     }>;
-  }>;
-}) {
+  },
+  repairs: SharesRepairTally,
+) {
   return {
     key: row.key,
     owner: row.owner,
@@ -790,23 +815,23 @@ function publicFinanceAccount(row: {
       gainBps: holding.gainBps,
       sharesDecimal: canonicalStoredShares(
         holding.sharesDecimal,
-        `financeDocuments.${row.key}.${holding.name}.sharesDecimal`,
+        HOLDING_SHARES_CONTEXT,
         {},
-        { accountKey: row.key, ticker: holding.ticker },
+        repairs,
       ),
       avgCostCents: holding.avgCostCents,
       currentPricePerShareCents: holding.currentPricePerShareCents,
       isProxy: holding.isProxy,
       proxyNote: holding.proxyNote,
-      lots: holding.lots.map((lot, lotIndex) => ({
+      lots: holding.lots.map((lot) => ({
         date: lot.date,
         type: lot.type,
         pricePerShareCents: lot.pricePerShareCents,
         sharesDecimal: canonicalStoredShares(
           lot.sharesDecimal,
-          `financeDocuments.${row.key}.${holding.name}.lots.sharesDecimal`,
+          LOT_SHARES_CONTEXT,
           { signed: true },
-          { accountKey: row.key, ticker: holding.ticker, lotIndex },
+          repairs,
         ),
         amountInvestedCents: lot.amountInvestedCents,
         note: lot.note,
@@ -825,30 +850,32 @@ function publicFinanceAccount(row: {
  * the read canonicalizes and stays loud only for genuine corruption — an
  * exponent, padding, or 13 integer digits still throws exactly as before.
  *
- * The warning is the repair signal for the source blob, so it names the account,
- * the public ticker and the lot position and nothing else. Quantities, cents,
- * holding names and owners never reach the log.
+ * Nothing is logged here. A per-value warning naming the account, ticker and lot
+ * slot published which household accounts hold which securities into whatever
+ * ships the function log, once per read, forever. The whole execution instead
+ * emits at most the one constant line below.
  */
 function canonicalStoredShares(
   value: string,
   context: string,
   options: SharesDecimalOptions,
-  telemetry: { accountKey: string; ticker?: string; lotIndex?: number },
+  repairs: SharesRepairTally,
 ): string {
   const canonical = canonicalizeSharesDecimal(value, context, options);
-  if (canonical === value) return canonical;
-
-  const reason =
-    canonical === "0" && value.startsWith("-")
-      ? "negative-zero"
-      : "excess-precision";
-  const lot = telemetry.lotIndex === undefined ? "" : ` lot=${telemetry.lotIndex}`;
-  console.warn(
-    `financeDocuments canonicalized shares: account=${telemetry.accountKey} ` +
-      `ticker=${telemetry.ticker ?? "none"}${lot} reason=${reason}`,
-  );
+  if (canonical !== value) repairs.repaired = true;
   return canonical;
 }
+
+/**
+ * The whole repair signal: constant text, no identifiers, no counts, no values.
+ *
+ * It answers exactly one question — is the stored row still pre-canonical? — and
+ * the answer is actionable on its own: re-run the finances migration, which
+ * rewrites the row from the untouched source blob.
+ */
+const STORED_SHARES_REPAIRED_WARNING =
+  "financeDocuments: repaired non-canonical stored share quantities at read " +
+  "time. Re-run the finances migration to canonicalize the stored row.";
 
 function budgetSourceFor(
   viewer: FamilyMember,
@@ -1401,9 +1428,13 @@ export const getFinanceDocument = query({
     if (!doc) return { document: null, complete: true };
 
     const rule = scope === "netWorth" ? sharesNetWorthWith : canSeeDataOwnedBy;
+    // One flag for the whole execution, so a document full of float-noise lots
+    // still produces at most one constant log line rather than one per value.
+    const repairs: SharesRepairTally = { repaired: false };
     const accounts = doc.accounts
       .filter((account) => rule(viewer, account.owner))
-      .map(publicFinanceAccount);
+      .map((account) => publicFinanceAccount(account, repairs));
+    if (repairs.repaired) console.warn(STORED_SHARES_REPAIRED_WARNING);
     if (accounts.length === 0) {
       return { document: null, complete: true };
     }

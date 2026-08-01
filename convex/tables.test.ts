@@ -1877,6 +1877,42 @@ describe("public Linux/Android read contract", () => {
     expect(returned).toEqual(["321.125", "10.5"]);
   });
 
+  // Pinned verbatim: the read path may emit this line and nothing else. Any
+  // future edit that appends an account, a ticker, a count or a quantity to the
+  // repair signal fails here and in the sentinel test below.
+  const REPAIR_WARNING =
+    "financeDocuments: repaired non-canonical stored share quantities at read " +
+    "time. Re-run the finances migration to canonicalize the stored row.";
+
+  /** Every console channel a Convex handler can reach, drained together. */
+  function captureConsole() {
+    const channels = ["warn", "error", "log", "info", "debug"] as const;
+    const spies = channels.map((channel) =>
+      vi.spyOn(console, channel).mockImplementation(() => {}),
+    );
+    return {
+      drain(): string[] {
+        // mockRestore clears the recorded calls, so read them first.
+        const lines = spies.flatMap((spy) =>
+          spy.mock.calls.map((call) => call.map(String).join(" ")),
+        );
+        for (const spy of spies) spy.mockRestore();
+        return lines;
+      },
+    };
+  }
+
+  /**
+   * Everything the read path logged that is not the unrelated auth-gate notice.
+   *
+   * The suite runs with ALLOW_TOKENLESS_READ, so every query also warns that
+   * the deployment is permissive. That line is not about the finance document
+   * and carries no identifier, so it is separated out rather than allowed to
+   * loosen the exact-match assertions below.
+   */
+  const financeLogLines = (lines: string[]) =>
+    lines.filter((line) => !line.startsWith("PERMISSIVE:"));
+
   // The single live financeDocuments row predates both tightenings: lots were
   // written from IEEE-754 doubles, and the wap VOO statement_reconciliation lot
   // is negative. Asserting those took every getFinanceDocument call down.
@@ -1940,16 +1976,97 @@ describe("public Linux/Android read contract", () => {
       warn.mockRestore();
     }
 
-    // The repair signal names the account, the public ticker and the lot slot
-    // and stops there: no quantity, no cents, no holding name, no owner.
-    expect(lines).toContain(
-      "financeDocuments canonicalized shares: account=victor_401k ticker=INDEX reason=excess-precision",
-    );
-    expect(lines).toContain(
-      "financeDocuments canonicalized shares: account=victor_401k ticker=INDEX lot=2 reason=negative-zero",
-    );
+    // Four values were repaired across two reads, and the log carries exactly
+    // two lines: one constant line per execution, fired because something was
+    // repaired and saying nothing about what.
+    expect(financeLogLines(lines)).toEqual([REPAIR_WARNING, REPAIR_WARNING]);
+  });
+
+  // Household financial metadata is exactly what a function log must not carry:
+  // which account holds which security, and how much of it. The repair path runs
+  // on every read of a pre-canonical row, so a leak there is a leak forever.
+  it("logs nothing identifying while repairing a document full of sentinel identifiers", async () => {
+    const SENTINELS = {
+      accountKey: "sentinelAccountKeyZulu",
+      holdingName: "Sentinel Holding Name Zulu",
+      ticker: "ZQSENTINEL",
+      provider: "Sentinel Provider Zulu",
+      category: "Sentinel Category Zulu",
+      note: "Sentinel Lot Note Zulu",
+    };
+
+    await t.run(async (ctx) => {
+      const document = await ctx.db
+        .query("financeDocuments")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "finances"))
+        .unique();
+      if (!document) throw new Error("missing seeded finance document");
+      const template = document.accounts[0]!;
+      const holding = template.holdings[0]!;
+      const lot = holding.lots[0]!;
+      await ctx.db.patch(document._id, {
+        accounts: [
+          {
+            ...template,
+            key: SENTINELS.accountKey,
+            provider: SENTINELS.provider,
+            holdings: [
+              {
+                ...holding,
+                name: SENTINELS.holdingName,
+                category: SENTINELS.category,
+                ticker: SENTINELS.ticker,
+                // Every quantity below needs repair, and every one of them
+                // carries a digit run that appears nowhere else in the suite.
+                sharesDecimal: "77.7770000000000004",
+                lots: [
+                  { ...lot, sharesDecimal: "88.8880000000000006", note: SENTINELS.note },
+                  {
+                    ...lot,
+                    type: "statement_reconciliation",
+                    sharesDecimal: "-99.9990000000000004",
+                  },
+                  { ...lot, sharesDecimal: "-0.0000000000004" },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+    });
+
+    const capture = captureConsole();
+    let lines: string[] = [];
+    let holding: { sharesDecimal: string; lots: { sharesDecimal: string }[] } | undefined;
+    try {
+      const response = await t.query(fn.getFinanceDocument, {
+        viewer: "victor",
+        scope: "visible",
+      });
+      expect(response.complete).toBe(true);
+      holding = response.document?.accounts[0]?.holdings[0];
+    } finally {
+      lines = capture.drain();
+    }
+
+    // The read still succeeds and still repairs, so the silence below is not
+    // silence about a no-op.
+    expect(holding?.sharesDecimal).toBe("77.777");
+    expect(holding?.lots.map((lot) => lot.sharesDecimal)).toEqual([
+      "88.888",
+      "-99.999",
+      "0",
+    ]);
+
+    expect(financeLogLines(lines)).toEqual([REPAIR_WARNING]);
+    // Checked over *everything* logged, not just the repair line: a leak that
+    // moved to another channel or another message would still be a leak.
     for (const line of lines) {
-      expect(line).not.toMatch(/321|10\.4|2\.33|Index Fund|victor\b(?!_401k)/);
+      for (const sentinel of Object.values(SENTINELS)) {
+        expect(line).not.toContain(sentinel);
+      }
+      // No quantity can survive a line with no digits in it at all.
+      expect(line).not.toMatch(/\d/);
     }
   });
 
@@ -1975,12 +2092,21 @@ describe("public Linux/Android read contract", () => {
       await ctx.db.patch(document._id, { accounts });
     });
 
-    await expect(
-      t.query(fn.getFinanceDocument, {
-        viewer: "victor",
-        scope: "netWorth",
-      }),
-    ).rejects.toThrow(/canonical share quantity/);
+    // The thrown text is the other way this path can publish household data: a
+    // RangeError message reaches the Convex function log verbatim. It names the
+    // failing field positionally and carries no key, name, ticker or quantity.
+    const thrown = await t
+      .query(fn.getFinanceDocument, { viewer: "victor", scope: "netWorth" })
+      .then(
+        () => null,
+        (error: unknown) => String((error as { message?: unknown }).message),
+      );
+    expect(thrown).toContain(
+      "financeDocuments holding sharesDecimal is not a canonical share quantity",
+    );
+    for (const identifier of ["victor_401k", "Index Fund", "INDEX", "1e3"]) {
+      expect(thrown).not.toContain(identifier);
+    }
   });
 
   it("lists Bitcoin bill payments and includes them in row counts", async () => {

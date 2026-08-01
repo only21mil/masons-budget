@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  assertSharesDecimal,
+  canonicalizeSharesDecimal,
   parseLexicalJson,
   parseMinorUnits,
   projectBtcBalanceDocument,
@@ -408,6 +410,41 @@ describe("all five source documents have typed projections", () => {
     // away to nothing becomes plain zero rather than "-0".
     expect(wap.holdings[0]!.lots.map((lot) => lot.sharesDecimal))
       .toEqual(["0", "-1.234567890124"]);
+  });
+
+  // A bigint is the obvious wrong guess for "an exact quantity". Rendering one
+  // into an error message with JSON.stringify throws a TypeError and replaces
+  // the RangeError this contract promises, so a caller catching RangeError sees
+  // nothing and crashes instead. These messages are positional by design and
+  // must stay that way — a stored quantity in a thrown message reaches the
+  // Convex function log.
+  it("raises RangeError for non-string quantities and never quotes the value", () => {
+    const nonStrings: unknown[] = [
+      1n,
+      -1n,
+      1.5,
+      true,
+      null,
+      undefined,
+      { sharesDecimal: "1.5" },
+      Symbol("shares"),
+    ];
+    for (const value of nonStrings) {
+      for (const call of [
+        () => assertSharesDecimal(value, "holding sharesDecimal"),
+        () => assertSharesDecimal(value, "lot sharesDecimal", { signed: true }),
+        () => canonicalizeSharesDecimal(value, "holding sharesDecimal"),
+        () =>
+          canonicalizeSharesDecimal(value, "lot sharesDecimal", {
+            signed: true,
+          }),
+      ]) {
+        expect(call, String(typeof value)).toThrow(RangeError);
+        expect(call, String(typeof value)).toThrow(
+          /^(holding|lot) sharesDecimal is not a canonical share quantity$/,
+        );
+      }
+    }
   });
 
   it("rejects present non-array finance holdings and lots without rejecting omission", () => {

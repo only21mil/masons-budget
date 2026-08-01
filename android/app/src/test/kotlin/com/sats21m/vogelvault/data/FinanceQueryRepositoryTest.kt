@@ -221,6 +221,44 @@ class FinanceQueryRepositoryTest {
         assertEquals("-2.330000000000", lot.sharesDecimal)
     }
 
+    // The finance document and the market quotes are two separate reads, and the
+    // finance screen renders the quote row from the second one. A refused share
+    // quantity therefore has to stop at the document it came in: if it took the
+    // quote snapshot with it, one legacy lot would blank a panel that never
+    // depended on it.
+    @Test
+    fun `a malformed finance document leaves a healthy quote read untouched`() {
+        val malformedShares = financeEnvelope().replace(
+            "\"sharesDecimal\":\"12.34567890\"",
+            "\"sharesDecimal\":\"not-shares\"",
+        )
+        val healthyQuotes = quoteSnapshot(
+            btc = quote("BTC", int64(6_485_500), "live", "2026-07-30T15:00:00Z"),
+            voo = quote("VOO", int64(68_000), "live", "2026-07-30T15:00:00Z"),
+            ibit = unavailable("IBIT"),
+        )
+
+        val finance = runBlocking {
+            repositoryWith(RecordingPoster(success(malformedShares))).getFinanceDocument(
+                FamilyMember.VICTOR,
+                RowVisibilityScope.NET_WORTH,
+            )
+        }
+        val quotes = runBlocking {
+            repositoryWith(RecordingPoster(success(healthyQuotes))).getMarketQuoteSnapshot()
+        }
+
+        assertEquals(ConvexResult.Failed("unexpected payload shape"), finance)
+        val snapshot = assertIs<ConvexResult.Ok<MarketQuoteReadSnapshot>>(quotes).value
+        assertEquals(true, snapshot.complete)
+        assertEquals(
+            listOf(MarketSymbol.BTC, MarketSymbol.VOO, MarketSymbol.IBIT),
+            snapshot.snapshot.quotes.map { it.symbol },
+        )
+        assertEquals(MarketQuoteStatus.LIVE, snapshot.snapshot.quotes[1].status)
+        assertEquals(68_000L, snapshot.snapshot.quotes[1].priceCents)
+    }
+
     @Test
     fun `missing finance document remains an explicit complete empty snapshot`() {
         val result = assertIs<ConvexResult.Ok<FinanceDocumentSnapshot>>(

@@ -190,6 +190,30 @@ function isZeroMagnitude(whole: string, fraction: string): boolean {
   return whole === "0" && !/[1-9]/.test(fraction);
 }
 
+/**
+ * Render a refused value for an error message without throwing on the way.
+ *
+ * `JSON.stringify` raises a TypeError on a bigint, which would replace the
+ * RangeError this module promises with an unrelated failure the caller's catch
+ * was never written for. The share assertions above never render a value at all
+ * — their messages are positional by design, so a stored quantity cannot reach a
+ * log — and this exists for the numeric parsers that still quote their input.
+ */
+function renderRejected(value: unknown): string {
+  switch (typeof value) {
+    case "string":
+      return JSON.stringify(value);
+    case "bigint":
+      return `${value}n`;
+    case "number":
+    case "boolean":
+    case "undefined":
+      return String(value);
+    default:
+      return value === null ? "null" : typeof value;
+  }
+}
+
 const FAMILY_MEMBERS: readonly FamilyMember[] = [
   "victor",
   "rachel",
@@ -947,7 +971,7 @@ export function parseMinorUnits(
     );
   if (!match) {
     throw new RangeError(
-      `${context} is not a decimal value: ${JSON.stringify(value)}`,
+      `${context} is not a decimal value: ${renderRejected(value)}`,
     );
   }
 

@@ -351,6 +351,41 @@ test("canonicalizing still refuses corruption, before and after quantizing", () 
   )
 })
 
+// A bigint is the obvious wrong guess for "an exact quantity", and it used to
+// take the error renderer down with it: JSON.stringify refuses to serialize one,
+// so the contract's RangeError was replaced by a TypeError from the message
+// itself. A caller catching RangeError saw nothing and crashed instead.
+test("a non-string quantity raises the contract's RangeError, not a serializer TypeError", () => {
+  const nonStrings: unknown[] = [
+    1n,
+    -1n,
+    1.5,
+    true,
+    null,
+    undefined,
+    { sharesDecimal: "1.5" },
+    Symbol("shares"),
+  ]
+  for (const value of nonStrings) {
+    for (const call of [
+      () => assertSharesDecimal(value),
+      () => assertSharesDecimal(value, { signed: true }),
+      () => canonicalizeSharesDecimal(value),
+      () => canonicalizeSharesDecimal(value, { signed: true }),
+    ]) {
+      assert.throws(
+        call,
+        { name: "RangeError", message: /canonical share quantity/ },
+        String(typeof value),
+      )
+    }
+  }
+  // The rendering stays useful for the scalars, and never quotes an object's
+  // contents — an unexpected object here is as likely to be a whole record.
+  assert.throws(() => assertSharesDecimal(7n), /: 7n$/)
+  assert.throws(() => assertSharesDecimal({ shares: "1.5" }), /: object$/)
+})
+
 test("canonicalized output always satisfies the strict assertion", () => {
   const raws = [
     "0",

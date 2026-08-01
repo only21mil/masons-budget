@@ -227,6 +227,31 @@ export function usdCentsToSats(cents: Cents, btcPriceCents: Cents): Sats {
 }
 
 /**
+ * Render a refused quantity for an error message without throwing on the way.
+ *
+ * `JSON.stringify` raises a TypeError on a bigint, which is exactly the input a
+ * caller most easily reaches for when it means "an exact number" — and a
+ * TypeError from the renderer replaces the RangeError this contract promises,
+ * so the caller's own catch never sees the failure it was written for. Objects
+ * collapse to their type rather than being serialized, since an unexpected
+ * object here is as likely to be a whole financial record as a wrapper.
+ */
+function renderRejected(value: unknown): string {
+  switch (typeof value) {
+    case "string":
+      return JSON.stringify(value)
+    case "bigint":
+      return `${value}n`
+    case "number":
+    case "boolean":
+    case "undefined":
+      return String(value)
+    default:
+      return value === null ? "null" : typeof value
+  }
+}
+
+/**
  * Assert an *already canonical* share quantity and hand it back unchanged.
  *
  * Canonical means: no exponent, no padding, no leading-zero ambiguity, no
@@ -242,11 +267,11 @@ export function assertSharesDecimal(
   const signed = options.signed === true
   const maxLength = signed ? SHARES_DECIMAL_MAX_LENGTH + 1 : SHARES_DECIMAL_MAX_LENGTH
   if (typeof value !== "string" || value.length > maxLength) {
-    throw new RangeError(`Not a canonical share quantity: ${JSON.stringify(value)}`)
+    throw new RangeError(`Not a canonical share quantity: ${renderRejected(value)}`)
   }
   const match = SHARES_DECIMAL_PATTERN.exec(value)
   if (!match) {
-    throw new RangeError(`Not a canonical share quantity: ${JSON.stringify(value)}`)
+    throw new RangeError(`Not a canonical share quantity: ${renderRejected(value)}`)
   }
   const negative = match[1] === "-"
   const whole = match[2]!
@@ -255,14 +280,14 @@ export function assertSharesDecimal(
   // minus zero, which has two spellings for one value and is therefore not
   // canonical.
   if (negative && (!signed || isZeroMagnitude(whole, fraction))) {
-    throw new RangeError(`Not a canonical share quantity: ${JSON.stringify(value)}`)
+    throw new RangeError(`Not a canonical share quantity: ${renderRejected(value)}`)
   }
   if (
     whole.length > SHARES_DECIMAL_MAX_INTEGER_DIGITS ||
     fraction.length > SHARES_DECIMAL_MAX_SCALE ||
     whole.length + fraction.length > SHARES_DECIMAL_MAX_PRECISION
   ) {
-    throw new RangeError(`Share quantity exceeds bounds: ${JSON.stringify(value)}`)
+    throw new RangeError(`Share quantity exceeds bounds: ${renderRejected(value)}`)
   }
   return value
 }
@@ -299,15 +324,15 @@ export function canonicalizeSharesDecimal(
     ? SHARES_DECIMAL_MAX_RAW_LENGTH + 1
     : SHARES_DECIMAL_MAX_RAW_LENGTH
   if (typeof value !== "string" || value.length > maxRawLength) {
-    throw new RangeError(`Not a canonical share quantity: ${JSON.stringify(value)}`)
+    throw new RangeError(`Not a canonical share quantity: ${renderRejected(value)}`)
   }
   const match = SHARES_DECIMAL_PATTERN.exec(value)
   if (!match) {
-    throw new RangeError(`Not a canonical share quantity: ${JSON.stringify(value)}`)
+    throw new RangeError(`Not a canonical share quantity: ${renderRejected(value)}`)
   }
   const negative = match[1] === "-"
   if (negative && !signed) {
-    throw new RangeError(`Not a canonical share quantity: ${JSON.stringify(value)}`)
+    throw new RangeError(`Not a canonical share quantity: ${renderRejected(value)}`)
   }
 
   const sourceWhole = match[2]!
