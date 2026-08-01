@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-// Build one private combined bootstrap APK. Gradle reads the pairing value from
-// a validated private path in VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE; it is
-// never accepted in argv or printed by this helper.
+// Build a clean replacement APK or one private combined bootstrap APK. Gradle
+// reads any pairing value from a validated private path in
+// VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE; it is never accepted in argv or printed.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -189,7 +189,7 @@ function validateCleanBuildConfig(file, pairingCode) {
     !buildConfig.includes(emptyReadToken) ||
     !buildConfig.includes(emptyBootstrap) ||
     !buildConfig.includes(readOnlyIntent) ||
-    buildConfig.includes(pairingCode)
+    (pairingCode && buildConfig.includes(pairingCode))
   ) {
     throw new Error("The clean replacement build retained read-bootstrap material.");
   }
@@ -217,6 +217,7 @@ export function buildAndroidReadBootstrap({
   pairingFile,
   output,
   cleanOutput,
+  cleanOnly = false,
   processEnv = process.env,
   spawn = spawnSync,
   generatedApkPath = generatedApk,
@@ -224,10 +225,9 @@ export function buildAndroidReadBootstrap({
   intermediatesPath = appBuildRoot,
 }) {
   validateCiBuildEnvironment(processEnv);
-  const { file, pairingCode } = readPrivatePairingFile(
-    pairingFile,
-    processEnv.HOME,
-  );
+  const { file, pairingCode } = cleanOnly
+    ? { file: "", pairingCode: "" }
+    : readPrivatePairingFile(pairingFile, processEnv.HOME);
   const stableDebugKeystore = validateStableDebugKeystore(
     processEnv.VOGEL_DEBUG_KEYSTORE,
   );
@@ -253,6 +253,17 @@ export function buildAndroidReadBootstrap({
     "--rerun-tasks",
   ];
   try {
+    if (cleanOnly) {
+      runGradle(gradleFlags, buildEnvironment, spawn);
+      if (!fs.statSync(generatedApkPath).isFile()) {
+        throw new Error("Gradle did not produce the expected clean APK.");
+      }
+      validateCleanBuildConfig(generatedBuildConfigPath, pairingCode);
+      fs.copyFileSync(generatedApkPath, destination, fs.constants.COPYFILE_EXCL);
+      fs.chmodSync(destination, 0o600);
+      return { output: destination, cleanOutput: undefined };
+    }
+
     runGradle(gradleFlags, buildEnvironment, spawn);
     if (!fs.statSync(generatedApkPath).isFile()) {
       throw new Error("Gradle did not produce the expected bootstrap APK.");
@@ -297,6 +308,9 @@ export function buildAndroidReadBootstrap({
 
 function usage() {
   console.log(`Usage:
+  node scripts/build-android-read-bootstrap.mjs \\
+    --clean-only --out "$HOME/work/.../vogel-vault-clean.apk"
+
   VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE="$HOME/work/.../pairing.txt" \\
     node scripts/build-android-read-bootstrap.mjs \\
       --out "$HOME/work/.../vogel-vault-bootstrap.apk" \\
@@ -314,27 +328,33 @@ export function main(args = process.argv.slice(2), processEnv = process.env) {
     usage();
     return;
   }
+  const cleanOnly =
+    args.length === 3 && args[0] === "--clean-only" && args[1] === "--out";
   if (
+    !cleanOnly &&
     !(
       (args.length === 2 && args[0] === "--out") ||
       (args.length === 4 && args[0] === "--out" && args[2] === "--clean-out")
     )
   ) {
     throw new Error(
-      "Expected --out <absolute-path> and optional --clean-out <absolute-path>.",
+      "Expected --clean-only --out <absolute-path>, or --out <absolute-path> and optional --clean-out <absolute-path>.",
     );
   }
   const pairingFile = processEnv.VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE;
-  if (!pairingFile) {
+  if (!cleanOnly && !pairingFile) {
     throw new Error("VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE is required.");
   }
   const result = buildAndroidReadBootstrap({
     pairingFile,
-    output: args[1],
-    cleanOutput: args[3],
+    output: cleanOnly ? args[2] : args[1],
+    cleanOutput: cleanOnly ? undefined : args[3],
+    cleanOnly,
     processEnv,
   });
-  console.log(`Wrote one private bootstrap APK to ${result.output}.`);
+  console.log(
+    `Wrote one ${cleanOnly ? "clean replacement" : "private bootstrap"} APK to ${result.output}.`,
+  );
   if (result.cleanOutput) {
     console.log(`Wrote one clean replacement APK to ${result.cleanOutput}.`);
   }
