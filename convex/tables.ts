@@ -1743,7 +1743,7 @@ const DEVICE_MAX_TEXT = 16_384;
 const DEVICE_CONTROL = /[\u0000-\u001f\u007f]/;
 const DEVICE_MONTH = /^\d{4}-(?:0[1-9]|1[0-2])$/;
 const DEVICE_ISO_TIMESTAMP =
-  /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{3})?Z$/;
+  /^(\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d)(?:\.(\d{1,9}))?Z$/;
 
 function requireDeviceText(
   value: string,
@@ -1797,16 +1797,18 @@ function requireDeviceCalendarDate(value: string | undefined, field: string) {
 
 function requireDeviceTimestamp(value: string | undefined, field: string) {
   if (value === undefined) return;
-  requireDeviceText(value, field, { max: 24 });
+  requireDeviceText(value, field, { max: 30 });
+  const match = DEVICE_ISO_TIMESTAMP.exec(value);
   const parsed = Date.parse(value);
-  if (!DEVICE_ISO_TIMESTAMP.test(value) || !Number.isFinite(parsed)) {
+  if (match === null || !Number.isFinite(parsed)) {
     deviceFailure(
       "VALIDATION_FAILED",
-      `${field} must be a UTC ISO timestamp (yyyy-MM-ddTHH:mm:ss[.SSS]Z).`,
+      `${field} must be a UTC ISO timestamp with at most 9 fractional digits.`,
     );
   }
+  const milliseconds = (match[2] ?? "").padEnd(3, "0").slice(0, 3);
   const canonical = new Date(parsed).toISOString();
-  if (value !== canonical && value !== canonical.replace(".000Z", "Z")) {
+  if (`${match[1]}.${milliseconds}Z` !== canonical) {
     deviceFailure(
       "VALIDATION_FAILED",
       `${field} must identify a real UTC instant without normalization.`,

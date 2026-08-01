@@ -62,6 +62,23 @@ class TodoCrudLogicTest {
     }
 
     @Test
+    fun `device edits canonicalize timestamps to fixed milliseconds`() {
+        val precise = Instant.parse("2026-08-01T12:03:02.123456789Z")
+        val changed =
+            todo()
+                .withCompletion(true, precise)
+                .withFlag(true, precise)
+                .withTitle("Renamed", precise)
+
+        assertEquals("2026-08-01T12:03:02.123Z", changed.completedAt)
+        assertEquals("2026-08-01T12:03:02.123Z", changed.updatedAt)
+        assertEquals(
+            "2026-08-01T12:03:02.000Z",
+            Instant.parse("2026-08-01T12:03:02Z").toTodoTimestamp(),
+        )
+    }
+
+    @Test
     fun `one order serves the list, every edit and the undo restore`() {
         val open = todo(id = "b-open")
         val flagged = todo(id = "a-flagged").withFlag(true, now)

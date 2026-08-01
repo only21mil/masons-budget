@@ -956,6 +956,75 @@ describe("device row authorization", () => {
 });
 
 describe("device transaction and todo mutations", () => {
+  it("accepts nanosecond todo timestamps on add and update", async () => {
+    const device = await fullDevice("todo-timestamp-device");
+    const request = {
+      ...authArgs(device),
+      owner: "victor" as const,
+      sourceFile: "todos" as const,
+      todo: {
+        id: "todo-high-precision",
+        owner: "victor" as const,
+        title: "High precision",
+        done: false,
+        flagged: false,
+        createdAt: "2026-08-01T12:03:02.123456789Z",
+        updatedAt: "2026-08-01T12:03:02.123456789Z",
+      },
+    };
+
+    await expect(t.mutation(api.upsertTodo, request)).resolves.toMatchObject({
+      outcome: "inserted",
+    });
+    const revision = await todoRevision(request.todo.id);
+    const updatedAt = "2026-08-01T12:04:03.987654321Z";
+    await expect(
+      t.mutation(api.upsertTodo, {
+        ...request,
+        baseUpdatedAtMs: revision,
+        todo: { ...request.todo, done: true, updatedAt },
+      }),
+    ).resolves.toMatchObject({ outcome: "updated" });
+
+    const stored = await t.run(async (ctx) =>
+      ctx.db
+        .query("todos")
+        .withIndex("by_todo_id", (q) => q.eq("todoId", request.todo.id))
+        .unique(),
+    );
+    expect(stored).toMatchObject({
+      createdAt: request.todo.createdAt,
+      updatedAt,
+      done: true,
+    });
+  });
+
+  it.each([
+    ["malformed", "2026-08-01 12:03:02.123Z"],
+    ["oversized", "2026-08-01T12:03:02.1234567890Z"],
+    ["unparseable", "2026-13-01T12:03:02.123Z"],
+  ])("rejects %s todo timestamps", async (_case, updatedAt) => {
+    const device = await fullDevice(`todo-${_case}-timestamp-device`);
+
+    await expectDeviceError(
+      t.mutation(api.upsertTodo, {
+        ...authArgs(device),
+        owner: "victor",
+        sourceFile: "todos",
+        todo: {
+          id: `todo-${_case}-timestamp`,
+          owner: "victor",
+          title: "Invalid timestamp",
+          done: false,
+          flagged: false,
+          createdAt: updatedAt,
+          updatedAt,
+        },
+      }),
+      "VALIDATION_FAILED",
+    );
+  });
+
   it("atomically marks every runtime-owned source at its first successful write", async () => {
     await seedBudgets();
     await seedBtcLedger("victor");

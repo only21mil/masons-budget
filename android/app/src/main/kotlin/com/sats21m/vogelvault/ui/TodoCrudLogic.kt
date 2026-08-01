@@ -4,9 +4,15 @@ import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.domain.visibleTo
 import java.time.Instant
+import java.time.format.DateTimeFormatterBuilder
 import java.util.UUID
 
 internal const val TODO_UNDO_WINDOW_MILLIS = 6_000L
+
+private val todoTimestampFormatter =
+    DateTimeFormatterBuilder().appendInstant(3).toFormatter()
+
+internal fun Instant.toTodoTimestamp(): String = todoTimestampFormatter.format(this)
 
 internal data class PendingTodoDeletion(
     val operationToken: String,
@@ -55,7 +61,7 @@ internal fun newTodo(
 ): TodoItem {
     val trimmed = title.trim()
     require(trimmed.isNotEmpty()) { "todo title must not be blank" }
-    val stamp = now.toString()
+    val stamp = now.toTodoTimestamp()
     return TodoItem(
         id = id,
         title = trimmed,
@@ -72,16 +78,24 @@ internal fun newTodo(
 internal fun TodoItem.withCompletion(done: Boolean, now: Instant): TodoItem =
     copy(
         done = done,
-        completedAt = if (done) now.toString() else null,
-        updatedAt = now.toString(),
+        completedAt = if (done) now.toTodoTimestamp() else null,
+        updatedAt = now.toTodoTimestamp(),
         updatedAtMs = now.toEpochMilli(),
     )
 
 internal fun TodoItem.withFlag(flagged: Boolean, now: Instant): TodoItem =
-    copy(flagged = flagged, updatedAt = now.toString(), updatedAtMs = now.toEpochMilli())
+    copy(
+        flagged = flagged,
+        updatedAt = now.toTodoTimestamp(),
+        updatedAtMs = now.toEpochMilli(),
+    )
 
 internal fun TodoItem.withTitle(title: String, now: Instant): TodoItem {
     val trimmed = title.trim()
     require(trimmed.isNotEmpty()) { "todo title must not be blank" }
-    return copy(title = trimmed, updatedAt = now.toString(), updatedAtMs = now.toEpochMilli())
+    return copy(
+        title = trimmed,
+        updatedAt = now.toTodoTimestamp(),
+        updatedAtMs = now.toEpochMilli(),
+    )
 }

@@ -42,6 +42,18 @@ class AddTaskSheetTest {
     }
 
     @Test
+    fun `prepared task canonicalizes device timestamps to fixed milliseconds`() {
+        val task = prepareTask(
+            AddTaskDraft("Pay bill", "", "", "", false, FamilyMember.VICTOR),
+            id = "android-task-precision",
+            now = Instant.parse("2026-08-01T12:03:02.123456789Z"),
+        ).getOrThrow()
+
+        assertEquals("2026-08-01T12:03:02.123Z", task.createdAt)
+        assertEquals("2026-08-01T12:03:02.123Z", task.updatedAt)
+    }
+
+    @Test
     fun `optional filing fields are omitted instead of inventing adult data`() {
         val task = prepareTask(
             AddTaskDraft(
