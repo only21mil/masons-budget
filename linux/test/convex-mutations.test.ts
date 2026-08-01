@@ -156,6 +156,9 @@ describe("paired-device main controller", () => {
   })
 
   it("carries an existing coarse Bitcoin write grant into the new transfer vocabulary", async () => {
+    const post = vi.fn(async () =>
+      success({ ok: true, entityId: "legacy-transfer", outcome: "inserted" })
+    )
     const controller = createPairedDeviceController({
       store: store({
         ...snapshot,
@@ -170,7 +173,7 @@ describe("paired-device main controller", () => {
       }),
       writesEnabled: () => true,
       approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
-      post: vi.fn(),
+      post,
     })
 
     await expect(controller.status()).resolves.toMatchObject({
@@ -180,6 +183,50 @@ describe("paired-device main controller", () => {
         "btcTransfer.delete",
       ]),
     })
+    await expect(controller.mutate({
+      kind: "btcTransfer.upsert",
+      requestId: "request_legacy_transfer",
+      actor: "victor",
+      id: "legacy-transfer",
+      owner: "victor",
+      date: "2026-08-01",
+      fromAccountKey: "river",
+      toAccountKey: "coldcard",
+      sats: 100_000n,
+      feeSats: 250n,
+    })).resolves.toMatchObject({
+      status: "ok",
+      kind: "btcTransfer.upsert",
+      entityId: "legacy-transfer",
+    })
+    expect(post).toHaveBeenCalledOnce()
+  })
+
+  it("does not infer transfer access from a partial legacy Bitcoin grant", async () => {
+    const post = vi.fn()
+    const controller = createPairedDeviceController({
+      store: store({
+        ...snapshot,
+        capabilities: ["btcBuy.upsert", "btcAccount.upsert"],
+      }),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post,
+    })
+
+    await expect(controller.mutate({
+      kind: "btcTransfer.upsert",
+      requestId: "request_partial_legacy_transfer",
+      actor: "victor",
+      id: "partial-legacy-transfer",
+      owner: "victor",
+      date: "2026-08-01",
+      fromAccountKey: "river",
+      toAccountKey: "coldcard",
+      sats: 1n,
+      feeSats: 0n,
+    })).resolves.toMatchObject({ status: "unauthorized" })
+    expect(post).not.toHaveBeenCalled()
   })
 
   it("validates closed requests, including atomic budget-category renames", () => {

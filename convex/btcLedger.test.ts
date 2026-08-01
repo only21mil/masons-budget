@@ -167,6 +167,41 @@ describe("Bitcoin balance posting", () => {
     );
   });
 
+  it("posts an existing unposted transaction when it is edited into sat-denominated Income", async () => {
+    const fiatIncome = {
+      id: "edited-btc-income",
+      date: "2026-08-01",
+      merchant: "Income",
+      amountCents: 1n,
+      kind: "credit",
+      category: "Income",
+    };
+    await t.mutation(api.transaction, { transaction: fiatIncome });
+    await t.mutation(api.transaction, {
+      transaction: { ...fiatIncome, amountSats: 12_000n },
+    });
+    await t.mutation(api.transaction, {
+      transaction: { ...fiatIncome, amountSats: 12_000n },
+    });
+
+    const state = await snapshot();
+    expect(satsByKey(state)).toEqual({
+      river: 1_012_000n,
+      coldcard: 2_000_000n,
+    });
+    const stored = await t.run(async (ctx) =>
+      ctx.db
+        .query("transactions")
+        .withIndex("by_source_tx_id", (q) =>
+          q.eq("sourceFile", "transactions").eq("txId", "edited-btc-income"),
+        )
+        .unique(),
+    );
+    expect(stored?.amountSats).toBe(12_000n);
+    expect(stored?.bitcoinAccountKey).toBe("river");
+    expect(stored?.balancePostingVersion).toBe(1n);
+  });
+
   it("keeps child financial rows working without routing them into the adult River ledger", async () => {
     const before = satsByKey(await snapshot());
     await t.mutation(api.buy, {
@@ -194,18 +229,22 @@ describe("Bitcoin balance posting", () => {
         feeUsdCents: 0n,
       },
     });
+    const childIncome = {
+      id: "mason-btc-income",
+      owner: "mason",
+      date: "2026-08-01",
+      merchant: "Bitcoin allowance",
+      amountCents: 1n,
+      kind: "credit",
+      category: "Income",
+    };
     await t.mutation(api.transaction, {
       sourceFile: "mason-transactions",
-      transaction: {
-        id: "mason-btc-income",
-        owner: "mason",
-        date: "2026-08-01",
-        merchant: "Bitcoin allowance",
-        amountCents: 1n,
-        amountSats: 5_000n,
-        kind: "credit",
-        category: "Income",
-      },
+      transaction: childIncome,
+    });
+    await t.mutation(api.transaction, {
+      sourceFile: "mason-transactions",
+      transaction: { ...childIncome, amountSats: 5_000n },
     });
 
     expect(satsByKey(await snapshot())).toEqual(before);

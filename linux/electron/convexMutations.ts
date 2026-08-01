@@ -1415,7 +1415,7 @@ export function createPairedDeviceController(
           if (snapshot.deploymentOrigin !== approvedOrigin) {
             return { ...identity, status: "unauthorized" }
           }
-          if (!snapshot.capabilities.includes(request.kind)) {
+          if (!storedCapabilities(snapshot.capabilities).includes(request.kind)) {
             return { ...identity, status: "unauthorized" }
           }
 

@@ -1929,6 +1929,21 @@ async function upsertTransactionRow(
         };
       }
       await applyBtcAccountDeltas(ctx, row.owner, deltas);
+    } else if (
+      postsToHouseholdBitcoinLedger(row.owner) &&
+      row.category === "Income" &&
+      row.amountSats !== undefined
+    ) {
+      const key =
+        row.bitcoinAccountKey?.trim() || (await riverAccountKey(ctx, row.owner));
+      const deltas = new Map<string, bigint>();
+      addDelta(deltas, key, row.amountSats);
+      await applyBtcAccountDeltas(ctx, row.owner, deltas);
+      storedRow = {
+        ...row,
+        bitcoinAccountKey: key,
+        balancePostingVersion: 1n,
+      };
     }
     await lockRuntimeSource(ctx, row.sourceFile);
     await ctx.db.patch(existing._id, {
