@@ -30,6 +30,7 @@ import { dashboardIncomeMtd } from "../src/renderer/pages/finance/index.tsx"
 import { resolvePage } from "../src/renderer/pages/index.ts"
 
 const REFERENCE_PRICE_CENTS = 10_000_000n
+const FIXTURE_MONTH = "2026-07"
 
 const boundaries = [
   {
@@ -449,6 +450,7 @@ function renderPage(
       initialProfile: profile,
       initialRoute: route,
       initialStateOverride: state,
+      initialCurrentMonth: FIXTURE_MONTH,
       initialDisplayUnit: displayUnit,
       initialData,
       initialFinanceModel,
