@@ -99,6 +99,11 @@ export async function riverAccountKey(
   if (!document || document.owner !== owner) {
     throw new ConvexError("The canonical Bitcoin balance document is unavailable.");
   }
+  if (document.postingActivatedAtMs === undefined) {
+    throw new ConvexError(
+      "Bitcoin balance posting is not active until opening reconciliation completes.",
+    );
+  }
   const matches = document.accounts.filter(
     (account) =>
       account.key.toLocaleLowerCase("en-US") === "river" ||
@@ -126,6 +131,11 @@ export async function applyBtcAccountDeltas(
     .unique();
   if (!document || document.owner !== owner) {
     throw new ConvexError("The canonical Bitcoin balance document is unavailable.");
+  }
+  if (document.postingActivatedAtMs === undefined) {
+    throw new ConvexError(
+      "Bitcoin balance posting is not active until opening reconciliation completes.",
+    );
   }
 
   const byKey = new Map(effective);
@@ -238,6 +248,9 @@ export const reconcileBtcAccounts = internalMutation({
     if (!document || document.owner !== owner) {
       throw new ConvexError("The canonical Bitcoin balance document is unavailable.");
     }
+    if (document.postingActivatedAtMs !== undefined) {
+      throw new ConvexError("Opening balance reconciliation is already complete.");
+    }
     if (document.updatedAtMs !== args.expectedUpdatedAtMs) {
       throw new ConvexError("The Bitcoin balance document changed before reconciliation.");
     }
@@ -272,6 +285,7 @@ export const reconcileBtcAccounts = internalMutation({
       accounts,
       totals: totalsFor(accounts),
       asOf: args.asOf,
+      postingActivatedAtMs: now,
       updatedAtMs: now,
     });
     for (const key of changedKeys) {

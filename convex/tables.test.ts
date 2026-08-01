@@ -907,6 +907,7 @@ async function seedPostingLedgers(t: T) {
           exchangeSats: 10_000_000n,
           selfCustodySats: 0n,
         },
+        postingActivatedAtMs: 1,
         updatedAtMs: 1,
       });
       await ctx.db.insert("btcAccounts", {

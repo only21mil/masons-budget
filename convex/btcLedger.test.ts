@@ -49,10 +49,10 @@ let t: T;
 beforeEach(async () => {
   t = testConvex();
   setDeploymentEnv({ ALLOW_TOKENLESS_SYNC: "true" });
-  await seedLedger(t);
+  await seedLedger(t, true);
 });
 
-async function seedLedger(instance: T) {
+async function seedLedger(instance: T, activated: boolean) {
   await instance.run(async (ctx) => {
     const asOf = "2026-07-30T00:00:00.000Z";
     const accounts = [
@@ -84,6 +84,7 @@ async function seedLedger(instance: T) {
         selfCustodySats: 2_000_000n,
       },
       source: "test",
+      ...(activated ? { postingActivatedAtMs: 1 } : {}),
       updatedAtMs: 10,
     });
     for (const account of accounts) {
@@ -258,6 +259,25 @@ describe("Bitcoin balance posting", () => {
   });
 
   it("reconciles existing opening accounts once and closes after the first posted event", async () => {
+    t = testConvex();
+    setDeploymentEnv({ ALLOW_TOKENLESS_SYNC: "true" });
+    await seedLedger(t, false);
+    await expect(
+      t.mutation(api.buy, {
+        buy: {
+          id: "blocked-before-reconcile",
+          date: "2026-08-01",
+          source: "river",
+          sats: 1n,
+          priceUsdCents: 10_000_000n,
+          usdCents: 1n,
+        },
+      }),
+    ).rejects.toThrow(/not active until opening reconciliation completes/);
+    expect(satsByKey(await snapshot())).toEqual({
+      river: 1_000_000n,
+      coldcard: 2_000_000n,
+    });
     const reconciled = await t.mutation(api.reconcile, {
       owner: "victor",
       expectedUpdatedAtMs: 10,

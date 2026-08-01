@@ -235,6 +235,7 @@ async function seedBtcLedger(owner: "victor" | "mason") {
         exchangeSats: 1_000_000n,
         selfCustodySats: 0n,
       },
+      postingActivatedAtMs: 1,
       updatedAtMs: 1,
     });
     await ctx.db.insert("btcAccounts", {

@@ -631,6 +631,9 @@ export default defineSchema({
     source: v.optional(v.string()),
     basis: v.optional(v.string()),
     confidence: v.optional(v.string()),
+    // Absent on legacy snapshots. Opening reconciliation writes this marker
+    // atomically so a deploy cannot accept a posted event before its anchor.
+    postingActivatedAtMs: v.optional(v.float64()),
     updatedAtMs: v.float64(),
     migrationRawJson: v.optional(v.string()),
     migrationSourceIndex: v.optional(v.float64()),
