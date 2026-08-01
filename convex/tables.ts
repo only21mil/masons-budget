@@ -3937,6 +3937,60 @@ function btcAccountMirrorKey(
     : canonicalKey;
 }
 
+async function hasPostedBtcAccountReference(
+  ctx: MutationCtx,
+  owner: FamilyMember,
+  accountKey: string,
+): Promise<boolean> {
+  const rowOwners: FamilyMember[] =
+    owner === "victor" ? ["victor", "rachel"] : [owner];
+  for (const rowOwner of rowOwners) {
+    const [transactions, buys, billPays, transfers] = await Promise.all([
+      ctx.db
+        .query("transactions")
+        .withIndex("by_owner_date", (q) => q.eq("owner", rowOwner))
+        .collect(),
+      ctx.db
+        .query("btcBuys")
+        .withIndex("by_owner_date", (q) => q.eq("owner", rowOwner))
+        .collect(),
+      ctx.db
+        .query("btcBillPays")
+        .withIndex("by_owner_date", (q) => q.eq("owner", rowOwner))
+        .collect(),
+      ctx.db
+        .query("btcTransfers")
+        .withIndex("by_owner_date", (q) => q.eq("owner", rowOwner))
+        .collect(),
+    ]);
+    if (
+      transactions.some(
+        (row) =>
+          row.balancePostingVersion === 1n &&
+          row.bitcoinAccountKey === accountKey,
+      ) ||
+      buys.some(
+        (row) =>
+          row.balancePostingVersion === 1n &&
+          row.balanceAccountKey === accountKey,
+      ) ||
+      billPays.some(
+        (row) =>
+          row.balancePostingVersion === 1n &&
+          row.balanceAccountKey === accountKey,
+      ) ||
+      transfers.some(
+        (row) =>
+          row.balancePostingVersion === 1n &&
+          (row.fromAccountKey === accountKey || row.toAccountKey === accountKey),
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function upsertBtcAccountCore(
   ctx: MutationCtx,
   sourceFile: "btc-balance-snapshot" | "son-balances",
@@ -4033,6 +4087,24 @@ async function upsertBtcAccountCore(
   const accounts = existingDocument ? [...existingDocument.accounts] : [];
   const index = accounts.findIndex((candidate) => candidate.key === key);
   const previousAccount = index === -1 ? undefined : accounts[index];
+  if (existingDocument?.postingActivatedAtMs !== undefined) {
+    if (previousAccount && previousAccount.sats !== account.sats) {
+      deviceFailure(
+        "ENTITY_CONFLICT",
+        "Bitcoin account quantity is ledger-controlled after activation.",
+        "btcAccount",
+        key,
+      );
+    }
+    if (!previousAccount && account.sats !== 0n) {
+      deviceFailure(
+        "ENTITY_CONFLICT",
+        "A new Bitcoin account must start at zero after ledger activation.",
+        "btcAccount",
+        key,
+      );
+    }
+  }
   const fiatValuation =
     account.fiatValuation ??
     previousAccount?.fiatValuation ??
@@ -4166,6 +4238,27 @@ async function deleteBtcAccountCore(
       "btcAccount",
       accountKey,
     );
+  }
+  const removedAccount = document?.accounts.find(
+    (account) => account.key === accountKey,
+  );
+  if (document && removedAccount) {
+    if (removedAccount.sats !== 0n) {
+      deviceFailure(
+        "ENTITY_CONFLICT",
+        "A Bitcoin account must have a zero balance before deletion.",
+        "btcAccount",
+        accountKey,
+      );
+    }
+    if (await hasPostedBtcAccountReference(ctx, owner, accountKey)) {
+      deviceFailure(
+        "ENTITY_CONFLICT",
+        "A Bitcoin account referenced by posted activity cannot be deleted.",
+        "btcAccount",
+        accountKey,
+      );
+    }
   }
   if (document && removed) {
     await lockRuntimeSource(ctx, sourceFile);
