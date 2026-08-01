@@ -227,6 +227,10 @@ function resolveOwner(raw: unknown, fileOwner: FamilyMember): FamilyMember {
   return isFamilyMember(raw) ? raw : fileOwner;
 }
 
+function postsToHouseholdBitcoinLedger(owner: FamilyMember): boolean {
+  return owner === "victor" || owner === "rachel";
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MIRROR 3 — decimal-safe money
 //
@@ -1955,7 +1959,11 @@ async function upsertTransactionRow(
     );
   }
   let storedRow = row;
-  if (row.category === "Income" && row.amountSats !== undefined) {
+  if (
+    postsToHouseholdBitcoinLedger(row.owner) &&
+    row.category === "Income" &&
+    row.amountSats !== undefined
+  ) {
     const key = row.bitcoinAccountKey?.trim() || (await riverAccountKey(ctx, row.owner));
     const deltas = new Map<string, bigint>();
     addDelta(deltas, key, row.amountSats);
@@ -2127,16 +2135,20 @@ async function upsertBtcBuyRow(
       row.buyId,
     );
   }
-  const key = await riverAccountKey(ctx, row.owner);
-  const deltas = new Map<string, bigint>();
-  addDelta(deltas, key, row.sats);
-  await applyBtcAccountDeltas(ctx, row.owner, deltas);
+  let storedRow = row;
+  if (postsToHouseholdBitcoinLedger(row.owner)) {
+    const key = await riverAccountKey(ctx, row.owner);
+    const deltas = new Map<string, bigint>();
+    addDelta(deltas, key, row.sats);
+    await applyBtcAccountDeltas(ctx, row.owner, deltas);
+    storedRow = {
+      ...row,
+      balanceAccountKey: key,
+      balancePostingVersion: 1n,
+    };
+  }
   await lockRuntimeSource(ctx, row.sourceFile);
-  await ctx.db.insert("btcBuys", {
-    ...row,
-    balanceAccountKey: key,
-    balancePostingVersion: 1n,
-  });
+  await ctx.db.insert("btcBuys", storedRow);
   await clearRowTombstone(ctx, "btcBuy", row.sourceFile, row.buyId);
   return "inserted";
 }
@@ -2228,16 +2240,20 @@ async function upsertBtcBillPayRow(
       row.billPayId,
     );
   }
-  const key = await riverAccountKey(ctx, row.owner);
-  const deltas = new Map<string, bigint>();
-  addDelta(deltas, key, -row.btcSpentSats);
-  await applyBtcAccountDeltas(ctx, row.owner, deltas);
+  let storedRow = row;
+  if (postsToHouseholdBitcoinLedger(row.owner)) {
+    const key = await riverAccountKey(ctx, row.owner);
+    const deltas = new Map<string, bigint>();
+    addDelta(deltas, key, -row.btcSpentSats);
+    await applyBtcAccountDeltas(ctx, row.owner, deltas);
+    storedRow = {
+      ...row,
+      balanceAccountKey: key,
+      balancePostingVersion: 1n,
+    };
+  }
   await lockRuntimeSource(ctx, row.sourceFile);
-  await ctx.db.insert("btcBillPays", {
-    ...row,
-    balanceAccountKey: key,
-    balancePostingVersion: 1n,
-  });
+  await ctx.db.insert("btcBillPays", storedRow);
   await clearRowTombstone(ctx, "btcBillPay", row.sourceFile, row.billPayId);
   return "inserted";
 }

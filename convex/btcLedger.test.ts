@@ -167,6 +167,75 @@ describe("Bitcoin balance posting", () => {
     );
   });
 
+  it("keeps child financial rows working without routing them into the adult River ledger", async () => {
+    const before = satsByKey(await snapshot());
+    await t.mutation(api.buy, {
+      sourceFile: "mason-bitcoin-buys",
+      buy: {
+        id: "mason-buy",
+        owner: "mason",
+        date: "2026-08-01",
+        source: "allowance",
+        sats: 25_000n,
+        priceUsdCents: 10_000_000n,
+        usdCents: 2_500n,
+      },
+    });
+    await t.mutation(api.billPay, {
+      billPay: {
+        id: "mason-bill-pay",
+        owner: "mason",
+        date: "2026-08-01",
+        merchant: "Merchant",
+        category: "Spending",
+        amountUsdCents: 1_000n,
+        btcSpentSats: 10_000n,
+        btcPriceCents: 10_000_000n,
+        feeUsdCents: 0n,
+      },
+    });
+    await t.mutation(api.transaction, {
+      sourceFile: "mason-transactions",
+      transaction: {
+        id: "mason-btc-income",
+        owner: "mason",
+        date: "2026-08-01",
+        merchant: "Bitcoin allowance",
+        amountCents: 1n,
+        amountSats: 5_000n,
+        kind: "credit",
+        category: "Income",
+      },
+    });
+
+    expect(satsByKey(await snapshot())).toEqual(before);
+    const rows = await t.run(async (ctx) => ({
+      buy: await ctx.db
+        .query("btcBuys")
+        .withIndex("by_source_buy_id", (q) =>
+          q.eq("sourceFile", "mason-bitcoin-buys").eq("buyId", "mason-buy"),
+        )
+        .unique(),
+      billPay: await ctx.db
+        .query("btcBillPays")
+        .withIndex("by_source_bill_pay_id", (q) =>
+          q
+            .eq("sourceFile", "bitcoin-bill-pays")
+            .eq("billPayId", "mason-bill-pay"),
+        )
+        .unique(),
+      transaction: await ctx.db
+        .query("transactions")
+        .withIndex("by_source_tx_id", (q) =>
+          q.eq("sourceFile", "mason-transactions").eq("txId", "mason-btc-income"),
+        )
+        .unique(),
+    }));
+    expect(rows.buy?.balancePostingVersion).toBeUndefined();
+    expect(rows.billPay?.balancePostingVersion).toBeUndefined();
+    expect(rows.transaction?.balancePostingVersion).toBeUndefined();
+  });
+
   it("debits bill pays from River and transfers principal plus fee atomically", async () => {
     await t.mutation(api.billPay, {
       billPay: {
