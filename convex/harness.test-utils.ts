@@ -19,6 +19,7 @@ import schema from "./schema";
  */
 const modules: Record<string, () => Promise<unknown>> = {
   "./_generated/server.ts": () => import("./generatedServer.test-stub"),
+  "./btcLedger.ts": () => import("./btcLedger"),
   "./dataFiles.ts": () => import("./dataFiles"),
   "./dateValidation.ts": () => import("./dateValidation"),
   "./deviceAuth.ts": () => import("./deviceAuth"),

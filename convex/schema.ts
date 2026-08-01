@@ -241,6 +241,7 @@ export default defineSchema({
       v.literal("budgetCategory"),
       v.literal("btcBuy"),
       v.literal("btcBillPay"),
+      v.literal("btcTransfer"),
       v.literal("btcAccount"),
     ),
     sourceFile: v.string(),
@@ -383,6 +384,9 @@ export default defineSchema({
     // "nothing here"; collapsing both to absent means one shape reaches clients.
     card: v.optional(v.string()),
     note: v.optional(v.string()),
+    amountSats: v.optional(v.int64()),
+    bitcoinAccountKey: v.optional(v.string()),
+    balancePostingVersion: v.optional(v.int64()),
     // "transactions" | "mason-transactions" | "maddox-transactions".
     // Carries the sign convention, and pairs with txId as the natural key —
     // record ids are only unique within their own file.
@@ -460,6 +464,8 @@ export default defineSchema({
     costBasisStatus: v.optional(v.string()),
     loggedBy: v.optional(v.string()),
     archimedesRequestId: v.optional(v.string()),
+    balanceAccountKey: v.optional(v.string()),
+    balancePostingVersion: v.optional(v.int64()),
     sourceFile: v.string(), // "bitcoin-buys" | "mason-bitcoin-buys"
     updatedAtMs: v.float64(),
     migrationRaw: v.optional(v.any()),
@@ -488,6 +494,8 @@ export default defineSchema({
     note: v.optional(v.string()),
     feeUsdCents: v.int64(),
     reference: v.optional(v.string()),
+    balanceAccountKey: v.optional(v.string()),
+    balancePostingVersion: v.optional(v.int64()),
     sourceFile: v.string(),
     updatedAtMs: v.float64(),
     migrationRaw: v.optional(v.any()),
@@ -498,6 +506,24 @@ export default defineSchema({
     .index("by_owner_month", ["owner", "month"])
     .index("by_owner_month_date", ["owner", "month", "date"])
     .index("by_date", ["date"]),
+
+  btcTransfers: defineTable({
+    transferId: v.string(),
+    owner: familyMemberValidator,
+    date: v.string(),
+    month: v.string(),
+    fromAccountKey: v.string(),
+    toAccountKey: v.string(),
+    sats: v.int64(),
+    feeSats: v.int64(),
+    note: v.optional(v.string()),
+    sourceFile: v.literal("btc-transfers"),
+    balancePostingVersion: v.int64(),
+    updatedAtMs: v.float64(),
+  })
+    .index("by_transfer_id", ["transferId"])
+    .index("by_owner_date", ["owner", "date"])
+    .index("by_owner_month_date", ["owner", "month", "date"]),
 
   // ── Bitcoin accounts (balance snapshot) ──
   // The blob keys these by account name inside one snapshot object. As rows the

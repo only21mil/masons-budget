@@ -41,6 +41,8 @@ export const PAIRED_DEVICE_PATHS = {
   "btcBuy.delete": "tables:deleteBtcBuyFromDevice",
   "btcBillPay.upsert": "tables:upsertBtcBillPayFromDevice",
   "btcBillPay.delete": "tables:deleteBtcBillPayFromDevice",
+  "btcTransfer.upsert": "tables:upsertBtcTransferFromDevice",
+  "btcTransfer.delete": "tables:deleteBtcTransferFromDevice",
   "btcAccount.upsert": "tables:upsertBtcAccountFromDevice",
   "btcAccount.delete": "tables:deleteBtcAccountFromDevice",
 } as const
@@ -67,6 +69,8 @@ const MUTATION_KINDS = [
   "btcBuy.delete",
   "btcBillPay.upsert",
   "btcBillPay.delete",
+  "btcTransfer.upsert",
+  "btcTransfer.delete",
   "btcAccount.upsert",
   "btcAccount.delete",
 ] as const satisfies readonly VogelVaultMutationKind[]
@@ -318,7 +322,7 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           input,
           kind,
           ["id", "owner", "date", "merchant", "amountCents", "transactionKind", "category"],
-          ["card", "note", "baseUpdatedAtMs"],
+          ["card", "note", "amountSats", "baseUpdatedAtMs"],
         )
         const { requestId, actor } = common(record)
         const owner = canonicalFinancialOwner(member(record["owner"]))
@@ -338,6 +342,12 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           category: boundedText(record["category"]),
           ...optionalField("card", card),
           ...optionalField("note", note),
+          ...optionalField(
+            "amountSats",
+            Object.hasOwn(record, "amountSats")
+              ? positiveInt64(record["amountSats"])
+              : undefined,
+          ),
         }
         // Reuse the shared sign, owner/source and exact-money contract.
         buildTransactionWriteRequest(owner, candidate)
@@ -354,12 +364,19 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           category: candidate.category,
           ...optionalField("card", card),
           ...optionalField("note", note),
+          ...optionalField(
+            "amountSats",
+            Object.hasOwn(record, "amountSats")
+              ? positiveInt64(record["amountSats"])
+              : undefined,
+          ),
           ...optionalField("baseUpdatedAtMs", optionalRevision(record)),
         }
       }
       case "transaction.delete":
       case "btcBuy.delete":
-      case "btcBillPay.delete": {
+      case "btcBillPay.delete":
+      case "btcTransfer.delete": {
         const record = withCommon(input, kind, ["id", "owner", "baseUpdatedAtMs"])
         const { requestId, actor } = common(record)
         return {
@@ -539,6 +556,39 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           ...optionalField("baseUpdatedAtMs", optionalRevision(record)),
         }
       }
+      case "btcTransfer.upsert": {
+        const record = withCommon(
+          input,
+          kind,
+          ["id", "owner", "date", "fromAccountKey", "toAccountKey", "sats", "feeSats"],
+          ["note", "baseUpdatedAtMs"],
+        )
+        const { requestId, actor } = common(record)
+        const owner = canonicalFinancialOwner(member(record["owner"]))
+        const fromAccountKey = boundedText(
+          record["fromAccountKey"],
+          PAIRED_DEVICE_LIMITS.maxIdentifier,
+        )
+        const toAccountKey = boundedText(
+          record["toAccountKey"],
+          PAIRED_DEVICE_LIMITS.maxIdentifier,
+        )
+        if (fromAccountKey === toAccountKey) throw new InvalidRequest()
+        return {
+          kind,
+          requestId,
+          actor,
+          id: boundedText(record["id"], PAIRED_DEVICE_LIMITS.maxIdentifier),
+          owner,
+          date: exactDate(record["date"]),
+          fromAccountKey,
+          toAccountKey,
+          sats: positiveInt64(record["sats"]),
+          feeSats: nonnegativeInt64(record["feeSats"]),
+          ...optionalField("note", optionalText(record, "note")),
+          ...optionalField("baseUpdatedAtMs", optionalRevision(record)),
+        }
+      }
       case "btcAccount.upsert": {
         const record = withCommon(
           input,
@@ -675,11 +725,19 @@ function mutationArgs(
         category: request.category,
         ...optionalField("card", request.card),
         ...optionalField("note", request.note),
+        ...optionalField("amountSats", request.amountSats),
       })
       return {
         ...auth,
         owner: request.owner,
         ...wire.args,
+        transaction: {
+          ...wire.args.transaction,
+          ...optionalField(
+            "amountSats",
+            request.amountSats === undefined ? undefined : encoded(request.amountSats),
+          ),
+        },
         ...optionalField("baseUpdatedAtMs", request.baseUpdatedAtMs),
       }
     }
@@ -803,6 +861,31 @@ function mutationArgs(
         entityId: request.id,
         owner: request.owner,
         sourceFile: "bitcoin-bill-pays",
+        baseUpdatedAtMs: request.baseUpdatedAtMs,
+      }
+    case "btcTransfer.upsert":
+      return {
+        ...auth,
+        owner: request.owner,
+        sourceFile: "btc-transfers",
+        transfer: {
+          id: request.id,
+          owner: request.owner,
+          date: request.date,
+          fromAccountKey: request.fromAccountKey,
+          toAccountKey: request.toAccountKey,
+          sats: encoded(request.sats),
+          feeSats: encoded(request.feeSats),
+          ...optionalField("note", request.note),
+        },
+        ...optionalField("baseUpdatedAtMs", request.baseUpdatedAtMs),
+      }
+    case "btcTransfer.delete":
+      return {
+        ...auth,
+        entityId: request.id,
+        owner: request.owner,
+        sourceFile: "btc-transfers",
         baseUpdatedAtMs: request.baseUpdatedAtMs,
       }
     case "btcAccount.upsert": {
@@ -979,6 +1062,8 @@ const RESOURCE_CAPABILITIES = {
     "btcBuy.delete",
     "btcBillPay.upsert",
     "btcBillPay.delete",
+    "btcTransfer.upsert",
+    "btcTransfer.delete",
     "btcAccount.upsert",
     "btcAccount.delete",
   ],
@@ -1011,7 +1096,27 @@ function storedCapabilities(value: unknown): readonly VogelVaultMutationKind[] {
   ) {
     throw new InvalidResponse()
   }
-  return value as VogelVaultMutationKind[]
+  const capabilities = value as VogelVaultMutationKind[]
+  const legacyBitcoinGrant = [
+    "btcBuy.upsert",
+    "btcBuy.delete",
+    "btcBillPay.upsert",
+    "btcBillPay.delete",
+    "btcAccount.upsert",
+    "btcAccount.delete",
+  ] as const satisfies readonly VogelVaultMutationKind[]
+  if (
+    legacyBitcoinGrant.every((kind) => capabilities.includes(kind)) &&
+    !capabilities.includes("btcTransfer.upsert") &&
+    !capabilities.includes("btcTransfer.delete")
+  ) {
+    // Stored grants are the expanded renderer vocabulary, while Convex keeps
+    // the durable coarse `bitcoin:write` capability. Preserve that original
+    // grant across this vocabulary addition so existing paired desktops do
+    // not need to re-pair merely to use the new Bitcoin transfer endpoint.
+    return [...capabilities, "btcTransfer.upsert", "btcTransfer.delete"]
+  }
+  return capabilities
 }
 
 function pairValue(

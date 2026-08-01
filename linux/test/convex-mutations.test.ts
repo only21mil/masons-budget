@@ -155,6 +155,33 @@ describe("paired-device main controller", () => {
     })
   })
 
+  it("carries an existing coarse Bitcoin write grant into the new transfer vocabulary", async () => {
+    const controller = createPairedDeviceController({
+      store: store({
+        ...snapshot,
+        capabilities: [
+          "btcBuy.upsert",
+          "btcBuy.delete",
+          "btcBillPay.upsert",
+          "btcBillPay.delete",
+          "btcAccount.upsert",
+          "btcAccount.delete",
+        ],
+      }),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: vi.fn(),
+    })
+
+    await expect(controller.status()).resolves.toMatchObject({
+      status: "paired",
+      capabilities: expect.arrayContaining([
+        "btcTransfer.upsert",
+        "btcTransfer.delete",
+      ]),
+    })
+  })
+
   it("validates closed requests, including atomic budget-category renames", () => {
     expect(validateMutationRequest({
       kind: "budgetCategory.upsert",
@@ -360,6 +387,87 @@ describe("paired-device main controller", () => {
       entityId: "tx-1",
     })
     expect(JSON.stringify(result)).not.toContain(snapshot.deviceCredential)
+  })
+
+  it("encodes Bitcoin Income sats and owned-account transfers through fixed paths", async () => {
+    const bodies: Record<string, unknown>[] = []
+    const controller = createPairedDeviceController({
+      store: store({
+        ...snapshot,
+        capabilities: ["transaction.upsert", "btcTransfer.upsert"],
+      }),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: async (_endpoint, body) => {
+        const wire = JSON.parse(body) as Record<string, unknown>
+        bodies.push(wire)
+        return success({
+          ok: true,
+          entityId: wire.path === PAIRED_DEVICE_PATHS["transaction.upsert"]
+            ? "income-1"
+            : "transfer-1",
+          outcome: "inserted",
+        })
+      },
+    })
+
+    await controller.mutate({
+      kind: "transaction.upsert",
+      requestId: "request_income",
+      actor: "victor",
+      id: "income-1",
+      owner: "victor",
+      date: "2026-08-01",
+      merchant: "Bitcoin income",
+      amountCents: 1n,
+      amountSats: 25_000n,
+      transactionKind: "credit",
+      category: "Income",
+    })
+    await controller.mutate({
+      kind: "btcTransfer.upsert",
+      requestId: "request_transfer",
+      actor: "victor",
+      id: "transfer-1",
+      owner: "victor",
+      date: "2026-08-01",
+      fromAccountKey: "river",
+      toAccountKey: "coldcard",
+      sats: 100_000n,
+      feeSats: 250n,
+      note: "Move to self custody",
+    })
+
+    expect(bodies[0]).toMatchObject({
+      path: PAIRED_DEVICE_PATHS["transaction.upsert"],
+      args: {
+        transaction: { amountSats: encodeConvexInt64(25_000n) },
+      },
+    })
+    expect(bodies[1]).toMatchObject({
+      path: PAIRED_DEVICE_PATHS["btcTransfer.upsert"],
+      args: {
+        sourceFile: "btc-transfers",
+        transfer: {
+          fromAccountKey: "river",
+          toAccountKey: "coldcard",
+          sats: encodeConvexInt64(100_000n),
+          feeSats: encodeConvexInt64(250n),
+        },
+      },
+    })
+    expect(validateMutationRequest({
+      kind: "btcTransfer.upsert",
+      requestId: "request_invalid",
+      actor: "victor",
+      id: "transfer-invalid",
+      owner: "victor",
+      date: "2026-08-01",
+      fromAccountKey: "river",
+      toAccountKey: "river",
+      sats: 1n,
+      feeSats: 0n,
+    })).toBeNull()
   })
 
   it("treats actor as non-authoritative intent and canonicalizes Rachel finance", async () => {

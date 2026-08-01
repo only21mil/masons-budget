@@ -152,6 +152,26 @@ const requests = [
     owner: "victor",
     baseUpdatedAtMs: 100,
   },
+  {
+    kind: "btcTransfer.upsert",
+    requestId: "request-13",
+    actor: "victor",
+    id: "transfer-01",
+    owner: "victor",
+    date: "2026-07-30",
+    fromAccountKey: "river",
+    toAccountKey: "cold-storage",
+    sats: 100_000n,
+    feeSats: 250n,
+  },
+  {
+    kind: "btcTransfer.delete",
+    requestId: "request-14",
+    actor: "victor",
+    id: "transfer-01",
+    owner: "victor",
+    baseUpdatedAtMs: 100,
+  },
 ] as const satisfies readonly VogelVaultMutationRequest[]
 
 const mutationFailureCodes = [
@@ -196,7 +216,7 @@ describe("paired-device IPC contract", () => {
     ])
   })
 
-  it("has exactly twelve closed mutation discriminators", () => {
+  it("has exactly fourteen closed mutation discriminators", () => {
     expect(requests.map((request) => request.kind)).toEqual([
       "transaction.upsert",
       "transaction.delete",
@@ -210,8 +230,10 @@ describe("paired-device IPC contract", () => {
       "btcBillPay.delete",
       "btcAccount.upsert",
       "btcAccount.delete",
+      "btcTransfer.upsert",
+      "btcTransfer.delete",
     ])
-    expect(new Set(requests.map((request) => request.requestId)).size).toBe(12)
+    expect(new Set(requests.map((request) => request.requestId)).size).toBe(14)
   })
 
   it("keeps mutation results to six text-free outer states", () => {

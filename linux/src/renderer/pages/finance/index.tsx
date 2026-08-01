@@ -69,6 +69,7 @@ import {
   BillPayFormDialog,
   BtcAccountFormDialog,
   BtcBuyFormDialog,
+  BtcTransferFormDialog,
   BudgetProgress,
   BudgetCategoryFormDialog,
   Button,
@@ -1344,6 +1345,7 @@ function BitcoinOverviewPage() {
     refresh,
   } = useAppState()
   const [adding, setAdding] = useState(false)
+  const [transferring, setTransferring] = useState(false)
   const visible = visibleTo(activeProfile, data.btcAccounts.value)
   const projectionInScope = netWorthScopeFor(activeProfile, visible)
   const document = data.btcBalanceDocument.value
@@ -1361,6 +1363,14 @@ function BitcoinOverviewPage() {
     data.btcBalanceDocument.status,
     mutationOwner("btcAccount.upsert", activeProfile),
   )
+  const transferGate = mutationGate(
+    "btcTransfer.upsert",
+    data.btcBalanceDocument.status,
+    mutationOwner("btcTransfer.upsert", activeProfile),
+  )
+  const transferBlockedReason = inScope.length < 2
+    ? "At least two canonical Bitcoin accounts are required."
+    : transferGate.reason
   const syncedColumns: ReadonlyArray<Column<BTCAccount>> = [
     ...stackColumns(displayUnit, btcPriceCents),
     { key: "owner", header: "Owner", render: (row) => <Badge>{row.owner}</Badge>, secondary: true },
@@ -1384,12 +1394,19 @@ function BitcoinOverviewPage() {
         actions={
           <>
             <Button
-              variant="primary"
               onClick={() => setAdding(true)}
               disabled={!addGate.allowed}
               title={addGate.reason ?? undefined}
             >
               Add BTC account
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => setTransferring(true)}
+              disabled={!transferGate.allowed || inScope.length < 2}
+              title={transferBlockedReason ?? undefined}
+            >
+              Transfer BTC
             </Button>
             <FreshnessTag
               status={data.btcBalanceDocument.status}
@@ -1487,6 +1504,15 @@ function BitcoinOverviewPage() {
         />
       </Panel>
       <BtcAccountFormDialog open={adding} account={null} onClose={() => setAdding(false)} />
+      <BtcTransferFormDialog
+        open={transferring}
+        submissionGate={
+          inScope.length < 2
+            ? { allowed: false, reason: "At least two canonical Bitcoin accounts are required." }
+            : transferGate
+        }
+        onClose={() => setTransferring(false)}
+      />
     </>
   )
 }

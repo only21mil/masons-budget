@@ -435,6 +435,8 @@ export type VogelVaultMutationKind =
   | "btcBuy.delete"
   | "btcBillPay.upsert"
   | "btcBillPay.delete"
+  | "btcTransfer.upsert"
+  | "btcTransfer.delete"
   | "btcAccount.upsert"
   | "btcAccount.delete"
 
@@ -462,6 +464,8 @@ export type VogelVaultMutationRequest =
       readonly category: string
       readonly card?: string
       readonly note?: string
+      /** Present only when Income is explicitly entered in sats. */
+      readonly amountSats?: bigint
       /** Omit only for a create whose natural key has never existed. */
       readonly baseUpdatedAtMs?: number
     })
@@ -558,6 +562,25 @@ export type VogelVaultMutationRequest =
     })
   | (VogelVaultMutationBase & {
       readonly kind: "btcBillPay.delete"
+      readonly id: string
+      readonly owner: VogelVaultMember
+      readonly baseUpdatedAtMs: number
+    })
+  | (VogelVaultMutationBase & {
+      readonly kind: "btcTransfer.upsert"
+      readonly id: string
+      readonly owner: VogelVaultMember
+      readonly date: string
+      readonly fromAccountKey: string
+      readonly toAccountKey: string
+      readonly sats: bigint
+      readonly feeSats: bigint
+      readonly note?: string
+      /** Omit only for a create whose natural key has never existed. */
+      readonly baseUpdatedAtMs?: number
+    })
+  | (VogelVaultMutationBase & {
+      readonly kind: "btcTransfer.delete"
       readonly id: string
       readonly owner: VogelVaultMember
       readonly baseUpdatedAtMs: number

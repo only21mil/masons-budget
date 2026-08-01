@@ -44,6 +44,12 @@ import { query, mutation, type MutationCtx } from "./_generated/server";
 import { isRealIsoDate, requireIsoDate } from "./dateValidation";
 import { authenticateDevice, markDeviceSeen } from "./deviceAuth";
 import {
+  addDelta,
+  applyBtcAccountDeltas,
+  riverAccountKey,
+  type BtcTransferRow,
+} from "./btcLedger";
+import {
   type SharesDecimalOptions,
   canonicalizeSharesDecimal,
 } from "./documentProjection";
@@ -1587,6 +1593,7 @@ type RowEntityType =
   | "budgetCategory"
   | "btcBuy"
   | "btcBillPay"
+  | "btcTransfer"
   | "btcAccount";
 
 type DeviceErrorCode =
@@ -1835,9 +1842,27 @@ async function clearLegacyTodoTombstone(ctx: MutationCtx, todoId: string) {
 
 async function upsertTransactionRow(
   ctx: MutationCtx,
-  row: ReturnType<typeof buildTransactionRow>,
+  row: Omit<Doc<"transactions">, "_id" | "_creationTime">,
   optimistic?: OptimisticWrite,
 ): Promise<UpsertOutcome> {
+  if (row.amountSats !== undefined) {
+    if (row.category !== "Income" || row.amountSats <= 0n) {
+      deviceFailure(
+        "VALIDATION_FAILED",
+        "Only Income entered explicitly in BTC/sats may carry amountSats.",
+        "transaction",
+        row.txId,
+      );
+    }
+    if (row.bitcoinAccountKey !== undefined && !row.bitcoinAccountKey.trim()) {
+      deviceFailure(
+        "VALIDATION_FAILED",
+        "bitcoinAccountKey must not be empty.",
+        "transaction",
+        row.txId,
+      );
+    }
+  }
   const existing = await ctx.db
     .query("transactions")
     .withIndex("by_source_tx_id", (q: any) =>
@@ -1872,9 +1897,38 @@ async function upsertTransactionRow(
         row.txId,
       );
     }
+    let storedRow = row;
+    if (existing.balancePostingVersion === 1n) {
+      const oldSats = existing.amountSats;
+      const oldKey = existing.bitcoinAccountKey;
+      if (oldSats === undefined || oldKey === undefined) {
+        throw new ConvexError("Posted Income row is missing its Bitcoin posting fields.");
+      }
+      const deltas = new Map<string, bigint>();
+      addDelta(deltas, oldKey, -oldSats);
+      if (row.category === "Income") {
+        const nextSats = row.amountSats ?? oldSats;
+        const nextKey = row.bitcoinAccountKey?.trim() || oldKey;
+        addDelta(deltas, nextKey, nextSats);
+        storedRow = {
+          ...row,
+          amountSats: nextSats,
+          bitcoinAccountKey: nextKey,
+          balancePostingVersion: 1n,
+        };
+      } else {
+        storedRow = {
+          ...row,
+          amountSats: undefined,
+          bitcoinAccountKey: undefined,
+          balancePostingVersion: undefined,
+        };
+      }
+      await applyBtcAccountDeltas(ctx, row.owner, deltas);
+    }
     await lockRuntimeSource(ctx, row.sourceFile);
     await ctx.db.patch(existing._id, {
-      ...row,
+      ...storedRow,
       updatedAtMs: optimistic
         ? nextUpdatedAtMs(existing.updatedAtMs)
         : row.updatedAtMs,
@@ -1900,8 +1954,20 @@ async function upsertTransactionRow(
       row.txId,
     );
   }
+  let storedRow = row;
+  if (row.category === "Income" && row.amountSats !== undefined) {
+    const key = row.bitcoinAccountKey?.trim() || (await riverAccountKey(ctx, row.owner));
+    const deltas = new Map<string, bigint>();
+    addDelta(deltas, key, row.amountSats);
+    await applyBtcAccountDeltas(ctx, row.owner, deltas);
+    storedRow = {
+      ...row,
+      bitcoinAccountKey: key,
+      balancePostingVersion: 1n,
+    };
+  }
   await lockRuntimeSource(ctx, row.sourceFile);
-  await ctx.db.insert("transactions", row);
+  await ctx.db.insert("transactions", storedRow);
   await clearRowTombstone(ctx, "transaction", row.sourceFile, row.txId);
   return "inserted";
 }
@@ -1983,7 +2049,7 @@ async function upsertTodoRow(
 
 async function upsertBtcBuyRow(
   ctx: MutationCtx,
-  row: ReturnType<typeof buildBtcBuyRow>,
+  row: Omit<Doc<"btcBuys">, "_id" | "_creationTime">,
   optimistic?: OptimisticWrite,
 ): Promise<UpsertOutcome> {
   const existing = await ctx.db
@@ -2020,9 +2086,22 @@ async function upsertBtcBuyRow(
         row.buyId,
       );
     }
+    let storedRow = row;
+    if (existing.balancePostingVersion === 1n) {
+      const key = existing.balanceAccountKey;
+      if (!key) throw new ConvexError("Posted Bitcoin buy is missing its account key.");
+      const deltas = new Map<string, bigint>();
+      addDelta(deltas, key, row.sats - existing.sats);
+      await applyBtcAccountDeltas(ctx, row.owner, deltas);
+      storedRow = {
+        ...row,
+        balanceAccountKey: key,
+        balancePostingVersion: 1n,
+      };
+    }
     await lockRuntimeSource(ctx, row.sourceFile);
     await ctx.db.patch(existing._id, {
-      ...row,
+      ...storedRow,
       updatedAtMs: optimistic
         ? nextUpdatedAtMs(existing.updatedAtMs)
         : row.updatedAtMs,
@@ -2048,8 +2127,16 @@ async function upsertBtcBuyRow(
       row.buyId,
     );
   }
+  const key = await riverAccountKey(ctx, row.owner);
+  const deltas = new Map<string, bigint>();
+  addDelta(deltas, key, row.sats);
+  await applyBtcAccountDeltas(ctx, row.owner, deltas);
   await lockRuntimeSource(ctx, row.sourceFile);
-  await ctx.db.insert("btcBuys", row);
+  await ctx.db.insert("btcBuys", {
+    ...row,
+    balanceAccountKey: key,
+    balancePostingVersion: 1n,
+  });
   await clearRowTombstone(ctx, "btcBuy", row.sourceFile, row.buyId);
   return "inserted";
 }
@@ -2100,9 +2187,22 @@ async function upsertBtcBillPayRow(
         row.billPayId,
       );
     }
+    let storedRow = row;
+    if (existing.balancePostingVersion === 1n) {
+      const key = existing.balanceAccountKey;
+      if (!key) throw new ConvexError("Posted Bitcoin bill pay is missing its account key.");
+      const deltas = new Map<string, bigint>();
+      addDelta(deltas, key, existing.btcSpentSats - row.btcSpentSats);
+      await applyBtcAccountDeltas(ctx, row.owner, deltas);
+      storedRow = {
+        ...row,
+        balanceAccountKey: key,
+        balancePostingVersion: 1n,
+      };
+    }
     await lockRuntimeSource(ctx, row.sourceFile);
     await ctx.db.patch(existing._id, {
-      ...row,
+      ...storedRow,
       updatedAtMs: optimistic
         ? nextUpdatedAtMs(existing.updatedAtMs)
         : row.updatedAtMs,
@@ -2128,10 +2228,221 @@ async function upsertBtcBillPayRow(
       row.billPayId,
     );
   }
+  const key = await riverAccountKey(ctx, row.owner);
+  const deltas = new Map<string, bigint>();
+  addDelta(deltas, key, -row.btcSpentSats);
+  await applyBtcAccountDeltas(ctx, row.owner, deltas);
   await lockRuntimeSource(ctx, row.sourceFile);
-  await ctx.db.insert("btcBillPays", row);
+  await ctx.db.insert("btcBillPays", {
+    ...row,
+    balanceAccountKey: key,
+    balancePostingVersion: 1n,
+  });
   await clearRowTombstone(ctx, "btcBillPay", row.sourceFile, row.billPayId);
   return "inserted";
+}
+
+function validateBtcTransfer(row: BtcTransferRow) {
+  if (!row.transferId.trim()) {
+    deviceFailure("VALIDATION_FAILED", "Transfer id must not be empty.", "btcTransfer");
+  }
+  if (!row.fromAccountKey.trim() || !row.toAccountKey.trim()) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Transfer source and destination accounts are required.",
+      "btcTransfer",
+      row.transferId,
+    );
+  }
+  if (row.fromAccountKey === row.toAccountKey) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Transfer source and destination must be different accounts.",
+      "btcTransfer",
+      row.transferId,
+    );
+  }
+  if (row.sats <= 0n || row.feeSats < 0n) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Transfer sats must be positive and feeSats must be nonnegative.",
+      "btcTransfer",
+      row.transferId,
+    );
+  }
+  if (row.sats + row.feeSats > (1n << 63n) - 1n) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Transfer debit exceeds signed int64.",
+      "btcTransfer",
+      row.transferId,
+    );
+  }
+}
+
+function sameBtcTransfer(
+  existing: Doc<"btcTransfers">,
+  row: BtcTransferRow,
+): boolean {
+  return (
+    existing.owner === row.owner &&
+    existing.date === row.date &&
+    existing.fromAccountKey === row.fromAccountKey &&
+    existing.toAccountKey === row.toAccountKey &&
+    existing.sats === row.sats &&
+    existing.feeSats === row.feeSats &&
+    existing.note === row.note
+  );
+}
+
+async function upsertBtcTransferRow(
+  ctx: MutationCtx,
+  row: BtcTransferRow,
+  optimistic?: OptimisticWrite,
+): Promise<UpsertOutcome> {
+  validateBtcTransfer(row);
+  const existing = await ctx.db
+    .query("btcTransfers")
+    .withIndex("by_transfer_id", (q) => q.eq("transferId", row.transferId))
+    .unique();
+  const tombstone = optimistic
+    ? await findRowTombstone(ctx, "btcTransfer", row.sourceFile, row.transferId)
+    : null;
+  if (existing) {
+    if (existing.owner !== row.owner) {
+      deviceFailure(
+        "OWNER_MISMATCH",
+        `Bitcoin transfer ${row.transferId} belongs to ${existing.owner}, not ${row.owner}.`,
+        "btcTransfer",
+        row.transferId,
+      );
+    }
+    // A lost create response may be retried without the revision it never
+    // received. Exact replay is a no-op; changed content still needs a fence.
+    if (sameBtcTransfer(existing, row)) return "updated";
+    if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
+      deviceFailure(
+        "REVISION_REQUIRED",
+        "baseUpdatedAtMs is required to edit a Bitcoin transfer.",
+        "btcTransfer",
+        row.transferId,
+      );
+    }
+    if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
+      deviceFailure(
+        "ENTITY_CONFLICT",
+        "The Bitcoin transfer changed after it was read.",
+        "btcTransfer",
+        row.transferId,
+      );
+    }
+    const deltas = new Map<string, bigint>();
+    addDelta(deltas, existing.fromAccountKey, existing.sats + existing.feeSats);
+    addDelta(deltas, existing.toAccountKey, -existing.sats);
+    addDelta(deltas, row.fromAccountKey, -(row.sats + row.feeSats));
+    addDelta(deltas, row.toAccountKey, row.sats);
+    await applyBtcAccountDeltas(ctx, row.owner, deltas);
+    await lockRuntimeSource(ctx, row.sourceFile);
+    await ctx.db.patch(existing._id, {
+      ...row,
+      updatedAtMs: optimistic
+        ? nextUpdatedAtMs(existing.updatedAtMs)
+        : row.updatedAtMs,
+    });
+    await clearRowTombstone(ctx, "btcTransfer", row.sourceFile, row.transferId);
+    return "updated";
+  }
+  if (optimistic?.baseUpdatedAtMs !== undefined) {
+    deviceFailure(
+      tombstone ? "ENTITY_DELETED" : "ENTITY_NOT_FOUND",
+      tombstone
+        ? "The Bitcoin transfer was deleted after it was read."
+        : "The Bitcoin transfer to update does not exist.",
+      "btcTransfer",
+      row.transferId,
+    );
+  }
+  if (tombstone) {
+    deviceFailure(
+      "ENTITY_DELETED",
+      "A deleted Bitcoin transfer id cannot be silently resurrected.",
+      "btcTransfer",
+      row.transferId,
+    );
+  }
+  const deltas = new Map<string, bigint>();
+  addDelta(deltas, row.fromAccountKey, -(row.sats + row.feeSats));
+  addDelta(deltas, row.toAccountKey, row.sats);
+  await applyBtcAccountDeltas(ctx, row.owner, deltas);
+  await lockRuntimeSource(ctx, row.sourceFile);
+  await ctx.db.insert("btcTransfers", row);
+  await clearRowTombstone(ctx, "btcTransfer", row.sourceFile, row.transferId);
+  return "inserted";
+}
+
+async function deleteBtcTransferCore(
+  ctx: MutationCtx,
+  owner: FamilyMember,
+  transferId: string,
+  optimistic?: OptimisticWrite,
+): Promise<boolean> {
+  const sourceFile = "btc-transfers";
+  const existing = await ctx.db
+    .query("btcTransfers")
+    .withIndex("by_transfer_id", (q) => q.eq("transferId", transferId))
+    .unique();
+  const tombstone = optimistic
+    ? await findRowTombstone(ctx, "btcTransfer", sourceFile, transferId)
+    : null;
+  if (!existing) {
+    if (optimistic?.baseUpdatedAtMs !== undefined) {
+      if (tombstone?.deletedFromUpdatedAtMs === optimistic.baseUpdatedAtMs) {
+        return false;
+      }
+      deviceFailure(
+        tombstone ? "ENTITY_CONFLICT" : "ENTITY_NOT_FOUND",
+        "The Bitcoin transfer deletion does not match the current revision.",
+        "btcTransfer",
+        transferId,
+      );
+    }
+    await lockRuntimeSource(ctx, sourceFile);
+    await upsertRowTombstone(ctx, "btcTransfer", sourceFile, transferId, owner);
+    return false;
+  }
+  if (existing.owner !== owner) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Bitcoin transfer ${transferId} belongs to ${existing.owner}, not ${owner}.`,
+      "btcTransfer",
+      transferId,
+    );
+  }
+  if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
+    deviceFailure(
+      optimistic?.baseUpdatedAtMs === undefined
+        ? "REVISION_REQUIRED"
+        : "ENTITY_CONFLICT",
+      "The Bitcoin transfer deletion does not match the current revision.",
+      "btcTransfer",
+      transferId,
+    );
+  }
+  const deltas = new Map<string, bigint>();
+  addDelta(deltas, existing.fromAccountKey, existing.sats + existing.feeSats);
+  addDelta(deltas, existing.toAccountKey, -existing.sats);
+  await applyBtcAccountDeltas(ctx, existing.owner, deltas);
+  await lockRuntimeSource(ctx, sourceFile);
+  await ctx.db.delete(existing._id);
+  await upsertRowTombstone(
+    ctx,
+    "btcTransfer",
+    sourceFile,
+    transferId,
+    owner,
+    optimistic?.baseUpdatedAtMs,
+  );
+  return true;
 }
 
 async function upsertBtcAccountRow(
@@ -2252,6 +2563,8 @@ const transactionInput = v.object({
   category: v.string(),
   card: v.optional(v.string()),
   note: v.optional(v.string()),
+  amountSats: v.optional(v.int64()),
+  bitcoinAccountKey: v.optional(v.string()),
   owner: v.optional(familyMemberValidator),
 });
 
@@ -2264,8 +2577,23 @@ const transactionDeviceInput = v.object({
   category: v.string(),
   card: v.optional(v.string()),
   note: v.optional(v.string()),
+  amountSats: v.optional(v.int64()),
+  bitcoinAccountKey: v.optional(v.string()),
   owner: familyMemberValidator,
 });
+
+const btcTransferInput = v.object({
+  id: v.string(),
+  owner: familyMemberValidator,
+  date: v.string(),
+  fromAccountKey: v.string(),
+  toAccountKey: v.string(),
+  sats: v.int64(),
+  feeSats: v.int64(),
+  note: v.optional(v.string()),
+});
+
+const btcTransferSourceValidator = v.literal("btc-transfers");
 
 const transactionSourceValidator = v.union(
   v.literal("transactions"),
@@ -2420,6 +2748,8 @@ export const upsertTransaction = mutation({
       category: transaction.category,
       card: optionalText(transaction.card),
       note: optionalText(transaction.note),
+      amountSats: transaction.amountSats,
+      bitcoinAccountKey: optionalText(transaction.bitcoinAccountKey),
       sourceFile: file,
       updatedAtMs: now,
     };
@@ -2475,6 +2805,14 @@ export const deleteTransaction = mutation({
           `not ${rawOwner}. Pass the matching sourceFile for that owner; this ` +
           `is not corrected here on purpose because the delete is irreversible.`,
       );
+    }
+    if (existing.balancePostingVersion === 1n) {
+      if (existing.amountSats === undefined || existing.bitcoinAccountKey === undefined) {
+        throw new ConvexError("Posted Income row is missing its Bitcoin posting fields.");
+      }
+      const deltas = new Map<string, bigint>();
+      addDelta(deltas, existing.bitcoinAccountKey, -existing.amountSats);
+      await applyBtcAccountDeltas(ctx, existing.owner, deltas);
     }
     await lockRuntimeSource(ctx, file);
     await ctx.db.delete(existing._id);
@@ -2658,6 +2996,61 @@ export const upsertBtcBillPay = mutation({
       month: row.month,
       outcome,
     };
+  },
+});
+
+export const upsertBtcTransfer = mutation({
+  args: {
+    transfer: btcTransferInput,
+    sourceFile: v.optional(btcTransferSourceValidator),
+    baseUpdatedAtMs: v.optional(v.float64()),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { transfer, sourceFile, baseUpdatedAtMs, token }) => {
+    validateSyncToken(token);
+    const owner = canonicalLedgerOwner(transfer.owner);
+    const now = Date.now();
+    const date = requireIsoDate(transfer.date, "date", now, 30, rejectRowDate);
+    const row: BtcTransferRow = {
+      transferId: transfer.id,
+      owner,
+      date,
+      month: monthOf(date),
+      fromAccountKey: transfer.fromAccountKey.trim(),
+      toAccountKey: transfer.toAccountKey.trim(),
+      sats: transfer.sats,
+      feeSats: transfer.feeSats,
+      note: optionalText(transfer.note),
+      sourceFile: sourceFile ?? "btc-transfers",
+      balancePostingVersion: 1n,
+      updatedAtMs: now,
+    };
+    const outcome = await upsertBtcTransferRow(
+      ctx,
+      row,
+      baseUpdatedAtMs === undefined ? undefined : { baseUpdatedAtMs },
+    );
+    return { transferId: row.transferId, owner, outcome };
+  },
+});
+
+export const deleteBtcTransfer = mutation({
+  args: {
+    transferId: v.string(),
+    owner: familyMemberValidator,
+    baseUpdatedAtMs: v.optional(v.float64()),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { transferId, owner, baseUpdatedAtMs, token }) => {
+    validateSyncToken(token);
+    const ledgerOwner = canonicalLedgerOwner(owner);
+    const removed = await deleteBtcTransferCore(
+      ctx,
+      ledgerOwner,
+      transferId,
+      baseUpdatedAtMs === undefined ? undefined : { baseUpdatedAtMs },
+    );
+    return { transferId, owner: ledgerOwner, removed };
   },
 });
 
@@ -3132,6 +3525,14 @@ async function deleteTransactionCore(
       txId,
     );
   }
+  if (existing?.balancePostingVersion === 1n) {
+    if (existing.amountSats === undefined || existing.bitcoinAccountKey === undefined) {
+      throw new ConvexError("Posted Income row is missing its Bitcoin posting fields.");
+    }
+    const deltas = new Map<string, bigint>();
+    addDelta(deltas, existing.bitcoinAccountKey, -existing.amountSats);
+    await applyBtcAccountDeltas(ctx, existing.owner, deltas);
+  }
   await lockRuntimeSource(ctx, sourceFile);
   if (existing) await ctx.db.delete(existing._id);
   await upsertRowTombstone(
@@ -3362,6 +3763,14 @@ async function deleteBtcBuyCore(
       buyId,
     );
   }
+  if (existing?.balancePostingVersion === 1n) {
+    if (!existing.balanceAccountKey) {
+      throw new ConvexError("Posted Bitcoin buy is missing its account key.");
+    }
+    const deltas = new Map<string, bigint>();
+    addDelta(deltas, existing.balanceAccountKey, -existing.sats);
+    await applyBtcAccountDeltas(ctx, existing.owner, deltas);
+  }
   await lockRuntimeSource(ctx, sourceFile);
   if (existing) await ctx.db.delete(existing._id);
   await upsertRowTombstone(
@@ -3431,6 +3840,14 @@ async function deleteBtcBillPayCore(
       "btcBillPay",
       billPayId,
     );
+  }
+  if (existing?.balancePostingVersion === 1n) {
+    if (!existing.balanceAccountKey) {
+      throw new ConvexError("Posted Bitcoin bill pay is missing its account key.");
+    }
+    const deltas = new Map<string, bigint>();
+    addDelta(deltas, existing.balanceAccountKey, existing.btcSpentSats);
+    await applyBtcAccountDeltas(ctx, existing.owner, deltas);
   }
   await lockRuntimeSource(ctx, sourceFile);
   if (existing) await ctx.db.delete(existing._id);
@@ -3773,6 +4190,10 @@ export const upsertTransactionFromDevice = mutation({
     requireDeviceText(args.transaction.category, "transaction.category");
     requireDeviceOptionalText(args.transaction.card, "transaction.card");
     requireDeviceOptionalText(args.transaction.note, "transaction.note");
+    requireDeviceOptionalText(
+      args.transaction.bitcoinAccountKey,
+      "transaction.bitcoinAccountKey",
+    );
     const ledgerOwner = canonicalLedgerOwner(args.owner);
     requireSourceOwner(args.sourceFile, "transactions", ledgerOwner);
     if (args.transaction.owner !== args.owner) {
@@ -3809,6 +4230,8 @@ export const upsertTransactionFromDevice = mutation({
         category: args.transaction.category,
         card: optionalText(args.transaction.card),
         note: optionalText(args.transaction.note),
+        amountSats: args.transaction.amountSats,
+        bitcoinAccountKey: optionalText(args.transaction.bitcoinAccountKey),
         sourceFile: args.sourceFile,
         updatedAtMs: now,
       },
@@ -4233,6 +4656,105 @@ export const deleteBtcBillPayFromDevice = mutation({
     const removed = await deleteBtcBillPayCore(
       ctx,
       ledgerOwner,
+      args.entityId,
+      { baseUpdatedAtMs: args.baseUpdatedAtMs },
+    );
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, entityId: args.entityId, removed };
+  },
+});
+
+export const upsertBtcTransferFromDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    owner: familyMemberValidator,
+    sourceFile: btcTransferSourceValidator,
+    baseUpdatedAtMs: v.optional(v.float64()),
+    transfer: btcTransferInput,
+  },
+  returns: deviceUpsertResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+      "bitcoin:write",
+    );
+    requireDeviceRevision(args.baseUpdatedAtMs, false);
+    requireDeviceIdentifier(args.transfer.id, "transfer.id");
+    requireDeviceIdentifier(
+      args.transfer.fromAccountKey,
+      "transfer.fromAccountKey",
+    );
+    requireDeviceIdentifier(
+      args.transfer.toAccountKey,
+      "transfer.toAccountKey",
+    );
+    requireDevicePositive(args.transfer.sats, "transfer.sats");
+    requireDeviceNonnegative(args.transfer.feeSats, "transfer.feeSats");
+    requireDeviceOptionalText(args.transfer.note, "transfer.note");
+    if (args.transfer.owner !== args.owner) {
+      deviceFailure(
+        "OWNER_MISMATCH",
+        "Bitcoin transfer owner does not match request owner.",
+        "btcTransfer",
+        args.transfer.id,
+      );
+    }
+    const owner = canonicalLedgerOwner(args.owner);
+    const now = Date.now();
+    const date = requireIsoDate(
+      args.transfer.date,
+      "date",
+      now,
+      30,
+      rejectDeviceDate,
+    );
+    const row: BtcTransferRow = {
+      transferId: args.transfer.id,
+      owner,
+      date,
+      month: monthOf(date),
+      fromAccountKey: args.transfer.fromAccountKey.trim(),
+      toAccountKey: args.transfer.toAccountKey.trim(),
+      sats: args.transfer.sats,
+      feeSats: args.transfer.feeSats,
+      note: optionalText(args.transfer.note),
+      sourceFile: args.sourceFile,
+      balancePostingVersion: 1n,
+      updatedAtMs: now,
+    };
+    const outcome = await upsertBtcTransferRow(ctx, row, {
+      baseUpdatedAtMs: args.baseUpdatedAtMs,
+    });
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, entityId: row.transferId, outcome };
+  },
+});
+
+export const deleteBtcTransferFromDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    owner: familyMemberValidator,
+    sourceFile: btcTransferSourceValidator,
+    entityId: v.string(),
+    baseUpdatedAtMs: v.float64(),
+  },
+  returns: deviceDeleteResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+      "bitcoin:write",
+    );
+    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    requireDeviceIdentifier(args.entityId, "entityId");
+    const removed = await deleteBtcTransferCore(
+      ctx,
+      canonicalLedgerOwner(args.owner),
       args.entityId,
       { baseUpdatedAtMs: args.baseUpdatedAtMs },
     );

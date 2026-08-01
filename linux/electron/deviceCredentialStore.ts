@@ -35,6 +35,8 @@ const MUTATION_KINDS = [
   "btcBuy.delete",
   "btcBillPay.upsert",
   "btcBillPay.delete",
+  "btcTransfer.upsert",
+  "btcTransfer.delete",
   "btcAccount.upsert",
   "btcAccount.delete",
 ] as const satisfies readonly VogelVaultMutationKind[]

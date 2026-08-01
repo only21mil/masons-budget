@@ -210,6 +210,48 @@ async function seedBudgets() {
   });
 }
 
+async function seedBtcLedger(owner: "victor" | "mason") {
+  const sourceFile = owner === "victor" ? "btc-balance-snapshot" : "son-balances";
+  const key = owner === "victor" ? "river" : "son-river-mason";
+  const accountKey = "river";
+  await t.run(async (ctx) => {
+    await ctx.db.insert("btcBalanceDocuments", {
+      sourceFile,
+      owner,
+      schemaVersion: 2n,
+      asOf: "2026-07-30T00:00:00.000Z",
+      accounts: [
+        {
+          key: accountKey,
+          label: "River",
+          custody: "exchange",
+          sats: 1_000_000n,
+          fiatCents: 1_000n,
+        },
+      ],
+      totals: {
+        sats: 1_000_000n,
+        fiatCents: 1_000n,
+        exchangeSats: 1_000_000n,
+        selfCustodySats: 0n,
+      },
+      updatedAtMs: 1,
+    });
+    await ctx.db.insert("btcAccounts", {
+      key,
+      owner,
+      label: "River",
+      custody: "exchange",
+      sats: 1_000_000n,
+      fiatCents: 1_000n,
+      asOf: "2026-07-30T00:00:00.000Z",
+      schemaVersion: 2n,
+      sourceFile,
+      updatedAtMs: 1,
+    });
+  });
+}
+
 describe("device row authorization", () => {
   it("requires the operation capability and leaves lastSeen unchanged on rejection", async () => {
     const device = await pairMobileDevice(t, syncToken, "todo-only");
@@ -531,6 +573,7 @@ describe("device row authorization", () => {
 describe("device transaction and todo mutations", () => {
   it("atomically marks every runtime-owned source at its first successful write", async () => {
     await seedBudgets();
+    await seedBtcLedger("victor");
     const device = await fullDevice("source-lock-device");
     const auth = authArgs(device);
 
@@ -604,6 +647,7 @@ describe("device transaction and todo mutations", () => {
       ...auth,
       owner: "victor",
       sourceFile: "btc-balance-snapshot",
+      baseUpdatedAtMs: await btcDocumentRevision("btc-balance-snapshot"),
       account: {
         key: "lock-account",
         owner: "victor",
@@ -1412,6 +1456,7 @@ describe("device bitcoin mutations", () => {
 
   it("canonicalizes Rachel financial intent into the shared Victor ledger", async () => {
     await seedBudgets();
+    await seedBtcLedger("victor");
     const device = await fullDevice();
     const auth = authArgs(device);
     await t.mutation(api.upsertTransaction, {
@@ -1470,6 +1515,7 @@ describe("device bitcoin mutations", () => {
       ...auth,
       owner: "rachel",
       sourceFile: "btc-balance-snapshot",
+      baseUpdatedAtMs: await btcDocumentRevision("btc-balance-snapshot"),
       account: {
         key: "rachel-shared",
         owner: "rachel",
@@ -1494,7 +1540,12 @@ describe("device bitcoin mutations", () => {
           q.eq("sourceFile", "btc-balance-snapshot"),
         )
         .unique())!.owner,
-      accountMirror: (await ctx.db.query("btcAccounts").unique())!.owner,
+      accountMirror: (await ctx.db
+        .query("btcAccounts")
+        .withIndex("by_owner_key", (q) =>
+          q.eq("owner", "victor").eq("key", "rachel-shared"),
+        )
+        .unique())!.owner,
     }));
     expect(owners).toEqual({
       transaction: "victor",
@@ -1507,6 +1558,8 @@ describe("device bitcoin mutations", () => {
   });
 
   it("upserts and deletes buys and bill pays with cross-owner protection", async () => {
+    await seedBtcLedger("victor");
+    await seedBtcLedger("mason");
     const device = await fullDevice();
     await expect(
       t.mutation(api.upsertBtcBuy, {
