@@ -161,20 +161,38 @@ class FinanceParityTest {
             )
         }
         assertFailsWith<IllegalArgumentException> { Money.sharesToValueCents("1.2.3", 100L) }
+        // Lot-level valuation has to opt in. The sign never enters the
+        // magnitude, so the half cent still rounds away from zero.
+        assertEquals(-1L, Money.sharesToValueCents("-0.005", 100L, signed = true))
+        assertFailsWith<IllegalArgumentException> { Money.sharesToValueCents("-0.005", 100L) }
     }
 
     @Test
     fun `shares use the bounded canonical decimal fixture contract`() {
         val contract = fixtures.getAsJsonObject("sharesDecimalContract")
         assertEquals(contract["maxLength"].asInt, Money.SHARES_DECIMAL_MAX_LENGTH)
+        assertEquals(contract["signedMaxLength"].asInt, Money.SHARES_DECIMAL_SIGNED_MAX_LENGTH)
         assertEquals(contract["maxPrecision"].asInt, Money.SHARES_DECIMAL_MAX_PRECISION)
         assertEquals(contract["maxScale"].asInt, Money.SHARES_DECIMAL_MAX_SCALE)
         assertEquals(contract["maxIntegerDigits"].asInt, Money.SHARES_DECIMAL_MAX_INTEGER_DIGITS)
+        // An unsigned quantity is canonical whichever side asks for it, so the
+        // signed reader accepts everything the unsigned reader does; only the
+        // lot-only column may carry a minus.
         for (entry in contract.getAsJsonArray("valid")) {
             assertEquals(entry.asString, Money.sharesDecimalOrNull(entry.asString))
+            assertEquals(entry.asString, Money.sharesDecimalOrNull(entry.asString, signed = true))
+        }
+        for (entry in contract.getAsJsonArray("lotOnly")) {
+            assertEquals(entry.asString, Money.sharesDecimalOrNull(entry.asString, signed = true))
+            assertEquals(null, Money.sharesDecimalOrNull(entry.asString), entry.asString)
         }
         for (entry in contract.getAsJsonArray("invalid")) {
             assertEquals(null, Money.sharesDecimalOrNull(entry.asString), entry.asString)
+            assertEquals(
+                null,
+                Money.sharesDecimalOrNull(entry.asString, signed = true),
+                entry.asString,
+            )
         }
     }
 

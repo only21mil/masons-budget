@@ -33,7 +33,14 @@ const sharesContract = JSON.parse(
     "utf8",
   ),
 ) as {
-  sharesDecimalContract: { valid: string[]; invalid: string[] }
+  sharesDecimalContract: {
+    /** Canonical as a holding quantity and as a lot quantity alike. */
+    valid: string[]
+    /** Canonical only as a lot quantity; a signed holding stays corruption. */
+    lotOnly: string[]
+    /** Refused in both positions. */
+    invalid: string[]
+  }
 }
 
 function int64(value: bigint): { readonly $integer: string } {
@@ -283,21 +290,84 @@ describe("main-process finance and quote transport", () => {
       return repository.query({ kind: "finance", scope: "netWorth" }, "victor")
     }
 
-    for (const value of sharesContract.sharesDecimalContract.valid) {
-      await expect(queryShares(value)).resolves.toMatchObject({
-        status: "ok",
-        value: { accounts: [{ holdings: [{ sharesDecimal: value }] }] },
-      })
+    const okHolding = (value: string) => ({
+      status: "ok",
+      value: { accounts: [{ holdings: [{ sharesDecimal: value }] }] },
+    })
+    const okLot = (value: string) => ({
+      status: "ok",
+      value: { accounts: [{ holdings: [{ lots: [{ sharesDecimal: value }] }] }] },
+    })
+    const refused = { status: "error", code: "invalid-response" }
+
+    const contract = sharesContract.sharesDecimalContract
+    for (const value of contract.valid) {
+      await expect(queryShares(value), value).resolves.toMatchObject(okHolding(value))
+      await expect(queryShares(value, true), value).resolves.toMatchObject(okLot(value))
     }
-    for (const value of sharesContract.sharesDecimalContract.invalid) {
-      await expect(queryShares(value)).resolves.toEqual({
-        status: "error",
-        code: "invalid-response",
-      })
+    // Signed quantities are lot-only: a statement-reconciliation lot removes
+    // shares, a position size never goes negative. The transport asserts and
+    // never repairs, so a lot arrives already canonical from the server.
+    for (const value of contract.lotOnly) {
+      await expect(queryShares(value, true), value).resolves.toMatchObject(okLot(value))
+      await expect(queryShares(value), value).resolves.toEqual(refused)
     }
-    await expect(queryShares("1e3", true)).resolves.toEqual({
-      status: "error",
-      code: "invalid-response",
+    for (const value of contract.invalid) {
+      await expect(queryShares(value), value).resolves.toEqual(refused)
+      await expect(queryShares(value, true), value).resolves.toEqual(refused)
+    }
+  })
+
+  it("decodes a whole document carrying a negative reconciliation lot", async () => {
+    // The live Fold row holds a statement_reconciliation lot that removes
+    // shares. One refused lot throws out the entire finance query result, so
+    // the assertion is on the whole document, not on the lot alone.
+    const repository = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => success({
+        complete: true,
+        document: {
+          lastUpdated: "2026-07-30",
+          accounts: [wireAccount("victor", {
+            holdings: [wireHolding({
+              lots: [
+                {
+                  date: "2026-07-01",
+                  type: "401k contribution",
+                  pricePerShareCents: int64(32_000n),
+                  sharesDecimal: "2.5000",
+                  amountInvestedCents: int64(80_000n),
+                },
+                {
+                  date: "2026-07-15",
+                  type: "statement_reconciliation",
+                  pricePerShareCents: int64(32_000n),
+                  sharesDecimal: "-2.330000000000",
+                  amountInvestedCents: int64(-74_560n),
+                },
+              ],
+            })],
+          })],
+          updatedAtMs: 1,
+        },
+      }),
+    })
+
+    const result = await repository.query({ kind: "finance", scope: "netWorth" }, "victor")
+
+    expect(result.status).toBe("ok")
+    expect(result).toMatchObject({
+      value: {
+        accounts: [{
+          holdings: [{
+            sharesDecimal: "2.5000",
+            lots: [
+              { type: "401k contribution", sharesDecimal: "2.5000" },
+              { type: "statement_reconciliation", sharesDecimal: "-2.330000000000" },
+            ],
+          }],
+        }],
+      },
     })
   })
 

@@ -181,40 +181,44 @@ class FinanceQueryRepositoryTest {
         val contract = loadSharesContract()
         for (entry in contract["valid"]!!.jsonArray) {
             val value = entry.jsonPrimitive.content
-            val result = assertIs<ConvexResult.Ok<FinanceDocumentSnapshot>>(
-                runBlocking {
-                    repositoryWith(
-                        RecordingPoster(
-                            success(
-                                financeEnvelope().replace(
-                                    "\"sharesDecimal\":\"12.34567890\"",
-                                    "\"sharesDecimal\":\"$value\"",
-                                ),
-                            ),
-                        ),
-                    ).getFinanceDocument(FamilyMember.VICTOR, RowVisibilityScope.NET_WORTH)
-                },
-            )
-            assertEquals(value, result.value.document!!.accounts.first().holdings.first().sharesDecimal)
+            assertEquals(value, decodedHolding(withHoldingShares(value)).sharesDecimal, value)
+            assertEquals(value, decodedHolding(withLotShares(value)).lots.single().sharesDecimal, value)
+        }
+
+        // A statement-reconciliation lot removes shares and arrives negative; a
+        // position size never does, so the same text stays corruption there.
+        for (entry in contract["lotOnly"]!!.jsonArray) {
+            val value = entry.jsonPrimitive.content
+            assertEquals(value, decodedHolding(withLotShares(value)).lots.single().sharesDecimal, value)
+            assertDecodeFailed(withHoldingShares(value), value)
         }
 
         for (entry in contract["invalid"]!!.jsonArray) {
             val value = entry.jsonPrimitive.content
-            val payload = financeEnvelope().replace(
-                "\"sharesDecimal\":\"12.34567890\"",
-                "\"sharesDecimal\":\"$value\"",
-            )
-            assertEquals(
-                ConvexResult.Failed("unexpected payload shape"),
-                runBlocking {
-                    repositoryWith(RecordingPoster(success(payload))).getFinanceDocument(
-                        FamilyMember.VICTOR,
-                        RowVisibilityScope.NET_WORTH,
-                    )
-                },
-                value,
-            )
+            assertDecodeFailed(withHoldingShares(value), value)
+            assertDecodeFailed(withLotShares(value), value)
         }
+    }
+
+    @Test
+    fun `a negative reconciliation lot decodes the whole finance document`() {
+        val payload = withLotShares("-2.330000000000").replace(
+            "\"type\":\"weekly_buy\"",
+            "\"type\":\"statement_reconciliation\"",
+        )
+
+        val document = assertIs<ConvexResult.Ok<FinanceDocumentSnapshot>>(
+            decodeFinance(payload),
+        ).value.document!!
+
+        // One refused lot nulls the entire document, so the account and holding
+        // either side of the lot are the real assertion here.
+        assertEquals(2, document.accounts.size)
+        val holding = document.accounts.first().holdings.single()
+        assertEquals("12.34567890", holding.sharesDecimal)
+        val lot = holding.lots.single()
+        assertEquals("statement_reconciliation", lot.type)
+        assertEquals("-2.330000000000", lot.sharesDecimal)
     }
 
     @Test
@@ -238,6 +242,33 @@ class FinanceQueryRepositoryTest {
             ),
             http = poster,
         )
+
+    /** The envelope's holding and lot carry distinct quantities, so each side swaps alone. */
+    private fun withHoldingShares(value: String): String = financeEnvelope().replace(
+        "\"sharesDecimal\":\"12.34567890\"",
+        "\"sharesDecimal\":\"$value\"",
+    )
+
+    private fun withLotShares(value: String): String = financeEnvelope().replace(
+        "\"sharesDecimal\":\"0.00367647\"",
+        "\"sharesDecimal\":\"$value\"",
+    )
+
+    private fun decodeFinance(payload: String): ConvexResult<FinanceDocumentSnapshot> =
+        runBlocking {
+            repositoryWith(RecordingPoster(success(payload))).getFinanceDocument(
+                FamilyMember.VICTOR,
+                RowVisibilityScope.NET_WORTH,
+            )
+        }
+
+    private fun decodedHolding(payload: String) =
+        assertIs<ConvexResult.Ok<FinanceDocumentSnapshot>>(decodeFinance(payload))
+            .value.document!!.accounts.first().holdings.first()
+
+    private fun assertDecodeFailed(payload: String, label: String) {
+        assertEquals(ConvexResult.Failed("unexpected payload shape"), decodeFinance(payload), label)
+    }
 
     private fun loadSharesContract() = sequence<File> {
         var directory: File? = File(checkNotNull(System.getProperty("user.dir")))

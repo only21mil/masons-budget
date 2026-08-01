@@ -23,10 +23,12 @@ const sharesContract = JSON.parse(
 ) as {
   sharesDecimalContract: {
     maxLength: number;
+    signedMaxLength: number;
     maxPrecision: number;
     maxScale: number;
     maxIntegerDigits: number;
     valid: string[];
+    lotOnly: string[];
     invalid: string[];
   };
 };
@@ -286,11 +288,13 @@ describe("all five source documents have typed projections", () => {
     const contract = sharesContract.sharesDecimalContract;
     expect({
       maxLength: SHARES_DECIMAL_MAX_LENGTH,
+      signedMaxLength: SHARES_DECIMAL_MAX_LENGTH + 1,
       maxPrecision: SHARES_DECIMAL_MAX_PRECISION,
       maxScale: SHARES_DECIMAL_MAX_SCALE,
       maxIntegerDigits: SHARES_DECIMAL_MAX_INTEGER_DIGITS,
     }).toEqual({
       maxLength: contract.maxLength,
+      signedMaxLength: contract.signedMaxLength,
       maxPrecision: contract.maxPrecision,
       maxScale: contract.maxScale,
       maxIntegerDigits: contract.maxIntegerDigits,
@@ -310,46 +314,48 @@ describe("all five source documents have typed projections", () => {
       },
     });
 
-    // The shared fixture predates canonicalization and still classifies these as
-    // invalid, which they are *as stored text* — assertSharesDecimal refuses
-    // them, and the Linux/Swift/Kotlin readers that consume the same fixture
-    // keep refusing them. The projection is the one layer allowed to repair a
-    // value, so here they land on their canonical form instead of throwing.
-    const repairedAtProjection: Record<string, string> = {
-      "1.1234567890123": "1.123456789012",
-      "999999999999.9999999999990": "999999999999.999999999999",
+    const holdingOf = (shares: string, lotShares = shares) =>
+      projectFinanceDocument(rawFinance(shares, lotShares), 0).accounts[0]!.holdings[0]!;
+
+    // The fixture's `invalid` column is the *assert* contract every reading
+    // client enforces. The projection is the one layer allowed to repair a
+    // value instead of refusing it, so a few entries land on a canonical form
+    // here. `holding` is absent where the repair is lot-only: minus zero is a
+    // second spelling of a legitimate lot quantity, while any negative position
+    // size is corruption.
+    const repairedAtProjection: Record<string, { holding?: string; lot: string }> = {
+      "1.1234567890123": { holding: "1.123456789012", lot: "1.123456789012" },
+      "999999999999.9999999999990": {
+        holding: "999999999999.999999999999",
+        lot: "999999999999.999999999999",
+      },
+      "-0": { lot: "0" },
+      "-0.0": { lot: "0" },
     };
-    // Signed quantities are lot-only: a reconciliation lot removes shares, a
-    // position size never goes negative.
-    const lotOnly = new Set(["-0.005"]);
 
     for (const value of contract.valid) {
-      const holding = projectFinanceDocument(rawFinance(value), 0)
-        .accounts[0]!.holdings[0]!;
+      const holding = holdingOf(value);
       expect(holding.sharesDecimal, value).toBe(value);
       expect(holding.lots[0]!.sharesDecimal, value).toBe(value);
     }
+    // Signed quantities are lot-only: a reconciliation lot removes shares, a
+    // position size never goes negative.
+    for (const value of contract.lotOnly) {
+      expect(() => holdingOf(value), value).toThrow(/share quantity/);
+      expect(holdingOf("1", value).lots[0]!.sharesDecimal, value).toBe(value);
+    }
     for (const value of contract.invalid) {
       const repaired = repairedAtProjection[value];
+      if (repaired?.holding !== undefined) {
+        expect(holdingOf(value).sharesDecimal, value).toBe(repaired.holding);
+      } else {
+        expect(() => holdingOf(value), value).toThrow(/share quantity/);
+      }
       if (repaired !== undefined) {
-        const holding = projectFinanceDocument(rawFinance(value), 0)
-          .accounts[0]!.holdings[0]!;
-        expect(holding.sharesDecimal, value).toBe(repaired);
-        expect(holding.lots[0]!.sharesDecimal, value).toBe(repaired);
-        continue;
+        expect(holdingOf("1", value).lots[0]!.sharesDecimal, value).toBe(repaired.lot);
+      } else {
+        expect(() => holdingOf("1", value), value).toThrow(/share quantity/);
       }
-      if (lotOnly.has(value)) {
-        expect(() => projectFinanceDocument(rawFinance(value), 0), value)
-          .toThrow(/share quantity/);
-        const holding = projectFinanceDocument(rawFinance("1", value), 0)
-          .accounts[0]!.holdings[0]!;
-        expect(holding.lots[0]!.sharesDecimal, value).toBe(value);
-        continue;
-      }
-      expect(() => projectFinanceDocument(rawFinance(value), 0), value)
-        .toThrow(/share quantity/);
-      expect(() => projectFinanceDocument(rawFinance("1", value), 0), value)
-        .toThrow(/share quantity/);
     }
   });
 

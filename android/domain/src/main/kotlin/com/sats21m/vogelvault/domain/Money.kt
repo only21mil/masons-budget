@@ -41,9 +41,19 @@ object Money {
     const val SHARES_DECIMAL_MAX_PRECISION = 24
     const val SHARES_DECIMAL_MAX_LENGTH = 25
 
+    /** A signed lot quantity spends one extra character on the leading minus. */
+    const val SHARES_DECIMAL_SIGNED_MAX_LENGTH = SHARES_DECIMAL_MAX_LENGTH + 1
+
     private const val USD_SCALE = 2
     private const val BTC_SCALE = 8
-    private val sharesDecimalPattern = Regex("^(0|[1-9]\\d*)(?:\\.(\\d+))?$")
+
+    /**
+     * The sign group is always captured so the digit groups keep stable indices;
+     * a leading minus is only *accepted* when the caller opts into signed
+     * quantities. Exponents, whitespace, leading-zero ambiguity, and a bare "1."
+     * stay refused.
+     */
+    private val sharesDecimalPattern = Regex("^(-?)(0|[1-9]\\d*)(?:\\.(\\d+))?$")
 
     /** Parse a decimal value into integer minor units at [scale]. */
     fun parseMinorUnits(value: String?, scale: Int): Long {
@@ -131,12 +141,24 @@ object Money {
             .longValueExact()
     }
 
-    /** Return [value] only when it matches the bounded exact shares wire contract. */
-    fun sharesDecimalOrNull(value: String?): String? {
-        if (value == null || value.length > SHARES_DECIMAL_MAX_LENGTH) return null
+    /**
+     * Return [value] only when it matches the bounded exact shares wire contract.
+     *
+     * Holdings are position sizes and stay unsigned; a lot passes [signed] =
+     * true, because a statement-reconciliation lot removes shares and is stored
+     * as a negative quantity. Minus zero is refused either way: it spells one
+     * value two ways and so is not canonical. The server canonicalizes before
+     * writing, so this side only asserts — it never repairs.
+     */
+    fun sharesDecimalOrNull(value: String?, signed: Boolean = false): String? {
+        val maxLength =
+            if (signed) SHARES_DECIMAL_SIGNED_MAX_LENGTH else SHARES_DECIMAL_MAX_LENGTH
+        if (value == null || value.length > maxLength) return null
         val match = sharesDecimalPattern.matchEntire(value) ?: return null
-        val whole = match.groupValues[1]
-        val fraction = match.groupValues[2]
+        val negative = match.groupValues[1] == "-"
+        val whole = match.groupValues[2]
+        val fraction = match.groupValues[3]
+        if (negative && (!signed || isZeroMagnitude(whole, fraction))) return null
         if (
             whole.length > SHARES_DECIMAL_MAX_INTEGER_DIGITS ||
             fraction.length > SHARES_DECIMAL_MAX_SCALE ||
@@ -145,12 +167,24 @@ object Money {
         return value
     }
 
-    fun requireSharesDecimal(value: String): String =
-        requireNotNull(sharesDecimalOrNull(value)) { "Not a canonical share quantity: $value" }
+    fun requireSharesDecimal(value: String, signed: Boolean = false): String =
+        requireNotNull(sharesDecimalOrNull(value, signed)) {
+            "Not a canonical share quantity: $value"
+        }
 
-    /** Value an exact lexical share quantity at an integer-cent share price. */
-    fun sharesToValueCents(sharesDecimal: String, pricePerShareCents: Long): Long =
-        BigDecimal(requireSharesDecimal(sharesDecimal))
+    /**
+     * Value an exact lexical share quantity at an integer-cent share price.
+     *
+     * Only holding quantities reach this today, so the default stays unsigned
+     * and a negative holding still throws. `BigDecimal` carries the sign
+     * exactly, and HALF_UP rounds away from zero on both sides.
+     */
+    fun sharesToValueCents(
+        sharesDecimal: String,
+        pricePerShareCents: Long,
+        signed: Boolean = false,
+    ): Long =
+        BigDecimal(requireSharesDecimal(sharesDecimal, signed))
             .multiply(BigDecimal(pricePerShareCents))
             .setScale(0, RoundingMode.HALF_UP)
             .longValueExact()
@@ -163,6 +197,10 @@ object Money {
             .divide(BigDecimal(whole), 0, RoundingMode.DOWN)
             .toInt()
     }
+
+    /** The pattern forbids leading zeroes, so "0" is the only zero whole part. */
+    private fun isZeroMagnitude(whole: String, fraction: String): Boolean =
+        whole == "0" && fraction.none { it in '1'..'9' }
 
     private fun group(digits: String, separator: String): String {
         val builder = StringBuilder()
