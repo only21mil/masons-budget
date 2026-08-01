@@ -47,20 +47,31 @@ All of these must hold before any command in the next section runs.
    backend-first ordering breaks every installed client at once.
 
    - The updated, same-signed Android APK containing the signed-lot decoder is
-     **installed on the Fold**, and confirmed by reading the app's version and
-     build identity off the device — not from memory, and not from the fact that
-     a build was produced:
+     **installed on the Fold**, proven by **digest equality with the reviewed
+     artifact** — never by version fields. Every current build hardcodes
+     `versionName "0.1.0"` / `versionCode 1` (`android/app/build.gradle.kts`),
+     so `dumpsys` version output cannot distinguish the fixed build from any
+     stale one, and `lastUpdateTime` proves only that *some* installation
+     happened.
+
+     Record the SHA-256 of the exact APK the release workflow produced from the
+     reviewed merge commit, then read the installed APK's digest off the device
+     and require equality:
 
      ```bash
-     adb shell dumpsys package com.sats21m.vogelvault \
-       | grep -E 'versionName|versionCode|firstInstallTime|lastUpdateTime'
+     sha256sum "$reviewed_apk"                     # the artifact you installed
+     adb shell sha256sum "$(adb shell pm path com.sats21m.vogelvault \
+       | sed -n 's/^package://p' | tr -d '\r')"    # the installed base.apk
      ```
 
-     The reported `versionName`/`versionCode` must be the build produced from
-     the reviewed checkout. Anything older, or any doubt, is a stop.
+     The two digests must be byte-identical. Any mismatch, or any doubt about
+     which workflow run produced `$reviewed_apk`, is a stop.
    - Any active Linux client is running a build that contains the signed-lot
-     transport change. If a stale Linux client is running anywhere, update or
-     shut it down before continuing.
+     transport change, proven the same way: bind the running install to the
+     reviewed source (the packaged build's digest, or the exact commit of the
+     build tree it was produced from) rather than to a version string or
+     memory. If a stale Linux client is running anywhere, update or shut it
+     down before continuing.
 
 2. **The deployed code is the reviewed checkout.** Work from a clean, pinned
    worktree of the merge commit that contains the canonicalizing projection, run
