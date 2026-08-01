@@ -12,6 +12,32 @@ struct LegacyTransactionDTO: Codable {
     let card: String?
     let note: String?
     let owner: FamilyMember?
+    let amountSats: Int64?
+    let updatedAtMs: Double?
+
+    init(
+        id: String,
+        date: String,
+        merchant: String,
+        amount: Decimal,
+        category: String,
+        card: String?,
+        note: String?,
+        owner: FamilyMember?,
+        amountSats: Int64? = nil,
+        updatedAtMs: Double? = nil,
+    ) {
+        self.id = id
+        self.date = date
+        self.merchant = merchant
+        self.amount = amount
+        self.category = category
+        self.card = card
+        self.note = note
+        self.owner = owner
+        self.amountSats = amountSats
+        self.updatedAtMs = updatedAtMs
+    }
 }
 
 enum TransactionWriteValidationError: LocalizedError, Equatable {
@@ -61,6 +87,8 @@ extension LegacyTransactionDTO {
             card: transaction.card,
             note: transaction.note,
             owner: canonicalOwner,
+            amountSats: transaction.amountSats,
+            updatedAtMs: transaction.updatedAtMs,
         )
     }
 

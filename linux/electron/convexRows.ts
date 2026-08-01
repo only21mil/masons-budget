@@ -313,6 +313,21 @@ function transaction(value: unknown, viewer: VogelVaultMember): VogelVaultTransa
   const { date, month } = dateAndMonth(row)
   const amountCents = int64(row, "amountCents")
   const category = text(row, "category")
+  const amountSats = optionalInt64(row, "amountSats")
+  const bitcoinAccountKey = optionalText(row, "bitcoinAccountKey")
+  const balancePostingVersion = optionalInt64(row, "balancePostingVersion")
+  if (
+    amountSats !== undefined &&
+    (category !== "Income" || amountSats <= 0n)
+  ) {
+    throw new InvalidValue()
+  }
+  if (
+    balancePostingVersion !== undefined &&
+    (balancePostingVersion !== 1n || amountSats === undefined || bitcoinAccountKey === undefined)
+  ) {
+    throw new InvalidValue()
+  }
   const spendAmount = category === "Income"
     ? 0n
     : amountCents
@@ -331,6 +346,9 @@ function transaction(value: unknown, viewer: VogelVaultMember): VogelVaultTransa
     category,
     ...optionalField("card", optionalText(row, "card")),
     ...optionalField("note", optionalText(row, "note")),
+    ...optionalField("amountSats", amountSats),
+    ...optionalField("bitcoinAccountKey", bitcoinAccountKey),
+    ...optionalField("balancePostingVersion", balancePostingVersion),
     updatedAtMs: timestampValue(row),
   }
 }

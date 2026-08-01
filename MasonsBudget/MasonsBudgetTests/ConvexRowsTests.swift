@@ -153,6 +153,22 @@ final class ConvexRowsTests: XCTestCase {
         XCTAssertEqual(child.owner, .mason)
     }
 
+    func testSatIncomeAndRevisionArePreservedThroughTransactionProjection() throws {
+        var row = transactionRow(owner: "victor", amount: "KCMAAAAAAAA=")
+        row["category"] = "Income"
+        row["amountSats"] = int64("QOIBAAAAAAA=")
+        row["updatedAtMs"] = 1_777_777_777_777
+
+        let envelope: ConvexRowEnvelope<ConvexTransactionRow> = try decodeTaggedJSON([
+            "complete": true,
+            "rows": [row],
+        ])
+        let transaction = try XCTUnwrap(envelope.completeRows().first?.legacyDTO())
+
+        XCTAssertEqual(transaction.amountSats, 123_456)
+        XCTAssertEqual(transaction.updatedAtMs, 1_777_777_777_777)
+    }
+
     func testUnexpectedResponseFieldsAreIgnoredButKnownFieldsStayValidated() throws {
         var row = transactionRow(owner: "victor", amount: "OTAAAAAAAAA=")
         row["spendAmount"] = int64("x8////////8=")

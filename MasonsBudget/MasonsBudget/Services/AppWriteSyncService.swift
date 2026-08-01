@@ -73,30 +73,49 @@ enum AppWriteSyncService {
         owner: FamilyMember,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
-        deleteTransaction(id: transaction.id, owner: owner, onResult: onResult)
+        deleteTransaction(
+            id: transaction.id,
+            owner: owner,
+            baseUpdatedAtMs: transaction.updatedAtMs,
+            onResult: onResult
+        )
     }
 
     static func deleteTransaction(
         id: String,
         owner: FamilyMember,
+        baseUpdatedAtMs: Double? = nil,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         let canonicalOwner = owner.ledgerOwner
         let fileName = canonicalOwner.transactionsDataFileName
-        deleteTransaction(id: id, owner: canonicalOwner, from: fileName, onResult: onResult)
+        deleteTransaction(
+            id: id,
+            owner: canonicalOwner,
+            from: fileName,
+            baseUpdatedAtMs: baseUpdatedAtMs,
+            onResult: onResult
+        )
     }
 
     private static func deleteTransaction(
         id: String,
         owner: FamilyMember,
         from fileName: String,
+        baseUpdatedAtMs: Double?,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         let label = "Delete transaction"
         let operationID = reportSyncStart(label)
         if let blocked = writeBlocker(requiresSyncToken: true) {
             reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
-                deleteTransaction(id: id, owner: owner, from: fileName, onResult: onResult)
+                deleteTransaction(
+                    id: id,
+                    owner: owner,
+                    from: fileName,
+                    baseUpdatedAtMs: baseUpdatedAtMs,
+                    onResult: onResult
+                )
             }, onResult: onResult)
             return
         }
@@ -104,10 +123,21 @@ enum AppWriteSyncService {
         Task {
             let client = makeClient()
             let result = await withRetry(label: "delete tx \(id)") {
-                try await client.deleteTransactionRow(id: id, owner: owner, sourceFile: fileName)
+                try await client.deleteTransactionRow(
+                    id: id,
+                    owner: owner,
+                    sourceFile: fileName,
+                    baseUpdatedAtMs: baseUpdatedAtMs
+                )
             }
             reportSyncResult(label: label, operationID: operationID, result: result, retry: {
-                deleteTransaction(id: id, owner: owner, from: fileName, onResult: onResult)
+                deleteTransaction(
+                    id: id,
+                    owner: owner,
+                    from: fileName,
+                    baseUpdatedAtMs: baseUpdatedAtMs,
+                    onResult: onResult
+                )
             }, onResult: onResult)
         }
     }

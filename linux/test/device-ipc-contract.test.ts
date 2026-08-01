@@ -177,6 +177,7 @@ const requests = [
 const mutationFailureCodes = [
   "invalid-request",
   "conflict",
+  "rejected",
   "unavailable",
   "invalid-response",
   "credential-storage",
@@ -265,7 +266,7 @@ describe("paired-device IPC contract", () => {
       "missing",
       "failed",
     ])
-    expect(mutationFailureCodes).toHaveLength(5)
+    expect(mutationFailureCodes).toHaveLength(6)
   })
 
   it("keeps pairing and unpairing results credential-free", () => {

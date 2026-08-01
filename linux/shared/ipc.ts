@@ -32,6 +32,9 @@ export interface VogelVaultTransactionRow {
   readonly category: string
   readonly card?: string
   readonly note?: string
+  readonly amountSats?: bigint
+  readonly bitcoinAccountKey?: string
+  readonly balancePostingVersion?: bigint
   readonly updatedAtMs: number
 }
 
@@ -646,6 +649,7 @@ export type VogelVaultMutationOutcome =
 export type VogelVaultMutationFailureCode =
   | "invalid-request"
   | "conflict"
+  | "rejected"
   | "unavailable"
   | "invalid-response"
   | "credential-storage"

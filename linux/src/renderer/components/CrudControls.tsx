@@ -117,6 +117,8 @@ export function localMutationError(result: RendererMutationResult): string | nul
     case "failed":
       return result.code === "conflict"
         ? "This item changed while you were editing it. Review the latest values."
+        : result.code === "rejected"
+          ? "The ledger rejected this change. Review the values and try again."
         : "The ledger could not be reached. Your change was rolled back; try again."
   }
 }

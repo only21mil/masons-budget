@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CachedBtcBuyEntity::class,
         CachedBtcAccountEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(CacheTypeConverters::class)
@@ -51,6 +51,14 @@ abstract class VaultDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE cached_transactions ADD COLUMN amount_sats INTEGER",
+                )
+            }
+        }
+
         /**
          * Production construction intentionally has no destructive migration
          * fallback. A missing future migration must fail closed rather than erase
@@ -63,7 +71,7 @@ abstract class VaultDatabase : RoomDatabase() {
                     VaultDatabase::class.java,
                     DATABASE_NAME,
                 )
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
     }
 }

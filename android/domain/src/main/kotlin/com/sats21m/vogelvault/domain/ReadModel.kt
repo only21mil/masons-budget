@@ -83,6 +83,10 @@ data class Transaction(
         if (category == "Income") 0L else amount,
     /** Stable rendering magnitude; never used for budget maths. */
     val displaySpendAmount: Long = kotlin.math.abs(spendAmount),
+    /** Exact BTC Income quantity when the row posts to the Bitcoin ledger. */
+    val amountSats: Long? = null,
+    /** Exact remote revision for optimistic writeback. */
+    val updatedAtMs: Long = 0L,
 ) : Owned {
     /**
      * A credit/refund that reduces spend.

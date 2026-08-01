@@ -291,6 +291,79 @@ describe("device row authorization", () => {
     expect(stored!.lastSeenAt).toBe(0);
   });
 
+  it("requires bitcoin authority for sat-Income create, edit, and delete", async () => {
+    await seedBtcLedger("victor");
+    const transactionOnly = await pairMobileDevice(
+      t,
+      syncToken,
+      "transaction-only-bitcoin-test",
+      ["transactions:write"],
+    );
+    const full = await fullDevice("transaction-and-bitcoin-test");
+    const income = {
+      id: "device-sat-income",
+      owner: "victor" as const,
+      date: "2026-07-30",
+      merchant: "Bitcoin income",
+      amountCents: 1n,
+      amountSats: 100n,
+      kind: "credit" as const,
+      category: "Income",
+    };
+
+    await expect(
+      t.mutation(api.upsertTransaction, {
+        ...authArgs(transactionOnly),
+        owner: "victor",
+        sourceFile: "transactions",
+        transaction: income,
+      }),
+    ).rejects.toThrow(/Unauthorized mobile device/);
+    await expect(
+      t.mutation(api.upsertTransaction, {
+        ...authArgs(transactionOnly),
+        owner: "victor",
+        sourceFile: "transactions",
+        transaction: { ...income, id: "ordinary-income", amountSats: undefined },
+      }),
+    ).resolves.toMatchObject({ outcome: "inserted" });
+    await t.mutation(api.upsertTransaction, {
+      ...authArgs(full),
+      owner: "victor",
+      sourceFile: "transactions",
+      transaction: income,
+    });
+    const baseUpdatedAtMs = await transactionRevision(income.id);
+
+    await expect(
+      t.mutation(api.upsertTransaction, {
+        ...authArgs(transactionOnly),
+        owner: "victor",
+        sourceFile: "transactions",
+        baseUpdatedAtMs,
+        transaction: { ...income, note: "unauthorized edit" },
+      }),
+    ).rejects.toThrow(/Unauthorized mobile device/);
+    await expect(
+      t.mutation(api.deleteTransaction, {
+        ...authArgs(transactionOnly),
+        owner: "victor",
+        sourceFile: "transactions",
+        entityId: income.id,
+        baseUpdatedAtMs,
+      }),
+    ).rejects.toThrow(/Unauthorized mobile device/);
+    await expect(
+      t.mutation(api.deleteTransaction, {
+        ...authArgs(full),
+        owner: "victor",
+        sourceFile: "transactions",
+        entityId: income.id,
+        baseUpdatedAtMs,
+      }),
+    ).resolves.toMatchObject({ removed: true });
+  });
+
   it("rejects owner/source and request/payload owner mismatches", async () => {
     const device = await fullDevice();
     await t.run(async (ctx) => {
@@ -1832,6 +1905,34 @@ describe("device bitcoin mutations", () => {
         asOf: "2026-08-01T00:00:00.000Z",
       },
     });
+    await expect(
+      t.mutation(api.upsertBtcAccount, {
+        ...base,
+        baseUpdatedAtMs: await btcDocumentRevision("btc-balance-snapshot"),
+        account: {
+          key: "decoy",
+          owner: "victor",
+          label: "River",
+          custody: "exchange",
+          sats: 0n,
+          asOf: "2026-08-01T00:00:00.000Z",
+        },
+      }),
+    ).rejects.toThrow(/missing or ambiguous/);
+    await expect(
+      t.mutation(api.upsertBtcAccount, {
+        ...base,
+        baseUpdatedAtMs: await btcDocumentRevision("btc-balance-snapshot"),
+        account: {
+          key: "coldcard",
+          owner: "victor",
+          label: "River",
+          custody: "self_custody",
+          sats: 0n,
+          asOf: "2026-08-01T00:00:00.000Z",
+        },
+      }),
+    ).rejects.toThrow(/missing or ambiguous/);
     await expectDeviceError(
       t.mutation(api.deleteBtcAccount, {
         ...base,

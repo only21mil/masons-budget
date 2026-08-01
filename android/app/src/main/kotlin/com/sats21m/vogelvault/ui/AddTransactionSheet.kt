@@ -160,6 +160,9 @@ internal fun prepareTransaction(
             kind = kind,
             card = draft.card.trim(),
             note = draft.note.trim().takeIf(String::isNotEmpty),
+            amountSats = sats.takeIf {
+                draft.type == AddTransactionType.INCOME && draft.inputUnit != DisplayUnit.USD
+            },
             owner = draft.owner.ledgerOwner,
         ),
         sourceFile = draft.owner.ledgerOwner.transactionsDataFileName,

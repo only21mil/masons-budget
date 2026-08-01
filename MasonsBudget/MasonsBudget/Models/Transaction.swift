@@ -20,6 +20,7 @@ final class Transaction {
     var createdBy: String
     var createdAt: Date
     var sourceFile: String?
+    var updatedAtMs: Double?
 
     init(
         id: String,
@@ -34,6 +35,7 @@ final class Transaction {
         createdBy: String,
         createdAt: Date = .now,
         sourceFile: String? = nil,
+        updatedAtMs: Double? = nil,
     ) {
         self.id = id
         self.date = date
@@ -47,6 +49,7 @@ final class Transaction {
         self.createdBy = createdBy
         self.createdAt = createdAt
         self.sourceFile = sourceFile
+        self.updatedAtMs = updatedAtMs
     }
 
     var ownerMember: FamilyMember {

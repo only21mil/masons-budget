@@ -49,6 +49,10 @@ export interface Transaction {
   readonly category: string
   readonly card: string | null
   readonly note: string | null
+  /** Exact BTC Income quantity when the row posts to the Bitcoin ledger. */
+  readonly amountSats?: bigint
+  readonly bitcoinAccountKey?: string
+  readonly balancePostingVersion?: bigint
   readonly owner: FamilyMember
 }
 

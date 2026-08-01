@@ -29,6 +29,11 @@ const api = {
     Record<string, unknown>,
     Record<string, unknown>
   >("tables:upsertTransaction"),
+  deleteTransaction: mutation<
+    "public",
+    Record<string, unknown>,
+    Record<string, unknown>
+  >("tables:deleteTransaction"),
   transfer: mutation<"public", Record<string, unknown>, Record<string, unknown>>(
     "tables:upsertBtcTransfer",
   ),
@@ -167,6 +172,30 @@ describe("Bitcoin balance posting", () => {
     );
   });
 
+  it("rejects invalid sync-token buys before they can debit River", async () => {
+    const before = satsByKey(await snapshot());
+    const valid = {
+      id: "invalid-buy",
+      date: "2026-08-01",
+      source: "river",
+      sats: 1n,
+      priceUsdCents: 1n,
+      usdCents: 1n,
+    };
+    for (const buy of [
+      { ...valid, sats: 0n },
+      { ...valid, sats: -1n },
+      { ...valid, priceUsdCents: 0n },
+      { ...valid, usdCents: 0n },
+    ]) {
+      await expect(t.mutation(api.buy, { buy })).rejects.toThrow(/must be positive/);
+    }
+    await expect(
+      t.mutation(api.buy, { buy: { ...valid, date: "not-a-date" } }),
+    ).rejects.toThrow();
+    expect(satsByKey(await snapshot())).toEqual(before);
+  });
+
   it("posts an existing unposted transaction when it is edited into sat-denominated Income", async () => {
     const fiatIncome = {
       id: "edited-btc-income",
@@ -180,8 +209,21 @@ describe("Bitcoin balance posting", () => {
     await t.mutation(api.transaction, {
       transaction: { ...fiatIncome, amountSats: 12_000n },
     });
+    const postedRevision = await t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query("transactions")
+          .withIndex("by_source_tx_id", (q) =>
+            q.eq("sourceFile", "transactions").eq("txId", fiatIncome.id),
+          )
+          .unique()
+      )!.updatedAtMs,
+    );
     await expect(
-      t.mutation(api.transaction, { transaction: fiatIncome }),
+      t.mutation(api.transaction, {
+        transaction: fiatIncome,
+        baseUpdatedAtMs: postedRevision,
+      }),
     ).rejects.toThrow(/requires explicit amountSats/);
     await expect(
       t.mutation(api.transaction, {
@@ -190,6 +232,7 @@ describe("Bitcoin balance posting", () => {
           amountSats: 12_000n,
           bitcoinAccountKey: "coldcard",
         },
+        baseUpdatedAtMs: postedRevision,
       }),
     ).rejects.toThrow(/canonical River account/);
     await t.mutation(api.transaction, {
@@ -212,6 +255,54 @@ describe("Bitcoin balance posting", () => {
     expect(stored?.amountSats).toBe(12_000n);
     expect(stored?.bitcoinAccountKey).toBe("river");
     expect(stored?.balancePostingVersion).toBe(1n);
+  });
+
+  it("reverses posted sat-Income once and fences delete retries", async () => {
+    const income = {
+      id: "delete-btc-income",
+      date: "2026-08-01",
+      merchant: "Income",
+      amountCents: 1n,
+      kind: "credit",
+      category: "Income",
+      amountSats: 12_000n,
+    };
+    await t.mutation(api.transaction, { transaction: income });
+    const revision = await t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query("transactions")
+          .withIndex("by_source_tx_id", (q) =>
+            q.eq("sourceFile", "transactions").eq("txId", income.id),
+          )
+          .unique()
+      )!.updatedAtMs,
+    );
+
+    await expect(
+      t.mutation(api.deleteTransaction, { txId: income.id }),
+    ).rejects.toThrow(/baseUpdatedAtMs is required/);
+    await expect(
+      t.mutation(api.deleteTransaction, {
+        txId: income.id,
+        baseUpdatedAtMs: revision,
+      }),
+    ).resolves.toMatchObject({ removed: true });
+    expect(satsByKey(await snapshot()).river).toBe(1_000_000n);
+
+    await expect(
+      t.mutation(api.deleteTransaction, {
+        txId: income.id,
+        baseUpdatedAtMs: revision,
+      }),
+    ).resolves.toMatchObject({ removed: false });
+    await expect(
+      t.mutation(api.deleteTransaction, {
+        txId: income.id,
+        baseUpdatedAtMs: revision - 1,
+      }),
+    ).rejects.toThrow(/does not match the current revision/);
+    expect(satsByKey(await snapshot()).river).toBe(1_000_000n);
   });
 
   it("keeps child financial rows working without routing them into the adult River ledger", async () => {
@@ -285,6 +376,28 @@ describe("Bitcoin balance posting", () => {
     expect(rows.buy?.balancePostingVersion).toBeUndefined();
     expect(rows.billPay?.balancePostingVersion).toBeUndefined();
     expect(rows.transaction?.balancePostingVersion).toBeUndefined();
+
+    await expect(
+      t.mutation(api.transfer, {
+        transfer: {
+          id: "mason-transfer",
+          owner: "mason",
+          date: "2026-08-01",
+          fromAccountKey: "strike",
+          toAccountKey: "coldcard",
+          sats: 1n,
+          feeSats: 0n,
+        },
+      }),
+    ).rejects.toThrow(/adult household ledger/);
+    await expect(
+      t.mutation(api.reconcile, {
+        owner: "mason",
+        expectedUpdatedAtMs: 1,
+        asOf: "2026-08-01T00:00:00.000Z",
+        accounts: [],
+      }),
+    ).rejects.toThrow(/adult household ledger/);
   });
 
   it("debits bill pays from River and transfers principal plus fee atomically", async () => {
@@ -325,8 +438,17 @@ describe("Bitcoin balance posting", () => {
       true,
     );
 
+    const transferRevision = await t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query("btcTransfers")
+          .withIndex("by_transfer_id", (q) => q.eq("transferId", transfer.id))
+          .unique()
+      )!.updatedAtMs,
+    );
     await t.mutation(api.transfer, {
       transfer: { ...transfer, sats: 110_000n, feeSats: 600n },
+      baseUpdatedAtMs: transferRevision,
     });
     state = await snapshot();
     expect(satsByKey(state)).toEqual({
@@ -335,9 +457,18 @@ describe("Bitcoin balance posting", () => {
     });
     expect(state.document.totals.sats).toBe(2_969_400n);
 
+    const editedTransferRevision = await t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query("btcTransfers")
+          .withIndex("by_transfer_id", (q) => q.eq("transferId", transfer.id))
+          .unique()
+      )!.updatedAtMs,
+    );
     await t.mutation(api.deleteTransfer, {
       transferId: "transfer-1",
       owner: "victor",
+      baseUpdatedAtMs: editedTransferRevision,
     });
     state = await snapshot();
     expect(satsByKey(state)).toEqual({
@@ -382,6 +513,20 @@ describe("Bitcoin balance posting", () => {
     t = testConvex();
     setDeploymentEnv({ ALLOW_TOKENLESS_SYNC: "true" });
     await seedLedger(t, false);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("transactions", {
+        txId: "legacy-sat-income",
+        owner: "victor",
+        date: "2026-07-01",
+        month: "2026-07",
+        merchant: "Legacy Bitcoin income",
+        amountCents: 1n,
+        category: "Income",
+        amountSats: 10_000n,
+        sourceFile: "transactions",
+        updatedAtMs: 5,
+      });
+    });
     await expect(
       t.mutation(api.buy, {
         buy: {
@@ -449,6 +594,41 @@ describe("Bitcoin balance posting", () => {
       river: 1_250_000n,
       coldcard: 2_500_000n,
     });
+    const legacy = {
+      id: "legacy-sat-income",
+      date: "2026-07-01",
+      merchant: "Legacy Bitcoin income",
+      amountCents: 1n,
+      kind: "credit",
+      category: "Income",
+      amountSats: 10_000n,
+    };
+    const legacyRevision = await t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query("transactions")
+          .withIndex("by_source_tx_id", (q) =>
+            q.eq("sourceFile", "transactions").eq("txId", legacy.id),
+          )
+          .unique()
+      )!.updatedAtMs,
+    );
+    await t.mutation(api.transaction, {
+      transaction: legacy,
+      baseUpdatedAtMs: legacyRevision,
+    });
+    expect(satsByKey(await snapshot())).toEqual({
+      river: 1_250_000n,
+      coldcard: 2_500_000n,
+    });
+    await t.mutation(api.transaction, {
+      transaction: { ...legacy, amountSats: 11_000n },
+      baseUpdatedAtMs: legacyRevision,
+    });
+    expect(satsByKey(await snapshot())).toEqual({
+      river: 1_251_000n,
+      coldcard: 2_500_000n,
+    });
 
     await t.mutation(api.buy, {
       buy: {
@@ -476,5 +656,42 @@ describe("Bitcoin balance posting", () => {
         ],
       }),
     ).rejects.toThrow(/closed after the first posted Bitcoin event/);
+  });
+
+  it("refuses activation when River is missing or ambiguous", async () => {
+    t = testConvex();
+    setDeploymentEnv({ ALLOW_TOKENLESS_SYNC: "true" });
+    await seedLedger(t, false);
+    await t.run(async (ctx) => {
+      const document = await ctx.db
+        .query("btcBalanceDocuments")
+        .withIndex("by_source_file", (q) =>
+          q.eq("sourceFile", "btc-balance-snapshot"),
+        )
+        .unique();
+      await ctx.db.patch(document!._id, {
+        accounts: document!.accounts.map((account) =>
+          account.key === "coldcard" ? { ...account, label: "River" } : account,
+        ),
+      });
+    });
+
+    await expect(
+      t.mutation(api.reconcile, {
+        owner: "victor",
+        expectedUpdatedAtMs: 10,
+        asOf: "2026-08-01T20:00:00.000Z",
+        accounts: [
+          { key: "river", label: "River", custody: "exchange", sats: 1n },
+          {
+            key: "coldcard",
+            label: "River",
+            custody: "self_custody",
+            sats: 1n,
+          },
+        ],
+      }),
+    ).rejects.toThrow(/missing or ambiguous/);
+    expect((await snapshot()).document.postingActivatedAtMs).toBeUndefined();
   });
 });

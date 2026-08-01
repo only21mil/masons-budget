@@ -177,7 +177,8 @@ private class CachingRowQueryRepository(
                                 category = it.category,
                                 card = it.card,
                                 note = it.note,
-                                updatedAtMs = stamp,
+                                amountSats = it.amountSats,
+                                updatedAtMs = it.updatedAtMs,
                             )
                         },
                     fetchedAtMs = stamp,
@@ -393,7 +394,18 @@ private fun <T> cachedSlice(
 }
 
 private fun CachedTransactionEntity.toDomain() =
-    Transaction(transactionId, date, merchant, amountCents, category, card, note, owner)
+    Transaction(
+        id = transactionId,
+        date = date,
+        merchant = merchant,
+        amount = amountCents,
+        category = category,
+        card = card,
+        note = note,
+        owner = owner,
+        amountSats = amountSats,
+        updatedAtMs = updatedAtMs,
+    )
 
 private fun CachedTodoEntity.toDomain() =
     TodoItem(todoId, title, done, project, area, due, flagged, owner)

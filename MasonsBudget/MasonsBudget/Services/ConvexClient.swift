@@ -1121,12 +1121,19 @@ final class ConvexClient: Sendable {
         ]
         if let card = transaction.card { row["card"] = card }
         if let note = transaction.note { row["note"] = note }
+        if let amountSats = transaction.amountSats {
+            row["amountSats"] = ConvexTaggedInt64Encoder.encode(amountSats)
+        }
 
         let path = "tables:upsertTransaction"
-        let raw = try await mutation(path, args: [
+        var args: [String: Any] = [
             "sourceFile": sourceFile,
             "transaction": row,
-        ])
+        ]
+        if let updatedAtMs = transaction.updatedAtMs {
+            args["baseUpdatedAtMs"] = updatedAtMs
+        }
+        let raw = try await mutation(path, args: args)
         guard let result = raw as? [String: Any],
               result["txId"] as? String == transaction.id
         else {
@@ -1139,6 +1146,7 @@ final class ConvexClient: Sendable {
         id: String,
         owner: FamilyMember,
         sourceFile: String,
+        baseUpdatedAtMs: Double? = nil,
     ) async throws {
         let canonicalOwner = owner.ledgerOwner
         guard sourceFile == canonicalOwner.transactionsDataFileName else {
@@ -1149,11 +1157,13 @@ final class ConvexClient: Sendable {
             )
         }
         let path = "tables:deleteTransaction"
-        let raw = try await mutation(path, args: [
+        var args: [String: Any] = [
             "txId": id,
             "owner": canonicalOwner.rawValue,
             "sourceFile": sourceFile,
-        ])
+        ]
+        if let baseUpdatedAtMs { args["baseUpdatedAtMs"] = baseUpdatedAtMs }
+        let raw = try await mutation(path, args: args)
         guard let result = raw as? [String: Any],
               result["txId"] as? String == id,
               result["removed"] is Bool

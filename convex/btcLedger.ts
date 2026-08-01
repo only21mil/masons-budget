@@ -86,6 +86,23 @@ export function addDelta(
   deltas.set(key, next);
 }
 
+export function canonicalRiverAccountKey(
+  accounts: ReadonlyArray<{ key: string; label: string }>,
+): string {
+  const matches = accounts.filter(
+    (account) =>
+      account.key.trim().toLocaleLowerCase("en-US") === "river" ||
+      account.label.trim().toLocaleLowerCase("en-US") === "river",
+  );
+  if (matches.length !== 1) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: "The canonical River Bitcoin account is missing or ambiguous.",
+    });
+  }
+  return matches[0].key;
+}
+
 export async function riverAccountKey(
   ctx: MutationCtx,
   rawOwner: LedgerOwner,
@@ -104,15 +121,7 @@ export async function riverAccountKey(
       "Bitcoin balance posting is not active until opening reconciliation completes.",
     );
   }
-  const matches = document.accounts.filter(
-    (account) =>
-      account.key.toLocaleLowerCase("en-US") === "river" ||
-      account.label.trim().toLocaleLowerCase("en-US") === "river",
-  );
-  if (matches.length !== 1) {
-    throw new ConvexError("The canonical River Bitcoin account is missing or ambiguous.");
-  }
-  return matches[0].key;
+  return canonicalRiverAccountKey(document.accounts);
 }
 
 export async function applyBtcAccountDeltas(
@@ -214,8 +223,10 @@ export const reconcileBtcAccounts = internalMutation({
   },
   handler: async (ctx, args) => {
     const owner = args.owner === "rachel" ? "victor" : args.owner;
-    if (owner !== "victor" && owner !== "mason" && owner !== "maddox") {
-      throw new ConvexError("Unsupported Bitcoin ledger owner.");
+    if (owner !== "victor") {
+      throw new ConvexError(
+        "Bitcoin balance posting is available only for the adult household ledger.",
+      );
     }
     if (!args.asOf.trim()) throw new ConvexError("asOf must not be empty.");
 
@@ -283,6 +294,7 @@ export const reconcileBtcAccounts = internalMutation({
         "Reconciliation must provide every canonical Bitcoin account.",
       );
     }
+    const riverKey = canonicalRiverAccountKey(accounts);
 
     const now = Math.max(Date.now(), document.updatedAtMs + 1);
     await lockSource(ctx, sourceFile);
@@ -310,6 +322,25 @@ export const reconcileBtcAccounts = internalMutation({
         asOf: args.asOf,
         updatedAtMs: now,
       });
+    }
+    for (const row of posted[0]) {
+      if (
+        row.balancePostingVersion === undefined &&
+        row.amountSats !== undefined &&
+        row.category === "Income" &&
+        canonicalOwner(row.owner) === owner
+      ) {
+        if (row.amountSats <= 0n) {
+          throw new ConvexError(
+            `Legacy sat-denominated Income ${row.txId} has an invalid quantity.`,
+          );
+        }
+        await ctx.db.patch(row._id, {
+          bitcoinAccountKey: riverKey,
+          balancePostingVersion: 1n,
+          updatedAtMs: Math.max(now, row.updatedAtMs + 1),
+        });
+      }
     }
     return { updatedAccounts: changedKeys.size, updatedAtMs: now };
   },

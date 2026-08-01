@@ -133,6 +133,9 @@ function transaction(row: VogelVaultTransactionRow): Transaction {
     category: row.category,
     card: row.card ?? null,
     note: row.note ?? null,
+    amountSats: row.amountSats,
+    bitcoinAccountKey: row.bitcoinAccountKey,
+    balancePostingVersion: row.balancePostingVersion,
     owner: row.owner,
   }
 }

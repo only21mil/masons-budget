@@ -19,18 +19,20 @@ internal sealed class ConvexMutation(val path: String) {
     data class UpsertTransaction(
         val transaction: TransactionInput,
         val sourceFile: String? = null,
+        val baseUpdatedAtMs: Long? = null,
     ) : ConvexMutation("tables:upsertTransaction") {
-        override fun arguments(): JsonObject = argumentsWithOptionalSource(
-            "transaction",
-            transaction.toJson(),
-            sourceFile,
-        )
+        override fun arguments(): JsonObject = buildMap<String, JsonElement> {
+            put("transaction", transaction.toJson())
+            sourceFile?.let { put("sourceFile", JsonPrimitive(it)) }
+            baseUpdatedAtMs?.let { put("baseUpdatedAtMs", JsonPrimitive(it)) }
+        }.let(::JsonObject)
     }
 
     data class DeleteTransaction(
         val txId: String,
         val owner: FamilyMember,
         val sourceFile: String,
+        val baseUpdatedAtMs: Long? = null,
     ) : ConvexMutation("tables:deleteTransaction") {
         init {
             require(txId.isNotBlank()) { "transaction id must not be blank" }
@@ -40,11 +42,12 @@ internal sealed class ConvexMutation(val path: String) {
             }
         }
 
-        override fun arguments(): JsonObject = jsonObject(
-            "txId" to JsonPrimitive(txId),
-            "owner" to JsonPrimitive(owner.key),
-            "sourceFile" to JsonPrimitive(sourceFile),
-        )
+        override fun arguments(): JsonObject = buildMap<String, JsonElement> {
+            put("txId", JsonPrimitive(txId))
+            put("owner", JsonPrimitive(owner.key))
+            put("sourceFile", JsonPrimitive(sourceFile))
+            baseUpdatedAtMs?.let { put("baseUpdatedAtMs", JsonPrimitive(it)) }
+        }.let(::JsonObject)
     }
 
     data class UpsertTodoFromDevice(
@@ -141,6 +144,7 @@ internal data class TransactionInput(
     val kind: TransactionKind = TransactionKind.SPEND,
     val card: String? = null,
     val note: String? = null,
+    val amountSats: Long? = null,
     val owner: FamilyMember? = null,
 ) {
     init {
@@ -151,6 +155,9 @@ internal data class TransactionInput(
         require(amountCents != 0L) { "transaction amount must not be zero" }
         require(category != "Income" || kind == TransactionKind.CREDIT) {
             "Income transactions must be credits"
+        }
+        require(amountSats == null || (category == "Income" && amountSats > 0L)) {
+            "only Income may carry a positive sats amount"
         }
 
         val expectedNegative = category != "Income" && kind == TransactionKind.CREDIT
@@ -172,6 +179,7 @@ internal data class TransactionInput(
         put("category", JsonPrimitive(category))
         card?.let { put("card", JsonPrimitive(it)) }
         note?.let { put("note", JsonPrimitive(it)) }
+        amountSats?.let { put("amountSats", it.toConvexInt64()) }
         owner?.let { put("owner", JsonPrimitive(it.key)) }
     }.let(::JsonObject)
 }

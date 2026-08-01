@@ -1040,7 +1040,7 @@ function structuredRemoteError(response: JsonPostResponse): RemoteErrorCode | nu
 
 function remoteClassification(
   response: JsonPostResponse,
-): "unauthorized" | "missing" | "conflict" | "expired" | "already-claimed" | null {
+): "unauthorized" | "missing" | "conflict" | "rejected" | "expired" | "already-claimed" | null {
   if (response.httpStatus === 401 || response.httpStatus === 403) return "unauthorized"
   const code = structuredRemoteError(response)
   if (code === "DEVICE_UNAUTHORIZED") return "unauthorized"
@@ -1050,6 +1050,7 @@ function remoteClassification(
   if (code === "PAIRING_EXPIRED" || code === "PAIRING_NOT_FOUND") return "expired"
   if (code === "ENTITY_NOT_FOUND" || code === "ENTITY_DELETED") return "missing"
   if (code === "ENTITY_CONFLICT" || code === "REVISION_REQUIRED") return "conflict"
+  if (code === "VALIDATION_FAILED") return "rejected"
   return null
 }
 
@@ -1415,7 +1416,15 @@ export function createPairedDeviceController(
           if (snapshot.deploymentOrigin !== approvedOrigin) {
             return { ...identity, status: "unauthorized" }
           }
-          if (!storedCapabilities(snapshot.capabilities).includes(request.kind)) {
+          const capabilities = storedCapabilities(snapshot.capabilities)
+          if (!capabilities.includes(request.kind)) {
+            return { ...identity, status: "unauthorized" }
+          }
+          if (
+            request.kind === "transaction.upsert" &&
+            request.amountSats !== undefined &&
+            !capabilities.includes("btcTransfer.upsert")
+          ) {
             return { ...identity, status: "unauthorized" }
           }
 
@@ -1432,6 +1441,9 @@ export function createPairedDeviceController(
           if (classified === "missing") return { ...identity, status: "missing" }
           if (classified === "conflict") {
             return { ...identity, status: "failed", code: "conflict" }
+          }
+          if (classified === "rejected") {
+            return { ...identity, status: "failed", code: "rejected" }
           }
           if (structuredRemoteError(response) !== null) {
             return { ...identity, status: "failed", code: "invalid-response" }

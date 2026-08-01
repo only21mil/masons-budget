@@ -298,6 +298,44 @@ final class ConvexRowMutationTests: XCTestCase {
         XCTAssertEqual(buyRow["owner"] as? String, "maddox")
     }
 
+    func testSatIncomeWritePreservesSatsAndRevisionFence() async throws {
+        let capture = RowMutationRequestCapture()
+        let client = makeClient(capture: capture)
+        let transaction = LegacyTransactionDTO(
+            id: "tx-1",
+            date: "2026-08-01",
+            merchant: "Bitcoin income",
+            amount: Decimal(string: "80.00")!,
+            category: "Income",
+            card: nil,
+            note: "Paid in sats",
+            owner: .victor,
+            amountSats: 123_456,
+            updatedAtMs: 1_777_777_777_777,
+        )
+
+        try await client.upsertTransactionRow(
+            transaction,
+            owner: .victor,
+            sourceFile: "transactions",
+        )
+        try await client.deleteTransactionRow(
+            id: transaction.id,
+            owner: .victor,
+            sourceFile: "transactions",
+            baseUpdatedAtMs: transaction.updatedAtMs,
+        )
+
+        let requests = capture.values()
+        let upsertArgs = try XCTUnwrap(requests[0]["args"] as? [String: Any])
+        let row = try XCTUnwrap(upsertArgs["transaction"] as? [String: Any])
+        XCTAssertEqual(row["amountSats"] as? [String: String], ["$integer": "QOIBAAAAAAA="])
+        XCTAssertEqual(upsertArgs["baseUpdatedAtMs"] as? Double, 1_777_777_777_777)
+
+        let deleteArgs = try XCTUnwrap(requests[1]["args"] as? [String: Any])
+        XCTAssertEqual(deleteArgs["baseUpdatedAtMs"] as? Double, 1_777_777_777_777)
+    }
+
     func testTodoAndBudgetWritesUseRowsAndServerSelectedMonth() async throws {
         let capture = RowMutationRequestCapture()
         let client = makeClient(capture: capture)

@@ -93,6 +93,41 @@ class CachedRowDataSourceTest {
         }
 
     @Test
+    fun `sat income and remote revision survive the Room cache`() =
+        runBlocking {
+            val revision = 1_777_777_777_777L
+            val remote =
+                FakeRows().apply {
+                    transactions =
+                        ConvexResult.Ok(
+                            RowSnapshot(
+                                rows = listOf(
+                                    transaction(
+                                        id = "btc-income",
+                                        amount = 8_000L,
+                                        category = "Income",
+                                        amountSats = 123_456L,
+                                        updatedAtMs = revision,
+                                    ),
+                                ),
+                                complete = true,
+                            ),
+                        )
+                }
+            val source = CachedRowDataSource(remote, dao, clock = { 100L })
+            val key = CacheQueryKeys.transactions(FamilyMember.VICTOR.key)
+
+            val loaded = source.load(FamilyMember.VICTOR)
+            val transaction = loaded.data.transactions.value.single()
+            val cached = dao.observeTransactions(key).first().single()
+
+            assertEquals(123_456L, transaction.amountSats)
+            assertEquals(revision, transaction.updatedAtMs)
+            assertEquals(123_456L, cached.amountSats)
+            assertEquals(revision, cached.updatedAtMs)
+        }
+
+    @Test
     fun `unauthorized read invalidates current observers and hides the cached snapshot`() =
         runBlocking {
             var now = 100L
@@ -372,8 +407,9 @@ class CachedRowDataSourceTest {
                                 }
                             }
                         }
-                assertEquals(2, oldDatabase.openHelper.readableDatabase.version)
+                assertEquals(3, oldDatabase.openHelper.readableDatabase.version)
                 assertTrue("amount_cents" in columns)
+                assertTrue("amount_sats" in columns)
                 assertFalse("spend_amount" in columns)
                 assertFalse("display_spend_amount" in columns)
             } finally {
@@ -393,7 +429,7 @@ class CachedRowDataSourceTest {
                         }
                 val transaction = cached.data.transactions.value.single()
 
-                assertEquals(2, reopenedDatabase.openHelper.readableDatabase.version)
+                assertEquals(3, reopenedDatabase.openHelper.readableDatabase.version)
                 assertEquals(3_750L, transaction.amount)
                 assertEquals(3_750L, transaction.spendAmount)
                 assertEquals(3_750L, transaction.displaySpendAmount)
@@ -443,13 +479,18 @@ class CachedRowDataSourceTest {
     private fun transaction(
         id: String,
         amount: Long,
+        category: String = "Home",
+        amountSats: Long? = null,
+        updatedAtMs: Long = 0L,
     ) = Transaction(
         id = id,
         date = "2026-07-27",
         merchant = "Test",
         amount = amount,
-        category = "Home",
+        category = category,
         owner = FamilyMember.VICTOR,
+        amountSats = amountSats,
+        updatedAtMs = updatedAtMs,
     )
 }
 

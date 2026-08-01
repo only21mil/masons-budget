@@ -156,11 +156,16 @@ struct TransactionDetailView: View {
     private func deleteTransaction() {
         let owner = transaction.ownerMember
         let id = transaction.id
+        let baseUpdatedAtMs = transaction.updatedAtMs
         modelContext.delete(transaction)
         guard LocalMutationSave.perform(operation: "Delete transaction", in: modelContext, rollbackMutation: {
             modelContext.insert(transaction)
         }, remoteWrite: {
-            AppWriteSyncService.deleteTransaction(id: id, owner: owner)
+            AppWriteSyncService.deleteTransaction(
+                id: id,
+                owner: owner,
+                baseUpdatedAtMs: baseUpdatedAtMs
+            )
         }) else {
             return
         }

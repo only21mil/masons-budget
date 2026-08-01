@@ -91,7 +91,9 @@ export function TransactionFormDialog({
   const [category, setCategory] = useState(transaction?.category ?? "Other")
   const [card, setCard] = useState(transaction?.card ?? "")
   const [note, setNote] = useState(transaction?.note ?? "")
-  const [incomeSats, setIncomeSats] = useState("")
+  const [incomeSats, setIncomeSats] = useState(
+    transaction?.amountSats?.toString() ?? "",
+  )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -109,7 +111,7 @@ export function TransactionFormDialog({
     setCategory(transaction?.category ?? "Other")
     setCard(transaction?.card ?? "")
     setNote(transaction?.note ?? "")
-    setIncomeSats("")
+    setIncomeSats(transaction?.amountSats?.toString() ?? "")
     setError(null)
   }, [open, transaction])
 

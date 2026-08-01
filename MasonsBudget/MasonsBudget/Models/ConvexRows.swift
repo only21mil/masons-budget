@@ -107,6 +107,8 @@ struct ConvexTransactionRow: Decodable {
     let category: String
     let card: String?
     let note: String?
+    let amountSats: Int64?
+    let updatedAtMs: Double
 
     func legacyDTO() throws -> LegacyTransactionDTO {
         try validateDateMonth(date: date, month: month)
@@ -119,6 +121,8 @@ struct ConvexTransactionRow: Decodable {
             card: card,
             note: note,
             owner: owner,
+            amountSats: amountSats,
+            updatedAtMs: updatedAtMs,
         )
     }
 }

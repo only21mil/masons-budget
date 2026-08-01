@@ -509,6 +509,7 @@ final class ConvexSyncService {
         local.createdBy = remote.createdBy
         local.createdAt = remote.createdAt
         local.sourceFile = remote.sourceFile
+        local.updatedAtMs = remote.updatedAtMs
     }
 
     private func replaceBTCBuys(ownedBy owners: [FamilyMember], with buys: [BTCBuy]) throws {

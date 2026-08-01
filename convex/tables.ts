@@ -46,6 +46,7 @@ import { authenticateDevice, markDeviceSeen } from "./deviceAuth";
 import {
   addDelta,
   applyBtcAccountDeltas,
+  canonicalRiverAccountKey,
   riverAccountKey,
   type BtcTransferRow,
 } from "./btcLedger";
@@ -73,6 +74,13 @@ declare const process: { env: Record<string, string | undefined> };
 // full argument for that ordering is in the banner in dataFiles.ts; the short
 // version is that the opposite ordering locks the whole household out remotely
 // the instant a token is set, and nothing detects that.
+//
+// CONVEX_SYNC_TOKEN is the legacy full-admin write credential, not a paired
+// device capability. It authorizes every mutation in this compatibility
+// surface, including Bitcoin posting. Paired devices remain least-privilege and
+// require their explicit resource capabilities below. Retire this broad route
+// only through a coordinated client migration; do not describe it as
+// `bitcoin:write`-scoped.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function warnPermissive(hatchVar: string, tokenVar: string, tokenSet: boolean) {
@@ -423,6 +431,9 @@ function projectTransaction(row: {
   category: string;
   card?: string;
   note?: string;
+  amountSats?: bigint;
+  bitcoinAccountKey?: string;
+  balancePostingVersion?: bigint;
   updatedAtMs: number;
 }) {
   // CANONICAL SOURCE: shared/domain/src/readModel.ts (spendAmount,
@@ -445,6 +456,9 @@ function projectTransaction(row: {
     category: row.category,
     card: row.card,
     note: row.note,
+    amountSats: row.amountSats,
+    bitcoinAccountKey: row.bitcoinAccountKey,
+    balancePostingVersion: row.balancePostingVersion,
     updatedAtMs: row.updatedAtMs,
   };
 }
@@ -728,6 +742,7 @@ function publicBudgetDocument(row: {
 }
 
 function publicBtcBalanceDocument(row: {
+  sourceFile: string;
   owner: FamilyMember;
   schemaVersion: bigint;
   asOf: string;
@@ -754,9 +769,11 @@ function publicBtcBalanceDocument(row: {
   source?: string;
   basis?: string;
   confidence?: string;
+  postingActivatedAtMs?: number;
   updatedAtMs: number;
 }) {
   return {
+    sourceFile: row.sourceFile,
     owner: row.owner,
     schemaVersion: row.schemaVersion,
     asOf: row.asOf,
@@ -777,6 +794,7 @@ function publicBtcBalanceDocument(row: {
     source: row.source,
     basis: row.basis,
     confidence: row.confidence,
+    postingActivatedAtMs: row.postingActivatedAtMs,
     updatedAtMs: row.updatedAtMs,
   };
 }
@@ -1922,6 +1940,25 @@ async function clearLegacyTodoTombstone(ctx: MutationCtx, todoId: string) {
   if (existing) await ctx.db.delete(existing._id);
 }
 
+function sameTransaction(
+  existing: Doc<"transactions">,
+  row: Omit<Doc<"transactions">, "_id" | "_creationTime">,
+): boolean {
+  return (
+    existing.owner === row.owner &&
+    existing.date === row.date &&
+    existing.month === row.month &&
+    existing.merchant === row.merchant &&
+    existing.amountCents === row.amountCents &&
+    existing.category === row.category &&
+    existing.card === row.card &&
+    existing.note === row.note &&
+    existing.amountSats === row.amountSats &&
+    (row.bitcoinAccountKey === undefined ||
+      existing.bitcoinAccountKey === row.bitcoinAccountKey)
+  );
+}
+
 async function upsertTransactionRow(
   ctx: MutationCtx,
   row: Omit<Doc<"transactions">, "_id" | "_creationTime">,
@@ -1959,6 +1996,18 @@ async function upsertTransactionRow(
       deviceFailure(
         "OWNER_MISMATCH",
         `Transaction ${row.txId} belongs to ${existing.owner}, not ${row.owner}.`,
+        "transaction",
+        row.txId,
+      );
+    }
+    if (sameTransaction(existing, row)) return "updated";
+    if (
+      existing.balancePostingVersion === 1n &&
+      optimistic?.baseUpdatedAtMs === undefined
+    ) {
+      deviceFailure(
+        "REVISION_REQUIRED",
+        "baseUpdatedAtMs is required to edit posted sat-denominated Income.",
         "transaction",
         row.txId,
       );
@@ -2193,6 +2242,9 @@ async function upsertBtcBuyRow(
   row: Omit<Doc<"btcBuys">, "_id" | "_creationTime">,
   optimistic?: OptimisticWrite,
 ): Promise<UpsertOutcome> {
+  requireDevicePositive(row.sats, "buy.sats");
+  requireDevicePositive(row.priceUsdCents, "buy.priceUsdCents");
+  requireDevicePositive(row.usdCents, "buy.usdCents");
   const existing = await ctx.db
     .query("btcBuys")
     .withIndex("by_source_buy_id", (q: any) =>
@@ -2207,6 +2259,30 @@ async function upsertBtcBuyRow(
       deviceFailure(
         "OWNER_MISMATCH",
         `Bitcoin buy ${row.buyId} belongs to ${existing.owner}, not ${row.owner}.`,
+        "btcBuy",
+        row.buyId,
+      );
+    }
+    const same =
+      existing.date === row.date &&
+      existing.month === row.month &&
+      existing.source === row.source &&
+      existing.sats === row.sats &&
+      existing.priceUsdCents === row.priceUsdCents &&
+      existing.usdCents === row.usdCents &&
+      existing.note === row.note &&
+      existing.status === row.status &&
+      existing.costBasisStatus === row.costBasisStatus &&
+      existing.loggedBy === row.loggedBy &&
+      existing.archimedesRequestId === row.archimedesRequestId;
+    if (same) return "updated";
+    if (
+      existing.balancePostingVersion === 1n &&
+      optimistic?.baseUpdatedAtMs === undefined
+    ) {
+      deviceFailure(
+        "REVISION_REQUIRED",
+        "baseUpdatedAtMs is required to edit a posted Bitcoin buy.",
         "btcBuy",
         row.buyId,
       );
@@ -2316,6 +2392,30 @@ async function upsertBtcBillPayRow(
         row.billPayId,
       );
     }
+    const same =
+      existing.date === row.date &&
+      existing.month === row.month &&
+      existing.merchant === row.merchant &&
+      existing.category === row.category &&
+      existing.amountUsdCents === row.amountUsdCents &&
+      existing.btcSpentSats === row.btcSpentSats &&
+      existing.btcPriceCents === row.btcPriceCents &&
+      existing.platform === row.platform &&
+      existing.note === row.note &&
+      existing.feeUsdCents === row.feeUsdCents &&
+      existing.reference === row.reference;
+    if (same) return "updated";
+    if (
+      existing.balancePostingVersion === 1n &&
+      optimistic?.baseUpdatedAtMs === undefined
+    ) {
+      deviceFailure(
+        "REVISION_REQUIRED",
+        "baseUpdatedAtMs is required to edit a posted Bitcoin bill pay.",
+        "btcBillPay",
+        row.billPayId,
+      );
+    }
     if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
       deviceFailure(
         "REVISION_REQUIRED",
@@ -2392,6 +2492,14 @@ async function upsertBtcBillPayRow(
 }
 
 function validateBtcTransfer(row: BtcTransferRow) {
+  if (!postsToHouseholdBitcoinLedger(row.owner)) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Bitcoin transfers are available only for the adult household ledger.",
+      "btcTransfer",
+      row.transferId,
+    );
+  }
   if (!row.transferId.trim()) {
     deviceFailure("VALIDATION_FAILED", "Transfer id must not be empty.", "btcTransfer");
   }
@@ -2469,7 +2577,7 @@ async function upsertBtcTransferRow(
     // A lost create response may be retried without the revision it never
     // received. Exact replay is a no-op; changed content still needs a fence.
     if (sameBtcTransfer(existing, row)) return "updated";
-    if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
+    if (optimistic?.baseUpdatedAtMs === undefined) {
       deviceFailure(
         "REVISION_REQUIRED",
         "baseUpdatedAtMs is required to edit a Bitcoin transfer.",
@@ -2477,7 +2585,7 @@ async function upsertBtcTransferRow(
         row.transferId,
       );
     }
-    if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
+    if (optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
       deviceFailure(
         "ENTITY_CONFLICT",
         "The Bitcoin transfer changed after it was read.",
@@ -2535,6 +2643,14 @@ async function deleteBtcTransferCore(
   transferId: string,
   optimistic?: OptimisticWrite,
 ): Promise<boolean> {
+  if (!postsToHouseholdBitcoinLedger(owner)) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Bitcoin transfers are available only for the adult household ledger.",
+      "btcTransfer",
+      transferId,
+    );
+  }
   const sourceFile = "btc-transfers";
   const existing = await ctx.db
     .query("btcTransfers")
@@ -2567,7 +2683,15 @@ async function deleteBtcTransferCore(
       transferId,
     );
   }
-  if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
+  if (optimistic?.baseUpdatedAtMs === undefined) {
+    deviceFailure(
+      "REVISION_REQUIRED",
+      "baseUpdatedAtMs is required to delete a Bitcoin transfer.",
+      "btcTransfer",
+      transferId,
+    );
+  }
+  if (optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
     deviceFailure(
       optimistic?.baseUpdatedAtMs === undefined
         ? "REVISION_REQUIRED"
@@ -2861,9 +2985,10 @@ export const upsertTransaction = mutation({
   args: {
     transaction: transactionInput,
     sourceFile: v.optional(v.string()),
+    baseUpdatedAtMs: v.optional(v.float64()),
     token: v.optional(v.string()),
   },
-  handler: async (ctx, { transaction, sourceFile, token }) => {
+  handler: async (ctx, { transaction, sourceFile, baseUpdatedAtMs, token }) => {
     validateSyncToken(token);
     const file = sourceFile ?? "transactions";
     const fileOwner = ownerForSourceFile(file, "transactions");
@@ -2902,7 +3027,11 @@ export const upsertTransaction = mutation({
       sourceFile: file,
       updatedAtMs: now,
     };
-    const outcome = await upsertTransactionRow(ctx, row);
+    const outcome = await upsertTransactionRow(
+      ctx,
+      row,
+      baseUpdatedAtMs === undefined ? undefined : { baseUpdatedAtMs },
+    );
     return { txId: row.txId, owner: row.owner, month: row.month, outcome };
   },
 });
@@ -2922,9 +3051,13 @@ export const deleteTransaction = mutation({
     txId: v.string(),
     owner: v.optional(familyMemberValidator),
     sourceFile: v.optional(v.string()),
+    baseUpdatedAtMs: v.optional(v.float64()),
     token: v.optional(v.string()),
   },
-  handler: async (ctx, { txId, owner: rawOwner, sourceFile, token }) => {
+  handler: async (
+    ctx,
+    { txId, owner: rawOwner, sourceFile, baseUpdatedAtMs, token },
+  ) => {
     validateSyncToken(token);
     const file = sourceFile ?? "transactions";
     const fileOwner = ownerForSourceFile(file, "transactions");
@@ -2935,7 +3068,25 @@ export const deleteTransaction = mutation({
         q.eq("sourceFile", file).eq("txId", txId),
       )
       .unique();
+    const tombstone = await findRowTombstone(
+      ctx,
+      "transaction",
+      file,
+      txId,
+    );
     if (!existing) {
+      if (baseUpdatedAtMs !== undefined) {
+        if (tombstone?.deletedFromUpdatedAtMs === baseUpdatedAtMs) {
+          return { txId, owner, removed: false };
+        }
+        deviceFailure(
+          tombstone ? "ENTITY_CONFLICT" : "ENTITY_NOT_FOUND",
+          "The transaction deletion does not match the current revision.",
+          "transaction",
+          txId,
+        );
+      }
+      if (tombstone) return { txId, owner, removed: false };
       await lockRuntimeSource(ctx, file);
       await upsertRowTombstone(ctx, "transaction", file, txId, owner);
       return { txId, owner, removed: false };
@@ -2956,6 +3107,22 @@ export const deleteTransaction = mutation({
       );
     }
     if (existing.balancePostingVersion === 1n) {
+      if (baseUpdatedAtMs === undefined) {
+        deviceFailure(
+          "REVISION_REQUIRED",
+          "baseUpdatedAtMs is required to delete posted sat-denominated Income.",
+          "transaction",
+          txId,
+        );
+      }
+      if (baseUpdatedAtMs !== existing.updatedAtMs) {
+        deviceFailure(
+          "ENTITY_CONFLICT",
+          "The transaction changed after it was read.",
+          "transaction",
+          txId,
+        );
+      }
       if (existing.amountSats === undefined || existing.bitcoinAccountKey === undefined) {
         throw new ConvexError("Posted Income row is missing its Bitcoin posting fields.");
       }
@@ -2965,7 +3132,14 @@ export const deleteTransaction = mutation({
     }
     await lockRuntimeSource(ctx, file);
     await ctx.db.delete(existing._id);
-    await upsertRowTombstone(ctx, "transaction", file, txId, existing.owner);
+    await upsertRowTombstone(
+      ctx,
+      "transaction",
+      file,
+      txId,
+      existing.owner,
+      baseUpdatedAtMs,
+    );
     return { txId, owner: existing.owner, removed: true };
   },
 });
@@ -3051,17 +3225,20 @@ export const upsertBtcBuy = mutation({
   args: {
     buy: btcBuyInput,
     sourceFile: v.optional(v.string()),
+    baseUpdatedAtMs: v.optional(v.float64()),
     token: v.optional(v.string()),
   },
-  handler: async (ctx, { buy, sourceFile, token }) => {
+  handler: async (ctx, { buy, sourceFile, baseUpdatedAtMs, token }) => {
     validateSyncToken(token);
     const file = sourceFile ?? "bitcoin-buys";
     const fileOwner = ownerForSourceFile(file, "btcBuys");
+    const now = Date.now();
+    const date = requireIsoDate(buy.date, "date", now, 30, rejectRowDate);
     const row = {
       buyId: buy.id,
       owner: resolveOwner(buy.owner, fileOwner),
-      date: buy.date,
-      month: monthOf(buy.date),
+      date,
+      month: monthOf(date),
       source: buy.source,
       sats: buy.sats,
       priceUsdCents: buy.priceUsdCents,
@@ -3072,9 +3249,13 @@ export const upsertBtcBuy = mutation({
       loggedBy: optionalText(buy.loggedBy),
       archimedesRequestId: optionalText(buy.archimedesRequestId),
       sourceFile: file,
-      updatedAtMs: Date.now(),
+      updatedAtMs: now,
     };
-    const outcome = await upsertBtcBuyRow(ctx, row);
+    const outcome = await upsertBtcBuyRow(
+      ctx,
+      row,
+      baseUpdatedAtMs === undefined ? undefined : { baseUpdatedAtMs },
+    );
     return { buyId: row.buyId, owner: row.owner, month: row.month, outcome };
   },
 });
@@ -3098,9 +3279,10 @@ export const upsertBtcBillPay = mutation({
   args: {
     billPay: btcBillPayInput,
     sourceFile: v.optional(v.string()),
+    baseUpdatedAtMs: v.optional(v.float64()),
     token: v.optional(v.string()),
   },
-  handler: async (ctx, { billPay, sourceFile, token }) => {
+  handler: async (ctx, { billPay, sourceFile, baseUpdatedAtMs, token }) => {
     validateSyncToken(token);
     const file = sourceFile ?? "bitcoin-bill-pays";
     const fileOwner = ownerForSourceFile(file, "btcBillPays");
@@ -3138,7 +3320,11 @@ export const upsertBtcBillPay = mutation({
       sourceFile: file,
       updatedAtMs: now,
     };
-    const outcome = await upsertBtcBillPayRow(ctx, row);
+    const outcome = await upsertBtcBillPayRow(
+      ctx,
+      row,
+      baseUpdatedAtMs === undefined ? undefined : { baseUpdatedAtMs },
+    );
     return {
       billPayId: row.billPayId,
       owner: row.owner,
@@ -3216,9 +3402,10 @@ export const upsertBtcAccount = mutation({
       schemaVersion: v.optional(v.int64()),
     }),
     sourceFile: v.optional(v.string()),
+    baseUpdatedAtMs: v.optional(v.float64()),
     token: v.optional(v.string()),
   },
-  handler: async (ctx, { account, sourceFile, token }) => {
+  handler: async (ctx, { account, sourceFile, baseUpdatedAtMs, token }) => {
     validateSyncToken(token);
     const file = sourceFile ?? "btc-balance-snapshot";
     const fileOwner = ownerForSourceFile(file, "btcAccounts");
@@ -3236,16 +3423,23 @@ export const upsertBtcAccount = mutation({
       .withIndex("by_source_file", (q) => q.eq("sourceFile", file))
       .unique();
     if (document) {
-      const outcome = await upsertBtcAccountCore(ctx, file, {
-        key: account.key,
-        owner: account.owner,
-        label: account.label,
-        custody: account.custody,
-        sats: account.sats,
-        asOf: account.asOf,
-        schemaVersion: account.schemaVersion,
-        fiatValuation: { cents: account.fiatCents },
-      });
+      const outcome = await upsertBtcAccountCore(
+        ctx,
+        file,
+        {
+          key: account.key,
+          owner: account.owner,
+          label: account.label,
+          custody: account.custody,
+          sats: account.sats,
+          asOf: account.asOf,
+          schemaVersion: account.schemaVersion,
+          fiatValuation: { cents: account.fiatCents },
+        },
+        document.postingActivatedAtMs !== undefined || baseUpdatedAtMs !== undefined
+          ? { baseUpdatedAtMs }
+          : undefined,
+      );
       return { key: account.key.trim(), owner: account.owner, outcome };
     }
     // Legacy bootstrap may populate the compatibility table before the typed
@@ -4181,30 +4375,6 @@ async function upsertBtcAccountCore(
   }
   if (
     optimistic &&
-    existingDocument &&
-    optimistic.baseUpdatedAtMs === undefined
-  ) {
-    deviceFailure(
-      "REVISION_REQUIRED",
-      "baseUpdatedAtMs is required to edit an existing bitcoin document.",
-      "btcAccount",
-      key,
-    );
-  }
-  if (
-    optimistic &&
-    existingDocument &&
-    optimistic.baseUpdatedAtMs !== existingDocument.updatedAtMs
-  ) {
-    deviceFailure(
-      "ENTITY_CONFLICT",
-      "The bitcoin balance document changed after it was read.",
-      "btcAccount",
-      key,
-    );
-  }
-  if (
-    optimistic &&
     !existingDocument &&
     optimistic.baseUpdatedAtMs !== undefined
   ) {
@@ -4228,7 +4398,57 @@ async function upsertBtcAccountCore(
   const accounts = existingDocument ? [...existingDocument.accounts] : [];
   const index = accounts.findIndex((candidate) => candidate.key === key);
   const previousAccount = index === -1 ? undefined : accounts[index];
+  const requestedFiatCents =
+    account.fiatValuation?.cents ??
+    previousAccount?.fiatValuation?.cents ??
+    previousAccount?.fiatCents;
+  if (
+    existingDocument &&
+    previousAccount &&
+    previousAccount.label === account.label &&
+    previousAccount.custody === account.custody &&
+    previousAccount.sats === account.sats &&
+    (previousAccount.fiatValuation?.cents ?? previousAccount.fiatCents) ===
+      requestedFiatCents &&
+    existingDocument.asOf === account.asOf &&
+    existingDocument.schemaVersion ===
+      (account.schemaVersion ?? existingDocument.schemaVersion)
+  ) {
+    return "updated";
+  }
+  if (
+    optimistic &&
+    existingDocument &&
+    optimistic.baseUpdatedAtMs === undefined
+  ) {
+    deviceFailure(
+      "REVISION_REQUIRED",
+      "baseUpdatedAtMs is required to edit an existing bitcoin document.",
+      "btcAccount",
+      key,
+    );
+  }
+  if (
+    optimistic &&
+    existingDocument &&
+    optimistic.baseUpdatedAtMs !== existingDocument.updatedAtMs
+  ) {
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      "The bitcoin balance document changed after it was read.",
+      "btcAccount",
+      key,
+    );
+  }
   if (existingDocument?.postingActivatedAtMs !== undefined) {
+    if (optimistic?.baseUpdatedAtMs === undefined) {
+      deviceFailure(
+        "REVISION_REQUIRED",
+        "baseUpdatedAtMs is required to edit an activated bitcoin document.",
+        "btcAccount",
+        key,
+      );
+    }
     if (previousAccount && previousAccount.sats !== account.sats) {
       deviceFailure(
         "ENTITY_CONFLICT",
@@ -4263,6 +4483,9 @@ async function upsertBtcAccountCore(
   const outcome: UpsertOutcome = index === -1 ? "inserted" : "updated";
   if (index === -1) accounts.push(normalizedAccount);
   else accounts[index] = normalizedAccount;
+  if (existingDocument?.postingActivatedAtMs !== undefined) {
+    canonicalRiverAccountKey(accounts);
+  }
   const now =
     existingDocument && optimistic
       ? nextUpdatedAtMs(existingDocument.updatedAtMs)
@@ -4400,6 +4623,9 @@ async function deleteBtcAccountCore(
         accountKey,
       );
     }
+    if (document.postingActivatedAtMs !== undefined) {
+      canonicalRiverAccountKey(accounts);
+    }
   }
   if (document && removed) {
     await lockRuntimeSource(ctx, sourceFile);
@@ -4449,6 +4675,23 @@ export const upsertTransactionFromDevice = mutation({
       args.deviceToken,
       "transactions:write",
     );
+    const existing = await ctx.db
+      .query("transactions")
+      .withIndex("by_source_tx_id", (q) =>
+        q.eq("sourceFile", args.sourceFile).eq("txId", args.transaction.id),
+      )
+      .unique();
+    if (
+      args.transaction.amountSats !== undefined ||
+      existing?.balancePostingVersion === 1n
+    ) {
+      await authenticateDevice(
+        ctx,
+        args.deviceId,
+        args.deviceToken,
+        "bitcoin:write",
+      );
+    }
     requireDeviceRevision(args.baseUpdatedAtMs, false);
     requireDeviceIdentifier(args.transaction.id, "transaction.id");
     requireDeviceText(args.transaction.merchant, "transaction.merchant");
@@ -4524,6 +4767,20 @@ export const deleteTransactionFromDevice = mutation({
       args.deviceToken,
       "transactions:write",
     );
+    const existing = await ctx.db
+      .query("transactions")
+      .withIndex("by_source_tx_id", (q) =>
+        q.eq("sourceFile", args.sourceFile).eq("txId", args.entityId),
+      )
+      .unique();
+    if (existing?.balancePostingVersion === 1n) {
+      await authenticateDevice(
+        ctx,
+        args.deviceId,
+        args.deviceToken,
+        "bitcoin:write",
+      );
+    }
     requireDeviceRevision(args.baseUpdatedAtMs, true);
     requireDeviceIdentifier(args.entityId, "entityId");
     const removed = await deleteTransactionCore(

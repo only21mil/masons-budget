@@ -436,6 +436,31 @@ describe("paired-device main controller", () => {
     expect(JSON.stringify(result)).not.toContain(snapshot.deviceCredential)
   })
 
+  it("requires a Bitcoin grant before sending sat-denominated Income", async () => {
+    const post = vi.fn()
+    const controller = createPairedDeviceController({
+      store: store(),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post,
+    })
+
+    await expect(controller.mutate({
+      kind: "transaction.upsert",
+      requestId: "request_sat_income_without_bitcoin",
+      actor: "victor",
+      id: "income-without-bitcoin-grant",
+      owner: "victor",
+      date: "2026-08-01",
+      merchant: "Bitcoin income",
+      amountCents: 1n,
+      amountSats: 25_000n,
+      transactionKind: "credit",
+      category: "Income",
+    })).resolves.toMatchObject({ status: "unauthorized" })
+    expect(post).not.toHaveBeenCalled()
+  })
+
   it("encodes Bitcoin Income sats and owned-account transfers through fixed paths", async () => {
     const bodies: Record<string, unknown>[] = []
     const controller = createPairedDeviceController({
@@ -682,6 +707,17 @@ describe("paired-device main controller", () => {
     })
     await expect(missing.mutate(transactionRequest())).resolves.toMatchObject({
       status: "missing",
+    })
+
+    const rejected = createPairedDeviceController({
+      store: store(),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: async () => failure("VALIDATION_FAILED"),
+    })
+    await expect(rejected.mutate(transactionRequest())).resolves.toMatchObject({
+      status: "failed",
+      code: "rejected",
     })
 
     const failed = createPairedDeviceController({
