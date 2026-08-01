@@ -93,6 +93,7 @@ import {
 } from "../../components/index.ts"
 import { mutationOwner, stableId } from "../../data/mutations.ts"
 import type { MutationGate } from "../../data/mutations.ts"
+import type { BtcTransferRecord } from "../../data/fixtures.ts"
 import type { PageManifest } from "../types.ts"
 
 // ── shared helpers ──────────────────────────────────────────────────────────
@@ -654,6 +655,57 @@ function BtcAccountActions({ account }: { account: BTCAccount }) {
       <RowActions label={account.label} onEdit={() => setEditing(true)} onDelete={() => setConfirming(true)} editDisabled={!editGate.allowed} deleteDisabled={!deleteGate.allowed} pending={pending || deleting} />
       <BtcAccountFormDialog open={editing} account={account} onClose={() => setEditing(false)} />
       <DeleteConfirmDialog open={confirming} label={account.label} busy={deleting} onCancel={() => setConfirming(false)} onConfirm={() => void remove()} />
+    </>
+  )
+}
+
+function BtcTransferActions({ transfer }: { transfer: BtcTransferRecord }) {
+  const { activeProfile, data, isMutationPending, mutationGate, submitMutation } = useAppState()
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const deleteGate = mutationGate(
+    "btcTransfer.delete",
+    data.btcTransfers.status,
+    mutationOwner("btcTransfer.delete", transfer.owner),
+  )
+  const pending = isMutationPending(
+    "btcTransfer.delete",
+    transfer.owner,
+    transfer.id,
+  )
+
+  async function remove() {
+    setDeleting(true)
+    const result = await submitMutation({
+      kind: "btcTransfer.delete",
+      requestId: stableId("request"),
+      actor: activeProfile,
+      id: transfer.id,
+      owner: mutationOwner("btcTransfer.delete", transfer.owner),
+      baseUpdatedAtMs: transfer.updatedAtMs,
+    })
+    setDeleting(false)
+    if (result.status === "ok") setConfirming(false)
+  }
+
+  const label = `${transfer.fromAccountKey} to ${transfer.toAccountKey} transfer`
+  return (
+    <>
+      <RowActions
+        label={label}
+        onEdit={() => undefined}
+        onDelete={() => setConfirming(true)}
+        editDisabled
+        deleteDisabled={!deleteGate.allowed}
+        pending={pending || deleting}
+      />
+      <DeleteConfirmDialog
+        open={confirming}
+        label={label}
+        busy={deleting}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => void remove()}
+      />
     </>
   )
 }
@@ -1381,6 +1433,33 @@ function BitcoinOverviewPage() {
       width: "150px",
     },
   ]
+  const accountLabels = new Map(inScope.map((account) => [account.key, account.label]))
+  const transfers = visibleTo(activeProfile, data.btcTransfers.value)
+  const transferColumns: ReadonlyArray<Column<BtcTransferRecord>> = [
+    { key: "date", header: "Date", render: (row) => row.date },
+    {
+      key: "route",
+      header: "Transfer",
+      render: (row) => `${accountLabels.get(row.fromAccountKey) ?? row.fromAccountKey} → ${accountLabels.get(row.toAccountKey) ?? row.toAccountKey}`,
+    },
+    {
+      key: "sats",
+      header: "Amount",
+      render: (row) => formatBitcoin(row.sats, displayUnit, btcPriceCents),
+    },
+    {
+      key: "fee",
+      header: "Fee",
+      render: (row) => formatBitcoin(row.feeSats, displayUnit, btcPriceCents),
+    },
+    { key: "note", header: "Note", render: (row) => row.note ?? "—", secondary: true },
+    {
+      key: "actions",
+      header: "Actions",
+      render: (row) => <BtcTransferActions transfer={row} />,
+      width: "150px",
+    },
+  ]
 
   // Adults can see a child's stack but it is not part of their net worth. Say so
   // rather than letting the difference look like a bug.
@@ -1501,6 +1580,20 @@ function BitcoinOverviewPage() {
           state={tableState(data.btcBalanceDocument.status)}
           emptyTitle="No canonical accounts"
           emptyDetail="No editable account document is available for this profile."
+        />
+      </Panel>
+      <Panel
+        title="Transfer history"
+        source={`${data.btcTransfers.source} · deleting a transfer reverses its posted balances`}
+        flush
+      >
+        <DataTable
+          columns={transferColumns}
+          rows={transfers}
+          rowKey={(row) => row.id}
+          state={tableState(data.btcTransfers.status)}
+          emptyTitle="No Bitcoin transfers"
+          emptyDetail="Owned-wallet transfers will appear here after they post."
         />
       </Panel>
       <BtcAccountFormDialog open={adding} account={null} onClose={() => setAdding(false)} />

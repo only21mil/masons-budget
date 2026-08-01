@@ -107,6 +107,9 @@ internal fun prepareTransaction(
     btcPriceCents: Long,
     id: String = "android-${UUID.randomUUID()}",
 ): Result<PreparedTransaction> = runCatching {
+    require(draft.type != AddTransactionType.TRANSFER) {
+        "Use the dedicated Bitcoin transfer flow for owned-wallet movement"
+    }
     val merchant = draft.merchant.trim()
     require(merchant.isNotEmpty()) { "Enter a merchant or transfer destination" }
     require(draft.card.isNotBlank()) { "Select a card or payment method" }
@@ -332,7 +335,7 @@ internal fun AddTransactionSheet(
             )
 
             OptionRow(
-                options = AddTransactionType.entries,
+                options = AddTransactionType.entries.filterNot { it == AddTransactionType.TRANSFER },
                 selected = type,
                 label = AddTransactionType::label,
                 onSelect = {

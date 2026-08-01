@@ -579,6 +579,32 @@ function projectBtcBillPay(row: {
   };
 }
 
+function projectBtcTransfer(row: {
+  transferId: string;
+  owner: FamilyMember;
+  date: string;
+  month: string;
+  fromAccountKey: string;
+  toAccountKey: string;
+  sats: bigint;
+  feeSats: bigint;
+  note?: string;
+  updatedAtMs: number;
+}) {
+  return {
+    transferId: row.transferId,
+    owner: row.owner,
+    date: row.date,
+    month: row.month,
+    fromAccountKey: row.fromAccountKey,
+    toAccountKey: row.toAccountKey,
+    sats: row.sats,
+    feeSats: row.feeSats,
+    note: row.note,
+    updatedAtMs: row.updatedAtMs,
+  };
+}
+
 function projectBtcAccount(row: {
   key: string;
   owner: FamilyMember;
@@ -956,6 +982,14 @@ export const PUBLIC_QUERY_INDEX_PLAN = {
       fields: ["owner", "month"],
     },
   },
+  listBtcTransfers: {
+    table: "btcTransfers",
+    all: { name: "by_owner_date", fields: ["owner", "date"] },
+    month: {
+      name: "by_owner_month_date",
+      fields: ["owner", "month", "date"],
+    },
+  },
   listBtcAccounts: {
     table: "btcAccounts",
     all: { name: "by_owner_key", fields: ["owner", "key"] },
@@ -1211,6 +1245,49 @@ export const listBtcBillPays = query({
       rows.slice(0, cap).map(projectBtcBillPay),
       limit,
       "listBtcBillPays",
+    );
+  },
+});
+
+/** Owned-wallet transfers, newest first, for correction and audit. */
+export const listBtcTransfers = query({
+  args: {
+    viewer: familyMemberValidator,
+    scope: scopeValidator,
+    month: v.optional(v.string()),
+    limit: v.optional(v.float64()),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { viewer, scope, month, limit, token }) => {
+    validateReadToken(token);
+    const owners = ownersInScope(viewer, scope);
+    const cap = requestedRowCap(limit, "listBtcTransfers");
+    const perOwner = await Promise.all(
+      owners.map((owner) =>
+        month
+          ? ctx.db
+              .query("btcTransfers")
+              .withIndex(
+                PUBLIC_QUERY_INDEX_PLAN.listBtcTransfers.month.name,
+                (q) => q.eq("owner", owner).eq("month", month),
+              )
+              .collect()
+          : ctx.db
+              .query("btcTransfers")
+              .withIndex(
+                PUBLIC_QUERY_INDEX_PLAN.listBtcTransfers.all.name,
+                (q) => q.eq("owner", owner),
+              )
+              .order("desc")
+              .take(cap),
+      ),
+    );
+    const rows = perOwner.flat();
+    rows.sort(byDateDescending);
+    return publicEnvelope(
+      rows.slice(0, cap).map(projectBtcTransfer),
+      limit,
+      "listBtcTransfers",
     );
   },
 });
@@ -1473,6 +1550,7 @@ export const rowCounts = query({
       todos: (await ctx.db.query("todos").collect()).length,
       btcBuys: (await ctx.db.query("btcBuys").collect()).length,
       btcBillPays: (await ctx.db.query("btcBillPays").collect()).length,
+      btcTransfers: (await ctx.db.query("btcTransfers").collect()).length,
       btcAccounts: (await ctx.db.query("btcAccounts").collect()).length,
       income: (await ctx.db.query("income").collect()).length,
       balanceDocuments: (await ctx.db.query("balanceDocuments").collect())

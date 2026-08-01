@@ -72,6 +72,10 @@ struct AddTransactionView: View {
         case income = "Income"
         case transfer = "Transfer"
         case btcBuy = "Buy BTC"
+
+        /// Owned-wallet movement requires the dedicated atomic ledger flow.
+        /// Keep the legacy case decodable, but never offer it as budget spend.
+        static let selectableCases: [TxType] = [.spend, .income, .btcBuy]
     }
 
     private var numericAmount: Decimal {
@@ -147,7 +151,7 @@ struct AddTransactionView: View {
 
     private var typeSegment: some View {
         HStack(spacing: 0) {
-            ForEach(TxType.allCases, id: \.self) { t in
+            ForEach(TxType.selectableCases, id: \.self) { t in
                 Button {
                     if txType != t {
                         txType = t

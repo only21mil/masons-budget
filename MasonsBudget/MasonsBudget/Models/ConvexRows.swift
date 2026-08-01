@@ -242,7 +242,7 @@ struct ConvexBTCAccountRow: Decodable {
     let label: String
     let custody: BTCCustody
     let sats: Int64
-    let fiatCents: Int64
+    let fiatCents: Int64?
     let asOf: String
     let schemaVersion: Int64
 }
@@ -253,12 +253,12 @@ struct ConvexBTCBalanceDocumentRow: Decodable, Sendable {
         let label: String
         let custody: BTCCustody
         let sats: Int64
-        let fiatCents: Int64
+        let fiatCents: Int64?
     }
 
     struct Totals: Decodable, Sendable {
         let sats: Int64
-        let fiatCents: Int64
+        let fiatCents: Int64?
         let exchangeSats: Int64
         let selfCustodySats: Int64
     }
@@ -612,13 +612,13 @@ struct CanonicalBTCBalance: Sendable {
         let label: String
         let custody: BTCCustody
         let sats: Int64
-        let fiatCents: Int64
+        let fiatCents: Int64?
     }
 
     let owner: FamilyMember
     let asOf: String
     let totalSats: Int64
-    let totalFiatCents: Int64
+    let totalFiatCents: Int64?
     let exchangeSats: Int64
     let selfCustodySats: Int64
     let accounts: [Account]

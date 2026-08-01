@@ -24,6 +24,8 @@ const capabilities: readonly RendererMutationKind[] = [
   "btcBillPay.delete",
   "btcAccount.upsert",
   "btcAccount.delete",
+  "btcTransfer.upsert",
+  "btcTransfer.delete",
 ]
 
 const adapter: RendererMutationAdapter = {
@@ -53,8 +55,25 @@ function liveEnvelope(profile: "victor" | "rachel" | "mason" | "maddox" = "victo
     transactions: { ...data.transactions, status: "live" as const },
     budget: { ...data.budget, status: "live" as const },
     btcAccounts: { ...data.btcAccounts, status: "live" as const },
+    btcBalanceDocument: { ...data.btcBalanceDocument, status: "live" as const },
     btcBuys: { ...data.btcBuys, status: "live" as const },
     billPays: { ...data.billPays, status: "live" as const },
+    btcTransfers: {
+      ...data.btcTransfers,
+      status: "live" as const,
+      value: [{
+        id: "transfer-test-1",
+        updatedAtMs: 99,
+        date: "2026-07-26",
+        month: "2026-07",
+        fromAccountKey: "canonical-exchange",
+        toAccountKey: "canonical-cold",
+        sats: 12_345n,
+        feeSats: 21n,
+        note: "Move to cold storage",
+        owner: "victor" as const,
+      }],
+    },
     todos: { ...data.todos, status: "live" as const },
   }
 }
@@ -133,6 +152,14 @@ describe("renderer CRUD routes", () => {
     expect(markup).not.toContain(">USD valuation<")
     expect(markup).toContain('aria-label="Edit Canonical Cold Storage"')
     expect(markup).not.toContain('aria-label="Edit Cold Storage"')
+  })
+
+  it("shows posted Bitcoin transfers with a revision-fenced correction action", () => {
+    const markup = renderRoute("bitcoin")
+    expect(markup).toContain("Transfer history")
+    expect(markup).toContain("Canonical Exchange → Canonical Cold Storage")
+    expect(markup).toContain("Move to cold storage")
+    expect(markup).toContain('aria-label="Delete canonical-exchange to canonical-cold transfer"')
   })
 
   it("names dialogs and mutation controls without relying on color or row clicks", () => {

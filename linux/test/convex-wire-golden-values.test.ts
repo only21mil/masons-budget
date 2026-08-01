@@ -174,6 +174,7 @@ describe("real Convex wire values", () => {
       todos: 25,
       btcBuys: 33,
       btcBillPays: 31,
+      btcTransfers: 0,
       btcAccounts: 8,
       income: 16,
       balanceDocuments: 1,

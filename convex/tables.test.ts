@@ -168,6 +168,32 @@ const fn = {
       complete: boolean;
     }
   >,
+  listBtcTransfers: "tables:listBtcTransfers" as unknown as FunctionReference<
+    "query",
+    "public",
+    {
+      viewer: Member;
+      scope: Scope;
+      month?: string;
+      limit?: number;
+      token?: string;
+    },
+    {
+      rows: Array<{
+        transferId: string;
+        owner: Member;
+        date: string;
+        month: string;
+        fromAccountKey: string;
+        toAccountKey: string;
+        sats: bigint;
+        feeSats: bigint;
+        note?: string;
+        updatedAtMs: number;
+      }>;
+      complete: boolean;
+    }
+  >,
   listBtcAccounts: "tables:listBtcAccounts" as unknown as FunctionReference<
     "query",
     "public",
@@ -1671,6 +1697,45 @@ describe("public Linux/Android read contract", () => {
         expect(row).not.toHaveProperty("sourceFile");
       }
     }
+  });
+
+  it("returns scoped Bitcoin transfer history needed for revision-fenced correction", async () => {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("btcTransfers", {
+        transferId: "transfer-read-1",
+        owner: "victor",
+        date: "2026-08-01",
+        month: "2026-08",
+        fromAccountKey: "river",
+        toAccountKey: "coldcard",
+        sats: 50_000n,
+        feeSats: 250n,
+        note: "Test transfer",
+        sourceFile: "btc-transfers",
+        balancePostingVersion: 1n,
+        updatedAtMs: 123,
+      });
+    });
+
+    const response = await t.query(fn.listBtcTransfers, {
+      viewer: "rachel",
+      scope: "netWorth",
+    });
+    expect(response).toEqual({
+      complete: true,
+      rows: [{
+        transferId: "transfer-read-1",
+        owner: "victor",
+        date: "2026-08-01",
+        month: "2026-08",
+        fromAccountKey: "river",
+        toAccountKey: "coldcard",
+        sats: 50_000n,
+        feeSats: 250n,
+        note: "Test transfer",
+        updatedAtMs: 123,
+      }],
+    });
   });
 
   it("marks every explicitly bounded response incomplete", async () => {

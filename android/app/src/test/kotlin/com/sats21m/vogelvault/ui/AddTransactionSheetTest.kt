@@ -27,26 +27,24 @@ class AddTransactionSheetTest {
     }
 
     @Test
-    fun `income and transfer preserve the server sign convention`() {
+    fun `income preserves the server sign convention and legacy transfer fails closed`() {
         val income = prepare(
             amount = "21.00",
             unit = DisplayUnit.USD,
             type = AddTransactionType.INCOME,
             category = "Ignored",
         )
-        val transfer = prepare(
-            amount = "21.00",
-            unit = DisplayUnit.USD,
-            type = AddTransactionType.TRANSFER,
-            category = "",
-        )
-
         assertEquals(2_100L, income.input.amountCents)
         assertEquals(TransactionKind.CREDIT, income.input.kind)
         assertEquals("Income", income.input.category)
-        assertEquals(2_100L, transfer.input.amountCents)
-        assertEquals(TransactionKind.SPEND, transfer.input.kind)
-        assertEquals("Transfer", transfer.input.category)
+        assertFails {
+            prepare(
+                amount = "21.00",
+                unit = DisplayUnit.USD,
+                type = AddTransactionType.TRANSFER,
+                category = "",
+            )
+        }
     }
 
     @Test

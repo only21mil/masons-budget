@@ -101,6 +101,19 @@ export interface VogelVaultBtcBillPayRow {
   readonly updatedAtMs: number
 }
 
+export interface VogelVaultBtcTransferRow {
+  readonly transferId: string
+  readonly owner: VogelVaultMember
+  readonly date: string
+  readonly month: string
+  readonly fromAccountKey: string
+  readonly toAccountKey: string
+  readonly sats: bigint
+  readonly feeSats: bigint
+  readonly note?: string
+  readonly updatedAtMs: number
+}
+
 export interface VogelVaultIncomeRow {
   readonly incomeId: string
   readonly owner: VogelVaultMember
@@ -268,6 +281,7 @@ export interface VogelVaultRowCounts {
   readonly todos: number
   readonly btcBuys: number
   readonly btcBillPays: number
+  readonly btcTransfers: number
   readonly btcAccounts: number
   readonly income: number
   readonly balanceDocuments: number
@@ -308,6 +322,12 @@ export type VogelVaultRowRequest =
     }
   | {
       readonly kind: "btcBillPays"
+      readonly scope: VogelVaultBtcScope
+      readonly month?: string
+      readonly limit?: number
+    }
+  | {
+      readonly kind: "btcTransfers"
       readonly scope: VogelVaultBtcScope
       readonly month?: string
       readonly limit?: number
@@ -373,6 +393,12 @@ export type VogelVaultRowSuccess =
       readonly status: "ok"
       readonly kind: "btcBillPays"
       readonly rows: readonly VogelVaultBtcBillPayRow[]
+      readonly complete: boolean
+    }
+  | {
+      readonly status: "ok"
+      readonly kind: "btcTransfers"
+      readonly rows: readonly VogelVaultBtcTransferRow[]
       readonly complete: boolean
     }
   | {

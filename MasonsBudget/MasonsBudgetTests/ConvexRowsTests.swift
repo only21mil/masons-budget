@@ -349,6 +349,32 @@ final class ConvexRowsTests: XCTestCase {
         )
     }
 
+    func testCanonicalBTCDecodesUnavailableFiatWithoutFabricatingZero() throws {
+        let document: ConvexBTCBalanceDocumentRow = try decodeTaggedJSON([
+            "owner": "victor",
+            "schemaVersion": int64("2"),
+            "asOf": "2026-08-01T00:00:00Z",
+            "accounts": [[
+                "key": "river",
+                "label": "River",
+                "custody": "exchange",
+                "sats": int64("7426251"),
+            ]],
+            "totals": [
+                "sats": int64("7426251"),
+                "exchangeSats": int64("7426251"),
+                "selfCustodySats": int64("0"),
+            ],
+        ])
+
+        let balance = try XCTUnwrap(
+            CanonicalFinancialProjection.btcBalance(documents: [document]).value,
+        )
+        XCTAssertEqual(balance.totalSats, 7_426_251)
+        XCTAssertNil(balance.totalFiatCents)
+        XCTAssertNil(balance.accounts.first?.fiatCents)
+    }
+
     func testEmptyAndAmbiguousRequiredBTCSourceNeverBecomeZero() throws {
         XCTAssertNil(try CanonicalFinancialProjection.btcBalance(documents: []).value)
 
