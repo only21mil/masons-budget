@@ -368,18 +368,18 @@ final class ConvexRowsTests: XCTestCase {
     func testCanonicalBTCDecodesUnavailableFiatWithoutFabricatingZero() throws {
         let document: ConvexBTCBalanceDocumentRow = try decodeTaggedJSON([
             "owner": "victor",
-            "schemaVersion": int64("2"),
+            "schemaVersion": int64(value: 2),
             "asOf": "2026-08-01T00:00:00Z",
             "accounts": [[
                 "key": "river",
                 "label": "River",
                 "custody": "exchange",
-                "sats": int64("7426251"),
+                "sats": int64(value: 7_426_251),
             ]],
             "totals": [
-                "sats": int64("7426251"),
-                "exchangeSats": int64("7426251"),
-                "selfCustodySats": int64("0"),
+                "sats": int64(value: 7_426_251),
+                "exchangeSats": int64(value: 7_426_251),
+                "selfCustodySats": int64(value: 0),
             ],
         ])
 
@@ -493,8 +493,18 @@ final class ConvexRowsTests: XCTestCase {
         ]
     }
 
+    /// Takes an already-encoded Convex payload: base64 of eight little-endian
+    /// bytes. Most fixtures are written that way deliberately, to pin the exact
+    /// wire bytes rather than trusting the encoder.
     private func int64(_ payload: String) -> [String: String] {
         ["$integer": payload]
+    }
+
+    /// Encodes a numeric value into the same tagged form. Use this when the test
+    /// cares about the quantity rather than the exact bytes — writing a decimal
+    /// string into `int64(_:)` produces a payload the real decoder rejects.
+    private func int64(value: Int64) -> [String: String] {
+        ConvexTaggedInt64Encoder.encode(value)
     }
 
     private func decodeTaggedJSON<T: Decodable>(_ object: Any) throws -> T {
