@@ -24,6 +24,10 @@ import com.sats21m.vogelvault.ui.ConvexTransactionActions
 import com.sats21m.vogelvault.ui.TodoMutationGateway
 import com.sats21m.vogelvault.ui.VaultViewModel
 import java.io.IOException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -33,6 +37,22 @@ import kotlinx.coroutines.flow.StateFlow
  * Convex socket on startup.
  */
 open class VaultApplication : Application() {
+    /**
+     * Process-owned work that must outlive a transient Compose surface.
+     * In-flight writes keep their receipt path even when their sheet leaves
+     * composition; Android process death remains the outer cancellation bound.
+     */
+    internal open val applicationScope: CoroutineScope by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    }
+
+    override fun onTerminate() {
+        applicationScope.cancel()
+        super.onTerminate()
+    }
+
     val database: VaultDatabase by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         VaultDatabase.create(this)
     }

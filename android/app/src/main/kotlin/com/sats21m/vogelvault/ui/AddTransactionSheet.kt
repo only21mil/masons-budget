@@ -24,10 +24,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -54,6 +54,9 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 internal enum class AddTransactionType(val label: String) {
@@ -94,6 +97,24 @@ internal suspend fun savePreparedTransaction(
             sourceFile = row.sourceFile,
         ),
     )
+
+/**
+ * Starts the durable part of an add on a process-owned scope. The client
+ * installs an accepted receipt before returning; a disposed sheet suppresses
+ * only its stale UI callbacks, never the write or receipt installation.
+ */
+internal fun launchPreparedTransactionSave(
+    scope: CoroutineScope,
+    row: PreparedTransaction,
+    client: ConvexMutationClient,
+    isUiActive: () -> Boolean,
+    onUiResult: (ConvexResult<TransactionWriteReceipt>) -> Unit,
+): Job = scope.launch {
+    val result = savePreparedTransaction(row, client)
+    if (isUiActive()) {
+        onUiResult(result)
+    }
+}
 
 /**
  * User-visible feedback for every remote transaction write result.
@@ -310,6 +331,12 @@ internal fun AddTransactionSheet(
     // WA1 owns encrypted sync-token storage and exposes one process-scoped
     // client. The sheet sees the transport, never the credential or its store.
     val mutationClient = remember(application) { application?.convexMutationClient }
+    val saveScope = remember(application) { application?.applicationScope }
+    val uiActive = remember { AtomicBoolean(true) }
+    DisposableEffect(Unit) {
+        uiActive.set(true)
+        onDispose { uiActive.set(false) }
+    }
 
     // One id per sheet, not one per tap. A create whose response is ambiguous
     // gets retried by the user pressing Save again; a fresh id each time would
@@ -326,8 +353,6 @@ internal fun AddTransactionSheet(
     var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var saving by rememberSaveable { mutableStateOf(false) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-
     val type = AddTransactionType.valueOf(typeName)
     val inputUnit = DisplayUnit.valueOf(inputUnitName)
     val operationalBtcPriceCents = state.operationalBitcoinQuote()?.priceCents ?: 0L
@@ -489,9 +514,18 @@ internal fun AddTransactionSheet(
                             errorMessage = "Transaction writing is not configured"
                             return@Button
                         }
+                        val scope = saveScope
+                        if (scope == null) {
+                            errorMessage = "Transaction writing is not configured"
+                            return@Button
+                        }
                         saving = true
-                        scope.launch {
-                            val result = savePreparedTransaction(row, client)
+                        launchPreparedTransactionSave(
+                            scope = scope,
+                            row = row,
+                            client = client,
+                            isUiActive = uiActive::get,
+                        ) { result ->
                             saving = false
                             val failure = transactionWriteFailureMessage(result)
                             if (failure == null) {

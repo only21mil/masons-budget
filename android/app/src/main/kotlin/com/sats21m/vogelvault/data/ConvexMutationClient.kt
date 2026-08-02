@@ -4,6 +4,8 @@ import com.sats21m.vogelvault.domain.FamilyMember
 import java.io.IOException
 import java.net.URI
 import java.net.URISyntaxException
+import java.time.LocalDate
+import java.time.YearMonth
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -209,7 +211,7 @@ internal class TransactionRevisionStore {
         require(sourceFile.isNotBlank()) { "source file must not be blank" }
         require(txId.isNotBlank()) { "transaction id must not be blank" }
         require(updatedAtMs > 0L) { "transaction revision must be positive" }
-        revisions[Key(sourceFile, txId)] = updatedAtMs
+        revisions.merge(Key(sourceFile, txId), updatedAtMs, ::maxOf)
     }
 
     fun revisionFor(sourceFile: String, txId: String): Long? =
@@ -230,9 +232,19 @@ internal fun decodeTransactionWriteReceipt(
 ): TransactionWriteReceipt? {
     val objectValue = value.parsed as? JsonObject ?: return null
     val txId = objectValue.requiredString("txId") ?: return null
-    if (txId != mutation.transaction.id) return null
     val owner = FamilyMember.fromKeyOrNull(objectValue.requiredString("owner")) ?: return null
     val month = objectValue.requiredString("month") ?: return null
+    val expectedOwner = mutation.transaction.owner ?: return null
+    val expectedMonth = runCatching {
+        YearMonth.from(LocalDate.parse(mutation.transaction.date)).toString()
+    }.getOrNull() ?: return null
+    if (
+        txId != mutation.transaction.id ||
+        owner != expectedOwner ||
+        month != expectedMonth
+    ) {
+        return null
+    }
     val outcome = when (objectValue.requiredString("outcome")) {
         "inserted" -> TransactionWriteOutcome.INSERTED
         "updated" -> TransactionWriteOutcome.UPDATED
