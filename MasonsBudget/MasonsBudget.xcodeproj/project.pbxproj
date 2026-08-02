@@ -226,6 +226,7 @@
 		D1F0030EFC8EF2EF555C9F9B /* LockScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E117823C6DA6138431AE80C8 /* LockScreenView.swift */; };
 		D21FBFEEAD72E5855B86E247 /* TodoItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC02E94290076AEE88831C18 /* TodoItem.swift */; };
 		D4D00A5A4054A43453F6CBB1 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 083F88D8EB4768C9BEDF39F9 /* OnboardingView.swift */; };
+		D735B252616C9B242950D664 /* finance-market-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = F3B18B925AF533486B8311C0 /* finance-market-cases.json */; };
 		DA400DF45A592D3A83188DF1 /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FBD5FB3989AEA4A2A5A5B9A /* TodayView.swift */; };
 		DD95463755A63ABE04964599 /* BTCBillPay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DC543643B1F2899DDB38FE5 /* BTCBillPay.swift */; };
 		DE2E2A91C446B557794A2592 /* LegacyBlobDTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40F757710D47100DAE386F72 /* LegacyBlobDTOs.swift */; };
@@ -365,6 +366,7 @@
 		EF559B68DCF5C8C506B2A151 /* NetWorthSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetWorthSnapshot.swift; sourceTree = "<group>"; };
 		EF5C5935A12805ECA579168B /* MasonsBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasonsBudgetTests.swift; sourceTree = "<group>"; };
 		F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexClient.swift; sourceTree = "<group>"; };
+		F3B18B925AF533486B8311C0 /* finance-market-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "finance-market-cases.json"; sourceTree = "<group>"; };
 		F77DC014DA99E364F0D6572E /* PillButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PillButton.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -478,6 +480,7 @@
 			children = (
 				25CE52C2D21FE78FC3334E5D /* btc-fiat-availability-cases.json */,
 				EF30B8FE8B7986AB2D87D572 /* convex-int64-wire-cases.json */,
+				F3B18B925AF533486B8311C0 /* finance-market-cases.json */,
 				1A5243A1FDF7F650A8DB6182 /* json-number-money-cases.json */,
 				C2099C401266495C974A62BC /* month-cases.json */,
 				C8C3FD95CD5DDA1D13FAC403 /* todo-cases.json */,
@@ -719,6 +722,7 @@
 				A9879A70BEBAAD08D3FA3628 /* README.md in Resources */,
 				9F25069AA8D8C74899777A13 /* btc-fiat-availability-cases.json in Resources */,
 				6132ABC2B1A85E41529AC2D6 /* convex-int64-wire-cases.json in Resources */,
+				D735B252616C9B242950D664 /* finance-market-cases.json in Resources */,
 				17976960E05ECF3D6C23827A /* getBudgetDocument.convex_encoded_json.json in Resources */,
 				AD235E37C0A8962E20CFA401 /* getBudgetDocument.json.json in Resources */,
 				93A4F335D5DBBCBF731A774E /* json-number-money-cases.json in Resources */,

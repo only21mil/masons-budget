@@ -495,6 +495,17 @@ internal class RefreshAfterWritePoster : HttpPoster {
                 """{"status":"success","value":{"ok":true,"entityId":"$id","outcome":"updated"}}""",
             )
         }
+        // The add sheet's success path now requires the server's revision-bearing
+        // receipt, whose txId must match the request's generated id — echo it.
+        if (response.code == 200 && body.contains("\"path\":\"tables:upsertTransaction\"")) {
+            val id = Regex("\\\"id\\\":\\\"([^\\\"]+)\\\"")
+                .find(body)?.groupValues?.get(1) ?: error("transaction request had no id")
+            return HttpTextResponse(
+                200,
+                """{"status":"success","value":{"txId":"$id","owner":"victor","month":"2026-08",""" +
+                    """"outcome":"inserted","updatedAtMs":1785600000000}}""",
+            )
+        }
         return response
     }
 }
