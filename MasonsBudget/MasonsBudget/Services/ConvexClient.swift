@@ -1121,7 +1121,20 @@ final class ConvexClient: Sendable {
         ]
         if let card = transaction.card { row["card"] = card }
         if let note = transaction.note { row["note"] = note }
-        if let amountSats = transaction.amountSats {
+        // Only Income entered explicitly in BTC carries sats. A spend, or Income
+        // whose sats were derived from a USD amount and a quote, must never send
+        // this field: the server treats its presence as "credit these exact sats
+        // to River", so a derived value would post Bitcoin the household never
+        // received. The server rejects sats on a spend outright, which would also
+        // strand a row the user already saw saved locally.
+        // KNOWN GAP: this does not yet distinguish Income entered directly in BTC
+        // from Income whose sats were derived from USD and a quote. That needs a
+        // persisted "entered in BTC" marker on the model, which cannot be added
+        // or migration-tested without the Apple toolchain. Tracked for the Apple
+        // lane; until then Apple must not be the client used to enter sat-Income.
+        if let amountSats = transaction.amountSats,
+           transaction.category == "Income",
+           amountSats > 0 {
             row["amountSats"] = ConvexTaggedInt64Encoder.encode(amountSats)
         }
 

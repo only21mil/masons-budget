@@ -294,6 +294,10 @@ internal fun AddTransactionSheet(
     // client. The sheet sees the transport, never the credential or its store.
     val mutationClient = remember(application) { application?.convexMutationClient }
 
+    // One id per sheet, not one per tap. A create whose response is ambiguous
+    // gets retried by the user pressing Save again; a fresh id each time would
+    // read as a second create on the server and credit River twice.
+    val draftTransactionId = rememberSaveable { "android-${UUID.randomUUID()}" }
     var typeName by rememberSaveable { mutableStateOf(AddTransactionType.SPEND.name) }
     var inputUnitName by rememberSaveable { mutableStateOf(DisplayUnit.USD.name) }
     var merchant by rememberSaveable { mutableStateOf("") }
@@ -454,7 +458,11 @@ internal fun AddTransactionSheet(
                             note = note,
                             owner = state.activeProfile,
                         )
-                        val prepared = prepareTransaction(draft, operationalBtcPriceCents)
+                        val prepared = prepareTransaction(
+                            draft,
+                            operationalBtcPriceCents,
+                            draftTransactionId,
+                        )
                         val row = prepared.getOrElse {
                             errorMessage = it.message ?: "Transaction is invalid"
                             return@Button
