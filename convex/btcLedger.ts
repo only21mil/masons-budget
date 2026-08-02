@@ -349,7 +349,11 @@ export const reconcileBtcAccounts = internalMutation({
             `Legacy sat-denominated Income ${row.txId} has an invalid quantity.`,
           );
         }
-        if (row.date > asOfDate) {
+        // The cutoff is a lexical compare, so a date that is not exactly
+        // `yyyy-MM-dd` can sort below `asOf` while representing a later day —
+        // " 2026-12-01" is the cheap example. An unparseable date cannot be
+        // proven to be inside the reconciled balances, so it is never claimed.
+        if (!isRealIsoDate(row.date) || row.date > asOfDate) {
           skippedAfterAsOf.push(row.txId);
           continue;
         }
@@ -369,11 +373,20 @@ export const reconcileBtcAccounts = internalMutation({
         });
       }
     }
+    // Recorded in the same transaction as activation: a lost response must not
+    // be the only copy of what was claimed and what was left out.
+    await ctx.db.patch(document._id, {
+      activationBaseline: {
+        asOf: args.asOf,
+        baselinedIncomeTxIds: baselined,
+        skippedIncomeTxIds: skippedAfterAsOf,
+      },
+    });
     return {
       updatedAccounts: changedKeys.size,
       updatedAtMs: now,
       baselinedIncomeTxIds: baselined,
-      skippedIncomeTxIdsAfterAsOf: skippedAfterAsOf,
+      skippedIncomeTxIds: skippedAfterAsOf,
     };
   },
 });

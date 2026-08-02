@@ -59,15 +59,35 @@ self-custody account, so never guess that allocation.
    preflight revision.
    The mutation returns `baselinedIncomeTxIds` (legacy rows dated on or before
    `asOf`, now marked as already inside the reconciled balances) and
-   `skippedIncomeTxIdsAfterAsOf` (rows dated after the snapshot, deliberately
-   left unmarked because their sats are not in these balances). Read both lists
-   back. Every skipped row must be posted deliberately afterwards or corrected;
-   none of them may be assumed to be in the stack.
+   `skippedIncomeTxIds` (rows left unmarked because their date is after the
+   snapshot or is not a real `yyyy-MM-dd`, so their sats cannot be proven to be
+   in these balances). Every skipped row must be posted deliberately afterwards
+   or corrected; none of them may be assumed to be in the stack.
+   The same two lists plus the `asOf` used are written durably onto the document
+   as `activationBaseline` in the activation transaction, so a lost response is
+   never the only copy. Read them back from the document rather than relying on
+   the mutation reply.
+
+   Argument shape, exactly: `owner` is `"victor"`; `expectedUpdatedAtMs` is a
+   plain number; `asOf` is the ISO string; `accounts` is the complete array of
+   `{ key, label, custody, sats }`. Every `sats` value crosses the wire as an
+   int64, not a JavaScript number — send it as a bigint from a script, or as
+   Convex's tagged integer form from a raw client. A float here is rejected, and
+   silently rounding a sat quantity is exactly the failure this ledger exists to
+   prevent.
 7. Run one controlled low-value test for each posting type and verify after
    each operation: buy credits River; BTC bill pay debits River;
    sat-denominated Income credits River; owned-wallet transfer debits source by
    principal plus fee and credits destination by principal; deleting that test
    transfer reverses both postings.
+   Transfer arguments: `tables:upsertBtcTransfer` takes
+   `{ transfer: { id, owner, date, fromAccountKey, toAccountKey, sats, feeSats,
+   note? } }` with `sats` and `feeSats` as int64. Deletion through the
+   full-admin path is `tables:deleteBtcTransfer { transferId, owner }` and needs
+   no revision; *editing* an existing transfer does require `baseUpdatedAtMs`,
+   read from `tables:listBtcTransfers`, because a changed transfer moves money
+   on two accounts. Repeating the identical delete is a no-op, not a second
+   reversal.
 
 After activation, operator-import manifests containing new adult Bitcoin buys
 or bill pays are rejected atomically. Record those rows through the reviewed

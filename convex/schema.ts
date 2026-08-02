@@ -634,6 +634,17 @@ export default defineSchema({
     // Absent on legacy snapshots. Opening reconciliation writes this marker
     // atomically so a deploy cannot accept a posted event before its anchor.
     postingActivatedAtMs: v.optional(v.float64()),
+    // What activation claimed, recorded in the same transaction. The mutation
+    // also returns these, but a lost response would otherwise leave no way to
+    // learn which legacy rows were treated as already inside the opening
+    // balances and which were deliberately left out.
+    activationBaseline: v.optional(
+      v.object({
+        asOf: v.string(),
+        baselinedIncomeTxIds: v.array(v.string()),
+        skippedIncomeTxIds: v.array(v.string()),
+      }),
+    ),
     updatedAtMs: v.float64(),
     migrationRawJson: v.optional(v.string()),
     migrationSourceIndex: v.optional(v.float64()),

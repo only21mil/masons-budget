@@ -234,7 +234,7 @@ describe("Bitcoin balance posting", () => {
         },
         baseUpdatedAtMs: postedRevision,
       }),
-    ).rejects.toThrow(/canonical River account/);
+    ).rejects.toThrow(/cannot change its Bitcoin account/);
     await t.mutation(api.transaction, {
       transaction: { ...fiatIncome, amountSats: 12_000n },
     });
@@ -885,9 +885,9 @@ describe("activation baseline marking", () => {
     await seedLegacyIncome("tx-after", "2026-08-05");
     const result = (await reconcileFresh()) as unknown as {
       baselinedIncomeTxIds: string[];
-      skippedIncomeTxIdsAfterAsOf: string[];
+      skippedIncomeTxIds: string[];
     };
-    expect(result.skippedIncomeTxIdsAfterAsOf).toContain("tx-after");
+    expect(result.skippedIncomeTxIds).toContain("tx-after");
     expect(result.baselinedIncomeTxIds).not.toContain("tx-after");
     expect((await readRow("tx-after"))!.balancePostingVersion).toBeUndefined();
   });
@@ -939,5 +939,164 @@ describe("activation baseline marking", () => {
         ],
       }),
     ).rejects.toThrow(/real ISO date/);
+  });
+});
+
+describe("activation baseline durability and edit safety", () => {
+  async function seedLegacy(txId: string, date: string, extra: Record<string, unknown> = {}) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("transactions", {
+        txId,
+        owner: "victor",
+        date,
+        month: "2026-07",
+        merchant: "Payroll",
+        amountCents: -1000n,
+        category: "Income",
+        amountSats: 50_000n,
+        sourceFile: "transactions",
+        updatedAtMs: 5,
+        ...extra,
+      });
+    });
+  }
+
+  it("skips a legacy row whose date is not a real calendar date", async () => {
+    // A leading space sorts below the cutoff while naming a later day, so a raw
+    // lexical compare would baseline a row that is not in the opening balances.
+    await seedLegacy("tx-malformed", " 2026-12-01");
+    await deactivate();
+    const result = (await t.mutation(api.reconcile, {
+      owner: "victor",
+      expectedUpdatedAtMs: 10,
+      asOf: "2026-07-31T00:00:00.000Z",
+      accounts: [
+        { key: "river", label: "River", custody: "exchange", sats: 1_000_000n },
+        {
+          key: "coldcard",
+          label: "Coldcard",
+          custody: "self_custody",
+          sats: 2_000_000n,
+        },
+      ],
+    })) as unknown as { skippedIncomeTxIds: string[] };
+    expect(result.skippedIncomeTxIds).toContain("tx-malformed");
+    const row = await t.run(async (ctx) =>
+      ctx.db
+        .query("transactions")
+        .withIndex("by_source_tx_id", (q) =>
+          q.eq("sourceFile", "transactions").eq("txId", "tx-malformed"),
+        )
+        .unique(),
+    );
+    expect(row!.balancePostingVersion).toBeUndefined();
+  });
+
+  it("records the baseline inventory durably on the document", async () => {
+    await seedLegacy("tx-kept", "2026-07-20");
+    await seedLegacy("tx-late", "2026-08-09");
+    await deactivate();
+    await t.mutation(api.reconcile, {
+      owner: "victor",
+      expectedUpdatedAtMs: 10,
+      asOf: "2026-07-31T00:00:00.000Z",
+      accounts: [
+        { key: "river", label: "River", custody: "exchange", sats: 1_000_000n },
+        {
+          key: "coldcard",
+          label: "Coldcard",
+          custody: "self_custody",
+          sats: 2_000_000n,
+        },
+      ],
+    });
+    const stored = (await snapshot()).document.activationBaseline;
+    expect(stored?.asOf).toBe("2026-07-31T00:00:00.000Z");
+    expect(stored?.baselinedIncomeTxIds).toContain("tx-kept");
+    expect(stored?.skippedIncomeTxIds).toContain("tx-late");
+  });
+
+  it("keeps a baselined self-custody row on its own account through an edit", async () => {
+    await seedLegacy("tx-cold", "2026-07-20", { bitcoinAccountKey: "coldcard" });
+    await deactivate();
+    await t.mutation(api.reconcile, {
+      owner: "victor",
+      expectedUpdatedAtMs: 10,
+      asOf: "2026-07-31T00:00:00.000Z",
+      accounts: [
+        { key: "river", label: "River", custody: "exchange", sats: 1_000_000n },
+        {
+          key: "coldcard",
+          label: "Coldcard",
+          custody: "self_custody",
+          sats: 2_000_000n,
+        },
+      ],
+    });
+    const before = satsByKey(await snapshot());
+
+    const revision = await t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query("transactions")
+          .withIndex("by_source_tx_id", (q) =>
+            q.eq("sourceFile", "transactions").eq("txId", "tx-cold"),
+          )
+          .unique()
+      )!.updatedAtMs,
+    );
+    // An ordinary metadata edit must not walk the sats over to River.
+    await t.mutation(api.transaction, {
+      transaction: {
+        id: "tx-cold",
+        date: "2026-07-20",
+        merchant: "Payroll renamed",
+        amountCents: 1000n,
+        kind: "credit",
+        category: "Income",
+        amountSats: 50_000n,
+      },
+      baseUpdatedAtMs: revision,
+    });
+
+    const row = await t.run(async (ctx) =>
+      ctx.db
+        .query("transactions")
+        .withIndex("by_source_tx_id", (q) =>
+          q.eq("sourceFile", "transactions").eq("txId", "tx-cold"),
+        )
+        .unique(),
+    );
+    expect(row!.bitcoinAccountKey).toBe("coldcard");
+    expect(satsByKey(await snapshot())).toMatchObject(before);
+  });
+
+  it("requires a revision to change a transfer even on the full-admin path", async () => {
+    await t.mutation(api.transfer, {
+      transfer: {
+        id: "tf-fence",
+        owner: "victor",
+        date: "2026-08-01",
+        fromAccountKey: "river",
+        toAccountKey: "coldcard",
+        sats: 10_000n,
+        feeSats: 100n,
+      },
+    });
+    const afterCreate = satsByKey(await snapshot());
+    await expect(
+      t.mutation(api.transfer, {
+        transfer: {
+          id: "tf-fence",
+          owner: "victor",
+          date: "2026-08-01",
+          fromAccountKey: "river",
+          toAccountKey: "coldcard",
+          sats: 20_000n,
+          feeSats: 100n,
+        },
+      }),
+    ).rejects.toThrow(/baseUpdatedAtMs is required/);
+    expect(satsByKey(await snapshot())).toMatchObject(afterCreate);
   });
 });

@@ -2047,14 +2047,20 @@ async function upsertTransactionRow(
           );
         }
         const nextSats = row.amountSats;
-        const nextKey = await riverAccountKey(ctx, row.owner);
+        // A posted row keeps the account that actually received the sats. New
+        // sat-Income is forced to River on insert, but re-deriving River here
+        // would silently walk a baselined self-custody row over to River on an
+        // ordinary metadata edit, and its later reversal would debit the wrong
+        // account. Moving posted sats between wallets is a transfer, not an edit.
+        const nextKey = oldKey;
         if (
           row.bitcoinAccountKey !== undefined &&
           row.bitcoinAccountKey.trim() !== nextKey
         ) {
           deviceFailure(
             "VALIDATION_FAILED",
-            "Sat-denominated Income must post to the canonical River account.",
+            "A posted sat-denominated Income row cannot change its Bitcoin account; " +
+              "record a transfer instead.",
             "transaction",
             row.txId,
           );
@@ -2577,10 +2583,11 @@ async function upsertBtcTransferRow(
     // A lost create response may be retried without the revision it never
     // received. Exact replay is a no-op; changed content still needs a fence.
     if (sameBtcTransfer(existing, row)) return "updated";
-    // A device context must carry the revision it read. The full-admin sync
-    // token has no optimistic context at all and is the operator's documented
-    // cutover path, so it is fenced by credential rather than by revision.
-    if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
+    // Changing a transfer moves money on two accounts, so every caller needs the
+    // revision it read — authorization is not a concurrency fence. Exact replay
+    // already returned above, so this cannot break a lost-response retry. The
+    // permissive path is deletion only, which the cutover runbook drives.
+    if (optimistic?.baseUpdatedAtMs === undefined) {
       deviceFailure(
         "REVISION_REQUIRED",
         "baseUpdatedAtMs is required to edit a Bitcoin transfer.",
@@ -2588,7 +2595,7 @@ async function upsertBtcTransferRow(
         row.transferId,
       );
     }
-    if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
+    if (optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
       deviceFailure(
         "ENTITY_CONFLICT",
         "The Bitcoin transfer changed after it was read.",
@@ -2605,9 +2612,9 @@ async function upsertBtcTransferRow(
     await lockRuntimeSource(ctx, row.sourceFile);
     await ctx.db.patch(existing._id, {
       ...row,
-      updatedAtMs: optimistic
-        ? nextUpdatedAtMs(existing.updatedAtMs)
-        : row.updatedAtMs,
+      // Monotonic for every writer: a raw wall-clock stamp can land below a
+      // revision a concurrent reader already holds.
+      updatedAtMs: nextUpdatedAtMs(existing.updatedAtMs),
     });
     await clearRowTombstone(ctx, "btcTransfer", row.sourceFile, row.transferId);
     return "updated";
@@ -3401,7 +3408,10 @@ export const upsertBtcAccount = mutation({
       label: v.string(),
       custody: custodyValidator,
       sats: v.int64(),
-      fiatCents: v.int64(),
+      // Optional: the read model and the cutover runbook both allow an account
+      // with no fiat valuation, and posting strips it. Requiring it here forced
+      // an operator repairing a mirror to invent a number.
+      fiatCents: v.optional(v.int64()),
       asOf: v.string(),
       schemaVersion: v.optional(v.int64()),
     }),
@@ -3438,7 +3448,10 @@ export const upsertBtcAccount = mutation({
           sats: account.sats,
           asOf: account.asOf,
           schemaVersion: account.schemaVersion,
-          fiatValuation: { cents: account.fiatCents },
+          fiatValuation:
+            account.fiatCents === undefined
+              ? undefined
+              : { cents: account.fiatCents },
         },
         document.postingActivatedAtMs !== undefined || baseUpdatedAtMs !== undefined
           ? { baseUpdatedAtMs }
@@ -4267,6 +4280,59 @@ function btcAccountTotals(
   };
 }
 
+type BtcFiatValuation = {
+  cents: bigint;
+  priceCents?: bigint;
+  quotedAt?: string;
+  source?: string;
+  confidence?: string;
+};
+
+/**
+ * Every field the request actually carries must already match. A request with
+ * no valuation means "leave it alone"; one that names only `cents` stays as
+ * idempotent as it always was; and a refreshed quote — which carries
+ * `priceCents`, `quotedAt`, `source` and `confidence` — stops matching as soon
+ * as any of them moves, so it can no longer be silently discarded on an account
+ * whose cents happen to be unchanged.
+ */
+/** Rows migrated before valuations existed carry only a bare `fiatCents`. */
+function effectiveFiatValuation(record: {
+  fiatCents?: bigint;
+  fiatValuation?: BtcFiatValuation;
+}): BtcFiatValuation | undefined {
+  if (record.fiatValuation !== undefined) return record.fiatValuation;
+  return record.fiatCents === undefined ? undefined : { cents: record.fiatCents };
+}
+
+function sameFiatValuation(
+  requested: BtcFiatValuation | undefined,
+  stored: BtcFiatValuation | undefined,
+): boolean {
+  if (requested === undefined) return true;
+  if (stored === undefined) return false;
+  if (stored.cents !== requested.cents) return false;
+  if (
+    requested.priceCents !== undefined &&
+    stored.priceCents !== requested.priceCents
+  ) {
+    return false;
+  }
+  if (
+    requested.quotedAt !== undefined &&
+    stored.quotedAt !== requested.quotedAt
+  ) {
+    return false;
+  }
+  if (requested.source !== undefined && stored.source !== requested.source) {
+    return false;
+  }
+  return (
+    requested.confidence === undefined ||
+    stored.confidence === requested.confidence
+  );
+}
+
 function btcAccountMirrorKey(
   sourceFile: "btc-balance-snapshot" | "son-balances",
   canonicalKey: string,
@@ -4430,6 +4496,8 @@ async function upsertBtcAccountCore(
     existingDocument.schemaVersion ===
       (account.schemaVersion ?? existingDocument.schemaVersion) &&
     existingMirror &&
+    existingMirror.owner === account.owner &&
+    existingMirror.sourceFile === sourceFile &&
     existingMirror.label === account.label &&
     existingMirror.custody === account.custody &&
     existingMirror.sats === account.sats &&
@@ -4437,7 +4505,19 @@ async function upsertBtcAccountCore(
       requestedFiatCents &&
     existingMirror.asOf === account.asOf &&
     existingMirror.schemaVersion ===
-      (account.schemaVersion ?? existingDocument.schemaVersion)
+      (account.schemaVersion ?? existingDocument.schemaVersion) &&
+    // Cents alone is not the valuation. A quote refresh that leaves cents
+    // unchanged still carries a new price, timestamp, source or confidence, and
+    // discarding it would freeze that account's provenance silently — most
+    // visibly on a zero-sat account, where cents never move.
+    sameFiatValuation(
+      account.fiatValuation,
+      effectiveFiatValuation(previousAccount),
+    ) &&
+    sameFiatValuation(
+      account.fiatValuation,
+      effectiveFiatValuation(existingMirror),
+    )
   ) {
     return "updated";
   }
