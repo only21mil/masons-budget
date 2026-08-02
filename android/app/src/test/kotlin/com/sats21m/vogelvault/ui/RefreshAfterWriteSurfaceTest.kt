@@ -474,6 +474,7 @@ class RefreshAfterWriteSurfaceTest {
             scope = application.applicationScope,
             row = lifecyclePreparedRow(),
             client = client,
+            transactionDraftIds = application.transactionDraftIds,
             isUiActive = uiActive::get,
             onAccepted = { application.noteAcceptedWrite() },
             onUiResult = {},

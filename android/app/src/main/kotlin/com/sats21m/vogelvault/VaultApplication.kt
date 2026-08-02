@@ -24,6 +24,7 @@ import com.sats21m.vogelvault.ui.ConvexTransactionActions
 import com.sats21m.vogelvault.ui.TodoMutationGateway
 import com.sats21m.vogelvault.ui.VaultViewModel
 import java.io.IOException
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,6 +32,27 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+
+/**
+ * Process-owned identity for one draft awaiting a definitive server
+ * acceptance. Ambiguous retries deliberately reuse this id so Convex
+ * supersedes the same row instead of inserting another one. One instance per
+ * money-write surface; a surface's pending id is independent of the others'.
+ */
+internal class TransactionDraftIdStore {
+    private val lock = Any()
+    private var pendingId: String? = null
+
+    fun currentId(): String = synchronized(lock) {
+        pendingId ?: "android-${UUID.randomUUID()}".also { pendingId = it }
+    }
+
+    fun rotateAfterAcceptance() {
+        synchronized(lock) {
+            pendingId = null
+        }
+    }
+}
 
 /**
  * Process-scoped infrastructure and the ViewModel composition root.
@@ -49,6 +71,16 @@ open class VaultApplication : Application() {
     ) {
         CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     }
+
+    /** Shared by every sheet instance until Convex confirms the pending row. */
+    internal val transactionDraftIds = TransactionDraftIdStore()
+
+    /**
+     * The Bitcoin buy sheet carries the same duplicate-credit hazard as the
+     * transaction sheet: its buy credits River, so a dismissed-then-reopened
+     * resubmit after an ambiguous write must reuse one id.
+     */
+    internal val btcBuyDraftIds = TransactionDraftIdStore()
 
     /**
      * Process-owned acceptance signal for writes that may outlive the surface

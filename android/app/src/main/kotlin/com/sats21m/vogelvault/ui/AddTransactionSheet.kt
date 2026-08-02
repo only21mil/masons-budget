@@ -36,6 +36,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.TransactionDraftIdStore
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexMutationClient
@@ -108,12 +109,14 @@ internal fun launchPreparedTransactionSave(
     scope: CoroutineScope,
     row: PreparedTransaction,
     client: ConvexMutationClient,
+    transactionDraftIds: TransactionDraftIdStore,
     isUiActive: () -> Boolean,
     onAccepted: () -> Unit,
     onUiResult: (ConvexResult<TransactionWriteReceipt>) -> Unit,
 ): Job = scope.launch {
     val result = savePreparedTransaction(row, client)
     if (result.isOk) {
+        transactionDraftIds.rotateAfterAcceptance()
         // The ledger refresh belongs to the screen's view model, which
         // outlives this sheet. An accepted write must become visible even
         // when the user dismissed mid-flight — suppressing this with the
@@ -337,6 +340,7 @@ internal fun AddTransactionSheet(
 ) {
     val applicationContext = LocalContext.current.applicationContext
     val application = applicationContext as? VaultApplication
+    val transactionDraftIds = application?.transactionDraftIds
     // WA1 owns encrypted sync-token storage and exposes one process-scoped
     // client. The sheet sees the transport, never the credential or its store.
     val mutationClient = remember(application) { application?.convexMutationClient }
@@ -347,10 +351,13 @@ internal fun AddTransactionSheet(
         onDispose { uiActive.set(false) }
     }
 
-    // One id per sheet, not one per tap. A create whose response is ambiguous
-    // gets retried by the user pressing Save again; a fresh id each time would
-    // read as a second create on the server and credit River twice.
-    val draftTransactionId = rememberSaveable { "android-${UUID.randomUUID()}" }
+    // One process-owned id survives dismissal and Activity recreation until
+    // the server confirms acceptance. Reopening after an unconfirmed write
+    // therefore supersedes the same row even if fields were edited; reopening
+    // after confirmation receives a fresh id for a legitimate second row.
+    val draftTransactionId = remember {
+        transactionDraftIds?.currentId() ?: "android-${UUID.randomUUID()}"
+    }
     var typeName by rememberSaveable { mutableStateOf(AddTransactionType.SPEND.name) }
     var inputUnitName by rememberSaveable { mutableStateOf(DisplayUnit.USD.name) }
     var merchant by rememberSaveable { mutableStateOf("") }
@@ -362,8 +369,8 @@ internal fun AddTransactionSheet(
     var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
     // Deliberately NOT rememberSaveable: a recreated sheet cannot reconnect to
     // the in-flight job, so restoring saving=true would strand the button
-    // forever. A fresh sheet with the SAME saveable draft id retries safely —
-    // the server dedupes that id — and an acceptance that lands meanwhile
+    // forever. A fresh sheet reconnects to the SAME process-owned draft id and
+    // retries safely; an acceptance that lands meanwhile
     // reaches the ledger through the application-level signal.
     var saving by remember { mutableStateOf(false) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
@@ -533,11 +540,17 @@ internal fun AddTransactionSheet(
                             errorMessage = "Transaction writing is not configured"
                             return@Button
                         }
+                        val draftIds = transactionDraftIds
+                        if (draftIds == null) {
+                            errorMessage = "Transaction writing is not configured"
+                            return@Button
+                        }
                         saving = true
                         launchPreparedTransactionSave(
                             scope = scope,
                             row = row,
                             client = client,
+                            transactionDraftIds = draftIds,
                             isUiActive = uiActive::get,
                             // The acceptance signal goes to the process-owned
                             // flow, never to a composition-captured callback: a

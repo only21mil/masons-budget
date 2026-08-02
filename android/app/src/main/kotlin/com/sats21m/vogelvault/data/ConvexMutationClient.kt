@@ -217,6 +217,8 @@ internal class TransactionRevisionStore {
     fun revisionFor(sourceFile: String, txId: String): Long? =
         revisions[Key(sourceFile, txId)]
 
+    internal fun entryCount(): Int = revisions.size
+
     fun remove(sourceFile: String, txId: String) {
         revisions.remove(Key(sourceFile, txId))
     }
