@@ -106,7 +106,16 @@ interface SuccessEnvelope {
 export interface PairedDeviceController {
   pair(input: unknown): Promise<VogelVaultPairingResult>
   status(): Promise<VogelVaultPairingStatus>
-  mutate(input: unknown): Promise<VogelVaultMutationResult>
+  /**
+   * `sessionActor` is the member this window is authenticated as, established
+   * by the main process rather than by the request. It is required: without it
+   * the payload's own `actor` would be the only claim of identity, and any
+   * renderer could write another family member's ledger by declaring theirs.
+   */
+  mutate(
+    input: unknown,
+    sessionActor: VogelVaultMember,
+  ): Promise<VogelVaultMutationResult>
   unpair(): Promise<VogelVaultUnpairResult>
 }
 
@@ -1376,11 +1385,20 @@ export function createPairedDeviceController(
       })
     },
 
-    async mutate(input: unknown): Promise<VogelVaultMutationResult> {
+    async mutate(
+      input: unknown,
+      sessionActor: VogelVaultMember,
+    ): Promise<VogelVaultMutationResult> {
       const identity = safeIdentity(input)
       const request = validateMutationRequest(input)
       if (request === null) {
         return { ...identity, status: "failed", code: "invalid-request" }
+      }
+      // Refuse rather than silently rewriting the actor: a payload that
+      // disagrees with the session is a renderer claiming an identity it was
+      // not given, and quietly correcting it would hide that.
+      if (request.actor !== sessionActor) {
+        return { ...identity, status: "unauthorized" }
       }
       if (!options.writesEnabled()) {
         return { ...identity, status: "disabled" }

@@ -249,13 +249,18 @@ function registerRemoteSnapshot(): void {
  */
 let rowRepository: ConvexRowRepository | null = null
 
+// One session store for reads and writes. A window's active profile is its
+// identity, and `activate` already refuses to let a child window become an
+// adult, so binding writes to the same store is what stops a renderer from
+// simply declaring `actor: "victor"` in a mutation payload.
+const profiles = createReadProfileSessions<WebContents>()
+
 function registerConvexRows(): void {
   const repository = createConvexRowRepository({
     configuration: remoteReadConfiguration,
     post: postJsonToDeployment,
   })
   rowRepository = repository
-  const profiles = createReadProfileSessions<WebContents>()
 
   ipcMain.handle(
     CONVEX_ROWS_CHANNEL,
@@ -349,7 +354,8 @@ function registerPairedDeviceWrites(): void {
           code: "invalid-request",
         }
       }
-      const result = await controller.mutate(request)
+      // The actor is taken from this window's session, never from the payload.
+      const result = await controller.mutate(request, profiles.current(event.sender))
       // A write that lands must not be followed by a cached pre-write read, or
       // the row the user just saved appears to vanish until the cache expires.
       // Bitcoin mutations move balances, so their slices are dropped too.
