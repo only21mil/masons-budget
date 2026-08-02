@@ -122,6 +122,11 @@ struct ConvexTransactionRow: Decodable {
             note: note,
             owner: owner,
             amountSats: amountSats,
+            // The server stores sats only on Income the user entered in BTC, so
+            // their presence on a row coming back is the origin marker. Without
+            // deriving it here, editing a synced Bitcoin income would re-push it
+            // with no sats and quietly turn it into an ordinary dollar income.
+            enteredInBitcoin: amountSats != nil,
             updatedAtMs: updatedAtMs,
         )
     }

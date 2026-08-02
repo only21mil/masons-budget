@@ -5,6 +5,12 @@ enum AppWriteSyncError: Error {
     case unexpectedPayload
 }
 
+/// Carries the revision out of the escaping retry closure without mutating a
+/// captured `var` from concurrently-executing code.
+private final class AcceptedRevisionBox: @unchecked Sendable {
+    var value: Double?
+}
+
 @MainActor
 enum AppWriteSyncService {
     private static let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "AppWriteSync")
@@ -39,7 +45,16 @@ enum AppWriteSyncService {
         }
 
         let fileName = canonicalOwner.transactionsDataFileName
-        pushTransactionPayload(payload, owner: canonicalOwner, to: fileName, onResult: onResult)
+        pushTransactionPayload(
+            payload,
+            owner: canonicalOwner,
+            to: fileName,
+            onResult: onResult,
+            // The server fences the next edit and delete on the revision it just
+            // accepted. Install it now or an immediate add -> edit is rejected
+            // until some later sync happens to refresh the row.
+            onAcceptedRevision: { accepted in transaction.updatedAtMs = accepted },
+        )
     }
 
     private static func pushTransactionPayload(
@@ -47,23 +62,36 @@ enum AppWriteSyncService {
         owner: FamilyMember,
         to fileName: String,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
+        onAcceptedRevision: (@MainActor (Double) -> Void)? = nil,
     ) {
         let label = "Save transaction"
         let operationID = reportSyncStart(label)
         if let blocked = writeBlocker(requiresSyncToken: true) {
             reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
-                pushTransactionPayload(payload, owner: owner, to: fileName, onResult: onResult)
+                pushTransactionPayload(
+                    payload, owner: owner, to: fileName,
+                    onResult: onResult, onAcceptedRevision: onAcceptedRevision,
+                )
             }, onResult: onResult)
             return
         }
 
         Task {
             let client = makeClient()
+            let revision = AcceptedRevisionBox()
             let result = await withRetry(label: "push tx \(payload.id)") {
-                try await client.upsertTransactionRow(payload, owner: owner, sourceFile: fileName)
+                revision.value = try await client.upsertTransactionRow(
+                    payload, owner: owner, sourceFile: fileName,
+                )
+            }
+            if case .ok = result, let accepted = revision.value {
+                onAcceptedRevision?(accepted)
             }
             reportSyncResult(label: label, operationID: operationID, result: result, retry: {
-                pushTransactionPayload(payload, owner: owner, to: fileName, onResult: onResult)
+                pushTransactionPayload(
+                    payload, owner: owner, to: fileName,
+                    onResult: onResult, onAcceptedRevision: onAcceptedRevision,
+                )
             }, onResult: onResult)
         }
     }

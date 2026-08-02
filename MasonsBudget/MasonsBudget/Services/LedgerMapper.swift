@@ -30,6 +30,7 @@ enum LedgerMapper {
                 amount: dto.amount,
                 category: dto.category,
                 amountSats: dto.amountSats,
+                enteredInBitcoin: dto.enteredInBitcoin,
                 card: dto.card?.isEmpty == true ? nil : dto.card,
                 note: dto.note?.isEmpty == true ? nil : dto.note,
                 owner: resolvedOwner,

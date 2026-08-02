@@ -444,6 +444,9 @@ struct AddTransactionView: View {
             amount: signedUsd,
             category: transactionCategory,
             amountSats: signedSats,
+            // This screen's amount was typed in BTC/sats, so the sats are exact
+            // rather than derived from a dollar amount and a price quote.
+            enteredInBitcoin: true,
             card: method == "Lightning" ? "lightning" : "on-chain",
             owner: ledgerOwner,
             createdBy: "app",

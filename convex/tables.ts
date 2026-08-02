@@ -3064,7 +3064,22 @@ export const upsertTransaction = mutation({
       row,
       baseUpdatedAtMs === undefined ? undefined : { baseUpdatedAtMs },
     );
-    return { txId: row.txId, owner: row.owner, month: row.month, outcome };
+    // Return the accepted revision so a client can fence its very next edit or
+    // delete instead of waiting for a later sync to learn it. Without this an
+    // immediate add -> edit round trip fails on a revision the client cannot know.
+    const stored = await ctx.db
+      .query("transactions")
+      .withIndex("by_source_tx_id", (q) =>
+        q.eq("sourceFile", file).eq("txId", row.txId),
+      )
+      .unique();
+    return {
+      txId: row.txId,
+      owner: row.owner,
+      month: row.month,
+      outcome,
+      updatedAtMs: stored?.updatedAtMs,
+    };
   },
 });
 
