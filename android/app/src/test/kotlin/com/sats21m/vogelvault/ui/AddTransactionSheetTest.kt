@@ -1,16 +1,30 @@
 package com.sats21m.vogelvault.ui
 
+import com.sats21m.vogelvault.data.ConvexConfig
+import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.ConvexSyncTokenSource
+import com.sats21m.vogelvault.data.HttpTextResponse
+import com.sats21m.vogelvault.data.MutableConvexConfigSource
+import com.sats21m.vogelvault.data.RecordingPoster
 import com.sats21m.vogelvault.data.TransactionKind
+import com.sats21m.vogelvault.data.TransactionWriteOutcome
+import com.sats21m.vogelvault.data.TransactionWriteReceipt
+import com.sats21m.vogelvault.data.testToken
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import java.time.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
+import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class AddTransactionSheetTest {
     @Test
@@ -122,6 +136,39 @@ class AddTransactionSheetTest {
         assertTrue(notConfigured.contains("token"))
     }
 
+    @Test
+    fun `brand new unsynced row saves without a fence and installs accepted revision`() {
+        val revision = 1_888_888_888_889L
+        val poster = RecordingPoster(
+            HttpTextResponse(
+                200,
+                """{"status":"success","value":{"txId":"test-id","owner":"victor","month":"2026-07","outcome":"inserted","updatedAtMs":$revision}}""",
+            ),
+        )
+        val client = ConvexMutationClient(
+            configSource = MutableConvexConfigSource(
+                ConvexConfig(deploymentUrl = DEPLOYMENT),
+            ),
+            syncTokenSource = ConvexSyncTokenSource { testToken() },
+            http = poster,
+        )
+
+        val result = runBlocking {
+            savePreparedTransaction(
+                prepare("1.00", DisplayUnit.USD),
+                client,
+            )
+        }
+
+        val receipt = assertIs<ConvexResult.Ok<TransactionWriteReceipt>>(result).value
+        assertEquals(TransactionWriteOutcome.INSERTED, receipt.outcome)
+        assertEquals(revision, receipt.updatedAtMs)
+        assertEquals(revision, client.acceptedTransactionRevision("transactions", "test-id"))
+        val args = Json.parseToJsonElement(poster.bodies.single()).jsonObject["args"]!!.jsonObject
+        assertTrue("baseUpdatedAtMs" !in args)
+        assertEquals("test-id", args["transaction"]!!.jsonObject["id"]!!.jsonPrimitive.content)
+    }
+
     private fun prepare(
         amount: String,
         unit: DisplayUnit,
@@ -154,5 +201,6 @@ class AddTransactionSheetTest {
 
     private companion object {
         const val BTC_PRICE_CENTS = 11_700_000L
+        const val DEPLOYMENT = "https://keen-elephant-452.convex.cloud"
     }
 }

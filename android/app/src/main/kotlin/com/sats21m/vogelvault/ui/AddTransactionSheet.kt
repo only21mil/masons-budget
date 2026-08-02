@@ -38,9 +38,11 @@ import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.data.ConvexMutation
+import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.TransactionInput
 import com.sats21m.vogelvault.data.TransactionKind
+import com.sats21m.vogelvault.data.TransactionWriteReceipt
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Money
@@ -77,6 +79,21 @@ internal data class PreparedTransaction(
     val sourceFile: String,
     val sats: Long?,
 )
+
+/**
+ * New rows are the one legitimate unfenced write. The typed receipt installs
+ * the server revision on the shared client before the refresh callback runs.
+ */
+internal suspend fun savePreparedTransaction(
+    row: PreparedTransaction,
+    client: ConvexMutationClient,
+): ConvexResult<TransactionWriteReceipt> =
+    client.upsertTransaction(
+        ConvexMutation.UpsertTransaction(
+            transaction = row.input,
+            sourceFile = row.sourceFile,
+        ),
+    )
 
 /**
  * User-visible feedback for every remote transaction write result.
@@ -474,12 +491,7 @@ internal fun AddTransactionSheet(
                         }
                         saving = true
                         scope.launch {
-                            val result = client.mutate(
-                                ConvexMutation.UpsertTransaction(
-                                    transaction = row.input,
-                                    sourceFile = row.sourceFile,
-                                ),
-                            )
+                            val result = savePreparedTransaction(row, client)
                             saving = false
                             val failure = transactionWriteFailureMessage(result)
                             if (failure == null) {

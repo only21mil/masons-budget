@@ -7,6 +7,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.test.fail
 import kotlinx.coroutines.runBlocking
@@ -224,6 +225,36 @@ class ConvexMutationTest {
     }
 
     @Test
+    fun `transaction upsert returns and stores the accepted revision`() {
+        val revision = 1_888_888_888_888L
+        val store = TransactionRevisionStore()
+        val poster = RecordingPoster(
+            HttpTextResponse(
+                200,
+                """{"status":"success","value":{"txId":"tx-1","owner":"victor","month":"2026-07","outcome":"inserted","updatedAtMs":$revision}}""",
+            ),
+        )
+        val client = client(poster, transactionRevisions = store)
+
+        val result = runBlocking {
+            client.upsertTransaction(
+                ConvexMutation.UpsertTransaction(
+                    transaction = transaction(),
+                    sourceFile = "transactions",
+                ),
+            )
+        }
+
+        val receipt = assertIs<ConvexResult.Ok<TransactionWriteReceipt>>(result).value
+        assertEquals("tx-1", receipt.txId)
+        assertEquals(FamilyMember.VICTOR, receipt.owner)
+        assertEquals("2026-07", receipt.month)
+        assertEquals(TransactionWriteOutcome.INSERTED, receipt.outcome)
+        assertEquals(revision, receipt.updatedAtMs)
+        assertEquals(revision, client.acceptedTransactionRevision("transactions", "tx-1"))
+    }
+
+    @Test
     fun `transaction delete always sends matching owner and source file`() {
         val poster = RecordingPoster(success())
 
@@ -398,10 +429,12 @@ class ConvexMutationTest {
     private fun client(
         poster: RecordingPoster,
         syncToken: String = testToken(),
+        transactionRevisions: TransactionRevisionStore = TransactionRevisionStore(),
     ) = ConvexMutationClient(
         configSource = source(readToken = testToken()),
         syncTokenSource = ConvexSyncTokenSource { syncToken },
         http = poster,
+        transactionRevisions = transactionRevisions,
     )
 
     private fun source(readToken: String?) = MutableConvexConfigSource(
