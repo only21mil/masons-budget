@@ -5,6 +5,7 @@ import {
   internalMutation,
   type MutationCtx,
 } from "./_generated/server";
+import { isRealIsoDate } from "./dateValidation";
 import { custodyValidator, familyMemberValidator } from "./schema";
 
 export type LedgerOwner = "victor" | "rachel" | "mason" | "maddox";
@@ -229,6 +230,12 @@ export const reconcileBtcAccounts = internalMutation({
       );
     }
     if (!args.asOf.trim()) throw new ConvexError("asOf must not be empty.");
+    // The baseline cutoff below compares row dates against this value, so it
+    // must actually start with a real calendar date.
+    const asOfDate = args.asOf.slice(0, 10);
+    if (!isRealIsoDate(asOfDate)) {
+      throw new ConvexError("asOf must begin with a real ISO date.");
+    }
 
     const posted = await Promise.all([
       ctx.db.query("transactions").collect(),
@@ -323,6 +330,13 @@ export const reconcileBtcAccounts = internalMutation({
         updatedAtMs: now,
       });
     }
+    // Baseline marking claims a legacy row as "already inside the reconciled
+    // balances", which is only true for rows dated on or before `asOf`. A row
+    // dated after the snapshot is NOT in those balances, so marking it would
+    // make its later deletion debit sats the account never held. Those rows are
+    // left unmarked and reported so the operator sees them.
+    const baselined: string[] = [];
+    const skippedAfterAsOf: string[] = [];
     for (const row of posted[0]) {
       if (
         row.balancePostingVersion === undefined &&
@@ -335,14 +349,32 @@ export const reconcileBtcAccounts = internalMutation({
             `Legacy sat-denominated Income ${row.txId} has an invalid quantity.`,
           );
         }
+        if (row.date > asOfDate) {
+          skippedAfterAsOf.push(row.txId);
+          continue;
+        }
+        // Never re-point a row that already names its account: reversing it
+        // later must debit the account that actually received the sats.
+        const accountKey = row.bitcoinAccountKey?.trim() || riverKey;
+        if (!accounts.some((candidate) => candidate.key === accountKey)) {
+          throw new ConvexError(
+            `Legacy sat-denominated Income ${row.txId} names unknown account ${accountKey}.`,
+          );
+        }
+        baselined.push(row.txId);
         await ctx.db.patch(row._id, {
-          bitcoinAccountKey: riverKey,
+          bitcoinAccountKey: accountKey,
           balancePostingVersion: 1n,
           updatedAtMs: Math.max(now, row.updatedAtMs + 1),
         });
       }
     }
-    return { updatedAccounts: changedKeys.size, updatedAtMs: now };
+    return {
+      updatedAccounts: changedKeys.size,
+      updatedAtMs: now,
+      baselinedIncomeTxIds: baselined,
+      skippedIncomeTxIdsAfterAsOf: skippedAfterAsOf,
+    };
   },
 });
 

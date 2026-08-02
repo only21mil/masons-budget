@@ -2577,7 +2577,10 @@ async function upsertBtcTransferRow(
     // A lost create response may be retried without the revision it never
     // received. Exact replay is a no-op; changed content still needs a fence.
     if (sameBtcTransfer(existing, row)) return "updated";
-    if (optimistic?.baseUpdatedAtMs === undefined) {
+    // A device context must carry the revision it read. The full-admin sync
+    // token has no optimistic context at all and is the operator's documented
+    // cutover path, so it is fenced by credential rather than by revision.
+    if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
       deviceFailure(
         "REVISION_REQUIRED",
         "baseUpdatedAtMs is required to edit a Bitcoin transfer.",
@@ -2585,7 +2588,7 @@ async function upsertBtcTransferRow(
         row.transferId,
       );
     }
-    if (optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
+    if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
       deviceFailure(
         "ENTITY_CONFLICT",
         "The Bitcoin transfer changed after it was read.",
@@ -2683,7 +2686,10 @@ async function deleteBtcTransferCore(
       transferId,
     );
   }
-  if (optimistic?.baseUpdatedAtMs === undefined) {
+  // Same split as the edit path: devices must present the revision they read,
+  // while the full-admin sync token used by the cutover runbook is fenced by
+  // credential. Without this the runbook's own verification step fails closed.
+  if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
     deviceFailure(
       "REVISION_REQUIRED",
       "baseUpdatedAtMs is required to delete a Bitcoin transfer.",
@@ -2691,11 +2697,9 @@ async function deleteBtcTransferCore(
       transferId,
     );
   }
-  if (optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
+  if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
     deviceFailure(
-      optimistic?.baseUpdatedAtMs === undefined
-        ? "REVISION_REQUIRED"
-        : "ENTITY_CONFLICT",
+      "ENTITY_CONFLICT",
       "The Bitcoin transfer deletion does not match the current revision.",
       "btcTransfer",
       transferId,
@@ -4402,6 +4406,18 @@ async function upsertBtcAccountCore(
     account.fiatValuation?.cents ??
     previousAccount?.fiatValuation?.cents ??
     previousAccount?.fiatCents;
+  const mirrorRowKey = btcAccountMirrorKey(sourceFile, key);
+  const existingMirror = await ctx.db
+    .query("btcAccounts")
+    .withIndex("by_owner_key", (q) =>
+      q.eq("owner", account.owner).eq("key", mirrorRowKey),
+    )
+    .unique();
+  // The no-op shortcut must agree with BOTH sides of the pair. A document that
+  // already matches while its mirror is missing or divergent is exactly the
+  // state `reconcileBtcAccounts` refuses to activate, and the cutover runbook
+  // sends the operator back through here to repair it — so short-circuiting on
+  // the document alone would report success and leave activation wedged.
   if (
     existingDocument &&
     previousAccount &&
@@ -4412,6 +4428,15 @@ async function upsertBtcAccountCore(
       requestedFiatCents &&
     existingDocument.asOf === account.asOf &&
     existingDocument.schemaVersion ===
+      (account.schemaVersion ?? existingDocument.schemaVersion) &&
+    existingMirror &&
+    existingMirror.label === account.label &&
+    existingMirror.custody === account.custody &&
+    existingMirror.sats === account.sats &&
+    (existingMirror.fiatValuation?.cents ?? existingMirror.fiatCents) ===
+      requestedFiatCents &&
+    existingMirror.asOf === account.asOf &&
+    existingMirror.schemaVersion ===
       (account.schemaVersion ?? existingDocument.schemaVersion)
   ) {
     return "updated";
@@ -4486,10 +4511,12 @@ async function upsertBtcAccountCore(
   if (existingDocument?.postingActivatedAtMs !== undefined) {
     canonicalRiverAccountKey(accounts);
   }
-  const now =
-    existingDocument && optimistic
-      ? nextUpdatedAtMs(existingDocument.updatedAtMs)
-      : Date.now();
+  // Monotonic for every writer, not just fenced ones: a full-admin sync-token
+  // write landing in the same millisecond as a posting must not move the
+  // document revision backwards and invalidate a device's baseUpdatedAtMs.
+  const now = existingDocument
+    ? nextUpdatedAtMs(existingDocument.updatedAtMs)
+    : Date.now();
   const documentPatch = {
     owner: account.owner,
     schemaVersion:
@@ -4510,24 +4537,16 @@ async function upsertBtcAccountCore(
     });
   }
 
-  const mirror = await ctx.db
-    .query("btcAccounts")
-    .withIndex("by_owner_key", (q) =>
-      q
-        .eq("owner", account.owner)
-        .eq("key", btcAccountMirrorKey(sourceFile, key)),
-    )
-    .unique();
   const mirrorRow = {
     ...normalizedAccount,
-    key: btcAccountMirrorKey(sourceFile, key),
+    key: mirrorRowKey,
     owner: account.owner,
     asOf: account.asOf,
     schemaVersion: documentPatch.schemaVersion,
     sourceFile,
     updatedAtMs: now,
   };
-  if (mirror) await ctx.db.patch(mirror._id, mirrorRow);
+  if (existingMirror) await ctx.db.patch(existingMirror._id, mirrorRow);
   else await ctx.db.insert("btcAccounts", mirrorRow);
   await clearRowTombstone(ctx, "btcAccount", sourceFile, key);
   return outcome;

@@ -51,10 +51,18 @@ self-custody account, so never guess that allocation.
    and second reconciliation requests fail closed.
    Reconciliation is intentionally limited to the adult household ledger;
    child Bitcoin posting is outside this release.
+   `asOf` must begin with a real ISO date: it is the cutoff that decides which
+   legacy sat-denominated Income rows are already inside these balances.
 6. Immediately read back the document and every `btcAccounts` mirror. Verify
    exact account quantities, all three totals, equal document/mirror sats,
    `postingActivatedAtMs` present, and a document revision newer than the
    preflight revision.
+   The mutation returns `baselinedIncomeTxIds` (legacy rows dated on or before
+   `asOf`, now marked as already inside the reconciled balances) and
+   `skippedIncomeTxIdsAfterAsOf` (rows dated after the snapshot, deliberately
+   left unmarked because their sats are not in these balances). Read both lists
+   back. Every skipped row must be posted deliberately afterwards or corrected;
+   none of them may be assumed to be in the stack.
 7. Run one controlled low-value test for each posting type and verify after
    each operation: buy credits River; BTC bill pay debits River;
    sat-denominated Income credits River; owned-wallet transfer debits source by

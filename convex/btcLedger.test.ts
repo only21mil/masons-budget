@@ -695,3 +695,249 @@ describe("Bitcoin balance posting", () => {
     expect((await snapshot()).document.postingActivatedAtMs).toBeUndefined();
   });
 });
+
+const accountMutation = mutation<
+  "public",
+  Record<string, unknown>,
+  Record<string, unknown>
+>("tables:upsertBtcAccount");
+
+async function deactivate() {
+  await t.run(async (ctx) => {
+    const document = await ctx.db
+      .query("btcBalanceDocuments")
+      .withIndex("by_source_file", (q) =>
+        q.eq("sourceFile", "btc-balance-snapshot"),
+      )
+      .unique();
+    await ctx.db.patch(document!._id, {
+      postingActivatedAtMs: undefined,
+      updatedAtMs: 10,
+    });
+  });
+}
+
+describe("pre-activation cutover repair", () => {
+  const riverAccount = {
+    key: "river",
+    owner: "victor",
+    label: "River",
+    custody: "exchange",
+    sats: 1_000_000n,
+    fiatCents: 100_000n,
+    asOf: "2026-07-30T00:00:00.000Z",
+    schemaVersion: 2n,
+  };
+
+  it("repairs a missing mirror instead of reporting a silent no-op", async () => {
+    // Document already matches; only the mirror is gone. This is exactly the
+    // state reconcileBtcAccounts refuses to activate, and the runbook sends the
+    // operator back through upsertBtcAccount to repair it.
+    await deactivate();
+    await t.run(async (ctx) => {
+      const mirror = await ctx.db
+        .query("btcAccounts")
+        .withIndex("by_owner_key", (q) =>
+          q.eq("owner", "victor").eq("key", "river"),
+        )
+        .unique();
+      await ctx.db.delete(mirror!._id);
+    });
+    expect((await snapshot()).mirrors.map((row) => row.key)).not.toContain(
+      "river",
+    );
+
+    await t.mutation(accountMutation, { account: riverAccount });
+
+    const repaired = (await snapshot()).mirrors.find(
+      (row) => row.key === "river",
+    );
+    expect(repaired).toBeDefined();
+    expect(repaired!.sats).toBe(1_000_000n);
+  });
+
+  it("repairs a divergent mirror quantity", async () => {
+    await deactivate();
+    await t.run(async (ctx) => {
+      const mirror = await ctx.db
+        .query("btcAccounts")
+        .withIndex("by_owner_key", (q) =>
+          q.eq("owner", "victor").eq("key", "river"),
+        )
+        .unique();
+      await ctx.db.patch(mirror!._id, { sats: 7n });
+    });
+
+    await t.mutation(accountMutation, { account: riverAccount });
+
+    const repaired = (await snapshot()).mirrors.find(
+      (row) => row.key === "river",
+    );
+    expect(repaired!.sats).toBe(1_000_000n);
+  });
+
+  it("never moves the document revision backwards on an unfenced write", async () => {
+    await deactivate();
+    await t.run(async (ctx) => {
+      const document = await ctx.db
+        .query("btcBalanceDocuments")
+        .withIndex("by_source_file", (q) =>
+          q.eq("sourceFile", "btc-balance-snapshot"),
+        )
+        .unique();
+      // Push the revision past wall clock, as a burst of fenced writes does.
+      await ctx.db.patch(document!._id, { updatedAtMs: Date.now() + 60_000 });
+    });
+    const raised = (await snapshot()).document.updatedAtMs;
+
+    await t.mutation(accountMutation, {
+      account: { ...riverAccount, label: "River Exchange" },
+    });
+
+    expect((await snapshot()).document.updatedAtMs).toBeGreaterThan(raised);
+  });
+});
+
+describe("operator transfer correction without a device revision", () => {
+  it("deletes a transfer through the full-admin path and reverses both legs", async () => {
+    await t.mutation(api.transfer, {
+      transfer: {
+        id: "tf-runbook",
+        owner: "victor",
+        date: "2026-08-01",
+        fromAccountKey: "river",
+        toAccountKey: "coldcard",
+        sats: 100_000n,
+        feeSats: 500n,
+      },
+    });
+    expect(satsByKey(await snapshot())).toMatchObject({
+      river: 899_500n,
+      coldcard: 2_100_000n,
+    });
+
+    // Runbook step 7 supplies no revision; the operator credential is the fence.
+    const removed = await t.mutation(api.deleteTransfer, {
+      transferId: "tf-runbook",
+      owner: "victor",
+    });
+    expect(removed).toMatchObject({ removed: true });
+    expect(satsByKey(await snapshot())).toMatchObject({
+      river: 1_000_000n,
+      coldcard: 2_000_000n,
+    });
+  });
+});
+
+describe("activation baseline marking", () => {
+  async function seedLegacyIncome(
+    txId: string,
+    date: string,
+    extra: Record<string, unknown> = {},
+  ) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("transactions", {
+        txId,
+        owner: "victor",
+        date,
+        month: date.slice(0, 7),
+        merchant: "Payroll",
+        amountCents: -1000n,
+        category: "Income",
+        amountSats: 50_000n,
+        sourceFile: "transactions",
+        updatedAtMs: 5,
+        ...extra,
+      });
+    });
+  }
+
+  async function reconcileFresh() {
+    await deactivate();
+    return await t.mutation(api.reconcile, {
+      owner: "victor",
+      expectedUpdatedAtMs: 10,
+      asOf: "2026-07-31T00:00:00.000Z",
+      accounts: [
+        { key: "river", label: "River", custody: "exchange", sats: 1_000_000n },
+        {
+          key: "coldcard",
+          label: "Coldcard",
+          custody: "self_custody",
+          sats: 2_000_000n,
+        },
+      ],
+    });
+  }
+
+  async function readRow(txId: string) {
+    return await t.run(async (ctx) =>
+      ctx.db
+        .query("transactions")
+        .withIndex("by_source_tx_id", (q) =>
+          q.eq("sourceFile", "transactions").eq("txId", txId),
+        )
+        .unique(),
+    );
+  }
+
+  it("skips legacy Income dated after asOf so a later delete cannot debit River", async () => {
+    await seedLegacyIncome("tx-after", "2026-08-05");
+    const result = (await reconcileFresh()) as unknown as {
+      baselinedIncomeTxIds: string[];
+      skippedIncomeTxIdsAfterAsOf: string[];
+    };
+    expect(result.skippedIncomeTxIdsAfterAsOf).toContain("tx-after");
+    expect(result.baselinedIncomeTxIds).not.toContain("tx-after");
+    expect((await readRow("tx-after"))!.balancePostingVersion).toBeUndefined();
+  });
+
+  it("preserves an existing account key rather than re-pointing it at River", async () => {
+    await seedLegacyIncome("tx-coldcard", "2026-07-20", {
+      bitcoinAccountKey: "coldcard",
+    });
+    const result = (await reconcileFresh()) as unknown as {
+      baselinedIncomeTxIds: string[];
+    };
+    expect(result.baselinedIncomeTxIds).toContain("tx-coldcard");
+    const row = await readRow("tx-coldcard");
+    expect(row!.bitcoinAccountKey).toBe("coldcard");
+    expect(row!.balancePostingVersion).toBe(1n);
+  });
+
+  it("baselines an in-window row against River and leaves balances untouched", async () => {
+    await seedLegacyIncome("tx-in-window", "2026-07-20");
+    const before = satsByKey(await snapshot());
+    const result = (await reconcileFresh()) as unknown as {
+      baselinedIncomeTxIds: string[];
+    };
+    expect(result.baselinedIncomeTxIds).toContain("tx-in-window");
+    expect((await readRow("tx-in-window"))!.bitcoinAccountKey).toBe("river");
+    expect(satsByKey(await snapshot())).toMatchObject(before);
+  });
+
+  it("rejects an asOf that does not start with a real calendar date", async () => {
+    await deactivate();
+    await expect(
+      t.mutation(api.reconcile, {
+        owner: "victor",
+        expectedUpdatedAtMs: 10,
+        asOf: "not-a-date",
+        accounts: [
+          {
+            key: "river",
+            label: "River",
+            custody: "exchange",
+            sats: 1_000_000n,
+          },
+          {
+            key: "coldcard",
+            label: "Coldcard",
+            custody: "self_custody",
+            sats: 2_000_000n,
+          },
+        ],
+      }),
+    ).rejects.toThrow(/real ISO date/);
+  });
+});
