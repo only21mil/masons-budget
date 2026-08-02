@@ -85,6 +85,16 @@ export function isSpend(transaction: Transaction): boolean {
 }
 
 export function normalizeTransaction(raw: Record<string, unknown>, fallbackOwner?: FamilyMember): Transaction {
+  // Spread rather than assign: `exactOptionalPropertyTypes` treats an explicit
+  // `undefined` as a different thing from an absent key, and absent is what a
+  // row with no Bitcoin amount means.
+  const amountSats = optionalSats(raw.amountSats ?? raw.amount_sats)
+  const bitcoinAccountKey = optionalString(
+    raw.bitcoinAccountKey ?? raw.bitcoin_account_key,
+  )
+  const balancePostingVersion = optionalSats(
+    raw.balancePostingVersion ?? raw.balance_posting_version,
+  )
   return {
     id: String(raw.id ?? ""),
     updatedAtMs: timestampMillis(raw.updatedAtMs ?? raw.updated_at_ms),
@@ -95,6 +105,9 @@ export function normalizeTransaction(raw: Record<string, unknown>, fallbackOwner
     card: optionalString(raw.card),
     note: optionalString(raw.note),
     owner: raw.owner === undefined && fallbackOwner ? fallbackOwner : coerceOwner(raw.owner),
+    ...(amountSats === undefined ? {} : { amountSats }),
+    ...(bitcoinAccountKey === null ? {} : { bitcoinAccountKey }),
+    ...(balancePostingVersion === undefined ? {} : { balancePostingVersion }),
   }
 }
 
@@ -427,6 +440,25 @@ function optionalString(value: unknown): string | null {
   if (value === null || value === undefined) return null
   const text = String(value)
   return text === "" ? null : text
+}
+
+/**
+ * Bitcoin quantities are exact. A row that carries sats must keep them through
+ * normalization: dropping the field here silently turns a posted sat-Income row
+ * into an ordinary one for every consumer downstream, and a non-integer value
+ * must be refused rather than rounded into the ledger.
+ */
+function optionalSats(value: unknown): bigint | undefined {
+  if (value === null || value === undefined) return undefined
+  if (typeof value === "bigint") return value
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value)) return undefined
+    return BigInt(value)
+  }
+  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) {
+    return BigInt(value.trim())
+  }
+  return undefined
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
