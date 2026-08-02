@@ -47,6 +47,7 @@ import com.sats21m.vogelvault.explicitBtcBuyOwner
 import com.sats21m.vogelvault.data.BtcBuyInput
 import com.sats21m.vogelvault.data.BudgetCategoryInput
 import com.sats21m.vogelvault.data.ConvexMutation
+import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.ConvexValue
 import com.sats21m.vogelvault.domain.BudgetHealth
@@ -449,7 +450,7 @@ internal fun launchBtcBuySave(
             sourceFile = request.owner.btcBuysDataFileName,
         ),
     )
-    if (result is ConvexResult.Ok) {
+    if (result is ConvexResult.Ok<*>) {
         buyDraftIds.rotateAfterAcceptance()
     }
     onResult(result)
