@@ -1218,3 +1218,50 @@ describe("delayed full-admin create cannot resurrect deleted rows", () => {
     expect(satsByKey(await snapshot())).toMatchObject(afterDelete);
   });
 });
+
+describe("cutover approval window", () => {
+  it("rejects activation when an account edit lands after the operator's preflight read", async () => {
+    // The agreed rule: preactivation account editing stays allowed, and the
+    // protection is that any edit after preflight invalidates the approved
+    // request rather than letting activation anchor a stale snapshot.
+    await deactivate();
+    const preflightRevision = (await snapshot()).document.updatedAtMs;
+
+    await t.mutation(accountMutation, {
+      account: {
+        key: "river",
+        owner: "victor",
+        label: "River",
+        custody: "exchange",
+        sats: 1_250_000n,
+        asOf: "2026-07-31T00:00:00.000Z",
+        schemaVersion: 2n,
+      },
+    });
+    const afterEdit = (await snapshot()).document.updatedAtMs;
+    expect(afterEdit).toBeGreaterThan(preflightRevision);
+
+    await expect(
+      t.mutation(api.reconcile, {
+        owner: "victor",
+        expectedUpdatedAtMs: preflightRevision,
+        asOf: "2026-07-31T00:00:00.000Z",
+        accounts: [
+          {
+            key: "river",
+            label: "River",
+            custody: "exchange",
+            sats: 1_000_000n,
+          },
+          {
+            key: "coldcard",
+            label: "Coldcard",
+            custody: "self_custody",
+            sats: 2_000_000n,
+          },
+        ],
+      }),
+    ).rejects.toThrow(/changed before reconciliation/);
+    expect((await snapshot()).document.postingActivatedAtMs).toBeUndefined();
+  });
+});
