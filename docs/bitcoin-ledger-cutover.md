@@ -10,13 +10,15 @@ existing trusted clients and operator tooling. Paired devices need both
 
 ## Reviewed opening quantities
 
-- River: `7,426,251 sats` (`0.07426251 BTC`)
-- Self custody total: `541,711,788 sats` (`5.41711788 BTC`)
-- Household total: `549,138,039 sats` (`5.49138039 BTC`)
+The exact opening quantities are deliberately NOT in this repository. Git
+history is permanent and this file is tracked, so the household's real Bitcoin
+holdings live only in the private cutover artifact at
+`~/.config/sats/vogel-vault-cutover-opening-balances.md` (mode 0600).
 
-These totals came from Victor's 2026-08-01 screenshots. They do not identify how
-to divide the self-custody total if production contains more than one
-self-custody account, so never guess that allocation.
+That artifact carries the reviewed River total, the self-custody total, the
+household total, and their provenance. It does not identify how to divide the
+self-custody total if production contains more than one self-custody account, so
+never guess that allocation.
 
 ## Required sequence
 
@@ -36,9 +38,8 @@ self-custody account, so never guess that allocation.
    - owner is `victor`;
    - exactly one account key/label resolves to River;
    - every account key, label, and custody value is copied into the request;
-   - the sum of exchange accounts is `7,426,251 sats`;
-   - the sum of self-custody accounts is `541,711,788 sats`;
-   - the sum of every account is `549,138,039 sats`;
+   - the exchange, self-custody and household sums each equal the
+     corresponding reviewed total in the private cutover artifact;
    - `postingActivatedAtMs` is absent;
    - `expectedUpdatedAtMs` equals the just-read document revision.
    If an account or mirror is missing or metadata is wrong, stop and repair it

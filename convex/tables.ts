@@ -2000,9 +2000,10 @@ async function upsertTransactionRow(
       q.eq("sourceFile", row.sourceFile).eq("txId", row.txId),
     )
     .unique();
-  const tombstone = optimistic
-    ? await findRowTombstone(ctx, "transaction", row.sourceFile, row.txId)
-    : null;
+  // Loaded for every caller, not only optimistic ones. A delayed create
+  // retried through the full-admin path must not resurrect a deleted row
+  // and re-apply its balance legs.
+  const tombstone = await findRowTombstone(ctx, "transaction", row.sourceFile, row.txId)
   if (existing) {
     if (existing.owner !== row.owner) {
       deviceFailure(
@@ -2269,9 +2270,10 @@ async function upsertBtcBuyRow(
       q.eq("sourceFile", row.sourceFile).eq("buyId", row.buyId),
     )
     .unique();
-  const tombstone = optimistic
-    ? await findRowTombstone(ctx, "btcBuy", row.sourceFile, row.buyId)
-    : null;
+  // Loaded for every caller, not only optimistic ones. A delayed create
+  // retried through the full-admin path must not resurrect a deleted row
+  // and re-apply its balance legs.
+  const tombstone = await findRowTombstone(ctx, "btcBuy", row.sourceFile, row.buyId)
   if (existing) {
     if (existing.owner !== row.owner) {
       deviceFailure(
@@ -2391,9 +2393,10 @@ async function upsertBtcBillPayRow(
       q.eq("sourceFile", row.sourceFile).eq("billPayId", row.billPayId),
     )
     .unique();
-  const tombstone = optimistic
-    ? await findRowTombstone(ctx, "btcBillPay", row.sourceFile, row.billPayId)
-    : null;
+  // Loaded for every caller, not only optimistic ones. A delayed create
+  // retried through the full-admin path must not resurrect a deleted row
+  // and re-apply its balance legs.
+  const tombstone = await findRowTombstone(ctx, "btcBillPay", row.sourceFile, row.billPayId)
   if (existing) {
     // Bill pays deliberately share ONE source file and carry `owner` per row,
     // unlike transactions which separate owners by file. The natural key is
@@ -4454,9 +4457,10 @@ async function upsertBtcAccountCore(
     .query("btcBalanceDocuments")
     .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
     .unique();
-  const tombstone = optimistic
-    ? await findRowTombstone(ctx, "btcAccount", sourceFile, key)
-    : null;
+  // Loaded for every caller, not only optimistic ones. A delayed create
+  // retried through the full-admin path must not resurrect a deleted row
+  // and re-apply its balance legs.
+  const tombstone = await findRowTombstone(ctx, "btcAccount", sourceFile, key)
   if (existingDocument && existingDocument.owner !== account.owner) {
     deviceFailure(
       "OWNER_MISMATCH",

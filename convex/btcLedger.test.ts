@@ -1179,3 +1179,42 @@ describe("operator readback and delayed-retry safety", () => {
     expect(satsByKey(await snapshot())).toMatchObject(afterDelete);
   });
 });
+
+describe("delayed full-admin create cannot resurrect deleted rows", () => {
+  it("refuses a replayed sat-Income create after deletion", async () => {
+    const income = {
+      id: "income-resurrect",
+      date: "2026-08-01",
+      merchant: "Bitcoin income",
+      amountCents: 1n,
+      amountSats: 15_000n,
+      kind: "credit",
+      category: "Income",
+    };
+    await t.mutation(api.transaction, { transaction: income });
+    const revision = await t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query("transactions")
+          .withIndex("by_source_tx_id", (q) =>
+            q.eq("sourceFile", "transactions").eq("txId", "income-resurrect"),
+          )
+          .unique()
+      )!.updatedAtMs,
+    );
+    await t.mutation(api.deleteTransaction, {
+      txId: "income-resurrect",
+      sourceFile: "transactions",
+      baseUpdatedAtMs: revision,
+    });
+    const afterDelete = satsByKey(await snapshot());
+
+    // The original create, retried late through the full-admin path. Before the
+    // fix the tombstone was invisible to non-optimistic callers and this
+    // re-credited River.
+    await expect(
+      t.mutation(api.transaction, { transaction: income }),
+    ).rejects.toThrow(/cannot be silently resurrected/);
+    expect(satsByKey(await snapshot())).toMatchObject(afterDelete);
+  });
+});
