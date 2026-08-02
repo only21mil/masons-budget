@@ -101,16 +101,26 @@ internal suspend fun savePreparedTransaction(
 /**
  * Starts the durable part of an add on a process-owned scope. The client
  * installs an accepted receipt before returning; a disposed sheet suppresses
- * only its stale UI callbacks, never the write or receipt installation.
+ * only its stale UI callbacks, never the write, the receipt installation, or
+ * the acceptance signal.
  */
 internal fun launchPreparedTransactionSave(
     scope: CoroutineScope,
     row: PreparedTransaction,
     client: ConvexMutationClient,
     isUiActive: () -> Boolean,
+    onAccepted: () -> Unit,
     onUiResult: (ConvexResult<TransactionWriteReceipt>) -> Unit,
 ): Job = scope.launch {
     val result = savePreparedTransaction(row, client)
+    if (result.isOk) {
+        // The ledger refresh belongs to the screen's view model, which
+        // outlives this sheet. An accepted write must become visible even
+        // when the user dismissed mid-flight — suppressing this with the
+        // sheet left committed, fenced rows invisible until an unrelated
+        // refresh.
+        onAccepted()
+    }
     if (isUiActive()) {
         onUiResult(result)
     }
@@ -525,11 +535,11 @@ internal fun AddTransactionSheet(
                             row = row,
                             client = client,
                             isUiActive = uiActive::get,
+                            onAccepted = onWriteSucceeded,
                         ) { result ->
                             saving = false
                             val failure = transactionWriteFailureMessage(result)
                             if (failure == null) {
-                                onWriteSucceeded()
                                 onDismiss()
                             } else {
                                 errorMessage = failure

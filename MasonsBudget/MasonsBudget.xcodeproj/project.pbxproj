@@ -99,11 +99,13 @@
 		589F465E417CA8207BB0C71C /* FamilyVisibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AC58C7449FBDB08006CFC23 /* FamilyVisibilityTests.swift */; };
 		58AC51EEA6EDF49B075A3ACD /* UnitToggleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 709F4C2338EDE5D2BBB8C9F8 /* UnitToggleView.swift */; };
 		5AB5EAF56B9C5DD97AD09DCD /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D9D2114CBEC645F03E11CE8 /* AppTheme.swift */; };
+		5B7C04B7A70406D9EB0D62FC /* OptimisticSaveFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 974E8027F86EF14E53108D7C /* OptimisticSaveFlowTests.swift */; };
 		5B8933B6B7A64817AE2924C3 /* BTCBuysView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B7551DE4A0BB82EF414D999 /* BTCBuysView.swift */; };
 		5C491764B10B9D634D9C8A32 /* BudgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 941AE83F8125080834B45397 /* BudgetView.swift */; };
 		5D301B43723DB13E1F0CF7ED /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DBCCD025DF53FB5AB826594 /* TasksView.swift */; };
 		5EA48A752E0FC8F9CCC3058F /* TodoArea.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEF1482C8EFC171A27117F7 /* TodoArea.swift */; };
 		5EAA31651D7CB8DA2D1CA647 /* ScreenHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59DD3C8ADB2447DA2F2ABEF8 /* ScreenHeader.swift */; };
+		5F53BC404D76D935C43AAC65 /* OptimisticSaveFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24D0567CEA50C9D8FB8CC4E1 /* OptimisticSaveFlow.swift */; };
 		6081768770E661C6EDF63DBA /* todo-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = C8C3FD95CD5DDA1D13FAC403 /* todo-cases.json */; };
 		60A2374372574199C9FDA25D /* StockPriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F721A6FC17530024B35A0C6 /* StockPriceService.swift */; };
 		60DB40E2C6E812784A222981 /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DBCCD025DF53FB5AB826594 /* TasksView.swift */; };
@@ -157,6 +159,7 @@
 		8DF654AA7A8B2269A569CE26 /* ActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 355DA4D064A09FC72695758B /* ActivityView.swift */; };
 		8FA1F5019016A229F4F7FE7B /* IncomingEventsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DA02D07A5F77E55C69B00DF /* IncomingEventsSection.swift */; };
 		90E14E434FF58A97D552458E /* AppWritebackConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 661693167D7791B43DA9AA2D /* AppWritebackConfigTests.swift */; };
+		91E9062D2847E4FFE95DCA2F /* OptimisticSaveFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24D0567CEA50C9D8FB8CC4E1 /* OptimisticSaveFlow.swift */; };
 		92289BEED97E0A6FA4B40D68 /* ScreenHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59DD3C8ADB2447DA2F2ABEF8 /* ScreenHeader.swift */; };
 		922DB4C9AB5F88B7E87EC756 /* listBtcBillPays.json.json in Resources */ = {isa = PBXBuildFile; fileRef = 5D35827B5A5FFF969AAD61BE /* listBtcBillPays.json.json */; };
 		92F0489AD93C51D921395285 /* TaskUndoBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9217F015BEE5502E0937BDC3 /* TaskUndoBanner.swift */; };
@@ -226,6 +229,7 @@
 		D1BB8B327A23D4D8D3ABBE63 /* TodoItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC02E94290076AEE88831C18 /* TodoItem.swift */; };
 		D1F0030EFC8EF2EF555C9F9B /* LockScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E117823C6DA6138431AE80C8 /* LockScreenView.swift */; };
 		D21FBFEEAD72E5855B86E247 /* TodoItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC02E94290076AEE88831C18 /* TodoItem.swift */; };
+		D3A7164DCDC3D43A860ABC7C /* OptimisticSaveFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24D0567CEA50C9D8FB8CC4E1 /* OptimisticSaveFlow.swift */; };
 		D4D00A5A4054A43453F6CBB1 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 083F88D8EB4768C9BEDF39F9 /* OnboardingView.swift */; };
 		D735B252616C9B242950D664 /* finance-market-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = F3B18B925AF533486B8311C0 /* finance-market-cases.json */; };
 		DA400DF45A592D3A83188DF1 /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FBD5FB3989AEA4A2A5A5B9A /* TodayView.swift */; };
@@ -274,6 +278,7 @@
 		1F721A6FC17530024B35A0C6 /* StockPriceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockPriceService.swift; sourceTree = "<group>"; };
 		2266CE759B0FEC971BEC064D /* MasonsBudgetMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MasonsBudgetMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		230D932174FB25E1E6FA335C /* WriteFeedbackStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WriteFeedbackStore.swift; sourceTree = "<group>"; };
+		24D0567CEA50C9D8FB8CC4E1 /* OptimisticSaveFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OptimisticSaveFlow.swift; sourceTree = "<group>"; };
 		25CE52C2D21FE78FC3334E5D /* btc-fiat-availability-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "btc-fiat-availability-cases.json"; sourceTree = "<group>"; };
 		273950057898C808021DD99E /* BTCBillPayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BTCBillPayView.swift; sourceTree = "<group>"; };
 		28C9AC48788F6BD75F27ADC1 /* Transaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transaction.swift; sourceTree = "<group>"; };
@@ -334,6 +339,7 @@
 		9217F015BEE5502E0937BDC3 /* TaskUndoBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskUndoBanner.swift; sourceTree = "<group>"; };
 		941AE83F8125080834B45397 /* BudgetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetView.swift; sourceTree = "<group>"; };
 		952D7F58F4E564F0E226F433 /* getBudgetDocument.json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = getBudgetDocument.json.json; sourceTree = "<group>"; };
+		974E8027F86EF14E53108D7C /* OptimisticSaveFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OptimisticSaveFlowTests.swift; sourceTree = "<group>"; };
 		97885C819FB926B04D0E8D3F /* SharedEnums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedEnums.swift; sourceTree = "<group>"; };
 		9C6D1E05743C11803452DA93 /* MasonsBudgetMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MasonsBudgetMac.entitlements; sourceTree = "<group>"; };
 		9D264872AB987E5209C0B6A3 /* CSVImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSVImportView.swift; sourceTree = "<group>"; };
@@ -442,6 +448,7 @@
 				2AC58C7449FBDB08006CFC23 /* FamilyVisibilityTests.swift */,
 				196CEA0279F5A6BEA5F39E8F /* LegacyBlobCompatibilityTests.swift */,
 				EF5C5935A12805ECA579168B /* MasonsBudgetTests.swift */,
+				974E8027F86EF14E53108D7C /* OptimisticSaveFlowTests.swift */,
 				5B419D48E89A2C2DCD79A7F8 /* VoiceParserTests.swift */,
 			);
 			path = MasonsBudgetTests;
@@ -468,6 +475,7 @@
 				91E4D6A837EBFF6D4985DF22 /* LedgerMapper.swift */,
 				40F757710D47100DAE386F72 /* LegacyBlobDTOs.swift */,
 				130D186945E2F17AE4A79132 /* MC2DTOs.swift */,
+				24D0567CEA50C9D8FB8CC4E1 /* OptimisticSaveFlow.swift */,
 				E2283F2AE36B94EF55B4AAD6 /* SearchMatcher.swift */,
 				1F721A6FC17530024B35A0C6 /* StockPriceService.swift */,
 				D86340D4ABE8A55B4DA49FF6 /* SyncStatusStore.swift */,
@@ -816,6 +824,7 @@
 				627817036F8B1B2C7497C8BB /* NetWorthSnapshot.swift in Sources */,
 				0B6CB8CA90ABDA907CFB646B /* NetWorthView.swift in Sources */,
 				D4D00A5A4054A43453F6CBB1 /* OnboardingView.swift in Sources */,
+				D3A7164DCDC3D43A860ABC7C /* OptimisticSaveFlow.swift in Sources */,
 				AE798501AD587483D3C310A2 /* PillButton.swift in Sources */,
 				22D2DCF2D99CB0EBD5F13623 /* ProfileSwitcherView.swift in Sources */,
 				52B443B199D5AC3640525B0A /* ProjectTodoListView.swift in Sources */,
@@ -893,6 +902,7 @@
 				F9ABB4FF696573BDEF25CB28 /* NetWorthSnapshot.swift in Sources */,
 				B2AA8D11A0C83B4E36735704 /* NetWorthView.swift in Sources */,
 				09CA016D0D8B9A10D766551F /* OnboardingView.swift in Sources */,
+				5F53BC404D76D935C43AAC65 /* OptimisticSaveFlow.swift in Sources */,
 				C20D34C265A1FDA9FF26D0A4 /* PillButton.swift in Sources */,
 				8762E9AC6714420D2E8E38B8 /* ProfileSwitcherView.swift in Sources */,
 				2F829E91B66B1C0F4AB2B42F /* ProjectTodoListView.swift in Sources */,
@@ -980,6 +990,8 @@
 				50A640E5700293AAB0B52CCB /* NetWorthSnapshot.swift in Sources */,
 				243ED1BA417A2995DC916F87 /* NetWorthView.swift in Sources */,
 				26A9F98B72A257BB65FC0437 /* OnboardingView.swift in Sources */,
+				91E9062D2847E4FFE95DCA2F /* OptimisticSaveFlow.swift in Sources */,
+				5B7C04B7A70406D9EB0D62FC /* OptimisticSaveFlowTests.swift in Sources */,
 				8D1C891633544EAA468EB8A8 /* PillButton.swift in Sources */,
 				B4EDB5E700BF7C5162C6804E /* ProfileSwitcherView.swift in Sources */,
 				51BEEF51F09DBEE974B679E0 /* ProjectTodoListView.swift in Sources */,

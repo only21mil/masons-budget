@@ -518,26 +518,21 @@ struct AddTransactionView: View {
             owner: ledgerOwner,
             createdBy: "app",
         )
-        modelContext.insert(tx)
         amountValidationMessage = nil
-        writeFeedback.begin()
-        LocalMutationSave.perform(
+        // The sheet stays open until the write result arrives, and closes only
+        // on `.ok`. Dismissing first made every rejection invisible.
+        OptimisticSaveFlow.run(
+            models: [tx],
             operation: "Transaction",
             in: modelContext,
-            onFailure: { [writeFeedback] failure in
-                writeFeedback.failLocal(failure, operation: "Transaction")
+            feedback: writeFeedback,
+            push: { completion in
+                AppWriteSyncService.pushTransaction(tx, owner: ledgerOwner, onResult: completion)
             },
-            rollbackMutation: {
-                modelContext.delete(tx)
-            },
-        ) {
-            // The sheet stays open until the write result arrives, and closes only
-            // on `.ok`. Dismissing first made every rejection invisible.
-            AppWriteSyncService.pushTransaction(tx, owner: ledgerOwner) { [writeFeedback, createIDs, dismiss] result in
-                _ = writeFeedback.finish(result, operation: "Transaction")
+            afterResult: { [createIDs, dismiss] result in
                 if createIDs.recordServerResult(result, for: .transaction) { dismiss() }
-            }
-        }
+            },
+        )
     }
 
     private func saveBTCBuy(owner activeMember: FamilyMember) {
@@ -576,26 +571,19 @@ struct AddTransactionView: View {
             owner: ledgerOwner,
         )
 
-        modelContext.insert(buy)
-        modelContext.insert(lot)
         amountValidationMessage = nil
-        writeFeedback.begin()
-        LocalMutationSave.perform(
+        OptimisticSaveFlow.run(
+            models: [buy, lot],
             operation: "Bitcoin buy",
             in: modelContext,
-            onFailure: { [writeFeedback] failure in
-                writeFeedback.failLocal(failure, operation: "Bitcoin buy")
+            feedback: writeFeedback,
+            push: { completion in
+                AppWriteSyncService.pushBTCBuy(buy, owner: ledgerOwner, onResult: completion)
             },
-            rollbackMutation: {
-                modelContext.delete(buy)
-                modelContext.delete(lot)
-            },
-        ) {
-            AppWriteSyncService.pushBTCBuy(buy, owner: ledgerOwner) { [writeFeedback, createIDs, dismiss] result in
-                _ = writeFeedback.finish(result, operation: "Bitcoin buy")
+            afterResult: { [createIDs, dismiss] result in
                 if createIDs.recordServerResult(result, for: .bitcoinBuy) { dismiss() }
-            }
-        }
+            },
+        )
     }
 
     private func roundedSats(from value: Decimal) -> Int64 {

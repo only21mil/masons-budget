@@ -177,7 +177,7 @@ class AddTransactionSheetTest {
     }
 
     @Test
-    fun `dismissed sheet cannot cancel write or lose accepted receipt`() = runBlocking {
+    fun `dismissed sheet keeps the accepted write visible and suppresses only UI`() = runBlocking {
         val requestStarted = CompletableDeferred<Unit>()
         val response = CompletableDeferred<HttpTextResponse>()
         val poster = object : HttpPoster {
@@ -194,6 +194,7 @@ class AddTransactionSheetTest {
         val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val uiActive = AtomicBoolean(true)
         var uiResultCount = 0
+        var acceptedCount = 0
 
         try {
             val save = launchPreparedTransactionSave(
@@ -201,6 +202,7 @@ class AddTransactionSheetTest {
                 row = prepare("1.00", DisplayUnit.USD),
                 client = client,
                 isUiActive = uiActive::get,
+                onAccepted = { acceptedCount++ },
                 onUiResult = { uiResultCount++ },
             )
             requestStarted.await()
@@ -214,6 +216,12 @@ class AddTransactionSheetTest {
             )
             save.join()
 
+            assertEquals(
+                1,
+                acceptedCount,
+                "The acceptance signal must fire after dismissal — it drives the ledger " +
+                    "refresh owned by the view model, so a committed write stays visible.",
+            )
             assertEquals(0, uiResultCount)
             assertEquals(
                 1_888_888_888_890L,
