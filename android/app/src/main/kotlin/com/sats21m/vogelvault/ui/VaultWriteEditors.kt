@@ -420,7 +420,12 @@ internal fun BtcBuyEntrySheet(
 ) {
     val application = LocalContext.current.applicationContext as? VaultApplication
     val mutationClient = remember(application) { application?.convexMutationClient }
-    val buyId = remember { "android-${UUID.randomUUID()}" }
+    val buyDraftIds = application?.btcBuyDraftIds
+    // Process-owned, exactly like the transaction sheet: dismissing this sheet
+    // mid-write and reopening must resubmit the SAME id, or a committed buy
+    // whose response was lost is credited to River a second time.
+    val buyId = remember { buyDraftIds?.currentId() ?: "android-${UUID.randomUUID()}" }
+    val saveScope = remember(application) { application?.applicationScope }
     var date by remember { mutableStateOf(LocalDate.now().toString()) }
     var source by remember { mutableStateOf("") }
     var sats by remember { mutableStateOf("") }
@@ -474,8 +479,16 @@ internal fun BtcBuyEntrySheet(
                                     message = "Bitcoin buy not saved: the app write client is unavailable."
                                     return@Button
                                 }
+                                val writeScope = saveScope
+                                if (writeScope == null) {
+                                    message = "Bitcoin buy not saved: the app write client is unavailable."
+                                    return@Button
+                                }
                                 submitting = true
-                                scope.launch {
+                                // The application scope owns the request so a
+                                // dismissal cannot cancel a write the server
+                                // may already have committed.
+                                writeScope.launch {
                                     val request = draft.request
                                     val result =
                                         client.mutate(

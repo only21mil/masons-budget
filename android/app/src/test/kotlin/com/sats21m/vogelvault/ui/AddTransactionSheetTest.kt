@@ -1,5 +1,6 @@
 package com.sats21m.vogelvault.ui
 
+import com.sats21m.vogelvault.TransactionDraftIdStore
 import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
@@ -9,6 +10,7 @@ import com.sats21m.vogelvault.data.HttpTextResponse
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.data.RecordingPoster
 import com.sats21m.vogelvault.data.TransactionKind
+import com.sats21m.vogelvault.data.TransactionRevisionStore
 import com.sats21m.vogelvault.data.TransactionWriteOutcome
 import com.sats21m.vogelvault.data.TransactionWriteReceipt
 import com.sats21m.vogelvault.data.testToken
@@ -16,6 +18,7 @@ import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
@@ -192,6 +195,7 @@ class AddTransactionSheetTest {
             http = poster,
         )
         val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val transactionDraftIds = TransactionDraftIdStore()
         val uiActive = AtomicBoolean(true)
         var uiResultCount = 0
         var acceptedCount = 0
@@ -201,6 +205,7 @@ class AddTransactionSheetTest {
                 scope = applicationScope,
                 row = prepare("1.00", DisplayUnit.USD),
                 client = client,
+                transactionDraftIds = transactionDraftIds,
                 isUiActive = uiActive::get,
                 onAccepted = { acceptedCount++ },
                 onUiResult = { uiResultCount++ },
@@ -232,16 +237,118 @@ class AddTransactionSheetTest {
         }
     }
 
+    @Test
+    fun `reopened sheet reuses the pending draft id until the server confirms`() = runBlocking {
+        val transactionDraftIds = TransactionDraftIdStore()
+        val firstId = transactionDraftIds.currentId()
+        val poster = GatedTransactionPoster(requestCount = 1)
+        val client = ConvexMutationClient(
+            configSource = MutableConvexConfigSource(ConvexConfig(deploymentUrl = DEPLOYMENT)),
+            syncTokenSource = ConvexSyncTokenSource { testToken() },
+            http = poster,
+        )
+        val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        var rotatedBeforeAcceptedSignal = false
+
+        try {
+            val save = launchPreparedTransactionSave(
+                scope = applicationScope,
+                row = prepare("1.00", DisplayUnit.USD, id = firstId),
+                client = client,
+                transactionDraftIds = transactionDraftIds,
+                isUiActive = { true },
+                onAccepted = {
+                    rotatedBeforeAcceptedSignal = transactionDraftIds.currentId() != firstId
+                },
+                onUiResult = {},
+            )
+            poster.requestStarted[0].await()
+
+            val reopenedId = transactionDraftIds.currentId()
+            assertEquals(firstId, reopenedId)
+
+            poster.responses[0].complete(acceptedResponse(firstId, 1_888_888_888_891L))
+            save.join()
+
+            assertTrue(rotatedBeforeAcceptedSignal)
+            assertNotEquals(firstId, transactionDraftIds.currentId())
+        } finally {
+            applicationScope.cancel()
+        }
+    }
+
+    @Test
+    fun `ambiguous first write then resubmit cannot double-create`() = runBlocking {
+        val transactionDraftIds = TransactionDraftIdStore()
+        val transactionRevisions = TransactionRevisionStore()
+        val poster = GatedTransactionPoster(requestCount = 2)
+        val client = ConvexMutationClient(
+            configSource = MutableConvexConfigSource(ConvexConfig(deploymentUrl = DEPLOYMENT)),
+            syncTokenSource = ConvexSyncTokenSource { testToken() },
+            http = poster,
+            transactionRevisions = transactionRevisions,
+        )
+        val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val firstId = transactionDraftIds.currentId()
+
+        try {
+            val firstSave = launchPreparedTransactionSave(
+                scope = applicationScope,
+                row = prepare("1.00", DisplayUnit.USD, id = firstId),
+                client = client,
+                transactionDraftIds = transactionDraftIds,
+                isUiActive = { false },
+                onAccepted = {},
+                onUiResult = {},
+            )
+            poster.requestStarted[0].await()
+
+            val reopenedId = transactionDraftIds.currentId()
+            assertEquals(firstId, reopenedId)
+            val secondSave = launchPreparedTransactionSave(
+                scope = applicationScope,
+                row = prepare("2.00", DisplayUnit.USD, id = reopenedId),
+                client = client,
+                transactionDraftIds = transactionDraftIds,
+                isUiActive = { true },
+                onAccepted = {},
+                onUiResult = {},
+            )
+            poster.requestStarted[1].await()
+
+            poster.responses[0].complete(acceptedResponse(firstId, 1_888_888_888_892L))
+            firstSave.join()
+            poster.responses[1].complete(
+                acceptedResponse(
+                    id = firstId,
+                    revision = 1_888_888_888_893L,
+                    outcome = "updated",
+                ),
+            )
+            secondSave.join()
+
+            assertEquals(listOf(firstId, firstId), poster.bodies.map(::transactionIdFromBody))
+            assertEquals(1, transactionRevisions.entryCount())
+            assertEquals(
+                1_888_888_888_893L,
+                transactionRevisions.revisionFor("transactions", firstId),
+            )
+        } finally {
+            applicationScope.cancel()
+        }
+    }
+
     private fun prepare(
         amount: String,
         unit: DisplayUnit,
         owner: FamilyMember = FamilyMember.VICTOR,
         type: AddTransactionType = AddTransactionType.SPEND,
         category: String = "Groceries",
+        id: String = "test-id",
     ) = prepareTransaction(
         draft(amount, unit, owner, type, category),
         btcPriceCents = BTC_PRICE_CENTS,
-        id = "test-id",
+        id = id,
     ).getOrThrow()
 
     private fun draft(
@@ -267,3 +374,36 @@ class AddTransactionSheetTest {
         const val DEPLOYMENT = "https://keen-elephant-452.convex.cloud"
     }
 }
+
+private class GatedTransactionPoster(requestCount: Int) : HttpPoster {
+    private val requestIndex = AtomicInteger(0)
+    private val capturedBodies = arrayOfNulls<String>(requestCount)
+    val requestStarted = List(requestCount) { CompletableDeferred<Unit>() }
+    val responses = List(requestCount) { CompletableDeferred<HttpTextResponse>() }
+    val bodies: List<String>
+        get() = capturedBodies.map { checkNotNull(it) }
+
+    override suspend fun postJson(url: String, body: String): HttpTextResponse {
+        val index = requestIndex.getAndIncrement()
+        check(index in capturedBodies.indices) { "Unexpected transaction request $index" }
+        capturedBodies[index] = body
+        requestStarted[index].complete(Unit)
+        return responses[index].await()
+    }
+}
+
+private fun acceptedResponse(
+    id: String,
+    revision: Long,
+    outcome: String = "inserted",
+) = HttpTextResponse(
+    200,
+    """{"status":"success","value":{"txId":"$id","owner":"victor","month":"2026-07","outcome":"$outcome","updatedAtMs":$revision}}""",
+)
+
+private fun transactionIdFromBody(body: String): String =
+    Json.parseToJsonElement(body)
+        .jsonObject["args"]!!
+        .jsonObject["transaction"]!!
+        .jsonObject["id"]!!
+        .jsonPrimitive.content
