@@ -240,7 +240,7 @@ class AddTransactionSheetTest {
     @Test
     fun `reopened sheet reuses the pending draft id until the server confirms`() = runBlocking {
         val transactionDraftIds = TransactionDraftIdStore()
-        val firstId = transactionDraftIds.currentId()
+        val firstId = transactionDraftIds.currentId(ADULT_TX_SCOPE)
         val poster = GatedTransactionPoster(requestCount = 1)
         val client = ConvexMutationClient(
             configSource = MutableConvexConfigSource(ConvexConfig(deploymentUrl = DEPLOYMENT)),
@@ -258,20 +258,20 @@ class AddTransactionSheetTest {
                 transactionDraftIds = transactionDraftIds,
                 isUiActive = { true },
                 onAccepted = {
-                    rotatedBeforeAcceptedSignal = transactionDraftIds.currentId() != firstId
+                    rotatedBeforeAcceptedSignal = transactionDraftIds.currentId(ADULT_TX_SCOPE) != firstId
                 },
                 onUiResult = {},
             )
             poster.requestStarted[0].await()
 
-            val reopenedId = transactionDraftIds.currentId()
+            val reopenedId = transactionDraftIds.currentId(ADULT_TX_SCOPE)
             assertEquals(firstId, reopenedId)
 
             poster.responses[0].complete(acceptedResponse(firstId, 1_888_888_888_891L))
             save.join()
 
             assertTrue(rotatedBeforeAcceptedSignal)
-            assertNotEquals(firstId, transactionDraftIds.currentId())
+            assertNotEquals(firstId, transactionDraftIds.currentId(ADULT_TX_SCOPE))
         } finally {
             applicationScope.cancel()
         }
@@ -289,7 +289,7 @@ class AddTransactionSheetTest {
             transactionRevisions = transactionRevisions,
         )
         val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        val firstId = transactionDraftIds.currentId()
+        val firstId = transactionDraftIds.currentId(ADULT_TX_SCOPE)
 
         try {
             val firstSave = launchPreparedTransactionSave(
@@ -303,7 +303,7 @@ class AddTransactionSheetTest {
             )
             poster.requestStarted[0].await()
 
-            val reopenedId = transactionDraftIds.currentId()
+            val reopenedId = transactionDraftIds.currentId(ADULT_TX_SCOPE)
             assertEquals(firstId, reopenedId)
             val secondSave = launchPreparedTransactionSave(
                 scope = applicationScope,
@@ -372,6 +372,9 @@ class AddTransactionSheetTest {
     private companion object {
         const val BTC_PRICE_CENTS = 11_700_000L
         const val DEPLOYMENT = "https://keen-elephant-452.convex.cloud"
+
+        /** The wire sourceFile every VICTOR-owned row in these tests is sent under. */
+        val ADULT_TX_SCOPE = FamilyMember.VICTOR.ledgerOwner.transactionsDataFileName
     }
 }
 

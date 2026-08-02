@@ -436,6 +436,9 @@ internal fun launchBtcBuySave(
     buyDraftIds: TransactionDraftIdStore,
     onResult: (ConvexResult<ConvexValue>) -> Unit,
 ): Job = scope.launch {
+    // One expression feeds both the wire and the lease so acquisition,
+    // acceptance, and release can never disagree about the server scope.
+    val sourceFile = request.owner.btcBuysDataFileName
     val result = client.mutate(
         ConvexMutation.UpsertBtcBuy(
             buy = BtcBuyInput(
@@ -447,11 +450,11 @@ internal fun launchBtcBuySave(
                 usdCents = request.usdCents,
                 owner = explicitBtcBuyOwner(request.owner),
             ),
-            sourceFile = request.owner.btcBuysDataFileName,
+            sourceFile = sourceFile,
         ),
     )
     if (result is ConvexResult.Ok<*>) {
-        buyDraftIds.rotateAfterAcceptance(request.id)
+        buyDraftIds.rotateAfterAcceptance(sourceFile, request.id)
     }
     onResult(result)
 }
@@ -468,8 +471,13 @@ internal fun BtcBuyEntrySheet(
     val buyDraftIds = application?.btcBuyDraftIds
     // Process-owned, exactly like the transaction sheet: dismissing this sheet
     // mid-write and reopening must resubmit the SAME id, or a committed buy
-    // whose response was lost is credited to River a second time.
-    val buyId = remember { buyDraftIds?.currentId() ?: "android-${UUID.randomUUID()}" }
+    // whose response was lost is credited to River a second time. Acquired
+    // under this owner's buy sourceFile so another profile's pending id can
+    // never leak into this sheet's write.
+    val buyScope = owner.btcBuysDataFileName
+    val buyId = remember(buyScope) {
+        buyDraftIds?.currentId(buyScope) ?: "android-${UUID.randomUUID()}"
+    }
     val saveScope = remember(application) { application?.applicationScope }
     var date by remember { mutableStateOf(LocalDate.now().toString()) }
     var source by remember { mutableStateOf("") }

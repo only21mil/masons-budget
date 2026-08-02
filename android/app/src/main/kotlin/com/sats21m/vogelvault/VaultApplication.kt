@@ -34,34 +34,46 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Process-owned identity for one draft awaiting a definitive server
- * acceptance. Ambiguous retries deliberately reuse this id so Convex
- * supersedes the same row instead of inserting another one. One instance per
- * money-write surface; a surface's pending id is independent of the others'.
+ * Process-owned identity for drafts awaiting a definitive server acceptance,
+ * one pending id per server scope. Ambiguous retries deliberately reuse the
+ * scope's id so Convex supersedes the same row instead of inserting another
+ * one. One instance per money-write surface; a surface's pending ids are
+ * independent of the others'.
+ *
+ * The scope key is the exact `sourceFile` the mutation sends, because that is
+ * the server's natural idempotency domain: Convex keys these rows by
+ * `(sourceFile, id)`. A process-global slot loses a cross-profile race — an
+ * adult id retained after an ambiguous write could be handed to a Mason sheet,
+ * legitimately accepted under Mason's sourceFile, and its acceptance would
+ * then release the lease the adult retry still needs, minting a fresh id and
+ * crediting the adult row twice.
  */
 internal class TransactionDraftIdStore {
     private val lock = Any()
-    private var pendingId: String? = null
+    private val pendingIdsByScope = mutableMapOf<String, String>()
 
-    fun currentId(): String = synchronized(lock) {
-        pendingId ?: "android-${UUID.randomUUID()}".also { pendingId = it }
+    fun currentId(scope: String): String = synchronized(lock) {
+        pendingIdsByScope.getOrPut(scope) { "android-${UUID.randomUUID()}" }
     }
 
     /**
-     * Compare-and-clear: releases the pending id ONLY when it is still the id
-     * that was accepted.
+     * Compare-and-clear within one scope: releases the scope's pending id ONLY
+     * when it is still the id that was accepted, and only for the scope the
+     * server actually accepted it under.
      *
      * A blind clear loses a race. Two overlapping requests can carry the same
      * id X (dismiss, reopen, retry before the first returns) and Convex accepts
      * both idempotently. The first Ok clears X, the user starts the next
      * operation and takes Y, then the delayed second Ok arrives — a blind clear
      * would drop Y even though nothing accepted it, and the operation after
-     * that would mint a third id and duplicate the row.
+     * that would mint a third id and duplicate the row. Scoping the clear stops
+     * the cross-profile variant: an acceptance under one sourceFile can never
+     * release another sourceFile's lease, even for an equal id.
      */
-    fun rotateAfterAcceptance(acceptedId: String) {
+    fun rotateAfterAcceptance(scope: String, acceptedId: String) {
         synchronized(lock) {
-            if (pendingId == acceptedId) {
-                pendingId = null
+            if (pendingIdsByScope[scope] == acceptedId) {
+                pendingIdsByScope.remove(scope)
             }
         }
     }

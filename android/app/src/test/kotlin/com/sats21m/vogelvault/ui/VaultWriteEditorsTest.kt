@@ -115,9 +115,9 @@ class VaultWriteEditorsTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
 
         try {
-            val firstId = store.currentId()
+            val firstId = store.currentId(adultBuyScope)
             runBlocking { saveBuy(scope, store, client, firstId).join() }
-            val secondId = store.currentId()
+            val secondId = store.currentId(adultBuyScope)
             runBlocking { saveBuy(scope, store, client, secondId).join() }
 
             assertNotEquals(
@@ -146,12 +146,12 @@ class VaultWriteEditorsTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
 
         try {
-            val firstId = store.currentId()
+            val firstId = store.currentId(adultBuyScope)
             runBlocking { saveBuy(scope, store, client, firstId).join() }
 
             assertEquals(
                 firstId,
-                store.currentId(),
+                store.currentId(adultBuyScope),
                 "a non-accepted buy must retain its id so the retry cannot duplicate",
             )
         } finally {
@@ -176,7 +176,7 @@ class VaultWriteEditorsTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
 
         try {
-            val sharedId = store.currentId()
+            val sharedId = store.currentId(adultBuyScope)
 
             // Request A: accepted immediately, releasing the shared id.
             runBlocking {
@@ -184,7 +184,7 @@ class VaultWriteEditorsTest {
             }
 
             // The user starts the NEXT legitimate operation and takes a new id.
-            val nextId = store.currentId()
+            val nextId = store.currentId(adultBuyScope)
             assertNotEquals(sharedId, nextId)
 
             // Request B: the overlapping retry of the SAME id, whose accepted
@@ -201,7 +201,7 @@ class VaultWriteEditorsTest {
 
             assertEquals(
                 nextId,
-                store.currentId(),
+                store.currentId(adultBuyScope),
                 "a late acceptance of a superseded id must not clear the id the next operation already holds",
             )
         } finally {
@@ -209,16 +209,84 @@ class VaultWriteEditorsTest {
         }
     }
 
+    /**
+     * The cross-profile collision the scope-aware lease closes: the lease is
+     * keyed by the server's natural scope (the wire sourceFile), never shared
+     * process-globally across profiles.
+     *
+     * Without scoping: an adult buy X commits but its response is lost, the
+     * store retains X, a Mason sheet reuses X under `mason-bitcoin-buys`
+     * (which Convex legitimately accepts as a NEW row), the acceptance clears
+     * the shared lease, and the adult retry mints Y — inserting a second adult
+     * buy and crediting River twice.
+     */
+    @Test
+    fun `a mason acceptance of an equal id cannot release the adult scope lease`() {
+        val store = TransactionDraftIdStore()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+
+        try {
+            // The adult buy takes X; its outcome is ambiguous (response lost),
+            // so the adult scope keeps X leased for the retry.
+            val adultId = store.currentId(adultBuyScope)
+            runBlocking {
+                saveBuy(scope, store, buyClient(BuyPoster(HttpTextResponse(500, ""))), adultId).join()
+            }
+
+            // A Mason sheet opening now must acquire under Mason's own scope
+            // and must NOT be handed the adult's pending X.
+            val masonId = store.currentId(masonBuyScope)
+            assertNotEquals(
+                adultId,
+                masonId,
+                "a mason sheet must never acquire another scope's pending id",
+            )
+
+            // Even if an id equal to X is accepted under Mason's sourceFile,
+            // that acceptance belongs to Mason's scope and must leave the
+            // adult lease untouched.
+            val masonPoster = BuyPoster(accepted())
+            runBlocking {
+                saveBuy(
+                    scope,
+                    store,
+                    buyClient(masonPoster),
+                    adultId,
+                    owner = FamilyMember.MASON,
+                ).join()
+            }
+            assertEquals("mason-bitcoin-buys", wireBuySourceFile(masonPoster.bodies.single()))
+
+            assertEquals(
+                adultId,
+                store.currentId(adultBuyScope),
+                "the adult retry must reuse X so it supersedes the ambiguous row " +
+                    "instead of inserting a duplicate adult buy and crediting River twice",
+            )
+            assertEquals(
+                masonId,
+                store.currentId(masonBuyScope),
+                "mason's own pending id must also survive an acceptance that is not his pending id",
+            )
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    private val adultBuyScope = FamilyMember.VICTOR.btcBuysDataFileName
+    private val masonBuyScope = FamilyMember.MASON.btcBuysDataFileName
+
     private fun saveBuy(
         scope: CoroutineScope,
         store: TransactionDraftIdStore,
         client: ConvexMutationClient,
         id: String,
+        owner: FamilyMember = FamilyMember.VICTOR,
     ) = launchBtcBuySave(
         scope = scope,
         request = BtcBuyWriteRequest(
             id = id,
-            owner = FamilyMember.VICTOR,
+            owner = owner,
             date = "2026-08-01",
             source = "River",
             sats = 100_000L,
@@ -246,6 +314,10 @@ class VaultWriteEditorsTest {
     private fun wireBuyId(body: String): String =
         Json.parseToJsonElement(body).jsonObject["args"]!!.jsonObject["buy"]!!
             .jsonObject["id"]!!.jsonPrimitive.content
+
+    private fun wireBuySourceFile(body: String): String =
+        Json.parseToJsonElement(body).jsonObject["args"]!!
+            .jsonObject["sourceFile"]!!.jsonPrimitive.content
 
     private class BuyPoster(private val response: HttpTextResponse) : HttpPoster {
         val bodies = mutableListOf<String>()

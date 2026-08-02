@@ -116,7 +116,9 @@ internal fun launchPreparedTransactionSave(
 ): Job = scope.launch {
     val result = savePreparedTransaction(row, client)
     if (result.isOk) {
-        transactionDraftIds.rotateAfterAcceptance(row.input.id)
+        // Release under the exact sourceFile this write was accepted for; an
+        // equal id pending under a different profile's file stays leased.
+        transactionDraftIds.rotateAfterAcceptance(row.sourceFile, row.input.id)
         // The ledger refresh belongs to the screen's view model, which
         // outlives this sheet. An accepted write must become visible even
         // when the user dismissed mid-flight — suppressing this with the
@@ -355,8 +357,11 @@ internal fun AddTransactionSheet(
     // the server confirms acceptance. Reopening after an unconfirmed write
     // therefore supersedes the same row even if fields were edited; reopening
     // after confirmation receives a fresh id for a legitimate second row.
-    val draftTransactionId = remember {
-        transactionDraftIds?.currentId() ?: "android-${UUID.randomUUID()}"
+    // Acquired under the same sourceFile prepareTransaction will send, so a
+    // profile switch can never resubmit another profile's pending id.
+    val draftScope = state.activeProfile.ledgerOwner.transactionsDataFileName
+    val draftTransactionId = remember(draftScope) {
+        transactionDraftIds?.currentId(draftScope) ?: "android-${UUID.randomUUID()}"
     }
     var typeName by rememberSaveable { mutableStateOf(AddTransactionType.SPEND.name) }
     var inputUnitName by rememberSaveable { mutableStateOf(DisplayUnit.USD.name) }
