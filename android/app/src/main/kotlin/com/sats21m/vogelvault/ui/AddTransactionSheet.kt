@@ -116,7 +116,7 @@ internal fun launchPreparedTransactionSave(
 ): Job = scope.launch {
     val result = savePreparedTransaction(row, client)
     if (result.isOk) {
-        transactionDraftIds.rotateAfterAcceptance()
+        transactionDraftIds.rotateAfterAcceptance(row.input.id)
         // The ledger refresh belongs to the screen's view model, which
         // outlives this sheet. An accepted write must become visible even
         // when the user dismissed mid-flight — suppressing this with the

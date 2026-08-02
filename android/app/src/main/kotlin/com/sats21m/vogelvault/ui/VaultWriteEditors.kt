@@ -451,7 +451,7 @@ internal fun launchBtcBuySave(
         ),
     )
     if (result is ConvexResult.Ok<*>) {
-        buyDraftIds.rotateAfterAcceptance()
+        buyDraftIds.rotateAfterAcceptance(request.id)
     }
     onResult(result)
 }

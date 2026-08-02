@@ -47,9 +47,22 @@ internal class TransactionDraftIdStore {
         pendingId ?: "android-${UUID.randomUUID()}".also { pendingId = it }
     }
 
-    fun rotateAfterAcceptance() {
+    /**
+     * Compare-and-clear: releases the pending id ONLY when it is still the id
+     * that was accepted.
+     *
+     * A blind clear loses a race. Two overlapping requests can carry the same
+     * id X (dismiss, reopen, retry before the first returns) and Convex accepts
+     * both idempotently. The first Ok clears X, the user starts the next
+     * operation and takes Y, then the delayed second Ok arrives — a blind clear
+     * would drop Y even though nothing accepted it, and the operation after
+     * that would mint a third id and duplicate the row.
+     */
+    fun rotateAfterAcceptance(acceptedId: String) {
         synchronized(lock) {
-            pendingId = null
+            if (pendingId == acceptedId) {
+                pendingId = null
+            }
         }
     }
 }

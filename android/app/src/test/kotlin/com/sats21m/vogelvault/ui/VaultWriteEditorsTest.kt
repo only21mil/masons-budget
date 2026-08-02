@@ -159,6 +159,56 @@ class VaultWriteEditorsTest {
         }
     }
 
+    /**
+     * The race the revision review caught: rotation used to clear whichever id
+     * was current rather than the one that was accepted.
+     *
+     * Two overlapping requests can carry the SAME id (dismiss, reopen, retry
+     * before the first returns) and Convex accepts both idempotently. If the
+     * second, delayed acceptance blindly cleared the store, it would discard
+     * the id the user's NEXT operation had already taken — and the operation
+     * after that would mint a third id and duplicate the row.
+     */
+    @Test
+    fun `a late duplicate acceptance cannot clear the next operation id`() {
+        val store = TransactionDraftIdStore()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+
+        try {
+            val sharedId = store.currentId()
+
+            // Request A: accepted immediately, releasing the shared id.
+            runBlocking {
+                saveBuy(scope, store, buyClient(BuyPoster(accepted())), sharedId).join()
+            }
+
+            // The user starts the NEXT legitimate operation and takes a new id.
+            val nextId = store.currentId()
+            assertNotEquals(sharedId, nextId)
+
+            // Request B: the overlapping retry of the SAME id, whose accepted
+            // response only arrives now — after nextId was handed out.
+            val gatedPoster = object : HttpPoster {
+                override suspend fun postJson(url: String, body: String): HttpTextResponse {
+                    gate.await()
+                    return accepted()
+                }
+            }
+            val late = saveBuy(scope, store, buyClient(gatedPoster), sharedId)
+            gate.complete(Unit)
+            runBlocking { late.join() }
+
+            assertEquals(
+                nextId,
+                store.currentId(),
+                "a late acceptance of a superseded id must not clear the id the next operation already holds",
+            )
+        } finally {
+            scope.cancel()
+        }
+    }
+
     private fun saveBuy(
         scope: CoroutineScope,
         store: TransactionDraftIdStore,
