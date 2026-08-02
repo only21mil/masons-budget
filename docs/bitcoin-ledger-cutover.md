@@ -66,7 +66,13 @@ self-custody account, so never guess that allocation.
    The same two lists plus the `asOf` used are written durably onto the document
    as `activationBaseline` in the activation transaction, so a lost response is
    never the only copy. Read them back from the document rather than relying on
-   the mutation reply.
+   the mutation reply: `tables:listBtcBalanceDocuments` projects
+   `activationBaseline` alongside `postingActivatedAtMs`.
+
+   Both reads and writes are token-gated and fail closed. Supply
+   `CONVEX_READ_TOKEN` for every query and `CONVEX_SYNC_TOKEN` for every
+   full-admin mutation. Do not set `ALLOW_TOKENLESS_READ` or
+   `ALLOW_TOKENLESS_SYNC` on production to work around a missing token.
 
    Argument shape, exactly: `owner` is `"victor"`; `expectedUpdatedAtMs` is a
    plain number; `asOf` is the ISO string; `accounts` is the complete array of

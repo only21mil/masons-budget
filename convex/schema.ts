@@ -121,7 +121,7 @@ const monthlyHistoryValidator = v.object({
   savingsBps: v.int64(),
 });
 
-const fiatValuationValidator = v.object({
+export const fiatValuationValidator = v.object({
   cents: v.int64(),
   priceCents: v.optional(v.int64()),
   quotedAt: v.optional(v.string()),

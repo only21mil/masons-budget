@@ -1100,3 +1100,82 @@ describe("activation baseline durability and edit safety", () => {
     expect(satsByKey(await snapshot())).toMatchObject(afterCreate);
   });
 });
+
+describe("operator readback and delayed-retry safety", () => {
+  const listDocuments = mutation<
+    "public",
+    Record<string, unknown>,
+    { rows: Array<Record<string, unknown>> }
+  >("tables:listBtcBalanceDocuments");
+
+  it("exposes activationBaseline through the production read path", async () => {
+    // Writing it durably is not enough: the runbook tells the operator to read
+    // it back, and the only sanctioned read is this projection.
+    setDeploymentEnv({ ALLOW_TOKENLESS_SYNC: "true", ALLOW_TOKENLESS_READ: "true" });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("transactions", {
+        txId: "tx-readback",
+        owner: "victor",
+        date: "2026-07-20",
+        month: "2026-07",
+        merchant: "Payroll",
+        amountCents: -1000n,
+        category: "Income",
+        amountSats: 50_000n,
+        sourceFile: "transactions",
+        updatedAtMs: 5,
+      });
+    });
+    await deactivate();
+    await t.mutation(api.reconcile, {
+      owner: "victor",
+      expectedUpdatedAtMs: 10,
+      asOf: "2026-07-31T00:00:00.000Z",
+      accounts: [
+        { key: "river", label: "River", custody: "exchange", sats: 1_000_000n },
+        {
+          key: "coldcard",
+          label: "Coldcard",
+          custody: "self_custody",
+          sats: 2_000_000n,
+        },
+      ],
+    });
+
+    const documents = (await t.query(
+      listDocuments as never,
+      { viewer: "victor", scope: "netWorth" } as never,
+    )) as unknown as { rows: Array<Record<string, unknown>> };
+    const baseline = documents.rows[0]!.activationBaseline as {
+      asOf: string;
+      baselinedIncomeTxIds: string[];
+      skippedIncomeTxIds: string[];
+    };
+    expect(baseline.asOf).toBe("2026-07-31T00:00:00.000Z");
+    expect(baseline.baselinedIncomeTxIds).toContain("tx-readback");
+  });
+
+  it("refuses a delayed full-admin create replay after the transfer was deleted", async () => {
+    const transfer = {
+      id: "tf-replay",
+      owner: "victor",
+      date: "2026-08-01",
+      fromAccountKey: "river",
+      toAccountKey: "coldcard",
+      sats: 10_000n,
+      feeSats: 100n,
+    };
+    await t.mutation(api.transfer, { transfer });
+    await t.mutation(api.deleteTransfer, {
+      transferId: "tf-replay",
+      owner: "victor",
+    });
+    const afterDelete = satsByKey(await snapshot());
+
+    // The original create, retried late through the full-admin path.
+    await expect(t.mutation(api.transfer, { transfer })).rejects.toThrow(
+      /deleted Bitcoin transfer id cannot be silently resurrected/,
+    );
+    expect(satsByKey(await snapshot())).toMatchObject(afterDelete);
+  });
+});

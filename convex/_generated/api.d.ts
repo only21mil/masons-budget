@@ -9,6 +9,7 @@
  */
 
 import type * as androidReadToken from "../androidReadToken.js";
+import type * as btcLedger from "../btcLedger.js";
 import type * as crons from "../crons.js";
 import type * as dataFiles from "../dataFiles.js";
 import type * as dateValidation from "../dateValidation.js";
@@ -32,6 +33,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   androidReadToken: typeof androidReadToken;
+  btcLedger: typeof btcLedger;
   crons: typeof crons;
   dataFiles: typeof dataFiles;
   dateValidation: typeof dateValidation;

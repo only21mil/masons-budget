@@ -54,7 +54,11 @@ import {
   type SharesDecimalOptions,
   canonicalizeSharesDecimal,
 } from "./documentProjection";
-import { custodyValidator, familyMemberValidator } from "./schema";
+import {
+  custodyValidator,
+  familyMemberValidator,
+  fiatValuationValidator,
+} from "./schema";
 import { normalizeTodoRecord, todoUpdatedMs } from "./todoNormalize";
 
 declare const process: { env: Record<string, string | undefined> };
@@ -770,6 +774,11 @@ function publicBtcBalanceDocument(row: {
   basis?: string;
   confidence?: string;
   postingActivatedAtMs?: number;
+  activationBaseline?: {
+    asOf: string;
+    baselinedIncomeTxIds: string[];
+    skippedIncomeTxIds: string[];
+  };
   updatedAtMs: number;
 }) {
   return {
@@ -795,6 +804,9 @@ function publicBtcBalanceDocument(row: {
     basis: row.basis,
     confidence: row.confidence,
     postingActivatedAtMs: row.postingActivatedAtMs,
+    // The runbook requires reading this back after activation; without it here
+    // the record is written durably and is still unreachable to the operator.
+    activationBaseline: row.activationBaseline,
     updatedAtMs: row.updatedAtMs,
   };
 }
@@ -2568,9 +2580,15 @@ async function upsertBtcTransferRow(
     .query("btcTransfers")
     .withIndex("by_transfer_id", (q) => q.eq("transferId", row.transferId))
     .unique();
-  const tombstone = optimistic
-    ? await findRowTombstone(ctx, "btcTransfer", row.sourceFile, row.transferId)
-    : null;
+  // Loaded for every caller, not only optimistic ones. A delayed retry of the
+  // original full-admin create, arriving after the transfer was deleted, would
+  // otherwise miss the tombstone and repost both balance legs.
+  const tombstone = await findRowTombstone(
+    ctx,
+    "btcTransfer",
+    row.sourceFile,
+    row.transferId,
+  );
   if (existing) {
     if (existing.owner !== row.owner) {
       deviceFailure(
@@ -3412,6 +3430,10 @@ export const upsertBtcAccount = mutation({
       // with no fiat valuation, and posting strips it. Requiring it here forced
       // an operator repairing a mirror to invent a number.
       fiatCents: v.optional(v.int64()),
+      // The operator can also supply the complete quote. Without this the
+      // full-admin path could never repair a mirror that differs only in
+      // priceCents/quotedAt/source/confidence, because it had no way to say so.
+      fiatValuation: v.optional(fiatValuationValidator),
       asOf: v.string(),
       schemaVersion: v.optional(v.int64()),
     }),
@@ -3449,9 +3471,10 @@ export const upsertBtcAccount = mutation({
           asOf: account.asOf,
           schemaVersion: account.schemaVersion,
           fiatValuation:
-            account.fiatCents === undefined
+            account.fiatValuation ??
+            (account.fiatCents === undefined
               ? undefined
-              : { cents: account.fiatCents },
+              : { cents: account.fiatCents }),
         },
         document.postingActivatedAtMs !== undefined || baseUpdatedAtMs !== undefined
           ? { baseUpdatedAtMs }
