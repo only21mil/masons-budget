@@ -1102,11 +1102,12 @@ describe("activation baseline durability and edit safety", () => {
 });
 
 describe("operator readback and delayed-retry safety", () => {
-  const listDocuments = mutation<
+  const listDocuments = "tables:listBtcBalanceDocuments" as unknown as FunctionReference<
+    "query",
     "public",
     Record<string, unknown>,
     { rows: Array<Record<string, unknown>> }
-  >("tables:listBtcBalanceDocuments");
+  >;
 
   it("exposes activationBaseline through the production read path", async () => {
     // Writing it durably is not enough: the runbook tells the operator to read
@@ -1142,10 +1143,10 @@ describe("operator readback and delayed-retry safety", () => {
       ],
     });
 
-    const documents = (await t.query(
-      listDocuments as never,
-      { viewer: "victor", scope: "netWorth" } as never,
-    )) as unknown as { rows: Array<Record<string, unknown>> };
+    const documents = (await t.query(listDocuments, {
+      viewer: "victor",
+      scope: "netWorth",
+    })) as unknown as { rows: Array<Record<string, unknown>> };
     const baseline = documents.rows[0]!.activationBaseline as {
       asOf: string;
       baselinedIncomeTxIds: string[];

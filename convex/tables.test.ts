@@ -431,6 +431,7 @@ const fn = {
         owner?: Member;
       };
       sourceFile?: string;
+      baseUpdatedAtMs?: number;
       token?: string;
     },
     { buyId: string; owner: Member; month: string; outcome: string }
@@ -454,6 +455,7 @@ const fn = {
         owner?: Member;
       };
       sourceFile?: string;
+      baseUpdatedAtMs?: number;
       token?: string;
     },
     { billPayId: string; owner: Member; month: string; outcome: string }
@@ -473,6 +475,7 @@ const fn = {
         schemaVersion?: bigint;
       };
       sourceFile?: string;
+      baseUpdatedAtMs?: number;
       token?: string;
     },
     { key: string; owner: Member; outcome: string }
