@@ -334,7 +334,6 @@ private fun satsToCentsExact(
 internal fun AddTransactionSheet(
     state: VaultUiState,
     onDismiss: () -> Unit,
-    onWriteSucceeded: () -> Unit,
 ) {
     val applicationContext = LocalContext.current.applicationContext
     val application = applicationContext as? VaultApplication
@@ -361,7 +360,12 @@ internal fun AddTransactionSheet(
     var dateIso by rememberSaveable { mutableStateOf(LocalDate.now(ZoneOffset.UTC).toString()) }
     var note by rememberSaveable { mutableStateOf("") }
     var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
-    var saving by rememberSaveable { mutableStateOf(false) }
+    // Deliberately NOT rememberSaveable: a recreated sheet cannot reconnect to
+    // the in-flight job, so restoring saving=true would strand the button
+    // forever. A fresh sheet with the SAME saveable draft id retries safely —
+    // the server dedupes that id — and an acceptance that lands meanwhile
+    // reaches the ledger through the application-level signal.
+    var saving by remember { mutableStateOf(false) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
     val type = AddTransactionType.valueOf(typeName)
     val inputUnit = DisplayUnit.valueOf(inputUnitName)
@@ -535,7 +539,11 @@ internal fun AddTransactionSheet(
                             row = row,
                             client = client,
                             isUiActive = uiActive::get,
-                            onAccepted = onWriteSucceeded,
+                            // The acceptance signal goes to the process-owned
+                            // flow, never to a composition-captured callback: a
+                            // recreated Activity subscribes its own ViewModel
+                            // and still receives this write's acceptance.
+                            onAccepted = { application?.noteAcceptedWrite() },
                         ) { result ->
                             saving = false
                             val failure = transactionWriteFailureMessage(result)

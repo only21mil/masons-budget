@@ -135,6 +135,18 @@ class MainActivity : FragmentActivity() {
                         ) {
                             budgetNotifications.evaluateAndNotify(state)
                         }
+                        // The process-owned acceptance signal outlives any one
+                        // Activity: a write accepted while this screen was being
+                        // recreated replays to THIS subscriber, so the current
+                        // ViewModel refreshes instead of the disposed one.
+                        // refreshActiveProfile is idempotent; the replay costs at
+                        // most one reload per recreation.
+                        val vaultApplication = application as? VaultApplication
+                        LaunchedEffect(model, vaultApplication) {
+                            vaultApplication?.acceptedWrites?.collect {
+                                model.refreshActiveProfile()
+                            }
+                        }
                         VaultApp(
                             state = state,
                             onNavigate = model::navigate,

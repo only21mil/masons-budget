@@ -28,6 +28,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -46,6 +48,24 @@ open class VaultApplication : Application() {
         LazyThreadSafetyMode.SYNCHRONIZED,
     ) {
         CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    }
+
+    /**
+     * Process-owned acceptance signal for writes that may outlive the surface
+     * that started them. `replay = 1` is the recreation guarantee: an Activity
+     * recreated mid-write subscribes after the acceptance and still receives
+     * it, so the visible ledger refreshes instead of staying stale until an
+     * unrelated reload. Refresh consumers must be idempotent — a re-subscribe
+     * after any past acceptance delivers one replayed signal.
+     */
+    private val acceptedWriteSignals = MutableSharedFlow<Unit>(
+        replay = 1,
+        extraBufferCapacity = 16,
+    )
+    val acceptedWrites: SharedFlow<Unit> = acceptedWriteSignals
+
+    internal open fun noteAcceptedWrite() {
+        acceptedWriteSignals.tryEmit(Unit)
     }
 
     override fun onTerminate() {
