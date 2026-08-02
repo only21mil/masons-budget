@@ -27,6 +27,7 @@ import type {
   DeviceCredentialStore,
 } from "./deviceCredentialStore.ts"
 import type { JsonPostResponse, JsonPoster } from "./convexRead.ts"
+import { ADULTS } from "./readProfileSession.ts"
 
 export const PAIRED_DEVICE_PATHS = {
   claim: "dataFiles:claimMobilePairing",
@@ -1398,6 +1399,14 @@ export function createPairedDeviceController(
       // disagrees with the session is a renderer claiming an identity it was
       // not given, and quietly correcting it would hide that.
       if (request.actor !== sessionActor) {
+        return { ...identity, status: "unauthorized" }
+      }
+      // A genuine actor is not automatically an allowed one. Every validated
+      // request carries the EFFECTIVE owner its write will land on (family
+      // finance has already canonicalized onto the household ledger), so a
+      // child session may write only its own ledger; adults manage any of
+      // them, matching the read-profile containment in readProfileSession.
+      if (!ADULTS.has(sessionActor) && request.owner !== sessionActor) {
         return { ...identity, status: "unauthorized" }
       }
       if (!options.writesEnabled()) {

@@ -11,7 +11,12 @@ import type {
 } from "../shared/ipc.ts"
 
 const MEMBERS = ["victor", "rachel", "mason", "maddox"] as const
-const ADULTS: ReadonlySet<VogelVaultMember> = new Set(["victor", "rachel"])
+/**
+ * Exported because write authorization must agree with read containment: the
+ * same set that may switch profiles is the set that may write another
+ * member's ledger.
+ */
+export const ADULTS: ReadonlySet<VogelVaultMember> = new Set(["victor", "rachel"])
 
 function isMember(value: unknown): value is VogelVaultMember {
   return typeof value === "string" && (MEMBERS as readonly string[]).includes(value)

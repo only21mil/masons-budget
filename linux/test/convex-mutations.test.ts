@@ -456,6 +456,107 @@ describe("paired-device main controller", () => {
     })
   })
 
+  // A genuine actor is not automatically an allowed one. The session check
+  // above proves who is writing; these prove what they may write: a child may
+  // touch only their own effective ledger, while adults manage any of them.
+  it("refuses a child session writing another member's ledger", async () => {
+    const post = vi.fn()
+    const controller = createPairedDeviceController({
+      store: store(),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post,
+    })
+
+    const result = await controller.mutate(
+      { ...transactionRequest(), actor: "mason", owner: "victor" },
+      "mason",
+    )
+
+    expect(result).toMatchObject({ status: "unauthorized" })
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  it("refuses a child session whose write canonicalizes onto the household ledger", async () => {
+    const post = vi.fn()
+    const controller = createPairedDeviceController({
+      store: store(),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post,
+    })
+
+    // Rachel finance canonicalizes to the household ledger owner (victor), so
+    // a Mason session declaring owner=rachel is a cross-owner write in effect.
+    const result = await controller.mutate(
+      { ...transactionRequest(), actor: "mason", owner: "rachel" },
+      "mason",
+    )
+
+    expect(result).toMatchObject({ status: "unauthorized" })
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  it("still lets a child write their own ledger", async () => {
+    const localStore = store({
+      ...snapshot,
+      capabilities: ["budgetCategory.upsert"],
+    })
+    const bodies: Record<string, unknown>[] = []
+    const controller = createPairedDeviceController({
+      store: localStore,
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: async (_endpoint, body) => {
+        bodies.push(JSON.parse(body) as Record<string, unknown>)
+        return success({ ok: true, entityId: "Dining", outcome: "updated" })
+      },
+    })
+
+    const result = await controller.mutate({
+      kind: "budgetCategory.upsert",
+      requestId: "request_child_own",
+      actor: "mason",
+      owner: "mason",
+      month: "2026-07",
+      name: "Dining",
+      budgetCents: 20_000n,
+    }, "mason")
+
+    expect(result.status).toBe("ok")
+    expect(bodies[0]).toMatchObject({ args: { owner: "mason" } })
+  })
+
+  it("still lets an adult session manage a child's ledger", async () => {
+    const localStore = store({
+      ...snapshot,
+      capabilities: ["budgetCategory.upsert"],
+    })
+    const bodies: Record<string, unknown>[] = []
+    const controller = createPairedDeviceController({
+      store: localStore,
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: async (_endpoint, body) => {
+        bodies.push(JSON.parse(body) as Record<string, unknown>)
+        return success({ ok: true, entityId: "Dining", outcome: "updated" })
+      },
+    })
+
+    const result = await controller.mutate({
+      kind: "budgetCategory.upsert",
+      requestId: "request_adult_child",
+      actor: "victor",
+      owner: "mason",
+      month: "2026-07",
+      name: "Dining",
+      budgetCents: 20_000n,
+    }, "victor")
+
+    expect(result.status).toBe("ok")
+    expect(bodies[0]).toMatchObject({ args: { owner: "mason" } })
+  })
+
   it("uses only the fixed path, canonical int64, and main-held credential", async () => {
     const calls: { endpoint: string; body: string }[] = []
     const controller = createPairedDeviceController({
