@@ -41,12 +41,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.TransactionDraftIdStore
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.explicitBtcBuyOwner
 import com.sats21m.vogelvault.data.BtcBuyInput
 import com.sats21m.vogelvault.data.BudgetCategoryInput
 import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.ConvexValue
 import com.sats21m.vogelvault.domain.BudgetHealth
 import com.sats21m.vogelvault.domain.BudgetHealthStatus
 import com.sats21m.vogelvault.domain.CategorySpend
@@ -66,6 +68,8 @@ import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 import java.util.UUID
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 data class BudgetCategoryEditorSeed(
@@ -411,6 +415,46 @@ internal fun BudgetCategoryEditorSheet(
     }
 }
 
+/**
+ * Starts the durable part of a Bitcoin buy on a process-owned scope and owns
+ * the draft-id lifecycle for it.
+ *
+ * The id rotates ONLY on a confirmed acceptance, and before the caller's
+ * refresh/dismiss runs: a rejected or ambiguous buy keeps the id so the retry
+ * supersedes the same row instead of crediting River twice, while a confirmed
+ * buy releases it so the NEXT legitimate buy gets a fresh id rather than
+ * colliding with the previous one forever.
+ *
+ * The sheet calls exactly this function, so its regressions exercise the
+ * shipped lifecycle rather than a parallel copy.
+ */
+internal fun launchBtcBuySave(
+    scope: CoroutineScope,
+    request: BtcBuyWriteRequest,
+    client: ConvexMutationClient,
+    buyDraftIds: TransactionDraftIdStore,
+    onResult: (ConvexResult<ConvexValue>) -> Unit,
+): Job = scope.launch {
+    val result = client.mutate(
+        ConvexMutation.UpsertBtcBuy(
+            buy = BtcBuyInput(
+                id = request.id,
+                date = request.date,
+                source = request.source,
+                sats = request.sats,
+                priceUsdCents = request.priceUsdCents,
+                usdCents = request.usdCents,
+                owner = explicitBtcBuyOwner(request.owner),
+            ),
+            sourceFile = request.owner.btcBuysDataFileName,
+        ),
+    )
+    if (result is ConvexResult.Ok) {
+        buyDraftIds.rotateAfterAcceptance()
+    }
+    onResult(result)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun BtcBuyEntrySheet(
@@ -480,7 +524,8 @@ internal fun BtcBuyEntrySheet(
                                     return@Button
                                 }
                                 val writeScope = saveScope
-                                if (writeScope == null) {
+                                val draftIds = buyDraftIds
+                                if (writeScope == null || draftIds == null) {
                                     message = "Bitcoin buy not saved: the app write client is unavailable."
                                     return@Button
                                 }
@@ -488,24 +533,12 @@ internal fun BtcBuyEntrySheet(
                                 // The application scope owns the request so a
                                 // dismissal cannot cancel a write the server
                                 // may already have committed.
-                                writeScope.launch {
-                                    val request = draft.request
-                                    val result =
-                                        client.mutate(
-                                            ConvexMutation.UpsertBtcBuy(
-                                                buy =
-                                                    BtcBuyInput(
-                                                        id = request.id,
-                                                        date = request.date,
-                                                        source = request.source,
-                                                        sats = request.sats,
-                                                        priceUsdCents = request.priceUsdCents,
-                                                        usdCents = request.usdCents,
-                                                        owner = explicitBtcBuyOwner(request.owner),
-                                                    ),
-                                                sourceFile = request.owner.btcBuysDataFileName,
-                                            ),
-                                        )
+                                launchBtcBuySave(
+                                    scope = writeScope,
+                                    request = draft.request,
+                                    client = client,
+                                    buyDraftIds = draftIds,
+                                ) { result ->
                                     submitting = false
                                     when (result) {
                                         is ConvexResult.Ok -> {

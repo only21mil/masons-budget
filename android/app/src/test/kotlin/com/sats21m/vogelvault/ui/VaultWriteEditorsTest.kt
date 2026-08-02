@@ -1,10 +1,28 @@
 package com.sats21m.vogelvault.ui
 
+import com.sats21m.vogelvault.TransactionDraftIdStore
+import com.sats21m.vogelvault.data.ConvexConfig
+import com.sats21m.vogelvault.data.ConvexMutationClient
+import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.ConvexSyncTokenSource
+import com.sats21m.vogelvault.data.HttpPoster
+import com.sats21m.vogelvault.data.HttpTextResponse
+import com.sats21m.vogelvault.data.MutableConvexConfigSource
+import com.sats21m.vogelvault.data.testToken
 import com.sats21m.vogelvault.domain.CategorySpend
 import com.sats21m.vogelvault.domain.FamilyMember
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class VaultWriteEditorsTest {
     @Test
@@ -82,4 +100,110 @@ class VaultWriteEditorsTest {
             budgetDocumentMonth = "2026-07",
             category = CategorySpend("Groceries", 90_000L, 50_000L, icon = "cart"),
         )
+
+    /**
+     * The blocker the revision review caught: the buy store handed out an id
+     * but nothing ever released it, so every later buy reused the first id
+     * forever. This drives launchBtcBuySave — the exact function the sheet
+     * calls — through two CONFIRMED buys and requires distinct ids on the wire.
+     */
+    @Test
+    fun `each confirmed bitcoin buy uses a fresh draft id`() {
+        val store = TransactionDraftIdStore()
+        val poster = BuyPoster(accepted())
+        val client = buyClient(poster)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+
+        try {
+            val firstId = store.currentId()
+            runBlocking { saveBuy(scope, store, client, firstId).join() }
+            val secondId = store.currentId()
+            runBlocking { saveBuy(scope, store, client, secondId).join() }
+
+            assertNotEquals(
+                firstId,
+                secondId,
+                "a confirmed buy must release its id so the next buy is a new row",
+            )
+            assertEquals(2, poster.bodies.size)
+            assertEquals(firstId, wireBuyId(poster.bodies[0]))
+            assertEquals(secondId, wireBuyId(poster.bodies[1]))
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    /**
+     * The inverse guarantee, which the rotation must not break: a rejected or
+     * ambiguous buy KEEPS its id so the retry supersedes the same row instead
+     * of crediting River a second time.
+     */
+    @Test
+    fun `a rejected bitcoin buy keeps its draft id for the retry`() {
+        val store = TransactionDraftIdStore()
+        val poster = BuyPoster(HttpTextResponse(500, ""))
+        val client = buyClient(poster)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+
+        try {
+            val firstId = store.currentId()
+            runBlocking { saveBuy(scope, store, client, firstId).join() }
+
+            assertEquals(
+                firstId,
+                store.currentId(),
+                "a non-accepted buy must retain its id so the retry cannot duplicate",
+            )
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    private fun saveBuy(
+        scope: CoroutineScope,
+        store: TransactionDraftIdStore,
+        client: ConvexMutationClient,
+        id: String,
+    ) = launchBtcBuySave(
+        scope = scope,
+        request = BtcBuyWriteRequest(
+            id = id,
+            owner = FamilyMember.VICTOR,
+            date = "2026-08-01",
+            source = "River",
+            sats = 100_000L,
+            priceUsdCents = 6_500_000L,
+            usdCents = 6_500L,
+        ),
+        client = client,
+        buyDraftIds = store,
+        onResult = {},
+    )
+
+    private fun buyClient(poster: HttpPoster) = ConvexMutationClient(
+        configSource = MutableConvexConfigSource(
+            ConvexConfig(deploymentUrl = "https://buy-rotation-test.convex.cloud"),
+        ),
+        syncTokenSource = ConvexSyncTokenSource { testToken() },
+        http = poster,
+    )
+
+    private fun accepted() = HttpTextResponse(
+        200,
+        """{"status":"success","value":{"ok":true}}""",
+    )
+
+    private fun wireBuyId(body: String): String =
+        Json.parseToJsonElement(body).jsonObject["args"]!!.jsonObject["buy"]!!
+            .jsonObject["id"]!!.jsonPrimitive.content
+
+    private class BuyPoster(private val response: HttpTextResponse) : HttpPoster {
+        val bodies = mutableListOf<String>()
+
+        override suspend fun postJson(url: String, body: String): HttpTextResponse {
+            bodies += body
+            return response
+        }
+    }
+
 }
