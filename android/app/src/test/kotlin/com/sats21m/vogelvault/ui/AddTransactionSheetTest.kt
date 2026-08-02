@@ -4,6 +4,7 @@ import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.ConvexSyncTokenSource
+import com.sats21m.vogelvault.data.HttpPoster
 import com.sats21m.vogelvault.data.HttpTextResponse
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.data.RecordingPoster
@@ -14,6 +15,7 @@ import com.sats21m.vogelvault.data.testToken
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import java.time.LocalDate
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
@@ -21,6 +23,11 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -167,6 +174,54 @@ class AddTransactionSheetTest {
         val args = Json.parseToJsonElement(poster.bodies.single()).jsonObject["args"]!!.jsonObject
         assertTrue("baseUpdatedAtMs" !in args)
         assertEquals("test-id", args["transaction"]!!.jsonObject["id"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `dismissed sheet cannot cancel write or lose accepted receipt`() = runBlocking {
+        val requestStarted = CompletableDeferred<Unit>()
+        val response = CompletableDeferred<HttpTextResponse>()
+        val poster = object : HttpPoster {
+            override suspend fun postJson(url: String, body: String): HttpTextResponse {
+                requestStarted.complete(Unit)
+                return response.await()
+            }
+        }
+        val client = ConvexMutationClient(
+            configSource = MutableConvexConfigSource(ConvexConfig(deploymentUrl = DEPLOYMENT)),
+            syncTokenSource = ConvexSyncTokenSource { testToken() },
+            http = poster,
+        )
+        val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val uiActive = AtomicBoolean(true)
+        var uiResultCount = 0
+
+        try {
+            val save = launchPreparedTransactionSave(
+                scope = applicationScope,
+                row = prepare("1.00", DisplayUnit.USD),
+                client = client,
+                isUiActive = uiActive::get,
+                onUiResult = { uiResultCount++ },
+            )
+            requestStarted.await()
+
+            uiActive.set(false)
+            response.complete(
+                HttpTextResponse(
+                    200,
+                    """{"status":"success","value":{"txId":"test-id","owner":"victor","month":"2026-07","outcome":"inserted","updatedAtMs":1888888888890}}""",
+                ),
+            )
+            save.join()
+
+            assertEquals(0, uiResultCount)
+            assertEquals(
+                1_888_888_888_890L,
+                client.acceptedTransactionRevision("transactions", "test-id"),
+            )
+        } finally {
+            applicationScope.cancel()
+        }
     }
 
     private fun prepare(
