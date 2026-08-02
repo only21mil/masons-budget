@@ -1,6 +1,65 @@
 import SwiftData
 import SwiftUI
 
+struct AddTransactionAmountIntent: Equatable {
+    let amountUSD: Decimal
+    let amountSats: Int64?
+    let enteredInBitcoin: Bool?
+
+    static func make(
+        isIncome: Bool,
+        inputUnit: DisplayUnit,
+        typedAmount: Decimal,
+        computedSats: Int64,
+        btcPrice: Decimal,
+    ) -> AddTransactionAmountIntent {
+        let isBitcoinEntry = inputUnit != .usd
+        let isBitcoinIncome = isIncome && isBitcoinEntry
+        let amountUSD = inputUnit == .usd
+            ? abs(typedAmount)
+            : (Decimal(computedSats) / 100_000_000) * btcPrice
+
+        return AddTransactionAmountIntent(
+            amountUSD: amountUSD,
+            amountSats: isIncome ? (isBitcoinIncome ? computedSats : nil) : computedSats,
+            enteredInBitcoin: isBitcoinEntry ? true : nil,
+        )
+    }
+}
+
+@MainActor
+final class AddTransactionCreateIDStore: ObservableObject {
+    enum Entry {
+        case transaction
+        case bitcoinBuy
+    }
+
+    private let makeUUID: () -> UUID
+    private(set) var transactionID: String
+    private(set) var bitcoinBuyID: String
+
+    init(makeUUID: @escaping () -> UUID = { UUID() }) {
+        self.makeUUID = makeUUID
+        transactionID = makeUUID().uuidString
+        bitcoinBuyID = "b-app-\(makeUUID().uuidString)"
+    }
+
+    /// A rejected or ambiguous write keeps the same id for the user's retry.
+    /// Only a receipt the server accepted advances the session to a new create.
+    @discardableResult
+    func recordServerResult(_ result: ConvexWriteResult, for entry: Entry) -> Bool {
+        guard result.isOk else { return false }
+
+        switch entry {
+        case .transaction:
+            transactionID = makeUUID().uuidString
+        case .bitcoinBuy:
+            bitcoinBuyID = "b-app-\(makeUUID().uuidString)"
+        }
+        return true
+    }
+}
+
 struct AddTransactionView: View {
     @Environment(\.theme) var theme
     @Environment(\.dismiss) var dismiss
@@ -21,6 +80,10 @@ struct AddTransactionView: View {
     /// Holds the in-flight write and its cause-specific rejection message. The
     /// sheet stays open until the write is accepted.
     @StateObject private var writeFeedback = WriteFeedbackStore()
+    /// One create id per logical entry for this sheet session. If the server
+    /// commits but its response is lost, Save retries the same id instead of
+    /// creating and crediting a second row.
+    @StateObject private var createIDs = AddTransactionCreateIDStore()
 
     /// The single inline message slot: local validation first, then the write cause.
     private var inlineMessage: String? {
@@ -434,19 +497,23 @@ struct AddTransactionView: View {
         let isIncome = txType == .income
         let signedSatsDecimal = abs(sats)
         let signedSats = signedSatsDecimal.clampedInt64
-        let signedUsd = (Decimal(signedSats) / 100_000_000) * btcPrice
+        let amountIntent = AddTransactionAmountIntent.make(
+            isIncome: isIncome,
+            inputUnit: inputUnit,
+            typedAmount: numericAmount,
+            computedSats: signedSats,
+            btcPrice: btcPrice,
+        )
         let transactionCategory = selectedCategory.isEmpty ? (isIncome ? "Income" : "Other") : selectedCategory
 
         let tx = Transaction(
-            id: UUID().uuidString,
+            id: createIDs.transactionID,
             date: Date(),
             merchant: merchant.isEmpty ? (isIncome ? "Income" : "Expense") : merchant,
-            amount: signedUsd,
+            amount: amountIntent.amountUSD,
             category: transactionCategory,
-            amountSats: signedSats,
-            // This screen's amount was typed in BTC/sats, so the sats are exact
-            // rather than derived from a dollar amount and a price quote.
-            enteredInBitcoin: true,
+            amountSats: amountIntent.amountSats,
+            enteredInBitcoin: amountIntent.enteredInBitcoin,
             card: method == "Lightning" ? "lightning" : "on-chain",
             owner: ledgerOwner,
             createdBy: "app",
@@ -466,8 +533,9 @@ struct AddTransactionView: View {
         ) {
             // The sheet stays open until the write result arrives, and closes only
             // on `.ok`. Dismissing first made every rejection invisible.
-            AppWriteSyncService.pushTransaction(tx, owner: ledgerOwner) { [writeFeedback, dismiss] result in
-                if writeFeedback.finish(result, operation: "Transaction") { dismiss() }
+            AppWriteSyncService.pushTransaction(tx, owner: ledgerOwner) { [writeFeedback, createIDs, dismiss] result in
+                _ = writeFeedback.finish(result, operation: "Transaction")
+                if createIDs.recordServerResult(result, for: .transaction) { dismiss() }
             }
         }
     }
@@ -488,7 +556,7 @@ struct AddTransactionView: View {
         let date = Date()
 
         let buy = BTCBuy(
-            id: "b-app-\(UUID().uuidString)",
+            id: createIDs.bitcoinBuyID,
             date: date,
             source: account,
             amountBTC: btc,
@@ -523,8 +591,9 @@ struct AddTransactionView: View {
                 modelContext.delete(lot)
             },
         ) {
-            AppWriteSyncService.pushBTCBuy(buy, owner: ledgerOwner) { [writeFeedback, dismiss] result in
-                if writeFeedback.finish(result, operation: "Bitcoin buy") { dismiss() }
+            AppWriteSyncService.pushBTCBuy(buy, owner: ledgerOwner) { [writeFeedback, createIDs, dismiss] result in
+                _ = writeFeedback.finish(result, operation: "Bitcoin buy")
+                if createIDs.recordServerResult(result, for: .bitcoinBuy) { dismiss() }
             }
         }
     }
