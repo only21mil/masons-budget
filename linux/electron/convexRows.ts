@@ -1225,6 +1225,13 @@ function parseResponse(
 
 export interface ConvexRowRepository {
   query(request: unknown, activeProfile?: unknown): Promise<VogelVaultRowResult>
+  /**
+   * Drop cached answers for the given request kinds so the next read goes to the
+   * server. A write that changes balances must not be followed by a cached
+   * pre-write answer, or the saved row appears to vanish for up to `cacheMs`.
+   * Passing no kinds clears everything.
+   */
+  invalidate(kinds?: readonly string[]): void
 }
 
 export interface ConvexRowRepositoryOptions {
@@ -1245,6 +1252,17 @@ export function createConvexRowRepository(options: ConvexRowRepositoryOptions): 
   let activeGeneration = -1
 
   return {
+    invalidate(kinds?: readonly string[]): void {
+      if (kinds === undefined || kinds.length === 0) {
+        cache.clear()
+        return
+      }
+      // Cache keys embed the serialised request, so a kind match is a substring
+      // check against that serialisation rather than a parsed field.
+      for (const key of [...cache.keys()]) {
+        if (kinds.some((kind) => key.includes(`"kind":"${kind}"`))) cache.delete(key)
+      }
+    },
     query(input: unknown, activeProfile?: unknown): Promise<VogelVaultRowResult> {
       const request = validateRowRequest(input)
       if (request === null) return Promise.resolve({ status: "error", code: "invalid-request" })

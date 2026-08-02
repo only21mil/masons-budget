@@ -1111,4 +1111,48 @@ describe("main-process row repository", () => {
       code: "unauthorized",
     })
   })
+
+  it("drops cached answers for invalidated kinds so a write is not masked by a stale read", async () => {
+    let calls = 0
+    const repository = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => {
+        calls += 1
+        return {
+          httpStatus: 200,
+          body: JSON.stringify({ status: "success", value: { rows: [], complete: true } }),
+        }
+      },
+    })
+
+    await repository.query({ kind: "transactions" }, "victor")
+    await repository.query({ kind: "transactions" }, "victor")
+    expect(calls).toBe(1)
+
+    // A Bitcoin mutation lands; the next read must reach the server rather than
+    // replay the pre-write answer that is still inside the cache window.
+    repository.invalidate(["transactions"])
+    await repository.query({ kind: "transactions" }, "victor")
+    expect(calls).toBe(2)
+  })
+
+  it("leaves unrelated cached kinds alone when invalidating", async () => {
+    let calls = 0
+    const repository = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => {
+        calls += 1
+        return {
+          httpStatus: 200,
+          body: JSON.stringify({ status: "success", value: { rows: [], complete: true } }),
+        }
+      },
+    })
+
+    await repository.query({ kind: "todos" }, "victor")
+    expect(calls).toBe(1)
+    repository.invalidate(["transactions"])
+    await repository.query({ kind: "todos" }, "victor")
+    expect(calls).toBe(1)
+  })
 })
