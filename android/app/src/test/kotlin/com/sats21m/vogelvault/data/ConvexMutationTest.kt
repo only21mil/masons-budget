@@ -280,8 +280,8 @@ class ConvexMutationTest {
         val ownerResult = runBlocking { wrongOwner.upsertTransaction(mutation) }
         val monthResult = runBlocking { wrongMonth.upsertTransaction(mutation) }
 
-        assertEquals("invalid write response", assertIs<ConvexResult.Failed>(ownerResult).reason)
-        assertEquals("invalid write response", assertIs<ConvexResult.Failed>(monthResult).reason)
+        assertEquals(ConvexFailure.InvalidResponse, assertIs<ConvexResult.Failed>(ownerResult).failure)
+        assertEquals(ConvexFailure.InvalidResponse, assertIs<ConvexResult.Failed>(monthResult).failure)
         assertEquals(null, wrongOwner.acceptedTransactionRevision("transactions", "tx-1"))
         assertEquals(null, wrongMonth.acceptedTransactionRevision("transactions", "tx-1"))
     }

@@ -190,7 +190,7 @@ class TransactionDetailScreenTest {
     private fun success() =
         HttpTextResponse(
             200,
-            """{"status":"success","value":{"txId":"activity-row","owner":"victor","month":"2026-07","outcome":"updated","updatedAtMs":1777777777778}}""",
+            """{"status":"success","value":{"txId":"activity-row","owner":"mason","month":"2026-07","outcome":"updated","updatedAtMs":1777777777778}}""",
         )
 
     private companion object {

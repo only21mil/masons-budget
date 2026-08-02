@@ -183,6 +183,7 @@
 		A9879A70BEBAAD08D3FA3628 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 6D0182EA2E13DE22F30E4E71 /* README.md */; };
 		A9C97F4F24814C2915C6BAD1 /* ConvexSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C3385DCCF03F3E6D6FE6C7 /* ConvexSyncService.swift */; };
 		AAEBC48066D2E3E788C9E5AA /* AppWriteSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D424253F2EA585494807458 /* AppWriteSyncService.swift */; };
+		ABCDCCCE43A08655664D0BD1 /* AddTransactionIntentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB8660E933700241699D6450 /* AddTransactionIntentTests.swift */; };
 		AC4B388167FA9DAB45D43515 /* SyncEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F048D3DB36FA73A8D570960 /* SyncEvent.swift */; };
 		AC9DFD3F20A65000ABF54CDC /* HoldingAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19DCBB53F51F8E4A3BE1BD9E /* HoldingAccount.swift */; };
 		AD235E37C0A8962E20CFA401 /* getBudgetDocument.json.json in Resources */ = {isa = PBXBuildFile; fileRef = 952D7F58F4E564F0E226F433 /* getBudgetDocument.json.json */; };
@@ -361,6 +362,7 @@
 		E4DF0247EF288DCF8C3F9782 /* ConvexDataReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexDataReader.swift; sourceTree = "<group>"; };
 		E61832AD53C22BEAF0386F25 /* VoiceTransactionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTransactionView.swift; sourceTree = "<group>"; };
 		E9C16AAB01C5D56B81A0DAA4 /* listTransactions.convex_encoded_json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = listTransactions.convex_encoded_json.json; sourceTree = "<group>"; };
+		EB8660E933700241699D6450 /* AddTransactionIntentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTransactionIntentTests.swift; sourceTree = "<group>"; };
 		EC957E91914A99EF29371CA6 /* NetWorthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetWorthView.swift; sourceTree = "<group>"; };
 		EF30B8FE8B7986AB2D87D572 /* convex-int64-wire-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "convex-int64-wire-cases.json"; sourceTree = "<group>"; };
 		EF559B68DCF5C8C506B2A151 /* NetWorthSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetWorthSnapshot.swift; sourceTree = "<group>"; };
@@ -429,6 +431,7 @@
 		713CA87802FA5D0C380DF86E /* MasonsBudgetTests */ = {
 			isa = PBXGroup;
 			children = (
+				EB8660E933700241699D6450 /* AddTransactionIntentTests.swift */,
 				661693167D7791B43DA9AA2D /* AppWritebackConfigTests.swift */,
 				39F9FEE550CB799FCADD40AF /* BudgetMonthScopingTests.swift */,
 				08E8E973EE7F78352B998034 /* ConvexConfigTests.swift */,
@@ -925,6 +928,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8DF654AA7A8B2269A569CE26 /* ActivityView.swift in Sources */,
+				ABCDCCCE43A08655664D0BD1 /* AddTransactionIntentTests.swift in Sources */,
 				C196EDE6E90DE6BBB122E90A /* AddTransactionView.swift in Sources */,
 				0F8ED58D169C39B1704B92F1 /* AmountView.swift in Sources */,
 				064EE72180F8557196303AF4 /* AppTheme.swift in Sources */,
