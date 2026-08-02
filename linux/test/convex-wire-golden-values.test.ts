@@ -64,8 +64,8 @@ describe("real Convex wire values", () => {
       }
     }
     expect(capture.value.rows[0]).toMatchObject({
-      amountCents: "27918",
-      spendAmount: "27918",
+      amountCents: "2366",
+      spendAmount: "2366",
       hasOppositeSpendSign: false,
     })
     const encodedCapture = JSON.parse(
@@ -98,9 +98,9 @@ describe("real Convex wire values", () => {
       throw new Error(`production golden listTransactions decoded as ${result.kind}`)
     }
     expect(result.rows[0]).toMatchObject({
-      amountCents: 27_918n,
-      spendAmount: 27_918n,
-      displaySpendAmount: 27_918n,
+      amountCents: 2_366n,
+      spendAmount: 2_366n,
+      displaySpendAmount: 2_366n,
       hasOppositeSpendSign: false,
     })
   })
@@ -135,10 +135,10 @@ describe("real Convex wire values", () => {
       throw new Error(`production golden listBtcBuys decoded as ${result.kind}`)
     }
     const row = result.rows[0] as VogelVaultBtcBuyRow
-    expect(row.buyId).toBe("b1784166358832")
-    expect(row.sats).toBe(148_033n)
-    expect(row.priceUsdCents).toBe(6_563_401n)
-    expect(row.usdCents).toBe(9_813n)
+    expect(row.buyId).toBe("river-buy-by5ekey7i4")
+    expect(row.sats).toBe(6_572_537n)
+    expect(row.priceUsdCents).toBe(6_414_981n)
+    expect(row.usdCents).toBe(425_843n)
   })
 
   it("decodes BTC bill-pay values through the production repository", async () => {
@@ -154,10 +154,10 @@ describe("real Convex wire values", () => {
       throw new Error(`production golden listBtcBillPays decoded as ${result.kind}`)
     }
     const row = result.rows[0] as VogelVaultBtcBillPayRow
-    expect(row.billPayId).toBe("bp030")
-    expect(row.amountUsdCents).toBe(30_673n)
-    expect(row.btcSpentSats).toBe(481_122n)
-    expect(row.btcPriceCents).toBe(6_375_306n)
+    expect(row.billPayId).toBe("river-billpay-qe3kbvq5qy")
+    expect(row.amountUsdCents).toBe(179_200n)
+    expect(row.btcSpentSats).toBe(2_802_143n)
+    expect(row.btcPriceCents).toBe(6_395_105n)
     expect(row.feeUsdCents).toBe(0n)
   })
 
@@ -170,13 +170,13 @@ describe("real Convex wire values", () => {
       throw new Error(`production golden rowCounts decoded as ${result.kind}`)
     }
     expect(result.value).toEqual({
-      transactions: 911,
-      todos: 25,
-      btcBuys: 33,
-      btcBillPays: 31,
+      transactions: 993,
+      todos: 12,
+      btcBuys: 35,
+      btcBillPays: 37,
       btcTransfers: 0,
       btcAccounts: 8,
-      income: 16,
+      income: 18,
       balanceDocuments: 1,
       budgetDocuments: 2,
       btcBalanceDocuments: 2,
@@ -201,9 +201,9 @@ describe("real Convex wire values", () => {
     }
     expect(result.value).toMatchObject({
       owner: "victor",
-      month: "June 2026",
+      month: "August 2026",
       coinbaseOneBalanceCents: 2_642n,
-      updatedAtMs: 0,
+      updatedAtMs: 1_785_605_567_371,
     })
     expect(result.value.categories[0]).toMatchObject({
       name: "Bills & Utilities",
