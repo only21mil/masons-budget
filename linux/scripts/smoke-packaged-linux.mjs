@@ -79,8 +79,6 @@ try {
   await mkdir(outDir)
   const reportPath = path.join(outDir, "smoke-report.json")
   const harness = path.join(root, "scripts", "smoke-electron-app.mjs")
-  // Keep Chromium's OS sandbox enabled: this smoke exists to exercise the
-  // packaged preload in the same sandboxed renderer boundary users receive.
   const args = [
     "-a",
     "--server-args=-screen 0 1920x1200x24",
@@ -88,6 +86,10 @@ try {
     harness,
     `--user-data-dir=${profileDir}`,
   ]
+  // GitHub-hosted runners cannot give Electron's development chrome-sandbox
+  // root ownership and mode 4755. This affects only the CI smoke harness; the
+  // packaged artifact and its launcher are unchanged.
+  if (process.env.CI === "true") args.push("--no-sandbox")
   const environment = {
     ...process.env,
     VV_SMOKE_APP_ROOT: appRoot,
