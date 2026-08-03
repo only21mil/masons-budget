@@ -1,6 +1,8 @@
 package com.sats21m.vogelvault
 
 import android.app.Application
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.CreationExtras
@@ -34,11 +36,11 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Process-owned identity for drafts awaiting a definitive server acceptance,
- * one pending id per server scope. Ambiguous retries deliberately reuse the
- * scope's id so Convex supersedes the same row instead of inserting another
- * one. One instance per money-write surface; a surface's pending ids are
- * independent of the others'.
+ * Application-owned identity leases for drafts awaiting a definitive server
+ * acceptance, one pending id per server scope. Ambiguous retries deliberately
+ * reuse the scope's id so Convex supersedes the same row instead of inserting
+ * another one. When backed by preferences, leases survive process death. One
+ * instance per money-write surface keeps each surface's pending ids independent.
  *
  * The scope key is the exact `sourceFile` the mutation sends, because that is
  * the server's natural idempotency domain: Convex keys these rows by
@@ -48,12 +50,25 @@ import kotlinx.coroutines.flow.StateFlow
  * then release the lease the adult retry still needs, minting a fresh id and
  * crediting the adult row twice.
  */
-internal class TransactionDraftIdStore {
+internal class TransactionDraftIdStore(
+    private val preferences: SharedPreferences? = null,
+) {
     private val lock = Any()
-    private val pendingIdsByScope = mutableMapOf<String, String>()
+    private val pendingIdsByScope =
+        preferences
+            ?.all
+            ?.mapNotNull { (scope, value) ->
+                (value as? String)?.let { pendingId -> scope to pendingId }
+            }
+            ?.toMap()
+            ?.toMutableMap()
+            ?: mutableMapOf()
 
     fun currentId(scope: String): String = synchronized(lock) {
-        pendingIdsByScope.getOrPut(scope) { "android-${UUID.randomUUID()}" }
+        pendingIdsByScope[scope] ?: "android-${UUID.randomUUID()}".also { pendingId ->
+            pendingIdsByScope[scope] = pendingId
+            preferences?.edit()?.putString(scope, pendingId)?.apply()
+        }
     }
 
     /**
@@ -74,6 +89,7 @@ internal class TransactionDraftIdStore {
         synchronized(lock) {
             if (pendingIdsByScope[scope] == acceptedId) {
                 pendingIdsByScope.remove(scope)
+                preferences?.edit()?.remove(scope)?.apply()
             }
         }
     }
@@ -98,14 +114,32 @@ open class VaultApplication : Application() {
     }
 
     /** Shared by every sheet instance until Convex confirms the pending row. */
-    internal val transactionDraftIds = TransactionDraftIdStore()
+    internal val transactionDraftIds: TransactionDraftIdStore by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        TransactionDraftIdStore(
+            getSharedPreferences(TRANSACTION_DRAFT_ID_PREFERENCES, Context.MODE_PRIVATE),
+        )
+    }
 
     /**
      * The Bitcoin buy sheet carries the same duplicate-credit hazard as the
      * transaction sheet: its buy credits River, so a dismissed-then-reopened
      * resubmit after an ambiguous write must reuse one id.
      */
-    internal val btcBuyDraftIds = TransactionDraftIdStore()
+    internal val btcBuyDraftIds: TransactionDraftIdStore by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        TransactionDraftIdStore(
+            getSharedPreferences(BTC_BUY_DRAFT_ID_PREFERENCES, Context.MODE_PRIVATE),
+        )
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        transactionDraftIds
+        btcBuyDraftIds
+    }
 
     /**
      * Process-owned acceptance signal for writes that may outlive the surface
@@ -128,6 +162,11 @@ open class VaultApplication : Application() {
     override fun onTerminate() {
         applicationScope.cancel()
         super.onTerminate()
+    }
+
+    private companion object {
+        const val TRANSACTION_DRAFT_ID_PREFERENCES = "transaction_draft_ids"
+        const val BTC_BUY_DRAFT_ID_PREFERENCES = "btc_buy_draft_ids"
     }
 
     val database: VaultDatabase by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
