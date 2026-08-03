@@ -42,6 +42,25 @@ class RowQueryRepositoryTest {
     }
 
     @Test
+    fun `sat income rows preserve exact sats and remote revision`() {
+        val revision = 1_777_777_777_777L
+        val poster = RecordingPoster(
+            rowSuccess(
+                """[{"txId":"income-1","owner":"victor","date":"2026-08-01","month":"2026-08","merchant":"Bitcoin income","amountCents":${convexInt64(8000)},"spendAmount":${convexInt64(0)},"displaySpendAmount":${convexInt64(0)},"hasOppositeSpendSign":false,"category":"Income","amountSats":${convexInt64(123456)},"updatedAtMs":$revision.0}]""",
+            ),
+        )
+
+        val result = runBlocking {
+            repositoryWith(poster).listTransactions(FamilyMember.VICTOR, month = "2026-08")
+        }
+        val row = (result as? ConvexResult.Ok)?.value?.rows?.single()
+            ?: fail("expected one decoded sat-Income row, got $result")
+
+        assertEquals(123_456L, row.amountSats)
+        assertEquals(revision, row.updatedAtMs)
+    }
+
+    @Test
     fun `bounded incomplete snapshots remain explicitly incomplete`() {
         val poster = RecordingPoster(rowSuccess("[]", complete = false))
 

@@ -152,7 +152,7 @@ describe("paired-device credential storage", () => {
       id: "tx-1",
       owner: "victor",
       baseUpdatedAtMs: 100,
-    })).resolves.toMatchObject({ status: "failed", code: "credential-storage" })
+    }, "victor")).resolves.toMatchObject({ status: "failed", code: "credential-storage" })
     expect(post).not.toHaveBeenCalled()
   })
 

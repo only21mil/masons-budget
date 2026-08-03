@@ -24,6 +24,7 @@ export {
   BillPayFormDialog,
   BtcAccountFormDialog,
   BtcBuyFormDialog,
+  BtcTransferFormDialog,
   BudgetCategoryFormDialog,
   TodoFormDialog,
   TransactionFormDialog,

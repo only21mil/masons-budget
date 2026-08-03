@@ -33,6 +33,7 @@ import { PUBLIC_QUERY_INDEX_PLAN } from "./tables";
 // suite registers exactly what it needs and touches nothing shared.
 const modules: Record<string, () => Promise<unknown>> = {
   "./_generated/server.ts": () => import("./generatedServer.test-stub"),
+  "./btcLedger.ts": () => import("./btcLedger"),
   "./dataFiles.ts": () => import("./dataFiles"),
   "./dateValidation.ts": () => import("./dateValidation"),
   "./migrate.ts": () => import("./migrate"),
@@ -162,6 +163,32 @@ const fn = {
         btcSpentSats: bigint;
         btcPriceCents: bigint;
         feeUsdCents: bigint;
+        updatedAtMs: number;
+      }>;
+      complete: boolean;
+    }
+  >,
+  listBtcTransfers: "tables:listBtcTransfers" as unknown as FunctionReference<
+    "query",
+    "public",
+    {
+      viewer: Member;
+      scope: Scope;
+      month?: string;
+      limit?: number;
+      token?: string;
+    },
+    {
+      rows: Array<{
+        transferId: string;
+        owner: Member;
+        date: string;
+        month: string;
+        fromAccountKey: string;
+        toAccountKey: string;
+        sats: bigint;
+        feeSats: bigint;
+        note?: string;
         updatedAtMs: number;
       }>;
       complete: boolean;
@@ -404,6 +431,7 @@ const fn = {
         owner?: Member;
       };
       sourceFile?: string;
+      baseUpdatedAtMs?: number;
       token?: string;
     },
     { buyId: string; owner: Member; month: string; outcome: string }
@@ -427,6 +455,7 @@ const fn = {
         owner?: Member;
       };
       sourceFile?: string;
+      baseUpdatedAtMs?: number;
       token?: string;
     },
     { billPayId: string; owner: Member; month: string; outcome: string }
@@ -446,6 +475,7 @@ const fn = {
         schemaVersion?: bigint;
       };
       sourceFile?: string;
+      baseUpdatedAtMs?: number;
       token?: string;
     },
     { key: string; owner: Member; outcome: string }
@@ -877,6 +907,51 @@ async function migrateAll(t: T) {
       "financeDocuments",
       projectFinanceDocument(JSON.stringify(FINANCES), 1004),
     );
+  });
+}
+
+async function seedPostingLedgers(t: T) {
+  await t.run(async (ctx) => {
+    for (const owner of ["victor", "mason"] as const) {
+      const sourceFile =
+        owner === "victor" ? "btc-balance-snapshot" : "son-balances";
+      const mirrorKey = owner === "victor" ? "river" : "son-river-mason";
+      await ctx.db.insert("btcBalanceDocuments", {
+        sourceFile,
+        owner,
+        schemaVersion: 2n,
+        asOf: "2026-07-30T00:00:00.000Z",
+        accounts: [
+          {
+            key: "river",
+            label: "River",
+            custody: "exchange",
+            sats: 10_000_000n,
+            fiatCents: 100_000n,
+          },
+        ],
+        totals: {
+          sats: 10_000_000n,
+          fiatCents: 100_000n,
+          exchangeSats: 10_000_000n,
+          selfCustodySats: 0n,
+        },
+        postingActivatedAtMs: 1,
+        updatedAtMs: 1,
+      });
+      await ctx.db.insert("btcAccounts", {
+        key: mirrorKey,
+        owner,
+        label: "River",
+        custody: "exchange",
+        sats: 10_000_000n,
+        fiatCents: 100_000n,
+        asOf: "2026-07-30T00:00:00.000Z",
+        schemaVersion: 2n,
+        sourceFile,
+        updatedAtMs: 1,
+      });
+    }
   });
 }
 
@@ -1627,6 +1702,45 @@ describe("public Linux/Android read contract", () => {
     }
   });
 
+  it("returns scoped Bitcoin transfer history needed for revision-fenced correction", async () => {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("btcTransfers", {
+        transferId: "transfer-read-1",
+        owner: "victor",
+        date: "2026-08-01",
+        month: "2026-08",
+        fromAccountKey: "river",
+        toAccountKey: "coldcard",
+        sats: 50_000n,
+        feeSats: 250n,
+        note: "Test transfer",
+        sourceFile: "btc-transfers",
+        balancePostingVersion: 1n,
+        updatedAtMs: 123,
+      });
+    });
+
+    const response = await t.query(fn.listBtcTransfers, {
+      viewer: "rachel",
+      scope: "netWorth",
+    });
+    expect(response).toEqual({
+      complete: true,
+      rows: [{
+        transferId: "transfer-read-1",
+        owner: "victor",
+        date: "2026-08-01",
+        month: "2026-08",
+        fromAccountKey: "river",
+        toAccountKey: "coldcard",
+        sats: 50_000n,
+        feeSats: 250n,
+        note: "Test transfer",
+        updatedAtMs: 123,
+      }],
+    });
+  });
+
   it("marks every explicitly bounded response incomplete", async () => {
     const transactions = await t.query(fn.listTransactions, {
       viewer: "victor",
@@ -2323,6 +2437,38 @@ describe("row mutations", () => {
   });
 
   it("upserts a btc buy and a btc account idempotently", async () => {
+    await seedPostingLedgers(t);
+    await expect(
+      t.mutation(fn.upsertBtcAccount, {
+        account: {
+          key: "river",
+          owner: "victor",
+          label: "River",
+          custody: "exchange",
+          sats: 99_000_000n,
+          fiatCents: 0n,
+          asOf: "2026-07-26T00:00:00Z",
+        },
+      }),
+    ).rejects.toThrow(/baseUpdatedAtMs is required/);
+    const initialDocument = await t.query(fn.listBtcBalanceDocuments, {
+      viewer: "victor",
+      scope: "netWorth",
+    });
+    await expect(
+      t.mutation(fn.upsertBtcAccount, {
+        baseUpdatedAtMs: initialDocument.rows[0]!.updatedAtMs,
+        account: {
+          key: "river",
+          owner: "victor",
+          label: "River",
+          custody: "exchange",
+          sats: 99_000_000n,
+          fiatCents: 0n,
+          asOf: "2026-07-26T00:00:00Z",
+        },
+      }),
+    ).rejects.toThrow(/ledger-controlled after activation/);
     const inserted = await t.mutation(fn.upsertBtcBuy, {
       buy: {
         id: "app-b1",
@@ -2349,27 +2495,37 @@ describe("row mutations", () => {
       ).outcome,
     ).toBe("updated");
 
+    const beforeInsert = await t.query(fn.listBtcBalanceDocuments, {
+      viewer: "victor",
+      scope: "netWorth",
+    });
     await t.mutation(fn.upsertBtcAccount, {
+      baseUpdatedAtMs: beforeInsert.rows[0]!.updatedAtMs,
       account: {
         key: "strike",
         owner: "victor",
         label: "Strike",
         custody: "exchange",
-        sats: 35000000n,
-        fiatCents: 3430055n,
+        sats: 0n,
+        fiatCents: 0n,
         asOf: "2026-07-26T00:00:00Z",
       },
+    });
+    const beforeRename = await t.query(fn.listBtcBalanceDocuments, {
+      viewer: "victor",
+      scope: "netWorth",
     });
     expect(
       (
         await t.mutation(fn.upsertBtcAccount, {
+          baseUpdatedAtMs: beforeRename.rows[0]!.updatedAtMs,
           account: {
             key: "strike",
             owner: "victor",
-            label: "Strike",
+            label: "Strike account",
             custody: "exchange",
-            sats: 36000000n,
-            fiatCents: 3530055n,
+            sats: 0n,
+            fiatCents: 0n,
             asOf: "2026-07-26T01:00:00Z",
           },
         })
@@ -2381,7 +2537,59 @@ describe("row mutations", () => {
       scope: "visible",
     });
     expect(accounts.filter((a) => a.key === "strike")).toHaveLength(1);
-    expect(accounts.find((a) => a.key === "strike")?.sats).toBe(36000000n);
+    expect(accounts.find((a) => a.key === "strike")).toMatchObject({
+      label: "Strike account",
+      sats: 0n,
+    });
+    const documents = await t.query(fn.listBtcBalanceDocuments, {
+      viewer: "victor",
+      scope: "netWorth",
+    });
+    expect(
+      documents.rows[0]?.accounts.find((account) => account.key === "strike"),
+    ).toMatchObject({ label: "Strike account", sats: 0n });
+  });
+
+  it("keeps activated account retries idempotent and changed revisions monotonic", async () => {
+    await seedPostingLedgers(t);
+    const account = {
+      key: "river",
+      owner: "victor" as const,
+      label: "River",
+      custody: "exchange" as const,
+      sats: 10_000_000n,
+      fiatCents: 100_000n,
+      asOf: "2026-07-30T00:00:00.000Z",
+      schemaVersion: 2n,
+    };
+
+    await expect(
+      t.mutation(fn.upsertBtcAccount, { account }),
+    ).resolves.toMatchObject({ outcome: "updated" });
+    const before = await t.query(fn.listBtcBalanceDocuments, {
+      viewer: "victor",
+      scope: "netWorth",
+    });
+    expect(before.rows[0]!.updatedAtMs).toBe(1);
+
+    const dateNow = vi.spyOn(Date, "now").mockReturnValue(0);
+    try {
+      await expect(
+        t.mutation(fn.upsertBtcAccount, {
+          baseUpdatedAtMs: before.rows[0]!.updatedAtMs,
+          account: { ...account, label: "River exchange" },
+        }),
+      ).resolves.toMatchObject({ outcome: "updated" });
+    } finally {
+      dateNow.mockRestore();
+    }
+
+    const after = await t.query(fn.listBtcBalanceDocuments, {
+      viewer: "victor",
+      scope: "netWorth",
+    });
+    expect(after.rows[0]!.updatedAtMs).toBe(2);
+    expect(after.rows[0]!.accounts[0]!.label).toBe("River exchange");
   });
 
   it("updates and inserts categories without replacing the budget document", async () => {
@@ -2523,6 +2731,7 @@ describe("row mutations", () => {
   });
 
   it("upserts one BTC bill pay idempotently with separate sats and fiat fields", async () => {
+    await seedPostingLedgers(t);
     const inserted = await t.mutation(fn.upsertBtcBillPay, {
       billPay: {
         id: "app-bp-1",
@@ -2545,6 +2754,12 @@ describe("row mutations", () => {
     });
 
     const updated = await t.mutation(fn.upsertBtcBillPay, {
+      baseUpdatedAtMs: (
+        await queryRows(fn.listBtcBillPays, {
+          viewer: "victor",
+          scope: "visible",
+        })
+      ).find((row) => row.billPayId === "app-bp-1")!.updatedAtMs,
       billPay: {
         id: "app-bp-1",
         date: "2026-07-24",
@@ -2572,6 +2787,7 @@ describe("row mutations", () => {
   });
 
   it("resolves BTC bill-pay owners through the existing visibility scopes", async () => {
+    await seedPostingLedgers(t);
     await t.mutation(fn.upsertBtcBillPay, {
       billPay: {
         id: "mason-bp-1",
@@ -2644,6 +2860,7 @@ describe("row mutations", () => {
   });
 
   it("refuses a bill-pay upsert that would change an existing row's owner", async () => {
+    await seedPostingLedgers(t);
     const base = {
       date: "2026-07-24",
       merchant: "Electric Utility",
@@ -2962,19 +3179,31 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
     },
     {
       name: "upsertBtcAccount",
-      call: (token?: string) =>
-        t.mutation(fn.upsertBtcAccount, {
+      call: async (token?: string) => {
+        const baseUpdatedAtMs = await t.run(async (ctx) =>
+          (
+            await ctx.db
+              .query("btcBalanceDocuments")
+              .withIndex("by_source_file", (q) =>
+                q.eq("sourceFile", "btc-balance-snapshot"),
+              )
+              .unique()
+          )!.updatedAtMs,
+        );
+        return await t.mutation(fn.upsertBtcAccount, {
+          baseUpdatedAtMs,
           account: {
             key: "probe",
             owner: "victor",
             label: "Probe",
             custody: "exchange",
-            sats: 1n,
-            fiatCents: 1n,
+            sats: 0n,
+            fiatCents: 0n,
             asOf: "2026-07-25T00:00:00Z",
           },
           token,
-        }),
+        });
+      },
     },
     {
       name: "upsertBudgetCategory",
@@ -3005,6 +3234,7 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
         projectBudgetDocument(JSON.stringify(ADULT_BUDGET), "budget", 1000),
       );
     });
+    await seedPostingLedgers(t);
   });
 
   describe("no token configured, no hatch (the deployed default)", () => {

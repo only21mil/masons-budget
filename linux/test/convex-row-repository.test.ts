@@ -23,6 +23,7 @@ const PROFILE_SCOPED_REQUESTS: readonly VogelVaultRowRequest[] = [
   { kind: "btcBuys", scope: "visible" },
   { kind: "btcAccounts", scope: "netWorth" },
   { kind: "btcBillPays", scope: "visible" },
+  { kind: "btcTransfers", scope: "netWorth" },
   { kind: "budget", scope: "netWorth" },
   { kind: "btcSnapshotMeta", scope: "visible" },
   { kind: "btcBalanceDocuments", scope: "netWorth" },
@@ -130,6 +131,11 @@ describe("row request validation", () => {
     expect(validateRowRequest({ kind: "btcBillPays", scope: "visible" })).toEqual({
       kind: "btcBillPays",
       scope: "visible",
+    })
+    expect(validateRowRequest({ kind: "btcTransfers" })).toBeNull()
+    expect(validateRowRequest({ kind: "btcTransfers", scope: "netWorth" })).toEqual({
+      kind: "btcTransfers",
+      scope: "netWorth",
     })
     expect(validateRowRequest({ kind: "budget" })).toBeNull()
     expect(validateRowRequest({ kind: "budget", scope: "netWorth" })).toEqual({
@@ -282,6 +288,7 @@ describe("main-process row repository", () => {
         todos: 2,
         btcBuys: 3,
         btcBillPays: 4,
+        btcTransfers: 0,
         btcAccounts: 5,
         income: 6,
         balanceDocuments: 7,
@@ -382,13 +389,14 @@ describe("main-process row repository", () => {
       { kind: "btcBuys", scope: "visible" },
       { kind: "btcAccounts", scope: "visible" },
       { kind: "btcBillPays", scope: "visible" },
+      { kind: "btcTransfers", scope: "netWorth" },
       { kind: "budget", scope: "netWorth" },
       { kind: "btcSnapshotMeta", scope: "visible" },
       { kind: "btcBalanceDocuments", scope: "netWorth" },
     ]
 
     const pending = requests.map((request) => repository.query(request, "victor"))
-    expect(calls).toBe(9)
+    expect(calls).toBe(10)
     for (const release of releases) release()
 
     const results = await Promise.all(pending)
@@ -610,6 +618,27 @@ describe("main-process row repository", () => {
           updatedAtMs: 40,
         },
         expected: { billPayId: "pay-1", owner: "mason", feeUsdCents: 100n },
+      },
+      {
+        request: { kind: "btcTransfers", scope: "netWorth" },
+        path: "tables:listBtcTransfers",
+        row: {
+          transferId: "transfer-1",
+          owner: "victor",
+          date: "2026-07-03",
+          month: "2026-07",
+          fromAccountKey: "river",
+          toAccountKey: "coldcard",
+          sats: int64(50n),
+          feeSats: int64(2n),
+          updatedAtMs: 45,
+        },
+        expected: {
+          transferId: "transfer-1",
+          owner: "victor",
+          sats: 50n,
+          feeSats: 2n,
+        },
       },
     ]
 
@@ -1081,5 +1110,49 @@ describe("main-process row repository", () => {
       status: "error",
       code: "unauthorized",
     })
+  })
+
+  it("drops cached answers for invalidated kinds so a write is not masked by a stale read", async () => {
+    let calls = 0
+    const repository = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => {
+        calls += 1
+        return {
+          httpStatus: 200,
+          body: JSON.stringify({ status: "success", value: { rows: [], complete: true } }),
+        }
+      },
+    })
+
+    await repository.query({ kind: "transactions" }, "victor")
+    await repository.query({ kind: "transactions" }, "victor")
+    expect(calls).toBe(1)
+
+    // A Bitcoin mutation lands; the next read must reach the server rather than
+    // replay the pre-write answer that is still inside the cache window.
+    repository.invalidate(["transactions"])
+    await repository.query({ kind: "transactions" }, "victor")
+    expect(calls).toBe(2)
+  })
+
+  it("leaves unrelated cached kinds alone when invalidating", async () => {
+    let calls = 0
+    const repository = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => {
+        calls += 1
+        return {
+          httpStatus: 200,
+          body: JSON.stringify({ status: "success", value: { rows: [], complete: true } }),
+        }
+      },
+    })
+
+    await repository.query({ kind: "todos" }, "victor")
+    expect(calls).toBe(1)
+    repository.invalidate(["transactions"])
+    await repository.query({ kind: "todos" }, "victor")
+    expect(calls).toBe(1)
   })
 })

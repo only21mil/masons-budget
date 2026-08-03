@@ -67,6 +67,9 @@ const api = {
   deleteBtcAccount: mutation<Record<string, unknown>, DeleteResult>(
     "tables:deleteBtcAccountFromDevice",
   ),
+  upsertBtcTransfer: mutation<Record<string, unknown>, UpsertResult>(
+    "tables:upsertBtcTransferFromDevice",
+  ),
 };
 
 let t: T;
@@ -210,6 +213,49 @@ async function seedBudgets() {
   });
 }
 
+async function seedBtcLedger(owner: "victor" | "mason") {
+  const sourceFile = owner === "victor" ? "btc-balance-snapshot" : "son-balances";
+  const key = owner === "victor" ? "river" : "son-river-mason";
+  const accountKey = "river";
+  await t.run(async (ctx) => {
+    await ctx.db.insert("btcBalanceDocuments", {
+      sourceFile,
+      owner,
+      schemaVersion: 2n,
+      asOf: "2026-07-30T00:00:00.000Z",
+      accounts: [
+        {
+          key: accountKey,
+          label: "River",
+          custody: "exchange",
+          sats: 1_000_000n,
+          fiatCents: 1_000n,
+        },
+      ],
+      totals: {
+        sats: 1_000_000n,
+        fiatCents: 1_000n,
+        exchangeSats: 1_000_000n,
+        selfCustodySats: 0n,
+      },
+      postingActivatedAtMs: 1,
+      updatedAtMs: 1,
+    });
+    await ctx.db.insert("btcAccounts", {
+      key,
+      owner,
+      label: "River",
+      custody: "exchange",
+      sats: 1_000_000n,
+      fiatCents: 1_000n,
+      asOf: "2026-07-30T00:00:00.000Z",
+      schemaVersion: 2n,
+      sourceFile,
+      updatedAtMs: 1,
+    });
+  });
+}
+
 describe("device row authorization", () => {
   it("requires the operation capability and leaves lastSeen unchanged on rejection", async () => {
     const device = await pairMobileDevice(t, syncToken, "todo-only");
@@ -243,6 +289,79 @@ describe("device row authorization", () => {
         .unique(),
     );
     expect(stored!.lastSeenAt).toBe(0);
+  });
+
+  it("requires bitcoin authority for sat-Income create, edit, and delete", async () => {
+    await seedBtcLedger("victor");
+    const transactionOnly = await pairMobileDevice(
+      t,
+      syncToken,
+      "transaction-only-bitcoin-test",
+      ["transactions:write"],
+    );
+    const full = await fullDevice("transaction-and-bitcoin-test");
+    const income = {
+      id: "device-sat-income",
+      owner: "victor" as const,
+      date: "2026-07-30",
+      merchant: "Bitcoin income",
+      amountCents: 1n,
+      amountSats: 100n,
+      kind: "credit" as const,
+      category: "Income",
+    };
+
+    await expect(
+      t.mutation(api.upsertTransaction, {
+        ...authArgs(transactionOnly),
+        owner: "victor",
+        sourceFile: "transactions",
+        transaction: income,
+      }),
+    ).rejects.toThrow(/Unauthorized mobile device/);
+    await expect(
+      t.mutation(api.upsertTransaction, {
+        ...authArgs(transactionOnly),
+        owner: "victor",
+        sourceFile: "transactions",
+        transaction: { ...income, id: "ordinary-income", amountSats: undefined },
+      }),
+    ).resolves.toMatchObject({ outcome: "inserted" });
+    await t.mutation(api.upsertTransaction, {
+      ...authArgs(full),
+      owner: "victor",
+      sourceFile: "transactions",
+      transaction: income,
+    });
+    const baseUpdatedAtMs = await transactionRevision(income.id);
+
+    await expect(
+      t.mutation(api.upsertTransaction, {
+        ...authArgs(transactionOnly),
+        owner: "victor",
+        sourceFile: "transactions",
+        baseUpdatedAtMs,
+        transaction: { ...income, note: "unauthorized edit" },
+      }),
+    ).rejects.toThrow(/Unauthorized mobile device/);
+    await expect(
+      t.mutation(api.deleteTransaction, {
+        ...authArgs(transactionOnly),
+        owner: "victor",
+        sourceFile: "transactions",
+        entityId: income.id,
+        baseUpdatedAtMs,
+      }),
+    ).rejects.toThrow(/Unauthorized mobile device/);
+    await expect(
+      t.mutation(api.deleteTransaction, {
+        ...authArgs(full),
+        owner: "victor",
+        sourceFile: "transactions",
+        entityId: income.id,
+        baseUpdatedAtMs,
+      }),
+    ).resolves.toMatchObject({ removed: true });
   });
 
   it("rejects owner/source and request/payload owner mismatches", async () => {
@@ -531,6 +650,7 @@ describe("device row authorization", () => {
 describe("device transaction and todo mutations", () => {
   it("atomically marks every runtime-owned source at its first successful write", async () => {
     await seedBudgets();
+    await seedBtcLedger("victor");
     const device = await fullDevice("source-lock-device");
     const auth = authArgs(device);
 
@@ -604,12 +724,13 @@ describe("device transaction and todo mutations", () => {
       ...auth,
       owner: "victor",
       sourceFile: "btc-balance-snapshot",
+      baseUpdatedAtMs: await btcDocumentRevision("btc-balance-snapshot"),
       account: {
         key: "lock-account",
         owner: "victor",
         label: "Account",
         custody: "exchange",
-        sats: 1n,
+        sats: 0n,
         asOf: "2026-07-30T00:00:00.000Z",
       },
     });
@@ -1412,6 +1533,7 @@ describe("device bitcoin mutations", () => {
 
   it("canonicalizes Rachel financial intent into the shared Victor ledger", async () => {
     await seedBudgets();
+    await seedBtcLedger("victor");
     const device = await fullDevice();
     const auth = authArgs(device);
     await t.mutation(api.upsertTransaction, {
@@ -1470,12 +1592,13 @@ describe("device bitcoin mutations", () => {
       ...auth,
       owner: "rachel",
       sourceFile: "btc-balance-snapshot",
+      baseUpdatedAtMs: await btcDocumentRevision("btc-balance-snapshot"),
       account: {
         key: "rachel-shared",
         owner: "rachel",
         label: "Shared account",
         custody: "exchange",
-        sats: 10n,
+        sats: 0n,
         asOf: "2026-07-30T00:00:00.000Z",
       },
     });
@@ -1494,7 +1617,12 @@ describe("device bitcoin mutations", () => {
           q.eq("sourceFile", "btc-balance-snapshot"),
         )
         .unique())!.owner,
-      accountMirror: (await ctx.db.query("btcAccounts").unique())!.owner,
+      accountMirror: (await ctx.db
+        .query("btcAccounts")
+        .withIndex("by_owner_key", (q) =>
+          q.eq("owner", "victor").eq("key", "rachel-shared"),
+        )
+        .unique())!.owner,
     }));
     expect(owners).toEqual({
       transaction: "victor",
@@ -1507,6 +1635,8 @@ describe("device bitcoin mutations", () => {
   });
 
   it("upserts and deletes buys and bill pays with cross-owner protection", async () => {
+    await seedBtcLedger("victor");
+    await seedBtcLedger("mason");
     const device = await fullDevice();
     await expect(
       t.mutation(api.upsertBtcBuy, {
@@ -1684,11 +1814,23 @@ describe("device bitcoin mutations", () => {
       "son-coldcard-mason",
       "son-strike-mason",
     ]);
+    await t.mutation(api.upsertBtcAccount, {
+      ...base,
+      baseUpdatedAtMs: beforeDelete.document!.updatedAtMs,
+      account: {
+        key: "strike",
+        owner: "mason",
+        label: "Strike",
+        custody: "exchange",
+        sats: 0n,
+        asOf: "2026-07-30T00:00:00.000Z",
+      },
+    });
     await expect(
       t.mutation(api.deleteBtcAccount, {
         ...base,
         entityId: "strike",
-        baseUpdatedAtMs: beforeDelete.document!.updatedAtMs,
+        baseUpdatedAtMs: await btcDocumentRevision("son-balances"),
       }),
     ).resolves.toEqual({
       ok: true,
@@ -1709,6 +1851,134 @@ describe("device bitcoin mutations", () => {
     expect(afterDelete.mirrors.map((row) => row.key)).toEqual([
       "son-coldcard-mason",
     ]);
+  });
+
+  it("keeps activated account quantities ledger-controlled and protects referenced accounts", async () => {
+    await seedBtcLedger("victor");
+    const device = await fullDevice();
+    const base = {
+      ...authArgs(device),
+      owner: "victor",
+      sourceFile: "btc-balance-snapshot",
+    };
+    await expectDeviceError(
+      t.mutation(api.upsertBtcAccount, {
+        ...base,
+        baseUpdatedAtMs: await btcDocumentRevision("btc-balance-snapshot"),
+        account: {
+          key: "river",
+          owner: "victor",
+          label: "River",
+          custody: "exchange",
+          sats: 999_999n,
+          asOf: "2026-08-01T00:00:00.000Z",
+        },
+      }),
+      "ENTITY_CONFLICT",
+      "river",
+    );
+    await expectDeviceError(
+      t.mutation(api.upsertBtcAccount, {
+        ...base,
+        baseUpdatedAtMs: await btcDocumentRevision("btc-balance-snapshot"),
+        account: {
+          key: "coldcard",
+          owner: "victor",
+          label: "Coldcard",
+          custody: "self_custody",
+          sats: 1n,
+          asOf: "2026-08-01T00:00:00.000Z",
+        },
+      }),
+      "ENTITY_CONFLICT",
+      "coldcard",
+    );
+    await t.mutation(api.upsertBtcAccount, {
+      ...base,
+      baseUpdatedAtMs: await btcDocumentRevision("btc-balance-snapshot"),
+      account: {
+        key: "coldcard",
+        owner: "victor",
+        label: "Coldcard",
+        custody: "self_custody",
+        sats: 0n,
+        asOf: "2026-08-01T00:00:00.000Z",
+      },
+    });
+    await expect(
+      t.mutation(api.upsertBtcAccount, {
+        ...base,
+        baseUpdatedAtMs: await btcDocumentRevision("btc-balance-snapshot"),
+        account: {
+          key: "decoy",
+          owner: "victor",
+          label: "River",
+          custody: "exchange",
+          sats: 0n,
+          asOf: "2026-08-01T00:00:00.000Z",
+        },
+      }),
+    ).rejects.toThrow(/missing or ambiguous/);
+    await expect(
+      t.mutation(api.upsertBtcAccount, {
+        ...base,
+        baseUpdatedAtMs: await btcDocumentRevision("btc-balance-snapshot"),
+        account: {
+          key: "coldcard",
+          owner: "victor",
+          label: "River",
+          custody: "self_custody",
+          sats: 0n,
+          asOf: "2026-08-01T00:00:00.000Z",
+        },
+      }),
+    ).rejects.toThrow(/missing or ambiguous/);
+    await expectDeviceError(
+      t.mutation(api.deleteBtcAccount, {
+        ...base,
+        entityId: "river",
+        baseUpdatedAtMs: await btcDocumentRevision("btc-balance-snapshot"),
+      }),
+      "ENTITY_CONFLICT",
+      "river",
+    );
+    await t.mutation(api.upsertBtcTransfer, {
+      ...authArgs(device),
+      owner: "victor",
+      sourceFile: "btc-transfers",
+      transfer: {
+        id: "to-coldcard",
+        owner: "victor",
+        date: "2026-08-01",
+        fromAccountKey: "river",
+        toAccountKey: "coldcard",
+        sats: 1_000n,
+        feeSats: 0n,
+      },
+    });
+    await t.mutation(api.upsertBtcTransfer, {
+      ...authArgs(device),
+      owner: "victor",
+      sourceFile: "btc-transfers",
+      transfer: {
+        id: "from-coldcard",
+        owner: "victor",
+        date: "2026-08-01",
+        fromAccountKey: "coldcard",
+        toAccountKey: "river",
+        sats: 1_000n,
+        feeSats: 0n,
+      },
+    });
+    await expectDeviceError(
+      t.mutation(api.deleteBtcAccount, {
+        ...base,
+        entityId: "coldcard",
+        baseUpdatedAtMs: await btcDocumentRevision("btc-balance-snapshot"),
+      }),
+      "ENTITY_CONFLICT",
+      "coldcard",
+    );
   });
 
   it("preserves valuation when omitted and never invents zero for a new account", async () => {

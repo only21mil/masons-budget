@@ -183,6 +183,7 @@ internal data class PublicTransactionDto(
     val category: String,
     val card: String?,
     val note: String?,
+    val amountSats: Long?,
     val updatedAtMs: Long,
 ) {
     fun toDomain(): Transaction = Transaction(
@@ -193,7 +194,9 @@ internal data class PublicTransactionDto(
         category = category,
         card = card,
         note = note,
+        amountSats = amountSats,
         owner = owner,
+        updatedAtMs = updatedAtMs,
         spendAmount = spendAmount,
         displaySpendAmount = displaySpendAmount,
     )
@@ -203,6 +206,7 @@ internal data class PublicTransactionDto(
             val row = element as? JsonObject ?: return null
             val card = row.decodedOptionalString("card") ?: return null
             val note = row.decodedOptionalString("note") ?: return null
+            val amountSats = row.decodedOptionalInt64("amountSats") ?: return null
             val amountCents = row.rowInt64("amountCents") ?: return null
             // abs(Long.MIN_VALUE) overflows back to Long.MIN_VALUE, so this
             // canonical amount cannot produce a nonnegative display magnitude.
@@ -231,6 +235,7 @@ internal data class PublicTransactionDto(
                 category = category,
                 card = card.value,
                 note = note.value,
+                amountSats = amountSats.value,
                 updatedAtMs = row.requiredLong("updatedAtMs") ?: return null,
             )
         }

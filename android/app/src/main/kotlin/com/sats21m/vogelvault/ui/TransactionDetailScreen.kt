@@ -55,6 +55,9 @@ sealed interface TransactionActionResult {
     data class Error(val message: String) : TransactionActionResult
 }
 
+internal const val TRANSACTION_REVISION_REQUIRED_MESSAGE =
+    "This transaction has no server revision. Refresh and try again."
+
 interface TransactionActions {
     suspend fun save(
         original: Transaction,
@@ -71,6 +74,11 @@ internal class ConvexTransactionActions(
         original: Transaction,
         draft: TransactionDraft,
     ): TransactionActionResult {
+        // The detail screen only receives rows from the server-backed ledger.
+        // A missing revision here is stale local state, never a new create, so
+        // refuse before the write can silently become unfenced.
+        val baseUpdatedAtMs = original.knownTransactionRevision(client)
+            ?: return TransactionActionResult.Error(TRANSACTION_REVISION_REQUIRED_MESSAGE)
         val amountCents =
             parseTransactionCents(draft.amount)
                 ?: return TransactionActionResult.Error("Enter a valid signed amount with at most two decimals.")
@@ -89,6 +97,7 @@ internal class ConvexTransactionActions(
                     kind = originalKind(original),
                     card = draft.method.trim().ifEmpty { null },
                     note = draft.note.trim().ifEmpty { null },
+                    amountSats = original.amountSats,
                     owner = original.owner.ledgerOwner,
                 )
             } catch (error: IllegalArgumentException) {
@@ -98,23 +107,30 @@ internal class ConvexTransactionActions(
             }
 
         return client
-            .mutate(
+            .upsertTransaction(
                 ConvexMutation.UpsertTransaction(
                     transaction = transaction,
                     sourceFile = original.owner.ledgerOwner.transactionsDataFileName,
+                    baseUpdatedAtMs = baseUpdatedAtMs,
                 ),
             ).toTransactionActionResult()
     }
 
-    override suspend fun delete(transaction: Transaction): TransactionActionResult =
-        client
+    override suspend fun delete(transaction: Transaction): TransactionActionResult {
+        // Deletes are fenced by the same revision as edits; an absent fence is
+        // especially dangerous because it can remove a newly changed sat row.
+        val baseUpdatedAtMs = transaction.knownTransactionRevision(client)
+            ?: return TransactionActionResult.Error(TRANSACTION_REVISION_REQUIRED_MESSAGE)
+        return client
             .mutate(
                 ConvexMutation.DeleteTransaction(
                     txId = transaction.id,
                     owner = transaction.owner.ledgerOwner,
                     sourceFile = transaction.owner.ledgerOwner.transactionsDataFileName,
+                    baseUpdatedAtMs = baseUpdatedAtMs,
                 ),
             ).toTransactionActionResult()
+    }
 }
 
 @Composable
@@ -355,6 +371,14 @@ private fun originalKind(transaction: Transaction): TransactionKind =
     } else {
         TransactionKind.SPEND
     }
+
+private fun Transaction.knownTransactionRevision(client: ConvexMutationClient): Long? {
+    if (updatedAtMs > 0L) return updatedAtMs
+    return client.acceptedTransactionRevision(
+        sourceFile = owner.ledgerOwner.transactionsDataFileName,
+        txId = id,
+    )
+}
 
 private fun isIsoDate(value: String): Boolean =
     try {

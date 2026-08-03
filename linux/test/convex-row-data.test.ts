@@ -22,6 +22,7 @@ function response(
           todos: 1,
           btcBuys: 1,
           btcBillPays: 1,
+          btcTransfers: 1,
           btcAccounts: 1,
           income: 1,
           balanceDocuments: 1,
@@ -129,6 +130,23 @@ function response(
           btcPriceCents: 9_000_000n,
           feeUsdCents: 50n,
           updatedAtMs: 50,
+        }],
+      }
+    case "btcTransfers":
+      return {
+        status: "ok",
+        kind: "btcTransfers",
+        complete: true,
+        rows: [{
+          transferId: "transfer-1",
+          owner: "victor",
+          date: "2026-07-24",
+          month: "2026-07",
+          fromAccountKey: "river",
+          toAccountKey: "wallet",
+          sats: 100_000n,
+          feeSats: 200n,
+          updatedAtMs: 55,
         }],
       }
     case "budget":
@@ -252,6 +270,7 @@ describe("renderer Convex row adapter", () => {
       { kind: "btcBuys", scope: "visible" },
       { kind: "btcAccounts", scope: "visible" },
       { kind: "btcBillPays", scope: "visible" },
+      { kind: "btcTransfers", scope: "netWorth" },
       { kind: "budget", scope: "netWorth" },
       { kind: "btcSnapshotMeta", scope: "visible" },
       { kind: "btcBalanceDocuments", scope: "netWorth" },
@@ -267,6 +286,7 @@ describe("renderer Convex row adapter", () => {
     expect(result.data.btcBuys.value[0]?.updatedAtMs).toBe(30)
     expect(result.data.btcAccounts.value[0]?.updatedAtMs).toBe(40)
     expect(result.data.billPays.value[0]?.updatedAtMs).toBe(50)
+    expect(result.data.btcTransfers.value[0]?.updatedAtMs).toBe(55)
     expect(result.data.budget.value?.updatedAtMs).toBe(60)
     expect(result.data.btcBalanceDocument.value?.updatedAtMs).toBe(80)
     expect(result.data.btcBalanceDocument.value?.accounts[0]?.updatedAtMs).toBe(80)
@@ -289,6 +309,7 @@ describe("renderer Convex row adapter", () => {
           todos: 0,
           btcBuys: 0,
           btcBillPays: 0,
+          btcTransfers: 0,
           btcAccounts: 0,
           income: 0,
           balanceDocuments: 0,

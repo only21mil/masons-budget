@@ -82,6 +82,27 @@ function reject(code: string): never {
   throw new ConvexError({ code });
 }
 
+async function refuseActivatedBtcPostingImports(
+  ctx: ReadCtx,
+  ops: readonly CanonicalOperatorImportOp[],
+): Promise<void> {
+  const insertsAdultBitcoinHistory = ops.some(
+    (op) =>
+      (op.kind === "btc_buy" || op.kind === "btc_bill_pay") &&
+      (op.owner === "victor" || op.owner === "rachel"),
+  );
+  if (!insertsAdultBitcoinHistory) return;
+  const document = await ctx.db
+    .query("btcBalanceDocuments")
+    .withIndex("by_source_file", (q) =>
+      q.eq("sourceFile", "btc-balance-snapshot"),
+    )
+    .unique();
+  if (document?.postingActivatedAtMs !== undefined) {
+    reject("BTC_POSTING_ALREADY_ACTIVE");
+  }
+}
+
 function requireFingerprint(value: string): void {
   if (!FINGERPRINT.test(value)) reject("INVALID_FINGERPRINT");
 }
@@ -611,6 +632,7 @@ async function untouchedFingerprintFor(
 
 async function buildAnalysis(ctx: ReadCtx, input: unknown): Promise<Analysis> {
   const canonical = await canonicalizeRedacted(input);
+  await refuseActivatedBtcPostingImports(ctx, canonical.ops);
   const state = await loadLedgerState(ctx);
   validateLiveCategories(canonical.ops, state.budgets);
 

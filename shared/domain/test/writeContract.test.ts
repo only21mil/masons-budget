@@ -99,6 +99,38 @@ test("minor-unit parser refuses float and unsafe JSON-number fallbacks", () => {
   assert.throws(() => parseWriteInt64(9_007_199_254_740_992), WriteContractError)
 })
 
+test("Bitcoin-denominated Income carries exact positive sats only", () => {
+  const input = {
+    id: "income-1",
+    date: "2026-08-01",
+    merchant: "Bitcoin income",
+    amountCents: 1n,
+    amountSats: 25_000n,
+    kind: "credit",
+    category: "Income",
+    owner: "victor",
+    sourceFile: "transactions",
+  }
+  assert.deepEqual(
+    buildTransactionWriteRequest("victor", input).args.transaction.amountSats,
+    { $integer: "qGEAAAAAAAA=" },
+  )
+  assert.throws(
+    () => buildTransactionWriteRequest("victor", {
+      ...input,
+      category: "Other",
+      kind: "spend",
+    }),
+    (error: unknown) =>
+      error instanceof WriteContractError && error.code === "invalid-input",
+  )
+  assert.throws(
+    () => buildTransactionWriteRequest("victor", { ...input, amountSats: 0n }),
+    (error: unknown) =>
+      error instanceof WriteContractError && error.code === "invalid-input",
+  )
+})
+
 test("golden write requests never contain a token or decimal dollar field", () => {
   for (const testCase of fixtures.accepted) {
     const serialized = JSON.stringify(testCase.expected)

@@ -353,6 +353,9 @@ function mutationSnapshot(
     case "btcBillPay.upsert":
     case "btcBillPay.delete":
       return data.billPays.value.find((row) => row.id === request.id)
+    case "btcTransfer.upsert":
+    case "btcTransfer.delete":
+      return undefined
     case "btcAccount.upsert":
     case "btcAccount.delete":
       return data.btcAccounts.value.find((row) => row.key === request.key)
@@ -538,6 +541,12 @@ export function applyOptimisticMutation(
         ...data,
         billPays: { ...data.billPays, value: data.billPays.value.filter((row) => row.id !== request.id) },
       }
+    case "btcTransfer.upsert":
+    case "btcTransfer.delete":
+      // The authoritative mutation changes two accounts and aggregate totals
+      // atomically. Keep the last complete snapshot visible until refresh
+      // instead of fabricating a partial renderer-only document.
+      return data
     case "btcAccount.upsert": {
       const existing = data.btcAccounts.value.find((row) => row.key === request.key)
       const row: BTCAccount = {

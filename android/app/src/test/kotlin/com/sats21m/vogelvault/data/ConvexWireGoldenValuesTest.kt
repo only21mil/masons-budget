@@ -27,8 +27,8 @@ class ConvexWireGoldenValuesTest {
             goldenFixture("listTransactions.json.json").readText(),
         ).jsonObject.getValue("value").jsonObject
             .getValue("rows").jsonArray[0].jsonObject
-        assertEquals("27918", rawTransactions.getValue("amountCents").jsonPrimitive.content)
-        assertEquals("27918", rawTransactions.getValue("spendAmount").jsonPrimitive.content)
+        assertEquals("2366", rawTransactions.getValue("amountCents").jsonPrimitive.content)
+        assertEquals("2366", rawTransactions.getValue("spendAmount").jsonPrimitive.content)
         assertEquals(false, rawTransactions.getValue("hasOppositeSpendSign").jsonPrimitive.boolean)
         val transactions = requireOk(
             runBlocking {
@@ -36,9 +36,9 @@ class ConvexWireGoldenValuesTest {
             },
             "listTransactions",
         )
-        assertEquals(27_918L, transactions.rows[0].amount)
-        assertEquals(27_918L, transactions.rows[0].spendAmount)
-        assertEquals(27_918L, transactions.rows[0].displaySpendAmount)
+        assertEquals(2_366L, transactions.rows[0].amount)
+        assertEquals(2_366L, transactions.rows[0].spendAmount)
+        assertEquals(2_366L, transactions.rows[0].displaySpendAmount)
         assertEquals(false, transactions.rows[0].hasOppositeSpendSign)
 
         val todos = requireOk(
@@ -61,10 +61,10 @@ class ConvexWireGoldenValuesTest {
             },
             "listBtcBuys",
         )
-        assertEquals("b1784166358832", buys.rows[0].id)
-        assertEquals(148_033L, buys.rows[0].sats)
-        assertEquals(6_563_401L, buys.rows[0].priceUsdCents)
-        assertEquals(9_813L, buys.rows[0].usdCents)
+        assertEquals("river-buy-by5ekey7i4", buys.rows[0].id)
+        assertEquals(6_572_537L, buys.rows[0].sats)
+        assertEquals(6_414_981L, buys.rows[0].priceUsdCents)
+        assertEquals(425_843L, buys.rows[0].usdCents)
 
         val billPays = requireOk(
             runBlocking {
@@ -76,20 +76,20 @@ class ConvexWireGoldenValuesTest {
             },
             "listBtcBillPays",
         )
-        assertEquals("bp030", billPays.rows[0].id)
-        assertEquals(30_673L, billPays.rows[0].amountUsdCents)
-        assertEquals(481_122L, billPays.rows[0].btcSpentSats)
-        assertEquals(6_375_306L, billPays.rows[0].btcPriceCents)
+        assertEquals("river-billpay-qe3kbvq5qy", billPays.rows[0].id)
+        assertEquals(179_200L, billPays.rows[0].amountUsdCents)
+        assertEquals(2_802_143L, billPays.rows[0].btcSpentSats)
+        assertEquals(6_395_105L, billPays.rows[0].btcPriceCents)
         assertEquals(0L, billPays.rows[0].feeUsdCents)
 
         val counts = requireOk(
             runBlocking { repository.rowCounts() },
             "rowCounts",
         )
-        assertEquals(911L, counts.transactions)
-        assertEquals(25L, counts.todos)
-        assertEquals(33L, counts.btcBuys)
-        assertEquals(31L, counts.btcBillPays)
+        assertEquals(993L, counts.transactions)
+        assertEquals(12L, counts.todos)
+        assertEquals(35L, counts.btcBuys)
+        assertEquals(37L, counts.btcBillPays)
         assertEquals(8L, counts.btcAccounts)
 
         val budget = requireOk(
@@ -104,7 +104,7 @@ class ConvexWireGoldenValuesTest {
         assertEquals(true, budget.complete)
         val budgetDocument = requireNotNull(budget.document)
         assertEquals(FamilyMember.VICTOR, budgetDocument.owner)
-        assertEquals("June 2026", budgetDocument.month)
+        assertEquals("August 2026", budgetDocument.month)
         assertEquals(2_642L, budgetDocument.coinbaseOneBalanceCents)
         assertEquals("Bills & Utilities", budgetDocument.categories[0].name)
         assertEquals(620_000L, budgetDocument.categories[0].budgetCents)

@@ -334,6 +334,34 @@ describe("operator import internal backend", () => {
     expect(after).toEqual(before);
   });
 
+  it("rejects new adult Bitcoin history after live balance posting activates", async () => {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("btcBalanceDocuments", {
+        sourceFile: "btc-balance-snapshot",
+        owner: "victor",
+        schemaVersion: 2n,
+        asOf: "2026-08-01T00:00:00.000Z",
+        accounts: [],
+        totals: {
+          sats: 0n,
+          fiatCents: 0n,
+          exchangeSats: 0n,
+          selfCustodySats: 0n,
+        },
+        postingActivatedAtMs: 1,
+        updatedAtMs: 1,
+      });
+    });
+
+    await expectCode(
+      preflight(t, smallManifest([btcBuy(0)])),
+      "BTC_POSTING_ALREADY_ACTIVE",
+    );
+    await expect(preflight(t, smallManifest([transaction(0)]))).resolves.toMatchObject({
+      outcome: "ready",
+    });
+  });
+
   it("atomically inserts all four row kinds, locks sources, advances only the intended budget fields, records a redacted receipt, and reads back", async () => {
     const manifest = productionManifest();
     const plan = await preflight(t, manifest);

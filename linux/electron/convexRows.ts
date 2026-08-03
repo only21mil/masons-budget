@@ -18,6 +18,7 @@ import type {
   VogelVaultBtcBalanceDocument,
   VogelVaultBtcBillPayRow,
   VogelVaultBtcBuyRow,
+  VogelVaultBtcTransferRow,
   VogelVaultBtcScope,
   VogelVaultBtcSnapshotMeta,
   VogelVaultFiatValuation,
@@ -55,6 +56,7 @@ export const ROW_QUERY_PATHS = {
   btcBuys: "tables:listBtcBuys",
   btcAccounts: "tables:listBtcAccounts",
   btcBillPays: "tables:listBtcBillPays",
+  btcTransfers: "tables:listBtcTransfers",
   budget: "tables:getBudgetDocument",
   btcSnapshotMeta: "tables:getBtcSnapshotMetadata",
   btcBalanceDocuments: "tables:listBtcBalanceDocuments",
@@ -70,6 +72,7 @@ export const CONVEX_ROW_LIMITS = {
   maxBtcBuys: 1_000,
   maxBtcAccounts: 256,
   maxBtcBillPays: 1_000,
+  maxBtcTransfers: 1_000,
   maxBtcBalanceDocuments: 256,
   maxBudgetCategories: 256,
   maxBudgetPaychecks: 512,
@@ -80,9 +83,9 @@ export const CONVEX_ROW_LIMITS = {
   maxStringLength: 16_384,
   cacheMs: 5_000,
   maxCachedRequests: 64,
-  // One renderer refresh may fan out to eleven independent row queries after
+  // One renderer refresh may fan out to twelve independent row queries after
   // rowCounts. Keep the guard large enough for that single trusted load.
-  maxInFlightRequests: 11,
+  maxInFlightRequests: 12,
 } as const
 
 const MEMBERS = ["victor", "rachel", "mason", "maddox"] as const
@@ -310,6 +313,21 @@ function transaction(value: unknown, viewer: VogelVaultMember): VogelVaultTransa
   const { date, month } = dateAndMonth(row)
   const amountCents = int64(row, "amountCents")
   const category = text(row, "category")
+  const amountSats = optionalInt64(row, "amountSats")
+  const bitcoinAccountKey = optionalText(row, "bitcoinAccountKey")
+  const balancePostingVersion = optionalInt64(row, "balancePostingVersion")
+  if (
+    amountSats !== undefined &&
+    (category !== "Income" || amountSats <= 0n)
+  ) {
+    throw new InvalidValue()
+  }
+  if (
+    balancePostingVersion !== undefined &&
+    (balancePostingVersion !== 1n || amountSats === undefined || bitcoinAccountKey === undefined)
+  ) {
+    throw new InvalidValue()
+  }
   const spendAmount = category === "Income"
     ? 0n
     : amountCents
@@ -328,6 +346,9 @@ function transaction(value: unknown, viewer: VogelVaultMember): VogelVaultTransa
     category,
     ...optionalField("card", optionalText(row, "card")),
     ...optionalField("note", optionalText(row, "note")),
+    ...optionalField("amountSats", amountSats),
+    ...optionalField("bitcoinAccountKey", bitcoinAccountKey),
+    ...optionalField("balancePostingVersion", balancePostingVersion),
     updatedAtMs: timestampValue(row),
   }
 }
@@ -465,6 +486,41 @@ function btcBillPay(
     ...optionalField("note", optionalText(row, "note")),
     feeUsdCents: int64(row, "feeUsdCents"),
     ...optionalField("reference", optionalText(row, "reference")),
+    updatedAtMs: timestampValue(row),
+  }
+}
+
+function btcTransfer(
+  value: unknown,
+  viewer: VogelVaultMember,
+  scope: VogelVaultBtcScope,
+): VogelVaultBtcTransferRow {
+  const row = responseObject(
+    value,
+    [
+      "transferId", "owner", "date", "month", "fromAccountKey",
+      "toAccountKey", "sats", "feeSats", "updatedAtMs",
+    ],
+  )
+  const owner = member(row)
+  assertVisible(viewer, owner, scope)
+  const { date, month } = dateAndMonth(row)
+  const sats = int64(row, "sats")
+  const feeSats = int64(row, "feeSats")
+  if (sats <= 0n || feeSats < 0n) throw new InvalidValue()
+  const fromAccountKey = text(row, "fromAccountKey", 256)
+  const toAccountKey = text(row, "toAccountKey", 256)
+  if (fromAccountKey === toAccountKey) throw new InvalidValue()
+  return {
+    transferId: text(row, "transferId", 256),
+    owner,
+    date,
+    month,
+    fromAccountKey,
+    toAccountKey,
+    sats,
+    feeSats,
+    ...optionalField("note", optionalText(row, "note")),
     updatedAtMs: timestampValue(row),
   }
 }
@@ -816,6 +872,12 @@ function rowCounts(value: unknown): VogelVaultRowCounts {
     todos: nonNegativeInteger(row, "todos"),
     btcBuys: nonNegativeInteger(row, "btcBuys"),
     btcBillPays: nonNegativeInteger(row, "btcBillPays"),
+    // Older deployed backends predate transfer rows. Treat the missing count as
+    // zero during the coordinated client/backend rollout; the list query still
+    // remains strict once requested.
+    btcTransfers: Object.hasOwn(row, "btcTransfers")
+      ? nonNegativeInteger(row, "btcTransfers")
+      : 0,
     btcAccounts: nonNegativeInteger(row, "btcAccounts"),
     income: nonNegativeInteger(row, "income"),
     balanceDocuments: nonNegativeInteger(row, "balanceDocuments"),
@@ -903,6 +965,18 @@ export function validateRowRequest(value: unknown): VogelVaultRowRequest | null 
           ),
         }
       }
+      case "btcTransfers": {
+        const row = exactObject(value, ["kind", "scope"], ["month", "limit"])
+        return {
+          kind,
+          scope: scopeValue(row["scope"]),
+          ...optionalField("month", Object.hasOwn(row, "month") ? monthValue(row) : undefined),
+          ...optionalField(
+            "limit",
+            Object.hasOwn(row, "limit") ? positiveLimit(row["limit"], CONVEX_ROW_LIMITS.maxBtcTransfers) : undefined,
+          ),
+        }
+      }
       case "budget": {
         const row = exactObject(value, ["kind", "scope"])
         if (row["scope"] !== "netWorth") throw new InvalidValue()
@@ -944,6 +1018,7 @@ function requestArgs(request: ResolvedRowRequest, credential: string | null): Re
       if (request.limit !== undefined) args.limit = request.limit
       break
     case "btcBillPays":
+    case "btcTransfers":
       args.viewer = request.viewer
       args.scope = request.scope
       if (request.month !== undefined) args.month = request.month
@@ -1094,6 +1169,15 @@ function parseResponse(
         )
         return { status: "ok", kind: request.kind, ...list }
       }
+      case "btcTransfers": {
+        const list = parseListEnvelope(
+          value,
+          request.limit,
+          CONVEX_ROW_LIMITS.maxBtcTransfers,
+          (row) => btcTransfer(row, request.viewer, request.scope),
+        )
+        return { status: "ok", kind: request.kind, ...list }
+      }
       case "budget":
         return {
           status: "ok",
@@ -1141,6 +1225,13 @@ function parseResponse(
 
 export interface ConvexRowRepository {
   query(request: unknown, activeProfile?: unknown): Promise<VogelVaultRowResult>
+  /**
+   * Drop cached answers for the given request kinds so the next read goes to the
+   * server. A write that changes balances must not be followed by a cached
+   * pre-write answer, or the saved row appears to vanish for up to `cacheMs`.
+   * Passing no kinds clears everything.
+   */
+  invalidate(kinds?: readonly string[]): void
 }
 
 export interface ConvexRowRepositoryOptions {
@@ -1161,6 +1252,17 @@ export function createConvexRowRepository(options: ConvexRowRepositoryOptions): 
   let activeGeneration = -1
 
   return {
+    invalidate(kinds?: readonly string[]): void {
+      if (kinds === undefined || kinds.length === 0) {
+        cache.clear()
+        return
+      }
+      // Cache keys embed the serialised request, so a kind match is a substring
+      // check against that serialisation rather than a parsed field.
+      for (const key of [...cache.keys()]) {
+        if (kinds.some((kind) => key.includes(`"kind":"${kind}"`))) cache.delete(key)
+      }
+    },
     query(input: unknown, activeProfile?: unknown): Promise<VogelVaultRowResult> {
       const request = validateRowRequest(input)
       if (request === null) return Promise.resolve({ status: "error", code: "invalid-request" })

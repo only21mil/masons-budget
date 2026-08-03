@@ -163,6 +163,19 @@ export interface IncomeRecord {
   readonly owner: FamilyMember
 }
 
+export interface BtcTransferRecord {
+  readonly id: string
+  readonly updatedAtMs: number
+  readonly date: string
+  readonly month: string
+  readonly fromAccountKey: string
+  readonly toAccountKey: string
+  readonly sats: bigint
+  readonly feeSats: bigint
+  readonly note: string | null
+  readonly owner: FamilyMember
+}
+
 const INCOME: readonly IncomeRecord[] = [
   income("income-0001", 1, "4444.44", "Payroll", "victor"),
   income("income-0002", 7, "3333.33", "Payroll", "victor"),
@@ -390,6 +403,7 @@ export interface FixtureEnvelope {
   readonly btcAccounts: SliceState<readonly BTCAccount[]>
   readonly btcBuys: SliceState<readonly BTCBuy[]>
   readonly billPays: SliceState<readonly BTCBillPay[]>
+  readonly btcTransfers: SliceState<readonly BtcTransferRecord[]>
   readonly todos: SliceState<readonly TodoItem[]>
   readonly btcPriceUsd: bigint | null
   readonly generatedAt: number
@@ -440,6 +454,7 @@ export function buildSanitizedFixtureEnvelope(
     btcAccounts: slice(BTC_ACCOUNTS, overrides.btcAccounts ?? "demo", 11, "Demo fixtures · btc-balance-snapshot"),
     btcBuys: slice(BTC_BUYS, overrides.btcBuys ?? "demo", 11, "Demo fixtures · bitcoin-buys"),
     billPays: slice(BILL_PAYS, overrides.billPays ?? "demo", 11, "Demo fixtures · bitcoin-bill-pays"),
+    btcTransfers: slice([], overrides.btcTransfers ?? "demo", 11, "Demo fixtures · bitcoin transfers"),
     todos: slice(TODOS, overrides.todos ?? "demo", 2, "Demo fixtures · todos"),
     btcPriceUsd:
       btcBalanceDocument.totals.sats > 0n
@@ -515,6 +530,7 @@ export function fixtureEnvelopeInState(
     btcAccounts: status,
     btcBuys: status,
     billPays: status,
+    btcTransfers: status,
     todos: status,
   })
   if (!empty) return base
@@ -527,6 +543,7 @@ export function fixtureEnvelopeInState(
     btcAccounts: { ...base.btcAccounts, value: [] },
     btcBuys: { ...base.btcBuys, value: [] },
     billPays: { ...base.billPays, value: [] },
+    btcTransfers: { ...base.btcTransfers, value: [] },
     todos: { ...base.todos, value: [] },
     btcPriceUsd: null,
   }

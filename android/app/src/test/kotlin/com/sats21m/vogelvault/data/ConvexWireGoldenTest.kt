@@ -56,12 +56,12 @@ class ConvexWireGoldenTest {
         val transaction = snapshot.rows.firstOrNull()
             ?: return "listTransactions: production capture decoded with no rows"
         return when {
-            transaction.amount != 27_918L ->
-                "listTransactions: expected canonical amount 27918, got ${transaction.amount}"
-            transaction.spendAmount != 27_918L ->
-                "listTransactions: expected locally derived spend 27918, got ${transaction.spendAmount}"
-            transaction.displaySpendAmount != 27_918L ->
-                "listTransactions: expected locally derived display spend 27918, got ${transaction.displaySpendAmount}"
+            transaction.amount != 2_366L ->
+                "listTransactions: expected canonical amount 2366, got ${transaction.amount}"
+            transaction.spendAmount != 2_366L ->
+                "listTransactions: expected locally derived spend 2366, got ${transaction.spendAmount}"
+            transaction.displaySpendAmount != 2_366L ->
+                "listTransactions: expected locally derived display spend 2366, got ${transaction.displaySpendAmount}"
             transaction.hasOppositeSpendSign ->
                 "listTransactions: expected locally derived opposite-sign flag false"
             else -> null

@@ -56,6 +56,8 @@ export interface TransactionWriteInput {
   readonly sourceFile: string
   readonly card?: string
   readonly note?: string
+  /** Exact sats, present only for explicitly Bitcoin-denominated Income. */
+  readonly amountSats?: string | bigint
 }
 
 export interface TransactionWriteWire {
@@ -68,6 +70,7 @@ export interface TransactionWriteWire {
   readonly owner: FamilyMember
   readonly card?: string
   readonly note?: string
+  readonly amountSats?: ConvexInt64WireValue
 }
 
 export interface TransactionWriteRequest {
@@ -144,6 +147,15 @@ export function buildTransactionWriteRequest(
   const kind = transactionKind(candidate.kind)
   const category = requiredString(candidate.category, "category")
   requireTransactionSign(amountCents, owner, kind, category)
+  const amountSats = candidate.amountSats === undefined
+    ? undefined
+    : parseWriteInt64(candidate.amountSats)
+  if (amountSats !== undefined && (category !== "Income" || amountSats <= 0n)) {
+    throw new WriteContractError(
+      "invalid-input",
+      "Bitcoin-denominated Income must carry a positive exact sats amount",
+    )
+  }
 
   const transaction: TransactionWriteWire = {
     id: requiredString(candidate.id, "id"),
@@ -155,6 +167,9 @@ export function buildTransactionWriteRequest(
     owner,
     ...optionalWireString(candidate, "card"),
     ...optionalWireString(candidate, "note"),
+    ...(amountSats === undefined
+      ? {}
+      : { amountSats: encodeConvexInt64(amountSats) }),
   }
 
   return {
