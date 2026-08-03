@@ -602,6 +602,7 @@ function mutationFreshness(data: FixtureEnvelope, kind: RendererMutationKind): s
   if (kind.startsWith("budgetCategory.")) return data.budget.status
   if (kind.startsWith("btcBuy.")) return data.btcBuys.status
   if (kind.startsWith("btcBillPay.")) return data.billPays.status
+  if (kind.startsWith("btcTransfer.")) return data.btcBalanceDocument.status
   return data.btcBalanceDocument.status
 }
 

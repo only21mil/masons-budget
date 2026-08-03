@@ -68,9 +68,9 @@ describe("production Convex wire captures", () => {
           throw new Error("production transaction capture did not decode")
         }
         expect(result.rows[0]).toMatchObject({
-          amountCents: 27_918n,
-          spendAmount: 27_918n,
-          displaySpendAmount: 27_918n,
+          amountCents: 2_366n,
+          spendAmount: 2_366n,
+          displaySpendAmount: 2_366n,
           hasOppositeSpendSign: false,
         })
         continue

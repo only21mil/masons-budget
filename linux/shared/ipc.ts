@@ -32,6 +32,9 @@ export interface VogelVaultTransactionRow {
   readonly category: string
   readonly card?: string
   readonly note?: string
+  readonly amountSats?: bigint
+  readonly bitcoinAccountKey?: string
+  readonly balancePostingVersion?: bigint
   readonly updatedAtMs: number
 }
 
@@ -98,6 +101,19 @@ export interface VogelVaultBtcBillPayRow {
   readonly note?: string
   readonly feeUsdCents: bigint
   readonly reference?: string
+  readonly updatedAtMs: number
+}
+
+export interface VogelVaultBtcTransferRow {
+  readonly transferId: string
+  readonly owner: VogelVaultMember
+  readonly date: string
+  readonly month: string
+  readonly fromAccountKey: string
+  readonly toAccountKey: string
+  readonly sats: bigint
+  readonly feeSats: bigint
+  readonly note?: string
   readonly updatedAtMs: number
 }
 
@@ -268,6 +284,7 @@ export interface VogelVaultRowCounts {
   readonly todos: number
   readonly btcBuys: number
   readonly btcBillPays: number
+  readonly btcTransfers: number
   readonly btcAccounts: number
   readonly income: number
   readonly balanceDocuments: number
@@ -308,6 +325,12 @@ export type VogelVaultRowRequest =
     }
   | {
       readonly kind: "btcBillPays"
+      readonly scope: VogelVaultBtcScope
+      readonly month?: string
+      readonly limit?: number
+    }
+  | {
+      readonly kind: "btcTransfers"
       readonly scope: VogelVaultBtcScope
       readonly month?: string
       readonly limit?: number
@@ -377,6 +400,12 @@ export type VogelVaultRowSuccess =
     }
   | {
       readonly status: "ok"
+      readonly kind: "btcTransfers"
+      readonly rows: readonly VogelVaultBtcTransferRow[]
+      readonly complete: boolean
+    }
+  | {
+      readonly status: "ok"
       readonly kind: "budget"
       readonly value: VogelVaultBudgetDocument | null
     }
@@ -435,6 +464,8 @@ export type VogelVaultMutationKind =
   | "btcBuy.delete"
   | "btcBillPay.upsert"
   | "btcBillPay.delete"
+  | "btcTransfer.upsert"
+  | "btcTransfer.delete"
   | "btcAccount.upsert"
   | "btcAccount.delete"
 
@@ -462,6 +493,8 @@ export type VogelVaultMutationRequest =
       readonly category: string
       readonly card?: string
       readonly note?: string
+      /** Present only when Income is explicitly entered in sats. */
+      readonly amountSats?: bigint
       /** Omit only for a create whose natural key has never existed. */
       readonly baseUpdatedAtMs?: number
     })
@@ -563,6 +596,25 @@ export type VogelVaultMutationRequest =
       readonly baseUpdatedAtMs: number
     })
   | (VogelVaultMutationBase & {
+      readonly kind: "btcTransfer.upsert"
+      readonly id: string
+      readonly owner: VogelVaultMember
+      readonly date: string
+      readonly fromAccountKey: string
+      readonly toAccountKey: string
+      readonly sats: bigint
+      readonly feeSats: bigint
+      readonly note?: string
+      /** Omit only for a create whose natural key has never existed. */
+      readonly baseUpdatedAtMs?: number
+    })
+  | (VogelVaultMutationBase & {
+      readonly kind: "btcTransfer.delete"
+      readonly id: string
+      readonly owner: VogelVaultMember
+      readonly baseUpdatedAtMs: number
+    })
+  | (VogelVaultMutationBase & {
       readonly kind: "btcAccount.upsert"
       readonly key: string
       readonly owner: VogelVaultMember
@@ -597,6 +649,7 @@ export type VogelVaultMutationOutcome =
 export type VogelVaultMutationFailureCode =
   | "invalid-request"
   | "conflict"
+  | "rejected"
   | "unavailable"
   | "invalid-response"
   | "credential-storage"

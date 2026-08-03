@@ -63,6 +63,29 @@ class TransactionDetailScreenTest {
                 ?.jsonPrimitive
                 ?.content,
         )
+        assertEquals(
+            REVISION.toString(),
+            args["baseUpdatedAtMs"]?.jsonPrimitive?.content,
+        )
+    }
+
+    @Test
+    fun `editing a server row without a revision refuses instead of sending unfenced`() {
+        val poster = RecordingPoster(success())
+        val actions = actions(poster)
+
+        val result =
+            runBlocking {
+                actions.save(
+                    transaction(updatedAtMs = 0L),
+                    draft(),
+                )
+            }
+
+        val error = assertIs<TransactionActionResult.Error>(result)
+        assertEquals(TRANSACTION_REVISION_REQUIRED_MESSAGE, error.message)
+        assertTrue(poster.urls.isEmpty())
+        assertTrue(poster.bodies.isEmpty())
     }
 
     @Test
@@ -98,6 +121,7 @@ class TransactionDetailScreenTest {
         assertEquals("activity-row", args["txId"]?.jsonPrimitive?.content)
         assertEquals("mason", args["owner"]?.jsonPrimitive?.content)
         assertEquals("mason-transactions", args["sourceFile"]?.jsonPrimitive?.content)
+        assertEquals(REVISION.toString(), args["baseUpdatedAtMs"]?.jsonPrimitive?.content)
     }
 
     @Test
@@ -138,17 +162,20 @@ class TransactionDetailScreenTest {
             ),
         )
 
-    private fun transaction(owner: FamilyMember = FamilyMember.VICTOR) =
-        Transaction(
-            id = "activity-row",
-            date = "2026-07-29",
-            merchant = "Neighborhood Market",
-            amount = 14_218L,
-            category = "Groceries",
-            card = "Visa",
-            note = "original",
-            owner = owner,
-        )
+    private fun transaction(
+        owner: FamilyMember = FamilyMember.VICTOR,
+        updatedAtMs: Long = REVISION,
+    ) = Transaction(
+        id = "activity-row",
+        date = "2026-07-29",
+        merchant = "Neighborhood Market",
+        amount = 14_218L,
+        category = "Groceries",
+        card = "Visa",
+        note = "original",
+        owner = owner,
+        updatedAtMs = updatedAtMs,
+    )
 
     private fun draft(amount: String = "142.18") =
         TransactionDraft(
@@ -161,9 +188,13 @@ class TransactionDetailScreenTest {
         )
 
     private fun success() =
-        HttpTextResponse(200, """{"status":"success","value":{"outcome":"updated"}}""")
+        HttpTextResponse(
+            200,
+            """{"status":"success","value":{"txId":"activity-row","owner":"mason","month":"2026-07","outcome":"updated","updatedAtMs":1777777777778}}""",
+        )
 
     private companion object {
         const val DEPLOYMENT = "https://keen-elephant-452.convex.cloud"
+        const val REVISION = 1_777_777_777_777L
     }
 }

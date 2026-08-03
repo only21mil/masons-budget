@@ -24,7 +24,60 @@ import com.sats21m.vogelvault.ui.ConvexTransactionActions
 import com.sats21m.vogelvault.ui.TodoMutationGateway
 import com.sats21m.vogelvault.ui.VaultViewModel
 import java.io.IOException
+import java.util.UUID
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+
+/**
+ * Process-owned identity for drafts awaiting a definitive server acceptance,
+ * one pending id per server scope. Ambiguous retries deliberately reuse the
+ * scope's id so Convex supersedes the same row instead of inserting another
+ * one. One instance per money-write surface; a surface's pending ids are
+ * independent of the others'.
+ *
+ * The scope key is the exact `sourceFile` the mutation sends, because that is
+ * the server's natural idempotency domain: Convex keys these rows by
+ * `(sourceFile, id)`. A process-global slot loses a cross-profile race — an
+ * adult id retained after an ambiguous write could be handed to a Mason sheet,
+ * legitimately accepted under Mason's sourceFile, and its acceptance would
+ * then release the lease the adult retry still needs, minting a fresh id and
+ * crediting the adult row twice.
+ */
+internal class TransactionDraftIdStore {
+    private val lock = Any()
+    private val pendingIdsByScope = mutableMapOf<String, String>()
+
+    fun currentId(scope: String): String = synchronized(lock) {
+        pendingIdsByScope.getOrPut(scope) { "android-${UUID.randomUUID()}" }
+    }
+
+    /**
+     * Compare-and-clear within one scope: releases the scope's pending id ONLY
+     * when it is still the id that was accepted, and only for the scope the
+     * server actually accepted it under.
+     *
+     * A blind clear loses a race. Two overlapping requests can carry the same
+     * id X (dismiss, reopen, retry before the first returns) and Convex accepts
+     * both idempotently. The first Ok clears X, the user starts the next
+     * operation and takes Y, then the delayed second Ok arrives — a blind clear
+     * would drop Y even though nothing accepted it, and the operation after
+     * that would mint a third id and duplicate the row. Scoping the clear stops
+     * the cross-profile variant: an acceptance under one sourceFile can never
+     * release another sourceFile's lease, even for an equal id.
+     */
+    fun rotateAfterAcceptance(scope: String, acceptedId: String) {
+        synchronized(lock) {
+            if (pendingIdsByScope[scope] == acceptedId) {
+                pendingIdsByScope.remove(scope)
+            }
+        }
+    }
+}
 
 /**
  * Process-scoped infrastructure and the ViewModel composition root.
@@ -33,6 +86,50 @@ import kotlinx.coroutines.flow.StateFlow
  * Convex socket on startup.
  */
 open class VaultApplication : Application() {
+    /**
+     * Process-owned work that must outlive a transient Compose surface.
+     * In-flight writes keep their receipt path even when their sheet leaves
+     * composition; Android process death remains the outer cancellation bound.
+     */
+    internal open val applicationScope: CoroutineScope by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    }
+
+    /** Shared by every sheet instance until Convex confirms the pending row. */
+    internal val transactionDraftIds = TransactionDraftIdStore()
+
+    /**
+     * The Bitcoin buy sheet carries the same duplicate-credit hazard as the
+     * transaction sheet: its buy credits River, so a dismissed-then-reopened
+     * resubmit after an ambiguous write must reuse one id.
+     */
+    internal val btcBuyDraftIds = TransactionDraftIdStore()
+
+    /**
+     * Process-owned acceptance signal for writes that may outlive the surface
+     * that started them. `replay = 1` is the recreation guarantee: an Activity
+     * recreated mid-write subscribes after the acceptance and still receives
+     * it, so the visible ledger refreshes instead of staying stale until an
+     * unrelated reload. Refresh consumers must be idempotent — a re-subscribe
+     * after any past acceptance delivers one replayed signal.
+     */
+    private val acceptedWriteSignals = MutableSharedFlow<Unit>(
+        replay = 1,
+        extraBufferCapacity = 16,
+    )
+    val acceptedWrites: SharedFlow<Unit> = acceptedWriteSignals
+
+    internal open fun noteAcceptedWrite() {
+        acceptedWriteSignals.tryEmit(Unit)
+    }
+
+    override fun onTerminate() {
+        applicationScope.cancel()
+        super.onTerminate()
+    }
+
     val database: VaultDatabase by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         VaultDatabase.create(this)
     }

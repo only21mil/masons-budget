@@ -27,6 +27,7 @@ import type {
   DeviceCredentialStore,
 } from "./deviceCredentialStore.ts"
 import type { JsonPostResponse, JsonPoster } from "./convexRead.ts"
+import { ADULTS } from "./readProfileSession.ts"
 
 export const PAIRED_DEVICE_PATHS = {
   claim: "dataFiles:claimMobilePairing",
@@ -41,6 +42,8 @@ export const PAIRED_DEVICE_PATHS = {
   "btcBuy.delete": "tables:deleteBtcBuyFromDevice",
   "btcBillPay.upsert": "tables:upsertBtcBillPayFromDevice",
   "btcBillPay.delete": "tables:deleteBtcBillPayFromDevice",
+  "btcTransfer.upsert": "tables:upsertBtcTransferFromDevice",
+  "btcTransfer.delete": "tables:deleteBtcTransferFromDevice",
   "btcAccount.upsert": "tables:upsertBtcAccountFromDevice",
   "btcAccount.delete": "tables:deleteBtcAccountFromDevice",
 } as const
@@ -67,6 +70,8 @@ const MUTATION_KINDS = [
   "btcBuy.delete",
   "btcBillPay.upsert",
   "btcBillPay.delete",
+  "btcTransfer.upsert",
+  "btcTransfer.delete",
   "btcAccount.upsert",
   "btcAccount.delete",
 ] as const satisfies readonly VogelVaultMutationKind[]
@@ -102,7 +107,16 @@ interface SuccessEnvelope {
 export interface PairedDeviceController {
   pair(input: unknown): Promise<VogelVaultPairingResult>
   status(): Promise<VogelVaultPairingStatus>
-  mutate(input: unknown): Promise<VogelVaultMutationResult>
+  /**
+   * `sessionActor` is the member this window is authenticated as, established
+   * by the main process rather than by the request. It is required: without it
+   * the payload's own `actor` would be the only claim of identity, and any
+   * renderer could write another family member's ledger by declaring theirs.
+   */
+  mutate(
+    input: unknown,
+    sessionActor: VogelVaultMember,
+  ): Promise<VogelVaultMutationResult>
   unpair(): Promise<VogelVaultUnpairResult>
 }
 
@@ -318,7 +332,7 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           input,
           kind,
           ["id", "owner", "date", "merchant", "amountCents", "transactionKind", "category"],
-          ["card", "note", "baseUpdatedAtMs"],
+          ["card", "note", "amountSats", "baseUpdatedAtMs"],
         )
         const { requestId, actor } = common(record)
         const owner = canonicalFinancialOwner(member(record["owner"]))
@@ -338,6 +352,12 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           category: boundedText(record["category"]),
           ...optionalField("card", card),
           ...optionalField("note", note),
+          ...optionalField(
+            "amountSats",
+            Object.hasOwn(record, "amountSats")
+              ? positiveInt64(record["amountSats"])
+              : undefined,
+          ),
         }
         // Reuse the shared sign, owner/source and exact-money contract.
         buildTransactionWriteRequest(owner, candidate)
@@ -354,12 +374,19 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           category: candidate.category,
           ...optionalField("card", card),
           ...optionalField("note", note),
+          ...optionalField(
+            "amountSats",
+            Object.hasOwn(record, "amountSats")
+              ? positiveInt64(record["amountSats"])
+              : undefined,
+          ),
           ...optionalField("baseUpdatedAtMs", optionalRevision(record)),
         }
       }
       case "transaction.delete":
       case "btcBuy.delete":
-      case "btcBillPay.delete": {
+      case "btcBillPay.delete":
+      case "btcTransfer.delete": {
         const record = withCommon(input, kind, ["id", "owner", "baseUpdatedAtMs"])
         const { requestId, actor } = common(record)
         return {
@@ -539,6 +566,39 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           ...optionalField("baseUpdatedAtMs", optionalRevision(record)),
         }
       }
+      case "btcTransfer.upsert": {
+        const record = withCommon(
+          input,
+          kind,
+          ["id", "owner", "date", "fromAccountKey", "toAccountKey", "sats", "feeSats"],
+          ["note", "baseUpdatedAtMs"],
+        )
+        const { requestId, actor } = common(record)
+        const owner = canonicalFinancialOwner(member(record["owner"]))
+        const fromAccountKey = boundedText(
+          record["fromAccountKey"],
+          PAIRED_DEVICE_LIMITS.maxIdentifier,
+        )
+        const toAccountKey = boundedText(
+          record["toAccountKey"],
+          PAIRED_DEVICE_LIMITS.maxIdentifier,
+        )
+        if (fromAccountKey === toAccountKey) throw new InvalidRequest()
+        return {
+          kind,
+          requestId,
+          actor,
+          id: boundedText(record["id"], PAIRED_DEVICE_LIMITS.maxIdentifier),
+          owner,
+          date: exactDate(record["date"]),
+          fromAccountKey,
+          toAccountKey,
+          sats: positiveInt64(record["sats"]),
+          feeSats: nonnegativeInt64(record["feeSats"]),
+          ...optionalField("note", optionalText(record, "note")),
+          ...optionalField("baseUpdatedAtMs", optionalRevision(record)),
+        }
+      }
       case "btcAccount.upsert": {
         const record = withCommon(
           input,
@@ -675,11 +735,19 @@ function mutationArgs(
         category: request.category,
         ...optionalField("card", request.card),
         ...optionalField("note", request.note),
+        ...optionalField("amountSats", request.amountSats),
       })
       return {
         ...auth,
         owner: request.owner,
         ...wire.args,
+        transaction: {
+          ...wire.args.transaction,
+          ...optionalField(
+            "amountSats",
+            request.amountSats === undefined ? undefined : encoded(request.amountSats),
+          ),
+        },
         ...optionalField("baseUpdatedAtMs", request.baseUpdatedAtMs),
       }
     }
@@ -803,6 +871,31 @@ function mutationArgs(
         entityId: request.id,
         owner: request.owner,
         sourceFile: "bitcoin-bill-pays",
+        baseUpdatedAtMs: request.baseUpdatedAtMs,
+      }
+    case "btcTransfer.upsert":
+      return {
+        ...auth,
+        owner: request.owner,
+        sourceFile: "btc-transfers",
+        transfer: {
+          id: request.id,
+          owner: request.owner,
+          date: request.date,
+          fromAccountKey: request.fromAccountKey,
+          toAccountKey: request.toAccountKey,
+          sats: encoded(request.sats),
+          feeSats: encoded(request.feeSats),
+          ...optionalField("note", request.note),
+        },
+        ...optionalField("baseUpdatedAtMs", request.baseUpdatedAtMs),
+      }
+    case "btcTransfer.delete":
+      return {
+        ...auth,
+        entityId: request.id,
+        owner: request.owner,
+        sourceFile: "btc-transfers",
         baseUpdatedAtMs: request.baseUpdatedAtMs,
       }
     case "btcAccount.upsert": {
@@ -957,7 +1050,7 @@ function structuredRemoteError(response: JsonPostResponse): RemoteErrorCode | nu
 
 function remoteClassification(
   response: JsonPostResponse,
-): "unauthorized" | "missing" | "conflict" | "expired" | "already-claimed" | null {
+): "unauthorized" | "missing" | "conflict" | "rejected" | "expired" | "already-claimed" | null {
   if (response.httpStatus === 401 || response.httpStatus === 403) return "unauthorized"
   const code = structuredRemoteError(response)
   if (code === "DEVICE_UNAUTHORIZED") return "unauthorized"
@@ -967,6 +1060,7 @@ function remoteClassification(
   if (code === "PAIRING_EXPIRED" || code === "PAIRING_NOT_FOUND") return "expired"
   if (code === "ENTITY_NOT_FOUND" || code === "ENTITY_DELETED") return "missing"
   if (code === "ENTITY_CONFLICT" || code === "REVISION_REQUIRED") return "conflict"
+  if (code === "VALIDATION_FAILED") return "rejected"
   return null
 }
 
@@ -979,6 +1073,8 @@ const RESOURCE_CAPABILITIES = {
     "btcBuy.delete",
     "btcBillPay.upsert",
     "btcBillPay.delete",
+    "btcTransfer.upsert",
+    "btcTransfer.delete",
     "btcAccount.upsert",
     "btcAccount.delete",
   ],
@@ -1011,7 +1107,27 @@ function storedCapabilities(value: unknown): readonly VogelVaultMutationKind[] {
   ) {
     throw new InvalidResponse()
   }
-  return value as VogelVaultMutationKind[]
+  const capabilities = value as VogelVaultMutationKind[]
+  const legacyBitcoinGrant = [
+    "btcBuy.upsert",
+    "btcBuy.delete",
+    "btcBillPay.upsert",
+    "btcBillPay.delete",
+    "btcAccount.upsert",
+    "btcAccount.delete",
+  ] as const satisfies readonly VogelVaultMutationKind[]
+  if (
+    legacyBitcoinGrant.every((kind) => capabilities.includes(kind)) &&
+    !capabilities.includes("btcTransfer.upsert") &&
+    !capabilities.includes("btcTransfer.delete")
+  ) {
+    // Stored grants are the expanded renderer vocabulary, while Convex keeps
+    // the durable coarse `bitcoin:write` capability. Preserve that original
+    // grant across this vocabulary addition so existing paired desktops do
+    // not need to re-pair merely to use the new Bitcoin transfer endpoint.
+    return [...capabilities, "btcTransfer.upsert", "btcTransfer.delete"]
+  }
+  return capabilities
 }
 
 function pairValue(
@@ -1270,11 +1386,28 @@ export function createPairedDeviceController(
       })
     },
 
-    async mutate(input: unknown): Promise<VogelVaultMutationResult> {
+    async mutate(
+      input: unknown,
+      sessionActor: VogelVaultMember,
+    ): Promise<VogelVaultMutationResult> {
       const identity = safeIdentity(input)
       const request = validateMutationRequest(input)
       if (request === null) {
         return { ...identity, status: "failed", code: "invalid-request" }
+      }
+      // Refuse rather than silently rewriting the actor: a payload that
+      // disagrees with the session is a renderer claiming an identity it was
+      // not given, and quietly correcting it would hide that.
+      if (request.actor !== sessionActor) {
+        return { ...identity, status: "unauthorized" }
+      }
+      // A genuine actor is not automatically an allowed one. Every validated
+      // request carries the EFFECTIVE owner its write will land on (family
+      // finance has already canonicalized onto the household ledger), so a
+      // child session may write only its own ledger; adults manage any of
+      // them, matching the read-profile containment in readProfileSession.
+      if (!ADULTS.has(sessionActor) && request.owner !== sessionActor) {
+        return { ...identity, status: "unauthorized" }
       }
       if (!options.writesEnabled()) {
         return { ...identity, status: "disabled" }
@@ -1310,7 +1443,15 @@ export function createPairedDeviceController(
           if (snapshot.deploymentOrigin !== approvedOrigin) {
             return { ...identity, status: "unauthorized" }
           }
-          if (!snapshot.capabilities.includes(request.kind)) {
+          const capabilities = storedCapabilities(snapshot.capabilities)
+          if (!capabilities.includes(request.kind)) {
+            return { ...identity, status: "unauthorized" }
+          }
+          if (
+            request.kind === "transaction.upsert" &&
+            request.amountSats !== undefined &&
+            !capabilities.includes("btcTransfer.upsert")
+          ) {
             return { ...identity, status: "unauthorized" }
           }
 
@@ -1327,6 +1468,9 @@ export function createPairedDeviceController(
           if (classified === "missing") return { ...identity, status: "missing" }
           if (classified === "conflict") {
             return { ...identity, status: "failed", code: "conflict" }
+          }
+          if (classified === "rejected") {
+            return { ...identity, status: "failed", code: "rejected" }
           }
           if (structuredRemoteError(response) !== null) {
             return { ...identity, status: "failed", code: "invalid-response" }

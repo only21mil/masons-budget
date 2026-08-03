@@ -24,10 +24,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -36,11 +36,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.TransactionDraftIdStore
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.data.ConvexMutation
+import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.TransactionInput
 import com.sats21m.vogelvault.data.TransactionKind
+import com.sats21m.vogelvault.data.TransactionWriteReceipt
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Money
@@ -52,6 +55,9 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 internal enum class AddTransactionType(val label: String) {
@@ -77,6 +83,53 @@ internal data class PreparedTransaction(
     val sourceFile: String,
     val sats: Long?,
 )
+
+/**
+ * New rows are the one legitimate unfenced write. The typed receipt installs
+ * the server revision on the shared client before the refresh callback runs.
+ */
+internal suspend fun savePreparedTransaction(
+    row: PreparedTransaction,
+    client: ConvexMutationClient,
+): ConvexResult<TransactionWriteReceipt> =
+    client.upsertTransaction(
+        ConvexMutation.UpsertTransaction(
+            transaction = row.input,
+            sourceFile = row.sourceFile,
+        ),
+    )
+
+/**
+ * Starts the durable part of an add on a process-owned scope. The client
+ * installs an accepted receipt before returning; a disposed sheet suppresses
+ * only its stale UI callbacks, never the write, the receipt installation, or
+ * the acceptance signal.
+ */
+internal fun launchPreparedTransactionSave(
+    scope: CoroutineScope,
+    row: PreparedTransaction,
+    client: ConvexMutationClient,
+    transactionDraftIds: TransactionDraftIdStore,
+    isUiActive: () -> Boolean,
+    onAccepted: () -> Unit,
+    onUiResult: (ConvexResult<TransactionWriteReceipt>) -> Unit,
+): Job = scope.launch {
+    val result = savePreparedTransaction(row, client)
+    if (result.isOk) {
+        // Release under the exact sourceFile this write was accepted for; an
+        // equal id pending under a different profile's file stays leased.
+        transactionDraftIds.rotateAfterAcceptance(row.sourceFile, row.input.id)
+        // The ledger refresh belongs to the screen's view model, which
+        // outlives this sheet. An accepted write must become visible even
+        // when the user dismissed mid-flight — suppressing this with the
+        // sheet left committed, fenced rows invisible until an unrelated
+        // refresh.
+        onAccepted()
+    }
+    if (isUiActive()) {
+        onUiResult(result)
+    }
+}
 
 /**
  * User-visible feedback for every remote transaction write result.
@@ -107,6 +160,9 @@ internal fun prepareTransaction(
     btcPriceCents: Long,
     id: String = "android-${UUID.randomUUID()}",
 ): Result<PreparedTransaction> = runCatching {
+    require(draft.type != AddTransactionType.TRANSFER) {
+        "Use the dedicated Bitcoin transfer flow for owned-wallet movement"
+    }
     val merchant = draft.merchant.trim()
     require(merchant.isNotEmpty()) { "Enter a merchant or transfer destination" }
     require(draft.card.isNotBlank()) { "Select a card or payment method" }
@@ -157,6 +213,9 @@ internal fun prepareTransaction(
             kind = kind,
             card = draft.card.trim(),
             note = draft.note.trim().takeIf(String::isNotEmpty),
+            amountSats = sats.takeIf {
+                draft.type == AddTransactionType.INCOME && draft.inputUnit != DisplayUnit.USD
+            },
             owner = draft.owner.ledgerOwner,
         ),
         sourceFile = draft.owner.ledgerOwner.transactionsDataFileName,
@@ -280,14 +339,30 @@ private fun satsToCentsExact(
 internal fun AddTransactionSheet(
     state: VaultUiState,
     onDismiss: () -> Unit,
-    onWriteSucceeded: () -> Unit,
 ) {
     val applicationContext = LocalContext.current.applicationContext
     val application = applicationContext as? VaultApplication
+    val transactionDraftIds = application?.transactionDraftIds
     // WA1 owns encrypted sync-token storage and exposes one process-scoped
     // client. The sheet sees the transport, never the credential or its store.
     val mutationClient = remember(application) { application?.convexMutationClient }
+    val saveScope = remember(application) { application?.applicationScope }
+    val uiActive = remember { AtomicBoolean(true) }
+    DisposableEffect(Unit) {
+        uiActive.set(true)
+        onDispose { uiActive.set(false) }
+    }
 
+    // One process-owned id survives dismissal and Activity recreation until
+    // the server confirms acceptance. Reopening after an unconfirmed write
+    // therefore supersedes the same row even if fields were edited; reopening
+    // after confirmation receives a fresh id for a legitimate second row.
+    // Acquired under the same sourceFile prepareTransaction will send, so a
+    // profile switch can never resubmit another profile's pending id.
+    val draftScope = state.activeProfile.ledgerOwner.transactionsDataFileName
+    val draftTransactionId = remember(draftScope) {
+        transactionDraftIds?.currentId(draftScope) ?: "android-${UUID.randomUUID()}"
+    }
     var typeName by rememberSaveable { mutableStateOf(AddTransactionType.SPEND.name) }
     var inputUnitName by rememberSaveable { mutableStateOf(DisplayUnit.USD.name) }
     var merchant by rememberSaveable { mutableStateOf("") }
@@ -297,10 +372,13 @@ internal fun AddTransactionSheet(
     var dateIso by rememberSaveable { mutableStateOf(LocalDate.now(ZoneOffset.UTC).toString()) }
     var note by rememberSaveable { mutableStateOf("") }
     var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
-    var saving by rememberSaveable { mutableStateOf(false) }
+    // Deliberately NOT rememberSaveable: a recreated sheet cannot reconnect to
+    // the in-flight job, so restoring saving=true would strand the button
+    // forever. A fresh sheet reconnects to the SAME process-owned draft id and
+    // retries safely; an acceptance that lands meanwhile
+    // reaches the ledger through the application-level signal.
+    var saving by remember { mutableStateOf(false) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-
     val type = AddTransactionType.valueOf(typeName)
     val inputUnit = DisplayUnit.valueOf(inputUnitName)
     val operationalBtcPriceCents = state.operationalBitcoinQuote()?.priceCents ?: 0L
@@ -332,7 +410,7 @@ internal fun AddTransactionSheet(
             )
 
             OptionRow(
-                options = AddTransactionType.entries,
+                options = AddTransactionType.entries.filterNot { it == AddTransactionType.TRANSFER },
                 selected = type,
                 label = AddTransactionType::label,
                 onSelect = {
@@ -448,7 +526,11 @@ internal fun AddTransactionSheet(
                             note = note,
                             owner = state.activeProfile,
                         )
-                        val prepared = prepareTransaction(draft, operationalBtcPriceCents)
+                        val prepared = prepareTransaction(
+                            draft,
+                            operationalBtcPriceCents,
+                            draftTransactionId,
+                        )
                         val row = prepared.getOrElse {
                             errorMessage = it.message ?: "Transaction is invalid"
                             return@Button
@@ -458,18 +540,32 @@ internal fun AddTransactionSheet(
                             errorMessage = "Transaction writing is not configured"
                             return@Button
                         }
+                        val scope = saveScope
+                        if (scope == null) {
+                            errorMessage = "Transaction writing is not configured"
+                            return@Button
+                        }
+                        val draftIds = transactionDraftIds
+                        if (draftIds == null) {
+                            errorMessage = "Transaction writing is not configured"
+                            return@Button
+                        }
                         saving = true
-                        scope.launch {
-                            val result = client.mutate(
-                                ConvexMutation.UpsertTransaction(
-                                    transaction = row.input,
-                                    sourceFile = row.sourceFile,
-                                ),
-                            )
+                        launchPreparedTransactionSave(
+                            scope = scope,
+                            row = row,
+                            client = client,
+                            transactionDraftIds = draftIds,
+                            isUiActive = uiActive::get,
+                            // The acceptance signal goes to the process-owned
+                            // flow, never to a composition-captured callback: a
+                            // recreated Activity subscribes its own ViewModel
+                            // and still receives this write's acceptance.
+                            onAccepted = { application?.noteAcceptedWrite() },
+                        ) { result ->
                             saving = false
                             val failure = transactionWriteFailureMessage(result)
                             if (failure == null) {
-                                onWriteSucceeded()
                                 onDismiss()
                             } else {
                                 errorMessage = failure

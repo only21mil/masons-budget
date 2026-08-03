@@ -121,7 +121,7 @@ const monthlyHistoryValidator = v.object({
   savingsBps: v.int64(),
 });
 
-const fiatValuationValidator = v.object({
+export const fiatValuationValidator = v.object({
   cents: v.int64(),
   priceCents: v.optional(v.int64()),
   quotedAt: v.optional(v.string()),
@@ -241,6 +241,7 @@ export default defineSchema({
       v.literal("budgetCategory"),
       v.literal("btcBuy"),
       v.literal("btcBillPay"),
+      v.literal("btcTransfer"),
       v.literal("btcAccount"),
     ),
     sourceFile: v.string(),
@@ -383,6 +384,9 @@ export default defineSchema({
     // "nothing here"; collapsing both to absent means one shape reaches clients.
     card: v.optional(v.string()),
     note: v.optional(v.string()),
+    amountSats: v.optional(v.int64()),
+    bitcoinAccountKey: v.optional(v.string()),
+    balancePostingVersion: v.optional(v.int64()),
     // "transactions" | "mason-transactions" | "maddox-transactions".
     // Carries the sign convention, and pairs with txId as the natural key —
     // record ids are only unique within their own file.
@@ -460,6 +464,8 @@ export default defineSchema({
     costBasisStatus: v.optional(v.string()),
     loggedBy: v.optional(v.string()),
     archimedesRequestId: v.optional(v.string()),
+    balanceAccountKey: v.optional(v.string()),
+    balancePostingVersion: v.optional(v.int64()),
     sourceFile: v.string(), // "bitcoin-buys" | "mason-bitcoin-buys"
     updatedAtMs: v.float64(),
     migrationRaw: v.optional(v.any()),
@@ -488,6 +494,8 @@ export default defineSchema({
     note: v.optional(v.string()),
     feeUsdCents: v.int64(),
     reference: v.optional(v.string()),
+    balanceAccountKey: v.optional(v.string()),
+    balancePostingVersion: v.optional(v.int64()),
     sourceFile: v.string(),
     updatedAtMs: v.float64(),
     migrationRaw: v.optional(v.any()),
@@ -498,6 +506,24 @@ export default defineSchema({
     .index("by_owner_month", ["owner", "month"])
     .index("by_owner_month_date", ["owner", "month", "date"])
     .index("by_date", ["date"]),
+
+  btcTransfers: defineTable({
+    transferId: v.string(),
+    owner: familyMemberValidator,
+    date: v.string(),
+    month: v.string(),
+    fromAccountKey: v.string(),
+    toAccountKey: v.string(),
+    sats: v.int64(),
+    feeSats: v.int64(),
+    note: v.optional(v.string()),
+    sourceFile: v.literal("btc-transfers"),
+    balancePostingVersion: v.int64(),
+    updatedAtMs: v.float64(),
+  })
+    .index("by_transfer_id", ["transferId"])
+    .index("by_owner_date", ["owner", "date"])
+    .index("by_owner_month_date", ["owner", "month", "date"]),
 
   // ── Bitcoin accounts (balance snapshot) ──
   // The blob keys these by account name inside one snapshot object. As rows the
@@ -605,6 +631,20 @@ export default defineSchema({
     source: v.optional(v.string()),
     basis: v.optional(v.string()),
     confidence: v.optional(v.string()),
+    // Absent on legacy snapshots. Opening reconciliation writes this marker
+    // atomically so a deploy cannot accept a posted event before its anchor.
+    postingActivatedAtMs: v.optional(v.float64()),
+    // What activation claimed, recorded in the same transaction. The mutation
+    // also returns these, but a lost response would otherwise leave no way to
+    // learn which legacy rows were treated as already inside the opening
+    // balances and which were deliberately left out.
+    activationBaseline: v.optional(
+      v.object({
+        asOf: v.string(),
+        baselinedIncomeTxIds: v.array(v.string()),
+        skippedIncomeTxIds: v.array(v.string()),
+      }),
+    ),
     updatedAtMs: v.float64(),
     migrationRawJson: v.optional(v.string()),
     migrationSourceIndex: v.optional(v.float64()),

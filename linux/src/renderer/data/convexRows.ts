@@ -13,6 +13,7 @@ import type {
   VogelVaultBtcAccountRow,
   VogelVaultBtcBillPayRow,
   VogelVaultBtcBuyRow,
+  VogelVaultBtcTransferRow,
   VogelVaultBtcBalanceDocument,
   VogelVaultBudgetDocument,
   VogelVaultIncomeRow,
@@ -22,7 +23,7 @@ import type {
   VogelVaultTodoRow,
   VogelVaultTransactionRow,
 } from "../../../shared/ipc.ts"
-import type { FixtureEnvelope, IncomeRecord } from "./fixtures.ts"
+import type { BtcTransferRecord, FixtureEnvelope, IncomeRecord } from "./fixtures.ts"
 import {
   type BTCAccountWithFiatValuation,
   type BTCSnapshotWithFiatAvailability,
@@ -99,6 +100,7 @@ function errorEnvelope(code: VogelVaultRowErrorCode, now: number): FixtureEnvelo
     btcAccounts: errorSlice([], code),
     btcBuys: errorSlice([], code),
     billPays: errorSlice([], code),
+    btcTransfers: errorSlice([], code),
     todos: errorSlice([], code),
     btcPriceUsd: null,
     generatedAt: now,
@@ -114,6 +116,7 @@ function emptyEnvelope(now: number): FixtureEnvelope {
     btcAccounts: populatedSlice([], false, null, `${SOURCE} · BTC accounts`),
     btcBuys: populatedSlice([], false, null, `${SOURCE} · BTC buys`),
     billPays: populatedSlice([], false, null, `${SOURCE} · BTC bill pays`),
+    btcTransfers: populatedSlice([], false, null, `${SOURCE} · BTC transfers`),
     todos: populatedSlice([], false, null, `${SOURCE} · todos`),
     btcPriceUsd: null,
     generatedAt: now,
@@ -130,6 +133,9 @@ function transaction(row: VogelVaultTransactionRow): Transaction {
     category: row.category,
     card: row.card ?? null,
     note: row.note ?? null,
+    amountSats: row.amountSats,
+    bitcoinAccountKey: row.bitcoinAccountKey,
+    balancePostingVersion: row.balancePostingVersion,
     owner: row.owner,
   }
 }
@@ -245,6 +251,21 @@ function billPay(row: VogelVaultBtcBillPayRow): BTCBillPay {
     note: row.note ?? null,
     feeUsd: row.feeUsdCents,
     reference: row.reference ?? null,
+    owner: row.owner,
+  }
+}
+
+function btcTransfer(row: VogelVaultBtcTransferRow): BtcTransferRecord {
+  return {
+    id: row.transferId,
+    updatedAtMs: row.updatedAtMs,
+    date: row.date,
+    month: row.month,
+    fromAccountKey: row.fromAccountKey,
+    toAccountKey: row.toAccountKey,
+    sats: row.sats,
+    feeSats: row.feeSats,
+    note: row.note ?? null,
     owner: row.owner,
   }
 }
@@ -399,6 +420,7 @@ export async function loadConvexRowEnvelope(
     query({ kind: "btcBuys", scope: "visible" }),
     query({ kind: "btcAccounts", scope: "visible" }),
     query({ kind: "btcBillPays", scope: "visible" }),
+    query({ kind: "btcTransfers", scope: "netWorth" }),
     query({ kind: "budget", scope: "netWorth" }),
     query({ kind: "btcSnapshotMeta", scope: "visible" }),
     query({ kind: "btcBalanceDocuments", scope: "netWorth" }),
@@ -410,6 +432,7 @@ export async function loadConvexRowEnvelope(
     buysResult,
     accountsResult,
     billPaysResult,
+    transfersResult,
     budgetResult,
     metaResult,
     btcBalanceResult,
@@ -492,6 +515,17 @@ export async function loadConvexRowEnvelope(
             updatedAt(billPaysResult.rows),
             `${SOURCE} · BTC bill pays`,
           )
+  const btcTransfers =
+    transfersResult.status === "error"
+      ? errorSlice<readonly BtcTransferRecord[]>([], transfersResult.code)
+      : transfersResult.kind !== "btcTransfers"
+        ? errorSlice<readonly BtcTransferRecord[]>([], "invalid-response")
+        : populatedSlice(
+            transfersResult.rows.map(btcTransfer),
+            true,
+            updatedAt(transfersResult.rows),
+            `${SOURCE} · BTC transfers`,
+          )
   let budgetSlice: SliceState<Budget | null>
   if (budgetResult.status === "error") {
     budgetSlice = errorSlice<Budget | null>(null, budgetResult.code)
@@ -529,6 +563,7 @@ export async function loadConvexRowEnvelope(
     btcBuys.updatedAt,
     btcAccounts.updatedAt,
     billPays.updatedAt,
+    btcTransfers.updatedAt,
     budgetSlice.updatedAt,
     btcBalance.updatedAt,
   ].filter((value): value is number => value !== null)
@@ -543,6 +578,7 @@ export async function loadConvexRowEnvelope(
       btcAccounts,
       btcBuys,
       billPays,
+      btcTransfers,
       todos,
       btcPriceUsd: priceFromBalanceDocument(btcBalance.value),
       generatedAt: timestamps.length > 0 ? Math.max(...timestamps) : now(),

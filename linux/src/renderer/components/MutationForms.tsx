@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react"
+import { useEffect, useId, useMemo, useState } from "react"
 import type {
   BTCAccount,
   BTCBillPay,
@@ -91,6 +91,9 @@ export function TransactionFormDialog({
   const [category, setCategory] = useState(transaction?.category ?? "Other")
   const [card, setCard] = useState(transaction?.card ?? "")
   const [note, setNote] = useState(transaction?.note ?? "")
+  const [incomeSats, setIncomeSats] = useState(
+    transaction?.amountSats?.toString() ?? "",
+  )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -108,6 +111,7 @@ export function TransactionFormDialog({
     setCategory(transaction?.category ?? "Other")
     setCard(transaction?.card ?? "")
     setNote(transaction?.note ?? "")
+    setIncomeSats(transaction?.amountSats?.toString() ?? "")
     setError(null)
   }, [open, transaction])
 
@@ -117,8 +121,13 @@ export function TransactionFormDialog({
       return
     }
     const cents = parseExactCents(amount)
+    const satsValue = incomeSats.trim() ? parseExactSats(incomeSats) : null
     if (!merchant.trim() || !date || cents === null || cents <= 0n || !category.trim()) {
       setError("Enter a date, merchant, category, and a positive amount with at most two decimals.")
+      return
+    }
+    if (incomeSats.trim() && (category.trim() !== "Income" || satsValue === null || satsValue <= 0n)) {
+      setError("Bitcoin income must use the Income category and a positive whole-sats amount.")
       return
     }
     setBusy(true)
@@ -137,6 +146,7 @@ export function TransactionFormDialog({
       category: category.trim(),
       card: optional(card),
       note: optional(note),
+      ...(satsValue === null ? {} : { amountSats: satsValue }),
       ...(transaction ? { baseUpdatedAtMs: transaction.updatedAtMs } : {}),
     })
     setBusy(false)
@@ -188,6 +198,14 @@ export function TransactionFormDialog({
           </Select>
         </Field>
         <Field label="Category"><TextInput value={category} onChange={(e) => setCategory(e.target.value)} /></Field>
+        {category.trim() === "Income" ? (
+          <Field
+            label="Bitcoin received (sats)"
+            hint="Optional. When present, these exact sats are added to River. USD-only income does not invent Bitcoin."
+          >
+            <TextInput inputMode="numeric" value={incomeSats} onChange={(e) => setIncomeSats(e.target.value)} />
+          </Field>
+        ) : null}
         <Field label="Card"><TextInput value={card} onChange={(e) => setCard(e.target.value)} /></Field>
         <Field label="Note"><TextInput value={note} onChange={(e) => setNote(e.target.value)} /></Field>
       </form>
@@ -565,6 +583,139 @@ export function BillPayFormDialog({
         <Field label="Fee (USD)"><TextInput inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} /></Field>
         <Field label="Platform"><TextInput value={platform} onChange={(e) => setPlatform(e.target.value)} /></Field>
         <Field label="Reference"><TextInput value={reference} onChange={(e) => setReference(e.target.value)} /></Field>
+        <Field label="Note"><TextInput value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+      </form>
+    </DialogFrame>
+  )
+}
+
+export function BtcTransferFormDialog({
+  open,
+  submissionGate,
+  onClose,
+}: {
+  open: boolean
+  submissionGate?: MutationGate
+  onClose: () => void
+}) {
+  const { activeProfile, data, submitMutation } = useAppState()
+  const formId = useId()
+  const blockedReasonId = useId()
+  const accounts = useMemo(
+    () => data.btcBalanceDocument.value?.accounts ?? [],
+    [data.btcBalanceDocument.value],
+  )
+  const [id, setId] = useState(() => stableId("btc-transfer"))
+  const [date, setDate] = useState(today())
+  const [fromAccountKey, setFromAccountKey] = useState("")
+  const [toAccountKey, setToAccountKey] = useState("")
+  const [sats, setSats] = useState("")
+  const [feeSats, setFeeSats] = useState("0")
+  const [note, setNote] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    setId(stableId("btc-transfer"))
+    setDate(today())
+    setFromAccountKey(accounts[0]?.key ?? "")
+    setToAccountKey(accounts.find((account) => account.key !== accounts[0]?.key)?.key ?? "")
+    setSats("")
+    setFeeSats("0")
+    setNote("")
+    setError(null)
+  }, [accounts, open])
+
+  async function submit() {
+    if (submissionGate && !submissionGate.allowed) {
+      setError(submissionGate.reason ?? "Current live Bitcoin balances are required before transferring.")
+      return
+    }
+    const satsValue = parseExactSats(sats)
+    const feeValue = parseExactSats(feeSats)
+    if (
+      !date ||
+      !fromAccountKey ||
+      !toAccountKey ||
+      fromAccountKey === toAccountKey ||
+      satsValue === null ||
+      satsValue <= 0n ||
+      feeValue === null
+    ) {
+      setError("Choose two different accounts, positive whole sats, and a non-negative fee.")
+      return
+    }
+    setBusy(true)
+    const result = await submitMutation({
+      kind: "btcTransfer.upsert",
+      requestId: stableId("request"),
+      actor: activeProfile,
+      id,
+      owner: mutationOwner("btcTransfer.upsert", activeProfile),
+      date,
+      fromAccountKey,
+      toAccountKey,
+      sats: satsValue,
+      feeSats: feeValue,
+      note: optional(note),
+    })
+    setBusy(false)
+    const message = localMutationError(result)
+    setError(message)
+    if (!message) onClose()
+  }
+
+  return (
+    <DialogFrame
+      open={open}
+      title="Transfer Bitcoin"
+      description="The source pays the transfer amount plus any network fee; the destination receives the transfer amount."
+      onClose={onClose}
+      busy={busy}
+      footer={(
+        <FormFooter
+          formId={formId}
+          busy={busy}
+          blocked={submissionGate ? !submissionGate.allowed : false}
+          blockedReasonId={blockedReasonId}
+          onCancel={onClose}
+          verb="Transfer Bitcoin"
+        />
+      )}
+    >
+      <form id={formId} className="vv-form-grid" onSubmit={(event) => {
+        event.preventDefault()
+        void submit()
+      }}>
+        {submissionGate && !submissionGate.allowed ? (
+          <p id={blockedReasonId} className="vv-form-error" role="status">
+            {submissionGate.reason ?? "Current live Bitcoin balances are required before transferring."}
+          </p>
+        ) : null}
+        <ErrorSummary error={error} />
+        <Field label="Transfer ID"><TextInput value={id} readOnly /></Field>
+        <Field label="Date"><TextInput data-autofocus type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        <Field label="From">
+          <Select value={fromAccountKey} onChange={(e) => setFromAccountKey(e.target.value)}>
+            <option value="">Select source account</option>
+            {accounts.map((account) => (
+              <option key={account.key} value={account.key}>{account.label}</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="To">
+          <Select value={toAccountKey} onChange={(e) => setToAccountKey(e.target.value)}>
+            <option value="">Select destination account</option>
+            {accounts.map((account) => (
+              <option key={account.key} value={account.key}>{account.label}</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Sats to transfer"><TextInput inputMode="numeric" value={sats} onChange={(e) => setSats(e.target.value)} /></Field>
+        <Field label="Network fee (sats)" hint="Charged to the source account.">
+          <TextInput inputMode="numeric" value={feeSats} onChange={(e) => setFeeSats(e.target.value)} />
+        </Field>
         <Field label="Note"><TextInput value={note} onChange={(e) => setNote(e.target.value)} /></Field>
       </form>
     </DialogFrame>

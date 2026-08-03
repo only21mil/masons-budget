@@ -32,6 +32,7 @@ import com.sats21m.vogelvault.data.HttpPoster
 import com.sats21m.vogelvault.data.HttpTextResponse
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.domain.CategorySpend
+import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
@@ -78,11 +79,13 @@ class RefreshAfterWriteSurfaceTest {
             destination = Destination.ACTIVITY,
             data = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE),
         )
-        val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
+        val content: @Composable (() -> Unit) -> Unit = { _ ->
+            // The transaction sheet no longer takes a composition callback: its
+            // acceptance arrives via the application-level signal, counted by
+            // RefreshAfterWriteApplication.acceptedWriteCount below.
             AddTransactionSheet(
                 state = state,
                 onDismiss = {},
-                onWriteSucceeded = onWriteSucceeded,
             )
         }
         val interact = {
@@ -422,6 +425,126 @@ class RefreshAfterWriteSurfaceTest {
         )
     }
 
+    /**
+     * The recreation case Hermes's revision-3 verdict demanded: an Activity is
+     * destroyed while its application-scoped write is in flight, the write is
+     * accepted with no subscriber alive, and the REPLACEMENT activity — whose
+     * collector attaches only after the acceptance — must still receive the
+     * refresh signal. Real Robolectric activity lifecycles, the production
+     * mutation client, and the production save function; no boolean stand-ins.
+     */
+    @Test
+    fun `write accepted across activity recreation refreshes the replacement screen`() {
+        val requestStarted = java.util.concurrent.CountDownLatch(1)
+        val response = kotlinx.coroutines.CompletableDeferred<HttpTextResponse>()
+        application.poster.response = HttpTextResponse(500, "")
+        val gatedPoster = object : HttpPoster {
+            override suspend fun postJson(url: String, body: String): HttpTextResponse {
+                requestStarted.countDown()
+                return response.await()
+            }
+        }
+        val client = ConvexMutationClient(
+            configSource = MutableConvexConfigSource(
+                ConvexConfig(deploymentUrl = "https://refresh-after-write-test.convex.cloud"),
+            ),
+            syncTokenSource = ConvexSyncTokenSource { com.sats21m.vogelvault.data.testToken() },
+            http = gatedPoster,
+        )
+
+        var firstScreenRefreshes = 0
+        val first = Robolectric.buildActivity(ComponentActivity::class.java)
+        first.get().setTheme(R.style.Theme_VogelVault)
+        first.setup()
+        compose.runOnUiThread {
+            first.get().setContent {
+                VogelVaultTheme {
+                    androidx.compose.runtime.LaunchedEffect(Unit) {
+                        application.acceptedWrites.collect { firstScreenRefreshes++ }
+                    }
+                }
+            }
+        }
+        settle()
+
+        // The first screen starts the durable save, then dies mid-flight —
+        // exactly what rotation does to a sheet with a write on the wire.
+        val uiActive = java.util.concurrent.atomic.AtomicBoolean(true)
+        val save = launchPreparedTransactionSave(
+            scope = application.applicationScope,
+            row = lifecyclePreparedRow(),
+            client = client,
+            transactionDraftIds = application.transactionDraftIds,
+            isUiActive = uiActive::get,
+            onAccepted = { application.noteAcceptedWrite() },
+            onUiResult = {},
+        )
+        check(requestStarted.await(5, java.util.concurrent.TimeUnit.SECONDS)) {
+            "the save never reached the wire"
+        }
+        uiActive.set(false)
+        first.pause().stop().destroy()
+        settle()
+
+        // Acceptance lands while NO activity exists.
+        response.complete(
+            HttpTextResponse(
+                200,
+                """{"status":"success","value":{"txId":"lifecycle-row","owner":"victor","month":"2026-07","outcome":"inserted","updatedAtMs":1888888888891}}""",
+            ),
+        )
+        runBlocking { save.join() }
+        settle()
+        assertEquals(
+            0,
+            firstScreenRefreshes,
+            "the destroyed screen's collector must not have produced a refresh",
+        )
+
+        // The replacement activity subscribes AFTER the acceptance and must
+        // still receive it — this is the durable-ownership guarantee.
+        var replacementScreenRefreshes = 0
+        val second = Robolectric.buildActivity(ComponentActivity::class.java)
+        second.get().setTheme(R.style.Theme_VogelVault)
+        second.setup()
+        try {
+            compose.runOnUiThread {
+                second.get().setContent {
+                    VogelVaultTheme {
+                        androidx.compose.runtime.LaunchedEffect(Unit) {
+                            application.acceptedWrites.collect { replacementScreenRefreshes++ }
+                        }
+                    }
+                }
+            }
+            settle()
+            assertEquals(
+                1,
+                replacementScreenRefreshes,
+                "the replacement screen must receive the acceptance that landed while no activity was alive",
+            )
+        } finally {
+            second.pause().stop().destroy()
+        }
+    }
+
+    private fun lifecyclePreparedRow(): PreparedTransaction =
+        prepareTransaction(
+            AddTransactionDraft(
+                type = AddTransactionType.SPEND,
+                inputUnit = DisplayUnit.USD,
+                merchant = "Lifecycle Market",
+                category = "Other",
+                amount = "1.00",
+                card = "Fold card",
+                date = java.time.LocalDate.parse("2026-07-15"),
+                note = "",
+                owner = FamilyMember.VICTOR,
+            ),
+            btcPriceCents = 0L,
+            id = "lifecycle-row",
+        ).getOrThrow()
+
     private fun runSurface(
         response: HttpTextResponse,
         content: @Composable (() -> Unit) -> Unit,
@@ -430,6 +553,7 @@ class RefreshAfterWriteSurfaceTest {
     ): Int {
         application.poster.response = response
         application.poster.requestCount = 0
+        application.acceptedWriteCount = 0
         var refreshCount = 0
         val controller = Robolectric.buildActivity(ComponentActivity::class.java)
         controller.get().setTheme(R.style.Theme_VogelVault)
@@ -456,7 +580,7 @@ class RefreshAfterWriteSurfaceTest {
                     "a rejected write did not name its cause",
                 )
             }
-            refreshCount
+            refreshCount + application.acceptedWriteCount
         } finally {
             controller.pause().stop().destroy()
         }
@@ -495,12 +619,37 @@ internal class RefreshAfterWritePoster : HttpPoster {
                 """{"status":"success","value":{"ok":true,"entityId":"$id","outcome":"updated"}}""",
             )
         }
+        // The add sheet's success path now requires the server's revision-bearing
+        // receipt, whose txId must match the request's generated id — echo it.
+        if (response.code == 200 && body.contains("\"path\":\"tables:upsertTransaction\"")) {
+            val id = Regex("\\\"id\\\":\\\"([^\\\"]+)\\\"")
+                .find(body)?.groupValues?.get(1) ?: error("transaction request had no id")
+            return HttpTextResponse(
+                200,
+                """{"status":"success","value":{"txId":"$id","owner":"victor","month":"2026-08",""" +
+                    """"outcome":"inserted","updatedAtMs":1785600000000}}""",
+            )
+        }
         return response
     }
 }
 
 internal class RefreshAfterWriteApplication : VaultApplication() {
     val poster = RefreshAfterWritePoster()
+
+    /**
+     * Counts the process-level acceptance signal the transaction sheet now
+     * uses instead of a composition callback. runSurface adds this to the
+     * composition-counted refreshes so every surface keeps the same
+     * one-on-success / zero-on-rejection contract.
+     */
+    @Volatile
+    var acceptedWriteCount = 0
+
+    override fun noteAcceptedWrite() {
+        acceptedWriteCount++
+        super.noteAcceptedWrite()
+    }
 
     override fun hasConvexWriteCredential(): Boolean = true
     override fun hasTodoWriteCredential(): Boolean = true

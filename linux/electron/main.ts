@@ -29,6 +29,7 @@ import {
   createRemoteReader,
 } from "./convexRead.ts"
 import { createConvexRowRepository } from "./convexRows.ts"
+import type { ConvexRowRepository } from "./convexRows.ts"
 import {
   createPairedDeviceController,
   resolveApprovedDeploymentOrigin,
@@ -240,12 +241,26 @@ function registerRemoteSnapshot(): void {
   })
 }
 
+/**
+ * Held at module scope so the write handler can drop stale read slices after a
+ * mutation lands. Read registration and write registration are separate
+ * functions, and a cached pre-write answer served after a save is what makes a
+ * saved row look like it vanished.
+ */
+let rowRepository: ConvexRowRepository | null = null
+
+// One session store for reads and writes. A window's active profile is its
+// identity, and `activate` already refuses to let a child window become an
+// adult, so binding writes to the same store is what stops a renderer from
+// simply declaring `actor: "victor"` in a mutation payload.
+const profiles = createReadProfileSessions<WebContents>()
+
 function registerConvexRows(): void {
   const repository = createConvexRowRepository({
     configuration: remoteReadConfiguration,
     post: postJsonToDeployment,
   })
-  const profiles = createReadProfileSessions<WebContents>()
+  rowRepository = repository
 
   ipcMain.handle(
     CONVEX_ROWS_CHANNEL,
@@ -339,7 +354,23 @@ function registerPairedDeviceWrites(): void {
           code: "invalid-request",
         }
       }
-      return controller.mutate(request)
+      // The actor is taken from this window's session, never from the payload.
+      const result = await controller.mutate(request, profiles.current(event.sender))
+      // A write that lands must not be followed by a cached pre-write read, or
+      // the row the user just saved appears to vanish until the cache expires.
+      // Bitcoin mutations move balances, so their slices are dropped too.
+      if (result.status !== "failed") {
+        rowRepository?.invalidate([
+          "transactions",
+          "btcBalanceDocuments",
+          "btcAccounts",
+          "btcBuys",
+          "btcBillPays",
+          "btcTransfers",
+          "rowCounts",
+        ])
+      }
+      return result
     },
   )
   ipcMain.handle(

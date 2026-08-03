@@ -312,7 +312,6 @@ fun ScreenHost(
         AddTransactionSheet(
             state = state,
             onDismiss = { addingTransaction = false },
-            onWriteSucceeded = onWriteSucceeded,
         )
     }
 

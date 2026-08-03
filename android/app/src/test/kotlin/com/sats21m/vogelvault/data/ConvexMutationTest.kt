@@ -7,6 +7,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.test.fail
 import kotlinx.coroutines.runBlocking
@@ -186,6 +187,116 @@ class ConvexMutationTest {
     }
 
     @Test
+    fun `sat income and revision fences are preserved on transaction writes`() {
+        val upsertPoster = RecordingPoster(success())
+        val deletePoster = RecordingPoster(success())
+        val revision = 1_777_777_777_777L
+        val income = transaction(
+            amountCents = 8_000L,
+            category = "Income",
+            kind = TransactionKind.CREDIT,
+            amountSats = 123_456L,
+        )
+
+        runBlocking {
+            client(upsertPoster).mutate(
+                ConvexMutation.UpsertTransaction(
+                    transaction = income,
+                    sourceFile = "transactions",
+                    baseUpdatedAtMs = revision,
+                ),
+            )
+            client(deletePoster).mutate(
+                ConvexMutation.DeleteTransaction(
+                    txId = income.id,
+                    owner = FamilyMember.VICTOR,
+                    sourceFile = "transactions",
+                    baseUpdatedAtMs = revision,
+                ),
+            )
+        }
+
+        val upsertArgs = sentArgs(upsertPoster)
+        assertTagged(upsertArgs["transaction"]!!.jsonObject, "amountSats", "QOIBAAAAAAA=")
+        assertEquals(revision.toString(), upsertArgs["baseUpdatedAtMs"]?.jsonPrimitive?.content)
+
+        val deleteArgs = sentArgs(deletePoster)
+        assertEquals(revision.toString(), deleteArgs["baseUpdatedAtMs"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `transaction upsert returns and stores the accepted revision`() {
+        val revision = 1_888_888_888_888L
+        val store = TransactionRevisionStore()
+        val poster = RecordingPoster(
+            HttpTextResponse(
+                200,
+                """{"status":"success","value":{"txId":"tx-1","owner":"victor","month":"2026-07","outcome":"inserted","updatedAtMs":$revision}}""",
+            ),
+        )
+        val client = client(poster, transactionRevisions = store)
+
+        val result = runBlocking {
+            client.upsertTransaction(
+                ConvexMutation.UpsertTransaction(
+                    transaction = transaction(),
+                    sourceFile = "transactions",
+                ),
+            )
+        }
+
+        val receipt = assertIs<ConvexResult.Ok<TransactionWriteReceipt>>(result).value
+        assertEquals("tx-1", receipt.txId)
+        assertEquals(FamilyMember.VICTOR, receipt.owner)
+        assertEquals("2026-07", receipt.month)
+        assertEquals(TransactionWriteOutcome.INSERTED, receipt.outcome)
+        assertEquals(revision, receipt.updatedAtMs)
+        assertEquals(revision, client.acceptedTransactionRevision("transactions", "tx-1"))
+    }
+
+    @Test
+    fun `transaction receipt rejects a different owner or transaction month`() {
+        val mutation = ConvexMutation.UpsertTransaction(
+            transaction = transaction(),
+            sourceFile = "transactions",
+        )
+        val wrongOwner = client(
+            RecordingPoster(
+                HttpTextResponse(
+                    200,
+                    """{"status":"success","value":{"txId":"tx-1","owner":"mason","month":"2026-07","outcome":"inserted","updatedAtMs":1888888888888}}""",
+                ),
+            ),
+        )
+        val wrongMonth = client(
+            RecordingPoster(
+                HttpTextResponse(
+                    200,
+                    """{"status":"success","value":{"txId":"tx-1","owner":"victor","month":"2026-08","outcome":"inserted","updatedAtMs":1888888888888}}""",
+                ),
+            ),
+        )
+
+        val ownerResult = runBlocking { wrongOwner.upsertTransaction(mutation) }
+        val monthResult = runBlocking { wrongMonth.upsertTransaction(mutation) }
+
+        assertEquals(ConvexFailure.InvalidResponse, assertIs<ConvexResult.Failed>(ownerResult).failure)
+        assertEquals(ConvexFailure.InvalidResponse, assertIs<ConvexResult.Failed>(monthResult).failure)
+        assertEquals(null, wrongOwner.acceptedTransactionRevision("transactions", "tx-1"))
+        assertEquals(null, wrongMonth.acceptedTransactionRevision("transactions", "tx-1"))
+    }
+
+    @Test
+    fun `older transaction revision never overwrites a newer revision`() {
+        val store = TransactionRevisionStore()
+
+        store.install("transactions", "tx-1", 2_000L)
+        store.install("transactions", "tx-1", 1_000L)
+
+        assertEquals(2_000L, store.revisionFor("transactions", "tx-1"))
+    }
+
+    @Test
     fun `transaction delete always sends matching owner and source file`() {
         val poster = RecordingPoster(success())
 
@@ -344,6 +455,7 @@ class ConvexMutationTest {
         amountCents: Long = 1L,
         category: String = "Groceries",
         kind: TransactionKind = TransactionKind.SPEND,
+        amountSats: Long? = null,
         owner: FamilyMember? = FamilyMember.VICTOR,
     ) = TransactionInput(
         id = "tx-1",
@@ -352,16 +464,19 @@ class ConvexMutationTest {
         amountCents = amountCents,
         category = category,
         kind = kind,
+        amountSats = amountSats,
         owner = owner,
     )
 
     private fun client(
         poster: RecordingPoster,
         syncToken: String = testToken(),
+        transactionRevisions: TransactionRevisionStore = TransactionRevisionStore(),
     ) = ConvexMutationClient(
         configSource = source(readToken = testToken()),
         syncTokenSource = ConvexSyncTokenSource { syncToken },
         http = poster,
+        transactionRevisions = transactionRevisions,
     )
 
     private fun source(readToken: String?) = MutableConvexConfigSource(
