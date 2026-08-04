@@ -114,23 +114,26 @@ enum ConvexConfig {
         readTokenStore.remove()
     }
 
-    /// Runtime gate for the public row API. Default-off until the row schema and
-    /// backfill exist in production.
+    /// Runtime kill switch for the public row API. Row reads are now the
+    /// authoritative default; an explicit false retains the emergency blob
+    /// fallback without making old installs silently stay on stale blobs.
     static var rowReadsEnabled: Bool {
-        UserDefaults.standard.bool(forKey: rowReadsEnabledKey)
+        rowReadsEnabled(in: .standard)
     }
 
-    static func setRowReadsEnabled(_ enabled: Bool) {
-        UserDefaults.standard.set(enabled, forKey: rowReadsEnabledKey)
+    static func rowReadsEnabled(in defaults: UserDefaults) -> Bool {
+        defaults.object(forKey: rowReadsEnabledKey) as? Bool ?? true
+    }
+
+    static func setRowReadsEnabled(_ enabled: Bool, in defaults: UserDefaults = .standard) {
+        defaults.set(enabled, forKey: rowReadsEnabledKey)
     }
 
     /// Runtime kill switch for every app-originated write.
     ///
     /// Android has one and its `ConvexResult.Disabled` depends on it; without a
     /// write switch here that state would be unreachable on Apple and the two
-    /// clients would disagree about the cause set. Unlike `rowReadsEnabled` this
-    /// defaults to ON: writes already ship, and defaulting it off would silently
-    /// stop every save. Absent key means enabled.
+    /// clients would disagree about the cause set. Absent key means enabled.
     static var writesEnabled: Bool {
         UserDefaults.standard.object(forKey: writesEnabledKey) as? Bool ?? true
     }

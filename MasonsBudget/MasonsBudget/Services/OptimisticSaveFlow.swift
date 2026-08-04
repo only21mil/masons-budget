@@ -20,8 +20,10 @@ enum OptimisticSaveFlow {
         in context: ModelContext,
         feedback: WriteFeedbackStore,
         push: (@escaping @MainActor @Sendable (ConvexWriteResult) -> Void) -> Void,
+        resolveResult: @escaping @MainActor @Sendable (ConvexWriteResult) -> ConvexWriteResult = { $0 },
         afterResult: @escaping @MainActor (ConvexWriteResult) -> Void,
     ) -> Bool {
+        guard !feedback.isSaving, !feedback.isRetryPending else { return false }
         for model in models { context.insert(model) }
         feedback.begin()
         return LocalMutationSave.perform(
@@ -35,7 +37,8 @@ enum OptimisticSaveFlow {
             },
         ) {
             push { result in
-                if !result.isOk, !result.isRetryable {
+                let resolvedResult = resolveResult(result)
+                if !resolvedResult.isOk, !resolvedResult.isRetryable {
                     for model in models { context.delete(model) }
                     do {
                         try context.save()
@@ -59,9 +62,22 @@ enum OptimisticSaveFlow {
                         )
                     }
                 }
-                _ = feedback.finish(result, operation: operation)
-                afterResult(result)
+                _ = feedback.finish(resolvedResult, operation: operation)
+                afterResult(resolvedResult)
             }
         }
+    }
+
+    /// A complete authoritative row snapshot can prove that an ambiguous create
+    /// landed before its retained retry later receives a terminal response.
+    /// Preserve that proven server row instead of rolling it back locally.
+    static func resolveCreateResult(
+        _ result: ConvexWriteResult,
+        acceptedRevision: Double?,
+    ) -> ConvexWriteResult {
+        guard !result.isOk, !result.isRetryable, acceptedRevision != nil else {
+            return result
+        }
+        return .ok
     }
 }

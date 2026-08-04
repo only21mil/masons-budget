@@ -108,8 +108,30 @@ final class OptimisticSaveFlowTests: XCTestCase {
         XCTAssertEqual(try rowCount(in: context), 1)
     }
 
-    func testRetryableFailureKeepsRowAndAppWriteRetryInstallsRevision() async throws {
+    func testSaveFlowRefusesASecondInsertWhileTheStableIDIsWriteOwned() throws {
         let context = try makeContext()
+        let feedback = WriteFeedbackStore()
+        feedback.begin()
+        var remoteWriteStarted = false
+
+        let started = OptimisticSaveFlow.run(
+            models: [makeTransaction(id: "write-owned")],
+            operation: "Transaction",
+            in: context,
+            feedback: feedback,
+            push: { _ in remoteWriteStarted = true },
+            afterResult: { _ in },
+        )
+
+        XCTAssertFalse(started)
+        XCTAssertFalse(remoteWriteStarted)
+        XCTAssertEqual(try rowCount(in: context), 0)
+    }
+
+    func testRetryableFailureKeepsRowAndAppWriteRetryInstallsRevision() async throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Transaction.self, configurations: configuration)
+        let context = ModelContext(container)
         let transaction = makeTransaction(id: "retained-retry")
         let feedback = WriteFeedbackStore()
         let statusStore = SyncStatusStore()
@@ -129,6 +151,7 @@ final class OptimisticSaveFlowTests: XCTestCase {
                     retryDelayNanoseconds: 0,
                     preflight: { nil },
                     write: { _, _, _ in try await harness.write() },
+                    tracksOptimisticCreate: true,
                     onResult: completion,
                 )
             },
@@ -141,9 +164,33 @@ final class OptimisticSaveFlowTests: XCTestCase {
         XCTAssertEqual(try rowCount(in: context), 1)
         XCTAssertNil(transaction.updatedAtMs)
         XCTAssertEqual(transaction.sourceFile, Transaction.pendingRowWriteSource)
+        let freshContext = ModelContext(container)
+        let persisted = try XCTUnwrap(
+            freshContext.fetch(FetchDescriptor<Transaction>()).first(where: {
+                $0.id == transaction.id
+            }),
+        )
+        XCTAssertEqual(
+            persisted.sourceFile,
+            Transaction.pendingRowWriteSource,
+            "The retry marker must survive a fresh ModelContext, not merely the writing context.",
+        )
         XCTAssertTrue(statusStore.canRetry)
         XCTAssertFalse(feedback.isSaving)
         XCTAssertTrue(feedback.isRetryPending)
+
+        let liveSync = ConvexSyncService(context: context)
+        try liveSync.replaceTransactions(
+            ownedBy: [.victor],
+            with: [],
+            rowAuthoritative: true,
+        )
+        try context.save()
+        XCTAssertEqual(
+            try rowCount(in: context),
+            1,
+            "An authoritative snapshot must not reap a row while its retry payload is live.",
+        )
 
         statusStore.retry()
         await waitForResults(2, in: harness)
@@ -152,9 +199,57 @@ final class OptimisticSaveFlowTests: XCTestCase {
         XCTAssertEqual(try rowCount(in: context), 1)
         XCTAssertEqual(transaction.updatedAtMs, 42)
         XCTAssertEqual(transaction.sourceFile, FamilyMember.victor.transactionsDataFileName)
+        let acceptedContext = ModelContext(container)
+        let accepted = try XCTUnwrap(
+            acceptedContext.fetch(FetchDescriptor<Transaction>()).first(where: {
+                $0.id == transaction.id
+            }),
+        )
+        XCTAssertEqual(accepted.updatedAtMs, 42)
+        XCTAssertEqual(accepted.sourceFile, FamilyMember.victor.transactionsDataFileName)
         XCTAssertFalse(statusStore.canRetry)
         XCTAssertFalse(feedback.isSaving)
         XCTAssertFalse(feedback.isRetryPending)
+    }
+
+    func testAuthoritativeRevisionMakesAStaleTerminalCreateResultAccepted() {
+        XCTAssertEqual(
+            OptimisticSaveFlow.resolveCreateResult(
+                .failed(.serverRejected),
+                acceptedRevision: 42,
+            ),
+            .ok,
+        )
+        XCTAssertEqual(
+            OptimisticSaveFlow.resolveCreateResult(
+                .failed(.serverRejected),
+                acceptedRevision: nil,
+            ),
+            .failed(.serverRejected),
+        )
+    }
+
+    func testGenericTransactionWriterPreservesNonCreateSourceProvenance() async throws {
+        let transaction = makeTransaction(id: "csv-provenance")
+        transaction.createdBy = "csv_import"
+        transaction.sourceFile = "csv-import-strike-2026-08-03"
+        let harness = TransactionRetryHarness()
+
+        AppWriteSyncService.pushTransaction(
+            transaction,
+            owner: .victor,
+            statusStore: SyncStatusStore(),
+            automaticRetries: 0,
+            retryDelayNanoseconds: 0,
+            preflight: { nil },
+            write: { _, _, _ in try await harness.write() },
+        )
+
+        for _ in 0 ..< 100 where harness.attempts < 1 {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(harness.attempts, 1)
+        XCTAssertEqual(transaction.sourceFile, "csv-import-strike-2026-08-03")
     }
 
     private func waitForResults(_ count: Int, in harness: TransactionRetryHarness) async {

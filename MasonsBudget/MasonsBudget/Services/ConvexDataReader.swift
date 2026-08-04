@@ -5,10 +5,18 @@
 import Foundation
 import os
 
+enum ConvexSnapshotSource: Equatable {
+    case rowAPI
+    case legacyBlob
+}
+
 struct ConvexReadBatch<Value> {
     let value: Value
     /// Nil means the legacy payload does not prove absence for unrepresented owners.
     let replacementOwners: Set<FamilyMember>?
+    let source: ConvexSnapshotSource
+
+    var isRowAuthoritative: Bool { source == .rowAPI }
 }
 
 /// Reads financial data from Convex row tables with explicit legacy-blob fallbacks.
@@ -43,14 +51,14 @@ actor ConvexDataReader {
             do {
                 let rows = try await rowReader.transactions(viewer: viewer)
                 let owners = Set(FamilyMember.allCases.filter { viewer.canSee(dataOwnedBy: $0) })
-                return ConvexReadBatch(value: rows, replacementOwners: owners)
+                return ConvexReadBatch(value: rows, replacementOwners: owners, source: .rowAPI)
             } catch let error as ConvexError where error.isRowAPIUnavailable {
                 log.notice("Public row API is not deployed; reading authenticated transactions blob")
             }
         }
 
         let blob = try await client.fetchFile("transactions", as: [LegacyTransactionDTO].self)
-        return ConvexReadBatch(value: blob, replacementOwners: nil)
+        return ConvexReadBatch(value: blob, replacementOwners: nil, source: .legacyBlob)
     }
 
     /// Read the current budget from Convex.
@@ -138,7 +146,7 @@ actor ConvexDataReader {
             do {
                 let rows = try await rowReader.todos(viewer: viewer)
                 let owners = Set(FamilyMember.allCases.filter { viewer.canSee(dataOwnedBy: $0) })
-                return ConvexReadBatch(value: rows, replacementOwners: owners)
+                return ConvexReadBatch(value: rows, replacementOwners: owners, source: .rowAPI)
             } catch let error as ConvexError where error.isRowAPIUnavailable {
                 log.notice("Public row API is not deployed; reading authenticated todos blob")
             }
@@ -151,7 +159,7 @@ actor ConvexDataReader {
         } else if let wrapper = raw as? [String: Any], let array = wrapper["todos"] as? [Any] {
             rawTodos = array
         } else {
-            return ConvexReadBatch(value: [], replacementOwners: nil)
+            return ConvexReadBatch(value: [], replacementOwners: nil, source: .legacyBlob)
         }
 
         let todos: [LegacyTodoDTO] = rawTodos.compactMap { item in
@@ -170,7 +178,7 @@ actor ConvexDataReader {
                 return nil
             }
         }
-        return ConvexReadBatch(value: todos, replacementOwners: nil)
+        return ConvexReadBatch(value: todos, replacementOwners: nil, source: .legacyBlob)
     }
 
     /// Check current data versions (lightweight — for change detection).

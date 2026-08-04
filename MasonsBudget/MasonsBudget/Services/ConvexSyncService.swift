@@ -152,7 +152,11 @@ final class ConvexSyncService {
             let batch = try await reader.readTransactions(viewer: currentMember)
             let models = LedgerMapper.mapTransactions(batch.value)
             let owners = batch.replacementOwners.map { Array($0) } ?? [.victor, .rachel]
-            try replaceTransactions(ownedBy: owners, with: models)
+            try replaceTransactions(
+                ownedBy: owners,
+                with: models,
+                rowAuthoritative: batch.isRowAuthoritative,
+            )
             return models.count
         } catch {
             log.error("Transactions sync failed: \(error.localizedDescription)")
@@ -474,7 +478,11 @@ final class ConvexSyncService {
         local.lastUpdated = remote.lastUpdated
     }
 
-    func replaceTransactions(ownedBy owners: [FamilyMember], with transactions: [Transaction]) throws {
+    func replaceTransactions(
+        ownedBy owners: [FamilyMember],
+        with transactions: [Transaction],
+        rowAuthoritative: Bool = false,
+    ) throws {
         let existing = try context.fetch(FetchDescriptor<Transaction>())
 
         let remoteIds = Set(transactions.map(\.id))
@@ -489,16 +497,21 @@ final class ConvexSyncService {
         }
 
         // Retry actions are intentionally in-memory. The source marker makes
-        // their failure durable: after a complete successful row read, remove
+        // their failure durable: after a complete authoritative row read, remove
         // only retry-pending app rows the server still does not contain. Active
         // attempts clear the marker before network I/O, so sync cannot reap an
         // in-flight optimistic row.
-        for transaction in existing where owners.contains(transaction.ownerMember)
-            && transaction.createdBy == "app"
-            && transaction.sourceFile == Transaction.pendingRowWriteSource
-        {
-            guard !remoteIds.contains(transaction.id) else { continue }
-            context.delete(transaction)
+        if rowAuthoritative {
+            for transaction in existing where owners.contains(transaction.ownerMember)
+                && transaction.createdBy == "app"
+                && transaction.sourceFile == Transaction.pendingRowWriteSource
+            {
+                guard !AppWriteSyncService.hasLiveOptimisticTransaction(transaction.id) else {
+                    continue
+                }
+                guard !remoteIds.contains(transaction.id) else { continue }
+                context.delete(transaction)
+            }
         }
 
         for transaction in transactions {
@@ -511,6 +524,8 @@ final class ConvexSyncService {
     }
 
     private func updateTransaction(_ local: Transaction, from remote: Transaction) {
+        let preservesLocalImportProvenance = local.createdBy == "csv_import"
+            || local.createdBy == "voice"
         local.date = remote.date
         local.merchant = remote.merchant
         local.amount = remote.amount
@@ -520,9 +535,13 @@ final class ConvexSyncService {
         local.card = remote.card
         local.note = remote.note
         local.owner = remote.owner
-        local.createdBy = remote.createdBy
+        if !preservesLocalImportProvenance {
+            local.createdBy = remote.createdBy
+        }
         local.createdAt = remote.createdAt
-        local.sourceFile = remote.sourceFile
+        if !preservesLocalImportProvenance {
+            local.sourceFile = remote.sourceFile
+        }
         local.updatedAtMs = remote.updatedAtMs
     }
 

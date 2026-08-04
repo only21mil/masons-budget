@@ -309,11 +309,201 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
         ))
         try context.save()
 
-        try service.replaceTransactions(ownedBy: [.victor], with: [])
+        try service.replaceTransactions(
+            ownedBy: [.victor],
+            with: [],
+            rowAuthoritative: true,
+        )
         try context.save()
 
         let transactions = try context.fetch(FetchDescriptor<Transaction>())
         XCTAssertEqual(transactions.map(\.id), ["active-local"])
+    }
+
+    @MainActor
+    func testRealBlobReaderSnapshotDoesNotReapPendingRow() async throws {
+        let client = try makeSnapshotClient(valueForPath: { path in
+            XCTAssertEqual(path, "dataFiles:get")
+            return []
+        })
+        let reader = ConvexDataReader(client: client, rowReadsEnabled: { false })
+        let batch = try await reader.readTransactions(viewer: .victor)
+        XCTAssertEqual(batch.source, .legacyBlob)
+        XCTAssertFalse(batch.isRowAuthoritative)
+
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Transaction.self, configurations: configuration)
+        let context = ModelContext(container)
+        context.insert(pendingTransaction(id: "blob-must-not-reap"))
+        try context.save()
+
+        let service = ConvexSyncService(context: context)
+        try service.replaceTransactions(
+            ownedBy: [.victor],
+            with: LedgerMapper.mapTransactions(batch.value),
+            rowAuthoritative: batch.isRowAuthoritative,
+        )
+        try context.save()
+
+        XCTAssertEqual(try context.fetch(FetchDescriptor<Transaction>()).map(\.id), ["blob-must-not-reap"])
+    }
+
+    @MainActor
+    func testUnavailableRowReaderFallsBackWithoutReapingPendingRow() async throws {
+        let client = try makeSnapshotClient(
+            missingRowPath: "tables:listTransactions",
+            valueForPath: { path in
+                XCTAssertEqual(path, "dataFiles:get")
+                return []
+            },
+        )
+        let reader = ConvexDataReader(client: client, rowReadsEnabled: { true })
+        let batch = try await reader.readTransactions(viewer: .victor)
+        XCTAssertEqual(batch.source, .legacyBlob)
+        XCTAssertFalse(batch.isRowAuthoritative)
+
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Transaction.self, configurations: configuration)
+        let context = ModelContext(container)
+        context.insert(pendingTransaction(id: "fallback-must-not-reap"))
+        try context.save()
+
+        let service = ConvexSyncService(context: context)
+        try service.replaceTransactions(
+            ownedBy: [.victor],
+            with: LedgerMapper.mapTransactions(batch.value),
+            rowAuthoritative: batch.isRowAuthoritative,
+        )
+        try context.save()
+
+        XCTAssertEqual(
+            try context.fetch(FetchDescriptor<Transaction>()).map(\.id),
+            ["fallback-must-not-reap"],
+        )
+    }
+
+    @MainActor
+    func testRealRowReaderSnapshotReapsOnlyServerAbsentPendingRow() async throws {
+        let client = try makeSnapshotClient(valueForPath: { path in
+            XCTAssertEqual(path, "tables:listTransactions")
+            return [
+                "complete": true,
+                "rows": [[
+                    "txId": "server-present",
+                    "owner": "victor",
+                    "date": "2026-08-01",
+                    "month": "2026-08",
+                    "merchant": "Remote",
+                    "amountCents": ConvexTaggedInt64Encoder.encode(1_200),
+                    "category": "Other",
+                    "updatedAtMs": 42,
+                ], [
+                    "txId": "csv-present",
+                    "owner": "victor",
+                    "date": "2026-08-02",
+                    "month": "2026-08",
+                    "merchant": "Imported",
+                    "amountCents": ConvexTaggedInt64Encoder.encode(2_300),
+                    "category": "Other",
+                    "updatedAtMs": 43,
+                ]],
+            ]
+        })
+        let reader = ConvexDataReader(client: client, rowReadsEnabled: { true })
+        let batch = try await reader.readTransactions(viewer: .victor)
+        XCTAssertEqual(batch.source, .rowAPI)
+        XCTAssertTrue(batch.isRowAuthoritative)
+
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Transaction.self, configurations: configuration)
+        let context = ModelContext(container)
+        context.insert(pendingTransaction(id: "server-present"))
+        context.insert(pendingTransaction(id: "server-absent"))
+        context.insert(Transaction(
+            id: "csv-present",
+            date: .now,
+            merchant: "CSV Local",
+            amount: 23,
+            category: "Other",
+            owner: .victor,
+            createdBy: "csv_import",
+            sourceFile: "csv-import-strike-2026-08-03",
+        ))
+        context.insert(Transaction(
+            id: "active-local",
+            date: .now,
+            merchant: "Active",
+            amount: 8,
+            category: "Other",
+            owner: .victor,
+            createdBy: "app",
+        ))
+        try context.save()
+
+        let service = ConvexSyncService(context: context)
+        try service.replaceTransactions(
+            ownedBy: [.victor],
+            with: LedgerMapper.mapTransactions(batch.value),
+            rowAuthoritative: batch.isRowAuthoritative,
+        )
+        try context.save()
+
+        let rows = try context.fetch(FetchDescriptor<Transaction>())
+        XCTAssertEqual(Set(rows.map(\.id)), Set(["server-present", "csv-present", "active-local"]))
+        let serverPresent = try XCTUnwrap(rows.first(where: { $0.id == "server-present" }))
+        XCTAssertEqual(serverPresent.updatedAtMs, 42)
+        XCTAssertEqual(serverPresent.sourceFile, "transactions.json")
+        XCTAssertEqual(serverPresent.createdBy, "mc2")
+        let csvPresent = try XCTUnwrap(rows.first(where: { $0.id == "csv-present" }))
+        XCTAssertEqual(csvPresent.updatedAtMs, 43)
+        XCTAssertEqual(csvPresent.sourceFile, "csv-import-strike-2026-08-03")
+        XCTAssertEqual(csvPresent.createdBy, "csv_import")
+    }
+
+    private func pendingTransaction(id: String) -> Transaction {
+        Transaction(
+            id: id,
+            date: .now,
+            merchant: "Pending",
+            amount: 12,
+            category: "Other",
+            owner: .victor,
+            createdBy: "app",
+            sourceFile: Transaction.pendingRowWriteSource,
+        )
+    }
+
+    private func makeSnapshotClient(
+        missingRowPath: String? = nil,
+        valueForPath: @escaping @Sendable (String) throws -> Any,
+    ) throws -> ConvexClient {
+        let deploymentURL = try XCTUnwrap(URL(string: "https://snapshot.invalid"))
+        return ConvexClient(deploymentURL: deploymentURL, requestExecutor: { request in
+            let body = try XCTUnwrap(request.httpBody)
+            let object = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: body) as? [String: Any],
+            )
+            let path = try XCTUnwrap(object["path"] as? String)
+            let envelope: [String: Any]
+            if path == missingRowPath {
+                envelope = [
+                    "status": "error",
+                    "errorMessage": "Could not find public function for '\(path)'",
+                ]
+            } else {
+                envelope = [
+                    "status": "success",
+                    "value": try valueForPath(path),
+                ]
+            }
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"],
+            ))
+            return (try JSONSerialization.data(withJSONObject: envelope), response)
+        })
     }
 
     // MARK: - transactions.json

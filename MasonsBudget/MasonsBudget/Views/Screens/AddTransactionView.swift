@@ -177,24 +177,31 @@ struct AddTransactionView: View {
                 typeSegment
                     .padding(.horizontal, AppLayout.sectionPadding)
                     .padding(.top, 12)
+                    .disabled(writeFeedback.isSaving || writeFeedback.isRetryPending)
 
                 Spacer()
 
                 amountSection
+                    .disabled(writeFeedback.isSaving || writeFeedback.isRetryPending)
 
                 Spacer()
 
                 fieldsCard
                     .padding(.horizontal, AppLayout.sectionPadding)
+                    .disabled(writeFeedback.isSaving || writeFeedback.isRetryPending)
 
                 numPad
                     .padding(.top, 8)
+                    .disabled(writeFeedback.isSaving || writeFeedback.isRetryPending)
             }
             .background(theme.bg)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button(writeFeedback.isRetryPending ? "Abandon" : "Cancel") {
+                        cancelSheet()
+                    }
                         .foregroundStyle(theme.accent)
+                        .disabled(writeFeedback.isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(
@@ -212,6 +219,7 @@ struct AddTransactionView: View {
                 .navigationBarTitleDisplayMode(.inline)
             #endif
         }
+        .interactiveDismissDisabled(writeFeedback.isSaving || writeFeedback.isRetryPending)
     }
 
     // MARK: - Type Segment
@@ -465,6 +473,7 @@ struct AddTransactionView: View {
     }
 
     private func handleKey(_ key: String) {
+        guard !writeFeedback.isSaving, !writeFeedback.isRetryPending else { return }
         amountValidationMessage = nil
         writeFeedback.clear()
         if key == "⌫" {
@@ -475,6 +484,45 @@ struct AddTransactionView: View {
             amount += key
         } else {
             amount += key
+        }
+    }
+
+    private func cancelSheet() {
+        guard !writeFeedback.isSaving else { return }
+        guard writeFeedback.isRetryPending else {
+            dismiss()
+            return
+        }
+
+        do {
+            switch txType {
+            case .btcBuy:
+                let buys = try modelContext.fetch(FetchDescriptor<BTCBuy>())
+                if let buy = buys.first(where: { $0.id == createIDs.bitcoinBuyID }) {
+                    modelContext.delete(buy)
+                }
+                let lots = try modelContext.fetch(FetchDescriptor<CostBasisLot>())
+                if let lot = lots.first(where: { $0.lotId == createIDs.bitcoinBuyID }) {
+                    modelContext.delete(lot)
+                }
+            default:
+                let transactions = try modelContext.fetch(FetchDescriptor<Transaction>())
+                if let pending = transactions.first(where: {
+                    $0.id == createIDs.transactionID
+                        && $0.sourceFile == Transaction.pendingRowWriteSource
+                }) {
+                    modelContext.delete(pending)
+                }
+            }
+            try modelContext.save()
+            AppWriteSyncService.abandonOptimisticTransaction(createIDs.transactionID)
+            if let operationID = writeFeedback.retryOperationID {
+                SyncStatusStore.shared.dismissFailure(id: operationID)
+            }
+            writeFeedback.abandonRetry()
+            dismiss()
+        } catch {
+            writeFeedback.failRetryAbandonment(.persistence, operation: "Abandon transaction")
         }
     }
 
@@ -531,7 +579,19 @@ struct AddTransactionView: View {
             in: modelContext,
             feedback: writeFeedback,
             push: { completion in
-                AppWriteSyncService.pushTransaction(tx, owner: ledgerOwner, onResult: completion)
+                AppWriteSyncService.pushTransaction(
+                    tx,
+                    owner: ledgerOwner,
+                    tracksOptimisticCreate: true,
+                    onOperationStart: { writeFeedback.bindRetryOperation($0) },
+                    onResult: completion,
+                )
+            },
+            resolveResult: {
+                OptimisticSaveFlow.resolveCreateResult(
+                    $0,
+                    acceptedRevision: tx.updatedAtMs,
+                )
             },
             afterResult: { [createIDs, dismiss] result in
                 if createIDs.recordServerResult(result, for: .transaction) { dismiss() }
@@ -582,7 +642,12 @@ struct AddTransactionView: View {
             in: modelContext,
             feedback: writeFeedback,
             push: { completion in
-                AppWriteSyncService.pushBTCBuy(buy, owner: ledgerOwner, onResult: completion)
+                AppWriteSyncService.pushBTCBuy(
+                    buy,
+                    owner: ledgerOwner,
+                    onOperationStart: { writeFeedback.bindRetryOperation($0) },
+                    onResult: completion,
+                )
             },
             afterResult: { [createIDs, dismiss] result in
                 if createIDs.recordServerResult(result, for: .bitcoinBuy) { dismiss() }

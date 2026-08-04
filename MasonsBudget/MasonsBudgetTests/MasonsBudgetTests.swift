@@ -270,6 +270,28 @@ final class MasonsBudgetTests: XCTestCase {
     }
 
     @MainActor
+    func testSyncStatusStoreDismissesOnlyTheNamedRetryOperation() {
+        let store = SyncStatusStore()
+        var transactionRetryCount = 0
+        var unrelatedRetryCount = 0
+        let unrelatedID = store.begin("CSV import")
+        let transactionID = store.begin("Save transaction")
+        store.complete("CSV import", id: unrelatedID, result: .failed(.transport), retry: {
+            unrelatedRetryCount += 1
+        })
+        store.complete("Save transaction", id: transactionID, result: .failed(.transport), retry: {
+            transactionRetryCount += 1
+        })
+
+        store.dismissFailure(id: transactionID)
+        XCTAssertEqual(store.retainedFailureCount, 1)
+        XCTAssertEqual(store.lastOperation, "CSV import")
+        store.retry()
+        XCTAssertEqual(unrelatedRetryCount, 1)
+        XCTAssertEqual(transactionRetryCount, 0)
+    }
+
+    @MainActor
     func testExplicitOperationIDBalancesImmediateFailureWithoutOrderingRace() {
         let store = SyncStatusStore()
         let id = AppWriteSyncService.reportSyncStart(
@@ -566,6 +588,42 @@ final class MasonsBudgetTests: XCTestCase {
     }
 
     @MainActor
+    func testWriteFeedbackRetryOwnershipSurvivesEditsUntilExplicitlyAbandoned() throws {
+        let feedback = WriteFeedbackStore()
+        let status = SyncStatusStore()
+        var staleRetryCount = 0
+        let operationID = UUID()
+        status.begin("Save transaction", id: operationID)
+        feedback.begin()
+        feedback.bindRetryOperation(operationID)
+
+        // The amount can be edited while the network write is still in flight.
+        // That must not lose the exact retry entry before the result arrives.
+        feedback.clear()
+        XCTAssertTrue(feedback.isSaving)
+        XCTAssertEqual(feedback.retryOperationID, operationID)
+        status.complete("Save transaction", id: operationID, result: .failed(.transport), retry: {
+            staleRetryCount += 1
+        })
+        XCTAssertFalse(feedback.finish(.failed(.transport), operation: "Transaction"))
+        XCTAssertTrue(feedback.isRetryPending)
+        XCTAssertEqual(feedback.retryOperationID, operationID)
+
+        feedback.failRetryAbandonment(.persistence, operation: "Abandon transaction")
+        XCTAssertTrue(feedback.isRetryPending)
+        XCTAssertEqual(feedback.retryOperationID, operationID)
+        XCTAssertEqual(feedback.lastLocalFailure, .persistence)
+
+        status.dismissFailure(id: try XCTUnwrap(feedback.retryOperationID))
+        feedback.abandonRetry()
+        status.retry()
+        XCTAssertEqual(staleRetryCount, 0)
+        XCTAssertFalse(feedback.isRetryPending)
+        XCTAssertNil(feedback.retryOperationID)
+        XCTAssertNil(feedback.lastResult)
+    }
+
+    @MainActor
     func testLocalSaveFailureRollsBackAndNeverStartsRemoteWriteback() {
         let context = FailingLocalMutationContext()
         let statusStore = SyncStatusStore()
@@ -652,9 +710,20 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertEqual(AppWriteSyncService.writeBlocker(requiresSyncToken: true), .disabled)
         XCTAssertEqual(AppWriteSyncService.writeBlocker(requiresSyncToken: false), .disabled)
 
-        // Unlike rowReadsEnabled this defaults ON: writes already ship.
         ConvexConfig.setWritesEnabled(true)
         XCTAssertNotEqual(AppWriteSyncService.writeBlocker(requiresSyncToken: true), .disabled)
+    }
+
+    func testRowReadsDefaultOnWithExplicitKillSwitch() throws {
+        let suiteName = "ConvexConfigTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertTrue(ConvexConfig.rowReadsEnabled(in: defaults))
+        ConvexConfig.setRowReadsEnabled(false, in: defaults)
+        XCTAssertFalse(ConvexConfig.rowReadsEnabled(in: defaults))
+        ConvexConfig.setRowReadsEnabled(true, in: defaults)
+        XCTAssertTrue(ConvexConfig.rowReadsEnabled(in: defaults))
     }
 
     @MainActor

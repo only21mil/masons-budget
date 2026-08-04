@@ -19,6 +19,19 @@ enum AppWriteSyncService {
         String
     ) async throws -> Double?
 
+    /// Process-local ownership for an optimistic create attempt or retained
+    /// retry. A row sync may reconcile this ID from the server, but must not reap
+    /// a server-absent row while its exact payload can still be retried.
+    private static var liveOptimisticTransactionIDs: Set<String> = []
+
+    static func hasLiveOptimisticTransaction(_ id: String) -> Bool {
+        liveOptimisticTransactionIDs.contains(id)
+    }
+
+    static func abandonOptimisticTransaction(_ id: String) {
+        liveOptimisticTransactionIDs.remove(id)
+    }
+
     private static let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "AppWriteSync")
     private static let maxRetries = 2
     private static let retryDelay: UInt64 = 2_000_000_000
@@ -30,6 +43,8 @@ enum AppWriteSyncService {
     static func pushTransaction(
         _ transaction: Transaction,
         owner: FamilyMember,
+        tracksOptimisticCreate: Bool = false,
+        onOperationStart: (@MainActor @Sendable (UUID) -> Void)? = nil,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         pushTransaction(
@@ -47,6 +62,8 @@ enum AppWriteSyncService {
                     sourceFile: fileName,
                 )
             },
+            tracksOptimisticCreate: tracksOptimisticCreate,
+            onOperationStart: onOperationStart,
             onResult: onResult,
         )
     }
@@ -61,6 +78,8 @@ enum AppWriteSyncService {
         retryDelayNanoseconds: UInt64,
         preflight: @escaping @MainActor @Sendable () -> ConvexWriteResult?,
         write: @escaping TransactionRowWrite,
+        tracksOptimisticCreate: Bool = false,
+        onOperationStart: (@MainActor @Sendable (UUID) -> Void)? = nil,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         let canonicalOwner = owner.ledgerOwner
@@ -71,6 +90,7 @@ enum AppWriteSyncService {
         } catch {
             log.error("Refused transaction payload: \(ConvexWriteResult.classify(error).diagnosticCode, privacy: .public)")
             let operationID = reportSyncStart(label, statusStore: statusStore)
+            onOperationStart?(operationID)
             reportSyncResult(
                 label: label,
                 operationID: operationID,
@@ -83,15 +103,19 @@ enum AppWriteSyncService {
         }
 
         let fileName = canonicalOwner.transactionsDataFileName
+        // Only AddTransactionView explicitly opts into the durable create
+        // marker. CSV, voice, detail edits and generated paycheck rows already
+        // carry different lifecycle/provenance and must never be inferred into it.
         let deliverResult: @MainActor @Sendable (ConvexWriteResult) -> Void = { result in
-            if result.isRetryable {
+            if tracksOptimisticCreate, result.isRetryable {
                 // This marker is persisted with the optimistic row. If the
                 // in-memory Retry action is dismissed or lost on app exit, a
                 // later complete row sync can remove the server-absent row
                 // instead of leaving a permanent local-only transaction.
                 transaction.sourceFile = Transaction.pendingRowWriteSource
-            } else if result.isOk {
-                transaction.sourceFile = fileName
+            } else if tracksOptimisticCreate {
+                liveOptimisticTransactionIDs.remove(transaction.id)
+                if result.isOk { transaction.sourceFile = fileName }
             }
             onResult?(result)
         }
@@ -104,7 +128,15 @@ enum AppWriteSyncService {
             retryDelayNanoseconds: retryDelayNanoseconds,
             preflight: preflight,
             write: write,
-            onAttemptStart: { transaction.sourceFile = nil },
+            onOperationStart: { operationID in
+                if tracksOptimisticCreate {
+                    liveOptimisticTransactionIDs.insert(transaction.id)
+                }
+                onOperationStart?(operationID)
+            },
+            onAttemptStart: {
+                if tracksOptimisticCreate { transaction.sourceFile = nil }
+            },
             onResult: deliverResult,
             // The server fences the next edit and delete on the revision it just
             // accepted. Install it now or an immediate add -> edit is rejected
@@ -122,6 +154,7 @@ enum AppWriteSyncService {
         retryDelayNanoseconds: UInt64,
         preflight: @escaping @MainActor @Sendable () -> ConvexWriteResult?,
         write: @escaping TransactionRowWrite,
+        onOperationStart: (@MainActor @Sendable (UUID) -> Void)? = nil,
         onAttemptStart: (@MainActor @Sendable () -> Void)? = nil,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
         onAcceptedRevision: (@MainActor @Sendable (Double) -> Void)? = nil,
@@ -129,6 +162,7 @@ enum AppWriteSyncService {
         let label = "Save transaction"
         onAttemptStart?()
         let operationID = reportSyncStart(label, statusStore: statusStore)
+        onOperationStart?(operationID)
         if let blocked = preflight() {
             reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
                 pushTransactionPayload(
@@ -138,6 +172,7 @@ enum AppWriteSyncService {
                     retryDelayNanoseconds: retryDelayNanoseconds,
                     preflight: preflight,
                     write: write,
+                    onOperationStart: onOperationStart,
                     onAttemptStart: onAttemptStart,
                     onResult: onResult, onAcceptedRevision: onAcceptedRevision,
                 )
@@ -165,6 +200,7 @@ enum AppWriteSyncService {
                     retryDelayNanoseconds: retryDelayNanoseconds,
                     preflight: preflight,
                     write: write,
+                    onOperationStart: onOperationStart,
                     onAttemptStart: onAttemptStart,
                     onResult: onResult, onAcceptedRevision: onAcceptedRevision,
                 )
@@ -249,25 +285,40 @@ enum AppWriteSyncService {
     static func pushBTCBuy(
         _ buy: BTCBuy,
         owner: FamilyMember,
+        onOperationStart: (@MainActor @Sendable (UUID) -> Void)? = nil,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         let canonicalOwner = owner.ledgerOwner
         let fileName = canonicalOwner.btcBuysDataFileName
         let payload = LegacyBTCBuyDTO(appBuy: buy, owner: canonicalOwner)
-        pushBTCBuyPayload(payload, owner: canonicalOwner, to: fileName, onResult: onResult)
+        pushBTCBuyPayload(
+            payload,
+            owner: canonicalOwner,
+            to: fileName,
+            onOperationStart: onOperationStart,
+            onResult: onResult,
+        )
     }
 
     private static func pushBTCBuyPayload(
         _ payload: LegacyBTCBuyDTO,
         owner: FamilyMember,
         to fileName: String,
+        onOperationStart: (@MainActor @Sendable (UUID) -> Void)? = nil,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         let label = "Save BTC buy"
         let operationID = reportSyncStart(label)
+        onOperationStart?(operationID)
         if let blocked = writeBlocker(requiresSyncToken: true) {
             reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
-                pushBTCBuyPayload(payload, owner: owner, to: fileName, onResult: onResult)
+                pushBTCBuyPayload(
+                    payload,
+                    owner: owner,
+                    to: fileName,
+                    onOperationStart: onOperationStart,
+                    onResult: onResult,
+                )
             }, onResult: onResult)
             return
         }
@@ -282,7 +333,13 @@ enum AppWriteSyncService {
                 )
             }
             reportSyncResult(label: label, operationID: operationID, result: result, retry: {
-                pushBTCBuyPayload(payload, owner: owner, to: fileName, onResult: onResult)
+                pushBTCBuyPayload(
+                    payload,
+                    owner: owner,
+                    to: fileName,
+                    onOperationStart: onOperationStart,
+                    onResult: onResult,
+                )
             }, onResult: onResult)
         }
     }
