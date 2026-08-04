@@ -7,6 +7,12 @@ import SwiftData
 
 @Model
 final class Transaction {
+    /// Persistent marker for an optimistic row whose remote write failed with
+    /// a retryable result. A complete transaction sync reconciles these rows
+    /// against the authoritative server snapshot after an app restart or a
+    /// dismissed in-memory retry.
+    static let pendingRowWriteSource = "app-pending-row-write"
+
     @Attribute(.unique) var id: String
     var date: Date
     var merchant: String

@@ -124,7 +124,6 @@ final class CSVImportService: Sendable {
             let isIncome = category.caseInsensitiveCompare("Income") == .orderedSame
             let enteredInBitcoin = isAuthoritativeBitcoinAmount(
                 header: headers[amtIdx],
-                source: source,
             )
 
             results.append(ImportedTransaction(
@@ -271,24 +270,14 @@ final class CSVImportService: Sendable {
     /// A sat amount may reach the income wire only when the CSV schema makes
     /// Bitcoin the authoritative input. Explicit USD/fiat columns remain
     /// dollar-origin even though the preview derives a sat estimate.
-    private func isAuthoritativeBitcoinAmount(header: String, source: ImportSource) -> Bool {
+    private func isAuthoritativeBitcoinAmount(header: String) -> Bool {
         let normalized = header.lowercased()
         if normalized.contains("usd") || normalized.contains("fiat") || normalized.contains("$") {
             return false
         }
-        if normalized.contains("btc") || normalized.contains("bitcoin") || normalized.contains("sat") {
-            return true
-        }
-
-        // These source-specific importers map their selected amount column as
-        // Bitcoin units. Generic/self-custody CSVs require an explicit BTC/sats
-        // header instead of guessing from the numeric magnitude.
-        switch source {
-        case .strike, .cashApp, .coinbase, .kraken:
-            true
-        case .selfCustody, .custom:
-            false
-        }
+        return normalized.contains("btc")
+            || normalized.contains("bitcoin")
+            || normalized.contains("sat")
     }
 
     private func duplicateKey(date: Date, sats: Decimal, merchant: String) -> String {

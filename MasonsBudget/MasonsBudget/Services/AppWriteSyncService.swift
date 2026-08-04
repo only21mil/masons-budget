@@ -17,7 +17,7 @@ enum AppWriteSyncService {
         LegacyTransactionDTO,
         FamilyMember,
         String
-    ) async throws -> Double
+    ) async throws -> Double?
 
     private static let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "AppWriteSync")
     private static let maxRetries = 2
@@ -83,6 +83,18 @@ enum AppWriteSyncService {
         }
 
         let fileName = canonicalOwner.transactionsDataFileName
+        let deliverResult: @MainActor @Sendable (ConvexWriteResult) -> Void = { result in
+            if result.isRetryable {
+                // This marker is persisted with the optimistic row. If the
+                // in-memory Retry action is dismissed or lost on app exit, a
+                // later complete row sync can remove the server-absent row
+                // instead of leaving a permanent local-only transaction.
+                transaction.sourceFile = Transaction.pendingRowWriteSource
+            } else if result.isOk {
+                transaction.sourceFile = fileName
+            }
+            onResult?(result)
+        }
         pushTransactionPayload(
             payload,
             owner: canonicalOwner,
@@ -92,7 +104,8 @@ enum AppWriteSyncService {
             retryDelayNanoseconds: retryDelayNanoseconds,
             preflight: preflight,
             write: write,
-            onResult: onResult,
+            onAttemptStart: { transaction.sourceFile = nil },
+            onResult: deliverResult,
             // The server fences the next edit and delete on the revision it just
             // accepted. Install it now or an immediate add -> edit is rejected
             // until some later sync happens to refresh the row.
@@ -109,10 +122,12 @@ enum AppWriteSyncService {
         retryDelayNanoseconds: UInt64,
         preflight: @escaping @MainActor @Sendable () -> ConvexWriteResult?,
         write: @escaping TransactionRowWrite,
+        onAttemptStart: (@MainActor @Sendable () -> Void)? = nil,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
-        onAcceptedRevision: (@MainActor (Double) -> Void)? = nil,
+        onAcceptedRevision: (@MainActor @Sendable (Double) -> Void)? = nil,
     ) {
         let label = "Save transaction"
+        onAttemptStart?()
         let operationID = reportSyncStart(label, statusStore: statusStore)
         if let blocked = preflight() {
             reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
@@ -123,6 +138,7 @@ enum AppWriteSyncService {
                     retryDelayNanoseconds: retryDelayNanoseconds,
                     preflight: preflight,
                     write: write,
+                    onAttemptStart: onAttemptStart,
                     onResult: onResult, onAcceptedRevision: onAcceptedRevision,
                 )
             }, onResult: onResult, statusStore: statusStore)
@@ -149,6 +165,7 @@ enum AppWriteSyncService {
                     retryDelayNanoseconds: retryDelayNanoseconds,
                     preflight: preflight,
                     write: write,
+                    onAttemptStart: onAttemptStart,
                     onResult: onResult, onAcceptedRevision: onAcceptedRevision,
                 )
             }, onResult: onResult, statusStore: statusStore)

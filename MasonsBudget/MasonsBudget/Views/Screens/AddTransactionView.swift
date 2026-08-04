@@ -197,10 +197,14 @@ struct AddTransactionView: View {
                         .foregroundStyle(theme.accent)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(writeFeedback.isSaving ? "Saving…" : "Save") { saveTransaction() }
+                    Button(
+                        writeFeedback.isSaving
+                            ? "Saving…"
+                            : (writeFeedback.isRetryPending ? "Retry pending" : "Save"),
+                    ) { saveTransaction() }
                         .font(AppFont.headline)
                         .foregroundStyle(theme.accent)
-                        .disabled(writeFeedback.isSaving)
+                        .disabled(writeFeedback.isSaving || writeFeedback.isRetryPending)
                 }
             }
             .navigationTitle("New transaction")

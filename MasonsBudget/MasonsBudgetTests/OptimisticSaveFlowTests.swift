@@ -140,7 +140,10 @@ final class OptimisticSaveFlowTests: XCTestCase {
         XCTAssertEqual(harness.results, [.failed(.transport)])
         XCTAssertEqual(try rowCount(in: context), 1)
         XCTAssertNil(transaction.updatedAtMs)
+        XCTAssertEqual(transaction.sourceFile, Transaction.pendingRowWriteSource)
         XCTAssertTrue(statusStore.canRetry)
+        XCTAssertFalse(feedback.isSaving)
+        XCTAssertTrue(feedback.isRetryPending)
 
         statusStore.retry()
         await waitForResults(2, in: harness)
@@ -148,7 +151,10 @@ final class OptimisticSaveFlowTests: XCTestCase {
         XCTAssertEqual(harness.attempts, 2)
         XCTAssertEqual(try rowCount(in: context), 1)
         XCTAssertEqual(transaction.updatedAtMs, 42)
+        XCTAssertEqual(transaction.sourceFile, FamilyMember.victor.transactionsDataFileName)
         XCTAssertFalse(statusStore.canRetry)
+        XCTAssertFalse(feedback.isSaving)
+        XCTAssertFalse(feedback.isRetryPending)
     }
 
     private func waitForResults(_ count: Int, in harness: TransactionRetryHarness) async {
@@ -165,7 +171,7 @@ private final class TransactionRetryHarness {
     var attempts = 0
     var results: [ConvexWriteResult] = []
 
-    func write() async throws -> Double {
+    func write() async throws -> Double? {
         attempts += 1
         if attempts == 1 { throw URLError(.timedOut) }
         return 42

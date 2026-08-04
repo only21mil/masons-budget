@@ -90,6 +90,41 @@ final class CSVImportServiceTests: XCTestCase {
         XCTAssertEqual(transactions[0].enteredInBitcoin, false)
     }
 
+    func testExchangeAmountHeadersNeverFabricateBitcoinOrigin() throws {
+        let cases: [(ImportSource, String)] = [
+            (.strike, "Date,Amount,Description"),
+            (.cashApp, "Date,Amount,Notes"),
+            (.coinbase, "Date,Amount,Type"),
+            (.kraken, "Date,Amount,Type"),
+        ]
+
+        for (source, header) in cases {
+            let csv = "\(header)\n2026-05-01,0.01,Payroll income\n".data(using: .utf8)!
+            let imported = try CSVImportService(importBTCPrice: 90_000).parseCSV(data: csv, source: source)
+
+            XCTAssertEqual(imported.count, 1, source.rawValue)
+            XCTAssertEqual(imported[0].category, "Income", source.rawValue)
+            XCTAssertFalse(imported[0].enteredInBitcoin, source.rawValue)
+        }
+    }
+
+    func testExchangeExplicitBitcoinHeadersCarryOrigin() throws {
+        let cases: [(ImportSource, String)] = [
+            (.strike, "Date,BTC Amount,Description"),
+            (.cashApp, "Date,Asset Amount BTC,Notes"),
+            (.coinbase, "Date,BTC Quantity,Type"),
+            (.kraken, "Date,BTC Volume,Type"),
+        ]
+
+        for (source, header) in cases {
+            let csv = "\(header)\n2026-05-01,0.01,Payroll income\n".data(using: .utf8)!
+            let imported = try CSVImportService(importBTCPrice: 90_000).parseCSV(data: csv, source: source)
+
+            XCTAssertEqual(imported.count, 1, source.rawValue)
+            XCTAssertTrue(imported[0].enteredInBitcoin, source.rawValue)
+        }
+    }
+
     func testDuplicateDetectionComparesExplicitSats() throws {
         let csv = """
         date,amount,memo

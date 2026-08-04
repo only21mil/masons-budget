@@ -251,8 +251,6 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
             createdBy: "mc2",
             sourceFile: "transactions.json",
         )
-        try service.replaceTransactions(ownedBy: [.victor], with: [rowSyncedIncome])
-
         let paycheck = Transaction(
             id: "income-2026-08-01-Payroll",
             date: Date(timeIntervalSince1970: 20),
@@ -263,6 +261,12 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
             createdBy: "mc2",
             sourceFile: "budget.json",
         )
+        // Start from the real pre-sync shape. The transactions pass removes
+        // the legacy paycheck, and the following budget pass must restore it
+        // without deleting the row-API income it just installed.
+        context.insert(paycheck)
+        try context.save()
+        try service.replaceTransactions(ownedBy: [.victor], with: [rowSyncedIncome])
         try service.replaceIncomeTransactions(forOwner: .victor, with: [paycheck])
         try context.save()
 
@@ -275,6 +279,41 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
             transactions.first(where: { $0.id == "row-sat-income" })?.enteredInBitcoin,
             true,
         )
+    }
+
+    @MainActor
+    func testCompleteTransactionSyncReconcilesAbandonedRetryRowOnly() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Transaction.self, configurations: configuration)
+        let context = ModelContext(container)
+        let service = ConvexSyncService(context: context)
+
+        context.insert(Transaction(
+            id: "retry-abandoned",
+            date: .now,
+            merchant: "Retry Market",
+            amount: 12,
+            category: "Other",
+            owner: .victor,
+            createdBy: "app",
+            sourceFile: Transaction.pendingRowWriteSource,
+        ))
+        context.insert(Transaction(
+            id: "active-local",
+            date: .now,
+            merchant: "Active Market",
+            amount: 8,
+            category: "Other",
+            owner: .victor,
+            createdBy: "app",
+        ))
+        try context.save()
+
+        try service.replaceTransactions(ownedBy: [.victor], with: [])
+        try context.save()
+
+        let transactions = try context.fetch(FetchDescriptor<Transaction>())
+        XCTAssertEqual(transactions.map(\.id), ["active-local"])
     }
 
     // MARK: - transactions.json

@@ -45,6 +45,19 @@ enum OptimisticSaveFlow {
                             failure: .persistence,
                         )
                     }
+                } else {
+                    // A remote writer may install accepted metadata or a
+                    // durable retry-pending marker before delivering its
+                    // result. Persist any such state now; otherwise an app exit
+                    // can lose the evidence needed to resolve a local-only row.
+                    do {
+                        try context.save()
+                    } catch {
+                        SyncStatusStore.shared.recordLocalFailure(
+                            operation,
+                            failure: .persistence,
+                        )
+                    }
                 }
                 _ = feedback.finish(result, operation: operation)
                 afterResult(result)

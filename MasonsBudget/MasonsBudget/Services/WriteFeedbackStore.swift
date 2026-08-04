@@ -22,6 +22,10 @@ final class WriteFeedbackStore: ObservableObject {
     /// The last rejection cause, for views that branch rather than render.
     @Published private(set) var lastResult: ConvexWriteResult?
 
+    /// A retry action owns the stable create ID and its persisted optimistic
+    /// row. The add sheet disables a second Save until that action resolves.
+    var isRetryPending: Bool { lastResult?.isRetryable == true }
+
     /// A local database rejection is separate from the remote result channel.
     @Published private(set) var lastLocalFailure: LocalSaveFailure?
 

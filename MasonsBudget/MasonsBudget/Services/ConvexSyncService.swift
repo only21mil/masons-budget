@@ -488,6 +488,19 @@ final class ConvexSyncService {
             context.delete(transaction)
         }
 
+        // Retry actions are intentionally in-memory. The source marker makes
+        // their failure durable: after a complete successful row read, remove
+        // only retry-pending app rows the server still does not contain. Active
+        // attempts clear the marker before network I/O, so sync cannot reap an
+        // in-flight optimistic row.
+        for transaction in existing where owners.contains(transaction.ownerMember)
+            && transaction.createdBy == "app"
+            && transaction.sourceFile == Transaction.pendingRowWriteSource
+        {
+            guard !remoteIds.contains(transaction.id) else { continue }
+            context.delete(transaction)
+        }
+
         for transaction in transactions {
             if let local = existingById[transaction.id] {
                 updateTransaction(local, from: transaction)
