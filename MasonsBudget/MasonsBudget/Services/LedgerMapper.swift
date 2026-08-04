@@ -29,12 +29,15 @@ enum LedgerMapper {
                 merchant: dto.merchant,
                 amount: dto.amount,
                 category: dto.category,
+                amountSats: dto.amountSats,
+                enteredInBitcoin: dto.enteredInBitcoin,
                 card: dto.card?.isEmpty == true ? nil : dto.card,
                 note: dto.note?.isEmpty == true ? nil : dto.note,
                 owner: resolvedOwner,
                 createdBy: "mc2",
                 createdAt: parseDate(dto.date),
                 sourceFile: "transactions.json",
+                updatedAtMs: dto.updatedAtMs,
             )
         }
     }

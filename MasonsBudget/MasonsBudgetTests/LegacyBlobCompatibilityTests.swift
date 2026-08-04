@@ -191,6 +191,47 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
         return ModelContext(container)
     }
 
+    @MainActor
+    func testReplaceTransactionsCopiesBitcoinEntryMarkerOntoExistingRow() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Transaction.self, configurations: configuration)
+        let context = ModelContext(container)
+        let service = ConvexSyncService(context: context)
+
+        context.insert(Transaction(
+            id: "tx-1",
+            date: .distantPast,
+            merchant: "Old merchant",
+            amount: 80,
+            category: "Income",
+            amountSats: nil,
+            enteredInBitcoin: nil,
+            owner: .victor,
+            createdBy: "mc2",
+        ))
+        try context.save()
+
+        try service.replaceTransactions(ownedBy: [.victor], with: [
+            Transaction(
+                id: "tx-1",
+                date: Date(timeIntervalSince1970: 1),
+                merchant: "Payroll",
+                amount: 80,
+                category: "Income",
+                amountSats: 123_456,
+                enteredInBitcoin: true,
+                owner: .victor,
+                createdBy: "mc2",
+            ),
+        ])
+        try context.save()
+
+        let transactions = try context.fetch(FetchDescriptor<Transaction>())
+        XCTAssertEqual(transactions.count, 1)
+        XCTAssertEqual(transactions[0].amountSats, 123_456)
+        XCTAssertEqual(transactions[0].enteredInBitcoin, true)
+    }
+
     // MARK: - transactions.json
 
     func testDecodeTransactions() throws {
@@ -206,6 +247,47 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
         XCTAssertEqual(dtos[0].id, "mortgage-2026-03-01")
         assertDecimalClose(dtos[0].amount, 3613.79)
         XCTAssertEqual(dtos[1].merchant, "Kroger")
+    }
+
+    // A Bitcoin income that round-trips through the server must still be
+    // recognisable as Bitcoin-entered. If it is not, the next edit re-pushes it
+    // with no sats and the River credit silently disappears.
+    func testSyncedSatIncomeKeepsItsBitcoinOriginThroughTheMapper() throws {
+        let row = try JSONDecoder().decode(ConvexTransactionRow.self, from: """
+        {"txId":"tx-1","owner":"victor","date":"2026-08-01","month":"2026-08",
+         "merchant":"Payroll","amountCents":8000,"category":"Income",
+         "card":null,"note":null,"amountSats":123456,"updatedAtMs":5}
+        """.data(using: .utf8)!)
+
+        let mapped = LedgerMapper.mapTransactions([try row.legacyDTO()])
+        XCTAssertEqual(mapped[0].amountSats, 123_456)
+        XCTAssertEqual(mapped[0].enteredInBitcoin, true)
+    }
+
+    // A dollar income carries no sats on the wire, so it must come back as not
+    // explicitly Bitcoin rather than inheriting a marker it never had.
+    func testSyncedUsdIncomeIsNotMarkedBitcoinEntered() throws {
+        let row = try JSONDecoder().decode(ConvexTransactionRow.self, from: """
+        {"txId":"tx-2","owner":"victor","date":"2026-08-01","month":"2026-08",
+         "merchant":"Payroll","amountCents":8000,"category":"Income",
+         "card":null,"note":null,"updatedAtMs":5}
+        """.data(using: .utf8)!)
+
+        let mapped = LedgerMapper.mapTransactions([try row.legacyDTO()])
+        XCTAssertNil(mapped[0].amountSats)
+        XCTAssertEqual(mapped[0].enteredInBitcoin, false)
+    }
+
+    // Legacy blob rows predate the marker entirely; absence must decode cleanly
+    // to nil rather than failing the whole blob.
+    func testLegacyBlobDecodesWithoutTheOriginMarker() throws {
+        let dtos = try JSONDecoder().decode([LegacyTransactionDTO].self, from: """
+        [{"id":"t001","date":"2026-03-02","merchant":"Kroger","amount":76.81,
+          "category":"Groceries","card":"Strike","note":""}]
+        """.data(using: .utf8)!)
+
+        XCTAssertNil(dtos[0].enteredInBitcoin)
+        XCTAssertNil(LedgerMapper.mapTransactions(dtos)[0].enteredInBitcoin)
     }
 
     func testMapTransactions() throws {

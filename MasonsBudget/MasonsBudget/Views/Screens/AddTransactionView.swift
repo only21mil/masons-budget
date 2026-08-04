@@ -1,6 +1,65 @@
 import SwiftData
 import SwiftUI
 
+struct AddTransactionAmountIntent: Equatable {
+    let amountUSD: Decimal
+    let amountSats: Int64?
+    let enteredInBitcoin: Bool?
+
+    static func make(
+        isIncome: Bool,
+        inputUnit: DisplayUnit,
+        typedAmount: Decimal,
+        computedSats: Int64,
+        btcPrice: Decimal,
+    ) -> AddTransactionAmountIntent {
+        let isBitcoinEntry = inputUnit != .usd
+        let isBitcoinIncome = isIncome && isBitcoinEntry
+        let amountUSD = inputUnit == .usd
+            ? abs(typedAmount)
+            : (Decimal(computedSats) / 100_000_000) * btcPrice
+
+        return AddTransactionAmountIntent(
+            amountUSD: amountUSD,
+            amountSats: isIncome ? (isBitcoinIncome ? computedSats : nil) : computedSats,
+            enteredInBitcoin: isBitcoinEntry ? true : nil,
+        )
+    }
+}
+
+@MainActor
+final class AddTransactionCreateIDStore: ObservableObject {
+    enum Entry {
+        case transaction
+        case bitcoinBuy
+    }
+
+    private let makeUUID: () -> UUID
+    private(set) var transactionID: String
+    private(set) var bitcoinBuyID: String
+
+    init(makeUUID: @escaping () -> UUID = { UUID() }) {
+        self.makeUUID = makeUUID
+        transactionID = makeUUID().uuidString
+        bitcoinBuyID = "b-app-\(makeUUID().uuidString)"
+    }
+
+    /// A rejected or ambiguous write keeps the same id for the user's retry.
+    /// Only a receipt the server accepted advances the session to a new create.
+    @discardableResult
+    func recordServerResult(_ result: ConvexWriteResult, for entry: Entry) -> Bool {
+        guard result.isOk else { return false }
+
+        switch entry {
+        case .transaction:
+            transactionID = makeUUID().uuidString
+        case .bitcoinBuy:
+            bitcoinBuyID = "b-app-\(makeUUID().uuidString)"
+        }
+        return true
+    }
+}
+
 struct AddTransactionView: View {
     @Environment(\.theme) var theme
     @Environment(\.dismiss) var dismiss
@@ -21,6 +80,10 @@ struct AddTransactionView: View {
     /// Holds the in-flight write and its cause-specific rejection message. The
     /// sheet stays open until the write is accepted.
     @StateObject private var writeFeedback = WriteFeedbackStore()
+    /// One create id per logical entry for this sheet session. If the server
+    /// commits but its response is lost, Save retries the same id instead of
+    /// creating and crediting a second row.
+    @StateObject private var createIDs = AddTransactionCreateIDStore()
 
     /// The single inline message slot: local validation first, then the write cause.
     private var inlineMessage: String? {
@@ -72,6 +135,10 @@ struct AddTransactionView: View {
         case income = "Income"
         case transfer = "Transfer"
         case btcBuy = "Buy BTC"
+
+        /// Owned-wallet movement requires the dedicated atomic ledger flow.
+        /// Keep the legacy case decodable, but never offer it as budget spend.
+        static let selectableCases: [TxType] = [.spend, .income, .btcBuy]
     }
 
     private var numericAmount: Decimal {
@@ -147,7 +214,7 @@ struct AddTransactionView: View {
 
     private var typeSegment: some View {
         HStack(spacing: 0) {
-            ForEach(TxType.allCases, id: \.self) { t in
+            ForEach(TxType.selectableCases, id: \.self) { t in
                 Button {
                     if txType != t {
                         txType = t
@@ -430,39 +497,42 @@ struct AddTransactionView: View {
         let isIncome = txType == .income
         let signedSatsDecimal = abs(sats)
         let signedSats = signedSatsDecimal.clampedInt64
-        let signedUsd = (Decimal(signedSats) / 100_000_000) * btcPrice
+        let amountIntent = AddTransactionAmountIntent.make(
+            isIncome: isIncome,
+            inputUnit: inputUnit,
+            typedAmount: numericAmount,
+            computedSats: signedSats,
+            btcPrice: btcPrice,
+        )
         let transactionCategory = selectedCategory.isEmpty ? (isIncome ? "Income" : "Other") : selectedCategory
 
         let tx = Transaction(
-            id: UUID().uuidString,
+            id: createIDs.transactionID,
             date: Date(),
             merchant: merchant.isEmpty ? (isIncome ? "Income" : "Expense") : merchant,
-            amount: signedUsd,
+            amount: amountIntent.amountUSD,
             category: transactionCategory,
-            amountSats: signedSats,
+            amountSats: amountIntent.amountSats,
+            enteredInBitcoin: amountIntent.enteredInBitcoin,
             card: method == "Lightning" ? "lightning" : "on-chain",
             owner: ledgerOwner,
             createdBy: "app",
         )
-        modelContext.insert(tx)
         amountValidationMessage = nil
-        writeFeedback.begin()
-        LocalMutationSave.perform(
+        // The sheet stays open until the write result arrives, and closes only
+        // on `.ok`. Dismissing first made every rejection invisible.
+        OptimisticSaveFlow.run(
+            models: [tx],
             operation: "Transaction",
             in: modelContext,
-            onFailure: { [writeFeedback] failure in
-                writeFeedback.failLocal(failure, operation: "Transaction")
+            feedback: writeFeedback,
+            push: { completion in
+                AppWriteSyncService.pushTransaction(tx, owner: ledgerOwner, onResult: completion)
             },
-            rollbackMutation: {
-                modelContext.delete(tx)
+            afterResult: { [createIDs, dismiss] result in
+                if createIDs.recordServerResult(result, for: .transaction) { dismiss() }
             },
-        ) {
-            // The sheet stays open until the write result arrives, and closes only
-            // on `.ok`. Dismissing first made every rejection invisible.
-            AppWriteSyncService.pushTransaction(tx, owner: ledgerOwner) { [writeFeedback, dismiss] result in
-                if writeFeedback.finish(result, operation: "Transaction") { dismiss() }
-            }
-        }
+        )
     }
 
     private func saveBTCBuy(owner activeMember: FamilyMember) {
@@ -481,7 +551,7 @@ struct AddTransactionView: View {
         let date = Date()
 
         let buy = BTCBuy(
-            id: "b-app-\(UUID().uuidString)",
+            id: createIDs.bitcoinBuyID,
             date: date,
             source: account,
             amountBTC: btc,
@@ -501,25 +571,19 @@ struct AddTransactionView: View {
             owner: ledgerOwner,
         )
 
-        modelContext.insert(buy)
-        modelContext.insert(lot)
         amountValidationMessage = nil
-        writeFeedback.begin()
-        LocalMutationSave.perform(
+        OptimisticSaveFlow.run(
+            models: [buy, lot],
             operation: "Bitcoin buy",
             in: modelContext,
-            onFailure: { [writeFeedback] failure in
-                writeFeedback.failLocal(failure, operation: "Bitcoin buy")
+            feedback: writeFeedback,
+            push: { completion in
+                AppWriteSyncService.pushBTCBuy(buy, owner: ledgerOwner, onResult: completion)
             },
-            rollbackMutation: {
-                modelContext.delete(buy)
-                modelContext.delete(lot)
+            afterResult: { [createIDs, dismiss] result in
+                if createIDs.recordServerResult(result, for: .bitcoinBuy) { dismiss() }
             },
-        ) {
-            AppWriteSyncService.pushBTCBuy(buy, owner: ledgerOwner) { [writeFeedback, dismiss] result in
-                if writeFeedback.finish(result, operation: "Bitcoin buy") { dismiss() }
-            }
-        }
+        )
     }
 
     private func roundedSats(from value: Decimal) -> Int64 {

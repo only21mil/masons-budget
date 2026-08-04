@@ -474,7 +474,7 @@ final class ConvexSyncService {
         local.lastUpdated = remote.lastUpdated
     }
 
-    private func replaceTransactions(ownedBy owners: [FamilyMember], with transactions: [Transaction]) throws {
+    func replaceTransactions(ownedBy owners: [FamilyMember], with transactions: [Transaction]) throws {
         let existing = try context.fetch(FetchDescriptor<Transaction>())
 
         let remoteIds = Set(transactions.map(\.id))
@@ -503,12 +503,14 @@ final class ConvexSyncService {
         local.amount = remote.amount
         local.category = remote.category
         local.amountSats = remote.amountSats
+        local.enteredInBitcoin = remote.enteredInBitcoin
         local.card = remote.card
         local.note = remote.note
         local.owner = remote.owner
         local.createdBy = remote.createdBy
         local.createdAt = remote.createdAt
         local.sourceFile = remote.sourceFile
+        local.updatedAtMs = remote.updatedAtMs
     }
 
     private func replaceBTCBuys(ownedBy owners: [FamilyMember], with buys: [BTCBuy]) throws {

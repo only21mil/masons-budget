@@ -14,12 +14,18 @@ final class Transaction {
     var amount: Decimal
     var category: String
     var amountSats: Int64?
+    /// True only when the user typed the amount in BTC or sats. Optional so the
+    /// store migrates lightly: an existing row has no answer, and `nil` must be
+    /// read as "not explicitly Bitcoin" so a legacy or USD-derived row never
+    /// claims exact sats it does not have.
+    var enteredInBitcoin: Bool?
     var card: String?
     var note: String?
     var owner: String
     var createdBy: String
     var createdAt: Date
     var sourceFile: String?
+    var updatedAtMs: Double?
 
     init(
         id: String,
@@ -28,12 +34,14 @@ final class Transaction {
         amount: Decimal,
         category: String,
         amountSats: Int64? = nil,
+        enteredInBitcoin: Bool? = nil,
         card: String? = nil,
         note: String? = nil,
         owner: FamilyMember = .victor,
         createdBy: String,
         createdAt: Date = .now,
         sourceFile: String? = nil,
+        updatedAtMs: Double? = nil,
     ) {
         self.id = id
         self.date = date
@@ -41,12 +49,14 @@ final class Transaction {
         self.amount = amount
         self.category = category
         self.amountSats = amountSats
+        self.enteredInBitcoin = enteredInBitcoin
         self.card = card
         self.note = note
         self.owner = owner.rawValue
         self.createdBy = createdBy
         self.createdAt = createdAt
         self.sourceFile = sourceFile
+        self.updatedAtMs = updatedAtMs
     }
 
     var ownerMember: FamilyMember {
