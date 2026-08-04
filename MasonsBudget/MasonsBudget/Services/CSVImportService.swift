@@ -31,6 +31,7 @@ struct ImportedTransaction: Identifiable {
     let category: String
     let method: String
     let isIncome: Bool
+    let enteredInBitcoin: Bool
     let note: String?
 }
 
@@ -121,6 +122,9 @@ final class CSVImportService: Sendable {
             let sats = convertToSats(amount: amount, source: source)
             let category = guessCategory(memo: memo)
             let isIncome = category.caseInsensitiveCompare("Income") == .orderedSame
+            let enteredInBitcoin = isAuthoritativeBitcoinAmount(
+                header: headers[amtIdx],
+            )
 
             results.append(ImportedTransaction(
                 date: date,
@@ -130,6 +134,7 @@ final class CSVImportService: Sendable {
                 category: category,
                 method: "on-chain",
                 isIncome: isIncome,
+                enteredInBitcoin: enteredInBitcoin,
                 note: nil,
             ))
         }
@@ -223,6 +228,7 @@ final class CSVImportService: Sendable {
                 amount: tx.amountUsd,
                 category: tx.category,
                 amountSats: tx.sats,
+                enteredInBitcoin: tx.enteredInBitcoin,
                 note: tx.note,
                 owner: owner,
                 createdBy: "csv_import",
@@ -259,6 +265,19 @@ final class CSVImportService: Sendable {
             .replacingOccurrences(of: "&", with: "and")
             .prefix(200)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// A sat amount may reach the income wire only when the CSV schema makes
+    /// Bitcoin the authoritative input. Explicit USD/fiat columns remain
+    /// dollar-origin even though the preview derives a sat estimate.
+    private func isAuthoritativeBitcoinAmount(header: String) -> Bool {
+        let normalized = header.lowercased()
+        if normalized.contains("usd") || normalized.contains("fiat") || normalized.contains("$") {
+            return false
+        }
+        return normalized.contains("btc")
+            || normalized.contains("bitcoin")
+            || normalized.contains("sat")
     }
 
     private func duplicateKey(date: Date, sats: Decimal, merchant: String) -> String {

@@ -298,6 +298,107 @@ final class ConvexRowMutationTests: XCTestCase {
         XCTAssertEqual(buyRow["owner"] as? String, "maddox")
     }
 
+    func testSatIncomeWritePreservesSatsAndRevisionFence() async throws {
+        let capture = RowMutationRequestCapture()
+        let client = makeClient(capture: capture)
+        let transaction = LegacyTransactionDTO(
+            id: "tx-1",
+            date: "2026-08-01",
+            merchant: "Bitcoin income",
+            amount: Decimal(string: "80.00")!,
+            category: "Income",
+            card: nil,
+            note: "Paid in sats",
+            owner: .victor,
+            amountSats: 123_456,
+            enteredInBitcoin: true,
+            updatedAtMs: 1_777_777_777_777,
+        )
+
+        let accepted = try await client.upsertTransactionRow(
+            transaction,
+            owner: .victor,
+            sourceFile: "transactions",
+        )
+        // Without this the client cannot fence its own next edit or delete.
+        XCTAssertEqual(accepted, 1_888_888_888_888)
+        try await client.deleteTransactionRow(
+            id: transaction.id,
+            owner: .victor,
+            sourceFile: "transactions",
+            baseUpdatedAtMs: transaction.updatedAtMs,
+        )
+
+        let requests = capture.values()
+        let upsertArgs = try XCTUnwrap(requests[0]["args"] as? [String: Any])
+        let row = try XCTUnwrap(upsertArgs["transaction"] as? [String: Any])
+        XCTAssertEqual(row["amountSats"] as? [String: String], ["$integer": "QOIBAAAAAAA="])
+        XCTAssertEqual(upsertArgs["baseUpdatedAtMs"] as? Double, 1_777_777_777_777)
+
+        let deleteArgs = try XCTUnwrap(requests[1]["args"] as? [String: Any])
+        XCTAssertEqual(deleteArgs["baseUpdatedAtMs"] as? Double, 1_777_777_777_777)
+    }
+
+    // A USD Income row carries a sats figure derived from a spot price. Sending
+    // it would post that estimate to the ledger as if the user had received an
+    // exact amount of Bitcoin, so only an explicitly Bitcoin-entered row may
+    // carry sats onto the wire.
+    func testUsdDerivedIncomeDoesNotSendSats() async throws {
+        let capture = RowMutationRequestCapture()
+        let client = makeClient(capture: capture)
+        let transaction = LegacyTransactionDTO(
+            id: "tx-1",
+            date: "2026-08-01",
+            merchant: "Payroll",
+            amount: Decimal(string: "80.00")!,
+            category: "Income",
+            card: nil,
+            note: nil,
+            owner: .victor,
+            amountSats: 123_456,
+            enteredInBitcoin: false,
+        )
+
+        try await client.upsertTransactionRow(
+            transaction,
+            owner: .victor,
+            sourceFile: "transactions",
+        )
+
+        let upsertArgs = try XCTUnwrap(capture.values()[0]["args"] as? [String: Any])
+        let row = try XCTUnwrap(upsertArgs["transaction"] as? [String: Any])
+        XCTAssertNil(row["amountSats"])
+    }
+
+    // A row written before the input-origin marker existed has no answer. It
+    // must read as "not explicitly Bitcoin" so a legacy USD estimate is never
+    // promoted into an exact sat posting by the migration alone.
+    func testLegacyIncomeWithoutInputOriginDoesNotSendSats() async throws {
+        let capture = RowMutationRequestCapture()
+        let client = makeClient(capture: capture)
+        let transaction = LegacyTransactionDTO(
+            id: "tx-1",
+            date: "2026-08-01",
+            merchant: "Payroll",
+            amount: Decimal(string: "80.00")!,
+            category: "Income",
+            card: nil,
+            note: nil,
+            owner: .victor,
+            amountSats: 123_456,
+        )
+
+        try await client.upsertTransactionRow(
+            transaction,
+            owner: .victor,
+            sourceFile: "transactions",
+        )
+
+        let upsertArgs = try XCTUnwrap(capture.values()[0]["args"] as? [String: Any])
+        let row = try XCTUnwrap(upsertArgs["transaction"] as? [String: Any])
+        XCTAssertNil(row["amountSats"])
+    }
+
     func testTodoAndBudgetWritesUseRowsAndServerSelectedMonth() async throws {
         let capture = RowMutationRequestCapture()
         let client = makeClient(capture: capture)
@@ -348,7 +449,7 @@ final class ConvexRowMutationTests: XCTestCase {
                 let value: Any
                 switch path {
                 case "tables:upsertTransaction":
-                    value = ["txId": "tx-1"]
+                    value = ["txId": "tx-1", "updatedAtMs": 1_888_888_888_888]
                 case "tables:deleteTransaction":
                     value = ["txId": "tx-1", "removed": true]
                 case "tables:upsertBtcBuy":

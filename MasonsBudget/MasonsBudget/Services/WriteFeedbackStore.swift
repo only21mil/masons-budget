@@ -22,6 +22,13 @@ final class WriteFeedbackStore: ObservableObject {
     /// The last rejection cause, for views that branch rather than render.
     @Published private(set) var lastResult: ConvexWriteResult?
 
+    /// Exact global status entry owned by the current retry attempt.
+    private(set) var retryOperationID: UUID?
+
+    /// A retry action owns the stable create ID and its persisted optimistic
+    /// row. The add sheet disables a second Save until that action resolves.
+    var isRetryPending: Bool { lastResult?.isRetryable == true }
+
     /// A local database rejection is separate from the remote result channel.
     @Published private(set) var lastLocalFailure: LocalSaveFailure?
 
@@ -30,6 +37,7 @@ final class WriteFeedbackStore: ObservableObject {
         message = nil
         lastResult = nil
         lastLocalFailure = nil
+        retryOperationID = nil
     }
 
     /// Records a local rejection that never reached the write seam.
@@ -38,6 +46,7 @@ final class WriteFeedbackStore: ObservableObject {
         message = text
         lastResult = nil
         lastLocalFailure = nil
+        retryOperationID = nil
     }
 
     func failLocal(_ failure: LocalSaveFailure, operation: String) {
@@ -45,6 +54,7 @@ final class WriteFeedbackStore: ObservableObject {
         message = failure.userMessage(operation: operation)
         lastResult = nil
         lastLocalFailure = failure
+        retryOperationID = nil
     }
 
     /// Records a write outcome. Returns true only when the write was accepted,
@@ -54,14 +64,41 @@ final class WriteFeedbackStore: ObservableObject {
         isSaving = false
         lastResult = result
         lastLocalFailure = nil
+        if !result.isRetryable { retryOperationID = nil }
         message = result.userMessage(operation: operation)
         return result.isOk
     }
 
+    func bindRetryOperation(_ id: UUID) {
+        isSaving = true
+        retryOperationID = id
+    }
+
     func clear() {
+        message = nil
+        guard !isRetryPending else { return }
+        lastResult = nil
+        lastLocalFailure = nil
+        // A keypad edit can arrive after the operation starts but before its
+        // retryable result. Only a terminal result or explicit abandonment may
+        // release the exact global retry entry owned by that operation.
+    }
+
+    /// Explicitly abandons the retry-owned stable ID and local optimistic row.
+    /// Ordinary edits and key presses must not call this.
+    func abandonRetry() {
         message = nil
         lastResult = nil
         lastLocalFailure = nil
+        retryOperationID = nil
+    }
+
+    /// A failed local abandonment leaves the retry action and stable ID live.
+    /// Surface the persistence error without orphaning that ownership.
+    func failRetryAbandonment(_ failure: LocalSaveFailure, operation: String) {
+        isSaving = false
+        message = failure.userMessage(operation: operation)
+        lastLocalFailure = failure
     }
 }
 

@@ -114,23 +114,26 @@ enum ConvexConfig {
         readTokenStore.remove()
     }
 
-    /// Runtime gate for the public row API. Default-off until the row schema and
-    /// backfill exist in production.
+    /// Runtime kill switch for the public row API. Row reads are now the
+    /// authoritative default; an explicit false retains the emergency blob
+    /// fallback without making old installs silently stay on stale blobs.
     static var rowReadsEnabled: Bool {
-        UserDefaults.standard.bool(forKey: rowReadsEnabledKey)
+        rowReadsEnabled(in: .standard)
     }
 
-    static func setRowReadsEnabled(_ enabled: Bool) {
-        UserDefaults.standard.set(enabled, forKey: rowReadsEnabledKey)
+    static func rowReadsEnabled(in defaults: UserDefaults) -> Bool {
+        defaults.object(forKey: rowReadsEnabledKey) as? Bool ?? true
+    }
+
+    static func setRowReadsEnabled(_ enabled: Bool, in defaults: UserDefaults = .standard) {
+        defaults.set(enabled, forKey: rowReadsEnabledKey)
     }
 
     /// Runtime kill switch for every app-originated write.
     ///
     /// Android has one and its `ConvexResult.Disabled` depends on it; without a
     /// write switch here that state would be unreachable on Apple and the two
-    /// clients would disagree about the cause set. Unlike `rowReadsEnabled` this
-    /// defaults to ON: writes already ship, and defaulting it off would silently
-    /// stop every save. Absent key means enabled.
+    /// clients would disagree about the cause set. Absent key means enabled.
     static var writesEnabled: Bool {
         UserDefaults.standard.object(forKey: writesEnabledKey) as? Bool ?? true
     }
@@ -1088,11 +1091,12 @@ final class ConvexClient: Sendable {
     /// Insert or replace one transaction row. The source file is the ownership
     /// boundary: adult rows stay canonical to Victor while child rows remain
     /// isolated in their own files.
+    @discardableResult
     func upsertTransactionRow(
         _ transaction: LegacyTransactionDTO,
         owner: FamilyMember,
         sourceFile: String,
-    ) async throws {
+    ) async throws -> Double? {
         let canonicalOwner = owner.ledgerOwner
         guard transaction.owner == canonicalOwner else {
             throw ConvexRowMutationError.ownerMismatch(
@@ -1121,17 +1125,44 @@ final class ConvexClient: Sendable {
         ]
         if let card = transaction.card { row["card"] = card }
         if let note = transaction.note { row["note"] = note }
+        // Only Income the user actually typed in BTC/sats carries sats. A spend,
+        // or Income whose sats were derived from a dollar amount and a quote,
+        // must not: the server reads this field as "credit these exact sats to
+        // River", so a derived value would post Bitcoin the household never
+        // received. A legacy row has no marker and is therefore treated as not
+        // explicitly Bitcoin.
+        if let amountSats = transaction.amountSats,
+           transaction.category == "Income",
+           transaction.enteredInBitcoin == true,
+           amountSats > 0 {
+            row["amountSats"] = ConvexTaggedInt64Encoder.encode(amountSats)
+        }
 
         let path = "tables:upsertTransaction"
-        let raw = try await mutation(path, args: [
+        var args: [String: Any] = [
             "sourceFile": sourceFile,
             "transaction": row,
-        ])
+        ]
+        if let updatedAtMs = transaction.updatedAtMs {
+            args["baseUpdatedAtMs"] = updatedAtMs
+        }
+        let raw = try await mutation(path, args: args)
         guard let result = raw as? [String: Any],
               result["txId"] as? String == transaction.id
         else {
             throw ConvexRowMutationError.unexpectedResponse(path: path)
         }
+        // Hand back the revision the server actually accepted. The next edit or
+        // delete of this row is fenced on it, so a caller that does not install
+        // it cannot edit what it just created until a later sync refreshes it.
+        return Self.acceptedRevision(result["updatedAtMs"])
+    }
+
+    static func acceptedRevision(_ value: Any?) -> Double? {
+        if let accepted = value as? Double { return accepted }
+        if let accepted = value as? Int64 { return Double(accepted) }
+        if let accepted = value as? Int { return Double(accepted) }
+        return nil
     }
 
     /// Delete one transaction row without reading or rewriting its neighbours.
@@ -1139,6 +1170,7 @@ final class ConvexClient: Sendable {
         id: String,
         owner: FamilyMember,
         sourceFile: String,
+        baseUpdatedAtMs: Double? = nil,
     ) async throws {
         let canonicalOwner = owner.ledgerOwner
         guard sourceFile == canonicalOwner.transactionsDataFileName else {
@@ -1149,11 +1181,13 @@ final class ConvexClient: Sendable {
             )
         }
         let path = "tables:deleteTransaction"
-        let raw = try await mutation(path, args: [
+        var args: [String: Any] = [
             "txId": id,
             "owner": canonicalOwner.rawValue,
             "sourceFile": sourceFile,
-        ])
+        ]
+        if let baseUpdatedAtMs { args["baseUpdatedAtMs"] = baseUpdatedAtMs }
+        let raw = try await mutation(path, args: args)
         guard let result = raw as? [String: Any],
               result["txId"] as? String == id,
               result["removed"] is Bool

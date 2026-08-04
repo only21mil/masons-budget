@@ -168,6 +168,14 @@ final class SyncStatusStore: ObservableObject {
         refreshPresentation()
     }
 
+    /// Dismisses one exact retry entry without consuming an unrelated failure
+    /// that happens to share its user-facing operation label.
+    func dismissFailure(id: UUID) {
+        guard retainedFailures[id] != nil else { return }
+        removeFailure(id: id)
+        refreshPresentation()
+    }
+
     var retainedFailureCount: Int {
         retainedFailures.count
     }

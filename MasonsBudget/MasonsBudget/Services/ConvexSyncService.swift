@@ -152,7 +152,11 @@ final class ConvexSyncService {
             let batch = try await reader.readTransactions(viewer: currentMember)
             let models = LedgerMapper.mapTransactions(batch.value)
             let owners = batch.replacementOwners.map { Array($0) } ?? [.victor, .rachel]
-            try replaceTransactions(ownedBy: owners, with: models)
+            try replaceTransactions(
+                ownedBy: owners,
+                with: models,
+                rowAuthoritative: batch.isRowAuthoritative,
+            )
             return models.count
         } catch {
             log.error("Transactions sync failed: \(error.localizedDescription)")
@@ -474,7 +478,11 @@ final class ConvexSyncService {
         local.lastUpdated = remote.lastUpdated
     }
 
-    private func replaceTransactions(ownedBy owners: [FamilyMember], with transactions: [Transaction]) throws {
+    func replaceTransactions(
+        ownedBy owners: [FamilyMember],
+        with transactions: [Transaction],
+        rowAuthoritative: Bool = false,
+    ) throws {
         let existing = try context.fetch(FetchDescriptor<Transaction>())
 
         let remoteIds = Set(transactions.map(\.id))
@@ -488,6 +496,24 @@ final class ConvexSyncService {
             context.delete(transaction)
         }
 
+        // Retry actions are intentionally in-memory. The source marker makes
+        // their failure durable: after a complete authoritative row read, remove
+        // only retry-pending app rows the server still does not contain. Active
+        // attempts clear the marker before network I/O, so sync cannot reap an
+        // in-flight optimistic row.
+        if rowAuthoritative {
+            for transaction in existing where owners.contains(transaction.ownerMember)
+                && transaction.createdBy == "app"
+                && transaction.sourceFile == Transaction.pendingRowWriteSource
+            {
+                guard !AppWriteSyncService.hasLiveOptimisticTransaction(transaction.id) else {
+                    continue
+                }
+                guard !remoteIds.contains(transaction.id) else { continue }
+                context.delete(transaction)
+            }
+        }
+
         for transaction in transactions {
             if let local = existingById[transaction.id] {
                 updateTransaction(local, from: transaction)
@@ -498,17 +524,25 @@ final class ConvexSyncService {
     }
 
     private func updateTransaction(_ local: Transaction, from remote: Transaction) {
+        let preservesLocalImportProvenance = local.createdBy == "csv_import"
+            || local.createdBy == "voice"
         local.date = remote.date
         local.merchant = remote.merchant
         local.amount = remote.amount
         local.category = remote.category
         local.amountSats = remote.amountSats
+        local.enteredInBitcoin = remote.enteredInBitcoin
         local.card = remote.card
         local.note = remote.note
         local.owner = remote.owner
-        local.createdBy = remote.createdBy
+        if !preservesLocalImportProvenance {
+            local.createdBy = remote.createdBy
+        }
         local.createdAt = remote.createdAt
-        local.sourceFile = remote.sourceFile
+        if !preservesLocalImportProvenance {
+            local.sourceFile = remote.sourceFile
+        }
+        local.updatedAtMs = remote.updatedAtMs
     }
 
     private func replaceBTCBuys(ownedBy owners: [FamilyMember], with buys: [BTCBuy]) throws {
@@ -650,7 +684,7 @@ final class ConvexSyncService {
         }
     }
 
-    private func replaceIncomeTransactions(forOwner owner: FamilyMember, with transactions: [Transaction]) throws {
+    func replaceIncomeTransactions(forOwner owner: FamilyMember, with transactions: [Transaction]) throws {
         let existing = try context.fetch(FetchDescriptor<Transaction>())
 
         let remoteIds = Set(transactions.map(\.id))
@@ -659,7 +693,14 @@ final class ConvexSyncService {
             existingById[tx.id] = tx
         }
 
-        for tx in existing where tx.ownerMember == owner && tx.category == "Income" && tx.createdBy == "mc2" {
+        // Budget sync owns only paycheck-derived rows. Row-API transactions
+        // also arrive as createdBy=mc2, but belong to transactions.json and
+        // must survive the syncTransactions -> syncBudget sequence.
+        for tx in existing where tx.ownerMember == owner
+            && tx.category == "Income"
+            && tx.createdBy == "mc2"
+            && tx.sourceFile == "budget.json"
+        {
             guard !remoteIds.contains(tx.id) else { continue }
             context.delete(tx)
         }

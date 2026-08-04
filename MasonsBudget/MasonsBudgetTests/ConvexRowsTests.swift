@@ -18,8 +18,8 @@ final class ConvexRowsTests: XCTestCase {
         )
         XCTAssertFalse(transactions.complete)
         XCTAssertEqual(transactions.rows.count, 3)
-        XCTAssertEqual(transactions.rows[0].txId, "t1784233824245")
-        XCTAssertEqual(transactions.rows[0].amountCents, 27_918)
+        XCTAssertEqual(transactions.rows[0].txId, "aven-20260801-ef20d6dc6ad5bce1e3569287")
+        XCTAssertEqual(transactions.rows[0].amountCents, 2_366)
 
         let todos: ConvexRowEnvelope<ConvexTodoRow> = try await client.fetchRows(
             .todos(viewer: .victor),
@@ -36,10 +36,10 @@ final class ConvexRowsTests: XCTestCase {
         )
         XCTAssertFalse(buys.complete)
         XCTAssertEqual(buys.rows.count, 3)
-        XCTAssertEqual(buys.rows[0].buyId, "b1784166358832")
-        XCTAssertEqual(buys.rows[0].sats, 148_033)
-        XCTAssertEqual(buys.rows[0].priceUsdCents, 6_563_401)
-        XCTAssertEqual(buys.rows[0].usdCents, 9_813)
+        XCTAssertEqual(buys.rows[0].buyId, "river-buy-by5ekey7i4")
+        XCTAssertEqual(buys.rows[0].sats, 6_572_537)
+        XCTAssertEqual(buys.rows[0].priceUsdCents, 6_414_981)
+        XCTAssertEqual(buys.rows[0].usdCents, 425_843)
 
         let billPays: ConvexRowEnvelope<ConvexBTCBillPayRow> = try await client.fetchRows(
             .btcBillPays(viewer: .victor, scope: .visible),
@@ -47,10 +47,10 @@ final class ConvexRowsTests: XCTestCase {
         )
         XCTAssertFalse(billPays.complete)
         XCTAssertEqual(billPays.rows.count, 3)
-        XCTAssertEqual(billPays.rows[0].billPayId, "bp030")
-        XCTAssertEqual(billPays.rows[0].amountUsdCents, 30_673)
-        XCTAssertEqual(billPays.rows[0].btcSpentSats, 481_122)
-        XCTAssertEqual(billPays.rows[0].btcPriceCents, 6_375_306)
+        XCTAssertEqual(billPays.rows[0].billPayId, "river-billpay-qe3kbvq5qy")
+        XCTAssertEqual(billPays.rows[0].amountUsdCents, 179_200)
+        XCTAssertEqual(billPays.rows[0].btcSpentSats, 2_802_143)
+        XCTAssertEqual(billPays.rows[0].btcPriceCents, 6_395_105)
         XCTAssertEqual(billPays.rows[0].feeUsdCents, 0)
 
         let accounts: ConvexRowEnvelope<ConvexBTCAccountRow> = try await client.fetchRows(
@@ -70,7 +70,7 @@ final class ConvexRowsTests: XCTestCase {
         XCTAssertTrue(budget.complete)
         let budgetDocument = try XCTUnwrap(budget.document)
         XCTAssertEqual(budgetDocument.owner, .victor)
-        XCTAssertEqual(budgetDocument.month, "June 2026")
+        XCTAssertEqual(budgetDocument.month, "August 2026")
         XCTAssertEqual(budgetDocument.coinbaseOneBalanceCents, 2_642)
         XCTAssertEqual(budgetDocument.categories.first?.name, "Bills & Utilities")
         XCTAssertEqual(budgetDocument.categories.first?.budgetCents, 620_000)
@@ -81,10 +81,10 @@ final class ConvexRowsTests: XCTestCase {
         XCTAssertEqual(
             counts,
             ConvexRowCounts(
-                transactions: 911,
-                todos: 25,
-                btcBuys: 33,
-                btcBillPays: 31,
+                transactions: 993,
+                todos: 12,
+                btcBuys: 35,
+                btcBillPays: 37,
                 btcAccounts: 8,
             ),
         )
@@ -151,6 +151,22 @@ final class ConvexRowsTests: XCTestCase {
         XCTAssertEqual(adult.owner, .victor)
         XCTAssertEqual(child.amount, Decimal(string: "123.45")!)
         XCTAssertEqual(child.owner, .mason)
+    }
+
+    func testSatIncomeAndRevisionArePreservedThroughTransactionProjection() throws {
+        var row = transactionRow(owner: "victor", amount: "KCMAAAAAAAA=")
+        row["category"] = "Income"
+        row["amountSats"] = int64("QOIBAAAAAAA=")
+        row["updatedAtMs"] = 1_777_777_777_777
+
+        let envelope: ConvexRowEnvelope<ConvexTransactionRow> = try decodeTaggedJSON([
+            "complete": true,
+            "rows": [row],
+        ])
+        let transaction = try XCTUnwrap(envelope.completeRows().first?.legacyDTO())
+
+        XCTAssertEqual(transaction.amountSats, 123_456)
+        XCTAssertEqual(transaction.updatedAtMs, 1_777_777_777_777)
     }
 
     func testUnexpectedResponseFieldsAreIgnoredButKnownFieldsStayValidated() throws {
@@ -349,6 +365,32 @@ final class ConvexRowsTests: XCTestCase {
         )
     }
 
+    func testCanonicalBTCDecodesUnavailableFiatWithoutFabricatingZero() throws {
+        let document: ConvexBTCBalanceDocumentRow = try decodeTaggedJSON([
+            "owner": "victor",
+            "schemaVersion": int64(value: 2),
+            "asOf": "2026-08-01T00:00:00Z",
+            "accounts": [[
+                "key": "river",
+                "label": "River",
+                "custody": "exchange",
+                "sats": int64(value: 7_426_251),
+            ]],
+            "totals": [
+                "sats": int64(value: 7_426_251),
+                "exchangeSats": int64(value: 7_426_251),
+                "selfCustodySats": int64(value: 0),
+            ],
+        ])
+
+        let balance = try XCTUnwrap(
+            CanonicalFinancialProjection.btcBalance(documents: [document]).value,
+        )
+        XCTAssertEqual(balance.totalSats, 7_426_251)
+        XCTAssertNil(balance.totalFiatCents)
+        XCTAssertNil(balance.accounts.first?.fiatCents)
+    }
+
     func testEmptyAndAmbiguousRequiredBTCSourceNeverBecomeZero() throws {
         XCTAssertNil(try CanonicalFinancialProjection.btcBalance(documents: []).value)
 
@@ -451,8 +493,18 @@ final class ConvexRowsTests: XCTestCase {
         ]
     }
 
+    /// Takes an already-encoded Convex payload: base64 of eight little-endian
+    /// bytes. Most fixtures are written that way deliberately, to pin the exact
+    /// wire bytes rather than trusting the encoder.
     private func int64(_ payload: String) -> [String: String] {
         ["$integer": payload]
+    }
+
+    /// Encodes a numeric value into the same tagged form. Use this when the test
+    /// cares about the quantity rather than the exact bytes — writing a decimal
+    /// string into `int64(_:)` produces a payload the real decoder rejects.
+    private func int64(value: Int64) -> [String: String] {
+        ConvexTaggedInt64Encoder.encode(value)
     }
 
     private func decodeTaggedJSON<T: Decodable>(_ object: Any) throws -> T {
