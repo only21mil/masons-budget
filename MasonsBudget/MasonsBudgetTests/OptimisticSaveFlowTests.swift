@@ -33,14 +33,14 @@ final class OptimisticSaveFlowTests: XCTestCase {
         try context.fetch(FetchDescriptor<Transaction>()).count
     }
 
-    func testRejectedSaveRollsBackSoRetryWithSameStableIDCannotCollide() throws {
+    func testTerminalRejectedSaveRollsBackSoRetryWithSameStableIDCannotCollide() throws {
         let context = try makeContext()
         let createIDs = AddTransactionCreateIDStore()
         let stableID = createIDs.transactionID
 
-        // Two consecutive failed attempts, exactly as a user retrying after
-        // rejections: same session, same stable ID, fresh model each tap.
-        for result in [ConvexWriteResult.failed(.transport), .unauthorized] {
+        // Two terminal rejections, exactly as a user correcting and re-saving:
+        // same session, same stable ID, fresh model each tap.
+        for result in [ConvexWriteResult.failed(.serverRejected), .unauthorized] {
             var delivered: ConvexWriteResult?
             OptimisticSaveFlow.run(
                 models: [makeTransaction(id: stableID)],
@@ -57,7 +57,7 @@ final class OptimisticSaveFlowTests: XCTestCase {
             XCTAssertEqual(
                 try rowCount(in: context),
                 0,
-                "A non-accepted result must roll the optimistic row back so the retry starts clean.",
+                "A terminal rejection must roll the optimistic row back so a corrected save starts clean.",
             )
             XCTAssertEqual(
                 createIDs.transactionID,
@@ -106,5 +106,68 @@ final class OptimisticSaveFlowTests: XCTestCase {
         XCTAssertTrue(started)
         XCTAssertEqual(delivered, .ok)
         XCTAssertEqual(try rowCount(in: context), 1)
+    }
+
+    func testRetryableFailureKeepsRowAndAppWriteRetryInstallsRevision() async throws {
+        let context = try makeContext()
+        let transaction = makeTransaction(id: "retained-retry")
+        let feedback = WriteFeedbackStore()
+        let statusStore = SyncStatusStore()
+        let harness = TransactionRetryHarness()
+
+        let started = OptimisticSaveFlow.run(
+            models: [transaction],
+            operation: "Transaction",
+            in: context,
+            feedback: feedback,
+            push: { completion in
+                AppWriteSyncService.pushTransaction(
+                    transaction,
+                    owner: .victor,
+                    statusStore: statusStore,
+                    automaticRetries: 0,
+                    retryDelayNanoseconds: 0,
+                    preflight: { nil },
+                    write: { _, _, _ in try await harness.write() },
+                    onResult: completion,
+                )
+            },
+            afterResult: { harness.results.append($0) },
+        )
+
+        XCTAssertTrue(started)
+        await waitForResults(1, in: harness)
+        XCTAssertEqual(harness.results, [.failed(.transport)])
+        XCTAssertEqual(try rowCount(in: context), 1)
+        XCTAssertNil(transaction.updatedAtMs)
+        XCTAssertTrue(statusStore.canRetry)
+
+        statusStore.retry()
+        await waitForResults(2, in: harness)
+        XCTAssertEqual(harness.results, [.failed(.transport), .ok])
+        XCTAssertEqual(harness.attempts, 2)
+        XCTAssertEqual(try rowCount(in: context), 1)
+        XCTAssertEqual(transaction.updatedAtMs, 42)
+        XCTAssertFalse(statusStore.canRetry)
+    }
+
+    private func waitForResults(_ count: Int, in harness: TransactionRetryHarness) async {
+        for _ in 0 ..< 100 {
+            if harness.results.count >= count { return }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTFail("Timed out waiting for \(count) AppWriteSyncService results")
+    }
+}
+
+@MainActor
+private final class TransactionRetryHarness {
+    var attempts = 0
+    var results: [ConvexWriteResult] = []
+
+    func write() async throws -> Double {
+        attempts += 1
+        if attempts == 1 { throw URLError(.timedOut) }
+        return 42
     }
 }

@@ -652,7 +652,7 @@ final class ConvexSyncService {
         }
     }
 
-    private func replaceIncomeTransactions(forOwner owner: FamilyMember, with transactions: [Transaction]) throws {
+    func replaceIncomeTransactions(forOwner owner: FamilyMember, with transactions: [Transaction]) throws {
         let existing = try context.fetch(FetchDescriptor<Transaction>())
 
         let remoteIds = Set(transactions.map(\.id))
@@ -661,7 +661,14 @@ final class ConvexSyncService {
             existingById[tx.id] = tx
         }
 
-        for tx in existing where tx.ownerMember == owner && tx.category == "Income" && tx.createdBy == "mc2" {
+        // Budget sync owns only paycheck-derived rows. Row-API transactions
+        // also arrive as createdBy=mc2, but belong to transactions.json and
+        // must survive the syncTransactions -> syncBudget sequence.
+        for tx in existing where tx.ownerMember == owner
+            && tx.category == "Income"
+            && tx.createdBy == "mc2"
+            && tx.sourceFile == "budget.json"
+        {
             guard !remoteIds.contains(tx.id) else { continue }
             context.delete(tx)
         }

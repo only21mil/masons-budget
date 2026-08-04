@@ -3,14 +3,14 @@ import SwiftData
 /// The complete lifecycle of one Save tap, shared by the add-entry views and
 /// their regression tests so the tested path IS the shipped path: optimistic
 /// insert, local save with rollback on persistence failure, remote push, and
-/// rollback of the saved rows on any non-accepted remote result.
+/// rollback of the saved rows on a terminal remote rejection.
 ///
 /// The rollback on rejection is what makes the stable per-session create ID
-/// safe: the retry re-inserts the same ID against a clean store instead of
-/// colliding with the leftover optimistic row, while the server dedupes the
-/// re-sent ID on its side. An ambiguous result (transport loss after a server
-/// commit) also rolls back locally — the retry or the next sync refresh
-/// restores the row from the server's authoritative copy.
+/// safe: a corrected Save tap re-inserts the same ID against a clean store
+/// instead of colliding with a rejected optimistic row. Retryable and ambiguous
+/// failures deliberately keep the local row, because AppWriteSyncService retains
+/// a payload-only retry closure. Keeping the model attached lets a successful
+/// retry install the accepted revision without waiting for a later full sync.
 @MainActor
 enum OptimisticSaveFlow {
     @discardableResult
@@ -35,7 +35,7 @@ enum OptimisticSaveFlow {
             },
         ) {
             push { result in
-                if !result.isOk {
+                if !result.isOk, !result.isRetryable {
                     for model in models { context.delete(model) }
                     do {
                         try context.save()

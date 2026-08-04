@@ -232,6 +232,51 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
         XCTAssertEqual(transactions[0].enteredInBitcoin, true)
     }
 
+    @MainActor
+    func testTransactionsThenBudgetSyncKeepsRowSyncedIncome() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Transaction.self, configurations: configuration)
+        let context = ModelContext(container)
+        let service = ConvexSyncService(context: context)
+
+        let rowSyncedIncome = Transaction(
+            id: "row-sat-income",
+            date: Date(timeIntervalSince1970: 10),
+            merchant: "River credit",
+            amount: 80,
+            category: "Income",
+            amountSats: 123_456,
+            enteredInBitcoin: true,
+            owner: .victor,
+            createdBy: "mc2",
+            sourceFile: "transactions.json",
+        )
+        try service.replaceTransactions(ownedBy: [.victor], with: [rowSyncedIncome])
+
+        let paycheck = Transaction(
+            id: "income-2026-08-01-Payroll",
+            date: Date(timeIntervalSince1970: 20),
+            merchant: "Payroll",
+            amount: 2_000,
+            category: "Income",
+            owner: .victor,
+            createdBy: "mc2",
+            sourceFile: "budget.json",
+        )
+        try service.replaceIncomeTransactions(forOwner: .victor, with: [paycheck])
+        try context.save()
+
+        let transactions = try context.fetch(FetchDescriptor<Transaction>())
+        XCTAssertEqual(
+            Set(transactions.map(\.id)),
+            Set(["row-sat-income", "income-2026-08-01-Payroll"]),
+        )
+        XCTAssertEqual(
+            transactions.first(where: { $0.id == "row-sat-income" })?.enteredInBitcoin,
+            true,
+        )
+    }
+
     // MARK: - transactions.json
 
     func testDecodeTransactions() throws {
