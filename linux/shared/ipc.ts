@@ -493,8 +493,10 @@ export type VogelVaultMutationRequest =
       readonly category: string
       readonly card?: string
       readonly note?: string
-      /** Present only when Income is explicitly entered in sats. */
+      /** Present for sat-Income and for a Bitcoin-denominated payment source. */
       readonly amountSats?: bigint
+      /** Required by the payment-source contract for lightning and on_chain. */
+      readonly bitcoinAccountKey?: string
       /** Omit only for a create whose natural key has never existed. */
       readonly baseUpdatedAtMs?: number
     })

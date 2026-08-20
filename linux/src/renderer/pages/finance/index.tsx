@@ -92,6 +92,7 @@ import {
   TransactionFormDialog,
 } from "../../components/index.ts"
 import { mutationOwner, stableId } from "../../data/mutations.ts"
+import { paymentSourceDisplay } from "../../data/paymentSource.ts"
 import type { MutationGate } from "../../data/mutations.ts"
 import type { BtcTransferRecord } from "../../data/fixtures.ts"
 import type { PageManifest } from "../types.ts"
@@ -941,7 +942,13 @@ function transactionColumns(
     { key: "merchant", header: "Merchant", render: (row) => row.merchant },
     { key: "category", header: "Category", render: (row) => <Badge>{row.category}</Badge>, secondary: !detailed },
     ...(detailed ? [
-      { key: "card", header: "Card", render: (row: Transaction) => row.card ?? "—", secondary: true },
+      {
+        key: "card",
+        header: "Source",
+        // A card string the closed list does not know is shown verbatim.
+        render: (row: Transaction) => paymentSourceDisplay(row) ?? "—",
+        secondary: true,
+      },
       { key: "owner", header: "Owner", render: (row: Transaction) => <Badge tone="neutral">{row.owner}</Badge>, secondary: true },
     ] : []),
     {
