@@ -1,7 +1,7 @@
 // Headless render matrix.
 //
 // Renders every page, for every profile, in every slice state. This is stronger
-// than opening the window and clicking around: it proves all 20 routes mount
+// than opening the window and clicking around: it proves all 19 routes mount
 // without throwing, that each renders its five states, and — critically — that
 // no page leaks a record the active profile is not allowed to see.
 //
@@ -20,7 +20,12 @@ import type { Freshness } from "@vogel-vault/domain/readModel"
 
 import { AppStateProvider, useAppState } from "../src/renderer/app/AppState.tsx"
 import type { DisplayUnit } from "../src/renderer/data/bitcoinDisplay.ts"
-import { ALL_PAGES, navSectionsFor, resolvePage } from "../src/renderer/pages/index.ts"
+import {
+  ALL_PAGES,
+  canonicalRoute,
+  navSectionsFor,
+  resolvePage,
+} from "../src/renderer/pages/index.ts"
 import { TaskClockProvider } from "../src/renderer/pages/tasks/taskClock.tsx"
 import type { PageDefinition } from "../src/renderer/pages/types.ts"
 
@@ -71,8 +76,26 @@ function renderPage(
 
 // ── Structure ───────────────────────────────────────────────────────────────
 
-test("the cockpit has exactly 20 primary pages", () => {
-  assert.equal(ALL_PAGES.length, 20, ALL_PAGES.map((page) => page.id).join(", "))
+test("the cockpit has exactly 19 primary pages", () => {
+  assert.equal(ALL_PAGES.length, 19, ALL_PAGES.map((page) => page.id).join(", "))
+})
+
+test("retirement is no longer a tab and its deep link lands on net worth", () => {
+  assert.ok(
+    !ALL_PAGES.some((page) => page.id === "retirement"),
+    "the retirement route id should be retired",
+  )
+
+  for (const member of FAMILY_MEMBERS) {
+    const navIds = navSectionsFor(member).flatMap((section) =>
+      section.items.map((item) => item.id))
+    assert.ok(!navIds.includes("retirement"), `retirement still in the nav for ${member}`)
+
+    // A persisted route or deep link must land on the page that absorbed it,
+    // not on the dashboard and not on a blank "page unavailable" state.
+    assert.equal(canonicalRoute("retirement"), "net-worth")
+    assert.equal(resolvePage("retirement", member)?.id, "net-worth")
+  }
 })
 
 test("route ids are unique", () => {
@@ -94,7 +117,6 @@ test("the unit selector appears only on opted-in non-Budget financial pages", ()
     "bitcoin",
     "bitcoin-buys",
     "bills",
-    "retirement",
     "net-worth",
   ])
   for (const page of ALL_PAGES) {
@@ -134,7 +156,7 @@ test("every page renders for every profile in every state", () => {
       }
     }
   }
-  // 20 pages x 4 profiles x 5 states, minus adult-only pages for the 2 children.
+  // 19 pages x 4 profiles x 5 states, minus adult-only pages for the 2 children.
   assert.ok(rendered >= 300, `expected a full matrix, rendered ${rendered}`)
 })
 
