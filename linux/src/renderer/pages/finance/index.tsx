@@ -25,7 +25,6 @@ import {
 import { basisPoints, formatUsd, satsToUsdCents, sum } from "@vogel-vault/domain/money"
 import {
   type BTCAccount,
-  type BTCBillPay,
   type BTCSnapshot,
   type BTCBuy,
   type BudgetCategory,
@@ -93,6 +92,10 @@ import {
 } from "../../components/index.ts"
 import { mutationOwner, stableId } from "../../data/mutations.ts"
 import { paymentSourceDisplay } from "../../data/paymentSource.ts"
+import {
+  type LinuxBillPay,
+  BILL_PAY_BUDGET_EFFECT_LABELS,
+} from "../../data/billPayBudgetEffect.ts"
 import type { MutationGate } from "../../data/mutations.ts"
 import type { BtcTransferRecord } from "../../data/fixtures.ts"
 import type { PageManifest } from "../types.ts"
@@ -588,7 +591,7 @@ function BtcBuyActions({ buy }: { buy: BTCBuy }) {
   )
 }
 
-function BillPayActions({ payment }: { payment: BTCBillPay }) {
+function BillPayActions({ payment }: { payment: LinuxBillPay }) {
   const { activeProfile, data, isMutationPending, mutationGate, submitMutation } = useAppState()
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -1032,6 +1035,8 @@ function BudgetPage() {
   // because deriveBudgetSpend reads its month from the budget — one source of
   // truth for the filter, so the categories, the totals and the panel caption
   // cannot drift apart.
+  // SEAM: once shared/domain deriveBudgetSpend takes bill pays, the scoped
+  // selected-month budget_category bill pays are passed in as its third argument here.
   const spend = deriveBudgetSpend({ ...budget, month: scope.month }, transactions)
   const { planned, actual, remaining, overBudgetCount: overCount } = spend
   const actualsStatus = budgetActualsStatus(data.budget, data.transactions)
@@ -1792,6 +1797,14 @@ function BillsPage() {
           </>
         }
       />
+      {/* A disabled button's tooltip never opens in Chromium, so say why here. */}
+      {addGate.allowed ? null : (
+        <StatusBanner
+          tone="warning"
+          title="Adding a bill payment is unavailable"
+          detail={addGate.reason ?? "This action is unavailable."}
+        />
+      )}
       <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
       <StaleNotice status={data.billPays.status} />
       <BitcoinQuoteNotice available={displayUnit === "usd" || quote !== null} />
@@ -1839,6 +1852,16 @@ function BillsPage() {
             { key: "date", header: "Date", render: (row) => row.date, width: "104px" },
             { key: "merchant", header: "Payee", render: (row) => row.merchant },
             { key: "category", header: "Category", render: (row) => <Badge>{row.category}</Badge>, secondary: true },
+            {
+              key: "budgetEffect",
+              header: "Budget",
+              render: (row) => (
+                <Badge tone={row.budgetEffect === "budget_category" ? "warning" : "neutral"}>
+                  {BILL_PAY_BUDGET_EFFECT_LABELS[row.budgetEffect]}
+                </Badge>
+              ),
+              secondary: true,
+            },
             {
               key: "amount",
               header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),

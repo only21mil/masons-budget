@@ -1,6 +1,5 @@
 import type {
   BTCAccount,
-  BTCBillPay,
   BTCBuy,
   BTCSnapshot,
   Budget,
@@ -24,6 +23,10 @@ import type {
   VogelVaultTransactionRow,
 } from "../../../shared/ipc.ts"
 import type { BtcTransferRecord, FixtureEnvelope, IncomeRecord } from "./fixtures.ts"
+import {
+  type LinuxBillPay,
+  decodeBillPayBudgetEffect,
+} from "./billPayBudgetEffect.ts"
 import {
   type BTCAccountWithFiatValuation,
   type BTCSnapshotWithFiatAvailability,
@@ -237,13 +240,14 @@ function btcAccount(row: VogelVaultBtcAccountRow): BTCAccountWithFiatValuation {
   }
 }
 
-function billPay(row: VogelVaultBtcBillPayRow): BTCBillPay {
+function billPay(row: VogelVaultBtcBillPayRow): LinuxBillPay {
   return {
     id: row.billPayId,
     updatedAtMs: row.updatedAtMs,
     date: row.date,
     merchant: row.merchant,
     category: row.category,
+    budgetEffect: decodeBillPayBudgetEffect(row.budgetEffect),
     amountUsd: row.amountUsdCents,
     btcSpentSats: row.btcSpentSats,
     btcPrice: row.btcPriceCents,
@@ -506,9 +510,9 @@ export async function loadConvexRowEnvelope(
           )
   const billPays =
     billPaysResult.status === "error"
-      ? errorSlice<readonly BTCBillPay[]>([], billPaysResult.code)
+      ? errorSlice<readonly LinuxBillPay[]>([], billPaysResult.code)
       : billPaysResult.kind !== "btcBillPays"
-        ? errorSlice<readonly BTCBillPay[]>([], "invalid-response")
+        ? errorSlice<readonly LinuxBillPay[]>([], "invalid-response")
         : populatedSlice(
             billPaysResult.rows.map(billPay),
             billPaysResult.rows.length > 0,

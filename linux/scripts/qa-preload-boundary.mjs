@@ -336,6 +336,23 @@ require_(
   convexMutationsSource.includes("clearIfCurrent(snapshot.revision)"),
   "convexMutations: rejected credentials are cleared revision-safely",
 )
+require_(
+  convexMutationsSource.includes('budgetEffect !== "budget_category"') &&
+    convexMutationsSource.includes('budgetEffect !== "credit_card_payment"') &&
+    convexMutationsSource.includes("budgetEffect: request.budgetEffect"),
+  "convexMutations: bill-pay budgetEffect is a validated closed enum that reaches the device payload",
+)
+require_(
+  convexMutationsSource.includes('budgetEffect === "credit_card_payment" &&') &&
+    convexMutationsSource.includes("category !== CREDIT_CARD_PAYMENT_CATEGORY"),
+  "convexMutations: a credit-card bill pay is pinned to its canonical category",
+)
+require_(
+  sharedIpcSource.includes(
+    'export type VogelVaultBillPayBudgetEffect = "budget_category" | "credit_card_payment"',
+  ) && sharedIpcSource.includes("readonly budgetEffect: VogelVaultBillPayBudgetEffect"),
+  "ipc: the bill-pay budget effect is one closed union required on new writes",
+)
 
 // ── File writes ────────────────────────────────────────────────────────────
 //

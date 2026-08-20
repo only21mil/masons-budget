@@ -2,7 +2,6 @@ import { useEffect, useId, useMemo, useState } from "react"
 import { visibleTo } from "@vogel-vault/domain/family"
 import type {
   BTCAccount,
-  BTCBillPay,
   BTCBuy,
   BudgetCategory,
   TodoItem,
@@ -30,6 +29,12 @@ import {
   type PaymentSource,
   type PaymentSourceSelection,
 } from "../data/paymentSource.ts"
+import {
+  type BillPayBudgetEffect,
+  type LinuxBillPay,
+  BILL_PAY_BUDGET_EFFECT_LABELS,
+  billPayBudgetTreatmentFor,
+} from "../data/billPayBudgetEffect.ts"
 import { localMutationError } from "./CrudControls.tsx"
 import { DialogFrame } from "./DialogFrame.tsx"
 import { Button, Field, Select, TextInput } from "./primitives.tsx"
@@ -590,7 +595,7 @@ export function BillPayFormDialog({
   onClose,
 }: {
   open: boolean
-  payment: BTCBillPay | null
+  payment: LinuxBillPay | null
   onClose: () => void
 }) {
   const { activeProfile, submitMutation } = useAppState()
@@ -598,6 +603,12 @@ export function BillPayFormDialog({
   const [id, setId] = useState(() => payment?.id ?? stableId("bill"))
   const [date, setDate] = useState(payment?.date ?? today())
   const [merchant, setMerchant] = useState(payment?.merchant ?? "")
+  // A row written before the amendment decodes as credit_card_payment, so an
+  // edit of one opens on that option rather than silently promoting it into a
+  // budget it never came out of.
+  const [budgetEffect, setBudgetEffect] = useState<BillPayBudgetEffect>(
+    payment?.budgetEffect ?? "budget_category",
+  )
   const [category, setCategory] = useState(payment?.category ?? "Bills")
   const [amount, setAmount] = useState(payment ? formatCentsInput(payment.amountUsd) : "")
   const [sats, setSats] = useState(payment?.btcSpentSats.toString() ?? "")
@@ -608,12 +619,14 @@ export function BillPayFormDialog({
   const [note, setNote] = useState(payment?.note ?? "")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const treatment = billPayBudgetTreatmentFor({ budgetEffect, category })
 
   useEffect(() => {
     if (!open) return
     setId(payment?.id ?? stableId("bill"))
     setDate(payment?.date ?? today())
     setMerchant(payment?.merchant ?? "")
+    setBudgetEffect(payment?.budgetEffect ?? "budget_category")
     setCategory(payment?.category ?? "Bills")
     setAmount(payment ? formatCentsInput(payment.amountUsd) : "")
     setSats(payment?.btcSpentSats.toString() ?? "")
@@ -630,7 +643,7 @@ export function BillPayFormDialog({
     const satsValue = parseExactSats(sats)
     const priceValue = parseExactCents(price)
     const feeValue = parseExactCents(fee)
-    if (!date || !merchant.trim() || !category.trim() || !amountValue || !satsValue || !priceValue || feeValue === null || amountValue <= 0n || satsValue <= 0n || priceValue <= 0n || feeValue < 0n) {
+    if (!date || !merchant.trim() || !treatment.category || !amountValue || !satsValue || !priceValue || feeValue === null || amountValue <= 0n || satsValue <= 0n || priceValue <= 0n || feeValue < 0n) {
       setError("Enter positive payment, sats, and price values; the fee may be zero.")
       return
     }
@@ -643,7 +656,10 @@ export function BillPayFormDialog({
       owner: mutationOwner("btcBillPay.upsert", payment?.owner ?? activeProfile),
       date,
       merchant: merchant.trim(),
-      category: category.trim(),
+      // Both fields come from the one seam, so the stored category and the
+      // stored effect can never disagree.
+      category: treatment.category,
+      budgetEffect: treatment.effect,
       amountUsdCents: amountValue,
       btcSpentSats: satsValue,
       btcPriceCents: priceValue,
@@ -676,7 +692,31 @@ export function BillPayFormDialog({
         <Field label="Record ID"><TextInput value={id} readOnly /></Field>
         <Field label="Date"><TextInput data-autofocus type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
         <Field label="Payee"><TextInput value={merchant} onChange={(e) => setMerchant(e.target.value)} /></Field>
-        <Field label="Category"><TextInput value={category} onChange={(e) => setCategory(e.target.value)} /></Field>
+        <Field
+          label="Budget effect"
+          hint="A budget category payment comes out of that category for this month. A credit card payment does not touch the budget."
+        >
+          <Select
+            value={budgetEffect}
+            onChange={(e) => setBudgetEffect(e.target.value as BillPayBudgetEffect)}
+          >
+            <option value="budget_category">
+              {BILL_PAY_BUDGET_EFFECT_LABELS.budget_category}
+            </option>
+            <option value="credit_card_payment">
+              {BILL_PAY_BUDGET_EFFECT_LABELS.credit_card_payment}
+            </option>
+          </Select>
+        </Field>
+        {treatment.categorySelectable ? (
+          <Field label="Category">
+            <TextInput value={category} onChange={(e) => setCategory(e.target.value)} />
+          </Field>
+        ) : (
+          <Field label="Category" hint="Fixed for a credit card payment.">
+            <TextInput value={treatment.category} readOnly />
+          </Field>
+        )}
         <Field label="Amount (USD)"><TextInput inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
         <Field label="Sats spent"><TextInput inputMode="numeric" value={sats} onChange={(e) => setSats(e.target.value)} /></Field>
         <Field label="BTC price (USD)"><TextInput inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} /></Field>

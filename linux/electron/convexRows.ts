@@ -16,6 +16,7 @@ import {
 import type {
   VogelVaultBtcAccountRow,
   VogelVaultBtcBalanceDocument,
+  VogelVaultBillPayBudgetEffect,
   VogelVaultBtcBillPayRow,
   VogelVaultBtcBuyRow,
   VogelVaultBtcTransferRow,
@@ -457,6 +458,14 @@ function btcAccount(
   }
 }
 
+function billPayBudgetEffect(
+  record: Record<string, unknown>,
+): VogelVaultBillPayBudgetEffect | undefined {
+  const value = record["budgetEffect"]
+  if (value === "budget_category" || value === "credit_card_payment") return value
+  return undefined
+}
+
 function btcBillPay(
   value: unknown,
   viewer: VogelVaultMember,
@@ -479,6 +488,9 @@ function btcBillPay(
     month,
     merchant: text(row, "merchant"),
     category: text(row, "category"),
+    // Absent on pre-amendment rows; the renderer defaults those to
+    // credit_card_payment. An unreadable value is dropped rather than guessed.
+    ...optionalField("budgetEffect", billPayBudgetEffect(row)),
     amountUsdCents: int64(row, "amountUsdCents"),
     btcSpentSats: int64(row, "btcSpentSats"),
     btcPriceCents: int64(row, "btcPriceCents"),
