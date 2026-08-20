@@ -12,7 +12,7 @@ import type {
   Transaction,
 } from "@vogel-vault/domain/readModel"
 
-import type { FixtureEnvelope } from "./fixtures.ts"
+import type { FixtureEnvelope, IncomeRecord } from "./fixtures.ts"
 import type { LinuxBillPay } from "./billPayBudgetEffect.ts"
 import type {
   VogelVaultMutationKind,
@@ -132,6 +132,106 @@ export function mutationOwner(
   actorOrStoredOwner: FamilyMember,
 ): FamilyMember {
   return kind.startsWith("todo.") ? actorOrStoredOwner : ledgerOwner(actorOrStoredOwner)
+}
+
+export interface BitcoinBuyLinkInput {
+  readonly recordAsBitcoinBuy: boolean
+  readonly requestId: string
+  /**
+   * The one stable id both rows carry. Generated once and held in form state so
+   * a retry reuses it: the server treats an exact replay as a no-op, which is
+   * the whole duplicate defence.
+   */
+  readonly id: string
+  readonly actor: FamilyMember
+  readonly owner: FamilyMember
+  readonly date: string
+  readonly category: string
+  /** Exact positive cents of the income; also the buy's `usdCents`. */
+  readonly amountCents: bigint
+  /**
+   * The buy's own `source`. Existing buy rows name the venue the sats landed in
+   * — the fixtures' "DCA Exchange" is a BTC account label — so this is the
+   * canonical River account the purchase credits, not the payer.
+   */
+  readonly buySource: string
+  /** The income's `source`: the employer or payer, as income rows already read. */
+  readonly incomeSource: string
+  readonly sats: bigint | null
+  readonly priceUsdCents: bigint | null
+  readonly note?: string
+  readonly loggedBy?: string
+}
+
+export type BitcoinBuyLink = Extract<RendererMutationRequest, { kind: "btcBuy.upsert" }>
+
+/**
+ * The single `btcBuy.upsert` an "income bought Bitcoin" save submits, or null.
+ *
+ * One user action is one write: the buy carries the income beside it in
+ * `linkedIncome` rather than the client issuing two writes and having to decide
+ * what a half-failure means. The buy is also the only BTC balance posting, so
+ * nothing here sets `amountSats` on an Income transaction — both credit River
+ * and doing both would double the stack.
+ *
+ * The two rows carry different `source` strings on purpose: the buy names the
+ * account it credits and the income names the payer. The server's equality
+ * requirements cover id, owner, date and amount, never source.
+ *
+ * This wave is the adult household ledger only; `mutationOwner` puts Rachel's
+ * writes on the canonical `victor` owner, and a child owner returns null.
+ */
+export function bitcoinBuyLinkFor(input: BitcoinBuyLinkInput): BitcoinBuyLink | null {
+  if (!input.recordAsBitcoinBuy) return null
+  if (input.category.trim() !== "Income") return null
+  if (input.amountCents <= 0n) return null
+  const owner = mutationOwner("btcBuy.upsert", input.owner)
+  if (owner !== "victor") return null
+  const id = input.id.trim()
+  const buySource = input.buySource.trim()
+  const incomeSource = input.incomeSource.trim()
+  if (!id || !input.date || !buySource || !incomeSource) return null
+  if (input.sats === null || input.sats <= 0n) return null
+  if (input.priceUsdCents === null || input.priceUsdCents <= 0n) return null
+  const note = input.note?.trim()
+  const loggedBy = input.loggedBy?.trim()
+
+  return {
+    kind: "btcBuy.upsert",
+    requestId: input.requestId,
+    actor: input.actor,
+    id,
+    owner,
+    date: input.date,
+    source: buySource,
+    sats: input.sats,
+    priceUsdCents: input.priceUsdCents,
+    usdCents: input.amountCents,
+    ...(note ? { note } : {}),
+    ...(loggedBy ? { loggedBy } : {}),
+    linkedIncome: {
+      id,
+      owner,
+      date: input.date,
+      amountCents: input.amountCents,
+      source: incomeSource,
+      ...(note ? { note } : {}),
+      ...(loggedBy ? { loggedBy } : {}),
+    },
+  }
+}
+
+/**
+ * Read marker: the buy an income row funded, or null when it funded none.
+ *
+ * The pair shares one id, so this is the whole linkage — there is no separate
+ * join column that could drift out of step with it.
+ */
+export function linkedBitcoinBuyFor(
+  incomeId: string,
+  buys: readonly BTCBuy[],
+): BTCBuy | null {
+  return buys.find((buy) => buy.id === incomeId) ?? null
 }
 
 export function supportsMutationOwner(
@@ -503,12 +603,36 @@ export function applyOptimisticMutation(
         archimedesRequestId:
           request.archimedesRequestId ?? existing?.archimedesRequestId ?? null,
       }
+      // A linked income row is written by the same mutation, so it appears in
+      // the same optimistic step. Both are keyed by the shared id, which is why
+      // a replay replaces rather than appends.
+      const income = request.linkedIncome
+      const incomeRow: IncomeRecord | null = income === undefined ? null : {
+        id: income.id,
+        date: income.date,
+        month: income.date.slice(0, 7),
+        amount: income.amountCents,
+        source: income.source,
+        loggedBy: income.loggedBy ?? null,
+        note: income.note ?? null,
+        owner: income.owner,
+      }
       return {
         ...data,
         btcBuys: {
           ...data.btcBuys,
           value: replaceOrAppend(data.btcBuys.value, (item) => item.id === row.id, row),
         },
+        ...(incomeRow === null ? {} : {
+          income: {
+            ...data.income,
+            value: replaceOrAppend(
+              data.income.value,
+              (item) => item.id === incomeRow.id,
+              incomeRow,
+            ),
+          },
+        }),
       }
     }
     case "btcBuy.delete":

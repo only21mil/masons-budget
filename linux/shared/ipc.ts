@@ -17,6 +17,25 @@ export interface VogelVaultFiatValuation {
   readonly confidence?: string
 }
 
+/**
+ * Income row written atomically with the Bitcoin buy it funded.
+ *
+ * One user action, one write. The buy carries the only BTC balance posting, so
+ * this block never travels with `amountSats` on a separate Income transaction —
+ * both credit River and doing both would double the stack. `id`, `owner` and
+ * `date` must equal the enclosing buy's, and `amountCents` must equal its
+ * `usdCents`; the server rejects the write otherwise.
+ */
+export interface VogelVaultLinkedIncome {
+  readonly id: string
+  readonly owner: VogelVaultMember
+  readonly date: string
+  readonly amountCents: bigint
+  readonly source: string
+  readonly note?: string
+  readonly loggedBy?: string
+}
+
 export interface VogelVaultTransactionRow {
   readonly txId: string
   readonly owner: VogelVaultMember
@@ -574,6 +593,8 @@ export type VogelVaultMutationRequest =
       readonly costBasisStatus?: string
       readonly loggedBy?: string
       readonly archimedesRequestId?: string
+      /** Present only when this buy was funded by income saved in the same action. */
+      readonly linkedIncome?: VogelVaultLinkedIncome
       /** Omit only for a create whose natural key has never existed. */
       readonly baseUpdatedAtMs?: number
     })
