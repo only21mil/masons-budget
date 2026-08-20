@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
 import { AppStateProvider } from "../src/renderer/app/AppState.tsx"
+import type { FixtureEnvelope } from "../src/renderer/data/fixtures.ts"
 import { buildSanitizedFixtureEnvelope } from "../src/renderer/data/fixtures.ts"
 import type {
   RendererMutationAdapter,
@@ -81,13 +82,14 @@ function liveEnvelope(profile: "victor" | "rachel" | "mason" | "maddox" = "victo
 function renderRoute(
   route: string,
   profile: "victor" | "rachel" | "mason" | "maddox" = "victor",
+  data: FixtureEnvelope = liveEnvelope(profile),
 ): string {
   const page = ALL_PAGES.find((candidate) => candidate.id === route)!
   return renderToStaticMarkup(
     createElement(AppStateProvider, {
       initialProfile: profile,
       initialRoute: route,
-      initialData: liveEnvelope(profile),
+      initialData: data,
       initialDataOrigin: "remote",
       initialMutationCapabilities: capabilities,
       mutationAdapter: adapter,
@@ -192,6 +194,71 @@ describe("renderer CRUD routes", () => {
 
     const masonBuys = renderRoute("bitcoin-buys", "mason")
     expect(masonBuys).not.toMatch(/<button[^>]*disabled[^>]*>Add buy<\/button>/)
+  })
+
+  it("accepts the first bill payment into a live but empty remote table", () => {
+    const live = liveEnvelope()
+    const empty = {
+      ...live,
+      billPays: { ...live.billPays, status: "empty" as const, value: [], updatedAt: null },
+    }
+    const markup = renderRoute("bills", "victor", empty)
+    expect(markup).not.toMatch(/<button[^>]*disabled[^>]*>Add bill payment<\/button>/)
+    expect(markup).not.toContain("Wait for current remote rows before editing.")
+    expect(markup).not.toContain("Adding a bill payment is unavailable")
+  })
+
+  it("accepts a first row in every table that reports empty at zero remote rows", () => {
+    const live = liveEnvelope()
+    const empty = {
+      ...live,
+      billPays: { ...live.billPays, status: "empty" as const, value: [] },
+      btcBuys: { ...live.btcBuys, status: "empty" as const, value: [] },
+      todos: { ...live.todos, status: "empty" as const, value: [] },
+      btcBalanceDocument: { ...live.btcBalanceDocument, status: "empty" as const, value: null },
+    }
+    for (const [route, label] of [
+      ["bills", "Add bill payment"],
+      ["bitcoin-buys", "Add buy"],
+      ["bitcoin", "Add BTC account"],
+      ["today", "Add task"],
+    ] as const) {
+      const markup = renderRoute(route, "victor", empty)
+      expect(markup).toContain(label)
+      expect(markup).not.toMatch(
+        new RegExp(`<button[^>]*disabled[^>]*>${label}</button>`),
+      )
+    }
+  })
+
+  it("never gates a mutation on the BTC account mirror slice", () => {
+    // btcAccount.* reads freshness from the canonical balance document, so an
+    // empty account mirror alongside a live document must not disable the add.
+    const live = liveEnvelope()
+    const markup = renderRoute("bitcoin", "victor", {
+      ...live,
+      btcAccounts: { ...live.btcAccounts, status: "empty" as const, value: [] },
+    })
+    expect(markup).not.toMatch(/<button[^>]*disabled[^>]*>Add BTC account<\/button>/)
+  })
+
+  it("offers the bill-pay budget choice and shows each row's effect", () => {
+    const markup = renderRoute("bills", "victor")
+    expect(markup).toContain("Budget effect")
+    expect(markup).toContain('value="budget_category"')
+    expect(markup).toContain('value="credit_card_payment"')
+    expect(markup).toContain("Budget category")
+    expect(markup).toContain("Credit card payment")
+  })
+
+  it("visibly names the reason a blocked Add bill payment cannot be pressed", () => {
+    const markup = renderRoute("bills", "mason")
+    const bannerAt = markup.indexOf("Adding a bill payment is unavailable")
+    expect(bannerAt).toBeGreaterThan(-1)
+    expect(markup.slice(bannerAt - 200, bannerAt)).toContain("vv-banner")
+    expect(markup.slice(bannerAt, bannerAt + 400)).toContain(
+      "This profile has no supported durable source for that operation.",
+    )
   })
 
   it("renders write controls disabled for fixture origin", () => {

@@ -119,6 +119,7 @@ const requests = [
     date: "2026-07-30",
     merchant: "Example",
     category: "Bills",
+    budgetEffect: "budget_category",
     amountUsdCents: 10_000n,
     btcSpentSats: 100_000n,
     btcPriceCents: 10_000_000n,

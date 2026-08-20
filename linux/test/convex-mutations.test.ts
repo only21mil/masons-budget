@@ -260,6 +260,86 @@ describe("paired-device main controller", () => {
     })
   })
 
+  it("requires a closed bill-pay budgetEffect and pins the credit-card category", () => {
+    const billPay = {
+      kind: "btcBillPay.upsert" as const,
+      requestId: "request_bill_effect",
+      actor: "victor" as const,
+      id: "bill-01",
+      owner: "victor" as const,
+      date: "2026-08-01",
+      merchant: "Internet Provider",
+      category: "Utilities",
+      budgetEffect: "budget_category" as const,
+      amountUsdCents: 7_999n,
+      btcSpentSats: 85_000n,
+      btcPriceCents: 9_410_000n,
+      feeUsdCents: 40n,
+    }
+
+    expect(validateMutationRequest(billPay)).toMatchObject({
+      category: "Utilities",
+      budgetEffect: "budget_category",
+    })
+    expect(validateMutationRequest({
+      ...billPay,
+      category: "Credit Card Payment",
+      budgetEffect: "credit_card_payment",
+    })).toMatchObject({
+      category: "Credit Card Payment",
+      budgetEffect: "credit_card_payment",
+    })
+
+    // Absent, misspelled, or open-ended values all fail closed.
+    const withoutEffect: Record<string, unknown> = { ...billPay }
+    delete withoutEffect["budgetEffect"]
+    expect(validateMutationRequest(withoutEffect)).toBeNull()
+    expect(validateMutationRequest({ ...billPay, budgetEffect: "budget" })).toBeNull()
+    expect(validateMutationRequest({ ...billPay, budgetEffect: "" })).toBeNull()
+    expect(validateMutationRequest({ ...billPay, budgetEffect: null })).toBeNull()
+
+    // A credit-card payment carrying any other category is unclassifiable.
+    expect(validateMutationRequest({
+      ...billPay,
+      budgetEffect: "credit_card_payment",
+      category: "Utilities",
+    })).toBeNull()
+  })
+
+  it("sends the bill-pay budgetEffect to the device upsert endpoint", async () => {
+    const bodies: Record<string, unknown>[] = []
+    const controller = createPairedDeviceController({
+      store: store({ ...snapshot, capabilities: ["btcBillPay.upsert"] }),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: async (_endpoint, body) => {
+        bodies.push(JSON.parse(body) as Record<string, unknown>)
+        return success({ ok: true, entityId: "bill-01", outcome: "inserted" })
+      },
+    })
+
+    await expect(controller.mutate({
+      kind: "btcBillPay.upsert",
+      requestId: "request_bill_wire",
+      actor: "victor",
+      id: "bill-01",
+      owner: "victor",
+      date: "2026-08-01",
+      merchant: "Internet Provider",
+      category: "Utilities",
+      budgetEffect: "budget_category",
+      amountUsdCents: 7_999n,
+      btcSpentSats: 85_000n,
+      btcPriceCents: 9_410_000n,
+      feeUsdCents: 40n,
+    }, "victor")).resolves.toMatchObject({ status: "ok" })
+
+    const wire = bodies[0] as { path: string; args: { billPay: Record<string, unknown> } }
+    expect(wire.path).toBe(PAIRED_DEVICE_PATHS["btcBillPay.upsert"])
+    expect(wire.args.billPay.budgetEffect).toBe("budget_category")
+    expect(wire.args.billPay.category).toBe("Utilities")
+  })
+
   it("claims with main-generated credentials, expands grants, and exposes no secret", async () => {
     const localStore = store(null)
     const calls: { endpoint: string; body: string }[] = []

@@ -87,6 +87,13 @@ export interface VogelVaultBtcAccountRow {
   readonly updatedAtMs: number
 }
 
+/**
+ * Whether a bill pay comes out of a budget category or is a credit-card
+ * payment that contributes no budget spend. Closed set; persist the wire
+ * string, never a label.
+ */
+export type VogelVaultBillPayBudgetEffect = "budget_category" | "credit_card_payment"
+
 export interface VogelVaultBtcBillPayRow {
   readonly billPayId: string
   readonly owner: VogelVaultMember
@@ -94,6 +101,8 @@ export interface VogelVaultBtcBillPayRow {
   readonly month: string
   readonly merchant: string
   readonly category: string
+  /** Absent on rows written before the bill-pay budget amendment. */
+  readonly budgetEffect?: VogelVaultBillPayBudgetEffect
   readonly amountUsdCents: bigint
   readonly btcSpentSats: bigint
   readonly btcPriceCents: bigint
@@ -579,6 +588,12 @@ export type VogelVaultMutationRequest =
       readonly date: string
       readonly merchant: string
       readonly category: string
+      /**
+       * Required on every new client write. "credit_card_payment" must carry
+       * the canonical "Credit Card Payment" category and contributes no
+       * budget spend; "budget_category" requires a real selected category.
+       */
+      readonly budgetEffect: VogelVaultBillPayBudgetEffect
       readonly amountUsdCents: bigint
       readonly btcSpentSats: bigint
       readonly btcPriceCents: bigint

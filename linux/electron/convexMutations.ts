@@ -59,6 +59,13 @@ export const PAIRED_DEVICE_LIMITS = {
   maxMutationsPerMinute: 120,
 } as const
 
+/**
+ * The one category a "credit_card_payment" bill pay may carry. Validated here
+ * as well as in the renderer: main never trusts renderer intent, and a row
+ * with the wrong category would be unclassifiable by the budget read model.
+ */
+export const CREDIT_CARD_PAYMENT_CATEGORY = "Credit Card Payment"
+
 const MUTATION_KINDS = [
   "transaction.upsert",
   "transaction.delete",
@@ -540,13 +547,27 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           input,
           kind,
           [
-            "id", "owner", "date", "merchant", "category", "amountUsdCents",
-            "btcSpentSats", "btcPriceCents", "feeUsdCents",
+            "id", "owner", "date", "merchant", "category", "budgetEffect",
+            "amountUsdCents", "btcSpentSats", "btcPriceCents", "feeUsdCents",
           ],
           ["platform", "note", "reference", "baseUpdatedAtMs"],
         )
         const { requestId, actor } = common(record)
         const owner = canonicalFinancialOwner(member(record["owner"]))
+        const category = boundedText(record["category"])
+        const budgetEffect = record["budgetEffect"]
+        if (budgetEffect !== "budget_category" && budgetEffect !== "credit_card_payment") {
+          throw new InvalidRequest()
+        }
+        // A credit-card payment is defined by its canonical category. Accepting
+        // any other category here would produce a row the budget read model
+        // cannot classify.
+        if (
+          budgetEffect === "credit_card_payment" &&
+          category !== CREDIT_CARD_PAYMENT_CATEGORY
+        ) {
+          throw new InvalidRequest()
+        }
         return {
           kind,
           requestId,
@@ -555,7 +576,8 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           owner,
           date: exactDate(record["date"]),
           merchant: boundedText(record["merchant"]),
-          category: boundedText(record["category"]),
+          category,
+          budgetEffect,
           amountUsdCents: positiveInt64(record["amountUsdCents"]),
           btcSpentSats: positiveInt64(record["btcSpentSats"]),
           btcPriceCents: positiveInt64(record["btcPriceCents"]),
@@ -854,6 +876,7 @@ function mutationArgs(
           date: request.date,
           merchant: request.merchant,
           category: request.category,
+          budgetEffect: request.budgetEffect,
           amountUsdCents: encoded(request.amountUsdCents),
           btcSpentSats: encoded(request.btcSpentSats),
           btcPriceCents: encoded(request.btcPriceCents),

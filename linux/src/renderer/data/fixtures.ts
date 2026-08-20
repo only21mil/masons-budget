@@ -15,7 +15,6 @@ import { type FamilyMember, hasDedicatedChildFinanceFiles, isAdult } from "@voge
 import { parseBtcToSats, parseCents, type Cents } from "@vogel-vault/domain/money"
 import type {
   BTCAccount,
-  BTCBillPay,
   BTCBuy,
   BTCSnapshot,
   Budget,
@@ -25,6 +24,8 @@ import type {
   Transaction,
 } from "@vogel-vault/domain/readModel"
 import { type RawTodo, normalizeTodoRecord, toTodoItem } from "@vogel-vault/domain/todo"
+
+import type { LinuxBillPay } from "./billPayBudgetEffect.ts"
 
 const NOW = Date.UTC(2026, 6, 26, 14, 30, 0)
 const MINUTE = 60_000
@@ -308,13 +309,14 @@ function buy(
   }
 }
 
-const BILL_PAYS: readonly BTCBillPay[] = [
+const BILL_PAYS: readonly LinuxBillPay[] = [
   {
     id: "pay-0001",
     updatedAtMs: NOW,
     date: daysAgo(6),
     merchant: "Internet Provider",
     category: "Utilities",
+    budgetEffect: "budget_category",
     amountUsd: parseCents("79.99"),
     btcSpentSats: parseBtcToSats("0.00085000"),
     btcPrice: parseCents("94100.00"),
@@ -328,8 +330,9 @@ const BILL_PAYS: readonly BTCBillPay[] = [
     id: "pay-0002",
     updatedAtMs: NOW,
     date: daysAgo(20),
-    merchant: "Electric Utility",
-    category: "Utilities",
+    merchant: "Coinbase Card",
+    category: "Credit Card Payment",
+    budgetEffect: "credit_card_payment",
     amountUsd: parseCents("186.55"),
     btcSpentSats: parseBtcToSats("0.00204000"),
     btcPrice: parseCents("91400.00"),
@@ -402,7 +405,7 @@ export interface FixtureEnvelope {
   readonly btcBalanceDocument: SliceState<BTCSnapshot | null>
   readonly btcAccounts: SliceState<readonly BTCAccount[]>
   readonly btcBuys: SliceState<readonly BTCBuy[]>
-  readonly billPays: SliceState<readonly BTCBillPay[]>
+  readonly billPays: SliceState<readonly LinuxBillPay[]>
   readonly btcTransfers: SliceState<readonly BtcTransferRecord[]>
   readonly todos: SliceState<readonly TodoItem[]>
   readonly btcPriceUsd: bigint | null

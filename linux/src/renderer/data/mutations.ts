@@ -6,7 +6,6 @@ import {
 import { isConvexInt64 } from "@vogel-vault/domain"
 import type {
   BTCAccount,
-  BTCBillPay,
   BTCBuy,
   BudgetCategory,
   TodoItem,
@@ -14,6 +13,7 @@ import type {
 } from "@vogel-vault/domain/readModel"
 
 import type { FixtureEnvelope } from "./fixtures.ts"
+import type { LinuxBillPay } from "./billPayBudgetEffect.ts"
 import type {
   VogelVaultMutationKind,
   VogelVaultMutationRequest,
@@ -84,7 +84,12 @@ export function mutationGate(input: MutationGateInput): MutationGate {
   if (!input.capabilities.includes(input.kind)) {
     return { allowed: false, reason: "This operation is not enabled for the paired device." }
   }
-  if (input.freshness === "error" || input.freshness === "loading" || input.freshness === "empty") {
+  // "empty" is an authoritative zero-row read of a live remote table, not an
+  // absent one: the query succeeded and returned nothing. Treating it as
+  // unusable made the first row of every table impossible to create — a paired
+  // desktop with no bill pays yet could never add its first bill payment.
+  // Only "error" and "loading" mean the current rows are genuinely unknown.
+  if (input.freshness === "error" || input.freshness === "loading") {
     return { allowed: false, reason: "Wait for current remote rows before editing." }
   }
   if (input.owner && !canSeeDataOwnedBy(input.actor, input.owner)) {
@@ -513,13 +518,14 @@ export function applyOptimisticMutation(
       }
     case "btcBillPay.upsert": {
       const existing = data.billPays.value.find((item) => item.id === request.id)
-      const row: BTCBillPay = {
+      const row: LinuxBillPay = {
         id: request.id,
         updatedAtMs: existing?.updatedAtMs ?? 0,
         owner: request.owner,
         date: request.date,
         merchant: request.merchant,
         category: request.category,
+        budgetEffect: request.budgetEffect,
         amountUsd: request.amountUsdCents,
         btcSpentSats: request.btcSpentSats,
         btcPrice: request.btcPriceCents,
