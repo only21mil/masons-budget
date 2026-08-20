@@ -17,6 +17,9 @@ const mutation = <
 >(path: string) =>
   path as unknown as FunctionReference<"mutation", Visibility, Args, Result>;
 
+const query = <Args extends Record<string, unknown>, Result>(path: string) =>
+  path as unknown as FunctionReference<"query", "public", Args, Result>;
+
 const api = {
   buy: mutation<"public", Record<string, unknown>, Record<string, unknown>>(
     "tables:upsertBtcBuy",
@@ -42,6 +45,14 @@ const api = {
     Record<string, unknown>,
     Record<string, unknown>
   >("tables:deleteBtcTransfer"),
+  income: query<
+    Record<string, unknown>,
+    { rows: Array<{ incomeId: string; amountCents: bigint }> }
+  >("tables:listIncome"),
+  buys: query<
+    Record<string, unknown>,
+    { rows: Array<Record<string, unknown>> }
+  >("tables:listBtcBuys"),
   reconcile: mutation<
     "internal",
     Record<string, unknown>,
@@ -128,6 +139,185 @@ function satsByKey(state: Awaited<ReturnType<typeof snapshot>>) {
 }
 
 describe("Bitcoin balance posting", () => {
+  it("atomically records canonical income and one balance-posting Bitcoin buy", async () => {
+    const args = {
+      sourceFile: "bitcoin-buys",
+      buy: {
+        id: "income-buy-pair",
+        owner: "rachel",
+        date: "2026-08-01",
+        source: "river",
+        sats: 25_000n,
+        priceUsdCents: 10_000_000n,
+        usdCents: 2_500n,
+      },
+      linkedIncome: {
+        id: "income-buy-pair",
+        owner: "rachel",
+        date: "2026-08-01",
+        amountCents: 2_500n,
+        source: "Payroll",
+        sourceFile: "income",
+      },
+    };
+
+    await expect(t.mutation(api.buy, args)).resolves.toMatchObject({
+      owner: "victor",
+      outcome: "inserted",
+    });
+    const afterFirst = await snapshot();
+    const revisionAfterFirst = afterFirst.document.updatedAtMs;
+    await expect(t.mutation(api.buy, args)).resolves.toMatchObject({
+      owner: "victor",
+      outcome: "updated",
+    });
+
+    const state = await t.run(async (ctx) => ({
+      income: await ctx.db.query("income").collect(),
+      buys: await ctx.db.query("btcBuys").collect(),
+    }));
+    expect(state.income).toHaveLength(1);
+    expect(state.income[0]).toMatchObject({
+      sourceKey: "id:income-buy-pair",
+      incomeId: "income-buy-pair",
+      owner: "victor",
+      date: "2026-08-01",
+      amountCents: 2_500n,
+      sourceFile: "income",
+    });
+    setDeploymentEnv({ ALLOW_TOKENLESS_READ: "true" });
+    await expect(
+      t.query(api.income, { viewer: "victor" }),
+    ).resolves.toMatchObject({
+      rows: [{ incomeId: "income-buy-pair", amountCents: 2_500n }],
+    });
+    expect(state.buys).toHaveLength(1);
+    expect(state.buys[0]).toMatchObject({
+      buyId: "income-buy-pair",
+      owner: "victor",
+      linkedIncomeId: "income-buy-pair",
+      balanceAccountKey: "river",
+      balancePostingVersion: 1n,
+    });
+    const publicBuys = await t.query(api.buys, {
+      viewer: "victor",
+      scope: "visible",
+    });
+    expect(publicBuys.rows).toHaveLength(1);
+    expect(Object.hasOwn(publicBuys.rows[0]!, "linkedIncomeId")).toBe(false);
+    const afterRetry = await snapshot();
+    expect(satsByKey(afterRetry)).toEqual({
+      river: 1_025_000n,
+      coldcard: 2_000_000n,
+    });
+    expect(afterRetry.document.updatedAtMs).toBe(revisionAfterFirst);
+    await expect(
+      t.mutation(api.buy, {
+        sourceFile: "bitcoin-buys",
+        buy: {
+          ...args.buy,
+          owner: "victor",
+          source: "changed outside paired contract",
+        },
+      }),
+    ).rejects.toThrow(/cannot enter or leave the paired-income contract/);
+  });
+
+  it("rejects invalid or conflicting linked income without a partial buy or posting", async () => {
+    const before = await snapshot();
+    const valid = {
+      sourceFile: "bitcoin-buys",
+      buy: {
+        id: "income-buy-invalid",
+        owner: "victor",
+        date: "2026-08-01",
+        source: "river",
+        sats: 25_000n,
+        priceUsdCents: 10_000_000n,
+        usdCents: 2_500n,
+      },
+      linkedIncome: {
+        id: "income-buy-invalid",
+        owner: "victor",
+        date: "2026-08-01",
+        amountCents: 2_500n,
+        source: "Payroll",
+        sourceFile: "income",
+      },
+    };
+
+    for (const linkedIncome of [
+      { ...valid.linkedIncome, id: "different-id" },
+      { ...valid.linkedIncome, owner: "mason" },
+      { ...valid.linkedIncome, date: "2026-08-02" },
+      { ...valid.linkedIncome, amountCents: 2_499n },
+    ]) {
+      await expect(
+        t.mutation(api.buy, { ...valid, linkedIncome }),
+      ).rejects.toThrow(/same id, owner, and date|must equal|adult household/);
+    }
+    await t.run(async (ctx) => {
+      await ctx.db.insert("income", {
+        sourceKey: "id:income-buy-invalid",
+        incomeId: "income-buy-invalid",
+        owner: "victor",
+        date: "2026-08-01",
+        month: "2026-08",
+        amountCents: 2_500n,
+        source: "Different source",
+        sourceFile: "income",
+        updatedAtMs: 1,
+      });
+    });
+    await expect(t.mutation(api.buy, valid)).rejects.toThrow(/immutable/);
+
+    const rows = await t.run(async (ctx) => ctx.db.query("btcBuys").collect());
+    expect(rows).toHaveLength(0);
+    expect(satsByKey(await snapshot())).toEqual(satsByKey(before));
+  });
+
+  it("does not infer linkage from an unrelated cross-table id collision", async () => {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("income", {
+        sourceKey: "id:shared-natural-id",
+        incomeId: "shared-natural-id",
+        owner: "victor",
+        date: "2026-08-01",
+        month: "2026-08",
+        amountCents: 1_000n,
+        source: "Payroll",
+        sourceFile: "income",
+        updatedAtMs: 1,
+      });
+    });
+
+    await expect(
+      t.mutation(api.buy, {
+        sourceFile: "bitcoin-buys",
+        buy: {
+          id: "shared-natural-id",
+          owner: "victor",
+          date: "2026-08-01",
+          source: "river",
+          sats: 10_000n,
+          priceUsdCents: 10_000_000n,
+          usdCents: 1_000n,
+        },
+      }),
+    ).resolves.toMatchObject({ outcome: "inserted" });
+
+    const buy = await t.run(async (ctx) =>
+      ctx.db
+        .query("btcBuys")
+        .withIndex("by_source_buy_id", (q) =>
+          q.eq("sourceFile", "bitcoin-buys").eq("buyId", "shared-natural-id"),
+        )
+        .unique(),
+    );
+    expect(buy).toMatchObject({ buyId: "shared-natural-id" });
+    expect(buy?.linkedIncomeId).toBeUndefined();
+  });
+
   it("posts new buys and explicitly-satted Income to River without replaying legacy fiat Income", async () => {
     const buy = {
       id: "buy-1",

@@ -469,6 +469,10 @@ export default defineSchema({
     costBasisStatus: v.optional(v.string()),
     loggedBy: v.optional(v.string()),
     archimedesRequestId: v.optional(v.string()),
+    // Backend-only marker for the atomic income-plus-buy contract. Public
+    // projections intentionally omit it so existing client wire shapes stay
+    // backward compatible.
+    linkedIncomeId: v.optional(v.string()),
     balanceAccountKey: v.optional(v.string()),
     balancePostingVersion: v.optional(v.int64()),
     sourceFile: v.string(), // "bitcoin-buys" | "mason-bitcoin-buys"

@@ -382,6 +382,77 @@ describe("device row authorization", () => {
     ).resolves.toMatchObject({ removed: true });
   });
 
+  it("requires transaction and Bitcoin authority for linked income buys", async () => {
+    await seedBtcLedger("victor");
+    const bitcoinOnly = await pairMobileDevice(t, syncToken, "linked-buy-bitcoin-only", [
+      "bitcoin:write",
+    ]);
+    const transactionOnly = await pairMobileDevice(
+      t,
+      syncToken,
+      "linked-buy-transaction-only",
+      ["transactions:write"],
+    );
+    const full = await fullDevice("linked-buy-full");
+    const pair = {
+      owner: "rachel" as const,
+      sourceFile: "bitcoin-buys" as const,
+      buy: {
+        id: "device-linked-income",
+        owner: "rachel" as const,
+        date: "2026-07-30",
+        source: "river",
+        sats: 100n,
+        priceUsdCents: 2_500_000n,
+        usdCents: 25n,
+      },
+      linkedIncome: {
+        id: "device-linked-income",
+        owner: "rachel" as const,
+        date: "2026-07-30",
+        amountCents: 25n,
+        source: "Payroll",
+        sourceFile: "income" as const,
+      },
+    };
+
+    await expect(
+      t.mutation(api.upsertBtcBuy, { ...authArgs(bitcoinOnly), ...pair }),
+    ).rejects.toThrow(/Unauthorized mobile device/);
+    await expect(
+      t.mutation(api.upsertBtcBuy, { ...authArgs(transactionOnly), ...pair }),
+    ).rejects.toThrow(/Unauthorized mobile device/);
+    await expect(
+      t.mutation(api.upsertBtcBuy, { ...authArgs(full), ...pair }),
+    ).resolves.toMatchObject({ outcome: "inserted" });
+    await expect(
+      t.mutation(api.upsertBtcBuy, { ...authArgs(full), ...pair }),
+    ).resolves.toMatchObject({ outcome: "updated" });
+
+    const rows = await t.run(async (ctx) => ({
+      income: await ctx.db.query("income").collect(),
+      buys: await ctx.db.query("btcBuys").collect(),
+      balance: await ctx.db
+        .query("btcBalanceDocuments")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "btc-balance-snapshot"))
+        .unique(),
+    }));
+    expect(rows.income).toHaveLength(1);
+    expect(rows.income[0]).toMatchObject({ owner: "victor", sourceKey: "id:device-linked-income" });
+    expect(rows.buys).toHaveLength(1);
+    expect(rows.buys[0]).toMatchObject({ owner: "victor", buyId: "device-linked-income" });
+    expect(rows.balance?.totals.sats).toBe(1_000_100n);
+    await expect(
+      t.mutation(api.deleteBtcBuy, {
+        ...authArgs(full),
+        owner: "rachel",
+        sourceFile: "bitcoin-buys",
+        entityId: "device-linked-income",
+        baseUpdatedAtMs: rows.buys[0]!.updatedAtMs,
+      }),
+    ).rejects.toThrow(/cannot be deleted until paired correction and deletion/);
+  });
+
   it("rejects owner/source and request/payload owner mismatches", async () => {
     const device = await fullDevice();
     await t.run(async (ctx) => {

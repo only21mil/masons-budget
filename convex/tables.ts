@@ -2338,6 +2338,14 @@ async function upsertBtcBuyRow(
         row.buyId,
       );
     }
+    if (existing.linkedIncomeId !== row.linkedIncomeId) {
+      deviceFailure(
+        "ENTITY_CONFLICT",
+        "A Bitcoin buy cannot enter or leave the paired-income contract through an ordinary upsert.",
+        "btcBuy",
+        row.buyId,
+      );
+    }
     const same =
       existing.date === row.date &&
       existing.month === row.month &&
@@ -2349,8 +2357,17 @@ async function upsertBtcBuyRow(
       existing.status === row.status &&
       existing.costBasisStatus === row.costBasisStatus &&
       existing.loggedBy === row.loggedBy &&
-      existing.archimedesRequestId === row.archimedesRequestId;
+      existing.archimedesRequestId === row.archimedesRequestId &&
+      existing.linkedIncomeId === row.linkedIncomeId;
     if (same) return "updated";
+    if (existing.linkedIncomeId !== undefined) {
+      deviceFailure(
+        "ENTITY_CONFLICT",
+        "Linked income and its Bitcoin buy are immutable in this contract version.",
+        "btcBuy",
+        row.buyId,
+      );
+    }
     if (
       existing.balancePostingVersion === 1n &&
       optimistic?.baseUpdatedAtMs === undefined
@@ -2434,6 +2451,126 @@ async function upsertBtcBuyRow(
   await lockRuntimeSource(ctx, row.sourceFile);
   await ctx.db.insert("btcBuys", storedRow);
   await clearRowTombstone(ctx, "btcBuy", row.sourceFile, row.buyId);
+  return "inserted";
+}
+
+type LinkedIncomeInput = {
+  id: string;
+  owner: FamilyMember;
+  date: string;
+  amountCents: bigint;
+  source: string;
+  sourceFile: "income";
+  loggedBy?: string;
+  note?: string;
+  archimedesRequestId?: string;
+};
+
+type LinkedIncomeRow = Omit<Doc<"income">, "_id" | "_creationTime">;
+
+function linkedIncomeRow(
+  buy: Omit<Doc<"btcBuys">, "_id" | "_creationTime">,
+  linkedIncome: LinkedIncomeInput,
+  now: number,
+): LinkedIncomeRow {
+  const linkedOwner = canonicalLedgerOwner(linkedIncome.owner);
+  if (!buy.buyId.trim() || !linkedIncome.source.trim()) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Linked income id and source must not be empty.",
+      "btcBuy",
+      buy.buyId,
+    );
+  }
+  if (!postsToHouseholdBitcoinLedger(buy.owner) || linkedOwner !== "victor") {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Linked Bitcoin-buy income is available only for the adult household ledger.",
+      "btcBuy",
+      buy.buyId,
+    );
+  }
+  if (
+    linkedIncome.id !== buy.buyId ||
+    linkedOwner !== buy.owner ||
+    linkedIncome.date !== buy.date
+  ) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Linked income must have the same id, owner, and date as its Bitcoin buy.",
+      "btcBuy",
+      buy.buyId,
+    );
+  }
+  if (linkedIncome.amountCents !== buy.usdCents) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Linked income amountCents must equal the Bitcoin buy usdCents.",
+      "btcBuy",
+      buy.buyId,
+    );
+  }
+  requireDevicePositive(linkedIncome.amountCents, "linkedIncome.amountCents");
+  return {
+    sourceKey: `id:${linkedIncome.id}`,
+    incomeId: linkedIncome.id,
+    owner: linkedOwner,
+    date: linkedIncome.date,
+    month: monthOf(linkedIncome.date),
+    amountCents: linkedIncome.amountCents,
+    source: linkedIncome.source,
+    loggedBy: optionalText(linkedIncome.loggedBy),
+    note: optionalText(linkedIncome.note),
+    archimedesRequestId: optionalText(linkedIncome.archimedesRequestId),
+    sourceFile: "income",
+    updatedAtMs: now,
+  };
+}
+
+function sameLinkedIncome(existing: Doc<"income">, row: LinkedIncomeRow): boolean {
+  return (
+    existing.sourceKey === row.sourceKey &&
+    existing.incomeId === row.incomeId &&
+    existing.owner === row.owner &&
+    existing.date === row.date &&
+    existing.month === row.month &&
+    existing.amountCents === row.amountCents &&
+    existing.source === row.source &&
+    existing.loggedBy === row.loggedBy &&
+    existing.note === row.note &&
+    existing.archimedesRequestId === row.archimedesRequestId &&
+    existing.sourceFile === row.sourceFile
+  );
+}
+
+/**
+ * Create the canonical income side of an income-plus-buy pair.
+ *
+ * Paired income is intentionally immutable in this first contract. Exact retry
+ * is a no-op, while changed content fails before the buy can be changed. Convex
+ * rolls back the income insert if the later buy upsert fails.
+ */
+async function upsertLinkedIncomeRow(
+  ctx: MutationCtx,
+  row: LinkedIncomeRow,
+): Promise<UpsertOutcome> {
+  const existing = await ctx.db
+    .query("income")
+    .withIndex("by_source_key", (q) =>
+      q.eq("sourceFile", "income").eq("sourceKey", row.sourceKey),
+    )
+    .unique();
+  if (existing) {
+    if (sameLinkedIncome(existing, row)) return "updated";
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      "Linked income is immutable; correct or delete the pair through a future paired flow.",
+      "btcBuy",
+      row.incomeId,
+    );
+  }
+  await lockRuntimeSource(ctx, "income");
+  await ctx.db.insert("income", row);
   return "inserted";
 }
 
@@ -3019,6 +3156,18 @@ const btcBuyDeviceInput = v.object({
   archimedesRequestId: v.optional(v.string()),
 });
 
+const linkedIncomeInput = v.object({
+  id: v.string(),
+  owner: familyMemberValidator,
+  date: v.string(),
+  amountCents: v.int64(),
+  source: v.string(),
+  sourceFile: v.literal("income"),
+  loggedBy: v.optional(v.string()),
+  note: v.optional(v.string()),
+  archimedesRequestId: v.optional(v.string()),
+});
+
 const btcBuySourceValidator = v.union(
   v.literal("bitcoin-buys"),
   v.literal("mason-bitcoin-buys"),
@@ -3363,19 +3512,27 @@ const btcBuyInput = v.object({
 export const upsertBtcBuy = mutation({
   args: {
     buy: btcBuyInput,
+    linkedIncome: v.optional(linkedIncomeInput),
     sourceFile: v.optional(v.string()),
     baseUpdatedAtMs: v.optional(v.float64()),
     token: v.optional(v.string()),
   },
-  handler: async (ctx, { buy, sourceFile, baseUpdatedAtMs, token }) => {
+  handler: async (
+    ctx,
+    { buy, linkedIncome, sourceFile, baseUpdatedAtMs, token },
+  ) => {
     validateSyncToken(token);
     const file = sourceFile ?? "bitcoin-buys";
     const fileOwner = ownerForSourceFile(file, "btcBuys");
     const now = Date.now();
     const date = requireIsoDate(buy.date, "date", now, 30, rejectRowDate);
+    const resolvedOwner = resolveOwner(buy.owner, fileOwner);
+    const owner = linkedIncome
+      ? canonicalLedgerOwner(resolvedOwner)
+      : resolvedOwner;
     const row = {
       buyId: buy.id,
-      owner: resolveOwner(buy.owner, fileOwner),
+      owner,
       date,
       month: monthOf(date),
       source: buy.source,
@@ -3387,9 +3544,15 @@ export const upsertBtcBuy = mutation({
       costBasisStatus: optionalText(buy.costBasisStatus),
       loggedBy: optionalText(buy.loggedBy),
       archimedesRequestId: optionalText(buy.archimedesRequestId),
+      ...(linkedIncome === undefined
+        ? {}
+        : { linkedIncomeId: linkedIncome.id }),
       sourceFile: file,
       updatedAtMs: now,
     };
+    if (linkedIncome) {
+      await upsertLinkedIncomeRow(ctx, linkedIncomeRow(row, linkedIncome, now));
+    }
     const outcome = await upsertBtcBuyRow(
       ctx,
       row,
@@ -4281,6 +4444,14 @@ async function deleteBtcBuyCore(
     deviceFailure(
       "ENTITY_CONFLICT",
       "The bitcoin buy changed after it was read.",
+      "btcBuy",
+      buyId,
+    );
+  }
+  if (existing?.linkedIncomeId !== undefined) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "A linked income Bitcoin buy cannot be deleted until paired correction and deletion are implemented.",
       "btcBuy",
       buyId,
     );
@@ -5237,6 +5408,7 @@ export const upsertBtcBuyFromDevice = mutation({
     sourceFile: btcBuySourceValidator,
     baseUpdatedAtMs: v.optional(v.float64()),
     buy: btcBuyDeviceInput,
+    linkedIncome: v.optional(linkedIncomeInput),
   },
   returns: deviceUpsertResultValidator,
   handler: async (ctx, args) => {
@@ -5246,6 +5418,14 @@ export const upsertBtcBuyFromDevice = mutation({
       args.deviceToken,
       "bitcoin:write",
     );
+    if (args.linkedIncome) {
+      await authenticateDevice(
+        ctx,
+        args.deviceId,
+        args.deviceToken,
+        "transactions:write",
+      );
+    }
     requireDeviceRevision(args.baseUpdatedAtMs, false);
     requireDeviceIdentifier(args.buy.id, "buy.id");
     requireDeviceText(args.buy.source, "buy.source");
@@ -5260,6 +5440,27 @@ export const upsertBtcBuyFromDevice = mutation({
       args.buy.archimedesRequestId,
       "buy.archimedesRequestId",
     );
+    if (args.linkedIncome) {
+      requireDeviceIdentifier(args.linkedIncome.id, "linkedIncome.id");
+      requireDeviceText(args.linkedIncome.source, "linkedIncome.source");
+      requireDeviceOptionalText(args.linkedIncome.note, "linkedIncome.note");
+      requireDeviceOptionalText(
+        args.linkedIncome.loggedBy,
+        "linkedIncome.loggedBy",
+      );
+      requireDeviceOptionalText(
+        args.linkedIncome.archimedesRequestId,
+        "linkedIncome.archimedesRequestId",
+      );
+      if (args.linkedIncome.owner !== args.buy.owner) {
+        deviceFailure(
+          "OWNER_MISMATCH",
+          "Linked income owner must match the Bitcoin buy owner.",
+          "btcBuy",
+          args.buy.id,
+        );
+      }
+    }
     const ledgerOwner = canonicalLedgerOwner(args.owner);
     requireSourceOwner(args.sourceFile, "btcBuys", ledgerOwner);
     if (args.buy.owner !== args.owner) {
@@ -5278,25 +5479,35 @@ export const upsertBtcBuyFromDevice = mutation({
       30,
       rejectDeviceDate,
     );
+    const row = {
+      buyId: args.buy.id,
+      owner: ledgerOwner,
+      date,
+      month: monthOf(date),
+      source: args.buy.source,
+      sats: args.buy.sats,
+      priceUsdCents: args.buy.priceUsdCents,
+      usdCents: args.buy.usdCents,
+      note: optionalText(args.buy.note),
+      status: optionalText(args.buy.status),
+      costBasisStatus: optionalText(args.buy.costBasisStatus),
+      loggedBy: optionalText(args.buy.loggedBy),
+      archimedesRequestId: optionalText(args.buy.archimedesRequestId),
+      ...(args.linkedIncome === undefined
+        ? {}
+        : { linkedIncomeId: args.linkedIncome.id }),
+      sourceFile: args.sourceFile,
+      updatedAtMs: now,
+    };
+    if (args.linkedIncome) {
+      await upsertLinkedIncomeRow(
+        ctx,
+        linkedIncomeRow(row, args.linkedIncome, now),
+      );
+    }
     const outcome = await upsertBtcBuyRow(
       ctx,
-      {
-        buyId: args.buy.id,
-        owner: ledgerOwner,
-        date,
-        month: monthOf(date),
-        source: args.buy.source,
-        sats: args.buy.sats,
-        priceUsdCents: args.buy.priceUsdCents,
-        usdCents: args.buy.usdCents,
-        note: optionalText(args.buy.note),
-        status: optionalText(args.buy.status),
-        costBasisStatus: optionalText(args.buy.costBasisStatus),
-        loggedBy: optionalText(args.buy.loggedBy),
-        archimedesRequestId: optionalText(args.buy.archimedesRequestId),
-        sourceFile: args.sourceFile,
-        updatedAtMs: now,
-      },
+      row,
       { baseUpdatedAtMs: args.baseUpdatedAtMs },
     );
     await markDeviceSeen(ctx, device);
