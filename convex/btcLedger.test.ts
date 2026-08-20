@@ -258,6 +258,12 @@ describe("Bitcoin balance posting", () => {
         t.mutation(api.buy, { ...valid, linkedIncome }),
       ).rejects.toThrow(/same id, owner, and date|must equal|adult household/);
     }
+    await expect(
+      t.mutation(api.buy, {
+        ...valid,
+        sourceFile: "mason-bitcoin-buys",
+      }),
+    ).rejects.toThrow(/belongs to mason, not victor/);
     await t.run(async (ctx) => {
       await ctx.db.insert("income", {
         sourceKey: "id:income-buy-invalid",

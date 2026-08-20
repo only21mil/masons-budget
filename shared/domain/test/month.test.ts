@@ -17,6 +17,7 @@ import {
   type Budget,
   type BTCBillPay,
   type Transaction,
+  budgetBillPaysFor,
   budgetMonthsFor,
   budgetTransactionsFor,
   deriveBudgetSpend,
@@ -32,6 +33,7 @@ function billPay(
   category: string,
   amountUsd: string,
   budgetEffect: BTCBillPay["budgetEffect"],
+  owner: FamilyMember = "victor",
 ): BTCBillPay {
   return {
     id,
@@ -47,7 +49,7 @@ function billPay(
     note: null,
     feeUsd: 0n,
     reference: null,
-    owner: "victor",
+    owner,
   }
 }
 
@@ -272,6 +274,19 @@ test("one River bill-pay row contributes once only when budget_category is selec
   )
   assert.equal(result.categories.find((row) => row.name === "Utilities")!.spent, parseCents("75"))
   assert.equal(result.categories.find((row) => row.name === "Credit Card Payment")!.spent, 0n)
+  assert.equal(result.actual, parseCents("75"))
+})
+
+test("adult budget bill-pay scope excludes child rows", () => {
+  const rows = [
+    billPay("adult", "2026-07-15", "Utilities", "75", "budget_category"),
+    billPay("child", "2026-07-16", "Utilities", "500", "budget_category", "mason"),
+  ]
+  const result = deriveBudgetSpend(
+    budget("2026-07", [["Utilities", "200"]]),
+    [],
+    budgetBillPaysFor("rachel", rows),
+  )
   assert.equal(result.actual, parseCents("75"))
 })
 

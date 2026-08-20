@@ -14,7 +14,9 @@ This note fixes the wire values and write routes shared by the Android and Linux
 
 The four card sources store their wire value in `card` and omit `amountSats` and `bitcoinAccountKey`. Their existing category accounting remains unchanged.
 
-River Bitcoin Bill Pay stores its wire value in `platform` and debits the canonical River balance. A `btcBillPays` row carries `budgetEffect: "budget_category" | "credit_card_payment"`. New shared-contract writes must provide it. The two Convex mutations accept an omitted value from already-shipped clients and treat it as `credit_card_payment`; stored legacy rows use the same default. `budget_category` adds `amountUsdCents` to the selected category through the shared-domain budget calculation. `credit_card_payment` contributes zero and uses category `Credit Card Payment`. One action writes one `btcBillPays` row. It does not create a linked transaction row.
+River Bitcoin Bill Pay stores its wire value in `platform` and debits the canonical River balance. A `btcBillPays` row carries `budgetEffect: "budget_category" | "credit_card_payment"`. New shared-contract writes must provide it. The two Convex mutations accept an omitted value from already-shipped clients and treat it as `credit_card_payment`; stored legacy rows use the same default. `budget_category` adds `amountUsdCents` to the selected category through `deriveBudgetSpend`; callers first apply `budgetBillPaysFor` so a legacy child row cannot enter an adult budget. `credit_card_payment` contributes zero and uses category `Credit Card Payment`. One action writes one `btcBillPays` row. It does not create a linked transaction row.
+
+River bill pay, Lightning, and On-chain are adult-household Bitcoin flows. Rachel canonicalizes to the shared Victor ledger; Mason and Maddox cannot post against it.
 
 Lightning and On-chain store their wire value in `card`. They require a positive `amountSats` and the selected `bitcoinAccountKey`; the backend debits that account.
 

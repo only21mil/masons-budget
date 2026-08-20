@@ -3530,6 +3530,7 @@ export const upsertBtcBuy = mutation({
     const owner = linkedIncome
       ? canonicalLedgerOwner(resolvedOwner)
       : resolvedOwner;
+    if (linkedIncome) requireSourceOwner(file, "btcBuys", owner);
     const row = {
       buyId: buy.id,
       owner,

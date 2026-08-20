@@ -571,6 +571,16 @@ export function budgetTransactionsFor(
     : visibleTo(viewer, transactions)
 }
 
+/** Apply the same household-budget scope to Bitcoin bill pays. */
+export function budgetBillPaysFor(
+  viewer: FamilyMember,
+  billPays: readonly BTCBillPay[],
+): BTCBillPay[] {
+  return isAdult(viewer)
+    ? netWorthScopeFor(viewer, billPays)
+    : visibleTo(viewer, billPays)
+}
+
 /** Months that can contribute to a profile's budget, newest first. */
 export function budgetMonthsFor(
   viewer: FamilyMember,
@@ -650,9 +660,9 @@ export interface BudgetSpend {
 /**
  * Derive a month's spend for a budget.
  *
- * `transactions` and `billPays` should already be filtered to what the viewer
- * may see. This function does not apply visibility, deliberately, so the two
- * rules stay separate and testable.
+ * `transactions` and `billPays` must already have budget scope applied with
+ * `budgetTransactionsFor` and `budgetBillPaysFor`. This function does not
+ * apply visibility, deliberately, so the two rules stay separate and testable.
  */
 export function deriveBudgetSpend(
   budget: Budget,

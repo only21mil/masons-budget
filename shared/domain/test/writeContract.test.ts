@@ -238,6 +238,17 @@ test("payment-source builder rejects wrong routes and field combinations", () =>
   for (const candidate of rejected) {
     assert.throws(() => buildTransactionWriteRequest("victor", candidate), WriteContractError)
   }
+  assert.throws(
+    () => buildTransactionWriteRequest("mason", {
+      ...base,
+      owner: "mason",
+      sourceFile: "mason-transactions",
+      paymentSource: "lightning",
+      amountSats: 10n,
+      bitcoinAccountKey: "mason-stack",
+    }),
+    WriteContractError,
+  )
 })
 
 test("River bill-pay builder requires budgetEffect and canonicalizes excluded payments", () => {
@@ -268,8 +279,29 @@ test("River bill-pay builder requires budgetEffect and canonicalizes excluded pa
     budgetEffect: "credit_card_payment",
   })
   assert.equal(excluded.args.billPay.category, "Credit Card Payment")
+  const rachel = buildBtcBillPayWriteRequest("rachel", {
+    ...base,
+    owner: "rachel",
+    budgetEffect: "budget_category",
+  })
+  assert.equal(rachel.args.billPay.owner, "victor")
   assert.throws(
     () => buildBtcBillPayWriteRequest("victor", base),
+    WriteContractError,
+  )
+  assert.throws(
+    () => buildBtcBillPayWriteRequest("victor", {
+      ...base,
+      owner: "mason",
+      budgetEffect: "budget_category",
+    }),
+    WriteContractError,
+  )
+  assert.throws(
+    () => buildBtcBillPayWriteRequest("mason", {
+      ...base,
+      budgetEffect: "budget_category",
+    }),
     WriteContractError,
   )
 })

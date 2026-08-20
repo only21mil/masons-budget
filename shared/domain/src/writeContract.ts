@@ -11,7 +11,9 @@ import { encodeConvexInt64, type ConvexInt64WireValue } from "./convexInt64.ts"
 import {
   type FamilyMember,
   canSeeDataOwnedBy,
+  isAdult,
   isFamilyMember,
+  ledgerOwner,
   transactionsDataFileName,
 } from "./family.ts"
 import { isIsoDate } from "./todo.ts"
@@ -153,7 +155,7 @@ export interface BtcBillPayWriteRequest {
       readonly btcSpentSats: ConvexInt64WireValue
       readonly btcPriceCents: ConvexInt64WireValue
       readonly feeUsdCents: ConvexInt64WireValue
-      readonly owner: FamilyMember
+      readonly owner: "victor"
       readonly platform: "river_bitcoin_bill_pay"
       readonly note?: string
       readonly reference?: string
@@ -212,7 +214,6 @@ export function buildTransactionWriteRequest(
       `${actor} may not write data owned by ${owner}`,
     )
   }
-
   const sourceFile = requiredString(candidate.sourceFile, "sourceFile")
   const expectedSource = transactionsDataFileName(owner)
   if (sourceFile !== expectedSource) {
@@ -238,6 +239,7 @@ export function buildTransactionWriteRequest(
   const paymentFields = transactionPaymentFields(
     candidate,
     paymentSource,
+    owner,
     kind,
     category,
     amountSats,
@@ -271,21 +273,31 @@ export function buildBtcBillPayWriteRequest(
   actor: unknown,
   candidate: unknown,
 ): BtcBillPayWriteRequest {
-  if (!isFamilyMember(actor)) {
-    throw new WriteContractError("invalid-actor", "Write actor must be a known family member")
+  if (!isFamilyMember(actor) || !isAdult(actor)) {
+    throw new WriteContractError(
+      "write-not-authorized",
+      "River Bitcoin Bill Pay is available only to an adult household actor",
+    )
   }
   if (!isRecord(candidate)) {
     throw new WriteContractError("invalid-input", "Bitcoin bill-pay input must be an object")
   }
   const owner = candidate.owner
-  if (!isFamilyMember(owner)) {
-    throw new WriteContractError("invalid-owner", "Bitcoin bill-pay owner must be a known family member")
+  if (!isFamilyMember(owner) || !isAdult(owner)) {
+    throw new WriteContractError(
+      "invalid-owner",
+      "Bitcoin bill-pay owner must be an adult household member",
+    )
   }
   if (!canWriteDataOwnedBy(actor, owner)) {
     throw new WriteContractError(
       "write-not-authorized",
       `${actor} may not write data owned by ${owner}`,
     )
+  }
+  const canonicalOwner = ledgerOwner(owner)
+  if (canonicalOwner !== "victor") {
+    throw new WriteContractError("invalid-owner", "River bill pay requires the adult ledger")
   }
   if (candidate.sourceFile !== "bitcoin-bill-pays") {
     throw new WriteContractError(
@@ -343,7 +355,7 @@ export function buildBtcBillPayWriteRequest(
         btcSpentSats: encodeConvexInt64(btcSpentSats),
         btcPriceCents: encodeConvexInt64(btcPriceCents),
         feeUsdCents: encodeConvexInt64(feeUsdCents),
-        owner,
+        owner: canonicalOwner,
         platform: "river_bitcoin_bill_pay",
         ...optional("note"),
         ...optional("reference"),
@@ -371,6 +383,7 @@ function requirePaymentSource(value: unknown): PaymentSource {
 function transactionPaymentFields(
   candidate: Record<string, unknown>,
   paymentSource: PaymentSource | undefined,
+  owner: FamilyMember,
   kind: TransactionWriteKind,
   category: string,
   amountSats: bigint | undefined,
@@ -406,6 +419,12 @@ function transactionPaymentFields(
   }
 
   if (BITCOIN_SPEND_SOURCES.has(paymentSource)) {
+    if (!isAdult(owner)) {
+      throw new WriteContractError(
+        "write-not-authorized",
+        "Lightning and on-chain spends are available only to the adult household ledger",
+      )
+    }
     if (
       kind !== "spend" ||
       category === "Income" ||
