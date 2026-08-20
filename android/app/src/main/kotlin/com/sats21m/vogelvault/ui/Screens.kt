@@ -408,7 +408,6 @@ fun ScreenHost(
                 Destination.BTC_BUYS -> btcBuysScreen(state, displayUnit, btcBuysTitle)
                 Destination.BTC_BILL_PAYS -> btcBillPaysScreen(state, displayUnit, btcBillPaysTitle)
                 Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
-                Destination.RETIREMENT -> retirement(state, displayUnit)
                 Destination.EXPORT -> item { ExportScreen(state) }
                 // Rendered above, outside the shared ledger column.
                 Destination.TODAY -> Unit
@@ -475,7 +474,6 @@ private fun ScreenHeader(
         Destination.BTC_BUYS -> "Purchases visible to this profile"
         Destination.BTC_BILL_PAYS -> "Bitcoin spent on bills visible to this profile"
         Destination.NET_WORTH -> "Household for adults; self only for children"
-        Destination.RETIREMENT -> "A checkable long-range scenario"
         Destination.EXPORT -> "Owner-filtered files shared outside the app"
         Destination.TODAY -> "Due today or overdue"
         Destination.TASKS -> "Projects, areas and smart lists"
@@ -532,7 +530,6 @@ internal val Destination.supportsFinancialDisplayUnit: Boolean
             Destination.BTC_BUYS,
             Destination.BTC_BILL_PAYS,
             Destination.NET_WORTH,
-            Destination.RETIREMENT,
         )
 
 @Composable
@@ -1341,6 +1338,8 @@ private fun VaultLazyListScope.netWorth(
             quote = quote,
         )
     }
+    retirementHoldings(state, displayUnit)
+    item { RetirementScreen(state, displayUnit) }
 }
 
 private fun VaultLazyListScope.accountList(

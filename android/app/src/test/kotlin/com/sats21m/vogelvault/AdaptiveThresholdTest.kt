@@ -47,6 +47,11 @@ class AdaptiveThresholdTest {
 class DestinationVisibilityTest {
 
     @Test
+    fun `retirement is no longer a navigation destination`() {
+        assertTrue(Destination.entries.none { it.label == "Retirement" })
+    }
+
+    @Test
     fun `folded navigation partitions every destination into primary or More`() {
         val destinations = Destination.entries.toList()
         val primary = foldedPrimaryDestinations(destinations)
@@ -58,7 +63,6 @@ class DestinationVisibilityTest {
                 Destination.BTC_BUYS,
                 Destination.BTC_BILL_PAYS,
                 Destination.NET_WORTH,
-                Destination.RETIREMENT,
                 Destination.EXPORT,
                 Destination.TODAY,
                 Destination.TASKS,

@@ -157,7 +157,7 @@ class RetirementScreenTest {
         )
         return VaultUiState(
             activeProfile = FamilyMember.VICTOR,
-            destination = Destination.RETIREMENT,
+            destination = Destination.NET_WORTH,
             data = original.copy(
                 btcBalance = Slice(Freshness.LIVE, balance, 1L, "production-shaped test"),
                 // A newer execution price must remain irrelevant to retirement conversion.

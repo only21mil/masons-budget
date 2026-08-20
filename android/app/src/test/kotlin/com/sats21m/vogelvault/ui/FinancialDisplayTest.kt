@@ -152,7 +152,6 @@ class FinancialDisplayTest {
             Destination.BTC_BUYS,
             Destination.BTC_BILL_PAYS,
             Destination.NET_WORTH,
-            Destination.RETIREMENT,
         )
 
         Destination.entries.forEach { destination ->
