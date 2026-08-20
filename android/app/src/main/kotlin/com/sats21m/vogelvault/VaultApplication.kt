@@ -21,6 +21,8 @@ import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.cache.VaultDatabase
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.ui.ConvexTransactionActions
+import com.sats21m.vogelvault.ui.PaymentSourceStore
+import com.sats21m.vogelvault.ui.TransactionDeviceMutationGateway
 import com.sats21m.vogelvault.ui.TodoMutationGateway
 import com.sats21m.vogelvault.ui.VaultViewModel
 import java.io.IOException
@@ -95,6 +97,25 @@ open class VaultApplication : Application() {
         LazyThreadSafetyMode.SYNCHRONIZED,
     ) {
         CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    }
+
+    /** The selected payment-source wire survives Activity recreation. */
+    internal open val paymentSourceStore: PaymentSourceStore by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        PaymentSourceStore(this)
+    }
+
+    /** Capability-scoped transaction writes for the Android add surface. */
+    internal open val transactionDeviceMutationGateway: TransactionDeviceMutationGateway by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        TransactionDeviceMutationGateway(
+            ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(writeConvexConfig()),
+                credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
+            ),
+        )
     }
 
     /** Shared by every sheet instance until Convex confirms the pending row. */

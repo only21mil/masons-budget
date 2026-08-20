@@ -169,6 +169,7 @@ fun ScreenHost(
     onEnableRemoteRows: (String) -> Unit = {},
     onRemoteRowsConnected: () -> Unit = {},
     onWriteSucceeded: () -> Unit = {},
+    onStartRiverBillPay: (BillPayPrefill) -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -312,6 +313,7 @@ fun ScreenHost(
         AddTransactionSheet(
             state = state,
             onDismiss = { addingTransaction = false },
+            onStartRiverBillPay = onStartRiverBillPay,
         )
     }
 
