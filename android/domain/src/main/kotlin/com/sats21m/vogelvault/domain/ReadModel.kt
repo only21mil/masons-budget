@@ -217,16 +217,35 @@ data class IncomeEntry(
     override val owner: FamilyMember,
 ) : Owned
 
+/** How a Bitcoin bill pay participates in the monthly budget. */
+enum class BillPayBudgetEffect(val wireValue: String) {
+    BUDGET_CATEGORY("budget_category"),
+    CREDIT_CARD_PAYMENT("credit_card_payment"),
+    ;
+
+    companion object {
+        /** Old rows predate this field and were all budget-excluded payments. */
+        fun fromWireOrNull(value: String?): BillPayBudgetEffect? =
+            entries.firstOrNull { it.wireValue == value }
+
+        fun fromWireOrDefault(value: String?): BillPayBudgetEffect =
+            value?.let(::fromWireOrNull) ?: CREDIT_CARD_PAYMENT
+    }
+}
+
 data class BtcBillPay(
     val id: String,
     val date: String,
     val merchant: String,
     val category: String,
+    val budgetEffect: BillPayBudgetEffect = BillPayBudgetEffect.CREDIT_CARD_PAYMENT,
     val amountUsdCents: Long,
     val btcSpentSats: Long,
+    val btcPriceCents: Long = 0L,
     val feeUsdCents: Long,
     val platform: String?,
     val note: String?,
+    val reference: String? = null,
     override val owner: FamilyMember,
 ) : Owned
 
@@ -319,10 +338,23 @@ fun List<Transaction>.budgetTransactionsFor(viewer: FamilyMember): List<Transact
     if (viewer.isAdult) netWorthScopeFor(viewer) else visibleTo(viewer)
 
 /** Months that can contribute to [viewer]'s budget, newest first. */
-fun List<Transaction>.budgetMonthsFor(viewer: FamilyMember, budgetMonth: String?): List<String> {
+fun List<Transaction>.budgetMonthsFor(
+    viewer: FamilyMember,
+    budgetMonth: String?,
+    billPays: List<BtcBillPay> = emptyList(),
+): List<String> {
     val present = budgetTransactionsFor(viewer).monthsPresent()
-    return (listOfNotNull(budgetMonth) + present).distinct().sortedDescending()
+    val billPayMonths = billPays
+        .budgetBillPaysFor(viewer)
+        .asSequence()
+        .filter { it.budgetEffect == BillPayBudgetEffect.BUDGET_CATEGORY }
+        .map { monthOf(it.date) }
+    return (listOfNotNull(budgetMonth) + present + billPayMonths).distinct().sortedDescending()
 }
+
+/** Bill pays that count toward a viewer's budget, using the same adult/child scope as transactions. */
+fun List<BtcBillPay>.budgetBillPaysFor(viewer: FamilyMember): List<BtcBillPay> =
+    if (viewer.isAdult) netWorthScopeFor(viewer) else visibleTo(viewer)
 
 /** Resolve a persisted selection against the months still valid for this budget. */
 fun resolveBudgetMonth(selected: String?, months: List<String>, budgetMonth: String?): String? =
@@ -382,13 +414,28 @@ data class BudgetSpend(
  * Returns null when any category, aggregate, remaining, or uncategorised value
  * cannot be represented as exact signed 64-bit cents.
  */
-fun deriveBudgetSpend(budget: Budget, transactions: List<Transaction>): BudgetSpend? {
+fun deriveBudgetSpend(
+    budget: Budget,
+    transactions: List<Transaction>,
+    billPays: List<BtcBillPay> = emptyList(),
+): BudgetSpend? {
     val spentByCategory = mutableMapOf<String, Long>()
     for (transaction in transactions.inMonth(budget.month)) {
         val contribution = transaction.spendAmount
         if (contribution == 0L) continue
         spentByCategory[transaction.category] =
             addExactOrNull(spentByCategory[transaction.category] ?: 0L, contribution)
+                ?: return null
+    }
+    for (billPay in billPays) {
+        if (
+            billPay.budgetEffect != BillPayBudgetEffect.BUDGET_CATEGORY ||
+            monthOf(billPay.date) != budget.month
+        ) {
+            continue
+        }
+        spentByCategory[billPay.category] =
+            addExactOrNull(spentByCategory[billPay.category] ?: 0L, billPay.amountUsdCents)
                 ?: return null
     }
 

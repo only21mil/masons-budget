@@ -22,6 +22,7 @@ import com.sats21m.vogelvault.data.ReadBootstrapStatus
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.cache.VaultDatabase
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.ui.BtcBillPayMutationGateway
 import com.sats21m.vogelvault.ui.ConvexTransactionActions
 import com.sats21m.vogelvault.ui.TodoMutationGateway
 import com.sats21m.vogelvault.ui.VaultViewModel
@@ -147,6 +148,9 @@ open class VaultApplication : Application() {
         btcBuyDraftIds
     }
 
+    /** Stable retry ids for the one source-scoped Bitcoin bill-pay table. */
+    internal val btcBillPayDraftIds = TransactionDraftIdStore()
+
     /**
      * Process-owned acceptance signal for writes that may outlive the surface
      * that started them. `replay = 1` is the recreation guarantee: an Activity
@@ -257,6 +261,18 @@ open class VaultApplication : Application() {
     /** Capability-scoped todo writes, isolated from the legacy sync-token transport. */
     internal open val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         TodoMutationGateway(
+            ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(writeConvexConfig()),
+                credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
+            ),
+        )
+    }
+
+    /** Capability-scoped Bitcoin bill-pay writes use the paired-device credential. */
+    internal open val btcBillPayMutationGateway: BtcBillPayMutationGateway by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        BtcBillPayMutationGateway(
             ConvexDeviceMutationClient(
                 configSource = MutableConvexConfigSource(writeConvexConfig()),
                 credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
