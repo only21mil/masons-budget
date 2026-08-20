@@ -227,16 +227,8 @@ internal fun projectRetirement(
 private fun BigDecimal.toSats(): Long =
     setScale(0, RoundingMode.HALF_UP).longValueExact()
 
-internal fun VaultLazyListScope.retirement(
-    state: VaultUiState,
-    displayUnit: DisplayUnit,
-) {
-    retirementHoldings(state, displayUnit)
-    item { RetirementScreen(state, displayUnit) }
-}
-
 @Composable
-private fun RetirementScreen(
+internal fun RetirementScreen(
     state: VaultUiState,
     displayUnit: DisplayUnit,
 ) {
