@@ -46,9 +46,11 @@ import com.sats21m.vogelvault.data.TransactionKind
 import com.sats21m.vogelvault.data.TransactionWriteReceipt
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.IncomeEntry
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.ui.theme.VaultNegative
 import com.sats21m.vogelvault.ui.theme.VaultSpace
+import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
@@ -223,6 +225,44 @@ internal fun prepareTransaction(
     )
 }
 
+/**
+ * Converts the Budget income draft into the read-model shape consumed by the
+ * atomic BTC-buy editor. This is deliberately only a pure seed conversion: it
+ * does not call the legacy transaction mutation, so the eventual device write
+ * can create the income row and buy row at one server boundary.
+ */
+internal fun incomeEntryForBitcoinBuy(
+    draft: AddTransactionDraft,
+    btcPriceCents: Long,
+    id: String,
+): WriteDraftResult<IncomeEntry> {
+    if (!draft.owner.isAdult) {
+        return WriteDraftResult.Invalid(
+            "Only adult household profiles can add income as a Bitcoin buy.",
+        )
+    }
+    if (draft.type != AddTransactionType.INCOME) {
+        return WriteDraftResult.Invalid("Choose Income before adding it as a Bitcoin buy.")
+    }
+    if (id.isBlank()) {
+        return WriteDraftResult.Invalid("The Bitcoin-buy draft id is missing.")
+    }
+    val prepared = prepareTransaction(draft, btcPriceCents, id).getOrElse {
+        return WriteDraftResult.Invalid(it.message ?: "Income is invalid.")
+    }
+    return WriteDraftResult.Valid(
+        IncomeEntry(
+            id = id,
+            date = prepared.input.date,
+            month = prepared.input.date.substringBeforeLast('-'),
+            amountCents = prepared.input.amountCents,
+            sourceName = prepared.input.merchant,
+            note = prepared.input.note,
+            owner = draft.owner.ledgerOwner,
+        ),
+    )
+}
+
 internal fun conversionPreview(
     amount: String,
     inputUnit: DisplayUnit,
@@ -339,10 +379,13 @@ private fun satsToCentsExact(
 internal fun AddTransactionSheet(
     state: VaultUiState,
     onDismiss: () -> Unit,
+    allowIncomeBitcoinBuy: Boolean = false,
+    onOpenIncomeBitcoinBuy: (IncomeEntry) -> Unit = {},
 ) {
     val applicationContext = LocalContext.current.applicationContext
     val application = applicationContext as? VaultApplication
     val transactionDraftIds = application?.transactionDraftIds
+    val btcBuyDraftIds = application?.btcBuyDraftIds
     // WA1 owns encrypted sync-token storage and exposes one process-scoped
     // client. The sheet sees the transport, never the credential or its store.
     val mutationClient = remember(application) { application?.convexMutationClient }
@@ -362,6 +405,10 @@ internal fun AddTransactionSheet(
     val draftScope = state.activeProfile.ledgerOwner.transactionsDataFileName
     val draftTransactionId = remember(draftScope) {
         transactionDraftIds?.currentId(draftScope) ?: "android-${UUID.randomUUID()}"
+    }
+    val btcBuyDraftScope = state.activeProfile.ledgerOwner.btcBuysDataFileName
+    val atomicIncomeDraftId = remember(btcBuyDraftScope) {
+        btcBuyDraftIds?.currentId(btcBuyDraftScope) ?: "android-${UUID.randomUUID()}"
     }
     var typeName by rememberSaveable { mutableStateOf(AddTransactionType.SPEND.name) }
     var inputUnitName by rememberSaveable { mutableStateOf(DisplayUnit.USD.name) }
@@ -395,6 +442,17 @@ internal fun AddTransactionSheet(
         }
     }
     val selectedCategory = category.takeIf { it in categories } ?: categories.first()
+    fun currentDraft() = AddTransactionDraft(
+        type = type,
+        merchant = merchant,
+        category = selectedCategory,
+        amount = amount,
+        inputUnit = inputUnit,
+        card = card,
+        date = LocalDate.parse(dateIso),
+        note = note,
+        owner = state.activeProfile,
+    )
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -502,6 +560,34 @@ internal fun AddTransactionSheet(
                 Text(it, color = VaultNegative, style = MaterialTheme.typography.bodySmall)
             }
 
+            if (allowIncomeBitcoinBuy && state.activeProfile.isAdult) {
+                Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.xs)) {
+                    Text(
+                        stringResource(R.string.budget_income_add_as_bitcoin_buy_detail),
+                        color = VaultTextMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            val seed =
+                                incomeEntryForBitcoinBuy(
+                                    draft = currentDraft(),
+                                    btcPriceCents = operationalBtcPriceCents,
+                                    id = atomicIncomeDraftId,
+                                )
+                            when (seed) {
+                                is WriteDraftResult.Invalid -> errorMessage = seed.reason
+                                is WriteDraftResult.Valid -> onOpenIncomeBitcoinBuy(seed.request)
+                            }
+                        },
+                        enabled = !saving && type == AddTransactionType.INCOME,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.budget_income_add_as_bitcoin_buy))
+                    }
+                }
+            }
+
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm),
@@ -515,17 +601,7 @@ internal fun AddTransactionSheet(
                 }
                 Button(
                     onClick = {
-                        val draft = AddTransactionDraft(
-                            type = type,
-                            merchant = merchant,
-                            category = selectedCategory,
-                            amount = amount,
-                            inputUnit = inputUnit,
-                            card = card,
-                            date = LocalDate.parse(dateIso),
-                            note = note,
-                            owner = state.activeProfile,
-                        )
+                        val draft = currentDraft()
                         val prepared = prepareTransaction(
                             draft,
                             operationalBtcPriceCents,

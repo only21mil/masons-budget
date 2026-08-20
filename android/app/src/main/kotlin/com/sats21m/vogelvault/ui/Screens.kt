@@ -181,6 +181,7 @@ fun ScreenHost(
     },
 ) {
     var addingTransaction by rememberSaveable { mutableStateOf(false) }
+    var incomeBitcoinBuySeed by remember(state.activeProfile) { mutableStateOf<IncomeEntry?>(null) }
     var selectedTransactionKey by rememberSaveable(state.activeProfile) {
         mutableStateOf<String?>(null)
     }
@@ -312,6 +313,19 @@ fun ScreenHost(
         AddTransactionSheet(
             state = state,
             onDismiss = { addingTransaction = false },
+            allowIncomeBitcoinBuy = destination == Destination.BUDGET,
+            onOpenIncomeBitcoinBuy = { income ->
+                addingTransaction = false
+                incomeBitcoinBuySeed = income
+            },
+        )
+    }
+    incomeBitcoinBuySeed?.let { income ->
+        BtcBuyFromIncomeEntrySheet(
+            viewer = state.activeProfile,
+            income = income,
+            onDismiss = { incomeBitcoinBuySeed = null },
+            onWriteSucceeded = onWriteSucceeded,
         )
     }
 

@@ -20,6 +20,7 @@ import com.sats21m.vogelvault.data.ReadBootstrapStatus
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.cache.VaultDatabase
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.ui.BtcBuyIncomeMutationGateway
 import com.sats21m.vogelvault.ui.ConvexTransactionActions
 import com.sats21m.vogelvault.ui.TodoMutationGateway
 import com.sats21m.vogelvault.ui.VaultViewModel
@@ -212,6 +213,18 @@ open class VaultApplication : Application() {
     /** Capability-scoped todo writes, isolated from the legacy sync-token transport. */
     internal open val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         TodoMutationGateway(
+            ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(writeConvexConfig()),
+                credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
+            ),
+        )
+    }
+
+    /** Atomic adult-household Bitcoin-buy plus linked-income writes. */
+    internal open val btcBuyIncomeMutationGateway: BtcBuyIncomeMutationGateway by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        BtcBuyIncomeMutationGateway(
             ConvexDeviceMutationClient(
                 configSource = MutableConvexConfigSource(writeConvexConfig()),
                 credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
