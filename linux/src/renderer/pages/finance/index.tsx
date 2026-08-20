@@ -91,10 +91,10 @@ import {
   StatusBanner,
   TransactionFormDialog,
 } from "../../components/index.ts"
-import { mutationOwner, stableId } from "../../data/mutations.ts"
+import { linkedBitcoinBuyFor, mutationOwner, stableId } from "../../data/mutations.ts"
 import { paymentSourceDisplay } from "../../data/paymentSource.ts"
 import type { MutationGate } from "../../data/mutations.ts"
-import type { BtcTransferRecord } from "../../data/fixtures.ts"
+import type { BtcTransferRecord, IncomeRecord } from "../../data/fixtures.ts"
 import type { PageManifest } from "../types.ts"
 
 // ── shared helpers ──────────────────────────────────────────────────────────
@@ -372,6 +372,23 @@ export function dashboardIncomeMtd(
     if (total < INT64_MIN || total > INT64_MAX) return null
   }
   return total
+}
+
+/**
+ * Income rows the Budget tab reports for one month, newest first.
+ *
+ * Net-worth scope, not visibility: an adult can see a child's income but it
+ * never belongs in the household budget's income. Same scope and month
+ * predicate as the Dashboard KPI, so the two cannot disagree.
+ */
+export function budgetIncomeRows(
+  viewer: FamilyMember,
+  month: string,
+  rows: readonly IncomeRecord[],
+): readonly IncomeRecord[] {
+  return netWorthScopeFor(viewer, rows)
+    .filter((row) => row.month === month)
+    .toSorted((left, right) => right.date.localeCompare(left.date))
 }
 
 /**
@@ -1008,6 +1025,7 @@ function BudgetPage() {
     selectedMonth,
   } = useAppState()
   const [adding, setAdding] = useState(false)
+  const [addingIncome, setAddingIncome] = useState(false)
   const [drilldownCategory, setDrilldownCategory] = useState<string | null>(null)
   const budget = data.budget.value
 
@@ -1044,6 +1062,34 @@ function BudgetPage() {
     scope.month,
     budget.month,
   )
+  const incomeGate = mutationGate(
+    "transaction.upsert",
+    data.income.status,
+    mutationOwner("transaction.upsert", activeProfile),
+  )
+  const incomeRows = budgetIncomeRows(activeProfile, scope.month, data.income.value)
+  const incomeColumns: ReadonlyArray<Column<IncomeRecord>> = [
+    { key: "date", header: "Date", render: (row) => row.date, width: "104px" },
+    { key: "source", header: "Source", render: (row) => row.source },
+    {
+      key: "amount",
+      header: "Amount",
+      numeric: true,
+      render: (row) => <span className="vv-positive">{formatUsd(row.amount)}</span>,
+    },
+    {
+      key: "bitcoin",
+      header: "Bitcoin",
+      render: (row) => {
+        // The pair shares one id, so a matching buy IS the linkage.
+        const buy = linkedBitcoinBuyFor(row.id, data.btcBuys.value)
+        return buy
+          ? <Badge tone="accent">{`Bitcoin buy · ${formatBitcoin(buy.sats, "sats")}`}</Badge>
+          : "—"
+      },
+      secondary: true,
+    },
+  ]
   const interactiveBudgetColumns: ReadonlyArray<Column<CategorySpend>> = [
     {
       key: "name",
@@ -1091,6 +1137,13 @@ function BudgetPage() {
               title={addGate.reason ?? undefined}
             >
               Add category
+            </Button>
+            <Button
+              onClick={() => setAddingIncome(true)}
+              disabled={!incomeGate.allowed}
+              title={incomeGate.reason ?? undefined}
+            >
+              Add income
             </Button>
             {actualsUnavailable ? null : <MonthPicker scope={scope} label="Budget month" />}
             <FreshnessTag status={data.budget.status} updatedAt={data.budget.updatedAt} />
@@ -1149,11 +1202,32 @@ function BudgetPage() {
           }
         />
       </Panel>
+      <Panel
+        title="Income"
+        source={`${data.income.source} · net-worth scope, ${scope.month}`}
+        flush
+      >
+        <DataTable
+          columns={incomeColumns}
+          rows={incomeRows}
+          rowKey={(row) => row.id}
+          state={tableState(data.income.status)}
+          emptyTitle="No income this month"
+          emptyDetail="Income recorded for this month appears here, with its Bitcoin purchase when it funded one."
+        />
+      </Panel>
       <BudgetCategoryFormDialog
         open={adding}
         category={null}
         month={budget.month}
         onClose={() => setAdding(false)}
+      />
+      <TransactionFormDialog
+        open={addingIncome}
+        transaction={null}
+        defaultCategory="Income"
+        submissionGate={incomeGate}
+        onClose={() => setAddingIncome(false)}
       />
       {drilldownCategory ? (
         <BudgetCategoryTransactionsDialog

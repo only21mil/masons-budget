@@ -11,6 +11,7 @@ import type {
 
 import { useAppState } from "../app/AppState.tsx"
 import {
+  bitcoinBuyLinkFor,
   formatCentsInput,
   mutationOwner,
   parseExactCents,
@@ -92,14 +93,37 @@ function ErrorSummary({ error }: { error: string | null }) {
   return error ? <p className="vv-form-error" role="alert">{error}</p> : null
 }
 
+/**
+ * The canonical River account, or null when it is missing or ambiguous.
+ *
+ * A Bitcoin buy posts to River and nowhere else, so this names the account the
+ * purchase will credit rather than offering a choice the write cannot honour.
+ * Matching key or label mirrors the server's own resolution, and more than one
+ * match is refused for the same reason it is refused there: the credit would be
+ * going somewhere nobody chose.
+ */
+export function canonicalRiverAccount(
+  accounts: readonly BTCAccount[],
+): BTCAccount | null {
+  const matches = accounts.filter(
+    (account) =>
+      account.key.trim().toLocaleLowerCase("en-US") === "river" ||
+      account.label.trim().toLocaleLowerCase("en-US") === "river",
+  )
+  return matches.length === 1 ? matches[0]! : null
+}
+
 export function TransactionFormDialog({
   open,
   transaction,
+  defaultCategory,
   submissionGate,
   onClose,
 }: {
   open: boolean
   transaction: Transaction | null
+  /** Opens the dialog on a category, so the Budget tab can add income directly. */
+  defaultCategory?: string
   submissionGate?: MutationGate
   onClose: () => void
 }) {
@@ -115,15 +139,32 @@ export function TransactionFormDialog({
   const [transactionKind, setTransactionKind] = useState<"spend" | "credit">(
     transaction && transaction.amount < 0n ? "credit" : "spend",
   )
-  const [category, setCategory] = useState(transaction?.category ?? "Other")
+  const [category, setCategory] = useState(
+    transaction?.category ?? defaultCategory ?? "Other",
+  )
   const [sourceChoice, setSourceChoice] = useState(() => initialSourceChoice(transaction))
   const [bitcoinAccountKey, setBitcoinAccountKey] = useState(
     transaction?.bitcoinAccountKey ?? "",
   )
   const [note, setNote] = useState(transaction?.note ?? "")
   const [sats, setSats] = useState(transaction?.amountSats?.toString() ?? "")
+  const [asBitcoinBuy, setAsBitcoinBuy] = useState(false)
+  const [buySats, setBuySats] = useState("")
+  const [buyPrice, setBuyPrice] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const riverAccount = canonicalRiverAccount(
+    data.btcBalanceDocument.value?.accounts ?? [],
+  )
+
+  const isIncome = category.trim() === "Income"
+  // Editing an existing row cannot switch it onto the paired write: the pair is
+  // keyed by one shared id, and an already-stored transaction id is not it.
+  const buyAvailable = isIncome && transaction === null
+  // A linked income has no payment source: the write is btcBuy.upsert, not
+  // transaction.upsert. So the whole source machinery stands down here, and a
+  // selection left over from before the box was ticked neither shows nor blocks.
+  const recordingBitcoinBuy = buyAvailable && asBitcoinBuy
 
   // Preserved verbatim so editing an unrelated field never rewrites a card
   // string this build does not recognise.
@@ -132,7 +173,8 @@ export function TransactionFormDialog({
     () => visibleTo(activeProfile, data.btcAccounts.value),
     [activeProfile, data.btcAccounts.value],
   )
-  const selectedSource: PaymentSource | null = isPaymentSource(sourceChoice) ? sourceChoice : null
+  const selectedSource: PaymentSource | null =
+    !recordingBitcoinBuy && isPaymentSource(sourceChoice) ? sourceChoice : null
   // River spends Bitcoin too, but it writes a bill pay rather than a row here.
   const bitcoinSpendRow = selectedSource !== null &&
     isBitcoinDenominatedSource(selectedSource) &&
@@ -160,13 +202,16 @@ export function TransactionFormDialog({
         : "",
     )
     setTransactionKind(transaction && transaction.amount < 0n ? "credit" : "spend")
-    setCategory(transaction?.category ?? "Other")
+    setCategory(transaction?.category ?? defaultCategory ?? "Other")
     setSourceChoice(initialSourceChoice(transaction))
     setBitcoinAccountKey(transaction?.bitcoinAccountKey ?? "")
     setNote(transaction?.note ?? "")
     setSats(transaction?.amountSats?.toString() ?? "")
+    setAsBitcoinBuy(false)
+    setBuySats("")
+    setBuyPrice("")
     setError(null)
-  }, [open, transaction])
+  }, [defaultCategory, open, transaction])
 
   async function submit() {
     if (submissionGate && !submissionGate.allowed) {
@@ -178,6 +223,45 @@ export function TransactionFormDialog({
       setError("Enter a date, merchant, category, and a positive amount with at most two decimals.")
       return
     }
+    // Ahead of the payment-source and sat-Income checks, which belong to the
+    // transaction row this path never writes.
+    if (recordingBitcoinBuy) {
+      if (!riverAccount) {
+        setError("The canonical River account is unavailable, so the purchase has nowhere to land.")
+        return
+      }
+      // One write. The buy carries the income beside it and is the only balance
+      // posting, so no separate sat-denominated Income row is sent.
+      const linked = bitcoinBuyLinkFor({
+        recordAsBitcoinBuy: true,
+        requestId: stableId("request"),
+        id,
+        actor: activeProfile,
+        // Always a create, so there is no stored owner to preserve.
+        owner: activeProfile,
+        date,
+        category: category.trim(),
+        amountCents: cents,
+        // The buy names the account it credits; the income names who paid.
+        buySource: riverAccount.label,
+        incomeSource: merchant.trim(),
+        sats: parseExactSats(buySats),
+        priceUsdCents: parseExactCents(buyPrice),
+        note: optional(note),
+      })
+      if (!linked) {
+        setError("Enter positive whole sats and a positive price per BTC for the purchase.")
+        return
+      }
+      setBusy(true)
+      const linkedResult = await submitMutation(linked)
+      setBusy(false)
+      const linkedMessage = localMutationError(linkedResult)
+      setError(linkedMessage)
+      if (!linkedMessage) onClose()
+      return
+    }
+
     if (sourceBlockReason) {
       setError(sourceBlockReason)
       return
@@ -264,15 +348,49 @@ export function TransactionFormDialog({
           </Select>
         </Field>
         <Field label="Category"><TextInput value={category} onChange={(e) => setCategory(e.target.value)} /></Field>
-        <Field label="Payment source" hint="Where the money leaves from. Stored with the transaction.">
-          <Select value={sourceChoice} onChange={(e) => setSourceChoice(e.target.value)}>
-            <option value="">No source</option>
-            {legacyCard ? <option value={LEGACY_SOURCE_CHOICE}>{legacyCard}</option> : null}
-            {PAYMENT_SOURCES.map((source) => (
-              <option key={source} value={source}>{paymentSourceLabel(source)}</option>
-            ))}
-          </Select>
-        </Field>
+        {buyAvailable ? (
+          <Field
+            label="Bitcoin"
+            hint="One save records the income and the purchase together."
+          >
+            <label>
+              <input
+                type="checkbox"
+                checked={asBitcoinBuy}
+                onChange={(e) => setAsBitcoinBuy(e.target.checked)}
+              /> Record as Bitcoin buy
+            </label>
+          </Field>
+        ) : null}
+        {recordingBitcoinBuy ? (
+          <>
+            <Field
+              label="Bitcoin account"
+              hint="A purchase credits the canonical River account and no other."
+            >
+              <TextInput
+                value={riverAccount?.label ?? "Unavailable"}
+                readOnly
+              />
+            </Field>
+            <Field label="Sats purchased">
+              <TextInput inputMode="numeric" value={buySats} onChange={(e) => setBuySats(e.target.value)} />
+            </Field>
+            <Field label="Price per BTC (USD)">
+              <TextInput inputMode="decimal" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} />
+            </Field>
+          </>
+        ) : (
+          <Field label="Payment source" hint="Where the money leaves from. Stored with the transaction.">
+            <Select value={sourceChoice} onChange={(e) => setSourceChoice(e.target.value)}>
+              <option value="">No source</option>
+              {legacyCard ? <option value={LEGACY_SOURCE_CHOICE}>{legacyCard}</option> : null}
+              {PAYMENT_SOURCES.map((source) => (
+                <option key={source} value={source}>{paymentSourceLabel(source)}</option>
+              ))}
+            </Select>
+          </Field>
+        )}
         {bitcoinSpendRow ? (
           <>
             <Field
@@ -299,7 +417,7 @@ export function TransactionFormDialog({
               </Select>
             </Field>
           </>
-        ) : category.trim() === "Income" ? (
+        ) : isIncome && !recordingBitcoinBuy ? (
           <Field
             label="Bitcoin received (sats)"
             hint="Optional. When present, these exact sats are added to River. USD-only income does not invent Bitcoin."

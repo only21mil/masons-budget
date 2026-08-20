@@ -14,6 +14,7 @@ import {
 
 import type {
   VogelVaultFiatValuation,
+  VogelVaultLinkedIncome,
   VogelVaultMember,
   VogelVaultMutationKind,
   VogelVaultMutationRequest,
@@ -300,6 +301,40 @@ function withCommon(
   return record
 }
 
+/**
+ * Re-check the paired income block in main, not only in the renderer.
+ *
+ * The server rejects a mismatch too, but a request that cannot possibly be
+ * accepted should never reach the network: `id`, `owner` and `date` must equal
+ * the enclosing buy's and `amountCents` must equal its `usdCents`.
+ */
+function validateLinkedIncome(
+  value: unknown,
+  buy: { id: string; owner: VogelVaultMember; date: string; usdCents: bigint },
+): VogelVaultLinkedIncome {
+  const record = exactObject(
+    value,
+    ["id", "owner", "date", "amountCents", "source"],
+    ["note", "loggedBy"],
+  )
+  const id = boundedText(record["id"], PAIRED_DEVICE_LIMITS.maxIdentifier)
+  const owner = canonicalFinancialOwner(member(record["owner"]))
+  const date = exactDate(record["date"])
+  const amountCents = positiveInt64(record["amountCents"])
+  if (id !== buy.id || owner !== buy.owner || date !== buy.date || amountCents !== buy.usdCents) {
+    throw new InvalidRequest()
+  }
+  return {
+    id,
+    owner,
+    date,
+    amountCents,
+    source: boundedText(record["source"]),
+    ...optionalField("note", optionalText(record, "note")),
+    ...optionalField("loggedBy", optionalText(record, "loggedBy")),
+  }
+}
+
 function validateFiatValuation(value: unknown): VogelVaultFiatValuation {
   const record = exactObject(value, ["cents"], [
     "priceCents",
@@ -515,28 +550,37 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           ["id", "owner", "date", "source", "sats", "priceUsdCents", "usdCents"],
           [
             "note", "buyStatus", "costBasisStatus", "loggedBy", "archimedesRequestId",
-            "baseUpdatedAtMs",
+            "linkedIncome", "baseUpdatedAtMs",
           ],
         )
         const { requestId, actor } = common(record)
         const owner = canonicalFinancialOwner(member(record["owner"]))
         btcBuySource(owner)
+        const id = boundedText(record["id"], PAIRED_DEVICE_LIMITS.maxIdentifier)
+        const date = exactDate(record["date"])
+        const usdCents = positiveInt64(record["usdCents"])
         return {
           kind,
           requestId,
           actor,
-          id: boundedText(record["id"], PAIRED_DEVICE_LIMITS.maxIdentifier),
+          id,
           owner,
-          date: exactDate(record["date"]),
+          date,
           source: boundedText(record["source"]),
           sats: positiveInt64(record["sats"]),
           priceUsdCents: positiveInt64(record["priceUsdCents"]),
-          usdCents: positiveInt64(record["usdCents"]),
+          usdCents,
           ...optionalField("note", optionalText(record, "note")),
           ...optionalField("buyStatus", optionalText(record, "buyStatus")),
           ...optionalField("costBasisStatus", optionalText(record, "costBasisStatus")),
           ...optionalField("loggedBy", optionalText(record, "loggedBy")),
           ...optionalField("archimedesRequestId", optionalText(record, "archimedesRequestId")),
+          ...optionalField(
+            "linkedIncome",
+            Object.hasOwn(record, "linkedIncome")
+              ? validateLinkedIncome(record["linkedIncome"], { id, owner, date, usdCents })
+              : undefined,
+          ),
           ...optionalField("baseUpdatedAtMs", optionalRevision(record)),
         }
       }
@@ -840,6 +884,20 @@ function mutationArgs(
           ...optionalField("archimedesRequestId", request.archimedesRequestId),
         },
         sourceFile: btcBuySource(request.owner),
+        ...optionalField(
+          "linkedIncome",
+          request.linkedIncome === undefined
+            ? undefined
+            : {
+                id: request.linkedIncome.id,
+                owner: request.linkedIncome.owner,
+                date: request.linkedIncome.date,
+                amountCents: encoded(request.linkedIncome.amountCents),
+                source: request.linkedIncome.source,
+                ...optionalField("note", request.linkedIncome.note),
+                ...optionalField("loggedBy", request.linkedIncome.loggedBy),
+              },
+        ),
         ...optionalField("baseUpdatedAtMs", request.baseUpdatedAtMs),
       }
     case "btcBuy.delete":
@@ -1457,6 +1515,15 @@ export function createPairedDeviceController(
             request.kind === "transaction.upsert" &&
             request.amountSats !== undefined &&
             !capabilities.includes("btcTransfer.upsert")
+          ) {
+            return { ...identity, status: "unauthorized" }
+          }
+          // A linked buy writes an income row as well as the purchase, so it
+          // needs the income grant on top of the Bitcoin one.
+          if (
+            request.kind === "btcBuy.upsert" &&
+            request.linkedIncome !== undefined &&
+            !capabilities.includes("transaction.upsert")
           ) {
             return { ...identity, status: "unauthorized" }
           }

@@ -1023,6 +1023,103 @@ describe("paired-device main controller", () => {
     expect(localStore.current).toBeNull()
   })
 
+  it("carries a linked income row on the single buy write and refuses a mismatched pair", async () => {
+    const linked = {
+      kind: "btcBuy.upsert" as const,
+      requestId: "request_linked_income",
+      actor: "victor" as const,
+      id: "income-buy-01",
+      owner: "victor" as const,
+      date: "2026-08-03",
+      source: "Employer",
+      sats: 270_000n,
+      priceUsdCents: 9_259_259_00n,
+      usdCents: 250_000n,
+      linkedIncome: {
+        id: "income-buy-01",
+        owner: "victor" as const,
+        date: "2026-08-03",
+        amountCents: 250_000n,
+        source: "Employer",
+      },
+    }
+    expect(validateMutationRequest(linked)).toMatchObject({
+      linkedIncome: { id: "income-buy-01", amountCents: 250_000n },
+    })
+
+    // Every field the server requires to agree is re-checked here, so a request
+    // that cannot be accepted never reaches the network.
+    for (const broken of [
+      { ...linked.linkedIncome, id: "some-other-id" },
+      { ...linked.linkedIncome, date: "2026-08-04" },
+      { ...linked.linkedIncome, amountCents: 250_001n },
+      { ...linked.linkedIncome, owner: "mason" as const },
+    ]) {
+      expect(validateMutationRequest({ ...linked, linkedIncome: broken })).toBeNull()
+    }
+
+    let body: Record<string, unknown> | null = null
+    const controller = createPairedDeviceController({
+      store: store({
+        ...snapshot,
+        capabilities: ["btcBuy.upsert", "transaction.upsert"],
+      }),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: async (_endpoint, raw) => {
+        body = JSON.parse(raw) as Record<string, unknown>
+        return success({ ok: true, entityId: "income-buy-01", outcome: "inserted" })
+      },
+    })
+    await controller.mutate(linked, "victor")
+
+    expect(body).toMatchObject({
+      path: PAIRED_DEVICE_PATHS["btcBuy.upsert"],
+      args: {
+        sourceFile: "bitcoin-buys",
+        buy: { id: "income-buy-01", usdCents: encodeConvexInt64(250_000n) },
+        linkedIncome: {
+          id: "income-buy-01",
+          owner: "victor",
+          date: "2026-08-03",
+          amountCents: encodeConvexInt64(250_000n),
+          source: "Employer",
+        },
+      },
+    })
+  })
+
+  it("refuses a linked income row without the income grant", async () => {
+    const post = vi.fn()
+    const controller = createPairedDeviceController({
+      store: store({ ...snapshot, capabilities: ["btcBuy.upsert"] }),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post,
+    })
+
+    await expect(controller.mutate({
+      kind: "btcBuy.upsert",
+      requestId: "request_linked_ungranted",
+      actor: "victor",
+      id: "income-buy-02",
+      owner: "victor",
+      date: "2026-08-03",
+      source: "Employer",
+      sats: 270_000n,
+      priceUsdCents: 9_259_259_00n,
+      usdCents: 250_000n,
+      linkedIncome: {
+        id: "income-buy-02",
+        owner: "victor",
+        date: "2026-08-03",
+        amountCents: 250_000n,
+        source: "Employer",
+      },
+    }, "victor")).resolves.toMatchObject({ status: "unauthorized" })
+    expect(post).not.toHaveBeenCalled()
+  })
+
   it("keeps the credential when remote-first unpair cannot reach the server", async () => {
     const localStore = store()
     const controller = createPairedDeviceController({
