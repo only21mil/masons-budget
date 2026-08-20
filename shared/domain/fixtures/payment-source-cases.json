@@ -1,5 +1,5 @@
 {
-  "$comment": "Closed payment-source wire contract. River routes to btcBillPays. Card sources persist in transaction.card without Bitcoin posting fields. Lightning and on_chain persist in card and require exact positive sats plus a Bitcoin account key.",
+  "$comment": "Closed payment-source wire contract. Transaction builders derive a known source from card; paymentSource is an optional typed alias. River routes to btcBillPays. Card sources persist in transaction.card without Bitcoin posting fields. Lightning and on_chain persist in card and require exact positive sats plus a Bitcoin account key.",
   "contractVersion": 1,
   "sources": [
     { "wire": "river_bitcoin_bill_pay", "route": "btc_bill_pay" },

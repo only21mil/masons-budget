@@ -231,7 +231,9 @@ export function buildTransactionWriteRequest(
     ? undefined
     : parseWriteInt64(candidate.amountSats)
   const paymentSource = candidate.paymentSource === undefined
-    ? undefined
+    ? isPaymentSource(candidate.card)
+      ? candidate.card
+      : undefined
     : requirePaymentSource(candidate.paymentSource)
   const bitcoinAccountKey = candidate.bitcoinAccountKey === undefined
     ? undefined

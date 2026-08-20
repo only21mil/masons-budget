@@ -195,7 +195,7 @@ test("payment-source transaction mapping persists cards and Bitcoin spend intent
   }
   const card = buildTransactionWriteRequest("victor", {
     ...base,
-    paymentSource: paymentSourceFixtures.cardSpend.paymentSource,
+    card: paymentSourceFixtures.cardSpend.card,
   }).args.transaction
   assert.equal(card.card, paymentSourceFixtures.cardSpend.card)
   assert.equal(card.amountSats, undefined)
@@ -203,13 +203,21 @@ test("payment-source transaction mapping persists cards and Bitcoin spend intent
 
   const bitcoin = buildTransactionWriteRequest("victor", {
     ...base,
-    paymentSource: paymentSourceFixtures.bitcoinSpend.paymentSource,
+    card: paymentSourceFixtures.bitcoinSpend.card,
     amountSats: paymentSourceFixtures.bitcoinSpend.amountSats,
     bitcoinAccountKey: paymentSourceFixtures.bitcoinSpend.bitcoinAccountKey,
   }).args.transaction
   assert.equal(bitcoin.card, paymentSourceFixtures.bitcoinSpend.card)
   assert.deepEqual(bitcoin.amountSats, { $integer: "qGEAAAAAAAA=" })
   assert.equal(bitcoin.bitcoinAccountKey, "river")
+
+  const typedAlias = buildTransactionWriteRequest("victor", {
+    ...base,
+    paymentSource: paymentSourceFixtures.bitcoinSpend.paymentSource,
+    amountSats: paymentSourceFixtures.bitcoinSpend.amountSats,
+    bitcoinAccountKey: paymentSourceFixtures.bitcoinSpend.bitcoinAccountKey,
+  }).args.transaction
+  assert.deepEqual(typedAlias, bitcoin)
 })
 
 test("payment-source builder rejects wrong routes and field combinations", () => {

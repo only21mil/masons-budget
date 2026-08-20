@@ -1978,11 +1978,66 @@ function sameTransaction(
 }
 
 const BITCOIN_SPEND_PAYMENT_SOURCES = new Set(["lightning", "on_chain"]);
+const FIAT_PAYMENT_SOURCES = new Set([
+  "coinbase_card",
+  "aven",
+  "sofi_card",
+  "capital_one_vx",
+]);
 
 function isBitcoinSpendTransaction(row: {
   card?: string;
 }): boolean {
   return row.card !== undefined && BITCOIN_SPEND_PAYMENT_SOURCES.has(row.card);
+}
+
+function validateDeviceTransactionPaymentSource(
+  row: {
+    id: string;
+    card?: string;
+    amountSats?: bigint;
+    bitcoinAccountKey?: string;
+  },
+  existing: Doc<"transactions"> | null,
+) {
+  const source = optionalText(row.card);
+  if (source === undefined) return;
+  if (source === "river_bitcoin_bill_pay") {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "river_bitcoin_bill_pay must use upsertBtcBillPayFromDevice.",
+      "transaction",
+      row.id,
+    );
+  }
+  if (FIAT_PAYMENT_SOURCES.has(source)) {
+    if (row.amountSats !== undefined || row.bitcoinAccountKey !== undefined) {
+      deviceFailure(
+        "VALIDATION_FAILED",
+        "Card payment sources must not carry Bitcoin posting fields.",
+        "transaction",
+        row.id,
+      );
+    }
+    return;
+  }
+  if (BITCOIN_SPEND_PAYMENT_SOURCES.has(source)) return;
+
+  const requestedAccountKey = optionalText(row.bitcoinAccountKey);
+  if (
+    existing === null ||
+    source !== existing.card ||
+    row.amountSats !== existing.amountSats ||
+    (requestedAccountKey !== undefined &&
+      requestedAccountKey !== existing.bitcoinAccountKey)
+  ) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Unknown legacy transaction payment sources may only round-trip unchanged.",
+      "transaction",
+      row.id,
+    );
+  }
 }
 
 function validateTransactionBitcoinFields(
@@ -5113,6 +5168,7 @@ export const upsertTransactionFromDevice = mutation({
       args.transaction.bitcoinAccountKey,
       "transaction.bitcoinAccountKey",
     );
+    validateDeviceTransactionPaymentSource(args.transaction, existing);
     const ledgerOwner = canonicalLedgerOwner(args.owner);
     requireSourceOwner(args.sourceFile, "transactions", ledgerOwner);
     if (args.transaction.owner !== args.owner) {
@@ -5569,6 +5625,14 @@ export const upsertBtcBillPayFromDevice = mutation({
     requireDeviceText(args.billPay.merchant, "billPay.merchant");
     requireDeviceText(args.billPay.category, "billPay.category");
     requireDeviceOptionalText(args.billPay.platform, "billPay.platform");
+    if (args.billPay.platform !== "river_bitcoin_bill_pay") {
+      deviceFailure(
+        "VALIDATION_FAILED",
+        "Bitcoin bill pay platform must be river_bitcoin_bill_pay.",
+        "btcBillPay",
+        args.billPay.id,
+      );
+    }
     requireDeviceOptionalText(args.billPay.note, "billPay.note");
     requireDeviceOptionalText(args.billPay.reference, "billPay.reference");
     if (args.billPay.owner !== args.owner) {
