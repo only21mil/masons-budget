@@ -197,11 +197,14 @@ private fun BtcBillPayRow.toDomain(): BtcBillPay = BtcBillPay(
     date = date,
     merchant = merchant,
     category = category,
+    budgetEffect = budgetEffect,
     amountUsdCents = amountUsdCents,
     btcSpentSats = btcSpentSats,
+    btcPriceCents = btcPriceCents,
     feeUsdCents = feeUsdCents,
     platform = platform,
     note = note,
+    reference = reference,
     owner = owner,
 )
 

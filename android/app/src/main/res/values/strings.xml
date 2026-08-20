@@ -292,4 +292,19 @@
     <string name="budget_notifications_enabled">Enabled for this household or profile</string>
     <string name="budget_notifications_disabled">Off — notification permission is requested only when enabled</string>
     <string name="budget_notifications_permission_denied">Not enabled: Android denied notification permission. Allow notifications in system settings, then try again.</string>
+    <string name="btc_bill_pay_add_action">Add bill pay</string>
+    <string name="btc_bill_pay_editor_title">Add Bitcoin bill pay</string>
+    <string name="btc_bill_pay_date_label">Date (yyyy-MM-dd)</string>
+    <string name="btc_bill_pay_merchant_label">Merchant</string>
+    <string name="btc_bill_pay_effect_label">Budget effect</string>
+    <string name="btc_bill_pay_effect_budget_category">Count toward a budget category</string>
+    <string name="btc_bill_pay_effect_credit_card">Credit card payment (excluded from budget)</string>
+    <string name="btc_bill_pay_category_label">Budget category</string>
+    <string name="btc_bill_pay_choose_category">Choose a category</string>
+    <string name="btc_bill_pay_amount_label">Amount (USD)</string>
+    <string name="btc_bill_pay_sats_label">Sats spent</string>
+    <string name="btc_bill_pay_price_label">BTC price (USD)</string>
+    <string name="btc_bill_pay_fee_label">Fee (USD)</string>
+    <string name="btc_bill_pay_note_label">Note (optional)</string>
+    <string name="btc_bill_pay_reference_label">Reference (optional)</string>
 </resources>

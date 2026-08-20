@@ -101,6 +101,27 @@ internal sealed class ConvexMutation(val path: String) {
             argumentsWithOptionalSource("buy", buy.toJson(), sourceFile)
     }
 
+    data class UpsertBtcBillPayFromDevice(
+        val owner: FamilyMember,
+        val billPay: BtcBillPayInput,
+        val baseUpdatedAtMs: Long? = null,
+        val sourceFile: String = BTC_BILL_PAYS_SOURCE_FILE,
+    ) : ConvexMutation("tables:upsertBtcBillPayFromDevice") {
+        init {
+            require(owner.isAdult) { "Bitcoin bill pays are adult household rows" }
+            require(sourceFile == BTC_BILL_PAYS_SOURCE_FILE) {
+                "Bitcoin bill pays must use the canonical source file"
+            }
+        }
+
+        override fun arguments(): JsonObject = buildMap<String, JsonElement> {
+            put("owner", JsonPrimitive(owner.key))
+            put("sourceFile", JsonPrimitive(sourceFile))
+            put("billPay", billPay.toJson())
+            baseUpdatedAtMs?.let { put("baseUpdatedAtMs", JsonPrimitive(it)) }
+        }.let(::JsonObject)
+    }
+
     data class UpsertBtcAccount(
         val account: BtcAccountInput,
         val sourceFile: String? = null,
@@ -217,6 +238,61 @@ internal data class BtcBuyInput(
         loggedBy?.let { put("loggedBy", JsonPrimitive(it)) }
         archimedesRequestId?.let { put("archimedesRequestId", JsonPrimitive(it)) }
         owner?.let { put("owner", JsonPrimitive(it.key)) }
+    }.let(::JsonObject)
+}
+
+internal const val BTC_BILL_PAYS_SOURCE_FILE = "bitcoin-bill-pays"
+internal const val RIVER_BITCOIN_BILL_PAY_PLATFORM = "river_bitcoin_bill_pay"
+
+internal data class BtcBillPayInput(
+    val id: String,
+    val owner: FamilyMember,
+    val date: String,
+    val merchant: String,
+    val category: String,
+    val budgetEffect: com.sats21m.vogelvault.domain.BillPayBudgetEffect,
+    val amountUsdCents: Long,
+    val btcSpentSats: Long,
+    val btcPriceCents: Long,
+    val feeUsdCents: Long,
+    val platform: String = RIVER_BITCOIN_BILL_PAY_PLATFORM,
+    val note: String? = null,
+    val reference: String? = null,
+) {
+    init {
+        require(id.isNotBlank()) { "bitcoin bill pay id must not be blank" }
+        require(owner.isAdult) { "Bitcoin bill pays are adult household rows" }
+        require(date.isNotBlank()) { "bitcoin bill pay date must not be blank" }
+        require(merchant.isNotBlank()) { "bitcoin bill pay merchant must not be blank" }
+        require(category.isNotBlank()) { "bitcoin bill pay category must not be blank" }
+        require(amountUsdCents > 0L) { "bitcoin bill pay amount must be positive" }
+        require(btcSpentSats > 0L) { "bitcoin bill pay sats must be positive" }
+        require(btcPriceCents > 0L) { "bitcoin bill pay price must be positive" }
+        require(feeUsdCents >= 0L) { "bitcoin bill pay fee must not be negative" }
+        require(platform == RIVER_BITCOIN_BILL_PAY_PLATFORM) {
+            "bitcoin bill pay platform must be River"
+        }
+        if (budgetEffect == com.sats21m.vogelvault.domain.BillPayBudgetEffect.CREDIT_CARD_PAYMENT) {
+            require(category == "Credit Card Payment") {
+                "credit card bill pays must use the Credit Card Payment category"
+            }
+        }
+    }
+
+    fun toJson(): JsonObject = buildMap<String, JsonElement> {
+        put("id", JsonPrimitive(id))
+        put("owner", JsonPrimitive(owner.key))
+        put("date", JsonPrimitive(date))
+        put("merchant", JsonPrimitive(merchant))
+        put("category", JsonPrimitive(category))
+        put("budgetEffect", JsonPrimitive(budgetEffect.wireValue))
+        put("amountUsdCents", amountUsdCents.toConvexInt64())
+        put("btcSpentSats", btcSpentSats.toConvexInt64())
+        put("btcPriceCents", btcPriceCents.toConvexInt64())
+        put("feeUsdCents", feeUsdCents.toConvexInt64())
+        put("platform", JsonPrimitive(platform))
+        note?.let { put("note", JsonPrimitive(it)) }
+        reference?.let { put("reference", JsonPrimitive(it)) }
     }.let(::JsonObject)
 }
 

@@ -64,6 +64,7 @@ import com.sats21m.vogelvault.domain.ReadModel
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.domain.Transaction
 import com.sats21m.vogelvault.domain.budgetCategoryTransactionsFor
+import com.sats21m.vogelvault.domain.budgetBillPaysFor
 import com.sats21m.vogelvault.domain.budgetMonthsFor
 import com.sats21m.vogelvault.domain.budgetTransactionsFor
 import com.sats21m.vogelvault.domain.deriveBudgetSpend
@@ -203,8 +204,8 @@ fun ScreenHost(
     val netWorthBalance = state.data.netWorthBalanceForDisplay()
     val btcBuysTitle = stringResource(R.string.btc_buys_screen_title)
     val btcBillPaysTitle = stringResource(R.string.btc_bill_pays_screen_title)
-    val months = remember(profile, transactionsInput, budgetMonth) {
-        transactionsInput.budgetMonthsFor(profile, budgetMonth)
+    val months = remember(profile, transactionsInput, billPaysInput, budgetMonth) {
+        transactionsInput.budgetMonthsFor(profile, budgetMonth, billPaysInput)
     }
     val initialMonth = remember(state.selectedMonth, months, budgetMonth) {
         resolveBudgetMonth(state.selectedMonth, months, budgetMonth)
@@ -225,6 +226,7 @@ fun ScreenHost(
     var budgetDrilldownMonth by rememberSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
     var budgetDrilldownCategory by rememberSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
     var showBtcBuyEditor by rememberSaveable { mutableStateOf(false) }
+    var showBtcBillPayEditor by rememberSaveable { mutableStateOf(false) }
     // A refresh can retire the picked month. Fall back rather than render a month
     // the ledger no longer contains.
     val budgetSelectedMonth = resolveBudgetMonth(picked, months, budgetMonth)
@@ -272,7 +274,13 @@ fun ScreenHost(
             openTodos = collections.visibleTodos.count { !it.done },
         )
     }
-    val budgetSpend = remember(state.data.budget.value, budgetSelectedMonth, collections.budgetTransactions) {
+    val budgetSpend = remember(
+        state.data.budget.value,
+        budgetSelectedMonth,
+        collections.budgetTransactions,
+        billPaysInput,
+        profile,
+    ) {
         state.data.budget.value?.let { budget ->
             val scoped =
                 if (budgetSelectedMonth == null || budgetSelectedMonth == budget.month) {
@@ -280,7 +288,11 @@ fun ScreenHost(
                 } else {
                     budget.copy(month = budgetSelectedMonth)
                 }
-            deriveBudgetSpend(scoped, collections.budgetTransactions)
+            deriveBudgetSpend(
+                scoped,
+                collections.budgetTransactions,
+                billPaysInput.budgetBillPaysFor(profile),
+            )
         }
     }
     val bitcoinProjection = remember(
@@ -404,9 +416,15 @@ fun ScreenHost(
                         bitcoinProjection,
                         displayUnit,
                         onAddBuy = { showBtcBuyEditor = true },
+                        onAddBillPay = { showBtcBillPayEditor = true },
                     )
                 Destination.BTC_BUYS -> btcBuysScreen(state, displayUnit, btcBuysTitle)
-                Destination.BTC_BILL_PAYS -> btcBillPaysScreen(state, displayUnit, btcBillPaysTitle)
+                Destination.BTC_BILL_PAYS -> btcBillPaysScreen(
+                    state,
+                    displayUnit,
+                    btcBillPaysTitle,
+                    onAddBillPay = { showBtcBillPayEditor = true },
+                )
                 Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
                 Destination.RETIREMENT -> retirement(state, displayUnit)
                 Destination.EXPORT -> item { ExportScreen(state) }
@@ -435,6 +453,14 @@ fun ScreenHost(
         BtcBuyEntrySheet(
             owner = state.activeProfile,
             onDismiss = { showBtcBuyEditor = false },
+            onWriteSucceeded = onWriteSucceeded,
+        )
+    }
+    if (showBtcBillPayEditor) {
+        BtcBillPayEntrySheet(
+            owner = state.activeProfile,
+            budgetCategories = state.data.budget.value?.categories?.map { it.name }.orEmpty(),
+            onDismiss = { showBtcBillPayEditor = false },
             onWriteSucceeded = onWriteSucceeded,
         )
     }
@@ -1159,6 +1185,7 @@ private fun VaultLazyListScope.bitcoin(
     projection: BitcoinProjection,
     displayUnit: DisplayUnit,
     onAddBuy: () -> Unit,
+    onAddBillPay: () -> Unit,
 ) {
     val slice = state.data.btcBalance
     val unavailable = projection.balance == null
@@ -1216,6 +1243,9 @@ private fun VaultLazyListScope.bitcoin(
     )
     if (state.data.btcBuys.status == Freshness.LIVE) {
         item { BtcBuyEntryAction(onAddBuy) }
+    }
+    if (canAddBtcBillPay(state.data.btcBillPays.status, state.activeProfile)) {
+        item { BtcBillPayEntryAction(onAddBillPay) }
     }
     if (state.data.btcBuys.suppressFigures) {
         item {
