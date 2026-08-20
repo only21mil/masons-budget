@@ -222,6 +222,17 @@
     <string name="btc_buy_price_label">BTC price (USD)</string>
     <string name="btc_buy_purchase_amount_label">Purchase amount (USD)</string>
     <string name="btc_buy_independent_amounts_detail">Sats, BTC price, and purchase dollars are stored independently. Check all three before saving.</string>
+    <string name="btc_transfer_add_action">Transfer between accounts</string>
+    <string name="btc_transfer_editor_title">Transfer Bitcoin between accounts</string>
+    <string name="btc_transfer_editor_detail">Move exact sats between two visible household accounts. A fee reduces the total stack; it is not income or spending.</string>
+    <string name="btc_transfer_date_label">Date (yyyy-MM-dd)</string>
+    <string name="btc_transfer_from_account_label">From account</string>
+    <string name="btc_transfer_to_account_label">To account</string>
+    <string name="btc_transfer_sats_label">Sats to transfer</string>
+    <string name="btc_transfer_fee_label">Network fee (sats, optional)</string>
+    <string name="btc_transfer_note_label">Note (optional)</string>
+    <string name="btc_transfer_select_account">Select account</string>
+    <string name="btc_transfer_accounts_unavailable">At least two Bitcoin accounts owned by this household ledger are required.</string>
     <string name="write_cancel">Cancel</string>
     <string name="write_save">Save</string>
     <string name="write_credential_title">Financial write sync credential</string>

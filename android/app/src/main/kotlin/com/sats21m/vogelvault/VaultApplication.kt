@@ -21,6 +21,7 @@ import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.cache.VaultDatabase
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.ui.ConvexTransactionActions
+import com.sats21m.vogelvault.ui.BtcTransferMutationGateway
 import com.sats21m.vogelvault.ui.TodoMutationGateway
 import com.sats21m.vogelvault.ui.VaultViewModel
 import java.io.IOException
@@ -106,6 +107,13 @@ open class VaultApplication : Application() {
      * resubmit after an ambiguous write must reuse one id.
      */
     internal val btcBuyDraftIds = TransactionDraftIdStore()
+
+    /**
+     * The Bitcoin transfer editor has the same duplicate-post hazard as buys:
+     * a lost response must retry the exact same transfer id until Convex confirms
+     * the idempotent row.
+     */
+    internal val btcTransferDraftIds = TransactionDraftIdStore()
 
     /**
      * Process-owned acceptance signal for writes that may outlive the surface
@@ -212,6 +220,16 @@ open class VaultApplication : Application() {
     /** Capability-scoped todo writes, isolated from the legacy sync-token transport. */
     internal open val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         TodoMutationGateway(
+            ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(writeConvexConfig()),
+                credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
+            ),
+        )
+    }
+
+    /** Capability-scoped Bitcoin transfer writes. */
+    internal open val btcTransferMutationGateway: BtcTransferMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        BtcTransferMutationGateway(
             ConvexDeviceMutationClient(
                 configSource = MutableConvexConfigSource(writeConvexConfig()),
                 credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),

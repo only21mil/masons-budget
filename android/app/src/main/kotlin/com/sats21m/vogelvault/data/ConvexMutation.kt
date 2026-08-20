@@ -109,6 +109,25 @@ internal sealed class ConvexMutation(val path: String) {
             argumentsWithOptionalSource("account", account.toJson(), sourceFile)
     }
 
+    data class UpsertBtcTransferFromDevice(
+        val owner: FamilyMember,
+        val transfer: BtcTransferInput,
+        val baseUpdatedAtMs: Long? = null,
+    ) : ConvexMutation("tables:upsertBtcTransferFromDevice") {
+        init {
+            require(transfer.owner == owner) {
+                "Bitcoin transfer owner must match the request owner"
+            }
+        }
+
+        override fun arguments(): JsonObject = buildMap<String, JsonElement> {
+            put("owner", JsonPrimitive(owner.key))
+            put("sourceFile", JsonPrimitive("btc-transfers"))
+            put("transfer", transfer.toJson())
+            baseUpdatedAtMs?.let { put("baseUpdatedAtMs", JsonPrimitive(it)) }
+        }.let(::JsonObject)
+    }
+
     data class UpsertBudgetCategory(
         val viewer: FamilyMember,
         val month: String,
@@ -245,6 +264,44 @@ internal data class BtcAccountInput(
         put("fiatCents", fiatCents.toConvexInt64())
         put("asOf", JsonPrimitive(asOf))
         schemaVersion?.let { put("schemaVersion", it.toConvexInt64()) }
+    }.let(::JsonObject)
+}
+
+internal data class BtcTransferInput(
+    val id: String,
+    val owner: FamilyMember,
+    val date: String,
+    val fromAccountKey: String,
+    val toAccountKey: String,
+    val sats: Long,
+    val feeSats: Long,
+    val note: String? = null,
+) {
+    init {
+        require(id.isNotBlank()) { "bitcoin transfer id must not be blank" }
+        require(owner.isAdult) { "bitcoin transfers require an adult owner" }
+        require(date.isNotBlank()) { "bitcoin transfer date must not be blank" }
+        require(fromAccountKey.isNotBlank()) { "bitcoin transfer source account must not be blank" }
+        require(toAccountKey.isNotBlank()) { "bitcoin transfer destination account must not be blank" }
+        require(fromAccountKey != toAccountKey) {
+            "bitcoin transfer source and destination must differ"
+        }
+        require(sats > 0L) { "bitcoin transfer sats must be positive" }
+        require(feeSats >= 0L) { "bitcoin transfer feeSats must be nonnegative" }
+        require(sats <= Long.MAX_VALUE - feeSats) {
+            "bitcoin transfer debit exceeds signed int64"
+        }
+    }
+
+    fun toJson(): JsonObject = buildMap<String, JsonElement> {
+        put("id", JsonPrimitive(id))
+        put("owner", JsonPrimitive(owner.key))
+        put("date", JsonPrimitive(date))
+        put("fromAccountKey", JsonPrimitive(fromAccountKey))
+        put("toAccountKey", JsonPrimitive(toAccountKey))
+        put("sats", sats.toConvexInt64())
+        put("feeSats", feeSats.toConvexInt64())
+        note?.let { put("note", JsonPrimitive(it)) }
     }.let(::JsonObject)
 }
 

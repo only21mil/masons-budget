@@ -122,6 +122,7 @@ private data class DashboardProjection(
 
 private data class BitcoinProjection(
     val accounts: List<BtcAccount>,
+    val transferAccounts: List<BtcAccount>,
     val buys: List<BtcBuy>,
     val billPays: List<BtcBillPay>,
     val balance: BtcBalance?,
@@ -225,6 +226,7 @@ fun ScreenHost(
     var budgetDrilldownMonth by rememberSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
     var budgetDrilldownCategory by rememberSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
     var showBtcBuyEditor by rememberSaveable { mutableStateOf(false) }
+    var showBtcTransferEditor by rememberSaveable { mutableStateOf(false) }
     // A refresh can retire the picked month. Fall back rather than render a month
     // the ledger no longer contains.
     val budgetSelectedMonth = resolveBudgetMonth(picked, months, budgetMonth)
@@ -291,6 +293,7 @@ fun ScreenHost(
     ) {
         BitcoinProjection(
             accounts = collections.netWorthAccounts,
+            transferAccounts = collections.visibleAccounts,
             buys = collections.visibleBuys,
             billPays = collections.visibleBillPays,
             balance = collections.netWorthBalance,
@@ -404,6 +407,7 @@ fun ScreenHost(
                         bitcoinProjection,
                         displayUnit,
                         onAddBuy = { showBtcBuyEditor = true },
+                        onAddTransfer = { showBtcTransferEditor = true },
                     )
                 Destination.BTC_BUYS -> btcBuysScreen(state, displayUnit, btcBuysTitle)
                 Destination.BTC_BILL_PAYS -> btcBillPaysScreen(state, displayUnit, btcBillPaysTitle)
@@ -435,6 +439,14 @@ fun ScreenHost(
         BtcBuyEntrySheet(
             owner = state.activeProfile,
             onDismiss = { showBtcBuyEditor = false },
+            onWriteSucceeded = onWriteSucceeded,
+        )
+    }
+    if (showBtcTransferEditor) {
+        BtcTransferEntrySheet(
+            viewer = state.activeProfile,
+            accounts = bitcoinProjection.transferAccounts,
+            onDismiss = { showBtcTransferEditor = false },
             onWriteSucceeded = onWriteSucceeded,
         )
     }
@@ -1159,6 +1171,7 @@ private fun VaultLazyListScope.bitcoin(
     projection: BitcoinProjection,
     displayUnit: DisplayUnit,
     onAddBuy: () -> Unit,
+    onAddTransfer: () -> Unit,
 ) {
     val slice = state.data.btcBalance
     val unavailable = projection.balance == null
@@ -1216,6 +1229,16 @@ private fun VaultLazyListScope.bitcoin(
     )
     if (state.data.btcBuys.status == Freshness.LIVE) {
         item { BtcBuyEntryAction(onAddBuy) }
+    }
+    val transferAccounts = projection.transferAccounts.filter {
+        it.owner == state.activeProfile.ledgerOwner
+    }
+    if (
+        state.activeProfile.isAdult &&
+        state.data.btcAccounts.status == Freshness.LIVE &&
+        transferAccounts.size >= 2
+    ) {
+        item { BtcTransferEntryAction(onAddTransfer) }
     }
     if (state.data.btcBuys.suppressFigures) {
         item {
