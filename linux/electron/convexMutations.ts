@@ -1534,6 +1534,12 @@ export function createPairedDeviceController(
           if (!capabilities.includes(request.kind)) {
             return { ...identity, status: "unauthorized" }
           }
+          // A transaction carrying sats spends Bitcoin, so the contract wants
+          // `bitcoin:write` on top of `transactions:write`. Stored capabilities
+          // are the expanded kind vocabulary, never the coarse grant names, and
+          // `btcTransfer.upsert` is granted by `bitcoin:write` alone — so it
+          // stands in for that grant exactly. The renderer proxies the same rule
+          // through the same kind.
           if (
             request.kind === "transaction.upsert" &&
             request.amountSats !== undefined &&

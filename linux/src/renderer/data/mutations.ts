@@ -110,6 +110,38 @@ export function mutationGate(input: MutationGateInput): MutationGate {
   return { allowed: true, reason: null }
 }
 
+/**
+ * The mutation kind that stands in for the coarse `bitcoin:write` grant.
+ *
+ * The backend contract requires `transactions:write` for every transaction and
+ * `bitcoin:write` as well whenever the row carries `amountSats`. The renderer
+ * cannot check that directly: a pairing status reports `capabilities` as the
+ * expanded list of `RendererMutationKind`s, never the coarse grant names. Of
+ * those kinds, `btcTransfer.upsert` is granted by `bitcoin:write` and by no
+ * other resource capability, so its presence is exactly that grant — which is
+ * why main's paired-device guard proxies the same rule through the same kind.
+ */
+export const BITCOIN_WRITE_PROXY_KIND: RendererMutationKind = "btcTransfer.upsert"
+
+/**
+ * Whether this device may save a transaction denominated in sats.
+ *
+ * Callers apply it only to rows that will carry `amountSats`: a Lightning or
+ * on-chain spend, or Income recorded in sats. A USD-only card transaction needs
+ * `transaction.upsert` alone and is never asked for the Bitcoin grant.
+ */
+export function bitcoinSpendGate(
+  capabilities: readonly RendererMutationKind[],
+): MutationGate {
+  if (capabilities.includes(BITCOIN_WRITE_PROXY_KIND)) {
+    return { allowed: true, reason: null }
+  }
+  return {
+    allowed: false,
+    reason: "This device cannot spend Bitcoin: its pairing lacks the Bitcoin write grant.",
+  }
+}
+
 export function parseExactCents(value: string): bigint | null {
   const match = /^([+-]?)(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim())
   if (!match) return null

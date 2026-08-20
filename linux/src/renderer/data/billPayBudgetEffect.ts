@@ -85,3 +85,55 @@ export function billPayBudgetTreatmentFor(form: {
     countsTowardBudget: true,
   }
 }
+
+/**
+ * What a River hand-off carries from the transaction form into the bill-pay
+ * form. Values only: the hand-off writes nothing, and the user still enters the
+ * sats, the BTC price, and the fee before the bill pay is saved.
+ */
+export interface BillPayPrefill {
+  readonly date: string
+  readonly merchant: string
+  /** Exact USD cents, matching the read model's own `amountUsd`. */
+  readonly amountUsd: bigint
+  readonly budgetEffect: BillPayBudgetEffect
+  readonly category: string
+  /** The contract's wire value for a River bill pay; a hand-off is River by definition. */
+  readonly platform: string
+}
+
+/** Wire value the contract names for a River bill pay's `platform`. */
+export const RIVER_BILL_PAY_PLATFORM = "river_bitcoin_bill_pay"
+
+/**
+ * Project transaction-form state onto a bill-pay prefill.
+ *
+ * The transaction's category decides the budget choice: "Credit Card Payment"
+ * is the one category that names the non-budget treatment, so picking it hands
+ * off as a credit-card payment. Every other category is a real budget category
+ * and the bill pay comes out of it. The category itself is then read back from
+ * `billPayBudgetTreatmentFor`, so a hand-off can never seed the form with an
+ * effect and a category that disagree.
+ */
+export function billPayPrefillFor(form: {
+  readonly date: string
+  readonly merchant: string
+  readonly amountUsd: bigint
+  readonly category: string
+}): BillPayPrefill {
+  const category = form.category.trim()
+  const treatment = billPayBudgetTreatmentFor({
+    budgetEffect: category === CREDIT_CARD_PAYMENT_CATEGORY
+      ? "credit_card_payment"
+      : "budget_category",
+    category,
+  })
+  return {
+    date: form.date,
+    merchant: form.merchant.trim(),
+    amountUsd: form.amountUsd,
+    budgetEffect: treatment.effect,
+    category: treatment.category,
+    platform: RIVER_BILL_PAY_PLATFORM,
+  }
+}

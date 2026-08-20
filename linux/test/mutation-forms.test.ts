@@ -4,8 +4,10 @@ import type { BTCBuy } from "@vogel-vault/domain/readModel"
 
 import {
   type BitcoinBuyLinkInput,
+  BITCOIN_WRITE_PROXY_KIND,
   applyOptimisticMutation,
   bitcoinBuyLinkFor,
+  bitcoinSpendGate,
   formatCentsInput,
   linkedBitcoinBuyFor,
   mutationOwner,
@@ -17,6 +19,7 @@ import {
 import {
   CREDIT_CARD_PAYMENT_CATEGORY,
   billPayBudgetTreatmentFor,
+  billPayPrefillFor,
   decodeBillPayBudgetEffect,
 } from "../src/renderer/data/billPayBudgetEffect.ts"
 import { buildSanitizedFixtureEnvelope } from "../src/renderer/data/fixtures.ts"
@@ -202,6 +205,75 @@ describe("bill-pay budget effect", () => {
     expect(decodeBillPayBudgetEffect("nonsense")).toBe("credit_card_payment")
     expect(decodeBillPayBudgetEffect("credit_card_payment")).toBe("credit_card_payment")
     expect(decodeBillPayBudgetEffect("budget_category")).toBe("budget_category")
+  })
+})
+
+describe("the River hand-off prefill", () => {
+  it("carries the merchant, date, and exact amount onto a budget-category payment", () => {
+    expect(billPayPrefillFor({
+      date: "2026-08-14",
+      merchant: "  Duke Energy  ",
+      amountUsd: 12_845n,
+      category: "  Utilities  ",
+    })).toEqual({
+      date: "2026-08-14",
+      merchant: "Duke Energy",
+      amountUsd: 12_845n,
+      budgetEffect: "budget_category",
+      category: "Utilities",
+      platform: "river_bitcoin_bill_pay",
+    })
+  })
+
+  it("hands the one non-budget category off as a credit-card payment", () => {
+    expect(billPayPrefillFor({
+      date: "2026-08-14",
+      merchant: "Aven",
+      amountUsd: 40_000n,
+      category: CREDIT_CARD_PAYMENT_CATEGORY,
+    })).toEqual({
+      date: "2026-08-14",
+      merchant: "Aven",
+      amountUsd: 40_000n,
+      budgetEffect: "credit_card_payment",
+      category: CREDIT_CARD_PAYMENT_CATEGORY,
+      platform: "river_bitcoin_bill_pay",
+    })
+  })
+
+  it("keeps the seeded effect and category in agreement", () => {
+    for (const category of ["Groceries", CREDIT_CARD_PAYMENT_CATEGORY]) {
+      const prefill = billPayPrefillFor({
+        date: "2026-08-14",
+        merchant: "Payee",
+        amountUsd: 100n,
+        category,
+      })
+      expect(billPayBudgetTreatmentFor(prefill).category).toBe(prefill.category)
+      expect(billPayBudgetTreatmentFor(prefill).effect).toBe(prefill.budgetEffect)
+    }
+  })
+})
+
+describe("the Bitcoin-spend capability proxy", () => {
+  // The renderer only ever reads expanded mutation kinds, never the coarse
+  // grants, and btcTransfer.upsert comes from bitcoin:write and nothing else.
+  it("names the kind that stands in for bitcoin:write", () => {
+    expect(BITCOIN_WRITE_PROXY_KIND).toBe("btcTransfer.upsert")
+  })
+
+  it("allows a Bitcoin spend only when the proxy kind is granted", () => {
+    expect(bitcoinSpendGate(["transaction.upsert", "btcTransfer.upsert"])).toEqual({
+      allowed: true,
+      reason: null,
+    })
+    expect(bitcoinSpendGate(["transaction.upsert", "transaction.delete"])).toEqual({
+      allowed: false,
+      reason: "This device cannot spend Bitcoin: its pairing lacks the Bitcoin write grant.",
+    })
+    // A bill-pay or buy grant is not the whole of bitcoin:write's expansion, so
+    // it is not evidence of the grant on its own.
+    expect(bitcoinSpendGate(["transaction.upsert", "btcBillPay.upsert"]).allowed).toBe(false)
   })
 })
 

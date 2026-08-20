@@ -11,6 +11,7 @@ import type {
 import { useAppState } from "../app/AppState.tsx"
 import {
   bitcoinBuyLinkFor,
+  bitcoinSpendGate,
   formatCentsInput,
   mutationOwner,
   parseExactCents,
@@ -32,9 +33,11 @@ import {
 } from "../data/paymentSource.ts"
 import {
   type BillPayBudgetEffect,
+  type BillPayPrefill,
   type LinuxBillPay,
   BILL_PAY_BUDGET_EFFECT_LABELS,
   billPayBudgetTreatmentFor,
+  billPayPrefillFor,
 } from "../data/billPayBudgetEffect.ts"
 import { localMutationError } from "./CrudControls.tsx"
 import { DialogFrame } from "./DialogFrame.tsx"
@@ -123,6 +126,7 @@ export function TransactionFormDialog({
   transaction,
   defaultCategory,
   submissionGate,
+  onRecordAsBillPay,
   onClose,
 }: {
   open: boolean
@@ -130,9 +134,16 @@ export function TransactionFormDialog({
   /** Opens the dialog on a category, so the Budget tab can add income directly. */
   defaultCategory?: string
   submissionGate?: MutationGate
+  /**
+   * Hands a River selection to the bill-pay form instead of dead-ending on the
+   * pointer to the Bills page. The host owns both dialogs, so it closes this one
+   * and opens that one; nothing is written here. Without a handler the River
+   * selection stays blocked exactly as before.
+   */
+  onRecordAsBillPay?: (prefill: BillPayPrefill) => void
   onClose: () => void
 }) {
-  const { activeProfile, data, submitMutation } = useAppState()
+  const { activeProfile, data, mutationCapabilities, submitMutation } = useAppState()
   const formId = useId()
   const blockedReasonId = useId()
   const [id, setId] = useState(() => transaction?.id ?? stableId("transaction"))
@@ -185,6 +196,7 @@ export function TransactionFormDialog({
     isBitcoinDenominatedSource(selectedSource) &&
     paymentSourceRoute(selectedSource) === "transaction"
   const satsValue = sats.trim() ? parseExactSats(sats) : null
+  const amountCents = parseExactCents(amount)
   const selection: PaymentSourceSelection = {
     source: selectedSource,
     legacyCard: sourceChoice === LEGACY_SOURCE_CHOICE ? legacyCard : "",
@@ -192,9 +204,32 @@ export function TransactionFormDialog({
     bitcoinAccountKey,
   }
   const sourceBlockReason = paymentSourceBlockReason(selection)
+  // The row will carry amountSats — a Lightning or on-chain spend, or Income
+  // recorded in sats. Those need the Bitcoin grant on top of transaction.upsert;
+  // a USD-only card transaction does not.
+  const spendsBitcoin = bitcoinSpendRow ||
+    (!recordingBitcoinBuy && isIncome && satsValue !== null && satsValue > 0n)
+  const bitcoinCapability = spendsBitcoin ? bitcoinSpendGate(mutationCapabilities) : null
+  // River is a hand-off, not a save, so its own block never disables the button
+  // it offers; the capability block cannot be typed away and comes first.
   const blockedReason = submissionGate && !submissionGate.allowed
     ? submissionGate.reason ?? "Current live transaction rows are required before editing."
-    : sourceBlockReason
+    : bitcoinCapability !== null && !bitcoinCapability.allowed
+      ? bitcoinCapability.reason
+      : sourceBlockReason
+  const riverHandoff = selectedSource !== null &&
+    paymentSourceRoute(selectedSource) === "billPay" &&
+    onRecordAsBillPay !== undefined
+  // The bill pay needs the same floor a transaction save needs; the sats, the
+  // BTC price, and the fee are still the user's to enter on the other side.
+  const handoffPrefill = riverHandoff &&
+    merchant.trim() !== "" &&
+    date !== "" &&
+    category.trim() !== "" &&
+    amountCents !== null &&
+    amountCents > 0n
+    ? billPayPrefillFor({ date, merchant, amountUsd: amountCents, category })
+    : null
 
   useEffect(() => {
     if (!open) return
@@ -223,7 +258,7 @@ export function TransactionFormDialog({
       setError(submissionGate.reason ?? "Current live transaction rows are required before editing.")
       return
     }
-    const cents = parseExactCents(amount)
+    const cents = amountCents
     if (!merchant.trim() || !date || cents === null || cents <= 0n || !category.trim()) {
       setError("Enter a date, merchant, category, and a positive amount with at most two decimals.")
       return
@@ -267,6 +302,10 @@ export function TransactionFormDialog({
       return
     }
 
+    if (bitcoinCapability !== null && !bitcoinCapability.allowed) {
+      setError(bitcoinCapability.reason)
+      return
+    }
     if (sourceBlockReason) {
       setError(sourceBlockReason)
       return
@@ -336,6 +375,23 @@ export function TransactionFormDialog({
       }}>
         {blockedReason ? (
           <p id={blockedReasonId} className="vv-form-error" role="status">{blockedReason}</p>
+        ) : null}
+        {riverHandoff ? (
+          <Button
+            variant="primary"
+            disabled={busy || handoffPrefill === null}
+            title={
+              handoffPrefill === null
+                ? "Enter a date, payee, category, and a positive amount first."
+                : undefined
+            }
+            onClick={() => {
+              if (handoffPrefill === null) return
+              onRecordAsBillPay?.(handoffPrefill)
+            }}
+          >
+            Record as River bill payment
+          </Button>
         ) : null}
         <ErrorSummary error={error} />
         <Field label="Record ID" hint="Stable and immutable after creation.">
@@ -710,29 +766,38 @@ export function BtcBuyFormDialog({
 export function BillPayFormDialog({
   open,
   payment,
+  prefill,
   onClose,
 }: {
   open: boolean
   payment: LinuxBillPay | null
+  /**
+   * Seed values for a new bill pay, handed over by the transaction form. A
+   * stored row always wins, so an edit is never overwritten by a stale hand-off.
+   */
+  prefill?: BillPayPrefill
   onClose: () => void
 }) {
   const { activeProfile, submitMutation } = useAppState()
   const formId = useId()
+  const seed = payment === null ? prefill ?? null : null
   const [id, setId] = useState(() => payment?.id ?? stableId("bill"))
-  const [date, setDate] = useState(payment?.date ?? today())
-  const [merchant, setMerchant] = useState(payment?.merchant ?? "")
+  const [date, setDate] = useState(payment?.date ?? seed?.date ?? today())
+  const [merchant, setMerchant] = useState(payment?.merchant ?? seed?.merchant ?? "")
   // A row written before the amendment decodes as credit_card_payment, so an
   // edit of one opens on that option rather than silently promoting it into a
   // budget it never came out of.
   const [budgetEffect, setBudgetEffect] = useState<BillPayBudgetEffect>(
-    payment?.budgetEffect ?? "budget_category",
+    payment?.budgetEffect ?? seed?.budgetEffect ?? "budget_category",
   )
-  const [category, setCategory] = useState(payment?.category ?? "Bills")
-  const [amount, setAmount] = useState(payment ? formatCentsInput(payment.amountUsd) : "")
+  const [category, setCategory] = useState(payment?.category ?? seed?.category ?? "Bills")
+  const [amount, setAmount] = useState(
+    payment ? formatCentsInput(payment.amountUsd) : seed ? formatCentsInput(seed.amountUsd) : "",
+  )
   const [sats, setSats] = useState(payment?.btcSpentSats.toString() ?? "")
   const [price, setPrice] = useState(payment ? formatCentsInput(payment.btcPrice) : "")
   const [fee, setFee] = useState(payment ? formatCentsInput(payment.feeUsd) : "0.00")
-  const [platform, setPlatform] = useState(payment?.platform ?? "")
+  const [platform, setPlatform] = useState(payment?.platform ?? seed?.platform ?? "")
   const [reference, setReference] = useState(payment?.reference ?? "")
   const [note, setNote] = useState(payment?.note ?? "")
   const [busy, setBusy] = useState(false)
@@ -742,19 +807,21 @@ export function BillPayFormDialog({
   useEffect(() => {
     if (!open) return
     setId(payment?.id ?? stableId("bill"))
-    setDate(payment?.date ?? today())
-    setMerchant(payment?.merchant ?? "")
-    setBudgetEffect(payment?.budgetEffect ?? "budget_category")
-    setCategory(payment?.category ?? "Bills")
-    setAmount(payment ? formatCentsInput(payment.amountUsd) : "")
+    setDate(payment?.date ?? seed?.date ?? today())
+    setMerchant(payment?.merchant ?? seed?.merchant ?? "")
+    setBudgetEffect(payment?.budgetEffect ?? seed?.budgetEffect ?? "budget_category")
+    setCategory(payment?.category ?? seed?.category ?? "Bills")
+    setAmount(
+      payment ? formatCentsInput(payment.amountUsd) : seed ? formatCentsInput(seed.amountUsd) : "",
+    )
     setSats(payment?.btcSpentSats.toString() ?? "")
     setPrice(payment ? formatCentsInput(payment.btcPrice) : "")
     setFee(payment ? formatCentsInput(payment.feeUsd) : "0.00")
-    setPlatform(payment?.platform ?? "")
+    setPlatform(payment?.platform ?? seed?.platform ?? "")
     setReference(payment?.reference ?? "")
     setNote(payment?.note ?? "")
     setError(null)
-  }, [open, payment])
+  }, [open, payment, seed])
 
   async function submit() {
     const amountValue = parseExactCents(amount)

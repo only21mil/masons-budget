@@ -93,6 +93,7 @@ import {
 import { linkedBitcoinBuyFor, mutationOwner, stableId } from "../../data/mutations.ts"
 import { paymentSourceDisplay } from "../../data/paymentSource.ts"
 import {
+  type BillPayPrefill,
   type LinuxBillPay,
   BILL_PAY_BUDGET_EFFECT_LABELS,
 } from "../../data/billPayBudgetEffect.ts"
@@ -486,6 +487,54 @@ function TransactionActions({ transaction }: { transaction: Transaction }) {
         busy={deleting}
         onCancel={() => setConfirming(false)}
         onConfirm={() => void remove()}
+      />
+    </>
+  )
+}
+
+/**
+ * The Add-transaction dialog and the bill-pay form it hands River off to.
+ *
+ * One host owns both open states, which is what lets choosing "River Bitcoin
+ * Bill Pay" while adding a transaction close this form and open that one seeded
+ * with what has already been typed. Nothing is written on the way across: the
+ * bill-pay form keeps its own `btcBillPay.upsert` gate and still asks for the
+ * sats, the BTC price, and the fee before anything is saved.
+ *
+ * Editing an existing transaction is deliberately not a hand-off — a stored row
+ * cannot become a bill pay — so those call sites keep the plain dialog.
+ */
+function AddTransactionDialogs({
+  open,
+  defaultCategory,
+  submissionGate,
+  onClose,
+}: {
+  open: boolean
+  defaultCategory?: string
+  submissionGate?: MutationGate
+  onClose: () => void
+}) {
+  const [billPayPrefill, setBillPayPrefill] = useState<BillPayPrefill | null>(null)
+
+  return (
+    <>
+      <TransactionFormDialog
+        open={open && billPayPrefill === null}
+        transaction={null}
+        defaultCategory={defaultCategory}
+        submissionGate={submissionGate}
+        onRecordAsBillPay={(prefill) => {
+          setBillPayPrefill(prefill)
+          onClose()
+        }}
+        onClose={onClose}
+      />
+      <BillPayFormDialog
+        open={billPayPrefill !== null}
+        payment={null}
+        prefill={billPayPrefill ?? undefined}
+        onClose={() => setBillPayPrefill(null)}
       />
     </>
   )
@@ -1227,9 +1276,8 @@ function BudgetPage() {
         month={budget.month}
         onClose={() => setAdding(false)}
       />
-      <TransactionFormDialog
+      <AddTransactionDialogs
         open={addingIncome}
-        transaction={null}
         defaultCategory="Income"
         submissionGate={incomeGate}
         onClose={() => setAddingIncome(false)}
@@ -1465,7 +1513,7 @@ function ActivityPage() {
           footer={`${transactions.length} of ${data.transactions.value.length} records visible to ${activeProfile}`}
         />
       </Panel>
-      <TransactionFormDialog open={adding} transaction={null} onClose={() => setAdding(false)} />
+      <AddTransactionDialogs open={adding} onClose={() => setAdding(false)} />
     </>
   )
 }
