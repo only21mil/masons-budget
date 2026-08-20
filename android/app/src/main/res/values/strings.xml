@@ -214,6 +214,8 @@
     <string name="budget_category_editor_title">Edit %1$s budget</string>
     <string name="budget_category_editor_month">Budget document month: %1$s</string>
     <string name="budget_category_amount_label">Monthly budget (USD)</string>
+    <string name="budget_income_add_as_bitcoin_buy">Add as Bitcoin buy</string>
+    <string name="budget_income_add_as_bitcoin_buy_detail">Record this income and buy Bitcoin in one atomic write. The income amount is locked to the Bitcoin purchase amount.</string>
     <string name="btc_buy_add_action">Add Bitcoin buy</string>
     <string name="btc_buy_editor_title">Add Bitcoin buy</string>
     <string name="btc_buy_date_label">Date (yyyy-MM-dd)</string>
@@ -221,7 +223,12 @@
     <string name="btc_buy_sats_label">Sats</string>
     <string name="btc_buy_price_label">BTC price (USD)</string>
     <string name="btc_buy_purchase_amount_label">Purchase amount (USD)</string>
+    <string name="btc_buy_note_label">Buy note (optional)</string>
     <string name="btc_buy_independent_amounts_detail">Sats, BTC price, and purchase dollars are stored independently. Check all three before saving.</string>
+    <string name="btc_income_buy_editor_title">Add income as Bitcoin buy</string>
+    <string name="btc_income_buy_income_label">Income amount (locked)</string>
+    <string name="btc_income_buy_detail">One atomic write records the income and credits Bitcoin once. Retry safely if the network is uncertain.</string>
+    <string name="btc_income_buy_save">Save income + Bitcoin buy</string>
     <string name="write_cancel">Cancel</string>
     <string name="write_save">Save</string>
     <string name="write_credential_title">Financial write sync credential</string>

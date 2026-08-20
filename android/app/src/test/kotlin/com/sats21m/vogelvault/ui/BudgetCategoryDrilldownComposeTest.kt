@@ -16,6 +16,7 @@ import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.unit.dp
@@ -122,6 +123,16 @@ class BudgetCategoryDrilldownComposeTest {
 
         compose.onNodeWithContentDescription("Spend, \$611.17").fetchSemanticsNode()
         compose.onNodeWithContentDescription("Income, \$4,960.00").fetchSemanticsNode()
+    }
+
+    @Test
+    fun `Budget income editor exposes the atomic Bitcoin buy action`() {
+        compose.onNodeWithText("Add").performClick()
+        settle()
+        compose.onNodeWithText("Income").performClick()
+        settle()
+
+        compose.onNodeWithText("Add as Bitcoin buy").fetchSemanticsNode()
     }
 
     private fun assertNamedButton(contentDescription: String) {
