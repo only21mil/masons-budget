@@ -204,7 +204,9 @@ describe("Bitcoin balance posting", () => {
       scope: "visible",
     });
     expect(publicBuys.rows).toHaveLength(1);
-    expect(Object.hasOwn(publicBuys.rows[0]!, "linkedIncomeId")).toBe(false);
+    expect(
+      Object.prototype.hasOwnProperty.call(publicBuys.rows[0]!, "linkedIncomeId"),
+    ).toBe(false);
     const afterRetry = await snapshot();
     expect(satsByKey(afterRetry)).toEqual({
       river: 1_025_000n,
@@ -774,6 +776,39 @@ describe("Bitcoin balance posting", () => {
       coldcard: 2_000_000n,
     });
     expect(state.document.totals.sats).toBe(2_970_000n);
+  });
+
+  it("keeps a zero-fee transfer neutral to total BTC, income, and spending rows", async () => {
+    const before = await snapshot();
+    const rowCountsBefore = await t.run(async (ctx) => ({
+      income: (await ctx.db.query("income").collect()).length,
+      transactions: (await ctx.db.query("transactions").collect()).length,
+    }));
+
+    await t.mutation(api.transfer, {
+      transfer: {
+        id: "zero-fee-transfer",
+        owner: "victor",
+        date: "2026-08-01",
+        fromAccountKey: "river",
+        toAccountKey: "coldcard",
+        sats: 100_000n,
+        feeSats: 0n,
+      },
+    });
+
+    const after = await snapshot();
+    expect(satsByKey(after)).toEqual({
+      river: 900_000n,
+      coldcard: 2_100_000n,
+    });
+    expect(after.document.totals.sats).toBe(before.document.totals.sats);
+    await expect(
+      t.run(async (ctx) => ({
+        income: (await ctx.db.query("income").collect()).length,
+        transactions: (await ctx.db.query("transactions").collect()).length,
+      })),
+    ).resolves.toEqual(rowCountsBefore);
   });
 
   it("rejects invalid and underfunded transfers without partial balance changes", async () => {
