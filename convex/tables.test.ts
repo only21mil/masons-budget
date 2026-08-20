@@ -445,6 +445,7 @@ const fn = {
         date: string;
         merchant: string;
         category: string;
+        budgetEffect?: "budget_category" | "credit_card_payment";
         amountUsdCents: bigint;
         btcSpentSats: bigint;
         btcPriceCents: bigint;
@@ -2422,6 +2423,7 @@ describe("row mutations", () => {
           date: "2026-7-9",
           merchant: "Invisible bill pay",
           category: "Other",
+          budgetEffect: "budget_category",
           amountUsdCents: 100n,
           btcSpentSats: 100n,
           btcPriceCents: 100n,
@@ -2738,6 +2740,7 @@ describe("row mutations", () => {
         date: "2026-07-24",
         merchant: "Electric Utility",
         category: "Utilities",
+        budgetEffect: "budget_category",
         amountUsdCents: 18_655n,
         btcSpentSats: 200_000n,
         btcPriceCents: 9_327_500n,
@@ -2765,6 +2768,7 @@ describe("row mutations", () => {
         date: "2026-07-24",
         merchant: "Electric Utility",
         category: "Utilities",
+        budgetEffect: "budget_category",
         amountUsdCents: 18_700n,
         btcSpentSats: 200_000n,
         btcPriceCents: 9_327_500n,
@@ -2779,11 +2783,74 @@ describe("row mutations", () => {
     });
     expect(rows.filter((row) => row.billPayId === "app-bp-1")).toHaveLength(1);
     expect(rows.find((row) => row.billPayId === "app-bp-1")).toMatchObject({
+      budgetEffect: "budget_category",
       amountUsdCents: 18_700n,
       btcSpentSats: 200_000n,
       btcPriceCents: 9_327_500n,
       feeUsdCents: 95n,
     });
+  });
+
+  it("accepts an omitted legacy bill-pay effect, excludes it, and replays once", async () => {
+    await seedPostingLedgers(t);
+    const legacy = {
+      id: "legacy-bp-effect",
+      date: "2026-07-24",
+      merchant: "Aven",
+      category: "Bills",
+      amountUsdCents: 12_000n,
+      btcSpentSats: 100_000n,
+      btcPriceCents: 12_000_000n,
+      feeUsdCents: 0n,
+      platform: "river_bitcoin_bill_pay",
+    };
+    await t.mutation(fn.upsertBtcBillPay, { billPay: legacy });
+    const storedRevision = await t.run(async (ctx) => {
+      const stored = await ctx.db
+        .query("btcBillPays")
+        .withIndex("by_source_bill_pay_id", (q) =>
+          q.eq("sourceFile", "bitcoin-bill-pays").eq("billPayId", legacy.id),
+        )
+        .unique();
+      expect(stored).not.toBeNull();
+      await ctx.db.patch(stored!._id, {
+        category: "Bills",
+        budgetEffect: undefined,
+      });
+      return stored!.updatedAtMs;
+    });
+    await t.mutation(fn.upsertBtcBillPay, { billPay: legacy });
+    await t.mutation(fn.upsertBtcBillPay, { billPay: legacy });
+
+    const rows = await queryRows(fn.listBtcBillPays, {
+      viewer: "victor",
+      scope: "visible",
+    });
+    expect(rows.filter((row) => row.billPayId === legacy.id)).toHaveLength(1);
+    expect(rows.find((row) => row.billPayId === legacy.id)).toMatchObject({
+      category: "Credit Card Payment",
+      budgetEffect: "credit_card_payment",
+    });
+    const sats = await t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query("btcBalanceDocuments")
+          .withIndex("by_source_file", (q) => q.eq("sourceFile", "btc-balance-snapshot"))
+          .unique()
+      )!.totals.sats,
+    );
+    expect(sats).toBe(9_900_000n);
+    const stored = await t.run(async (ctx) =>
+      ctx.db
+        .query("btcBillPays")
+        .withIndex("by_source_bill_pay_id", (q) =>
+          q.eq("sourceFile", "bitcoin-bill-pays").eq("billPayId", legacy.id),
+        )
+        .unique(),
+    );
+    expect(stored?.updatedAtMs).toBe(storedRevision);
+    expect(stored?.budgetEffect).toBeUndefined();
+    expect(stored?.category).toBe("Bills");
   });
 
   it("resolves BTC bill-pay owners through the existing visibility scopes", async () => {
@@ -2794,6 +2861,7 @@ describe("row mutations", () => {
         date: "2026-07-24",
         merchant: "Game Store",
         category: "Fun",
+        budgetEffect: "budget_category",
         amountUsdCents: 2_000n,
         btcSpentSats: 20_000n,
         btcPriceCents: 10_000_000n,
@@ -2848,6 +2916,7 @@ describe("row mutations", () => {
             date: "2026-07-24",
             merchant: "Electric Utility",
             category: "Utilities",
+            budgetEffect: "budget_category",
             amountUsdCents: 18_655n,
             btcSpentSats: 200_000n,
             btcPriceCents: 10_000_000n,
@@ -2865,6 +2934,7 @@ describe("row mutations", () => {
       date: "2026-07-24",
       merchant: "Electric Utility",
       category: "Utilities",
+      budgetEffect: "budget_category" as const,
       amountUsdCents: 18_655n,
       btcSpentSats: 200_000n,
       btcPriceCents: 10_000_000n,
@@ -2908,6 +2978,7 @@ describe("row mutations", () => {
           date: "2026-07-24",
           merchant: "Nope",
           category: "Other",
+          budgetEffect: "budget_category",
           amountUsdCents: 1n,
           btcSpentSats: 1n,
           btcPriceCents: 1n,
@@ -3169,6 +3240,7 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
             date: "2026-07-25",
             merchant: "Probe",
             category: "Other",
+            budgetEffect: "budget_category",
             amountUsdCents: 1n,
             btcSpentSats: 1n,
             btcPriceCents: 1n,

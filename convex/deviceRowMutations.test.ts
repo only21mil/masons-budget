@@ -291,7 +291,7 @@ describe("device row authorization", () => {
     expect(stored!.lastSeenAt).toBe(0);
   });
 
-  it("requires bitcoin authority for sat-Income create, edit, and delete", async () => {
+  it("requires bitcoin authority for sat-Income and Lightning postings", async () => {
     await seedBtcLedger("victor");
     const transactionOnly = await pairMobileDevice(
       t,
@@ -317,6 +317,24 @@ describe("device row authorization", () => {
         owner: "victor",
         sourceFile: "transactions",
         transaction: income,
+      }),
+    ).rejects.toThrow(/Unauthorized mobile device/);
+    await expect(
+      t.mutation(api.upsertTransaction, {
+        ...authArgs(transactionOnly),
+        owner: "victor",
+        sourceFile: "transactions",
+        transaction: {
+          ...income,
+          id: "device-lightning-spend",
+          merchant: "Lightning merchant",
+          amountCents: 100n,
+          amountSats: 50n,
+          bitcoinAccountKey: "river",
+          kind: "spend",
+          category: "Food",
+          card: "lightning",
+        },
       }),
     ).rejects.toThrow(/Unauthorized mobile device/);
     await expect(
@@ -513,6 +531,7 @@ describe("device row authorization", () => {
             date: "2026-07-30",
             merchant: "",
             category: "Bills",
+            budgetEffect: "budget_category",
             amountUsdCents: 100n,
             btcSpentSats: 1n,
             btcPriceCents: 10_000_000n,
@@ -714,6 +733,7 @@ describe("device transaction and todo mutations", () => {
         date: "2026-07-30",
         merchant: "Utility",
         category: "Bills",
+        budgetEffect: "budget_category",
         amountUsdCents: 100n,
         btcSpentSats: 1n,
         btcPriceCents: 10_000_000n,
@@ -1509,6 +1529,7 @@ describe("device bitcoin mutations", () => {
           date: "2026-07-30",
           merchant: "Must not land",
           category: "Bills",
+          budgetEffect: "budget_category",
           amountUsdCents: 100n,
           btcSpentSats: 1n,
           btcPriceCents: 10_000_000n,
@@ -1582,6 +1603,7 @@ describe("device bitcoin mutations", () => {
         date: "2026-07-30",
         merchant: "Shared bill",
         category: "Bills",
+        budgetEffect: "budget_category",
         amountUsdCents: 100n,
         btcSpentSats: 10n,
         btcPriceCents: 10_000_000n,
@@ -1611,6 +1633,7 @@ describe("device bitcoin mutations", () => {
         .unique())!.owner,
       buy: (await ctx.db.query("btcBuys").unique())!.owner,
       bill: (await ctx.db.query("btcBillPays").unique())!.owner,
+      billEffect: (await ctx.db.query("btcBillPays").unique())!.budgetEffect,
       accountDocument: (await ctx.db
         .query("btcBalanceDocuments")
         .withIndex("by_source_file", (q) =>
@@ -1629,6 +1652,7 @@ describe("device bitcoin mutations", () => {
       budget: "victor",
       buy: "victor",
       bill: "victor",
+      billEffect: "budget_category",
       accountDocument: "victor",
       accountMirror: "victor",
     });
@@ -1698,6 +1722,7 @@ describe("device bitcoin mutations", () => {
         date: "2026-07-30",
         merchant: "Utility",
         category: "Bills",
+        budgetEffect: "budget_category",
         amountUsdCents: 5_000n,
         btcSpentSats: 50_000n,
         btcPriceCents: 10_000_000n,

@@ -1,0 +1,29 @@
+{
+  "$comment": "Closed payment-source wire contract. River routes to btcBillPays. Card sources persist in transaction.card without Bitcoin posting fields. Lightning and on_chain persist in card and require exact positive sats plus a Bitcoin account key.",
+  "contractVersion": 1,
+  "sources": [
+    { "wire": "river_bitcoin_bill_pay", "route": "btc_bill_pay" },
+    { "wire": "coinbase_card", "route": "transaction" },
+    { "wire": "aven", "route": "transaction" },
+    { "wire": "sofi_card", "route": "transaction" },
+    { "wire": "capital_one_vx", "route": "transaction" },
+    { "wire": "lightning", "route": "transaction" },
+    { "wire": "on_chain", "route": "transaction" }
+  ],
+  "bitcoinSpend": {
+    "paymentSource": "lightning",
+    "card": "lightning",
+    "amountSats": "25000",
+    "bitcoinAccountKey": "river"
+  },
+  "cardSpend": {
+    "paymentSource": "capital_one_vx",
+    "card": "capital_one_vx"
+  },
+  "billPay": {
+    "paymentSource": "river_bitcoin_bill_pay",
+    "route": "btc_bill_pay",
+    "platform": "river_bitcoin_bill_pay",
+    "budgetEffects": ["budget_category", "credit_card_payment"]
+  }
+}

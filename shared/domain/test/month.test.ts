@@ -15,6 +15,7 @@ import type { FamilyMember } from "../src/family.ts"
 import { parseCents } from "../src/money.ts"
 import {
   type Budget,
+  type BTCBillPay,
   type Transaction,
   budgetMonthsFor,
   budgetTransactionsFor,
@@ -24,6 +25,31 @@ import {
   monthsPresent,
   transactionsInMonth,
 } from "../src/readModel.ts"
+
+function billPay(
+  id: string,
+  date: string,
+  category: string,
+  amountUsd: string,
+  budgetEffect: BTCBillPay["budgetEffect"],
+): BTCBillPay {
+  return {
+    id,
+    updatedAtMs: 1,
+    date,
+    merchant: "River bill pay",
+    category,
+    budgetEffect,
+    amountUsd: parseCents(amountUsd),
+    btcSpentSats: 10_000n,
+    btcPrice: parseCents("100000"),
+    platform: "river_bitcoin_bill_pay",
+    note: null,
+    feeUsd: 0n,
+    reference: null,
+    owner: "victor",
+  }
+}
 
 function tx(date: string, category: string, amount: string, id = date + category): Transaction {
   return {
@@ -225,6 +251,28 @@ test("income is not spend", () => {
   const result = deriveBudgetSpend(budget("2026-07", [["Groceries", "900"], ["Income", "0"]]), withIncome)
   assert.equal(result.categories.find((c) => c.name === "Income")!.spent, 0n)
   assert.equal(result.actual, parseCents("150"))
+})
+
+test("one River bill-pay row contributes once only when budget_category is selected", () => {
+  const rows = [
+    billPay("budgeted", "2026-07-15", "Utilities", "75", "budget_category"),
+    billPay(
+      "card-payment",
+      "2026-07-16",
+      "Credit Card Payment",
+      "125",
+      "credit_card_payment",
+    ),
+    billPay("other-month", "2026-08-01", "Utilities", "500", "budget_category"),
+  ]
+  const result = deriveBudgetSpend(
+    budget("2026-07", [["Utilities", "200"], ["Credit Card Payment", "0"]]),
+    [],
+    rows,
+  )
+  assert.equal(result.categories.find((row) => row.name === "Utilities")!.spent, parseCents("75"))
+  assert.equal(result.categories.find((row) => row.name === "Credit Card Payment")!.spent, 0n)
+  assert.equal(result.actual, parseCents("75"))
 })
 
 test("child rows count as spend despite a positive amount", () => {

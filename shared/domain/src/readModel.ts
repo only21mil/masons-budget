@@ -289,6 +289,7 @@ export interface BTCBillPay {
   readonly date: string
   readonly merchant: string
   readonly category: string
+  readonly budgetEffect: BTCBillPayBudgetEffect
   readonly amountUsd: Cents
   readonly btcSpentSats: Sats
   readonly btcPrice: Cents
@@ -298,6 +299,13 @@ export interface BTCBillPay {
   readonly reference: string | null
   readonly owner: FamilyMember
 }
+
+export const BTC_BILL_PAY_BUDGET_EFFECTS = [
+  "budget_category",
+  "credit_card_payment",
+] as const
+
+export type BTCBillPayBudgetEffect = (typeof BTC_BILL_PAY_BUDGET_EFFECTS)[number]
 
 export function normalizeBTCSnapshot(raw: Record<string, unknown>, owner: FamilyMember): BTCSnapshot {
   const accountsRaw = asRecord(raw.accounts) ?? {}
@@ -364,18 +372,33 @@ export function normalizeBTCBuy(raw: Record<string, unknown>, fallbackOwner?: Fa
 }
 
 export function normalizeBTCBillPay(raw: Record<string, unknown>, fallbackOwner?: FamilyMember): BTCBillPay {
+  const budgetEffect: BTCBillPayBudgetEffect =
+    raw.budgetEffect === "budget_category" || raw.budget_effect === "budget_category"
+      ? "budget_category"
+      : "credit_card_payment"
   return {
     id: String(raw.id ?? ""),
     updatedAtMs: timestampMillis(raw.updatedAtMs ?? raw.updated_at_ms),
     date: String(raw.date ?? ""),
     merchant: String(raw.merchant ?? ""),
-    category: String(raw.category ?? "Other"),
-    amountUsd: parseCents(raw.amount_usd),
-    btcSpentSats: parseBtcToSats(raw.btc_spent),
-    btcPrice: parseCents(raw.btc_price),
+    category: budgetEffect === "credit_card_payment"
+      ? "Credit Card Payment"
+      : String(raw.category ?? "Other"),
+    budgetEffect,
+    amountUsd: raw.amountUsdCents === undefined
+      ? parseCents(raw.amount_usd)
+      : BigInt(String(raw.amountUsdCents)),
+    btcSpentSats: raw.btcSpentSats === undefined
+      ? parseBtcToSats(raw.btc_spent)
+      : BigInt(String(raw.btcSpentSats)),
+    btcPrice: raw.btcPriceCents === undefined
+      ? parseCents(raw.btc_price)
+      : BigInt(String(raw.btcPriceCents)),
     platform: optionalString(raw.platform),
     note: optionalString(raw.note),
-    feeUsd: parseCents(raw.fee_usd),
+    feeUsd: raw.feeUsdCents === undefined
+      ? parseCents(raw.fee_usd)
+      : BigInt(String(raw.feeUsdCents)),
     reference: optionalString(raw.reference),
     owner: raw.owner === undefined && fallbackOwner ? fallbackOwner : coerceOwner(raw.owner),
   }
@@ -627,13 +650,14 @@ export interface BudgetSpend {
 /**
  * Derive a month's spend for a budget.
  *
- * `transactions` should already be filtered to what the viewer may see — this
- * function does not apply visibility, deliberately, so the two rules stay
- * separate and testable.
+ * `transactions` and `billPays` should already be filtered to what the viewer
+ * may see. This function does not apply visibility, deliberately, so the two
+ * rules stay separate and testable.
  */
 export function deriveBudgetSpend(
   budget: Budget,
   transactions: readonly Transaction[],
+  billPays: readonly BTCBillPay[] = [],
 ): BudgetSpend {
   const inMonth = transactionsInMonth(transactions, budget.month)
 
@@ -642,6 +666,16 @@ export function deriveBudgetSpend(
     const spend = spendAmount(transaction)
     if (spend === 0n) continue
     spentByCategory.set(transaction.category, (spentByCategory.get(transaction.category) ?? 0n) + spend)
+  }
+  for (const billPay of billPays) {
+    if (
+      monthOf(billPay.date) !== budget.month ||
+      billPay.budgetEffect !== "budget_category"
+    ) continue
+    spentByCategory.set(
+      billPay.category,
+      (spentByCategory.get(billPay.category) ?? 0n) + billPay.amountUsd,
+    )
   }
 
   const categories: CategorySpend[] = budget.categories.map((category) => {

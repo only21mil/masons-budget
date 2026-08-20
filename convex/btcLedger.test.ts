@@ -172,6 +172,112 @@ describe("Bitcoin balance posting", () => {
     );
   });
 
+  it("keeps card transactions off the Bitcoin ledger and posts BTC spends exactly once through edit and delete", async () => {
+    const before = satsByKey(await snapshot());
+    await t.mutation(api.transaction, {
+      transaction: {
+        id: "card-spend",
+        date: "2026-08-20",
+        merchant: "Grocer",
+        amountCents: 2_500n,
+        kind: "spend",
+        category: "Groceries",
+        card: "aven",
+      },
+    });
+    expect(satsByKey(await snapshot())).toEqual(before);
+
+    const spend = {
+      id: "btc-spend",
+      date: "2026-08-20",
+      merchant: "Merchant",
+      amountCents: 10_000n,
+      kind: "spend",
+      category: "Shopping",
+      card: "lightning",
+      amountSats: 100_000n,
+      bitcoinAccountKey: "coldcard",
+    };
+    await t.mutation(api.transaction, { transaction: spend });
+    await t.mutation(api.transaction, { transaction: spend });
+    expect(satsByKey(await snapshot())).toEqual({
+      river: 1_000_000n,
+      coldcard: 1_900_000n,
+    });
+
+    const revision = await t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query("transactions")
+          .withIndex("by_source_tx_id", (q) =>
+            q.eq("sourceFile", "transactions").eq("txId", spend.id),
+          )
+          .unique()
+      )!.updatedAtMs,
+    );
+    await t.mutation(api.transaction, {
+      transaction: {
+        ...spend,
+        card: "on_chain",
+        amountSats: 120_000n,
+        bitcoinAccountKey: "river",
+      },
+      baseUpdatedAtMs: revision,
+    });
+    expect(satsByKey(await snapshot())).toEqual({
+      river: 880_000n,
+      coldcard: 2_000_000n,
+    });
+
+    const editedRevision = await t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query("transactions")
+          .withIndex("by_source_tx_id", (q) =>
+            q.eq("sourceFile", "transactions").eq("txId", spend.id),
+          )
+          .unique()
+      )!.updatedAtMs,
+    );
+    await expect(
+      t.mutation(api.deleteTransaction, { txId: spend.id }),
+    ).rejects.toThrow(/baseUpdatedAtMs is required/);
+    await t.mutation(api.deleteTransaction, {
+      txId: spend.id,
+      baseUpdatedAtMs: editedRevision,
+    });
+    expect(satsByKey(await snapshot())).toEqual(before);
+  });
+
+  it("rejects unknown and underfunded BTC spend accounts without changing balances", async () => {
+    const before = satsByKey(await snapshot());
+    const spend = {
+      id: "rejected-btc-spend",
+      date: "2026-08-20",
+      merchant: "Merchant",
+      amountCents: 10_000n,
+      kind: "spend",
+      category: "Shopping",
+      card: "on_chain",
+      amountSats: 100_000n,
+      bitcoinAccountKey: "missing",
+    };
+    await expect(
+      t.mutation(api.transaction, { transaction: spend }),
+    ).rejects.toThrow(/Unknown Bitcoin account/);
+    await expect(
+      t.mutation(api.transaction, {
+        transaction: {
+          ...spend,
+          id: "underfunded-btc-spend",
+          amountSats: 2_000_001n,
+          bitcoinAccountKey: "coldcard",
+        },
+      }),
+    ).rejects.toThrow(/insufficient funds/);
+    expect(satsByKey(await snapshot())).toEqual(before);
+  });
+
   it("rejects invalid sync-token buys before they can debit River", async () => {
     const before = satsByKey(await snapshot());
     const valid = {
@@ -326,6 +432,7 @@ describe("Bitcoin balance posting", () => {
         date: "2026-08-01",
         merchant: "Merchant",
         category: "Spending",
+        budgetEffect: "budget_category",
         amountUsdCents: 1_000n,
         btcSpentSats: 10_000n,
         btcPriceCents: 10_000_000n,
@@ -407,6 +514,7 @@ describe("Bitcoin balance posting", () => {
         date: "2026-08-01",
         merchant: "Utility",
         category: "Bills",
+        budgetEffect: "budget_category",
         amountUsdCents: 10_000n,
         btcSpentSats: 30_000n,
         btcPriceCents: 10_000_000n,

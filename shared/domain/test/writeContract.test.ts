@@ -4,9 +4,14 @@ import { test } from "node:test"
 
 import {
   WriteContractError,
+  PAYMENT_SOURCES,
+  buildBtcBillPayWriteRequest,
   buildTransactionWriteRequest,
   canWriteDataOwnedBy,
+  isPaymentSource,
   parseWriteInt64,
+  paymentSourceRoute,
+  type PaymentSource,
   type WriteContractErrorCode,
 } from "../src/writeContract.ts"
 
@@ -40,6 +45,26 @@ interface Fixtures {
 const fixtures = JSON.parse(
   readFileSync(new URL("../fixtures/write-payload-cases.json", import.meta.url), "utf8"),
 ) as Fixtures
+
+const paymentSourceFixtures = JSON.parse(
+  readFileSync(new URL("../fixtures/payment-source-cases.json", import.meta.url), "utf8"),
+) as {
+  contractVersion: number
+  sources: Array<{ wire: PaymentSource; route: "transaction" | "btc_bill_pay" }>
+  bitcoinSpend: {
+    paymentSource: PaymentSource
+    card: string
+    amountSats: string
+    bitcoinAccountKey: string
+  }
+  cardSpend: { paymentSource: PaymentSource; card: string }
+  billPay: {
+    paymentSource: PaymentSource
+    route: "btc_bill_pay"
+    platform: string
+    budgetEffects: string[]
+  }
+}
 
 test("golden write payloads encode exact signed int64 minor units", () => {
   assert.equal(fixtures.contractVersion, 2)
@@ -138,4 +163,113 @@ test("golden write requests never contain a token or decimal dollar field", () =
     assert.equal(serialized.includes('"amount"'), false, testCase.name)
     assert.equal(serialized.includes('"amountCents":{"$integer":'), true, testCase.name)
   }
+})
+
+test("payment source fixture pins the complete closed wire set and routes", () => {
+  assert.equal(paymentSourceFixtures.contractVersion, 1)
+  assert.deepEqual(
+    paymentSourceFixtures.sources.map(({ wire }) => wire),
+    PAYMENT_SOURCES,
+  )
+  for (const { wire, route } of paymentSourceFixtures.sources) {
+    assert.equal(isPaymentSource(wire), true)
+    assert.equal(paymentSourceRoute(wire), route)
+  }
+  assert.equal(isPaymentSource("visa"), false)
+  assert.deepEqual(paymentSourceFixtures.billPay.budgetEffects, [
+    "budget_category",
+    "credit_card_payment",
+  ])
+})
+
+test("payment-source transaction mapping persists cards and Bitcoin spend intent", () => {
+  const base = {
+    id: "payment-source-1",
+    date: "2026-08-20",
+    merchant: "Merchant",
+    amountCents: 2_500n,
+    kind: "spend" as const,
+    category: "Shopping",
+    owner: "victor" as const,
+    sourceFile: "transactions",
+  }
+  const card = buildTransactionWriteRequest("victor", {
+    ...base,
+    paymentSource: paymentSourceFixtures.cardSpend.paymentSource,
+  }).args.transaction
+  assert.equal(card.card, paymentSourceFixtures.cardSpend.card)
+  assert.equal(card.amountSats, undefined)
+  assert.equal(card.bitcoinAccountKey, undefined)
+
+  const bitcoin = buildTransactionWriteRequest("victor", {
+    ...base,
+    paymentSource: paymentSourceFixtures.bitcoinSpend.paymentSource,
+    amountSats: paymentSourceFixtures.bitcoinSpend.amountSats,
+    bitcoinAccountKey: paymentSourceFixtures.bitcoinSpend.bitcoinAccountKey,
+  }).args.transaction
+  assert.equal(bitcoin.card, paymentSourceFixtures.bitcoinSpend.card)
+  assert.deepEqual(bitcoin.amountSats, { $integer: "qGEAAAAAAAA=" })
+  assert.equal(bitcoin.bitcoinAccountKey, "river")
+})
+
+test("payment-source builder rejects wrong routes and field combinations", () => {
+  const base = {
+    id: "payment-source-reject",
+    date: "2026-08-20",
+    merchant: "Merchant",
+    amountCents: 2_500n,
+    kind: "spend" as const,
+    category: "Shopping",
+    owner: "victor" as const,
+    sourceFile: "transactions",
+  }
+  const rejected = [
+    { ...base, paymentSource: "river_bitcoin_bill_pay" },
+    { ...base, paymentSource: "lightning" },
+    {
+      ...base,
+      paymentSource: "on_chain",
+      amountSats: 10n,
+      bitcoinAccountKey: "",
+    },
+    { ...base, paymentSource: "aven", amountSats: 10n, bitcoinAccountKey: "river" },
+    { ...base, paymentSource: "not-a-source" },
+  ]
+  for (const candidate of rejected) {
+    assert.throws(() => buildTransactionWriteRequest("victor", candidate), WriteContractError)
+  }
+})
+
+test("River bill-pay builder requires budgetEffect and canonicalizes excluded payments", () => {
+  const base = {
+    id: "river-bill-1",
+    date: "2026-08-20",
+    merchant: "Aven",
+    category: "Bills",
+    amountUsdCents: 12_000n,
+    btcSpentSats: 180_000n,
+    btcPriceCents: 6_666_667n,
+    feeUsdCents: 0n,
+    owner: "victor" as const,
+    sourceFile: "bitcoin-bill-pays" as const,
+    paymentSource: "river_bitcoin_bill_pay" as const,
+  }
+  const budgeted = buildBtcBillPayWriteRequest("rachel", {
+    ...base,
+    budgetEffect: "budget_category",
+  })
+  assert.equal(budgeted.path, "tables:upsertBtcBillPay")
+  assert.equal(budgeted.args.billPay.category, "Bills")
+  assert.equal(budgeted.args.billPay.platform, "river_bitcoin_bill_pay")
+  assert.equal(budgeted.args.billPay.budgetEffect, "budget_category")
+
+  const excluded = buildBtcBillPayWriteRequest("victor", {
+    ...base,
+    budgetEffect: "credit_card_payment",
+  })
+  assert.equal(excluded.args.billPay.category, "Credit Card Payment")
+  assert.throws(
+    () => buildBtcBillPayWriteRequest("victor", base),
+    WriteContractError,
+  )
 })

@@ -12,6 +12,7 @@
     "./readModel": "./src/readModel.ts",
     "./todo": "./src/todo.ts",
     "./fixtures/finance-market-cases.json": "./fixtures/finance-market-cases.json",
+    "./fixtures/payment-source-cases.json": "./fixtures/payment-source-cases.json",
     "./fixtures/visibility-cases.json": "./fixtures/visibility-cases.json"
   },
   "scripts": {

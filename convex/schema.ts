@@ -70,6 +70,11 @@ export const custodyValidator = v.union(
   v.literal("self_custody"),
 );
 
+export const btcBillPayBudgetEffectValidator = v.union(
+  v.literal("budget_category"),
+  v.literal("credit_card_payment"),
+);
+
 const balanceAmountsSatsValidator = v.object({
   cashAppSats: v.optional(v.int64()),
   coldcardSats: v.optional(v.int64()),
@@ -487,6 +492,8 @@ export default defineSchema({
     month: v.string(),
     merchant: v.string(),
     category: v.string(),
+    // Legacy rows omit this and are treated as excluded credit-card payments.
+    budgetEffect: v.optional(btcBillPayBudgetEffectValidator),
     amountUsdCents: v.int64(),
     btcSpentSats: v.int64(),
     btcPriceCents: v.int64(),
