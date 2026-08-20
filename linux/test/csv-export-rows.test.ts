@@ -9,7 +9,11 @@ import {
   buildSanitizedFixtureEnvelope,
 } from "../src/renderer/data/fixtures.ts"
 import { PRICE_UNAVAILABLE } from "../src/renderer/data/bitcoinDisplay.ts"
-import { EXPORT_DATASET_IDS, buildExportDatasets } from "../src/renderer/pages/admin/index.tsx"
+import {
+  EXPORT_DATASET_IDS,
+  buildCsvExportRequest,
+  buildExportDatasets,
+} from "../src/renderer/pages/admin/index.tsx"
 
 type Datasets = ReturnType<typeof buildExportDatasets>
 type Dataset = Datasets[(typeof EXPORT_DATASET_IDS)[number]]
@@ -88,27 +92,19 @@ test("all five datasets for all four profiles pass CSV request validation", () =
   }
 })
 
-test("the exact request shape the admin Export page sends passes validateCsvRequest, for every profile and dataset", () => {
-  // Mirrors pages/admin/index.tsx's ExportPage.runExport() exactly: it calls
-  // exporter({ suggestedFileName: exportFileName(datasetId, activeProfile,
-  // data.generatedAt), columns: dataset.columns, rows: dataset.rows }), and
-  // the private exportFileName() builds
-  // `vogel-vault-${dataset}-${viewer}-${isoDate}.csv` from the same envelope
-  // clock the page reads off useAppState(). Reproduced here (exportFileName
-  // is not exported) rather than the placeholder file name the acceptance
-  // loop above used.
+test("the request the Export page hands to the bridge passes validateCsvRequest, for every profile and dataset", () => {
+  // buildCsvExportRequest is the object ExportPage.runExport() passes to
+  // window.vogelVault.exportCsv, so page-wiring drift fails here.
   for (const profile of FAMILY_MEMBERS) {
     const envelope = buildSanitizedFixtureEnvelope(profile)
-    const datasets = buildExportDatasets(profile, envelope)
     for (const datasetId of EXPORT_DATASET_IDS) {
-      const dataset = datasets[datasetId]
-      const suggestedFileName =
-        `vogel-vault-${datasetId}-${profile}-${new Date(envelope.generatedAt).toISOString().slice(0, 10)}.csv`
-      const validation = validateCsvRequest({
-        suggestedFileName,
-        columns: dataset.columns,
-        rows: dataset.rows,
-      })
+      const request = buildCsvExportRequest(datasetId, profile, envelope)
+      assert.equal(
+        request.suggestedFileName,
+        `vogel-vault-${datasetId}-${profile}-${new Date(envelope.generatedAt).toISOString().slice(0, 10)}.csv`,
+      )
+      assert.deepEqual(request.rows, buildExportDatasets(profile, envelope)[datasetId].rows)
+      const validation = validateCsvRequest(request)
       assert.equal(validation.ok, true, `${profile}/${datasetId}: ${validation.ok ? "" : validation.reason}`)
     }
   }
@@ -169,14 +165,27 @@ test("every row has exactly columns.length cells, for every dataset and every pr
   }
 })
 
-test("row ordering is deterministic across two independent builds", () => {
-  for (const profile of FAMILY_MEMBERS) {
-    const first = buildExportDatasets(profile, buildSanitizedFixtureEnvelope(profile))
-    const second = buildExportDatasets(profile, buildSanitizedFixtureEnvelope(profile))
-    for (const datasetId of EXPORT_DATASET_IDS) {
-      assert.deepEqual(second[datasetId].rows, first[datasetId].rows, `${profile}/${datasetId}`)
-    }
-  }
+test("row order is a pinned contract per dataset, not an accident of input order", () => {
+  const ids = (dataset: Dataset): readonly string[] => dataset.rows.map((row) => row[0]!)
+  const victor = datasetsFor("victor")
+  assert.deepEqual(ids(victor.transactions), [
+    "tx-0001", "tx-0002", "tx-0003", "tx-0004", "tx-0005", "tx-0006", "tx-0007", "tx-0008",
+    "tx-0009", "tx-0010", "tx-0011", "tx-0012", "tx-1001", "tx-1002", "tx-1003", "tx-2001",
+    "tx-2002", "tx-0101", "tx-0102", "tx-0103", "tx-0104", "tx-0105", "tx-1101",
+  ])
+  assert.deepEqual(ids(victor["bitcoin-buys"]), ["buy-0001", "buy-0002", "buy-0003", "buy-0004", "buy-0005"])
+  assert.deepEqual(ids(victor["bitcoin-accounts"]), ["coldcard", "lightning", "exchange-dca", "mason-stack", "maddox-stack"])
+  assert.deepEqual(ids(victor["bill-pays"]), ["pay-0001", "pay-0002"])
+  assert.deepEqual(
+    ids(victor.todos),
+    ["todo-0001", "todo-0002", "todo-0003", "todo-0004", "todo-0005", "todo-0006", "todo-0007", "todo-0008", "todo-0009", "todo-0010"],
+  )
+
+  const mason = datasetsFor("mason")
+  assert.deepEqual(ids(mason.transactions), ["tx-1001", "tx-1002", "tx-1003", "tx-1101"])
+  assert.deepEqual(ids(mason["bitcoin-buys"]), ["buy-0005"])
+  assert.deepEqual(ids(mason["bitcoin-accounts"]), ["mason-stack"])
+  assert.deepEqual(ids(mason.todos), ["todo-0007", "todo-0008"])
 })
 
 test("Mason's export contains only Mason-owned rows and never an adult household row", () => {
@@ -204,6 +213,24 @@ test("Mason's export contains only Mason-owned rows and never an adult household
   assert.equal(mason["bill-pays"].rows.length, 0)
   assert.ok(mason["bitcoin-buys"].rows.length > 0)
   assert.ok(mason["bitcoin-accounts"].rows.length > 0)
+})
+
+test("Maddox's rows are present in Maddox's export and in no other child's", () => {
+  const maddox = datasetsFor("maddox")
+  assert.deepEqual(maddox.transactions.rows.map((row) => row[0]), ["tx-2001", "tx-2002"])
+  assert.deepEqual(maddox["bitcoin-accounts"].rows.map((row) => row[0]), ["maddox-stack"])
+  assert.equal(cell(maddox.transactions, "tx-2001", "owner"), "maddox")
+  assert.equal(cell(maddox["bitcoin-accounts"], "maddox-stack", "in_net_worth"), "yes")
+  for (const datasetId of EXPORT_DATASET_IDS) {
+    const ownerColumn = maddox[datasetId].columns.indexOf("owner")
+    for (const row of maddox[datasetId].rows) {
+      assert.equal(row[ownerColumn], "maddox", `${datasetId} row ${row[0]} leaked into Maddox's export`)
+    }
+  }
+
+  const mason = datasetsFor("mason")
+  assert.ok(!mason.transactions.rows.some((row) => row[0] === "tx-2001"), "Maddox's row leaked into Mason's export")
+  assert.ok(!mason["bitcoin-accounts"].rows.some((row) => row[0] === "maddox-stack"), "Maddox's stack leaked into Mason's export")
 })
 
 test("an adult's export includes the household plus every child's rows, not just their own", () => {
