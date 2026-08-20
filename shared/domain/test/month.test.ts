@@ -32,7 +32,7 @@ function billPay(
   date: string,
   category: string,
   amountUsd: string,
-  budgetEffect: BTCBillPay["budgetEffect"],
+  budgetEffect: Exclude<BTCBillPay["budgetEffect"], undefined>,
   owner: FamilyMember = "victor",
 ): BTCBillPay {
   return {

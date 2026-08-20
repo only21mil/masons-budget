@@ -462,6 +462,10 @@ describe("device row authorization", () => {
       ),
       "VALIDATION_FAILED",
     );
+    await expectDeviceError(
+      request({ ...base, id: "legacy-card" }, legacyRevision),
+      "VALIDATION_FAILED",
+    );
 
     const state = await t.run(async (ctx) => ({
       rows: await ctx.db.query("transactions").collect(),

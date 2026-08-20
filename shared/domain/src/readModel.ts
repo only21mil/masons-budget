@@ -289,7 +289,8 @@ export interface BTCBillPay {
   readonly date: string
   readonly merchant: string
   readonly category: string
-  readonly budgetEffect: BTCBillPayBudgetEffect
+  /** Absent only on legacy client-constructed rows; normalizers always fill the excluded default. */
+  readonly budgetEffect?: BTCBillPayBudgetEffect
   readonly amountUsd: Cents
   readonly btcSpentSats: Sats
   readonly btcPrice: Cents

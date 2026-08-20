@@ -2001,7 +2001,23 @@ function validateDeviceTransactionPaymentSource(
   existing: Doc<"transactions"> | null,
 ) {
   const source = optionalText(row.card);
-  if (source === undefined) return;
+  if (source === undefined) {
+    const existingSource = optionalText(existing?.card);
+    if (
+      existingSource !== undefined &&
+      existingSource !== "river_bitcoin_bill_pay" &&
+      !FIAT_PAYMENT_SOURCES.has(existingSource) &&
+      !BITCOIN_SPEND_PAYMENT_SOURCES.has(existingSource)
+    ) {
+      deviceFailure(
+        "VALIDATION_FAILED",
+        "Unknown legacy transaction payment sources may only round-trip unchanged.",
+        "transaction",
+        row.id,
+      );
+    }
+    return;
+  }
   if (source === "river_bitcoin_bill_pay") {
     deviceFailure(
       "VALIDATION_FAILED",
