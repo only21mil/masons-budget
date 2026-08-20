@@ -426,6 +426,28 @@ function exportFileName(dataset: ExportDatasetId, viewer: FamilyMember, generate
   return `vogel-vault-${dataset}-${viewer}-${new Date(generatedAt).toISOString().slice(0, 10)}.csv`
 }
 
+/**
+ * The exact request the Export page hands to the preload bridge. Exported so
+ * the row-builder tests validate the same object the page sends, not a
+ * re-derivation of it.
+ */
+export function buildCsvExportRequest(
+  datasetId: ExportDatasetId,
+  viewer: FamilyMember,
+  envelope: FixtureEnvelope,
+): {
+  readonly suggestedFileName: string
+  readonly columns: readonly string[]
+  readonly rows: readonly (readonly string[])[]
+} {
+  const dataset = buildExportDatasets(viewer, envelope)[datasetId]
+  return {
+    suggestedFileName: exportFileName(datasetId, viewer, envelope.generatedAt),
+    columns: dataset.columns,
+    rows: dataset.rows,
+  }
+}
+
 interface ExportOutcome {
   readonly tone: BannerTone
   readonly title: string
@@ -459,11 +481,7 @@ function ExportPage() {
     setBusy(true)
     setOutcome(null)
     try {
-      const result = await exporter({
-        suggestedFileName: exportFileName(datasetId, activeProfile, data.generatedAt),
-        columns: dataset.columns,
-        rows: dataset.rows,
-      })
+      const result = await exporter(buildCsvExportRequest(datasetId, activeProfile, data))
       if (result.status === "written") {
         setOutcome({
           tone: "positive",
