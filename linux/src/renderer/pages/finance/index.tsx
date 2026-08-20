@@ -1868,26 +1868,23 @@ function BillsPage() {
   )
 }
 
-// ── Retirement ──────────────────────────────────────────────────────────────
+// ── Net Worth ───────────────────────────────────────────────────────────────
 
-function RetirementPage() {
-  const { activeProfile, displayUnit, financeModel, stateOverride } = useAppState()
-  const accounts = financeAccounts(activeProfile, financeModel)
-  const retirementValueCents = sum(accounts.map((account) => account.valueCents))
+/**
+ * Retirement detail, rendered inside Net Worth.
+ *
+ * The valuations are passed in rather than re-derived so this table can only
+ * ever show the accounts the net-worth headline already counted — one scope,
+ * one total, no double count. Everything else (freshness, the unavailable
+ * states) comes from the same finance slice the headline reads.
+ */
+function RetirementAccountsPanel({ accounts }: { accounts: readonly AccountValuation[] }) {
+  const { displayUnit, financeModel, stateOverride } = useAppState()
   const btcQuote = operationalBtcQuote(financeModel)
-  const staleQuoteSymbols = Array.from(new Set([
-    ...accounts.flatMap((account) => account.holdings.flatMap((holding) =>
-      holding.basis === "market-quote" && holding.quote?.status === "stale"
-        ? [holding.quote.symbol]
-        : [],
-    )),
-    ...(displayUnit !== "usd" && btcQuote?.status === "stale" ? [btcQuote.symbol] : []),
-  ]))
+  const showFinance = stateOverride === "normal" && financeModel.finance.status === "live"
   const updatedAt = financeModel.finance.status === "live"
     ? financeModel.finance.value.updatedAtMs
     : null
-  const showFinance = stateOverride === "normal" && financeModel.finance.status === "live"
-  const btcPriceCents = btcQuote?.priceCents ?? null
   const overrideState = financeOverrideState(stateOverride)
   const financeBlockState = overrideState
     ? overrideState
@@ -1899,141 +1896,91 @@ function RetirementPage() {
     : stateOverride === "demo" ? "empty" : stateOverride
 
   return (
-    <>
-      <PageHeader
-        title="Retirement"
-        showDisplayUnit
-        subtitle="Long-horizon accounts"
-        actions={
-          <FreshnessTag status={financeStatus} updatedAt={showFinance ? updatedAt : null} />
-        }
-      />
-      <BitcoinQuoteNotice
-        available={
-          displayUnit === "usd" ||
-          btcPriceCents !== null ||
-          (!showFinance && financeModel.marketQuotes.status !== "live")
-        }
-      />
-      <KPIStrip
-        items={[
-          {
-            label: "Retirement total",
-            value: showFinance
-              ? formatFinanceCents(retirementValueCents, displayUnit, btcQuote)
-              : SUPPRESSED,
-            provenance: staleQuoteSymbols.length > 0 ? "stale" : "actual",
-            hint: staleQuoteSymbols.length > 0
-              ? `Revalued with stale ${staleQuoteSymbols.join("/")} market ${
-                  staleQuoteSymbols.length === 1 ? "quote" : "quotes"
-                }`
-              : undefined,
-          },
-          {
-            label: "Accounts",
-            value: showFinance
-              ? String(accounts.length)
-              : SUPPRESSED,
-            provenance: "actual",
-          },
-        ]}
-      />
-      <Panel
-        title="Retirement accounts"
-        source={showFinance
-          ? `Synced finance document · ${financeModel.finance.value.lastUpdated}`
-          : "Authenticated finance document unavailable"}
-        flush
-      >
-        {showFinance ? (
-          <DataTable
-            columns={[
-              {
-                key: "provider",
-                header: "Account",
-                render: (row) => (
-                  <>
-                    <strong>{row.account.provider}</strong>
-                    <div className="vv-dim">{displayName(row.account.owner)}</div>
-                  </>
-                ),
-              },
-              {
-                key: "value",
-                header: `Value (${displayUnit.toUpperCase()})`,
-                numeric: true,
-                render: (row) => formatFinanceCents(row.valueCents, displayUnit, btcQuote),
-              },
-              {
-                key: "weekly",
-                header: "Weekly contribution",
-                numeric: true,
-                render: (row) => formatFinanceCents(
-                  row.account.weeklyContributionCents,
-                  displayUnit,
-                  btcQuote,
-                ),
-              },
-              {
-                key: "day",
-                header: "Schedule",
-                render: (row) => row.account.weeklyContributionDay ?? "Not scheduled",
-                secondary: true,
-              },
-              {
-                key: "holdings",
-                header: "Holding details",
-                render: (row) => row.holdings.length === 0 ? (
-                  <span className="vv-dim">No holding detail</span>
-                ) : (
-                  <div>
-                    {row.holdings.map((holding, index) => (
-                      <div key={`${holding.holding.name}:${index}`}>
-                        <strong>{holding.holding.name}</strong>
-                        {holding.holding.ticker ? ` · ${holding.holding.ticker}` : ""}
-                        {` · ${holding.holding.sharesDecimal} shares · `}
-                        {formatFinanceCents(holding.valueCents, displayUnit, btcQuote)}
-                        <div className="vv-dim">
-                          {holdingBasis(row, holding.holding.ticker)}
-                        </div>
+    <Panel
+      title="Retirement accounts"
+      source={showFinance
+        ? `Synced finance document · ${financeModel.finance.value.lastUpdated}`
+        : "Authenticated finance document unavailable"}
+      actions={
+        <FreshnessTag status={financeStatus} updatedAt={showFinance ? updatedAt : null} />
+      }
+      flush
+    >
+      {showFinance ? (
+        <DataTable
+          columns={[
+            {
+              key: "provider",
+              header: "Account",
+              render: (row) => (
+                <>
+                  <strong>{row.account.provider}</strong>
+                  <div className="vv-dim">{displayName(row.account.owner)}</div>
+                </>
+              ),
+            },
+            {
+              key: "value",
+              header: `Value (${displayUnit.toUpperCase()})`,
+              numeric: true,
+              render: (row) => formatFinanceCents(row.valueCents, displayUnit, btcQuote),
+            },
+            {
+              key: "weekly",
+              header: "Weekly contribution",
+              numeric: true,
+              render: (row) => formatFinanceCents(
+                row.account.weeklyContributionCents,
+                displayUnit,
+                btcQuote,
+              ),
+            },
+            {
+              key: "day",
+              header: "Schedule",
+              render: (row) => row.account.weeklyContributionDay ?? "Not scheduled",
+              secondary: true,
+            },
+            {
+              key: "holdings",
+              header: "Holding details",
+              render: (row) => row.holdings.length === 0 ? (
+                <span className="vv-dim">No holding detail</span>
+              ) : (
+                <div>
+                  {row.holdings.map((holding, index) => (
+                    <div key={`${holding.holding.name}:${index}`}>
+                      <strong>{holding.holding.name}</strong>
+                      {holding.holding.ticker ? ` · ${holding.holding.ticker}` : ""}
+                      {` · ${holding.holding.sharesDecimal} shares · `}
+                      {formatFinanceCents(holding.valueCents, displayUnit, btcQuote)}
+                      <div className="vv-dim">
+                        {holdingBasis(row, holding.holding.ticker)}
                       </div>
-                    ))}
-                  </div>
-                ),
-              },
-            ] satisfies ReadonlyArray<Column<AccountValuation>>}
-            rows={accounts}
-            rowKey={(row) => row.account.key}
-            state={accounts.length > 0 ? "normal" : "empty"}
-            emptyTitle="No retirement accounts"
-            emptyDetail="No net-worth-scoped retirement accounts were returned for this profile."
-          />
-        ) : (
-          <StateBlock
-            state={financeBlockState}
-            title={financeBlockState === "error"
-              ? "Retirement read failed"
-              : financeBlockState === "empty" ? "No retirement document" : undefined}
-            detail="No fixture balances are substituted for synchronized retirement holdings."
-          />
-        )}
-      </Panel>
-      <Panel title="Market quote snapshot" source="Operational prices · separate from the finance ledger" flush>
-        {stateOverride === "normal" ? (
-          <QuoteSnapshot
-            quotes={financeModel.marketQuotes}
-            displayUnit={displayUnit}
-            btcPriceCents={btcPriceCents}
-          />
-        ) : (
-          <StateBlock state={financeBlockState} detail="No QA fixture is presented as a market quote." />
-        )}
-      </Panel>
-    </>
+                    </div>
+                  ))}
+                </div>
+              ),
+            },
+          ] satisfies ReadonlyArray<Column<AccountValuation>>}
+          rows={accounts}
+          rowKey={(row) => row.account.key}
+          state={accounts.length > 0 ? "normal" : "empty"}
+          emptyTitle="No retirement accounts"
+          emptyDetail="No net-worth-scoped retirement accounts were returned for this profile."
+        />
+      ) : (
+        <StateBlock
+          state={financeBlockState}
+          title={financeBlockState === "error"
+            ? "Retirement read failed"
+            : financeBlockState === "empty" ? "No retirement document" : undefined}
+          detail="No fixture balances are substituted for synchronized retirement holdings."
+        />
+      )}
+    </Panel>
   )
 }
-
-// ── Net Worth ───────────────────────────────────────────────────────────────
 
 function NetWorthPage() {
   const { activeProfile, data, displayUnit, financeModel, stateOverride } = useAppState()
@@ -2054,8 +2001,16 @@ function NetWorthPage() {
   const accounts = financeAccounts(activeProfile, financeModel)
   const retirementValueCents = sum(accounts.map((account) => account.valueCents))
   const btcQuote = operationalBtcQuote(financeModel)
-  const financeLoaded = financeModel.finance.status === "live"
+  const financeLoaded = stateOverride === "normal" && financeModel.finance.status === "live"
   const quotesLoaded = financeModel.marketQuotes.status === "live"
+  const staleQuoteSymbols = Array.from(new Set([
+    ...accounts.flatMap((account) => account.holdings.flatMap((holding) =>
+      holding.basis === "market-quote" && holding.quote?.status === "stale"
+        ? [holding.quote.symbol]
+        : [],
+    )),
+    ...(displayUnit !== "usd" && btcQuote?.status === "stale" ? [btcQuote.symbol] : []),
+  ]))
   const totalAvailable = selection !== null && financeLoaded && quotesLoaded &&
     selection.totalValueCents !== null
   const btcPriceCents = selection?.btcQuote?.priceCents ?? btcQuote?.priceCents ?? null
@@ -2073,7 +2028,7 @@ function NetWorthPage() {
       <PageHeader
         title="Net Worth"
         showDisplayUnit
-        subtitle="Household scope for adults; self only for children"
+        subtitle="Bitcoin and retirement · household scope for adults, self only for children"
         actions={
           <FreshnessTag
             status={data.btcBalanceDocument.status}
@@ -2135,8 +2090,12 @@ function NetWorthPage() {
             value: financeLoaded
               ? formatFinanceCents(retirementValueCents, displayUnit, btcQuote)
               : SUPPRESSED,
-            hint: financeLoaded ? `${accounts.length} scoped account(s)` : undefined,
-            provenance: "estimated",
+            hint: staleQuoteSymbols.length > 0
+              ? `Revalued with stale ${staleQuoteSymbols.join("/")} market ${
+                  staleQuoteSymbols.length === 1 ? "quote" : "quotes"
+                } · ${accounts.length} scoped account(s)`
+              : financeLoaded ? `${accounts.length} scoped account(s)` : undefined,
+            provenance: staleQuoteSymbols.length > 0 ? "stale" : "estimated",
           },
           {
             label: isAdult(activeProfile) ? "Adult net worth" : "Net worth",
@@ -2222,6 +2181,7 @@ function NetWorthPage() {
           />
         </Panel>
       </PageGrid>
+      <RetirementAccountsPanel accounts={accounts} />
       <Panel title="Market quote snapshot" source="Operational prices · never inferred from buys" flush>
         {overrideState ? (
           <StateBlock state={overrideState} detail="No QA fixture is presented as a market quote." />
@@ -2249,7 +2209,8 @@ export const financePageManifest: PageManifest = {
     { id: "bitcoin", label: "Bitcoin Overview", icon: "bitcoin", Component: BitcoinOverviewPage },
     { id: "bitcoin-buys", label: "Bitcoin Buys", icon: "wallet", Component: BitcoinBuysPage },
     { id: "bills", label: "Bills", icon: "receipt", Component: BillsPage },
-    { id: "retirement", label: "Retirement", icon: "retirement", Component: RetirementPage, adultOnly: true },
+    // Retirement has no tab of its own: its accounts and total live on Net
+    // Worth, which is the only page that already combines both scopes.
     { id: "net-worth", label: "Net Worth", icon: "bank", Component: NetWorthPage },
   ],
 }

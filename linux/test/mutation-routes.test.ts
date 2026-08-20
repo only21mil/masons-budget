@@ -172,7 +172,7 @@ describe("renderer CRUD routes", () => {
   })
 
   it("keeps derived-only routes free of create and delete controls", () => {
-    for (const route of ["dashboard", "retirement", "net-worth"]) {
+    for (const route of ["dashboard", "net-worth"]) {
       const markup = renderRoute(route)
       expect(markup).not.toMatch(/Add (transaction|category|buy|bill payment|BTC account|task)/)
       expect(markup).not.toContain(">Delete<")

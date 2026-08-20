@@ -14,7 +14,12 @@ import {
   StateBlock,
   TopBar,
 } from "./renderer/components/index.ts"
-import { DEFAULT_ROUTE, navSectionsFor, resolvePage } from "./renderer/pages/index.ts"
+import {
+  DEFAULT_ROUTE,
+  canonicalRoute,
+  navSectionsFor,
+  resolvePage,
+} from "./renderer/pages/index.ts"
 
 import "./renderer/styles/global.css"
 import "./renderer/styles/components.css"
@@ -116,8 +121,15 @@ function Cockpit() {
   const sections = navSectionsFor(activeProfile)
   const page = resolvePage(route, activeProfile)
 
-  // A profile switch can strand the user on a page they may no longer see.
+  // A profile switch can strand the user on a page they may no longer see, and
+  // a retired route id keeps the sidebar highlighting nothing until it is
+  // rewritten to the page that absorbed it.
   useEffect(() => {
+    const canonical = canonicalRoute(route)
+    if (canonical !== route) {
+      navigate(canonical)
+      return
+    }
     if (!resolvePage(route, activeProfile)) navigate(DEFAULT_ROUTE)
   }, [route, activeProfile, navigate])
 
