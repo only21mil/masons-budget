@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useState } from "react"
+import { visibleTo } from "@vogel-vault/domain/family"
 import type {
   BTCAccount,
   BTCBillPay,
@@ -17,6 +18,18 @@ import {
   stableId,
 } from "../data/mutations.ts"
 import type { MutationGate } from "../data/mutations.ts"
+import {
+  PAYMENT_SOURCES,
+  isBitcoinDenominatedSource,
+  isPaymentSource,
+  paymentSourceBlockReason,
+  paymentSourceFromRow,
+  paymentSourceLabel,
+  paymentSourceRoute,
+  transactionSourceFields,
+  type PaymentSource,
+  type PaymentSourceSelection,
+} from "../data/paymentSource.ts"
 import { localMutationError } from "./CrudControls.tsx"
 import { DialogFrame } from "./DialogFrame.tsx"
 import { Button, Field, Select, TextInput } from "./primitives.tsx"
@@ -28,6 +41,20 @@ function optional(value: string): string | undefined {
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
+}
+
+/** Select value for a stored card string the closed source list does not know. */
+const LEGACY_SOURCE_CHOICE = "__legacy-card"
+
+function legacyCardOf(transaction: Transaction | null): string {
+  if (!transaction || paymentSourceFromRow(transaction)) return ""
+  return transaction.card ?? ""
+}
+
+function initialSourceChoice(transaction: Transaction | null): string {
+  const source = transaction ? paymentSourceFromRow(transaction) : null
+  if (source) return source
+  return legacyCardOf(transaction) ? LEGACY_SOURCE_CHOICE : ""
 }
 
 function FormFooter({
@@ -76,7 +103,7 @@ export function TransactionFormDialog({
   submissionGate?: MutationGate
   onClose: () => void
 }) {
-  const { activeProfile, submitMutation } = useAppState()
+  const { activeProfile, data, submitMutation } = useAppState()
   const formId = useId()
   const blockedReasonId = useId()
   const [id, setId] = useState(() => transaction?.id ?? stableId("transaction"))
@@ -89,13 +116,38 @@ export function TransactionFormDialog({
     transaction && transaction.amount < 0n ? "credit" : "spend",
   )
   const [category, setCategory] = useState(transaction?.category ?? "Other")
-  const [card, setCard] = useState(transaction?.card ?? "")
-  const [note, setNote] = useState(transaction?.note ?? "")
-  const [incomeSats, setIncomeSats] = useState(
-    transaction?.amountSats?.toString() ?? "",
+  const [sourceChoice, setSourceChoice] = useState(() => initialSourceChoice(transaction))
+  const [bitcoinAccountKey, setBitcoinAccountKey] = useState(
+    transaction?.bitcoinAccountKey ?? "",
   )
+  const [note, setNote] = useState(transaction?.note ?? "")
+  const [sats, setSats] = useState(transaction?.amountSats?.toString() ?? "")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Preserved verbatim so editing an unrelated field never rewrites a card
+  // string this build does not recognise.
+  const legacyCard = useMemo(() => legacyCardOf(transaction), [transaction])
+  const bitcoinAccounts = useMemo(
+    () => visibleTo(activeProfile, data.btcAccounts.value),
+    [activeProfile, data.btcAccounts.value],
+  )
+  const selectedSource: PaymentSource | null = isPaymentSource(sourceChoice) ? sourceChoice : null
+  // River spends Bitcoin too, but it writes a bill pay rather than a row here.
+  const bitcoinSpendRow = selectedSource !== null &&
+    isBitcoinDenominatedSource(selectedSource) &&
+    paymentSourceRoute(selectedSource) === "transaction"
+  const satsValue = sats.trim() ? parseExactSats(sats) : null
+  const selection: PaymentSourceSelection = {
+    source: selectedSource,
+    legacyCard: sourceChoice === LEGACY_SOURCE_CHOICE ? legacyCard : "",
+    amountSats: satsValue,
+    bitcoinAccountKey,
+  }
+  const sourceBlockReason = paymentSourceBlockReason(selection)
+  const blockedReason = submissionGate && !submissionGate.allowed
+    ? submissionGate.reason ?? "Current live transaction rows are required before editing."
+    : sourceBlockReason
 
   useEffect(() => {
     if (!open) return
@@ -109,9 +161,10 @@ export function TransactionFormDialog({
     )
     setTransactionKind(transaction && transaction.amount < 0n ? "credit" : "spend")
     setCategory(transaction?.category ?? "Other")
-    setCard(transaction?.card ?? "")
+    setSourceChoice(initialSourceChoice(transaction))
+    setBitcoinAccountKey(transaction?.bitcoinAccountKey ?? "")
     setNote(transaction?.note ?? "")
-    setIncomeSats(transaction?.amountSats?.toString() ?? "")
+    setSats(transaction?.amountSats?.toString() ?? "")
     setError(null)
   }, [open, transaction])
 
@@ -121,18 +174,30 @@ export function TransactionFormDialog({
       return
     }
     const cents = parseExactCents(amount)
-    const satsValue = incomeSats.trim() ? parseExactSats(incomeSats) : null
     if (!merchant.trim() || !date || cents === null || cents <= 0n || !category.trim()) {
       setError("Enter a date, merchant, category, and a positive amount with at most two decimals.")
       return
     }
-    if (incomeSats.trim() && (category.trim() !== "Income" || satsValue === null || satsValue <= 0n)) {
+    if (sourceBlockReason) {
+      setError(sourceBlockReason)
+      return
+    }
+    if (
+      !bitcoinSpendRow &&
+      sats.trim() &&
+      (category.trim() !== "Income" || satsValue === null || satsValue <= 0n)
+    ) {
       setError("Bitcoin income must use the Income category and a positive whole-sats amount.")
       return
     }
     setBusy(true)
     const signed =
       category.trim() === "Income" || transactionKind === "spend" ? cents : -cents
+    // The chosen source owns card, amountSats and bitcoinAccountKey. Sat-
+    // denominated Income keeps its existing shape: no source, sats only.
+    const sourceFields = transactionSourceFields(selection)
+    const amountSats = sourceFields.amountSats
+      ?? (!bitcoinSpendRow && satsValue !== null && satsValue > 0n ? satsValue : undefined)
     const result = await submitMutation({
       kind: "transaction.upsert",
       requestId: stableId("request"),
@@ -144,9 +209,12 @@ export function TransactionFormDialog({
       amountCents: signed,
       transactionKind: category.trim() === "Income" ? "credit" : transactionKind,
       category: category.trim(),
-      card: optional(card),
+      card: sourceFields.card,
       note: optional(note),
-      ...(satsValue === null ? {} : { amountSats: satsValue }),
+      ...(amountSats === undefined ? {} : { amountSats }),
+      ...(sourceFields.bitcoinAccountKey === undefined
+        ? {}
+        : { bitcoinAccountKey: sourceFields.bitcoinAccountKey }),
       ...(transaction ? { baseUpdatedAtMs: transaction.updatedAtMs } : {}),
     })
     setBusy(false)
@@ -166,7 +234,7 @@ export function TransactionFormDialog({
         <FormFooter
           formId={formId}
           busy={busy}
-          blocked={submissionGate ? !submissionGate.allowed : false}
+          blocked={blockedReason !== null}
           blockedReasonId={blockedReasonId}
           onCancel={onClose}
           verb="Save transaction"
@@ -177,10 +245,8 @@ export function TransactionFormDialog({
         event.preventDefault()
         void submit()
       }}>
-        {submissionGate && !submissionGate.allowed ? (
-          <p id={blockedReasonId} className="vv-form-error" role="status">
-            {submissionGate.reason ?? "Current live transaction rows are required before editing."}
-          </p>
+        {blockedReason ? (
+          <p id={blockedReasonId} className="vv-form-error" role="status">{blockedReason}</p>
         ) : null}
         <ErrorSummary error={error} />
         <Field label="Record ID" hint="Stable and immutable after creation.">
@@ -198,15 +264,49 @@ export function TransactionFormDialog({
           </Select>
         </Field>
         <Field label="Category"><TextInput value={category} onChange={(e) => setCategory(e.target.value)} /></Field>
-        {category.trim() === "Income" ? (
+        <Field label="Payment source" hint="Where the money leaves from. Stored with the transaction.">
+          <Select value={sourceChoice} onChange={(e) => setSourceChoice(e.target.value)}>
+            <option value="">No source</option>
+            {legacyCard ? <option value={LEGACY_SOURCE_CHOICE}>{legacyCard}</option> : null}
+            {PAYMENT_SOURCES.map((source) => (
+              <option key={source} value={source}>{paymentSourceLabel(source)}</option>
+            ))}
+          </Select>
+        </Field>
+        {bitcoinSpendRow ? (
+          <>
+            <Field
+              label="Bitcoin spent (sats)"
+              hint="Required. Exact whole sats leaving the selected Bitcoin source."
+            >
+              <TextInput
+                inputMode="numeric"
+                value={sats}
+                aria-invalid={satsValue === null || satsValue <= 0n || undefined}
+                onChange={(e) => setSats(e.target.value)}
+              />
+            </Field>
+            <Field label="Bitcoin account" hint="Required. The account these sats leave.">
+              <Select
+                value={bitcoinAccountKey}
+                aria-invalid={!bitcoinAccountKey.trim() || undefined}
+                onChange={(e) => setBitcoinAccountKey(e.target.value)}
+              >
+                <option value="">Choose an account</option>
+                {bitcoinAccounts.map((account) => (
+                  <option key={account.key} value={account.key}>{account.label}</option>
+                ))}
+              </Select>
+            </Field>
+          </>
+        ) : category.trim() === "Income" ? (
           <Field
             label="Bitcoin received (sats)"
             hint="Optional. When present, these exact sats are added to River. USD-only income does not invent Bitcoin."
           >
-            <TextInput inputMode="numeric" value={incomeSats} onChange={(e) => setIncomeSats(e.target.value)} />
+            <TextInput inputMode="numeric" value={sats} onChange={(e) => setSats(e.target.value)} />
           </Field>
         ) : null}
-        <Field label="Card"><TextInput value={card} onChange={(e) => setCard(e.target.value)} /></Field>
         <Field label="Note"><TextInput value={note} onChange={(e) => setNote(e.target.value)} /></Field>
       </form>
     </DialogFrame>

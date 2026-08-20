@@ -332,7 +332,7 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           input,
           kind,
           ["id", "owner", "date", "merchant", "amountCents", "transactionKind", "category"],
-          ["card", "note", "amountSats", "baseUpdatedAtMs"],
+          ["card", "note", "amountSats", "bitcoinAccountKey", "baseUpdatedAtMs"],
         )
         const { requestId, actor } = common(record)
         const owner = canonicalFinancialOwner(member(record["owner"]))
@@ -341,6 +341,10 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
         if (transactionKind !== "spend" && transactionKind !== "credit") throw new InvalidRequest()
         const card = optionalText(record, "card")
         const note = optionalText(record, "note")
+        // The Bitcoin account a sat-denominated payment source names. The
+        // shared write contract does not carry it, so it is validated here and
+        // added to the wire transaction alongside amountSats.
+        const bitcoinAccountKey = optionalText(record, "bitcoinAccountKey")
         const candidate = {
           id: boundedText(record["id"], PAIRED_DEVICE_LIMITS.maxIdentifier),
           owner,
@@ -380,6 +384,7 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
               ? positiveInt64(record["amountSats"])
               : undefined,
           ),
+          ...optionalField("bitcoinAccountKey", bitcoinAccountKey),
           ...optionalField("baseUpdatedAtMs", optionalRevision(record)),
         }
       }
@@ -747,6 +752,7 @@ function mutationArgs(
             "amountSats",
             request.amountSats === undefined ? undefined : encoded(request.amountSats),
           ),
+          ...optionalField("bitcoinAccountKey", request.bitcoinAccountKey),
         },
         ...optionalField("baseUpdatedAtMs", request.baseUpdatedAtMs),
       }
