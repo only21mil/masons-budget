@@ -171,6 +171,7 @@ fun ScreenHost(
     onEnableRemoteRows: (String) -> Unit = {},
     onRemoteRowsConnected: () -> Unit = {},
     onWriteSucceeded: () -> Unit = {},
+    onStartRiverBillPay: (BillPayPrefill) -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -230,6 +231,7 @@ fun ScreenHost(
     var showBtcBuyEditor by rememberSaveable { mutableStateOf(false) }
     var showBtcBillPayEditor by rememberSaveable { mutableStateOf(false) }
     var showBtcTransferEditor by rememberSaveable { mutableStateOf(false) }
+    var btcBillPayPrefill by remember(state.activeProfile) { mutableStateOf<BillPayPrefill?>(null) }
     // A refresh can retire the picked month. Fall back rather than render a month
     // the ledger no longer contains.
     val budgetSelectedMonth = resolveBudgetMonth(picked, months, budgetMonth)
@@ -333,6 +335,12 @@ fun ScreenHost(
                 addingTransaction = false
                 incomeBitcoinBuySeed = income
             },
+            onStartRiverBillPay = { prefill ->
+                addingTransaction = false
+                btcBillPayPrefill = prefill
+                showBtcBillPayEditor = true
+                onStartRiverBillPay(prefill)
+            },
         )
     }
     incomeBitcoinBuySeed?.let { income ->
@@ -433,7 +441,10 @@ fun ScreenHost(
                         bitcoinProjection,
                         displayUnit,
                         onAddBuy = { showBtcBuyEditor = true },
-                        onAddBillPay = { showBtcBillPayEditor = true },
+                        onAddBillPay = {
+                            btcBillPayPrefill = null
+                            showBtcBillPayEditor = true
+                        },
                         onAddTransfer = { showBtcTransferEditor = true },
                     )
                 Destination.BTC_BUYS -> btcBuysScreen(state, displayUnit, btcBuysTitle)
@@ -441,7 +452,10 @@ fun ScreenHost(
                     state,
                     displayUnit,
                     btcBillPaysTitle,
-                    onAddBillPay = { showBtcBillPayEditor = true },
+                    onAddBillPay = {
+                        btcBillPayPrefill = null
+                        showBtcBillPayEditor = true
+                    },
                 )
                 Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
                 Destination.EXPORT -> item { ExportScreen(state) }
@@ -477,7 +491,11 @@ fun ScreenHost(
         BtcBillPayEntrySheet(
             owner = state.activeProfile,
             budgetCategories = state.data.budget.value?.categories?.map { it.name }.orEmpty(),
-            onDismiss = { showBtcBillPayEditor = false },
+            prefill = btcBillPayPrefill,
+            onDismiss = {
+                showBtcBillPayEditor = false
+                btcBillPayPrefill = null
+            },
             onWriteSucceeded = onWriteSucceeded,
         )
     }

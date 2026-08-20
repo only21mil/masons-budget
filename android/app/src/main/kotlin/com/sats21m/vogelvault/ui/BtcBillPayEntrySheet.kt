@@ -185,6 +185,7 @@ internal fun launchBtcBillPaySave(
 internal fun BtcBillPayEntrySheet(
     owner: FamilyMember,
     budgetCategories: List<String>,
+    prefill: BillPayPrefill? = null,
     onDismiss: () -> Unit,
     onWriteSucceeded: () -> Unit,
 ) {
@@ -195,16 +196,16 @@ internal fun BtcBillPayEntrySheet(
     val draftId = remember(application) {
         draftIds?.currentId(BTC_BILL_PAYS_SOURCE_FILE) ?: "android-${UUID.randomUUID()}"
     }
-    val stateKeys = arrayOf(owner.key, draftId)
-    var date by rememberSaveable(*stateKeys) { mutableStateOf(LocalDate.now().toString()) }
-    var merchant by rememberSaveable(*stateKeys) { mutableStateOf("") }
+    val stateKeys = arrayOf(owner.key, draftId, prefill?.dateIso.orEmpty(), prefill?.merchant.orEmpty())
+    var date by rememberSaveable(*stateKeys) { mutableStateOf(prefill?.dateIso ?: LocalDate.now().toString()) }
+    var merchant by rememberSaveable(*stateKeys) { mutableStateOf(prefill?.merchant.orEmpty()) }
     var effectWire by rememberSaveable(*stateKeys) {
         mutableStateOf(BillPayBudgetEffect.CREDIT_CARD_PAYMENT.wireValue)
     }
     var category by rememberSaveable(*stateKeys) {
         mutableStateOf(budgetCategories.firstOrNull().orEmpty())
     }
-    var amountUsd by rememberSaveable(*stateKeys) { mutableStateOf("") }
+    var amountUsd by rememberSaveable(*stateKeys) { mutableStateOf(prefill?.amountUsd.orEmpty()) }
     var sats by rememberSaveable(*stateKeys) { mutableStateOf("") }
     var priceUsd by rememberSaveable(*stateKeys) { mutableStateOf("") }
     var feeUsd by rememberSaveable(*stateKeys) { mutableStateOf("0") }

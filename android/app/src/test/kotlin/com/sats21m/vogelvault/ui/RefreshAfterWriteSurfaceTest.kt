@@ -619,6 +619,14 @@ internal class RefreshAfterWritePoster : HttpPoster {
                 """{"status":"success","value":{"ok":true,"entityId":"$id","outcome":"updated"}}""",
             )
         }
+        if (response.code == 200 && body.contains("tables:upsertTransactionFromDevice")) {
+            val id = Regex("\\\"id\\\":\\\"([^\\\"]+)\\\"")
+                .find(body)?.groupValues?.get(1) ?: error("transaction request had no id")
+            return HttpTextResponse(
+                200,
+                """{"status":"success","value":{"ok":true,"entityId":"$id","outcome":"inserted"}}""",
+            )
+        }
         // The add sheet's success path now requires the server's revision-bearing
         // receipt, whose txId must match the request's generated id — echo it.
         if (response.code == 200 && body.contains("\"path\":\"tables:upsertTransaction\"")) {
@@ -656,6 +664,22 @@ internal class RefreshAfterWriteApplication : VaultApplication() {
 
     override val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         TodoMutationGateway(
+            ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(
+                    ConvexConfig(deploymentUrl = "https://refresh-after-write-test.convex.cloud"),
+                ),
+                credentialSource = ConvexDeviceCredentialSource {
+                    ConvexDeviceCredential("test-device", "t".repeat(43))
+                },
+                http = poster,
+            ),
+        )
+    }
+
+    override val transactionDeviceMutationGateway: TransactionDeviceMutationGateway by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        TransactionDeviceMutationGateway(
             ConvexDeviceMutationClient(
                 configSource = MutableConvexConfigSource(
                     ConvexConfig(deploymentUrl = "https://refresh-after-write-test.convex.cloud"),

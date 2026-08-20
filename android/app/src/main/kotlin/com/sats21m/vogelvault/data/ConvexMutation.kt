@@ -28,6 +28,30 @@ internal sealed class ConvexMutation(val path: String) {
         }.let(::JsonObject)
     }
 
+    /** Capability-scoped transaction write used by the Android add surface. */
+    data class UpsertTransactionFromDevice(
+        val owner: FamilyMember,
+        val sourceFile: String,
+        val transaction: TransactionInput,
+        val baseUpdatedAtMs: Long? = null,
+    ) : ConvexMutation("tables:upsertTransactionFromDevice") {
+        init {
+            require(sourceFile == owner.ledgerOwner.transactionsDataFileName) {
+                "source file must match the transaction owner"
+            }
+            require(transaction.owner == owner.ledgerOwner) {
+                "transaction owner must match the device-write owner"
+            }
+        }
+
+        override fun arguments(): JsonObject = buildMap<String, JsonElement> {
+            put("owner", JsonPrimitive(owner.ledgerOwner.key))
+            put("sourceFile", JsonPrimitive(sourceFile))
+            put("transaction", transaction.toJson())
+            baseUpdatedAtMs?.let { put("baseUpdatedAtMs", JsonPrimitive(it)) }
+        }.let(::JsonObject)
+    }
+
     data class DeleteTransaction(
         val txId: String,
         val owner: FamilyMember,
@@ -225,6 +249,7 @@ internal data class TransactionInput(
     val card: String? = null,
     val note: String? = null,
     val amountSats: Long? = null,
+    val bitcoinAccountKey: String? = null,
     val owner: FamilyMember? = null,
 ) {
     init {
@@ -236,8 +261,11 @@ internal data class TransactionInput(
         require(category != "Income" || kind == TransactionKind.CREDIT) {
             "Income transactions must be credits"
         }
-        require(amountSats == null || (category == "Income" && amountSats > 0L)) {
-            "only Income may carry a positive sats amount"
+        require(amountSats == null || amountSats > 0L) {
+            "amountSats must be positive when present"
+        }
+        require(bitcoinAccountKey == null || bitcoinAccountKey.isNotBlank()) {
+            "bitcoinAccountKey must not be blank when present"
         }
 
         val expectedNegative = category != "Income" && kind == TransactionKind.CREDIT
@@ -260,6 +288,7 @@ internal data class TransactionInput(
         card?.let { put("card", JsonPrimitive(it)) }
         note?.let { put("note", JsonPrimitive(it)) }
         amountSats?.let { put("amountSats", it.toConvexInt64()) }
+        bitcoinAccountKey?.let { put("bitcoinAccountKey", JsonPrimitive(it)) }
         owner?.let { put("owner", JsonPrimitive(it.key)) }
     }.let(::JsonObject)
 }
