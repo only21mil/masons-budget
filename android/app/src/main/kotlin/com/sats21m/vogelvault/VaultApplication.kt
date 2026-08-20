@@ -25,6 +25,7 @@ import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.ui.BtcBillPayMutationGateway
 import com.sats21m.vogelvault.ui.BtcBuyIncomeMutationGateway
 import com.sats21m.vogelvault.ui.ConvexTransactionActions
+import com.sats21m.vogelvault.ui.BtcTransferMutationGateway
 import com.sats21m.vogelvault.ui.TodoMutationGateway
 import com.sats21m.vogelvault.ui.VaultViewModel
 import java.io.IOException
@@ -147,10 +148,31 @@ open class VaultApplication : Application() {
         super.onCreate()
         transactionDraftIds
         btcBuyDraftIds
+        btcBillPayDraftIds
+        btcTransferDraftIds
     }
 
     /** Stable retry ids for the one source-scoped Bitcoin bill-pay table. */
-    internal val btcBillPayDraftIds = TransactionDraftIdStore()
+    internal val btcBillPayDraftIds: TransactionDraftIdStore by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        TransactionDraftIdStore(
+            getSharedPreferences(BTC_BILL_PAY_DRAFT_ID_PREFERENCES, Context.MODE_PRIVATE),
+        )
+    }
+
+    /**
+     * The Bitcoin transfer editor has the same duplicate-post hazard as buys:
+     * a lost response must retry the exact same transfer id until Convex confirms
+     * the idempotent row.
+     */
+    internal val btcTransferDraftIds: TransactionDraftIdStore by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        TransactionDraftIdStore(
+            getSharedPreferences(BTC_TRANSFER_DRAFT_ID_PREFERENCES, Context.MODE_PRIVATE),
+        )
+    }
 
     /**
      * Process-owned acceptance signal for writes that may outlive the surface
@@ -178,6 +200,8 @@ open class VaultApplication : Application() {
     private companion object {
         const val TRANSACTION_DRAFT_ID_PREFERENCES = "transaction_draft_ids"
         const val BTC_BUY_DRAFT_ID_PREFERENCES = "btc_buy_draft_ids"
+        const val BTC_BILL_PAY_DRAFT_ID_PREFERENCES = "btc_bill_pay_draft_ids"
+        const val BTC_TRANSFER_DRAFT_ID_PREFERENCES = "btc_transfer_draft_ids"
     }
 
     val database: VaultDatabase by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -286,6 +310,16 @@ open class VaultApplication : Application() {
         LazyThreadSafetyMode.SYNCHRONIZED,
     ) {
         BtcBuyIncomeMutationGateway(
+            ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(writeConvexConfig()),
+                credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
+            ),
+        )
+    }
+
+    /** Capability-scoped Bitcoin transfer writes. */
+    internal open val btcTransferMutationGateway: BtcTransferMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        BtcTransferMutationGateway(
             ConvexDeviceMutationClient(
                 configSource = MutableConvexConfigSource(writeConvexConfig()),
                 credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),

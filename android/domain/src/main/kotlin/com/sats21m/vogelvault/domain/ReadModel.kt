@@ -190,6 +190,46 @@ data class BtcBuy(
     override val owner: FamilyMember,
 ) : Owned
 
+/**
+ * An internal movement between two Bitcoin accounts.
+ *
+ * The principal is moved from one account to another; only the network fee
+ * changes the aggregate Bitcoin balance. Transfers never become fiat income or
+ * spending rows.
+ */
+data class BtcTransfer(
+    val id: String,
+    override val owner: FamilyMember,
+    val date: String,
+    val fromAccountKey: String,
+    val toAccountKey: String,
+    val sats: Long,
+    val feeSats: Long,
+    val note: String? = null,
+) : Owned {
+    init {
+        require(id.isNotBlank()) { "Bitcoin transfer id must not be empty" }
+        require(date.isNotBlank()) { "Bitcoin transfer date must not be empty" }
+        require(fromAccountKey.isNotBlank()) { "Bitcoin transfer source account must not be empty" }
+        require(toAccountKey.isNotBlank()) { "Bitcoin transfer destination account must not be empty" }
+        require(fromAccountKey != toAccountKey) {
+            "Bitcoin transfer source and destination must differ"
+        }
+        require(sats > 0L) { "Bitcoin transfer sats must be positive" }
+        require(feeSats >= 0L) { "Bitcoin transfer feeSats must be nonnegative" }
+        require(sats <= Long.MAX_VALUE - feeSats) {
+            "Bitcoin transfer debit exceeds signed int64"
+        }
+    }
+
+    val principalSats: Long get() = sats
+    val totalBtcDeltaSats: Long get() = -feeSats
+    val netWorthDeltaSats: Long get() = -feeSats
+    val incomeCentsDelta: Long get() = 0L
+    val spendCentsDelta: Long get() = 0L
+    val affectsIncomeOrSpend: Boolean get() = false
+}
+
 /** The single scoped BTC balance document that supplies net-worth totals. */
 data class BtcBalance(
     override val owner: FamilyMember,
