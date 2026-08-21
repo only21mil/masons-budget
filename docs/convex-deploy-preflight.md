@@ -4,13 +4,16 @@ Target: `prod:keen-elephant-452`
 Reviewed source: `build/finish-vogel-vault` at `e2d0781`  
 Recorded production evidence date: 2026-07-26  
 Preflight date: 2026-07-27
+Current-use review: 2026-08-21
 
 > **Historical pre-deploy record.** The row schema/API were subsequently
 > deployed and the migration was applied. Do not use this document as current
 > deployment state or as an instruction to deploy again. See `docs/HANDOFF.md`
 > for the present architecture and use a fresh approved preflight for any
 > production operation. Statements below are preserved as evidence about the
-> reviewed `e2d0781` bundle before that deployment.
+> reviewed `e2d0781` bundle before that deployment. The rollback bundle formerly
+> named in section 5 is unsafe for current production and has been superseded by
+> the proof-derived procedure below.
 
 ## Verdict
 
@@ -236,60 +239,119 @@ Do not set either hatch as part of this schema deploy. A hatch is an
 incident-only availability rollback that deliberately opens the corresponding
 surface.
 
-## 5. Exact deploy rollback
+## 5. Current deploy rollback procedure
 
-This rollback is for a bad schema/function deploy **before the backfill is
-invoked**. Stop the sequence immediately; do not run the migration merely to
-test whether the deploy can be salvaged.
+> **Do not deploy commit `0a5c75d` to current production.** That commit was the
+> correct pre-backfill rollback bundle for the 2026-07-27 operation only. A
+> read-only production inventory on 2026-08-21 found 74 live functions across
+> eight modules. `0a5c75d` contains 16 `dataFiles` functions and none of the 55
+> live functions in `tables`, `writeback`, `migrate`, `marketQuotes`,
+> `readCanary`, `operatorImport`, or `btcLedger`. Deploying it today would remove
+> at least those 55 functions, including the row API used by the shipped Android
+> and Linux clients, and cause an outage.
 
-Commit `0a5c75d` is the reproducible rollback bundle:
+A rollback bundle for a current operation must be derived from the commit proven
+to be deployed immediately before that operation. Never substitute `main`, the
+candidate's parent, a historical SHA from this document, or a function-name
+inventory. Commits with different bodies can export identical function names.
 
-- it has the same `convex/dataFiles.ts` bytes as `e2d0781`, including the
-  currently recorded fail-closed read/sync gates;
-- its `convex/schema.ts` declares only the five legacy tables;
-- it contains neither `convex/tables.ts`, `convex/migrate.ts`, nor
-  `convex/writeback.ts`.
+### Prove and stage the rollback bundle before deploying
 
-From a clean clone of this repository:
+1. Read the deployment history for `prod:keen-elephant-452` in the Convex
+   dashboard. Record the newest successful deploy entry and its message. The
+   entry must identify one unambiguous full 40-character commit SHA. Preserve a
+   screenshot or equivalent audit evidence. If the history does not prove the
+   SHA, stop and ask the production owner; do not infer it.
+2. Resolve that commit in this repository, record its tree, and create a clean
+   detached worktree. Use explicit values copied from the audit evidence:
+
+   ```bash
+   rollback_sha=REPLACE_WITH_PROVEN_FULL_SHA
+   rollback_tree=REPLACE_WITH_PROVEN_TREE
+   rollback_dir="$(mktemp -d /tmp/vogel-vault-convex-rollback.XXXXXX)"
+
+   test "${#rollback_sha}" -eq 40
+   git cat-file -e "${rollback_sha}^{commit}"
+   git worktree add --detach "$rollback_dir" "$rollback_sha"
+   cd "$rollback_dir"
+
+   test "$(git rev-parse HEAD)" = "$rollback_sha"
+   test "$(git rev-parse HEAD^{tree})" = "$rollback_tree"
+   test -z "$(git status --porcelain)"
+   npm ci
+   ```
+
+3. From a parent seat, load the sanctioned deploy credential with shell tracing
+   disabled. Never place the deploy key in a child-agent prompt or environment.
+   Confirm the production target, both configured token names, and the absence of
+   both tokenless hatches without printing any value. Require
+   `scripts/verify-read-auth.sh --expect enforced` to report `STATE: ENFORCED`.
+4. Run the repository's Convex typecheck and a deploy dry run from the rollback
+   worktree. Record the exit code and redacted output:
+
+   ```bash
+   CONVEX_DEPLOYMENT=prod:keen-elephant-452 \
+     npx convex deploy \
+       --dry-run \
+       --typecheck enable \
+       --codegen enable \
+       --message "preflight rollback bundle ${rollback_sha}"
+   ```
+
+5. Compare the prepared bundle's Convex module and public-function inventory to
+   the fresh production inventory. Any missing currently served module or
+   function blocks the rollback plan. A matching inventory is necessary but does
+   not replace the deployment-history proof of the commit.
+6. Freeze the rollback SHA, tree, clean status, inventory, auth result, and dry-run
+   evidence with the candidate's approval package. Production deployment must not
+   begin until the rollback bundle is proven and the owner has approved both the
+   candidate and this exact rollback target.
+
+### Execute rollback only after a failed approved deploy
+
+Keep production writers quiet during deployment, verification, and any rollback.
+From the already verified rollback worktree, recheck the exact SHA, tree, and
+clean status, then redeploy only with the production owner's explicit approval:
 
 ```bash
-rollback_dir="$(mktemp -d /tmp/vogel-vault-convex-rollback.XXXXXX)"
-git worktree add --detach "$rollback_dir" 0a5c75d
-if (
-  cd "$rollback_dir"
-  npm ci &&
-  CONVEX_DEPLOYMENT=prod:keen-elephant-452 \
-    npx convex deploy \
-      --message "rollback row-schema deploy to known legacy Convex bundle 0a5c75d"
-); then
-  git worktree remove --force "$rollback_dir"
-else
-  echo "Rollback deploy failed; retained $rollback_dir for diagnosis." >&2
-  false
-fi
+cd "$rollback_dir"
+test "$(git rev-parse HEAD)" = "$rollback_sha"
+test "$(git rev-parse HEAD^{tree})" = "$rollback_tree"
+test -z "$(git status --porcelain)"
+
+CONVEX_DEPLOYMENT=prod:keen-elephant-452 \
+  npx convex deploy \
+    --typecheck enable \
+    --codegen enable \
+    --message "rollback failed deploy to ${rollback_sha}"
 ```
 
-That redeploy removes the 17 newly public functions and restores the legacy
-saved schema/function bundle. It does not restore data because the deploy did
-not change any data. Deployment environment variables are separate state and
-must not be changed during this rollback.
+Afterward, verify in this order:
 
-Then verify, in this order:
+1. Confirm both tokenless hatches remain absent and both configured tokens remain
+   present, without printing values.
+2. Require the known-good read-auth probe to report `STATE: ENFORCED`.
+3. Verify the production function inventory matches the rollback bundle.
+4. Exercise the shipped row and blob readers plus the write paths affected by the
+   failed deployment.
+5. End the quiet-writer window only after the production owner accepts the
+   evidence.
 
-1. Confirm both tokenless hatches are absent.
-2. Run the known-good read-auth probe with `--expect enforced`.
-3. Exercise the shipped blob reader.
-4. Confirm no migration was run and do not start it until the deploy defect has
-   been corrected and re-reviewed.
+Code rollback does not undo data mutations. If the failed candidate wrote fields
+or documents that the proven rollback schema does not accept, do not deploy the
+old schema blindly. Keep authentication fail-closed and prepare a separately
+reviewed compatibility rollback that restores the previous function behavior
+while retaining schema support for the new stored data. Do not delete row
+documents ad hoc.
 
-If the backfill has already started, redeploying `0a5c75d` still closes the new
-public surface and restores the legacy client path, but it is **not** a data
-rollback. Do not delete row documents ad hoc: the blobs remain authoritative,
-and any cleanup of partially populated row tables requires its own reviewed,
-targeted plan. Removing a table from the saved schema does not itself delete its
-documents; Convex permits data tables that are not declared in the schema.
+Never change deployment environment variables during a code rollback. In
+particular, never set either tokenless hatch to recover from a bad deploy. A
+hatch opens authentication; it does not restore code.
 
-If the immediate defect is that `ALLOW_TOKENLESS_SYNC=true`, first remove that
-hatch to close unauthenticated mutation access, then perform the code rollback
-above. Never use either tokenless hatch to roll back a bad deploy; a hatch rolls
-authentication back to open, not code back to safe.
+### Historical evidence retained for audit
+
+For the 2026-07-27 pre-backfill operation, `0a5c75d` had the same
+`convex/dataFiles.ts` bytes as `e2d0781`, declared only the five legacy tables,
+and omitted `convex/tables.ts`, `convex/migrate.ts`, and `convex/writeback.ts`.
+That made it a valid rollback for that historical, pre-row deployment. The later
+row migration and client cutover permanently ended that scope.
