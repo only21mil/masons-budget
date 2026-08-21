@@ -6,47 +6,56 @@ import android.content.SharedPreferences
 /**
  * User-facing payment sources with a closed, persisted wire contract.
  *
- * The wire is what belongs in a transaction row or handoff. Labels are presentation
- * text and must not be used for routing or persistence.
+ * The wire is the durable selector identity used for routing and selector storage.
+ * [persistedCard] is the canonical transaction-row vocabulary; keep the two
+ * contracts separate so selector implementation details never leak into ledger rows.
  */
 internal enum class PaymentSource(
     val wire: String,
     val label: String,
+    val persistedCard: String,
     val route: PaymentSourceRoute,
 ) {
     RIVER_BITCOIN_BILL_PAY(
         wire = "river_bitcoin_bill_pay",
         label = "River Bitcoin Bill Pay",
+        persistedCard = "River Bitcoin Bill Pay",
         route = PaymentSourceRoute.BILL_PAY,
     ),
     COINBASE_CARD(
         wire = "coinbase_card",
         label = "Coinbase Card",
+        persistedCard = "Coinbase Card",
         route = PaymentSourceRoute.CARD_TRANSACTION,
     ),
     AVEN(
         wire = "aven",
         label = "Aven",
+        persistedCard = "Aven",
         route = PaymentSourceRoute.CARD_TRANSACTION,
     ),
     SOFI_CARD(
         wire = "sofi_card",
         label = "SoFi Card",
+        persistedCard = "SoFi Card",
         route = PaymentSourceRoute.CARD_TRANSACTION,
     ),
     CAPITAL_ONE_VX(
         wire = "capital_one_vx",
         label = "Capital One VX",
+        persistedCard = "Capital One VX",
         route = PaymentSourceRoute.CARD_TRANSACTION,
     ),
     LIGHTNING(
         wire = "lightning",
         label = "Lightning",
+        persistedCard = "lightning",
         route = PaymentSourceRoute.BITCOIN_TRANSACTION,
     ),
     ON_CHAIN(
         wire = "on_chain",
         label = "On-chain",
+        persistedCard = "on-chain",
         route = PaymentSourceRoute.BITCOIN_TRANSACTION,
     );
 

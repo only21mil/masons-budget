@@ -77,9 +77,9 @@ internal data class AddTransactionDraft(
     val amount: String,
     val inputUnit: DisplayUnit,
     // `card` remains as a source-compatible bridge for the older add surface.
-    // New callers must use paymentSource; the wire is always the closed source
-    // catalogue value rather than an arbitrary user-entered label.
-    val card: String = PaymentSource.DEFAULT.wire,
+    // New callers must use paymentSource; new drafts carry the canonical persisted
+    // card vocabulary rather than the selector routing wire.
+    val card: String = PaymentSource.DEFAULT.persistedCard,
     val date: LocalDate = LocalDate.now(ZoneOffset.UTC),
     val note: String = "",
     val owner: FamilyMember = FamilyMember.VICTOR,
@@ -342,7 +342,7 @@ internal fun prepareTransaction(
             amountCents = amountCents,
             category = category,
             kind = kind,
-            card = source.wire,
+            card = source.persistedCard,
             note = draft.note.trim().takeIf(String::isNotEmpty),
             // Fiat card sources deliberately omit both Bitcoin fields, even when
             // a stale account key or a converted input was present in the draft.
@@ -609,7 +609,7 @@ internal fun AddTransactionSheet(
         category = selectedCategory,
         amount = amount,
         inputUnit = inputUnit,
-        card = paymentSource.wire,
+        card = paymentSource.persistedCard,
         date = LocalDate.parse(dateIso),
         note = note,
         owner = state.activeProfile,
@@ -825,7 +825,7 @@ internal fun AddTransactionSheet(
                             category = selectedCategory,
                             amount = amount,
                             inputUnit = inputUnit,
-                            card = paymentSource.wire,
+                            card = paymentSource.persistedCard,
                             date = selectedDate,
                             note = note,
                             owner = state.activeProfile,

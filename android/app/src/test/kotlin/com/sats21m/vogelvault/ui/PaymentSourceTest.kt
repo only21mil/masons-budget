@@ -47,6 +47,18 @@ class PaymentSourceTest {
             ),
             PaymentSource.entries.map { it.wire to it.label },
         )
+        assertEquals(
+            listOf(
+                "river_bitcoin_bill_pay" to "River Bitcoin Bill Pay",
+                "coinbase_card" to "Coinbase Card",
+                "aven" to "Aven",
+                "sofi_card" to "SoFi Card",
+                "capital_one_vx" to "Capital One VX",
+                "lightning" to "lightning",
+                "on_chain" to "on-chain",
+            ),
+            PaymentSource.entries.map { it.wire to it.persistedCard },
+        )
         PaymentSource.entries.forEach { source ->
             assertEquals(source, PaymentSource.fromWire(source.wire))
         }
@@ -62,17 +74,16 @@ class PaymentSourceTest {
         val first = PaymentSourceStore(preferences)
         assertEquals(PaymentSource.COINBASE_CARD, first.current())
 
-        assertTrue(first.select(PaymentSource.CAPITAL_ONE_VX))
-        assertEquals(PaymentSource.CAPITAL_ONE_VX.wire, first.storedWire())
-        assertEquals(
-            PaymentSource.CAPITAL_ONE_VX,
-            PaymentSourceStore(preferences).current(),
-        )
-        assertFalse(preferences.all.values.any { it == PaymentSource.CAPITAL_ONE_VX.label })
+        PaymentSource.entries.forEach { source ->
+            assertTrue(first.select(source), source.name)
+            assertEquals(source.wire, first.storedWire(), source.name)
+            assertEquals(source, PaymentSourceStore(preferences).current(), source.name)
+            assertFalse(preferences.all.values.any { it == source.label }, source.name)
+        }
     }
 
     @Test
-    fun `card transaction omits bitcoin posting fields and carries the stable card wire`() {
+    fun `card transaction omits bitcoin posting fields and carries the canonical card label`() {
         val prepared = preparePaymentTransaction(
             source = PaymentSource.AVEN,
             amount = "12.34",
@@ -80,9 +91,36 @@ class PaymentSourceTest {
             bitcoinAccountKey = "must-not-leak",
         )
 
-        assertEquals(PaymentSource.AVEN.wire, prepared.input.card)
+        assertEquals("Aven", prepared.input.card)
         assertNull(prepared.input.amountSats)
         assertNull(prepared.input.bitcoinAccountKey)
+    }
+
+    @Test
+    fun `every transaction payment source maps its selector wire to the exact fleet card label`() {
+        val expectedCardBySource = linkedMapOf(
+            PaymentSource.COINBASE_CARD to "Coinbase Card",
+            PaymentSource.AVEN to "Aven",
+            PaymentSource.SOFI_CARD to "SoFi Card",
+            PaymentSource.CAPITAL_ONE_VX to "Capital One VX",
+            PaymentSource.LIGHTNING to "lightning",
+            PaymentSource.ON_CHAIN to "on-chain",
+        )
+
+        expectedCardBySource.forEach { (source, expectedCard) ->
+            val isBitcoin = source.isBitcoinTransaction
+            val prepared = preparePaymentTransaction(
+                source = source,
+                amount = if (source == PaymentSource.LIGHTNING) "21000" else "12.34",
+                unit = if (source == PaymentSource.LIGHTNING) DisplayUnit.SATS else {
+                    if (source == PaymentSource.ON_CHAIN) DisplayUnit.BTC else DisplayUnit.USD
+                },
+                bitcoinAccountKey = if (isBitcoin) "${source.name.lowercase()}-wallet" else "stale-key",
+            )
+
+            assertEquals(source, PaymentSource.fromWire(source.wire), source.name)
+            assertEquals(expectedCard, prepared.input.toJson()["card"]!!.jsonPrimitive.content, source.name)
+        }
     }
 
     @Test
@@ -94,7 +132,7 @@ class PaymentSourceTest {
             bitcoinAccountKey = "lightning-wallet",
         )
 
-        assertEquals(PaymentSource.LIGHTNING.wire, prepared.input.card)
+        assertEquals("lightning", prepared.input.card)
         assertEquals(21_000L, prepared.input.amountSats)
         assertEquals("lightning-wallet", prepared.input.bitcoinAccountKey)
         assertTrue(requireNotNull(prepared.input.amountSats) > 0L)
@@ -138,7 +176,7 @@ class PaymentSourceTest {
         assertEquals("transactions", args["sourceFile"]!!.jsonPrimitive.content)
         assertEquals("test-device", args["deviceId"]!!.jsonPrimitive.content)
         val transaction = args["transaction"]!!.jsonObject
-        assertEquals(PaymentSource.ON_CHAIN.wire, transaction["card"]!!.jsonPrimitive.content)
+        assertEquals("on-chain", transaction["card"]!!.jsonPrimitive.content)
         assertEquals("coldcard", transaction["bitcoinAccountKey"]!!.jsonPrimitive.content)
         assertTrue("amountSats" in transaction)
         assertFalse("baseUpdatedAtMs" in args)
