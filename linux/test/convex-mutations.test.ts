@@ -13,6 +13,12 @@ import type {
   DeviceCredentialSnapshot,
   DeviceCredentialStore,
 } from "../electron/deviceCredentialStore.ts"
+import {
+  PAYMENT_SOURCES,
+  paymentSourceRoute,
+  transactionSubmission,
+  type PaymentSource,
+} from "../src/renderer/data/paymentSource.ts"
 
 const revision = "revision_abcdefghijklmnop"
 const snapshot: DeviceCredentialSnapshot = {
@@ -1213,5 +1219,142 @@ describe("paired-device main controller", () => {
 
     await expect(controller.unpair()).resolves.toEqual({ status: "failed" })
     expect(localStore.current).toEqual(snapshot)
+  })
+})
+
+// The IPC boundary used to accept any string at all as `card`. These are the
+// payloads a compromised or buggy renderer would send; every one of them has to
+// die in main, where the closed matrix is re-checked rather than trusted.
+describe("the payment-source matrix at the IPC boundary", () => {
+  const SATS = 140_000n
+  const ACCOUNT = "coldcard"
+
+  function forged(extra: Record<string, unknown>): unknown {
+    return validateMutationRequest({ ...transactionRequest(), ...extra })
+  }
+
+  it("refuses River on a transaction, whatever else the payload carries", () => {
+    // River debits the canonical account inside the bill-pay mutation. A card
+    // transaction naming it records the spend and debits nothing.
+    expect(forged({ card: "river_bitcoin_bill_pay" })).toBeNull()
+    expect(forged({
+      card: "river_bitcoin_bill_pay",
+      amountSats: SATS,
+      bitcoinAccountKey: ACCOUNT,
+    })).toBeNull()
+    expect(forged({ card: "river_bitcoin_bill_pay", baseUpdatedAtMs: 7 })).toBeNull()
+  })
+
+  it("refuses a display label injected where a wire value belongs", () => {
+    expect(forged({ card: "On-chain", amountSats: SATS, bitcoinAccountKey: ACCOUNT })).toBeNull()
+    expect(forged({ card: "Coinbase Card" })).toBeNull()
+    expect(forged({ card: "River Bitcoin Bill Pay" })).toBeNull()
+    // Not even on an edit, where unknown text is otherwise preserved.
+    expect(forged({ card: "Lightning", baseUpdatedAtMs: 7 })).toBeNull()
+  })
+
+  it("refuses a Bitcoin spend with no sats", () => {
+    expect(forged({ card: "lightning", bitcoinAccountKey: ACCOUNT })).toBeNull()
+    expect(forged({ card: "on_chain", bitcoinAccountKey: ACCOUNT })).toBeNull()
+  })
+
+  it("refuses a Bitcoin spend with no account to debit", () => {
+    expect(forged({ card: "lightning", amountSats: SATS })).toBeNull()
+    expect(forged({ card: "on_chain", amountSats: SATS, bitcoinAccountKey: "   " })).toBeNull()
+  })
+
+  it("refuses a fiat card carrying sats", () => {
+    expect(forged({ card: "coinbase_card", amountSats: SATS })).toBeNull()
+    expect(forged({ card: "capital_one_vx", amountSats: SATS })).toBeNull()
+  })
+
+  it("refuses a fiat card naming a Bitcoin account", () => {
+    expect(forged({ card: "aven", bitcoinAccountKey: ACCOUNT })).toBeNull()
+    expect(forged({ card: "sofi_card", bitcoinAccountKey: ACCOUNT })).toBeNull()
+    // And an account key with no card at all names a debit nothing routes.
+    expect(forged({ bitcoinAccountKey: ACCOUNT })).toBeNull()
+  })
+
+  it("refuses an unknown card string on a create", () => {
+    // The validator cannot read the stored row, so it cannot tell a card string
+    // predating the closed list from one a caller invented. A create has no row
+    // to inherit from, so it must use the enum.
+    expect(forged({ card: "Debit" })).toBeNull()
+    expect(forged({ card: " coinbase_card " })).toBeNull()
+  })
+
+  it("accepts an unknown card string on an edit, byte for byte", () => {
+    // baseUpdatedAtMs fences the write against a row that already exists and is
+    // entitled to keep its own string.
+    expect(forged({ card: "Debit", baseUpdatedAtMs: 7 })).toMatchObject({
+      card: "Debit",
+      baseUpdatedAtMs: 7,
+    })
+    expect(forged({ card: " coinbase_card ", baseUpdatedAtMs: 7 })).toMatchObject({
+      card: " coinbase_card ",
+    })
+  })
+
+  it("refuses a Bitcoin source on Income, which receives sats rather than spending them", () => {
+    expect(forged({
+      card: "lightning",
+      category: "Income",
+      transactionKind: "credit",
+      amountSats: SATS,
+      bitcoinAccountKey: ACCOUNT,
+    })).toBeNull()
+  })
+
+  it("keeps the sat-denominated Income row exactly as it was", () => {
+    expect(forged({
+      category: "Income",
+      transactionKind: "credit",
+      amountSats: 25_000n,
+    })).toMatchObject({ category: "Income", amountSats: 25_000n })
+    // Still Income-only, and still without an account it never had.
+    expect(forged({ amountSats: 25_000n })).toBeNull()
+    expect(forged({
+      category: "Income",
+      transactionKind: "credit",
+      amountSats: 25_000n,
+      bitcoinAccountKey: ACCOUNT,
+    })).toBeNull()
+  })
+
+  it("accepts the two Bitcoin spends with exact sats and a named account", () => {
+    expect(forged({ card: "lightning", amountSats: SATS, bitcoinAccountKey: ACCOUNT }))
+      .toMatchObject({ card: "lightning", amountSats: SATS, bitcoinAccountKey: ACCOUNT })
+    expect(forged({ card: "on_chain", amountSats: SATS, bitcoinAccountKey: ACCOUNT }))
+      .toMatchObject({ card: "on_chain", amountSats: SATS, bitcoinAccountKey: ACCOUNT })
+  })
+})
+
+// End to end in shape, not in transport: the renderer's own payload builder
+// produces the source fields, and main's validator is the thing that judges
+// them. A drift between the two shows up here rather than on the wire.
+describe("form-built payloads through the main-process validator", () => {
+  it.each(PAYMENT_SOURCES)("routes %s the way the matrix says", (source: PaymentSource) => {
+    const built = transactionSubmission({
+      source,
+      amountSats: 140_000n,
+      bitcoinAccountKey: "coldcard",
+      category: "Home",
+    })
+    const writesTransaction = paymentSourceRoute(source) === "transaction"
+    // The form emits a card for the six transaction sources only. River is a
+    // bill pay and never builds one.
+    expect(built.card).toBe(writesTransaction ? source : undefined)
+    const request = validateMutationRequest({
+      ...transactionRequest(),
+      // Forced on for River: the payload the form declines to build is exactly
+      // the one a forged renderer would send, and main has to be the refusal.
+      card: source,
+      ...built,
+    })
+    if (!writesTransaction) {
+      expect(request).toBeNull()
+      return
+    }
+    expect(request).toMatchObject({ card: source, ...built })
   })
 })
