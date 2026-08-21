@@ -157,6 +157,54 @@ final class PaymentSourceConformanceTests: XCTestCase {
     // order violation. The synthetic and canonical sequences are asserted
     // separately below precisely so neither masks drift in the other.
 
+    func testOptionForWireReturnsCatalogueEntry() {
+        XCTAssertEqual(TransactionSourceCatalog.option(forWire: "river")?.label, "River")
+        XCTAssertEqual(TransactionSourceCatalog.option(forWire: "strike")?.classification, .bitcoinNative)
+        // Retired and unknown wires have no catalogue entry.
+        XCTAssertNil(TransactionSourceCatalog.option(forWire: "lightning"))
+        XCTAssertNil(TransactionSourceCatalog.option(forWire: "not-a-wire"))
+    }
+
+    func testEditableSourcesFenceOffBitcoinNativeForRowsWithoutPosting() {
+        // A fiat row (and by the same code path a legacy or untagged one)
+        // must not offer any Bitcoin-native wire: the edit surface has no
+        // sats entry, so it cannot collect the posting the backend demands.
+        let fiat = TransactionSourceCatalog.editableSources(
+            for: .spend, storedCard: "sofi_card", selected: nil)
+        XCTAssertFalse(fiat.contains { $0.classification.isBitcoinNative })
+        XCTAssertEqual(
+            fiat.map(\.wire),
+            contractWires.filter { wire in
+                wire != "river_bitcoin_bill_pay" && wire != "river"
+                    && wire != "zeus_lightning" && wire != "zeus_on_chain"
+                    && wire != "strike"
+            },
+            "Only the fiat cards remain for a fiat row",
+        )
+
+        // Untagged and unknown-wire rows are fenced identically.
+        XCTAssertFalse(
+            TransactionSourceCatalog
+                .editableSources(for: .spend, storedCard: nil, selected: nil)
+                .contains { $0.classification.isBitcoinNative })
+        XCTAssertFalse(
+            TransactionSourceCatalog
+                .editableSources(for: .spend, storedCard: "lightning", selected: nil)
+                .contains { $0.classification.isBitcoinNative })
+    }
+
+    func testEditableSourcesKeepStoredBitcoinNativeWireSelectable() {
+        // A row that already carries a Bitcoin-native wire keeps it — the
+        // stored posting round-trips unchanged, and the wire stays offered
+        // alongside the other Bitcoin-native options for that row.
+        let options = TransactionSourceCatalog.editableSources(
+            for: .spend, storedCard: "zeus_lightning", selected: nil)
+        XCTAssertEqual(
+            options.filter { $0.classification.isBitcoinNative }.map(\.wire),
+            ["river", "zeus_lightning", "zeus_on_chain", "strike"])
+        XCTAssertTrue(options.contains { $0.wire == "sofi_card" })
+    }
+
     func testUnknownWireIsReinsertedAsSyntheticOption() {
         // A stored wire that no longer exists in the catalogue (e.g. a retired
         // value on an existing row) must round-trip: sources(for:including:)

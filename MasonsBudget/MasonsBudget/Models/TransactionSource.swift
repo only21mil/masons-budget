@@ -111,6 +111,28 @@ enum TransactionSourceCatalog {
         return options
     }
 
+    /// Catalogue entry for a stored wire, or nil for retired/unknown values.
+    static func option(forWire wire: String) -> TransactionSourceOption? {
+        common.first { $0.wire == wire }
+    }
+
+    /// Options for an edit surface with no sats entry. The backend demands
+    /// positive amountSats + bitcoinAccountKey for a Bitcoin-native posting,
+    /// and an edit screen cannot collect them, so those wires are offered
+    /// only when the row already carries one — its stored posting then
+    /// round-trips unchanged. Re-sourcing a row onto a Bitcoin-native wire is
+    /// a separate feature, not an edit affordance.
+    static func editableSources(
+        for activity: TransactionActivityType,
+        storedCard: String?,
+        selected: String?
+    ) -> [TransactionSourceOption] {
+        let allowBitcoinNative = option(forWire: storedCard ?? "")?
+            .classification.isBitcoinNative == true
+        return sources(for: activity, including: selected)
+            .filter { $0.classification.isBitcoinNative ? allowBitcoinNative : true }
+    }
+
     /// Wire values for persistence, in canonical picker order.
     static func wires(for activity: TransactionActivityType, including current: String? = nil) -> [String] {
         sources(for: activity, including: current).map(\.wire)

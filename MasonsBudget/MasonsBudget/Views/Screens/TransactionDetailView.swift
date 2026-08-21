@@ -174,7 +174,15 @@ struct TransactionDetailView: View {
     }
 
     private var methodOptions: [TransactionSourceOption] {
-        TransactionSourceCatalog.sources(for: activityType, including: method)
+        // The detail screen has no sats entry, so Bitcoin-native wires are
+        // offered only when the stored row already carries one (see
+        // editableSources). Re-sourcing a row is a separate feature, not a
+        // thing this screen does.
+        TransactionSourceCatalog.editableSources(
+            for: activityType,
+            storedCard: transaction.card,
+            selected: method
+        )
     }
 
     private var methodLabel: String {
