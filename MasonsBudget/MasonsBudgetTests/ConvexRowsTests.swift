@@ -447,10 +447,37 @@ final class ConvexRowsTests: XCTestCase {
         }
     }
 
+    func testServerShapedIncomeRowDecodesThroughTheRealEnvelope() throws {
+        // The wire shape from tables:projectIncome exactly: ten keys, no
+        // sourceKey (the server strips it and pins the absence in its own
+        // tests). Decoding through the real ConvexRowEnvelope path is what
+        // catches a required field the server never sends — the in-memory
+        // constructor tests cannot see that class of bug.
+        let envelope: ConvexRowEnvelope<ConvexIncomeRow> = try decodeTaggedJSON([
+            "complete": true,
+            "rows": [[
+                "incomeId": "income-1",
+                "owner": "victor",
+                "date": "2026-07-01",
+                "month": "2026-07",
+                "amountCents": int64("QOIBAAAAAAA="),
+                "source": "River",
+                "loggedBy": nil,
+                "note": nil,
+                "archimedesRequestId": nil,
+                "updatedAtMs": 1_777_777_777_777,
+            ]],
+        ])
+        let row = try XCTUnwrap(envelope.completeRows().first)
+
+        XCTAssertEqual(row.incomeId, "income-1")
+        XCTAssertEqual(row.amountCents, 123_456)
+        XCTAssertEqual(row.source, "River")
+    }
+
     func testDedicatedIncomeRowsAreTheOnlyIncomeProjection() throws {
         let rows = [
             ConvexIncomeRow(
-                sourceKey: "income-1",
                 incomeId: "income-1",
                 owner: .victor,
                 date: "2026-07-01",
@@ -462,7 +489,6 @@ final class ConvexRowsTests: XCTestCase {
                 archimedesRequestId: nil,
             ),
             ConvexIncomeRow(
-                sourceKey: "income-2",
                 incomeId: "income-2",
                 owner: .victor,
                 date: "2026-07-15",
