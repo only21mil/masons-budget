@@ -406,6 +406,7 @@ internal data class LinkedIncomeInput(
         put("date", JsonPrimitive(date))
         put("amountCents", amountCents.toConvexInt64())
         put("source", JsonPrimitive(source))
+        put("sourceFile", JsonPrimitive("income"))
         note?.let { put("note", JsonPrimitive(it)) }
         loggedBy?.let { put("loggedBy", JsonPrimitive(it)) }
     }.let(::JsonObject)

@@ -265,16 +265,16 @@ class ConvexMutationTest {
         assertEquals("victor", args["owner"]?.jsonPrimitive?.content)
         assertEquals("bitcoin-buys", args["sourceFile"]?.jsonPrimitive?.content)
         assertEquals("income-buy-1", args["buy"]!!.jsonObject["id"]?.jsonPrimitive?.content)
+        val linkedIncome = args["linkedIncome"]!!.jsonObject
         assertEquals(
-            "income-buy-1",
-            args["linkedIncome"]!!.jsonObject["id"]?.jsonPrimitive?.content,
+            setOf("id", "owner", "date", "amountCents", "source", "sourceFile", "note", "loggedBy"),
+            linkedIncome.keys,
         )
-        assertEquals(
-            "victor",
-            args["linkedIncome"]!!.jsonObject["owner"]?.jsonPrimitive?.content,
-        )
+        assertEquals("income", linkedIncome["sourceFile"]?.jsonPrimitive?.content)
+        assertEquals("income-buy-1", linkedIncome["id"]?.jsonPrimitive?.content)
+        assertEquals("victor", linkedIncome["owner"]?.jsonPrimitive?.content)
         assertTagged(args["buy"]!!.jsonObject, "usdCents", "ZBkAAAAAAAA=")
-        assertTagged(args["linkedIncome"]!!.jsonObject, "amountCents", "ZBkAAAAAAAA=")
+        assertTagged(linkedIncome, "amountCents", "ZBkAAAAAAAA=")
     }
 
     @Test
