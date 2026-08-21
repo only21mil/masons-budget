@@ -22,7 +22,6 @@
 		0B6CB8CA90ABDA907CFB646B /* NetWorthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC957E91914A99EF29371CA6 /* NetWorthView.swift */; };
 		0B7AFCE74E5D43974F8AC1AE /* BudgetCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F123D957238EE653A6F6751 /* BudgetCategory.swift */; };
 		0D76FD14D73A05203A2007B5 /* ConvexDataReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4DF0247EF288DCF8C3F9782 /* ConvexDataReader.swift */; };
-		0DB81852B8BCA4A88AACB54E /* VoiceTransactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E61832AD53C22BEAF0386F25 /* VoiceTransactionView.swift */; };
 		0F8ED58D169C39B1704B92F1 /* AmountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EAD4E4602D4D4566CD78E35 /* AmountView.swift */; };
 		1287315587BFEF686848BA45 /* TaskSmartListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 859D4699AA8657478F0E4D21 /* TaskSmartListView.swift */; };
 		12A5E7048C0FED8784BDBD4C /* listTransactions.convex_encoded_json.json in Resources */ = {isa = PBXBuildFile; fileRef = E9C16AAB01C5D56B81A0DAA4 /* listTransactions.convex_encoded_json.json */; };
@@ -136,7 +135,6 @@
 		777A58FB2F9ED9243F50855A /* ProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E87F8471A5178129ADC32F6 /* ProjectsView.swift */; };
 		78CD410FBB0B0F30FC04C2B5 /* AreaTodoListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A36EDB41C72B5F230F05789 /* AreaTodoListView.swift */; };
 		7A23F98EAE7CC04F98559625 /* LedgerMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91E4D6A837EBFF6D4985DF22 /* LedgerMapper.swift */; };
-		7A6F4CE5CE7C098A4BEB7835 /* VoiceParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B1E681CE6C03C61153CAE59 /* VoiceParser.swift */; };
 		7D48872896D49FB898A12EC5 /* BitcoinIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF60F6C9AFB730F4A27C9A10 /* BitcoinIcons.swift */; };
 		7EB78B1C7E862DC7C62818C1 /* IncomingEventsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DA02D07A5F77E55C69B00DF /* IncomingEventsSection.swift */; };
 		7F206C7332A7AFA5BB962E49 /* BudgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 941AE83F8125080834B45397 /* BudgetView.swift */; };
@@ -144,7 +142,6 @@
 		80A637E625F3EF70CF7EF91A /* MC2DTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 130D186945E2F17AE4A79132 /* MC2DTOs.swift */; };
 		8271DA0EE070045925ED003C /* TodoProject.swift in Sources */ = {isa = PBXBuildFile; fileRef = 782A3D53AC3B913AC715D707 /* TodoProject.swift */; };
 		84680CBB7571265A670FF80F /* BitcoinIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF60F6C9AFB730F4A27C9A10 /* BitcoinIcons.swift */; };
-		8468F93DF475A5DD08A50959 /* VoiceTransactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E61832AD53C22BEAF0386F25 /* VoiceTransactionView.swift */; };
 		84C14555E924E91D3C73C55E /* ScreenHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59DD3C8ADB2447DA2F2ABEF8 /* ScreenHeader.swift */; };
 		84D36BF1F75AFCEAE45CA0A2 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E34240C2E281F20DD41FF8D /* ContentView.swift */; };
 		8762E9AC6714420D2E8E38B8 /* ProfileSwitcherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6DC67CB4C872B77EB725922 /* ProfileSwitcherView.swift */; };
@@ -193,7 +190,6 @@
 		AC4B388167FA9DAB45D43515 /* SyncEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F048D3DB36FA73A8D570960 /* SyncEvent.swift */; };
 		AC9DFD3F20A65000ABF54CDC /* HoldingAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19DCBB53F51F8E4A3BE1BD9E /* HoldingAccount.swift */; };
 		AD235E37C0A8962E20CFA401 /* getBudgetDocument.json.json in Resources */ = {isa = PBXBuildFile; fileRef = 952D7F58F4E564F0E226F433 /* getBudgetDocument.json.json */; };
-		ADA692279C957C0AFBD77C69 /* VoiceParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B1E681CE6C03C61153CAE59 /* VoiceParser.swift */; };
 		ADF07F1500B9EBF914125718 /* BTCAccountDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB39E4E9476D6B0B76703693 /* BTCAccountDetailView.swift */; };
 		AE798501AD587483D3C310A2 /* PillButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = F77DC014DA99E364F0D6572E /* PillButton.swift */; };
 		B01D62F2D057FFF30B54C0DD /* ExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42CB31DA7B47761B37A90E9C /* ExportView.swift */; };
@@ -226,7 +222,6 @@
 		CA666BE0514416974E0790EC /* rowCounts.json.json in Resources */ = {isa = PBXBuildFile; fileRef = 1548F69DA102C9E89909A9D9 /* rowCounts.json.json */; };
 		CA974F20B48556D7C1FD187F /* Transaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28C9AC48788F6BD75F27ADC1 /* Transaction.swift */; };
 		CB9BB3C97CAED9728CE9B542 /* BTCBillPay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DC543643B1F2899DDB38FE5 /* BTCBillPay.swift */; };
-		CD6E34BC67B813408C710CD1 /* VoiceTransactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E61832AD53C22BEAF0386F25 /* VoiceTransactionView.swift */; };
 		CEF9C4C16AACAB7C0C7AFD75 /* TransactionSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 570F3F5990719F8820C73D57 /* TransactionSource.swift */; };
 		D027098D14027DE06D9B4266 /* InlineAddTaskBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5514024FC5632566C2498B75 /* InlineAddTaskBar.swift */; };
 		D1BB8B327A23D4D8D3ABBE63 /* TodoItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC02E94290076AEE88831C18 /* TodoItem.swift */; };
@@ -244,8 +239,6 @@
 		E47423E8CDB190F1BB982E95 /* MoreMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C4688B09BFCB16C26276040 /* MoreMenuView.swift */; };
 		E678847B04562368D94CD18E /* MC2DTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 130D186945E2F17AE4A79132 /* MC2DTOs.swift */; };
 		E72C1516754CC4B60DCF93C6 /* SyncStatusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D86340D4ABE8A55B4DA49FF6 /* SyncStatusStore.swift */; };
-		E748DE87C77526CF1C9469D0 /* VoiceParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B1E681CE6C03C61153CAE59 /* VoiceParser.swift */; };
-		E7735A84FAB8CCBB3AA04C72 /* VoiceParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B419D48E89A2C2DCD79A7F8 /* VoiceParserTests.swift */; };
 		E7A545B3227D5DE6C136EEBC /* BTCPriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D42E3A9B8292524595DB757 /* BTCPriceService.swift */; };
 		EDA46ADEA2A64402C54F371F /* BTCBillPayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 273950057898C808021DD99E /* BTCBillPayView.swift */; };
 		EFBB7BB8E76452640F44EF64 /* SearchMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2283F2AE36B94EF55B4AAD6 /* SearchMatcher.swift */; };
@@ -315,7 +308,6 @@
 		59FFF78C97F7D0BF875F4206 /* listBtcBillPays.convex_encoded_json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = listBtcBillPays.convex_encoded_json.json; sourceTree = "<group>"; };
 		5AFC3C821C582B4F9E705206 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		5B1D5B4D12045D8F03AA2B7B /* listTodos.convex_encoded_json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = listTodos.convex_encoded_json.json; sourceTree = "<group>"; };
-		5B419D48E89A2C2DCD79A7F8 /* VoiceParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceParserTests.swift; sourceTree = "<group>"; };
 		5B7551DE4A0BB82EF414D999 /* BTCBuysView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BTCBuysView.swift; sourceTree = "<group>"; };
 		5C4688B09BFCB16C26276040 /* MoreMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreMenuView.swift; sourceTree = "<group>"; };
 		5C96A266DE62219A9E6D25F4 /* listTodos.json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = listTodos.json.json; sourceTree = "<group>"; };
@@ -337,7 +329,6 @@
 		84B5CA78FD69DF5C17B4C334 /* MasonsBudgetTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MasonsBudgetTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		859D4699AA8657478F0E4D21 /* TaskSmartListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSmartListView.swift; sourceTree = "<group>"; };
 		8998D9F9DC9435AE8FBBBCBC /* ConvexRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexRows.swift; sourceTree = "<group>"; };
-		8B1E681CE6C03C61153CAE59 /* VoiceParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceParser.swift; sourceTree = "<group>"; };
 		8B2D2A739D76D88CF2D981C6 /* MonthlyBudgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonthlyBudgetSnapshot.swift; sourceTree = "<group>"; };
 		8FBBF456CA8F45467DE539B3 /* CategoryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryDetailView.swift; sourceTree = "<group>"; };
 		91E4D6A837EBFF6D4985DF22 /* LedgerMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerMapper.swift; sourceTree = "<group>"; };
@@ -372,7 +363,6 @@
 		E117823C6DA6138431AE80C8 /* LockScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenView.swift; sourceTree = "<group>"; };
 		E2283F2AE36B94EF55B4AAD6 /* SearchMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchMatcher.swift; sourceTree = "<group>"; };
 		E4DF0247EF288DCF8C3F9782 /* ConvexDataReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexDataReader.swift; sourceTree = "<group>"; };
-		E61832AD53C22BEAF0386F25 /* VoiceTransactionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTransactionView.swift; sourceTree = "<group>"; };
 		E9C16AAB01C5D56B81A0DAA4 /* listTransactions.convex_encoded_json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = listTransactions.convex_encoded_json.json; sourceTree = "<group>"; };
 		EB8660E933700241699D6450 /* AddTransactionIntentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTransactionIntentTests.swift; sourceTree = "<group>"; };
 		EC957E91914A99EF29371CA6 /* NetWorthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetWorthView.swift; sourceTree = "<group>"; };
@@ -456,7 +446,6 @@
 				EF5C5935A12805ECA579168B /* MasonsBudgetTests.swift */,
 				974E8027F86EF14E53108D7C /* OptimisticSaveFlowTests.swift */,
 				57B55FD0C0F021AD800D8EFC /* PaymentSourceConformanceTests.swift */,
-				5B419D48E89A2C2DCD79A7F8 /* VoiceParserTests.swift */,
 			);
 			path = MasonsBudgetTests;
 			sourceTree = "<group>";
@@ -487,7 +476,6 @@
 				1F721A6FC17530024B35A0C6 /* StockPriceService.swift */,
 				D86340D4ABE8A55B4DA49FF6 /* SyncStatusStore.swift */,
 				B76057F6E5D01B646C6C3DE7 /* TaskUndoStore.swift */,
-				8B1E681CE6C03C61153CAE59 /* VoiceParser.swift */,
 				230D932174FB25E1E6FA335C /* WriteFeedbackStore.swift */,
 			);
 			path = Services;
@@ -578,7 +566,6 @@
 				0DBCCD025DF53FB5AB826594 /* TasksView.swift */,
 				9FBD5FB3989AEA4A2A5A5B9A /* TodayView.swift */,
 				4BCFC0CB64EDE2474B2E5620 /* TransactionDetailView.swift */,
-				E61832AD53C22BEAF0386F25 /* VoiceTransactionView.swift */,
 			);
 			path = Screens;
 			sourceTree = "<group>";
@@ -860,8 +847,6 @@
 				17BBEDB466265654289AAE51 /* TransactionDetailView.swift in Sources */,
 				CEF9C4C16AACAB7C0C7AFD75 /* TransactionSource.swift in Sources */,
 				43C1EFDD2AAB66D42EC2F7BE /* UnitToggleView.swift in Sources */,
-				ADA692279C957C0AFBD77C69 /* VoiceParser.swift in Sources */,
-				0DB81852B8BCA4A88AACB54E /* VoiceTransactionView.swift in Sources */,
 				2E43E8C2327E9AC68ED166D3 /* WriteFeedbackStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -938,8 +923,6 @@
 				1DCAE04D1FD4D959FD8F4048 /* TransactionDetailView.swift in Sources */,
 				263192C847B3B58DC73DB2EB /* TransactionSource.swift in Sources */,
 				0079C75072FC413931C2BB2F /* UnitToggleView.swift in Sources */,
-				7A6F4CE5CE7C098A4BEB7835 /* VoiceParser.swift in Sources */,
-				8468F93DF475A5DD08A50959 /* VoiceTransactionView.swift in Sources */,
 				06A4626D7CE3ECA5F430755B /* WriteFeedbackStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1028,9 +1011,6 @@
 				7278CE8F39F5AFB791DE48D4 /* TransactionDetailView.swift in Sources */,
 				4A07B5BA11595826A572BCD6 /* TransactionSource.swift in Sources */,
 				58AC51EEA6EDF49B075A3ACD /* UnitToggleView.swift in Sources */,
-				E748DE87C77526CF1C9469D0 /* VoiceParser.swift in Sources */,
-				E7735A84FAB8CCBB3AA04C72 /* VoiceParserTests.swift in Sources */,
-				CD6E34BC67B813408C710CD1 /* VoiceTransactionView.swift in Sources */,
 				F9371209D19D48A735D4FBED /* WriteFeedbackStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1053,8 +1033,6 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Unlock The Vogel Vault with Face ID.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone access is needed for voice transaction entry.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Voice input lets you log transactions by speaking.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -1080,8 +1058,6 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Unlock The Vogel Vault with Face ID.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone access is needed for voice transaction entry.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Voice input lets you log transactions by speaking.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -1173,8 +1149,6 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Unlock The Vogel Vault with Face ID.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone access is needed for voice transaction entry.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Voice input lets you log transactions by speaking.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -1216,8 +1190,6 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Unlock The Vogel Vault with Face ID.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone access is needed for voice transaction entry.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Voice input lets you log transactions by speaking.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
