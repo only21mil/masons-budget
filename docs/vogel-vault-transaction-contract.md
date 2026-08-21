@@ -10,7 +10,7 @@ The `sources` array in `shared/domain/fixtures/payment-source-cases.json` define
 
 Every payment-source reference lives in exactly one of three identifier spaces, and values never cross between them:
 
-- The **wire** (`river`, `zeus_lightning`, …) is the stored identity. It is the value in the `card` field of a transaction row and the only value any mutation accepts.. Wires are never renamed once shipped.
+- The **wire** (`river`, `zeus_lightning`, …) is the stored identity. It is the value in the `card` field of a transaction row and the only value any mutation accepts. Wires are never renamed once shipped.
 - The **label** ("Zeus Lightning", …) is display-only: pickers, list rows, CSV export, and search. The label never crosses the mutation boundary; `card = source.wire`, never `source.label`. Clients render stored wires through a label mapper whose fallback is the wire verbatim, so an unrecognised legacy card displays as itself.
 - The **Bitcoin account key** (`zeus-mobile`, `son-coldcard-mason`, …) names the balance a Bitcoin-native posting moves. It is a separate namespace from wires. Clients send it byte-for-byte exactly as stored, never trimmed or normalised, because the server keys postings by exact string. It must be explicitly chosen; the contract never guesses it from a wire.
 
