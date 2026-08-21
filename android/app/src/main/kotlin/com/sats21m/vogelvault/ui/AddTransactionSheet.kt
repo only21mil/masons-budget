@@ -779,22 +779,27 @@ internal fun AddTransactionSheet(
                     )
                     OutlinedButton(
                         onClick = {
-                            val btcBuyDraftScope = btcBuyDraftIdScope(
-                                surface = BtcBuyWriteSurface.INCOME_LINKED,
-                                profile = state.activeProfile,
-                            )
-                            val atomicIncomeDraftId =
-                                btcBuyDraftIds?.currentId(btcBuyDraftScope)
-                                    ?: "android-${UUID.randomUUID()}"
+                            // Validate every user field before taking the
+                            // process-owned Bitcoin-buy lease. The conversion
+                            // does not inspect this temporary id.
                             val seed =
                                 incomeEntryForBitcoinBuy(
                                     draft = currentDraft(),
                                     btcPriceCents = operationalBtcPriceCents,
-                                    id = atomicIncomeDraftId,
+                                    id = "validation-only",
                                 )
                             when (seed) {
                                 is WriteDraftResult.Invalid -> errorMessage = seed.reason
-                                is WriteDraftResult.Valid -> onOpenIncomeBitcoinBuy(seed.request)
+                                is WriteDraftResult.Valid -> {
+                                    val btcBuyDraftScope = btcBuyDraftIdScope(
+                                        surface = BtcBuyWriteSurface.INCOME_LINKED,
+                                        profile = state.activeProfile,
+                                    )
+                                    val atomicIncomeDraftId =
+                                        btcBuyDraftIds?.currentId(btcBuyDraftScope)
+                                            ?: "android-${UUID.randomUUID()}"
+                                    onOpenIncomeBitcoinBuy(seed.request.copy(id = atomicIncomeDraftId))
+                                }
                             }
                         },
                         enabled = !saving && type == AddTransactionType.INCOME,

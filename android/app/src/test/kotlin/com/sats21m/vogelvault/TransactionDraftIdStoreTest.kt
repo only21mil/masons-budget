@@ -47,53 +47,79 @@ class TransactionDraftIdStoreTest {
     }
 
     @Test
-    fun `legacy bitcoin buy ids migrate once into requested scopes without leaking`() {
-        val adultLegacyId = "android-legacy-adult"
-        val masonLegacyId = "android-legacy-mason"
-        assertEquals(
-            true,
-            preferences.edit()
-                .putString(LEGACY_ADULT_KEY, adultLegacyId)
-                .putString(LEGACY_MASON_KEY, masonLegacyId)
-                .commit(),
-        )
+    fun `legacy fallback is read only across every bitcoin buy surface and family member`() {
+        val legacyId = "android-legacy-adult"
 
-        val store = TransactionDraftIdStore(preferences)
+        BtcBuyWriteSurface.entries.forEach { surface ->
+            FamilyMember.entries.forEach { profile ->
+                val scope = btcBuyDraftIdScope(surface, profile)
+                assertEquals(
+                    true,
+                    preferences.edit()
+                        .clear()
+                        .putString(LEGACY_ADULT_KEY, legacyId)
+                        .commit(),
+                )
+                val beforeRead = preferences.all
+                val store = TransactionDraftIdStore(preferences)
 
-        assertEquals(adultLegacyId, store.currentId(ADULT_SCOPE))
-        assertEquals(masonLegacyId, store.currentId(MASON_SCOPE))
-        assertNotEquals(adultLegacyId, masonLegacyId)
-        assertNotEquals(adultLegacyId, store.currentId(RACHEL_SCOPE))
-        assertNotEquals(adultLegacyId, store.currentId(INCOME_SCOPE))
-        assertEquals(adultLegacyId, preferences.getString(ADULT_SCOPE, null))
-        assertEquals(masonLegacyId, preferences.getString(MASON_SCOPE, null))
-        assertNull(preferences.getString(LEGACY_ADULT_KEY, null))
-        assertNull(preferences.getString(LEGACY_MASON_KEY, null))
+                val pendingId = store.currentId(scope)
 
-        val restored = TransactionDraftIdStore(preferences)
-        assertEquals(adultLegacyId, restored.currentId(ADULT_SCOPE))
-        assertEquals(masonLegacyId, restored.currentId(MASON_SCOPE))
-        assertNotEquals(adultLegacyId, restored.currentId(INCOME_SCOPE))
+                if (profile.ledgerOwner == FamilyMember.VICTOR) {
+                    assertEquals(legacyId, pendingId, "$surface/${profile.key}")
+                    assertEquals(beforeRead, preferences.all, "$surface/${profile.key}")
+                } else {
+                    assertNotEquals(legacyId, pendingId, "$surface/${profile.key}")
+                    assertEquals(legacyId, preferences.getString(LEGACY_ADULT_KEY, null), "$surface/${profile.key}")
+                    assertEquals(pendingId, preferences.getString(scope, null), "$surface/${profile.key}")
+                }
+            }
+        }
     }
 
     @Test
-    fun `legacy migration derives every bitcoin buy owner from the family domain`() {
-        FamilyMember.entries.forEach { profile ->
-            val legacyId = "android-legacy-${profile.key}"
-            val scope = btcBuyDraftIdScope(BtcBuyWriteSurface.STANDALONE, profile)
-            assertEquals(
-                true,
-                preferences.edit()
-                    .clear()
-                    .putString(profile.btcBuysDataFileName, legacyId)
-                    .commit(),
-            )
+    fun `adult acceptance clears the read only legacy fallback`() {
+        val legacyId = "android-legacy-adult"
+        assertEquals(true, preferences.edit().putString(LEGACY_ADULT_KEY, legacyId).commit())
+        val store = TransactionDraftIdStore(preferences)
 
-            val store = TransactionDraftIdStore(preferences)
+        assertEquals(legacyId, store.currentId(ADULT_SCOPE))
+        store.rotateAfterAcceptance(ADULT_SCOPE, legacyId)
 
-            assertEquals(legacyId, store.currentId(scope), profile.key)
-            assertNull(preferences.getString(profile.btcBuysDataFileName, null), profile.key)
-        }
+        assertNull(preferences.getString(LEGACY_ADULT_KEY, null))
+        assertNull(preferences.getString(ADULT_SCOPE, null))
+    }
+
+    @Test
+    fun `adult scoped acceptance also clears a stale legacy fallback`() {
+        val legacyId = "android-legacy-adult"
+        val scopedId = "android-scoped-adult"
+        assertEquals(
+            true,
+            preferences.edit()
+                .putString(LEGACY_ADULT_KEY, legacyId)
+                .putString(ADULT_SCOPE, scopedId)
+                .commit(),
+        )
+        val store = TransactionDraftIdStore(preferences)
+
+        store.rotateAfterAcceptance(ADULT_SCOPE, scopedId)
+
+        assertNull(preferences.getString(LEGACY_ADULT_KEY, null))
+        assertNull(preferences.getString(ADULT_SCOPE, null))
+    }
+
+    @Test
+    fun `non adult acceptance cannot clear the adult legacy fallback`() {
+        val legacyId = "android-legacy-adult"
+        assertEquals(true, preferences.edit().putString(LEGACY_ADULT_KEY, legacyId).commit())
+        val store = TransactionDraftIdStore(preferences)
+        val maddoxId = store.currentId(MADDOX_SCOPE)
+
+        store.rotateAfterAcceptance(MADDOX_SCOPE, maddoxId)
+
+        assertEquals(legacyId, preferences.getString(LEGACY_ADULT_KEY, null))
+        assertNull(preferences.getString(MADDOX_SCOPE, null))
     }
 
     @Test
@@ -170,22 +196,17 @@ class TransactionDraftIdStoreTest {
 
     private companion object {
         const val LEGACY_ADULT_KEY = "bitcoin-buys"
-        const val LEGACY_MASON_KEY = "mason-bitcoin-buys"
         val ADULT_SCOPE = btcBuyDraftIdScope(
             surface = BtcBuyWriteSurface.STANDALONE,
             profile = FamilyMember.VICTOR,
         )
-        val RACHEL_SCOPE = btcBuyDraftIdScope(
+        val MADDOX_SCOPE = btcBuyDraftIdScope(
             surface = BtcBuyWriteSurface.STANDALONE,
-            profile = FamilyMember.RACHEL,
+            profile = FamilyMember.MADDOX,
         )
         val MASON_SCOPE = btcBuyDraftIdScope(
             surface = BtcBuyWriteSurface.STANDALONE,
             profile = FamilyMember.MASON,
-        )
-        val INCOME_SCOPE = btcBuyDraftIdScope(
-            surface = BtcBuyWriteSurface.INCOME_LINKED,
-            profile = FamilyMember.VICTOR,
         )
     }
 }

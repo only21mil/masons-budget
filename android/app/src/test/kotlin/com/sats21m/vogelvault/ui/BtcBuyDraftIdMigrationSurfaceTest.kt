@@ -1,9 +1,17 @@
 package com.sats21m.vogelvault.ui
 
 import android.content.Context
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -11,12 +19,15 @@ import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(org.robolectric.RobolectricTestRunner::class)
@@ -56,6 +67,54 @@ class OrdinaryTransactionLegacyLeaseTest {
             controller.pause().stop().destroy()
         }
     }
+
+    @Test
+    fun `invalid income bitcoin buy tap consumes no legacy lease`() {
+        val application = RuntimeEnvironment.getApplication() as OrdinaryTransactionLegacyLeaseApplication
+        val preferences = application.getSharedPreferences(BTC_BUY_DRAFT_ID_PREFERENCES, Context.MODE_PRIVATE)
+        val incomeScope = btcBuyDraftIdScope(BtcBuyWriteSurface.INCOME_LINKED, FamilyMember.VICTOR)
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        controller.get().setTheme(R.style.Theme_VogelVault)
+
+        try {
+            compose.runOnUiThread {
+                controller.get().setContent {
+                    VogelVaultTheme {
+                        AddTransactionSheet(
+                            state = VaultUiState(
+                                activeProfile = FamilyMember.VICTOR,
+                                destination = Destination.BUDGET,
+                                data = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE),
+                            ),
+                            onDismiss = {},
+                            allowIncomeBitcoinBuy = true,
+                        )
+                    }
+                }
+            }
+            compose.waitForIdle()
+            compose.onNode(hasText("Income") and hasClickAction())
+                .performScrollTo()
+                .performSemanticsAction(SemanticsActions.OnClick)
+            shadowOf(Looper.getMainLooper()).idle()
+            compose.waitForIdle()
+            compose
+                .onNodeWithText(application.getString(R.string.budget_income_add_as_bitcoin_buy))
+                .performScrollTo()
+                .assertIsEnabled()
+                .performSemanticsAction(SemanticsActions.OnClick)
+            shadowOf(Looper.getMainLooper()).idle()
+            compose.waitForIdle()
+            compose
+                .onNodeWithText("Enter a merchant or transfer destination")
+                .fetchSemanticsNode()
+
+            assertEquals(LEGACY_ID, preferences.getString(LEGACY_KEY, null))
+            assertNull(preferences.getString(incomeScope, null))
+        } finally {
+            controller.pause().stop().destroy()
+        }
+    }
 }
 
 @RunWith(org.robolectric.RobolectricTestRunner::class)
@@ -65,7 +124,7 @@ class MaddoxLegacyLeaseTest {
     val compose = createEmptyComposeRule()
 
     @Test
-    fun `opening Maddox bitcoin buy migrates his legacy lease through the shipped reader`() {
+    fun `opening Maddox bitcoin buy cannot claim the adult legacy lease`() {
         val application = RuntimeEnvironment.getApplication() as MaddoxLegacyLeaseApplication
         val preferences = application.getSharedPreferences(BTC_BUY_DRAFT_ID_PREFERENCES, Context.MODE_PRIVATE)
         val maddoxScope = btcBuyDraftIdScope(BtcBuyWriteSurface.STANDALONE, FamilyMember.MADDOX)
@@ -86,8 +145,9 @@ class MaddoxLegacyLeaseTest {
             }
             compose.waitForIdle()
 
-            assertEquals(LEGACY_ID, preferences.getString(maddoxScope, null))
-            assertNull(preferences.getString(LEGACY_KEY, null))
+            val maddoxId = assertNotNull(preferences.getString(maddoxScope, null))
+            assertNotEquals(LEGACY_ID, maddoxId)
+            assertEquals(LEGACY_ID, preferences.getString(LEGACY_KEY, null))
         } finally {
             controller.pause().stop().destroy()
         }
@@ -101,7 +161,7 @@ class PartiallyMigratedLeaseTest {
     val compose = createEmptyComposeRule()
 
     @Test
-    fun `opening a scoped bitcoin buy keeps the scoped id and removes its stale legacy id`() {
+    fun `opening a scoped bitcoin buy does not clear the adult legacy lease`() {
         val application = RuntimeEnvironment.getApplication() as PartiallyMigratedLeaseApplication
         val preferences = application.getSharedPreferences(BTC_BUY_DRAFT_ID_PREFERENCES, Context.MODE_PRIVATE)
         val victorScope = btcBuyDraftIdScope(BtcBuyWriteSurface.STANDALONE, FamilyMember.VICTOR)
@@ -123,7 +183,7 @@ class PartiallyMigratedLeaseTest {
             compose.waitForIdle()
 
             assertEquals(SCOPED_ID, preferences.getString(victorScope, null))
-            assertNull(preferences.getString(LEGACY_KEY, null))
+            assertEquals(LEGACY_ID, preferences.getString(LEGACY_KEY, null))
         } finally {
             controller.pause().stop().destroy()
         }

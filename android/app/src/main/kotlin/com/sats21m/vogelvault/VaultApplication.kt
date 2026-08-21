@@ -69,10 +69,10 @@ internal class TransactionDraftIdStore(
             ?: mutableMapOf()
 
     fun currentId(scope: String): String = synchronized(lock) {
-        pendingIdsByScope[scope]?.let { pendingId ->
-            removeStaleLegacyId(scope)
-            pendingId
-        } ?: migrateLegacyId(scope)
+        pendingIdsByScope[scope]
+            // Legacy buy ids were ledger-owner leases shared by both buy
+            // surfaces. Read them as a fallback; never move or delete on read.
+            ?: legacyBtcBuyPreferenceKey(scope)?.let(pendingIdsByScope::get)
             ?: "android-${UUID.randomUUID()}".also { pendingId ->
                 if (preferences != null) {
                     check(preferences.edit().putString(scope, pendingId).commit()) {
@@ -83,37 +83,11 @@ internal class TransactionDraftIdStore(
             }
     }
 
-    private fun removeStaleLegacyId(scope: String) {
-        val legacyKey = legacyBtcBuyPreferenceKey(scope) ?: return
-        if (legacyKey !in pendingIdsByScope) return
-        val storedPreferences = preferences ?: return
-        check(storedPreferences.edit().remove(legacyKey).commit()) {
-            "stale pending draft id could not be removed"
-        }
-        pendingIdsByScope.remove(legacyKey)
-    }
-
-    private fun migrateLegacyId(scope: String): String? {
-        val legacyKey = legacyBtcBuyPreferenceKey(scope) ?: return null
-        val pendingId = pendingIdsByScope[legacyKey] ?: return null
-        val storedPreferences = preferences ?: return null
-        check(
-            storedPreferences.edit()
-                .putString(scope, pendingId)
-                .remove(legacyKey)
-                .commit(),
-        ) {
-            "pending draft id migration could not be persisted"
-        }
-        pendingIdsByScope.remove(legacyKey)
-        pendingIdsByScope[scope] = pendingId
-        return pendingId
-    }
-
     /**
-     * Compare-and-clear within one scope: releases the scope's pending id ONLY
-     * when it is still the id that was accepted, and only for the scope the
-     * server actually accepted it under.
+     * Compare-and-clear within one scope: releases the scope's pending id only
+     * when it is still the id that was accepted. An adult Bitcoin-buy
+     * acceptance also clears its read-only legacy fallback; opening a reader
+     * never does.
      *
      * A blind clear loses a race. Two overlapping requests can carry the same
      * id X (dismiss, reopen, retry before the first returns) and Convex accepts
@@ -126,11 +100,21 @@ internal class TransactionDraftIdStore(
      */
     fun rotateAfterAcceptance(scope: String, acceptedId: String) {
         synchronized(lock) {
-            if (pendingIdsByScope[scope] == acceptedId) {
-                val removed = preferences?.edit()?.remove(scope)?.commit() ?: true
-                if (removed) {
-                    pendingIdsByScope.remove(scope)
-                }
+            val legacyKey = legacyBtcBuyPreferenceKey(scope)
+            val scopedMatches = pendingIdsByScope[scope] == acceptedId
+            val legacyMatches = legacyKey?.let(pendingIdsByScope::get) == acceptedId
+            if (!scopedMatches && !legacyMatches) return
+
+            val keysToRemove = buildList {
+                if (scopedMatches) add(scope)
+                if (legacyKey != null) add(legacyKey)
+            }
+            val removed = preferences?.edit()?.let { editor ->
+                keysToRemove.forEach(editor::remove)
+                editor.commit()
+            } ?: true
+            if (removed) {
+                keysToRemove.forEach(pendingIdsByScope::remove)
             }
         }
     }
@@ -143,7 +127,10 @@ private fun legacyBtcBuyPreferenceKey(scope: String): String? {
     val profile = FamilyMember.fromKeyOrNull(parts[4]) ?: return null
     if (parts[2] != profile.btcBuysDataFileName) return null
     if (parts[3] != profile.ledgerOwner.key) return null
-    return profile.btcBuysDataFileName
+    // The unscoped key never recorded a profile. Restrict it to the adult
+    // ledger whose two buy surfaces historically shared this exact lease.
+    if (profile.ledgerOwner != FamilyMember.VICTOR) return null
+    return FamilyMember.VICTOR.btcBuysDataFileName
 }
 
 /**
