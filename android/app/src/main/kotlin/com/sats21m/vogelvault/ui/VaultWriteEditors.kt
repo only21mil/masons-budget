@@ -265,15 +265,30 @@ internal fun launchBtcBuyFromIncomeSave(
     request: BtcBuyFromIncomeWriteRequest,
     gateway: BtcBuyIncomeMutationGateway,
     buyDraftIds: TransactionDraftIdStore,
-    onResult: (ConvexResult<ConvexValue>) -> Unit,
+    onResult: (BtcBuySaveOutcome) -> Unit,
 ): Job = scope.launch {
     val leaseScope = btcBuyDraftIdScope(BtcBuyWriteSurface.INCOME_LINKED, request.profile)
     val result = gateway.upsert(request)
-    if (result is ConvexResult.Ok) {
-        buyDraftIds.rotateAfterAcceptance(leaseScope, request.id)
-    }
-    onResult(result)
+    val leaseReset =
+        result !is ConvexResult.Ok || buyDraftIds.rotateAfterAcceptance(leaseScope, request.id)
+    onResult(btcBuySaveOutcome(result, leaseReset))
 }
+
+internal sealed interface BtcBuySaveOutcome {
+    data object Accepted : BtcBuySaveOutcome
+    data object AcceptedLeaseResetFailed : BtcBuySaveOutcome
+    data class Rejected(val result: ConvexResult<ConvexValue>) : BtcBuySaveOutcome
+}
+
+internal fun btcBuySaveOutcome(
+    result: ConvexResult<ConvexValue>,
+    leaseReset: Boolean,
+): BtcBuySaveOutcome =
+    when {
+        result !is ConvexResult.Ok -> BtcBuySaveOutcome.Rejected(result)
+        leaseReset -> BtcBuySaveOutcome.Accepted
+        else -> BtcBuySaveOutcome.AcceptedLeaseResetFailed
+    }
 
 internal sealed interface WriteDraftResult<out T> {
     data class Valid<T>(val request: T) : WriteDraftResult<T>
@@ -596,7 +611,7 @@ internal fun launchBtcBuySave(
     request: BtcBuyWriteRequest,
     client: ConvexMutationClient,
     buyDraftIds: TransactionDraftIdStore,
-    onResult: (ConvexResult<ConvexValue>) -> Unit,
+    onResult: (BtcBuySaveOutcome) -> Unit,
 ): Job = scope.launch {
     // One expression feeds both the wire and the lease so acquisition,
     // acceptance, and release can never disagree about the server scope.
@@ -616,10 +631,9 @@ internal fun launchBtcBuySave(
             sourceFile = sourceFile,
         ),
     )
-    if (result is ConvexResult.Ok<*>) {
-        buyDraftIds.rotateAfterAcceptance(leaseScope, request.id)
-    }
-    onResult(result)
+    val leaseReset =
+        result !is ConvexResult.Ok || buyDraftIds.rotateAfterAcceptance(leaseScope, request.id)
+    onResult(btcBuySaveOutcome(result, leaseReset))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -710,28 +724,34 @@ internal fun BtcBuyEntrySheet(
                                     request = draft.request,
                                     client = client,
                                     buyDraftIds = draftIds,
-                                ) { result ->
+                                ) { outcome ->
                                     submitting = false
-                                    when (result) {
-                                        is ConvexResult.Ok -> {
+                                    when (outcome) {
+                                        BtcBuySaveOutcome.Accepted -> {
                                             onWriteSucceeded()
                                             onDismiss()
                                         }
-                                        ConvexResult.Unauthorized ->
-                                            message =
-                                                "Bitcoin buy not saved: Convex rejected the sync token."
-                                        ConvexResult.NotConfigured ->
-                                            message =
-                                                "Bitcoin buy not saved: Convex is not configured on this device."
-                                        ConvexResult.Disabled ->
-                                            message =
-                                                "Bitcoin buy not saved: authenticated writes are disabled."
-                                        ConvexResult.Missing ->
-                                            message =
-                                                "Bitcoin buy not saved: Convex returned no write result."
-                                        is ConvexResult.Failed ->
-                                            message =
-                                                "Bitcoin buy not saved: the write failed (${result.reason})."
+                                        BtcBuySaveOutcome.AcceptedLeaseResetFailed ->
+                                            message = acceptedBtcBuyLeaseResetFailure
+                                        is BtcBuySaveOutcome.Rejected ->
+                                            when (val result = outcome.result) {
+                                                is ConvexResult.Ok -> error("Accepted result cannot be rejected")
+                                                ConvexResult.Unauthorized ->
+                                                    message =
+                                                        "Bitcoin buy not saved: Convex rejected the sync token."
+                                                ConvexResult.NotConfigured ->
+                                                    message =
+                                                        "Bitcoin buy not saved: Convex is not configured on this device."
+                                                ConvexResult.Disabled ->
+                                                    message =
+                                                        "Bitcoin buy not saved: authenticated writes are disabled."
+                                                ConvexResult.Missing ->
+                                                    message =
+                                                        "Bitcoin buy not saved: Convex returned no write result."
+                                                is ConvexResult.Failed ->
+                                                    message =
+                                                        "Bitcoin buy not saved: the write failed (${result.reason})."
+                                            }
                                     }
                                 }
                             }
@@ -813,23 +833,29 @@ internal fun BtcBuyFromIncomeEntrySheet(
                                     request = draft.request,
                                     gateway = writeGateway,
                                     buyDraftIds = processDraftIds,
-                                ) { result ->
+                                ) { outcome ->
                                     submitting = false
-                                    when (result) {
-                                        is ConvexResult.Ok -> {
+                                    when (outcome) {
+                                        BtcBuySaveOutcome.Accepted -> {
                                             onWriteSucceeded()
                                             onDismiss()
                                         }
-                                        ConvexResult.Unauthorized ->
-                                            message = "Income and Bitcoin buy not saved: the sync token was rejected."
-                                        ConvexResult.NotConfigured ->
-                                            message = "Income and Bitcoin buy not saved: Convex is not configured."
-                                        ConvexResult.Disabled ->
-                                            message = "Income and Bitcoin buy not saved: authenticated writes are disabled."
-                                        ConvexResult.Missing ->
-                                            message = "Income and Bitcoin buy not saved: Convex returned no write result."
-                                        is ConvexResult.Failed ->
-                                            message = "Income and Bitcoin buy not saved: ${result.reason}."
+                                        BtcBuySaveOutcome.AcceptedLeaseResetFailed ->
+                                            message = acceptedBtcBuyLeaseResetFailure
+                                        is BtcBuySaveOutcome.Rejected ->
+                                            when (val result = outcome.result) {
+                                                is ConvexResult.Ok -> error("Accepted result cannot be rejected")
+                                                ConvexResult.Unauthorized ->
+                                                    message = "Income and Bitcoin buy not saved: the sync token was rejected."
+                                                ConvexResult.NotConfigured ->
+                                                    message = "Income and Bitcoin buy not saved: Convex is not configured."
+                                                ConvexResult.Disabled ->
+                                                    message = "Income and Bitcoin buy not saved: authenticated writes are disabled."
+                                                ConvexResult.Missing ->
+                                                    message = "Income and Bitcoin buy not saved: Convex returned no write result."
+                                                is ConvexResult.Failed ->
+                                                    message = "Income and Bitcoin buy not saved: ${result.reason}."
+                                            }
                                     }
                                 }
                             }
@@ -842,6 +868,10 @@ internal fun BtcBuyFromIncomeEntrySheet(
         }
     }
 }
+
+private const val acceptedBtcBuyLeaseResetFailure =
+    "Convex accepted this Bitcoin buy, but this device could not retire its draft id. " +
+        "Do not submit another buy until local storage is repaired."
 
 @Composable
 private fun EditorField(

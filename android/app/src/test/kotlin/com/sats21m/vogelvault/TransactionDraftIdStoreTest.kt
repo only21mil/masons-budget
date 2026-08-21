@@ -3,16 +3,22 @@ package com.sats21m.vogelvault
 import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
+import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.ConvexValue
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.ui.BtcBuySaveOutcome
 import com.sats21m.vogelvault.ui.BtcBuyWriteSurface
 import com.sats21m.vogelvault.ui.btcBuyDraftIdScope
+import com.sats21m.vogelvault.ui.btcBuySaveOutcome
 import java.util.UUID
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -102,7 +108,7 @@ class TransactionDraftIdStoreTest {
     }
 
     @Test
-    fun `failed acceptance clear keeps the lease available for retry`() {
+    fun `failed acceptance clear reports the stale durable lease`() {
         val context: Application = RuntimeEnvironment.getApplication()
         val delegate =
             context.getSharedPreferences(
@@ -114,11 +120,28 @@ class TransactionDraftIdStoreTest {
         val tracked = CommitTrackingPreferences(delegate, commitResult = false)
         val store = TransactionDraftIdStore(tracked)
 
-        store.rotateAfterAcceptance(ADULT_SCOPE, persistedId)
+        val rotated = store.rotateAfterAcceptance(ADULT_SCOPE, persistedId)
 
+        assertEquals<Any?>(false, rotated)
         assertEquals(persistedId, store.currentId(ADULT_SCOPE))
         assertEquals(persistedId, delegate.getString(ADULT_SCOPE, null))
+        assertEquals(persistedId, TransactionDraftIdStore(delegate).currentId(ADULT_SCOPE))
         assertEquals(1, tracked.commitCalls)
+    }
+
+    @Test
+    fun `accepted buy with a stale lease becomes a visible failure`() {
+        val accepted =
+            ConvexResult.Ok(
+                ConvexValue(
+                    parsed = JsonPrimitive("written"),
+                    rawResponseJson = """{"status":"success"}""",
+                ),
+            )
+
+        assertIs<BtcBuySaveOutcome.AcceptedLeaseResetFailed>(
+            btcBuySaveOutcome(accepted, leaseReset = false),
+        )
     }
 
     @Test

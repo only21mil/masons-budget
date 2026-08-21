@@ -94,15 +94,15 @@ internal class TransactionDraftIdStore(
      * the cross-profile variant: an acceptance under one sourceFile can never
      * release another sourceFile's lease, even for an equal id.
      */
-    fun rotateAfterAcceptance(scope: String, acceptedId: String) {
+    fun rotateAfterAcceptance(scope: String, acceptedId: String): Boolean =
         synchronized(lock) {
-            if (pendingIdsByScope[scope] != acceptedId) return
+            if (pendingIdsByScope[scope] != acceptedId) return@synchronized true
             val removed = preferences?.edit()?.remove(scope)?.commit() ?: true
             if (removed) {
                 pendingIdsByScope.remove(scope)
             }
+            removed
         }
-    }
 }
 
 /**
