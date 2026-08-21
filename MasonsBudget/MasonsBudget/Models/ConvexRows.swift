@@ -656,8 +656,9 @@ struct CanonicalIncomeSummary: Sendable {
 
 /// The public income projection from `tables:projectIncome`. The server
 /// deliberately strips the storage-only `sourceKey` field at this boundary
-/// and pins its absence in `tables.test.ts`, so this row carries exactly the
-/// ten fields the wire sends.
+/// and pins its absence in `tables.test.ts`. This row carries the nine
+/// fields it needs; the wire also sends `updatedAtMs`, which this row does
+/// not use.
 struct ConvexIncomeRow: Decodable, Sendable {
     let incomeId: String
     let owner: FamilyMember
