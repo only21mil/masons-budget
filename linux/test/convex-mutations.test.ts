@@ -15,6 +15,8 @@ import type {
 } from "../electron/deviceCredentialStore.ts"
 import {
   PAYMENT_SOURCES,
+  paymentSourceBlockReason,
+  paymentSourceChoiceTransition,
   paymentSourceRoute,
   transactionSubmission,
   type PaymentSource,
@@ -677,6 +679,71 @@ describe("paired-device main controller", () => {
     expect(JSON.stringify(result)).not.toContain(snapshot.deviceCredential)
   })
 
+  it.each(["lightning", "on_chain"])(
+    "forwards an edit-tagged retired %s posting byte-for-byte for Convex to compare",
+    async (card) => {
+      const calls: string[] = []
+      const controller = createPairedDeviceController({
+        store: store({
+          ...snapshot,
+          capabilities: ["transaction.upsert", "btcTransfer.upsert"],
+        }),
+        writesEnabled: () => true,
+        approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+        post: async (_endpoint, body) => {
+          calls.push(body)
+          return success({ ok: true, entityId: "tx-1", outcome: "updated" })
+        },
+      })
+      const storedAccountKey = " stored-account-key "
+
+      await expect(controller.mutate({
+        ...transactionRequest(),
+        card,
+        amountSats: 140_000n,
+        bitcoinAccountKey: storedAccountKey,
+        baseUpdatedAtMs: 7,
+      }, "victor")).resolves.toMatchObject({ status: "ok", outcome: "updated" })
+
+      const wire = JSON.parse(calls[0] ?? "{}")
+      expect(wire.args.transaction).toMatchObject({
+        card,
+        amountSats: encodeConvexInt64(140_000n),
+        bitcoinAccountKey: storedAccountKey,
+      })
+      expect(wire.args.baseUpdatedAtMs).toBe(7)
+    },
+  )
+
+  it.each(["lightning", "on_chain"])(
+    "rejects a new retired %s posting locally as an invalid request",
+    async (card) => {
+      const post = vi.fn()
+      const controller = createPairedDeviceController({
+        store: store({
+          ...snapshot,
+          capabilities: ["transaction.upsert", "btcTransfer.upsert"],
+        }),
+        writesEnabled: () => true,
+        approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+        post,
+      })
+
+      await expect(controller.mutate({
+        ...transactionRequest(),
+        card,
+        amountSats: 140_000n,
+        bitcoinAccountKey: "stored-account-key",
+      }, "victor")).resolves.toEqual({
+        status: "failed",
+        code: "invalid-request",
+        requestId: "request_1234",
+        kind: "transaction.upsert",
+      })
+      expect(post).not.toHaveBeenCalled()
+    },
+  )
+
   it("requires a Bitcoin grant before sending sat-denominated Income", async () => {
     const post = vi.fn()
     const controller = createPairedDeviceController({
@@ -1288,9 +1355,7 @@ describe("the payment-source matrix at the IPC boundary", () => {
     return validateMutationRequest({ ...transactionRequest(), ...extra })
   }
 
-  it("refuses River on a transaction, whatever else the payload carries", () => {
-    // River debits the canonical account inside the bill-pay mutation. A card
-    // transaction naming it records the spend and debits nothing.
+  it("refuses River Bitcoin Bill Pay on a transaction, whatever else it carries", () => {
     expect(forged({ card: "river_bitcoin_bill_pay" })).toBeNull()
     expect(forged({
       card: "river_bitcoin_bill_pay",
@@ -1300,22 +1365,32 @@ describe("the payment-source matrix at the IPC boundary", () => {
     expect(forged({ card: "river_bitcoin_bill_pay", baseUpdatedAtMs: 7 })).toBeNull()
   })
 
-  it("refuses a display label injected where a wire value belongs", () => {
-    expect(forged({ card: "On-chain", amountSats: SATS, bitcoinAccountKey: ACCOUNT })).toBeNull()
-    expect(forged({ card: "Coinbase Card" })).toBeNull()
-    expect(forged({ card: "River Bitcoin Bill Pay" })).toBeNull()
-    // Not even on an edit, where unknown text is otherwise preserved.
-    expect(forged({ card: "Lightning", baseUpdatedAtMs: 7 })).toBeNull()
+  it.each([
+    "River",
+    "Zeus Lightning",
+    "Zeus On-chain",
+    "Strike",
+    "Coinbase Card",
+    "Aven",
+    "SoFi Card",
+    "Capital One VX",
+    "River Bitcoin Bill Pay",
+    "Lightning",
+    "On-chain",
+  ])("refuses the display label %s where a wire belongs, including on edits", (card) => {
+    expect(forged({ card })).toBeNull()
+    expect(forged({ card, baseUpdatedAtMs: 7 })).toBeNull()
   })
 
   it("refuses a Bitcoin spend with no sats", () => {
-    expect(forged({ card: "lightning", bitcoinAccountKey: ACCOUNT })).toBeNull()
-    expect(forged({ card: "on_chain", bitcoinAccountKey: ACCOUNT })).toBeNull()
+    expect(forged({ card: "river", bitcoinAccountKey: ACCOUNT })).toBeNull()
+    expect(forged({ card: "zeus_lightning", bitcoinAccountKey: ACCOUNT })).toBeNull()
   })
 
   it("refuses a Bitcoin spend with no account to debit", () => {
-    expect(forged({ card: "lightning", amountSats: SATS })).toBeNull()
-    expect(forged({ card: "on_chain", amountSats: SATS, bitcoinAccountKey: "   " })).toBeNull()
+    expect(forged({ card: "strike", amountSats: SATS })).toBeNull()
+    expect(forged({ card: "zeus_on_chain", amountSats: SATS, bitcoinAccountKey: "   " }))
+      .toBeNull()
   })
 
   it("refuses a fiat card carrying sats", () => {
@@ -1328,6 +1403,32 @@ describe("the payment-source matrix at the IPC boundary", () => {
     expect(forged({ card: "sofi_card", bitcoinAccountKey: ACCOUNT })).toBeNull()
     // And an account key with no card at all names a debit nothing routes.
     expect(forged({ bitcoinAccountKey: ACCOUNT })).toBeNull()
+  })
+
+  it("leaves fiat card spend, refund, and Income semantics to the base contract", () => {
+    expect(forged({ card: "coinbase_card" })).toMatchObject({
+      card: "coinbase_card",
+      transactionKind: "spend",
+      category: "Home",
+    })
+    expect(forged({
+      card: "coinbase_card",
+      transactionKind: "credit",
+      amountCents: -4_218n,
+    })).toMatchObject({
+      card: "coinbase_card",
+      transactionKind: "credit",
+      category: "Home",
+    })
+    expect(forged({
+      card: "coinbase_card",
+      transactionKind: "credit",
+      category: "Income",
+    })).toMatchObject({
+      card: "coinbase_card",
+      transactionKind: "credit",
+      category: "Income",
+    })
   })
 
   it("refuses an unknown card string on a create", () => {
@@ -1350,18 +1451,100 @@ describe("the payment-source matrix at the IPC boundary", () => {
     })
   })
 
-  it("refuses a Bitcoin source on Income, which receives sats rather than spending them", () => {
+  it.each(["lightning", "on_chain"])(
+    "accepts an edit-tagged retired %s payload for Convex's exact-row check",
+    (card) => {
+      const storedAccountKey = " stored-account-key "
+      expect(forged({
+        card,
+        amountSats: SATS,
+        bitcoinAccountKey: storedAccountKey,
+        baseUpdatedAtMs: 7,
+      })).toMatchObject({
+        card,
+        amountSats: SATS,
+        bitcoinAccountKey: storedAccountKey,
+        baseUpdatedAtMs: 7,
+      })
+    },
+  )
+
+  it.each(["lightning", "on_chain"])(
+    "rejects malformed edit-tagged retired %s payloads inside the retired branch",
+    (card) => {
+      // Each edit marker forces the request past the new-create fence. Removing
+      // any one retired-field/direction guard makes its matching assertion pass.
+      expect(forged({
+        card,
+        bitcoinAccountKey: ACCOUNT,
+        baseUpdatedAtMs: 7,
+      })).toBeNull()
+      expect(forged({
+        card,
+        amountSats: SATS,
+        bitcoinAccountKey: "   ",
+        baseUpdatedAtMs: 7,
+      })).toBeNull()
+      // The positive-int64 parser is the outer guard for this case; it rejects
+      // the value before the retired branch can receive it.
+      expect(forged({
+        card,
+        amountSats: 0n,
+        bitcoinAccountKey: ACCOUNT,
+        baseUpdatedAtMs: 7,
+      })).toBeNull()
+    },
+  )
+
+  it.each(["lightning", "on_chain"])(
+    "rejects edit-tagged retired %s credit outside Income by transaction kind",
+    (card) => {
+      expect(forged({
+        card,
+        amountCents: -4_218n,
+        amountSats: SATS,
+        bitcoinAccountKey: ACCOUNT,
+        transactionKind: "credit",
+        category: "Home",
+        baseUpdatedAtMs: 7,
+      })).toBeNull()
+    },
+  )
+
+  it.each(["lightning", "on_chain"])(
+    "rejects edit-tagged retired %s spend on Income in the shared base contract",
+    (card) => {
+      // The retired branch deliberately has no duplicate category clause. If
+      // it passes a spend on Income, the shared sign contract still rejects it.
+      expect(forged({
+        card,
+        amountSats: SATS,
+        bitcoinAccountKey: ACCOUNT,
+        transactionKind: "spend",
+        category: "Income",
+        baseUpdatedAtMs: 7,
+      })).toBeNull()
+    },
+  )
+
+  it("accepts Bitcoin-native Income with positive sats and a receiving account", () => {
     expect(forged({
-      card: "lightning",
+      card: "strike",
       category: "Income",
       transactionKind: "credit",
       amountSats: SATS,
       bitcoinAccountKey: ACCOUNT,
-    })).toBeNull()
+    })).toMatchObject({
+      card: "strike",
+      category: "Income",
+      transactionKind: "credit",
+      amountSats: SATS,
+      bitcoinAccountKey: ACCOUNT,
+    })
   })
 
-  it.each(["lightning", "on_chain"])(
-    "refuses the Bitcoin source %s on a credit or refund",
+  it.each(["zeus_lightning", "zeus_on_chain"])(
+    "refuses the Bitcoin-native source %s on a non-Income credit or refund",
     (card) => {
       expect(forged({
         card,
@@ -1388,12 +1571,20 @@ describe("the payment-source matrix at the IPC boundary", () => {
     })).toBeNull()
   })
 
-  it("accepts the two Bitcoin spends with exact sats and a named account", () => {
-    expect(forged({ card: "lightning", amountSats: SATS, bitcoinAccountKey: ACCOUNT }))
-      .toMatchObject({ card: "lightning", amountSats: SATS, bitcoinAccountKey: ACCOUNT })
-    expect(forged({ card: "on_chain", amountSats: SATS, bitcoinAccountKey: ACCOUNT }))
-      .toMatchObject({ card: "on_chain", amountSats: SATS, bitcoinAccountKey: ACCOUNT })
-  })
+  it.each(["river", "zeus_lightning", "zeus_on_chain", "strike"])(
+    "accepts the Bitcoin-native spend %s with exact sats and a named account",
+    (card) => {
+      expect(forged({ card, amountSats: SATS, bitcoinAccountKey: ACCOUNT }))
+        .toMatchObject({ card, amountSats: SATS, bitcoinAccountKey: ACCOUNT })
+    },
+  )
+
+  it.each(["lightning", "on_chain"])(
+    "rejects a new retired %s source because legacy sources may only round-trip unchanged",
+    (card) => {
+      expect(forged({ card, amountSats: SATS, bitcoinAccountKey: ACCOUNT })).toBeNull()
+    },
+  )
 })
 
 // End to end in shape, not in transport: the renderer's own payload builder
@@ -1409,8 +1600,8 @@ describe("form-built payloads through the main-process validator", () => {
       category: "Home",
     })
     const writesTransaction = paymentSourceRoute(source) === "transaction"
-    // The form emits a card for the six transaction sources only. River is a
-    // bill pay and never builds one.
+    // The form emits a card for the eight transaction sources only. River
+    // Bitcoin Bill Pay never builds one.
     expect(built.card).toBe(writesTransaction ? source : undefined)
     const request = validateMutationRequest({
       ...transactionRequest(),
@@ -1424,5 +1615,44 @@ describe("form-built payloads through the main-process validator", () => {
       return
     }
     expect(request).toMatchObject({ card: source, ...built })
+  })
+
+  it("restores one retired posting and keeps transition, form block, and main aligned", () => {
+    const restored = paymentSourceChoiceTransition({
+      sourceChoice: "strike",
+      sats: "999999",
+      bitcoinAccountKey: "new-account",
+    }, "__legacy-card", {
+      choice: "__legacy-card",
+      card: "lightning",
+      amountSats: 140_000n,
+      bitcoinAccountKey: " stored-account ",
+    })
+    expect(restored).toEqual({
+      sourceChoice: "__legacy-card",
+      sats: "140000",
+      bitcoinAccountKey: " stored-account ",
+    })
+
+    const formState = {
+      source: null,
+      legacyCard: "lightning",
+      amountSats: BigInt(restored.sats),
+      bitcoinAccountKey: restored.bitcoinAccountKey,
+      kind: "spend" as const,
+      category: "Home",
+    }
+    expect(paymentSourceBlockReason(formState)).toBeNull()
+    const submission = transactionSubmission(formState)
+    expect(submission).toEqual({
+      card: "lightning",
+      amountSats: 140_000n,
+      bitcoinAccountKey: " stored-account ",
+    })
+    expect(validateMutationRequest({
+      ...transactionRequest(),
+      ...submission,
+      baseUpdatedAtMs: 7,
+    })).toMatchObject({ ...submission, baseUpdatedAtMs: 7 })
   })
 })

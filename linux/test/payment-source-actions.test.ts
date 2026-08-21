@@ -1,3 +1,5 @@
+// @vitest-environment happy-dom
+
 // What a chosen payment source does to the transaction form.
 //
 // Two behaviours share this file because both are decided by the source the
@@ -10,9 +12,10 @@
 // carries the wire value, which is exactly what the form reads back through
 // `paymentSourceFromRow`.
 
-import { createElement } from "react"
+import { act, createElement } from "react"
+import { createRoot } from "react-dom/client"
 import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import type { FamilyMember } from "@vogel-vault/domain/family"
 import type { Transaction } from "@vogel-vault/domain/readModel"
@@ -32,12 +35,15 @@ import type {
   RendererMutationKind,
 } from "../src/renderer/data/mutations.ts"
 
+;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
+  .IS_REACT_ACT_ENVIRONMENT = true
+
 const BILL_PAY_POINTER = "is recorded on the Bills page"
 const HANDOFF_ACTION = "Record as River bill payment"
 const BITCOIN_BLOCK =
-  "This device cannot spend Bitcoin: its pairing lacks the Bitcoin write grant."
+  "This device cannot post Bitcoin: its pairing lacks the Bitcoin write grant."
 const CHILD_BITCOIN_BLOCK =
-  "Only adult profiles may record Lightning or on-chain spends."
+  "Only adult profiles may record Bitcoin balance postings."
 
 /** transactions:write and bitcoin:write, in the expanded kind vocabulary. */
 const FULL_CAPABILITIES: readonly RendererMutationKind[] = [
@@ -118,6 +124,77 @@ function rowOnSource(card: string, extra: Partial<Transaction> = {}): Transactio
     ...extra,
   }
 }
+
+describe("a stored retired Bitcoin posting through the real dialog submit", () => {
+  it.each(["lightning", "on_chain"] as const)(
+    "submits the exact well-formed %s posting instead of applying the sat-Income guard",
+    async (card) => {
+      const container = document.createElement("div")
+      document.body.append(container)
+      const root = createRoot(container)
+      const mutateConvexRow = vi.fn<RendererMutationAdapter["mutateConvexRow"]>(
+        async (request) => ({
+          status: "ok",
+          requestId: request.requestId,
+          kind: request.kind,
+          outcome: "updated",
+          entityId: "id" in request ? request.id : "updated-row",
+        }),
+      )
+      const onClose = vi.fn()
+      const interactiveAdapter: RendererMutationAdapter = { ...adapter, mutateConvexRow }
+
+      try {
+        await act(async () => {
+          root.render(createElement(AppStateProvider, {
+            initialProfile: "victor",
+            initialData: liveEnvelope("victor"),
+            initialDataOrigin: "remote",
+            initialMutationCapabilities: [...FULL_CAPABILITIES],
+            initialPairingStatus: {
+              status: "paired",
+              pairedAt: 1,
+              capabilities: FULL_CAPABILITIES,
+              writesEnabled: true,
+            },
+            mutationAdapter: interactiveAdapter,
+            children: createElement(TransactionFormDialog, {
+              open: true,
+              transaction: rowOnSource(card, {
+                category: "Shopping",
+                amountSats: 140_000n,
+                bitcoinAccountKey: " stored-account ",
+              }),
+              onClose,
+            }),
+          }))
+        })
+
+        const form = container.querySelector("form")
+        expect(form).not.toBeNull()
+        await act(async () => {
+          form!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }))
+          await vi.waitFor(() => expect(mutateConvexRow).toHaveBeenCalledTimes(1))
+        })
+
+        expect(mutateConvexRow).toHaveBeenCalledWith(expect.objectContaining({
+          kind: "transaction.upsert",
+          card,
+          amountSats: 140_000n,
+          bitcoinAccountKey: " stored-account ",
+          baseUpdatedAtMs: 7,
+          transactionKind: "spend",
+          category: "Shopping",
+        }))
+        expect(container.textContent).not.toContain("Bitcoin income must use the Income category")
+        expect(onClose).toHaveBeenCalledTimes(1)
+      } finally {
+        await act(async () => root.unmount())
+        container.remove()
+      }
+    },
+  )
+})
 
 describe("the River hand-off on the transaction form", () => {
   it("offers the hand-off, and keeps the explanation, when a handler is supplied", () => {
@@ -244,17 +321,17 @@ describe("the bill-pay form opened from a hand-off", () => {
   })
 })
 
-describe("the Bitcoin-spend capability block", () => {
-  const lightningRow = rowOnSource("lightning", {
+describe("the Bitcoin-posting capability block", () => {
+  const bitcoinNativeRow = rowOnSource("zeus_lightning", {
     amountSats: 140_000n,
     bitcoinAccountKey: "coldcard",
   })
 
-  it("blocks a Bitcoin-denominated source when the pairing carries no Bitcoin grant", () => {
+  it("blocks a Bitcoin-native source when the pairing carries no Bitcoin grant", () => {
     const markup = withState(
       createElement(TransactionFormDialog, {
         open: true,
-        transaction: lightningRow,
+        transaction: bitcoinNativeRow,
         onClose: () => undefined,
       }),
       TRANSACTIONS_ONLY,
@@ -274,11 +351,11 @@ describe("the Bitcoin-spend capability block", () => {
     expect(markup).not.toContain(BITCOIN_BLOCK)
   })
 
-  it("allows the Bitcoin spend once the grant is present", () => {
+  it("allows the Bitcoin posting once the grant is present", () => {
     const markup = withState(
       createElement(TransactionFormDialog, {
         open: true,
-        transaction: lightningRow,
+        transaction: bitcoinNativeRow,
         onClose: () => undefined,
       }),
     )
@@ -303,12 +380,15 @@ describe("the Bitcoin-spend capability block", () => {
 // not be paid out of it, and a Mason row may not be paid out of the household's.
 describe("the Bitcoin account list on a Bitcoin-denominated source", () => {
   const spendRow = (owner: FamilyMember) =>
-    rowOnSource("lightning", { owner, amountSats: 140_000n, bitcoinAccountKey: "coldcard" })
+    rowOnSource("zeus_lightning", {
+      owner,
+      amountSats: 140_000n,
+      bitcoinAccountKey: "coldcard",
+    })
 
   function accountOptions(markup: string): string[] {
-    // "lightning" is deliberately absent from this list: it is both an account
-    // key in the fixtures and a payment-source wire value, so it cannot tell
-    // the two selects apart.
+    // "lightning" is deliberately absent from this list because it is an account
+    // key in the fixtures, not one of the account keys asserted below.
     return ["coldcard", "exchange-dca", "mason-stack", "maddox-stack"].filter((key) =>
       markup.includes(`value="${key}"`),
     )
@@ -363,17 +443,33 @@ describe("the Bitcoin account list on a Bitcoin-denominated source", () => {
     expect(markup).toContain(CHILD_BITCOIN_BLOCK)
     expect(markup).toMatch(/type="submit"[^>]*disabled/)
   })
+
+  it.each(["lightning", "on_chain"])(
+    "keeps the adult-owner gate on a stored retired %s posting",
+    (card) => {
+      const markup = withState(
+        createElement(TransactionFormDialog, {
+          open: true,
+          transaction: rowOnSource(card, {
+            owner: "mason",
+            amountSats: 140_000n,
+            bitcoinAccountKey: "mason-stack",
+          }),
+          onClose: () => undefined,
+        }),
+      )
+      expect(markup).toContain(CHILD_BITCOIN_BLOCK)
+      expect(markup).toMatch(/type="submit"[^>]*disabled/)
+    },
+  )
 })
 
-describe("Income against a Bitcoin-denominated source", () => {
-  const INCOME_BLOCK =
-    "Income cannot use a Bitcoin payment source; record a Bitcoin buy instead."
-
-  it("refuses the combination and names the Bitcoin buy instead", () => {
+describe("Income against a payment source", () => {
+  it("offers sats and an account for Bitcoin-native Income", () => {
     const markup = withState(
       createElement(TransactionFormDialog, {
         open: true,
-        transaction: rowOnSource("lightning", {
+        transaction: rowOnSource("strike", {
           category: "Income",
           amountSats: 140_000n,
           bitcoinAccountKey: "coldcard",
@@ -381,11 +477,10 @@ describe("Income against a Bitcoin-denominated source", () => {
         onClose: () => undefined,
       }),
     )
-    expect(markup).toContain(INCOME_BLOCK)
-    // The two sats fields are mutually exclusive: this row shows the spend
-    // field, so the optional sat-Income field is not on screen at all.
-    expect(markup).toContain("Bitcoin spent (sats)")
-    expect(markup).not.toContain("Bitcoin received (sats)")
+    expect(markup).not.toContain("requires a spend outside Income")
+    expect(markup).toContain("Bitcoin received (sats)")
+    expect(markup).not.toContain("Bitcoin spent (sats)")
+    expect(markup).toContain("Required. The account these sats enter.")
   })
 
   it("leaves Income with no source on its optional sats field", () => {
@@ -396,12 +491,11 @@ describe("Income against a Bitcoin-denominated source", () => {
         onClose: () => undefined,
       }),
     )
-    expect(markup).not.toContain(INCOME_BLOCK)
     expect(markup).toContain("Bitcoin received (sats)")
     expect(markup).not.toContain("Bitcoin spent (sats)")
   })
 
-  it("leaves Income on a fiat card alone", () => {
+  it("leaves fiat-card Income to the base transaction contract", () => {
     const markup = withState(
       createElement(TransactionFormDialog, {
         open: true,
@@ -409,6 +503,7 @@ describe("Income against a Bitcoin-denominated source", () => {
         onClose: () => undefined,
       }),
     )
-    expect(markup).not.toContain(INCOME_BLOCK)
+    expect(markup).not.toContain("Coinbase Card cannot be used on Income.")
+    expect(markup).toContain('<option value="coinbase_card" selected="">Coinbase Card</option>')
   })
 })

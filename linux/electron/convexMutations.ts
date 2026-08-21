@@ -75,33 +75,42 @@ const INCOME_CATEGORY = "Income"
  *
  * The renderer refuses a malformed source, but main does not trust renderer
  * intent: without this the IPC boundary accepted any string at all as `card`,
- * including a River value (which would record a Bitcoin spend while debiting
- * nothing, because the debit lives in the bill-pay mutation) or a Lightning row
- * with no sats and no account (a spend of an unstated amount from an unstated
- * wallet).
+ * including a River bill-pay value on a transaction or a Bitcoin-native row
+ * with no sats and no account.
  */
 const TRANSACTION_CARDS = {
-  river_bitcoin_bill_pay: "billPay",
+  river: "bitcoin",
+  zeus_lightning: "bitcoin",
+  zeus_on_chain: "bitcoin",
+  strike: "bitcoin",
   coinbase_card: "fiat",
   aven: "fiat",
   sofi_card: "fiat",
   capital_one_vx: "fiat",
-  lightning: "bitcoin",
-  on_chain: "bitcoin",
+  river_bitcoin_bill_pay: "billPay",
 } as const satisfies Readonly<Record<string, "billPay" | "fiat" | "bitcoin">>
 
 type TransactionCard = keyof typeof TRANSACTION_CARDS
 
 /** Presentation strings for the same list. A stored row never carries one. */
 const PAYMENT_SOURCE_LABELS: ReadonlySet<string> = new Set([
-  "River Bitcoin Bill Pay",
+  "River",
+  "Zeus Lightning",
+  "Zeus On-chain",
+  "Strike",
   "Coinbase Card",
   "Aven",
   "SoFi Card",
   "Capital One VX",
+  "River Bitcoin Bill Pay",
+  // Retired labels remain presentation strings rather than editable legacy text.
   "Lightning",
   "On-chain",
 ])
+
+function isRetiredBitcoinCard(card: string): card is "lightning" | "on_chain" {
+  return card === "lightning" || card === "on_chain"
+}
 
 function transactionCardKind(card: string | undefined): TransactionCard | null {
   // Matched against the raw string. A value that only becomes a wire value
@@ -111,7 +120,7 @@ function transactionCardKind(card: string | undefined): TransactionCard | null {
 }
 
 /** How a validated transaction's payment source is denominated. */
-type TransactionSourceKind = "none" | "legacy" | "fiat" | "bitcoin"
+type TransactionSourceKind = "none" | "legacy" | "fiat" | "bitcoin" | "retiredBitcoin"
 
 /**
  * Enforce the payment-source matrix on one transaction, or refuse the request.
@@ -151,21 +160,39 @@ function transactionPaymentSource(input: {
         throw new InvalidRequest()
       case "bitcoin":
         if (sats === undefined || sats <= 0n || accountKey === "") throw new InvalidRequest()
-        // Mirrors the renderer: a Bitcoin-denominated source spends sats, and
-        // Income receives them. The pair would credit the stack for money that
-        // left it, so it is refused here too rather than trusted from there.
-        if (input.transactionKind !== "spend" || input.category === INCOME_CATEGORY) {
+        if (
+          !(input.transactionKind === "spend" && input.category !== INCOME_CATEGORY) &&
+          !(input.transactionKind === "credit" && input.category === INCOME_CATEGORY)
+        ) {
           throw new InvalidRequest()
         }
         return "bitcoin"
       case "fiat":
         if (sats !== undefined || accountKey !== "") throw new InvalidRequest()
+        // Direction and category follow the base transaction contract. This
+        // branch owns only the rule that a fiat card cannot post Bitcoin.
         return "fiat"
     }
   }
   // A display label is presentation, never a stored value.
   if (PAYMENT_SOURCE_LABELS.has(raw)) throw new InvalidRequest()
   if (!input.isEdit) throw new InvalidRequest()
+  if (isRetiredBitcoinCard(raw)) {
+    if (
+      sats === undefined ||
+      sats <= 0n ||
+      accountKey === "" ||
+      input.transactionKind !== "spend"
+    ) {
+      throw new InvalidRequest()
+    }
+    // The shared builder still rejects spend + Income below. Keeping a second
+    // category clause here would be redundant and could not be pinned by an
+    // independent validator regression.
+    // Main has no stored row to compare. Preserve the edit payload exactly and
+    // let Convex require an exact match before it accepts the legacy source.
+    return "retiredBitcoin"
+  }
   if (accountKey !== "") throw new InvalidRequest()
   if (sats !== undefined && input.category !== INCOME_CATEGORY) throw new InvalidRequest()
   return "legacy"
@@ -498,7 +525,7 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           ? positiveInt64(record["amountSats"])
           : undefined
         const baseUpdatedAtMs = optionalRevision(record)
-        transactionPaymentSource({
+        const sourceKind = transactionPaymentSource({
           card,
           amountSats,
           bitcoinAccountKey,
@@ -506,7 +533,7 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           category,
           isEdit: baseUpdatedAtMs !== undefined,
         })
-        const candidate = {
+        const candidateWithoutPosting = {
           id: boundedText(record["id"], PAIRED_DEVICE_LIMITS.maxIdentifier),
           owner,
           sourceFile,
@@ -517,11 +544,17 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           category,
           ...optionalField("card", card),
           ...optionalField("note", note),
+        }
+        const candidate = {
+          ...candidateWithoutPosting,
           ...optionalField("amountSats", amountSats),
           ...optionalField("bitcoinAccountKey", bitcoinAccountKey),
         }
         // Reuse the shared sign, owner/source and exact-money contract.
-        buildTransactionWriteRequest(owner, candidate)
+        buildTransactionWriteRequest(
+          owner,
+          sourceKind === "retiredBitcoin" ? candidateWithoutPosting : candidate,
+        )
         return {
           kind,
           requestId,
@@ -914,6 +947,11 @@ function mutationArgs(
   switch (request.kind) {
     case "transaction.upsert": {
       const sourceFile = transactionSource(request.owner)
+      const retiredBitcoinEdit = request.baseUpdatedAtMs !== undefined &&
+        request.card !== undefined &&
+        isRetiredBitcoinCard(request.card) &&
+        request.amountSats !== undefined &&
+        request.bitcoinAccountKey !== undefined
       const wire = buildTransactionWriteRequest(request.owner, {
         id: request.id,
         owner: request.owner,
@@ -925,13 +963,22 @@ function mutationArgs(
         category: request.category,
         ...optionalField("card", request.card),
         ...optionalField("note", request.note),
-        ...optionalField("amountSats", request.amountSats),
-        ...optionalField("bitcoinAccountKey", request.bitcoinAccountKey),
+        ...(retiredBitcoinEdit ? {} : optionalField("amountSats", request.amountSats)),
+        ...(retiredBitcoinEdit ? {} : optionalField("bitcoinAccountKey", request.bitcoinAccountKey)),
       })
       return {
         ...auth,
         owner: request.owner,
         ...wire.args,
+        ...(retiredBitcoinEdit
+          ? {
+              transaction: {
+                ...wire.args.transaction,
+                amountSats: encodeConvexInt64(request.amountSats),
+                bitcoinAccountKey: request.bitcoinAccountKey,
+              },
+            }
+          : {}),
         ...optionalField("baseUpdatedAtMs", request.baseUpdatedAtMs),
       }
     }
@@ -1647,7 +1694,7 @@ export function createPairedDeviceController(
           if (!capabilities.includes(request.kind)) {
             return { ...identity, status: "unauthorized" }
           }
-          // A transaction carrying sats spends Bitcoin, so the contract wants
+          // A transaction carrying sats posts Bitcoin, so the contract wants
           // `bitcoin:write` on top of `transactions:write`. Stored capabilities
           // are the expanded kind vocabulary, never the coarse grant names, and
           // `btcTransfer.upsert` is granted by `bitcoin:write` alone — so it

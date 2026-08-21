@@ -7,7 +7,7 @@ import {
   BITCOIN_WRITE_PROXY_KIND,
   applyOptimisticMutation,
   bitcoinBuyLinkFor,
-  bitcoinSpendGate,
+  bitcoinPostingGate,
   formatCentsInput,
   linkedBitcoinBuyFor,
   mutationOwner,
@@ -334,33 +334,33 @@ describe("the River hand-off prefill", () => {
   })
 })
 
-describe("the Bitcoin-spend capability proxy", () => {
+describe("the Bitcoin-posting capability proxy", () => {
   // The renderer only ever reads expanded mutation kinds, never the coarse
   // grants, and btcTransfer.upsert comes from bitcoin:write and nothing else.
   it("names the kind that stands in for bitcoin:write", () => {
     expect(BITCOIN_WRITE_PROXY_KIND).toBe("btcTransfer.upsert")
   })
 
-  it("allows a Bitcoin spend only when the proxy kind is granted", () => {
-    expect(bitcoinSpendGate(["transaction.upsert", "btcTransfer.upsert"])).toEqual({
+  it("allows a Bitcoin posting only when the proxy kind is granted", () => {
+    expect(bitcoinPostingGate(["transaction.upsert", "btcTransfer.upsert"])).toEqual({
       allowed: true,
       reason: null,
     })
-    expect(bitcoinSpendGate(["transaction.upsert", "transaction.delete"])).toEqual({
+    expect(bitcoinPostingGate(["transaction.upsert", "transaction.delete"])).toEqual({
       allowed: false,
-      reason: "This device cannot spend Bitcoin: its pairing lacks the Bitcoin write grant.",
+      reason: "This device cannot post Bitcoin: its pairing lacks the Bitcoin write grant.",
     })
     // A bill-pay or buy grant is not the whole of bitcoin:write's expansion, so
     // it is not evidence of the grant on its own.
-    expect(bitcoinSpendGate(["transaction.upsert", "btcBillPay.upsert"]).allowed).toBe(false)
+    expect(bitcoinPostingGate(["transaction.upsert", "btcBillPay.upsert"]).allowed).toBe(false)
   })
 
-  it("keeps Bitcoin spends adult-only while leaving child fiat transactions available", () => {
-    expect(bitcoinSpendGate(["btcTransfer.upsert"], "mason")).toEqual({
+  it("keeps Bitcoin postings adult-only while leaving child fiat transactions available", () => {
+    expect(bitcoinPostingGate(["btcTransfer.upsert"], "mason")).toEqual({
       allowed: false,
-      reason: "Only adult profiles may record Lightning or on-chain spends.",
+      reason: "Only adult profiles may record Bitcoin balance postings.",
     })
-    expect(bitcoinSpendGate(["btcTransfer.upsert"], "rachel")).toEqual({
+    expect(bitcoinPostingGate(["btcTransfer.upsert"], "rachel")).toEqual({
       allowed: true,
       reason: null,
     })

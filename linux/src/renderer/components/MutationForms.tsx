@@ -11,7 +11,7 @@ import type {
 import { useAppState } from "../app/AppState.tsx"
 import {
   bitcoinBuyLinkFor,
-  bitcoinSpendGate,
+  bitcoinPostingGate,
   formatCentsInput,
   mutationOwner,
   parseExactCents,
@@ -23,6 +23,7 @@ import {
   PAYMENT_SOURCES,
   isBitcoinDenominatedSource,
   isPaymentSource,
+  isRetiredBitcoinSource,
   paymentSourceBlockReason,
   paymentSourceChoiceTransition,
   paymentSourceFromRow,
@@ -202,8 +203,9 @@ export function TransactionFormDialog({
   )
   const selectedSource: PaymentSource | null =
     !recordingBitcoinBuy && isPaymentSource(sourceChoice) ? sourceChoice : null
-  // River spends Bitcoin too, but it writes a bill pay rather than a row here.
-  const bitcoinSpendRow = selectedSource !== null &&
+  // Bitcoin-native sources post a debit or credit on the transaction row.
+  // River Bitcoin Bill Pay writes a different table and does not qualify here.
+  const bitcoinNativeRow = selectedSource !== null &&
     isBitcoinDenominatedSource(selectedSource) &&
     paymentSourceRoute(selectedSource) === "transaction"
   const satsValue = sats.trim() ? parseExactSats(sats) : null
@@ -220,14 +222,22 @@ export function TransactionFormDialog({
   // One pure builder decides every source field the save sends, so the button,
   // the capability gate and the payload cannot disagree about them.
   const submission = transactionSubmission(formState)
-  // The row will carry amountSats — a Lightning or on-chain spend, or Income
-  // recorded in sats. Those need the Bitcoin grant on top of transaction.upsert;
+  // The row will carry amountSats from a Bitcoin-native source or untyped Income.
+  // Those need the Bitcoin grant on top of transaction.upsert;
   // a USD-only card transaction does not. A blocked Bitcoin source still counts:
   // the grant is missing whether or not the sats have been typed yet.
-  const spendsBitcoin = bitcoinSpendRow ||
+  const postsBitcoin = bitcoinNativeRow ||
     (!recordingBitcoinBuy && submission.amountSats !== undefined)
-  const bitcoinCapability = spendsBitcoin
-    ? bitcoinSpendGate(mutationCapabilities, bitcoinSpendRow ? ledgerScopeOwner : undefined)
+  const retiredBitcoinRow = selectedSource === null &&
+    isRetiredBitcoinSource(legacyCard) &&
+    submission.amountSats !== undefined &&
+    submission.bitcoinAccountKey !== undefined
+  const ownerScopedBitcoinPosting = bitcoinNativeRow || retiredBitcoinRow
+  const bitcoinCapability = postsBitcoin
+    ? bitcoinPostingGate(
+        mutationCapabilities,
+        ownerScopedBitcoinPosting ? ledgerScopeOwner : undefined,
+      )
     : null
   // River is a hand-off, not a save, so its own block never disables the button
   // it offers; the capability block cannot be typed away and comes first.
@@ -284,6 +294,12 @@ export function TransactionFormDialog({
     const nextState = paymentSourceChoiceTransition(
       { sourceChoice, sats, bitcoinAccountKey },
       next,
+      {
+        choice: LEGACY_SOURCE_CHOICE,
+        card: legacyCard,
+        amountSats: transaction?.amountSats,
+        bitcoinAccountKey: transaction?.bitcoinAccountKey,
+      },
     )
     setSourceChoice(nextState.sourceChoice)
     if (nextState.sats !== sats) setSats(nextState.sats)
@@ -353,6 +369,7 @@ export function TransactionFormDialog({
     // chosen source the builder ignores a stale value rather than refusing it.
     if (
       selectedSource === null &&
+      !isRetiredBitcoinSource(formState.legacyCard) &&
       sats.trim() &&
       (category.trim() !== "Income" || satsValue === null || satsValue <= 0n)
     ) {
@@ -480,7 +497,12 @@ export function TransactionFormDialog({
             </Field>
           </>
         ) : (
-          <Field label="Payment source" hint="Where the money leaves from. Stored with the transaction.">
+          <Field
+            label="Payment source"
+            hint={isIncome
+              ? "Where the Bitcoin arrives. Stored with the transaction."
+              : "Where the money leaves from. Stored with the transaction."}
+          >
             <Select value={sourceChoice} onChange={(e) => chooseSource(e.target.value)}>
               <option value="">No source</option>
               {legacyCard ? <option value={LEGACY_SOURCE_CHOICE}>{legacyCard}</option> : null}
@@ -490,11 +512,13 @@ export function TransactionFormDialog({
             </Select>
           </Field>
         )}
-        {bitcoinSpendRow ? (
+        {bitcoinNativeRow ? (
           <>
             <Field
-              label="Bitcoin spent (sats)"
-              hint="Required. Exact whole sats leaving the selected Bitcoin source."
+              label={isIncome ? "Bitcoin received (sats)" : "Bitcoin spent (sats)"}
+              hint={isIncome
+                ? "Required. Exact whole sats entering the selected Bitcoin source."
+                : "Required. Exact whole sats leaving the selected Bitcoin source."}
             >
               <TextInput
                 inputMode="numeric"
@@ -503,7 +527,12 @@ export function TransactionFormDialog({
                 onChange={(e) => setSats(e.target.value)}
               />
             </Field>
-            <Field label="Bitcoin account" hint="Required. The account these sats leave.">
+            <Field
+              label="Bitcoin account"
+              hint={isIncome
+                ? "Required. The account these sats enter."
+                : "Required. The account these sats leave."}
+            >
               <Select
                 value={bitcoinAccountKey}
                 aria-invalid={!bitcoinAccountKey.trim() || undefined}

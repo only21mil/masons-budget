@@ -1,15 +1,19 @@
+import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 
 import {
   PAYMENT_SOURCES,
   isBitcoinDenominatedSource,
   isPaymentSource,
+  isRetiredBitcoinSource,
   paymentSourceBlockReason,
   paymentSourceChoiceTransition,
+  paymentSourceClassification,
   paymentSourceDisplay,
   paymentSourceFromRow,
   paymentSourceLabel,
   paymentSourceRoute,
+  paymentSourceSupportedActivities,
   paymentSourceToRowFields,
   transactionSourceFields,
   transactionSubmission,
@@ -18,27 +22,30 @@ import {
 
 const SATS = 125_000n
 const ACCOUNT = "coldcard"
+const paymentSourceFixture = JSON.parse(
+  readFileSync(
+    new URL("../../shared/domain/fixtures/payment-source-cases.json", import.meta.url),
+    "utf8",
+  ),
+) as {
+  sources: Array<{
+    wire: string
+    label: string
+    route: "transaction" | "btc_bill_pay"
+    classification: "bitcoin_native" | "fiat_card" | "bill_pay"
+    supportedActivities: string[]
+  }>
+}
 
 describe("payment source contract", () => {
-  it("keeps the closed list, its order, and its display labels exact", () => {
-    expect([...PAYMENT_SOURCES]).toEqual([
-      "river_bitcoin_bill_pay",
-      "coinbase_card",
-      "aven",
-      "sofi_card",
-      "capital_one_vx",
-      "lightning",
-      "on_chain",
-    ])
-    expect(PAYMENT_SOURCES.map(paymentSourceLabel)).toEqual([
-      "River Bitcoin Bill Pay",
-      "Coinbase Card",
-      "Aven",
-      "SoFi Card",
-      "Capital One VX",
-      "Lightning",
-      "On-chain",
-    ])
+  it("matches the shared fixture in canonical picker order", () => {
+    expect(PAYMENT_SOURCES.map((source) => ({
+      wire: source,
+      label: paymentSourceLabel(source),
+      route: paymentSourceRoute(source) === "billPay" ? "btc_bill_pay" : "transaction",
+      classification: paymentSourceClassification(source),
+      supportedActivities: [...paymentSourceSupportedActivities(source)],
+    }))).toEqual(paymentSourceFixture.sources)
   })
 
   it.each(PAYMENT_SOURCES)("round-trips %s through its row fields", (source) => {
@@ -74,8 +81,8 @@ describe("payment source contract", () => {
     },
   )
 
-  it.each(["lightning", "on_chain"] as const)(
-    "maps the Bitcoin spend %s onto card, sats, and account",
+  it.each(["river", "zeus_lightning", "zeus_on_chain", "strike"] as const)(
+    "maps the Bitcoin-native source %s onto card, sats, and account",
     (source: PaymentSource) => {
       expect(isBitcoinDenominatedSource(source)).toBe(true)
       expect(
@@ -90,9 +97,20 @@ describe("payment source contract", () => {
   )
 
   it("never recognises a display label as a stored value", () => {
-    expect(isPaymentSource("On-chain")).toBe(false)
+    expect(isPaymentSource("Zeus On-chain")).toBe(false)
     expect(paymentSourceFromRow({ card: "River Bitcoin Bill Pay" })).toBeNull()
   })
+
+  it.each(["lightning", "on_chain"])(
+    "keeps retired %s non-selectable while recognising it as legacy stored text",
+    (source) => {
+      expect(PAYMENT_SOURCES).not.toContain(source)
+      expect(isPaymentSource(source)).toBe(false)
+      expect(isRetiredBitcoinSource(source)).toBe(true)
+      expect(paymentSourceFromRow({ card: source })).toBeNull()
+      expect(paymentSourceDisplay({ card: source })).toBe(source)
+    },
+  )
 
   it("leaves an unknown legacy card string untouched", () => {
     expect(paymentSourceFromRow({ card: "Debit" })).toBeNull()
@@ -106,7 +124,12 @@ describe("payment source contract", () => {
 
 describe("payment source submission payloads", () => {
   it("submits a fiat card as card only", () => {
-    const selection = { source: "coinbase_card" as const, amountSats: null }
+    const selection = {
+      source: "coinbase_card" as const,
+      amountSats: null,
+      kind: "spend" as const,
+      category: "Shopping",
+    }
     expect(paymentSourceBlockReason(selection)).toBeNull()
     expect(transactionSourceFields(selection)).toEqual({ card: "coinbase_card" })
   })
@@ -121,16 +144,17 @@ describe("payment source submission payloads", () => {
     expect(transactionSourceFields(selection)).toEqual({})
   })
 
-  it("submits an on-chain spend with exact sats and the chosen account", () => {
+  it("submits a Zeus on-chain spend with exact sats and the chosen account", () => {
     const selection = {
-      source: "on_chain" as const,
+      source: "zeus_on_chain" as const,
       amountSats: SATS,
       bitcoinAccountKey: ACCOUNT,
       kind: "spend" as const,
+      category: "Shopping",
     }
     expect(paymentSourceBlockReason(selection)).toBeNull()
     expect(transactionSourceFields(selection)).toEqual({
-      card: "on_chain",
+      card: "zeus_on_chain",
       amountSats: SATS,
       bitcoinAccountKey: ACCOUNT,
     })
@@ -138,39 +162,55 @@ describe("payment source submission payloads", () => {
 
   it("blocks a Bitcoin spend that is missing sats or an account", () => {
     expect(
-      paymentSourceBlockReason({ source: "lightning", bitcoinAccountKey: ACCOUNT, kind: "spend" }),
-    ).toMatch(/exact sats/)
-    expect(
       paymentSourceBlockReason({
-        source: "lightning",
-        amountSats: 0n,
+        source: "zeus_lightning",
         bitcoinAccountKey: ACCOUNT,
         kind: "spend",
+        category: "Shopping",
       }),
     ).toMatch(/exact sats/)
     expect(
-      paymentSourceBlockReason({ source: "on_chain", amountSats: SATS, kind: "spend" }),
+      paymentSourceBlockReason({
+        source: "zeus_lightning",
+        amountSats: 0n,
+        bitcoinAccountKey: ACCOUNT,
+        kind: "spend",
+        category: "Shopping",
+      }),
+    ).toMatch(/exact sats/)
+    expect(
+      paymentSourceBlockReason({
+        source: "zeus_on_chain",
+        amountSats: SATS,
+        kind: "spend",
+        category: "Shopping",
+      }),
     ).toMatch(/account it leaves/)
     expect(
       paymentSourceBlockReason({
-        source: "on_chain",
+        source: "zeus_on_chain",
         amountSats: SATS,
         bitcoinAccountKey: " ",
         kind: "spend",
+        category: "Shopping",
       }),
     ).toMatch(/account it leaves/)
   })
 
   it("contributes nothing for a blocked Bitcoin spend", () => {
-    expect(transactionSourceFields({ source: "lightning", amountSats: null, kind: "spend" }))
-      .toEqual({})
+    expect(transactionSourceFields({
+      source: "zeus_lightning",
+      amountSats: null,
+      kind: "spend",
+      category: "Shopping",
+    })).toEqual({})
   })
 })
 
 describe("payment source display", () => {
   it("renders the label for a stored wire value", () => {
     expect(paymentSourceDisplay({ card: "capital_one_vx" })).toBe("Capital One VX")
-    expect(paymentSourceDisplay({ card: "lightning" })).toBe("Lightning")
+    expect(paymentSourceDisplay({ card: "zeus_lightning" })).toBe("Zeus Lightning")
     expect(paymentSourceDisplay({ platform: "river_bitcoin_bill_pay" })).toBe(
       "River Bitcoin Bill Pay",
     )
@@ -210,33 +250,29 @@ describe("legacy card strings, whitespace and all", () => {
   })
 })
 
-describe("Income and Bitcoin-denominated sources", () => {
-  it.each(["lightning", "on_chain"] as const)(
-    "refuses %s on an Income row and says what to do instead",
+describe("direction and Bitcoin-native sources", () => {
+  it.each(["river", "zeus_lightning", "zeus_on_chain", "strike"] as const)(
+    "credits %s Income into the selected account",
     (source: PaymentSource) => {
-      const reason = paymentSourceBlockReason({
+      const selection = {
         source,
         amountSats: SATS,
         bitcoinAccountKey: ACCOUNT,
         kind: "credit",
         category: "Income",
+      } as const
+      expect(paymentSourceBlockReason(selection)).toBeNull()
+      expect(transactionSourceFields(selection)).toEqual({
+        card: source,
+        amountSats: SATS,
+        bitcoinAccountKey: ACCOUNT,
       })
-      expect(reason).toBe(
-        "Income cannot use a Bitcoin payment source; record a Bitcoin buy instead.",
-      )
-      expect(transactionSourceFields({
-        source,
-        amountSats: SATS,
-        bitcoinAccountKey: ACCOUNT,
-        kind: "credit",
-        category: "Income",
-      })).toEqual({})
     },
   )
 
   it("leaves a Bitcoin spend on any other category alone", () => {
     expect(paymentSourceBlockReason({
-      source: "lightning",
+      source: "zeus_lightning",
       amountSats: SATS,
       bitcoinAccountKey: ACCOUNT,
       kind: "spend",
@@ -244,14 +280,73 @@ describe("Income and Bitcoin-denominated sources", () => {
     })).toBeNull()
   })
 
-  it("leaves a fiat card on Income alone", () => {
+  it("requires positive sats and the receiving account for Bitcoin-native Income", () => {
+    expect(paymentSourceBlockReason({
+      source: "strike",
+      bitcoinAccountKey: ACCOUNT,
+      kind: "credit",
+      category: "Income",
+    })).toMatch(/exact sats/)
+    expect(paymentSourceBlockReason({
+      source: "strike",
+      amountSats: SATS,
+      kind: "credit",
+      category: "Income",
+    })).toMatch(/account it enters/)
+  })
+
+  it("leaves fiat card direction and category to the base transaction contract", () => {
     expect(paymentSourceBlockReason({
       source: "coinbase_card",
+      kind: "spend",
+      category: "Shopping",
+    })).toBeNull()
+    expect(paymentSourceBlockReason({
+      source: "coinbase_card",
+      kind: "credit",
+      category: "Shopping",
+    })).toBeNull()
+    expect(paymentSourceBlockReason({
+      source: "coinbase_card",
+      kind: "credit",
       category: "Income",
     })).toBeNull()
   })
 
-  it.each(["lightning", "on_chain"] as const)(
+  it("blocks malformed or direction-changed retired Bitcoin postings", () => {
+    expect(paymentSourceBlockReason({
+      source: null,
+      legacyCard: "lightning",
+      amountSats: SATS,
+      bitcoinAccountKey: ACCOUNT,
+      kind: "credit",
+      category: "Shopping",
+    })).toMatch(/only preserve an existing Bitcoin spend/)
+    expect(paymentSourceBlockReason({
+      source: null,
+      legacyCard: "lightning",
+      amountSats: SATS,
+      bitcoinAccountKey: ACCOUNT,
+      kind: "credit",
+      category: "Income",
+    })).toMatch(/only preserve an existing Bitcoin spend/)
+    expect(paymentSourceBlockReason({
+      source: null,
+      legacyCard: "on_chain",
+      bitcoinAccountKey: ACCOUNT,
+      kind: "spend",
+      category: "Shopping",
+    })).toMatch(/exact positive sats amount/)
+    expect(paymentSourceBlockReason({
+      source: null,
+      legacyCard: "on_chain",
+      amountSats: SATS,
+      kind: "spend",
+      category: "Shopping",
+    })).toMatch(/exact Bitcoin account/)
+  })
+
+  it.each(["zeus_lightning", "zeus_on_chain"] as const)(
     "refuses %s on a credit or refund",
     (source: PaymentSource) => {
       const selection = {
@@ -262,7 +357,7 @@ describe("Income and Bitcoin-denominated sources", () => {
         category: "Groceries",
       }
       expect(paymentSourceBlockReason(selection)).toBe(
-        `${paymentSourceLabel(source)} can only be used on a spending transaction.`,
+        `${paymentSourceLabel(source)} requires a spend outside Income or a credit in Income.`,
       )
       expect(transactionSourceFields(selection)).toEqual({})
     },
@@ -270,16 +365,16 @@ describe("Income and Bitcoin-denominated sources", () => {
 })
 
 describe("the transaction submission payload builder", () => {
-  it("drops sats and the account when Lightning gives way to a fiat card", () => {
+  it("drops sats and the account when Zeus Lightning gives way to a fiat card", () => {
     const lightning = {
-      source: "lightning" as const,
+      source: "zeus_lightning" as const,
       amountSats: SATS,
       bitcoinAccountKey: ACCOUNT,
       kind: "spend" as const,
       category: "Groceries",
     }
     expect(transactionSubmission(lightning)).toEqual({
-      card: "lightning",
+      card: "zeus_lightning",
       amountSats: SATS,
       bitcoinAccountKey: ACCOUNT,
     })
@@ -294,6 +389,7 @@ describe("the transaction submission payload builder", () => {
       source: "coinbase_card",
       amountSats: SATS,
       bitcoinAccountKey: ACCOUNT,
+      kind: "credit",
       category: "Income",
     })).toEqual({ card: "coinbase_card" })
   })
@@ -324,6 +420,26 @@ describe("the transaction submission payload builder", () => {
     })).toEqual({ card: " Debit ", amountSats: SATS })
   })
 
+  it.each(["lightning", "on_chain"] as const)(
+    "round-trips an existing retired %s posting without making it selectable",
+    (legacyCard) => {
+      const storedAccountKey = " stored-account-key "
+      expect(transactionSubmission({
+        source: null,
+        legacyCard,
+        amountSats: SATS,
+        bitcoinAccountKey: storedAccountKey,
+        kind: "spend",
+        category: "Shopping",
+      })).toEqual({
+        card: legacyCard,
+        amountSats: SATS,
+        bitcoinAccountKey: storedAccountKey,
+      })
+      expect(isPaymentSource(legacyCard)).toBe(false)
+    },
+  )
+
   it("submits nothing for a source the block reason refuses", () => {
     expect(transactionSubmission({
       source: "river_bitcoin_bill_pay",
@@ -332,10 +448,19 @@ describe("the transaction submission payload builder", () => {
       category: "Utilities",
     })).toEqual({})
     expect(transactionSubmission({
-      source: "on_chain",
+      source: "zeus_on_chain",
       amountSats: SATS,
+      kind: "spend",
       category: "Utilities",
     })).toEqual({})
+    expect(transactionSubmission({
+      source: null,
+      legacyCard: "lightning",
+      amountSats: SATS,
+      bitcoinAccountKey: ACCOUNT,
+      kind: "credit",
+      category: "Shopping",
+    })).toEqual({ card: "lightning" })
   })
 })
 
@@ -344,16 +469,36 @@ describe("payment source transitions", () => {
     ["No source", ""],
     ["the preserved legacy option", "__legacy-card"],
   ] as const)(
-    "clears Bitcoin-only state when Lightning gives way to %s",
+    "clears Bitcoin-only state when Zeus Lightning gives way to %s",
     (_label, next) => {
       expect(paymentSourceChoiceTransition({
-        sourceChoice: "lightning",
+        sourceChoice: "zeus_lightning",
         sats: SATS.toString(),
         bitcoinAccountKey: ACCOUNT,
       }, next)).toEqual({
         sourceChoice: next,
         sats: "",
         bitcoinAccountKey: "",
+      })
+    },
+  )
+
+  it.each(["lightning", "on_chain"] as const)(
+    "restores the exact stored %s posting when its legacy option is reselected",
+    (card) => {
+      expect(paymentSourceChoiceTransition({
+        sourceChoice: "zeus_lightning",
+        sats: "999999",
+        bitcoinAccountKey: "new-account",
+      }, "__legacy-card", {
+        choice: "__legacy-card",
+        card,
+        amountSats: SATS,
+        bitcoinAccountKey: " stored-account ",
+      })).toEqual({
+        sourceChoice: "__legacy-card",
+        sats: SATS.toString(),
+        bitcoinAccountKey: " stored-account ",
       })
     },
   )

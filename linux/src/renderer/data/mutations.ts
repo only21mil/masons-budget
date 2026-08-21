@@ -73,7 +73,7 @@ export interface MutationGate {
 }
 
 export interface MutationOwnerOptions {
-  /** A transaction carrying the Lightning/on-chain Bitcoin spend fields. */
+  /** A transaction carrying Bitcoin balance-posting fields. */
   readonly bitcoinSpend?: boolean
 }
 
@@ -130,13 +130,13 @@ export function mutationGate(input: MutationGateInput): MutationGate {
 export const BITCOIN_WRITE_PROXY_KIND: RendererMutationKind = "btcTransfer.upsert"
 
 /**
- * Whether this device may save a transaction denominated in sats.
+ * Whether this device may save a transaction that posts to a Bitcoin balance.
  *
- * Callers apply it only to rows that will carry `amountSats`: a Lightning or
- * on-chain spend, or Income recorded in sats. A USD-only card transaction needs
- * `transaction.upsert` alone and is never asked for the Bitcoin grant.
+ * Callers apply it only to rows that will carry `amountSats`. A USD-only card
+ * transaction needs `transaction.upsert` alone and is never asked for the
+ * Bitcoin grant.
  */
-export function bitcoinSpendGate(
+export function bitcoinPostingGate(
   capabilities: readonly RendererMutationKind[],
   owner?: FamilyMember,
 ): MutationGate {
@@ -146,7 +146,7 @@ export function bitcoinSpendGate(
   ) {
     return {
       allowed: false,
-      reason: "Only adult profiles may record Lightning or on-chain spends.",
+      reason: "Only adult profiles may record Bitcoin balance postings.",
     }
   }
   if (capabilities.includes(BITCOIN_WRITE_PROXY_KIND)) {
@@ -154,7 +154,7 @@ export function bitcoinSpendGate(
   }
   return {
     allowed: false,
-    reason: "This device cannot spend Bitcoin: its pairing lacks the Bitcoin write grant.",
+    reason: "This device cannot post Bitcoin: its pairing lacks the Bitcoin write grant.",
   }
 }
 

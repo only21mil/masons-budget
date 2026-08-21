@@ -1,10 +1,10 @@
 // Closed payment-source list for the transaction form.
 //
-// Bound to CONTRACT NOTE (Alpheus Codex, 2026-08-20), closed against main
-// e1af2854. The wire string is the stable id and is what gets persisted; the
-// display label is presentation only and never reaches a row.
+// Bound to shared/domain/fixtures/payment-source-cases.json. The wire string is
+// the stable id and is what gets persisted; the display label is presentation
+// only and never reaches a row. Fixture order is the picker order.
 //
-// Six sources write a transaction row and set `card` to their wire value.
+// Eight sources write a transaction row and set `card` to their wire value.
 // River Bitcoin Bill Pay is not a transaction at all: it writes a btcBillPays
 // row with platform "river_bitcoin_bill_pay", and the server debits the
 // canonical River account inside that mutation. Nothing here fakes a card
@@ -15,54 +15,100 @@
 
 /** Wire values, persisted verbatim. Never store or match on the label. */
 export type PaymentSource =
-  | "river_bitcoin_bill_pay"
+  | "river"
+  | "zeus_lightning"
+  | "zeus_on_chain"
+  | "strike"
   | "coinbase_card"
   | "aven"
   | "sofi_card"
   | "capital_one_vx"
-  | "lightning"
-  | "on_chain"
+  | "river_bitcoin_bill_pay"
 
 /** Display order is the product order and is not sorted or derived. */
 export const PAYMENT_SOURCES: readonly PaymentSource[] = [
-  "river_bitcoin_bill_pay",
+  "river",
+  "zeus_lightning",
+  "zeus_on_chain",
+  "strike",
   "coinbase_card",
   "aven",
   "sofi_card",
   "capital_one_vx",
-  "lightning",
-  "on_chain",
+  "river_bitcoin_bill_pay",
 ]
 
 export const PAYMENT_SOURCE_LABELS: Readonly<Record<PaymentSource, string>> = {
-  river_bitcoin_bill_pay: "River Bitcoin Bill Pay",
+  river: "River",
+  zeus_lightning: "Zeus Lightning",
+  zeus_on_chain: "Zeus On-chain",
+  strike: "Strike",
   coinbase_card: "Coinbase Card",
   aven: "Aven",
   sofi_card: "SoFi Card",
   capital_one_vx: "Capital One VX",
-  lightning: "Lightning",
-  on_chain: "On-chain",
+  river_bitcoin_bill_pay: "River Bitcoin Bill Pay",
 }
 
-/** Which table a source writes to. Only River leaves the transactions table. */
+/** Which table a source writes to. Only River Bitcoin Bill Pay leaves transactions. */
 export type PaymentSourceRoute = "transaction" | "billPay"
+export type PaymentSourceClassification = "bitcoin_native" | "fiat_card" | "bill_pay"
+export type PaymentSourceActivity = "spend" | "income" | "transfer" | "btc_bill_pay"
 
 interface PaymentSourceMapping {
   readonly route: PaymentSourceRoute
-  /** BTC-denominated rails need exact sats and a named Bitcoin account. */
-  readonly bitcoinDenominated: boolean
+  readonly classification: PaymentSourceClassification
+  readonly supportedActivities: readonly PaymentSourceActivity[]
 }
 
 // CONTRACT NOTE binding: this table is the only place a source's row route and
 // BTC field requirements are decided.
 const PAYMENT_SOURCE_MAPPING: Readonly<Record<PaymentSource, PaymentSourceMapping>> = {
-  river_bitcoin_bill_pay: { route: "billPay", bitcoinDenominated: true },
-  coinbase_card: { route: "transaction", bitcoinDenominated: false },
-  aven: { route: "transaction", bitcoinDenominated: false },
-  sofi_card: { route: "transaction", bitcoinDenominated: false },
-  capital_one_vx: { route: "transaction", bitcoinDenominated: false },
-  lightning: { route: "transaction", bitcoinDenominated: true },
-  on_chain: { route: "transaction", bitcoinDenominated: true },
+  river: {
+    route: "transaction",
+    classification: "bitcoin_native",
+    supportedActivities: ["spend", "income", "transfer"],
+  },
+  zeus_lightning: {
+    route: "transaction",
+    classification: "bitcoin_native",
+    supportedActivities: ["spend", "income", "transfer"],
+  },
+  zeus_on_chain: {
+    route: "transaction",
+    classification: "bitcoin_native",
+    supportedActivities: ["spend", "income", "transfer"],
+  },
+  strike: {
+    route: "transaction",
+    classification: "bitcoin_native",
+    supportedActivities: ["spend", "income", "transfer"],
+  },
+  coinbase_card: {
+    route: "transaction",
+    classification: "fiat_card",
+    supportedActivities: ["spend"],
+  },
+  aven: {
+    route: "transaction",
+    classification: "fiat_card",
+    supportedActivities: ["spend"],
+  },
+  sofi_card: {
+    route: "transaction",
+    classification: "fiat_card",
+    supportedActivities: ["spend"],
+  },
+  capital_one_vx: {
+    route: "transaction",
+    classification: "fiat_card",
+    supportedActivities: ["spend"],
+  },
+  river_bitcoin_bill_pay: {
+    route: "billPay",
+    classification: "bill_pay",
+    supportedActivities: ["btc_bill_pay"],
+  },
 }
 
 /** Row fields a source drives, discriminated by the table it writes to. */
@@ -87,13 +133,27 @@ export function isPaymentSource(value: unknown): value is PaymentSource {
   return typeof value === "string" && Object.hasOwn(PAYMENT_SOURCE_MAPPING, value)
 }
 
-/** True when the source spends Bitcoin and therefore needs exact sats. */
+export function isRetiredBitcoinSource(value: unknown): value is "lightning" | "on_chain" {
+  return value === "lightning" || value === "on_chain"
+}
+
+/** True when the source posts Bitcoin and therefore needs exact sats. */
 export function isBitcoinDenominatedSource(source: PaymentSource): boolean {
-  return PAYMENT_SOURCE_MAPPING[source].bitcoinDenominated
+  return PAYMENT_SOURCE_MAPPING[source].classification !== "fiat_card"
 }
 
 export function paymentSourceRoute(source: PaymentSource): PaymentSourceRoute {
   return PAYMENT_SOURCE_MAPPING[source].route
+}
+
+export function paymentSourceClassification(source: PaymentSource): PaymentSourceClassification {
+  return PAYMENT_SOURCE_MAPPING[source].classification
+}
+
+export function paymentSourceSupportedActivities(
+  source: PaymentSource,
+): readonly PaymentSourceActivity[] {
+  return PAYMENT_SOURCE_MAPPING[source].supportedActivities
 }
 
 /** The source-choice state that owns the form's Bitcoin-only fields. */
@@ -103,11 +163,34 @@ export interface PaymentSourceChoiceState {
   readonly bitcoinAccountKey: string
 }
 
+export interface StoredLegacyPaymentSource {
+  /** The select value representing this stored legacy row. */
+  readonly choice: string
+  /** The exact stored card string, before any picker transition. */
+  readonly card?: string | null
+  readonly amountSats?: bigint | null
+  readonly bitcoinAccountKey?: string | null
+}
+
 /** Apply a payment-source select transition to the form's source fields. */
 export function paymentSourceChoiceTransition(
   state: PaymentSourceChoiceState,
   next: string,
+  storedLegacy?: StoredLegacyPaymentSource,
 ): PaymentSourceChoiceState {
+  if (
+    storedLegacy !== undefined &&
+    next === storedLegacy.choice &&
+    isRetiredBitcoinSource(storedLegacy.card)
+  ) {
+    return {
+      sourceChoice: next,
+      // Restore the posting that came from the row, not values typed for the
+      // source the user is leaving. Convex will compare these exact fields.
+      sats: storedLegacy.amountSats?.toString() ?? "",
+      bitcoinAccountKey: storedLegacy.bitcoinAccountKey ?? "",
+    }
+  }
   const nextSource = isPaymentSource(next) ? next : null
   const keepsBitcoinFields = nextSource !== null &&
     isBitcoinDenominatedSource(nextSource) &&
@@ -148,17 +231,19 @@ export function paymentSourceToRowFields(
   return {
     route: "transaction",
     card: source,
-    ...(mapping.bitcoinDenominated && positiveSats !== null
+    ...(mapping.classification === "bitcoin_native" && positiveSats !== null
       ? { amountSats: positiveSats }
       : {}),
-    ...(mapping.bitcoinDenominated && accountKey ? { bitcoinAccountKey: accountKey } : {}),
+    ...(mapping.classification === "bitcoin_native" && accountKey
+      ? { bitcoinAccountKey: accountKey }
+      : {}),
   }
 }
 
 /**
  * Recover the source from a stored row, transaction or bill pay.
  *
- * `platform` identifies a River bill pay; `card` identifies the six transaction
+ * `platform` identifies a River bill pay; `card` identifies the eight transaction
  * sources and is matched against the wire value, never the label. Anything else
  * — including every legacy card string — is not one of ours and returns null so
  * callers preserve it untouched.
@@ -185,17 +270,14 @@ export interface PaymentSourceSelection {
   readonly legacyCard?: string
   readonly amountSats?: bigint | null
   readonly bitcoinAccountKey?: string | null
-  /** The transaction direction. Bitcoin-denominated sources are spends only. */
+  /** The transaction direction. Bitcoin-native sources support spend and Income. */
   readonly kind?: "spend" | "credit"
   /** The row's category. Only "Income" changes what a source may be. */
   readonly category?: string
 }
 
-/** The one category that cannot spend Bitcoin, because it receives it. */
+/** The category that receives Bitcoin rather than spending it. */
 export const INCOME_CATEGORY = "Income"
-
-export const INCOME_BITCOIN_SOURCE_BLOCK =
-  "Income cannot use a Bitcoin payment source; record a Bitcoin buy instead"
 
 /**
  * Why this selection may not be saved as a transaction, or null when it may.
@@ -205,28 +287,42 @@ export const INCOME_BITCOIN_SOURCE_BLOCK =
  */
 export function paymentSourceBlockReason(selection: PaymentSourceSelection): string | null {
   const source = selection.source
-  if (source === null) return null
+  const category = selection.category?.trim() ?? ""
+  if (source === null) {
+    const legacy = selection.legacyCard ?? ""
+    if (!isRetiredBitcoinSource(legacy)) return null
+    if (selection.kind !== "spend" || category === INCOME_CATEGORY) {
+      return `${legacy} is retired and may only preserve an existing Bitcoin spend.`
+    }
+    const sats = selection.amountSats ?? null
+    if (sats === null || sats <= 0n) {
+      return `${legacy} is retired. Restore its exact positive sats amount before saving.`
+    }
+    if (!selection.bitcoinAccountKey?.trim()) {
+      return `${legacy} is retired. Restore its exact Bitcoin account before saving.`
+    }
+    return null
+  }
   if (paymentSourceRoute(source) === "billPay") {
     return `${paymentSourceLabel(source)} is recorded on the Bills page so the River balance ` +
       "is debited. Add it there instead of as a transaction."
   }
-  if (!isBitcoinDenominatedSource(source)) return null
-  // A Bitcoin-denominated source spends sats. Income receives them, and its
-  // sats field credits River — so the two together would credit the stack for
-  // money that left it. The paired income-plus-buy write is the way to record
-  // Bitcoin arriving.
-  if (selection.category?.trim() === INCOME_CATEGORY) {
-    return `${INCOME_BITCOIN_SOURCE_BLOCK}.`
-  }
-  if (selection.kind !== "spend") {
-    return `${paymentSourceLabel(source)} can only be used on a spending transaction.`
+  const isSpend = selection.kind === "spend" && category !== INCOME_CATEGORY
+  const isIncome = selection.kind === "credit" && category === INCOME_CATEGORY
+  const classification = paymentSourceClassification(source)
+  // A fiat card is metadata on the base transaction shape. Its direction and
+  // category follow that base contract; only Bitcoin posting fields are barred.
+  if (classification === "fiat_card") return null
+  if (!isSpend && !isIncome) {
+    return `${paymentSourceLabel(source)} requires a spend outside Income or a credit in Income.`
   }
   const sats = selection.amountSats ?? null
   if (sats === null || sats <= 0n) {
-    return `${paymentSourceLabel(source)} spends Bitcoin. Enter the exact sats amount.`
+    return `${paymentSourceLabel(source)} posts Bitcoin. Enter the exact sats amount.`
   }
   if (!selection.bitcoinAccountKey?.trim()) {
-    return `${paymentSourceLabel(source)} spends Bitcoin. Choose the account it leaves.`
+    const direction = isIncome ? "enters" : "leaves"
+    return `${paymentSourceLabel(source)} posts Bitcoin. Choose the account it ${direction}.`
   }
   return null
 }
@@ -310,9 +406,21 @@ export function transactionSubmission(
   if (state.source !== null) return transactionSourceFields(state)
   const legacy = state.legacyCard ?? ""
   const sats = state.amountSats ?? null
+  const accountKey = state.bitcoinAccountKey ?? ""
+  // The retired wires are not selectable, but an untouched stored posting must
+  // still carry its exact source and posting fields back to Convex. Convex owns
+  // the existing-row comparison and rejects new or changed legacy writes.
+  const retiredBitcoinSource = isRetiredBitcoinSource(legacy)
+  const retiredBitcoinPosting = retiredBitcoinSource &&
+    sats !== null && sats > 0n && accountKey.trim() !== "" &&
+    paymentSourceBlockReason(state) === null
   const satIncome = state.category.trim() === INCOME_CATEGORY && sats !== null && sats > 0n
   return {
     ...(legacy.trim() ? { card: legacy } : {}),
-    ...(satIncome ? { amountSats: sats } : {}),
+    ...(retiredBitcoinPosting
+      ? { amountSats: sats, bitcoinAccountKey: accountKey }
+      : satIncome
+        ? { amountSats: sats }
+        : {}),
   }
 }
