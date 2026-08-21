@@ -34,6 +34,12 @@ struct ActivityView: View {
 
     private var filtered: [Transaction] {
         let visible = allTransactions.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+        // The lightning/on-chain buckets keep their exact raw-string
+        // semantics: retired wires ("lightning"/"on-chain") still match their
+        // historical buckets, and a nil card still lands in the on-chain
+        // bucket. TransactionDetailView no longer stamps a default onto nil
+        // rows when editing, but existing nil rows keep appearing here
+        // unchanged — bucket semantics are a filter concern, not a write one.
         let scoped: [Transaction] = switch filter {
         case .all: visible
         case .income: visible.filter(\.isIncome)
@@ -191,10 +197,10 @@ struct ActivityView: View {
                         .foregroundStyle(theme.text)
                         .lineLimit(1)
                     HStack(spacing: 5) {
-                        Image(systemName: tx.card == "lightning" ? "bolt.fill" : "link")
+                        Image(systemName: PaymentMethod.icon(forWire: tx.card))
                             .font(AppFont.micro)
                             .foregroundStyle(theme.textMuted)
-                        Text(tx.card ?? "On-chain")
+                        Text(PaymentMethod.label(forWire: tx.card))
                             .font(AppFont.smallRegular)
                             .foregroundStyle(theme.textMuted)
                     }

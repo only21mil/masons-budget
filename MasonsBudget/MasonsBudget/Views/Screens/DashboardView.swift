@@ -610,7 +610,7 @@ struct DashboardView: View {
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                 HStack(spacing: 5) {
-                    Image(systemName: tx.card == "lightning" ? "bolt.fill" : "link")
+                    Image(systemName: PaymentMethod.icon(forWire: tx.card))
                         .font(AppFont.micro)
                         .foregroundStyle(theme.textMuted)
                     Text(relativeDateString(tx.date))

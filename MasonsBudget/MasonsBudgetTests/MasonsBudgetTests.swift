@@ -80,18 +80,19 @@ final class MasonsBudgetTests: XCTestCase {
     }
 
     func testTransactionSourceCatalogIncludesRequestedCards() {
-        let spendSources = TransactionSourceCatalog.sources(for: .spend)
-        XCTAssertTrue(spendSources.contains("Aven Card"))
-        XCTAssertTrue(spendSources.contains("Coinbase One Card"))
-        XCTAssertTrue(spendSources.contains("Gemini Card"))
-        XCTAssertTrue(spendSources.contains("SoFi Card"))
+        let spendSources = TransactionSourceCatalog.wires(for: .spend)
+        XCTAssertTrue(spendSources.contains("aven"))
+        XCTAssertTrue(spendSources.contains("coinbase_card"))
     }
 
     func testTransactionSourceCatalogFiltersByActivity() {
-        let billPaySources = TransactionSourceCatalog.sources(for: .btcBillPay)
-        XCTAssertTrue(billPaySources.contains("River Bill Pay"))
-        XCTAssertTrue(billPaySources.contains("Strike Bill Pay"))
-        XCTAssertFalse(billPaySources.contains("SoFi Card"))
+        let billPaySources = TransactionSourceCatalog.wires(for: .btcBillPay)
+        XCTAssertEqual(billPaySources, ["river_bitcoin_bill_pay"])
+
+        let incomeSources = TransactionSourceCatalog.wires(for: .income)
+        XCTAssertEqual(incomeSources, ["river", "zeus_lightning", "zeus_on_chain", "strike"])
+
+        XCTAssertFalse(billPaySources.contains("sofi_card"))
     }
 
     // MARK: - Model init (verify defaults)
@@ -153,7 +154,7 @@ final class MasonsBudgetTests: XCTestCase {
             amount: -42.75,
             category: "Dining",
             amountSats: 45000,
-            card: "lightning",
+            card: "zeus_lightning",
             note: "Family dinner",
             createdBy: "test",
         )

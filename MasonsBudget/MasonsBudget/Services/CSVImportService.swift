@@ -132,7 +132,9 @@ final class CSVImportService: Sendable {
                 sats: sats,
                 amountUsd: usdValue(fromSats: sats),
                 category: category,
-                method: "on-chain",
+                // Closest catalogue wire for imported Bitcoin rows — imports
+                // carry no better payment-source signal.
+                method: "zeus_on_chain",
                 isIncome: isIncome,
                 enteredInBitcoin: enteredInBitcoin,
                 note: nil,

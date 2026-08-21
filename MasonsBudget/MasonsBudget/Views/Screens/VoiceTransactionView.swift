@@ -27,6 +27,13 @@ struct VoiceTransactionView: View {
         parsed.amount != nil && !(parsed.merchant ?? "").isEmpty
     }
 
+    /// The wire Save will persist for the parsed method (mirrors the save-site
+    /// inference): an "on" mention maps to zeus_on_chain, otherwise
+    /// zeus_lightning. Both are Bitcoin-native defaults from the catalogue.
+    private var inferredMethodWire: String {
+        parsed.card?.localizedCaseInsensitiveContains("on") == true ? "zeus_on_chain" : "zeus_lightning"
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -126,7 +133,7 @@ struct VoiceTransactionView: View {
             Hairline()
             parsedRow(label: "Category", value: parsed.category ?? "Other")
             Hairline()
-            parsedRow(label: "Method", value: parsed.card ?? "Lightning")
+            parsedRow(label: "Method", value: PaymentMethod.label(forWire: inferredMethodWire))
             Hairline()
             parsedRow(label: "Date", value: parsed.date.map(formatDate) ?? "Today")
         }
@@ -180,7 +187,7 @@ struct VoiceTransactionView: View {
             merchant.localizedCaseInsensitiveContains("salary")
         let signedUsd = abs(amount)
         let signedSats = btcPrice > 0 ? ((signedUsd / btcPrice) * 100_000_000).clampedInt64 : nil
-        let method = parsed.card?.localizedCaseInsensitiveContains("on") == true ? "on-chain" : "lightning"
+        let method = inferredMethodWire
 
         let tx = Transaction(
             id: UUID().uuidString,
