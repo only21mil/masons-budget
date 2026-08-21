@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import type { BTCBuy } from "@vogel-vault/domain/readModel"
+import type { BTCBuy, Freshness } from "@vogel-vault/domain/readModel"
 
 import {
   type BitcoinBuyLinkInput,
@@ -22,7 +22,11 @@ import {
   billPayPrefillFor,
   decodeBillPayBudgetEffect,
 } from "../src/renderer/data/billPayBudgetEffect.ts"
-import { buildSanitizedFixtureEnvelope } from "../src/renderer/data/fixtures.ts"
+import {
+  type FixtureEnvelope,
+  buildSanitizedFixtureEnvelope,
+} from "../src/renderer/data/fixtures.ts"
+import { liveEnvelope, renderRoute } from "./support/renderRoute.ts"
 
 describe("exact renderer mutation forms", () => {
   it.each([
@@ -135,43 +139,110 @@ describe("exact renderer mutation forms", () => {
     }
   })
 
-  // Every slice below reports "empty" at zero remote rows (convexRows.ts passes
+  // Four slices report "empty" at zero remote rows (convexRows.ts passes
   // `rows.length > 0`, or a null document, to populatedSlice), so each one used
-  // to make its own first row unreachable. transactions and btcTransfers always
-  // report "live" on a successful read and were never affected.
+  // to make its own first row unreachable: billPays, btcBuys, todos, and
+  // btcBalanceDocument — which is the freshness source for BTC accounts AND for
+  // BTC transfers. transactions and btcTransfers always report "live" on a
+  // successful read and were never affected.
+  //
+  // budget is NOT on that list and is deliberately excluded: the Budget page
+  // returns before it renders an add control when the budget document is null,
+  // and the server rejects a category upsert without one, so no first budget row
+  // can be created from an empty table. The exclusion is pinned by the null
+  // budget document test below.
+  //
+  // Each case drives a real page against a real envelope rather than restating
+  // the gate, so the claim is about what the user can actually press.
   it.each([
-    ["billPays", "btcBillPay.upsert", "btcBillPay.delete"],
-    ["btcBuys", "btcBuy.upsert", "btcBuy.delete"],
-    ["todos", "todo.upsert", "todo.delete"],
-    ["budget", "budgetCategory.upsert", "budgetCategory.delete"],
-    ["btcBalanceDocument", "btcAccount.upsert", "btcAccount.delete"],
-    ["btcBalanceDocument via transfers", "btcTransfer.upsert", "btcTransfer.delete"],
-  ] as const)(
-    "%s: an empty-but-live slice allows a first row while loading and error still block",
-    (_slice, upsertKind, deleteKind) => {
-      for (const kind of [upsertKind, deleteKind]) {
-        const base = {
-          dataOrigin: "remote" as const,
-          bridgeAvailable: true,
-          writesEnabled: true,
-          capabilities: [kind],
-          kind,
-          actor: "victor" as const,
-          owner: "victor" as const,
-          freshness: "empty",
-          selectedMonth: "2026-07",
-          persistedMonth: "2026-07",
-        }
-        expect(mutationGate(base)).toEqual({ allowed: true, reason: null })
-        for (const freshness of ["loading", "error"]) {
-          expect(mutationGate({ ...base, freshness })).toEqual({
-            allowed: false,
-            reason: "Wait for current remote rows before editing.",
-          })
-        }
+    {
+      slice: "billPays",
+      route: "bills",
+      label: "Add bill payment",
+      at: (live: FixtureEnvelope, status: Freshness): FixtureEnvelope => ({
+        ...live,
+        billPays: { ...live.billPays, status, value: [] },
+      }),
+    },
+    {
+      slice: "btcBuys",
+      route: "bitcoin-buys",
+      label: "Add buy",
+      at: (live: FixtureEnvelope, status: Freshness): FixtureEnvelope => ({
+        ...live,
+        btcBuys: { ...live.btcBuys, status, value: [] },
+      }),
+    },
+    {
+      slice: "todos",
+      route: "today",
+      label: "Add task",
+      at: (live: FixtureEnvelope, status: Freshness): FixtureEnvelope => ({
+        ...live,
+        todos: { ...live.todos, status, value: [] },
+      }),
+    },
+    {
+      slice: "btcBalanceDocument",
+      route: "bitcoin",
+      label: "Add BTC account",
+      at: (live: FixtureEnvelope, status: Freshness): FixtureEnvelope => ({
+        ...live,
+        btcBalanceDocument: { ...live.btcBalanceDocument, status, value: null },
+      }),
+    },
+  ])(
+    "$slice: an empty-but-live slice offers $label while loading and error block it",
+    ({ route, label, at }) => {
+      const live = liveEnvelope()
+
+      const empty = renderRoute(route, "victor", at(live, "empty"))
+      expect(empty).toContain(label)
+      expect(empty).not.toMatch(new RegExp(`<button[^>]*disabled[^>]*>${label}</button>`))
+      expect(empty).not.toContain("Wait for current remote rows before editing.")
+
+      for (const status of ["loading", "error"] as const) {
+        expect(renderRoute(route, "victor", at(live, status))).toMatch(
+          new RegExp(
+            `<button[^>]*disabled[^>]*title="Wait for current remote rows before editing\\."[^>]*>${label}</button>`,
+          ),
+        )
       }
     },
   )
+
+  it("gates a Bitcoin transfer on the balance document the accounts came from", () => {
+    // btcTransfer.* has no slice of its own: it reads freshness from the same
+    // canonical document as btcAccount.*, which is why one entry above covers
+    // both. A live document with two accounts is the only state that offers the
+    // transfer, so the gate is shown here against that envelope.
+    const live = liveEnvelope()
+    expect(renderRoute("bitcoin", "victor", live)).not.toMatch(
+      /<button[^>]*disabled[^>]*>Transfer BTC<\/button>/,
+    )
+    for (const status of ["loading", "error"] as const) {
+      expect(renderRoute("bitcoin", "victor", {
+        ...live,
+        btcBalanceDocument: { ...live.btcBalanceDocument, status },
+      })).toMatch(
+        /<button[^>]*disabled[^>]*title="Wait for current remote rows before editing\."[^>]*>Transfer BTC<\/button>/,
+      )
+    }
+  })
+
+  it("offers no add control at all when the budget document is null", () => {
+    // The Budget page returns its unavailable state before any action renders,
+    // and budgetCategory.upsert has no document to attach a category to, so
+    // "the first budget row from an empty table" is not a case the gate decides.
+    const live = liveEnvelope()
+    const markup = renderRoute("budget", "victor", {
+      ...live,
+      budget: { ...live.budget, status: "empty", value: null },
+    })
+    expect(markup).toContain("Nothing here yet")
+    expect(markup).not.toContain("Add category")
+    expect(markup).not.toContain("Add income")
+  })
 })
 
 describe("bill-pay budget effect", () => {

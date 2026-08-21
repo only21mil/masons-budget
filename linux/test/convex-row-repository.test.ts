@@ -69,6 +69,23 @@ function income(overrides: Record<string, unknown> = {}): Record<string, unknown
   }
 }
 
+function billPay(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    billPayId: "pay-1",
+    owner: "victor",
+    date: "2026-07-03",
+    month: "2026-07",
+    merchant: "Example",
+    category: "Bills",
+    amountUsdCents: int64(5_000n),
+    btcSpentSats: int64(50n),
+    btcPriceCents: int64(10_000_000n),
+    feeUsdCents: int64(100n),
+    updatedAtMs: 40,
+    ...overrides,
+  }
+}
+
 function btcBalanceDocument(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     owner: "victor",
@@ -1050,6 +1067,77 @@ describe("main-process row repository", () => {
     await expect(
       badBillPay.query({ kind: "btcBillPays", scope: "netWorth" }, "victor"),
     ).resolves.toEqual({ status: "error", code: "invalid-response" })
+  })
+
+  describe("the bill-pay budget effect at the read boundary", () => {
+    function readBillPay(row: Record<string, unknown>) {
+      const repository = createConvexRowRepository({
+        configuration: () => ({ generation: 1, settings }),
+        post: async () => success({ complete: true, rows: [row] }),
+      })
+      return repository.query({ kind: "btcBillPays", scope: "visible" }, "victor")
+    }
+
+    // toStrictEqual, not toMatchObject: the claim is that the property is
+    // ABSENT from the decoded row, not that it decoded to undefined. Only an
+    // absent property lets the renderer apply its credit_card_payment default.
+    it("passes a pre-amendment row through with no budgetEffect property", async () => {
+      await expect(readBillPay(billPay())).resolves.toStrictEqual({
+        status: "ok",
+        kind: "btcBillPays",
+        complete: true,
+        rows: [{
+          billPayId: "pay-1",
+          owner: "victor",
+          date: "2026-07-03",
+          month: "2026-07",
+          merchant: "Example",
+          category: "Bills",
+          amountUsdCents: 5_000n,
+          btcSpentSats: 50n,
+          btcPriceCents: 10_000_000n,
+          feeUsdCents: 100n,
+          updatedAtMs: 40,
+        }],
+      })
+    })
+
+    it("accepts a budget-category effect against a real category", async () => {
+      await expect(
+        readBillPay(billPay({ budgetEffect: "budget_category", category: "Utilities" })),
+      ).resolves.toMatchObject({
+        status: "ok",
+        rows: [{ category: "Utilities", budgetEffect: "budget_category" }],
+      })
+    })
+
+    it("accepts a credit-card payment under the one category that names it", async () => {
+      await expect(
+        readBillPay(billPay({
+          budgetEffect: "credit_card_payment",
+          category: "Credit Card Payment",
+        })),
+      ).resolves.toMatchObject({
+        status: "ok",
+        rows: [{ category: "Credit Card Payment", budgetEffect: "credit_card_payment" }],
+      })
+    })
+
+    it.each([
+      ["an unknown wire value", { budgetEffect: "budget" }],
+      ["an empty string", { budgetEffect: "" }],
+      ["a null", { budgetEffect: null }],
+      ["a non-string", { budgetEffect: 1 }],
+      [
+        "a credit-card payment under some other category",
+        { budgetEffect: "credit_card_payment", category: "Utilities" },
+      ],
+    ])("rejects the whole row for %s", async (_reason, overrides) => {
+      await expect(readBillPay(billPay(overrides))).resolves.toEqual({
+        status: "error",
+        code: "invalid-response",
+      })
+    })
   })
 
   it("enforces response byte and row-count bounds", async () => {

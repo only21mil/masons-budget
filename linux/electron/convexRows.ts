@@ -98,6 +98,10 @@ const BASE64_INT64 = /^(?:[A-Za-z0-9+/]{4}){2}[A-Za-z0-9+/]{3}=$/
 const TWO_64 = 1n << 64n
 const SIGN_64 = 1n << 63n
 const MARKET_SYMBOLS = ["BTC", "VOO", "IBIT"] as const
+// The one category a credit-card bill pay is allowed to carry. Declared here
+// rather than imported so the read transport keeps its own closed vocabulary;
+// convexMutations.ts pins the identical string on the write side.
+const CREDIT_CARD_PAYMENT_CATEGORY = "Credit Card Payment"
 const MARKET_STATUSES = ["live", "stale", "unavailable"] as const
 const CANONICAL_ISO_INSTANT =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?Z$/
@@ -458,12 +462,27 @@ function btcAccount(
   }
 }
 
+/**
+ * Absent stays absent; present is closed.
+ *
+ * A pre-amendment row carries no property at all, and the renderer defaults
+ * that case to credit_card_payment. A property that IS present is server-
+ * authored data this boundary must read exactly: an unrecognised value, or a
+ * credit-card payment under any category but the canonical one, is a malformed
+ * row and is rejected like every other unreadable field, never coerced into the
+ * legacy default.
+ */
 function billPayBudgetEffect(
   record: Record<string, unknown>,
+  category: string,
 ): VogelVaultBillPayBudgetEffect | undefined {
+  if (!Object.hasOwn(record, "budgetEffect")) return undefined
   const value = record["budgetEffect"]
-  if (value === "budget_category" || value === "credit_card_payment") return value
-  return undefined
+  if (value !== "budget_category" && value !== "credit_card_payment") throw new InvalidValue()
+  if (value === "credit_card_payment" && category !== CREDIT_CARD_PAYMENT_CATEGORY) {
+    throw new InvalidValue()
+  }
+  return value
 }
 
 function btcBillPay(
@@ -481,16 +500,15 @@ function btcBillPay(
   const owner = member(row)
   assertVisible(viewer, owner, scope)
   const { date, month } = dateAndMonth(row)
+  const category = text(row, "category")
   return {
     billPayId: text(row, "billPayId", 256),
     owner,
     date,
     month,
     merchant: text(row, "merchant"),
-    category: text(row, "category"),
-    // Absent on pre-amendment rows; the renderer defaults those to
-    // credit_card_payment. An unreadable value is dropped rather than guessed.
-    ...optionalField("budgetEffect", billPayBudgetEffect(row)),
+    category,
+    ...optionalField("budgetEffect", billPayBudgetEffect(row, category)),
     amountUsdCents: int64(row, "amountUsdCents"),
     btcSpentSats: int64(row, "btcSpentSats"),
     btcPriceCents: int64(row, "btcPriceCents"),

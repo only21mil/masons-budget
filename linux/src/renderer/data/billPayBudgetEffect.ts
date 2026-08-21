@@ -41,7 +41,13 @@ export function isBillPayBudgetEffect(value: unknown): value is BillPayBudgetEff
   return BILL_PAY_BUDGET_EFFECTS.includes(value as BillPayBudgetEffect)
 }
 
-/** An absent or unreadable field is a pre-amendment row: it never hit a budget. */
+/**
+ * An absent field is a pre-amendment row: it never hit a budget.
+ *
+ * Absent is the only case this default is for. The main-process read boundary
+ * rejects a row whose `budgetEffect` is present but unreadable, so nothing
+ * outside the closed set reaches the renderer to be coerced here.
+ */
 export function decodeBillPayBudgetEffect(value: unknown): BillPayBudgetEffect {
   return isBillPayBudgetEffect(value) ? value : "credit_card_payment"
 }
