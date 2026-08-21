@@ -45,9 +45,9 @@ import kotlinx.coroutines.flow.StateFlow
  * acceptance, one pending id per caller-provided lease scope. Ambiguous retries
  * deliberately reuse the scope's id so Convex supersedes the same row instead
  * of inserting another one. When backed by preferences, leases survive process
- * death. New leases use scopes that keep pending ids independent across
- * surfaces and profiles. The pre-scope adult Bitcoin-buy marker remains a
- * read-only ledger-owner fallback until an accepted write clears it.
+ * death. Each lease scope keeps pending ids independent across surfaces and
+ * profiles. Pre-scope Bitcoin-buy markers are deliberately ignored because
+ * their missing surface and profile identity makes safe ownership impossible.
  *
  * The scope is usually the server's natural source-file idempotency domain, but
  * Bitcoin buys need a narrower explicit scope because standalone and
@@ -71,9 +71,6 @@ internal class TransactionDraftIdStore(
 
     fun currentId(scope: String): String = synchronized(lock) {
         pendingIdsByScope[scope]
-            // Legacy buy ids were ledger-owner leases shared by both buy
-            // surfaces. Read them as a fallback; never move or delete on read.
-            ?: legacyBtcBuyPreferenceKey(scope)?.let(pendingIdsByScope::get)
             ?: "android-${UUID.randomUUID()}".also { pendingId ->
                 if (preferences != null) {
                     check(preferences.edit().putString(scope, pendingId).commit()) {
@@ -86,9 +83,7 @@ internal class TransactionDraftIdStore(
 
     /**
      * Compare-and-clear within one scope: releases the scope's pending id only
-     * when it is still the id that was accepted. An adult Bitcoin-buy
-     * acceptance also clears its read-only legacy fallback; opening a reader
-     * never does.
+     * when it is still the id that was accepted.
      *
      * A blind clear loses a race. Two overlapping requests can carry the same
      * id X (dismiss, reopen, retry before the first returns) and Convex accepts
@@ -101,37 +96,13 @@ internal class TransactionDraftIdStore(
      */
     fun rotateAfterAcceptance(scope: String, acceptedId: String) {
         synchronized(lock) {
-            val legacyKey = legacyBtcBuyPreferenceKey(scope)
-            val scopedMatches = pendingIdsByScope[scope] == acceptedId
-            val legacyMatches = legacyKey?.let(pendingIdsByScope::get) == acceptedId
-            if (!scopedMatches && !legacyMatches) return
-
-            val keysToRemove = buildList {
-                if (scopedMatches) add(scope)
-                if (legacyKey != null) add(legacyKey)
-            }
-            val removed = preferences?.edit()?.let { editor ->
-                keysToRemove.forEach(editor::remove)
-                editor.commit()
-            } ?: true
+            if (pendingIdsByScope[scope] != acceptedId) return
+            val removed = preferences?.edit()?.remove(scope)?.commit() ?: true
             if (removed) {
-                keysToRemove.forEach(pendingIdsByScope::remove)
+                pendingIdsByScope.remove(scope)
             }
         }
     }
-}
-
-private fun legacyBtcBuyPreferenceKey(scope: String): String? {
-    val parts = scope.split(":")
-    if (parts.size != 5 || parts[0] != "btc-buy-v1") return null
-    if (parts[1] != "standalone" && parts[1] != "income-linked") return null
-    val profile = FamilyMember.fromKeyOrNull(parts[4]) ?: return null
-    if (parts[2] != profile.btcBuysDataFileName) return null
-    if (parts[3] != profile.ledgerOwner.key) return null
-    // The unscoped key never recorded a profile. Restrict it to the adult
-    // ledger whose two buy surfaces historically shared this exact lease.
-    if (profile.ledgerOwner != FamilyMember.VICTOR) return null
-    return FamilyMember.VICTOR.btcBuysDataFileName
 }
 
 /**

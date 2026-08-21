@@ -47,79 +47,22 @@ class TransactionDraftIdStoreTest {
     }
 
     @Test
-    fun `legacy fallback is read only across every bitcoin buy surface and family member`() {
+    fun `every bitcoin buy scope owns a distinct pending id`() {
         val legacyId = "android-legacy-adult"
-
-        BtcBuyWriteSurface.entries.forEach { surface ->
-            FamilyMember.entries.forEach { profile ->
-                val scope = btcBuyDraftIdScope(surface, profile)
-                assertEquals(
-                    true,
-                    preferences.edit()
-                        .clear()
-                        .putString(LEGACY_ADULT_KEY, legacyId)
-                        .commit(),
-                )
-                val beforeRead = preferences.all
-                val store = TransactionDraftIdStore(preferences)
-
-                val pendingId = store.currentId(scope)
-
-                if (profile.ledgerOwner == FamilyMember.VICTOR) {
-                    assertEquals(legacyId, pendingId, "$surface/${profile.key}")
-                    assertEquals(beforeRead, preferences.all, "$surface/${profile.key}")
-                } else {
-                    assertNotEquals(legacyId, pendingId, "$surface/${profile.key}")
-                    assertEquals(legacyId, preferences.getString(LEGACY_ADULT_KEY, null), "$surface/${profile.key}")
-                    assertEquals(pendingId, preferences.getString(scope, null), "$surface/${profile.key}")
-                }
-            }
+        val scopes = BtcBuyWriteSurface.entries.flatMap { surface ->
+            FamilyMember.entries.map { profile -> btcBuyDraftIdScope(surface, profile) }
         }
-    }
-
-    @Test
-    fun `adult acceptance clears the read only legacy fallback`() {
-        val legacyId = "android-legacy-adult"
         assertEquals(true, preferences.edit().putString(LEGACY_ADULT_KEY, legacyId).commit())
         val store = TransactionDraftIdStore(preferences)
 
-        assertEquals(legacyId, store.currentId(ADULT_SCOPE))
-        store.rotateAfterAcceptance(ADULT_SCOPE, legacyId)
+        val pendingIdsByScope = scopes.associateWith(store::currentId)
 
-        assertNull(preferences.getString(LEGACY_ADULT_KEY, null))
-        assertNull(preferences.getString(ADULT_SCOPE, null))
-    }
-
-    @Test
-    fun `adult scoped acceptance also clears a stale legacy fallback`() {
-        val legacyId = "android-legacy-adult"
-        val scopedId = "android-scoped-adult"
-        assertEquals(
-            true,
-            preferences.edit()
-                .putString(LEGACY_ADULT_KEY, legacyId)
-                .putString(ADULT_SCOPE, scopedId)
-                .commit(),
-        )
-        val store = TransactionDraftIdStore(preferences)
-
-        store.rotateAfterAcceptance(ADULT_SCOPE, scopedId)
-
-        assertNull(preferences.getString(LEGACY_ADULT_KEY, null))
-        assertNull(preferences.getString(ADULT_SCOPE, null))
-    }
-
-    @Test
-    fun `non adult acceptance cannot clear the adult legacy fallback`() {
-        val legacyId = "android-legacy-adult"
-        assertEquals(true, preferences.edit().putString(LEGACY_ADULT_KEY, legacyId).commit())
-        val store = TransactionDraftIdStore(preferences)
-        val maddoxId = store.currentId(MADDOX_SCOPE)
-
-        store.rotateAfterAcceptance(MADDOX_SCOPE, maddoxId)
-
+        assertEquals(scopes.size, pendingIdsByScope.values.toSet().size)
+        pendingIdsByScope.forEach { (scope, pendingId) ->
+            assertNotEquals(legacyId, pendingId, scope)
+            assertEquals(pendingId, preferences.getString(scope, null), scope)
+        }
         assertEquals(legacyId, preferences.getString(LEGACY_ADULT_KEY, null))
-        assertNull(preferences.getString(MADDOX_SCOPE, null))
     }
 
     @Test
@@ -199,10 +142,6 @@ class TransactionDraftIdStoreTest {
         val ADULT_SCOPE = btcBuyDraftIdScope(
             surface = BtcBuyWriteSurface.STANDALONE,
             profile = FamilyMember.VICTOR,
-        )
-        val MADDOX_SCOPE = btcBuyDraftIdScope(
-            surface = BtcBuyWriteSurface.STANDALONE,
-            profile = FamilyMember.MADDOX,
         )
         val MASON_SCOPE = btcBuyDraftIdScope(
             surface = BtcBuyWriteSurface.STANDALONE,

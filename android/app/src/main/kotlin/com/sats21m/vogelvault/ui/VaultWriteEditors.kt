@@ -634,9 +634,9 @@ internal fun BtcBuyEntrySheet(
     val buyDraftIds = application?.btcBuyDraftIds
     // Process-owned, exactly like the transaction sheet: dismissing this sheet
     // mid-write and reopening must resubmit the SAME id, or a committed buy
-    // whose response was lost is credited to River a second time. New leases
-    // are scoped to this owner and surface; the old adult-ledger lease remains
-    // a read-only fallback until one accepted buy clears it.
+    // whose response was lost is credited to River a second time. Leases are
+    // scoped to this owner and surface so another pending operation cannot
+    // leak into this sheet's write.
     val buyScope = btcBuyDraftIdScope(BtcBuyWriteSurface.STANDALONE, owner)
     val buyId = remember(buyScope) {
         buyDraftIds?.currentId(buyScope) ?: "android-${UUID.randomUUID()}"
