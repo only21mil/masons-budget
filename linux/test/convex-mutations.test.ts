@@ -286,7 +286,10 @@ describe("paired-device main controller", () => {
     expect(validateMutationRequest(billPay)).toMatchObject({
       category: "Utilities",
       budgetEffect: "budget_category",
+      owner: "victor",
     })
+    expect(validateMutationRequest({ ...billPay, owner: "mason" })).toBeNull()
+    expect(validateMutationRequest({ ...billPay, owner: "rachel" })).toBeNull()
     expect(validateMutationRequest({
       ...billPay,
       category: "Credit Card Payment",

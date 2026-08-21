@@ -225,7 +225,9 @@ export function TransactionFormDialog({
   // the grant is missing whether or not the sats have been typed yet.
   const spendsBitcoin = bitcoinSpendRow ||
     (!recordingBitcoinBuy && submission.amountSats !== undefined)
-  const bitcoinCapability = spendsBitcoin ? bitcoinSpendGate(mutationCapabilities) : null
+  const bitcoinCapability = spendsBitcoin
+    ? bitcoinSpendGate(mutationCapabilities, bitcoinSpendRow ? activeProfile : undefined)
+    : null
   // River is a hand-off, not a save, so its own block never disables the button
   // it offers; the capability block cannot be typed away and comes first.
   const blockedReason = submissionGate && !submissionGate.allowed

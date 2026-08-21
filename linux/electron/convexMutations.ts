@@ -548,12 +548,16 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
       case "btcTransfer.delete": {
         const record = withCommon(input, kind, ["id", "owner", "baseUpdatedAtMs"])
         const { requestId, actor } = common(record)
+        const requestedOwner = member(record["owner"])
+        const owner = kind === "btcBillPay.delete"
+          ? billPayOwner(requestedOwner)
+          : canonicalFinancialOwner(requestedOwner)
         return {
           kind,
           requestId,
           actor,
           id: boundedText(record["id"], PAIRED_DEVICE_LIMITS.maxIdentifier),
-          owner: canonicalFinancialOwner(member(record["owner"])),
+          owner,
           baseUpdatedAtMs: revision(record["baseUpdatedAtMs"]),
         }
       }
@@ -714,7 +718,7 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           ["platform", "note", "reference", "baseUpdatedAtMs"],
         )
         const { requestId, actor } = common(record)
-        const owner = canonicalFinancialOwner(member(record["owner"]))
+        const owner = billPayOwner(member(record["owner"]))
         const category = boundedText(record["category"])
         const budgetEffect = record["budgetEffect"]
         if (budgetEffect !== "budget_category" && budgetEffect !== "credit_card_payment") {
@@ -827,6 +831,11 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
 
 function canonicalFinancialOwner(owner: VogelVaultMember): VogelVaultMember {
   return owner === "rachel" ? "victor" : owner
+}
+
+function billPayOwner(owner: VogelVaultMember): VogelVaultMember {
+  if (owner !== "victor") throw new InvalidRequest()
+  return owner
 }
 
 function transactionSource(owner: VogelVaultMember): string {
