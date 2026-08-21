@@ -75,6 +75,10 @@ struct AddTransactionView: View {
     @State private var selectedCategory = ""
     /// Selected payment-source wire (TransactionSourceCatalog), never a display label.
     @State private var method: String = TransactionSourceCatalog.defaultSource(for: .spend)
+    /// Bitcoin account for a Bitcoin-native method. Synced BTCAccounts are
+    /// queried; a Bitcoin-native save requires a selection.
+    @State private var bitcoinAccountKey: String?
+    @Query private var btcAccounts: [BTCAccount]
     @State private var merchant = ""
     @State private var btcBuyPrice = ""
     @State private var amountValidationMessage: String?
@@ -424,6 +428,38 @@ struct AddTransactionView: View {
                     }
                 }
 
+                if isBitcoinNativeMethod {
+                    Hairline()
+
+                    fieldRow(label: "Account") {
+                        // The backend requires a named Bitcoin account on
+                        // every Bitcoin-native posting; the save is blocked
+                        // below until one is chosen.
+                        Menu {
+                            ForEach(adultBtcAccounts, id: \.key) { account in
+                                Button {
+                                    bitcoinAccountKey = account.key
+                                } label: {
+                                    Label(account.label, systemImage: "bitcoinsign.circle")
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "bitcoinsign.circle")
+                                    .font(AppFont.labelSmallRegular)
+                                    .foregroundStyle(theme.textMuted)
+                                Text(bitcoinAccountLabel)
+                                    .font(AppFont.labelLarge)
+                                    .foregroundStyle(bitcoinAccountKey == nil ? theme.textMuted : theme.text)
+                                Spacer()
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(AppFont.labelSmallRegular)
+                                    .foregroundStyle(theme.textMuted)
+                            }
+                        }
+                    }
+                }
+
                 Hairline()
 
                 fieldRow(label: "Merchant") {
@@ -471,6 +507,26 @@ struct AddTransactionView: View {
 
     private var selectedLabel: String {
         pickerOptions.first { $0.wire == method }?.label ?? method
+    }
+
+    /// True when the selected method is a catalogued Bitcoin-native wire.
+    private var isBitcoinNativeMethod: Bool {
+        TransactionSourceCatalog.option(forWire: method)?.classification.isBitcoinNative == true
+    }
+
+    /// Accounts the posting may target: adults only, matching the backend's
+    /// postsToHouseholdBitcoinLedger gate.
+    private var adultBtcAccounts: [BTCAccount] {
+        btcAccounts
+            .filter { $0.ownerMember == .victor || $0.ownerMember == .rachel }
+            .sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
+    }
+
+    private var bitcoinAccountLabel: String {
+        guard let bitcoinAccountKey,
+              let account = adultBtcAccounts.first(where: { $0.key == bitcoinAccountKey })
+        else { return "None" }
+        return account.label
     }
 
     // MARK: - Number Pad
@@ -568,6 +624,29 @@ struct AddTransactionView: View {
         }
 
         let sats = computedSats
+
+        // A Bitcoin-native payment source posts exact sats the user typed —
+        // the server debits/credits the literal amount, so a value derived
+        // from dollars and a price quote must never be sent. Block the save
+        // and say what the form needs (Linux shows the same message shape).
+        if isBitcoinNativeMethod {
+            guard inputUnit != .usd else {
+                amountValidationMessage =
+                    "\(selectedLabel) posts Bitcoin. Enter the amount in sats."
+                return
+            }
+            guard sats > 0 else {
+                amountValidationMessage = "Enter an amount"
+                return
+            }
+            guard let key = bitcoinAccountKey, !key.isEmpty else {
+                amountValidationMessage = "Choose the Bitcoin account this posts to."
+                return
+            }
+        } else {
+            bitcoinAccountKey = nil
+        }
+
         guard sats != 0 else {
             amountValidationMessage = "Enter an amount"
             return
@@ -598,6 +677,7 @@ struct AddTransactionView: View {
             // posting fields above are unchanged (this sheet always computed
             // them from the entry unit).
             card: method,
+            bitcoinAccountKey: isBitcoinNativeMethod ? bitcoinAccountKey : nil,
             owner: ledgerOwner,
             createdBy: "app",
         )

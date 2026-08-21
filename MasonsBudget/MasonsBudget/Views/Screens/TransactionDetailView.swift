@@ -233,6 +233,7 @@ struct TransactionDetailView: View {
         let previousCategory = transaction.category
         let previousAmount = transaction.amount
         let previousCard = transaction.card
+        let previousBitcoinAccountKey = transaction.bitcoinAccountKey
         let previousNote = transaction.note
         let previousDate = transaction.date
         let previousOwner = transaction.owner
@@ -250,6 +251,10 @@ struct TransactionDetailView: View {
         } else {
             transaction.card = nil
         }
+        // The stored Bitcoin account round-trips untouched: the picker fence
+        // keeps Bitcoin-native wires to rows that already carry one, and a
+        // posted sat movement cannot change accounts on an edit.
+        transaction.bitcoinAccountKey = previousBitcoinAccountKey
         transaction.note = note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : note
         transaction.date = date
         transaction.ownerMember = transaction.ownerMember.ledgerOwner
@@ -258,6 +263,7 @@ struct TransactionDetailView: View {
             transaction.category = previousCategory
             transaction.amount = previousAmount
             transaction.card = previousCard
+            transaction.bitcoinAccountKey = previousBitcoinAccountKey
             transaction.note = previousNote
             transaction.date = previousDate
             transaction.owner = previousOwner

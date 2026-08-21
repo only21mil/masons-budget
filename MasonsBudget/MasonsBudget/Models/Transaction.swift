@@ -26,6 +26,10 @@ final class Transaction {
     /// claims exact sats it does not have.
     var enteredInBitcoin: Bool?
     var card: String?
+    /// Bitcoin account this row posts to, when its payment source is
+    /// Bitcoin-native. Sent alongside amountSats; the backend rejects a
+    /// Bitcoin-native row without it. Nil on fiat/legacy/untagged rows.
+    var bitcoinAccountKey: String?
     var note: String?
     var owner: String
     var createdBy: String
@@ -42,6 +46,7 @@ final class Transaction {
         amountSats: Int64? = nil,
         enteredInBitcoin: Bool? = nil,
         card: String? = nil,
+        bitcoinAccountKey: String? = nil,
         note: String? = nil,
         owner: FamilyMember = .victor,
         createdBy: String,
@@ -57,6 +62,7 @@ final class Transaction {
         self.amountSats = amountSats
         self.enteredInBitcoin = enteredInBitcoin
         self.card = card
+        self.bitcoinAccountKey = bitcoinAccountKey
         self.note = note
         self.owner = owner.rawValue
         self.createdBy = createdBy

@@ -533,6 +533,7 @@ final class ConvexSyncService {
         local.amountSats = remote.amountSats
         local.enteredInBitcoin = remote.enteredInBitcoin
         local.card = remote.card
+        local.bitcoinAccountKey = remote.bitcoinAccountKey
         local.note = remote.note
         local.owner = remote.owner
         if !preservesLocalImportProvenance {

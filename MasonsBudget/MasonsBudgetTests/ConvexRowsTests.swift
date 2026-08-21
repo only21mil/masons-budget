@@ -153,6 +153,37 @@ final class ConvexRowsTests: XCTestCase {
         XCTAssertEqual(child.owner, .mason)
     }
 
+    func testBitcoinAccountKeySurvivesTransactionProjection() throws {
+        var row = transactionRow(owner: "victor", amount: "OTAAAAAAAAA=")
+        row["card"] = "zeus_lightning"
+        row["amountSats"] = int64("QOIBAAAAAAA=")
+        row["bitcoinAccountKey"] = "zeus-mobile"
+
+        let envelope: ConvexRowEnvelope<ConvexTransactionRow> = try decodeTaggedJSON([
+            "complete": true,
+            "rows": [row],
+        ])
+        let transaction = try XCTUnwrap(envelope.completeRows().first?.legacyDTO())
+
+        XCTAssertEqual(transaction.card, "zeus_lightning")
+        XCTAssertEqual(transaction.bitcoinAccountKey, "zeus-mobile")
+        XCTAssertEqual(transaction.amountSats, 123_456)
+    }
+
+    func testFiatRowDecodesWithNilBitcoinAccountKey() throws {
+        var row = transactionRow(owner: "victor", amount: "OTAAAAAAAAA=")
+        row["card"] = "sofi_card"
+
+        let envelope: ConvexRowEnvelope<ConvexTransactionRow> = try decodeTaggedJSON([
+            "complete": true,
+            "rows": [row],
+        ])
+        let transaction = try XCTUnwrap(envelope.completeRows().first?.legacyDTO())
+
+        XCTAssertEqual(transaction.card, "sofi_card")
+        XCTAssertNil(transaction.bitcoinAccountKey)
+    }
+
     func testSatIncomeAndRevisionArePreservedThroughTransactionProjection() throws {
         var row = transactionRow(owner: "victor", amount: "KCMAAAAAAAA=")
         row["category"] = "Income"

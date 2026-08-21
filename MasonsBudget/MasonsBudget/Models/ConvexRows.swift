@@ -108,6 +108,7 @@ struct ConvexTransactionRow: Decodable {
     let card: String?
     let note: String?
     let amountSats: Int64?
+    let bitcoinAccountKey: String?
     let updatedAtMs: Double
 
     func legacyDTO() throws -> LegacyTransactionDTO {
@@ -127,6 +128,7 @@ struct ConvexTransactionRow: Decodable {
             // deriving it here, editing a synced Bitcoin income would re-push it
             // with no sats and quietly turn it into an ordinary dollar income.
             enteredInBitcoin: amountSats != nil,
+            bitcoinAccountKey: bitcoinAccountKey,
             updatedAtMs: updatedAtMs,
         )
     }
