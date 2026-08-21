@@ -77,6 +77,26 @@ class TransactionDraftIdStoreTest {
     }
 
     @Test
+    fun `legacy migration derives every bitcoin buy owner from the family domain`() {
+        FamilyMember.entries.forEach { profile ->
+            val legacyId = "android-legacy-${profile.key}"
+            val scope = btcBuyDraftIdScope(BtcBuyWriteSurface.STANDALONE, profile)
+            assertEquals(
+                true,
+                preferences.edit()
+                    .clear()
+                    .putString(profile.btcBuysDataFileName, legacyId)
+                    .commit(),
+            )
+
+            val store = TransactionDraftIdStore(preferences)
+
+            assertEquals(legacyId, store.currentId(scope), profile.key)
+            assertNull(preferences.getString(profile.btcBuysDataFileName, null), profile.key)
+        }
+    }
+
+    @Test
     fun `new pending ids are synchronously committed before return`() {
         val context: Application = RuntimeEnvironment.getApplication()
         val delegate =

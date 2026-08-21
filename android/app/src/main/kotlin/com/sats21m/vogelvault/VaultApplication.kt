@@ -69,8 +69,10 @@ internal class TransactionDraftIdStore(
             ?: mutableMapOf()
 
     fun currentId(scope: String): String = synchronized(lock) {
-        pendingIdsByScope[scope]
-            ?: migrateLegacyId(scope)
+        pendingIdsByScope[scope]?.let { pendingId ->
+            removeStaleLegacyId(scope)
+            pendingId
+        } ?: migrateLegacyId(scope)
             ?: "android-${UUID.randomUUID()}".also { pendingId ->
                 if (preferences != null) {
                     check(preferences.edit().putString(scope, pendingId).commit()) {
@@ -79,6 +81,16 @@ internal class TransactionDraftIdStore(
                 }
                 pendingIdsByScope[scope] = pendingId
             }
+    }
+
+    private fun removeStaleLegacyId(scope: String) {
+        val legacyKey = legacyBtcBuyPreferenceKey(scope) ?: return
+        if (legacyKey !in pendingIdsByScope) return
+        val storedPreferences = preferences ?: return
+        check(storedPreferences.edit().remove(legacyKey).commit()) {
+            "stale pending draft id could not be removed"
+        }
+        pendingIdsByScope.remove(legacyKey)
     }
 
     private fun migrateLegacyId(scope: String): String? {
@@ -128,15 +140,10 @@ private fun legacyBtcBuyPreferenceKey(scope: String): String? {
     val parts = scope.split(":")
     if (parts.size != 5 || parts[0] != "btc-buy-v1") return null
     if (parts[1] != "standalone" && parts[1] != "income-linked") return null
-    return when {
-        parts[2] == "bitcoin-buys" &&
-            parts[3] == "victor" &&
-            (parts[4] == "victor" || parts[4] == "rachel") -> "bitcoin-buys"
-        parts[2] == "mason-bitcoin-buys" &&
-            parts[3] == "mason" &&
-            parts[4] == "mason" -> "mason-bitcoin-buys"
-        else -> null
-    }
+    val profile = FamilyMember.fromKeyOrNull(parts[4]) ?: return null
+    if (parts[2] != profile.btcBuysDataFileName) return null
+    if (parts[3] != profile.ledgerOwner.key) return null
+    return profile.btcBuysDataFileName
 }
 
 /**

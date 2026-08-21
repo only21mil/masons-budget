@@ -544,13 +544,6 @@ internal fun AddTransactionSheet(
     val draftTransactionId = remember(draftScope, transactionDraftIds) {
         transactionDraftIds.currentId(draftScope)
     }
-    val btcBuyDraftScope = btcBuyDraftIdScope(
-        surface = BtcBuyWriteSurface.INCOME_LINKED,
-        profile = state.activeProfile,
-    )
-    val atomicIncomeDraftId = remember(btcBuyDraftScope) {
-        btcBuyDraftIds?.currentId(btcBuyDraftScope) ?: "android-${UUID.randomUUID()}"
-    }
     var typeName by rememberSaveable { mutableStateOf(AddTransactionType.SPEND.name) }
     var inputUnitName by rememberSaveable { mutableStateOf(DisplayUnit.USD.name) }
     var merchant by rememberSaveable { mutableStateOf("") }
@@ -786,6 +779,13 @@ internal fun AddTransactionSheet(
                     )
                     OutlinedButton(
                         onClick = {
+                            val btcBuyDraftScope = btcBuyDraftIdScope(
+                                surface = BtcBuyWriteSurface.INCOME_LINKED,
+                                profile = state.activeProfile,
+                            )
+                            val atomicIncomeDraftId =
+                                btcBuyDraftIds?.currentId(btcBuyDraftScope)
+                                    ?: "android-${UUID.randomUUID()}"
                             val seed =
                                 incomeEntryForBitcoinBuy(
                                     draft = currentDraft(),
