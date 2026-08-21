@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Same locked-down CSP as the app. This page is a build-time design
+         harness and is never loaded by the Electron main process.
+         frame-ancestors is deliberately absent: it is ignored in <meta>. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-src 'none'; child-src 'none'; object-src 'none'"
+    />
+    <title>The Vogel Vault — design packet</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/screenshot-harness.tsx"></script>
+  </body>
+</html>

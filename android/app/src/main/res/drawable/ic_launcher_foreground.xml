@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Vogel Vault mark — a vault door.
+  
+  Thick orange ring for the door edge, four bolts seated ON the ring, and a cream
+  keyhole. The Bitcoin reference is two slots cut vertically through the keyhole
+  stem: at a glance it is a keyhole, up close it is the double-bar. Contained
+  inside the keyhole silhouette on purpose — nothing overshoots, so the mark stays
+  a single readable object at 48dp.
+  
+  v1 drew the bars over the keyhole and let them run past it top and bottom, and
+  set the bolts floating outside the ring. On the device it read as a clock face.
+  
+  All artwork sits inside the 72dp adaptive safe zone (18..90 of the 108 viewport),
+  so no launcher mask can clip it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Vault door edge -->
+    <path
+        android:strokeColor="#FF9F0A"
+        android:strokeWidth="5"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M54,28 A26,26 0 1,1 53.99,28" />
+
+    <!-- Bolts seated on the ring at the diagonals, not floating beside it. -->
+    <path
+        android:strokeColor="#0E0E11"
+        android:strokeWidth="4.5"
+        android:strokeLineCap="butt"
+        android:pathData="M39.6,39.6 L37.2,37.2 M68.4,39.6 L70.8,37.2 M39.6,68.4 L37.2,70.8 M68.4,68.4 L70.8,70.8" />
+
+    <!-- Keyhole bowl -->
+    <path
+        android:fillColor="#F5F2EA"
+        android:pathData="M54,46 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0" />
+
+    <!-- Keyhole stem, flaring to the base like a real escutcheon -->
+    <path
+        android:fillColor="#F5F2EA"
+        android:pathData="M50.4,52 L57.6,52 L60.4,68 L47.6,68 z" />
+
+    <!-- The double-bar, cut THROUGH the keyhole rather than drawn over it.
+         Base graphite so it reads as a slot, and confined to the stem. -->
+    <path
+        android:fillColor="#111114"
+        android:pathData="M52.2,53.5 L53.6,53.5 L54.7,66.5 L53.1,66.5 z" />
+    <path
+        android:fillColor="#111114"
+        android:pathData="M55.6,53.5 L57.0,53.5 L58.1,66.5 L56.5,66.5 z" />
+</vector>

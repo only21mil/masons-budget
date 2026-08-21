@@ -1,0 +1,412 @@
+import { describe, expect, it } from "vitest"
+
+import type {
+  VogelVaultRowRequest,
+  VogelVaultRowResult,
+} from "../shared/ipc.ts"
+import { loadConvexRowEnvelope } from "../src/renderer/data/convexRows.ts"
+import { deriveBudgetSpend } from "../src/renderer/data/transactionAmounts.ts"
+
+function response(
+  request: VogelVaultRowRequest,
+  budgetMonth = "2026-07",
+  transactionDate = "2026-07-26",
+): VogelVaultRowResult {
+  switch (request.kind) {
+    case "rowCounts":
+      return {
+        status: "ok",
+        kind: "rowCounts",
+        value: {
+          transactions: 1,
+          todos: 1,
+          btcBuys: 1,
+          btcBillPays: 1,
+          btcTransfers: 1,
+          btcAccounts: 1,
+          income: 1,
+          balanceDocuments: 1,
+          budgetDocuments: 1,
+          btcBalanceDocuments: 1,
+          financeDocuments: 1,
+        },
+      }
+    case "transactions":
+      return {
+        status: "ok",
+        kind: "transactions",
+        complete: true,
+        rows: [{
+          txId: "tx-1",
+          owner: "victor",
+          date: transactionDate,
+          month: transactionDate.slice(0, 7),
+          merchant: "Example",
+          amountCents: 123n,
+          spendAmount: 123n,
+          displaySpendAmount: 123n,
+          hasOppositeSpendSign: false,
+          category: "Food",
+          updatedAtMs: 10,
+        }],
+      }
+    case "income":
+      return {
+        status: "ok",
+        kind: "income",
+        complete: true,
+        rows: [{
+          incomeId: "income-1",
+          owner: "victor",
+          date: "2026-07-20",
+          month: "2026-07",
+          amountCents: 777_777n,
+          source: "Payroll",
+          updatedAtMs: 75,
+        }],
+      }
+    case "todos":
+      return {
+        status: "ok",
+        kind: "todos",
+        complete: true,
+        rows: [{
+          todoId: "todo-1",
+          owner: "victor",
+          title: "Example",
+          done: false,
+          flagged: true,
+          updatedAtMs: 20,
+        }],
+      }
+    case "btcBuys":
+      return {
+        status: "ok",
+        kind: "btcBuys",
+        complete: true,
+        rows: [{
+          buyId: "buy-1",
+          owner: "victor",
+          date: "2026-07-25",
+          month: "2026-07",
+          source: "Example",
+          sats: 100_000_000n,
+          priceUsdCents: 9_000_000n,
+          usdCents: 9_000_000n,
+          updatedAtMs: 30,
+        }],
+      }
+    case "btcAccounts":
+      return {
+        status: "ok",
+        kind: "btcAccounts",
+        complete: true,
+        rows: [{
+          key: "wallet",
+          owner: "victor",
+          label: "Wallet",
+          custody: "self_custody",
+          sats: 100_000_000n,
+          fiatCents: 9_000_000n,
+          asOf: "2026-07-26T00:00:00Z",
+          schemaVersion: 1n,
+          updatedAtMs: 40,
+        }],
+      }
+    case "btcBillPays":
+      return {
+        status: "ok",
+        kind: "btcBillPays",
+        complete: true,
+        rows: [{
+          billPayId: "pay-1",
+          owner: "victor",
+          date: "2026-07-24",
+          month: "2026-07",
+          merchant: "Example",
+          category: "Bills",
+          amountUsdCents: 2_500n,
+          btcSpentSats: 28_000n,
+          btcPriceCents: 9_000_000n,
+          feeUsdCents: 50n,
+          updatedAtMs: 50,
+        }],
+      }
+    case "btcTransfers":
+      return {
+        status: "ok",
+        kind: "btcTransfers",
+        complete: true,
+        rows: [{
+          transferId: "transfer-1",
+          owner: "victor",
+          date: "2026-07-24",
+          month: "2026-07",
+          fromAccountKey: "river",
+          toAccountKey: "wallet",
+          sats: 100_000n,
+          feeSats: 200n,
+          updatedAtMs: 55,
+        }],
+      }
+    case "budget":
+      return {
+        status: "ok",
+        kind: "budget",
+        value: {
+          owner: "victor",
+          month: budgetMonth,
+          coinbaseOneBalanceCents: 0n,
+          categories: [{ name: "Food", budgetCents: 50_000n }],
+          mtdIncomeCents: 100_000n,
+          ytdIncomeCents: 700_000n,
+          monthlyHistory: [],
+          updatedAtMs: 60,
+        },
+      }
+    case "btcSnapshotMeta":
+      return {
+        status: "ok",
+        kind: "btcSnapshotMeta",
+        complete: true,
+        rows: [{
+          owner: "victor",
+          schemaVersion: 1n,
+          asOf: "2026-07-26T00:00:00Z",
+          updatedAtMs: 70,
+        }],
+      }
+    case "btcBalanceDocuments":
+      return {
+        status: "ok",
+        kind: "btcBalanceDocuments",
+        complete: true,
+        rows: [{
+          owner: "victor",
+          schemaVersion: 1n,
+          asOf: "2026-07-16",
+          accounts: [{
+            key: "canonical-wallet",
+            label: "Canonical Wallet",
+            custody: "self_custody",
+            sats: 123_456_789n,
+            fiatCents: 12_000_000n,
+          }],
+          totals: {
+            sats: 123_456_789n,
+            fiatCents: 12_000_000n,
+            exchangeSats: 0n,
+            selfCustodySats: 123_456_789n,
+          },
+          updatedAtMs: 80,
+        }],
+      }
+    case "finance":
+      return { status: "ok", kind: "finance", value: null }
+    case "marketQuotes":
+      return {
+        status: "ok",
+        kind: "marketQuotes",
+        value: {
+          quotes: [
+            { symbol: "BTC", priceCents: null, source: "fixture", fetchedAt: null, status: "unavailable" },
+            { symbol: "VOO", priceCents: null, source: "fixture", fetchedAt: null, status: "unavailable" },
+            { symbol: "IBIT", priceCents: null, source: "fixture", fetchedAt: null, status: "unavailable" },
+          ],
+        },
+      }
+  }
+}
+
+describe("renderer Convex row adapter", () => {
+  it.each([
+    ["June 2026", "legacy English"],
+    ["2026-06", "canonical"],
+  ])("derives non-zero June actuals from a %s budget month (%s form)", async (budgetMonth) => {
+    const result = await loadConvexRowEnvelope(
+      async (request) => response(request, budgetMonth, "2026-06-18"),
+    )
+
+    expect(result.status).toBe("loaded")
+    if (result.status !== "loaded") return
+    const adaptedBudget = result.data.budget.value
+    expect(result.data.budget.status).toBe("live")
+    expect(adaptedBudget).not.toBeNull()
+    if (adaptedBudget === null) return
+    expect(deriveBudgetSpend(adaptedBudget, result.data.transactions.value).actual).toBe(123n)
+    expect(adaptedBudget.month).toBe("2026-06")
+  })
+
+  it("marks an unparseable budget month unavailable instead of deriving zero actuals", async () => {
+    const result = await loadConvexRowEnvelope(
+      async (request) => response(request, "Juny 2026", "2026-06-18"),
+    )
+
+    expect(result.status).toBe("loaded")
+    if (result.status !== "loaded") return
+    expect(result.data.budget.status).toBe("error")
+    expect(result.data.budget.value).toBeNull()
+    const actual = result.data.budget.value === null
+      ? null
+      : deriveBudgetSpend(result.data.budget.value, result.data.transactions.value).actual
+    expect(actual).toBeNull()
+    expect(actual).not.toBe(0n)
+  })
+
+  it("loads every bounded table with explicit BTC scopes and preserves bigint money", async () => {
+    const requests: VogelVaultRowRequest[] = []
+    const result = await loadConvexRowEnvelope(async (request) => {
+      requests.push(request)
+      return response(request)
+    })
+
+    expect(result.status).toBe("loaded")
+    if (result.status !== "loaded") return
+    expect(requests).toEqual([
+      { kind: "rowCounts" },
+      { kind: "transactions" },
+      { kind: "todos" },
+      { kind: "income" },
+      { kind: "btcBuys", scope: "visible" },
+      { kind: "btcAccounts", scope: "visible" },
+      { kind: "btcBillPays", scope: "visible" },
+      { kind: "btcTransfers", scope: "netWorth" },
+      { kind: "budget", scope: "netWorth" },
+      { kind: "btcSnapshotMeta", scope: "visible" },
+      { kind: "btcBalanceDocuments", scope: "netWorth" },
+    ])
+    expect("income" in result.data).toBe(true)
+    expect("btcBalanceDocument" in result.data).toBe(true)
+    expect(result.data.income.value[0]?.amount).toBe(777_777n)
+    expect(result.data.btcBalanceDocument.value?.totals.sats).toBe(123_456_789n)
+    expect(result.data.btcBalanceDocument.value?.totals.fiat).toBe(12_000_000n)
+    expect(result.data.transactions.value[0]?.amount).toBe(123n)
+    expect(result.data.transactions.value[0]?.updatedAtMs).toBe(10)
+    expect(result.data.todos.value[0]?.updatedAtMs).toBe(20)
+    expect(result.data.btcBuys.value[0]?.updatedAtMs).toBe(30)
+    expect(result.data.btcAccounts.value[0]?.updatedAtMs).toBe(40)
+    expect(result.data.billPays.value[0]?.updatedAtMs).toBe(50)
+    expect(result.data.btcTransfers.value[0]?.updatedAtMs).toBe(55)
+    expect(result.data.budget.value?.updatedAtMs).toBe(60)
+    expect(result.data.btcBalanceDocument.value?.updatedAtMs).toBe(80)
+    expect(result.data.btcBalanceDocument.value?.accounts[0]?.updatedAtMs).toBe(80)
+    expect(typeof result.data.transactions.value[0]?.amount).toBe("bigint")
+    expect(result.data.btcAccounts.value[0]?.fiat).toBe(9_000_000n)
+    expect(result.data.budget.value?.categories[0]?.spent).toBe(0n)
+    expect(result.data.btcPriceUsd).toBe(9_720_000n)
+    expect(result.data.generatedAt).toBe(80)
+  })
+
+  it("stops at rowCounts and renders an empty state before production is populated", async () => {
+    const requests: VogelVaultRowRequest[] = []
+    const result = await loadConvexRowEnvelope(async (request) => {
+      requests.push(request)
+      return {
+        status: "ok",
+        kind: "rowCounts",
+        value: {
+          transactions: 0,
+          todos: 0,
+          btcBuys: 0,
+          btcBillPays: 0,
+          btcTransfers: 0,
+          btcAccounts: 0,
+          income: 0,
+          balanceDocuments: 0,
+          budgetDocuments: 0,
+          btcBalanceDocuments: 0,
+          financeDocuments: 0,
+        },
+      }
+    }, () => 123)
+
+    expect(requests).toEqual([{ kind: "rowCounts" }])
+    expect(result).toMatchObject({
+      status: "loaded",
+      data: {
+        generatedAt: 123,
+        transactions: { status: "empty", value: [] },
+        income: { status: "empty", value: [] },
+        btcBalanceDocument: { status: "empty", value: null },
+        btcAccounts: { status: "empty", value: [] },
+      },
+    })
+  })
+
+  it("keeps disabled reads on fixtures and classifies missing auth separately", async () => {
+    await expect(
+      loadConvexRowEnvelope(async () => ({ status: "error", code: "disabled" })),
+    ).resolves.toEqual({ status: "fallback" })
+
+    const unauthorized = await loadConvexRowEnvelope(
+      async () => ({ status: "error", code: "unauthorized" }),
+      () => 456,
+    )
+    expect(unauthorized).toMatchObject({
+      status: "loaded",
+      data: {
+        generatedAt: 456,
+        transactions: {
+          status: "error",
+          source: "Convex row tables · authentication required",
+          error: "Convex read authentication failed.",
+        },
+      },
+    })
+  })
+
+  it("contains a rejected transaction query to the transaction slice", async () => {
+    const result = await loadConvexRowEnvelope(
+      async (request) =>
+        request.kind === "transactions"
+          ? { status: "error", code: "unavailable" }
+          : response(request),
+      () => 999,
+    )
+
+    expect(result.status).toBe("loaded")
+    if (result.status !== "loaded") return
+    expect(result.data.transactions.status).toBe("error")
+    expect(result.data.todos.status).toBe("live")
+    expect(result.data.income.status).toBe("live")
+    expect(result.data.btcBalanceDocument.status).toBe("live")
+    expect(result.data.btcBuys.status).toBe("live")
+    expect(result.data.billPays.status).toBe("live")
+  })
+
+  it("keeps a complete zero-row transaction response usable as a true zero", async () => {
+    const result = await loadConvexRowEnvelope(
+      async (request) => {
+        const base = response(request)
+        return base.status === "ok" && base.kind === "transactions"
+          ? { ...base, rows: [] }
+          : base
+      },
+      () => 999,
+    )
+
+    expect(result.status).toBe("loaded")
+    if (result.status !== "loaded") return
+    expect(result.data.transactions.status).toBe("live")
+    expect(result.data.transactions.value).toEqual([])
+    expect(result.data.budget.status).toBe("live")
+  })
+
+  it("rejects overlapping BTC balance documents instead of combining them", async () => {
+    const result = await loadConvexRowEnvelope(
+      async (request) => {
+        const base = response(request)
+        if (base.status !== "ok" || base.kind !== "btcBalanceDocuments") return base
+        const document = base.rows[0]
+        if (!document) return base
+        return { ...base, rows: [document, document] }
+      },
+    )
+
+    expect(result.status).toBe("loaded")
+    if (result.status !== "loaded") return
+    expect(result.data.btcBalanceDocument.status).toBe("error")
+    expect(result.data.btcBalanceDocument.value).toBeNull()
+    expect(result.data.btcAccounts.status).toBe("live")
+  })
+})

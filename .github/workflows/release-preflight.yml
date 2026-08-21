@@ -1,0 +1,117 @@
+name: Release and App Store Connect preflight (manual, read-only)
+
+# Answers "would a TestFlight run get past signing and see the exact app today?"
+# without archiving, signing, exporting, uploading, or writing to App Store
+# Connect. The REST probe performs two bounded read-only requests: exact bundle
+# visibility, then the latest visible build. Run this before Deploy to TestFlight
+# rather than discovering a missing secret or invisible app after an archive.
+#
+# Nothing here prints a secret. The report is booleans and fixed classifications
+# only: set or not, whether encoded values decode, whether the API key is an
+# in-memory ES256/P-256 key, exact bundle visibility, and latest-build presence.
+# Not even a length — the length of an App Store Connect key id would narrow it.
+#
+# THE SUBTLE PART, since getting this wrong is the usual way presence checks are
+# written: the `secrets` context is NOT available in any `if:`. Neither
+# `jobs.<id>.if` nor `steps.<id>.if` can see it, so
+#
+#     if: secrets.ASC_KEY_ID != ''            # invalid, actionlint rejects it
+#
+# never works. The alternatives are worse than they look:
+#
+#     run: test -n "${{ secrets.ASC_KEY_ID }}"   # splices the value into the
+#                                                # shell source; a value with a
+#                                                # quote in it becomes syntax
+#
+# The correct shape is the one below: bind each secret to its own `env:` key and
+# let the process read it from its environment, where it is a value rather than
+# a fragment of source. workflow-lint.yml enforces that shape across every
+# workflow in the repository.
+#
+# The env block must name every secret explicitly. There is no way to enumerate
+# secrets at runtime, and the one thing that looks like it — toJSON(secrets) —
+# would dump every value straight into the log. The inventory cross-check in
+# workflow-lint.yml is what keeps this list from drifting out of date.
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    secrets:
+      APPLE_CERTIFICATE_P12:
+        required: false
+      APPLE_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_PROVISIONING_PROFILE:
+        required: false
+      APPLE_DISTRIBUTION_CERTIFICATE_P12:
+        required: false
+      APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_IOS_APP_STORE_PROFILE:
+        required: false
+      APPLE_MAC_APP_STORE_PROFILE:
+        required: false
+      APPLE_MAC_INSTALLER_CERTIFICATE_P12:
+        required: false
+      APPLE_MAC_INSTALLER_CERTIFICATE_PASSWORD:
+        required: false
+      ASC_API_KEY_P8:
+        required: false
+      ASC_KEY_ID:
+        required: false
+      ASC_ISSUER_ID:
+        required: false
+      ANDROID_DEBUG_KEYSTORE_BASE64:
+        required: false
+      ANDROID_DEBUG_KEYSTORE_PASSWORD:
+        required: false
+      ANDROID_DEBUG_KEY_ALIAS:
+        required: false
+      ANDROID_DEBUG_KEY_PASSWORD:
+        required: false
+permissions:
+  contents: read
+
+# The only workflow that lacked one. Two overlapping dispatches both ran to
+# completion and reported against the same secrets.
+concurrency:
+  group: release-preflight-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    name: Report release secret presence
+    if: github.repository == 'only21mil/masons-budget'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Report presence
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
+          APPLE_DISTRIBUTION_CERTIFICATE_P12: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_P12 }}
+          APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          APPLE_IOS_APP_STORE_PROFILE: ${{ secrets.APPLE_IOS_APP_STORE_PROFILE }}
+          APPLE_MAC_APP_STORE_PROFILE: ${{ secrets.APPLE_MAC_APP_STORE_PROFILE }}
+          APPLE_MAC_INSTALLER_CERTIFICATE_P12: ${{ secrets.APPLE_MAC_INSTALLER_CERTIFICATE_P12 }}
+          APPLE_MAC_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_MAC_INSTALLER_CERTIFICATE_PASSWORD }}
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+          ANDROID_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
+          ANDROID_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
+          ANDROID_DEBUG_KEY_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEY_PASSWORD }}
+        run: python3 .github/workflows/scripts/report_secret_presence.py
+
+      - name: Verify App Store Connect bundle visibility
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_BUNDLE_ID: com.sats21m.masonsbudget
+        run: node .github/workflows/scripts/app_store_connect_preflight.mjs

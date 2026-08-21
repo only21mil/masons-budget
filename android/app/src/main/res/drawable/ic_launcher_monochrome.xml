@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Themed-icon layer (Android 13+). The launcher tints this itself, so it must be a
+  single-colour silhouette — any colour here is discarded. The keyhole slots are
+  omitted: at tint-time they would vanish into the fill and only muddy the shape.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108"
+    android:tint="#FFFFFF">
+
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M54,28 A26,26 0 1,1 53.99,28" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,46 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M50.4,52 L57.6,52 L60.4,68 L47.6,68 z" />
+</vector>

@@ -1,0 +1,161 @@
+{
+  "strictParserScope": {
+    "format": "convex_encoded_json",
+    "fieldClass": "v.int64"
+  },
+  "valid": [
+    {
+      "name": "zero",
+      "wire": { "$integer": "AAAAAAAAAAA=" },
+      "decimal": "0"
+    },
+    {
+      "name": "one",
+      "wire": { "$integer": "AQAAAAAAAAA=" },
+      "decimal": "1"
+    },
+    {
+      "name": "negative one",
+      "wire": { "$integer": "//////////8=" },
+      "decimal": "-1"
+    },
+    {
+      "name": "above JavaScript safe integer",
+      "wire": { "$integer": "AAAAAAAAIAA=" },
+      "decimal": "9007199254740992"
+    },
+    {
+      "name": "below JavaScript safe integer",
+      "wire": { "$integer": "AAAAAAAA4P8=" },
+      "decimal": "-9007199254740992"
+    },
+    {
+      "name": "positive arbitrary 64-bit value",
+      "wire": { "$integer": "FYHpffQQIhE=" },
+      "decimal": "1234567890123456789"
+    },
+    {
+      "name": "negative arbitrary 64-bit value",
+      "wire": { "$integer": "634Wggvv3e4=" },
+      "decimal": "-1234567890123456789"
+    },
+    {
+      "name": "signed int64 maximum",
+      "wire": { "$integer": "/////////38=" },
+      "decimal": "9223372036854775807"
+    },
+    {
+      "name": "signed int64 minimum",
+      "wire": { "$integer": "AAAAAAAAAIA=" },
+      "decimal": "-9223372036854775808"
+    }
+  ],
+  "formatCases": [
+    {
+      "name": "json v.int64 decimal string",
+      "format": "json",
+      "fieldClass": "v.int64",
+      "wire": "1",
+      "validForFormat": true,
+      "decimal": "1"
+    },
+    {
+      "name": "convex encoded JSON v.int64 tag",
+      "format": "convex_encoded_json",
+      "fieldClass": "v.int64",
+      "wire": { "$integer": "AQAAAAAAAAA=" },
+      "validForFormat": true,
+      "decimal": "1"
+    },
+    {
+      "name": "json v.float64 plain number",
+      "format": "json",
+      "fieldClass": "v.float64",
+      "wire": 1,
+      "validForFormat": true
+    },
+    {
+      "name": "convex encoded JSON v.float64 plain number",
+      "format": "convex_encoded_json",
+      "fieldClass": "v.float64",
+      "wire": 1,
+      "validForFormat": true
+    },
+    {
+      "name": "convex encoded JSON v.int64 raw-number fallback",
+      "format": "convex_encoded_json",
+      "fieldClass": "v.int64",
+      "wire": 1,
+      "validForFormat": false
+    },
+    {
+      "name": "convex encoded JSON v.int64 decimal-string fallback",
+      "format": "convex_encoded_json",
+      "fieldClass": "v.int64",
+      "wire": "1",
+      "validForFormat": false
+    }
+  ],
+  "invalid": [
+    {
+      "name": "null fallback",
+      "wire": null
+    },
+    {
+      "name": "convex_encoded_json v.int64 raw-number fallback",
+      "wire": 1
+    },
+    {
+      "name": "convex_encoded_json v.int64 decimal-string fallback",
+      "wire": "1"
+    },
+    {
+      "name": "array shape",
+      "wire": [{ "$integer": "AQAAAAAAAAA=" }]
+    },
+    {
+      "name": "missing tagged key",
+      "wire": {}
+    },
+    {
+      "name": "alias key",
+      "wire": { "$int64": "AQAAAAAAAAA=" }
+    },
+    {
+      "name": "extra key",
+      "wire": { "$integer": "AQAAAAAAAAA=", "value": "1" }
+    },
+    {
+      "name": "numeric tagged fallback",
+      "wire": { "$integer": 1 }
+    },
+    {
+      "name": "decimal tagged fallback",
+      "wire": { "$integer": "1" }
+    },
+    {
+      "name": "URL-safe alphabet",
+      "wire": { "$integer": "__________8=" }
+    },
+    {
+      "name": "invalid alphabet",
+      "wire": { "$integer": "AAAAAAAAAA!=" }
+    },
+    {
+      "name": "missing padding",
+      "wire": { "$integer": "AQAAAAAAAAA" }
+    },
+    {
+      "name": "non-canonical padding bits",
+      "wire": { "$integer": "AAAAAAAAAAB=" }
+    },
+    {
+      "name": "over-padded seven-byte payload",
+      "wire": { "$integer": "AAAAAAAAAA==" }
+    },
+    {
+      "name": "over-long nine-byte payload",
+      "wire": { "$integer": "AAAAAAAAAAAA" }
+    }
+  ]
+}

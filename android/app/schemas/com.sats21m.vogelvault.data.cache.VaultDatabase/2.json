@@ -1,0 +1,666 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "0ee062c09459de37498657d9d17514e4",
+    "entities": [
+      {
+        "tableName": "query_snapshots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`query_key` TEXT NOT NULL, `generation` INTEGER NOT NULL, `kind` TEXT NOT NULL, `started_at_ms` INTEGER NOT NULL, `finished_at_ms` INTEGER, `expected_row_count` INTEGER, `row_count` INTEGER NOT NULL, `is_complete` INTEGER NOT NULL, `completeness` TEXT NOT NULL, `is_active` INTEGER NOT NULL, `activated_at_ms` INTEGER, `authorization` TEXT NOT NULL, `freshness` TEXT NOT NULL, `invalidated_at_ms` INTEGER, PRIMARY KEY(`query_key`, `generation`))",
+        "fields": [
+          {
+            "fieldPath": "queryKey",
+            "columnName": "query_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "generation",
+            "columnName": "generation",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAtMs",
+            "columnName": "started_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "finishedAtMs",
+            "columnName": "finished_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "expectedRowCount",
+            "columnName": "expected_row_count",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "rowCount",
+            "columnName": "row_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isComplete",
+            "columnName": "is_complete",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completeness",
+            "columnName": "completeness",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isActive",
+            "columnName": "is_active",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "activatedAtMs",
+            "columnName": "activated_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "authorization",
+            "columnName": "authorization",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "freshness",
+            "columnName": "freshness",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "invalidatedAtMs",
+            "columnName": "invalidated_at_ms",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "query_key",
+            "generation"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_query_snapshots_query_key_is_active",
+            "unique": false,
+            "columnNames": [
+              "query_key",
+              "is_active"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_query_snapshots_query_key_is_active` ON `${TABLE_NAME}` (`query_key`, `is_active`)"
+          },
+          {
+            "name": "index_query_snapshots_query_key_is_complete_activated_at_ms",
+            "unique": false,
+            "columnNames": [
+              "query_key",
+              "is_complete",
+              "activated_at_ms"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_query_snapshots_query_key_is_complete_activated_at_ms` ON `${TABLE_NAME}` (`query_key`, `is_complete`, `activated_at_ms`)"
+          }
+        ]
+      },
+      {
+        "tableName": "cached_transactions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`query_key` TEXT NOT NULL, `generation` INTEGER NOT NULL, `source_file` TEXT NOT NULL, `transaction_id` TEXT NOT NULL, `owner` TEXT NOT NULL, `date` TEXT NOT NULL, `month` TEXT NOT NULL, `merchant` TEXT NOT NULL, `amount_cents` INTEGER NOT NULL, `category` TEXT NOT NULL, `card` TEXT, `note` TEXT, `updated_at_ms` INTEGER NOT NULL, PRIMARY KEY(`query_key`, `generation`, `source_file`, `transaction_id`), FOREIGN KEY(`query_key`, `generation`) REFERENCES `query_snapshots`(`query_key`, `generation`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "queryKey",
+            "columnName": "query_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "generation",
+            "columnName": "generation",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceFile",
+            "columnName": "source_file",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transactionId",
+            "columnName": "transaction_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "owner",
+            "columnName": "owner",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "date",
+            "columnName": "date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "month",
+            "columnName": "month",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "merchant",
+            "columnName": "merchant",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "amountCents",
+            "columnName": "amount_cents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "category",
+            "columnName": "category",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "card",
+            "columnName": "card",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updated_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "query_key",
+            "generation",
+            "source_file",
+            "transaction_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cached_transactions_query_key_generation",
+            "unique": false,
+            "columnNames": [
+              "query_key",
+              "generation"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_transactions_query_key_generation` ON `${TABLE_NAME}` (`query_key`, `generation`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "query_snapshots",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "query_key",
+              "generation"
+            ],
+            "referencedColumns": [
+              "query_key",
+              "generation"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "cached_todos",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`query_key` TEXT NOT NULL, `generation` INTEGER NOT NULL, `todo_id` TEXT NOT NULL, `owner` TEXT NOT NULL, `title` TEXT NOT NULL, `done` INTEGER NOT NULL, `flagged` INTEGER NOT NULL, `lane` TEXT, `project` TEXT, `area` TEXT, `due` TEXT, `notes` TEXT, `priority` INTEGER, `created_at` TEXT, `updated_at` TEXT, `completed_at` TEXT, `updated_at_ms` INTEGER NOT NULL, `source_file` TEXT NOT NULL, PRIMARY KEY(`query_key`, `generation`, `todo_id`), FOREIGN KEY(`query_key`, `generation`) REFERENCES `query_snapshots`(`query_key`, `generation`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "queryKey",
+            "columnName": "query_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "generation",
+            "columnName": "generation",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "todoId",
+            "columnName": "todo_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "owner",
+            "columnName": "owner",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "done",
+            "columnName": "done",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "flagged",
+            "columnName": "flagged",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lane",
+            "columnName": "lane",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "project",
+            "columnName": "project",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "area",
+            "columnName": "area",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "due",
+            "columnName": "due",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "priority",
+            "columnName": "priority",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "completedAt",
+            "columnName": "completed_at",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updated_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceFile",
+            "columnName": "source_file",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "query_key",
+            "generation",
+            "todo_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cached_todos_query_key_generation",
+            "unique": false,
+            "columnNames": [
+              "query_key",
+              "generation"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_todos_query_key_generation` ON `${TABLE_NAME}` (`query_key`, `generation`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "query_snapshots",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "query_key",
+              "generation"
+            ],
+            "referencedColumns": [
+              "query_key",
+              "generation"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "cached_btc_buys",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`query_key` TEXT NOT NULL, `generation` INTEGER NOT NULL, `source_file` TEXT NOT NULL, `buy_id` TEXT NOT NULL, `owner` TEXT NOT NULL, `date` TEXT NOT NULL, `month` TEXT NOT NULL, `source` TEXT NOT NULL, `sats` INTEGER NOT NULL, `price_usd_cents` INTEGER NOT NULL, `usd_cents` INTEGER NOT NULL, `note` TEXT, `status` TEXT, `cost_basis_status` TEXT, `logged_by` TEXT, `archimedes_request_id` TEXT, `updated_at_ms` INTEGER NOT NULL, PRIMARY KEY(`query_key`, `generation`, `source_file`, `buy_id`), FOREIGN KEY(`query_key`, `generation`) REFERENCES `query_snapshots`(`query_key`, `generation`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "queryKey",
+            "columnName": "query_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "generation",
+            "columnName": "generation",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceFile",
+            "columnName": "source_file",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "buyId",
+            "columnName": "buy_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "owner",
+            "columnName": "owner",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "date",
+            "columnName": "date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "month",
+            "columnName": "month",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sats",
+            "columnName": "sats",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "priceUsdCents",
+            "columnName": "price_usd_cents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "usdCents",
+            "columnName": "usd_cents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "costBasisStatus",
+            "columnName": "cost_basis_status",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "loggedBy",
+            "columnName": "logged_by",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "archimedesRequestId",
+            "columnName": "archimedes_request_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updated_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "query_key",
+            "generation",
+            "source_file",
+            "buy_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cached_btc_buys_query_key_generation",
+            "unique": false,
+            "columnNames": [
+              "query_key",
+              "generation"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_btc_buys_query_key_generation` ON `${TABLE_NAME}` (`query_key`, `generation`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "query_snapshots",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "query_key",
+              "generation"
+            ],
+            "referencedColumns": [
+              "query_key",
+              "generation"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "cached_btc_accounts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`query_key` TEXT NOT NULL, `generation` INTEGER NOT NULL, `owner` TEXT NOT NULL, `account_key` TEXT NOT NULL, `label` TEXT NOT NULL, `custody` TEXT NOT NULL, `sats` INTEGER NOT NULL, `fiat_cents` INTEGER NOT NULL, `fiat_available` INTEGER NOT NULL, `fiat_price_cents` INTEGER, `fiat_quoted_at` TEXT, `fiat_source` TEXT, `fiat_confidence` TEXT, `as_of` TEXT NOT NULL, `schema_version` INTEGER NOT NULL, `source_file` TEXT NOT NULL, `updated_at_ms` INTEGER NOT NULL, PRIMARY KEY(`query_key`, `generation`, `owner`, `account_key`), FOREIGN KEY(`query_key`, `generation`) REFERENCES `query_snapshots`(`query_key`, `generation`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "queryKey",
+            "columnName": "query_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "generation",
+            "columnName": "generation",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "owner",
+            "columnName": "owner",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountKey",
+            "columnName": "account_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "custody",
+            "columnName": "custody",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sats",
+            "columnName": "sats",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fiatCents",
+            "columnName": "fiat_cents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fiatAvailable",
+            "columnName": "fiat_available",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fiatPriceCents",
+            "columnName": "fiat_price_cents",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "fiatQuotedAt",
+            "columnName": "fiat_quoted_at",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fiatSource",
+            "columnName": "fiat_source",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fiatConfidence",
+            "columnName": "fiat_confidence",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "asOf",
+            "columnName": "as_of",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "schemaVersion",
+            "columnName": "schema_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceFile",
+            "columnName": "source_file",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updated_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "query_key",
+            "generation",
+            "owner",
+            "account_key"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cached_btc_accounts_query_key_generation",
+            "unique": false,
+            "columnNames": [
+              "query_key",
+              "generation"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_btc_accounts_query_key_generation` ON `${TABLE_NAME}` (`query_key`, `generation`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "query_snapshots",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "query_key",
+              "generation"
+            ],
+            "referencedColumns": [
+              "query_key",
+              "generation"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '0ee062c09459de37498657d9d17514e4')"
+    ]
+  }
+}
