@@ -554,6 +554,55 @@ describe("main-process row repository", () => {
     })
   })
 
+  // A Bitcoin-native spend is a positive-sats row with a non-Income category and
+  // an account key. The ledger's own contract writes exactly this shape through
+  // api.transaction (convex/btcLedger.test.ts:418-422) and the write validator
+  // accepts it (electron/convexMutations.ts bitcoin branch). The read decoder
+  // must surface it, not fail the whole envelope. Positivity and the account
+  // requirement are pinned in the same test so the admission cannot widen again.
+  it("decodes a bitcoin-native spend and keeps non-positive sats fail-closed", async () => {
+    const decode = (row: Record<string, unknown>) => {
+      const repository = createConvexRowRepository({
+        configuration: () => ({ generation: 1, settings }),
+        post: async () => success({ complete: true, rows: [transaction(row)] }),
+      })
+      return repository.query({ kind: "transactions" }, "victor")
+    }
+
+    const spend = {
+      txId: "btc-spend",
+      merchant: "Merchant",
+      amountCents: int64(10_000n),
+      category: "Shopping",
+      card: "zeus_lightning",
+      bitcoinAccountKey: "zeus",
+    }
+
+    // Positive sats, non-Income, account present -> decodes.
+    const ok = await decode({ ...spend, amountSats: int64(25_000n) })
+    expect(ok.status).toBe("ok")
+    if (ok.status !== "ok") return
+    expect(ok.rows[0]).toMatchObject({
+      txId: "btc-spend",
+      category: "Shopping",
+      amountSats: 25_000n,
+      bitcoinAccountKey: "zeus",
+      card: "zeus_lightning",
+      spendAmount: 10_000n,
+      hasOppositeSpendSign: false,
+    })
+
+    // Negative sats, non-Income, account present -> fail closed.
+    const negative = await decode({ ...spend, amountSats: int64(-25_000n) })
+    expect(negative.status).toBe("error")
+    expect(negative).toMatchObject({ code: "invalid-response" })
+
+    // Zero sats, non-Income, account present -> fail closed.
+    const zero = await decode({ ...spend, amountSats: int64(0n) })
+    expect(zero.status).toBe("error")
+    expect(zero).toMatchObject({ code: "invalid-response" })
+  })
+
   it("asserts visibility locally even if the backend returns the wrong owner", async () => {
     const repository = createConvexRowRepository({
       configuration: () => ({ generation: 1, settings }),
