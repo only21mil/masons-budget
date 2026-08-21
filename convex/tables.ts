@@ -1977,18 +1977,59 @@ function sameTransaction(
   );
 }
 
-const BITCOIN_SPEND_PAYMENT_SOURCES = new Set(["lightning", "on_chain"]);
-const FIAT_PAYMENT_SOURCES = new Set([
+export const BITCOIN_PAYMENT_SOURCES = new Set([
+  "river",
+  "zeus_lightning",
+  "zeus_on_chain",
+  "strike",
+]);
+const LEGACY_BITCOIN_SPEND_PAYMENT_SOURCES = new Set([
+  "lightning",
+  "on_chain",
+]);
+export const FIAT_PAYMENT_SOURCES = new Set([
   "coinbase_card",
   "aven",
   "sofi_card",
   "capital_one_vx",
 ]);
 
-function isBitcoinSpendTransaction(row: {
+function isActiveBitcoinPaymentSource(row: {
   card?: string;
 }): boolean {
-  return row.card !== undefined && BITCOIN_SPEND_PAYMENT_SOURCES.has(row.card);
+  return row.card !== undefined && BITCOIN_PAYMENT_SOURCES.has(row.card);
+}
+
+function isLegacyBitcoinSpendTransaction(row: { card?: string }): boolean {
+  return (
+    row.card !== undefined && LEGACY_BITCOIN_SPEND_PAYMENT_SOURCES.has(row.card)
+  );
+}
+
+function isBitcoinPostingTransaction(row: { card?: string }): boolean {
+  return isActiveBitcoinPaymentSource(row) || isLegacyBitcoinSpendTransaction(row);
+}
+
+function requireBitcoinPaymentSourceDirection(
+  card: string | undefined,
+  kind: "spend" | "credit",
+  category: string,
+  transactionId: string,
+) {
+  const row = { card };
+  if (!isBitcoinPostingTransaction(row)) return;
+  const expectedKind =
+    isActiveBitcoinPaymentSource(row) && category === "Income"
+      ? "credit"
+      : "spend";
+  if (kind !== expectedKind) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Bitcoin payment-source direction must match spend or Income intent.",
+      "transaction",
+      transactionId,
+    );
+  }
 }
 
 function validateDeviceTransactionPaymentSource(
@@ -2007,7 +2048,7 @@ function validateDeviceTransactionPaymentSource(
       existingSource !== undefined &&
       existingSource !== "river_bitcoin_bill_pay" &&
       !FIAT_PAYMENT_SOURCES.has(existingSource) &&
-      !BITCOIN_SPEND_PAYMENT_SOURCES.has(existingSource)
+      !BITCOIN_PAYMENT_SOURCES.has(existingSource)
     ) {
       deviceFailure(
         "VALIDATION_FAILED",
@@ -2037,7 +2078,7 @@ function validateDeviceTransactionPaymentSource(
     }
     return;
   }
-  if (BITCOIN_SPEND_PAYMENT_SOURCES.has(source)) return;
+  if (BITCOIN_PAYMENT_SOURCES.has(source)) return;
 
   const requestedAccountKey = optionalText(row.bitcoinAccountKey);
   if (
@@ -2067,17 +2108,17 @@ function validateTransactionBitcoinFields(
       row.txId,
     );
   }
-  if (isBitcoinSpendTransaction(row)) {
+  if (isBitcoinPostingTransaction(row)) {
     if (!postsToHouseholdBitcoinLedger(row.owner)) {
       deviceFailure(
         "VALIDATION_FAILED",
-        "Lightning and on-chain spends are available only for the adult household ledger.",
+        "Bitcoin payment-source transactions are available only for the adult household ledger.",
         "transaction",
         row.txId,
       );
     }
     if (
-      row.category === "Income" ||
+      (isLegacyBitcoinSpendTransaction(row) && row.category === "Income") ||
       row.amountSats === undefined ||
       row.amountSats <= 0n ||
       row.bitcoinAccountKey === undefined ||
@@ -2085,7 +2126,9 @@ function validateTransactionBitcoinFields(
     ) {
       deviceFailure(
         "VALIDATION_FAILED",
-        "Lightning and on-chain spends require a non-Income category, positive amountSats, and bitcoinAccountKey.",
+        isLegacyBitcoinSpendTransaction(row)
+          ? "Retired Bitcoin payment sources remain debit-only and require a non-Income category, positive amountSats, and bitcoinAccountKey."
+          : "Bitcoin payment-source transactions require positive amountSats and bitcoinAccountKey.",
         "transaction",
         row.txId,
       );
@@ -2097,7 +2140,7 @@ function validateTransactionBitcoinFields(
     if (row.category !== "Income" || row.amountSats <= 0n) {
       deviceFailure(
         "VALIDATION_FAILED",
-        "Only Income, Lightning, or on-chain transactions may carry positive amountSats.",
+        "Only Income or Bitcoin payment-source transactions may carry positive amountSats.",
         "transaction",
         row.txId,
       );
@@ -2132,10 +2175,12 @@ function storedTransactionBalanceDelta(row: {
   if (row.amountSats === undefined || row.bitcoinAccountKey === undefined) {
     throw new ConvexError("Posted transaction is missing its Bitcoin posting fields.");
   }
+  // This row is already posted, so category is authoritative for its stored
+  // sign. Source and account metadata select the posting family and account.
   if (row.category === "Income") {
     return { accountKey: row.bitcoinAccountKey, delta: row.amountSats };
   }
-  if (isBitcoinSpendTransaction(row)) {
+  if (isBitcoinPostingTransaction(row)) {
     return { accountKey: row.bitcoinAccountKey, delta: -row.amountSats };
   }
   throw new ConvexError(`Posted transaction ${row.txId} has no Bitcoin posting source.`);
@@ -2149,17 +2194,35 @@ async function requestedTransactionBalanceDelta(
   if (!postsToHouseholdBitcoinLedger(row.owner) || row.amountSats === undefined) {
     return null;
   }
-  if (isBitcoinSpendTransaction(row)) {
+  // Incoming input is attacker-shaped. Pin an existing Income account before
+  // dispatch; wrappers validate kind/category, so a wire never infers direction.
+  const requestedAccountKey = row.bitcoinAccountKey?.trim();
+  if (
+    existingIncomeAccountKey !== undefined &&
+    requestedAccountKey !== undefined &&
+    requestedAccountKey !== existingIncomeAccountKey
+  ) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "A posted sat-denominated Income row cannot change its Bitcoin account; record a transfer instead.",
+      "transaction",
+      row.txId,
+    );
+  }
+  if (isActiveBitcoinPaymentSource(row) && row.category === "Income") {
+    return { accountKey: requestedAccountKey!, delta: row.amountSats };
+  }
+  if (isBitcoinPostingTransaction(row)) {
     return {
-      accountKey: row.bitcoinAccountKey!.trim(),
+      accountKey: requestedAccountKey!,
       delta: -row.amountSats,
     };
   }
   if (row.category !== "Income") return null;
   const accountKey = existingIncomeAccountKey ?? await riverAccountKey(ctx, row.owner);
   if (
-    row.bitcoinAccountKey !== undefined &&
-    row.bitcoinAccountKey.trim() !== accountKey
+    requestedAccountKey !== undefined &&
+    requestedAccountKey !== accountKey
   ) {
     deviceFailure(
       "VALIDATION_FAILED",
@@ -3346,17 +3409,12 @@ export const upsertTransaction = mutation({
       transaction.kind ?? "spend",
       transaction.category,
     );
-    if (
-      isBitcoinSpendTransaction({ card: optionalText(transaction.card) }) &&
-      (transaction.kind ?? "spend") !== "spend"
-    ) {
-      deviceFailure(
-        "VALIDATION_FAILED",
-        "Lightning and on-chain transactions must use kind spend.",
-        "transaction",
-        transaction.id,
-      );
-    }
+    requireBitcoinPaymentSourceDirection(
+      optionalText(transaction.card),
+      transaction.kind ?? "spend",
+      transaction.category,
+      transaction.id,
+    );
     const row = {
       txId: transaction.id,
       owner,
@@ -5209,17 +5267,12 @@ export const upsertTransactionFromDevice = mutation({
       args.transaction.kind,
       args.transaction.category,
     );
-    if (
-      isBitcoinSpendTransaction({ card: optionalText(args.transaction.card) }) &&
-      args.transaction.kind !== "spend"
-    ) {
-      deviceFailure(
-        "VALIDATION_FAILED",
-        "Lightning and on-chain transactions must use kind spend.",
-        "transaction",
-        args.transaction.id,
-      );
-    }
+    requireBitcoinPaymentSourceDirection(
+      optionalText(args.transaction.card),
+      args.transaction.kind,
+      args.transaction.category,
+      args.transaction.id,
+    );
     const outcome = await upsertTransactionRow(
       ctx,
       {

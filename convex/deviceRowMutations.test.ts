@@ -291,7 +291,7 @@ describe("device row authorization", () => {
     expect(stored!.lastSeenAt).toBe(0);
   });
 
-  it("requires bitcoin authority for sat-Income and Lightning postings", async () => {
+  it("requires bitcoin authority for sat-Income and Bitcoin-spend postings", async () => {
     await seedBtcLedger("victor");
     const transactionOnly = await pairMobileDevice(
       t,
@@ -326,14 +326,14 @@ describe("device row authorization", () => {
         sourceFile: "transactions",
         transaction: {
           ...income,
-          id: "device-lightning-spend",
-          merchant: "Lightning merchant",
+          id: "device-zeus-lightning-spend",
+          merchant: "Zeus Lightning merchant",
           amountCents: 100n,
           amountSats: 50n,
           bitcoinAccountKey: "river",
           kind: "spend",
           category: "Food",
-          card: "lightning",
+          card: "zeus_lightning",
         },
       }),
     ).rejects.toThrow(/Unauthorized mobile device/);
@@ -424,15 +424,68 @@ describe("device row authorization", () => {
       }),
       "VALIDATION_FAILED",
     );
-    await expect(
+    for (const source of ["river", "zeus_lightning", "zeus_on_chain", "strike"]) {
+      await expect(
+        request({
+          ...base,
+          id: `valid-${source}`,
+          card: source,
+          amountSats: 50n,
+          bitcoinAccountKey: "river",
+        }),
+      ).resolves.toMatchObject({ outcome: "inserted" });
+    }
+    for (const source of ["river", "zeus_lightning", "zeus_on_chain", "strike"]) {
+      await expect(
+        request({
+          ...base,
+          id: `income-${source}`,
+          merchant: "Bitcoin income",
+          kind: "credit",
+          category: "Income",
+          card: source,
+          amountSats: 60n,
+          bitcoinAccountKey: "river",
+        }),
+      ).resolves.toMatchObject({ outcome: "inserted" });
+    }
+    await expectDeviceError(
       request({
         ...base,
-        id: "valid-lightning",
-        card: "lightning",
-        amountSats: 50n,
+        id: "income-missing-account",
+        merchant: "Bitcoin income",
+        kind: "credit",
+        category: "Income",
+        card: "strike",
+        amountSats: 60n,
+      }),
+      "VALIDATION_FAILED",
+    );
+    await expectDeviceError(
+      request({
+        ...base,
+        id: "spend-as-credit",
+        merchant: "Refund",
+        amountCents: -100n,
+        kind: "credit",
+        card: "zeus_lightning",
+        amountSats: 60n,
         bitcoinAccountKey: "river",
       }),
-    ).resolves.toMatchObject({ outcome: "inserted" });
+      "VALIDATION_FAILED",
+    );
+    for (const source of ["lightning", "on_chain"]) {
+      await expectDeviceError(
+        request({
+          ...base,
+          id: `retired-${source}`,
+          card: source,
+          amountSats: 50n,
+          bitcoinAccountKey: "river",
+        }),
+        "VALIDATION_FAILED",
+      );
+    }
 
     await t.run(async (ctx) => {
       await ctx.db.insert("transactions", {
@@ -467,6 +520,56 @@ describe("device row authorization", () => {
       "VALIDATION_FAILED",
     );
 
+    for (const source of ["lightning", "on_chain"]) {
+      const id = `legacy-${source}`;
+      await t.run(async (ctx) => {
+        await ctx.db.insert("transactions", {
+          txId: id,
+          owner: "victor",
+          date: "2026-07-30",
+          month: "2026-07",
+          merchant: "Legacy Bitcoin merchant",
+          amountCents: 100n,
+          category: "Food",
+          card: source,
+          amountSats: 50n,
+          bitcoinAccountKey: "river",
+          balancePostingVersion: 1n,
+          sourceFile: "transactions",
+          updatedAtMs: 1,
+        });
+      });
+      await expect(
+        request(
+          {
+            ...base,
+            id,
+            card: source,
+            amountSats: 50n,
+            bitcoinAccountKey: "river",
+            note: "metadata edit",
+          },
+          1,
+        ),
+      ).resolves.toMatchObject({ outcome: "updated" });
+      await expectDeviceError(
+        request(
+          {
+            ...base,
+            id,
+            merchant: "Legacy Bitcoin income",
+            kind: "credit",
+            category: "Income",
+            card: source,
+            amountSats: 50n,
+            bitcoinAccountKey: "river",
+          },
+          await transactionRevision(id),
+        ),
+        "VALIDATION_FAILED",
+      );
+    }
+
     const state = await t.run(async (ctx) => ({
       rows: await ctx.db.query("transactions").collect(),
       balance: await ctx.db
@@ -477,10 +580,23 @@ describe("device row authorization", () => {
         .unique(),
     }));
     expect(state.rows.map((row) => row.txId).sort()).toEqual([
+      "income-river",
+      "income-strike",
+      "income-zeus_lightning",
+      "income-zeus_on_chain",
       "legacy-card",
-      "valid-lightning",
+      "legacy-lightning",
+      "legacy-on_chain",
+      "valid-river",
+      "valid-strike",
+      "valid-zeus_lightning",
+      "valid-zeus_on_chain",
     ]);
-    expect(state.balance!.totals.sats).toBe(999_950n);
+    expect(state.balance!.accounts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "river", sats: 1_000_040n }),
+      ]),
+    );
   });
 
   it("requires transaction and Bitcoin authority for linked income buys", async () => {

@@ -13,6 +13,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { convexTest } from "convex-test";
 import type { FunctionReference, OptionalRestArgs } from "convex/server";
+import { readFileSync } from "node:fs";
 
 import schema from "./schema";
 import {
@@ -26,7 +27,46 @@ import {
   projectBudgetDocument,
   projectFinanceDocument,
 } from "./documentProjection";
-import { PUBLIC_QUERY_INDEX_PLAN } from "./tables";
+import {
+  BITCOIN_PAYMENT_SOURCES,
+  FIAT_PAYMENT_SOURCES,
+  PUBLIC_QUERY_INDEX_PLAN,
+} from "./tables";
+
+const paymentSourceFixture = JSON.parse(
+  readFileSync(
+    new URL("../shared/domain/fixtures/payment-source-cases.json", import.meta.url),
+    "utf8",
+  ),
+) as {
+  contractVersion: number;
+  sources: Array<{
+    wire: string;
+    route: "transaction" | "btc_bill_pay";
+    classification: "bill_pay" | "fiat_card" | "bitcoin_native";
+  }>;
+};
+
+describe("payment-source catalogue conformance", () => {
+  it("matches the shared fixture exactly", () => {
+    expect(paymentSourceFixture.contractVersion).toBe(2);
+    expect([...FIAT_PAYMENT_SOURCES]).toEqual(
+      paymentSourceFixture.sources
+        .filter((source) => source.classification === "fiat_card")
+        .map((source) => source.wire),
+    );
+    expect([...BITCOIN_PAYMENT_SOURCES]).toEqual(
+      paymentSourceFixture.sources
+        .filter((source) => source.classification === "bitcoin_native")
+        .map((source) => source.wire),
+    );
+    expect(
+      paymentSourceFixture.sources
+        .filter((source) => source.classification === "bill_pay")
+        .map(({ wire, route }) => ({ wire, route })),
+    ).toEqual([{ wire: "river_bitcoin_bill_pay", route: "btc_bill_pay" }]);
+  });
+});
 
 // A local module map rather than the shared one in harness.test-utils.ts:
 // tables.ts is new and other lanes are editing that file right now, so this

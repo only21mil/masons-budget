@@ -23,21 +23,25 @@ export const UPSERT_TRANSACTION_PATH = "tables:upsertTransaction" as const
 export const UPSERT_BTC_BILL_PAY_PATH = "tables:upsertBtcBillPay" as const
 
 export const PAYMENT_SOURCES = [
-  "river_bitcoin_bill_pay",
+  "river",
+  "zeus_lightning",
+  "zeus_on_chain",
+  "strike",
   "coinbase_card",
   "aven",
   "sofi_card",
   "capital_one_vx",
-  "lightning",
-  "on_chain",
+  "river_bitcoin_bill_pay",
 ] as const
 
 export type PaymentSource = (typeof PAYMENT_SOURCES)[number]
 export type PaymentSourceRoute = "transaction" | "btc_bill_pay"
 
-const BITCOIN_SPEND_SOURCES: ReadonlySet<PaymentSource> = new Set([
-  "lightning",
-  "on_chain",
+const BITCOIN_NATIVE_SOURCES: ReadonlySet<PaymentSource> = new Set([
+  "river",
+  "zeus_lightning",
+  "zeus_on_chain",
+  "strike",
 ])
 
 export function isPaymentSource(value: unknown): value is PaymentSource {
@@ -95,7 +99,7 @@ export interface TransactionWriteInput {
   /** Closed source intent. The builder maps it onto the retained `card` field. */
   readonly paymentSource?: PaymentSource
   readonly note?: string
-  /** Exact sats for Bitcoin Income or a Lightning/on-chain spend. */
+  /** Positive sats magnitude for a Bitcoin-native spend or Income posting. */
   readonly amountSats?: string | bigint
   readonly bitcoinAccountKey?: string
 }
@@ -420,23 +424,24 @@ function transactionPaymentFields(
     )
   }
 
-  if (BITCOIN_SPEND_SOURCES.has(paymentSource)) {
+  if (BITCOIN_NATIVE_SOURCES.has(paymentSource)) {
     if (!isAdult(owner)) {
       throw new WriteContractError(
         "write-not-authorized",
-        "Lightning and on-chain spends are available only to the adult household ledger",
+        "Bitcoin-native payment sources are available only to the adult household ledger",
       )
     }
+    const isSpend = kind === "spend" && category !== "Income"
+    const isIncome = kind === "credit" && category === "Income"
     if (
-      kind !== "spend" ||
-      category === "Income" ||
+      (!isSpend && !isIncome) ||
       amountSats === undefined ||
       amountSats <= 0n ||
       bitcoinAccountKey === undefined
     ) {
       throw new WriteContractError(
         "payment-source-fields",
-        "Lightning and on-chain spends require kind spend, a non-Income category, positive amountSats, and bitcoinAccountKey",
+        "Bitcoin-native payment sources require a spend with a non-Income category or a credit with category Income, plus positive amountSats and bitcoinAccountKey",
       )
     }
   } else if (amountSats !== undefined || bitcoinAccountKey !== undefined) {
