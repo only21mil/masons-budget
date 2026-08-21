@@ -157,7 +157,8 @@ class RowReadModelLoader(
             emptyList(),
             RowReadProjection.BITCOIN_BILL_PAYS.sourceName,
             stamp,
-            BtcBillPayRow::toDomain,
+            map = BtcBillPayRow::toDomain,
+            completeEmptyIsLive = true,
         )
         val budgetSlice = budget.await().toBudgetSlice(stamp)
         val latestBuy = buySlice.value.maxByOrNull { it.date }
@@ -351,10 +352,11 @@ private fun <T, R> ConvexResult<RowSnapshot<T>>.toMappedSlice(
     source: String,
     stamp: Long,
     map: (T) -> R,
+    completeEmptyIsLive: Boolean = false,
 ): Slice<List<R>> = when (this) {
     is ConvexResult.Ok -> when {
         !value.complete -> errorSlice(empty, source, RowReadFailure.MALFORMED_PAYLOAD)
-        value.rows.isEmpty() -> emptySlice(empty, source)
+        value.rows.isEmpty() && !completeEmptyIsLive -> emptySlice(empty, source)
         else -> liveSlice(value.rows.map(map), source, stamp)
     }
     ConvexResult.Missing -> emptySlice(empty, source)
