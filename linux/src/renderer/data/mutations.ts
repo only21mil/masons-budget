@@ -263,6 +263,7 @@ export function bitcoinBuyLinkFor(input: BitcoinBuyLinkInput): BitcoinBuyLink | 
       date: input.date,
       amountCents: input.amountCents,
       source: incomeSource,
+      sourceFile: "income",
       ...(note ? { note } : {}),
       ...(loggedBy ? { loggedBy } : {}),
     },

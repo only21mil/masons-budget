@@ -405,6 +405,7 @@ describe("income recorded as a Bitcoin buy", () => {
         amountCents: 250_000n,
         // The income names the payer, as every other income row does.
         source: "Employer",
+        sourceFile: "income",
       },
     })
     // The server's equality requirements, restated where the payload is built.

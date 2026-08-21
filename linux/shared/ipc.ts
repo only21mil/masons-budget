@@ -32,6 +32,7 @@ export interface VogelVaultLinkedIncome {
   readonly date: string
   readonly amountCents: bigint
   readonly source: string
+  readonly sourceFile: "income"
   readonly note?: string
   readonly loggedBy?: string
 }

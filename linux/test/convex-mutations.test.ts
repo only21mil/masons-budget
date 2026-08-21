@@ -1130,6 +1130,7 @@ describe("paired-device main controller", () => {
         date: "2026-08-03",
         amountCents: 250_000n,
         source: "Employer",
+        sourceFile: "income" as const,
       },
     }
     expect(validateMutationRequest(linked)).toMatchObject({
@@ -1143,6 +1144,7 @@ describe("paired-device main controller", () => {
       { ...linked.linkedIncome, date: "2026-08-04" },
       { ...linked.linkedIncome, amountCents: 250_001n },
       { ...linked.linkedIncome, owner: "mason" as const },
+      { ...linked.linkedIncome, sourceFile: "paycheck" },
     ]) {
       expect(validateMutationRequest({ ...linked, linkedIncome: broken })).toBeNull()
     }
@@ -1173,9 +1175,58 @@ describe("paired-device main controller", () => {
           date: "2026-08-03",
           amountCents: encodeConvexInt64(250_000n),
           source: "Employer",
+          sourceFile: "income",
         },
       },
     })
+    if (body === null) throw new Error("expected a captured linked-income wire body")
+    const wireLinkedIncome = (body["args"] as {
+      linkedIncome: Record<string, unknown>
+    }).linkedIncome
+    expect(Object.keys(wireLinkedIncome).sort()).toEqual([
+      "amountCents",
+      "date",
+      "id",
+      "owner",
+      "source",
+      "sourceFile",
+    ])
+  })
+
+  it("pins the bill-pay platform on the wire over a legacy inbound label", async () => {
+    let body: Record<string, unknown> | null = null
+    const controller = createPairedDeviceController({
+      store: store({ ...snapshot, capabilities: ["btcBillPay.upsert"] }),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: async (_endpoint, raw) => {
+        body = JSON.parse(raw) as Record<string, unknown>
+        return success({ ok: true, entityId: "bill-platform-01", outcome: "updated" })
+      },
+    })
+
+    await expect(controller.mutate({
+      kind: "btcBillPay.upsert",
+      requestId: "request_bill_platform",
+      actor: "victor",
+      id: "bill-platform-01",
+      owner: "victor",
+      date: "2026-08-03",
+      merchant: "Internet Provider",
+      category: "Utilities",
+      budgetEffect: "budget_category",
+      amountUsdCents: 7_999n,
+      btcSpentSats: 85_000n,
+      btcPriceCents: 9_410_000n,
+      platform: "River",
+      feeUsdCents: 40n,
+    }, "victor")).resolves.toMatchObject({ status: "ok" })
+
+    if (body === null) throw new Error("expected a captured bill-pay wire body")
+    const wireBillPay = (body["args"] as {
+      billPay: Record<string, unknown>
+    }).billPay
+    expect(wireBillPay.platform).toBe("river_bitcoin_bill_pay")
   })
 
   it("refuses a linked income row without the income grant", async () => {
@@ -1204,6 +1255,7 @@ describe("paired-device main controller", () => {
         date: "2026-08-03",
         amountCents: 250_000n,
         source: "Employer",
+        sourceFile: "income",
       },
     }, "victor")).resolves.toMatchObject({ status: "unauthorized" })
     expect(post).not.toHaveBeenCalled()

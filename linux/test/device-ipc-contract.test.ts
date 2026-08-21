@@ -108,6 +108,7 @@ const requests = [
       date: "2026-07-30",
       amountCents: 10_000n,
       source: "Example",
+      sourceFile: "income",
     },
   },
   {

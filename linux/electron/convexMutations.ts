@@ -427,13 +427,14 @@ function validateLinkedIncome(
 ): VogelVaultLinkedIncome {
   const record = exactObject(
     value,
-    ["id", "owner", "date", "amountCents", "source"],
+    ["id", "owner", "date", "amountCents", "source", "sourceFile"],
     ["note", "loggedBy"],
   )
   const id = boundedText(record["id"], PAIRED_DEVICE_LIMITS.maxIdentifier)
   const owner = canonicalFinancialOwner(member(record["owner"]))
   const date = exactDate(record["date"])
   const amountCents = positiveInt64(record["amountCents"])
+  if (record["sourceFile"] !== "income") throw new InvalidRequest()
   if (id !== buy.id || owner !== buy.owner || date !== buy.date || amountCents !== buy.usdCents) {
     throw new InvalidRequest()
   }
@@ -443,6 +444,7 @@ function validateLinkedIncome(
     date,
     amountCents,
     source: boundedText(record["source"]),
+    sourceFile: "income",
     ...optionalField("note", optionalText(record, "note")),
     ...optionalField("loggedBy", optionalText(record, "loggedBy")),
   }
@@ -1043,6 +1045,7 @@ function mutationArgs(
                 date: request.linkedIncome.date,
                 amountCents: encoded(request.linkedIncome.amountCents),
                 source: request.linkedIncome.source,
+                sourceFile: "income",
                 ...optionalField("note", request.linkedIncome.note),
                 ...optionalField("loggedBy", request.linkedIncome.loggedBy),
               },
@@ -1071,7 +1074,7 @@ function mutationArgs(
           amountUsdCents: encoded(request.amountUsdCents),
           btcSpentSats: encoded(request.btcSpentSats),
           btcPriceCents: encoded(request.btcPriceCents),
-          ...optionalField("platform", request.platform),
+          platform: "river_bitcoin_bill_pay",
           ...optionalField("note", request.note),
           feeUsdCents: encoded(request.feeUsdCents),
           ...optionalField("reference", request.reference),
