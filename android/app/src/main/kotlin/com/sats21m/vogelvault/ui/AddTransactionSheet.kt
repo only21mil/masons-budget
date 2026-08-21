@@ -80,9 +80,8 @@ internal data class AddTransactionDraft(
     val amount: String,
     val inputUnit: DisplayUnit,
     // `card` remains as a source-compatible bridge for the older add surface.
-    // New callers must use paymentSource; new drafts carry the canonical persisted
-    // card vocabulary rather than the selector routing wire.
-    val card: String = PaymentSource.DEFAULT.persistedCard,
+    // New callers use paymentSource; new drafts carry the canonical source wire.
+    val card: String = PaymentSource.DEFAULT.wire,
     val date: LocalDate = LocalDate.now(ZoneOffset.UTC),
     val note: String = "",
     val owner: FamilyMember = FamilyMember.VICTOR,
@@ -118,12 +117,14 @@ internal const val BITCOIN_ACCOUNT_SELECTOR_TEST_TAG = "bitcoin-account-selector
 private fun AddTransactionDraft.selectedPaymentSource(): PaymentSource {
     // Older callers supplied values such as "Debit" through `card`. Recognise a
     // valid wire from that bridge, while making the new enum selection primary.
-    val legacy = PaymentSource.fromWire(card)
-    return if (paymentSource == PaymentSource.DEFAULT && legacy != PaymentSource.DEFAULT) {
-        legacy
-    } else {
-        paymentSource
+    if (paymentSource != PaymentSource.DEFAULT) return paymentSource
+
+    val legacyWire = card.trim()
+    PaymentSource.fromWireOrNull(legacyWire)?.let { return it }
+    require(!PaymentSource.isRetiredTransactionWire(legacyWire)) {
+        "Retired payment source $legacyWire cannot create a new transaction"
     }
+    return paymentSource
 }
 
 /** Accounts usable by a write for the active viewer's canonical ledger owner. */
@@ -356,7 +357,7 @@ internal fun prepareTransaction(
             amountCents = amountCents,
             category = category,
             kind = kind,
-            card = source.persistedCard,
+            card = source.wire,
             note = draft.note.trim().takeIf(String::isNotEmpty),
             // Fiat card sources deliberately omit both Bitcoin fields, even when
             // a stale account key or a converted input was present in the draft.
@@ -549,7 +550,7 @@ internal fun AddTransactionSheet(
     var paymentSourceWire by rememberSaveable {
         mutableStateOf(paymentSourceStore.current().wire)
     }
-    val paymentSource = PaymentSource.fromWire(paymentSourceWire)
+    val paymentSource = PaymentSource.fromWireOrDefault(paymentSourceWire)
 
     // One process-owned id survives dismissal and Activity recreation until the
     // device endpoint confirms acceptance. Every retry therefore addresses the
@@ -619,7 +620,7 @@ internal fun AddTransactionSheet(
         category = selectedCategory,
         amount = amount,
         inputUnit = inputUnit,
-        card = paymentSource.persistedCard,
+        card = paymentSource.wire,
         date = LocalDate.parse(dateIso),
         note = note,
         owner = state.activeProfile,
@@ -847,7 +848,7 @@ internal fun AddTransactionSheet(
                             category = selectedCategory,
                             amount = amount,
                             inputUnit = inputUnit,
-                            card = paymentSource.persistedCard,
+                            card = paymentSource.wire,
                             date = selectedDate,
                             note = note,
                             owner = state.activeProfile,

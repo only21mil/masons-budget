@@ -93,7 +93,7 @@ class CachedRowDataSourceTest {
         }
 
     @Test
-    fun `sat income and remote revision survive the Room cache`() =
+    fun `Bitcoin posting fields and remote revision survive the Room cache`() =
         runBlocking {
             val revision = 1_777_777_777_777L
             val remote =
@@ -107,6 +107,7 @@ class CachedRowDataSourceTest {
                                         amount = 8_000L,
                                         category = "Income",
                                         amountSats = 123_456L,
+                                        bitcoinAccountKey = "river-wallet",
                                         updatedAtMs = revision,
                                     ),
                                 ),
@@ -122,8 +123,10 @@ class CachedRowDataSourceTest {
             val cached = dao.observeTransactions(key).first().single()
 
             assertEquals(123_456L, transaction.amountSats)
+            assertEquals("river-wallet", transaction.bitcoinAccountKey)
             assertEquals(revision, transaction.updatedAtMs)
             assertEquals(123_456L, cached.amountSats)
+            assertEquals("river-wallet", cached.bitcoinAccountKey)
             assertEquals(revision, cached.updatedAtMs)
         }
 
@@ -407,7 +410,7 @@ class CachedRowDataSourceTest {
                                 }
                             }
                         }
-                assertEquals(3, oldDatabase.openHelper.readableDatabase.version)
+                assertEquals(4, oldDatabase.openHelper.readableDatabase.version)
                 assertTrue("amount_cents" in columns)
                 assertTrue("amount_sats" in columns)
                 assertFalse("spend_amount" in columns)
@@ -429,7 +432,7 @@ class CachedRowDataSourceTest {
                         }
                 val transaction = cached.data.transactions.value.single()
 
-                assertEquals(3, reopenedDatabase.openHelper.readableDatabase.version)
+                assertEquals(4, reopenedDatabase.openHelper.readableDatabase.version)
                 assertEquals(3_750L, transaction.amount)
                 assertEquals(3_750L, transaction.spendAmount)
                 assertEquals(3_750L, transaction.displaySpendAmount)
@@ -481,6 +484,7 @@ class CachedRowDataSourceTest {
         amount: Long,
         category: String = "Home",
         amountSats: Long? = null,
+        bitcoinAccountKey: String? = null,
         updatedAtMs: Long = 0L,
     ) = Transaction(
         id = id,
@@ -490,6 +494,7 @@ class CachedRowDataSourceTest {
         category = category,
         owner = FamilyMember.VICTOR,
         amountSats = amountSats,
+        bitcoinAccountKey = bitcoinAccountKey,
         updatedAtMs = updatedAtMs,
     )
 }

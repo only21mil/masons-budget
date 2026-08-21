@@ -4,59 +4,60 @@ import android.content.Context
 import android.content.SharedPreferences
 
 /**
- * User-facing payment sources with a closed, persisted wire contract.
+ * User-facing payment sources in the canonical shared-fixture order.
  *
- * The wire is the durable selector identity used for routing and selector storage.
- * [persistedCard] is the canonical transaction-row vocabulary; keep the two
- * contracts separate so selector implementation details never leak into ledger rows.
+ * [wire] is the durable selector identity and the transaction card value. [label]
+ * is display-only and must never cross the mutation boundary.
  */
 internal enum class PaymentSource(
     val wire: String,
     val label: String,
-    val persistedCard: String,
     val route: PaymentSourceRoute,
 ) {
-    RIVER_BITCOIN_BILL_PAY(
-        wire = "river_bitcoin_bill_pay",
-        label = "River Bitcoin Bill Pay",
-        persistedCard = "River Bitcoin Bill Pay",
-        route = PaymentSourceRoute.BILL_PAY,
+    RIVER(
+        wire = "river",
+        label = "River",
+        route = PaymentSourceRoute.BITCOIN_TRANSACTION,
+    ),
+    ZEUS_LIGHTNING(
+        wire = "zeus_lightning",
+        label = "Zeus Lightning",
+        route = PaymentSourceRoute.BITCOIN_TRANSACTION,
+    ),
+    ZEUS_ON_CHAIN(
+        wire = "zeus_on_chain",
+        label = "Zeus On-chain",
+        route = PaymentSourceRoute.BITCOIN_TRANSACTION,
+    ),
+    STRIKE(
+        wire = "strike",
+        label = "Strike",
+        route = PaymentSourceRoute.BITCOIN_TRANSACTION,
     ),
     COINBASE_CARD(
         wire = "coinbase_card",
         label = "Coinbase Card",
-        persistedCard = "Coinbase Card",
         route = PaymentSourceRoute.CARD_TRANSACTION,
     ),
     AVEN(
         wire = "aven",
         label = "Aven",
-        persistedCard = "Aven",
         route = PaymentSourceRoute.CARD_TRANSACTION,
     ),
     SOFI_CARD(
         wire = "sofi_card",
         label = "SoFi Card",
-        persistedCard = "SoFi Card",
         route = PaymentSourceRoute.CARD_TRANSACTION,
     ),
     CAPITAL_ONE_VX(
         wire = "capital_one_vx",
         label = "Capital One VX",
-        persistedCard = "Capital One VX",
         route = PaymentSourceRoute.CARD_TRANSACTION,
     ),
-    LIGHTNING(
-        wire = "lightning",
-        label = "Lightning",
-        persistedCard = "lightning",
-        route = PaymentSourceRoute.BITCOIN_TRANSACTION,
-    ),
-    ON_CHAIN(
-        wire = "on_chain",
-        label = "On-chain",
-        persistedCard = "on-chain",
-        route = PaymentSourceRoute.BITCOIN_TRANSACTION,
+    RIVER_BITCOIN_BILL_PAY(
+        wire = "river_bitcoin_bill_pay",
+        label = "River Bitcoin Bill Pay",
+        route = PaymentSourceRoute.BILL_PAY,
     );
 
     val isBitcoinTransaction: Boolean
@@ -65,8 +66,16 @@ internal enum class PaymentSource(
     companion object {
         val DEFAULT: PaymentSource = COINBASE_CARD
 
-        fun fromWire(wire: String?): PaymentSource =
-            entries.firstOrNull { it.wire == wire } ?: DEFAULT
+        private val RETIRED_TRANSACTION_WIRES = setOf("lightning", "on_chain", "on-chain")
+
+        fun fromWireOrNull(wire: String?): PaymentSource? =
+            entries.firstOrNull { it.wire == wire }
+
+        fun fromWireOrDefault(wire: String?): PaymentSource =
+            fromWireOrNull(wire) ?: DEFAULT
+
+        fun isRetiredTransactionWire(wire: String?): Boolean =
+            wire in RETIRED_TRANSACTION_WIRES
     }
 }
 
@@ -87,7 +96,7 @@ internal class PaymentSourceStore(
         context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE),
     )
 
-    fun current(): PaymentSource = PaymentSource.fromWire(storedWire())
+    fun current(): PaymentSource = PaymentSource.fromWireOrDefault(storedWire())
 
     fun storedWire(): String? = preferences.getString(KEY_PAYMENT_SOURCE_WIRE, null)
 

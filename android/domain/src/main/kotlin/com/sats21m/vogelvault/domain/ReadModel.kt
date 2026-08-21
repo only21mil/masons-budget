@@ -85,6 +85,8 @@ data class Transaction(
     val displaySpendAmount: Long = kotlin.math.abs(spendAmount),
     /** Exact BTC Income quantity when the row posts to the Bitcoin ledger. */
     val amountSats: Long? = null,
+    /** Stored Bitcoin account identity for exact edit round-trips. */
+    val bitcoinAccountKey: String? = null,
     /** Exact remote revision for optimistic writeback. */
     val updatedAtMs: Long = 0L,
 ) : Owned {

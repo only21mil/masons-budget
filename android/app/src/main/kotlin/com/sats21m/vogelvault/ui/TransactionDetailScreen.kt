@@ -98,6 +98,7 @@ internal class ConvexTransactionActions(
                     card = draft.method.trim().ifEmpty { null },
                     note = draft.note.trim().ifEmpty { null },
                     amountSats = original.amountSats,
+                    bitcoinAccountKey = original.bitcoinAccountKey,
                     owner = original.owner.ledgerOwner,
                 )
             } catch (error: IllegalArgumentException) {

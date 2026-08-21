@@ -46,7 +46,7 @@ class RowQueryRepositoryTest {
         val revision = 1_777_777_777_777L
         val poster = RecordingPoster(
             rowSuccess(
-                """[{"txId":"income-1","owner":"victor","date":"2026-08-01","month":"2026-08","merchant":"Bitcoin income","amountCents":${convexInt64(8000)},"spendAmount":${convexInt64(0)},"displaySpendAmount":${convexInt64(0)},"hasOppositeSpendSign":false,"category":"Income","amountSats":${convexInt64(123456)},"updatedAtMs":$revision.0}]""",
+                """[{"txId":"income-1","owner":"victor","date":"2026-08-01","month":"2026-08","merchant":"Bitcoin income","amountCents":${convexInt64(8000)},"spendAmount":${convexInt64(0)},"displaySpendAmount":${convexInt64(0)},"hasOppositeSpendSign":false,"category":"Income","card":"river","amountSats":${convexInt64(123456)},"bitcoinAccountKey":"river-wallet","updatedAtMs":$revision.0}]""",
             ),
         )
 
@@ -57,6 +57,7 @@ class RowQueryRepositoryTest {
             ?: fail("expected one decoded sat-Income row, got $result")
 
         assertEquals(123_456L, row.amountSats)
+        assertEquals("river-wallet", row.bitcoinAccountKey)
         assertEquals(revision, row.updatedAtMs)
     }
 

@@ -281,6 +281,7 @@ val repositoryRoot = rootProject.layout.projectDirectory.dir("..")
 val sharedAppTestFixtures =
     objects.fileCollection().from(
         repositoryRoot.file("shared/domain/fixtures/finance-market-cases.json"),
+        repositoryRoot.file("shared/domain/fixtures/payment-source-cases.json"),
         repositoryRoot.dir("shared/domain/fixtures/convex-wire-golden"),
     )
 
