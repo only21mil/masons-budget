@@ -85,6 +85,12 @@ internal enum class PaymentSourceRoute {
     BITCOIN_TRANSACTION,
 }
 
+/** Display a known source label while leaving unrecognised stored text untouched. */
+internal fun paymentSourceDisplay(
+    card: String?,
+    missingLabel: String = "",
+): String = PaymentSource.fromWireOrNull(card)?.label ?: card ?: missingLabel
+
 /**
  * Durable selector storage. Only the stable wire is persisted; a renamed label
  * cannot strand a previously selected source.

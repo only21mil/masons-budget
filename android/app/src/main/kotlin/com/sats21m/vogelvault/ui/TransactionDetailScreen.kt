@@ -1,6 +1,7 @@
 package com.sats21m.vogelvault.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,6 +10,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -95,7 +98,7 @@ internal class ConvexTransactionActions(
                     amountCents = amountCents,
                     category = draft.category.trim(),
                     kind = originalKind(original),
-                    card = draft.method.trim().ifEmpty { null },
+                    card = editedPaymentSourceCard(original.card, draft.method),
                     note = draft.note.trim().ifEmpty { null },
                     amountSats = original.amountSats,
                     bitcoinAccountKey = original.bitcoinAccountKey,
@@ -237,12 +240,14 @@ fun TransactionDetailScreen(
                     )
                 }
                 item {
-                    OutlinedTextField(
-                        value = method,
-                        onValueChange = { method = it },
-                        label = { Text(stringResource(R.string.transaction_method)) },
+                    TransactionPaymentSourcePicker(
+                        selectedCard = method,
+                        allowedRoute = transaction.paymentSourceRouteForEdit(),
+                        legacyCard = transaction.card?.takeIf {
+                            it.isNotBlank() && PaymentSource.fromWireOrNull(it) == null
+                        },
+                        onSelect = { method = it },
                         enabled = !working,
-                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
                 item {
@@ -353,6 +358,69 @@ fun TransactionDetailScreen(
     }
 }
 
+@Composable
+private fun TransactionPaymentSourcePicker(
+    selectedCard: String,
+    allowedRoute: PaymentSourceRoute,
+    legacyCard: String?,
+    onSelect: (String) -> Unit,
+    enabled: Boolean,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            stringResource(R.string.transaction_method),
+            style = MaterialTheme.typography.labelSmall,
+        )
+        OutlinedButton(
+            onClick = { expanded = true },
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                paymentSourceDisplay(selectedCard.ifEmpty { null }, missingLabel = "On-chain"),
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            if (legacyCard != null) {
+                DropdownMenuItem(
+                    text = { Text(legacyCard) },
+                    onClick = {
+                        expanded = false
+                        onSelect(legacyCard)
+                    },
+                )
+            }
+            PaymentSource.entries.filter { it.route == allowedRoute }.forEach { source ->
+                DropdownMenuItem(
+                    text = { Text(source.label) },
+                    onClick = {
+                        expanded = false
+                        onSelect(source.wire)
+                    },
+                )
+            }
+        }
+    }
+}
+
+private fun Transaction.paymentSourceRouteForEdit(): PaymentSourceRoute {
+    val source = PaymentSource.fromWireOrNull(card)
+    return if (
+        source?.route == PaymentSourceRoute.BITCOIN_TRANSACTION ||
+        PaymentSource.isRetiredTransactionWire(card) ||
+        amountSats != null ||
+        bitcoinAccountKey != null
+    ) {
+        PaymentSourceRoute.BITCOIN_TRANSACTION
+    } else {
+        PaymentSourceRoute.CARD_TRANSACTION
+    }
+}
+
 internal fun parseTransactionCents(value: String): Long? =
     runCatching {
         value
@@ -365,6 +433,16 @@ internal fun parseTransactionCents(value: String): Long? =
 
 internal fun editableTransactionAmount(cents: Long): String =
     BigDecimal.valueOf(cents, 2).toPlainString()
+
+private fun editedPaymentSourceCard(
+    originalCard: String?,
+    editedCard: String,
+): String? =
+    if (PaymentSource.fromWireOrNull(originalCard) == null && editedCard == originalCard) {
+        originalCard
+    } else {
+        editedCard.trim().ifEmpty { null }
+    }
 
 private fun originalKind(transaction: Transaction): TransactionKind =
     if (transaction.category == "Income" || transaction.amount < 0L) {

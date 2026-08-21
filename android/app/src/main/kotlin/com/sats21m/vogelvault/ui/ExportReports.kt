@@ -53,7 +53,9 @@ internal object ExportReports {
                     formulaSafeText(transaction.merchant),
                     exactUsd(transaction.amount),
                     formulaSafeText(transaction.category),
-                    formulaSafeText(transaction.card.orEmpty()),
+                    formulaSafeText(
+                        paymentSourceDisplay(transaction.card, missingLabel = "On-chain"),
+                    ),
                     formulaSafeText(transaction.note.orEmpty()),
                     transaction.owner.key,
                 )

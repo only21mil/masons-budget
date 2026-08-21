@@ -67,6 +67,64 @@ class ExportReportsTest {
     }
 
     @Test
+    fun `transaction export renders a known payment-source label and preserves a legacy card`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR)
+        val data = fixture.copy(
+            transactions = fixture.transactions.copy(
+                value = listOf(
+                    transaction(
+                        merchant = "canonical-wire",
+                        amount = 100L,
+                        owner = FamilyMember.VICTOR,
+                        card = "coinbase_card",
+                    ),
+                    transaction(
+                        merchant = "legacy-card",
+                        amount = 200L,
+                        owner = FamilyMember.VICTOR,
+                        card = "Fold card",
+                    ),
+                ),
+            ),
+        )
+
+        val csv = ExportReports.transactions(
+            FamilyMember.VICTOR,
+            data,
+            LocalDate.parse("2026-07-29"),
+        )
+
+        assertContains(csv.content, "canonical-wire,1.00,Groceries,Coinbase Card")
+        assertFalse(csv.content.contains("coinbase_card"), csv.content)
+        assertContains(csv.content, "legacy-card,2.00,Groceries,Fold card")
+    }
+
+    @Test
+    fun `transaction export renders a missing payment source as On-chain`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR)
+        val data = fixture.copy(
+            transactions = fixture.transactions.copy(
+                value = listOf(
+                    transaction(
+                        merchant = "missing-source",
+                        amount = 100L,
+                        owner = FamilyMember.VICTOR,
+                        card = null,
+                    ),
+                ),
+            ),
+        )
+
+        val csv = ExportReports.transactions(
+            FamilyMember.VICTOR,
+            data,
+            LocalDate.parse("2026-07-29"),
+        )
+
+        assertContains(csv.content, "missing-source,1.00,Groceries,On-chain")
+    }
+
+    @Test
     fun `budget summary preserves purchase and refund signs without child spend`() {
         val fixture = Fixtures.envelope(FamilyMember.VICTOR)
         val budget = Budget(
@@ -265,6 +323,7 @@ class ExportReportsTest {
         merchant: String,
         amount: Long,
         owner: FamilyMember,
+        card: String? = null,
     ) = Transaction(
         id = "$owner-$merchant",
         date = "2026-07-20",
@@ -272,6 +331,7 @@ class ExportReportsTest {
         amount = amount,
         spendAmount = amount,
         category = "Groceries",
+        card = card,
         owner = owner,
     )
 

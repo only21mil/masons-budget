@@ -86,6 +86,27 @@ class TransactionDetailScreenTest {
     }
 
     @Test
+    fun `unrecognised legacy card survives an edit byte for byte`() {
+        val poster = RecordingPoster(success(owner = "victor"))
+        val legacyCard = "  Fold card  "
+        val original = transaction(card = legacyCard)
+
+        val result = runBlocking {
+            actions(poster).save(
+                original,
+                draft(method = legacyCard),
+            )
+        }
+
+        assertEquals(TransactionActionResult.Success, result)
+        val sent =
+            Json.parseToJsonElement(poster.bodies.single()).jsonObject["args"]!!
+                .jsonObject["transaction"]!!
+                .jsonObject
+        assertEquals(legacyCard, sent["card"]?.jsonPrimitive?.content)
+    }
+
+    @Test
     fun `editing a server row without a revision refuses instead of sending unfenced`() {
         val poster = RecordingPoster(success())
         val actions = actions(poster)
