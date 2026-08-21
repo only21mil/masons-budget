@@ -34,7 +34,7 @@ it registers five new row-table schemas and their indexes and publishes 17 new
 functions. It does not invoke a migration and does not modify a document.
 Afterward, the backfill is a separate, explicit operation.
 
-## Evidence boundary
+## Evidence boundary: recorded 2026-07-27, not current state
 
 No `convex deploy`, `dev`, `env`, or `run` command was used for this preflight.
 Therefore “today” below means the state recorded in committed repository
