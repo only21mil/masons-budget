@@ -138,8 +138,16 @@ class RowReadModelLoader(
         val transactionSlice = transactions.await().toTransactionSlice(stamp)
         val todoSlice =
             todos.await().toSlice(emptyList(), RowReadProjection.TODOS.sourceName, stamp)
+        // A complete zero-row buy read is an authoritative zero, not the
+        // absence of a snapshot: the write gate keys on LIVE, so EMPTY here
+        // is what locked a first-ever buy out of the app.
         val buySlice =
-            btcBuys.await().toSlice(emptyList(), RowReadProjection.BITCOIN_BUYS.sourceName, stamp)
+            btcBuys.await().toSlice(
+                emptyList(),
+                RowReadProjection.BITCOIN_BUYS.sourceName,
+                stamp,
+                completeEmptyIsLive = true,
+            )
         val accountSlice =
             btcAccounts.await().toSlice(
                 emptyList(),
@@ -337,10 +345,11 @@ private fun <T> ConvexResult<RowSnapshot<T>>.toSlice(
     empty: List<T>,
     source: String,
     stamp: Long,
+    completeEmptyIsLive: Boolean = false,
 ): Slice<List<T>> = when (this) {
     is ConvexResult.Ok -> when {
         !value.complete -> errorSlice(empty, source, RowReadFailure.MALFORMED_PAYLOAD)
-        value.rows.isEmpty() -> emptySlice(empty, source)
+        value.rows.isEmpty() && !completeEmptyIsLive -> emptySlice(empty, source)
         else -> liveSlice(value.rows, source, stamp)
     }
     ConvexResult.Missing -> emptySlice(empty, source)
