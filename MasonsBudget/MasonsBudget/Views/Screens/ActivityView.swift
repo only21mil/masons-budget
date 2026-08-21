@@ -34,18 +34,21 @@ struct ActivityView: View {
 
     private var filtered: [Transaction] {
         let visible = allTransactions.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
-        // The lightning/on-chain buckets keep their exact raw-string
-        // semantics: retired wires ("lightning"/"on-chain") still match their
-        // historical buckets, and a nil card still lands in the on-chain
-        // bucket. TransactionDetailView no longer stamps a default onto nil
-        // rows when editing, but existing nil rows keep appearing here
-        // unchanged — bucket semantics are a filter concern, not a write one.
+        // Rails are a filter over the stored wire, not a display concern.
+        // Each rail matches its active Bitcoin-native wires plus the retired
+        // wire it succeeds: Lightning takes zeus_lightning and the historical
+        // "lightning" rows; On-chain takes zeus_on_chain, the historical
+        // "on-chain" rows, and nil-card rows (TransactionDetailView no longer
+        // stamps a default onto nil rows when editing, but existing ones keep
+        // appearing here — bucket semantics are a filter concern, not a write
+        // one). River and Strike live in no rail; All and Spends cover them,
+        // matching Android.
         let scoped: [Transaction] = switch filter {
         case .all: visible
         case .income: visible.filter(\.isIncome)
         case .spends: visible.filter(\.isSpend)
-        case .lightning: visible.filter { $0.card == "lightning" }
-        case .onChain: visible.filter { $0.card == "on-chain" || $0.card == nil }
+        case .lightning: visible.filter { TransactionSourceCatalog.activityRail(forCard: $0.card) == .lightning }
+        case .onChain: visible.filter { TransactionSourceCatalog.activityRail(forCard: $0.card) == .onChain }
         }
 
         return scoped.filter { SearchMatcher.matches(transaction: $0, query: searchText) }

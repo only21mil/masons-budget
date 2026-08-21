@@ -205,6 +205,52 @@ final class PaymentSourceConformanceTests: XCTestCase {
         XCTAssertTrue(options.contains { $0.wire == "sofi_card" })
     }
 
+    func testActivityRailsCoverActiveAndRetiredBitcoinWires() {
+        // The Lightning rail takes zeus_lightning plus the retired
+        // "lightning"; On-chain takes zeus_on_chain, retired "on-chain",
+        // and nil-card rows. Fiat cards and River/Strike live in no rail.
+        XCTAssertEqual(TransactionSourceCatalog.activityRail(forCard: "zeus_lightning"), .lightning)
+        XCTAssertEqual(TransactionSourceCatalog.activityRail(forCard: "lightning"), .lightning)
+        XCTAssertEqual(TransactionSourceCatalog.activityRail(forCard: "zeus_on_chain"), .onChain)
+        XCTAssertEqual(TransactionSourceCatalog.activityRail(forCard: "on-chain"), .onChain)
+        XCTAssertEqual(TransactionSourceCatalog.activityRail(forCard: nil), .onChain)
+        XCTAssertNil(TransactionSourceCatalog.activityRail(forCard: "sofi_card"))
+        XCTAssertNil(TransactionSourceCatalog.activityRail(forCard: "river"))
+        XCTAssertNil(TransactionSourceCatalog.activityRail(forCard: "strike"))
+    }
+
+    func testSearchMatchesDisplayLabelOfCatalogueWires() {
+        // Search runs on the display label: a user typing "Zeus" finds a
+        // zeus_lightning row without knowing the wire value.
+        let tx = Transaction(
+            id: "search-1", date: Date(), merchant: "Test", amount: 10,
+            category: "Other", card: "zeus_lightning", owner: .victor, createdBy: "app",
+        )
+        XCTAssertTrue(SearchMatcher.matches(transaction: tx, query: "Zeus"))
+        XCTAssertTrue(SearchMatcher.matches(transaction: tx, query: "lightning"))
+        XCTAssertFalse(SearchMatcher.matches(transaction: tx, query: "Coinbase"))
+    }
+
+    func testSearchMatchesLegacyCardByItsOwnStoredText() {
+        // An unrecognised card still matches by its verbatim stored value —
+        // label(forWire:) falls back to the wire itself.
+        let legacy = Transaction(
+            id: "search-2", date: Date(), merchant: "Test", amount: 10,
+            category: "Other", card: "SoFi old card", owner: .victor, createdBy: "app",
+        )
+        XCTAssertTrue(SearchMatcher.matches(transaction: legacy, query: "sofi old"))
+        XCTAssertFalse(SearchMatcher.matches(transaction: legacy, query: "Zeus"))
+    }
+
+    func testExportCardColumnRendersLabelAndLegacyVerbatim() {
+        // Catalogue wires export their display label; an unrecognised card
+        // exports byte-for-byte verbatim via the label fallback.
+        XCTAssertEqual(ExportView.cardColumn(for: "coinbase_card"), "Coinbase Card")
+        XCTAssertEqual(ExportView.cardColumn(for: "zeus_on_chain"), "Zeus On-chain")
+        XCTAssertEqual(ExportView.cardColumn(for: "SoFi old card"), "SoFi old card")
+        XCTAssertEqual(ExportView.cardColumn(for: nil), "On-chain")
+    }
+
     func testUnknownWireIsReinsertedAsSyntheticOption() {
         // A stored wire that no longer exists in the catalogue (e.g. a retired
         // value on an existing row) must round-trip: sources(for:including:)

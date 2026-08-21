@@ -116,6 +116,24 @@ enum TransactionSourceCatalog {
         common.first { $0.wire == wire }
     }
 
+    /// Which Activity rail a stored card belongs to, if any. Rails are a
+    /// filter over the stored wire: each rail matches its active
+    /// Bitcoin-native wire plus the retired wire it succeeds, and On-chain
+    /// additionally keeps nil-card rows (the historical default). River and
+    /// Strike live in no rail; All and Spends cover them, matching Android.
+    enum ActivityRail: Equatable {
+        case lightning
+        case onChain
+    }
+
+    static func activityRail(forCard card: String?) -> ActivityRail? {
+        switch card {
+        case "zeus_lightning", "lightning": .lightning
+        case "zeus_on_chain", "on-chain", nil: .onChain
+        default: nil
+        }
+    }
+
     /// Options for an edit surface with no sats entry. The backend demands
     /// positive amountSats + bitcoinAccountKey for a Bitcoin-native posting,
     /// and an edit screen cannot collect them, so those wires are offered
