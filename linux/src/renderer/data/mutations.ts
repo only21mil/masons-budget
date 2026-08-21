@@ -1,6 +1,7 @@
 import {
   type FamilyMember,
   canSeeDataOwnedBy,
+  isAdult,
   ledgerOwner,
 } from "@vogel-vault/domain/family"
 import { isConvexInt64 } from "@vogel-vault/domain"
@@ -71,6 +72,11 @@ export interface MutationGate {
   readonly reason: string | null
 }
 
+export interface MutationOwnerOptions {
+  /** A transaction carrying the Lightning/on-chain Bitcoin spend fields. */
+  readonly bitcoinSpend?: boolean
+}
+
 export function mutationGate(input: MutationGateInput): MutationGate {
   if (input.dataOrigin !== "remote") {
     return { allowed: false, reason: "Sample and fallback data cannot be edited." }
@@ -132,7 +138,17 @@ export const BITCOIN_WRITE_PROXY_KIND: RendererMutationKind = "btcTransfer.upser
  */
 export function bitcoinSpendGate(
   capabilities: readonly RendererMutationKind[],
+  owner?: FamilyMember,
 ): MutationGate {
+  if (
+    owner !== undefined &&
+    !supportsMutationOwner("transaction.upsert", owner, { bitcoinSpend: true })
+  ) {
+    return {
+      allowed: false,
+      reason: "Only adult profiles may record Lightning or on-chain spends.",
+    }
+  }
   if (capabilities.includes(BITCOIN_WRITE_PROXY_KIND)) {
     return { allowed: true, reason: null }
   }
@@ -269,10 +285,15 @@ export function linkedBitcoinBuyFor(
 export function supportsMutationOwner(
   kind: RendererMutationKind,
   actorOrStoredOwner: FamilyMember,
+  options: MutationOwnerOptions = {},
 ): boolean {
   const owner = mutationOwner(kind, actorOrStoredOwner)
-  if (kind.startsWith("todo.") || kind.startsWith("transaction.")) return true
+  if (kind.startsWith("todo.")) return true
+  if (kind.startsWith("transaction.")) {
+    return options.bitcoinSpend ? isAdult(owner) : true
+  }
   if (kind.startsWith("btcBillPay.")) return owner === "victor"
+  if (kind.startsWith("btcTransfer.")) return isAdult(owner)
   return owner === "victor" || owner === "mason"
 }
 

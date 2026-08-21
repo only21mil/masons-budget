@@ -66,10 +66,18 @@ describe("exact renderer mutation forms", () => {
 
   it("rejects financial operations that have no closed child source", () => {
     expect(supportsMutationOwner("transaction.upsert", "maddox")).toBe(true)
+    expect(supportsMutationOwner("transaction.upsert", "maddox", {
+      bitcoinSpend: true,
+    })).toBe(false)
+    expect(supportsMutationOwner("transaction.upsert", "victor", {
+      bitcoinSpend: true,
+    })).toBe(true)
     expect(supportsMutationOwner("btcBuy.upsert", "mason")).toBe(true)
     expect(supportsMutationOwner("btcBuy.upsert", "maddox")).toBe(false)
     expect(supportsMutationOwner("btcBillPay.upsert", "mason")).toBe(false)
     expect(supportsMutationOwner("btcBillPay.delete", "maddox")).toBe(false)
+    expect(supportsMutationOwner("btcTransfer.upsert", "mason")).toBe(false)
+    expect(supportsMutationOwner("btcTransfer.delete", "rachel")).toBe(true)
     expect(supportsMutationOwner("btcAccount.upsert", "mason")).toBe(true)
     expect(supportsMutationOwner("btcAccount.upsert", "maddox")).toBe(false)
     expect(supportsMutationOwner("budgetCategory.upsert", "maddox")).toBe(false)
@@ -274,6 +282,18 @@ describe("the Bitcoin-spend capability proxy", () => {
     // A bill-pay or buy grant is not the whole of bitcoin:write's expansion, so
     // it is not evidence of the grant on its own.
     expect(bitcoinSpendGate(["transaction.upsert", "btcBillPay.upsert"]).allowed).toBe(false)
+  })
+
+  it("keeps Bitcoin spends adult-only while leaving child fiat transactions available", () => {
+    expect(bitcoinSpendGate(["btcTransfer.upsert"], "mason")).toEqual({
+      allowed: false,
+      reason: "Only adult profiles may record Lightning or on-chain spends.",
+    })
+    expect(bitcoinSpendGate(["btcTransfer.upsert"], "rachel")).toEqual({
+      allowed: true,
+      reason: null,
+    })
+    expect(supportsMutationOwner("transaction.upsert", "mason")).toBe(true)
   })
 })
 

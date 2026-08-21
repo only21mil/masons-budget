@@ -209,7 +209,9 @@ export function TransactionFormDialog({
   // a USD-only card transaction does not.
   const spendsBitcoin = bitcoinSpendRow ||
     (!recordingBitcoinBuy && isIncome && satsValue !== null && satsValue > 0n)
-  const bitcoinCapability = spendsBitcoin ? bitcoinSpendGate(mutationCapabilities) : null
+  const bitcoinCapability = spendsBitcoin
+    ? bitcoinSpendGate(mutationCapabilities, bitcoinSpendRow ? activeProfile : undefined)
+    : null
   // River is a hand-off, not a save, so its own block never disables the button
   // it offers; the capability block cannot be typed away and comes first.
   const blockedReason = submissionGate && !submissionGate.allowed
