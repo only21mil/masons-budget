@@ -875,7 +875,7 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
           "asOf": "2026-04-30T15:09:48.945031Z",
           "accounts": {
             "strike": {"btc":0.00874765,"fiat":0,"label":"Strike","custody":"exchange"},
-            "coldcard": {"btc":4.51718914,"fiat":0,"label":"Coldcard","custody":"self_custody"}
+            "coldcard": {"btc":4.51718914,"fiat":0,"label":"Multisig","custody":"self_custody"}
           },
           "totals": {"btc":4.58478055,"fiat":0,"exchange_btc":0.06408003,"self_custody_btc":4.52070052},
           "metadata": {"source":"snapshot","basis":"authoritative","confidence":"high"}
@@ -897,7 +897,7 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
           "asOf": "2026-04-30",
           "accounts": {
             "strike": {"btc":0.00874765,"fiat":0,"label":"Strike","custody":"exchange"},
-            "coldcard": {"btc":4.51718914,"fiat":0,"label":"Coldcard","custody":"self_custody"}
+            "coldcard": {"btc":4.51718914,"fiat":0,"label":"Multisig","custody":"self_custody"}
           },
           "totals": {"btc":4.52593679,"fiat":0,"exchange_btc":0.00874765,"self_custody_btc":4.51718914}
         }
@@ -912,7 +912,7 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
             XCTAssertTrue(acct.key.hasSuffix("-victor"))
         }
 
-        let coldcard = accounts.first(where: { $0.label == "Coldcard" })
+        let coldcard = accounts.first(where: { $0.label == "Multisig" })
         XCTAssertNotNil(coldcard)
         XCTAssertEqual(coldcard?.custody, .selfCustody)
         assertDecimalClose(coldcard?.btc, 4.51718914)
@@ -1221,7 +1221,7 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
             XCTAssertTrue(acct.key.hasSuffix("-mason"))
         }
 
-        let coldcard = accounts.first(where: { $0.label == "Coldcard" })
+        let coldcard = accounts.first(where: { $0.label == "Multisig" })
         XCTAssertEqual(coldcard?.custody, .selfCustody)
         XCTAssertEqual(coldcard?.btc, 0.75072) // Exact — created from Decimal literal
     }

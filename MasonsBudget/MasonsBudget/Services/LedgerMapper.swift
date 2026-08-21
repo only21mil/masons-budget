@@ -304,7 +304,7 @@ enum LedgerMapper {
         [
             BTCAccount(key: "son-strike-mason", label: "Strike", custody: .exchange, btc: son.strike, fiat: 0, owner: .mason),
             BTCAccount(key: "son-river-mason", label: "River", custody: .exchange, btc: son.river, fiat: 0, owner: .mason),
-            BTCAccount(key: "son-coldcard-mason", label: "Coldcard", custody: .selfCustody, btc: son.coldcard, fiat: 0, owner: .mason),
+            BTCAccount(key: "son-coldcard-mason", label: "Multisig", custody: .selfCustody, btc: son.coldcard, fiat: 0, owner: .mason),
         ]
     }
 

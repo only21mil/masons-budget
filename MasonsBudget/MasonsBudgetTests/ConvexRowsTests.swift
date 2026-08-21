@@ -359,7 +359,7 @@ final class ConvexRowsTests: XCTestCase {
             accounts: [
                 .init(
                     key: "coldcard",
-                    label: "Coldcard",
+                    label: "Multisig",
                     custody: .selfCustody,
                     sats: 100_000_000,
                     fiatCents: 1,

@@ -125,7 +125,7 @@ const SEED = {
     { id: 'd3', text: 'Confirm DCA bumped to 0.025 BTC/wk',project: 'Self-Custody', when: 'Today', flag: false, done: true  },
     { id: 'd4', text: 'Sign lease addendum',                project: 'Move to Austin', when: 'Today', flag: false, done: false },
     { id: 'd5', text: 'Schedule annual physical',          project: 'Health',         when: 'Today', flag: false, done: false },
-    { id: 'd6', text: 'Order new Coldcard backup plate',   project: 'Self-Custody', when: 'Tomorrow', flag: false, done: false },
+    { id: 'd6', text: 'Order new multisig backup plate',   project: 'Self-Custody', when: 'Tomorrow', flag: false, done: false },
     { id: 'd7', text: 'Call moving company',                project: 'Move to Austin', when: 'Tomorrow', flag: false, done: false },
     { id: 'd8', text: 'Review wills with attorney',        project: 'Family',         when: 'May 12',  flag: true,  done: false },
   ],

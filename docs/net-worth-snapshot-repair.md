@@ -38,7 +38,7 @@ An adult `syncAll()` performs these relevant operations before recording the
 snapshot:
 
 1. `syncBTCAccounts()` loads the shared adult BTC snapshot.
-2. `syncSonBalances()` loads Mason's Strike, River, and Coldcard balances and
+2. `syncSonBalances()` loads Mason's Strike, River, and Multisig (coldcard field) balances and
    persists them as Mason-owned `BTCAccount` models.
 3. `syncFinances()` maps both adult retirement accounts and the sibling
    `mason_401k` entry into `HoldingAccount` models.

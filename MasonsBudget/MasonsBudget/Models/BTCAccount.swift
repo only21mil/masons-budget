@@ -1,6 +1,6 @@
 // Mason's Budget App — BTC account model
 // Mirrors Bitcoin account rows and the surviving balance-snapshot blob.
-// Each account: Strike, River, CashApp, Coldcard, Zeus, etc.
+// Each account: Strike, River, CashApp, Multisig, Zeus, etc.
 
 import Foundation
 import SwiftData
