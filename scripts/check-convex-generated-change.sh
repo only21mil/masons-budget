@@ -38,18 +38,18 @@ changed_files="$(git diff --name-only "${diff_args[@]}" --)"
 
 expected_schema_checksum="$(sha256sum convex/schema.ts)"
 recorded_schema_checksum=""
-if [[ -f convex/_generated/schema.sha256 ]]; then
-  recorded_schema_checksum="$(< convex/_generated/schema.sha256)"
+if [[ -f convex/schema.sha256 ]]; then
+  recorded_schema_checksum="$(< convex/schema.sha256)"
 fi
 
 if [[ "$recorded_schema_checksum" != "$expected_schema_checksum" ]]; then
   cat >&2 <<'EOF'
-ERROR: convex/_generated/schema.sha256 does not attest the current convex/schema.ts.
+ERROR: convex/schema.sha256 does not attest the current convex/schema.ts.
 
 Regenerate and commit the generated declarations from the repository root:
   set -a; . "$HOME/.config/sats/secrets.env"; set +a
   npm run codegen
-  git add convex/_generated
+  git add convex/_generated convex/schema.sha256
 
 This CI check is credential-free. The local codegen command must succeed before
 it writes the schema checksum; a checksum can still be forged manually, so this
@@ -131,9 +131,15 @@ fi
 base_schema_checksum="$(
   git show "${base_revision}:convex/schema.ts" | sha256sum | cut -d' ' -f1
 )"
+base_attestation_path="convex/schema.sha256"
+if ! git cat-file -e "${base_revision}:${base_attestation_path}" 2>/dev/null; then
+  # Accept the old location only as a baseline so the move can land safely.
+  base_attestation_path="convex/_generated/schema.sha256"
+fi
 base_recorded_checksum="$(
-  git show "${base_revision}:convex/_generated/schema.sha256" 2>/dev/null \
-    | awk 'NR == 1 { print $1 }'
+  git show "${base_revision}:${base_attestation_path}" 2>/dev/null \
+    | awk 'NR == 1 { print $1 }' \
+    || true
 )"
 if [[ -z "$base_recorded_checksum" || "$base_recorded_checksum" != "$base_schema_checksum" ]]; then
   cat >&2 <<EOF
@@ -149,7 +155,7 @@ if ! grep -Fxq "convex/schema.ts" <<<"$changed_files"; then
   exit 0
 fi
 
-if grep -Fxq "convex/_generated/schema.sha256" <<<"$changed_files"; then
+if grep -Fxq "convex/schema.sha256" <<<"$changed_files"; then
   echo "Convex generated-type drift checks passed: schema attestation changed and API module inventory matches."
   echo "LIMITATION: repository checks cannot prove codegen ran or rule out hand-edited generated files."
   exit 0
@@ -161,7 +167,7 @@ ERROR: convex/schema.ts changed without a corresponding schema.sha256 attestatio
 Regenerate and commit the generated declarations from the repository root:
   set -a; . "$HOME/.config/sats/secrets.env"; set +a
   npm run codegen
-  git add convex/_generated
+  git add convex/_generated convex/schema.sha256
 
 This CI check is only a credential-free heuristic. Even a matching changed
 checksum can be forged by hand. The authenticated codegen command above is what

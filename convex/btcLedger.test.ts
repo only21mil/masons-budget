@@ -17,6 +17,9 @@ const mutation = <
 >(path: string) =>
   path as unknown as FunctionReference<"mutation", Visibility, Args, Result>;
 
+const query = <Args extends Record<string, unknown>, Result>(path: string) =>
+  path as unknown as FunctionReference<"query", "public", Args, Result>;
+
 const api = {
   buy: mutation<"public", Record<string, unknown>, Record<string, unknown>>(
     "tables:upsertBtcBuy",
@@ -42,6 +45,14 @@ const api = {
     Record<string, unknown>,
     Record<string, unknown>
   >("tables:deleteBtcTransfer"),
+  income: query<
+    Record<string, unknown>,
+    { rows: Array<{ incomeId: string; amountCents: bigint }> }
+  >("tables:listIncome"),
+  buys: query<
+    Record<string, unknown>,
+    { rows: Array<Record<string, unknown>> }
+  >("tables:listBtcBuys"),
   reconcile: mutation<
     "internal",
     Record<string, unknown>,
@@ -127,7 +138,218 @@ function satsByKey(state: Awaited<ReturnType<typeof snapshot>>) {
   );
 }
 
+async function transactionRevision(txId: string) {
+  return await t.run(async (ctx) =>
+    (
+      await ctx.db
+        .query("transactions")
+        .withIndex("by_source_tx_id", (q) =>
+          q.eq("sourceFile", "transactions").eq("txId", txId),
+        )
+        .unique()
+    )!.updatedAtMs,
+  );
+}
+
+async function transactionRow(txId: string) {
+  return await t.run(async (ctx) =>
+    ctx.db
+      .query("transactions")
+      .withIndex("by_source_tx_id", (q) =>
+        q.eq("sourceFile", "transactions").eq("txId", txId),
+      )
+      .unique(),
+  );
+}
+
 describe("Bitcoin balance posting", () => {
+  it("atomically records canonical income and one balance-posting Bitcoin buy", async () => {
+    const args = {
+      sourceFile: "bitcoin-buys",
+      buy: {
+        id: "income-buy-pair",
+        owner: "rachel",
+        date: "2026-08-01",
+        source: "river",
+        sats: 25_000n,
+        priceUsdCents: 10_000_000n,
+        usdCents: 2_500n,
+      },
+      linkedIncome: {
+        id: "income-buy-pair",
+        owner: "rachel",
+        date: "2026-08-01",
+        amountCents: 2_500n,
+        source: "Payroll",
+        sourceFile: "income",
+      },
+    };
+
+    await expect(t.mutation(api.buy, args)).resolves.toMatchObject({
+      owner: "victor",
+      outcome: "inserted",
+    });
+    const afterFirst = await snapshot();
+    const revisionAfterFirst = afterFirst.document.updatedAtMs;
+    await expect(t.mutation(api.buy, args)).resolves.toMatchObject({
+      owner: "victor",
+      outcome: "updated",
+    });
+
+    const state = await t.run(async (ctx) => ({
+      income: await ctx.db.query("income").collect(),
+      buys: await ctx.db.query("btcBuys").collect(),
+    }));
+    expect(state.income).toHaveLength(1);
+    expect(state.income[0]).toMatchObject({
+      sourceKey: "id:income-buy-pair",
+      incomeId: "income-buy-pair",
+      owner: "victor",
+      date: "2026-08-01",
+      amountCents: 2_500n,
+      sourceFile: "income",
+    });
+    setDeploymentEnv({ ALLOW_TOKENLESS_READ: "true" });
+    await expect(
+      t.query(api.income, { viewer: "victor" }),
+    ).resolves.toMatchObject({
+      rows: [{ incomeId: "income-buy-pair", amountCents: 2_500n }],
+    });
+    expect(state.buys).toHaveLength(1);
+    expect(state.buys[0]).toMatchObject({
+      buyId: "income-buy-pair",
+      owner: "victor",
+      linkedIncomeId: "income-buy-pair",
+      balanceAccountKey: "river",
+      balancePostingVersion: 1n,
+    });
+    const publicBuys = await t.query(api.buys, {
+      viewer: "victor",
+      scope: "visible",
+    });
+    expect(publicBuys.rows).toHaveLength(1);
+    expect(
+      Object.prototype.hasOwnProperty.call(publicBuys.rows[0]!, "linkedIncomeId"),
+    ).toBe(false);
+    const afterRetry = await snapshot();
+    expect(satsByKey(afterRetry)).toEqual({
+      river: 1_025_000n,
+      coldcard: 2_000_000n,
+    });
+    expect(afterRetry.document.updatedAtMs).toBe(revisionAfterFirst);
+    await expect(
+      t.mutation(api.buy, {
+        sourceFile: "bitcoin-buys",
+        buy: {
+          ...args.buy,
+          owner: "victor",
+          source: "changed outside paired contract",
+        },
+      }),
+    ).rejects.toThrow(/cannot enter or leave the paired-income contract/);
+  });
+
+  it("rejects invalid or conflicting linked income without a partial buy or posting", async () => {
+    const before = await snapshot();
+    const valid = {
+      sourceFile: "bitcoin-buys",
+      buy: {
+        id: "income-buy-invalid",
+        owner: "victor",
+        date: "2026-08-01",
+        source: "river",
+        sats: 25_000n,
+        priceUsdCents: 10_000_000n,
+        usdCents: 2_500n,
+      },
+      linkedIncome: {
+        id: "income-buy-invalid",
+        owner: "victor",
+        date: "2026-08-01",
+        amountCents: 2_500n,
+        source: "Payroll",
+        sourceFile: "income",
+      },
+    };
+
+    for (const linkedIncome of [
+      { ...valid.linkedIncome, id: "different-id" },
+      { ...valid.linkedIncome, owner: "mason" },
+      { ...valid.linkedIncome, date: "2026-08-02" },
+      { ...valid.linkedIncome, amountCents: 2_499n },
+    ]) {
+      await expect(
+        t.mutation(api.buy, { ...valid, linkedIncome }),
+      ).rejects.toThrow(/same id, owner, and date|must equal|adult household/);
+    }
+    await expect(
+      t.mutation(api.buy, {
+        ...valid,
+        sourceFile: "mason-bitcoin-buys",
+      }),
+    ).rejects.toThrow(/belongs to mason, not victor/);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("income", {
+        sourceKey: "id:income-buy-invalid",
+        incomeId: "income-buy-invalid",
+        owner: "victor",
+        date: "2026-08-01",
+        month: "2026-08",
+        amountCents: 2_500n,
+        source: "Different source",
+        sourceFile: "income",
+        updatedAtMs: 1,
+      });
+    });
+    await expect(t.mutation(api.buy, valid)).rejects.toThrow(/immutable/);
+
+    const rows = await t.run(async (ctx) => ctx.db.query("btcBuys").collect());
+    expect(rows).toHaveLength(0);
+    expect(satsByKey(await snapshot())).toEqual(satsByKey(before));
+  });
+
+  it("does not infer linkage from an unrelated cross-table id collision", async () => {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("income", {
+        sourceKey: "id:shared-natural-id",
+        incomeId: "shared-natural-id",
+        owner: "victor",
+        date: "2026-08-01",
+        month: "2026-08",
+        amountCents: 1_000n,
+        source: "Payroll",
+        sourceFile: "income",
+        updatedAtMs: 1,
+      });
+    });
+
+    await expect(
+      t.mutation(api.buy, {
+        sourceFile: "bitcoin-buys",
+        buy: {
+          id: "shared-natural-id",
+          owner: "victor",
+          date: "2026-08-01",
+          source: "river",
+          sats: 10_000n,
+          priceUsdCents: 10_000_000n,
+          usdCents: 1_000n,
+        },
+      }),
+    ).resolves.toMatchObject({ outcome: "inserted" });
+
+    const buy = await t.run(async (ctx) =>
+      ctx.db
+        .query("btcBuys")
+        .withIndex("by_source_buy_id", (q) =>
+          q.eq("sourceFile", "bitcoin-buys").eq("buyId", "shared-natural-id"),
+        )
+        .unique(),
+    );
+    expect(buy).toMatchObject({ buyId: "shared-natural-id" });
+    expect(buy?.linkedIncomeId).toBeUndefined();
+  });
+
   it("posts new buys and explicitly-satted Income to River without replaying legacy fiat Income", async () => {
     const buy = {
       id: "buy-1",
@@ -170,6 +392,532 @@ describe("Bitcoin balance posting", () => {
     expect(state.mirrors.find((row) => row.key === "river")?.sats).toBe(
       1_040_000n,
     );
+  });
+
+  it("keeps card transactions off the Bitcoin ledger and posts BTC spends exactly once through edit and delete", async () => {
+    const before = satsByKey(await snapshot());
+    await t.mutation(api.transaction, {
+      transaction: {
+        id: "card-spend",
+        date: "2026-08-20",
+        merchant: "Grocer",
+        amountCents: 2_500n,
+        kind: "spend",
+        category: "Groceries",
+        card: "aven",
+      },
+    });
+    expect(satsByKey(await snapshot())).toEqual(before);
+
+    const spend = {
+      id: "btc-spend",
+      date: "2026-08-20",
+      merchant: "Merchant",
+      amountCents: 10_000n,
+      kind: "spend",
+      category: "Shopping",
+      card: "zeus_lightning",
+      amountSats: 100_000n,
+      bitcoinAccountKey: "coldcard",
+    };
+    await t.mutation(api.transaction, { transaction: spend });
+    await t.mutation(api.transaction, { transaction: spend });
+    expect(satsByKey(await snapshot())).toEqual({
+      river: 1_000_000n,
+      coldcard: 1_900_000n,
+    });
+
+    const revision = await t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query("transactions")
+          .withIndex("by_source_tx_id", (q) =>
+            q.eq("sourceFile", "transactions").eq("txId", spend.id),
+          )
+          .unique()
+      )!.updatedAtMs,
+    );
+    await t.mutation(api.transaction, {
+      transaction: {
+        ...spend,
+        card: "zeus_on_chain",
+        amountSats: 120_000n,
+        bitcoinAccountKey: "river",
+      },
+      baseUpdatedAtMs: revision,
+    });
+    expect(satsByKey(await snapshot())).toEqual({
+      river: 880_000n,
+      coldcard: 2_000_000n,
+    });
+
+    const editedRevision = await t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query("transactions")
+          .withIndex("by_source_tx_id", (q) =>
+            q.eq("sourceFile", "transactions").eq("txId", spend.id),
+          )
+          .unique()
+      )!.updatedAtMs,
+    );
+    await expect(
+      t.mutation(api.deleteTransaction, { txId: spend.id }),
+    ).rejects.toThrow(/baseUpdatedAtMs is required/);
+    await t.mutation(api.deleteTransaction, {
+      txId: spend.id,
+      baseUpdatedAtMs: editedRevision,
+    });
+    expect(satsByKey(await snapshot())).toEqual(before);
+  });
+
+  it("credits every active Bitcoin payment source to its selected account and reverses edits and deletes", async () => {
+    const before = satsByKey(await snapshot());
+    const credits = [
+      { source: "river", accountKey: "river", sats: 40_000n },
+      { source: "zeus_lightning", accountKey: "river", sats: 10_000n },
+      { source: "zeus_on_chain", accountKey: "coldcard", sats: 20_000n },
+      { source: "strike", accountKey: "river", sats: 30_000n },
+    ] as const;
+
+    for (const credit of credits) {
+      await t.mutation(api.transaction, {
+        transaction: {
+          id: `income-${credit.source}`,
+          date: "2026-08-20",
+          merchant: "Bitcoin income",
+          amountCents: 1n,
+          kind: "credit",
+          category: "Income",
+          card: credit.source,
+          amountSats: credit.sats,
+          bitcoinAccountKey: credit.accountKey,
+        },
+      });
+    }
+    expect(satsByKey(await snapshot())).toEqual({
+      river: 1_080_000n,
+      coldcard: 2_020_000n,
+    });
+
+    const strikeId = "income-strike";
+    const strikeRevision = await transactionRevision(strikeId);
+    await expect(
+      t.mutation(api.transaction, {
+        transaction: {
+          id: strikeId,
+          date: "2026-08-20",
+          merchant: "Bitcoin spend",
+          amountCents: 1n,
+          kind: "spend",
+          category: "Shopping",
+          card: "strike",
+          amountSats: 35_000n,
+          bitcoinAccountKey: "coldcard",
+        },
+        baseUpdatedAtMs: strikeRevision,
+      }),
+    ).rejects.toThrow(/cannot change its Bitcoin account/);
+    expect(satsByKey(await snapshot())).toEqual({
+      river: 1_080_000n,
+      coldcard: 2_020_000n,
+    });
+    await expect(
+      t.mutation(api.transaction, {
+        transaction: {
+          id: strikeId,
+          date: "2026-08-20",
+          merchant: "Bitcoin income",
+          amountCents: 1n,
+          kind: "credit",
+          category: "Income",
+          card: "strike",
+          amountSats: 35_000n,
+          bitcoinAccountKey: "coldcard",
+        },
+        baseUpdatedAtMs: strikeRevision,
+      }),
+    ).rejects.toThrow(/cannot change its Bitcoin account/);
+    await t.mutation(api.transaction, {
+      transaction: {
+        id: strikeId,
+        date: "2026-08-20",
+        merchant: "Bitcoin income",
+        amountCents: 1n,
+        kind: "credit",
+        category: "Income",
+        card: "strike",
+        amountSats: 35_000n,
+        bitcoinAccountKey: "river",
+      },
+      baseUpdatedAtMs: strikeRevision,
+    });
+    expect(satsByKey(await snapshot())).toEqual({
+      river: 1_085_000n,
+      coldcard: 2_020_000n,
+    });
+
+    for (const credit of credits) {
+      const id = `income-${credit.source}`;
+      await t.mutation(api.deleteTransaction, {
+        txId: id,
+        baseUpdatedAtMs: await transactionRevision(id),
+      });
+    }
+    expect(satsByKey(await snapshot())).toEqual(before);
+  });
+
+  it("credits tagged River Income to the same canonical account as untyped sat-Income", async () => {
+    const taggedId = "tagged-river-income";
+    const untypedId = "untyped-river-income";
+    const base = {
+      date: "2026-08-20",
+      merchant: "Bitcoin income",
+      amountCents: 1n,
+      kind: "credit",
+      category: "Income",
+      amountSats: 100n,
+    };
+    await t.mutation(api.transaction, {
+      transaction: {
+        ...base,
+        id: taggedId,
+        card: "river",
+        bitcoinAccountKey: "river",
+      },
+    });
+    await t.mutation(api.transaction, {
+      transaction: { ...base, id: untypedId },
+    });
+
+    expect(satsByKey(await snapshot())).toEqual({
+      river: 1_000_200n,
+      coldcard: 2_000_000n,
+    });
+    await expect(transactionRow(taggedId)).resolves.toMatchObject({
+      card: "river",
+      bitcoinAccountKey: "river",
+      balancePostingVersion: 1n,
+    });
+    await expect(transactionRow(untypedId)).resolves.toMatchObject({
+      bitcoinAccountKey: "river",
+      balancePostingVersion: 1n,
+    });
+  });
+
+  it("reclassifies an active spend into Income by restoring the old account and crediting the new one", async () => {
+    const id = "spend-to-income";
+    await t.mutation(api.transaction, {
+      transaction: {
+        id,
+        date: "2026-08-20",
+        merchant: "Original spend",
+        amountCents: 1n,
+        kind: "spend",
+        category: "Shopping",
+        card: "zeus_lightning",
+        amountSats: 100n,
+        bitcoinAccountKey: "river",
+      },
+    });
+    await t.mutation(api.transaction, {
+      transaction: {
+        id,
+        date: "2026-08-20",
+        merchant: "Corrected Income",
+        amountCents: 1n,
+        kind: "credit",
+        category: "Income",
+        card: "strike",
+        amountSats: 250n,
+        bitcoinAccountKey: "coldcard",
+      },
+      baseUpdatedAtMs: await transactionRevision(id),
+    });
+
+    expect(satsByKey(await snapshot())).toEqual({
+      river: 1_000_000n,
+      coldcard: 2_000_250n,
+    });
+    await expect(transactionRow(id)).resolves.toMatchObject({
+      category: "Income",
+      card: "strike",
+      amountSats: 250n,
+      bitcoinAccountKey: "coldcard",
+      balancePostingVersion: 1n,
+    });
+  });
+
+  it("moves an active spend posting between accounts by reversing the old debit first", async () => {
+    const id = "spend-account-correction";
+    await t.mutation(api.transaction, {
+      transaction: {
+        id,
+        date: "2026-08-20",
+        merchant: "Original spend",
+        amountCents: 1n,
+        kind: "spend",
+        category: "Shopping",
+        card: "zeus_lightning",
+        amountSats: 100n,
+        bitcoinAccountKey: "river",
+      },
+    });
+    await t.mutation(api.transaction, {
+      transaction: {
+        id,
+        date: "2026-08-20",
+        merchant: "Corrected spend",
+        amountCents: 1n,
+        kind: "spend",
+        category: "Shopping",
+        card: "zeus_on_chain",
+        amountSats: 150n,
+        bitcoinAccountKey: "coldcard",
+      },
+      baseUpdatedAtMs: await transactionRevision(id),
+    });
+
+    expect(satsByKey(await snapshot())).toEqual({
+      river: 1_000_000n,
+      coldcard: 1_999_850n,
+    });
+    await expect(transactionRow(id)).resolves.toMatchObject({
+      category: "Shopping",
+      card: "zeus_on_chain",
+      amountSats: 150n,
+      bitcoinAccountKey: "coldcard",
+      balancePostingVersion: 1n,
+    });
+  });
+
+  it("edits active Income on the same account by applying only the sats delta", async () => {
+    const id = "income-amount-correction";
+    const transaction = {
+      id,
+      date: "2026-08-20",
+      merchant: "Bitcoin income",
+      amountCents: 1n,
+      kind: "credit",
+      category: "Income",
+      card: "strike",
+      amountSats: 100n,
+      bitcoinAccountKey: "coldcard",
+    };
+    await t.mutation(api.transaction, { transaction });
+    await t.mutation(api.transaction, {
+      transaction: { ...transaction, amountSats: 150n },
+      baseUpdatedAtMs: await transactionRevision(id),
+    });
+
+    expect(satsByKey(await snapshot())).toEqual({
+      river: 1_000_000n,
+      coldcard: 2_000_150n,
+    });
+    await expect(transactionRow(id)).resolves.toMatchObject({
+      category: "Income",
+      card: "strike",
+      amountSats: 150n,
+      bitcoinAccountKey: "coldcard",
+      balancePostingVersion: 1n,
+    });
+  });
+
+  it("reverses historical retired-source Income as a credit without reopening legacy writes", async () => {
+    await t.run(async (ctx) => {
+      const document = await ctx.db
+        .query("btcBalanceDocuments")
+        .withIndex("by_source_file", (q) =>
+          q.eq("sourceFile", "btc-balance-snapshot"),
+        )
+        .unique();
+      const river = await ctx.db
+        .query("btcAccounts")
+        .withIndex("by_owner_key", (q) =>
+          q.eq("owner", "victor").eq("key", "river"),
+        )
+        .unique();
+      if (!document || !river) throw new Error("seed ledger missing River");
+      await ctx.db.patch(document._id, {
+        accounts: document.accounts.map((account) =>
+          account.key === "river" ? { ...account, sats: 1_000_300n } : account,
+        ),
+        totals: {
+          ...document.totals,
+          sats: 3_000_300n,
+          exchangeSats: 1_000_300n,
+        },
+      });
+      await ctx.db.patch(river._id, { sats: 1_000_300n });
+      for (const [card, sats] of [
+        ["lightning", 100n],
+        ["on_chain", 200n],
+      ] as const) {
+        await ctx.db.insert("transactions", {
+          txId: `historical-${card}-income`,
+          owner: "victor",
+          date: "2026-07-20",
+          month: "2026-07",
+          merchant: "Historical Bitcoin Income",
+          amountCents: 1n,
+          category: "Income",
+          card,
+          amountSats: sats,
+          bitcoinAccountKey: "river",
+          balancePostingVersion: 1n,
+          sourceFile: "transactions",
+          updatedAtMs: 1,
+        });
+      }
+    });
+
+    const lightningId = "historical-lightning-income";
+    await expect(
+      t.mutation(api.transaction, {
+        transaction: {
+          id: lightningId,
+          date: "2026-07-20",
+          merchant: "Historical Bitcoin Income",
+          amountCents: 1n,
+          kind: "credit",
+          category: "Income",
+          card: "lightning",
+          amountSats: 100n,
+          bitcoinAccountKey: "river",
+        },
+        baseUpdatedAtMs: 1,
+      }),
+    ).rejects.toThrow(/direction must match/);
+    expect(satsByKey(await snapshot()).river).toBe(1_000_300n);
+
+    await t.mutation(api.transaction, {
+      transaction: {
+        id: lightningId,
+        date: "2026-07-20",
+        merchant: "Corrected Bitcoin spend",
+        amountCents: 1n,
+        kind: "spend",
+        category: "Shopping",
+        card: "river",
+        amountSats: 50n,
+        bitcoinAccountKey: "river",
+      },
+      baseUpdatedAtMs: 1,
+    });
+    expect(satsByKey(await snapshot()).river).toBe(1_000_150n);
+
+    const onChainId = "historical-on_chain-income";
+    await t.mutation(api.deleteTransaction, {
+      txId: onChainId,
+      baseUpdatedAtMs: 1,
+    });
+    expect(satsByKey(await snapshot())).toEqual({
+      river: 999_950n,
+      coldcard: 2_000_000n,
+    });
+    await expect(transactionRow(lightningId)).resolves.toMatchObject({
+      category: "Shopping",
+      card: "river",
+      amountSats: 50n,
+      bitcoinAccountKey: "river",
+      balancePostingVersion: 1n,
+    });
+    await expect(transactionRow(onChainId)).resolves.toBeNull();
+  });
+
+  it("rejects invalid Bitcoin payment-source directions and accounts at the admin boundary", async () => {
+    await expect(
+      t.mutation(api.transaction, {
+        transaction: {
+          id: "income-as-spend",
+          date: "2026-08-20",
+          merchant: "Bitcoin income",
+          amountCents: 1n,
+          kind: "spend",
+          category: "Income",
+          card: "strike",
+          amountSats: 1n,
+          bitcoinAccountKey: "river",
+        },
+      }),
+    ).rejects.toThrow(/must be sent with kind/);
+    await expect(
+      t.mutation(api.transaction, {
+        transaction: {
+          id: "spend-as-credit",
+          date: "2026-08-20",
+          merchant: "Refund",
+          amountCents: -1n,
+          kind: "credit",
+          category: "Shopping",
+          card: "zeus_lightning",
+          amountSats: 1n,
+          bitcoinAccountKey: "river",
+        },
+      }),
+    ).rejects.toThrow(/direction must match/);
+    await expect(
+      t.mutation(api.transaction, {
+        transaction: {
+          id: "missing-income-account",
+          date: "2026-08-20",
+          merchant: "Bitcoin income",
+          amountCents: 1n,
+          kind: "credit",
+          category: "Income",
+          card: "zeus_on_chain",
+          amountSats: 1n,
+        },
+      }),
+    ).rejects.toThrow(/require positive amountSats and bitcoinAccountKey/);
+    await expect(
+      t.mutation(api.transaction, {
+        transaction: {
+          id: "unknown-income-account",
+          date: "2026-08-20",
+          merchant: "Bitcoin income",
+          amountCents: 1n,
+          kind: "credit",
+          category: "Income",
+          card: "strike",
+          amountSats: 1n,
+          bitcoinAccountKey: "missing",
+        },
+      }),
+    ).rejects.toThrow(/Unknown Bitcoin account/);
+    expect(satsByKey(await snapshot())).toEqual({
+      river: 1_000_000n,
+      coldcard: 2_000_000n,
+    });
+  });
+
+  it("rejects unknown and underfunded BTC spend accounts without changing balances", async () => {
+    const before = satsByKey(await snapshot());
+    const spend = {
+      id: "rejected-btc-spend",
+      date: "2026-08-20",
+      merchant: "Merchant",
+      amountCents: 10_000n,
+      kind: "spend",
+      category: "Shopping",
+      card: "zeus_on_chain",
+      amountSats: 100_000n,
+      bitcoinAccountKey: "missing",
+    };
+    await expect(
+      t.mutation(api.transaction, { transaction: spend }),
+    ).rejects.toThrow(/Unknown Bitcoin account/);
+    await expect(
+      t.mutation(api.transaction, {
+        transaction: {
+          ...spend,
+          id: "underfunded-btc-spend",
+          amountSats: 2_000_001n,
+          bitcoinAccountKey: "coldcard",
+        },
+      }),
+    ).rejects.toThrow(/insufficient funds/);
+    expect(satsByKey(await snapshot())).toEqual(before);
   });
 
   it("rejects invalid sync-token buys before they can debit River", async () => {
@@ -326,6 +1074,7 @@ describe("Bitcoin balance posting", () => {
         date: "2026-08-01",
         merchant: "Merchant",
         category: "Spending",
+        budgetEffect: "budget_category",
         amountUsdCents: 1_000n,
         btcSpentSats: 10_000n,
         btcPriceCents: 10_000_000n,
@@ -407,6 +1156,7 @@ describe("Bitcoin balance posting", () => {
         date: "2026-08-01",
         merchant: "Utility",
         category: "Bills",
+        budgetEffect: "budget_category",
         amountUsdCents: 10_000n,
         btcSpentSats: 30_000n,
         btcPriceCents: 10_000_000n,
@@ -476,6 +1226,39 @@ describe("Bitcoin balance posting", () => {
       coldcard: 2_000_000n,
     });
     expect(state.document.totals.sats).toBe(2_970_000n);
+  });
+
+  it("keeps a zero-fee transfer neutral to total BTC, income, and spending rows", async () => {
+    const before = await snapshot();
+    const rowCountsBefore = await t.run(async (ctx) => ({
+      income: (await ctx.db.query("income").collect()).length,
+      transactions: (await ctx.db.query("transactions").collect()).length,
+    }));
+
+    await t.mutation(api.transfer, {
+      transfer: {
+        id: "zero-fee-transfer",
+        owner: "victor",
+        date: "2026-08-01",
+        fromAccountKey: "river",
+        toAccountKey: "coldcard",
+        sats: 100_000n,
+        feeSats: 0n,
+      },
+    });
+
+    const after = await snapshot();
+    expect(satsByKey(after)).toEqual({
+      river: 900_000n,
+      coldcard: 2_100_000n,
+    });
+    expect(after.document.totals.sats).toBe(before.document.totals.sats);
+    await expect(
+      t.run(async (ctx) => ({
+        income: (await ctx.db.query("income").collect()).length,
+        transactions: (await ctx.db.query("transactions").collect()).length,
+      })),
+    ).resolves.toEqual(rowCountsBefore);
   });
 
   it("rejects invalid and underfunded transfers without partial balance changes", async () => {
