@@ -42,18 +42,17 @@ import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Application-owned identity leases for drafts awaiting a definitive server
- * acceptance, one pending id per server scope. Ambiguous retries deliberately
- * reuse the scope's id so Convex supersedes the same row instead of inserting
- * another one. When backed by preferences, leases survive process death. One
- * instance per money-write surface keeps each surface's pending ids independent.
+ * acceptance, one pending id per caller-provided lease scope. Ambiguous retries
+ * deliberately reuse the scope's id so Convex supersedes the same row instead
+ * of inserting another one. When backed by preferences, leases survive process
+ * death. Each money-write surface chooses a scope that keeps its pending ids
+ * independent from other surfaces and profiles.
  *
- * The scope key is the exact `sourceFile` the mutation sends, because that is
- * the server's natural idempotency domain: Convex keys these rows by
- * `(sourceFile, id)`. A process-global slot loses a cross-profile race — an
- * adult id retained after an ambiguous write could be handed to a Mason sheet,
- * legitimately accepted under Mason's sourceFile, and its acceptance would
- * then release the lease the adult retry still needs, minting a fresh id and
- * crediting the adult row twice.
+ * The scope is usually the server's natural source-file idempotency domain, but
+ * Bitcoin buys need a narrower explicit scope because standalone and
+ * income-linked writes can share a source file and adult profiles share the
+ * canonical Victor owner. Callers must use the same scope for acquisition and
+ * compare-and-clear release.
  */
 internal class TransactionDraftIdStore(
     private val preferences: SharedPreferences? = null,

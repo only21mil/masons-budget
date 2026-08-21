@@ -120,7 +120,10 @@ data class BtcBuyWriteRequest(
 
 internal data class BtcBuyFromIncomeWriteRequest(
     val id: String,
+    /** Canonical owner sent to the device mutation. */
     val owner: FamilyMember,
+    /** Active profile identity used only to namespace the retry lease. */
+    val profile: FamilyMember,
     val date: String,
     val source: String,
     val sats: Long,
@@ -153,6 +156,8 @@ internal data class BtcBuyFromIncomeWriteRequest(
     )
 
     init {
+        require(profile.isAdult)
+        require(owner == profile.ledgerOwner)
         require(owner.isAdult)
         require(id.isNotBlank())
         require(runCatching { LocalDate.parse(date) }.isSuccess)
@@ -165,6 +170,28 @@ internal data class BtcBuyFromIncomeWriteRequest(
 }
 
 internal const val BITCOIN_BUY_SOURCE_FILE = "bitcoin-buys"
+
+/**
+ * A Bitcoin-buy lease is narrower than the server data file. The data file is
+ * the wire idempotency domain, while these values identify the UI operation
+ * and the active profile that owns the retry state.
+ */
+internal enum class BtcBuyWriteSurface(val wire: String) {
+    STANDALONE("standalone"),
+    INCOME_LINKED("income-linked"),
+}
+
+internal fun btcBuyDraftIdScope(
+    surface: BtcBuyWriteSurface,
+    profile: FamilyMember,
+): String =
+    listOf(
+        "btc-buy-v1",
+        surface.wire,
+        profile.btcBuysDataFileName,
+        profile.ledgerOwner.key,
+        profile.key,
+    ).joinToString(":")
 
 internal class BtcBuyIncomeMutationGateway(
     private val client: ConvexDeviceMutationClient,
@@ -220,6 +247,7 @@ internal fun btcBuyFromIncomeWriteRequest(
         BtcBuyFromIncomeWriteRequest(
             id = normalizedId,
             owner = viewer.ledgerOwner,
+            profile = viewer,
             date = normalizedDate,
             source = normalizedSource,
             sats = exactSats,
@@ -239,9 +267,10 @@ internal fun launchBtcBuyFromIncomeSave(
     buyDraftIds: TransactionDraftIdStore,
     onResult: (ConvexResult<ConvexValue>) -> Unit,
 ): Job = scope.launch {
+    val leaseScope = btcBuyDraftIdScope(BtcBuyWriteSurface.INCOME_LINKED, request.profile)
     val result = gateway.upsert(request)
     if (result is ConvexResult.Ok) {
-        buyDraftIds.rotateAfterAcceptance(BITCOIN_BUY_SOURCE_FILE, request.id)
+        buyDraftIds.rotateAfterAcceptance(leaseScope, request.id)
     }
     onResult(result)
 }
@@ -572,6 +601,7 @@ internal fun launchBtcBuySave(
     // One expression feeds both the wire and the lease so acquisition,
     // acceptance, and release can never disagree about the server scope.
     val sourceFile = request.owner.btcBuysDataFileName
+    val leaseScope = btcBuyDraftIdScope(BtcBuyWriteSurface.STANDALONE, request.owner)
     val result = client.mutate(
         ConvexMutation.UpsertBtcBuy(
             buy = BtcBuyInput(
@@ -587,7 +617,7 @@ internal fun launchBtcBuySave(
         ),
     )
     if (result is ConvexResult.Ok<*>) {
-        buyDraftIds.rotateAfterAcceptance(sourceFile, request.id)
+        buyDraftIds.rotateAfterAcceptance(leaseScope, request.id)
     }
     onResult(result)
 }
@@ -605,9 +635,9 @@ internal fun BtcBuyEntrySheet(
     // Process-owned, exactly like the transaction sheet: dismissing this sheet
     // mid-write and reopening must resubmit the SAME id, or a committed buy
     // whose response was lost is credited to River a second time. Acquired
-    // under this owner's buy sourceFile so another profile's pending id can
-    // never leak into this sheet's write.
-    val buyScope = owner.btcBuysDataFileName
+    // under this owner's buy surface and profile so another pending operation
+    // can never leak into this sheet's write.
+    val buyScope = btcBuyDraftIdScope(BtcBuyWriteSurface.STANDALONE, owner)
     val buyId = remember(buyScope) {
         buyDraftIds?.currentId(buyScope) ?: "android-${UUID.randomUUID()}"
     }
