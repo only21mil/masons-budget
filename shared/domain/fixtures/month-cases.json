@@ -1,0 +1,43 @@
+{
+  "$comment": "Language-neutral month and owner vectors for budget scoping. Adults may see child transactions for oversight, but only adult-owned rows contribute to Victor/Rachel budget months and totals. Child budgets remain self-only. TypeScript and Kotlin load this same file.",
+  "transactions": [
+    { "id": "victor-july", "date": "2026-07-26", "merchant": "Victor July", "amount": "100", "category": "Spending", "owner": "victor" },
+    { "id": "rachel-july", "date": "2026-07-20", "merchant": "Rachel July", "amount": "20", "category": "Spending", "owner": "rachel" },
+    { "id": "mason-july", "date": "2026-07-15", "merchant": "Mason July", "amount": "30", "category": "Spending", "owner": "mason" },
+    { "id": "maddox-july", "date": "2026-07-10", "merchant": "Maddox July", "amount": "10", "category": "Spending", "owner": "maddox" },
+    { "id": "victor-june", "date": "2026-06-26", "merchant": "Victor June", "amount": "200", "category": "Spending", "owner": "victor" },
+    { "id": "rachel-june", "date": "2026-06-20", "merchant": "Rachel June", "amount": "40", "category": "Spending", "owner": "rachel" },
+    { "id": "mason-june", "date": "2026-06-15", "merchant": "Mason June", "amount": "50", "category": "Spending", "owner": "mason" },
+    { "id": "maddox-may", "date": "2026-05-10", "merchant": "Maddox May", "amount": "12", "category": "Spending", "owner": "maddox" }
+  ],
+  "profiles": [
+    {
+      "viewer": "victor",
+      "budgetMonth": "2026-07",
+      "expectedOwners": ["victor", "rachel"],
+      "expectedMonths": ["2026-07", "2026-06"],
+      "spendByMonth": { "2026-07": "120", "2026-06": "240" }
+    },
+    {
+      "viewer": "rachel",
+      "budgetMonth": "2026-07",
+      "expectedOwners": ["victor", "rachel"],
+      "expectedMonths": ["2026-07", "2026-06"],
+      "spendByMonth": { "2026-07": "120", "2026-06": "240" }
+    },
+    {
+      "viewer": "mason",
+      "budgetMonth": "2026-07",
+      "expectedOwners": ["mason"],
+      "expectedMonths": ["2026-07", "2026-06"],
+      "spendByMonth": { "2026-07": "30", "2026-06": "50" }
+    },
+    {
+      "viewer": "maddox",
+      "budgetMonth": null,
+      "expectedOwners": ["maddox"],
+      "expectedMonths": ["2026-07", "2026-05"],
+      "spendByMonth": { "2026-07": "10", "2026-05": "12" }
+    }
+  ]
+}

@@ -1,0 +1,99 @@
+# Xcode
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+
+# Build artifacts
+build/
+Build/
+Archives/
+runtime-artifacts/
+.cutover-backup/
+*.xcarchive
+*.pkg
+*.dmg
+*.app
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+Packages/
+*.resolved
+
+# CocoaPods (not used, but just in case)
+Pods/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# Files that might appear on external disk
+.Spotlight-V100
+.Trashes
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# Claude Code
+.claude/
+
+# Serena
+.serena/
+
+# Environment / secrets (never commit)
+.env
+.env.*
+.env.local
+*.pem
+*.p8
+AuthKey_*.p8
+*.p12
+*.mobileprovision
+*.provisionprofile
+credentials.json
+
+# Node / Convex
+node_modules/
+.convex/
+
+# Linux client (Electron + Vite) build output
+linux/dist/
+linux/dist-electron/
+linux/release/
+linux/screenshots/
+!linux/build/
+!linux/build/icon.png
+.vite/
+*.deb
+*.AppImage
+
+# Android client build output
+android/build/
+android/*/build/
+android/.gradle/
+android/local.properties
+*.apk
+*.aab
+*.keystore
+*.jks
+node_modules

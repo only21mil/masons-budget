@@ -1,0 +1,45 @@
+{
+  "status": "success",
+  "value": {
+    "document": {
+      "lastUpdated": "2026-07-31",
+      "retirementTotalCents": { "$integer": "QHh9AQAAAAA=" },
+      "accounts": [
+        {
+          "key": "synthetic-retirement",
+          "owner": "victor",
+          "provider": "Synthetic redacted provider",
+          "totalValueCents": { "$integer": "QHh9AQAAAAA=" },
+          "weeklyContributionCents": { "$integer": "ECcAAAAAAAA=" },
+          "weeklyContributionDay": "Friday",
+          "holdings": [
+            {
+              "name": "Synthetic index holding",
+              "category": "Equity",
+              "ticker": "VOO",
+              "valueCents": { "$integer": "QHh9AQAAAAA=" },
+              "costBasisCents": { "$integer": "AC0xAQAAAAA=" },
+              "gainBps": { "$integer": "xAkAAAAAAAA=" },
+              "sharesDecimal": "5.00000000",
+              "avgCostCents": { "$integer": "QEtMAAAAAAA=" },
+              "currentPricePerShareCents": { "$integer": "QEtMAAAAAAA=" },
+              "isProxy": false,
+              "lots": [
+                {
+                  "date": "2026-07-25",
+                  "type": "synthetic_buy",
+                  "pricePerShareCents": { "$integer": "QEtMAAAAAAA=" },
+                  "sharesDecimal": "5.00000000",
+                  "amountInvestedCents": { "$integer": "QHh9AQAAAAA=" },
+                  "note": "Synthetic redacted golden"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "updatedAtMs": 1785499200000.0
+    },
+    "complete": true
+  }
+}

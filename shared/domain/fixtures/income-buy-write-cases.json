@@ -1,0 +1,53 @@
+{
+  "$comment": "Atomic tables:upsertBtcBuy payload for one canonical income row and one Bitcoin buy. Both rows share one stable caller-generated id. The buy is the only sats posting. Runtime credentials are intentionally absent.",
+  "contractVersion": 1,
+  "actor": "rachel",
+  "input": {
+    "sourceFile": "bitcoin-buys",
+    "buy": {
+      "id": "income-buy-01",
+      "owner": "rachel",
+      "date": "2026-08-20",
+      "source": "River",
+      "sats": "100",
+      "priceUsdCents": "2500000",
+      "usdCents": "25",
+      "note": "Budget income invested in Bitcoin"
+    },
+    "linkedIncome": {
+      "id": "income-buy-01",
+      "owner": "rachel",
+      "date": "2026-08-20",
+      "amountCents": "25",
+      "source": "Payroll",
+      "sourceFile": "income",
+      "note": "Budget income invested in Bitcoin"
+    }
+  },
+  "expected": {
+    "path": "tables:upsertBtcBuy",
+    "format": "convex_encoded_json",
+    "args": {
+      "sourceFile": "bitcoin-buys",
+      "buy": {
+        "id": "income-buy-01",
+        "owner": "victor",
+        "date": "2026-08-20",
+        "source": "River",
+        "sats": { "$integer": "ZAAAAAAAAAA=" },
+        "priceUsdCents": { "$integer": "oCUmAAAAAAA=" },
+        "usdCents": { "$integer": "GQAAAAAAAAA=" },
+        "note": "Budget income invested in Bitcoin"
+      },
+      "linkedIncome": {
+        "id": "income-buy-01",
+        "owner": "victor",
+        "date": "2026-08-20",
+        "amountCents": { "$integer": "GQAAAAAAAAA=" },
+        "source": "Payroll",
+        "sourceFile": "income",
+        "note": "Budget income invested in Bitcoin"
+      }
+    }
+  }
+}

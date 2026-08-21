@@ -1,0 +1,32 @@
+{
+  "status": "success",
+  "value": {
+    "complete": true,
+    "rows": [
+      {
+        "owner": "victor",
+        "schemaVersion": { "$integer": "AgAAAAAAAAA=" },
+        "asOf": "2026-07-31T12:00:00Z",
+        "accounts": [
+          {
+            "key": "synthetic-cold-storage",
+            "label": "Synthetic cold storage",
+            "custody": "self_custody",
+            "sats": { "$integer": "AOH1BQAAAAA=" },
+            "fiatCents": { "$integer": "wM9qAAAAAAA=" }
+          }
+        ],
+        "totals": {
+          "sats": { "$integer": "AOH1BQAAAAA=" },
+          "fiatCents": { "$integer": "wM9qAAAAAAA=" },
+          "exchangeSats": { "$integer": "AAAAAAAAAAA=" },
+          "selfCustodySats": { "$integer": "AOH1BQAAAAA=" }
+        },
+        "source": "synthetic-redacted-golden",
+        "basis": "synthetic-test-quote",
+        "confidence": "test-only",
+        "updatedAtMs": 1785499200000.0
+      }
+    ]
+  }
+}

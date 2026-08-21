@@ -1,0 +1,104 @@
+{
+  "name": "@vogel-vault/linux",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The Vogel Vault \u2014 private family Bitcoin and budget dashboard",
+  "homepage": "https://github.com/only21mil/masons-budget",
+  "author": {
+    "name": "Victor Vogel"
+  },
+  "license": "UNLICENSED",
+  "main": "dist-electron/main.js",
+  "desktopName": "vogel-vault",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json",
+    "lint": "eslint .",
+    "test": "vitest run && node --test test/temp-tracked-cleanup.check.mjs",
+    "qa:preload-boundary": "node scripts/qa-preload-boundary.mjs",
+    "build:release": "npm run typecheck && vite build --mode release",
+    "package": "npm run package:linux",
+    "package:linux": "node scripts/package-linux.mjs",
+    "package:verify": "node scripts/package-verify-linux.mjs",
+    "screenshots": "node scripts/capture-screenshots.mjs",
+    "smoke": "node scripts/smoke-electron.mjs",
+    "smoke:packaged": "node scripts/smoke-packaged-linux.mjs"
+  },
+  "dependencies": {
+    "@vogel-vault/domain": "*",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@electron/asar": "4.2.1",
+    "@eslint/js": "10.0.1",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "43.2.0",
+    "electron-builder": "26.15.7",
+    "eslint": "10.8.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "^15.14.0",
+    "happy-dom": "^20.11.6",
+    "playwright": "^1.49.1",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "8.65.0",
+    "vite": "^6.0.5",
+    "vite-plugin-electron": "^0.29.0",
+    "vitest": "^4.1.10"
+  },
+  "build": {
+    "appId": "com.sats21m.masonsbudget",
+    "productName": "The Vogel Vault",
+    "copyright": "Copyright © 2026 Victor Vogel",
+    "asar": true,
+    "extraMetadata": {
+      "name": "vogel-vault",
+      "description": "The Vogel Vault — private family Bitcoin and budget dashboard",
+      "desktopName": "vogel-vault",
+      "homepage": "https://github.com/only21mil/masons-budget",
+      "author": {
+        "name": "Victor Vogel"
+      }
+    },
+    "directories": {
+      "buildResources": "build",
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
+    "linux": {
+      "target": [
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Vogel-Vault-${version}-x86_64.${ext}",
+      "category": "Finance",
+      "description": "Private family Bitcoin and budget dashboard for the Vogel household.",
+      "executableName": "vogel-vault",
+      "icon": "build/icon.png",
+      "maintainer": "Victor Vogel",
+      "syncDesktopName": true,
+      "synopsis": "Private family Bitcoin and budget dashboard"
+    }
+  }
+}

@@ -1,0 +1,199 @@
+package com.sats21m.vogelvault
+
+import com.github.takahirom.roborazzi.captureRoboImage
+import com.sats21m.vogelvault.domain.DisplayUnit
+import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.Freshness
+import com.sats21m.vogelvault.ui.Destination
+import com.sats21m.vogelvault.ui.VaultApp
+import com.sats21m.vogelvault.ui.VaultUiState
+import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+
+/**
+ * Android design packet.
+ *
+ * Renders the real Compose shell to PNG under Robolectric, so the Fold UI can be
+ * reviewed with no emulator, no display and no physical device. Mirrors the Linux
+ * client's packet.
+ *
+ * Two postures matter, and they are the whole point of the adaptive layout:
+ *   - folded   411dp wide -> bottom navigation bar
+ *   - unfolded 841dp wide -> navigation rail
+ *
+ * Deliberately a review artifact, not a pixel-diff gate. Behaviour is asserted by
+ * the domain and threshold tests; a strict image comparison would fail on every
+ * font or renderer nudge and train us to ignore it.
+ *
+ * Note this uses the composable form of `captureRoboImage` rather than a
+ * ComposeTestRule: the rule form needs a real Activity to launch, which is not
+ * declared for unit tests, and it is not needed just to render a tree.
+ */
+private fun capture(
+    name: String,
+    state: VaultUiState,
+    displayUnit: DisplayUnit = DisplayUnit.BTC,
+) {
+    captureRoboImage("build/outputs/roborazzi/$name.png") {
+        VogelVaultTheme {
+            VaultApp(
+                state = state,
+                onNavigate = {},
+                onSwitchProfile = {},
+                displayUnit = displayUnit,
+            )
+        }
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = [34], qualifiers = RobolectricDeviceQualifiers.FOLDED)
+class DesignPacketFoldedTest {
+
+    @Test
+    fun adultDestinations() {
+        for (destination in Destination.entries) {
+            capture(
+                "folded-${destination.name.lowercase()}-victor-normal",
+                VaultUiState.of(FamilyMember.VICTOR, destination),
+            )
+        }
+    }
+
+    @Test
+    fun childDestinations() {
+        for (destination in Destination.entries) {
+            capture(
+                "folded-${destination.name.lowercase()}-mason-normal",
+                VaultUiState.of(FamilyMember.MASON, destination),
+            )
+        }
+    }
+
+    @Test
+    fun bitcoinDisplayUnits() {
+        for (unit in DisplayUnit.entries) {
+            capture(
+                "folded-bitcoin-victor-${unit.storageKey}",
+                VaultUiState.of(FamilyMember.VICTOR, Destination.BITCOIN),
+                unit,
+            )
+        }
+    }
+
+    @Test
+    fun bitcoinUsdWithoutPrice() {
+        val state = VaultUiState.of(FamilyMember.VICTOR, Destination.BITCOIN)
+        capture(
+            "folded-bitcoin-victor-usd-no-price",
+            state.copy(
+                data = state.data.copy(
+                    btcBuys = state.data.btcBuys.copy(
+                        status = Freshness.EMPTY,
+                        value = emptyList(),
+                    ),
+                    btcPriceCents = 0L,
+                    btcPriceAsOf = null,
+                ),
+            ),
+            DisplayUnit.USD,
+        )
+    }
+
+    /**
+     * The Budget screen on a month that is not the budget file's own.
+     *
+     * The chip's selected state and the "planned figures are Jul 2026 targets"
+     * banner only exist off the default month, so no other capture in the packet
+     * puts either in front of a reviewer.
+     */
+    @Test
+    fun budgetOnAnEarlierMonth() {
+        capture(
+            "folded-budget-victor-2026-06",
+            VaultUiState.of(FamilyMember.VICTOR, Destination.BUDGET, selectedMonth = "2026-06"),
+        )
+    }
+
+    /** Maddox has no dedicated budget data, so his budget is genuinely empty. */
+    @Test
+    fun maddoxBudgetIsEmpty() {
+        capture(
+            "folded-budget-maddox-normal",
+            VaultUiState.of(FamilyMember.MADDOX, Destination.BUDGET),
+        )
+    }
+
+    @Test
+    fun nonNormalStates() {
+        val sampled = listOf(
+            Destination.DASHBOARD,
+            Destination.BUDGET,
+            Destination.ACTIVITY,
+            Destination.NET_WORTH,
+        )
+        val states = listOf(Freshness.STALE, Freshness.ERROR, Freshness.EMPTY, Freshness.LOADING)
+        for (destination in sampled) {
+            for (status in states) {
+                capture(
+                    "folded-${destination.name.lowercase()}-victor-${status.name.lowercase()}",
+                    VaultUiState.of(FamilyMember.VICTOR, destination, status),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Unfolded pass. A separate class because the Robolectric device qualifier is
+ * class-level, and proving the bottom bar becomes a rail is the point.
+ */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = [34], qualifiers = RobolectricDeviceQualifiers.UNFOLDED)
+class DesignPacketUnfoldedTest {
+
+    @Test
+    fun adultDestinations() {
+        for (destination in Destination.entries) {
+            capture(
+                "unfolded-${destination.name.lowercase()}-victor-normal",
+                VaultUiState.of(FamilyMember.VICTOR, destination),
+            )
+        }
+    }
+
+    @Test
+    fun childDashboard() {
+        capture(
+            "unfolded-dashboard-mason-normal",
+            VaultUiState.of(FamilyMember.MASON, Destination.DASHBOARD),
+        )
+    }
+
+    /** The month row has far more width to lay out against beside the rail. */
+    @Test
+    fun budgetOnAnEarlierMonth() {
+        capture(
+            "unfolded-budget-victor-2026-06",
+            VaultUiState.of(FamilyMember.VICTOR, Destination.BUDGET, selectedMonth = "2026-06"),
+        )
+    }
+}
+
+/**
+ * Robolectric screen qualifiers for the two Fold postures.
+ *
+ * Spelled out rather than using a named device so the widths straddle
+ * [com.sats21m.vogelvault.ui.UNFOLDED_MIN_WIDTH_DP] on purpose: 411dp is below the
+ * 600dp threshold, 841dp is above it. AdaptiveThresholdTest asserts that.
+ */
+object RobolectricDeviceQualifiers {
+    const val FOLDED = "w411dp-h891dp-normal-long-notround-any-420dpi-keyshidden-nonav"
+    const val UNFOLDED = "w841dp-h945dp-normal-long-notround-any-420dpi-keyshidden-nonav"
+}

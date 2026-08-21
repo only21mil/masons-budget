@@ -1,0 +1,414 @@
+name: Swift CI
+
+# The Apple client compiled nowhere. PRs #10 (month-scoping tests) and #11
+# (read-token entry) merged on a green tick from workflows that only build the
+# Linux and Android clients, so 75 Swift files and seven XCTest classes have
+# never been through a compiler in CI and the tests have never run.
+#
+# This workflow closes that hole and stops there. It builds and tests. It does
+# not sign, archive, export or upload — that is deploy.yml's job, behind its
+# manual trigger, which is the app-build approval gate. Nothing here may become a
+# second route to a shipped build, which is why every xcodebuild call below
+# disables signing outright rather than merely skipping the upload step.
+#
+# Xcode policy matches deploy.yml: self-hosted routes assert the exact installed
+# version, while the Ubuntu consistency job regenerates with pinned XcodeGen and
+# all Apple jobs consume the verified committed project.
+#
+# Cost: automatic Apple work runs on the SELF-HOSTED MacBook Pro (labels
+# self-hosted,macOS,ARM64,xcode,mason-mbp). The Mac mini is selected only by an
+# explicit manual fallback dispatch. Both avoid hosted macOS billing. CI previously ran on
+# GitHub-hosted macOS at 10x the Linux rate on a private repository ($0.08/min vs
+# $0.008/min) — that rate, across three release attempts and a day of PRs, is
+# what exhausted the Actions spending limit twice on 2026-07-28. The Ubuntu
+# detector, fork-PR guard and concurrency rules below are KEPT anyway: they
+# still stop pointless work, and they are what makes this job requireable at
+# all. An always-on Ubuntu detector gates the actual Apple work, a
+# head-repository check keeps fork PRs off the self-hosted machine, and
+# concurrency cancels superseded PR and merge-group runs. Title/body-only PR
+# edits use a separate no-op lane so they cannot cancel or restart unchanged
+# Apple work; base-branch edits stay in the cancellable PR lane because their
+# effective diff changed. Main pushes use per-commit groups and are never
+# cancelled so every consecutive push range is verified. The workflow itself
+# must start on every PR so its detector check always reports; a workflow-level
+# paths filter reports nothing at all.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  merge_group:
+  # Manual verification defaults to the MacBook Pro. The Mac mini is available
+  # only as an explicit fallback; automatic events can never select it.
+  workflow_dispatch:
+    inputs:
+      apple_runner:
+        description: Apple build host
+        required: true
+        default: mbp
+        type: choice
+        options:
+          - mbp
+          - mini
+
+permissions:
+  contents: read
+
+concurrency:
+  # A main push cannot share a pending slot with a later push: GitHub replaces
+  # an older pending run even when cancel-in-progress is false. Per-SHA groups
+  # ensure every main range starts and finishes. Base-unchanged PR edits use a
+  # run-unique group so they neither cancel the active PR run nor replace a
+  # pending real update. Other PR and merge-group updates keep a stable ref
+  # group and remain cancellable to control runner cost.
+  group: >-
+    swift-${{
+      github.event_name == 'pull_request' &&
+      github.event.action == 'edited' &&
+      !github.event.changes.base &&
+      format('base-unchanged-edit-{0}', github.run_id) ||
+      github.event_name == 'push' && github.sha ||
+      github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      (github.event_name == 'pull_request' || github.event_name == 'merge_group') &&
+      !(github.event_name == 'pull_request' &&
+        github.event.action == 'edited' &&
+        !github.event.changes.base)
+    }}
+
+env:
+  # Both registered Apple hosts must expose this exact version through their
+  # selected /Applications/Xcode.app. A mismatch fails before build work starts.
+  XCODE_VERSION: '26.6'
+
+jobs:
+  changes:
+    name: Detect Apple changes
+    runs-on: ubuntu-latest
+    outputs:
+      apple: ${{ steps.base-unchanged-edit.outputs.apple || steps.filter.outputs.apple }}
+    steps:
+      # GitHub includes changes.base only when an edited PR changed its base.
+      # Title/body-only edits still start this cheap job so its required check
+      # reports, but must not recompute an unchanged diff or restart Apple work.
+      - name: Recognize a base-unchanged PR edit
+        id: base-unchanged-edit
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.action == 'edited' &&
+          !github.event.changes.base
+        run: |
+          echo "apple=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::PR title/body edit left the base unchanged; Apple verification checks will report skipped."
+
+      - if: steps.base-unchanged-edit.outputs.apple != 'false'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Manual runs verify everything. PRs compare with their merge base; normal
+      # main pushes compare the exact before/after pair from the push event.
+      # Ambiguous push history spends the runner rather than claiming a skip.
+      - name: Compare against the merge base
+        id: filter
+        if: steps.base-unchanged-edit.outputs.apple != 'false'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          PUSH_FORCED: ${{ github.event.forced }}
+        run: |
+          set -euo pipefail
+
+          run_apple() {
+            echo "::notice::$1"
+            echo "apple=true" >> "$GITHUB_OUTPUT"
+          }
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            run_apple "Manual dispatch requested full Apple verification."
+            exit 0
+          fi
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            if [ "$EVENT_REF" != "refs/heads/main" ]; then
+              run_apple "Unexpected push ref $EVENT_REF; failing closed."
+              exit 0
+            fi
+            if [[ "$BEFORE_SHA" =~ ^0{40}$ ]]; then
+              run_apple "Push has an all-zero before SHA; no safe comparison range exists."
+              exit 0
+            fi
+            if [ "$PUSH_FORCED" != "false" ]; then
+              run_apple "Push is forced or its forced status is ambiguous."
+              exit 0
+            fi
+            if [[ ! "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ || ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              run_apple "Push SHAs are missing or malformed."
+              exit 0
+            fi
+            if ! git cat-file -e "${BEFORE_SHA}^{commit}" ||
+              ! git cat-file -e "${HEAD_SHA}^{commit}"; then
+              run_apple "Push comparison commit is unavailable in the full checkout."
+              exit 0
+            fi
+            if ! git merge-base --is-ancestor "$BEFORE_SHA" "$HEAD_SHA"; then
+              run_apple "Push before SHA is not an ancestor of the release SHA."
+              exit 0
+            fi
+            if ! files="$(git diff --name-only "$BEFORE_SHA" "$HEAD_SHA")"; then
+              run_apple "Push range could not be diffed."
+              exit 0
+            fi
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              run_apple "Pull request base SHA is missing or malformed."
+              exit 0
+            fi
+            if ! git cat-file -e "${BASE_SHA}^{commit}"; then
+              run_apple "Pull request base is unavailable in the full checkout."
+              exit 0
+            fi
+            if ! diff_base="$(git merge-base HEAD "$BASE_SHA")"; then
+              run_apple "Pull request merge base could not be determined."
+              exit 0
+            fi
+            if ! files="$(git diff --name-only "$diff_base" HEAD)"; then
+              run_apple "Pull request range could not be diffed."
+              exit 0
+            fi
+          elif [ "$EVENT_NAME" = "merge_group" ]; then
+            if [[ ! "$MERGE_GROUP_BASE_SHA" =~ ^[0-9a-f]{40}$ ||
+              ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              run_apple "Merge-group SHAs are missing or malformed."
+              exit 0
+            fi
+            if ! git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" ||
+              ! git cat-file -e "${HEAD_SHA}^{commit}"; then
+              run_apple "Merge-group comparison commit is unavailable in the full checkout."
+              exit 0
+            fi
+            if ! git merge-base --is-ancestor "$MERGE_GROUP_BASE_SHA" "$HEAD_SHA"; then
+              run_apple "Merge-group base SHA is not an ancestor of its head SHA."
+              exit 0
+            fi
+            if ! files="$(git diff --name-only "$MERGE_GROUP_BASE_SHA" "$HEAD_SHA")"; then
+              run_apple "Merge-group range could not be diffed."
+              exit 0
+            fi
+          else
+            run_apple "Unexpected event $EVENT_NAME; failing closed."
+            exit 0
+          fi
+
+          printf '%s\n' "$files" | sed 's/^/  /'
+
+          match_status=0
+          python3 .github/workflows/scripts/apple_changed_tree.py \
+            <<< "$files" || match_status=$?
+
+          if [ "$match_status" -eq 0 ]; then
+            run_apple "Apple-owned path changed."
+          elif [ "$match_status" -eq 1 ]; then
+            echo "apple=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No Apple path changed; Apple verification jobs will report skipped without allocating their runners."
+          else
+            run_apple "Apple path matching failed."
+          fi
+
+  project-consistency:
+    name: Verify committed Xcode project
+    needs: changes
+    # A broken detector is not permission to skip. Its failed check leaves the
+    # workflow red, and this fallback still attempts the full Apple path.
+    if: >-
+      always() &&
+      github.repository == 'only21mil/masons-budget' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
+      (needs.changes.result != 'success' || needs.changes.outputs.apple != 'false')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # This is deliberately a prerequisite of the self-hosted Apple job. A stale
+      # committed project fails here before the self-hosted Mac starts. The same
+      # script fixes drift on Linux or macOS and bootstraps the checksummed,
+      # pinned XcodeGen release, so this failure never requires Mac ownership.
+      - name: Require the generated project to be committed
+        run: scripts/regenerate-xcode-project.sh --check
+
+  swift:
+    name: Build and test the Apple client
+    # One job, not three. Xcode selection, simulator preparation, and project
+    # tests share one self-hosted machine; keeping them together avoids
+    # redundant setup and runner contention.
+    if: >-
+      always() &&
+      github.repository == 'only21mil/masons-budget' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
+      (needs.changes.result != 'success' || needs.changes.outputs.apple != 'false') &&
+      needs.project-consistency.result == 'success'
+    needs: [changes, project-consistency]
+    runs-on: >-
+      ${{
+        fromJSON(
+          github.event_name == 'workflow_dispatch' &&
+          inputs.apple_runner == 'mini' &&
+          '["self-hosted","macOS","ARM64","xcode","mason-mini"]' ||
+          '["self-hosted","macOS","ARM64","xcode","mason-mbp"]'
+        )
+      }}
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Self-hosted: setup-xcode expects the hosted image's versioned bundles
+      # (/Applications/Xcode_26.6.app). Our build hosts have a single /Applications/
+      # Xcode.app, so that action fails outright. Assert the version instead —
+      # the guarantee we actually need is "the pinned Xcode is what built this",
+      # and a mismatch must fail loudly rather than silently build with another.
+      - name: Verify the pinned Xcode
+        run: |
+          set -euo pipefail
+          # NOT `xcodebuild -version | head -1`: head closes the pipe after one
+          # line, xcodebuild writes into the closed descriptor and dies with an
+          # uncaught NSException, exit 134. Capture in full, then parse.
+          version_output="$(xcodebuild -version)"
+          actual="$(printf '%s\n' "$version_output" | awk 'NR==1 {print $2}')"
+          echo "xcodebuild reports $actual; workflow pins ${XCODE_VERSION}"
+          if [ "$actual" != "${XCODE_VERSION}" ]; then
+            echo "::error::Xcode ${XCODE_VERSION} is pinned but this runner has ${actual}." >&2
+            exit 1
+          fi
+
+      # Printed because the runner image moves under us: when this workflow
+      # starts failing on a build that has not changed, the first question is
+      # which Xcode and which SDK it got today.
+      - name: Report the toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+          xcodebuild -showsdks | grep -iE 'ios|macos' || true
+
+      # Cheapest signal first. VogelVaultCore is a plain SwiftPM library with no
+      # simulator, no signing and no app bundle, so a syntax-level break in
+      # VoiceParser surfaces here in under a minute instead of eight minutes into
+      # an app build.
+      - name: SwiftPM package tests
+        run: swift test
+
+      # A runtime and a device are separate CoreSimulator resources. On the
+      # self-hosted host, the first xcodebuild destination query returned only
+      # placeholders even though eleven concrete device plists already existed;
+      # the next job saw all eleven after the failure path called simctl. Do not
+      # depend on that cold-start registration side effect.
+      #
+      # Explicitly reuse or create one named CI device on the newest installed
+      # iOS runtime, choosing an iPhone type whose declared runtime range
+      # includes it. Then ask xcodebuild to verify that exact UDID: simctl owns
+      # provisioning, while xcodebuild remains the authority on scheme
+      # eligibility. The helper names a missing runtime or device type directly.
+      - name: Ensure an iOS simulator
+        id: simulator
+        working-directory: MasonsBudget
+        env:
+          SIMULATOR_NAME: Vogel Vault CI iPhone
+        run: |
+          set -euo pipefail
+          UDID=$(/usr/bin/python3 \
+            ../.github/workflows/scripts/ensure_ios_simulator.py \
+            --name "$SIMULATOR_NAME")
+          DESTINATIONS=$(xcodebuild -showdestinations \
+            -project MasonsBudget.xcodeproj -scheme MasonsBudget 2>&1 || true)
+          printf '%s\n' "$DESTINATIONS"
+
+          if ! grep -F "id:$UDID," <<< "$DESTINATIONS" >/dev/null; then
+            echo "::error::The required simulator '$SIMULATOR_NAME' ($UDID) exists in CoreSimulator, but Xcode ${XCODE_VERSION} does not list that exact device as eligible for the MasonsBudget scheme."
+            echo "== Devices =="
+            xcrun simctl list devices
+            exit 1
+          fi
+          echo "Testing on simulator $UDID"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      # Booting explicitly rather than letting xcodebuild do it lazily: a slow
+      # first boot otherwise shows up as a timeout inside the test action, which
+      # reads like a test failure and is not one.
+      - name: Boot the simulator
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          set -euo pipefail
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+
+      # Signing is disabled three ways because one is not enough: the project
+      # sets CODE_SIGN_STYLE=Automatic with a DEVELOPMENT_TEAM, and a runner has
+      # no Apple ID to resolve a profile with. The simulator does not verify
+      # signatures, so an unsigned bundle installs and the tests run.
+      #
+      # This is also the structural reason this workflow cannot produce a
+      # shippable artifact even by accident.
+      - name: iOS unit tests
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+        working-directory: MasonsBudget
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -project MasonsBudget.xcodeproj \
+            -scheme MasonsBudget \
+            -destination "platform=iOS Simulator,id=$UDID" \
+            -resultBundlePath "$RUNNER_TEMP/MasonsBudget-iOS.xcresult" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      # Build only: the MasonsBudgetMac scheme has no test targets, and the two
+      # app targets compile the same sources for different platforms, so this
+      # exists to catch an iOS-only API landing in shared code. deploy.yml offers
+      # a macos platform, so a Mac build that has silently rotted is a release
+      # that fails at the archive step.
+      - name: macOS build
+        working-directory: MasonsBudget
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project MasonsBudget.xcodeproj \
+            -scheme MasonsBudgetMac \
+            -destination "platform=macOS" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      # Only on failure. The xcresult carries the per-test failure detail that
+      # the raw xcodebuild log buries, and on a green run it is dead weight
+      # nobody opens.
+      - name: Upload the test result bundle
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: masonsbudget-ios-xcresult
+          path: ${{ runner.temp }}/MasonsBudget-iOS.xcresult
+          retention-days: 7
+          if-no-files-found: ignore

@@ -1,0 +1,34 @@
+{
+  "name": "vogel-vault-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "shared/domain",
+    "linux"
+  ],
+  "overrides": {
+    "@electron/asar": "4.2.1",
+    "@electron/universal": "3.0.6",
+    "ejs": "6.0.1"
+  },
+  "scripts": {
+    "dev": "npx convex dev",
+    "deploy": "npx convex deploy",
+    "codegen": "node scripts/convex-codegen.mjs",
+    "ledger-batch:test": "node --test scripts/tests/vv-ledger-batch.test.mjs",
+    "mobile-pairing:create": "node scripts/mint-mobile-pairing-slots.mjs",
+    "linux-pairing:create": "node scripts/mint-linux-device-pairing.mjs",
+    "convex:test": "vitest run --config convex/vitest.config.ts",
+    "domain:test": "npm run test --workspace @vogel-vault/domain",
+    "domain:typecheck": "npm run typecheck --workspace @vogel-vault/domain"
+  },
+  "dependencies": {
+    "convex": "^1.17.0"
+  },
+  "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
+    "convex-test": "^0.0.54",
+    "vitest": "^4.1.10"
+  }
+}

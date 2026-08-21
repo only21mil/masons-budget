@@ -1,0 +1,70 @@
+name: Linux package
+
+# Manual and main-only. Producing a distributable desktop app is approval-gated;
+# opening or merging a pull request must never create one by accident.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: x86_64 deb + AppImage
+    if: github.repository == 'only21mil/masons-budget' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install package and smoke dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends xauth xvfb
+          npm ci
+
+      - name: Hardened preload boundary
+        run: npm run qa:preload-boundary --workspace @vogel-vault/linux
+
+      - name: Build, package, extract, and validate
+        run: npm run package:linux --workspace @vogel-vault/linux
+
+      # The smoke launches the development Electron binary against the extracted
+      # AppImage payload with Chromium's OS sandbox on. Hosted runners ship that
+      # binary's setuid helper unprivileged, so give it the ownership and mode
+      # Electron documents (root:root, 4755) instead of turning the sandbox off.
+      - name: Privilege Electron's setuid sandbox helper for the smoke
+        working-directory: linux
+        run: |
+          set -euo pipefail
+          helper="$(node -p "require('path').join(require('path').dirname(require('electron')), 'chrome-sandbox')")"
+          test -f "$helper"
+          sudo chown root:root "$helper"
+          sudo chmod 4755 "$helper"
+          stat -c '%U:%G %a %n' "$helper"
+
+      - name: Offline smoke from packaged AppImage payload
+        run: npm run smoke:packaged --workspace @vogel-vault/linux
+
+      - name: Upload checksummed Linux packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vogel-vault-linux-x86_64
+          path: |
+            linux/release/*.deb
+            linux/release/*.AppImage
+            linux/release/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14

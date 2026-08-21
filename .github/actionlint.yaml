@@ -1,0 +1,14 @@
+# actionlint cannot know the labels of a self-hosted runner, so it rejects any
+# it has not been told about. Declaring them here keeps `runner-label` checking
+# ON for everything else — dropping the rule entirely would have silenced real
+# typos like `ubunut-latest` across every workflow.
+#
+# These are the labels registered on mac-mini-m4, the fleet's only machine that
+# can run Apple tooling. Keep this list in sync with the runner's registration;
+# a label here that the runner does not carry produces a job that queues
+# forever rather than failing, which is worse than a lint error.
+self-hosted-runner:
+  labels:
+    - macOS
+    - ARM64
+    - xcode

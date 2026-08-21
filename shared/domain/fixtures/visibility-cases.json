@@ -1,0 +1,234 @@
+{
+  "$comment": "Language-neutral parity vectors for the Vogel Vault family/visibility, open server-response, and signed-spend contracts. Ported case-for-case from MasonsBudget/MasonsBudgetTests/FamilyVisibilityTests.swift, which remains the source of truth. TypeScript, Kotlin, and Swift parity suites load this file. Server-authored objects are open to unknown fields; known fields remain validated. spendAmount is the signed budget contribution: purchases are positive for every owner, credits/refunds are negative, and displaySpendAmount is a non-negative rendering magnitude. When the Swift tests change, change this file in the same commit.",
+  "members": ["victor", "rachel", "mason", "maddox"],
+  "adults": ["victor", "rachel"],
+  "defaultOwner": "victor",
+  "ledgerOwner": [
+    { "member": "victor", "expected": "victor" },
+    { "member": "rachel", "expected": "victor" },
+    { "member": "mason", "expected": "mason" },
+    { "member": "maddox", "expected": "maddox" }
+  ],
+
+  "canSee": [
+    { "viewer": "victor", "owner": "victor", "expected": true },
+    { "viewer": "victor", "owner": "rachel", "expected": true },
+    { "viewer": "victor", "owner": "mason", "expected": true },
+    { "viewer": "victor", "owner": "maddox", "expected": true },
+
+    { "viewer": "rachel", "owner": "victor", "expected": true, "note": "CRITICAL regression: shipped broken in v0.3" },
+    { "viewer": "rachel", "owner": "rachel", "expected": true },
+    { "viewer": "rachel", "owner": "mason", "expected": true },
+    { "viewer": "rachel", "owner": "maddox", "expected": true },
+
+    { "viewer": "mason", "owner": "victor", "expected": false },
+    { "viewer": "mason", "owner": "rachel", "expected": false },
+    { "viewer": "mason", "owner": "mason", "expected": true },
+    { "viewer": "mason", "owner": "maddox", "expected": false, "note": "siblings are isolated" },
+
+    { "viewer": "maddox", "owner": "victor", "expected": false },
+    { "viewer": "maddox", "owner": "rachel", "expected": false },
+    { "viewer": "maddox", "owner": "mason", "expected": false, "note": "siblings are isolated" },
+    { "viewer": "maddox", "owner": "maddox", "expected": true }
+  ],
+
+  "sharesNetWorth": [
+    { "viewer": "victor", "owner": "victor", "expected": true },
+    { "viewer": "victor", "owner": "rachel", "expected": true },
+    { "viewer": "victor", "owner": "mason", "expected": false, "note": "child stacks never roll into adult totals" },
+    { "viewer": "victor", "owner": "maddox", "expected": false },
+
+    { "viewer": "rachel", "owner": "victor", "expected": true },
+    { "viewer": "rachel", "owner": "rachel", "expected": true },
+    { "viewer": "rachel", "owner": "mason", "expected": false },
+    { "viewer": "rachel", "owner": "maddox", "expected": false },
+
+    { "viewer": "mason", "owner": "victor", "expected": false },
+    { "viewer": "mason", "owner": "rachel", "expected": false },
+    { "viewer": "mason", "owner": "mason", "expected": true },
+    { "viewer": "mason", "owner": "maddox", "expected": false },
+
+    { "viewer": "maddox", "owner": "victor", "expected": false },
+    { "viewer": "maddox", "owner": "rachel", "expected": false },
+    { "viewer": "maddox", "owner": "mason", "expected": false },
+    { "viewer": "maddox", "owner": "maddox", "expected": true }
+  ],
+
+  "allowedSwitchTargets": [
+    { "member": "victor", "expected": ["victor", "rachel", "mason", "maddox"] },
+    { "member": "rachel", "expected": ["victor", "rachel", "mason", "maddox"] },
+    { "member": "mason", "expected": ["mason"] },
+    { "member": "maddox", "expected": ["maddox"] }
+  ],
+
+  "showsFullBudget": [
+    { "member": "victor", "expected": true },
+    { "member": "rachel", "expected": true },
+    { "member": "mason", "expected": false },
+    { "member": "maddox", "expected": false }
+  ],
+
+  "transactionsDataFileName": [
+    { "member": "victor", "expected": "transactions" },
+    { "member": "rachel", "expected": "transactions" },
+    { "member": "mason", "expected": "mason-transactions" },
+    { "member": "maddox", "expected": "maddox-transactions" }
+  ],
+
+  "btcBuysDataFileName": [
+    { "member": "victor", "expected": "bitcoin-buys" },
+    { "member": "rachel", "expected": "bitcoin-buys" },
+    { "member": "mason", "expected": "mason-bitcoin-buys" },
+    { "member": "maddox", "expected": "bitcoin-buys" }
+  ],
+
+  "hasDedicatedChildFinanceFiles": [
+    { "member": "victor", "expected": false },
+    { "member": "rachel", "expected": false },
+    { "member": "mason", "expected": true },
+    { "member": "maddox", "expected": false }
+  ],
+
+  "sampleTransactions": [
+    { "id": "tx-1", "merchant": "Costco", "amount": "150", "category": "Groceries", "owner": "victor", "spendAmount": "150", "displaySpendAmount": "150", "hasOppositeSpendSign": false, "_futureServerRowField": { "contract": "unknown server fields must be ignored" } },
+    { "id": "tx-2", "merchant": "Salary", "amount": "5000", "category": "Income", "owner": "victor", "spendAmount": "0", "displaySpendAmount": "0", "hasOppositeSpendSign": false },
+    { "id": "tx-3", "merchant": "Target", "amount": "95", "category": "Shopping", "owner": "rachel", "spendAmount": "95", "displaySpendAmount": "95", "hasOppositeSpendSign": false },
+    { "id": "tx-4", "merchant": "Game Store", "amount": "60", "category": "Entertainment", "owner": "mason", "spendAmount": "60", "displaySpendAmount": "60", "hasOppositeSpendSign": false },
+    { "id": "tx-5", "merchant": "Roblox", "amount": "10", "category": "Entertainment", "owner": "maddox", "spendAmount": "10", "displaySpendAmount": "10", "hasOppositeSpendSign": false },
+    { "id": "tx-6", "merchant": "Costco Refund", "amount": "-25", "category": "Groceries", "owner": "victor", "spendAmount": "-25", "displaySpendAmount": "25", "hasOppositeSpendSign": true, "note": "valid adult refund: reduces spend" },
+    { "id": "tx-7", "merchant": "Rachel Refund", "amount": "-40", "category": "Shopping", "owner": "rachel", "spendAmount": "-40", "displaySpendAmount": "40", "hasOppositeSpendSign": true, "note": "valid adult refund: reduces spend" },
+    { "id": "tx-8", "merchant": "Game Refund", "amount": "-8", "category": "Entertainment", "owner": "mason", "spendAmount": "-8", "displaySpendAmount": "8", "hasOppositeSpendSign": true, "note": "valid child refund: reduces spend" },
+    { "id": "tx-9", "merchant": "Maddox Refund", "amount": "-3", "category": "Entertainment", "owner": "maddox", "spendAmount": "-3", "displaySpendAmount": "3", "hasOppositeSpendSign": true, "note": "valid child refund: reduces spend" }
+  ],
+
+  "sampleAccounts": [
+    { "key": "coldcard-victor", "label": "Coldcard", "custody": "self_custody", "btc": "3.5", "owner": "victor" },
+    { "key": "phoenix-victor", "label": "Phoenix LN", "custody": "self_custody", "btc": "0.05", "owner": "victor" },
+    { "key": "strike-mason", "label": "Mason Strike", "custody": "exchange", "btc": "0.01", "owner": "mason" }
+  ],
+
+  "sampleTodos": [
+    { "id": "todo-1", "title": "Pay mortgage", "owner": "victor" },
+    { "id": "todo-2", "title": "Schedule dentist", "owner": "rachel" },
+    { "id": "todo-3", "title": "Finish homework", "owner": "mason" },
+    { "id": "todo-4", "title": "Pack lunch", "owner": "maddox" }
+  ],
+
+  "serverResponseCompatibility": {
+    "$comment": "Pass each complete response through the production decoder. Unknown members at the response, envelope, row, and rowCounts levels are deliberate and must not be removed before decoding. Known malformed fields and unknown closed owner values must still fail.",
+    "rowCounts": {
+      "response": {
+        "status": "success",
+        "value": {
+          "transactions": 905,
+          "todos": 12,
+          "btcBuys": 44,
+          "btcBillPays": 7,
+          "btcAccounts": 6,
+          "budgetDocuments": 2,
+          "btcBalanceDocuments": 2,
+          "financeDocuments": 1
+        },
+        "_futureResponseField": { "requestId": "compat-row-counts" }
+      },
+      "expectedKnownValue": {
+        "transactions": 905,
+        "todos": 12,
+        "btcBuys": 44,
+        "btcBillPays": 7,
+        "btcAccounts": 6
+      }
+    },
+    "transactionEnvelope": {
+      "response": {
+        "status": "success",
+        "value": {
+          "rows": [
+            {
+              "txId": "compat-adult-spend",
+              "owner": "victor",
+              "date": "2026-07-27",
+              "month": "2026-07",
+              "merchant": "Contract Grocer",
+              "amountCents": { "$integer": "4gQAAAAAAAA=" },
+              "spendAmount": { "$integer": "4gQAAAAAAAA=" },
+              "displaySpendAmount": { "$integer": "4gQAAAAAAAA=" },
+              "hasOppositeSpendSign": false,
+              "category": "Groceries",
+              "updatedAtMs": 1785128400000,
+              "_futureRowField": { "serverRevision": 2 }
+            }
+          ],
+          "complete": true,
+          "_futureEnvelopeField": { "nextCursor": null }
+        },
+        "_futureResponseField": { "requestId": "compat-transactions" }
+      },
+      "expectedKnownRow": {
+        "txId": "compat-adult-spend",
+        "owner": "victor",
+        "amountCents": "1250",
+        "spendAmount": "1250",
+        "displaySpendAmount": "1250",
+        "hasOppositeSpendSign": false
+      }
+    }
+  },
+
+  "spendContract": {
+    "$comment": "Money fields are decimal strings so every language parses exact integer minor units. Production purchases are positive for every owner and refunds are negative.",
+    "cases": [
+      {
+        "name": "adult spend",
+        "meaning": "spend",
+        "input": { "amountCents": "3762", "category": "Groceries", "owner": "victor" },
+        "expected": { "spendAmount": "3762", "displaySpendAmount": "3762", "hasOppositeSpendSign": false }
+      },
+      {
+        "name": "child spend",
+        "meaning": "spend",
+        "input": { "amountCents": "3762", "category": "Entertainment", "owner": "mason" },
+        "expected": { "spendAmount": "3762", "displaySpendAmount": "3762", "hasOppositeSpendSign": false }
+      },
+      {
+        "name": "income",
+        "meaning": "income",
+        "input": { "amountCents": "2500", "category": "Income", "owner": "victor" },
+        "expected": { "spendAmount": "0", "displaySpendAmount": "0", "hasOppositeSpendSign": false }
+      },
+      {
+        "name": "adult refund",
+        "meaning": "valid-refund",
+        "input": { "amountCents": "-123469", "category": "Groceries", "owner": "victor" },
+        "expected": { "spendAmount": "-123469", "displaySpendAmount": "123469", "hasOppositeSpendSign": true }
+      }
+    ]
+  },
+
+  "expectations": {
+    "visibleTransactionCount": { "victor": 9, "rachel": 9, "mason": 2, "maddox": 2 },
+    "visibleTransactionMerchants": {
+      "mason": ["Game Store", "Game Refund"],
+      "maddox": ["Roblox", "Maddox Refund"]
+    },
+    "visibleAccountCount": { "victor": 3, "rachel": 3, "mason": 1, "maddox": 0 },
+    "visibleAccountLabels": { "mason": ["Mason Strike"] },
+    "netWorthAccountLabels": {
+      "victor": ["Coldcard", "Phoenix LN"],
+      "rachel": ["Coldcard", "Phoenix LN"],
+      "mason": ["Mason Strike"],
+      "maddox": []
+    },
+    "visibleTodoCount": { "victor": 4, "rachel": 4, "mason": 1, "maddox": 1 },
+    "visibleTodoTitles": { "mason": ["Finish homework"], "maddox": ["Pack lunch"] },
+    "rachelSeesVictorTodo": "Pay mortgage",
+    "visibleSpend": { "victor": "239", "rachel": "239", "mason": "52", "maddox": "7" },
+    "budgetSpend": { "victor": "180", "rachel": "180", "mason": "52", "maddox": "7" },
+    "budgetOwners": {
+      "victor": ["victor", "rachel"],
+      "rachel": ["victor", "rachel"],
+      "mason": ["mason"],
+      "maddox": ["maddox"]
+    }
+  }
+}
