@@ -45,8 +45,9 @@ import kotlinx.coroutines.flow.StateFlow
  * acceptance, one pending id per caller-provided lease scope. Ambiguous retries
  * deliberately reuse the scope's id so Convex supersedes the same row instead
  * of inserting another one. When backed by preferences, leases survive process
- * death. Each money-write surface chooses a scope that keeps its pending ids
- * independent from other surfaces and profiles.
+ * death. New leases use scopes that keep pending ids independent across
+ * surfaces and profiles. The pre-scope adult Bitcoin-buy marker remains a
+ * read-only ledger-owner fallback until an accepted write clears it.
  *
  * The scope is usually the server's natural source-file idempotency domain, but
  * Bitcoin buys need a narrower explicit scope because standalone and
