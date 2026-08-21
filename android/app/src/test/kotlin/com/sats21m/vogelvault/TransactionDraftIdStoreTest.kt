@@ -162,6 +162,30 @@ class TransactionDraftIdStoreTest {
     }
 
     @Test
+    fun `accepted draft write with a stale lease still announces server acceptance`() {
+        var acceptedSignals = 0
+
+        DraftIdWriteOutcome.AcceptedLeaseResetFailed.onServerAccepted {
+            acceptedSignals += 1
+        }
+
+        assertEquals(1, acceptedSignals)
+    }
+
+    @Test
+    fun `rejected draft write does not announce server acceptance`() {
+        var acceptedSignals = 0
+
+        DraftIdWriteOutcome.Rejected<Nothing>(
+            ConvexResult.Failed("transport failure"),
+        ).onServerAccepted {
+            acceptedSignals += 1
+        }
+
+        assertEquals(0, acceptedSignals)
+    }
+
+    @Test
     fun `every production draft rotation observes its result`() {
         val callSites = mutableListOf<Triple<Path, String, String>>()
         Files.walk(Path.of("src/main/kotlin")).use { paths ->

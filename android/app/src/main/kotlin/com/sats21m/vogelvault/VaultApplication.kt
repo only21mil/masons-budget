@@ -124,6 +124,12 @@ internal fun <T> draftIdWriteOutcome(
         else -> DraftIdWriteOutcome.AcceptedLeaseResetFailed
     }
 
+internal inline fun DraftIdWriteOutcome<*>.onServerAccepted(block: () -> Unit) {
+    if (this !is DraftIdWriteOutcome.Rejected) {
+        block()
+    }
+}
+
 /**
  * Process-scoped infrastructure and the ViewModel composition root.
  *

@@ -33,6 +33,7 @@ import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.TransactionDraftIdStore
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.draftIdWriteOutcome
+import com.sats21m.vogelvault.onServerAccepted
 import com.sats21m.vogelvault.data.BTC_BILL_PAYS_SOURCE_FILE
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.RIVER_BITCOIN_BILL_PAY_PLATFORM
@@ -187,7 +188,7 @@ internal fun launchBtcBillPaySave(
     val leaseReset = result !is ConvexResult.Ok ||
         draftIds.rotateAfterAcceptance(BTC_BILL_PAYS_SOURCE_FILE, request.id)
     val outcome = draftIdWriteOutcome(result, leaseReset)
-    if (outcome is DraftIdWriteOutcome.Accepted) {
+    outcome.onServerAccepted {
         onAccepted()
     }
     onResult(outcome)

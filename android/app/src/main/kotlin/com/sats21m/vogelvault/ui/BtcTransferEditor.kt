@@ -30,6 +30,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.onServerAccepted
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Money
@@ -181,8 +182,8 @@ internal fun BtcTransferEntrySheet(
                                     ) { result ->
                                         submitting = false
                                         val failure = btcTransferWriteFailureMessage(result)
+                                        result.onServerAccepted(onWriteSucceeded)
                                         if (failure == null) {
-                                            onWriteSucceeded()
                                             onDismiss()
                                         } else {
                                             message = failure

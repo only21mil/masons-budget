@@ -41,6 +41,7 @@ import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.TransactionDraftIdStore
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.draftIdWriteOutcome
+import com.sats21m.vogelvault.onServerAccepted
 import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
@@ -211,7 +212,7 @@ internal fun launchPreparedTransactionSave(
     val leaseReset = result !is ConvexResult.Ok ||
         transactionDraftIds.rotateAfterAcceptance(row.sourceFile, row.input.id)
     val outcome = draftIdWriteOutcome(result, leaseReset)
-    if (outcome is DraftIdWriteOutcome.Accepted) {
+    outcome.onServerAccepted {
         // The ledger refresh belongs to the screen's view model, which
         // outlives this sheet. An accepted write must become visible even
         // when the user dismissed mid-flight — suppressing this with the
@@ -237,7 +238,7 @@ internal fun launchPreparedTransactionSave(
     val leaseReset = result !is ConvexResult.Ok ||
         transactionDraftIds.rotateAfterAcceptance(row.sourceFile, row.input.id)
     val outcome = draftIdWriteOutcome(result, leaseReset)
-    if (outcome is DraftIdWriteOutcome.Accepted) {
+    outcome.onServerAccepted {
         onAccepted()
     }
     if (isUiActive()) {
