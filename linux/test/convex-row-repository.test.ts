@@ -101,7 +101,7 @@ function btcBalanceDocument(overrides: Record<string, unknown> = {}): Record<str
       },
       {
         key: "coldcard",
-        label: "Coldcard",
+        label: "Multisig",
         custody: "self_custody",
         sats: int64(150_000_000n),
         fiatCents: int64(14_700_000n),
@@ -657,7 +657,7 @@ describe("main-process row repository", () => {
         row: {
           key: "coldcard",
           owner: "victor",
-          label: "Coldcard",
+          label: "Multisig",
           custody: "self_custody",
           sats: int64(1_000n),
           fiatCents: int64(500_000n),
@@ -940,7 +940,7 @@ describe("main-process row repository", () => {
     const legacyUnavailableDocument = btcBalanceDocument({
       accounts: [{
         key: "coldcard",
-        label: "Coldcard",
+        label: "Multisig",
         custody: "self_custody",
         sats: int64(541_782_856n),
         fiatCents: int64(0n),
@@ -956,7 +956,7 @@ describe("main-process row repository", () => {
     const explicitUnavailableDocument = btcBalanceDocument({
       accounts: [{
         key: "coldcard",
-        label: "Coldcard",
+        label: "Multisig",
         custody: "self_custody",
         sats: int64(541_782_856n),
         fiatCents: int64(0n),
