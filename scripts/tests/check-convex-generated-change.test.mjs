@@ -31,7 +31,7 @@ declare const fullApi: { tables: typeof tables };
     .update("export default {};\n")
     .digest("hex")
   await writeFile(
-    path.join(root, "convex/_generated/schema.sha256"),
+    path.join(root, "convex/schema.sha256"),
     `${schemaDigest}  convex/schema.ts\n`,
   )
   git(root, "init", "-q")
@@ -58,4 +58,22 @@ test("a new Convex source module requires regenerated API declarations", async (
 
   assert.notEqual(result.status, 0, result.stdout)
   assert.match(result.stderr, /module inventory/i)
+})
+
+test("a schema change requires a matching attestation change", async (t) => {
+  const root = await fixtureRepo()
+  t.after(() => rm(root, { force: true, recursive: true }))
+  const base = git(root, "rev-parse", "HEAD")
+  await writeFile(path.join(root, "convex/schema.ts"), "export default { changed: true };\n")
+  git(root, "add", "convex/schema.ts")
+  git(root, "commit", "-qm", "change schema")
+
+  const result = spawnSync(
+    "bash",
+    [path.join(root, "scripts/check-convex-generated-change.sh"), base, "HEAD"],
+    { cwd: root, encoding: "utf8" },
+  )
+
+  assert.notEqual(result.status, 0, result.stdout)
+  assert.match(result.stderr, /does not attest the current convex\/schema\.ts/i)
 })
