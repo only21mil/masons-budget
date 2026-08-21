@@ -24,6 +24,7 @@ import { useAppState } from "../../app/AppState.tsx"
 import type { FixtureEnvelope } from "../../data/fixtures.ts"
 import { fiatCentsOf } from "../../data/btcFiatValuation.ts"
 import { PRICE_UNAVAILABLE } from "../../data/bitcoinDisplay.ts"
+import { paymentSourceDisplay } from "../../data/paymentSource.ts"
 import { spendAmount } from "../../data/transactionAmounts.ts"
 import {
   Badge,
@@ -340,7 +341,7 @@ export function buildExportDatasets(
           row.date,
           row.merchant,
           row.category,
-          row.card ?? "",
+          paymentSourceDisplay(row) ?? "On-chain",
           row.owner,
           usdCell(row.amount),
           spend > 0n ? "spend" : spend < 0n ? "credit" : "income",

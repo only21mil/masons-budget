@@ -22,6 +22,19 @@ function datasetsFor(profile: FamilyMember): Datasets {
   return buildExportDatasets(profile, buildSanitizedFixtureEnvelope(profile))
 }
 
+function transactionExportWithCard(rowId: string, card: string | null): Dataset {
+  const envelope = buildSanitizedFixtureEnvelope("victor")
+  return buildExportDatasets("victor", {
+    ...envelope,
+    transactions: {
+      ...envelope.transactions,
+      value: envelope.transactions.value.map((row) =>
+        row.id === rowId ? { ...row, card } : row,
+      ),
+    },
+  }).transactions
+}
+
 function cell(dataset: Dataset, rowId: string, columnName: string): string {
   const idColumn = dataset.columns.indexOf(dataset.columns.includes("id") ? "id" : "key")
   const valueColumn = dataset.columns.indexOf(columnName)
@@ -69,6 +82,21 @@ test("an income row exports direction=income with a positive signed_usd", () => 
   const transactions = datasetsFor("victor").transactions
   assert.equal(cell(transactions, "tx-0003", "direction"), "income")
   assert.equal(cell(transactions, "tx-0003", "signed_usd"), "2480.00")
+})
+
+test("a known payment-source wire exports its display label", () => {
+  const transactions = transactionExportWithCard("tx-0001", "coinbase_card")
+  assert.equal(cell(transactions, "tx-0001", "card"), "Coinbase Card")
+})
+
+test("an unknown legacy card exports byte-for-byte verbatim", () => {
+  const transactions = transactionExportWithCard("tx-0001", " Legacy Card ")
+  assert.equal(cell(transactions, "tx-0001", "card"), " Legacy Card ")
+})
+
+test("a missing payment source exports as On-chain", () => {
+  const transactions = transactionExportWithCard("tx-0001", null)
+  assert.equal(cell(transactions, "tx-0001", "card"), "On-chain")
 })
 
 test("adult bitcoin account exports exclude child stacks from net worth", () => {
