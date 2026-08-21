@@ -14,6 +14,7 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
+import type { FamilyMember } from "@vogel-vault/domain/family"
 import type { Transaction } from "@vogel-vault/domain/readModel"
 import { parseCents } from "@vogel-vault/domain/money"
 
@@ -74,8 +75,8 @@ const adapter: RendererMutationAdapter = {
   unpairDevice: async () => ({ status: "ok", revoked: true }),
 }
 
-function liveEnvelope(): FixtureEnvelope {
-  const base = buildSanitizedFixtureEnvelope("victor")
+function liveEnvelope(profile: FamilyMember = "victor"): FixtureEnvelope {
+  const base = buildSanitizedFixtureEnvelope(profile)
   return {
     ...base,
     transactions: { ...base.transactions, status: "live" },
@@ -87,11 +88,12 @@ function liveEnvelope(): FixtureEnvelope {
 function withState(
   children: ReturnType<typeof createElement>,
   capabilities: readonly RendererMutationKind[] = FULL_CAPABILITIES,
+  profile: FamilyMember = "victor",
 ): string {
   return renderToStaticMarkup(
     createElement(AppStateProvider, {
-      initialProfile: "victor",
-      initialData: liveEnvelope(),
+      initialProfile: profile,
+      initialData: liveEnvelope(profile),
       initialDataOrigin: "remote",
       initialMutationCapabilities: [...capabilities],
       mutationAdapter: adapter,
@@ -291,5 +293,118 @@ describe("the Bitcoin-spend capability block", () => {
       TRANSACTIONS_ONLY,
     )
     expect(markup).toContain(BITCOIN_BLOCK)
+  })
+})
+
+// The account list is the effective LEDGER OWNER's net-worth scope, not the
+// viewer's visibility. Adults can see Mason's stack; a household row still may
+// not be paid out of it, and a Mason row may not be paid out of the household's.
+describe("the Bitcoin account list on a Bitcoin-denominated source", () => {
+  const spendRow = (owner: FamilyMember) =>
+    rowOnSource("lightning", { owner, amountSats: 140_000n, bitcoinAccountKey: "coldcard" })
+
+  function accountOptions(markup: string): string[] {
+    // "lightning" is deliberately absent from this list: it is both an account
+    // key in the fixtures and a payment-source wire value, so it cannot tell
+    // the two selects apart.
+    return ["coldcard", "exchange-dca", "mason-stack", "maddox-stack"].filter((key) =>
+      markup.includes(`value="${key}"`),
+    )
+  }
+
+  it("offers Victor the adult household stack and neither child's", () => {
+    const markup = withState(
+      createElement(TransactionFormDialog, {
+        open: true,
+        transaction: spendRow("victor"),
+        onClose: () => undefined,
+      }),
+    )
+    expect(accountOptions(markup)).toEqual(["coldcard", "exchange-dca"])
+  })
+
+  it("offers Rachel the identical list, since one household shares one stack", () => {
+    const markup = withState(
+      createElement(TransactionFormDialog, {
+        open: true,
+        transaction: spendRow("victor"),
+        onClose: () => undefined,
+      }),
+      FULL_CAPABILITIES,
+      "rachel",
+    )
+    expect(accountOptions(markup)).toEqual(["coldcard", "exchange-dca"])
+  })
+
+  it("offers Mason his own stack and nothing else", () => {
+    const markup = withState(
+      createElement(TransactionFormDialog, {
+        open: true,
+        transaction: spendRow("mason"),
+        onClose: () => undefined,
+      }),
+      FULL_CAPABILITIES,
+      "mason",
+    )
+    expect(accountOptions(markup)).toEqual(["mason-stack"])
+  })
+
+  it("scopes an adult editing a Mason row to Mason's accounts", () => {
+    const markup = withState(
+      createElement(TransactionFormDialog, {
+        open: true,
+        transaction: spendRow("mason"),
+        onClose: () => undefined,
+      }),
+    )
+    expect(accountOptions(markup)).toEqual(["mason-stack"])
+  })
+})
+
+describe("Income against a Bitcoin-denominated source", () => {
+  const INCOME_BLOCK =
+    "Income cannot use a Bitcoin payment source; record a Bitcoin buy instead."
+
+  it("refuses the combination and names the Bitcoin buy instead", () => {
+    const markup = withState(
+      createElement(TransactionFormDialog, {
+        open: true,
+        transaction: rowOnSource("lightning", {
+          category: "Income",
+          amountSats: 140_000n,
+          bitcoinAccountKey: "coldcard",
+        }),
+        onClose: () => undefined,
+      }),
+    )
+    expect(markup).toContain(INCOME_BLOCK)
+    // The two sats fields are mutually exclusive: this row shows the spend
+    // field, so the optional sat-Income field is not on screen at all.
+    expect(markup).toContain("Bitcoin spent (sats)")
+    expect(markup).not.toContain("Bitcoin received (sats)")
+  })
+
+  it("leaves Income with no source on its optional sats field", () => {
+    const markup = withState(
+      createElement(TransactionFormDialog, {
+        open: true,
+        transaction: rowOnSource("", { category: "Income", amountSats: 250_000n }),
+        onClose: () => undefined,
+      }),
+    )
+    expect(markup).not.toContain(INCOME_BLOCK)
+    expect(markup).toContain("Bitcoin received (sats)")
+    expect(markup).not.toContain("Bitcoin spent (sats)")
+  })
+
+  it("leaves Income on a fiat card alone", () => {
+    const markup = withState(
+      createElement(TransactionFormDialog, {
+        open: true,
+        transaction: rowOnSource("coinbase_card", { category: "Income" }),
+        onClose: () => undefined,
+      }),
+    )
+    expect(markup).not.toContain(INCOME_BLOCK)
   })
 })

@@ -5,12 +5,14 @@ import {
   isBitcoinDenominatedSource,
   isPaymentSource,
   paymentSourceBlockReason,
+  paymentSourceChoiceTransition,
   paymentSourceDisplay,
   paymentSourceFromRow,
   paymentSourceLabel,
   paymentSourceRoute,
   paymentSourceToRowFields,
   transactionSourceFields,
+  transactionSubmission,
   type PaymentSource,
 } from "../src/renderer/data/paymentSource.ts"
 
@@ -171,4 +173,159 @@ describe("payment source display", () => {
     expect(paymentSourceDisplay({ card: null })).toBeNull()
     expect(paymentSourceDisplay({ card: "  " })).toBeNull()
   })
+})
+
+// Classification reads the RAW stored string; trimming decides only emptiness.
+// A padded wire value belongs to whoever wrote it, and normalising it here would
+// silently rewrite their row the next time the form saved.
+describe("legacy card strings, whitespace and all", () => {
+  it("never classifies a padded wire value as one of ours", () => {
+    expect(isPaymentSource(" coinbase_card ")).toBe(false)
+    expect(paymentSourceFromRow({ card: " coinbase_card " })).toBeNull()
+    expect(paymentSourceFromRow({ platform: " river_bitcoin_bill_pay " })).toBeNull()
+  })
+
+  it("round-trips a padded legacy string byte for byte", () => {
+    expect(transactionSourceFields({ source: null, legacyCard: " Debit " })).toEqual({
+      card: " Debit ",
+    })
+    expect(transactionSourceFields({ source: null, legacyCard: " coinbase_card " })).toEqual({
+      card: " coinbase_card ",
+    })
+    expect(paymentSourceDisplay({ card: " Debit " })).toBe(" Debit ")
+    expect(paymentSourceDisplay({ card: " coinbase_card " })).toBe(" coinbase_card ")
+  })
+
+  it("still treats whitespace alone as no card at all", () => {
+    expect(transactionSourceFields({ source: null, legacyCard: "   " })).toEqual({})
+    expect(paymentSourceFromRow({ card: "   " })).toBeNull()
+  })
+})
+
+describe("Income and Bitcoin-denominated sources", () => {
+  it.each(["lightning", "on_chain"] as const)(
+    "refuses %s on an Income row and says what to do instead",
+    (source: PaymentSource) => {
+      const reason = paymentSourceBlockReason({
+        source,
+        amountSats: SATS,
+        bitcoinAccountKey: ACCOUNT,
+        category: "Income",
+      })
+      expect(reason).toBe(
+        "Income cannot use a Bitcoin payment source; record a Bitcoin buy instead.",
+      )
+      expect(transactionSourceFields({
+        source,
+        amountSats: SATS,
+        bitcoinAccountKey: ACCOUNT,
+        category: "Income",
+      })).toEqual({})
+    },
+  )
+
+  it("leaves a Bitcoin spend on any other category alone", () => {
+    expect(paymentSourceBlockReason({
+      source: "lightning",
+      amountSats: SATS,
+      bitcoinAccountKey: ACCOUNT,
+      category: "Groceries",
+    })).toBeNull()
+  })
+
+  it("leaves a fiat card on Income alone", () => {
+    expect(paymentSourceBlockReason({
+      source: "coinbase_card",
+      category: "Income",
+    })).toBeNull()
+  })
+})
+
+describe("the transaction submission payload builder", () => {
+  it("drops sats and the account when Lightning gives way to a fiat card", () => {
+    const lightning = {
+      source: "lightning" as const,
+      amountSats: SATS,
+      bitcoinAccountKey: ACCOUNT,
+      category: "Groceries",
+    }
+    expect(transactionSubmission(lightning)).toEqual({
+      card: "lightning",
+      amountSats: SATS,
+      bitcoinAccountKey: ACCOUNT,
+    })
+    // The retained state is exactly what the form still holds mid-switch.
+    expect(transactionSubmission({ ...lightning, source: "coinbase_card" })).toEqual({
+      card: "coinbase_card",
+    })
+  })
+
+  it("submits Income on a fiat card as the card alone", () => {
+    expect(transactionSubmission({
+      source: "coinbase_card",
+      amountSats: SATS,
+      bitcoinAccountKey: ACCOUNT,
+      category: "Income",
+    })).toEqual({ card: "coinbase_card" })
+  })
+
+  it("keeps the optional sat-Income row when no source is chosen", () => {
+    expect(transactionSubmission({ source: null, amountSats: SATS, category: "Income" }))
+      .toEqual({ amountSats: SATS })
+    expect(transactionSubmission({ source: null, amountSats: null, category: "Income" }))
+      .toEqual({})
+    // Sats outside Income are not a payload the form may build.
+    expect(transactionSubmission({ source: null, amountSats: SATS, category: "Groceries" }))
+      .toEqual({})
+    // And they never drag a Bitcoin account along.
+    expect(transactionSubmission({
+      source: null,
+      amountSats: SATS,
+      bitcoinAccountKey: ACCOUNT,
+      category: "Income",
+    })).toEqual({ amountSats: SATS })
+  })
+
+  it("preserves a legacy card beside the sat-Income behaviour", () => {
+    expect(transactionSubmission({
+      source: null,
+      legacyCard: " Debit ",
+      amountSats: SATS,
+      category: "Income",
+    })).toEqual({ card: " Debit ", amountSats: SATS })
+  })
+
+  it("submits nothing for a source the block reason refuses", () => {
+    expect(transactionSubmission({
+      source: "river_bitcoin_bill_pay",
+      amountSats: SATS,
+      bitcoinAccountKey: ACCOUNT,
+      category: "Utilities",
+    })).toEqual({})
+    expect(transactionSubmission({
+      source: "on_chain",
+      amountSats: SATS,
+      category: "Utilities",
+    })).toEqual({})
+  })
+})
+
+describe("payment source transitions", () => {
+  it.each([
+    ["No source", ""],
+    ["the preserved legacy option", "__legacy-card"],
+  ] as const)(
+    "clears Bitcoin-only state when Lightning gives way to %s",
+    (_label, next) => {
+      expect(paymentSourceChoiceTransition({
+        sourceChoice: "lightning",
+        sats: SATS.toString(),
+        bitcoinAccountKey: ACCOUNT,
+      }, next)).toEqual({
+        sourceChoice: next,
+        sats: "",
+        bitcoinAccountKey: "",
+      })
+    },
+  )
 })

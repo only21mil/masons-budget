@@ -96,6 +96,29 @@ export function paymentSourceRoute(source: PaymentSource): PaymentSourceRoute {
   return PAYMENT_SOURCE_MAPPING[source].route
 }
 
+/** The source-choice state that owns the form's Bitcoin-only fields. */
+export interface PaymentSourceChoiceState {
+  readonly sourceChoice: string
+  readonly sats: string
+  readonly bitcoinAccountKey: string
+}
+
+/** Apply a payment-source select transition to the form's source fields. */
+export function paymentSourceChoiceTransition(
+  state: PaymentSourceChoiceState,
+  next: string,
+): PaymentSourceChoiceState {
+  const nextSource = isPaymentSource(next) ? next : null
+  const keepsBitcoinFields = nextSource !== null &&
+    isBitcoinDenominatedSource(nextSource) &&
+    paymentSourceRoute(nextSource) === "transaction"
+  return {
+    sourceChoice: next,
+    sats: keepsBitcoinFields ? state.sats : "",
+    bitcoinAccountKey: keepsBitcoinFields ? state.bitcoinAccountKey : "",
+  }
+}
+
 /**
  * Project a chosen source onto the fields of the row it writes.
  *
@@ -144,10 +167,14 @@ export function paymentSourceFromRow(row: {
   readonly card?: string | null
   readonly platform?: string | null
 }): PaymentSource | null {
-  const platform = row.platform?.trim()
-  if (platform) return isPaymentSource(platform) ? platform : null
-  const card = row.card?.trim()
-  if (!card || !isPaymentSource(card)) return null
+  // Classification matches the RAW stored string. Trimming decides only whether
+  // a value is present at all: " coinbase_card " is text some other writer put
+  // there, not our wire value, and treating it as ours would silently rewrite
+  // the row on the next save.
+  const platform = row.platform ?? ""
+  if (platform.trim()) return isPaymentSource(platform) ? platform : null
+  const card = row.card ?? ""
+  if (!card.trim() || !isPaymentSource(card)) return null
   return card
 }
 
@@ -158,7 +185,15 @@ export interface PaymentSourceSelection {
   readonly legacyCard?: string
   readonly amountSats?: bigint | null
   readonly bitcoinAccountKey?: string | null
+  /** The row's category. Only "Income" changes what a source may be. */
+  readonly category?: string
 }
+
+/** The one category that cannot spend Bitcoin, because it receives it. */
+export const INCOME_CATEGORY = "Income"
+
+export const INCOME_BITCOIN_SOURCE_BLOCK =
+  "Income cannot use a Bitcoin payment source; record a Bitcoin buy instead"
 
 /**
  * Why this selection may not be saved as a transaction, or null when it may.
@@ -174,6 +209,13 @@ export function paymentSourceBlockReason(selection: PaymentSourceSelection): str
       "is debited. Add it there instead of as a transaction."
   }
   if (!isBitcoinDenominatedSource(source)) return null
+  // A Bitcoin-denominated source spends sats. Income receives them, and its
+  // sats field credits River — so the two together would credit the stack for
+  // money that left it. The paired income-plus-buy write is the way to record
+  // Bitcoin arriving.
+  if (selection.category?.trim() === INCOME_CATEGORY) {
+    return `${INCOME_BITCOIN_SOURCE_BLOCK}.`
+  }
   const sats = selection.amountSats ?? null
   if (sats === null || sats <= 0n) {
     return `${paymentSourceLabel(source)} spends Bitcoin. Enter the exact sats amount.`
@@ -198,8 +240,10 @@ export function transactionSourceFields(selection: PaymentSourceSelection): {
 } {
   const source = selection.source
   if (source === null) {
-    const legacy = selection.legacyCard?.trim()
-    return legacy ? { card: legacy } : {}
+    // Verbatim, not trimmed: the stored string is round-tripped exactly as it
+    // was found. Trimming only answers "is there one at all".
+    const legacy = selection.legacyCard ?? ""
+    return legacy.trim() ? { card: legacy } : {}
   }
   if (paymentSourceBlockReason(selection) !== null) return {}
   const fields = paymentSourceToRowFields(source, {
@@ -223,6 +267,47 @@ export function paymentSourceDisplay(row: {
 }): string | null {
   const source = paymentSourceFromRow(row)
   if (source) return paymentSourceLabel(source)
-  const card = row.card?.trim()
-  return card ? card : null
+  const card = row.card ?? ""
+  return card.trim() ? card : null
+}
+
+/** The whole transaction form, as far as the row's source fields are concerned. */
+export interface TransactionFormState extends PaymentSourceSelection {
+  /** Raw category text. Only "Income" enables the sat-denominated fallback. */
+  readonly category: string
+}
+
+/** Transaction-row fields the form submits for its current state. */
+export interface TransactionSubmissionFields {
+  readonly card?: string
+  readonly amountSats?: bigint
+  readonly bitcoinAccountKey?: string
+}
+
+/**
+ * Build the source fields of a transaction the form is about to save.
+ *
+ * This is the whole rule, in one place, so the dialog cannot assemble a
+ * payload the block reason never saw:
+ *
+ * - A chosen source owns every source field. A fiat card therefore carries a
+ *   card and nothing else, even when the sats field still holds a value typed
+ *   for a Bitcoin source the user has since switched away from. Re-attaching
+ *   those sats as Income sats is how a card row grew a Bitcoin balance posting
+ *   nobody asked for.
+ * - With no chosen source the sat-denominated Income row keeps its existing
+ *   shape: sats only, never a Bitcoin account, and only on Income. A preserved
+ *   legacy card string rides along verbatim and does not disturb that.
+ */
+export function transactionSubmission(
+  state: TransactionFormState,
+): TransactionSubmissionFields {
+  if (state.source !== null) return transactionSourceFields(state)
+  const legacy = state.legacyCard ?? ""
+  const sats = state.amountSats ?? null
+  const satIncome = state.category.trim() === INCOME_CATEGORY && sats !== null && sats > 0n
+  return {
+    ...(legacy.trim() ? { card: legacy } : {}),
+    ...(satIncome ? { amountSats: sats } : {}),
+  }
 }

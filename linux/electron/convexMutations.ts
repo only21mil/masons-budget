@@ -67,6 +67,112 @@ export const PAIRED_DEVICE_LIMITS = {
  */
 export const CREDIT_CARD_PAYMENT_CATEGORY = "Credit Card Payment"
 
+/** The one category whose transaction may be denominated in received sats. */
+const INCOME_CATEGORY = "Income"
+
+/**
+ * The closed payment-source matrix from the CONTRACT NOTE, keyed by wire value.
+ *
+ * The renderer refuses a malformed source, but main does not trust renderer
+ * intent: without this the IPC boundary accepted any string at all as `card`,
+ * including a River value (which would record a Bitcoin spend while debiting
+ * nothing, because the debit lives in the bill-pay mutation) or a Lightning row
+ * with no sats and no account (a spend of an unstated amount from an unstated
+ * wallet).
+ */
+const TRANSACTION_CARDS = {
+  river_bitcoin_bill_pay: "billPay",
+  coinbase_card: "fiat",
+  aven: "fiat",
+  sofi_card: "fiat",
+  capital_one_vx: "fiat",
+  lightning: "bitcoin",
+  on_chain: "bitcoin",
+} as const satisfies Readonly<Record<string, "billPay" | "fiat" | "bitcoin">>
+
+type TransactionCard = keyof typeof TRANSACTION_CARDS
+
+/** Presentation strings for the same list. A stored row never carries one. */
+const PAYMENT_SOURCE_LABELS: ReadonlySet<string> = new Set([
+  "River Bitcoin Bill Pay",
+  "Coinbase Card",
+  "Aven",
+  "SoFi Card",
+  "Capital One VX",
+  "Lightning",
+  "On-chain",
+])
+
+function transactionCardKind(card: string | undefined): TransactionCard | null {
+  // Matched against the raw string. A value that only becomes a wire value
+  // after trimming is somebody else's text, not ours.
+  if (card === undefined || !Object.hasOwn(TRANSACTION_CARDS, card)) return null
+  return card as TransactionCard
+}
+
+function isBitcoinDenominatedCard(card: string | undefined): boolean {
+  const known = transactionCardKind(card)
+  return known !== null && TRANSACTION_CARDS[known] === "bitcoin"
+}
+
+/** How a validated transaction's payment source is denominated. */
+type TransactionSourceKind = "none" | "legacy" | "fiat" | "bitcoin"
+
+/**
+ * Enforce the payment-source matrix on one transaction, or refuse the request.
+ *
+ * Legacy card strings are the one soft edge. This validator sees only the
+ * payload — it cannot read the stored row — so it cannot tell a card string
+ * predating the closed list from one a caller invented. An EDIT carries
+ * `baseUpdatedAtMs`, which fences it against a row that already exists and is
+ * entitled to keep its own string; a CREATE has no such row, so it must use the
+ * closed enum. That is the whole rule: legacy text is accepted on edits only.
+ */
+function transactionPaymentSource(input: {
+  readonly card: string | undefined
+  readonly amountSats: bigint | undefined
+  readonly bitcoinAccountKey: string | undefined
+  readonly category: string
+  readonly isEdit: boolean
+}): TransactionSourceKind {
+  const raw = input.card ?? ""
+  const accountKey = input.bitcoinAccountKey?.trim() ?? ""
+  const sats = input.amountSats
+
+  if (raw.trim() === "") {
+    // No payment source. The sat-denominated Income row is the only transaction
+    // that may carry sats without one, and it never names an account.
+    if (accountKey !== "") throw new InvalidRequest()
+    if (sats !== undefined && input.category !== INCOME_CATEGORY) throw new InvalidRequest()
+    return "none"
+  }
+
+  const known = transactionCardKind(raw)
+  if (known !== null) {
+    switch (TRANSACTION_CARDS[known]) {
+      case "billPay":
+        // River is btcBillPays and nothing else.
+        throw new InvalidRequest()
+      case "bitcoin":
+        if (sats === undefined || sats <= 0n || accountKey === "") throw new InvalidRequest()
+        // Mirrors the renderer: a Bitcoin-denominated source spends sats, and
+        // Income receives them. The pair would credit the stack for money that
+        // left it, so it is refused here too rather than trusted from there.
+        if (input.category === INCOME_CATEGORY) throw new InvalidRequest()
+        return "bitcoin"
+      case "fiat":
+        if (sats !== undefined || accountKey !== "") throw new InvalidRequest()
+        return "fiat"
+    }
+  }
+  // A display label is presentation, never a stored value.
+  if (PAYMENT_SOURCE_LABELS.has(raw)) throw new InvalidRequest()
+  if (!input.isEdit) throw new InvalidRequest()
+  if (accountKey !== "") throw new InvalidRequest()
+  if (sats !== undefined && input.category !== INCOME_CATEGORY) throw new InvalidRequest()
+  return "legacy"
+}
+
 const MUTATION_KINDS = [
   "transaction.upsert",
   "transaction.delete",
@@ -387,6 +493,18 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
         // shared write contract does not carry it, so it is validated here and
         // added to the wire transaction alongside amountSats.
         const bitcoinAccountKey = optionalText(record, "bitcoinAccountKey")
+        const category = boundedText(record["category"])
+        const amountSats = Object.hasOwn(record, "amountSats")
+          ? positiveInt64(record["amountSats"])
+          : undefined
+        const baseUpdatedAtMs = optionalRevision(record)
+        const sourceKind = transactionPaymentSource({
+          card,
+          amountSats,
+          bitcoinAccountKey,
+          category,
+          isEdit: baseUpdatedAtMs !== undefined,
+        })
         const candidate = {
           id: boundedText(record["id"], PAIRED_DEVICE_LIMITS.maxIdentifier),
           owner,
@@ -395,15 +513,14 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           merchant: boundedText(record["merchant"]),
           amountCents: int64(record["amountCents"]),
           kind: transactionKind,
-          category: boundedText(record["category"]),
+          category,
           ...optionalField("card", card),
           ...optionalField("note", note),
-          ...optionalField(
-            "amountSats",
-            Object.hasOwn(record, "amountSats")
-              ? positiveInt64(record["amountSats"])
-              : undefined,
-          ),
+          // The shared contract's sats rule is the sat-denominated INCOME rule.
+          // A Bitcoin-denominated source is a spend, and its own, stricter
+          // requirements were just checked above, so it is not offered to a
+          // rule that would reject every non-Income spend.
+          ...optionalField("amountSats", sourceKind === "bitcoin" ? undefined : amountSats),
         }
         // Reuse the shared sign, owner/source and exact-money contract.
         buildTransactionWriteRequest(owner, candidate)
@@ -420,14 +537,9 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           category: candidate.category,
           ...optionalField("card", card),
           ...optionalField("note", note),
-          ...optionalField(
-            "amountSats",
-            Object.hasOwn(record, "amountSats")
-              ? positiveInt64(record["amountSats"])
-              : undefined,
-          ),
+          ...optionalField("amountSats", amountSats),
           ...optionalField("bitcoinAccountKey", bitcoinAccountKey),
-          ...optionalField("baseUpdatedAtMs", optionalRevision(record)),
+          ...optionalField("baseUpdatedAtMs", baseUpdatedAtMs),
         }
       }
       case "transaction.delete":
@@ -806,7 +918,13 @@ function mutationArgs(
         category: request.category,
         ...optionalField("card", request.card),
         ...optionalField("note", request.note),
-        ...optionalField("amountSats", request.amountSats),
+        // As in the validator: the shared sats rule governs sat-denominated
+        // Income only. The Bitcoin spend's sats are re-attached to the wire
+        // transaction below, so the encoded payload is identical either way.
+        ...optionalField(
+          "amountSats",
+          isBitcoinDenominatedCard(request.card) ? undefined : request.amountSats,
+        ),
       })
       return {
         ...auth,

@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from "react"
-import { visibleTo } from "@vogel-vault/domain/family"
+import { netWorthScopeFor } from "@vogel-vault/domain/family"
 import type {
   BTCAccount,
   BTCBuy,
@@ -24,12 +24,13 @@ import {
   isBitcoinDenominatedSource,
   isPaymentSource,
   paymentSourceBlockReason,
+  paymentSourceChoiceTransition,
   paymentSourceFromRow,
   paymentSourceLabel,
   paymentSourceRoute,
-  transactionSourceFields,
+  transactionSubmission,
   type PaymentSource,
-  type PaymentSourceSelection,
+  type TransactionFormState,
 } from "../data/paymentSource.ts"
 import {
   type BillPayBudgetEffect,
@@ -185,9 +186,19 @@ export function TransactionFormDialog({
   // Preserved verbatim so editing an unrelated field never rewrites a card
   // string this build does not recognise.
   const legacyCard = useMemo(() => legacyCardOf(transaction), [transaction])
+  // The ledger this row lands on, canonicalised the same way the write is:
+  // Victor and Rachel share the adult household, and an adult editing a Mason
+  // row is spending Mason's Bitcoin.
+  const ledgerScopeOwner = mutationOwner(
+    "transaction.upsert",
+    transaction?.owner ?? activeProfile,
+  )
+  // Net-worth scope, not visibility. An adult can SEE Mason's accounts, but a
+  // household row may only be paid from the household's own stack — offering
+  // Mason's account here let an adult debit a child's Bitcoin by accident.
   const bitcoinAccounts = useMemo(
-    () => visibleTo(activeProfile, data.btcAccounts.value),
-    [activeProfile, data.btcAccounts.value],
+    () => netWorthScopeFor(ledgerScopeOwner, data.btcAccounts.value),
+    [ledgerScopeOwner, data.btcAccounts.value],
   )
   const selectedSource: PaymentSource | null =
     !recordingBitcoinBuy && isPaymentSource(sourceChoice) ? sourceChoice : null
@@ -197,18 +208,23 @@ export function TransactionFormDialog({
     paymentSourceRoute(selectedSource) === "transaction"
   const satsValue = sats.trim() ? parseExactSats(sats) : null
   const amountCents = parseExactCents(amount)
-  const selection: PaymentSourceSelection = {
+  const formState: TransactionFormState = {
     source: selectedSource,
     legacyCard: sourceChoice === LEGACY_SOURCE_CHOICE ? legacyCard : "",
     amountSats: satsValue,
     bitcoinAccountKey,
+    category,
   }
-  const sourceBlockReason = paymentSourceBlockReason(selection)
+  const sourceBlockReason = paymentSourceBlockReason(formState)
+  // One pure builder decides every source field the save sends, so the button,
+  // the capability gate and the payload cannot disagree about them.
+  const submission = transactionSubmission(formState)
   // The row will carry amountSats — a Lightning or on-chain spend, or Income
   // recorded in sats. Those need the Bitcoin grant on top of transaction.upsert;
-  // a USD-only card transaction does not.
+  // a USD-only card transaction does not. A blocked Bitcoin source still counts:
+  // the grant is missing whether or not the sats have been typed yet.
   const spendsBitcoin = bitcoinSpendRow ||
-    (!recordingBitcoinBuy && isIncome && satsValue !== null && satsValue > 0n)
+    (!recordingBitcoinBuy && submission.amountSats !== undefined)
   const bitcoinCapability = spendsBitcoin ? bitcoinSpendGate(mutationCapabilities) : null
   // River is a hand-off, not a save, so its own block never disables the button
   // it offers; the capability block cannot be typed away and comes first.
@@ -252,6 +268,26 @@ export function TransactionFormDialog({
     setBuyPrice("")
     setError(null)
   }, [defaultCategory, open, transaction])
+
+  /**
+   * Switch payment source, dropping Bitcoin-source state the new one cannot use.
+   *
+   * Both fields belong to a Bitcoin-denominated source and are hidden for any
+   * other choice. Leaving them set would keep the form blocked on a field the
+   * user can no longer see, and hand the payload builder sats the new source
+   * has no business carrying.
+   */
+  function chooseSource(next: string) {
+    const nextState = paymentSourceChoiceTransition(
+      { sourceChoice, sats, bitcoinAccountKey },
+      next,
+    )
+    setSourceChoice(nextState.sourceChoice)
+    if (nextState.sats !== sats) setSats(nextState.sats)
+    if (nextState.bitcoinAccountKey !== bitcoinAccountKey) {
+      setBitcoinAccountKey(nextState.bitcoinAccountKey)
+    }
+  }
 
   async function submit() {
     if (submissionGate && !submissionGate.allowed) {
@@ -310,8 +346,10 @@ export function TransactionFormDialog({
       setError(sourceBlockReason)
       return
     }
+    // Only meaningful while the sats field IS the sat-Income field: with a
+    // chosen source the builder ignores a stale value rather than refusing it.
     if (
-      !bitcoinSpendRow &&
+      selectedSource === null &&
       sats.trim() &&
       (category.trim() !== "Income" || satsValue === null || satsValue <= 0n)
     ) {
@@ -321,11 +359,8 @@ export function TransactionFormDialog({
     setBusy(true)
     const signed =
       category.trim() === "Income" || transactionKind === "spend" ? cents : -cents
-    // The chosen source owns card, amountSats and bitcoinAccountKey. Sat-
-    // denominated Income keeps its existing shape: no source, sats only.
-    const sourceFields = transactionSourceFields(selection)
+    const sourceFields = submission
     const amountSats = sourceFields.amountSats
-      ?? (!bitcoinSpendRow && satsValue !== null && satsValue > 0n ? satsValue : undefined)
     const result = await submitMutation({
       kind: "transaction.upsert",
       requestId: stableId("request"),
@@ -443,7 +478,7 @@ export function TransactionFormDialog({
           </>
         ) : (
           <Field label="Payment source" hint="Where the money leaves from. Stored with the transaction.">
-            <Select value={sourceChoice} onChange={(e) => setSourceChoice(e.target.value)}>
+            <Select value={sourceChoice} onChange={(e) => chooseSource(e.target.value)}>
               <option value="">No source</option>
               {legacyCard ? <option value={LEGACY_SOURCE_CHOICE}>{legacyCard}</option> : null}
               {PAYMENT_SOURCES.map((source) => (
