@@ -36,6 +36,8 @@ const BILL_PAY_POINTER = "is recorded on the Bills page"
 const HANDOFF_ACTION = "Record as River bill payment"
 const BITCOIN_BLOCK =
   "This device cannot spend Bitcoin: its pairing lacks the Bitcoin write grant."
+const CHILD_BITCOIN_BLOCK =
+  "Only adult profiles may record Lightning or on-chain spends."
 
 /** transactions:write and bitcoin:write, in the expanded kind vocabulary. */
 const FULL_CAPABILITIES: readonly RendererMutationKind[] = [
@@ -349,7 +351,7 @@ describe("the Bitcoin account list on a Bitcoin-denominated source", () => {
     expect(accountOptions(markup)).toEqual(["mason-stack"])
   })
 
-  it("scopes an adult editing a Mason row to Mason's accounts", () => {
+  it("blocks an adult from saving a Bitcoin spend on Mason's ledger", () => {
     const markup = withState(
       createElement(TransactionFormDialog, {
         open: true,
@@ -358,6 +360,8 @@ describe("the Bitcoin account list on a Bitcoin-denominated source", () => {
       }),
     )
     expect(accountOptions(markup)).toEqual(["mason-stack"])
+    expect(markup).toContain(CHILD_BITCOIN_BLOCK)
+    expect(markup).toMatch(/type="submit"[^>]*disabled/)
   })
 })
 

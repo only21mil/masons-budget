@@ -213,6 +213,7 @@ export function TransactionFormDialog({
     legacyCard: sourceChoice === LEGACY_SOURCE_CHOICE ? legacyCard : "",
     amountSats: satsValue,
     bitcoinAccountKey,
+    kind: isIncome ? "credit" : transactionKind,
     category,
   }
   const sourceBlockReason = paymentSourceBlockReason(formState)
@@ -226,7 +227,7 @@ export function TransactionFormDialog({
   const spendsBitcoin = bitcoinSpendRow ||
     (!recordingBitcoinBuy && submission.amountSats !== undefined)
   const bitcoinCapability = spendsBitcoin
-    ? bitcoinSpendGate(mutationCapabilities, bitcoinSpendRow ? activeProfile : undefined)
+    ? bitcoinSpendGate(mutationCapabilities, bitcoinSpendRow ? ledgerScopeOwner : undefined)
     : null
   // River is a hand-off, not a save, so its own block never disables the button
   // it offers; the capability block cannot be typed away and comes first.

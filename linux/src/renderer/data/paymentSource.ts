@@ -185,6 +185,8 @@ export interface PaymentSourceSelection {
   readonly legacyCard?: string
   readonly amountSats?: bigint | null
   readonly bitcoinAccountKey?: string | null
+  /** The transaction direction. Bitcoin-denominated sources are spends only. */
+  readonly kind?: "spend" | "credit"
   /** The row's category. Only "Income" changes what a source may be. */
   readonly category?: string
 }
@@ -215,6 +217,9 @@ export function paymentSourceBlockReason(selection: PaymentSourceSelection): str
   // Bitcoin arriving.
   if (selection.category?.trim() === INCOME_CATEGORY) {
     return `${INCOME_BITCOIN_SOURCE_BLOCK}.`
+  }
+  if (selection.kind !== "spend") {
+    return `${paymentSourceLabel(source)} can only be used on a spending transaction.`
   }
   const sats = selection.amountSats ?? null
   if (sats === null || sats <= 0n) {

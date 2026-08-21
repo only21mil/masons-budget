@@ -126,6 +126,7 @@ describe("payment source submission payloads", () => {
       source: "on_chain" as const,
       amountSats: SATS,
       bitcoinAccountKey: ACCOUNT,
+      kind: "spend" as const,
     }
     expect(paymentSourceBlockReason(selection)).toBeNull()
     expect(transactionSourceFields(selection)).toEqual({
@@ -137,25 +138,32 @@ describe("payment source submission payloads", () => {
 
   it("blocks a Bitcoin spend that is missing sats or an account", () => {
     expect(
-      paymentSourceBlockReason({ source: "lightning", bitcoinAccountKey: ACCOUNT }),
+      paymentSourceBlockReason({ source: "lightning", bitcoinAccountKey: ACCOUNT, kind: "spend" }),
     ).toMatch(/exact sats/)
     expect(
       paymentSourceBlockReason({
         source: "lightning",
         amountSats: 0n,
         bitcoinAccountKey: ACCOUNT,
+        kind: "spend",
       }),
     ).toMatch(/exact sats/)
     expect(
-      paymentSourceBlockReason({ source: "on_chain", amountSats: SATS }),
+      paymentSourceBlockReason({ source: "on_chain", amountSats: SATS, kind: "spend" }),
     ).toMatch(/account it leaves/)
     expect(
-      paymentSourceBlockReason({ source: "on_chain", amountSats: SATS, bitcoinAccountKey: " " }),
+      paymentSourceBlockReason({
+        source: "on_chain",
+        amountSats: SATS,
+        bitcoinAccountKey: " ",
+        kind: "spend",
+      }),
     ).toMatch(/account it leaves/)
   })
 
   it("contributes nothing for a blocked Bitcoin spend", () => {
-    expect(transactionSourceFields({ source: "lightning", amountSats: null })).toEqual({})
+    expect(transactionSourceFields({ source: "lightning", amountSats: null, kind: "spend" }))
+      .toEqual({})
   })
 })
 
@@ -210,6 +218,7 @@ describe("Income and Bitcoin-denominated sources", () => {
         source,
         amountSats: SATS,
         bitcoinAccountKey: ACCOUNT,
+        kind: "credit",
         category: "Income",
       })
       expect(reason).toBe(
@@ -219,6 +228,7 @@ describe("Income and Bitcoin-denominated sources", () => {
         source,
         amountSats: SATS,
         bitcoinAccountKey: ACCOUNT,
+        kind: "credit",
         category: "Income",
       })).toEqual({})
     },
@@ -229,6 +239,7 @@ describe("Income and Bitcoin-denominated sources", () => {
       source: "lightning",
       amountSats: SATS,
       bitcoinAccountKey: ACCOUNT,
+      kind: "spend",
       category: "Groceries",
     })).toBeNull()
   })
@@ -239,6 +250,23 @@ describe("Income and Bitcoin-denominated sources", () => {
       category: "Income",
     })).toBeNull()
   })
+
+  it.each(["lightning", "on_chain"] as const)(
+    "refuses %s on a credit or refund",
+    (source: PaymentSource) => {
+      const selection = {
+        source,
+        amountSats: SATS,
+        bitcoinAccountKey: ACCOUNT,
+        kind: "credit" as const,
+        category: "Groceries",
+      }
+      expect(paymentSourceBlockReason(selection)).toBe(
+        `${paymentSourceLabel(source)} can only be used on a spending transaction.`,
+      )
+      expect(transactionSourceFields(selection)).toEqual({})
+    },
+  )
 })
 
 describe("the transaction submission payload builder", () => {
@@ -247,6 +275,7 @@ describe("the transaction submission payload builder", () => {
       source: "lightning" as const,
       amountSats: SATS,
       bitcoinAccountKey: ACCOUNT,
+      kind: "spend" as const,
       category: "Groceries",
     }
     expect(transactionSubmission(lightning)).toEqual({

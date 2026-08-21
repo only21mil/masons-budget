@@ -1360,6 +1360,18 @@ describe("the payment-source matrix at the IPC boundary", () => {
     })).toBeNull()
   })
 
+  it.each(["lightning", "on_chain"])(
+    "refuses the Bitcoin source %s on a credit or refund",
+    (card) => {
+      expect(forged({
+        card,
+        transactionKind: "credit",
+        amountSats: SATS,
+        bitcoinAccountKey: ACCOUNT,
+      })).toBeNull()
+    },
+  )
+
   it("keeps the sat-denominated Income row exactly as it was", () => {
     expect(forged({
       category: "Income",
@@ -1393,6 +1405,7 @@ describe("form-built payloads through the main-process validator", () => {
       source,
       amountSats: 140_000n,
       bitcoinAccountKey: "coldcard",
+      kind: "spend",
       category: "Home",
     })
     const writesTransaction = paymentSourceRoute(source) === "transaction"
