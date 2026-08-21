@@ -321,9 +321,14 @@ function transaction(value: unknown, viewer: VogelVaultMember): VogelVaultTransa
   const amountSats = optionalInt64(row, "amountSats")
   const bitcoinAccountKey = optionalText(row, "bitcoinAccountKey")
   const balancePostingVersion = optionalInt64(row, "balancePostingVersion")
+  // A Bitcoin-native spend is a positive-sats row with a non-Income category and
+  // an account key. The write path accepts it and the ledger posts it, so the
+  // read side must decode it too. The one newly-admitted shape is positive sats
+  // on a non-Income category; positivity and the account requirement are kept
+  // for every other case so the decoder stays a defensive boundary.
   if (
     amountSats !== undefined &&
-    (category !== "Income" || amountSats <= 0n)
+    (amountSats <= 0n || (category !== "Income" && bitcoinAccountKey === undefined))
   ) {
     throw new InvalidValue()
   }
