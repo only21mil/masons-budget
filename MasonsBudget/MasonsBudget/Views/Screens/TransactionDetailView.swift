@@ -234,9 +234,13 @@ struct TransactionDetailView: View {
         transaction.amount = amount
         // No longer unconditional: it used to stamp retired values onto
         // untagged rows on every save. Only a real selection writes, and a
-        // cleared selection preserves the previous card rather than stamping.
-        if let method, methodOptions.contains(where: { $0.wire == method }) {
-            transaction.card = method
+        // cleared selection (None) writes nil so the row becomes untagged.
+        if let method {
+            if methodOptions.contains(where: { $0.wire == method }) {
+                transaction.card = method
+            }
+        } else {
+            transaction.card = nil
         }
         transaction.note = note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : note
         transaction.date = date

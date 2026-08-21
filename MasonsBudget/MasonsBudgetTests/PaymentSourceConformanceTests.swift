@@ -167,8 +167,8 @@ final class PaymentSourceConformanceTests: XCTestCase {
         XCTAssertEqual(sources.first?.label, "lightning")
         XCTAssertEqual(
             sources.map(\.wire),
-            ["lightning"] + contractWires.filter { $0 != "lightning" },
-            "The synthetic option leads, followed by every catalogue spend source in order",
+            ["lightning"] + contractWires.filter { $0 != "river_bitcoin_bill_pay" },
+            "The synthetic option leads, followed by every catalogue source that supports spend in order",
         )
     }
 }

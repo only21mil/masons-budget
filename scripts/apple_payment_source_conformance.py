@@ -24,6 +24,21 @@ from pathlib import Path
 FIXTURE_RELATIVE = Path("shared/domain/fixtures/payment-source-cases.json")
 SWIFT_RELATIVE = Path("MasonsBudget/MasonsBudget/Models/TransactionSource.swift")
 
+# Swift enum case names to fixture snake_case values. Classification and
+# activities are contract columns too: a catalogue entry with the right wire
+# and label but the wrong classification silently drops sources from pickers.
+SWIFT_TO_FIXTURE_CLASSIFICATION = {
+    "bitcoinNative": "bitcoin_native",
+    "fiatCard": "fiat_card",
+    "billPay": "bill_pay",
+}
+SWIFT_TO_FIXTURE_ACTIVITY = {
+    "spend": "spend",
+    "income": "income",
+    "transfer": "transfer",
+    "btcBillPay": "btc_bill_pay",
+}
+
 # Matches `TransactionSourceOption(wire: "river", label: "River", ...)` at the
 # start of a catalogue entry. Robust to attribute order and multiline entries
 # because the wire/label are pulled off each entry's first line by name.
@@ -31,11 +46,29 @@ ENTRY_LINE = re.compile(
     r"TransactionSourceOption\(\s*wire:\s*\"(?P<wire>[^\"]+)\"\s*,\s*"
     r"label:\s*\"(?P<label>[^\"]+)\"",
 )
+CLASSIFICATION_LINE = re.compile(r"classification:\s*\.(\w+)")
+ACTIVITIES_LINE = re.compile(r"supportedActivities:\s*\[([^\]]*)\]")
 
 
 def fail(message: str) -> "NoReturn":  # type: ignore[valid-type]
     print(f"FAIL: {message}")
     sys.exit(1)
+
+
+def swift_activities_to_fixture(raw: str) -> list[str]:
+    """Map `[.spend, .income]` to `["spend", "income"]`, sorted for comparison.
+
+    The Swift field is a Set, so its literal order carries no contract meaning;
+    the fixture's array order is canonical and both sides are compared sorted.
+    """
+    cases = re.findall(r"\.(\w+)", raw)
+    mapped = []
+    for case in cases:
+        fixture_name = SWIFT_TO_FIXTURE_ACTIVITY.get(case)
+        if fixture_name is None:
+            fail(f"unknown Swift activity case `.{case}` in catalogue entry")
+        mapped.append(fixture_name)
+    return sorted(mapped)
 
 
 def load_fixture(path: Path) -> tuple[str, list[dict]]:
@@ -51,18 +84,26 @@ def load_fixture(path: Path) -> tuple[str, list[dict]]:
     if not isinstance(sources, list) or not sources:
         fail(f"fixture has no non-empty `sources` array: {path}")
     for index, source in enumerate(sources):
-        for key in ("wire", "label"):
+        for key in ("wire", "label", "classification"):
             if not isinstance(source.get(key), str):
                 fail(f"fixture source[{index}] is missing a string `{key}`: {path}")
+        activities = source.get("supportedActivities")
+        if not isinstance(activities, list) or not all(
+            isinstance(activity, str) for activity in activities
+        ):
+            fail(f"fixture source[{index}] is missing a `supportedActivities` string array: {path}")
     return contract_version, sources
 
 
-def load_swift_catalogue(path: Path) -> list[tuple[str, str]]:
-    """Return the (wire, label) pairs of the `common` array, in file order.
+def load_swift_catalogue(path: Path) -> list[dict]:
+    """Return the catalogue entries of the `common` array, in file order.
 
-    Only entries inside the `static let common: [TransactionSourceOption]`
-    array count, so a synthetic option built inside `sources(for:including:)`
-    (whose entry line has no literal wire) never pollutes the comparison.
+    Each entry is a dict with wire, label, classification, and a sorted list
+    of supported activities, so every contract column is pinned, not just
+    wire and label. Only entries inside the
+    `static let common: [TransactionSourceOption]` array count, so a synthetic
+    option built inside `sources(for:including:)` (whose entry line has no
+    literal wire) never pollutes the comparison.
     """
     try:
         text = path.read_text(encoding="utf-8")
@@ -98,7 +139,29 @@ def load_swift_catalogue(path: Path) -> list[tuple[str, str]]:
         fail(f"unbalanced array literal for `common` in {path}")
 
     body = text[open_bracket:end]
-    return [(match["wire"], match["label"]) for match in ENTRY_LINE.finditer(body)]
+    entries = []
+    for match in ENTRY_LINE.finditer(body):
+        classification = CLASSIFICATION_LINE.search(body, match.end())
+        activities = ACTIVITIES_LINE.search(body, match.end())
+        # The next entry bounds where this entry's attributes may appear.
+        next_entry = ENTRY_LINE.search(body, match.end())
+        attribute_limit = next_entry.start() if next_entry else len(body)
+        if classification is None or classification.start() >= attribute_limit:
+            fail(f"catalogue entry {match['wire']!r} has no `classification:` within its span")
+        if activities is None or activities.start() >= attribute_limit:
+            fail(f"catalogue entry {match['wire']!r} has no `supportedActivities:` within its span")
+        fixture_classification = SWIFT_TO_FIXTURE_CLASSIFICATION.get(classification.group(1))
+        if fixture_classification is None:
+            fail(f"unknown Swift classification case `.{classification.group(1)}` on {match['wire']!r}")
+        entries.append(
+            {
+                "wire": match["wire"],
+                "label": match["label"],
+                "classification": fixture_classification,
+                "supportedActivities": swift_activities_to_fixture(activities.group(1)),
+            }
+        )
+    return entries
 
 
 def diff_list(name: str, swift: list[str], fixture: list[str]) -> None:
@@ -141,8 +204,8 @@ def main() -> int:
 
     fixture_wires = [source["wire"] for source in sources]
     fixture_labels = [source["label"] for source in sources]
-    swift_wires = [wire for wire, _ in catalogue]
-    swift_labels = [label for _, label in catalogue]
+    swift_wires = [entry["wire"] for entry in catalogue]
+    swift_labels = [entry["label"] for entry in catalogue]
 
     if len(swift_wires) != len(fixture_wires):
         fail(
@@ -152,6 +215,24 @@ def main() -> int:
 
     diff_list("wire order", swift_wires, fixture_wires)
     diff_list("label order", swift_labels, fixture_labels)
+
+    for index, (swift_entry, fixture_source) in enumerate(zip(catalogue, sources)):
+        swift_classification = swift_entry["classification"]
+        fixture_classification = fixture_source["classification"]
+        if swift_classification != fixture_classification:
+            fail(
+                f"classification mismatch at position {index} "
+                f"({swift_entry['wire']}): Swift {swift_classification!r} vs "
+                f"fixture {fixture_classification!r}"
+            )
+        swift_activities = swift_entry["supportedActivities"]
+        fixture_activities = sorted(fixture_source["supportedActivities"])
+        if swift_activities != fixture_activities:
+            fail(
+                f"supportedActivities mismatch at position {index} "
+                f"({swift_entry['wire']}): Swift {swift_activities!r} vs "
+                f"fixture {fixture_activities!r}"
+            )
 
     print(
         f"PASS: Apple payment-source catalogue conforms to "
