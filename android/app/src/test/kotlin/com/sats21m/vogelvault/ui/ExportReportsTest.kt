@@ -4,6 +4,8 @@ import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcBalance
 import com.sats21m.vogelvault.domain.Budget
 import com.sats21m.vogelvault.domain.BudgetCategory
+import com.sats21m.vogelvault.domain.BillPayBudgetEffect
+import com.sats21m.vogelvault.domain.BtcBillPay
 import com.sats21m.vogelvault.domain.Custody
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
@@ -86,6 +88,70 @@ class ExportReportsTest {
         val csv = ExportReports.budgetSummary(FamilyMember.VICTOR, data)
 
         assertContains(csv.content, "Groceries,100.00,15.00,85.00,15%")
+    }
+
+    @Test
+    fun `budget export includes budget-category bill pays and excludes credit-card payments`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR)
+        val budget = Budget(
+            month = "2026-07",
+            categories = listOf(BudgetCategory("Groceries", 10_000L, 0L)),
+            owner = FamilyMember.VICTOR,
+        )
+        val budgetBillPay = billPay(
+            id = "budget-bill-pay",
+            amountCents = 2_000L,
+            effect = BillPayBudgetEffect.BUDGET_CATEGORY,
+        )
+        val creditCardPayment = billPay(
+            id = "credit-card-payment",
+            amountCents = 99_999L,
+            effect = BillPayBudgetEffect.CREDIT_CARD_PAYMENT,
+        )
+        val data = fixture.copy(
+            budget = fixture.budget.copy(value = budget),
+            transactions = fixture.transactions.copy(value = emptyList()),
+            btcBillPays = fixture.btcBillPays.copy(
+                status = com.sats21m.vogelvault.domain.Freshness.LIVE,
+                value = listOf(budgetBillPay, creditCardPayment),
+            ),
+        )
+
+        val csv = ExportReports.budgetSummary(FamilyMember.VICTOR, data)
+
+        assertContains(csv.content, "Groceries,100.00,20.00,80.00,20%")
+        assertFalse(csv.content.contains("999.99"), csv.content)
+    }
+
+    @Test
+    fun `budget export marks actuals unavailable when bill-pay ledger fails`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR)
+        val budget = Budget(
+            month = "2026-07",
+            categories = listOf(BudgetCategory("Groceries", 10_000L, 0L)),
+            owner = FamilyMember.VICTOR,
+        )
+        val data = fixture.copy(
+            budget = fixture.budget.copy(value = budget),
+            transactions = fixture.transactions.copy(value = emptyList()),
+            btcBillPays = fixture.btcBillPays.copy(
+                status = com.sats21m.vogelvault.domain.Freshness.ERROR,
+                value = listOf(
+                    billPay(
+                        id = "stale-bill-pay",
+                        amountCents = 2_000L,
+                        effect = BillPayBudgetEffect.BUDGET_CATEGORY,
+                    ),
+                ),
+            ),
+        )
+
+        val csv = ExportReports.budgetSummary(FamilyMember.VICTOR, data)
+
+        assertEquals(
+            "Category,Budget,Actual,Remaining,Percent Used\nUNAVAILABLE,,,,\n",
+            csv.content,
+        )
     }
 
     @Test
@@ -175,6 +241,25 @@ class ExportReportsTest {
         assertContains(csv.content, "'  -2+3")
         assertFalse(csv.content.contains(",'-2.50,"), csv.content)
     }
+
+    private fun billPay(
+        id: String,
+        amountCents: Long,
+        effect: BillPayBudgetEffect,
+    ) = BtcBillPay(
+        id = id,
+        date = "2026-07-20",
+        merchant = id,
+        category = "Groceries",
+        budgetEffect = effect,
+        amountUsdCents = amountCents,
+        btcSpentSats = 1_000L,
+        btcPriceCents = 200_000L,
+        feeUsdCents = 0L,
+        platform = "river_bitcoin_bill_pay",
+        note = null,
+        owner = FamilyMember.VICTOR,
+    )
 
     private fun transaction(
         merchant: String,

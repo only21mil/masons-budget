@@ -50,6 +50,7 @@ import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.csvimport.CsvImportLauncher
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcBalance
+import com.sats21m.vogelvault.domain.BillPayBudgetEffect
 import com.sats21m.vogelvault.domain.BtcBillPay
 import com.sats21m.vogelvault.domain.BtcBuy
 import com.sats21m.vogelvault.domain.BudgetSpend
@@ -65,6 +66,7 @@ import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.domain.Transaction
 import com.sats21m.vogelvault.domain.budgetCategoryTransactionsFor
 import com.sats21m.vogelvault.domain.budgetBillPaysFor
+import com.sats21m.vogelvault.domain.budgetCategoryBillPaysFor
 import com.sats21m.vogelvault.domain.budgetMonthsFor
 import com.sats21m.vogelvault.domain.budgetTransactionsFor
 import com.sats21m.vogelvault.domain.deriveBudgetSpend
@@ -201,6 +203,9 @@ fun ScreenHost(
     val accountsInput = state.data.btcAccounts.value
     val buysInput = state.data.btcBuys.value
     val billPaysInput = state.data.btcBillPays.value
+    val budgetBillPays = remember(profile, billPaysInput) {
+        billPaysInput.budgetBillPaysFor(profile)
+    }
     val incomeInput = state.data.income.value
     val todosInput = state.data.todos.value
     val incomeFiguresUnavailable = state.data.incomeFiguresUnavailable
@@ -296,7 +301,7 @@ fun ScreenHost(
             deriveBudgetSpend(
                 scoped,
                 collections.budgetTransactions,
-                billPaysInput.budgetBillPaysFor(profile),
+                budgetBillPays,
             )
         }
     }
@@ -423,6 +428,12 @@ fun ScreenHost(
                             scope = drilldownScope,
                             transactions =
                                 transactionsInput.budgetCategoryTransactionsFor(
+                                    viewer = state.activeProfile,
+                                    month = drilldownScope.month,
+                                    category = drilldownScope.category,
+                                ),
+                            billPays =
+                                billPaysInput.budgetCategoryBillPaysFor(
                                     viewer = state.activeProfile,
                                     month = drilldownScope.month,
                                     category = drilldownScope.category,
@@ -927,10 +938,8 @@ private fun VaultLazyListScope.budget(
 
     val derived = spend ?: return
     val plannedUnavailable = slice.requiredProjectionUnavailable
-    val actualsUnavailable =
-        plannedUnavailable || state.data.transactions.requiredProjectionUnavailable
-    val actualsStatus =
-        if (plannedUnavailable) slice.status else state.data.transactions.status
+    val actualsUnavailable = state.data.budgetActualsUnavailable
+    val actualsStatus = state.data.budgetActualsStatus
 
     // Hidden when the read failed: the month list is derived from the same
     // transactions the screen has just been told not to trust, so offering a
@@ -1037,6 +1046,7 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
     state: VaultUiState,
     scope: BudgetCategoryDrilldownScope,
     transactions: List<Transaction>,
+    billPays: List<BtcBillPay>,
     onBack: () -> Unit,
     onSelectTransaction: (Transaction) -> Unit,
 ) {
@@ -1046,18 +1056,21 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
         }
     }
     item { StaleNotice(state.data.transactions.status) }
-    if (state.data.transactions.suppressFigures) {
+    item { StaleNotice(state.data.btcBillPays.status) }
+
+    if (state.data.budgetActualsUnavailable) {
         item {
             Panel(
                 title = stringResource(R.string.budget_category_transactions_title, scope.category),
-                source = "${state.data.transactions.source} · ${scope.month}",
+                source = "${state.data.budgetActualsStatus} · ${scope.month}",
             ) {
-                StateBlock(state.data.transactions.status)
+                StateBlock(state.data.budgetActualsStatus)
             }
         }
         return
     }
-    if (transactions.isEmpty()) {
+
+    if (transactions.isEmpty() && billPays.isEmpty()) {
         item {
             Panel(
                 title = stringResource(R.string.budget_category_transactions_title, scope.category),
@@ -1075,43 +1088,66 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
         }
         return
     }
-    keyedPanel(
-        sectionKey = "budget-category-transactions",
-        title =
-            "${scope.category} · ${transactions.size} " +
-                if (transactions.size == 1) "transaction" else "transactions",
-        source = "${state.data.transactions.source} · ${scope.month}",
-        rows = transactions,
-        rowKey = Transaction::selectionKey,
-        rowContent = { transaction ->
-            val accessibilityLabel =
-                stringResource(
-                    R.string.budget_transaction_edit_accessibility,
-                    transaction.merchant,
-                    transaction.date,
-                    transaction.owner.displayName,
-                )
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable(
-                        onClickLabel = accessibilityLabel,
-                        role = Role.Button,
-                        onClick = { onSelectTransaction(transaction) },
+
+    if (transactions.isNotEmpty()) {
+        keyedPanel(
+            sectionKey = "budget-category-transactions",
+            title =
+                "${scope.category} · ${transactions.size} " +
+                    if (transactions.size == 1) "transaction" else "transactions",
+            source = "${state.data.transactions.source} · ${scope.month}",
+            rows = transactions,
+            rowKey = Transaction::selectionKey,
+            rowContent = { transaction ->
+                val accessibilityLabel =
+                    stringResource(
+                        R.string.budget_transaction_edit_accessibility,
+                        transaction.merchant,
+                        transaction.date,
+                        transaction.owner.displayName,
                     )
-                    .semantics(mergeDescendants = true) {
-                        contentDescription = accessibilityLabel
-                    },
-            ) {
-                TransactionRow(
-                    transaction = transaction,
-                    displayUnit = DisplayUnit.USD,
-                    quote = null,
-                    secondary = "${transaction.date} · ${transaction.owner.displayName}",
-                )
-            }
-        },
-    )
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            onClickLabel = accessibilityLabel,
+                            role = Role.Button,
+                            onClick = { onSelectTransaction(transaction) },
+                        )
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = accessibilityLabel
+                        },
+                ) {
+                    TransactionRow(
+                        transaction = transaction,
+                        displayUnit = DisplayUnit.USD,
+                        quote = null,
+                        secondary = "${transaction.date} · ${transaction.owner.displayName}",
+                    )
+                }
+            },
+        )
+    }
+
+    if (billPays.isNotEmpty()) {
+        keyedPanel(
+            sectionKey = "budget-category-bill-pays",
+            title =
+                "${scope.category} · ${billPays.size} " +
+                    if (billPays.size == 1) "bill pay" else "bill pays",
+            source = "${state.data.btcBillPays.source} · ${scope.month}",
+            rows = billPays,
+            rowKey = BtcBillPay::id,
+        ) { payment ->
+            LedgerRow(
+                primary = payment.merchant,
+                secondary = "${payment.date} · ${payment.owner.displayName}",
+                figure = formatBtcBillPayAmount(payment, DisplayUnit.USD),
+                figureColor = VaultNegative,
+                badge = payment.platform,
+            )
+        }
+    }
 }
 
 /**

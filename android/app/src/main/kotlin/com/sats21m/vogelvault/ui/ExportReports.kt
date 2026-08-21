@@ -67,7 +67,8 @@ internal object ExportReports {
         data: ReadModel,
     ): CsvExport {
         val budget = data.budget.value?.takeIf { viewer.sharesNetWorth(it.owner) }
-        val derived = budget?.let {
+        val actualsUnavailable = budget == null || data.budgetActualsUnavailable
+        val derived = budget?.takeUnless { actualsUnavailable }?.let {
             deriveBudgetSpend(
                 it,
                 data.transactions.value.budgetTransactionsFor(viewer),
@@ -76,14 +77,20 @@ internal object ExportReports {
         }
         val content = buildString {
             appendLine("Category,Budget,Actual,Remaining,Percent Used")
-            derived?.categories?.forEach { category ->
-                appendCsvRow(
-                    formulaSafeText(category.name),
-                    exactUsd(category.budgetCents),
-                    exactUsd(category.spentCents),
-                    exactUsd(category.remainingCents),
-                    percentUsed(category.spentCents, category.budgetCents),
-                )
+            if (derived == null) {
+                // A report with no numeric rows is ambiguous; name the failure
+                // rather than silently exporting a partial budget as zero spend.
+                appendCsvRow("UNAVAILABLE", "", "", "", "")
+            } else {
+                derived.categories.forEach { category ->
+                    appendCsvRow(
+                        formulaSafeText(category.name),
+                        exactUsd(category.budgetCents),
+                        exactUsd(category.spentCents),
+                        exactUsd(category.remainingCents),
+                        percentUsed(category.spentCents, category.budgetCents),
+                    )
+                }
             }
         }
         return CsvExport("budget-${budget?.month ?: "unavailable"}.csv", content)
