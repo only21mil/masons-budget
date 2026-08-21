@@ -581,7 +581,8 @@ describe("main-process row repository", () => {
     // Positive sats, non-Income, account present -> decodes.
     const ok = await decode({ ...spend, amountSats: int64(25_000n) })
     expect(ok.status).toBe("ok")
-    if (ok.status !== "ok") return
+    expect(ok).toMatchObject({ kind: "transactions" })
+    if (ok.status !== "ok" || ok.kind !== "transactions") return
     expect(ok.rows[0]).toMatchObject({
       txId: "btc-spend",
       category: "Shopping",
