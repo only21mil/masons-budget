@@ -3,6 +3,7 @@ package com.sats21m.vogelvault.notifications
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.Transaction
+import com.sats21m.vogelvault.domain.budgetBillPaysFor
 import com.sats21m.vogelvault.domain.budgetTransactionsFor
 import com.sats21m.vogelvault.domain.deriveBudgetSpend
 import com.sats21m.vogelvault.ui.VaultUiState
@@ -44,9 +45,14 @@ data class BudgetAlert(
 class BudgetNotificationEvaluator {
     fun evaluate(state: VaultUiState): List<BudgetAlert> {
         if (state.staleAuthorization) return emptyList()
-        if (!state.data.budget.status.canNotify || !state.data.transactions.status.canNotify) {
+        if (
+            !state.data.budget.status.canNotify ||
+            !state.data.transactions.status.canNotify ||
+            !state.data.btcBillPays.status.canNotify
+        ) {
             return emptyList()
         }
+        if (state.data.budgetActualsUnavailable) return emptyList()
 
         val viewer = state.activeProfile
         val budget = state.data.budget.value ?: return emptyList()
@@ -56,12 +62,14 @@ class BudgetNotificationEvaluator {
             return emptyList()
         }
         val transactions = state.data.transactions.value.budgetTransactionsFor(viewer)
+        val billPays = state.data.btcBillPays.value.budgetBillPaysFor(viewer)
         if (!transactions.haveSafeCategoryTotals()) return emptyList()
 
         val spend =
             deriveBudgetSpend(
                 budget = budget,
                 transactions = transactions,
+                billPays = billPays,
             ) ?: return emptyList()
 
         return spend.categories

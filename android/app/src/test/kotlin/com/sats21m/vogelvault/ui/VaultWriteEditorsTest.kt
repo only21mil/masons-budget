@@ -2,6 +2,9 @@ package com.sats21m.vogelvault.ui
 
 import com.sats21m.vogelvault.TransactionDraftIdStore
 import com.sats21m.vogelvault.data.ConvexConfig
+import com.sats21m.vogelvault.data.ConvexDeviceCredential
+import com.sats21m.vogelvault.data.ConvexDeviceCredentialSource
+import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.ConvexSyncTokenSource
@@ -11,6 +14,7 @@ import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.data.testToken
 import com.sats21m.vogelvault.domain.CategorySpend
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.IncomeEntry
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -92,6 +96,173 @@ class VaultWriteEditorsTest {
             ),
         )
     }
+
+    @Test
+    fun `adult income buy canonicalizes Rachel to the Victor household owner`() {
+        val result = assertIs<WriteDraftResult.Valid<BtcBuyFromIncomeWriteRequest>>(
+            btcBuyFromIncomeWriteRequest(
+                viewer = FamilyMember.RACHEL,
+                id = "income-buy-1",
+                income = incomeEntry(),
+                source = "River",
+                sats = "100000",
+                priceUsd = "65000.00",
+                buyNote = "paycheck DCA",
+            ),
+        )
+
+        assertEquals(FamilyMember.VICTOR, result.request.owner)
+        assertEquals(FamilyMember.RACHEL, result.request.profile)
+        assertEquals("income-buy-1", result.request.buy.id)
+        assertEquals("income-buy-1", result.request.linkedIncome.id)
+        assertEquals(FamilyMember.VICTOR, result.request.buy.owner)
+        assertEquals(FamilyMember.VICTOR, result.request.linkedIncome.owner)
+        assertEquals(result.request.buy.date, result.request.linkedIncome.date)
+        assertEquals(result.request.buy.usdCents, result.request.linkedIncome.amountCents)
+        assertEquals("Payroll", result.request.linkedIncome.source)
+        assertEquals("paycheck DCA", result.request.buy.note)
+    }
+
+    @Test
+    fun `income buy rejects child viewers and cannot create a sat income transaction`() {
+        assertIs<WriteDraftResult.Invalid>(
+            btcBuyFromIncomeWriteRequest(
+                viewer = FamilyMember.MASON,
+                id = "child-buy",
+                income = incomeEntry(owner = FamilyMember.MASON),
+                source = "River",
+                sats = "100000",
+                priceUsd = "65000.00",
+            ),
+        )
+        val result = assertIs<WriteDraftResult.Valid<BtcBuyFromIncomeWriteRequest>>(
+            btcBuyFromIncomeWriteRequest(
+                viewer = FamilyMember.VICTOR,
+                id = "income-buy-2",
+                income = incomeEntry(),
+                source = "River",
+                sats = "100000",
+                priceUsd = "65000.00",
+            ),
+        )
+        assertEquals(100_000L, result.request.buy.sats)
+    }
+
+    @Test
+    fun `income buy save sends one atomic device mutation and rotates only after acceptance`() = runBlocking {
+        val store = TransactionDraftIdStore()
+        val poster = BuyPoster(accepted())
+        val gateway = BtcBuyIncomeMutationGateway(
+            ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(
+                    ConvexConfig(deploymentUrl = "https://income-buy-device-test.convex.cloud"),
+                ),
+                credentialSource = ConvexDeviceCredentialSource {
+                    ConvexDeviceCredential("test-device", "t".repeat(43))
+                },
+                http = poster,
+            ),
+        )
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            val incomeScope = btcBuyDraftIdScope(
+                surface = BtcBuyWriteSurface.INCOME_LINKED,
+                profile = FamilyMember.RACHEL,
+            )
+            val id = store.currentId(incomeScope)
+            val request = assertIs<WriteDraftResult.Valid<BtcBuyFromIncomeWriteRequest>>(
+                btcBuyFromIncomeWriteRequest(
+                    viewer = FamilyMember.RACHEL,
+                    id = id,
+                    income = incomeEntry(),
+                    source = "River",
+                    sats = "100000",
+                    priceUsd = "65000.00",
+                ),
+            ).request
+
+            launchBtcBuyFromIncomeSave(
+                scope = scope,
+                request = request,
+                gateway = gateway,
+                buyDraftIds = store,
+                onResult = {},
+            ).join()
+
+            assertEquals(1, poster.bodies.size)
+            val wire = Json.parseToJsonElement(poster.bodies.single()).jsonObject
+            assertEquals("tables:upsertBtcBuyFromDevice", wire["path"]!!.jsonPrimitive.content)
+            val args = wire["args"]!!.jsonObject
+            assertEquals("bitcoin-buys", args["sourceFile"]!!.jsonPrimitive.content)
+            assertEquals("victor", args["owner"]!!.jsonPrimitive.content)
+            assertEquals(
+                args["buy"]!!.jsonObject["id"]!!.jsonPrimitive.content,
+                args["linkedIncome"]!!.jsonObject["id"]!!.jsonPrimitive.content,
+            )
+            assertEquals(
+                args["buy"]!!.jsonObject["date"]!!.jsonPrimitive.content,
+                args["linkedIncome"]!!.jsonObject["date"]!!.jsonPrimitive.content,
+            )
+            assertNotEquals(id, store.currentId(incomeScope))
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `standalone and income linked bitcoin buys do not share a same-file lease`() {
+        val store = TransactionDraftIdStore()
+        val standaloneScope = btcBuyDraftIdScope(
+            surface = BtcBuyWriteSurface.STANDALONE,
+            profile = FamilyMember.VICTOR,
+        )
+        val incomeLinkedScope = btcBuyDraftIdScope(
+            surface = BtcBuyWriteSurface.INCOME_LINKED,
+            profile = FamilyMember.VICTOR,
+        )
+        val standaloneId = store.currentId(standaloneScope)
+        val incomeLinkedId = store.currentId(incomeLinkedScope)
+
+        assertNotEquals(
+            standaloneId,
+            incomeLinkedId,
+            "standalone and income-linked buys need independent retry leases",
+        )
+    }
+
+    @Test
+    fun `bitcoin buy leases distinguish Victor Rachel and Maddox profiles`() {
+        val store = TransactionDraftIdStore()
+        val ids = listOf(
+            FamilyMember.VICTOR,
+            FamilyMember.RACHEL,
+            FamilyMember.MADDOX,
+        ).map { profile ->
+            store.currentId(
+                btcBuyDraftIdScope(
+                    surface = BtcBuyWriteSurface.STANDALONE,
+                    profile = profile,
+                ),
+            )
+        }
+
+        assertEquals(
+            3,
+            ids.toSet().size,
+            "profile retry leases must not collide even when profiles share a data file",
+        )
+    }
+
+    private fun incomeEntry(owner: FamilyMember = FamilyMember.VICTOR) =
+        IncomeEntry(
+            id = "paycheck-1",
+            date = "2026-08-01",
+            month = "2026-08",
+            amountCents = 650_000L,
+            sourceName = "Payroll",
+            note = "August paycheck",
+            owner = owner,
+        )
 
     private fun seed(displayedMonth: String) =
         BudgetCategoryEditorSeed(
@@ -273,8 +444,14 @@ class VaultWriteEditorsTest {
         }
     }
 
-    private val adultBuyScope = FamilyMember.VICTOR.btcBuysDataFileName
-    private val masonBuyScope = FamilyMember.MASON.btcBuysDataFileName
+    private val adultBuyScope = btcBuyDraftIdScope(
+        surface = BtcBuyWriteSurface.STANDALONE,
+        profile = FamilyMember.VICTOR,
+    )
+    private val masonBuyScope = btcBuyDraftIdScope(
+        surface = BtcBuyWriteSurface.STANDALONE,
+        profile = FamilyMember.MASON,
+    )
 
     private fun saveBuy(
         scope: CoroutineScope,

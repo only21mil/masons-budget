@@ -20,6 +20,7 @@ import androidx.core.content.FileProvider
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.ReadModel
+import com.sats21m.vogelvault.domain.budgetBillPaysFor
 import com.sats21m.vogelvault.domain.budgetTransactionsFor
 import com.sats21m.vogelvault.domain.deriveBudgetSpend
 import com.sats21m.vogelvault.domain.netWorthScopeFor
@@ -66,19 +67,30 @@ internal object ExportReports {
         data: ReadModel,
     ): CsvExport {
         val budget = data.budget.value?.takeIf { viewer.sharesNetWorth(it.owner) }
-        val derived = budget?.let {
-            deriveBudgetSpend(it, data.transactions.value.budgetTransactionsFor(viewer))
+        val actualsUnavailable = budget == null || data.budgetActualsUnavailable
+        val derived = budget?.takeUnless { actualsUnavailable }?.let {
+            deriveBudgetSpend(
+                it,
+                data.transactions.value.budgetTransactionsFor(viewer),
+                data.btcBillPays.value.budgetBillPaysFor(viewer),
+            )
         }
         val content = buildString {
             appendLine("Category,Budget,Actual,Remaining,Percent Used")
-            derived?.categories?.forEach { category ->
-                appendCsvRow(
-                    formulaSafeText(category.name),
-                    exactUsd(category.budgetCents),
-                    exactUsd(category.spentCents),
-                    exactUsd(category.remainingCents),
-                    percentUsed(category.spentCents, category.budgetCents),
-                )
+            if (derived == null) {
+                // A report with no numeric rows is ambiguous; name the failure
+                // rather than silently exporting a partial budget as zero spend.
+                appendCsvRow("UNAVAILABLE", "", "", "", "")
+            } else {
+                derived.categories.forEach { category ->
+                    appendCsvRow(
+                        formulaSafeText(category.name),
+                        exactUsd(category.budgetCents),
+                        exactUsd(category.spentCents),
+                        exactUsd(category.remainingCents),
+                        percentUsed(category.spentCents, category.budgetCents),
+                    )
+                }
             }
         }
         return CsvExport("budget-${budget?.month ?: "unavailable"}.csv", content)

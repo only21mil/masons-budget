@@ -109,7 +109,11 @@ data class VaultUiState(
      * to be looking, and Rachel must get the same list as Victor.
      */
     val budgetMonths: List<String>
-        get() = data.transactions.value.budgetMonthsFor(activeProfile, data.budget.value?.month)
+        get() = data.transactions.value.budgetMonthsFor(
+            activeProfile,
+            data.budget.value?.month,
+            data.btcBillPays.value,
+        )
 
     /**
      * The month the Budget screen should open on, or null when there is nothing

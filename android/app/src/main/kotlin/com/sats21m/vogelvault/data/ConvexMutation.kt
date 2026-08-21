@@ -28,6 +28,30 @@ internal sealed class ConvexMutation(val path: String) {
         }.let(::JsonObject)
     }
 
+    /** Capability-scoped transaction write used by the Android add surface. */
+    data class UpsertTransactionFromDevice(
+        val owner: FamilyMember,
+        val sourceFile: String,
+        val transaction: TransactionInput,
+        val baseUpdatedAtMs: Long? = null,
+    ) : ConvexMutation("tables:upsertTransactionFromDevice") {
+        init {
+            require(sourceFile == owner.ledgerOwner.transactionsDataFileName) {
+                "source file must match the transaction owner"
+            }
+            require(transaction.owner == owner.ledgerOwner) {
+                "transaction owner must match the device-write owner"
+            }
+        }
+
+        override fun arguments(): JsonObject = buildMap<String, JsonElement> {
+            put("owner", JsonPrimitive(owner.ledgerOwner.key))
+            put("sourceFile", JsonPrimitive(sourceFile))
+            put("transaction", transaction.toJson())
+            baseUpdatedAtMs?.let { put("baseUpdatedAtMs", JsonPrimitive(it)) }
+        }.let(::JsonObject)
+    }
+
     data class DeleteTransaction(
         val txId: String,
         val owner: FamilyMember,
@@ -101,12 +125,92 @@ internal sealed class ConvexMutation(val path: String) {
             argumentsWithOptionalSource("buy", buy.toJson(), sourceFile)
     }
 
+    data class UpsertBtcBillPayFromDevice(
+        val owner: FamilyMember,
+        val billPay: BtcBillPayInput,
+        val baseUpdatedAtMs: Long? = null,
+        val sourceFile: String = BTC_BILL_PAYS_SOURCE_FILE,
+    ) : ConvexMutation("tables:upsertBtcBillPayFromDevice") {
+        init {
+            require(owner.isAdult) { "Bitcoin bill pays are adult household rows" }
+            require(sourceFile == BTC_BILL_PAYS_SOURCE_FILE) {
+                "Bitcoin bill pays must use the canonical source file"
+            }
+        }
+
+        override fun arguments(): JsonObject = buildMap<String, JsonElement> {
+            put("owner", JsonPrimitive(owner.key))
+            put("sourceFile", JsonPrimitive(sourceFile))
+            put("billPay", billPay.toJson())
+            baseUpdatedAtMs?.let { put("baseUpdatedAtMs", JsonPrimitive(it)) }
+        }.let(::JsonObject)
+    }
+
+    /**
+     * One device mutation for a BTC purchase and its optional USD income row.
+     *
+     * The server owns the transaction boundary: sending [linkedIncome] asks it
+     * to commit both rows together, while omitting it preserves the ordinary
+     * Bitcoin-buy write. The Android boundary still rejects mismatched identity
+     * locally so a retry cannot accidentally attach a different income row.
+     */
+    data class UpsertBtcBuyFromDevice(
+        val owner: FamilyMember,
+        val sourceFile: String,
+        val buy: BtcBuyInput,
+        val linkedIncome: LinkedIncomeInput? = null,
+        val baseUpdatedAtMs: Long? = null,
+    ) : ConvexMutation("tables:upsertBtcBuyFromDevice") {
+        init {
+            require(owner.isAdult) { "device Bitcoin-buy writes are adult-household only" }
+            require(sourceFile == owner.btcBuysDataFileName) {
+                "source file must match the Bitcoin-buy owner"
+            }
+            require(buy.owner == owner) { "Bitcoin buy owner must match the request owner" }
+            linkedIncome?.let { income ->
+                require(income.id == buy.id) { "linked income and Bitcoin buy must share an id" }
+                require(income.owner == owner) { "linked income owner must match the request owner" }
+                require(income.date == buy.date) { "linked income and Bitcoin buy must share a date" }
+                require(income.amountCents == buy.usdCents) {
+                    "linked income amount must match Bitcoin-buy USD cents"
+                }
+            }
+        }
+
+        override fun arguments(): JsonObject = buildMap<String, JsonElement> {
+            put("owner", JsonPrimitive(owner.key))
+            put("sourceFile", JsonPrimitive(sourceFile))
+            put("buy", buy.toJson())
+            linkedIncome?.let { put("linkedIncome", it.toJson()) }
+            baseUpdatedAtMs?.let { put("baseUpdatedAtMs", JsonPrimitive(it)) }
+        }.let(::JsonObject)
+    }
+
     data class UpsertBtcAccount(
         val account: BtcAccountInput,
         val sourceFile: String? = null,
     ) : ConvexMutation("tables:upsertBtcAccount") {
         override fun arguments(): JsonObject =
             argumentsWithOptionalSource("account", account.toJson(), sourceFile)
+    }
+
+    data class UpsertBtcTransferFromDevice(
+        val owner: FamilyMember,
+        val transfer: BtcTransferInput,
+        val baseUpdatedAtMs: Long? = null,
+    ) : ConvexMutation("tables:upsertBtcTransferFromDevice") {
+        init {
+            require(transfer.owner == owner) {
+                "Bitcoin transfer owner must match the request owner"
+            }
+        }
+
+        override fun arguments(): JsonObject = buildMap<String, JsonElement> {
+            put("owner", JsonPrimitive(owner.key))
+            put("sourceFile", JsonPrimitive("btc-transfers"))
+            put("transfer", transfer.toJson())
+            baseUpdatedAtMs?.let { put("baseUpdatedAtMs", JsonPrimitive(it)) }
+        }.let(::JsonObject)
     }
 
     data class UpsertBudgetCategory(
@@ -145,6 +249,7 @@ internal data class TransactionInput(
     val card: String? = null,
     val note: String? = null,
     val amountSats: Long? = null,
+    val bitcoinAccountKey: String? = null,
     val owner: FamilyMember? = null,
 ) {
     init {
@@ -156,8 +261,11 @@ internal data class TransactionInput(
         require(category != "Income" || kind == TransactionKind.CREDIT) {
             "Income transactions must be credits"
         }
-        require(amountSats == null || (category == "Income" && amountSats > 0L)) {
-            "only Income may carry a positive sats amount"
+        require(amountSats == null || amountSats > 0L) {
+            "amountSats must be positive when present"
+        }
+        require(bitcoinAccountKey == null || bitcoinAccountKey.isNotBlank()) {
+            "bitcoinAccountKey must not be blank when present"
         }
 
         val expectedNegative = category != "Income" && kind == TransactionKind.CREDIT
@@ -180,6 +288,7 @@ internal data class TransactionInput(
         card?.let { put("card", JsonPrimitive(it)) }
         note?.let { put("note", JsonPrimitive(it)) }
         amountSats?.let { put("amountSats", it.toConvexInt64()) }
+        bitcoinAccountKey?.let { put("bitcoinAccountKey", JsonPrimitive(it)) }
         owner?.let { put("owner", JsonPrimitive(it.key)) }
     }.let(::JsonObject)
 }
@@ -220,6 +329,89 @@ internal data class BtcBuyInput(
     }.let(::JsonObject)
 }
 
+internal const val BTC_BILL_PAYS_SOURCE_FILE = "bitcoin-bill-pays"
+internal const val RIVER_BITCOIN_BILL_PAY_PLATFORM = "river_bitcoin_bill_pay"
+
+internal data class BtcBillPayInput(
+    val id: String,
+    val owner: FamilyMember,
+    val date: String,
+    val merchant: String,
+    val category: String,
+    val budgetEffect: com.sats21m.vogelvault.domain.BillPayBudgetEffect,
+    val amountUsdCents: Long,
+    val btcSpentSats: Long,
+    val btcPriceCents: Long,
+    val feeUsdCents: Long,
+    val platform: String = RIVER_BITCOIN_BILL_PAY_PLATFORM,
+    val note: String? = null,
+    val reference: String? = null,
+) {
+    init {
+        require(id.isNotBlank()) { "bitcoin bill pay id must not be blank" }
+        require(owner.isAdult) { "Bitcoin bill pays are adult household rows" }
+        require(date.isNotBlank()) { "bitcoin bill pay date must not be blank" }
+        require(merchant.isNotBlank()) { "bitcoin bill pay merchant must not be blank" }
+        require(category.isNotBlank()) { "bitcoin bill pay category must not be blank" }
+        require(amountUsdCents > 0L) { "bitcoin bill pay amount must be positive" }
+        require(btcSpentSats > 0L) { "bitcoin bill pay sats must be positive" }
+        require(btcPriceCents > 0L) { "bitcoin bill pay price must be positive" }
+        require(feeUsdCents >= 0L) { "bitcoin bill pay fee must not be negative" }
+        require(platform == RIVER_BITCOIN_BILL_PAY_PLATFORM) {
+            "bitcoin bill pay platform must be River"
+        }
+        if (budgetEffect == com.sats21m.vogelvault.domain.BillPayBudgetEffect.CREDIT_CARD_PAYMENT) {
+            require(category == "Credit Card Payment") {
+                "credit card bill pays must use the Credit Card Payment category"
+            }
+        }
+    }
+
+    fun toJson(): JsonObject = buildMap<String, JsonElement> {
+        put("id", JsonPrimitive(id))
+        put("owner", JsonPrimitive(owner.key))
+        put("date", JsonPrimitive(date))
+        put("merchant", JsonPrimitive(merchant))
+        put("category", JsonPrimitive(category))
+        put("budgetEffect", JsonPrimitive(budgetEffect.wireValue))
+        put("amountUsdCents", amountUsdCents.toConvexInt64())
+        put("btcSpentSats", btcSpentSats.toConvexInt64())
+        put("btcPriceCents", btcPriceCents.toConvexInt64())
+        put("feeUsdCents", feeUsdCents.toConvexInt64())
+        put("platform", JsonPrimitive(platform))
+        note?.let { put("note", JsonPrimitive(it)) }
+        reference?.let { put("reference", JsonPrimitive(it)) }
+    }.let(::JsonObject)
+}
+
+internal data class LinkedIncomeInput(
+    val id: String,
+    val owner: FamilyMember,
+    val date: String,
+    val amountCents: Long,
+    val source: String,
+    val note: String? = null,
+    val loggedBy: String? = null,
+) {
+    init {
+        require(id.isNotBlank()) { "linked income id must not be blank" }
+        require(date.isNotBlank()) { "linked income date must not be blank" }
+        require(amountCents > 0L) { "linked income amount must be positive" }
+        require(source.isNotBlank()) { "linked income source must not be blank" }
+    }
+
+    fun toJson(): JsonObject = buildMap<String, JsonElement> {
+        put("id", JsonPrimitive(id))
+        put("owner", JsonPrimitive(owner.key))
+        put("date", JsonPrimitive(date))
+        put("amountCents", amountCents.toConvexInt64())
+        put("source", JsonPrimitive(source))
+        put("sourceFile", JsonPrimitive("income"))
+        note?.let { put("note", JsonPrimitive(it)) }
+        loggedBy?.let { put("loggedBy", JsonPrimitive(it)) }
+    }.let(::JsonObject)
+}
+
 internal data class BtcAccountInput(
     val key: String,
     val owner: FamilyMember,
@@ -245,6 +437,44 @@ internal data class BtcAccountInput(
         put("fiatCents", fiatCents.toConvexInt64())
         put("asOf", JsonPrimitive(asOf))
         schemaVersion?.let { put("schemaVersion", it.toConvexInt64()) }
+    }.let(::JsonObject)
+}
+
+internal data class BtcTransferInput(
+    val id: String,
+    val owner: FamilyMember,
+    val date: String,
+    val fromAccountKey: String,
+    val toAccountKey: String,
+    val sats: Long,
+    val feeSats: Long,
+    val note: String? = null,
+) {
+    init {
+        require(id.isNotBlank()) { "bitcoin transfer id must not be blank" }
+        require(owner.isAdult) { "bitcoin transfers require an adult owner" }
+        require(date.isNotBlank()) { "bitcoin transfer date must not be blank" }
+        require(fromAccountKey.isNotBlank()) { "bitcoin transfer source account must not be blank" }
+        require(toAccountKey.isNotBlank()) { "bitcoin transfer destination account must not be blank" }
+        require(fromAccountKey != toAccountKey) {
+            "bitcoin transfer source and destination must differ"
+        }
+        require(sats > 0L) { "bitcoin transfer sats must be positive" }
+        require(feeSats >= 0L) { "bitcoin transfer feeSats must be nonnegative" }
+        require(sats <= Long.MAX_VALUE - feeSats) {
+            "bitcoin transfer debit exceeds signed int64"
+        }
+    }
+
+    fun toJson(): JsonObject = buildMap<String, JsonElement> {
+        put("id", JsonPrimitive(id))
+        put("owner", JsonPrimitive(owner.key))
+        put("date", JsonPrimitive(date))
+        put("fromAccountKey", JsonPrimitive(fromAccountKey))
+        put("toAccountKey", JsonPrimitive(toAccountKey))
+        put("sats", sats.toConvexInt64())
+        put("feeSats", feeSats.toConvexInt64())
+        note?.let { put("note", JsonPrimitive(it)) }
     }.let(::JsonObject)
 }
 

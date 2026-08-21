@@ -1,5 +1,12 @@
 package com.sats21m.vogelvault.ui
 
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.BtcBillPay
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -69,8 +76,12 @@ internal fun VaultLazyListScope.btcBillPaysScreen(
     state: VaultUiState,
     displayUnit: DisplayUnit,
     title: String,
+    onAddBillPay: () -> Unit,
 ) {
     val slice = state.data.btcBillPays
+    if (canAddBtcBillPay(slice.status, state.activeProfile)) {
+        item { BtcBillPayEntryAction(onAddBillPay) }
+    }
     if (slice.suppressFigures) {
         item {
             Panel(title, slice.source) {
@@ -130,5 +141,12 @@ internal fun VaultLazyListScope.btcBillPaysScreen(
             figureColor = VaultNegative,
             badge = payment.platform,
         )
+    }
+}
+
+@Composable
+internal fun BtcBillPayEntryAction(onClick: () -> Unit) {
+    Button(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Text(stringResource(R.string.btc_bill_pay_add_action))
     }
 }
