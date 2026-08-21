@@ -518,7 +518,7 @@ class RowQueryRepositoryTest {
     fun `btc balance documents decode exact totals and reject malformed sats`() {
         val valid = RecordingPoster(
             rowSuccess(
-                """[{"owner":"victor","schemaVersion":${convexInt64(2)},"asOf":"2026-07-18T12:00:00Z","accounts":[{"key":"strike","label":"Strike","custody":"exchange","sats":${convexInt64(35000000)},"fiatCents":${convexInt64(3430055)}},{"key":"coldcard","label":"Coldcard","custody":"self_custody","sats":${convexInt64(150000000)},"fiatCents":${convexInt64(14700000)}}],"totals":{"sats":${convexInt64(185000000)},"fiatCents":${convexInt64(18130055)},"exchangeSats":${convexInt64(35000000)},"selfCustodySats":${convexInt64(150000000)}},"source":"synthetic","basis":"spot","confidence":"verified","updatedAtMs":0.0}]""",
+                """[{"owner":"victor","schemaVersion":${convexInt64(2)},"asOf":"2026-07-18T12:00:00Z","accounts":[{"key":"strike","label":"Strike","custody":"exchange","sats":${convexInt64(35000000)},"fiatCents":${convexInt64(3430055)}},{"key":"coldcard","label":"Multisig","custody":"self_custody","sats":${convexInt64(150000000)},"fiatCents":${convexInt64(14700000)}}],"totals":{"sats":${convexInt64(185000000)},"fiatCents":${convexInt64(18130055)},"exchangeSats":${convexInt64(35000000)},"selfCustodySats":${convexInt64(150000000)}},"source":"synthetic","basis":"spot","confidence":"verified","updatedAtMs":0.0}]""",
             ),
         )
         val result = runBlocking {

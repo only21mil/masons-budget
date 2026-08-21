@@ -68,12 +68,12 @@ class AndroidFinanceRegressionTest {
     }
 
     @Test
-    fun `live BTC quote values Total stack and Coldcard when embedded fiat is absent`() {
+    fun `live BTC quote values Total stack and Multisig when embedded fiat is absent`() {
         // A live operational quote may fill only the missing USD side, and the
         // accessibility contract must identify that quote-derived value as estimated.
         val coldcard = bitcoinAccount(
             key = "coldcard",
-            label = "Coldcard",
+            label = "Multisig",
             sats = 75_000_000L,
             owner = FamilyMember.VICTOR,
         )
@@ -93,9 +93,9 @@ class AndroidFinanceRegressionTest {
         compose.onNodeWithContentDescription(
             "Total stack, \$100,000.00, estimated figure",
         ).fetchSemanticsNode()
-        contentList().performScrollToNode(hasContentDescription("Coldcard", substring = true))
+        contentList().performScrollToNode(hasContentDescription("Multisig", substring = true))
         compose.onNodeWithContentDescription(
-            "Coldcard, Victor · Estimated, Self custody, \$75,000.00",
+            "Multisig, Victor · Estimated, Self custody, \$75,000.00",
         ).fetchSemanticsNode()
     }
 
@@ -103,7 +103,7 @@ class AndroidFinanceRegressionTest {
     fun `absent BTC quote keeps missing embedded fiat unavailable`() {
         val coldcard = bitcoinAccount(
             key = "coldcard",
-            label = "Coldcard",
+            label = "Multisig",
             sats = 75_000_000L,
             owner = FamilyMember.VICTOR,
         )
@@ -123,9 +123,9 @@ class AndroidFinanceRegressionTest {
 
         compose.onNodeWithContentDescription("Total stack, Price unavailable")
             .fetchSemanticsNode()
-        contentList().performScrollToNode(hasContentDescription("Coldcard", substring = true))
+        contentList().performScrollToNode(hasContentDescription("Multisig", substring = true))
         compose.onNodeWithContentDescription(
-            "Coldcard, Victor, Self custody, Price unavailable",
+            "Multisig, Victor, Self custody, Price unavailable",
         ).fetchSemanticsNode()
     }
 
@@ -167,7 +167,7 @@ class AndroidFinanceRegressionTest {
             owner = FamilyMember.VICTOR,
             totalSats = 100_000_000L,
             accounts = listOf(
-                bitcoinAccount("coldcard", "Coldcard", 100_000_000L, FamilyMember.VICTOR),
+                bitcoinAccount("coldcard", "Multisig", 100_000_000L, FamilyMember.VICTOR),
             ),
         )
         val holding = FinanceHolding(
@@ -224,7 +224,7 @@ class AndroidFinanceRegressionTest {
                 owner = FamilyMember.VICTOR,
                 totalSats = 100_000_000L,
                 accounts = listOf(
-                    bitcoinAccount("coldcard", "Coldcard", 100_000_000L, FamilyMember.VICTOR),
+                    bitcoinAccount("coldcard", "Multisig", 100_000_000L, FamilyMember.VICTOR),
                 ),
             ),
             accounts = listOf(
