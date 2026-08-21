@@ -1149,16 +1149,25 @@ final class ConvexClient: Sendable {
             .flatMap { TransactionSourceCatalog.option(forWire: $0)?.classification.isBitcoinNative } == true
 
         if isBitcoinNativeSource {
+            // Trim only for the emptiness test. The STORED value goes on the
+            // wire verbatim: the server keys postings by exact string, so an
+            // edited row whose stored key carries whitespace must round-trip
+            // byte-for-byte — normalising here would credit one account and
+            // debit a whitespace-twin the app renders as the same name.
+            // Linux forwards this field untrimmed for the same reason.
+            guard let storedAccountKey = transaction.bitcoinAccountKey,
+                  !storedAccountKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else {
+                throw ConvexRowMutationError.bitcoinPostingRequiresTypedSatsAndAccount
+            }
             guard let amountSats = transaction.amountSats,
                   transaction.enteredInBitcoin == true,
-                  amountSats > 0,
-                  let accountKey = transaction.bitcoinAccountKey?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !accountKey.isEmpty
+                  amountSats > 0
             else {
                 throw ConvexRowMutationError.bitcoinPostingRequiresTypedSatsAndAccount
             }
             row["amountSats"] = ConvexTaggedInt64Encoder.encode(amountSats)
-            row["bitcoinAccountKey"] = accountKey
+            row["bitcoinAccountKey"] = storedAccountKey
         } else if let amountSats = transaction.amountSats,
                   transaction.category == "Income",
                   transaction.enteredInBitcoin == true,
