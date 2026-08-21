@@ -3,6 +3,9 @@ package com.sats21m.vogelvault
 import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
+import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.ui.BtcBuyWriteSurface
+import com.sats21m.vogelvault.ui.btcBuyDraftIdScope
 import java.util.UUID
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -116,8 +119,14 @@ class TransactionDraftIdStoreTest {
     }
 
     private companion object {
-        const val ADULT_SCOPE = "transactions"
-        const val MASON_SCOPE = "mason-transactions"
+        val ADULT_SCOPE = btcBuyDraftIdScope(
+            surface = BtcBuyWriteSurface.STANDALONE,
+            profile = FamilyMember.VICTOR,
+        )
+        val MASON_SCOPE = btcBuyDraftIdScope(
+            surface = BtcBuyWriteSurface.STANDALONE,
+            profile = FamilyMember.MASON,
+        )
     }
 }
 

@@ -112,6 +112,7 @@ class VaultWriteEditorsTest {
         )
 
         assertEquals(FamilyMember.VICTOR, result.request.owner)
+        assertEquals(FamilyMember.RACHEL, result.request.profile)
         assertEquals("income-buy-1", result.request.buy.id)
         assertEquals("income-buy-1", result.request.linkedIncome.id)
         assertEquals(FamilyMember.VICTOR, result.request.buy.owner)
@@ -164,7 +165,11 @@ class VaultWriteEditorsTest {
         )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         try {
-            val id = store.currentId("bitcoin-buys")
+            val incomeScope = btcBuyDraftIdScope(
+                surface = BtcBuyWriteSurface.INCOME_LINKED,
+                profile = FamilyMember.RACHEL,
+            )
+            val id = store.currentId(incomeScope)
             val request = assertIs<WriteDraftResult.Valid<BtcBuyFromIncomeWriteRequest>>(
                 btcBuyFromIncomeWriteRequest(
                     viewer = FamilyMember.RACHEL,
@@ -198,10 +203,54 @@ class VaultWriteEditorsTest {
                 args["buy"]!!.jsonObject["date"]!!.jsonPrimitive.content,
                 args["linkedIncome"]!!.jsonObject["date"]!!.jsonPrimitive.content,
             )
-            assertNotEquals(id, store.currentId("bitcoin-buys"))
+            assertNotEquals(id, store.currentId(incomeScope))
         } finally {
             scope.cancel()
         }
+    }
+
+    @Test
+    fun `standalone and income linked bitcoin buys do not share a same-file lease`() {
+        val store = TransactionDraftIdStore()
+        val standaloneScope = btcBuyDraftIdScope(
+            surface = BtcBuyWriteSurface.STANDALONE,
+            profile = FamilyMember.VICTOR,
+        )
+        val incomeLinkedScope = btcBuyDraftIdScope(
+            surface = BtcBuyWriteSurface.INCOME_LINKED,
+            profile = FamilyMember.VICTOR,
+        )
+        val standaloneId = store.currentId(standaloneScope)
+        val incomeLinkedId = store.currentId(incomeLinkedScope)
+
+        assertNotEquals(
+            standaloneId,
+            incomeLinkedId,
+            "standalone and income-linked buys need independent retry leases",
+        )
+    }
+
+    @Test
+    fun `bitcoin buy leases distinguish Victor Rachel and Maddox profiles`() {
+        val store = TransactionDraftIdStore()
+        val ids = listOf(
+            FamilyMember.VICTOR,
+            FamilyMember.RACHEL,
+            FamilyMember.MADDOX,
+        ).map { profile ->
+            store.currentId(
+                btcBuyDraftIdScope(
+                    surface = BtcBuyWriteSurface.STANDALONE,
+                    profile = profile,
+                ),
+            )
+        }
+
+        assertEquals(
+            3,
+            ids.toSet().size,
+            "profile retry leases must not collide even when profiles share a data file",
+        )
     }
 
     private fun incomeEntry(owner: FamilyMember = FamilyMember.VICTOR) =
@@ -395,8 +444,14 @@ class VaultWriteEditorsTest {
         }
     }
 
-    private val adultBuyScope = FamilyMember.VICTOR.btcBuysDataFileName
-    private val masonBuyScope = FamilyMember.MASON.btcBuysDataFileName
+    private val adultBuyScope = btcBuyDraftIdScope(
+        surface = BtcBuyWriteSurface.STANDALONE,
+        profile = FamilyMember.VICTOR,
+    )
+    private val masonBuyScope = btcBuyDraftIdScope(
+        surface = BtcBuyWriteSurface.STANDALONE,
+        profile = FamilyMember.MASON,
+    )
 
     private fun saveBuy(
         scope: CoroutineScope,

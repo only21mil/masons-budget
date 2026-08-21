@@ -544,7 +544,10 @@ internal fun AddTransactionSheet(
     val draftTransactionId = remember(draftScope, transactionDraftIds) {
         transactionDraftIds.currentId(draftScope)
     }
-    val btcBuyDraftScope = state.activeProfile.ledgerOwner.btcBuysDataFileName
+    val btcBuyDraftScope = btcBuyDraftIdScope(
+        surface = BtcBuyWriteSurface.INCOME_LINKED,
+        profile = state.activeProfile,
+    )
     val atomicIncomeDraftId = remember(btcBuyDraftScope) {
         btcBuyDraftIds?.currentId(btcBuyDraftScope) ?: "android-${UUID.randomUUID()}"
     }
