@@ -6,6 +6,16 @@ UI labels are display text only. Clients persist and send the wire value. The sh
 
 The `sources` array in `shared/domain/fixtures/payment-source-cases.json` defines the canonical picker order shown below. Every client conformance test must assert the exact ordered wire sequence. Treating the entries as a set, sorting them alphabetically, or grouping them by class is a contract failure. The Convex backend validates the same catalogue but does not render a picker.
 
+### Three identifier spaces
+
+Every payment-source reference lives in exactly one of three identifier spaces, and values never cross between them:
+
+- The **wire** (`river`, `zeus_lightning`, …) is the stored identity. It is the value in the `card` field of a transaction row and the only value any mutation accepts.. Wires are never renamed once shipped.
+- The **label** ("Zeus Lightning", …) is display-only: pickers, list rows, CSV export, and search. The label never crosses the mutation boundary; `card = source.wire`, never `source.label`. Clients render stored wires through a label mapper whose fallback is the wire verbatim, so an unrecognised legacy card displays as itself.
+- The **Bitcoin account key** (`zeus-mobile`, `son-coldcard-mason`, …) names the balance a Bitcoin-native posting moves. It is a separate namespace from wires. Clients send it byte-for-byte exactly as stored, never trimmed or normalised, because the server keys postings by exact string. It must be explicitly chosen; the contract never guesses it from a wire.
+
+A row with no recorded source (`card == nil`) reads as on-chain by long-standing convention: the Activity rails sweep it into the On-chain bucket and exports render "On-chain". Whether that is the right product meaning is Victor's standing open question.
+
 | UI label | Wire value | Class | Supported activities | Row and mutation route |
 |---|---|---|---|---|
 | River | `river` | Bitcoin-native | spend, income, transfer | `transactions` for spend and income; transfers use the separate account route |
@@ -49,6 +59,14 @@ args.linkedIncome = {
 ```
 
 The client generates one stable ID and persists it across retries. Both legs use that ID, the same canonical adult owner, and the same date; `linkedIncome.amountCents` equals `buy.usdCents`. The income row uses `sourceKey: "id:<id>"`. The income leg counts toward income, while the buy is the only leg that posts sats to River. Bitcoin buys remain canonical-River writes and are outside the bidirectional payment-source change. The buy stores a backend-only linkage marker that is omitted from public wire responses. Exact retry creates no second row and applies no second balance posting. Paired correction and deletion are not part of this contract version, so linked pairs are immutable. The device route requires both `transactions:write` and `bitcoin:write`. This flow is adult-household only.
+
+### Activity rails
+
+The Activity list offers All, Income, Spends, Lightning, and On-chain rails. Rails are a filter over the stored wire, not a display concern. Lightning takes `zeus_lightning` plus the retired `lightning`; On-chain takes `zeus_on_chain`, the retired `on-chain`, and nil-card rows, which is the historical default. River and Strike live in no rail; All and Spends cover them. All three clients implement the same membership.
+
+### Legacy round-trip
+
+The backend accepts an unknown `card` value only unchanged: an existing legacy row may round-trip with the same card and Bitcoin posting fields, and nothing else. Clients therefore re-surface an unrecognised stored wire as a synthetic picker option (labelled by its own text) rather than dropping or coercing it; an edit that does not touch the method writes the stored value back verbatim. The retired `lightning` and `on_chain` wires are no longer selectable, but rows already carrying them keep this round-trip.
 
 ## Bitcoin transfers
 
