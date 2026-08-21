@@ -151,6 +151,11 @@ extension ConvexWriteResult {
                 return .failed(.ownerMismatch(field: field))
             case .unexpectedResponse:
                 return .failed(.malformedResponse)
+            case .bitcoinPostingRequiresTypedSatsAndAccount:
+                // A Bitcoin-native source must post typed sats to a named
+                // account; the guard refuses before any network call, so the
+                // write failed locally, not on the wire.
+                return .failed(.invalidAmount(field: "transaction.amountSats"))
             }
 
         case let validation as TransactionWriteValidationError:

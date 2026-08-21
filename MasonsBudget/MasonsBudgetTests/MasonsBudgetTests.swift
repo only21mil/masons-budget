@@ -497,6 +497,10 @@ final class MasonsBudgetTests: XCTestCase {
             .failed(.malformedResponse),
         )
         XCTAssertEqual(
+            ConvexWriteResult.classify(ConvexRowMutationError.bitcoinPostingRequiresTypedSatsAndAccount),
+            .failed(.invalidAmount(field: "transaction.amountSats")),
+        )
+        XCTAssertEqual(
             ConvexWriteResult.classify(TransactionWriteValidationError.ownerMismatch(transactionOwner: "mason", targetOwner: .victor)),
             .failed(.ownerMismatch(field: "transaction")),
         )
