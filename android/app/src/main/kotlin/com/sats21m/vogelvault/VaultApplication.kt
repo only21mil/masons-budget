@@ -3,14 +3,16 @@ package com.sats21m.vogelvault
 import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.annotation.CheckResult
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.sats21m.vogelvault.data.ConvexConfig
-import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexDeviceCredential
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
+import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexReadBootstrapRepository
+import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.FinanceQueryRepositories
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.data.RecoveringFinanceReadSource
@@ -94,6 +96,7 @@ internal class TransactionDraftIdStore(
      * the cross-profile variant: an acceptance under one sourceFile can never
      * release another sourceFile's lease, even for an equal id.
      */
+    @CheckResult
     fun rotateAfterAcceptance(scope: String, acceptedId: String): Boolean =
         synchronized(lock) {
             if (pendingIdsByScope[scope] != acceptedId) return@synchronized true
@@ -104,6 +107,22 @@ internal class TransactionDraftIdStore(
             removed
         }
 }
+
+internal sealed interface DraftIdWriteOutcome<out T> {
+    data class Accepted<T>(val value: T) : DraftIdWriteOutcome<T>
+    data object AcceptedLeaseResetFailed : DraftIdWriteOutcome<Nothing>
+    data class Rejected<T>(val result: ConvexResult<T>) : DraftIdWriteOutcome<T>
+}
+
+internal fun <T> draftIdWriteOutcome(
+    result: ConvexResult<T>,
+    leaseReset: Boolean,
+): DraftIdWriteOutcome<T> =
+    when {
+        result !is ConvexResult.Ok -> DraftIdWriteOutcome.Rejected(result)
+        leaseReset -> DraftIdWriteOutcome.Accepted(result.value)
+        else -> DraftIdWriteOutcome.AcceptedLeaseResetFailed
+    }
 
 /**
  * Process-scoped infrastructure and the ViewModel composition root.

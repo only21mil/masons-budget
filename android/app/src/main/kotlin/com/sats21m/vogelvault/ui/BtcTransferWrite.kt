@@ -1,6 +1,8 @@
 package com.sats21m.vogelvault.ui
 
+import com.sats21m.vogelvault.DraftIdWriteOutcome
 import com.sats21m.vogelvault.TransactionDraftIdStore
+import com.sats21m.vogelvault.draftIdWriteOutcome
 import com.sats21m.vogelvault.data.BtcTransferInput
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexMutation
@@ -158,13 +160,12 @@ internal fun launchBtcTransferSave(
     transfer: BtcTransfer,
     gateway: BtcTransferMutationGateway,
     transferDraftIds: TransactionDraftIdStore,
-    onResult: (ConvexResult<BtcTransferUpsertReceipt>) -> Unit,
+    onResult: (DraftIdWriteOutcome<BtcTransferUpsertReceipt>) -> Unit,
 ): Job = scope.launch {
     val result = gateway.upsert(transfer)
-    if (result is ConvexResult.Ok<*>) {
+    val leaseReset = result !is ConvexResult.Ok ||
         transferDraftIds.rotateAfterAcceptance(BTC_TRANSFER_SOURCE_FILE, transfer.id)
-    }
-    onResult(result)
+    onResult(draftIdWriteOutcome(result, leaseReset))
 }
 
 internal fun btcTransferWriteFailureMessage(result: ConvexResult<*>): String? = when (result) {
@@ -175,6 +176,15 @@ internal fun btcTransferWriteFailureMessage(result: ConvexResult<*>): String? = 
     ConvexResult.Missing -> "Bitcoin transfer not saved: Convex returned no write result."
     is ConvexResult.Failed -> "Bitcoin transfer not saved: the write failed (${result.reason})."
 }
+
+internal fun btcTransferWriteFailureMessage(outcome: DraftIdWriteOutcome<*>): String? =
+    when (outcome) {
+        is DraftIdWriteOutcome.Accepted -> null
+        DraftIdWriteOutcome.AcceptedLeaseResetFailed ->
+            "Convex accepted this Bitcoin transfer, but this device could not retire its draft id. " +
+                "Do not submit another transfer until local storage is repaired."
+        is DraftIdWriteOutcome.Rejected -> btcTransferWriteFailureMessage(outcome.result)
+    }
 
 private inline fun <T, R> ConvexResult<T>.mapSuccess(transform: (T) -> R?): ConvexResult<R> = when (this) {
     is ConvexResult.Ok -> transform(value)?.let { ConvexResult.Ok(it) }

@@ -1,5 +1,6 @@
 package com.sats21m.vogelvault.ui
 
+import com.sats21m.vogelvault.DraftIdWriteOutcome
 import com.sats21m.vogelvault.TransactionDraftIdStore
 import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexMutationClient
@@ -38,6 +39,15 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 class AddTransactionSheetTest {
+    @Test
+    fun `accepted transaction with a stale draft id reports local recovery`() {
+        assertEquals(
+            "Convex accepted this transaction, but this device could not retire its draft id. " +
+                "Do not submit another transaction until local storage is repaired.",
+            transactionWriteFailureMessage(DraftIdWriteOutcome.AcceptedLeaseResetFailed),
+        )
+    }
+
     @Test
     fun `fiat purchase reaches the payload as positive integer cents`() {
         val prepared = prepare(

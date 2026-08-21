@@ -1,5 +1,6 @@
 package com.sats21m.vogelvault.ui
 
+import com.sats21m.vogelvault.DraftIdWriteOutcome
 import com.sats21m.vogelvault.TransactionDraftIdStore
 import com.sats21m.vogelvault.data.BtcTransferInput
 import com.sats21m.vogelvault.data.ConvexMutation
@@ -42,6 +43,15 @@ class BtcTransferWriteTest {
             owner = FamilyMember.MASON,
         ),
     )
+
+    @Test
+    fun `accepted transfer with a stale draft id reports local recovery`() {
+        assertEquals(
+            "Convex accepted this Bitcoin transfer, but this device could not retire its draft id. " +
+                "Do not submit another transfer until local storage is repaired.",
+            btcTransferWriteFailureMessage(DraftIdWriteOutcome.AcceptedLeaseResetFailed),
+        )
+    }
 
     @Test
     fun `adult transfer uses canonical household owner and preserves optional note`() {
@@ -134,10 +144,10 @@ class BtcTransferWriteTest {
         val first = ids.currentId(BTC_TRANSFER_SOURCE_FILE)
         assertEquals(first, ids.currentId(BTC_TRANSFER_SOURCE_FILE))
 
-        ids.rotateAfterAcceptance(BTC_TRANSFER_SOURCE_FILE, "not-the-current-id")
+        assertTrue(ids.rotateAfterAcceptance(BTC_TRANSFER_SOURCE_FILE, "not-the-current-id"))
         assertEquals(first, ids.currentId(BTC_TRANSFER_SOURCE_FILE))
 
-        ids.rotateAfterAcceptance(BTC_TRANSFER_SOURCE_FILE, first)
+        assertTrue(ids.rotateAfterAcceptance(BTC_TRANSFER_SOURCE_FILE, first))
         val next = ids.currentId(BTC_TRANSFER_SOURCE_FILE)
         assertFalse(first == next)
     }

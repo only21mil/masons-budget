@@ -1,5 +1,6 @@
 package com.sats21m.vogelvault.ui
 
+import com.sats21m.vogelvault.DraftIdWriteOutcome
 import com.sats21m.vogelvault.domain.BillPayBudgetEffect
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
@@ -9,6 +10,15 @@ import kotlin.test.assertIs
 
 class BtcBillPayWriteTest {
     private val categories = listOf("Housing", "Groceries")
+
+    @Test
+    fun `accepted bill pay with a stale draft id reports local recovery`() {
+        assertEquals(
+            "Convex accepted this Bitcoin bill pay, but this device could not retire its draft id. " +
+                "Do not submit another bill pay until local storage is repaired.",
+            btcBillPayWriteFailureMessage(DraftIdWriteOutcome.AcceptedLeaseResetFailed),
+        )
+    }
 
     @Test
     fun `budget category requires a real selected budget category`() {

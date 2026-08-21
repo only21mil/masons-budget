@@ -36,9 +36,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.sats21m.vogelvault.DraftIdWriteOutcome
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.TransactionDraftIdStore
 import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.draftIdWriteOutcome
 import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
@@ -203,13 +205,13 @@ internal fun launchPreparedTransactionSave(
     transactionDraftIds: TransactionDraftIdStore,
     isUiActive: () -> Boolean,
     onAccepted: () -> Unit,
-    onUiResult: (ConvexResult<TransactionWriteReceipt>) -> Unit,
+    onUiResult: (DraftIdWriteOutcome<TransactionWriteReceipt>) -> Unit,
 ): Job = scope.launch {
     val result = savePreparedTransaction(row, client)
-    if (result.isOk) {
-        // Release under the exact sourceFile this write was accepted for; an
-        // equal id pending under a different profile's file stays leased.
+    val leaseReset = result !is ConvexResult.Ok ||
         transactionDraftIds.rotateAfterAcceptance(row.sourceFile, row.input.id)
+    val outcome = draftIdWriteOutcome(result, leaseReset)
+    if (outcome is DraftIdWriteOutcome.Accepted) {
         // The ledger refresh belongs to the screen's view model, which
         // outlives this sheet. An accepted write must become visible even
         // when the user dismissed mid-flight — suppressing this with the
@@ -218,7 +220,7 @@ internal fun launchPreparedTransactionSave(
         onAccepted()
     }
     if (isUiActive()) {
-        onUiResult(result)
+        onUiResult(outcome)
     }
 }
 
@@ -229,15 +231,17 @@ internal fun launchPreparedTransactionSave(
     transactionDraftIds: TransactionDraftIdStore,
     isUiActive: () -> Boolean,
     onAccepted: () -> Unit,
-    onUiResult: (ConvexResult<DeviceTransactionWriteReceipt>) -> Unit,
+    onUiResult: (DraftIdWriteOutcome<DeviceTransactionWriteReceipt>) -> Unit,
 ): Job = scope.launch {
     val result = savePreparedTransaction(row, gateway)
-    if (result.isOk) {
+    val leaseReset = result !is ConvexResult.Ok ||
         transactionDraftIds.rotateAfterAcceptance(row.sourceFile, row.input.id)
+    val outcome = draftIdWriteOutcome(result, leaseReset)
+    if (outcome is DraftIdWriteOutcome.Accepted) {
         onAccepted()
     }
     if (isUiActive()) {
-        onUiResult(result)
+        onUiResult(outcome)
     }
 }
 
@@ -256,6 +260,15 @@ internal fun transactionWriteFailureMessage(result: ConvexResult<*>): String? = 
     ConvexResult.Missing -> "Convex returned no write result"
     is ConvexResult.Failed -> "Transaction was not saved (${result.reason})"
 }
+
+internal fun transactionWriteFailureMessage(outcome: DraftIdWriteOutcome<*>): String? =
+    when (outcome) {
+        is DraftIdWriteOutcome.Accepted -> null
+        DraftIdWriteOutcome.AcceptedLeaseResetFailed ->
+            "Convex accepted this transaction, but this device could not retire its draft id. " +
+                "Do not submit another transaction until local storage is repaired."
+        is DraftIdWriteOutcome.Rejected -> transactionWriteFailureMessage(outcome.result)
+    }
 
 /**
  * Turns user input into the exact row mutation payload.

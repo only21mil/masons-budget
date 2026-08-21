@@ -10,6 +10,8 @@ import com.sats21m.vogelvault.ui.BtcBuySaveOutcome
 import com.sats21m.vogelvault.ui.BtcBuyWriteSurface
 import com.sats21m.vogelvault.ui.btcBuyDraftIdScope
 import com.sats21m.vogelvault.ui.btcBuySaveOutcome
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.UUID
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -145,12 +147,60 @@ class TransactionDraftIdStoreTest {
     }
 
     @Test
+    fun `accepted draft write with a stale lease becomes a recovery outcome`() {
+        val accepted =
+            ConvexResult.Ok(
+                ConvexValue(
+                    parsed = JsonPrimitive("written"),
+                    rawResponseJson = """{"status":"success"}""",
+                ),
+            )
+
+        assertIs<DraftIdWriteOutcome.AcceptedLeaseResetFailed>(
+            draftIdWriteOutcome(accepted, leaseReset = false),
+        )
+    }
+
+    @Test
+    fun `every production draft rotation observes its result`() {
+        val callSites = mutableListOf<Triple<Path, String, String>>()
+        Files.walk(Path.of("src/main/kotlin")).use { paths ->
+            paths
+                .filter { path -> path.toString().endsWith(".kt") }
+                .forEach { path ->
+                    val lines = Files.readAllLines(path)
+                    lines.forEachIndexed { index, rawLine ->
+                        val line = rawLine.trim()
+                        if (
+                            "rotateAfterAcceptance(" in line &&
+                            !line.startsWith("fun rotateAfterAcceptance(")
+                        ) {
+                            callSites +=
+                                Triple(path, line, lines.getOrNull(index - 1)?.trim().orEmpty())
+                        }
+                    }
+                }
+            }
+
+        assertEquals(6, callSites.size, callSites.joinToString("\n"))
+        callSites.forEach { (path, line, previousLine) ->
+            val callPrefix = line.substringBefore("rotateAfterAcceptance(")
+            val acceptedWriteGuard = "result !is ConvexResult.Ok ||"
+            assertEquals(
+                true,
+                acceptedWriteGuard in previousLine || acceptedWriteGuard in callPrefix,
+                "$path discards the draft-rotation result: $line",
+            )
+        }
+    }
+
+    @Test
     fun `scoped acceptance removes only that scope from persistence`() {
         val original = TransactionDraftIdStore(preferences)
         val adultId = original.currentId(ADULT_SCOPE)
         val masonId = original.currentId(MASON_SCOPE)
 
-        original.rotateAfterAcceptance(ADULT_SCOPE, adultId)
+        assertEquals(true, original.rotateAfterAcceptance(ADULT_SCOPE, adultId))
 
         assertNull(preferences.getString(ADULT_SCOPE, null))
         assertEquals(masonId, preferences.getString(MASON_SCOPE, null))

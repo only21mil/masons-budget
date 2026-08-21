@@ -28,9 +28,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
+import com.sats21m.vogelvault.DraftIdWriteOutcome
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.TransactionDraftIdStore
 import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.draftIdWriteOutcome
 import com.sats21m.vogelvault.data.BTC_BILL_PAYS_SOURCE_FILE
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.RIVER_BITCOIN_BILL_PAY_PLATFORM
@@ -159,6 +161,15 @@ internal fun btcBillPayWriteFailureMessage(result: ConvexResult<*>): String? = w
     is ConvexResult.Failed -> "Bitcoin bill pay not saved: ${result.reason}."
 }
 
+internal fun btcBillPayWriteFailureMessage(outcome: DraftIdWriteOutcome<*>): String? =
+    when (outcome) {
+        is DraftIdWriteOutcome.Accepted -> null
+        DraftIdWriteOutcome.AcceptedLeaseResetFailed ->
+            "Convex accepted this Bitcoin bill pay, but this device could not retire its draft id. " +
+                "Do not submit another bill pay until local storage is repaired."
+        is DraftIdWriteOutcome.Rejected -> btcBillPayWriteFailureMessage(outcome.result)
+    }
+
 /**
  * Runs one bill-pay mutation on the application-owned scope. A retry keeps the
  * same source-scoped draft id; only a definitive Ok releases it.
@@ -170,14 +181,16 @@ internal fun launchBtcBillPaySave(
     draftIds: TransactionDraftIdStore,
     baseUpdatedAtMs: Long? = null,
     onAccepted: () -> Unit = {},
-    onResult: (ConvexResult<BtcBillPayUpsertReceipt>) -> Unit,
+    onResult: (DraftIdWriteOutcome<BtcBillPayUpsertReceipt>) -> Unit,
 ): Job = scope.launch {
     val result = gateway.upsert(request, baseUpdatedAtMs)
-    if (result is ConvexResult.Ok) {
+    val leaseReset = result !is ConvexResult.Ok ||
         draftIds.rotateAfterAcceptance(BTC_BILL_PAYS_SOURCE_FILE, request.id)
+    val outcome = draftIdWriteOutcome(result, leaseReset)
+    if (outcome is DraftIdWriteOutcome.Accepted) {
         onAccepted()
     }
-    onResult(result)
+    onResult(outcome)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -357,12 +370,12 @@ internal fun BtcBillPayEntrySheet(
                                     gateway = writeGateway,
                                     draftIds = processDraftIds,
                                     onAccepted = onWriteSucceeded,
-                                ) { result ->
+                                ) { outcome ->
                                     submitting = false
-                                    if (result is ConvexResult.Ok) {
+                                    if (outcome is DraftIdWriteOutcome.Accepted) {
                                         onDismiss()
                                     } else {
-                                        message = btcBillPayWriteFailureMessage(result)
+                                        message = btcBillPayWriteFailureMessage(outcome)
                                     }
                                 }
                             }
