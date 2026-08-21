@@ -49,6 +49,7 @@ import {
   formatBitcoin,
 } from "../../data/bitcoinDisplay.ts"
 import {
+  budgetBillPaysFor,
   deriveBudgetSpend,
   displaySpendAmount,
   hasOppositeSpendSign,
@@ -1102,9 +1103,8 @@ function BudgetPage() {
   // because deriveBudgetSpend reads its month from the budget — one source of
   // truth for the filter, so the categories, the totals and the panel caption
   // cannot drift apart.
-  // SEAM: once shared/domain deriveBudgetSpend takes bill pays, the scoped
-  // selected-month budget_category bill pays are passed in as its third argument here.
-  const spend = deriveBudgetSpend({ ...budget, month: scope.month }, transactions)
+  const billPays = budgetBillPaysFor(activeProfile, data.billPays.value)
+  const spend = deriveBudgetSpend({ ...budget, month: scope.month }, transactions, billPays)
   const { planned, actual, remaining, overBudgetCount: overCount } = spend
   const actualsStatus = budgetActualsStatus(data.budget, data.transactions)
   const actualsUnavailable =
