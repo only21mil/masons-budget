@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
@@ -22,8 +25,12 @@ import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.domain.BillPayBudgetEffect
+import com.sats21m.vogelvault.domain.BtcBillPay
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.Fixtures
+import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
 import kotlin.test.assertEquals
 import org.junit.After
@@ -134,6 +141,134 @@ class BudgetCategoryDrilldownComposeTest {
 
         compose.onNodeWithText("Add as Bitcoin buy").fetchSemanticsNode()
     }
+
+    @Test
+    fun `category drilldown includes scoped budget-category bill pays`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+        val billPay = billPay(
+            id = "budget-bill-pay",
+            date = "2026-07-20",
+            category = "Groceries",
+            effect = BillPayBudgetEffect.BUDGET_CATEGORY,
+        )
+        render(
+            VaultUiState(
+                activeProfile = FamilyMember.VICTOR,
+                destination = Destination.BUDGET,
+                data = fixture.copy(
+                    btcBillPays = fixture.btcBillPays.copy(value = listOf(billPay)),
+                ),
+            ),
+        )
+
+        contentList().performScrollToKey("budget-categories:row:Groceries")
+        compose.onNodeWithContentDescription("View Groceries transactions for 2026-07").performClick()
+        settle()
+
+        contentList().performScrollToKey("budget-category-bill-pays:row:budget-bill-pay")
+        compose.onNodeWithText("budget-bill-pay", useUnmergedTree = true).fetchSemanticsNode()
+    }
+
+    @Test
+    fun `category drilldown refuses partial transactions when bill-pay projection fails`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+        val billPay = billPay(
+            id = "budget-bill-pay",
+            date = "2026-07-20",
+            category = "Groceries",
+            effect = BillPayBudgetEffect.BUDGET_CATEGORY,
+        )
+        val available = fixture.copy(
+            btcBillPays = fixture.btcBillPays.copy(value = listOf(billPay)),
+        )
+        val unavailable = available.copy(
+            btcBillPays = available.btcBillPays.copy(
+                status = Freshness.ERROR,
+                value = emptyList(),
+            ),
+        )
+        lateinit var replaceState: (VaultUiState) -> Unit
+
+        compose.runOnUiThread {
+            activityController.get().setContent {
+                var state by remember {
+                    mutableStateOf(
+                        VaultUiState(
+                            activeProfile = FamilyMember.VICTOR,
+                            destination = Destination.BUDGET,
+                            data = available,
+                        ),
+                    )
+                }
+                replaceState = { state = it }
+                VogelVaultTheme {
+                    Box(Modifier.size(width = 411.dp, height = 900.dp)) {
+                        ScreenHost(
+                            destination = Destination.BUDGET,
+                            state = state,
+                            displayUnit = DisplayUnit.USD,
+                        )
+                    }
+                }
+            }
+        }
+        settle()
+
+        contentList().performScrollToKey("budget-categories:row:Groceries")
+        compose.onNodeWithContentDescription("View Groceries transactions for 2026-07").performClick()
+        settle()
+
+        compose.runOnUiThread {
+            replaceState(
+                VaultUiState(
+                    activeProfile = FamilyMember.VICTOR,
+                    destination = Destination.BUDGET,
+                    data = unavailable,
+                ),
+            )
+        }
+        settle()
+
+        compose.onNodeWithText("Convex row data unavailable").fetchSemanticsNode()
+        assertEquals(0, nodesWithText("Neighborhood Market"))
+    }
+
+    private fun render(state: VaultUiState) {
+        compose.runOnUiThread {
+            activityController.get().setContent {
+                VogelVaultTheme {
+                    Box(Modifier.size(width = 411.dp, height = 900.dp)) {
+                        ScreenHost(
+                            destination = Destination.BUDGET,
+                            state = state,
+                            displayUnit = DisplayUnit.USD,
+                        )
+                    }
+                }
+            }
+        }
+        settle()
+    }
+
+    private fun billPay(
+        id: String,
+        date: String,
+        category: String,
+        effect: BillPayBudgetEffect,
+    ) = BtcBillPay(
+        id = id,
+        date = date,
+        merchant = id,
+        category = category,
+        budgetEffect = effect,
+        amountUsdCents = 2_000L,
+        btcSpentSats = 1_000L,
+        btcPriceCents = 200_000L,
+        feeUsdCents = 0L,
+        platform = "river_bitcoin_bill_pay",
+        note = null,
+        owner = FamilyMember.VICTOR,
+    )
 
     private fun assertNamedButton(contentDescription: String) {
         val config =

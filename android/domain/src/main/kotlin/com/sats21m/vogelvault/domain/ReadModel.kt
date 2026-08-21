@@ -358,6 +358,27 @@ data class ReadModel(
 
     val billPayLedgerUnavailable: Boolean
         get() = btcBillPays.requiredProjectionUnavailable || btcBillPays.value.isEmpty()
+
+    /**
+     * Budget actuals require every ledger that can contribute to monthly spend.
+     *
+     * A failed or absent bill-pay projection is not an empty spend list: treating
+     * it as zero would make Actual, Remaining, exports, and alerts under-report
+     * the household budget.
+     */
+    val budgetActualsUnavailable: Boolean
+        get() =
+            budget.requiredProjectionUnavailable ||
+                transactions.requiredProjectionUnavailable ||
+                btcBillPays.requiredProjectionUnavailable
+
+    /** The source status to explain why budget actuals cannot be trusted. */
+    val budgetActualsStatus: Freshness
+        get() = when {
+            budget.requiredProjectionUnavailable -> budget.status
+            transactions.requiredProjectionUnavailable -> transactions.status
+            else -> btcBillPays.status
+        }
 }
 
 // ── Month scoping ───────────────────────────────────────────────────────────
@@ -395,6 +416,18 @@ fun List<Transaction>.budgetMonthsFor(
 /** Bill pays that count toward a viewer's budget, using the same adult/child scope as transactions. */
 fun List<BtcBillPay>.budgetBillPaysFor(viewer: FamilyMember): List<BtcBillPay> =
     if (viewer.isAdult) netWorthScopeFor(viewer) else visibleTo(viewer)
+
+/** Bill pays shown in one budget category drilldown. */
+fun List<BtcBillPay>.budgetCategoryBillPaysFor(
+    viewer: FamilyMember,
+    month: String,
+    category: String,
+): List<BtcBillPay> =
+    budgetBillPaysFor(viewer).filter {
+        it.budgetEffect == BillPayBudgetEffect.BUDGET_CATEGORY &&
+            monthOf(it.date) == month &&
+            it.category == category
+    }
 
 /** Resolve a persisted selection against the months still valid for this budget. */
 fun resolveBudgetMonth(selected: String?, months: List<String>, budgetMonth: String?): String? =
