@@ -69,14 +69,33 @@ internal class TransactionDraftIdStore(
             ?: mutableMapOf()
 
     fun currentId(scope: String): String = synchronized(lock) {
-        pendingIdsByScope[scope] ?: "android-${UUID.randomUUID()}".also { pendingId ->
-            if (preferences != null) {
-                check(preferences.edit().putString(scope, pendingId).commit()) {
-                    "pending draft id could not be persisted"
+        pendingIdsByScope[scope]
+            ?: migrateLegacyId(scope)
+            ?: "android-${UUID.randomUUID()}".also { pendingId ->
+                if (preferences != null) {
+                    check(preferences.edit().putString(scope, pendingId).commit()) {
+                        "pending draft id could not be persisted"
+                    }
                 }
+                pendingIdsByScope[scope] = pendingId
             }
-            pendingIdsByScope[scope] = pendingId
+    }
+
+    private fun migrateLegacyId(scope: String): String? {
+        val legacyKey = legacyBtcBuyPreferenceKey(scope) ?: return null
+        val pendingId = pendingIdsByScope[legacyKey] ?: return null
+        val storedPreferences = preferences ?: return null
+        check(
+            storedPreferences.edit()
+                .putString(scope, pendingId)
+                .remove(legacyKey)
+                .commit(),
+        ) {
+            "pending draft id migration could not be persisted"
         }
+        pendingIdsByScope.remove(legacyKey)
+        pendingIdsByScope[scope] = pendingId
+        return pendingId
     }
 
     /**
@@ -102,6 +121,21 @@ internal class TransactionDraftIdStore(
                 }
             }
         }
+    }
+}
+
+private fun legacyBtcBuyPreferenceKey(scope: String): String? {
+    val parts = scope.split(":")
+    if (parts.size != 5 || parts[0] != "btc-buy-v1") return null
+    if (parts[1] != "standalone" && parts[1] != "income-linked") return null
+    return when {
+        parts[2] == "bitcoin-buys" &&
+            parts[3] == "victor" &&
+            (parts[4] == "victor" || parts[4] == "rachel") -> "bitcoin-buys"
+        parts[2] == "mason-bitcoin-buys" &&
+            parts[3] == "mason" &&
+            parts[4] == "mason" -> "mason-bitcoin-buys"
+        else -> null
     }
 }
 

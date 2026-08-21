@@ -47,6 +47,36 @@ class TransactionDraftIdStoreTest {
     }
 
     @Test
+    fun `legacy bitcoin buy ids migrate once into requested scopes without leaking`() {
+        val adultLegacyId = "android-legacy-adult"
+        val masonLegacyId = "android-legacy-mason"
+        assertEquals(
+            true,
+            preferences.edit()
+                .putString(LEGACY_ADULT_KEY, adultLegacyId)
+                .putString(LEGACY_MASON_KEY, masonLegacyId)
+                .commit(),
+        )
+
+        val store = TransactionDraftIdStore(preferences)
+
+        assertEquals(adultLegacyId, store.currentId(ADULT_SCOPE))
+        assertEquals(masonLegacyId, store.currentId(MASON_SCOPE))
+        assertNotEquals(adultLegacyId, masonLegacyId)
+        assertNotEquals(adultLegacyId, store.currentId(RACHEL_SCOPE))
+        assertNotEquals(adultLegacyId, store.currentId(INCOME_SCOPE))
+        assertEquals(adultLegacyId, preferences.getString(ADULT_SCOPE, null))
+        assertEquals(masonLegacyId, preferences.getString(MASON_SCOPE, null))
+        assertNull(preferences.getString(LEGACY_ADULT_KEY, null))
+        assertNull(preferences.getString(LEGACY_MASON_KEY, null))
+
+        val restored = TransactionDraftIdStore(preferences)
+        assertEquals(adultLegacyId, restored.currentId(ADULT_SCOPE))
+        assertEquals(masonLegacyId, restored.currentId(MASON_SCOPE))
+        assertNotEquals(adultLegacyId, restored.currentId(INCOME_SCOPE))
+    }
+
+    @Test
     fun `new pending ids are synchronously committed before return`() {
         val context: Application = RuntimeEnvironment.getApplication()
         val delegate =
@@ -119,13 +149,23 @@ class TransactionDraftIdStoreTest {
     }
 
     private companion object {
+        const val LEGACY_ADULT_KEY = "bitcoin-buys"
+        const val LEGACY_MASON_KEY = "mason-bitcoin-buys"
         val ADULT_SCOPE = btcBuyDraftIdScope(
             surface = BtcBuyWriteSurface.STANDALONE,
             profile = FamilyMember.VICTOR,
         )
+        val RACHEL_SCOPE = btcBuyDraftIdScope(
+            surface = BtcBuyWriteSurface.STANDALONE,
+            profile = FamilyMember.RACHEL,
+        )
         val MASON_SCOPE = btcBuyDraftIdScope(
             surface = BtcBuyWriteSurface.STANDALONE,
             profile = FamilyMember.MASON,
+        )
+        val INCOME_SCOPE = btcBuyDraftIdScope(
+            surface = BtcBuyWriteSurface.INCOME_LINKED,
+            profile = FamilyMember.VICTOR,
         )
     }
 }
