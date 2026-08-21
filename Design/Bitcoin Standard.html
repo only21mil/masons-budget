@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Bitcoin Standard — Budget + Todo</title>
+<meta name="viewport" content="width=1400"/>
+
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+
+<style>
+  html, body { margin: 0; padding: 0; background: #100C08; color: #F4ECD8;
+    font-family: 'Geist', -apple-system, BlinkMacSystemFont, "SF Pro", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  * { box-sizing: border-box; font-family: inherit; }
+  /* River-ish defaults — slightly tighter tracking, monospaced figures available */
+  body { letter-spacing: -0.005em; }
+  /* Subtle bitcoin-tinted canvas backdrop */
+  .canvas-root { background:
+    radial-gradient(ellipse 1200px 600px at 20% 10%, rgba(247,147,26,0.07), transparent 60%),
+    radial-gradient(ellipse 800px 400px at 80% 80%, rgba(247,147,26,0.05), transparent 70%),
+    #0E0B07;
+  }
+  /* Hide scrollbars in iframes for a cleaner look */
+  .ios-screen::-webkit-scrollbar, .mac-content::-webkit-scrollbar { width: 6px; }
+  .ios-screen::-webkit-scrollbar-thumb, .mac-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="macos-window.jsx"></script>
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="tokens.jsx"></script>
+<script type="text/babel" src="icons.jsx"></script>
+<script type="text/babel" src="screens.jsx"></script>
+<script type="text/babel" src="ios-app.jsx"></script>
+<script type="text/babel" src="mac-app.jsx"></script>
+
+</head>
+<body>
+<div id="root" class="canvas-root"></div>
+
+<script type="text/babel" data-presets="env,react">
+const { useState, useEffect } = React;
+
+const TWEAKS_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "dark": true,
+  "unit": "usd",
+  "accent": "#F7931A"
+}/*EDITMODE-END*/;
+
+function App() {
+  const [tw, setTweak] = useTweaks(TWEAKS_DEFAULTS);
+  const dark = !!tw.dark;
+  const unit = tw.unit || 'sats';
+  const setDark = (v) => setTweak('dark', v);
+  const setUnit = (v) => setTweak('unit', v);
+
+  return (
+    <>
+      <DesignCanvas
+        title="Bitcoin Standard — Budget + Todo"
+        subtitle="A budget + todo app for the bitcoin standard. iOS + macOS · light/dark · BTC/sats toggle"
+      >
+        <DCSection id="ios" title="iOS — iPhone" subtitle="Five tabs · live interactions · light/dark · unit toggle">
+          <DCArtboard id="ios-home"   label="Dashboard"        width={402} height={874}>
+            <IOSApp dark={dark} setDark={setDark} unit={unit} setUnit={setUnit} initialTab="home"/>
+          </DCArtboard>
+          <DCArtboard id="ios-budget" label="Budget"           width={402} height={874}>
+            <IOSApp dark={dark} setDark={setDark} unit={unit} setUnit={setUnit} initialTab="budget"/>
+          </DCArtboard>
+          <DCArtboard id="ios-today"  label="Today (todos)"    width={402} height={874}>
+            <IOSApp dark={dark} setDark={setDark} unit={unit} setUnit={setUnit} initialTab="today"/>
+          </DCArtboard>
+          <DCArtboard id="ios-stack"  label="Retirement"       width={402} height={874}>
+            <IOSApp dark={dark} setDark={setDark} unit={unit} setUnit={setUnit} initialTab="retire"/>
+          </DCArtboard>
+          <DCArtboard id="ios-projects" label="Projects + Areas" width={402} height={874}>
+            <IOSApp dark={dark} setDark={setDark} unit={unit} setUnit={setUnit} initialTab="more"/>
+          </DCArtboard>
+          <DCArtboard id="ios-add"    label="Add transaction"  width={402} height={874}>
+            <IOSAddOnly dark={dark} unit={unit}/>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="ios-light" title="iOS — Light" subtitle="Same screens, light surface">
+          <DCArtboard id="ios-home-light"  label="Dashboard"     width={402} height={874}>
+            <IOSApp dark={false} setDark={setDark} unit={unit} setUnit={setUnit} initialTab="home"/>
+          </DCArtboard>
+          <DCArtboard id="ios-budget-light" label="Budget"       width={402} height={874}>
+            <IOSApp dark={false} setDark={setDark} unit={unit} setUnit={setUnit} initialTab="budget"/>
+          </DCArtboard>
+          <DCArtboard id="ios-today-light" label="Today"         width={402} height={874}>
+            <IOSApp dark={false} setDark={setDark} unit={unit} setUnit={setUnit} initialTab="today"/>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="mac" title="macOS — Desktop" subtitle="Unified workspace · sidebar · all screens in one window">
+          <DCArtboard id="mac-home"   label="Dashboard"   width={1180} height={760}>
+            <MacAppRouter dark={dark} setDark={setDark} unit={unit} setUnit={setUnit} initialNav="home"/>
+          </DCArtboard>
+          <DCArtboard id="mac-txns"   label="Activity"    width={1180} height={760}>
+            <MacAppRouter dark={dark} setDark={setDark} unit={unit} setUnit={setUnit} initialNav="txns"/>
+          </DCArtboard>
+          <DCArtboard id="mac-budget" label="Budget"      width={1180} height={760}>
+            <MacAppRouter dark={dark} setDark={setDark} unit={unit} setUnit={setUnit} initialNav="budget"/>
+          </DCArtboard>
+          <DCArtboard id="mac-retire" label="Retirement"  width={1180} height={760}>
+            <MacAppRouter dark={dark} setDark={setDark} unit={unit} setUnit={setUnit} initialNav="retire"/>
+          </DCArtboard>
+          <DCArtboard id="mac-today"  label="Today + Projects" width={1180} height={760}>
+            <MacAppRouter dark={dark} setDark={setDark} unit={unit} setUnit={setUnit} initialNav="today"/>
+          </DCArtboard>
+          <DCArtboard id="mac-net"    label="Net Worth"   width={1180} height={760}>
+            <MacAppRouter dark={dark} setDark={setDark} unit={unit} setUnit={setUnit} initialNav="net"/>
+          </DCArtboard>
+        </DCSection>
+      </DesignCanvas>
+
+      <TweaksPanel title="Tweaks">
+        <TweakSection label="Theme">
+          <TweakRadio label="Mode" value={dark} options={[{label:'Light', value:false},{label:'Dark', value:true}]} onChange={(v)=>setDark(v)}/>
+          <TweakRadio label="Unit" value={unit} options={[{label:'BTC', value:'btc'},{label:'SATS', value:'sats'},{label:'USD', value:'usd'}]} onChange={(v)=>setUnit(v)}/>
+        </TweakSection>
+      </TweaksPanel>
+    </>
+  );
+}
+
+// Wraps Mac app — re-renders on prop change, scrolls inside artboard.
+function MacAppRouter(props) {
+  return <MacApp {...props}/>;
+}
+
+// Standalone Add Transaction artboard
+function IOSAddOnly({ dark, unit }) {
+  const t = dark ? TOKENS.dark : TOKENS.light;
+  return (
+    <IOSDevice dark={dark}>
+      <div style={{ height: '100%', background: t.bg }}>
+        <AddTxnScreen t={t} unit={unit} onClose={() => {}} onAdd={() => {}}/>
+      </div>
+    </IOSDevice>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

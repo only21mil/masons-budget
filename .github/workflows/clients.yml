@@ -1,0 +1,723 @@
+name: Clients CI
+
+# Builds and verifies the shared domain contract, the Convex backend functions,
+# and the Linux and Android clients on GitHub runners so no toolchain has to be
+# installed on a workstation. The Ubuntu runner ships the Android SDK with
+# licences already accepted, which is why the Android job needs no interactive
+# gate.
+#
+# This workflow never touches the live Convex deployment, never signs anything,
+# and never publishes. Apple builds stay in deploy.yml behind their own manual
+# trigger.
+
+on:
+  # main is included deliberately: it was previously excluded to avoid duplicate
+  # push+PR runs, which meant the default branch was never verified after a
+  # merge. Concurrency below handles the duplication instead.
+  push:
+    branches:
+      - main
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clients-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Which trees actually changed. Added 2026-07-27 after a session of ~30 PRs
+  # exhausted the account's Actions minutes: every PR ran all four jobs, so a
+  # docs-only change still assembled an APK, installed Chromium and captured a
+  # design packet. Cost is not the only reason — a job that cannot be affected
+  # by a diff tells you nothing when it passes.
+  #
+  # A push to main always reports every tree as changed. The default branch must
+  # be verified whole after a merge, which is the property the trigger comment
+  # above is protecting; scoping must not quietly undo it.
+  changes:
+    name: Detect changed trees
+    if: github.repository == 'only21mil/masons-budget'
+    runs-on: ubuntu-latest
+    outputs:
+      linux: ${{ steps.filter.outputs.linux }}
+      android: ${{ steps.filter.outputs.android }}
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Compare against the merge base
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          IS_MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          BEFORE_SHA: ${{ github.event.before }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          verify_all() {
+            echo "::notice::$1"
+            for t in linux android backend; do echo "$t=true" >> "$GITHUB_OUTPUT"; done
+          }
+
+          diff_base=""
+          diff_head=HEAD
+          if [ "$IS_MAIN_PUSH" = "true" ]; then
+            if [[ "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ ]] &&
+              [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+              diff_base="$BEFORE_SHA"
+            fi
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            base="origin/${BASE_REF:-main}"
+            git fetch -q origin "${BASE_REF:-main}"
+            diff_base="$(git merge-base HEAD "$base")"
+          elif [ "$EVENT_NAME" = "merge_group" ]; then
+            if [[ ! "$MERGE_GROUP_BASE_SHA" =~ ^[0-9a-f]{40}$ ||
+              ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              verify_all "Merge-group SHAs are missing or malformed; verifying every tree."
+              exit 0
+            fi
+            if ! git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" ||
+              ! git cat-file -e "${HEAD_SHA}^{commit}"; then
+              verify_all "Merge-group comparison commit is unavailable; verifying every tree."
+              exit 0
+            fi
+            if ! git merge-base --is-ancestor "$MERGE_GROUP_BASE_SHA" "$HEAD_SHA"; then
+              verify_all "Merge-group base is not an ancestor of its head; verifying every tree."
+              exit 0
+            fi
+            diff_base="$MERGE_GROUP_BASE_SHA"
+            diff_head="$HEAD_SHA"
+          fi
+
+          if [ -n "$diff_base" ]; then
+            scripts/check-convex-generated-change.sh "$diff_base" "$diff_head"
+          else
+            echo "No meaningful commit range; skipping the Convex generated-file heuristic."
+          fi
+
+          if [ "$IS_MAIN_PUSH" = "true" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            verify_all "Verifying every tree (main push or manual dispatch)."
+            exit 0
+          fi
+
+          if ! files="$(git diff --name-only "$diff_base" "$diff_head")"; then
+            verify_all "Comparison range could not be diffed; verifying every tree."
+            exit 0
+          fi
+          printf '%s\n' "$files" | sed 's/^/  /'
+
+          # shared/, convex/ and the workflow itself reach every client, so they
+          # mark all three. Erring toward running a job is the safe direction:
+          # a needless run costs minutes, a skipped one costs a regression.
+          wide=false
+          printf '%s\n' "$files" | grep -qE '^(shared/|convex/|package(-lock)?\.json|\.github/workflows/clients\.yml)' && wide=true
+
+          # A job's own tooling is part of that job even though it lives outside
+          # the client source tree. Keep this map job-specific: the other
+          # workflow scripts belong to the always-on lint gate or manual release
+          # preflights, so they must not spend Linux or Android client minutes.
+          declare -A job_paths=(
+            [linux]='^linux/'
+            [android]='^(android/|\.github/workflows/scripts/(report_android_debug_signing|validate_android_debug_keystore)\.sh$)'
+          )
+
+          for t in linux android; do
+            if [ "$wide" = true ] || printf '%s\n' "$files" | grep -qE "${job_paths[$t]}"; then
+              echo "$t=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$t=false" >> "$GITHUB_OUTPUT"
+            fi
+          done
+          # The contract and Convex suites are cheap and guard the money rules;
+          # they run whenever anything at all changed.
+          echo "backend=true" >> "$GITHUB_OUTPUT"
+
+  shared-domain:
+    name: Shared domain contract
+    if: github.repository == 'only21mil/masons-budget'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck --workspace @vogel-vault/domain
+
+      - name: Parity tests against the Swift contract
+        run: npm run test --workspace @vogel-vault/domain
+
+  # Real response bodies captured from Convex, replayed through the same
+  # repositories the shipped clients call. No socket or credential is involved.
+  # This runs on every PR rather than following client path filters: a committed
+  # capture, transport setting, or shared wire assumption can invalidate both
+  # clients even when neither client tree changed.
+  convex-wire-golden:
+    name: Production wire golden decoders
+    if: github.repository == 'only21mil/masons-budget'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Fixture provenance and freshness
+        run: node scripts/check-convex-wire-golden-provenance.mjs
+
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # v5.0.2 is the latest Node 24 open-source release. v6 changes the
+      # caching implementation's license and behavior, so it needs a separate
+      # legal and technical review before adoption.
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+
+      - run: npm ci
+
+      - name: Linux production decoder
+        run: >-
+          npx vitest run
+          test/convex-wire-golden.test.ts
+          test/convex-wire-golden-values.test.ts
+        working-directory: linux
+
+      - name: Android production decoder
+        run: >-
+          ./gradlew :app:testDebugUnitTest
+          --tests 'com.sats21m.vogelvault.data.ConvexWireGolden*Test'
+          --no-daemon
+        working-directory: android
+
+  # A peer of shared-domain rather than a dependant of it. The Convex functions
+  # import nothing from @vogel-vault/domain, so gating them behind the contract
+  # job would only serialise two runs that have no reason to wait on each other.
+  #
+  # This is the layer that was publicly readable until the read token landed, so
+  # its auth tests are the ones that most need to run on every push — they were
+  # written in #18 but had no job to run in, because this file belonged to
+  # another agent that wave.
+  convex-functions:
+    name: Convex functions
+    if: github.repository == 'only21mil/masons-budget'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      # Root install: convex-test, vitest and @edge-runtime/vm are root
+      # devDependencies. Generated Convex declarations are committed, so no
+      # codegen or authenticated deployment is needed here.
+      - run: npm ci
+
+      - name: Verify committed Convex generated types
+        run: |
+          git ls-files --error-unmatch \
+            convex/_generated/api.d.ts \
+            convex/_generated/dataModel.d.ts \
+            convex/schema.sha256 \
+            convex/_generated/server.d.ts
+
+      - name: Typecheck deployable Convex functions
+        run: npx tsc --noEmit -p convex/tsconfig.json
+
+      - name: Typecheck Convex tests
+        run: npx tsc --noEmit -p convex/tsconfig.test.json
+
+      - name: Read/mutation auth and todo LWW tests
+        run: npm run convex:test
+
+  linux-client:
+    name: Linux client
+    needs: [shared-domain, changes]
+    # A broken detector is not permission to skip a required client check.
+    if: >-
+      always() &&
+      github.repository == 'only21mil/masons-budget' &&
+      needs.shared-domain.result == 'success' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.linux == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck renderer
+        run: npx tsc --noEmit -p tsconfig.json
+        working-directory: linux
+
+      - name: Typecheck electron main/preload
+        run: npx tsc --noEmit -p tsconfig.electron.json
+        working-directory: linux
+
+      - name: Lint
+        run: npx eslint .
+        working-directory: linux
+
+      - name: Preload boundary guard
+        run: node scripts/qa-preload-boundary.mjs
+        working-directory: linux
+
+      - name: Render matrix (20 routes x profiles x states)
+        run: npx vitest run
+        working-directory: linux
+
+      - name: Build
+        run: npm run build --workspace @vogel-vault/linux
+
+      - name: Upload build output
+        if: >-
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-client-dist
+          path: |
+            linux/dist
+            linux/dist-electron
+          retention-days: 7
+
+      # Design packet: every page at both widths, plus sampled states and the
+      # child profile. Headless, so it needs no display. Download the artifact to
+      # review the UI without running the app.
+      - name: Install Chromium for screenshots
+        if: >-
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: npx playwright install --with-deps chromium
+        working-directory: linux
+
+      - name: Capture design packet
+        if: >-
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: npm run screenshots
+        working-directory: linux
+
+      - name: Upload design packet
+        if: >-
+          always() &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-design-packet
+          path: linux/screenshots
+          retention-days: 30
+
+  android-client:
+    name: Android client
+    needs: [shared-domain, changes]
+    # A broken detector is not permission to skip a required client check.
+    if: >-
+      always() &&
+      github.repository == 'only21mil/masons-budget' &&
+      needs.shared-domain.result == 'success' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.android == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Detect which Android modules exist
+        id: probe
+        run: |
+          if [ -f android/settings.gradle.kts ]; then
+            echo "gradle=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "gradle=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::android/ not scaffolded yet — skipping."
+          fi
+          if [ -f android/app/build.gradle.kts ]; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "app=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::android/app not scaffolded yet — domain module only, no APK."
+          fi
+
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        if: steps.probe.outputs.gradle == 'true'
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Android read-bootstrap tooling tests
+        if: steps.probe.outputs.app == 'true'
+        run: >-
+          node --test
+          scripts/tests/mint-android-read-bootstrap.test.mjs
+          scripts/tests/build-android-read-bootstrap.test.mjs
+
+      # setup-gradle configures caching; the committed, checksummed wrapper owns
+      # the Gradle version. The domain module is plain Kotlin/JVM and needs no
+      # Android SDK — only the app module does. v5.0.2 is the latest Node 24
+      # open-source release; v6 requires separate license/behavior review.
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        if: steps.probe.outputs.gradle == 'true'
+
+      # Robolectric's android-all runtimes are resolved by the test JVM rather
+      # than Gradle. Cache and prefetch them explicitly, then run Robolectric
+      # offline below. A cold runner still needs Maven once, but curl retries
+      # transient faults and SHA-512 verification rejects partial/corrupt files.
+      - name: Restore Robolectric API 34 and 35 runtimes
+        if: steps.probe.outputs.app == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/robolectric-dependencies/android-all-instrumented-15-robolectric-12650502-i7.jar
+            ${{ runner.temp }}/robolectric-dependencies/android-all-instrumented-14-robolectric-10818077-i7.jar
+          key: robolectric-${{ runner.os }}-android-all-instrumented-15-robolectric-12650502-i7-android-all-instrumented-14-robolectric-10818077-i7
+
+      - name: Prefetch Robolectric API 35 runtime
+        if: steps.probe.outputs.app == 'true'
+        env:
+          ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-dependencies
+          ROBOLECTRIC_RUNTIME: android-all-instrumented-15-robolectric-12650502-i7.jar
+          ROBOLECTRIC_RUNTIME_SHA512: 87bdd0341838f5f630e1ff412ab29cb2f06e0f8cb7751f14679d11b4ee6084873001f8f6a8581ae6e139fa7c9a654b632412827430f984ebecc3c2588674f7e7
+          ROBOLECTRIC_RUNTIME_URL: https://repo.maven.apache.org/maven2/org/robolectric/android-all-instrumented/15-robolectric-12650502-i7/android-all-instrumented-15-robolectric-12650502-i7.jar
+        run: |
+          set -euo pipefail
+          mkdir -p "$ROBOLECTRIC_DEPENDENCY_DIR"
+          runtime_path="$ROBOLECTRIC_DEPENDENCY_DIR/$ROBOLECTRIC_RUNTIME"
+
+          if printf '%s  %s\n' "$ROBOLECTRIC_RUNTIME_SHA512" "$runtime_path" |
+            sha512sum --check --status; then
+            echo "Using checksum-verified cached $ROBOLECTRIC_RUNTIME."
+            exit 0
+          fi
+
+          partial_path="${runtime_path}.partial"
+          rm -f "$partial_path"
+          trap 'rm -f "$partial_path"' EXIT
+          curl \
+            --fail \
+            --location \
+            --retry 5 \
+            --retry-all-errors \
+            --retry-delay 2 \
+            --connect-timeout 15 \
+            --max-time 600 \
+            --output "$partial_path" \
+            "$ROBOLECTRIC_RUNTIME_URL"
+          printf '%s  %s\n' "$ROBOLECTRIC_RUNTIME_SHA512" "$partial_path" |
+            sha512sum --check
+          mv "$partial_path" "$runtime_path"
+
+      - name: Prefetch Robolectric API 34 runtime
+        if: steps.probe.outputs.app == 'true'
+        env:
+          ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-dependencies
+          ROBOLECTRIC_RUNTIME: android-all-instrumented-14-robolectric-10818077-i7.jar
+          ROBOLECTRIC_RUNTIME_SHA512: 7cdc0b1306e7865f1acd25a363073149654caee5b8e278c5ae37ff4724185724eff39f0b0111800b521e640bb28698d9d2e655134a801569a0f07470e7b5f455
+          ROBOLECTRIC_RUNTIME_URL: https://repo.maven.apache.org/maven2/org/robolectric/android-all-instrumented/14-robolectric-10818077-i7/android-all-instrumented-14-robolectric-10818077-i7.jar
+        run: |
+          set -euo pipefail
+          mkdir -p "$ROBOLECTRIC_DEPENDENCY_DIR"
+          runtime_path="$ROBOLECTRIC_DEPENDENCY_DIR/$ROBOLECTRIC_RUNTIME"
+
+          if printf '%s  %s\n' "$ROBOLECTRIC_RUNTIME_SHA512" "$runtime_path" |
+            sha512sum --check --status; then
+            echo "Using checksum-verified cached $ROBOLECTRIC_RUNTIME."
+            exit 0
+          fi
+
+          partial_path="${runtime_path}.partial"
+          rm -f "$partial_path"
+          trap 'rm -f "$partial_path"' EXIT
+          curl \
+            --fail \
+            --location \
+            --retry 5 \
+            --retry-all-errors \
+            --retry-delay 2 \
+            --connect-timeout 15 \
+            --max-time 600 \
+            --output "$partial_path" \
+            "$ROBOLECTRIC_RUNTIME_URL"
+          printf '%s  %s\n' "$ROBOLECTRIC_RUNTIME_SHA512" "$partial_path" |
+            sha512sum --check
+          mv "$partial_path" "$runtime_path"
+
+      - name: Verify Android builds cannot embed a read credential
+        if: steps.probe.outputs.app == 'true'
+        run: |
+          set -euo pipefail
+          injection_marker="ci-build-token-must-never-enter-apk"
+
+          CONVEX_READ_TOKEN="$injection_marker" \
+            ./gradlew \
+              :app:generateDebugBuildConfig \
+              :app:generateReleaseBuildConfig \
+              --no-daemon \
+              --rerun-tasks
+
+          for variant in debug release; do
+            build_config="app/build/generated/source/buildConfig/$variant/com/sats21m/vogelvault/BuildConfig.java"
+            test -f "$build_config"
+            grep -Fqx '  public static final String CONVEX_READ_TOKEN = "";' "$build_config"
+            grep -Fqx '  public static final String CONVEX_READ_BOOTSTRAP_PAIR = "";' "$build_config"
+
+            if grep -Fq "$injection_marker" "$build_config"; then
+              echo "::error::Android $variant BuildConfig accepted a build-time read credential."
+              exit 1
+            fi
+          done
+
+          guard_dir="$HOME/work/android-bootstrap-ci-guard"
+          guard_file="$guard_dir/pairing.txt"
+          mkdir -p "$guard_dir"
+          chmod 700 "$guard_dir"
+          trap 'rm -f "$guard_file"; rmdir "$guard_dir" 2>/dev/null || true' EXIT
+          printf '%s' \
+            'android-read-AAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
+            > "$guard_file"
+          chmod 600 "$guard_file"
+
+          if CI=true \
+            VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE="$guard_file" \
+            ./gradlew \
+              :app:generateDebugBuildConfig \
+              --no-build-cache \
+              --no-configuration-cache \
+              --no-daemon; then
+            echo "::error::Android CI accepted a local bootstrap input."
+            exit 1
+          fi
+        working-directory: android
+
+      # Pull requests and other untrusted refs deliberately stay on AGP's
+      # per-run debug key. Repository key material may exist only when the
+      # default branch itself is built by a push or an explicit dispatch.
+      # Missing key material is a hard failure there: a default-branch artifact
+      # must never silently fall back to an ephemeral signing identity.
+      - name: Materialise and validate the stable debug keystore
+        id: debug_keystore
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+          VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
+          VOGEL_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
+          VOGEL_DEBUG_KEY_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 is required for default-branch Android APK builds."
+            exit 1
+          fi
+
+          KEYSTORE_PATH="$RUNNER_TEMP/vogel-debug.keystore"
+          if ! printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"; then
+            echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 is not valid base64."
+            exit 1
+          fi
+          chmod 600 "$KEYSTORE_PATH"
+
+          KEYSTORE_PATH="$KEYSTORE_PATH" \
+            .github/workflows/scripts/validate_android_debug_keystore.sh
+
+          echo "path=$KEYSTORE_PATH" >> "$GITHUB_OUTPUT"
+          echo "stable=true" >> "$GITHUB_OUTPUT"
+
+      - name: Domain parity tests (shared fixture, no Android SDK)
+        if: steps.probe.outputs.gradle == 'true'
+        run: ./gradlew :domain:test --no-daemon
+        working-directory: android
+
+      - name: Assemble stable-signed debug APK
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+          steps.debug_keystore.outputs.stable == 'true'
+        env:
+          VOGEL_DEBUG_KEYSTORE: ${{ steps.debug_keystore.outputs.path }}
+          VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
+          VOGEL_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
+          VOGEL_DEBUG_KEY_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleDebug :app:lintDebug --no-daemon
+        working-directory: android
+
+      # The event check is intentionally explicit: pull requests cannot reach
+      # either secret-bearing step, and no other ref gets an APK build. PRs run
+      # lint directly, without packaging an ephemeral APK.
+      - name: Lint Android app
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+        run: ./gradlew :app:lintDebug --no-daemon
+        working-directory: android
+
+      # The digest is public certificate metadata already embedded in the APK.
+      # The reporter emits exactly one normalized SHA-256 line, and the
+      # stable-signing default-branch run must produce it.
+      - name: Report the debug signing certificate
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          STABLE_SIGNING: ${{ steps.debug_keystore.outputs.stable || 'false' }}
+        run: .github/workflows/scripts/report_android_debug_signing.sh
+
+      # Required PR verification: every app unit test except the screenshot
+      # packet. This includes the real Robolectric cache/config tests and runs
+      # against prefetched API 34 and 35 runtimes with network resolution
+      # disabled.
+      - name: Verify declared Robolectric SDK runtimes are prefetched
+        if: steps.probe.outputs.app == 'true'
+        env:
+          ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-dependencies
+        run: |
+          set -euo pipefail
+          declare -A runtime_by_sdk=(
+            [34]='android-all-instrumented-14-robolectric-10818077-i7.jar'
+            [35]='android-all-instrumented-15-robolectric-12650502-i7.jar'
+          )
+
+          # grep, not ripgrep: GitHub-hosted runners do not ship rg, and an
+          # absent tool made this guard exit 127 and fail the build spuriously.
+          scan_status=0
+          sdk_declarations="$(
+            grep -rhoE \
+              'sdk[[:space:]]*=[[:space:]]*\[[^]]+\]' \
+              android/app/src/test
+          )" || scan_status=$?
+          if [ "$scan_status" -gt 1 ]; then
+            echo "::error::Could not scan app tests for Robolectric SDK declarations."
+            exit "$scan_status"
+          fi
+
+          mapfile -t declared_sdks < <(
+            printf '%s\n' "$sdk_declarations" |
+              sed -E 's/^[^[]*\[([^]]+)\].*$/\1/' |
+              tr ',' '\n' |
+              sed -E 's/^[[:space:]]+|[[:space:]]+$//g' |
+              sed '/^$/d' |
+              sort -u
+          )
+
+          for sdk in "${declared_sdks[@]}"; do
+            if [[ ! "$sdk" =~ ^[0-9]+$ ]]; then
+              echo "::error::Cannot verify non-numeric Robolectric SDK declaration '$sdk'; add an explicit warmed runtime mapping."
+              exit 1
+            fi
+
+            runtime="${runtime_by_sdk[$sdk]:-}"
+            if [ -z "$runtime" ]; then
+              echo "::error::Robolectric SDK $sdk is declared by app tests, but no warmed runtime is configured."
+              exit 1
+            fi
+            if [ ! -f "$ROBOLECTRIC_DEPENDENCY_DIR/$runtime" ]; then
+              echo "::error::Robolectric SDK $sdk requires missing warmed runtime $runtime."
+              exit 1
+            fi
+          done
+
+      - name: App unit tests
+        if: steps.probe.outputs.app == 'true'
+        env:
+          ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-dependencies
+        run: >-
+          ./gradlew :app:testDebugUnitTest
+          -PdesignPacketTests=exclude
+          -ProbolectricOffline=true
+          -ProbolectricDependencyDir="$ROBOLECTRIC_DEPENDENCY_DIR"
+          --no-daemon
+        working-directory: android
+
+      # Renders Compose to PNG under Robolectric — no emulator, no display.
+      # It remains a genuine default-branch test gate; pull requests warm the
+      # same API 34 runtime because ordinary app tests also declare that SDK.
+      - name: Design-packet tests
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-dependencies
+        run: >-
+          ./gradlew :app:testDebugUnitTest
+          -PdesignPacketTests=only
+          -Proborazzi.test.record=true
+          -ProbolectricOffline=true
+          -ProbolectricDependencyDir="$ROBOLECTRIC_DEPENDENCY_DIR"
+          --no-daemon
+        working-directory: android
+
+      - name: Upload Android design packet
+        if: >-
+          always() &&
+          steps.probe.outputs.app == 'true' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-design-packet
+          path: android/app/build/outputs/roborazzi
+          retention-days: 30
+
+      # Debug-signed only — a sideload artifact for the Fold, never a release
+      # build. Release signing stays out of CI.
+      - name: Upload stable-signed debug APK
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          steps.debug_keystore.outputs.stable == 'true' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vogel-vault-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 7
+
+      - name: Upload test report on failure
+        if: failure() && steps.probe.outputs.gradle == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-test-report
+          path: android/**/build/reports/tests/**
+          retention-days: 7
+
+      # Hosted runners are discarded anyway; still delete repository key material
+      # explicitly and prove that cleanup completed before the job can pass.
+      - name: Remove and verify cleanup of the debug keystore
+        if: always()
+        run: |
+          set -euo pipefail
+          KEYSTORE_PATH="$RUNNER_TEMP/vogel-debug.keystore"
+          rm -f "$KEYSTORE_PATH"
+          if [ -e "$KEYSTORE_PATH" ]; then
+            echo "::error::The Android debug keystore remained on the runner after cleanup."
+            exit 1
+          fi

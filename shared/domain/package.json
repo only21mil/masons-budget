@@ -1,0 +1,26 @@
+{
+  "name": "@vogel-vault/domain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared family, visibility, and Convex row-read contract for the Vogel Vault clients",
+  "exports": {
+    ".": "./src/index.ts",
+    "./family": "./src/family.ts",
+    "./finance": "./src/finance.ts",
+    "./money": "./src/money.ts",
+    "./readModel": "./src/readModel.ts",
+    "./todo": "./src/todo.ts",
+    "./fixtures/finance-market-cases.json": "./fixtures/finance-market-cases.json",
+    "./fixtures/payment-source-cases.json": "./fixtures/payment-source-cases.json",
+    "./fixtures/income-buy-write-cases.json": "./fixtures/income-buy-write-cases.json",
+    "./fixtures/visibility-cases.json": "./fixtures/visibility-cases.json"
+  },
+  "scripts": {
+    "test": "node --test 'test/**/*.test.ts'",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
