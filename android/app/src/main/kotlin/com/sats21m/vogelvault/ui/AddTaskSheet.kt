@@ -63,7 +63,7 @@ internal fun prepareTask(
             .getOrElse { throw IllegalArgumentException("Enter the due date as YYYY-MM-DD") }
     }
 
-    val stamp = now.toString()
+    val stamp = now.toTodoTimestamp()
     TodoItem(
         id = id,
         title = title,
