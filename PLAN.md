@@ -73,13 +73,13 @@ A modern, voice-first iOS budget app for the family (Victor, Rachel, Mason, Madd
 
 | File | Shape | Purpose |
 | --- | --- | --- |
-| `balances.json` | Object: per-account BTC balances (Strike, River, CashApp, Coldcard, Zeus) + total + sync metadata | Bitcoin balances |
+| `balances.json` | Object: per-account BTC balances (Strike, River, CashApp, Multisig, Zeus) + total + sync metadata | Bitcoin balances |
 | `btc-balance-snapshot.json` | Versioned schema: accounts {btc, fiat, label, custody}, totals, metadata | Authoritative BTC snapshot |
 | `bitcoin-buys.json` | Array of buy records with id, date, source, amount_sats, amount_btc, price_usd, usd, status, archimedes_request_id | BTC purchase history (append-only) |
 | `finances.json` | retirement.401k + WAP holdings with detailed contribution lots, cost basis, gain% | Retirement / brokerage |
 | `budget.json` | aven_balance, month, categories[{name, icon emoji, budget, spent}], strategy, income (weekly_gross etc.) | Monthly budget + income |
-| `transactions.json` | Array: id, date, merchant, amount, category, card, note | Spending transactions (append-only) |
-| `son-balances.json` | strike + river + coldcard + total BTC, lastUpdated | **Mason's BTC stack** (~0.78 BTC across 3 accounts) |
+| `transactions.json` | Array: id, date, merchant, amount, category, card, note. `card` stores a payment-source wire (see `docs/vogel-vault-transaction-contract.md`), never a display label | Spending transactions (append-only) |
+| `son-balances.json` | strike + river + coldcard (Multisig) + total BTC, lastUpdated | **Mason's BTC stack** (~0.78 BTC across 3 accounts) |
 | `bitcoin-bill-pays.json` | bill_pays[] with id, date, merchant, category, amount_usd, btc_spent, btc_price, platform, fee_usd, source, note, reference | Bills paid in BTC via Strike (mortgage, credit cards, insurance) |
 
 **Key observations:**

@@ -39,8 +39,6 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_CFBundleDisplayName: "The Vogel Vault"
-        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Voice input lets you log transactions by speaking."
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Microphone access is needed for voice transaction entry."
         INFOPLIST_KEY_NSFaceIDUsageDescription: "Unlock The Vogel Vault with Face ID."
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.finance"
         CODE_SIGN_ENTITLEMENTS: MasonsBudget/MasonsBudget.entitlements
@@ -85,8 +83,6 @@ targets:
         ENABLE_PREVIEWS: YES
         INFOPLIST_KEY_CFBundleDisplayName: "The Vogel Vault"
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.finance"
-        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Voice input lets you log transactions by speaking."
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Microphone access is needed for voice transaction entry."
         INFOPLIST_KEY_NSFaceIDUsageDescription: "Unlock The Vogel Vault with Face ID."
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: "NO"
     # SAT-1508: see iOS target note — custom keys require the info block, not INFOPLIST_KEY_*.

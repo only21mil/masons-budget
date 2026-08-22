@@ -100,7 +100,6 @@ struct ContentView: View {
     @StateObject private var taskUndoStore = TaskUndoStore.shared
     @State private var showAddTransaction = false
     @State private var showProfileSwitcher = false
-    @State private var showVoiceTransaction = false
 
     #if os(macOS)
         @State private var macNav: MacNav? = .dashboard
@@ -155,9 +154,6 @@ struct ContentView: View {
         .sheet(isPresented: $showProfileSwitcher) {
             ProfileSwitcherView()
         }
-        .sheet(isPresented: $showVoiceTransaction) {
-            VoiceTransactionView()
-        }
     }
 
     // MARK: - iOS
@@ -178,7 +174,6 @@ struct ContentView: View {
                                 ToolbarItem(placement: .topBarTrailing) {
                                     HStack(spacing: 8) {
                                         syncStatusGlyph
-                                        voiceButton
                                         addButton
                                     }
                                 }
@@ -215,10 +210,6 @@ struct ContentView: View {
                     .padding(.bottom, 12)
 
                 newTransactionButton
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 8)
-
-                voiceTransactionButton
                     .padding(.horizontal, 8)
                     .padding(.bottom, 12)
 
@@ -395,26 +386,6 @@ struct ContentView: View {
             .shadow(color: Color(hex: 0xF7931A).opacity(0.35), radius: 3, y: 2)
         }
 
-        private var voiceTransactionButton: some View {
-            Button {
-                showVoiceTransaction = true
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "mic.fill")
-                        .font(AppFont.label)
-                    Text("Voice transaction")
-                        .font(AppFont.labelSmall)
-                    Spacer()
-                }
-                .foregroundStyle(theme.accent)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(theme.accentSoft)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-            .buttonStyle(.plain)
-        }
-
         private var sidebarNetWorth: String {
             guard let btcBalance = canonicalFinancials.btcBalance.value else {
                 return "Unavailable"
@@ -492,21 +463,6 @@ struct ContentView: View {
                 .shadow(color: Color(hex: 0xF7931A).opacity(0.35), radius: 3, y: 2)
         }
         .accessibilityLabel("New transaction")
-    }
-
-    private var voiceButton: some View {
-        Button {
-            showVoiceTransaction = true
-        } label: {
-            Image(systemName: "mic.fill")
-                .font(AppFont.label)
-                .foregroundStyle(theme.accent)
-                .frame(width: 32, height: 32)
-                .background(theme.accentSoft)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Voice transaction")
     }
 
     @ViewBuilder

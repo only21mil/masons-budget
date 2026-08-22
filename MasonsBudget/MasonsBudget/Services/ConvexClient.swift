@@ -964,6 +964,11 @@ enum ConvexRowMutationError: LocalizedError, Equatable {
     case minorUnitOverflow(field: String)
     case ownerMismatch(field: String, expected: FamilyMember, actual: String?)
     case unexpectedResponse(path: String)
+    /// A Bitcoin-native payment source must post typed sats to a named
+    /// account. Derived sats, a missing account, or a blank account key are
+    /// refused here rather than sent — the server would debit or credit an
+    /// exact sat amount the row does not honestly carry.
+    case bitcoinPostingRequiresTypedSatsAndAccount
 
     var errorDescription: String? {
         switch self {
@@ -975,6 +980,8 @@ enum ConvexRowMutationError: LocalizedError, Equatable {
             "\(field) owner '\(actual ?? "missing")' does not match \(expected.rawValue)."
         case let .unexpectedResponse(path):
             "\(path) returned an unexpected response."
+        case .bitcoinPostingRequiresTypedSatsAndAccount:
+            "A Bitcoin payment source requires an amount entered in sats and a Bitcoin account."
         }
     }
 }
@@ -1125,16 +1132,46 @@ final class ConvexClient: Sendable {
         ]
         if let card = transaction.card { row["card"] = card }
         if let note = transaction.note { row["note"] = note }
-        // Only Income the user actually typed in BTC/sats carries sats. A spend,
-        // or Income whose sats were derived from a dollar amount and a quote,
-        // must not: the server reads this field as "credit these exact sats to
-        // River", so a derived value would post Bitcoin the household never
-        // received. A legacy row has no marker and is therefore treated as not
-        // explicitly Bitcoin.
-        if let amountSats = transaction.amountSats,
-           transaction.category == "Income",
-           transaction.enteredInBitcoin == true,
-           amountSats > 0 {
+        // Sats reach the server only when somebody actually typed them, never
+        // when they were derived from a dollar amount and a price quote — the
+        // server posts this field as exact sat movements on an account, so a
+        // derived value would move money nobody received or spent.
+        //
+        // Two shapes qualify:
+        //  - Income the user typed in BTC/sats (the original rule, unchanged);
+        //  - a Bitcoin-native payment source, which the server requires to
+        //    carry positive amountSats AND a bitcoinAccountKey. The form blocks
+        //    a Bitcoin-native save without typed sats, so a derived value never
+        //    reaches this branch; the guard here is the backstop, and a
+        //    Bitcoin-native row failing it throws rather than sending sats
+        //    the row does not honestly carry.
+        let isBitcoinNativeSource = transaction.card
+            .flatMap { TransactionSourceCatalog.option(forWire: $0)?.classification.isBitcoinNative } == true
+
+        if isBitcoinNativeSource {
+            // Trim only for the emptiness test. The STORED value goes on the
+            // wire verbatim: the server keys postings by exact string, so an
+            // edited row whose stored key carries whitespace must round-trip
+            // byte-for-byte — normalising here would credit one account and
+            // debit a whitespace-twin the app renders as the same name.
+            // Linux forwards this field untrimmed for the same reason.
+            guard let storedAccountKey = transaction.bitcoinAccountKey,
+                  !storedAccountKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else {
+                throw ConvexRowMutationError.bitcoinPostingRequiresTypedSatsAndAccount
+            }
+            guard let amountSats = transaction.amountSats,
+                  transaction.enteredInBitcoin == true,
+                  amountSats > 0
+            else {
+                throw ConvexRowMutationError.bitcoinPostingRequiresTypedSatsAndAccount
+            }
+            row["amountSats"] = ConvexTaggedInt64Encoder.encode(amountSats)
+            row["bitcoinAccountKey"] = storedAccountKey
+        } else if let amountSats = transaction.amountSats,
+                  transaction.category == "Income",
+                  transaction.enteredInBitcoin == true,
+                  amountSats > 0 {
             row["amountSats"] = ConvexTaggedInt64Encoder.encode(amountSats)
         }
 

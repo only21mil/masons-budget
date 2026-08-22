@@ -10,7 +10,6 @@ struct ActivityView: View {
 
     @State private var filter: TxFilter = .all
     @State private var searchText = ""
-    @State private var showCSVImport = false
 
     private var unit: DisplayUnit {
         DisplayUnit(rawValue: displayUnitRaw) ?? .btc
@@ -34,12 +33,21 @@ struct ActivityView: View {
 
     private var filtered: [Transaction] {
         let visible = allTransactions.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+        // Rails are a filter over the stored wire, not a display concern.
+        // Each rail matches its active Bitcoin-native wires plus the retired
+        // wire it succeeds: Lightning takes zeus_lightning and the historical
+        // "lightning" rows; On-chain takes zeus_on_chain, the historical
+        // "on-chain" rows, and nil-card rows (TransactionDetailView no longer
+        // stamps a default onto nil rows when editing, but existing ones keep
+        // appearing here — bucket semantics are a filter concern, not a write
+        // one). River and Strike live in no rail; All and Spends cover them,
+        // matching Android.
         let scoped: [Transaction] = switch filter {
         case .all: visible
         case .income: visible.filter(\.isIncome)
         case .spends: visible.filter(\.isSpend)
-        case .lightning: visible.filter { $0.card == "lightning" }
-        case .onChain: visible.filter { $0.card == "on-chain" || $0.card == nil }
+        case .lightning: visible.filter { TransactionSourceCatalog.activityRail(forCard: $0.card) == .lightning }
+        case .onChain: visible.filter { TransactionSourceCatalog.activityRail(forCard: $0.card) == .onChain }
         }
 
         return scoped.filter { SearchMatcher.matches(transaction: $0, query: searchText) }
@@ -78,24 +86,6 @@ struct ActivityView: View {
                         eyebrow: "Lightning + On-chain",
                     )
                     Spacer()
-                    Button {
-                        showCSVImport = true
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "square.and.arrow.down")
-                                .font(AppFont.labelSmall)
-                            Text("Import")
-                                .font(AppFont.labelSmall)
-                        }
-                        .foregroundStyle(theme.accent)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(theme.accentSoft)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.trailing, AppLayout.sectionPadding)
-                    .padding(.top, 16)
                 }
 
                 filterPills
@@ -107,9 +97,6 @@ struct ActivityView: View {
         }
         .background(theme.bg)
         .searchable(text: $searchText, prompt: "Search activity")
-        .sheet(isPresented: $showCSVImport) {
-            CSVImportView()
-        }
     }
 
     // MARK: - Filter Pills
@@ -191,10 +178,10 @@ struct ActivityView: View {
                         .foregroundStyle(theme.text)
                         .lineLimit(1)
                     HStack(spacing: 5) {
-                        Image(systemName: tx.card == "lightning" ? "bolt.fill" : "link")
+                        Image(systemName: PaymentMethod.icon(forWire: tx.card))
                             .font(AppFont.micro)
                             .foregroundStyle(theme.textMuted)
-                        Text(tx.card ?? "On-chain")
+                        Text(PaymentMethod.label(forWire: tx.card))
                             .font(AppFont.smallRegular)
                             .foregroundStyle(theme.textMuted)
                     }

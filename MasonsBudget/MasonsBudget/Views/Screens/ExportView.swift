@@ -25,6 +25,13 @@ struct ExportView: View {
         transactions.filter { member.canSee(dataOwnedBy: $0.ownerMember) }
     }
 
+    /// The CSV Card column renders the display label; label(forWire:)
+    /// falls back to the stored wire verbatim, so an unrecognised legacy
+    /// card exports byte-for-byte exactly as it is stored.
+    static func cardColumn(for card: String?) -> String {
+        PaymentMethod.label(forWire: card)
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
@@ -107,7 +114,7 @@ struct ExportView: View {
                 csvEscape(tx.merchant),
                 "\(tx.amount)",
                 csvEscape(tx.category),
-                csvEscape(tx.card ?? ""),
+                csvEscape(Self.cardColumn(for: tx.card)),
                 csvEscape(tx.note ?? ""),
                 tx.owner,
             ].joined(separator: ",")

@@ -96,21 +96,28 @@ struct SatsGlyphView: View {
 
 // MARK: - Payment Method Icon
 
-enum PaymentMethod: String {
-    case lightning, onChain = "on-chain"
-
-    var icon: String {
-        switch self {
-        case .lightning: "bolt.fill"
-        case .onChain: "link"
+/// Maps a persisted payment-source wire to its display glyph and label.
+/// Display concern only — the wire values themselves live in
+/// `TransactionSourceCatalog`. Retired wires ("lightning"/"on-chain") keep
+/// their historical presentation so legacy rows still render sensibly, and
+/// unknown wires surface verbatim, matching the catalogue's synthetic-option
+/// presentation.
+enum PaymentMethod {
+    /// Lightning-style sources get the bolt; on-chain style, fiat cards, and
+    /// unknown wires fall back to the link glyph.
+    static func icon(forWire wire: String?) -> String {
+        switch wire {
+        case "lightning", "zeus_lightning": "bolt.fill"
+        default: "link"
         }
     }
 
-    var label: String {
-        switch self {
-        case .lightning: "Lightning"
-        case .onChain: "On-chain"
-        }
+    /// Display label for a stored wire value. A missing card keeps the
+    /// historical On-chain default.
+    static func label(forWire wire: String?) -> String {
+        guard let wire, !wire.isEmpty else { return "On-chain" }
+        if wire == "lightning" { return "Lightning" }
+        return TransactionSourceCatalog.common.first { $0.wire == wire }?.label ?? wire
     }
 }
 

@@ -100,10 +100,10 @@ final class FamilyVisibilityTests: XCTestCase {
         let accounts = sampleAccounts()
 
         let victorNetWorth = accounts.filter { FamilyMember.victor.sharesNetWorth(with: $0.ownerMember) }
-        XCTAssertEqual(victorNetWorth.map(\.label), ["Coldcard", "Phoenix LN"])
+        XCTAssertEqual(victorNetWorth.map(\.label), ["Multisig", "Phoenix LN"])
 
         let rachelNetWorth = accounts.filter { FamilyMember.rachel.sharesNetWorth(with: $0.ownerMember) }
-        XCTAssertEqual(rachelNetWorth.map(\.label), ["Coldcard", "Phoenix LN"])
+        XCTAssertEqual(rachelNetWorth.map(\.label), ["Multisig", "Phoenix LN"])
 
         let masonNetWorth = accounts.filter { FamilyMember.mason.sharesNetWorth(with: $0.ownerMember) }
         XCTAssertEqual(masonNetWorth.map(\.label), ["Mason Strike"])
@@ -449,7 +449,7 @@ final class FamilyVisibilityTests: XCTestCase {
 
     private func sampleAccounts() -> [BTCAccount] {
         [
-            BTCAccount(key: "coldcard-victor", label: "Coldcard", custody: .selfCustody, btc: Decimal(string: "3.5")!, owner: .victor),
+            BTCAccount(key: "coldcard-victor", label: "Multisig", custody: .selfCustody, btc: Decimal(string: "3.5")!, owner: .victor),
             BTCAccount(key: "phoenix-victor", label: "Phoenix LN", custody: .selfCustody, btc: Decimal(string: "0.05")!, owner: .victor),
             BTCAccount(key: "strike-mason", label: "Mason Strike", custody: .exchange, btc: Decimal(string: "0.01")!, owner: .mason),
         ]

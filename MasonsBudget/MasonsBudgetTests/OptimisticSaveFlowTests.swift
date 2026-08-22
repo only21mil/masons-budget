@@ -23,7 +23,7 @@ final class OptimisticSaveFlowTests: XCTestCase {
             category: "Other",
             amountSats: nil,
             enteredInBitcoin: nil,
-            card: "on-chain",
+            card: "zeus_on_chain",
             owner: .victor,
             createdBy: "app",
         )

@@ -73,7 +73,12 @@ struct AddTransactionView: View {
     @State private var inputUnit: DisplayUnit = .usd
     @State private var amount = ""
     @State private var selectedCategory = ""
-    @State private var method: String = "Lightning"
+    /// Selected payment-source wire (TransactionSourceCatalog), never a display label.
+    @State private var method: String = TransactionSourceCatalog.defaultSource(for: .spend)
+    /// Bitcoin account for a Bitcoin-native method. Synced BTCAccounts are
+    /// queried; a Bitcoin-native save requires a selection.
+    @State private var bitcoinAccountKey: String?
+    @Query private var btcAccounts: [BTCAccount]
     @State private var merchant = ""
     @State private var btcBuyPrice = ""
     @State private var amountValidationMessage: String?
@@ -231,6 +236,10 @@ struct AddTransactionView: View {
                     if txType != t {
                         txType = t
                         selectedCategory = ""
+                        // Each activity has its own default payment source; a
+                        // selection carried across a type switch could be
+                        // unsupported (e.g. a fiat card on income).
+                        method = TransactionSourceCatalog.defaultSource(for: activityTypeFor(t))
                     }
                 } label: {
                     Text(t.rawValue)
@@ -393,10 +402,61 @@ struct AddTransactionView: View {
                 Hairline()
 
                 fieldRow(label: "Method") {
-                    HStack(spacing: 6) {
-                        methodChip("Lightning", icon: "bolt.fill")
-                        methodChip("On-chain", icon: "link")
-                        Spacer()
+                    // The catalogue's canonical order; selection is stored as
+                    // the option's wire value, never its display label.
+                    Menu {
+                        ForEach(pickerOptions) { option in
+                            Button {
+                                method = option.wire
+                            } label: {
+                                Label(option.label, systemImage: PaymentMethod.icon(forWire: option.wire))
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: PaymentMethod.icon(forWire: method))
+                                .font(AppFont.labelSmallRegular)
+                                .foregroundStyle(theme.textMuted)
+                            Text(selectedLabel)
+                                .font(AppFont.labelLarge)
+                                .foregroundStyle(theme.text)
+                            Spacer()
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(AppFont.labelSmallRegular)
+                                .foregroundStyle(theme.textMuted)
+                        }
+                    }
+                }
+
+                if isBitcoinNativeMethod {
+                    Hairline()
+
+                    fieldRow(label: "Account") {
+                        // The backend requires a named Bitcoin account on
+                        // every Bitcoin-native posting; the save is blocked
+                        // below until one is chosen.
+                        Menu {
+                            ForEach(adultBtcAccounts, id: \.key) { account in
+                                Button {
+                                    bitcoinAccountKey = account.key
+                                } label: {
+                                    Label(account.label, systemImage: "bitcoinsign.circle")
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "bitcoinsign.circle")
+                                    .font(AppFont.labelSmallRegular)
+                                    .foregroundStyle(theme.textMuted)
+                                Text(bitcoinAccountLabel)
+                                    .font(AppFont.labelLarge)
+                                    .foregroundStyle(bitcoinAccountKey == nil ? theme.textMuted : theme.text)
+                                Spacer()
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(AppFont.labelSmallRegular)
+                                    .foregroundStyle(theme.textMuted)
+                            }
+                        }
                     }
                 }
 
@@ -424,26 +484,49 @@ struct AddTransactionView: View {
         .padding(.vertical, 12)
     }
 
-    private func methodChip(_ name: String, icon: String) -> some View {
-        let isSelected = method == name
-        return Button { method = name } label: {
-            HStack(spacing: 5) {
-                Image(systemName: icon)
-                    .font(AppFont.smallRegular)
-                Text(name)
-                    .font(AppFont.labelSmall)
-            }
-            .foregroundStyle(isSelected ? theme.accent : theme.text)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(isSelected ? theme.accentSoft : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? theme.accent : theme.border, lineWidth: 1),
-            )
+    // MARK: - Method Picker
+
+    /// Spend, income, and transfer map to the shared activity types; all
+    /// selectable cases here are payment-source activities.
+    private var activityType: TransactionActivityType {
+        activityTypeFor(txType)
+    }
+
+    private func activityTypeFor(_ t: TxType) -> TransactionActivityType {
+        switch t {
+        case .spend: .spend
+        case .income: .income
+        case .transfer: .transfer
+        case .btcBuy: .spend
         }
-        .buttonStyle(.plain)
+    }
+
+    private var pickerOptions: [TransactionSourceOption] {
+        TransactionSourceCatalog.sources(for: activityType, including: method)
+    }
+
+    private var selectedLabel: String {
+        pickerOptions.first { $0.wire == method }?.label ?? method
+    }
+
+    /// True when the selected method is a catalogued Bitcoin-native wire.
+    private var isBitcoinNativeMethod: Bool {
+        TransactionSourceCatalog.option(forWire: method)?.classification.isBitcoinNative == true
+    }
+
+    /// Accounts the posting may target: adults only, matching the backend's
+    /// postsToHouseholdBitcoinLedger gate.
+    private var adultBtcAccounts: [BTCAccount] {
+        btcAccounts
+            .filter { $0.ownerMember == .victor || $0.ownerMember == .rachel }
+            .sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
+    }
+
+    private var bitcoinAccountLabel: String {
+        guard let bitcoinAccountKey,
+              let account = adultBtcAccounts.first(where: { $0.key == bitcoinAccountKey })
+        else { return "None" }
+        return account.label
     }
 
     // MARK: - Number Pad
@@ -541,6 +624,29 @@ struct AddTransactionView: View {
         }
 
         let sats = computedSats
+
+        // A Bitcoin-native payment source posts exact sats the user typed —
+        // the server debits/credits the literal amount, so a value derived
+        // from dollars and a price quote must never be sent. Block the save
+        // and say what the form needs (Linux shows the same message shape).
+        if isBitcoinNativeMethod {
+            guard inputUnit != .usd else {
+                amountValidationMessage =
+                    "\(selectedLabel) posts Bitcoin. Enter the amount in sats."
+                return
+            }
+            guard sats > 0 else {
+                amountValidationMessage = "Enter an amount"
+                return
+            }
+            guard let key = bitcoinAccountKey, !key.isEmpty else {
+                amountValidationMessage = "Choose the Bitcoin account this posts to."
+                return
+            }
+        } else {
+            bitcoinAccountKey = nil
+        }
+
         guard sats != 0 else {
             amountValidationMessage = "Enter an amount"
             return
@@ -566,7 +672,12 @@ struct AddTransactionView: View {
             category: transactionCategory,
             amountSats: amountIntent.amountSats,
             enteredInBitcoin: amountIntent.enteredInBitcoin,
-            card: method == "Lightning" ? "lightning" : "on-chain",
+            // Persist the selected option's wire value, not a display string.
+            // Fiat card wires persist here in `card` the same way; the sats
+            // posting fields above are unchanged (this sheet always computed
+            // them from the entry unit).
+            card: method,
+            bitcoinAccountKey: isBitcoinNativeMethod ? bitcoinAccountKey : nil,
             owner: ledgerOwner,
             createdBy: "app",
         )
