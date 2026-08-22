@@ -44,6 +44,13 @@ val VaultLineStrong = Color(0xFF2E2E33)
 /** Sats/terminal orange. Accent only. */
 val VaultAccent = Color(0xFFFF9F0A)
 val VaultAccentDim = Color(0x29FF9F0A)
+val VaultSelectionBorder = VaultAccent.copy(alpha = 0.75f)
+
+/** Bitcoin brand orange. Reserved for Bitcoin glyphs and Bitcoin-owned icons. */
+val VaultBitcoin = Color(0xFFF7931A)
+
+/** Non-Bitcoin navigation chrome. Never use this as a data-status signal. */
+val VaultNavSlate = Color(0xFF7A86C0)
 
 val VaultPositive = Color(0xFF4ADE80)
 val VaultNegative = Color(0xFFF87171)
@@ -63,8 +70,17 @@ private val VaultColorScheme = darkColorScheme(
     onSurface = VaultCream,
     surfaceVariant = VaultSurfaceRaised,
     onSurfaceVariant = VaultTextMuted,
+    surfaceContainerLowest = VaultBlack,
+    surfaceContainerLow = VaultSurface,
+    surfaceContainer = VaultSurface,
+    surfaceContainerHigh = VaultSurfaceRaised,
+    surfaceContainerHighest = VaultSurfaceRaised,
+    inverseSurface = VaultSurfaceRaised,
+    inverseOnSurface = VaultCream,
+    inversePrimary = VaultAccent,
     outline = VaultLineStrong,
     outlineVariant = VaultLine,
+    scrim = VaultBlack,
     error = VaultNegative,
     onError = VaultBlack,
 )

@@ -1,5 +1,6 @@
 package com.sats21m.vogelvault
 
+import androidx.compose.ui.graphics.Color
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.ui.Destination
@@ -8,9 +9,17 @@ import com.sats21m.vogelvault.ui.VaultUiState
 import com.sats21m.vogelvault.ui.VaultViewModel
 import com.sats21m.vogelvault.ui.foldedOverflowDestinations
 import com.sats21m.vogelvault.ui.foldedPrimaryDestinations
+import com.sats21m.vogelvault.ui.theme.VaultBitcoin
+import com.sats21m.vogelvault.ui.theme.VaultCream
+import com.sats21m.vogelvault.ui.theme.VaultInfo
+import com.sats21m.vogelvault.ui.theme.VaultNavSlate
+import com.sats21m.vogelvault.ui.theme.VaultNegative
+import com.sats21m.vogelvault.ui.theme.VaultPositive
+import com.sats21m.vogelvault.ui.theme.VaultWarning
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -45,6 +54,58 @@ class AdaptiveThresholdTest {
 
 /** Destination catalog and folded-navigation partitioning. */
 class DestinationVisibilityTest {
+
+    @Test
+    fun `all thirteen destinations use only approved resting navigation colors`() {
+        val expectedResting = mapOf(
+            Destination.DASHBOARD to VaultNavSlate,
+            Destination.ACTIVITY to VaultNavSlate,
+            Destination.BUDGET to VaultNavSlate,
+            Destination.BITCOIN to VaultBitcoin,
+            Destination.BTC_BUYS to VaultBitcoin,
+            Destination.BTC_BILL_PAYS to VaultBitcoin,
+            Destination.NET_WORTH to VaultNavSlate,
+            Destination.RETIREMENT to VaultNavSlate,
+            Destination.EXPORT to VaultNavSlate,
+            Destination.TODAY to VaultNavSlate,
+            Destination.TASKS to VaultNavSlate,
+            Destination.FAMILY to VaultNavSlate,
+            Destination.SETTINGS to VaultNavSlate,
+        )
+        val expectedSelected = Destination.entries.associateWith { destination ->
+            if (destination in setOf(
+                    Destination.BITCOIN,
+                    Destination.BTC_BUYS,
+                    Destination.BTC_BILL_PAYS,
+                )
+            ) {
+                VaultBitcoin
+            } else {
+                VaultCream
+            }
+        }
+
+        assertEquals(13, Destination.entries.size)
+        assertEquals(expectedResting, Destination.entries.associateWith { it.navigationRestingTint })
+        assertEquals(expectedSelected, Destination.entries.associateWith { it.navigationSelectedTint })
+        assertEquals(Color(0xFFF7931A), VaultBitcoin)
+        assertEquals(Color(0xFF7A86C0), VaultNavSlate)
+    }
+
+    @Test
+    fun `resting navigation colors do not consume selection or status colors`() {
+        Destination.entries.forEach { destination ->
+            assertNotEquals(VaultCream, destination.navigationRestingTint)
+            assertFalse(
+                destination.navigationRestingTint in setOf(
+                    VaultPositive,
+                    VaultNegative,
+                    VaultWarning,
+                    VaultInfo,
+                ),
+            )
+        }
+    }
 
     @Test
     fun `retirement and net worth remain separate navigation destinations`() {
