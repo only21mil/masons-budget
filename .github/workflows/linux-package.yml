@@ -49,6 +49,7 @@ jobs:
         working-directory: linux
         run: |
           set -euo pipefail
+          node -e "require('electron')"
           pkg="$(node -p "require('path').dirname(require.resolve('electron/package.json'))")"
           echo "electron package dir: $pkg"
           ls -la "$pkg"
