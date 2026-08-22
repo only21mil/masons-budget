@@ -1,6 +1,7 @@
 package com.sats21m.vogelvault.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Box
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.AccountBalance
@@ -53,9 +55,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.DisplayUnit
@@ -69,7 +73,10 @@ import com.sats21m.vogelvault.ui.theme.LocalIsUnfolded
 import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultAccentDim
 import com.sats21m.vogelvault.ui.theme.VaultBlack
+import com.sats21m.vogelvault.ui.theme.VaultBitcoin
 import com.sats21m.vogelvault.ui.theme.VaultCream
+import com.sats21m.vogelvault.ui.theme.VaultNavSlate
+import com.sats21m.vogelvault.ui.theme.VaultSelectionBorder
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import com.sats21m.vogelvault.ui.theme.VaultSurfaceSunken
 import com.sats21m.vogelvault.ui.theme.VaultTextDim
@@ -85,20 +92,28 @@ import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 enum class Destination(
     val label: String,
     val icon: ImageVector,
+    /**
+     * Resting glyph colour. Navigation item colors consume this value so their
+     * selected colors remain authoritative; never pass it directly to Icon.
+     */
+    val navigationRestingTint: Color,
 ) {
-    DASHBOARD("Dashboard", Icons.Filled.Dashboard),
-    ACTIVITY("Activity", Icons.AutoMirrored.Filled.ReceiptLong),
-    BUDGET("Budget", Icons.Filled.Payments),
-    BITCOIN("Bitcoin", Icons.Filled.CurrencyBitcoin),
-    BTC_BUYS("BTC Buys", Icons.Filled.CurrencyBitcoin),
-    BTC_BILL_PAYS("BTC Bill Pays", Icons.AutoMirrored.Filled.ReceiptLong),
-    NET_WORTH("Net Worth", Icons.Filled.AccountBalance),
-    RETIREMENT("Retirement", Icons.Filled.Savings),
-    EXPORT("Export", Icons.Filled.FileDownload),
-    TODAY("Today", Icons.Filled.WbSunny),
-    TASKS("Tasks", Icons.Filled.Checklist),
-    FAMILY("Family", Icons.Filled.People),
-    SETTINGS("Settings", Icons.Filled.Settings),
+    DASHBOARD("Dashboard", Icons.Filled.Dashboard, VaultNavSlate),
+    ACTIVITY("Activity", Icons.AutoMirrored.Filled.ReceiptLong, VaultNavSlate),
+    BUDGET("Budget", Icons.Filled.Payments, VaultNavSlate),
+    BITCOIN("Bitcoin", Icons.Filled.CurrencyBitcoin, VaultBitcoin),
+    BTC_BUYS("BTC Buys", Icons.Filled.CurrencyBitcoin, VaultBitcoin),
+    BTC_BILL_PAYS("BTC Bill Pays", Icons.AutoMirrored.Filled.ReceiptLong, VaultBitcoin),
+    NET_WORTH("Net Worth", Icons.Filled.AccountBalance, VaultNavSlate),
+    RETIREMENT("Retirement", Icons.Filled.Savings, VaultNavSlate),
+    EXPORT("Export", Icons.Filled.FileDownload, VaultNavSlate),
+    TODAY("Today", Icons.Filled.WbSunny, VaultNavSlate),
+    TASKS("Tasks", Icons.Filled.Checklist, VaultNavSlate),
+    FAMILY("Family", Icons.Filled.People, VaultNavSlate),
+    SETTINGS("Settings", Icons.Filled.Settings, VaultNavSlate);
+
+    val navigationSelectedTint: Color
+        get() = if (navigationRestingTint == VaultBitcoin) VaultBitcoin else VaultCream
 }
 
 /**
@@ -113,6 +128,10 @@ const val UNFOLDED_MIN_WIDTH_DP = 600
 private const val FOLDED_MAX_ITEMS = 5
 private const val FOLDED_PRIMARY_ITEMS_WITH_OVERFLOW = FOLDED_MAX_ITEMS - 1
 internal const val VAULT_RAIL_TEST_TAG = "vault-navigation-rail"
+
+private val RAIL_INDICATOR_WIDTH = 56.dp
+private val BAR_INDICATOR_WIDTH = 64.dp
+private val NAVIGATION_INDICATOR_HEIGHT = 32.dp
 
 internal fun foldedPrimaryDestinations(destinations: List<Destination>): List<Destination> =
     if (destinations.size <= FOLDED_MAX_ITEMS) {
@@ -276,6 +295,50 @@ private fun RefreshFailureNotice(state: VaultUiState) {
 }
 
 @Composable
+private fun NavigationDestinationIcon(
+    destination: Destination,
+    selected: Boolean,
+    indicatorWidth: Dp,
+    contentDescription: String? = destination.label,
+) {
+    Box(
+        modifier = Modifier
+            .size(width = indicatorWidth, height = NAVIGATION_INDICATOR_HEIGHT)
+            .then(
+                if (selected) {
+                    Modifier.border(1.dp, VaultSelectionBorder, CircleShape)
+                } else {
+                    Modifier
+                },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(destination.icon, contentDescription = contentDescription)
+    }
+}
+
+@Composable
+private fun MoreNavigationIcon(selected: Boolean) {
+    Box(
+        modifier = Modifier
+            .size(width = BAR_INDICATOR_WIDTH, height = NAVIGATION_INDICATOR_HEIGHT)
+            .then(
+                if (selected) {
+                    Modifier.border(1.dp, VaultSelectionBorder, CircleShape)
+                } else {
+                    Modifier
+                },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            Icons.Filled.MoreHoriz,
+            contentDescription = stringResource(R.string.navigation_more),
+        )
+    }
+}
+
+@Composable
 private fun VaultRail(
     destinations: List<Destination>,
     current: Destination,
@@ -312,13 +375,19 @@ private fun VaultRail(
                 NavigationRailItem(
                     selected = destination == current,
                     onClick = { onNavigate(destination) },
-                    icon = { Icon(destination.icon, contentDescription = destination.label) },
+                    icon = {
+                        NavigationDestinationIcon(
+                            destination = destination,
+                            selected = destination == current,
+                            indicatorWidth = RAIL_INDICATOR_WIDTH,
+                        )
+                    },
                     label = { Text(destination.label, style = MaterialTheme.typography.labelSmall) },
                     colors = NavigationRailItemDefaults.colors(
-                        selectedIconColor = VaultCream,
+                        selectedIconColor = destination.navigationSelectedTint,
                         selectedTextColor = VaultCream,
                         indicatorColor = VaultAccentDim,
-                        unselectedIconColor = VaultTextMuted,
+                        unselectedIconColor = destination.navigationRestingTint,
                         unselectedTextColor = VaultTextDim,
                     ),
                 )
@@ -342,13 +411,19 @@ private fun VaultBottomBar(
             NavigationBarItem(
                 selected = destination == current,
                 onClick = { onNavigate(destination) },
-                icon = { Icon(destination.icon, contentDescription = destination.label) },
+                icon = {
+                    NavigationDestinationIcon(
+                        destination = destination,
+                        selected = destination == current,
+                        indicatorWidth = BAR_INDICATOR_WIDTH,
+                    )
+                },
                 label = { Text(destination.label, style = MaterialTheme.typography.labelSmall) },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = VaultCream,
+                    selectedIconColor = destination.navigationSelectedTint,
                     selectedTextColor = VaultCream,
                     indicatorColor = VaultAccentDim,
-                    unselectedIconColor = VaultTextMuted,
+                    unselectedIconColor = destination.navigationRestingTint,
                     unselectedTextColor = VaultTextDim,
                 ),
             )
@@ -359,10 +434,7 @@ private fun VaultBottomBar(
                 onClick = { overflowExpanded = true },
                 icon = {
                     Box {
-                        Icon(
-                            Icons.Filled.MoreHoriz,
-                            contentDescription = stringResource(R.string.navigation_more),
-                        )
+                        MoreNavigationIcon(selected = current in overflow)
                         DropdownMenu(
                             expanded = overflowExpanded,
                             onDismissRequest = { overflowExpanded = false },
@@ -388,10 +460,11 @@ private fun VaultBottomBar(
                                         Icon(
                                             destination.icon,
                                             contentDescription = null,
-                                            tint = if (destination == current) {
-                                                VaultAccent
-                                            } else {
-                                                VaultTextMuted
+                                            tint = when {
+                                                destination == current &&
+                                                    destination.navigationRestingTint == VaultBitcoin -> VaultBitcoin
+                                                destination == current -> VaultCream
+                                                else -> destination.navigationRestingTint
                                             },
                                         )
                                     },
@@ -410,7 +483,7 @@ private fun VaultBottomBar(
                     selectedIconColor = VaultCream,
                     selectedTextColor = VaultCream,
                     indicatorColor = VaultAccentDim,
-                    unselectedIconColor = VaultTextMuted,
+                    unselectedIconColor = VaultNavSlate,
                     unselectedTextColor = VaultTextDim,
                 ),
             )
