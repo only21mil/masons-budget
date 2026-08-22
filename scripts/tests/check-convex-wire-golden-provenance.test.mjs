@@ -11,13 +11,12 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 const sourceScript = path.join(repoRoot, "scripts/check-convex-wire-golden-provenance.mjs")
 const toolingModule = path.join(repoRoot, "scripts/convex-wire-golden.mjs")
 
-async function fixtureRepo({ valueTestExitCode = 0 } = {}) {
+async function fixtureRepo({ valueTestExitCode = 0, vitestLayout = "root" } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "convex-wire-provenance-"))
   await mkdir(path.join(root, "scripts"), { recursive: true })
   await mkdir(path.join(root, "convex"), { recursive: true })
   await mkdir(path.join(root, "shared/domain"), { recursive: true })
   await mkdir(path.join(root, "linux/test"), { recursive: true })
-  await mkdir(path.join(root, "node_modules/.bin"), { recursive: true })
   await cp(sourceScript, path.join(root, "scripts/check-convex-wire-golden-provenance.mjs"))
   await cp(toolingModule, path.join(root, "scripts/convex-wire-golden.mjs"))
   await cp(
@@ -41,11 +40,23 @@ async function fixtureRepo({ valueTestExitCode = 0 } = {}) {
     path.join(root, "linux/test/convex-wire-golden-values.test.ts"),
     "// Fixture test path for the provenance checker.\n",
   )
-  await writeFile(
-    path.join(root, "node_modules/.bin/vitest"),
-    `#!/usr/bin/env node\nprocess.exit(${valueTestExitCode})\n`,
-    { mode: 0o755 },
-  )
+  if (vitestLayout === "root") {
+    await mkdir(path.join(root, "node_modules/.bin"), { recursive: true })
+  } else if (vitestLayout === "linux") {
+    await mkdir(path.join(root, "linux/node_modules/.bin"), { recursive: true })
+  } else if (vitestLayout !== "none") {
+    throw new Error(`unsupported Vitest fixture layout: ${vitestLayout}`)
+  }
+  if (vitestLayout !== "none") {
+    await writeFile(
+      path.join(
+        root,
+        vitestLayout === "root" ? "node_modules/.bin/vitest" : "linux/node_modules/.bin/vitest",
+      ),
+      `#!/usr/bin/env node\nprocess.exit(${valueTestExitCode})\n`,
+      { mode: 0o755 },
+    )
+  }
   return root
 }
 
@@ -87,6 +98,37 @@ test("an unrelated schema table does not invalidate captured query provenance", 
   const result = runGate(root)
 
   assert.equal(result.status, 0, result.stderr)
+})
+
+test("the repository-level Vitest runner executes the value test", async (t) => {
+  const root = await fixtureRepo({ vitestLayout: "root" })
+  t.after(() => rm(root, { force: true, recursive: true }))
+
+  const result = runGate(root)
+
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /^PASS:/m)
+})
+
+test("the Linux-local Vitest runner is used when the root runner is absent", async (t) => {
+  const root = await fixtureRepo({ vitestLayout: "linux" })
+  t.after(() => rm(root, { force: true, recursive: true }))
+
+  const result = runGate(root)
+
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /^PASS:/m)
+})
+
+test("the provenance gate fails closed when no Vitest runner exists", async (t) => {
+  const root = await fixtureRepo({ vitestLayout: "none" })
+  t.after(() => rm(root, { force: true, recursive: true }))
+
+  const result = runGate(root)
+
+  assert.notEqual(result.status, 0, result.stdout)
+  assert.match(result.stderr, /could not find Vitest runner/)
+  assert.doesNotMatch(result.stdout, /^PASS:/m)
 })
 
 test("a comment edit inside a captured projection does not invalidate provenance", async (t) => {

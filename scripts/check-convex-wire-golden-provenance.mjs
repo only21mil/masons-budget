@@ -22,9 +22,24 @@ const goldenRoot = path.join(repoRoot, "shared/domain/fixtures/convex-wire-golde
 const provenancePath = path.join(repoRoot, "shared/domain/convex-wire-golden-provenance.json")
 const linuxRoot = path.join(repoRoot, "linux")
 const valueTestPath = path.join(linuxRoot, "test/convex-wire-golden-values.test.ts")
-const vitestPath = path.join(repoRoot, "node_modules/.bin/vitest")
+const vitestCandidates = [
+  path.join(repoRoot, "node_modules/.bin/vitest"),
+  path.join(linuxRoot, "node_modules/.bin/vitest"),
+]
 const provenance = JSON.parse(await readFile(provenancePath, "utf8"))
 const failures = []
+
+async function resolveVitestPath() {
+  for (const candidate of vitestCandidates) {
+    try {
+      await access(candidate)
+      return candidate
+    } catch {
+      // Try the next supported install layout.
+    }
+  }
+  return null
+}
 
 if (provenance.version !== 2) {
   failures.push(`unsupported provenance version ${String(provenance.version)}`)
@@ -192,25 +207,33 @@ try {
 }
 
 if (failures.length === 0) {
-  const valueTest = spawnSync(
-    vitestPath,
-    ["run", "test/convex-wire-golden-values.test.ts"],
-    {
-      cwd: linuxRoot,
-      encoding: "utf8",
-    },
-  )
-  if (valueTest.error) {
-    failures.push(`could not run Linux production value test: ${valueTest.error.message}`)
-  } else if (valueTest.status !== 0) {
-    const output = [valueTest.stdout, valueTest.stderr]
-      .filter((text) => text.trim() !== "")
-      .join("\n")
-      .trim()
+  const vitestPath = await resolveVitestPath()
+  if (vitestPath === null) {
     failures.push(
-      `Linux production value test failed with exit ${String(valueTest.status)}`
-        + (output === "" ? "" : `:\n${output}`),
+      "could not find Vitest runner at repoRoot/node_modules/.bin/vitest "
+        + "or linux/node_modules/.bin/vitest",
     )
+  } else {
+    const valueTest = spawnSync(
+      vitestPath,
+      ["run", "test/convex-wire-golden-values.test.ts"],
+      {
+        cwd: linuxRoot,
+        encoding: "utf8",
+      },
+    )
+    if (valueTest.error) {
+      failures.push(`could not run Linux production value test: ${valueTest.error.message}`)
+    } else if (valueTest.status !== 0) {
+      const output = [valueTest.stdout, valueTest.stderr]
+        .filter((text) => text.trim() !== "")
+        .join("\n")
+        .trim()
+      failures.push(
+        `Linux production value test failed with exit ${String(valueTest.status)}`
+          + (output === "" ? "" : `:\n${output}`),
+      )
+    }
   }
 }
 
