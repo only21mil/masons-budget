@@ -67,8 +67,9 @@
     <string name="add_transaction_saving">Saving...</string>
     <string name="add_transaction_date_confirm">Use date</string>
     <string name="retirement_projection_title">Bitcoin retirement projection</string>
-    <string name="retirement_horizon_label">HORIZON</string>
-    <string name="retirement_horizon_years">%1$d years</string>
+    <string name="horizon_label">HORIZON</string>
+    <string name="horizon_years">%1$d years</string>
+    <string name="horizon_action">Show %1$d-year horizon</string>
     <string name="retirement_projected_bitcoin_label">Bitcoin at %1$d years</string>
     <string name="retirement_starting_bitcoin_label">Starting Bitcoin</string>
     <string name="retirement_balance_as_of_hint">balance as of %1$s</string>

@@ -1,17 +1,10 @@
 package com.sats21m.vogelvault.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,13 +12,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.MarketQuote
@@ -40,13 +28,7 @@ import com.sats21m.vogelvault.ui.components.Provenance
 import com.sats21m.vogelvault.ui.components.StateBlock
 import com.sats21m.vogelvault.ui.components.StatusBanner
 import com.sats21m.vogelvault.ui.components.VaultLazyListScope
-import com.sats21m.vogelvault.ui.theme.VaultAccent
-import com.sats21m.vogelvault.ui.theme.VaultAccentDim
-import com.sats21m.vogelvault.ui.theme.VaultCream
-import com.sats21m.vogelvault.ui.theme.VaultLine
 import com.sats21m.vogelvault.ui.theme.VaultSpace
-import com.sats21m.vogelvault.ui.theme.VaultSurface
-import com.sats21m.vogelvault.ui.theme.VaultTextDim
 import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 import com.sats21m.vogelvault.ui.theme.VaultWarning
 import java.math.BigDecimal
@@ -55,10 +37,10 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-private const val DEFAULT_HORIZON_YEARS = 10
+private val RETIREMENT_HORIZONS = listOf(10, 20, 30)
+private val DEFAULT_HORIZON_YEARS = RETIREMENT_HORIZONS.first()
 private const val WEEKLY_DCA_SATS = 2_100_000L
 private const val ADULT_ANNUAL_BONUS_CENTS = 9_700_000L
-private val HORIZONS = listOf(10, 20, 30)
 private val MONTHS_PER_YEAR = BigDecimal(12)
 private val WEEKS_PER_MONTH = BigDecimal("4.33")
 private val MONTHLY_BTC_GROWTH = BigDecimal("0.15").divide(MONTHS_PER_YEAR)
@@ -260,7 +242,7 @@ private fun RetirementScreen(
                         )
                     }
                 } else {
-                    HorizonPicker(horizon) { horizon = it }
+                    HorizonSelector(RETIREMENT_HORIZONS, horizon) { horizon = it }
                     ProjectionSummary(inputs, projection, displayUnit)
                     ProjectionBreakdown(inputs, projection, displayUnit)
                     ProjectionAssumptions(inputs)
@@ -318,51 +300,6 @@ private fun RetirementUnavailable(reason: RetirementUnavailableReason) {
     }
     Panel(stringResource(R.string.retirement_projection_title)) {
         StateBlock(com.sats21m.vogelvault.domain.Freshness.EMPTY, title, detail)
-    }
-}
-
-@Composable
-internal fun HorizonPicker(selected: Int, onSelect: (Int) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
-        Text(
-            stringResource(R.string.retirement_horizon_label),
-            style = MaterialTheme.typography.labelSmall,
-            color = VaultTextDim,
-            modifier = Modifier.semantics { heading() },
-        )
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm),
-        ) {
-            HORIZONS.forEach { years ->
-                val isSelected = years == selected
-                val shape = RoundedCornerShape(99.dp)
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .heightIn(min = VaultSpace.xxl)
-                        .selectable(
-                            selected = isSelected,
-                            role = Role.RadioButton,
-                            onClick = { onSelect(years) },
-                        )
-                        .background(if (isSelected) VaultAccentDim else VaultSurface, shape)
-                        .border(
-                            1.dp,
-                            if (isSelected) VaultAccent.copy(alpha = 0.42f) else VaultLine,
-                            shape,
-                        )
-                        .padding(horizontal = VaultSpace.sm, vertical = VaultSpace.sm),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        stringResource(R.string.retirement_horizon_years, years),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isSelected) VaultCream else VaultTextMuted,
-                    )
-                }
-            }
-        }
     }
 }
 

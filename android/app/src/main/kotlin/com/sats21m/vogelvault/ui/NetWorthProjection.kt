@@ -42,6 +42,8 @@ internal fun BtcAccount.displayLabel(): String =
 private val MONTHS_PER_YEAR = BigDecimal(12)
 private val WEEKS_PER_YEAR = BigDecimal(52)
 private val BASIS_POINTS = BigDecimal(10_000)
+private val NET_WORTH_HORIZONS = listOf(10, 20, 30)
+private val DEFAULT_NET_WORTH_HORIZON_YEARS = NET_WORTH_HORIZONS.first()
 
 internal data class NetWorthProjectionResult(
     val years: Int,
@@ -143,7 +145,7 @@ internal fun projectAssetCents(current: Long, weeklyContribution: Long, annualGr
 
 @Composable
 internal fun NetWorthProjectionPanel(state: VaultUiState, displayUnit: DisplayUnit) {
-    var years by rememberSaveable { mutableIntStateOf(10) }
+    var years by rememberSaveable { mutableIntStateOf(DEFAULT_NET_WORTH_HORIZON_YEARS) }
     val selection = state.netWorthSelection()
     val accounts = state.retirementAccountsResult().getOrNull()
     val projection = runCatching {
@@ -154,7 +156,7 @@ internal fun NetWorthProjectionPanel(state: VaultUiState, displayUnit: DisplayUn
 
     Panel("Net worth projections", "Scenario, not a forecast") {
         Column(Modifier.padding(VaultSpace.md)) {
-            HorizonPicker(years) { years = it }
+            HorizonSelector(NET_WORTH_HORIZONS, years) { years = it }
             if (projection == null) {
                 StateBlock(
                     Freshness.EMPTY,

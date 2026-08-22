@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasContentDescription
@@ -248,10 +251,41 @@ class AndroidFinanceRegressionTest {
         contentList().performScrollToNode(hasText("10 years"))
 
         compose.onNodeWithText("10 years").assertIsSelected()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Selected"))
         compose.onNodeWithText("20 years").assertIsNotSelected().performClick()
         settle()
         compose.onNodeWithText("10 years").assertIsNotSelected()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Not selected"))
         compose.onNodeWithText("20 years").assertIsSelected()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Selected"))
+    }
+
+    @Test
+    fun `retirement horizon exposes and updates its selected state`() {
+        val state = financeState(
+            profile = FamilyMember.VICTOR,
+            balance = bitcoinBalance(
+                owner = FamilyMember.VICTOR,
+                totalSats = 100_000_000L,
+                accounts = listOf(
+                    bitcoinAccount("coldcard", "Coldcard", 100_000_000L, FamilyMember.VICTOR),
+                ),
+            ),
+            accounts = listOf(
+                retirementAccount("victor-401k", "Retirement Provider", 100_000L, FamilyMember.VICTOR),
+            ),
+        )
+
+        show(Destination.RETIREMENT, state, DisplayUnit.USD)
+        contentList().performScrollToNode(hasText("10 years"))
+
+        compose.onNodeWithText("10 years").assertIsSelected()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Selected"))
+        compose.onNodeWithText("30 years").assertIsNotSelected().performClick()
+        settle()
+        compose.onNodeWithText("10 years").assertIsNotSelected()
+        compose.onNodeWithText("30 years").assertIsSelected()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Selected"))
     }
 
     @Test

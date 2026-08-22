@@ -1,7 +1,5 @@
 package com.sats21m.vogelvault.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -11,14 +9,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
@@ -36,13 +31,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
@@ -88,13 +80,11 @@ import com.sats21m.vogelvault.ui.components.VaultLazyListScope
 import com.sats21m.vogelvault.ui.components.figure
 import com.sats21m.vogelvault.ui.components.vaultContent
 import com.sats21m.vogelvault.ui.theme.VaultAccent
-import com.sats21m.vogelvault.ui.theme.VaultAccentDim
 import com.sats21m.vogelvault.ui.theme.VaultCream
 import com.sats21m.vogelvault.ui.theme.VaultLine
 import com.sats21m.vogelvault.ui.theme.VaultNegative
 import com.sats21m.vogelvault.ui.theme.VaultPositive
 import com.sats21m.vogelvault.ui.theme.VaultSpace
-import com.sats21m.vogelvault.ui.theme.VaultSurface
 import com.sats21m.vogelvault.ui.theme.VaultTextDim
 import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 import com.sats21m.vogelvault.ui.theme.VaultWarning
@@ -1172,54 +1162,6 @@ internal fun MonthChip(month: String, selected: Boolean, onSelect: () -> Unit) {
         selected = selected,
         onSelect = onSelect,
     )
-}
-
-/**
- * Existing ledger choice-chip language shared by month and display-unit
- * pickers. Orange marks selection only in the border/fill; text stays cream.
- */
-@Composable
-private fun SelectionChip(
-    label: String,
-    semanticLabel: String,
-    actionLabel: String,
-    selected: Boolean,
-    compact: Boolean = false,
-    onSelect: () -> Unit,
-) {
-    val shape = RoundedCornerShape(99.dp)
-    Box(
-        Modifier
-            .heightIn(min = 48.dp)
-            .clip(shape)
-            // selectable, not clickable: this is one choice out of a set, and a
-            // screen reader should say so.
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
-            .semantics {
-                contentDescription = semanticLabel
-                stateDescription = if (selected) "Selected" else "Not selected"
-                onClick(label = actionLabel) {
-                    onSelect()
-                    true
-                }
-            }
-            .background(if (selected) VaultAccentDim else VaultSurface, shape)
-            .border(1.dp, if (selected) VaultAccent.copy(alpha = 0.42f) else VaultLine, shape)
-            .padding(
-                horizontal = if (compact) VaultSpace.sm else VaultSpace.md,
-                vertical = if (compact) VaultSpace.xs else VaultSpace.sm,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            // Orange marks the selection through the fill and border only. It is
-            // never a text colour — the selected label just goes to full cream.
-            color = if (selected) VaultCream else VaultTextMuted,
-            maxLines = 1,
-        )
-    }
 }
 
 private val MONTH_NAMES =
