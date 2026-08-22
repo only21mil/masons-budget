@@ -9,11 +9,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -25,6 +30,7 @@ import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -151,10 +157,17 @@ class TaskStateProfileSwitchTest {
         val privateQuery = "Victor private merchant query"
         compose.onNode(hasSetTextAction() and hasText("Search activity"))
             .performTextInput(privateQuery)
-        compose.onNodeWithText(ActivityTransactionFilter.INCOME.label)
-            .performClick()
+        val income = compose.onNodeWithContentDescription("Income activity filter")
+        income.performClick()
         settle()
-        compose.onNodeWithText(ActivityTransactionFilter.INCOME.label).assertIsSelected()
+        income.assertIsSelected().assertHasClickAction()
+        val incomeConfig = income.fetchSemanticsNode().config
+        assertEquals("Selected", incomeConfig[SemanticsProperties.StateDescription])
+        assertEquals("Filter activity by Income", incomeConfig[SemanticsActions.OnClick].label)
+        val density = activityController.get().resources.displayMetrics.density
+        assertTrue(income.fetchSemanticsNode().boundsInRoot.height >= 48f * density)
+        val group = compose.onNodeWithTag(ACTIVITY_FILTER_GROUP_TEST_TAG).fetchSemanticsNode().config
+        assertTrue(group.contains(SemanticsProperties.SelectableGroup))
 
         switchTo(FamilyMember.RACHEL)
 
@@ -163,7 +176,7 @@ class TaskStateProfileSwitchTest {
             nodesWithText(privateQuery),
             "Victor's Activity query remained visible after switching to Rachel.",
         )
-        compose.onNodeWithText(ActivityTransactionFilter.ALL.label).assertIsSelected()
+        compose.onNodeWithContentDescription("All activity filter").assertIsSelected()
     }
 
     private fun showScreenHost() {
