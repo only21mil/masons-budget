@@ -289,6 +289,7 @@ val verifySharedAppTestInputs =
     tasks.register("verifySharedAppTestInputs") {
         group = "verification"
         description = "Verifies that shared fixtures invalidate :app:testDebugUnitTest."
+        dependsOn(project(":domain").tasks.named("jar"))
 
         doLast {
             val expected = sharedAppTestFixtures.files.mapTo(linkedSetOf()) { it.canonicalFile }
