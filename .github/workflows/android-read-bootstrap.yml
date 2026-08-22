@@ -55,8 +55,6 @@ jobs:
       - name: Materialize and validate private inputs
         id: private_inputs
         env:
-          MODE: ${{ inputs.mode }}
-          PAIRING: ${{ inputs.mode == 'bootstrap-pair' && secrets.ANDROID_READ_BOOTSTRAP_PAIR || '' }}
           KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
           VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
           VOGEL_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
@@ -65,13 +63,8 @@ jobs:
           set -euo pipefail
           umask 077
           private_root="$HOME/work/vogel-vault-android-read-bootstrap"
-          pairing_file="$private_root/pairing.txt"
           keystore_file="$private_root/vogel-debug.keystore"
 
-          if [ "$MODE" = "bootstrap-pair" ] && [ -z "${PAIRING:-}" ]; then
-            echo "::error::A todo-write-enabled ANDROID_READ_BOOTSTRAP_PAIR is required for this manual run."
-            exit 1
-          fi
           if [ -z "${KEYSTORE_BASE64:-}" ]; then
             echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 is required for this manual run."
             exit 1
@@ -79,10 +72,6 @@ jobs:
 
           mkdir -p "$private_root/artifacts"
           chmod 700 "$private_root" "$private_root/artifacts"
-          if [ "$MODE" = "bootstrap-pair" ]; then
-            printf '%s' "$PAIRING" > "$pairing_file"
-            chmod 600 "$pairing_file"
-          fi
           if ! printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keystore_file"; then
             echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 is not valid base64."
             exit 1
@@ -92,6 +81,22 @@ jobs:
           KEYSTORE_PATH="$keystore_file" \
             .github/workflows/scripts/validate_android_debug_keystore.sh
           echo "artifacts=$private_root/artifacts" >> "$GITHUB_OUTPUT"
+
+      - name: Materialize bootstrap pairing
+        if: inputs.mode == 'bootstrap-pair'
+        env:
+          PAIRING: ${{ secrets.ANDROID_READ_BOOTSTRAP_PAIR }}
+        run: |
+          set -euo pipefail
+          umask 077
+          pairing_file="$HOME/work/vogel-vault-android-read-bootstrap/pairing.txt"
+
+          if [ -z "${PAIRING:-}" ]; then
+            echo "::error::A todo-write-enabled ANDROID_READ_BOOTSTRAP_PAIR is required for this manual run."
+            exit 1
+          fi
+          printf '%s' "$PAIRING" > "$pairing_file"
+          chmod 600 "$pairing_file"
 
       - name: Build same-signed bootstrap and clean APKs
         env:
