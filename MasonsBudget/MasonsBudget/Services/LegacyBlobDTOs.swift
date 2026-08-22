@@ -13,6 +13,9 @@ struct LegacyTransactionDTO: Codable {
     let note: String?
     let owner: FamilyMember?
     let amountSats: Int64?
+    /// Bitcoin account the row posts to when its payment source is
+    /// Bitcoin-native. Absent on legacy blobs, which must round-trip as nil.
+    let bitcoinAccountKey: String?
     /// True only when the amount was typed in BTC/sats. Absent on legacy rows,
     /// which must be read as "not explicitly Bitcoin".
     let enteredInBitcoin: Bool?
@@ -29,6 +32,7 @@ struct LegacyTransactionDTO: Codable {
         owner: FamilyMember?,
         amountSats: Int64? = nil,
         enteredInBitcoin: Bool? = nil,
+        bitcoinAccountKey: String? = nil,
         updatedAtMs: Double? = nil,
     ) {
         self.id = id
@@ -41,6 +45,7 @@ struct LegacyTransactionDTO: Codable {
         self.owner = owner
         self.amountSats = amountSats
         self.enteredInBitcoin = enteredInBitcoin
+        self.bitcoinAccountKey = bitcoinAccountKey
         self.updatedAtMs = updatedAtMs
     }
 }

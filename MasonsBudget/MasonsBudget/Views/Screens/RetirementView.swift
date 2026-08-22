@@ -207,7 +207,7 @@ struct RetirementView: View {
                     BTCAccountDetailView(title: "Cold Storage", custody: .selfCustody)
                 } label: {
                     storageRow(
-                        title: "Cold Storage · Coldcard Q",
+                        title: "Cold Storage",
                         subtitle: "Multi-sig · 2-of-3",
                         icon: AppIcon.vault,
                         btc: coldBtc,

@@ -32,14 +32,43 @@ enum TransactionActivityType: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Payment-source catalogue
+//
+// Mirrors shared/domain/fixtures/payment-source-cases.json (contract a5c29efb,
+// contractVersion 2) position for position: the `common` array order is the
+// canonical picker order, and the fixture order must never drift from it.
+// The `wire` is the value persisted and sent to the server; `label` is
+// display-only. Unknown or retired wires on existing rows keep round-tripping
+// — `sources(for:including:)` re-surfaces a legacy value instead of dropping it.
+
+enum TransactionSourceClassification: Hashable {
+    case bitcoinNative
+    case fiatCard
+    case billPay
+
+    /// Carried over from the old `isBitcoinNative` flag: only bitcoin-native
+    /// sources post sats alongside the fiat amount.
+    var isBitcoinNative: Bool {
+        self == .bitcoinNative
+    }
+}
+
 struct TransactionSourceOption: Identifiable, Hashable {
-    let name: String
-    let provider: String
-    let supportedTypes: Set<TransactionActivityType>
-    let isBitcoinNative: Bool
+    /// The wire value that is persisted and sent. Never renamed once shipped.
+    let wire: String
+
+    /// Display-only. Free to change without a migration.
+    let label: String
+
+    let classification: TransactionSourceClassification
+    let supportedActivities: Set<TransactionActivityType>
+
+    var isBitcoinNative: Bool {
+        classification.isBitcoinNative
+    }
 
     var id: String {
-        name
+        wire
     }
 }
 
@@ -47,43 +76,102 @@ enum TransactionSourceCatalog {
     static let none = ""
 
     static let common: [TransactionSourceOption] = [
-        TransactionSourceOption(name: "Aven Card", provider: "Aven", supportedTypes: [.spend], isBitcoinNative: false),
-        TransactionSourceOption(name: "Coinbase One Card", provider: "Coinbase", supportedTypes: [.spend], isBitcoinNative: false),
-        TransactionSourceOption(name: "Gemini Card", provider: "Gemini", supportedTypes: [.spend], isBitcoinNative: false),
-        TransactionSourceOption(name: "SoFi Card", provider: "SoFi", supportedTypes: [.spend], isBitcoinNative: false),
-        TransactionSourceOption(name: "SoFi", provider: "SoFi", supportedTypes: [.spend, .income], isBitcoinNative: false),
-        TransactionSourceOption(name: "Cash App", provider: "Cash App", supportedTypes: [.spend, .btcBuy, .income], isBitcoinNative: true),
-        TransactionSourceOption(name: "River", provider: "River", supportedTypes: [.spend, .btcBuy, .income, .transfer], isBitcoinNative: true),
-        TransactionSourceOption(name: "River Bill Pay", provider: "River", supportedTypes: [.btcBillPay], isBitcoinNative: true),
-        TransactionSourceOption(name: "River BTC Buy", provider: "River", supportedTypes: [.btcBuy], isBitcoinNative: true),
-        TransactionSourceOption(name: "Strike", provider: "Strike", supportedTypes: [.spend, .btcBillPay, .btcBuy, .income, .transfer], isBitcoinNative: true),
-        TransactionSourceOption(name: "Strike Bill Pay", provider: "Strike", supportedTypes: [.btcBillPay], isBitcoinNative: true),
-        TransactionSourceOption(name: "Strike BTC Buy", provider: "Strike", supportedTypes: [.btcBuy], isBitcoinNative: true),
-        TransactionSourceOption(name: "Coldcard", provider: "Coldcard", supportedTypes: [.transfer], isBitcoinNative: true),
+        TransactionSourceOption(wire: "river", label: "River", classification: .bitcoinNative, supportedActivities: [.spend, .income, .transfer]),
+        TransactionSourceOption(wire: "zeus_lightning", label: "Zeus Lightning", classification: .bitcoinNative, supportedActivities: [.spend, .income, .transfer]),
+        TransactionSourceOption(wire: "zeus_on_chain", label: "Zeus On-chain", classification: .bitcoinNative, supportedActivities: [.spend, .income, .transfer]),
+        TransactionSourceOption(wire: "strike", label: "Strike", classification: .bitcoinNative, supportedActivities: [.spend, .income, .transfer]),
+        TransactionSourceOption(wire: "coinbase_card", label: "Coinbase Card", classification: .fiatCard, supportedActivities: [.spend]),
+        TransactionSourceOption(wire: "aven", label: "Aven", classification: .fiatCard, supportedActivities: [.spend]),
+        TransactionSourceOption(wire: "sofi_card", label: "SoFi Card", classification: .fiatCard, supportedActivities: [.spend]),
+        TransactionSourceOption(wire: "capital_one_vx", label: "Capital One VX", classification: .fiatCard, supportedActivities: [.spend]),
+        TransactionSourceOption(wire: "river_bitcoin_bill_pay", label: "River Bitcoin Bill Pay", classification: .billPay, supportedActivities: [.btcBillPay]),
     ]
 
-    static func sources(for type: TransactionActivityType, including current: String? = nil) -> [String] {
-        var names = common
-            .filter { $0.supportedTypes.contains(type) }
-            .map(\.name)
+    /// Options supporting an activity, in canonical picker order. A legacy or
+    /// retired wire already stored on the row is re-inserted at the front so it
+    /// still displays and round-trips instead of silently vanishing.
+    static func sources(for activity: TransactionActivityType, including current: String? = nil) -> [TransactionSourceOption] {
+        var options = common.filter { $0.supportedActivities.contains(activity) }
 
         if let current = current?.trimmingCharacters(in: .whitespacesAndNewlines),
            !current.isEmpty,
-           !names.contains(current)
+           !options.contains(where: { $0.wire == current })
         {
-            names.insert(current, at: 0)
+            options.insert(
+                TransactionSourceOption(
+                    wire: current,
+                    label: current,
+                    classification: .fiatCard,
+                    supportedActivities: [activity]
+                ),
+                at: 0
+            )
         }
 
-        return names
+        return options
     }
 
+    /// Catalogue entry for a stored wire, or nil for retired/unknown values.
+    static func option(forWire wire: String) -> TransactionSourceOption? {
+        common.first { $0.wire == wire }
+    }
+
+    /// Which Activity rail a stored card belongs to, if any. Rails are a
+    /// filter over the stored wire: each rail matches its active
+    /// Bitcoin-native wire plus the retired wire it succeeds, and On-chain
+    /// additionally keeps nil-card rows (the historical default). River and
+    /// Strike live in no rail; All and Spends cover them, matching Android.
+    enum ActivityRail: Equatable {
+        case lightning
+        case onChain
+    }
+
+    static func activityRail(forCard card: String?) -> ActivityRail? {
+        switch card {
+        case "zeus_lightning", "lightning": .lightning
+        case "zeus_on_chain", "on-chain", nil: .onChain
+        default: nil
+        }
+    }
+
+    /// Options for an edit surface with no sats entry. The backend demands
+    /// positive amountSats + bitcoinAccountKey for a Bitcoin-native posting,
+    /// and an edit screen cannot collect them, so those wires are offered
+    /// only when the row already carries one — its stored posting then
+    /// round-trips unchanged. Re-sourcing a row onto a Bitcoin-native wire is
+    /// a separate feature, not an edit affordance.
+    static func editableSources(
+        for activity: TransactionActivityType,
+        storedCard: String?,
+        selected: String?
+    ) -> [TransactionSourceOption] {
+        let allowBitcoinNative = option(forWire: storedCard ?? "")?
+            .classification.isBitcoinNative == true
+        return sources(for: activity, including: selected)
+            .filter { $0.classification.isBitcoinNative ? allowBitcoinNative : true }
+    }
+
+    /// Wire values for persistence, in canonical picker order.
+    static func wires(for activity: TransactionActivityType, including current: String? = nil) -> [String] {
+        sources(for: activity, including: current).map(\.wire)
+    }
+
+    /// Labels for display, in canonical picker order.
+    static func labels(for activity: TransactionActivityType, including current: String? = nil) -> [String] {
+        sources(for: activity, including: current).map(\.label)
+    }
+
+    /// Default wire for a new row of the given activity.
     static func defaultSource(for type: TransactionActivityType) -> String {
         switch type {
-        case .spend: "SoFi Card"
-        case .btcBillPay: "River Bill Pay"
-        case .btcBuy: "River BTC Buy"
-        case .income: "River"
-        case .transfer: "River"
+        case .spend: "sofi_card"
+        case .btcBillPay: "river_bitcoin_bill_pay"
+        case .income: "river"
+        case .transfer: "river"
+        case .btcBuy:
+            // BTC buys are no longer a payment-source activity (they have their
+            // own route/catalogue), so there is no default payment source.
+            none
         }
     }
 }

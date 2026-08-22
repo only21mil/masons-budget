@@ -11,7 +11,8 @@ struct TransactionDetailView: View {
     @State private var merchant: String
     @State private var category: String
     @State private var amountUsd: String
-    @State private var method: String
+    /// Selected payment-source wire, or nil when the row carries no method.
+    @State private var method: String?
     @State private var note: String
     @State private var date: Date
     @State private var showingDeleteConfirmation = false
@@ -25,7 +26,10 @@ struct TransactionDetailView: View {
         _merchant = State(initialValue: transaction.merchant)
         _category = State(initialValue: transaction.category)
         _amountUsd = State(initialValue: NSDecimalNumber(decimal: transaction.amount).stringValue)
-        _method = State(initialValue: transaction.card ?? "on-chain")
+        // Seed from the stored card when it exists, unknown/retired wires
+        // included — they round-trip as a synthetic picker option. No stamping
+        // of a default onto rows that never had a method.
+        _method = State(initialValue: transaction.card)
         _note = State(initialValue: transaction.note ?? "")
         _date = State(initialValue: transaction.date)
     }
@@ -72,11 +76,35 @@ struct TransactionDetailView: View {
                     }
                     Hairline()
                     editRow("Method") {
-                        Picker("Method", selection: $method) {
-                            Text("Lightning").tag("lightning")
-                            Text("On-chain").tag("on-chain")
+                        // Catalogue-driven picker. A retired or unknown wire
+                        // already on the row is re-inserted as a synthetic
+                        // option (via including:) so it displays and
+                        // round-trips unchanged unless the user explicitly
+                        // picks a new option.
+                        Menu {
+                            ForEach(methodOptions) { option in
+                                Button {
+                                    method = option.wire
+                                } label: {
+                                    Label(option.label, systemImage: PaymentMethod.icon(forWire: option.wire))
+                                }
+                            }
+                            Button {
+                                method = nil
+                            } label: {
+                                Label("None", systemImage: "minus.circle")
+                            }
+                        } label: {
+                            HStack {
+                                Text(methodLabel)
+                                    .font(AppFont.labelLarge)
+                                    .foregroundStyle(method == nil ? theme.textMuted : theme.text)
+                                Spacer()
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(AppFont.smallRegular)
+                                    .foregroundStyle(theme.textMuted)
+                            }
                         }
-                        .pickerStyle(.segmented)
                     }
                     Hairline()
                     DatePicker("Date", selection: $date, displayedComponents: .date)
@@ -139,6 +167,29 @@ struct TransactionDetailView: View {
         return AppFormatter.formatCurrency(amount)
     }
 
+    // MARK: - Method Picker
+
+    private var activityType: TransactionActivityType {
+        transaction.isIncome ? .income : .spend
+    }
+
+    private var methodOptions: [TransactionSourceOption] {
+        // The detail screen has no sats entry, so Bitcoin-native wires are
+        // offered only when the stored row already carries one (see
+        // editableSources). Re-sourcing a row is a separate feature, not a
+        // thing this screen does.
+        TransactionSourceCatalog.editableSources(
+            for: activityType,
+            storedCard: transaction.card,
+            selected: method
+        )
+    }
+
+    private var methodLabel: String {
+        guard let method else { return "None" }
+        return methodOptions.first { $0.wire == method }?.label ?? method
+    }
+
     private func editRow(_ label: String, @ViewBuilder content: () -> some View) -> some View {
         HStack(spacing: 12) {
             Text(label)
@@ -182,6 +233,7 @@ struct TransactionDetailView: View {
         let previousCategory = transaction.category
         let previousAmount = transaction.amount
         let previousCard = transaction.card
+        let previousBitcoinAccountKey = transaction.bitcoinAccountKey
         let previousNote = transaction.note
         let previousDate = transaction.date
         let previousOwner = transaction.owner
@@ -189,7 +241,20 @@ struct TransactionDetailView: View {
         transaction.merchant = merchant.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? transaction.merchant : merchant
         transaction.category = category.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Other" : category
         transaction.amount = amount
-        transaction.card = method
+        // No longer unconditional: it used to stamp retired values onto
+        // untagged rows on every save. Only a real selection writes, and a
+        // cleared selection (None) writes nil so the row becomes untagged.
+        if let method {
+            if methodOptions.contains(where: { $0.wire == method }) {
+                transaction.card = method
+            }
+        } else {
+            transaction.card = nil
+        }
+        // The stored Bitcoin account round-trips untouched: the picker fence
+        // keeps Bitcoin-native wires to rows that already carry one, and a
+        // posted sat movement cannot change accounts on an edit.
+        transaction.bitcoinAccountKey = previousBitcoinAccountKey
         transaction.note = note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : note
         transaction.date = date
         transaction.ownerMember = transaction.ownerMember.ledgerOwner
@@ -198,6 +263,7 @@ struct TransactionDetailView: View {
             transaction.category = previousCategory
             transaction.amount = previousAmount
             transaction.card = previousCard
+            transaction.bitcoinAccountKey = previousBitcoinAccountKey
             transaction.note = previousNote
             transaction.date = previousDate
             transaction.owner = previousOwner

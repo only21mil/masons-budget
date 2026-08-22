@@ -222,7 +222,9 @@ this file. As of this audit, the durable tracked items include:
 - [#46](https://github.com/only21mil/masons-budget/issues/46): production row
   cutover and release readiness.
 - [#71](https://github.com/only21mil/masons-budget/issues/71): Swift voice/CSV
-  transaction sign handling.
+  transaction sign handling. (Note: the CSV import feature itself was removed
+  from the build on 2026-08-21 per Victor's order; the CSV clause of this item
+  concerns signed-transaction handling, not the import screen.)
 - [#73](https://github.com/only21mil/masons-budget/issues/73): secondary
   consumers of signed transaction credits.
 - [#75](https://github.com/only21mil/masons-budget/issues/75) and

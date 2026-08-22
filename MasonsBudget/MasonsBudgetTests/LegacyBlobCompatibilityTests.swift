@@ -912,6 +912,7 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
             XCTAssertTrue(acct.key.hasSuffix("-victor"))
         }
 
+        // Label comes from the decoded blob; keep the historical value.
         let coldcard = accounts.first(where: { $0.label == "Coldcard" })
         XCTAssertNotNil(coldcard)
         XCTAssertEqual(coldcard?.custody, .selfCustody)
@@ -1221,7 +1222,8 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
             XCTAssertTrue(acct.key.hasSuffix("-mason"))
         }
 
-        let coldcard = accounts.first(where: { $0.label == "Coldcard" })
+        // Label is produced by mapSonBalances; follow the production rename.
+        let coldcard = accounts.first(where: { $0.label == "Multisig" })
         XCTAssertEqual(coldcard?.custody, .selfCustody)
         XCTAssertEqual(coldcard?.btc, 0.75072) // Exact — created from Decimal literal
     }

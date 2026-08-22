@@ -1473,7 +1473,7 @@ function RetirementScreen({ t, unit }) {
               <Vault size={20} color={t.accent}/>
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: t.text }}>Cold Storage · Coldcard Q</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: t.text }}>Cold Storage · Multisig</div>
               <div style={{ fontSize: 11, color: t.textFaint, marginTop: 2 }}>Multi-sig · 2-of-3 · last verified Apr 22</div>
             </div>
             <Amount sats={v.cold * SATS_PER_BTC} unit={unit} t={t} size={14} weight={700}/>
@@ -1661,7 +1661,7 @@ function NetWorthScreen({ t, unit }) {
         <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '0 4px 8px' }}>Holdings</div>
         <Card t={t} pad={0} radius={18}>
           {[
-            { l: 'Cold Storage', v: SEED.vault.cold, sub: 'Coldcard Q · Multisig' },
+            { l: 'Cold Storage', v: SEED.vault.cold, sub: 'Multisig · 2-of-3' },
             { l: 'Lightning', v: SEED.vault.hot, sub: 'Phoenix · Self-custody' },
           ].map((h, i, arr) => (
             <React.Fragment key={h.l}>

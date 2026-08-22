@@ -308,12 +308,11 @@ jobs:
           swift --version
           xcodebuild -showsdks | grep -iE 'ios|macos' || true
 
-      # Cheapest signal first. VogelVaultCore is a plain SwiftPM library with no
-      # simulator, no signing and no app bundle, so a syntax-level break in
-      # VoiceParser surfaces here in under a minute instead of eight minutes into
-      # an app build.
-      - name: SwiftPM package tests
-        run: swift test
+      # The SwiftPM package tests step is gone with VogelVaultCore: the target
+      # existed to compile and test VoiceParser, and voice entry was removed
+      # from the app (2026-08-21). A placeholder target that keeps a job green
+      # while measuring nothing was rejected in review — the honest signal
+      # after this point is the build and test jobs below, nothing cheaper.
 
       # A runtime and a device are separate CoreSimulator resources. On the
       # self-hosted host, the first xcodebuild destination query returned only

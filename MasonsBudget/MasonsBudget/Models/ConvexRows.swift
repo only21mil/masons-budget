@@ -108,6 +108,7 @@ struct ConvexTransactionRow: Decodable {
     let card: String?
     let note: String?
     let amountSats: Int64?
+    let bitcoinAccountKey: String?
     let updatedAtMs: Double
 
     func legacyDTO() throws -> LegacyTransactionDTO {
@@ -127,6 +128,7 @@ struct ConvexTransactionRow: Decodable {
             // deriving it here, editing a synced Bitcoin income would re-push it
             // with no sats and quietly turn it into an ordinary dollar income.
             enteredInBitcoin: amountSats != nil,
+            bitcoinAccountKey: bitcoinAccountKey,
             updatedAtMs: updatedAtMs,
         )
     }
@@ -652,8 +654,12 @@ struct CanonicalIncomeSummary: Sendable {
     }
 }
 
+/// The public income projection from `tables:projectIncome`. The server
+/// deliberately strips the storage-only `sourceKey` field at this boundary
+/// and pins its absence in `tables.test.ts`. This row carries the nine
+/// fields it needs; the wire also sends `updatedAtMs`, which this row does
+/// not use.
 struct ConvexIncomeRow: Decodable, Sendable {
-    let sourceKey: String
     let incomeId: String
     let owner: FamilyMember
     let date: String

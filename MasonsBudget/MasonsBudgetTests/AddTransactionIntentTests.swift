@@ -32,6 +32,41 @@ final class AddTransactionIntentTests: XCTestCase {
         }
     }
 
+    /// A Bitcoin-native spend carries its typed sats exactly like a typed
+    /// Bitcoin income — the encoder's three-condition rule depends on this:
+    /// derived sats (USD entry) must stay nil for spends of fiat sources, but
+    /// a Bitcoin-native source requires positive sats the user typed.
+    func testSpendCarriesTypedSatsForBitcoinEntry() {
+        for unit in [DisplayUnit.btc, DisplayUnit.sats] {
+            let intent = AddTransactionAmountIntent.make(
+                isIncome: false,
+                inputUnit: unit,
+                typedAmount: 0.01,
+                computedSats: 1_000_000,
+                btcPrice: 80_000,
+            )
+
+            XCTAssertEqual(intent.amountSats, 1_000_000)
+            XCTAssertEqual(intent.enteredInBitcoin, true)
+        }
+    }
+
+    func testUSDSpendCarriesDerivedSatsAndNoBitcoinMarker() {
+        let intent = AddTransactionAmountIntent.make(
+            isIncome: false,
+            inputUnit: .usd,
+            typedAmount: 100,
+            computedSats: 125_000,
+            btcPrice: 80_000,
+        )
+
+        // The derived value exists on the intent, but the marker is absent —
+        // the form's Bitcoin-native guard rejects a USD entry before it can
+        // reach the encoder, and the encoder refuses it independently.
+        XCTAssertEqual(intent.amountSats, 125_000)
+        XCTAssertNil(intent.enteredInBitcoin)
+    }
+
     @MainActor
     func testTransactionCreateIDSurvivesTwoFailuresAndRotatesAfterAcceptedReceipt() {
         let store = makeCreateIDStore()

@@ -24,7 +24,12 @@ enum SearchMatcher {
             transaction.amount.description,
             transaction.amountSats.map { String($0) },
             transaction.category,
-            transaction.card,
+            // Search the display label, not the stored wire: label(forWire:)
+            // falls back to the wire verbatim, so unknown and legacy cards
+            // still match by their own stored text while catalogue wires
+            // match what the user actually sees and types ("Coinbase", not
+            // "coinbase_card").
+            PaymentMethod.label(forWire: transaction.card),
         ])
     }
 
