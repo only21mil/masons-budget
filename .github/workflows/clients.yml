@@ -179,7 +179,9 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Fixture provenance and freshness
+      - run: npm ci
+
+      - name: Fixture provenance and Linux production values
         run: node scripts/check-convex-wire-golden-provenance.mjs
 
       - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
@@ -192,13 +194,8 @@ jobs:
       # legal and technical review before adoption.
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
 
-      - run: npm ci
-
       - name: Linux production decoder
-        run: >-
-          npx vitest run
-          test/convex-wire-golden.test.ts
-          test/convex-wire-golden-values.test.ts
+        run: npx vitest run test/convex-wire-golden.test.ts
         working-directory: linux
 
       - name: Android production decoder

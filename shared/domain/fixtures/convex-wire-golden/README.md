@@ -45,10 +45,11 @@ Verified before commit.
 `shared/domain/convex-wire-golden-provenance.json` records the production deployment, capture
 date, query/format matrix, SHA-256 of every response body, and SHA-256 of the committed
 per-query TypeScript dependency closure the captures were taken against.
-`scripts/check-convex-wire-golden-provenance.mjs` runs before the client decoders in CI. It
-fails when a capture is added or changed without an updated attestation, when the schema
-changes without a recapture, or when the capture is 60 days old. It emits a GitHub warning
-after 30 days.
+After dependencies are installed, `scripts/check-convex-wire-golden-provenance.mjs` runs the
+attestation checks and the Linux production value decoder as one gate. It fails when a capture
+is added or changed without an updated attestation, when the schema changes without a recapture,
+when the capture is 60 days old, or when the decoder rejects a committed production value. It
+emits a GitHub warning after 30 days.
 
 This is deliberately an offline attestation, not a live-production check. It makes an
 unattested fixture regeneration and age drift visible, but it cannot prove that the named
