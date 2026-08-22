@@ -100,6 +100,16 @@ const requests = [
     sats: 100_000n,
     priceUsdCents: 10_000_000n,
     usdCents: 10_000n,
+    // One action, one write: the income the purchase was funded by rides along
+    // on the same request under the shared id.
+    linkedIncome: {
+      id: "buy-01",
+      owner: "victor",
+      date: "2026-07-30",
+      amountCents: 10_000n,
+      source: "Example",
+      sourceFile: "income",
+    },
   },
   {
     kind: "btcBuy.delete",
@@ -119,6 +129,7 @@ const requests = [
     date: "2026-07-30",
     merchant: "Example",
     category: "Bills",
+    budgetEffect: "budget_category",
     amountUsdCents: 10_000n,
     btcSpentSats: 100_000n,
     btcPriceCents: 10_000_000n,

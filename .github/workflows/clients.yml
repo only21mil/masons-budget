@@ -235,7 +235,7 @@ jobs:
           git ls-files --error-unmatch \
             convex/_generated/api.d.ts \
             convex/_generated/dataModel.d.ts \
-            convex/_generated/schema.sha256 \
+            convex/schema.sha256 \
             convex/_generated/server.d.ts
 
       - name: Typecheck deployable Convex functions

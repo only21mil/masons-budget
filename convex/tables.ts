@@ -55,6 +55,7 @@ import {
   canonicalizeSharesDecimal,
 } from "./documentProjection";
 import {
+  btcBillPayBudgetEffectValidator,
   custodyValidator,
   familyMemberValidator,
   fiatValuationValidator,
@@ -570,6 +571,7 @@ function projectBtcBillPay(row: {
   month: string;
   merchant: string;
   category: string;
+  budgetEffect?: "budget_category" | "credit_card_payment";
   amountUsdCents: bigint;
   btcSpentSats: bigint;
   btcPriceCents: bigint;
@@ -585,7 +587,11 @@ function projectBtcBillPay(row: {
     date: row.date,
     month: row.month,
     merchant: row.merchant,
-    category: row.category,
+    category:
+      (row.budgetEffect ?? "credit_card_payment") === "credit_card_payment"
+        ? "Credit Card Payment"
+        : row.category,
+    budgetEffect: row.budgetEffect ?? "credit_card_payment",
     amountUsdCents: row.amountUsdCents,
     btcSpentSats: row.btcSpentSats,
     btcPriceCents: row.btcPriceCents,
@@ -1971,16 +1977,170 @@ function sameTransaction(
   );
 }
 
-async function upsertTransactionRow(
-  ctx: MutationCtx,
+export const BITCOIN_PAYMENT_SOURCES = new Set([
+  "river",
+  "zeus_lightning",
+  "zeus_on_chain",
+  "strike",
+]);
+const LEGACY_BITCOIN_SPEND_PAYMENT_SOURCES = new Set([
+  "lightning",
+  "on_chain",
+]);
+export const FIAT_PAYMENT_SOURCES = new Set([
+  "coinbase_card",
+  "aven",
+  "sofi_card",
+  "capital_one_vx",
+]);
+
+function isActiveBitcoinPaymentSource(row: {
+  card?: string;
+}): boolean {
+  return row.card !== undefined && BITCOIN_PAYMENT_SOURCES.has(row.card);
+}
+
+function isLegacyBitcoinSpendTransaction(row: { card?: string }): boolean {
+  return (
+    row.card !== undefined && LEGACY_BITCOIN_SPEND_PAYMENT_SOURCES.has(row.card)
+  );
+}
+
+function isBitcoinPostingTransaction(row: { card?: string }): boolean {
+  return isActiveBitcoinPaymentSource(row) || isLegacyBitcoinSpendTransaction(row);
+}
+
+function requireBitcoinPaymentSourceDirection(
+  card: string | undefined,
+  kind: "spend" | "credit",
+  category: string,
+  transactionId: string,
+) {
+  const row = { card };
+  if (!isBitcoinPostingTransaction(row)) return;
+  const expectedKind =
+    isActiveBitcoinPaymentSource(row) && category === "Income"
+      ? "credit"
+      : "spend";
+  if (kind !== expectedKind) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Bitcoin payment-source direction must match spend or Income intent.",
+      "transaction",
+      transactionId,
+    );
+  }
+}
+
+function validateDeviceTransactionPaymentSource(
+  row: {
+    id: string;
+    card?: string;
+    amountSats?: bigint;
+    bitcoinAccountKey?: string;
+  },
+  existing: Doc<"transactions"> | null,
+) {
+  const source = optionalText(row.card);
+  if (source === undefined) {
+    const existingSource = optionalText(existing?.card);
+    if (
+      existingSource !== undefined &&
+      existingSource !== "river_bitcoin_bill_pay" &&
+      !FIAT_PAYMENT_SOURCES.has(existingSource) &&
+      !BITCOIN_PAYMENT_SOURCES.has(existingSource)
+    ) {
+      deviceFailure(
+        "VALIDATION_FAILED",
+        "Unknown legacy transaction payment sources may only round-trip unchanged.",
+        "transaction",
+        row.id,
+      );
+    }
+    return;
+  }
+  if (source === "river_bitcoin_bill_pay") {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "river_bitcoin_bill_pay must use upsertBtcBillPayFromDevice.",
+      "transaction",
+      row.id,
+    );
+  }
+  if (FIAT_PAYMENT_SOURCES.has(source)) {
+    if (row.amountSats !== undefined || row.bitcoinAccountKey !== undefined) {
+      deviceFailure(
+        "VALIDATION_FAILED",
+        "Card payment sources must not carry Bitcoin posting fields.",
+        "transaction",
+        row.id,
+      );
+    }
+    return;
+  }
+  if (BITCOIN_PAYMENT_SOURCES.has(source)) return;
+
+  const requestedAccountKey = optionalText(row.bitcoinAccountKey);
+  if (
+    existing === null ||
+    source !== existing.card ||
+    row.amountSats !== existing.amountSats ||
+    (requestedAccountKey !== undefined &&
+      requestedAccountKey !== existing.bitcoinAccountKey)
+  ) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Unknown legacy transaction payment sources may only round-trip unchanged.",
+      "transaction",
+      row.id,
+    );
+  }
+}
+
+function validateTransactionBitcoinFields(
   row: Omit<Doc<"transactions">, "_id" | "_creationTime">,
-  optimistic?: OptimisticWrite,
-): Promise<UpsertOutcome> {
+) {
+  if (row.card === "river_bitcoin_bill_pay") {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "river_bitcoin_bill_pay must use upsertBtcBillPay.",
+      "transaction",
+      row.txId,
+    );
+  }
+  if (isBitcoinPostingTransaction(row)) {
+    if (!postsToHouseholdBitcoinLedger(row.owner)) {
+      deviceFailure(
+        "VALIDATION_FAILED",
+        "Bitcoin payment-source transactions are available only for the adult household ledger.",
+        "transaction",
+        row.txId,
+      );
+    }
+    if (
+      (isLegacyBitcoinSpendTransaction(row) && row.category === "Income") ||
+      row.amountSats === undefined ||
+      row.amountSats <= 0n ||
+      row.bitcoinAccountKey === undefined ||
+      !row.bitcoinAccountKey.trim()
+    ) {
+      deviceFailure(
+        "VALIDATION_FAILED",
+        isLegacyBitcoinSpendTransaction(row)
+          ? "Retired Bitcoin payment sources remain debit-only and require a non-Income category, positive amountSats, and bitcoinAccountKey."
+          : "Bitcoin payment-source transactions require positive amountSats and bitcoinAccountKey.",
+        "transaction",
+        row.txId,
+      );
+    }
+    return;
+  }
+
   if (row.amountSats !== undefined) {
     if (row.category !== "Income" || row.amountSats <= 0n) {
       deviceFailure(
         "VALIDATION_FAILED",
-        "Only Income entered explicitly in BTC/sats may carry amountSats.",
+        "Only Income or Bitcoin payment-source transactions may carry positive amountSats.",
         "transaction",
         row.txId,
       );
@@ -1993,7 +2153,95 @@ async function upsertTransactionRow(
         row.txId,
       );
     }
+  } else if (row.bitcoinAccountKey !== undefined) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "bitcoinAccountKey requires amountSats.",
+      "transaction",
+      row.txId,
+    );
   }
+}
+
+function storedTransactionBalanceDelta(row: {
+  txId: string;
+  category: string;
+  card?: string;
+  amountSats?: bigint;
+  bitcoinAccountKey?: string;
+  balancePostingVersion?: bigint;
+}): { accountKey: string; delta: bigint } | null {
+  if (row.balancePostingVersion !== 1n) return null;
+  if (row.amountSats === undefined || row.bitcoinAccountKey === undefined) {
+    throw new ConvexError("Posted transaction is missing its Bitcoin posting fields.");
+  }
+  // This row is already posted, so category is authoritative for its stored
+  // sign. Source and account metadata select the posting family and account.
+  if (row.category === "Income") {
+    return { accountKey: row.bitcoinAccountKey, delta: row.amountSats };
+  }
+  if (isBitcoinPostingTransaction(row)) {
+    return { accountKey: row.bitcoinAccountKey, delta: -row.amountSats };
+  }
+  throw new ConvexError(`Posted transaction ${row.txId} has no Bitcoin posting source.`);
+}
+
+async function requestedTransactionBalanceDelta(
+  ctx: MutationCtx,
+  row: Omit<Doc<"transactions">, "_id" | "_creationTime">,
+  existingIncomeAccountKey?: string,
+): Promise<{ accountKey: string; delta: bigint } | null> {
+  if (!postsToHouseholdBitcoinLedger(row.owner) || row.amountSats === undefined) {
+    return null;
+  }
+  // Incoming input is attacker-shaped. Pin an existing Income account before
+  // dispatch; wrappers validate kind/category, so a wire never infers direction.
+  const requestedAccountKey = row.bitcoinAccountKey?.trim();
+  if (
+    existingIncomeAccountKey !== undefined &&
+    requestedAccountKey !== undefined &&
+    requestedAccountKey !== existingIncomeAccountKey
+  ) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "A posted sat-denominated Income row cannot change its Bitcoin account; record a transfer instead.",
+      "transaction",
+      row.txId,
+    );
+  }
+  if (isActiveBitcoinPaymentSource(row) && row.category === "Income") {
+    return { accountKey: requestedAccountKey!, delta: row.amountSats };
+  }
+  if (isBitcoinPostingTransaction(row)) {
+    return {
+      accountKey: requestedAccountKey!,
+      delta: -row.amountSats,
+    };
+  }
+  if (row.category !== "Income") return null;
+  const accountKey = existingIncomeAccountKey ?? await riverAccountKey(ctx, row.owner);
+  if (
+    requestedAccountKey !== undefined &&
+    requestedAccountKey !== accountKey
+  ) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      existingIncomeAccountKey === undefined
+        ? "Sat-denominated Income must post to the canonical River account."
+        : "A posted sat-denominated Income row cannot change its Bitcoin account; record a transfer instead.",
+      "transaction",
+      row.txId,
+    );
+  }
+  return { accountKey, delta: row.amountSats };
+}
+
+async function upsertTransactionRow(
+  ctx: MutationCtx,
+  row: Omit<Doc<"transactions">, "_id" | "_creationTime">,
+  optimistic?: OptimisticWrite,
+): Promise<UpsertOutcome> {
+  validateTransactionBitcoinFields(row);
   const existing = await ctx.db
     .query("transactions")
     .withIndex("by_source_tx_id", (q: any) =>
@@ -2020,7 +2268,7 @@ async function upsertTransactionRow(
     ) {
       deviceFailure(
         "REVISION_REQUIRED",
-        "baseUpdatedAtMs is required to edit posted sat-denominated Income.",
+        "baseUpdatedAtMs is required to edit a posted Bitcoin transaction.",
         "transaction",
         row.txId,
       );
@@ -2041,85 +2289,41 @@ async function upsertTransactionRow(
         row.txId,
       );
     }
-    let storedRow = row;
-    if (existing.balancePostingVersion === 1n) {
-      const oldSats = existing.amountSats;
-      const oldKey = existing.bitcoinAccountKey;
-      if (oldSats === undefined || oldKey === undefined) {
-        throw new ConvexError("Posted Income row is missing its Bitcoin posting fields.");
-      }
-      const deltas = new Map<string, bigint>();
-      addDelta(deltas, oldKey, -oldSats);
-      if (row.category === "Income") {
-        if (row.amountSats === undefined) {
-          deviceFailure(
-            "VALIDATION_FAILED",
-            "Editing posted sat-denominated Income requires explicit amountSats.",
-            "transaction",
-            row.txId,
-          );
-        }
-        const nextSats = row.amountSats;
-        // A posted row keeps the account that actually received the sats. New
-        // sat-Income is forced to River on insert, but re-deriving River here
-        // would silently walk a baselined self-custody row over to River on an
-        // ordinary metadata edit, and its later reversal would debit the wrong
-        // account. Moving posted sats between wallets is a transfer, not an edit.
-        const nextKey = oldKey;
-        if (
-          row.bitcoinAccountKey !== undefined &&
-          row.bitcoinAccountKey.trim() !== nextKey
-        ) {
-          deviceFailure(
-            "VALIDATION_FAILED",
-            "A posted sat-denominated Income row cannot change its Bitcoin account; " +
-              "record a transfer instead.",
-            "transaction",
-            row.txId,
-          );
-        }
-        addDelta(deltas, nextKey, nextSats);
-        storedRow = {
+    const oldPosting = storedTransactionBalanceDelta(existing);
+    if (
+      oldPosting &&
+      existing.category === "Income" &&
+      row.category === "Income" &&
+      row.amountSats === undefined
+    ) {
+      deviceFailure(
+        "VALIDATION_FAILED",
+        "Editing posted sat-denominated Income requires explicit amountSats.",
+        "transaction",
+        row.txId,
+      );
+    }
+    const nextPosting = await requestedTransactionBalanceDelta(
+      ctx,
+      row,
+      existing.category === "Income" ? oldPosting?.accountKey : undefined,
+    );
+    const deltas = new Map<string, bigint>();
+    if (oldPosting) addDelta(deltas, oldPosting.accountKey, -oldPosting.delta);
+    if (nextPosting) addDelta(deltas, nextPosting.accountKey, nextPosting.delta);
+    if (oldPosting || nextPosting) await applyBtcAccountDeltas(ctx, row.owner, deltas);
+    const storedRow = nextPosting
+      ? {
           ...row,
-          amountSats: nextSats,
-          bitcoinAccountKey: nextKey,
+          bitcoinAccountKey: nextPosting.accountKey,
           balancePostingVersion: 1n,
-        };
-      } else {
-        storedRow = {
+        }
+      : {
           ...row,
           amountSats: undefined,
           bitcoinAccountKey: undefined,
           balancePostingVersion: undefined,
         };
-      }
-      await applyBtcAccountDeltas(ctx, row.owner, deltas);
-    } else if (
-      postsToHouseholdBitcoinLedger(row.owner) &&
-      row.category === "Income" &&
-      row.amountSats !== undefined
-    ) {
-      const key = await riverAccountKey(ctx, row.owner);
-      if (
-        row.bitcoinAccountKey !== undefined &&
-        row.bitcoinAccountKey.trim() !== key
-      ) {
-        deviceFailure(
-          "VALIDATION_FAILED",
-          "Sat-denominated Income must post to the canonical River account.",
-          "transaction",
-          row.txId,
-        );
-      }
-      const deltas = new Map<string, bigint>();
-      addDelta(deltas, key, row.amountSats);
-      await applyBtcAccountDeltas(ctx, row.owner, deltas);
-      storedRow = {
-        ...row,
-        bitcoinAccountKey: key,
-        balancePostingVersion: 1n,
-      };
-    }
     await lockRuntimeSource(ctx, row.sourceFile);
     await ctx.db.patch(existing._id, {
       ...storedRow,
@@ -2148,30 +2352,15 @@ async function upsertTransactionRow(
       row.txId,
     );
   }
+  const posting = await requestedTransactionBalanceDelta(ctx, row);
   let storedRow = row;
-  if (
-    postsToHouseholdBitcoinLedger(row.owner) &&
-    row.category === "Income" &&
-    row.amountSats !== undefined
-  ) {
-    const key = await riverAccountKey(ctx, row.owner);
-    if (
-      row.bitcoinAccountKey !== undefined &&
-      row.bitcoinAccountKey.trim() !== key
-    ) {
-      deviceFailure(
-        "VALIDATION_FAILED",
-        "Sat-denominated Income must post to the canonical River account.",
-        "transaction",
-        row.txId,
-      );
-    }
+  if (posting) {
     const deltas = new Map<string, bigint>();
-    addDelta(deltas, key, row.amountSats);
+    addDelta(deltas, posting.accountKey, posting.delta);
     await applyBtcAccountDeltas(ctx, row.owner, deltas);
     storedRow = {
       ...row,
-      bitcoinAccountKey: key,
+      bitcoinAccountKey: posting.accountKey,
       balancePostingVersion: 1n,
     };
   }
@@ -2283,6 +2472,14 @@ async function upsertBtcBuyRow(
         row.buyId,
       );
     }
+    if (existing.linkedIncomeId !== row.linkedIncomeId) {
+      deviceFailure(
+        "ENTITY_CONFLICT",
+        "A Bitcoin buy cannot enter or leave the paired-income contract through an ordinary upsert.",
+        "btcBuy",
+        row.buyId,
+      );
+    }
     const same =
       existing.date === row.date &&
       existing.month === row.month &&
@@ -2294,8 +2491,17 @@ async function upsertBtcBuyRow(
       existing.status === row.status &&
       existing.costBasisStatus === row.costBasisStatus &&
       existing.loggedBy === row.loggedBy &&
-      existing.archimedesRequestId === row.archimedesRequestId;
+      existing.archimedesRequestId === row.archimedesRequestId &&
+      existing.linkedIncomeId === row.linkedIncomeId;
     if (same) return "updated";
+    if (existing.linkedIncomeId !== undefined) {
+      deviceFailure(
+        "ENTITY_CONFLICT",
+        "Linked income and its Bitcoin buy are immutable in this contract version.",
+        "btcBuy",
+        row.buyId,
+      );
+    }
     if (
       existing.balancePostingVersion === 1n &&
       optimistic?.baseUpdatedAtMs === undefined
@@ -2382,6 +2588,126 @@ async function upsertBtcBuyRow(
   return "inserted";
 }
 
+type LinkedIncomeInput = {
+  id: string;
+  owner: FamilyMember;
+  date: string;
+  amountCents: bigint;
+  source: string;
+  sourceFile: "income";
+  loggedBy?: string;
+  note?: string;
+  archimedesRequestId?: string;
+};
+
+type LinkedIncomeRow = Omit<Doc<"income">, "_id" | "_creationTime">;
+
+function linkedIncomeRow(
+  buy: Omit<Doc<"btcBuys">, "_id" | "_creationTime">,
+  linkedIncome: LinkedIncomeInput,
+  now: number,
+): LinkedIncomeRow {
+  const linkedOwner = canonicalLedgerOwner(linkedIncome.owner);
+  if (!buy.buyId.trim() || !linkedIncome.source.trim()) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Linked income id and source must not be empty.",
+      "btcBuy",
+      buy.buyId,
+    );
+  }
+  if (!postsToHouseholdBitcoinLedger(buy.owner) || linkedOwner !== "victor") {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Linked Bitcoin-buy income is available only for the adult household ledger.",
+      "btcBuy",
+      buy.buyId,
+    );
+  }
+  if (
+    linkedIncome.id !== buy.buyId ||
+    linkedOwner !== buy.owner ||
+    linkedIncome.date !== buy.date
+  ) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Linked income must have the same id, owner, and date as its Bitcoin buy.",
+      "btcBuy",
+      buy.buyId,
+    );
+  }
+  if (linkedIncome.amountCents !== buy.usdCents) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Linked income amountCents must equal the Bitcoin buy usdCents.",
+      "btcBuy",
+      buy.buyId,
+    );
+  }
+  requireDevicePositive(linkedIncome.amountCents, "linkedIncome.amountCents");
+  return {
+    sourceKey: `id:${linkedIncome.id}`,
+    incomeId: linkedIncome.id,
+    owner: linkedOwner,
+    date: linkedIncome.date,
+    month: monthOf(linkedIncome.date),
+    amountCents: linkedIncome.amountCents,
+    source: linkedIncome.source,
+    loggedBy: optionalText(linkedIncome.loggedBy),
+    note: optionalText(linkedIncome.note),
+    archimedesRequestId: optionalText(linkedIncome.archimedesRequestId),
+    sourceFile: "income",
+    updatedAtMs: now,
+  };
+}
+
+function sameLinkedIncome(existing: Doc<"income">, row: LinkedIncomeRow): boolean {
+  return (
+    existing.sourceKey === row.sourceKey &&
+    existing.incomeId === row.incomeId &&
+    existing.owner === row.owner &&
+    existing.date === row.date &&
+    existing.month === row.month &&
+    existing.amountCents === row.amountCents &&
+    existing.source === row.source &&
+    existing.loggedBy === row.loggedBy &&
+    existing.note === row.note &&
+    existing.archimedesRequestId === row.archimedesRequestId &&
+    existing.sourceFile === row.sourceFile
+  );
+}
+
+/**
+ * Create the canonical income side of an income-plus-buy pair.
+ *
+ * Paired income is intentionally immutable in this first contract. Exact retry
+ * is a no-op, while changed content fails before the buy can be changed. Convex
+ * rolls back the income insert if the later buy upsert fails.
+ */
+async function upsertLinkedIncomeRow(
+  ctx: MutationCtx,
+  row: LinkedIncomeRow,
+): Promise<UpsertOutcome> {
+  const existing = await ctx.db
+    .query("income")
+    .withIndex("by_source_key", (q) =>
+      q.eq("sourceFile", "income").eq("sourceKey", row.sourceKey),
+    )
+    .unique();
+  if (existing) {
+    if (sameLinkedIncome(existing, row)) return "updated";
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      "Linked income is immutable; correct or delete the pair through a future paired flow.",
+      "btcBuy",
+      row.incomeId,
+    );
+  }
+  await lockRuntimeSource(ctx, "income");
+  await ctx.db.insert("income", row);
+  return "inserted";
+}
+
 async function upsertBtcBillPayRow(
   ctx: MutationCtx,
   row: Omit<Doc<"btcBillPays">, "_id" | "_creationTime">,
@@ -2413,11 +2739,16 @@ async function upsertBtcBillPayRow(
         row.billPayId,
       );
     }
+    const existingBudgetEffect = existing.budgetEffect ?? "credit_card_payment";
+    const existingCategory = existingBudgetEffect === "credit_card_payment"
+      ? "Credit Card Payment"
+      : existing.category;
     const same =
       existing.date === row.date &&
       existing.month === row.month &&
       existing.merchant === row.merchant &&
-      existing.category === row.category &&
+      existingCategory === row.category &&
+      existingBudgetEffect === row.budgetEffect &&
       existing.amountUsdCents === row.amountUsdCents &&
       existing.btcSpentSats === row.btcSpentSats &&
       existing.btcPriceCents === row.btcPriceCents &&
@@ -2859,6 +3190,27 @@ function requireBillPayAmounts(billPay: {
   }
 }
 
+function requireBillPayBudgetEffect(billPay: {
+  category: string;
+  budgetEffect: "budget_category" | "credit_card_payment";
+}) {
+  if (billPay.budgetEffect === "credit_card_payment") {
+    if (billPay.category !== "Credit Card Payment") {
+      deviceFailure(
+        "VALIDATION_FAILED",
+        'credit_card_payment bill pays require category "Credit Card Payment".',
+      );
+    }
+    return;
+  }
+  if (!billPay.category.trim()) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "budget_category bill pays require a selected category.",
+    );
+  }
+}
+
 const transactionInput = v.object({
   id: v.string(),
   date: v.string(),
@@ -2938,6 +3290,18 @@ const btcBuyDeviceInput = v.object({
   archimedesRequestId: v.optional(v.string()),
 });
 
+const linkedIncomeInput = v.object({
+  id: v.string(),
+  owner: familyMemberValidator,
+  date: v.string(),
+  amountCents: v.int64(),
+  source: v.string(),
+  sourceFile: v.literal("income"),
+  loggedBy: v.optional(v.string()),
+  note: v.optional(v.string()),
+  archimedesRequestId: v.optional(v.string()),
+});
+
 const btcBuySourceValidator = v.union(
   v.literal("bitcoin-buys"),
   v.literal("mason-bitcoin-buys"),
@@ -2949,6 +3313,7 @@ const btcBillPayDeviceInput = v.object({
   date: v.string(),
   merchant: v.string(),
   category: v.string(),
+  budgetEffect: v.optional(btcBillPayBudgetEffectValidator),
   amountUsdCents: v.int64(),
   btcSpentSats: v.int64(),
   btcPriceCents: v.int64(),
@@ -3043,6 +3408,12 @@ export const upsertTransaction = mutation({
       owner,
       transaction.kind ?? "spend",
       transaction.category,
+    );
+    requireBitcoinPaymentSourceDirection(
+      optionalText(transaction.card),
+      transaction.kind ?? "spend",
+      transaction.category,
+      transaction.id,
     );
     const row = {
       txId: transaction.id,
@@ -3157,7 +3528,7 @@ export const deleteTransaction = mutation({
       if (baseUpdatedAtMs === undefined) {
         deviceFailure(
           "REVISION_REQUIRED",
-          "baseUpdatedAtMs is required to delete posted sat-denominated Income.",
+          "baseUpdatedAtMs is required to delete a posted Bitcoin transaction.",
           "transaction",
           txId,
         );
@@ -3170,11 +3541,10 @@ export const deleteTransaction = mutation({
           txId,
         );
       }
-      if (existing.amountSats === undefined || existing.bitcoinAccountKey === undefined) {
-        throw new ConvexError("Posted Income row is missing its Bitcoin posting fields.");
-      }
+      const posting = storedTransactionBalanceDelta(existing);
+      if (!posting) throw new ConvexError("Posted transaction lost its Bitcoin posting.");
       const deltas = new Map<string, bigint>();
-      addDelta(deltas, existing.bitcoinAccountKey, -existing.amountSats);
+      addDelta(deltas, posting.accountKey, -posting.delta);
       await applyBtcAccountDeltas(ctx, existing.owner, deltas);
     }
     await lockRuntimeSource(ctx, file);
@@ -3271,19 +3641,28 @@ const btcBuyInput = v.object({
 export const upsertBtcBuy = mutation({
   args: {
     buy: btcBuyInput,
+    linkedIncome: v.optional(linkedIncomeInput),
     sourceFile: v.optional(v.string()),
     baseUpdatedAtMs: v.optional(v.float64()),
     token: v.optional(v.string()),
   },
-  handler: async (ctx, { buy, sourceFile, baseUpdatedAtMs, token }) => {
+  handler: async (
+    ctx,
+    { buy, linkedIncome, sourceFile, baseUpdatedAtMs, token },
+  ) => {
     validateSyncToken(token);
     const file = sourceFile ?? "bitcoin-buys";
     const fileOwner = ownerForSourceFile(file, "btcBuys");
     const now = Date.now();
     const date = requireIsoDate(buy.date, "date", now, 30, rejectRowDate);
+    const resolvedOwner = resolveOwner(buy.owner, fileOwner);
+    const owner = linkedIncome
+      ? canonicalLedgerOwner(resolvedOwner)
+      : resolvedOwner;
+    if (linkedIncome) requireSourceOwner(file, "btcBuys", owner);
     const row = {
       buyId: buy.id,
-      owner: resolveOwner(buy.owner, fileOwner),
+      owner,
       date,
       month: monthOf(date),
       source: buy.source,
@@ -3295,9 +3674,15 @@ export const upsertBtcBuy = mutation({
       costBasisStatus: optionalText(buy.costBasisStatus),
       loggedBy: optionalText(buy.loggedBy),
       archimedesRequestId: optionalText(buy.archimedesRequestId),
+      ...(linkedIncome === undefined
+        ? {}
+        : { linkedIncomeId: linkedIncome.id }),
       sourceFile: file,
       updatedAtMs: now,
     };
+    if (linkedIncome) {
+      await upsertLinkedIncomeRow(ctx, linkedIncomeRow(row, linkedIncome, now));
+    }
     const outcome = await upsertBtcBuyRow(
       ctx,
       row,
@@ -3312,6 +3697,7 @@ const btcBillPayInput = v.object({
   date: v.string(),
   merchant: v.string(),
   category: v.string(),
+  budgetEffect: v.optional(btcBillPayBudgetEffectValidator),
   amountUsdCents: v.int64(),
   btcSpentSats: v.int64(),
   btcPriceCents: v.int64(),
@@ -3350,13 +3736,19 @@ export const upsertBtcBillPay = mutation({
     // could store negatives and make every aggregate under-report by twice the
     // payment.
     requireBillPayAmounts(billPay);
+    const budgetEffect = billPay.budgetEffect ?? "credit_card_payment";
+    const category = budgetEffect === "credit_card_payment"
+      ? "Credit Card Payment"
+      : billPay.category;
+    requireBillPayBudgetEffect({ category, budgetEffect });
     const row = {
       billPayId: billPay.id,
       owner: resolveOwner(billPay.owner, fileOwner),
       date,
       month: monthOf(date),
       merchant: billPay.merchant,
-      category: billPay.category,
+      category,
+      budgetEffect,
       amountUsdCents: billPay.amountUsdCents,
       btcSpentSats: billPay.btcSpentSats,
       btcPriceCents: billPay.btcPriceCents,
@@ -3950,11 +4342,10 @@ async function deleteTransactionCore(
     );
   }
   if (existing?.balancePostingVersion === 1n) {
-    if (existing.amountSats === undefined || existing.bitcoinAccountKey === undefined) {
-      throw new ConvexError("Posted Income row is missing its Bitcoin posting fields.");
-    }
+    const posting = storedTransactionBalanceDelta(existing);
+    if (!posting) throw new ConvexError("Posted transaction lost its Bitcoin posting.");
     const deltas = new Map<string, bigint>();
-    addDelta(deltas, existing.bitcoinAccountKey, -existing.amountSats);
+    addDelta(deltas, posting.accountKey, -posting.delta);
     await applyBtcAccountDeltas(ctx, existing.owner, deltas);
   }
   await lockRuntimeSource(ctx, sourceFile);
@@ -4183,6 +4574,14 @@ async function deleteBtcBuyCore(
     deviceFailure(
       "ENTITY_CONFLICT",
       "The bitcoin buy changed after it was read.",
+      "btcBuy",
+      buyId,
+    );
+  }
+  if (existing?.linkedIncomeId !== undefined) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "A linked income Bitcoin buy cannot be deleted until paired correction and deletion are implemented.",
       "btcBuy",
       buyId,
     );
@@ -4843,6 +5242,7 @@ export const upsertTransactionFromDevice = mutation({
       args.transaction.bitcoinAccountKey,
       "transaction.bitcoinAccountKey",
     );
+    validateDeviceTransactionPaymentSource(args.transaction, existing);
     const ledgerOwner = canonicalLedgerOwner(args.owner);
     requireSourceOwner(args.sourceFile, "transactions", ledgerOwner);
     if (args.transaction.owner !== args.owner) {
@@ -4866,6 +5266,12 @@ export const upsertTransactionFromDevice = mutation({
       ledgerOwner,
       args.transaction.kind,
       args.transaction.category,
+    );
+    requireBitcoinPaymentSourceDirection(
+      optionalText(args.transaction.card),
+      args.transaction.kind,
+      args.transaction.category,
+      args.transaction.id,
     );
     const outcome = await upsertTransactionRow(
       ctx,
@@ -5128,6 +5534,7 @@ export const upsertBtcBuyFromDevice = mutation({
     sourceFile: btcBuySourceValidator,
     baseUpdatedAtMs: v.optional(v.float64()),
     buy: btcBuyDeviceInput,
+    linkedIncome: v.optional(linkedIncomeInput),
   },
   returns: deviceUpsertResultValidator,
   handler: async (ctx, args) => {
@@ -5137,6 +5544,14 @@ export const upsertBtcBuyFromDevice = mutation({
       args.deviceToken,
       "bitcoin:write",
     );
+    if (args.linkedIncome) {
+      await authenticateDevice(
+        ctx,
+        args.deviceId,
+        args.deviceToken,
+        "transactions:write",
+      );
+    }
     requireDeviceRevision(args.baseUpdatedAtMs, false);
     requireDeviceIdentifier(args.buy.id, "buy.id");
     requireDeviceText(args.buy.source, "buy.source");
@@ -5151,6 +5566,27 @@ export const upsertBtcBuyFromDevice = mutation({
       args.buy.archimedesRequestId,
       "buy.archimedesRequestId",
     );
+    if (args.linkedIncome) {
+      requireDeviceIdentifier(args.linkedIncome.id, "linkedIncome.id");
+      requireDeviceText(args.linkedIncome.source, "linkedIncome.source");
+      requireDeviceOptionalText(args.linkedIncome.note, "linkedIncome.note");
+      requireDeviceOptionalText(
+        args.linkedIncome.loggedBy,
+        "linkedIncome.loggedBy",
+      );
+      requireDeviceOptionalText(
+        args.linkedIncome.archimedesRequestId,
+        "linkedIncome.archimedesRequestId",
+      );
+      if (args.linkedIncome.owner !== args.buy.owner) {
+        deviceFailure(
+          "OWNER_MISMATCH",
+          "Linked income owner must match the Bitcoin buy owner.",
+          "btcBuy",
+          args.buy.id,
+        );
+      }
+    }
     const ledgerOwner = canonicalLedgerOwner(args.owner);
     requireSourceOwner(args.sourceFile, "btcBuys", ledgerOwner);
     if (args.buy.owner !== args.owner) {
@@ -5169,25 +5605,35 @@ export const upsertBtcBuyFromDevice = mutation({
       30,
       rejectDeviceDate,
     );
+    const row = {
+      buyId: args.buy.id,
+      owner: ledgerOwner,
+      date,
+      month: monthOf(date),
+      source: args.buy.source,
+      sats: args.buy.sats,
+      priceUsdCents: args.buy.priceUsdCents,
+      usdCents: args.buy.usdCents,
+      note: optionalText(args.buy.note),
+      status: optionalText(args.buy.status),
+      costBasisStatus: optionalText(args.buy.costBasisStatus),
+      loggedBy: optionalText(args.buy.loggedBy),
+      archimedesRequestId: optionalText(args.buy.archimedesRequestId),
+      ...(args.linkedIncome === undefined
+        ? {}
+        : { linkedIncomeId: args.linkedIncome.id }),
+      sourceFile: args.sourceFile,
+      updatedAtMs: now,
+    };
+    if (args.linkedIncome) {
+      await upsertLinkedIncomeRow(
+        ctx,
+        linkedIncomeRow(row, args.linkedIncome, now),
+      );
+    }
     const outcome = await upsertBtcBuyRow(
       ctx,
-      {
-        buyId: args.buy.id,
-        owner: ledgerOwner,
-        date,
-        month: monthOf(date),
-        source: args.buy.source,
-        sats: args.buy.sats,
-        priceUsdCents: args.buy.priceUsdCents,
-        usdCents: args.buy.usdCents,
-        note: optionalText(args.buy.note),
-        status: optionalText(args.buy.status),
-        costBasisStatus: optionalText(args.buy.costBasisStatus),
-        loggedBy: optionalText(args.buy.loggedBy),
-        archimedesRequestId: optionalText(args.buy.archimedesRequestId),
-        sourceFile: args.sourceFile,
-        updatedAtMs: now,
-      },
+      row,
       { baseUpdatedAtMs: args.baseUpdatedAtMs },
     );
     await markDeviceSeen(ctx, device);
@@ -5248,6 +5694,14 @@ export const upsertBtcBillPayFromDevice = mutation({
     requireDeviceText(args.billPay.merchant, "billPay.merchant");
     requireDeviceText(args.billPay.category, "billPay.category");
     requireDeviceOptionalText(args.billPay.platform, "billPay.platform");
+    if (args.billPay.platform !== "river_bitcoin_bill_pay") {
+      deviceFailure(
+        "VALIDATION_FAILED",
+        "Bitcoin bill pay platform must be river_bitcoin_bill_pay.",
+        "btcBillPay",
+        args.billPay.id,
+      );
+    }
     requireDeviceOptionalText(args.billPay.note, "billPay.note");
     requireDeviceOptionalText(args.billPay.reference, "billPay.reference");
     if (args.billPay.owner !== args.owner) {
@@ -5261,6 +5715,11 @@ export const upsertBtcBillPayFromDevice = mutation({
     const ledgerOwner = canonicalLedgerOwner(args.owner);
     requireSourceOwner(args.sourceFile, "btcBillPays", ledgerOwner);
     requireBillPayAmounts(args.billPay);
+    const budgetEffect = args.billPay.budgetEffect ?? "credit_card_payment";
+    const category = budgetEffect === "credit_card_payment"
+      ? "Credit Card Payment"
+      : args.billPay.category;
+    requireBillPayBudgetEffect({ category, budgetEffect });
     const now = Date.now();
     const date = requireIsoDate(
       args.billPay.date,
@@ -5277,7 +5736,8 @@ export const upsertBtcBillPayFromDevice = mutation({
         date,
         month: monthOf(date),
         merchant: args.billPay.merchant,
-        category: args.billPay.category,
+        category,
+        budgetEffect,
         amountUsdCents: args.billPay.amountUsdCents,
         btcSpentSats: args.billPay.btcSpentSats,
         btcPriceCents: args.billPay.btcPriceCents,

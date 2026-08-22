@@ -74,7 +74,6 @@ const schemaPath = path.join(process.cwd(), "convex", "schema.ts");
 const attestationPath = path.join(
   process.cwd(),
   "convex",
-  "_generated",
   "schema.sha256",
 );
 const schemaDigest = createHash("sha256")

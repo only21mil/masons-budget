@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import { normalizeTransaction } from "../src/readModel.ts"
+import { normalizeBTCBillPay, normalizeTransaction } from "../src/readModel.ts"
 
 // The Transaction type has carried amountSats/bitcoinAccountKey/
 // balancePostingVersion since the Bitcoin ledger landed, but the normalizer
@@ -76,4 +76,36 @@ test("normalizeTransaction refuses a fractional sats value rather than rounding 
   })
 
   assert.equal(row.amountSats, undefined)
+})
+
+test("normalizeBTCBillPay keeps a closed budget effect and defaults legacy rows to excluded", () => {
+  const budgeted = normalizeBTCBillPay({
+    id: "bill-budgeted",
+    date: "2026-08-20",
+    merchant: "Utility",
+    category: "Utilities",
+    budgetEffect: "budget_category",
+    amountUsdCents: 7_500n,
+    btcSpentSats: 10_000n,
+    btcPriceCents: 7_500_000n,
+    feeUsdCents: 0n,
+    owner: "victor",
+  })
+  assert.equal(budgeted.budgetEffect, "budget_category")
+  assert.equal(budgeted.category, "Utilities")
+  assert.equal(budgeted.amountUsd, 7_500n)
+
+  const legacy = normalizeBTCBillPay({
+    id: "bill-legacy",
+    date: "2026-08-20",
+    merchant: "Aven",
+    category: "Bills",
+    amount_usd: "75",
+    btc_spent: "0.001",
+    btc_price: "75000",
+    fee_usd: "0",
+    owner: "victor",
+  })
+  assert.equal(legacy.budgetEffect, "credit_card_payment")
+  assert.equal(legacy.category, "Credit Card Payment")
 })

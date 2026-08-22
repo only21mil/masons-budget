@@ -25,7 +25,6 @@ import {
 import { basisPoints, formatUsd, satsToUsdCents, sum } from "@vogel-vault/domain/money"
 import {
   type BTCAccount,
-  type BTCBillPay,
   type BTCSnapshot,
   type BTCBuy,
   type BudgetCategory,
@@ -50,6 +49,7 @@ import {
   formatBitcoin,
 } from "../../data/bitcoinDisplay.ts"
 import {
+  budgetBillPaysFor,
   deriveBudgetSpend,
   displaySpendAmount,
   hasOppositeSpendSign,
@@ -91,9 +91,15 @@ import {
   StatusBanner,
   TransactionFormDialog,
 } from "../../components/index.ts"
-import { mutationOwner, stableId } from "../../data/mutations.ts"
+import { linkedBitcoinBuyFor, mutationOwner, stableId } from "../../data/mutations.ts"
+import { paymentSourceDisplay } from "../../data/paymentSource.ts"
+import {
+  type BillPayPrefill,
+  type LinuxBillPay,
+  BILL_PAY_BUDGET_EFFECT_LABELS,
+} from "../../data/billPayBudgetEffect.ts"
 import type { MutationGate } from "../../data/mutations.ts"
-import type { BtcTransferRecord } from "../../data/fixtures.ts"
+import type { BtcTransferRecord, IncomeRecord } from "../../data/fixtures.ts"
 import type { PageManifest } from "../types.ts"
 
 // ── shared helpers ──────────────────────────────────────────────────────────
@@ -374,6 +380,23 @@ export function dashboardIncomeMtd(
 }
 
 /**
+ * Income rows the Budget tab reports for one month, newest first.
+ *
+ * Net-worth scope, not visibility: an adult can see a child's income but it
+ * never belongs in the household budget's income. Same scope and month
+ * predicate as the Dashboard KPI, so the two cannot disagree.
+ */
+export function budgetIncomeRows(
+  viewer: FamilyMember,
+  month: string,
+  rows: readonly IncomeRecord[],
+): readonly IncomeRecord[] {
+  return netWorthScopeFor(viewer, rows)
+    .filter((row) => row.month === month)
+    .toSorted((left, right) => right.date.localeCompare(left.date))
+}
+
+/**
  * Colour and sign for a transaction row.
  *
  * Income is category-based; for non-Income rows, positive is spend and negative
@@ -465,6 +488,54 @@ function TransactionActions({ transaction }: { transaction: Transaction }) {
         busy={deleting}
         onCancel={() => setConfirming(false)}
         onConfirm={() => void remove()}
+      />
+    </>
+  )
+}
+
+/**
+ * The Add-transaction dialog and the bill-pay form it hands River off to.
+ *
+ * One host owns both open states, which is what lets choosing "River Bitcoin
+ * Bill Pay" while adding a transaction close this form and open that one seeded
+ * with what has already been typed. Nothing is written on the way across: the
+ * bill-pay form keeps its own `btcBillPay.upsert` gate and still asks for the
+ * sats, the BTC price, and the fee before anything is saved.
+ *
+ * Editing an existing transaction is deliberately not a hand-off — a stored row
+ * cannot become a bill pay — so those call sites keep the plain dialog.
+ */
+function AddTransactionDialogs({
+  open,
+  defaultCategory,
+  submissionGate,
+  onClose,
+}: {
+  open: boolean
+  defaultCategory?: string
+  submissionGate?: MutationGate
+  onClose: () => void
+}) {
+  const [billPayPrefill, setBillPayPrefill] = useState<BillPayPrefill | null>(null)
+
+  return (
+    <>
+      <TransactionFormDialog
+        open={open && billPayPrefill === null}
+        transaction={null}
+        defaultCategory={defaultCategory}
+        submissionGate={submissionGate}
+        onRecordAsBillPay={(prefill) => {
+          setBillPayPrefill(prefill)
+          onClose()
+        }}
+        onClose={onClose}
+      />
+      <BillPayFormDialog
+        open={billPayPrefill !== null}
+        payment={null}
+        prefill={billPayPrefill ?? undefined}
+        onClose={() => setBillPayPrefill(null)}
       />
     </>
   )
@@ -587,7 +658,7 @@ function BtcBuyActions({ buy }: { buy: BTCBuy }) {
   )
 }
 
-function BillPayActions({ payment }: { payment: BTCBillPay }) {
+function BillPayActions({ payment }: { payment: LinuxBillPay }) {
   const { activeProfile, data, isMutationPending, mutationGate, submitMutation } = useAppState()
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -941,7 +1012,13 @@ function transactionColumns(
     { key: "merchant", header: "Merchant", render: (row) => row.merchant },
     { key: "category", header: "Category", render: (row) => <Badge>{row.category}</Badge>, secondary: !detailed },
     ...(detailed ? [
-      { key: "card", header: "Card", render: (row: Transaction) => row.card ?? "—", secondary: true },
+      {
+        key: "card",
+        header: "Source",
+        // A card string the closed list does not know is shown verbatim.
+        render: (row: Transaction) => paymentSourceDisplay(row) ?? "—",
+        secondary: true,
+      },
       { key: "owner", header: "Owner", render: (row: Transaction) => <Badge tone="neutral">{row.owner}</Badge>, secondary: true },
     ] : []),
     {
@@ -1001,6 +1078,7 @@ function BudgetPage() {
     selectedMonth,
   } = useAppState()
   const [adding, setAdding] = useState(false)
+  const [addingIncome, setAddingIncome] = useState(false)
   const [drilldownCategory, setDrilldownCategory] = useState<string | null>(null)
   const budget = data.budget.value
 
@@ -1025,7 +1103,8 @@ function BudgetPage() {
   // because deriveBudgetSpend reads its month from the budget — one source of
   // truth for the filter, so the categories, the totals and the panel caption
   // cannot drift apart.
-  const spend = deriveBudgetSpend({ ...budget, month: scope.month }, transactions)
+  const billPays = budgetBillPaysFor(activeProfile, data.billPays.value)
+  const spend = deriveBudgetSpend({ ...budget, month: scope.month }, transactions, billPays)
   const { planned, actual, remaining, overBudgetCount: overCount } = spend
   const actualsStatus = budgetActualsStatus(data.budget, data.transactions)
   const actualsUnavailable =
@@ -1037,6 +1116,34 @@ function BudgetPage() {
     scope.month,
     budget.month,
   )
+  const incomeGate = mutationGate(
+    "transaction.upsert",
+    data.income.status,
+    mutationOwner("transaction.upsert", activeProfile),
+  )
+  const incomeRows = budgetIncomeRows(activeProfile, scope.month, data.income.value)
+  const incomeColumns: ReadonlyArray<Column<IncomeRecord>> = [
+    { key: "date", header: "Date", render: (row) => row.date, width: "104px" },
+    { key: "source", header: "Source", render: (row) => row.source },
+    {
+      key: "amount",
+      header: "Amount",
+      numeric: true,
+      render: (row) => <span className="vv-positive">{formatUsd(row.amount)}</span>,
+    },
+    {
+      key: "bitcoin",
+      header: "Bitcoin",
+      render: (row) => {
+        // The pair shares one id, so a matching buy IS the linkage.
+        const buy = linkedBitcoinBuyFor(row.id, data.btcBuys.value)
+        return buy
+          ? <Badge tone="accent">{`Bitcoin buy · ${formatBitcoin(buy.sats, "sats")}`}</Badge>
+          : "—"
+      },
+      secondary: true,
+    },
+  ]
   const interactiveBudgetColumns: ReadonlyArray<Column<CategorySpend>> = [
     {
       key: "name",
@@ -1084,6 +1191,13 @@ function BudgetPage() {
               title={addGate.reason ?? undefined}
             >
               Add category
+            </Button>
+            <Button
+              onClick={() => setAddingIncome(true)}
+              disabled={!incomeGate.allowed}
+              title={incomeGate.reason ?? undefined}
+            >
+              Add income
             </Button>
             {actualsUnavailable ? null : <MonthPicker scope={scope} label="Budget month" />}
             <FreshnessTag status={data.budget.status} updatedAt={data.budget.updatedAt} />
@@ -1142,11 +1256,31 @@ function BudgetPage() {
           }
         />
       </Panel>
+      <Panel
+        title="Income"
+        source={`${data.income.source} · net-worth scope, ${scope.month}`}
+        flush
+      >
+        <DataTable
+          columns={incomeColumns}
+          rows={incomeRows}
+          rowKey={(row) => row.id}
+          state={tableState(data.income.status)}
+          emptyTitle="No income this month"
+          emptyDetail="Income recorded for this month appears here, with its Bitcoin purchase when it funded one."
+        />
+      </Panel>
       <BudgetCategoryFormDialog
         open={adding}
         category={null}
         month={budget.month}
         onClose={() => setAdding(false)}
+      />
+      <AddTransactionDialogs
+        open={addingIncome}
+        defaultCategory="Income"
+        submissionGate={incomeGate}
+        onClose={() => setAddingIncome(false)}
       />
       {drilldownCategory ? (
         <BudgetCategoryTransactionsDialog
@@ -1379,7 +1513,7 @@ function ActivityPage() {
           footer={`${transactions.length} of ${data.transactions.value.length} records visible to ${activeProfile}`}
         />
       </Panel>
-      <TransactionFormDialog open={adding} transaction={null} onClose={() => setAdding(false)} />
+      <AddTransactionDialogs open={adding} onClose={() => setAdding(false)} />
     </>
   )
 }
@@ -1785,6 +1919,14 @@ function BillsPage() {
           </>
         }
       />
+      {/* A disabled button's tooltip never opens in Chromium, so say why here. */}
+      {addGate.allowed ? null : (
+        <StatusBanner
+          tone="warning"
+          title="Adding a bill payment is unavailable"
+          detail={addGate.reason ?? "This action is unavailable."}
+        />
+      )}
       <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
       <StaleNotice status={data.billPays.status} />
       <BitcoinQuoteNotice available={displayUnit === "usd" || quote !== null} />
@@ -1833,6 +1975,16 @@ function BillsPage() {
             { key: "merchant", header: "Payee", render: (row) => row.merchant },
             { key: "category", header: "Category", render: (row) => <Badge>{row.category}</Badge>, secondary: true },
             {
+              key: "budgetEffect",
+              header: "Budget",
+              render: (row) => (
+                <Badge tone={row.budgetEffect === "budget_category" ? "warning" : "neutral"}>
+                  {BILL_PAY_BUDGET_EFFECT_LABELS[row.budgetEffect]}
+                </Badge>
+              ),
+              secondary: true,
+            },
+            {
               key: "amount",
               header: displayUnit === "sats" ? "Sats" : displayUnit.toUpperCase(),
               numeric: true,
@@ -1868,26 +2020,23 @@ function BillsPage() {
   )
 }
 
-// ── Retirement ──────────────────────────────────────────────────────────────
+// ── Net Worth ───────────────────────────────────────────────────────────────
 
-function RetirementPage() {
-  const { activeProfile, displayUnit, financeModel, stateOverride } = useAppState()
-  const accounts = financeAccounts(activeProfile, financeModel)
-  const retirementValueCents = sum(accounts.map((account) => account.valueCents))
+/**
+ * Retirement detail, rendered inside Net Worth.
+ *
+ * The valuations are passed in rather than re-derived so this table can only
+ * ever show the accounts the net-worth headline already counted — one scope,
+ * one total, no double count. Everything else (freshness, the unavailable
+ * states) comes from the same finance slice the headline reads.
+ */
+function RetirementAccountsPanel({ accounts }: { accounts: readonly AccountValuation[] }) {
+  const { displayUnit, financeModel, stateOverride } = useAppState()
   const btcQuote = operationalBtcQuote(financeModel)
-  const staleQuoteSymbols = Array.from(new Set([
-    ...accounts.flatMap((account) => account.holdings.flatMap((holding) =>
-      holding.basis === "market-quote" && holding.quote?.status === "stale"
-        ? [holding.quote.symbol]
-        : [],
-    )),
-    ...(displayUnit !== "usd" && btcQuote?.status === "stale" ? [btcQuote.symbol] : []),
-  ]))
+  const showFinance = stateOverride === "normal" && financeModel.finance.status === "live"
   const updatedAt = financeModel.finance.status === "live"
     ? financeModel.finance.value.updatedAtMs
     : null
-  const showFinance = stateOverride === "normal" && financeModel.finance.status === "live"
-  const btcPriceCents = btcQuote?.priceCents ?? null
   const overrideState = financeOverrideState(stateOverride)
   const financeBlockState = overrideState
     ? overrideState
@@ -1899,141 +2048,91 @@ function RetirementPage() {
     : stateOverride === "demo" ? "empty" : stateOverride
 
   return (
-    <>
-      <PageHeader
-        title="Retirement"
-        showDisplayUnit
-        subtitle="Long-horizon accounts"
-        actions={
-          <FreshnessTag status={financeStatus} updatedAt={showFinance ? updatedAt : null} />
-        }
-      />
-      <BitcoinQuoteNotice
-        available={
-          displayUnit === "usd" ||
-          btcPriceCents !== null ||
-          (!showFinance && financeModel.marketQuotes.status !== "live")
-        }
-      />
-      <KPIStrip
-        items={[
-          {
-            label: "Retirement total",
-            value: showFinance
-              ? formatFinanceCents(retirementValueCents, displayUnit, btcQuote)
-              : SUPPRESSED,
-            provenance: staleQuoteSymbols.length > 0 ? "stale" : "actual",
-            hint: staleQuoteSymbols.length > 0
-              ? `Revalued with stale ${staleQuoteSymbols.join("/")} market ${
-                  staleQuoteSymbols.length === 1 ? "quote" : "quotes"
-                }`
-              : undefined,
-          },
-          {
-            label: "Accounts",
-            value: showFinance
-              ? String(accounts.length)
-              : SUPPRESSED,
-            provenance: "actual",
-          },
-        ]}
-      />
-      <Panel
-        title="Retirement accounts"
-        source={showFinance
-          ? `Synced finance document · ${financeModel.finance.value.lastUpdated}`
-          : "Authenticated finance document unavailable"}
-        flush
-      >
-        {showFinance ? (
-          <DataTable
-            columns={[
-              {
-                key: "provider",
-                header: "Account",
-                render: (row) => (
-                  <>
-                    <strong>{row.account.provider}</strong>
-                    <div className="vv-dim">{displayName(row.account.owner)}</div>
-                  </>
-                ),
-              },
-              {
-                key: "value",
-                header: `Value (${displayUnit.toUpperCase()})`,
-                numeric: true,
-                render: (row) => formatFinanceCents(row.valueCents, displayUnit, btcQuote),
-              },
-              {
-                key: "weekly",
-                header: "Weekly contribution",
-                numeric: true,
-                render: (row) => formatFinanceCents(
-                  row.account.weeklyContributionCents,
-                  displayUnit,
-                  btcQuote,
-                ),
-              },
-              {
-                key: "day",
-                header: "Schedule",
-                render: (row) => row.account.weeklyContributionDay ?? "Not scheduled",
-                secondary: true,
-              },
-              {
-                key: "holdings",
-                header: "Holding details",
-                render: (row) => row.holdings.length === 0 ? (
-                  <span className="vv-dim">No holding detail</span>
-                ) : (
-                  <div>
-                    {row.holdings.map((holding, index) => (
-                      <div key={`${holding.holding.name}:${index}`}>
-                        <strong>{holding.holding.name}</strong>
-                        {holding.holding.ticker ? ` · ${holding.holding.ticker}` : ""}
-                        {` · ${holding.holding.sharesDecimal} shares · `}
-                        {formatFinanceCents(holding.valueCents, displayUnit, btcQuote)}
-                        <div className="vv-dim">
-                          {holdingBasis(row, holding.holding.ticker)}
-                        </div>
+    <Panel
+      title="Retirement accounts"
+      source={showFinance
+        ? `Synced finance document · ${financeModel.finance.value.lastUpdated}`
+        : "Authenticated finance document unavailable"}
+      actions={
+        <FreshnessTag status={financeStatus} updatedAt={showFinance ? updatedAt : null} />
+      }
+      flush
+    >
+      {showFinance ? (
+        <DataTable
+          columns={[
+            {
+              key: "provider",
+              header: "Account",
+              render: (row) => (
+                <>
+                  <strong>{row.account.provider}</strong>
+                  <div className="vv-dim">{displayName(row.account.owner)}</div>
+                </>
+              ),
+            },
+            {
+              key: "value",
+              header: `Value (${displayUnit.toUpperCase()})`,
+              numeric: true,
+              render: (row) => formatFinanceCents(row.valueCents, displayUnit, btcQuote),
+            },
+            {
+              key: "weekly",
+              header: "Weekly contribution",
+              numeric: true,
+              render: (row) => formatFinanceCents(
+                row.account.weeklyContributionCents,
+                displayUnit,
+                btcQuote,
+              ),
+            },
+            {
+              key: "day",
+              header: "Schedule",
+              render: (row) => row.account.weeklyContributionDay ?? "Not scheduled",
+              secondary: true,
+            },
+            {
+              key: "holdings",
+              header: "Holding details",
+              render: (row) => row.holdings.length === 0 ? (
+                <span className="vv-dim">No holding detail</span>
+              ) : (
+                <div>
+                  {row.holdings.map((holding, index) => (
+                    <div key={`${holding.holding.name}:${index}`}>
+                      <strong>{holding.holding.name}</strong>
+                      {holding.holding.ticker ? ` · ${holding.holding.ticker}` : ""}
+                      {` · ${holding.holding.sharesDecimal} shares · `}
+                      {formatFinanceCents(holding.valueCents, displayUnit, btcQuote)}
+                      <div className="vv-dim">
+                        {holdingBasis(row, holding.holding.ticker)}
                       </div>
-                    ))}
-                  </div>
-                ),
-              },
-            ] satisfies ReadonlyArray<Column<AccountValuation>>}
-            rows={accounts}
-            rowKey={(row) => row.account.key}
-            state={accounts.length > 0 ? "normal" : "empty"}
-            emptyTitle="No retirement accounts"
-            emptyDetail="No net-worth-scoped retirement accounts were returned for this profile."
-          />
-        ) : (
-          <StateBlock
-            state={financeBlockState}
-            title={financeBlockState === "error"
-              ? "Retirement read failed"
-              : financeBlockState === "empty" ? "No retirement document" : undefined}
-            detail="No fixture balances are substituted for synchronized retirement holdings."
-          />
-        )}
-      </Panel>
-      <Panel title="Market quote snapshot" source="Operational prices · separate from the finance ledger" flush>
-        {stateOverride === "normal" ? (
-          <QuoteSnapshot
-            quotes={financeModel.marketQuotes}
-            displayUnit={displayUnit}
-            btcPriceCents={btcPriceCents}
-          />
-        ) : (
-          <StateBlock state={financeBlockState} detail="No QA fixture is presented as a market quote." />
-        )}
-      </Panel>
-    </>
+                    </div>
+                  ))}
+                </div>
+              ),
+            },
+          ] satisfies ReadonlyArray<Column<AccountValuation>>}
+          rows={accounts}
+          rowKey={(row) => row.account.key}
+          state={accounts.length > 0 ? "normal" : "empty"}
+          emptyTitle="No retirement accounts"
+          emptyDetail="No net-worth-scoped retirement accounts were returned for this profile."
+        />
+      ) : (
+        <StateBlock
+          state={financeBlockState}
+          title={financeBlockState === "error"
+            ? "Retirement read failed"
+            : financeBlockState === "empty" ? "No retirement document" : undefined}
+          detail="No fixture balances are substituted for synchronized retirement holdings."
+        />
+      )}
+    </Panel>
   )
 }
-
-// ── Net Worth ───────────────────────────────────────────────────────────────
 
 function NetWorthPage() {
   const { activeProfile, data, displayUnit, financeModel, stateOverride } = useAppState()
@@ -2054,8 +2153,16 @@ function NetWorthPage() {
   const accounts = financeAccounts(activeProfile, financeModel)
   const retirementValueCents = sum(accounts.map((account) => account.valueCents))
   const btcQuote = operationalBtcQuote(financeModel)
-  const financeLoaded = financeModel.finance.status === "live"
+  const financeLoaded = stateOverride === "normal" && financeModel.finance.status === "live"
   const quotesLoaded = financeModel.marketQuotes.status === "live"
+  const staleQuoteSymbols = Array.from(new Set([
+    ...accounts.flatMap((account) => account.holdings.flatMap((holding) =>
+      holding.basis === "market-quote" && holding.quote?.status === "stale"
+        ? [holding.quote.symbol]
+        : [],
+    )),
+    ...(displayUnit !== "usd" && btcQuote?.status === "stale" ? [btcQuote.symbol] : []),
+  ]))
   const totalAvailable = selection !== null && financeLoaded && quotesLoaded &&
     selection.totalValueCents !== null
   const btcPriceCents = selection?.btcQuote?.priceCents ?? btcQuote?.priceCents ?? null
@@ -2073,7 +2180,7 @@ function NetWorthPage() {
       <PageHeader
         title="Net Worth"
         showDisplayUnit
-        subtitle="Household scope for adults; self only for children"
+        subtitle="Bitcoin and retirement · household scope for adults, self only for children"
         actions={
           <FreshnessTag
             status={data.btcBalanceDocument.status}
@@ -2135,8 +2242,12 @@ function NetWorthPage() {
             value: financeLoaded
               ? formatFinanceCents(retirementValueCents, displayUnit, btcQuote)
               : SUPPRESSED,
-            hint: financeLoaded ? `${accounts.length} scoped account(s)` : undefined,
-            provenance: "estimated",
+            hint: staleQuoteSymbols.length > 0
+              ? `Revalued with stale ${staleQuoteSymbols.join("/")} market ${
+                  staleQuoteSymbols.length === 1 ? "quote" : "quotes"
+                } · ${accounts.length} scoped account(s)`
+              : financeLoaded ? `${accounts.length} scoped account(s)` : undefined,
+            provenance: staleQuoteSymbols.length > 0 ? "stale" : "estimated",
           },
           {
             label: isAdult(activeProfile) ? "Adult net worth" : "Net worth",
@@ -2222,6 +2333,7 @@ function NetWorthPage() {
           />
         </Panel>
       </PageGrid>
+      <RetirementAccountsPanel accounts={accounts} />
       <Panel title="Market quote snapshot" source="Operational prices · never inferred from buys" flush>
         {overrideState ? (
           <StateBlock state={overrideState} detail="No QA fixture is presented as a market quote." />
@@ -2249,7 +2361,8 @@ export const financePageManifest: PageManifest = {
     { id: "bitcoin", label: "Bitcoin Overview", icon: "bitcoin", Component: BitcoinOverviewPage },
     { id: "bitcoin-buys", label: "Bitcoin Buys", icon: "wallet", Component: BitcoinBuysPage },
     { id: "bills", label: "Bills", icon: "receipt", Component: BillsPage },
-    { id: "retirement", label: "Retirement", icon: "retirement", Component: RetirementPage, adultOnly: true },
+    // Retirement has no tab of its own: its accounts and total live on Net
+    // Worth, which is the only page that already combines both scopes.
     { id: "net-worth", label: "Net Worth", icon: "bank", Component: NetWorthPage },
   ],
 }

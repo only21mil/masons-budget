@@ -3,102 +3,15 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
 import { AppStateProvider } from "../src/renderer/app/AppState.tsx"
-import { buildSanitizedFixtureEnvelope } from "../src/renderer/data/fixtures.ts"
-import type {
-  RendererMutationAdapter,
-  RendererMutationKind,
-} from "../src/renderer/data/mutations.ts"
 import { ALL_PAGES } from "../src/renderer/pages/index.ts"
 import { TaskClockProvider } from "../src/renderer/pages/tasks/taskClock.tsx"
-
-const capabilities: readonly RendererMutationKind[] = [
-  "transaction.upsert",
-  "transaction.delete",
-  "todo.upsert",
-  "todo.delete",
-  "budgetCategory.upsert",
-  "budgetCategory.delete",
-  "btcBuy.upsert",
-  "btcBuy.delete",
-  "btcBillPay.upsert",
-  "btcBillPay.delete",
-  "btcAccount.upsert",
-  "btcAccount.delete",
-  "btcTransfer.upsert",
-  "btcTransfer.delete",
-]
-
-const adapter: RendererMutationAdapter = {
-  getPairingStatus: async () => ({
-    status: "paired",
-    pairedAt: 1,
-    capabilities,
-    writesEnabled: true,
-  }),
-  pairDevice: async () => ({ status: "paired", pairedAt: 1, capabilities }),
-  mutateConvexRow: async (request) => ({
-    status: "ok",
-    requestId: request.requestId,
-    kind: request.kind,
-    outcome: request.kind.endsWith(".delete") ? "deleted" : "updated",
-    entityId: "id" in request ? request.id : "key" in request ? request.key : request.name,
-  }),
-  unpairDevice: async () => ({ status: "ok", revoked: true }),
-}
-
-const fixtureNow = () => new Date(2026, 6, 26, 12, 0, 0)
-
-function liveEnvelope(profile: "victor" | "rachel" | "mason" | "maddox" = "victor") {
-  const data = buildSanitizedFixtureEnvelope(profile)
-  return {
-    ...data,
-    transactions: { ...data.transactions, status: "live" as const },
-    budget: { ...data.budget, status: "live" as const },
-    btcAccounts: { ...data.btcAccounts, status: "live" as const },
-    btcBalanceDocument: { ...data.btcBalanceDocument, status: "live" as const },
-    btcBuys: { ...data.btcBuys, status: "live" as const },
-    billPays: { ...data.billPays, status: "live" as const },
-    btcTransfers: {
-      ...data.btcTransfers,
-      status: "live" as const,
-      value: [{
-        id: "transfer-test-1",
-        updatedAtMs: 99,
-        date: "2026-07-26",
-        month: "2026-07",
-        fromAccountKey: "canonical-exchange",
-        toAccountKey: "canonical-cold",
-        sats: 12_345n,
-        feeSats: 21n,
-        note: "Move to cold storage",
-        owner: "victor" as const,
-      }],
-    },
-    todos: { ...data.todos, status: "live" as const },
-  }
-}
-
-function renderRoute(
-  route: string,
-  profile: "victor" | "rachel" | "mason" | "maddox" = "victor",
-): string {
-  const page = ALL_PAGES.find((candidate) => candidate.id === route)!
-  return renderToStaticMarkup(
-    createElement(AppStateProvider, {
-      initialProfile: profile,
-      initialRoute: route,
-      initialData: liveEnvelope(profile),
-      initialDataOrigin: "remote",
-      initialMutationCapabilities: capabilities,
-      mutationAdapter: adapter,
-      children: createElement(
-        TaskClockProvider,
-        { now: fixtureNow },
-        createElement(page.Component),
-      ),
-    }),
-  )
-}
+import {
+  adapter,
+  capabilities,
+  fixtureNow,
+  liveEnvelope,
+  renderRoute,
+} from "./support/renderRoute.ts"
 
 describe("renderer CRUD routes", () => {
   it.each([
@@ -172,7 +85,7 @@ describe("renderer CRUD routes", () => {
   })
 
   it("keeps derived-only routes free of create and delete controls", () => {
-    for (const route of ["dashboard", "retirement", "net-worth"]) {
+    for (const route of ["dashboard", "net-worth"]) {
       const markup = renderRoute(route)
       expect(markup).not.toMatch(/Add (transaction|category|buy|bill payment|BTC account|task)/)
       expect(markup).not.toContain(">Delete<")
@@ -192,6 +105,71 @@ describe("renderer CRUD routes", () => {
 
     const masonBuys = renderRoute("bitcoin-buys", "mason")
     expect(masonBuys).not.toMatch(/<button[^>]*disabled[^>]*>Add buy<\/button>/)
+  })
+
+  it("accepts the first bill payment into a live but empty remote table", () => {
+    const live = liveEnvelope()
+    const empty = {
+      ...live,
+      billPays: { ...live.billPays, status: "empty" as const, value: [], updatedAt: null },
+    }
+    const markup = renderRoute("bills", "victor", empty)
+    expect(markup).not.toMatch(/<button[^>]*disabled[^>]*>Add bill payment<\/button>/)
+    expect(markup).not.toContain("Wait for current remote rows before editing.")
+    expect(markup).not.toContain("Adding a bill payment is unavailable")
+  })
+
+  it("accepts a first row in every table that reports empty at zero remote rows", () => {
+    const live = liveEnvelope()
+    const empty = {
+      ...live,
+      billPays: { ...live.billPays, status: "empty" as const, value: [] },
+      btcBuys: { ...live.btcBuys, status: "empty" as const, value: [] },
+      todos: { ...live.todos, status: "empty" as const, value: [] },
+      btcBalanceDocument: { ...live.btcBalanceDocument, status: "empty" as const, value: null },
+    }
+    for (const [route, label] of [
+      ["bills", "Add bill payment"],
+      ["bitcoin-buys", "Add buy"],
+      ["bitcoin", "Add BTC account"],
+      ["today", "Add task"],
+    ] as const) {
+      const markup = renderRoute(route, "victor", empty)
+      expect(markup).toContain(label)
+      expect(markup).not.toMatch(
+        new RegExp(`<button[^>]*disabled[^>]*>${label}</button>`),
+      )
+    }
+  })
+
+  it("never gates a mutation on the BTC account mirror slice", () => {
+    // btcAccount.* reads freshness from the canonical balance document, so an
+    // empty account mirror alongside a live document must not disable the add.
+    const live = liveEnvelope()
+    const markup = renderRoute("bitcoin", "victor", {
+      ...live,
+      btcAccounts: { ...live.btcAccounts, status: "empty" as const, value: [] },
+    })
+    expect(markup).not.toMatch(/<button[^>]*disabled[^>]*>Add BTC account<\/button>/)
+  })
+
+  it("offers the bill-pay budget choice and shows each row's effect", () => {
+    const markup = renderRoute("bills", "victor")
+    expect(markup).toContain("Budget effect")
+    expect(markup).toContain('value="budget_category"')
+    expect(markup).toContain('value="credit_card_payment"')
+    expect(markup).toContain("Budget category")
+    expect(markup).toContain("Credit card payment")
+  })
+
+  it("visibly names the reason a blocked Add bill payment cannot be pressed", () => {
+    const markup = renderRoute("bills", "mason")
+    const bannerAt = markup.indexOf("Adding a bill payment is unavailable")
+    expect(bannerAt).toBeGreaterThan(-1)
+    expect(markup.slice(bannerAt - 200, bannerAt)).toContain("vv-banner")
+    expect(markup.slice(bannerAt, bannerAt + 400)).toContain(
+      "This profile has no supported durable source for that operation.",
+    )
   })
 
   it("renders write controls disabled for fixture origin", () => {

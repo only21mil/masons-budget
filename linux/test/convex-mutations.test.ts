@@ -13,6 +13,14 @@ import type {
   DeviceCredentialSnapshot,
   DeviceCredentialStore,
 } from "../electron/deviceCredentialStore.ts"
+import {
+  PAYMENT_SOURCES,
+  paymentSourceBlockReason,
+  paymentSourceChoiceTransition,
+  paymentSourceRoute,
+  transactionSubmission,
+  type PaymentSource,
+} from "../src/renderer/data/paymentSource.ts"
 
 const revision = "revision_abcdefghijklmnop"
 const snapshot: DeviceCredentialSnapshot = {
@@ -258,6 +266,89 @@ describe("paired-device main controller", () => {
       merchant: "  Hardware store  ",
       category: " Home ",
     })
+  })
+
+  it("requires a closed bill-pay budgetEffect and pins the credit-card category", () => {
+    const billPay = {
+      kind: "btcBillPay.upsert" as const,
+      requestId: "request_bill_effect",
+      actor: "victor" as const,
+      id: "bill-01",
+      owner: "victor" as const,
+      date: "2026-08-01",
+      merchant: "Internet Provider",
+      category: "Utilities",
+      budgetEffect: "budget_category" as const,
+      amountUsdCents: 7_999n,
+      btcSpentSats: 85_000n,
+      btcPriceCents: 9_410_000n,
+      feeUsdCents: 40n,
+    }
+
+    expect(validateMutationRequest(billPay)).toMatchObject({
+      category: "Utilities",
+      budgetEffect: "budget_category",
+      owner: "victor",
+    })
+    expect(validateMutationRequest({ ...billPay, owner: "mason" })).toBeNull()
+    expect(validateMutationRequest({ ...billPay, owner: "rachel" })).toBeNull()
+    expect(validateMutationRequest({
+      ...billPay,
+      category: "Credit Card Payment",
+      budgetEffect: "credit_card_payment",
+    })).toMatchObject({
+      category: "Credit Card Payment",
+      budgetEffect: "credit_card_payment",
+    })
+
+    // Absent, misspelled, or open-ended values all fail closed.
+    const withoutEffect: Record<string, unknown> = { ...billPay }
+    delete withoutEffect["budgetEffect"]
+    expect(validateMutationRequest(withoutEffect)).toBeNull()
+    expect(validateMutationRequest({ ...billPay, budgetEffect: "budget" })).toBeNull()
+    expect(validateMutationRequest({ ...billPay, budgetEffect: "" })).toBeNull()
+    expect(validateMutationRequest({ ...billPay, budgetEffect: null })).toBeNull()
+
+    // A credit-card payment carrying any other category is unclassifiable.
+    expect(validateMutationRequest({
+      ...billPay,
+      budgetEffect: "credit_card_payment",
+      category: "Utilities",
+    })).toBeNull()
+  })
+
+  it("sends the bill-pay budgetEffect to the device upsert endpoint", async () => {
+    const bodies: Record<string, unknown>[] = []
+    const controller = createPairedDeviceController({
+      store: store({ ...snapshot, capabilities: ["btcBillPay.upsert"] }),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: async (_endpoint, body) => {
+        bodies.push(JSON.parse(body) as Record<string, unknown>)
+        return success({ ok: true, entityId: "bill-01", outcome: "inserted" })
+      },
+    })
+
+    await expect(controller.mutate({
+      kind: "btcBillPay.upsert",
+      requestId: "request_bill_wire",
+      actor: "victor",
+      id: "bill-01",
+      owner: "victor",
+      date: "2026-08-01",
+      merchant: "Internet Provider",
+      category: "Utilities",
+      budgetEffect: "budget_category",
+      amountUsdCents: 7_999n,
+      btcSpentSats: 85_000n,
+      btcPriceCents: 9_410_000n,
+      feeUsdCents: 40n,
+    }, "victor")).resolves.toMatchObject({ status: "ok" })
+
+    const wire = bodies[0] as { path: string; args: { billPay: Record<string, unknown> } }
+    expect(wire.path).toBe(PAIRED_DEVICE_PATHS["btcBillPay.upsert"])
+    expect(wire.args.billPay.budgetEffect).toBe("budget_category")
+    expect(wire.args.billPay.category).toBe("Utilities")
   })
 
   it("claims with main-generated credentials, expands grants, and exposes no secret", async () => {
@@ -587,6 +678,71 @@ describe("paired-device main controller", () => {
     })
     expect(JSON.stringify(result)).not.toContain(snapshot.deviceCredential)
   })
+
+  it.each(["lightning", "on_chain"])(
+    "forwards an edit-tagged retired %s posting byte-for-byte for Convex to compare",
+    async (card) => {
+      const calls: string[] = []
+      const controller = createPairedDeviceController({
+        store: store({
+          ...snapshot,
+          capabilities: ["transaction.upsert", "btcTransfer.upsert"],
+        }),
+        writesEnabled: () => true,
+        approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+        post: async (_endpoint, body) => {
+          calls.push(body)
+          return success({ ok: true, entityId: "tx-1", outcome: "updated" })
+        },
+      })
+      const storedAccountKey = " stored-account-key "
+
+      await expect(controller.mutate({
+        ...transactionRequest(),
+        card,
+        amountSats: 140_000n,
+        bitcoinAccountKey: storedAccountKey,
+        baseUpdatedAtMs: 7,
+      }, "victor")).resolves.toMatchObject({ status: "ok", outcome: "updated" })
+
+      const wire = JSON.parse(calls[0] ?? "{}")
+      expect(wire.args.transaction).toMatchObject({
+        card,
+        amountSats: encodeConvexInt64(140_000n),
+        bitcoinAccountKey: storedAccountKey,
+      })
+      expect(wire.args.baseUpdatedAtMs).toBe(7)
+    },
+  )
+
+  it.each(["lightning", "on_chain"])(
+    "rejects a new retired %s posting locally as an invalid request",
+    async (card) => {
+      const post = vi.fn()
+      const controller = createPairedDeviceController({
+        store: store({
+          ...snapshot,
+          capabilities: ["transaction.upsert", "btcTransfer.upsert"],
+        }),
+        writesEnabled: () => true,
+        approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+        post,
+      })
+
+      await expect(controller.mutate({
+        ...transactionRequest(),
+        card,
+        amountSats: 140_000n,
+        bitcoinAccountKey: "stored-account-key",
+      }, "victor")).resolves.toEqual({
+        status: "failed",
+        code: "invalid-request",
+        requestId: "request_1234",
+        kind: "transaction.upsert",
+      })
+      expect(post).not.toHaveBeenCalled()
+    },
+  )
 
   it("requires a Bitcoin grant before sending sat-denominated Income", async () => {
     const post = vi.fn()
@@ -1023,6 +1179,155 @@ describe("paired-device main controller", () => {
     expect(localStore.current).toBeNull()
   })
 
+  it("carries a linked income row on the single buy write and refuses a mismatched pair", async () => {
+    const linked = {
+      kind: "btcBuy.upsert" as const,
+      requestId: "request_linked_income",
+      actor: "victor" as const,
+      id: "income-buy-01",
+      owner: "victor" as const,
+      date: "2026-08-03",
+      source: "Employer",
+      sats: 270_000n,
+      priceUsdCents: 9_259_259_00n,
+      usdCents: 250_000n,
+      linkedIncome: {
+        id: "income-buy-01",
+        owner: "victor" as const,
+        date: "2026-08-03",
+        amountCents: 250_000n,
+        source: "Employer",
+        sourceFile: "income" as const,
+      },
+    }
+    expect(validateMutationRequest(linked)).toMatchObject({
+      linkedIncome: { id: "income-buy-01", amountCents: 250_000n },
+    })
+
+    // Every field the server requires to agree is re-checked here, so a request
+    // that cannot be accepted never reaches the network.
+    for (const broken of [
+      { ...linked.linkedIncome, id: "some-other-id" },
+      { ...linked.linkedIncome, date: "2026-08-04" },
+      { ...linked.linkedIncome, amountCents: 250_001n },
+      { ...linked.linkedIncome, owner: "mason" as const },
+      { ...linked.linkedIncome, sourceFile: "paycheck" },
+    ]) {
+      expect(validateMutationRequest({ ...linked, linkedIncome: broken })).toBeNull()
+    }
+
+    let body: Record<string, unknown> | null = null
+    const controller = createPairedDeviceController({
+      store: store({
+        ...snapshot,
+        capabilities: ["btcBuy.upsert", "transaction.upsert"],
+      }),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: async (_endpoint, raw) => {
+        body = JSON.parse(raw) as Record<string, unknown>
+        return success({ ok: true, entityId: "income-buy-01", outcome: "inserted" })
+      },
+    })
+    await controller.mutate(linked, "victor")
+
+    expect(body).toMatchObject({
+      path: PAIRED_DEVICE_PATHS["btcBuy.upsert"],
+      args: {
+        sourceFile: "bitcoin-buys",
+        buy: { id: "income-buy-01", usdCents: encodeConvexInt64(250_000n) },
+        linkedIncome: {
+          id: "income-buy-01",
+          owner: "victor",
+          date: "2026-08-03",
+          amountCents: encodeConvexInt64(250_000n),
+          source: "Employer",
+          sourceFile: "income",
+        },
+      },
+    })
+    if (body === null) throw new Error("expected a captured linked-income wire body")
+    const wireLinkedIncome = (body["args"] as {
+      linkedIncome: Record<string, unknown>
+    }).linkedIncome
+    expect(Object.keys(wireLinkedIncome).sort()).toEqual([
+      "amountCents",
+      "date",
+      "id",
+      "owner",
+      "source",
+      "sourceFile",
+    ])
+  })
+
+  it("pins the bill-pay platform on the wire over a legacy inbound label", async () => {
+    let body: Record<string, unknown> | null = null
+    const controller = createPairedDeviceController({
+      store: store({ ...snapshot, capabilities: ["btcBillPay.upsert"] }),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post: async (_endpoint, raw) => {
+        body = JSON.parse(raw) as Record<string, unknown>
+        return success({ ok: true, entityId: "bill-platform-01", outcome: "updated" })
+      },
+    })
+
+    await expect(controller.mutate({
+      kind: "btcBillPay.upsert",
+      requestId: "request_bill_platform",
+      actor: "victor",
+      id: "bill-platform-01",
+      owner: "victor",
+      date: "2026-08-03",
+      merchant: "Internet Provider",
+      category: "Utilities",
+      budgetEffect: "budget_category",
+      amountUsdCents: 7_999n,
+      btcSpentSats: 85_000n,
+      btcPriceCents: 9_410_000n,
+      platform: "River",
+      feeUsdCents: 40n,
+    }, "victor")).resolves.toMatchObject({ status: "ok" })
+
+    if (body === null) throw new Error("expected a captured bill-pay wire body")
+    const wireBillPay = (body["args"] as {
+      billPay: Record<string, unknown>
+    }).billPay
+    expect(wireBillPay.platform).toBe("river_bitcoin_bill_pay")
+  })
+
+  it("refuses a linked income row without the income grant", async () => {
+    const post = vi.fn()
+    const controller = createPairedDeviceController({
+      store: store({ ...snapshot, capabilities: ["btcBuy.upsert"] }),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post,
+    })
+
+    await expect(controller.mutate({
+      kind: "btcBuy.upsert",
+      requestId: "request_linked_ungranted",
+      actor: "victor",
+      id: "income-buy-02",
+      owner: "victor",
+      date: "2026-08-03",
+      source: "Employer",
+      sats: 270_000n,
+      priceUsdCents: 9_259_259_00n,
+      usdCents: 250_000n,
+      linkedIncome: {
+        id: "income-buy-02",
+        owner: "victor",
+        date: "2026-08-03",
+        amountCents: 250_000n,
+        source: "Employer",
+        sourceFile: "income",
+      },
+    }, "victor")).resolves.toMatchObject({ status: "unauthorized" })
+    expect(post).not.toHaveBeenCalled()
+  })
+
   it("keeps the credential when remote-first unpair cannot reach the server", async () => {
     const localStore = store()
     const controller = createPairedDeviceController({
@@ -1036,5 +1341,318 @@ describe("paired-device main controller", () => {
 
     await expect(controller.unpair()).resolves.toEqual({ status: "failed" })
     expect(localStore.current).toEqual(snapshot)
+  })
+})
+
+// The IPC boundary used to accept any string at all as `card`. These are the
+// payloads a compromised or buggy renderer would send; every one of them has to
+// die in main, where the closed matrix is re-checked rather than trusted.
+describe("the payment-source matrix at the IPC boundary", () => {
+  const SATS = 140_000n
+  const ACCOUNT = "coldcard"
+
+  function forged(extra: Record<string, unknown>): unknown {
+    return validateMutationRequest({ ...transactionRequest(), ...extra })
+  }
+
+  it("refuses River Bitcoin Bill Pay on a transaction, whatever else it carries", () => {
+    expect(forged({ card: "river_bitcoin_bill_pay" })).toBeNull()
+    expect(forged({
+      card: "river_bitcoin_bill_pay",
+      amountSats: SATS,
+      bitcoinAccountKey: ACCOUNT,
+    })).toBeNull()
+    expect(forged({ card: "river_bitcoin_bill_pay", baseUpdatedAtMs: 7 })).toBeNull()
+  })
+
+  it.each([
+    "River",
+    "Zeus Lightning",
+    "Zeus On-chain",
+    "Strike",
+    "Coinbase Card",
+    "Aven",
+    "SoFi Card",
+    "Capital One VX",
+    "River Bitcoin Bill Pay",
+    "Lightning",
+    "On-chain",
+  ])("refuses the display label %s where a wire belongs, including on edits", (card) => {
+    expect(forged({ card })).toBeNull()
+    expect(forged({ card, baseUpdatedAtMs: 7 })).toBeNull()
+  })
+
+  it("refuses a Bitcoin spend with no sats", () => {
+    expect(forged({ card: "river", bitcoinAccountKey: ACCOUNT })).toBeNull()
+    expect(forged({ card: "zeus_lightning", bitcoinAccountKey: ACCOUNT })).toBeNull()
+  })
+
+  it("refuses a Bitcoin spend with no account to debit", () => {
+    expect(forged({ card: "strike", amountSats: SATS })).toBeNull()
+    expect(forged({ card: "zeus_on_chain", amountSats: SATS, bitcoinAccountKey: "   " }))
+      .toBeNull()
+  })
+
+  it("refuses a fiat card carrying sats", () => {
+    expect(forged({ card: "coinbase_card", amountSats: SATS })).toBeNull()
+    expect(forged({ card: "capital_one_vx", amountSats: SATS })).toBeNull()
+  })
+
+  it("refuses a fiat card naming a Bitcoin account", () => {
+    expect(forged({ card: "aven", bitcoinAccountKey: ACCOUNT })).toBeNull()
+    expect(forged({ card: "sofi_card", bitcoinAccountKey: ACCOUNT })).toBeNull()
+    // And an account key with no card at all names a debit nothing routes.
+    expect(forged({ bitcoinAccountKey: ACCOUNT })).toBeNull()
+  })
+
+  it("leaves fiat card spend, refund, and Income semantics to the base contract", () => {
+    expect(forged({ card: "coinbase_card" })).toMatchObject({
+      card: "coinbase_card",
+      transactionKind: "spend",
+      category: "Home",
+    })
+    expect(forged({
+      card: "coinbase_card",
+      transactionKind: "credit",
+      amountCents: -4_218n,
+    })).toMatchObject({
+      card: "coinbase_card",
+      transactionKind: "credit",
+      category: "Home",
+    })
+    expect(forged({
+      card: "coinbase_card",
+      transactionKind: "credit",
+      category: "Income",
+    })).toMatchObject({
+      card: "coinbase_card",
+      transactionKind: "credit",
+      category: "Income",
+    })
+  })
+
+  it("refuses an unknown card string on a create", () => {
+    // The validator cannot read the stored row, so it cannot tell a card string
+    // predating the closed list from one a caller invented. A create has no row
+    // to inherit from, so it must use the enum.
+    expect(forged({ card: "Debit" })).toBeNull()
+    expect(forged({ card: " coinbase_card " })).toBeNull()
+  })
+
+  it("accepts an unknown card string on an edit, byte for byte", () => {
+    // baseUpdatedAtMs fences the write against a row that already exists and is
+    // entitled to keep its own string.
+    expect(forged({ card: "Debit", baseUpdatedAtMs: 7 })).toMatchObject({
+      card: "Debit",
+      baseUpdatedAtMs: 7,
+    })
+    expect(forged({ card: " coinbase_card ", baseUpdatedAtMs: 7 })).toMatchObject({
+      card: " coinbase_card ",
+    })
+  })
+
+  it.each(["lightning", "on_chain"])(
+    "accepts an edit-tagged retired %s payload for Convex's exact-row check",
+    (card) => {
+      const storedAccountKey = " stored-account-key "
+      expect(forged({
+        card,
+        amountSats: SATS,
+        bitcoinAccountKey: storedAccountKey,
+        baseUpdatedAtMs: 7,
+      })).toMatchObject({
+        card,
+        amountSats: SATS,
+        bitcoinAccountKey: storedAccountKey,
+        baseUpdatedAtMs: 7,
+      })
+    },
+  )
+
+  it.each(["lightning", "on_chain"])(
+    "rejects malformed edit-tagged retired %s payloads inside the retired branch",
+    (card) => {
+      // Each edit marker forces the request past the new-create fence. Removing
+      // any one retired-field/direction guard makes its matching assertion pass.
+      expect(forged({
+        card,
+        bitcoinAccountKey: ACCOUNT,
+        baseUpdatedAtMs: 7,
+      })).toBeNull()
+      expect(forged({
+        card,
+        amountSats: SATS,
+        bitcoinAccountKey: "   ",
+        baseUpdatedAtMs: 7,
+      })).toBeNull()
+      // The positive-int64 parser is the outer guard for this case; it rejects
+      // the value before the retired branch can receive it.
+      expect(forged({
+        card,
+        amountSats: 0n,
+        bitcoinAccountKey: ACCOUNT,
+        baseUpdatedAtMs: 7,
+      })).toBeNull()
+    },
+  )
+
+  it.each(["lightning", "on_chain"])(
+    "rejects edit-tagged retired %s credit outside Income by transaction kind",
+    (card) => {
+      expect(forged({
+        card,
+        amountCents: -4_218n,
+        amountSats: SATS,
+        bitcoinAccountKey: ACCOUNT,
+        transactionKind: "credit",
+        category: "Home",
+        baseUpdatedAtMs: 7,
+      })).toBeNull()
+    },
+  )
+
+  it.each(["lightning", "on_chain"])(
+    "rejects edit-tagged retired %s spend on Income in the shared base contract",
+    (card) => {
+      // The retired branch deliberately has no duplicate category clause. If
+      // it passes a spend on Income, the shared sign contract still rejects it.
+      expect(forged({
+        card,
+        amountSats: SATS,
+        bitcoinAccountKey: ACCOUNT,
+        transactionKind: "spend",
+        category: "Income",
+        baseUpdatedAtMs: 7,
+      })).toBeNull()
+    },
+  )
+
+  it("accepts Bitcoin-native Income with positive sats and a receiving account", () => {
+    expect(forged({
+      card: "strike",
+      category: "Income",
+      transactionKind: "credit",
+      amountSats: SATS,
+      bitcoinAccountKey: ACCOUNT,
+    })).toMatchObject({
+      card: "strike",
+      category: "Income",
+      transactionKind: "credit",
+      amountSats: SATS,
+      bitcoinAccountKey: ACCOUNT,
+    })
+  })
+
+  it.each(["zeus_lightning", "zeus_on_chain"])(
+    "refuses the Bitcoin-native source %s on a non-Income credit or refund",
+    (card) => {
+      expect(forged({
+        card,
+        transactionKind: "credit",
+        amountSats: SATS,
+        bitcoinAccountKey: ACCOUNT,
+      })).toBeNull()
+    },
+  )
+
+  it("keeps the sat-denominated Income row exactly as it was", () => {
+    expect(forged({
+      category: "Income",
+      transactionKind: "credit",
+      amountSats: 25_000n,
+    })).toMatchObject({ category: "Income", amountSats: 25_000n })
+    // Still Income-only, and still without an account it never had.
+    expect(forged({ amountSats: 25_000n })).toBeNull()
+    expect(forged({
+      category: "Income",
+      transactionKind: "credit",
+      amountSats: 25_000n,
+      bitcoinAccountKey: ACCOUNT,
+    })).toBeNull()
+  })
+
+  it.each(["river", "zeus_lightning", "zeus_on_chain", "strike"])(
+    "accepts the Bitcoin-native spend %s with exact sats and a named account",
+    (card) => {
+      expect(forged({ card, amountSats: SATS, bitcoinAccountKey: ACCOUNT }))
+        .toMatchObject({ card, amountSats: SATS, bitcoinAccountKey: ACCOUNT })
+    },
+  )
+
+  it.each(["lightning", "on_chain"])(
+    "rejects a new retired %s source because legacy sources may only round-trip unchanged",
+    (card) => {
+      expect(forged({ card, amountSats: SATS, bitcoinAccountKey: ACCOUNT })).toBeNull()
+    },
+  )
+})
+
+// End to end in shape, not in transport: the renderer's own payload builder
+// produces the source fields, and main's validator is the thing that judges
+// them. A drift between the two shows up here rather than on the wire.
+describe("form-built payloads through the main-process validator", () => {
+  it.each(PAYMENT_SOURCES)("routes %s the way the matrix says", (source: PaymentSource) => {
+    const built = transactionSubmission({
+      source,
+      amountSats: 140_000n,
+      bitcoinAccountKey: "coldcard",
+      kind: "spend",
+      category: "Home",
+    })
+    const writesTransaction = paymentSourceRoute(source) === "transaction"
+    // The form emits a card for the eight transaction sources only. River
+    // Bitcoin Bill Pay never builds one.
+    expect(built.card).toBe(writesTransaction ? source : undefined)
+    const request = validateMutationRequest({
+      ...transactionRequest(),
+      // Forced on for River: the payload the form declines to build is exactly
+      // the one a forged renderer would send, and main has to be the refusal.
+      card: source,
+      ...built,
+    })
+    if (!writesTransaction) {
+      expect(request).toBeNull()
+      return
+    }
+    expect(request).toMatchObject({ card: source, ...built })
+  })
+
+  it("restores one retired posting and keeps transition, form block, and main aligned", () => {
+    const restored = paymentSourceChoiceTransition({
+      sourceChoice: "strike",
+      sats: "999999",
+      bitcoinAccountKey: "new-account",
+    }, "__legacy-card", {
+      choice: "__legacy-card",
+      card: "lightning",
+      amountSats: 140_000n,
+      bitcoinAccountKey: " stored-account ",
+    })
+    expect(restored).toEqual({
+      sourceChoice: "__legacy-card",
+      sats: "140000",
+      bitcoinAccountKey: " stored-account ",
+    })
+
+    const formState = {
+      source: null,
+      legacyCard: "lightning",
+      amountSats: BigInt(restored.sats),
+      bitcoinAccountKey: restored.bitcoinAccountKey,
+      kind: "spend" as const,
+      category: "Home",
+    }
+    expect(paymentSourceBlockReason(formState)).toBeNull()
+    const submission = transactionSubmission(formState)
+    expect(submission).toEqual({
+      card: "lightning",
+      amountSats: 140_000n,
+      bitcoinAccountKey: " stored-account ",
+    })
+    expect(validateMutationRequest({
+      ...transactionRequest(),
+      ...submission,
+      baseUpdatedAtMs: 7,
+    })).toMatchObject({ ...submission, baseUpdatedAtMs: 7 })
   })
 })

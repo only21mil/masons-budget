@@ -127,7 +127,7 @@ function remoteData(profile: FamilyMember): FixtureEnvelope {
 }
 
 function renderFinancePage(
-  route: "retirement" | "net-worth",
+  route: "net-worth",
   profile: FamilyMember,
   financeModel?: LinuxFinanceReadModel,
   displayUnit: "btc" | "sats" | "usd" = "usd",
@@ -153,9 +153,10 @@ function renderFinancePage(
   )
 }
 
-test("retirement renders scoped holdings with honest live, stale, and ledger valuation bases", () => {
-  const markup = renderFinancePage("retirement", "victor", model())
+test("net worth carries the retirement table the retired tab used to own", () => {
+  const markup = renderFinancePage("net-worth", "victor", model())
 
+  assert.ok(markup.includes("Retirement accounts"), "the retirement table did not move across")
   assert.ok(markup.includes("Adult 401k"))
   assert.ok(markup.includes("Rachel IRA"))
   assert.ok(!markup.includes("Mason Custodial"), "child retirement leaked into the adult scope")
@@ -166,18 +167,24 @@ test("retirement renders scoped holdings with honest live, stale, and ledger val
   assert.ok(markup.includes("VOO"))
   assert.ok(markup.includes("IBIT"))
   assert.ok(markup.includes("STALE"))
+
+  // One list, one total: the table rows are the same scoped valuations the
+  // headline added up, so nothing can be shown twice or counted twice.
+  assert.equal(markup.split("Adult 401k").length - 1, 1)
+  assert.equal(markup.split("Retirement accounts").length - 1, 1)
 })
 
-test("retirement headline discloses stale quote revaluation provenance", () => {
-  const markup = renderFinancePage("retirement", "victor", model())
-  const totalAt = markup.indexOf("Retirement total")
-  const accountsAt = markup.indexOf("Accounts", totalAt)
+test("the retirement headline on net worth discloses stale quote revaluation", () => {
+  const markup = renderFinancePage("net-worth", "victor", model())
+  const totalAt = markup.indexOf("Retirement")
+  const nextKpiAt = markup.indexOf("Adult net worth", totalAt)
 
-  assert.ok(totalAt >= 0 && accountsAt > totalAt)
-  const totalMarkup = markup.slice(totalAt, accountsAt)
+  assert.ok(totalAt >= 0 && nextKpiAt > totalAt)
+  const totalMarkup = markup.slice(totalAt, nextKpiAt)
   assert.ok(totalMarkup.includes("vv-stale"))
   assert.ok(totalMarkup.includes("Stale quote revaluation"))
   assert.ok(totalMarkup.includes("Revalued with stale IBIT market quote"))
+  assert.ok(totalMarkup.includes("2 scoped account(s)"))
   assert.ok(!totalMarkup.includes("vv-actual"))
 })
 
@@ -192,7 +199,7 @@ test("retirement preserves accounts without holdings and exposes contribution sc
     holdings: [],
   }
   const financeModel = model()
-  const markup = renderFinancePage("retirement", "victor", {
+  const markup = renderFinancePage("net-worth", "victor", {
     ...financeModel,
     finance: {
       status: "live",
@@ -208,14 +215,14 @@ test("retirement preserves accounts without holdings and exposes contribution sc
 })
 
 test("retirement converts USD-native values only through the operational BTC quote", () => {
-  const satsMarkup = renderFinancePage("retirement", "victor", model(), "sats")
+  const satsMarkup = renderFinancePage("net-worth", "victor", model(), "sats")
   assert.ok(satsMarkup.includes("1 650 000 sats"))
 
   const unavailableQuotes = QUOTES.map((quote) => quote.symbol === "BTC"
     ? { ...quote, priceCents: null, fetchedAt: null, status: "unavailable" as const }
     : quote)
   const unavailableMarkup = renderFinancePage(
-    "retirement",
+    "net-worth",
     "victor",
     model(unavailableQuotes),
     "btc",
@@ -243,6 +250,33 @@ test("child net worth remains self-only even when the injected document contains
   assert.ok(!markup.includes("Adult net worth"))
   assert.ok(markup.includes("BTC plus retirement · self only"))
   assert.ok(!markup.includes("no child balances"))
+
+  // The merged page is not adult-only, so a kid gets the retirement table too —
+  // scoped by netWorthScopeFor, which for a child is exactly their own rows.
+  assert.ok(markup.includes("Retirement accounts"))
+  assert.ok(markup.includes("Mason Custodial"))
+  assert.ok(!markup.includes("Adult 401k"), "adult retirement leaked onto a child profile")
+  assert.ok(!markup.includes("Rachel IRA"))
+})
+
+test("a kid with no retirement rows gets an empty table, not an error", () => {
+  const adultsOnly: LinuxFinanceReadModel = {
+    ...model(),
+    finance: {
+      status: "live",
+      value: {
+        ...FINANCE,
+        accounts: FINANCE.accounts.filter((row) => row.owner !== "mason"),
+      },
+    },
+  }
+  const markup = renderFinancePage("net-worth", "mason", adultsOnly)
+
+  assert.ok(markup.includes("No retirement accounts"))
+  assert.ok(markup.includes("No net-worth-scoped retirement accounts were returned"))
+  assert.ok(!markup.includes("Retirement read failed"))
+  assert.ok(!markup.includes("Could not load"))
+  assert.ok(!markup.includes("Adult 401k"))
 })
 
 test("child net-worth failure copy stays profile-generic", () => {
@@ -318,9 +352,9 @@ test("a demo BTC document never combines with live finance and quotes", () => {
 })
 
 test("QA finance overrides use one consistent state for tags, ledger, and quotes", () => {
-  const stale = renderFinancePage("retirement", "victor", model(), "usd", { state: "stale" })
+  const stale = renderFinancePage("net-worth", "victor", model(), "usd", { state: "stale" })
   assert.ok(stale.includes("Stale"))
-  assert.ok(!stale.includes("No data"))
+  assert.ok(!stale.includes("No retirement document"))
   assert.ok(!stale.includes("Adult 401k"))
 
   const loading = renderFinancePage("net-worth", "victor", model(), "usd", { state: "loading" })
@@ -333,7 +367,7 @@ test("pending authenticated finance reads render loading rather than authoritati
     finance: { status: "loading", value: null },
     marketQuotes: { status: "loading", value: null },
   }
-  const markup = renderFinancePage("retirement", "victor", loading)
+  const markup = renderFinancePage("net-worth", "victor", loading)
 
   assert.ok(markup.includes("Loading"))
   assert.ok(!markup.includes("No retirement document"))
@@ -411,7 +445,7 @@ test("sync health does not timestamp a degraded snapshot from its newest quote",
 })
 
 test("default fixture mode never labels retirement or market quotes as live", () => {
-  const markup = renderFinancePage("retirement", "victor")
+  const markup = renderFinancePage("net-worth", "victor")
 
   assert.ok(markup.includes("No retirement document"))
   assert.ok(markup.includes("No market quote snapshot"))

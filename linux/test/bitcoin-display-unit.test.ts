@@ -316,7 +316,7 @@ test("Budget remains USD and never renders the unit selector", () => {
   for (const unit of ["btc", "sats", "usd"] as const) {
     const markup = renderPage("budget", "victor", unit, "normal", liveQuoteEnvelope())
     assert.ok(markup.includes("$2,670.00"), `${unit} changed the planned Budget unit`)
-    assert.ok(markup.includes("$673.46"), `${unit} changed the Budget actual unit`)
+    assert.ok(markup.includes("$753.45"), `${unit} changed the Budget actual unit`)
     assert.ok(!markup.includes('aria-label="Bitcoin display unit"'))
   }
 })

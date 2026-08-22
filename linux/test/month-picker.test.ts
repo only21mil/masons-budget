@@ -97,11 +97,11 @@ test("selecting June changes the Budget totals strip", () => {
 
   // Adult budget totals use adult household scope. Child rows remain visible on
   // Activity but do not roll into Victor/Rachel's actuals.
-  assert.ok(july.includes("$673.46"), "July adult actual missing")
+  assert.ok(july.includes("$753.45"), "July adult actual missing")
   assert.ok(june.includes("$741.05"), "June adult actual missing")
 
   // Planned is the budget file's, so it does not move; remaining must.
-  assert.ok(july.includes("$1,996.54"), "July remaining missing")
+  assert.ok(july.includes("$1,916.55"), "July remaining missing")
   assert.ok(june.includes("$1,928.95"), "June remaining missing")
 })
 
@@ -109,8 +109,8 @@ test("adult oversight keeps child rows visible without adding them to budget spe
   const budget = render("budget", "victor", JULY)
   const activity = render("activity", "victor", JULY)
 
-  assert.ok(budget.includes("$673.46"), "adult July actual should exclude child spend")
-  assert.ok(!budget.includes("$711.45"), "child spend rolled into the adult budget")
+  assert.ok(budget.includes("$753.45"), "adult July actual should exclude child spend")
+  assert.ok(!budget.includes("$791.44"), "child spend rolled into the adult budget")
   assert.ok(activity.includes("Game Store"), "Mason's row should remain visible for adult oversight")
   assert.ok(activity.includes("App Store"), "Maddox's row should remain visible for adult oversight")
 })

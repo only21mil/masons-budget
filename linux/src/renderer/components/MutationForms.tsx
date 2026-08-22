@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useState } from "react"
+import { netWorthScopeFor } from "@vogel-vault/domain/family"
 import type {
   BTCAccount,
-  BTCBillPay,
   BTCBuy,
   BudgetCategory,
   TodoItem,
@@ -10,6 +10,8 @@ import type {
 
 import { useAppState } from "../app/AppState.tsx"
 import {
+  bitcoinBuyLinkFor,
+  bitcoinPostingGate,
   formatCentsInput,
   mutationOwner,
   parseExactCents,
@@ -17,6 +19,28 @@ import {
   stableId,
 } from "../data/mutations.ts"
 import type { MutationGate } from "../data/mutations.ts"
+import {
+  PAYMENT_SOURCES,
+  isBitcoinDenominatedSource,
+  isPaymentSource,
+  isRetiredBitcoinSource,
+  paymentSourceBlockReason,
+  paymentSourceChoiceTransition,
+  paymentSourceFromRow,
+  paymentSourceLabel,
+  paymentSourceRoute,
+  transactionSubmission,
+  type PaymentSource,
+  type TransactionFormState,
+} from "../data/paymentSource.ts"
+import {
+  type BillPayBudgetEffect,
+  type BillPayPrefill,
+  type LinuxBillPay,
+  BILL_PAY_BUDGET_EFFECT_LABELS,
+  billPayBudgetTreatmentFor,
+  billPayPrefillFor,
+} from "../data/billPayBudgetEffect.ts"
 import { localMutationError } from "./CrudControls.tsx"
 import { DialogFrame } from "./DialogFrame.tsx"
 import { Button, Field, Select, TextInput } from "./primitives.tsx"
@@ -28,6 +52,20 @@ function optional(value: string): string | undefined {
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
+}
+
+/** Select value for a stored card string the closed source list does not know. */
+const LEGACY_SOURCE_CHOICE = "__legacy-card"
+
+function legacyCardOf(transaction: Transaction | null): string {
+  if (!transaction || paymentSourceFromRow(transaction)) return ""
+  return transaction.card ?? ""
+}
+
+function initialSourceChoice(transaction: Transaction | null): string {
+  const source = transaction ? paymentSourceFromRow(transaction) : null
+  if (source) return source
+  return legacyCardOf(transaction) ? LEGACY_SOURCE_CHOICE : ""
 }
 
 function FormFooter({
@@ -65,18 +103,49 @@ function ErrorSummary({ error }: { error: string | null }) {
   return error ? <p className="vv-form-error" role="alert">{error}</p> : null
 }
 
+/**
+ * The canonical River account, or null when it is missing or ambiguous.
+ *
+ * A Bitcoin buy posts to River and nowhere else, so this names the account the
+ * purchase will credit rather than offering a choice the write cannot honour.
+ * Matching key or label mirrors the server's own resolution, and more than one
+ * match is refused for the same reason it is refused there: the credit would be
+ * going somewhere nobody chose.
+ */
+export function canonicalRiverAccount(
+  accounts: readonly BTCAccount[],
+): BTCAccount | null {
+  const matches = accounts.filter(
+    (account) =>
+      account.key.trim().toLocaleLowerCase("en-US") === "river" ||
+      account.label.trim().toLocaleLowerCase("en-US") === "river",
+  )
+  return matches.length === 1 ? matches[0]! : null
+}
+
 export function TransactionFormDialog({
   open,
   transaction,
+  defaultCategory,
   submissionGate,
+  onRecordAsBillPay,
   onClose,
 }: {
   open: boolean
   transaction: Transaction | null
+  /** Opens the dialog on a category, so the Budget tab can add income directly. */
+  defaultCategory?: string
   submissionGate?: MutationGate
+  /**
+   * Hands a River selection to the bill-pay form instead of dead-ending on the
+   * pointer to the Bills page. The host owns both dialogs, so it closes this one
+   * and opens that one; nothing is written here. Without a handler the River
+   * selection stays blocked exactly as before.
+   */
+  onRecordAsBillPay?: (prefill: BillPayPrefill) => void
   onClose: () => void
 }) {
-  const { activeProfile, submitMutation } = useAppState()
+  const { activeProfile, data, mutationCapabilities, submitMutation } = useAppState()
   const formId = useId()
   const blockedReasonId = useId()
   const [id, setId] = useState(() => transaction?.id ?? stableId("transaction"))
@@ -88,14 +157,108 @@ export function TransactionFormDialog({
   const [transactionKind, setTransactionKind] = useState<"spend" | "credit">(
     transaction && transaction.amount < 0n ? "credit" : "spend",
   )
-  const [category, setCategory] = useState(transaction?.category ?? "Other")
-  const [card, setCard] = useState(transaction?.card ?? "")
-  const [note, setNote] = useState(transaction?.note ?? "")
-  const [incomeSats, setIncomeSats] = useState(
-    transaction?.amountSats?.toString() ?? "",
+  const [category, setCategory] = useState(
+    transaction?.category ?? defaultCategory ?? "Other",
   )
+  const [sourceChoice, setSourceChoice] = useState(() => initialSourceChoice(transaction))
+  const [bitcoinAccountKey, setBitcoinAccountKey] = useState(
+    transaction?.bitcoinAccountKey ?? "",
+  )
+  const [note, setNote] = useState(transaction?.note ?? "")
+  const [sats, setSats] = useState(transaction?.amountSats?.toString() ?? "")
+  const [asBitcoinBuy, setAsBitcoinBuy] = useState(false)
+  const [buySats, setBuySats] = useState("")
+  const [buyPrice, setBuyPrice] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const riverAccount = canonicalRiverAccount(
+    data.btcBalanceDocument.value?.accounts ?? [],
+  )
+
+  const isIncome = category.trim() === "Income"
+  // Editing an existing row cannot switch it onto the paired write: the pair is
+  // keyed by one shared id, and an already-stored transaction id is not it.
+  const buyAvailable = isIncome && transaction === null
+  // A linked income has no payment source: the write is btcBuy.upsert, not
+  // transaction.upsert. So the whole source machinery stands down here, and a
+  // selection left over from before the box was ticked neither shows nor blocks.
+  const recordingBitcoinBuy = buyAvailable && asBitcoinBuy
+
+  // Preserved verbatim so editing an unrelated field never rewrites a card
+  // string this build does not recognise.
+  const legacyCard = useMemo(() => legacyCardOf(transaction), [transaction])
+  // The ledger this row lands on, canonicalised the same way the write is:
+  // Victor and Rachel share the adult household, and an adult editing a Mason
+  // row is spending Mason's Bitcoin.
+  const ledgerScopeOwner = mutationOwner(
+    "transaction.upsert",
+    transaction?.owner ?? activeProfile,
+  )
+  // Net-worth scope, not visibility. An adult can SEE Mason's accounts, but a
+  // household row may only be paid from the household's own stack — offering
+  // Mason's account here let an adult debit a child's Bitcoin by accident.
+  const bitcoinAccounts = useMemo(
+    () => netWorthScopeFor(ledgerScopeOwner, data.btcAccounts.value),
+    [ledgerScopeOwner, data.btcAccounts.value],
+  )
+  const selectedSource: PaymentSource | null =
+    !recordingBitcoinBuy && isPaymentSource(sourceChoice) ? sourceChoice : null
+  // Bitcoin-native sources post a debit or credit on the transaction row.
+  // River Bitcoin Bill Pay writes a different table and does not qualify here.
+  const bitcoinNativeRow = selectedSource !== null &&
+    isBitcoinDenominatedSource(selectedSource) &&
+    paymentSourceRoute(selectedSource) === "transaction"
+  const satsValue = sats.trim() ? parseExactSats(sats) : null
+  const amountCents = parseExactCents(amount)
+  const formState: TransactionFormState = {
+    source: selectedSource,
+    legacyCard: sourceChoice === LEGACY_SOURCE_CHOICE ? legacyCard : "",
+    amountSats: satsValue,
+    bitcoinAccountKey,
+    kind: isIncome ? "credit" : transactionKind,
+    category,
+  }
+  const sourceBlockReason = paymentSourceBlockReason(formState)
+  // One pure builder decides every source field the save sends, so the button,
+  // the capability gate and the payload cannot disagree about them.
+  const submission = transactionSubmission(formState)
+  // The row will carry amountSats from a Bitcoin-native source or untyped Income.
+  // Those need the Bitcoin grant on top of transaction.upsert;
+  // a USD-only card transaction does not. A blocked Bitcoin source still counts:
+  // the grant is missing whether or not the sats have been typed yet.
+  const postsBitcoin = bitcoinNativeRow ||
+    (!recordingBitcoinBuy && submission.amountSats !== undefined)
+  const retiredBitcoinRow = selectedSource === null &&
+    isRetiredBitcoinSource(legacyCard) &&
+    submission.amountSats !== undefined &&
+    submission.bitcoinAccountKey !== undefined
+  const ownerScopedBitcoinPosting = bitcoinNativeRow || retiredBitcoinRow
+  const bitcoinCapability = postsBitcoin
+    ? bitcoinPostingGate(
+        mutationCapabilities,
+        ownerScopedBitcoinPosting ? ledgerScopeOwner : undefined,
+      )
+    : null
+  // River is a hand-off, not a save, so its own block never disables the button
+  // it offers; the capability block cannot be typed away and comes first.
+  const blockedReason = submissionGate && !submissionGate.allowed
+    ? submissionGate.reason ?? "Current live transaction rows are required before editing."
+    : bitcoinCapability !== null && !bitcoinCapability.allowed
+      ? bitcoinCapability.reason
+      : sourceBlockReason
+  const riverHandoff = selectedSource !== null &&
+    paymentSourceRoute(selectedSource) === "billPay" &&
+    onRecordAsBillPay !== undefined
+  // The bill pay needs the same floor a transaction save needs; the sats, the
+  // BTC price, and the fee are still the user's to enter on the other side.
+  const handoffPrefill = riverHandoff &&
+    merchant.trim() !== "" &&
+    date !== "" &&
+    category.trim() !== "" &&
+    amountCents !== null &&
+    amountCents > 0n
+    ? billPayPrefillFor({ date, merchant, amountUsd: amountCents, category })
+    : null
 
   useEffect(() => {
     if (!open) return
@@ -108,31 +271,116 @@ export function TransactionFormDialog({
         : "",
     )
     setTransactionKind(transaction && transaction.amount < 0n ? "credit" : "spend")
-    setCategory(transaction?.category ?? "Other")
-    setCard(transaction?.card ?? "")
+    setCategory(transaction?.category ?? defaultCategory ?? "Other")
+    setSourceChoice(initialSourceChoice(transaction))
+    setBitcoinAccountKey(transaction?.bitcoinAccountKey ?? "")
     setNote(transaction?.note ?? "")
-    setIncomeSats(transaction?.amountSats?.toString() ?? "")
+    setSats(transaction?.amountSats?.toString() ?? "")
+    setAsBitcoinBuy(false)
+    setBuySats("")
+    setBuyPrice("")
     setError(null)
-  }, [open, transaction])
+  }, [defaultCategory, open, transaction])
+
+  /**
+   * Switch payment source, dropping Bitcoin-source state the new one cannot use.
+   *
+   * Both fields belong to a Bitcoin-denominated source and are hidden for any
+   * other choice. Leaving them set would keep the form blocked on a field the
+   * user can no longer see, and hand the payload builder sats the new source
+   * has no business carrying.
+   */
+  function chooseSource(next: string) {
+    const nextState = paymentSourceChoiceTransition(
+      { sourceChoice, sats, bitcoinAccountKey },
+      next,
+      {
+        choice: LEGACY_SOURCE_CHOICE,
+        card: legacyCard,
+        amountSats: transaction?.amountSats,
+        bitcoinAccountKey: transaction?.bitcoinAccountKey,
+      },
+    )
+    setSourceChoice(nextState.sourceChoice)
+    if (nextState.sats !== sats) setSats(nextState.sats)
+    if (nextState.bitcoinAccountKey !== bitcoinAccountKey) {
+      setBitcoinAccountKey(nextState.bitcoinAccountKey)
+    }
+  }
 
   async function submit() {
     if (submissionGate && !submissionGate.allowed) {
       setError(submissionGate.reason ?? "Current live transaction rows are required before editing.")
       return
     }
-    const cents = parseExactCents(amount)
-    const satsValue = incomeSats.trim() ? parseExactSats(incomeSats) : null
+    const cents = amountCents
     if (!merchant.trim() || !date || cents === null || cents <= 0n || !category.trim()) {
       setError("Enter a date, merchant, category, and a positive amount with at most two decimals.")
       return
     }
-    if (incomeSats.trim() && (category.trim() !== "Income" || satsValue === null || satsValue <= 0n)) {
+    // Ahead of the payment-source and sat-Income checks, which belong to the
+    // transaction row this path never writes.
+    if (recordingBitcoinBuy) {
+      if (!riverAccount) {
+        setError("The canonical River account is unavailable, so the purchase has nowhere to land.")
+        return
+      }
+      // One write. The buy carries the income beside it and is the only balance
+      // posting, so no separate sat-denominated Income row is sent.
+      const linked = bitcoinBuyLinkFor({
+        recordAsBitcoinBuy: true,
+        requestId: stableId("request"),
+        id,
+        actor: activeProfile,
+        // Always a create, so there is no stored owner to preserve.
+        owner: activeProfile,
+        date,
+        category: category.trim(),
+        amountCents: cents,
+        // The buy names the account it credits; the income names who paid.
+        buySource: riverAccount.label,
+        incomeSource: merchant.trim(),
+        sats: parseExactSats(buySats),
+        priceUsdCents: parseExactCents(buyPrice),
+        note: optional(note),
+      })
+      if (!linked) {
+        setError("Enter positive whole sats and a positive price per BTC for the purchase.")
+        return
+      }
+      setBusy(true)
+      const linkedResult = await submitMutation(linked)
+      setBusy(false)
+      const linkedMessage = localMutationError(linkedResult)
+      setError(linkedMessage)
+      if (!linkedMessage) onClose()
+      return
+    }
+
+    if (bitcoinCapability !== null && !bitcoinCapability.allowed) {
+      setError(bitcoinCapability.reason)
+      return
+    }
+    if (sourceBlockReason) {
+      setError(sourceBlockReason)
+      return
+    }
+    // Only meaningful while the sats field IS the sat-Income field: with a
+    // chosen source the builder ignores a stale value rather than refusing it.
+    if (
+      selectedSource === null &&
+      !isRetiredBitcoinSource(formState.legacyCard) &&
+      sats.trim() &&
+      (category.trim() !== "Income" || satsValue === null || satsValue <= 0n)
+    ) {
       setError("Bitcoin income must use the Income category and a positive whole-sats amount.")
       return
     }
     setBusy(true)
     const signed =
       category.trim() === "Income" || transactionKind === "spend" ? cents : -cents
+    const sourceFields = submission
+    const amountSats = sourceFields.amountSats
     const result = await submitMutation({
       kind: "transaction.upsert",
       requestId: stableId("request"),
@@ -144,9 +392,12 @@ export function TransactionFormDialog({
       amountCents: signed,
       transactionKind: category.trim() === "Income" ? "credit" : transactionKind,
       category: category.trim(),
-      card: optional(card),
+      card: sourceFields.card,
       note: optional(note),
-      ...(satsValue === null ? {} : { amountSats: satsValue }),
+      ...(amountSats === undefined ? {} : { amountSats }),
+      ...(sourceFields.bitcoinAccountKey === undefined
+        ? {}
+        : { bitcoinAccountKey: sourceFields.bitcoinAccountKey }),
       ...(transaction ? { baseUpdatedAtMs: transaction.updatedAtMs } : {}),
     })
     setBusy(false)
@@ -166,7 +417,7 @@ export function TransactionFormDialog({
         <FormFooter
           formId={formId}
           busy={busy}
-          blocked={submissionGate ? !submissionGate.allowed : false}
+          blocked={blockedReason !== null}
           blockedReasonId={blockedReasonId}
           onCancel={onClose}
           verb="Save transaction"
@@ -177,10 +428,25 @@ export function TransactionFormDialog({
         event.preventDefault()
         void submit()
       }}>
-        {submissionGate && !submissionGate.allowed ? (
-          <p id={blockedReasonId} className="vv-form-error" role="status">
-            {submissionGate.reason ?? "Current live transaction rows are required before editing."}
-          </p>
+        {blockedReason ? (
+          <p id={blockedReasonId} className="vv-form-error" role="status">{blockedReason}</p>
+        ) : null}
+        {riverHandoff ? (
+          <Button
+            variant="primary"
+            disabled={busy || handoffPrefill === null}
+            title={
+              handoffPrefill === null
+                ? "Enter a date, payee, category, and a positive amount first."
+                : undefined
+            }
+            onClick={() => {
+              if (handoffPrefill === null) return
+              onRecordAsBillPay?.(handoffPrefill)
+            }}
+          >
+            Record as River bill payment
+          </Button>
         ) : null}
         <ErrorSummary error={error} />
         <Field label="Record ID" hint="Stable and immutable after creation.">
@@ -198,15 +464,95 @@ export function TransactionFormDialog({
           </Select>
         </Field>
         <Field label="Category"><TextInput value={category} onChange={(e) => setCategory(e.target.value)} /></Field>
-        {category.trim() === "Income" ? (
+        {buyAvailable ? (
+          <Field
+            label="Bitcoin"
+            hint="One save records the income and the purchase together."
+          >
+            <label>
+              <input
+                type="checkbox"
+                checked={asBitcoinBuy}
+                onChange={(e) => setAsBitcoinBuy(e.target.checked)}
+              /> Record as Bitcoin buy
+            </label>
+          </Field>
+        ) : null}
+        {recordingBitcoinBuy ? (
+          <>
+            <Field
+              label="Bitcoin account"
+              hint="A purchase credits the canonical River account and no other."
+            >
+              <TextInput
+                value={riverAccount?.label ?? "Unavailable"}
+                readOnly
+              />
+            </Field>
+            <Field label="Sats purchased">
+              <TextInput inputMode="numeric" value={buySats} onChange={(e) => setBuySats(e.target.value)} />
+            </Field>
+            <Field label="Price per BTC (USD)">
+              <TextInput inputMode="decimal" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} />
+            </Field>
+          </>
+        ) : (
+          <Field
+            label="Payment source"
+            hint={isIncome
+              ? "Where the Bitcoin arrives. Stored with the transaction."
+              : "Where the money leaves from. Stored with the transaction."}
+          >
+            <Select value={sourceChoice} onChange={(e) => chooseSource(e.target.value)}>
+              <option value="">No source</option>
+              {legacyCard ? <option value={LEGACY_SOURCE_CHOICE}>{legacyCard}</option> : null}
+              {PAYMENT_SOURCES.map((source) => (
+                <option key={source} value={source}>{paymentSourceLabel(source)}</option>
+              ))}
+            </Select>
+          </Field>
+        )}
+        {bitcoinNativeRow ? (
+          <>
+            <Field
+              label={isIncome ? "Bitcoin received (sats)" : "Bitcoin spent (sats)"}
+              hint={isIncome
+                ? "Required. Exact whole sats entering the selected Bitcoin source."
+                : "Required. Exact whole sats leaving the selected Bitcoin source."}
+            >
+              <TextInput
+                inputMode="numeric"
+                value={sats}
+                aria-invalid={satsValue === null || satsValue <= 0n || undefined}
+                onChange={(e) => setSats(e.target.value)}
+              />
+            </Field>
+            <Field
+              label="Bitcoin account"
+              hint={isIncome
+                ? "Required. The account these sats enter."
+                : "Required. The account these sats leave."}
+            >
+              <Select
+                value={bitcoinAccountKey}
+                aria-invalid={!bitcoinAccountKey.trim() || undefined}
+                onChange={(e) => setBitcoinAccountKey(e.target.value)}
+              >
+                <option value="">Choose an account</option>
+                {bitcoinAccounts.map((account) => (
+                  <option key={account.key} value={account.key}>{account.label}</option>
+                ))}
+              </Select>
+            </Field>
+          </>
+        ) : isIncome && !recordingBitcoinBuy ? (
           <Field
             label="Bitcoin received (sats)"
             hint="Optional. When present, these exact sats are added to River. USD-only income does not invent Bitcoin."
           >
-            <TextInput inputMode="numeric" value={incomeSats} onChange={(e) => setIncomeSats(e.target.value)} />
+            <TextInput inputMode="numeric" value={sats} onChange={(e) => setSats(e.target.value)} />
           </Field>
         ) : null}
-        <Field label="Card"><TextInput value={card} onChange={(e) => setCard(e.target.value)} /></Field>
         <Field label="Note"><TextInput value={note} onChange={(e) => setNote(e.target.value)} /></Field>
       </form>
     </DialogFrame>
@@ -487,50 +833,69 @@ export function BtcBuyFormDialog({
 export function BillPayFormDialog({
   open,
   payment,
+  prefill,
   onClose,
 }: {
   open: boolean
-  payment: BTCBillPay | null
+  payment: LinuxBillPay | null
+  /**
+   * Seed values for a new bill pay, handed over by the transaction form. A
+   * stored row always wins, so an edit is never overwritten by a stale hand-off.
+   */
+  prefill?: BillPayPrefill
   onClose: () => void
 }) {
   const { activeProfile, submitMutation } = useAppState()
   const formId = useId()
+  const seed = payment === null ? prefill ?? null : null
   const [id, setId] = useState(() => payment?.id ?? stableId("bill"))
-  const [date, setDate] = useState(payment?.date ?? today())
-  const [merchant, setMerchant] = useState(payment?.merchant ?? "")
-  const [category, setCategory] = useState(payment?.category ?? "Bills")
-  const [amount, setAmount] = useState(payment ? formatCentsInput(payment.amountUsd) : "")
+  const [date, setDate] = useState(payment?.date ?? seed?.date ?? today())
+  const [merchant, setMerchant] = useState(payment?.merchant ?? seed?.merchant ?? "")
+  // A row written before the amendment decodes as credit_card_payment, so an
+  // edit of one opens on that option rather than silently promoting it into a
+  // budget it never came out of.
+  const [budgetEffect, setBudgetEffect] = useState<BillPayBudgetEffect>(
+    payment?.budgetEffect ?? seed?.budgetEffect ?? "budget_category",
+  )
+  const [category, setCategory] = useState(payment?.category ?? seed?.category ?? "Bills")
+  const [amount, setAmount] = useState(
+    payment ? formatCentsInput(payment.amountUsd) : seed ? formatCentsInput(seed.amountUsd) : "",
+  )
   const [sats, setSats] = useState(payment?.btcSpentSats.toString() ?? "")
   const [price, setPrice] = useState(payment ? formatCentsInput(payment.btcPrice) : "")
   const [fee, setFee] = useState(payment ? formatCentsInput(payment.feeUsd) : "0.00")
-  const [platform, setPlatform] = useState(payment?.platform ?? "")
+  const [platform, setPlatform] = useState(payment?.platform ?? seed?.platform ?? "")
   const [reference, setReference] = useState(payment?.reference ?? "")
   const [note, setNote] = useState(payment?.note ?? "")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const treatment = billPayBudgetTreatmentFor({ budgetEffect, category })
 
   useEffect(() => {
     if (!open) return
     setId(payment?.id ?? stableId("bill"))
-    setDate(payment?.date ?? today())
-    setMerchant(payment?.merchant ?? "")
-    setCategory(payment?.category ?? "Bills")
-    setAmount(payment ? formatCentsInput(payment.amountUsd) : "")
+    setDate(payment?.date ?? seed?.date ?? today())
+    setMerchant(payment?.merchant ?? seed?.merchant ?? "")
+    setBudgetEffect(payment?.budgetEffect ?? seed?.budgetEffect ?? "budget_category")
+    setCategory(payment?.category ?? seed?.category ?? "Bills")
+    setAmount(
+      payment ? formatCentsInput(payment.amountUsd) : seed ? formatCentsInput(seed.amountUsd) : "",
+    )
     setSats(payment?.btcSpentSats.toString() ?? "")
     setPrice(payment ? formatCentsInput(payment.btcPrice) : "")
     setFee(payment ? formatCentsInput(payment.feeUsd) : "0.00")
-    setPlatform(payment?.platform ?? "")
+    setPlatform(payment?.platform ?? seed?.platform ?? "")
     setReference(payment?.reference ?? "")
     setNote(payment?.note ?? "")
     setError(null)
-  }, [open, payment])
+  }, [open, payment, seed])
 
   async function submit() {
     const amountValue = parseExactCents(amount)
     const satsValue = parseExactSats(sats)
     const priceValue = parseExactCents(price)
     const feeValue = parseExactCents(fee)
-    if (!date || !merchant.trim() || !category.trim() || !amountValue || !satsValue || !priceValue || feeValue === null || amountValue <= 0n || satsValue <= 0n || priceValue <= 0n || feeValue < 0n) {
+    if (!date || !merchant.trim() || !treatment.category || !amountValue || !satsValue || !priceValue || feeValue === null || amountValue <= 0n || satsValue <= 0n || priceValue <= 0n || feeValue < 0n) {
       setError("Enter positive payment, sats, and price values; the fee may be zero.")
       return
     }
@@ -543,7 +908,10 @@ export function BillPayFormDialog({
       owner: mutationOwner("btcBillPay.upsert", payment?.owner ?? activeProfile),
       date,
       merchant: merchant.trim(),
-      category: category.trim(),
+      // Both fields come from the one seam, so the stored category and the
+      // stored effect can never disagree.
+      category: treatment.category,
+      budgetEffect: treatment.effect,
       amountUsdCents: amountValue,
       btcSpentSats: satsValue,
       btcPriceCents: priceValue,
@@ -576,7 +944,31 @@ export function BillPayFormDialog({
         <Field label="Record ID"><TextInput value={id} readOnly /></Field>
         <Field label="Date"><TextInput data-autofocus type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
         <Field label="Payee"><TextInput value={merchant} onChange={(e) => setMerchant(e.target.value)} /></Field>
-        <Field label="Category"><TextInput value={category} onChange={(e) => setCategory(e.target.value)} /></Field>
+        <Field
+          label="Budget effect"
+          hint="A budget category payment comes out of that category for this month. A credit card payment does not touch the budget."
+        >
+          <Select
+            value={budgetEffect}
+            onChange={(e) => setBudgetEffect(e.target.value as BillPayBudgetEffect)}
+          >
+            <option value="budget_category">
+              {BILL_PAY_BUDGET_EFFECT_LABELS.budget_category}
+            </option>
+            <option value="credit_card_payment">
+              {BILL_PAY_BUDGET_EFFECT_LABELS.credit_card_payment}
+            </option>
+          </Select>
+        </Field>
+        {treatment.categorySelectable ? (
+          <Field label="Category">
+            <TextInput value={category} onChange={(e) => setCategory(e.target.value)} />
+          </Field>
+        ) : (
+          <Field label="Category" hint="Fixed for a credit card payment.">
+            <TextInput value={treatment.category} readOnly />
+          </Field>
+        )}
         <Field label="Amount (USD)"><TextInput inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
         <Field label="Sats spent"><TextInput inputMode="numeric" value={sats} onChange={(e) => setSats(e.target.value)} /></Field>
         <Field label="BTC price (USD)"><TextInput inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} /></Field>

@@ -11,15 +11,53 @@ import { encodeConvexInt64, type ConvexInt64WireValue } from "./convexInt64.ts"
 import {
   type FamilyMember,
   canSeeDataOwnedBy,
+  isAdult,
   isFamilyMember,
+  ledgerOwner,
   transactionsDataFileName,
 } from "./family.ts"
 import { isIsoDate } from "./todo.ts"
 
 export const CONVEX_WRITE_FORMAT = "convex_encoded_json" as const
 export const UPSERT_TRANSACTION_PATH = "tables:upsertTransaction" as const
+export const UPSERT_BTC_BILL_PAY_PATH = "tables:upsertBtcBillPay" as const
+
+export const PAYMENT_SOURCES = [
+  "river",
+  "zeus_lightning",
+  "zeus_on_chain",
+  "strike",
+  "coinbase_card",
+  "aven",
+  "sofi_card",
+  "capital_one_vx",
+  "river_bitcoin_bill_pay",
+] as const
+
+export type PaymentSource = (typeof PAYMENT_SOURCES)[number]
+export type PaymentSourceRoute = "transaction" | "btc_bill_pay"
+
+const BITCOIN_NATIVE_SOURCES: ReadonlySet<PaymentSource> = new Set([
+  "river",
+  "zeus_lightning",
+  "zeus_on_chain",
+  "strike",
+])
+
+export function isPaymentSource(value: unknown): value is PaymentSource {
+  return typeof value === "string" && (PAYMENT_SOURCES as readonly string[]).includes(value)
+}
+
+export function paymentSourceRoute(source: PaymentSource): PaymentSourceRoute {
+  return source === "river_bitcoin_bill_pay" ? "btc_bill_pay" : "transaction"
+}
 
 export type TransactionWriteKind = "spend" | "credit"
+export const BTC_BILL_PAY_WRITE_BUDGET_EFFECTS = [
+  "budget_category",
+  "credit_card_payment",
+] as const
+export type BtcBillPayBudgetEffect = (typeof BTC_BILL_PAY_WRITE_BUDGET_EFFECTS)[number]
 
 export type WriteContractErrorCode =
   | "invalid-actor"
@@ -31,6 +69,9 @@ export type WriteContractErrorCode =
   | "int64-out-of-range"
   | "zero-amount"
   | "income-must-be-credit"
+  | "invalid-payment-source"
+  | "payment-source-fields"
+  | "payment-source-route-mismatch"
   | "sign-disagrees"
   | "source-owner-mismatch"
 
@@ -55,9 +96,12 @@ export interface TransactionWriteInput {
   readonly owner: FamilyMember
   readonly sourceFile: string
   readonly card?: string
+  /** Closed source intent. The builder maps it onto the retained `card` field. */
+  readonly paymentSource?: PaymentSource
   readonly note?: string
-  /** Exact sats, present only for explicitly Bitcoin-denominated Income. */
+  /** Positive sats magnitude for a Bitcoin-native spend or Income posting. */
   readonly amountSats?: string | bigint
+  readonly bitcoinAccountKey?: string
 }
 
 export interface TransactionWriteWire {
@@ -71,6 +115,7 @@ export interface TransactionWriteWire {
   readonly card?: string
   readonly note?: string
   readonly amountSats?: ConvexInt64WireValue
+  readonly bitcoinAccountKey?: string
 }
 
 export interface TransactionWriteRequest {
@@ -79,6 +124,46 @@ export interface TransactionWriteRequest {
   readonly args: {
     readonly transaction: TransactionWriteWire
     readonly sourceFile: string
+  }
+}
+
+export interface BtcBillPayWriteInput {
+  readonly id: string
+  readonly date: string
+  readonly merchant: string
+  readonly category: string
+  readonly budgetEffect: BtcBillPayBudgetEffect
+  readonly amountUsdCents: string | bigint
+  readonly btcSpentSats: string | bigint
+  readonly btcPriceCents: string | bigint
+  readonly feeUsdCents: string | bigint
+  readonly owner: FamilyMember
+  readonly sourceFile: "bitcoin-bill-pays"
+  readonly paymentSource: "river_bitcoin_bill_pay"
+  readonly note?: string
+  readonly reference?: string
+}
+
+export interface BtcBillPayWriteRequest {
+  readonly path: typeof UPSERT_BTC_BILL_PAY_PATH
+  readonly format: typeof CONVEX_WRITE_FORMAT
+  readonly args: {
+    readonly sourceFile: "bitcoin-bill-pays"
+    readonly billPay: {
+      readonly id: string
+      readonly date: string
+      readonly merchant: string
+      readonly category: string
+      readonly budgetEffect: BtcBillPayBudgetEffect
+      readonly amountUsdCents: ConvexInt64WireValue
+      readonly btcSpentSats: ConvexInt64WireValue
+      readonly btcPriceCents: ConvexInt64WireValue
+      readonly feeUsdCents: ConvexInt64WireValue
+      readonly owner: "victor"
+      readonly platform: "river_bitcoin_bill_pay"
+      readonly note?: string
+      readonly reference?: string
+    }
   }
 }
 
@@ -133,7 +218,6 @@ export function buildTransactionWriteRequest(
       `${actor} may not write data owned by ${owner}`,
     )
   }
-
   const sourceFile = requiredString(candidate.sourceFile, "sourceFile")
   const expectedSource = transactionsDataFileName(owner)
   if (sourceFile !== expectedSource) {
@@ -150,12 +234,23 @@ export function buildTransactionWriteRequest(
   const amountSats = candidate.amountSats === undefined
     ? undefined
     : parseWriteInt64(candidate.amountSats)
-  if (amountSats !== undefined && (category !== "Income" || amountSats <= 0n)) {
-    throw new WriteContractError(
-      "invalid-input",
-      "Bitcoin-denominated Income must carry a positive exact sats amount",
-    )
-  }
+  const paymentSource = candidate.paymentSource === undefined
+    ? isPaymentSource(candidate.card)
+      ? candidate.card
+      : undefined
+    : requirePaymentSource(candidate.paymentSource)
+  const bitcoinAccountKey = candidate.bitcoinAccountKey === undefined
+    ? undefined
+    : requiredTrimmedString(candidate.bitcoinAccountKey, "bitcoinAccountKey")
+  const paymentFields = transactionPaymentFields(
+    candidate,
+    paymentSource,
+    owner,
+    kind,
+    category,
+    amountSats,
+    bitcoinAccountKey,
+  )
 
   const transaction: TransactionWriteWire = {
     id: requiredString(candidate.id, "id"),
@@ -165,11 +260,12 @@ export function buildTransactionWriteRequest(
     kind,
     category,
     owner,
-    ...optionalWireString(candidate, "card"),
+    ...paymentFields,
     ...optionalWireString(candidate, "note"),
     ...(amountSats === undefined
       ? {}
       : { amountSats: encodeConvexInt64(amountSats) }),
+    ...(bitcoinAccountKey === undefined ? {} : { bitcoinAccountKey }),
   }
 
   return {
@@ -177,6 +273,185 @@ export function buildTransactionWriteRequest(
     format: CONVEX_WRITE_FORMAT,
     args: { transaction, sourceFile },
   }
+}
+
+export function buildBtcBillPayWriteRequest(
+  actor: unknown,
+  candidate: unknown,
+): BtcBillPayWriteRequest {
+  if (!isFamilyMember(actor) || !isAdult(actor)) {
+    throw new WriteContractError(
+      "write-not-authorized",
+      "River Bitcoin Bill Pay is available only to an adult household actor",
+    )
+  }
+  if (!isRecord(candidate)) {
+    throw new WriteContractError("invalid-input", "Bitcoin bill-pay input must be an object")
+  }
+  const owner = candidate.owner
+  if (!isFamilyMember(owner) || !isAdult(owner)) {
+    throw new WriteContractError(
+      "invalid-owner",
+      "Bitcoin bill-pay owner must be an adult household member",
+    )
+  }
+  if (!canWriteDataOwnedBy(actor, owner)) {
+    throw new WriteContractError(
+      "write-not-authorized",
+      `${actor} may not write data owned by ${owner}`,
+    )
+  }
+  const canonicalOwner = ledgerOwner(owner)
+  if (canonicalOwner !== "victor") {
+    throw new WriteContractError("invalid-owner", "River bill pay requires the adult ledger")
+  }
+  if (candidate.sourceFile !== "bitcoin-bill-pays") {
+    throw new WriteContractError(
+      "source-owner-mismatch",
+      'Bitcoin bill pays require sourceFile "bitcoin-bill-pays"',
+    )
+  }
+  if (candidate.paymentSource !== "river_bitcoin_bill_pay") {
+    throw new WriteContractError(
+      "payment-source-route-mismatch",
+      "tables:upsertBtcBillPay requires river_bitcoin_bill_pay",
+    )
+  }
+  if (
+    candidate.budgetEffect !== "budget_category" &&
+    candidate.budgetEffect !== "credit_card_payment"
+  ) {
+    throw new WriteContractError(
+      "invalid-input",
+      "budgetEffect must be budget_category or credit_card_payment",
+    )
+  }
+  const budgetEffect = candidate.budgetEffect
+  const category = budgetEffect === "credit_card_payment"
+    ? "Credit Card Payment"
+    : requiredString(candidate.category, "category")
+  const amountUsdCents = positiveWriteInt64(candidate.amountUsdCents, "amountUsdCents")
+  const btcSpentSats = positiveWriteInt64(candidate.btcSpentSats, "btcSpentSats")
+  const btcPriceCents = positiveWriteInt64(candidate.btcPriceCents, "btcPriceCents")
+  const feeUsdCents = parseWriteInt64(candidate.feeUsdCents)
+  if (feeUsdCents < 0n) {
+    throw new WriteContractError("invalid-input", "feeUsdCents must be nonnegative")
+  }
+
+  const optional = (field: "note" | "reference") => {
+    const value = candidate[field]
+    if (value === undefined) return {}
+    if (typeof value !== "string") {
+      throw new WriteContractError("invalid-input", `${field} must be a string when present`)
+    }
+    return { [field]: value }
+  }
+  return {
+    path: UPSERT_BTC_BILL_PAY_PATH,
+    format: CONVEX_WRITE_FORMAT,
+    args: {
+      sourceFile: "bitcoin-bill-pays",
+      billPay: {
+        id: requiredString(candidate.id, "id"),
+        date: requiredIsoDate(candidate.date),
+        merchant: requiredString(candidate.merchant, "merchant"),
+        category,
+        budgetEffect,
+        amountUsdCents: encodeConvexInt64(amountUsdCents),
+        btcSpentSats: encodeConvexInt64(btcSpentSats),
+        btcPriceCents: encodeConvexInt64(btcPriceCents),
+        feeUsdCents: encodeConvexInt64(feeUsdCents),
+        owner: canonicalOwner,
+        platform: "river_bitcoin_bill_pay",
+        ...optional("note"),
+        ...optional("reference"),
+      },
+    },
+  }
+}
+
+function positiveWriteInt64(value: unknown, field: string): bigint {
+  const parsed = parseWriteInt64(value)
+  if (parsed <= 0n) {
+    throw new WriteContractError("invalid-input", `${field} must be positive`)
+  }
+  return parsed
+}
+
+function requirePaymentSource(value: unknown): PaymentSource {
+  if (isPaymentSource(value)) return value
+  throw new WriteContractError(
+    "invalid-payment-source",
+    `paymentSource must be one of ${PAYMENT_SOURCES.join(", ")}`,
+  )
+}
+
+function transactionPaymentFields(
+  candidate: Record<string, unknown>,
+  paymentSource: PaymentSource | undefined,
+  owner: FamilyMember,
+  kind: TransactionWriteKind,
+  category: string,
+  amountSats: bigint | undefined,
+  bitcoinAccountKey: string | undefined,
+): Partial<Pick<TransactionWriteWire, "card">> {
+  if (paymentSource === undefined) {
+    if (amountSats !== undefined && (category !== "Income" || amountSats <= 0n)) {
+      throw new WriteContractError(
+        "invalid-input",
+        "Bitcoin-denominated Income must carry a positive exact sats amount",
+      )
+    }
+    if (bitcoinAccountKey !== undefined && amountSats === undefined) {
+      throw new WriteContractError(
+        "payment-source-fields",
+        "bitcoinAccountKey requires amountSats",
+      )
+    }
+    return optionalWireString(candidate, "card")
+  }
+
+  if (paymentSourceRoute(paymentSource) !== "transaction") {
+    throw new WriteContractError(
+      "payment-source-route-mismatch",
+      "river_bitcoin_bill_pay must use tables:upsertBtcBillPay",
+    )
+  }
+  if (candidate.card !== undefined && candidate.card !== paymentSource) {
+    throw new WriteContractError(
+      "payment-source-fields",
+      "card must be omitted or match paymentSource",
+    )
+  }
+
+  if (BITCOIN_NATIVE_SOURCES.has(paymentSource)) {
+    if (!isAdult(owner)) {
+      throw new WriteContractError(
+        "write-not-authorized",
+        "Bitcoin-native payment sources are available only to the adult household ledger",
+      )
+    }
+    const isSpend = kind === "spend" && category !== "Income"
+    const isIncome = kind === "credit" && category === "Income"
+    if (
+      (!isSpend && !isIncome) ||
+      amountSats === undefined ||
+      amountSats <= 0n ||
+      bitcoinAccountKey === undefined
+    ) {
+      throw new WriteContractError(
+        "payment-source-fields",
+        "Bitcoin-native payment sources require a spend with a non-Income category or a credit with category Income, plus positive amountSats and bitcoinAccountKey",
+      )
+    }
+  } else if (amountSats !== undefined || bitcoinAccountKey !== undefined) {
+    throw new WriteContractError(
+      "payment-source-fields",
+      "Card payment sources must not carry Bitcoin posting fields",
+    )
+  }
+
+  return { card: paymentSource }
 }
 
 function requireTransactionSign(
@@ -224,6 +499,14 @@ function requiredString(value: unknown, field: string): string {
     throw new WriteContractError("invalid-input", `${field} must be a non-empty string`)
   }
   return value
+}
+
+function requiredTrimmedString(value: unknown, field: string): string {
+  const trimmed = requiredString(value, field).trim()
+  if (trimmed === "") {
+    throw new WriteContractError("invalid-input", `${field} must be a non-empty string`)
+  }
+  return trimmed
 }
 
 function requiredIsoDate(value: unknown): string {
