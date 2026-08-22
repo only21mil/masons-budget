@@ -250,6 +250,8 @@ class AndroidFinanceRegressionTest {
         show(Destination.NET_WORTH, state, DisplayUnit.USD)
         contentList().performScrollToNode(hasText("10 years"))
 
+        compose.onNodeWithText("HORIZON")
+            .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
         compose.onNodeWithText("10 years").assertIsSelected()
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Selected"))
         compose.onNodeWithText("20 years").assertIsNotSelected().performClick()
@@ -279,6 +281,8 @@ class AndroidFinanceRegressionTest {
         show(Destination.RETIREMENT, state, DisplayUnit.USD)
         contentList().performScrollToNode(hasText("10 years"))
 
+        compose.onNodeWithText("HORIZON")
+            .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
         compose.onNodeWithText("10 years").assertIsSelected()
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Selected"))
         compose.onNodeWithText("30 years").assertIsNotSelected().performClick()

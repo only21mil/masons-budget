@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -47,6 +48,7 @@ internal fun HorizonSelector(
             stringResource(R.string.horizon_label),
             style = MaterialTheme.typography.labelSmall,
             color = VaultTextDim,
+            modifier = Modifier.semantics { heading() },
         )
         Row(
             Modifier.fillMaxWidth(),
