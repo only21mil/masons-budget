@@ -1,11 +1,19 @@
 import type { Cents } from "@vogel-vault/domain/money"
 import {
+  type FamilyMember,
+  isAdult,
+  netWorthScopeFor,
+  visibleTo,
+} from "@vogel-vault/domain/family"
+import {
   type Budget,
   type BudgetSpend,
   type CategorySpend,
   type Transaction,
   transactionsInMonth,
 } from "@vogel-vault/domain/readModel"
+
+import type { LinuxBillPay } from "./billPayBudgetEffect.ts"
 
 /** Signed budget contribution: positive spend, negative credit, zero income. */
 export function spendAmount(transaction: Transaction): Cents {
@@ -23,10 +31,21 @@ export function hasOppositeSpendSign(transaction: Transaction): boolean {
   return spendAmount(transaction) < 0n
 }
 
-/** Derive the selected month's actuals exclusively from signed transaction contributions. */
+/** Apply the household-budget scope to Bitcoin bill pays. */
+export function budgetBillPaysFor(
+  viewer: FamilyMember,
+  billPays: readonly LinuxBillPay[],
+): LinuxBillPay[] {
+  return isAdult(viewer)
+    ? netWorthScopeFor(viewer, billPays)
+    : visibleTo(viewer, billPays)
+}
+
+/** Derive the selected month's actuals from signed transactions and budgeted bill pays. */
 export function deriveBudgetSpend(
   budget: Budget,
   transactions: readonly Transaction[],
+  billPays: readonly LinuxBillPay[] = [],
 ): BudgetSpend {
   const spentByCategory = new Map<string, Cents>()
   for (const transaction of transactionsInMonth(transactions, budget.month)) {
@@ -35,6 +54,16 @@ export function deriveBudgetSpend(
     spentByCategory.set(
       transaction.category,
       (spentByCategory.get(transaction.category) ?? 0n) + contribution,
+    )
+  }
+  for (const billPay of billPays) {
+    if (
+      billPay.date.slice(0, 7) !== budget.month ||
+      billPay.budgetEffect !== "budget_category"
+    ) continue
+    spentByCategory.set(
+      billPay.category,
+      (spentByCategory.get(billPay.category) ?? 0n) + billPay.amountUsd,
     )
   }
 

@@ -4,6 +4,9 @@ The Linux client uses a per-device credential. It never receives or sends
 `CONVEX_SYNC_TOKEN`; that household operator credential is accepted only by the
 trusted pairing-mint path.
 
+Desktop row writes are enabled only when the main process starts with
+`VOGEL_VAULT_DEVICE_WRITES=1`; pairing alone does not enable mutations.
+
 ## Capabilities
 
 Pairings and devices may carry this closed set:

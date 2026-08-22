@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: linux-package-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   package:
@@ -40,6 +40,20 @@ jobs:
 
       - name: Build, package, extract, and validate
         run: npm run package:linux --workspace @vogel-vault/linux
+
+      # The smoke launches the development Electron binary against the extracted
+      # AppImage payload with Chromium's OS sandbox on. Hosted runners ship that
+      # binary's setuid helper unprivileged, so give it the ownership and mode
+      # Electron documents (root:root, 4755) instead of turning the sandbox off.
+      - name: Privilege Electron's setuid sandbox helper for the smoke
+        working-directory: linux
+        run: |
+          set -euo pipefail
+          helper="$(node -p "require('path').join(require('path').dirname(require('electron')), 'chrome-sandbox')")"
+          test -f "$helper"
+          sudo chown root:root "$helper"
+          sudo chmod 4755 "$helper"
+          stat -c '%U:%G %a %n' "$helper"
 
       - name: Offline smoke from packaged AppImage payload
         run: npm run smoke:packaged --workspace @vogel-vault/linux

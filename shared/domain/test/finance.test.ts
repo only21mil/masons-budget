@@ -369,6 +369,27 @@ test("net worth scopes adult accounts and values each retirement asset once", ()
   )
 })
 
+test("Rachel shares the adult net worth while Mason's retirement stays excluded", () => {
+  const result = selectNetWorth({
+    viewer: "rachel",
+    bitcoinSats: BigInt(fixtures.netWorth.bitcoinSats),
+    financeAccounts: accounts,
+    quotes,
+  })
+  const expected = fixtures.netWorth.expectedAdult
+
+  assert.deepEqual(result.accounts.map((entry) => entry.account.key), expected.accountKeys)
+  assert.equal(result.retirementValueCents, BigInt(expected.retirementValueCents))
+  assert.equal(result.bitcoinValueCents, BigInt(expected.bitcoinValueCents))
+  assert.equal(result.retirementValueSats, BigInt(expected.retirementValueSats))
+  assert.equal(result.totalValueCents, BigInt(expected.totalValueCents))
+  assert.equal(result.totalValueSats, BigInt(expected.totalValueSats))
+  assert.equal(
+    result.accounts.some((entry) => entry.account.owner === "mason"),
+    false,
+  )
+})
+
 test("account total is fallback-only and missing BTC quote suppresses combined totals", () => {
   const rachel = accounts.find((entry) => entry.key === "rachel-401k")
   assert.ok(rachel)

@@ -1,0 +1,43 @@
+{
+  "$comment": "Closed payment-source wire contract shared by every client and Convex. The sources array order is the canonical picker order. Transaction builders derive a known source from card; paymentSource is an optional typed alias. River routes to btcBillPays. Fiat cards persist in transaction.card without Bitcoin posting fields. Bitcoin-native sources support spend, Income, and transfer activities. Transaction postings require an adult ledger, exact positive sats, and a Bitcoin account key; spend debits and Income credits.",
+  "contractVersion": 2,
+  "sources": [
+    { "wire": "river", "label": "River", "route": "transaction", "classification": "bitcoin_native", "supportedActivities": ["spend", "income", "transfer"] },
+    { "wire": "zeus_lightning", "label": "Zeus Lightning", "route": "transaction", "classification": "bitcoin_native", "supportedActivities": ["spend", "income", "transfer"] },
+    { "wire": "zeus_on_chain", "label": "Zeus On-chain", "route": "transaction", "classification": "bitcoin_native", "supportedActivities": ["spend", "income", "transfer"] },
+    { "wire": "strike", "label": "Strike", "route": "transaction", "classification": "bitcoin_native", "supportedActivities": ["spend", "income", "transfer"] },
+    { "wire": "coinbase_card", "label": "Coinbase Card", "route": "transaction", "classification": "fiat_card", "supportedActivities": ["spend"] },
+    { "wire": "aven", "label": "Aven", "route": "transaction", "classification": "fiat_card", "supportedActivities": ["spend"] },
+    { "wire": "sofi_card", "label": "SoFi Card", "route": "transaction", "classification": "fiat_card", "supportedActivities": ["spend"] },
+    { "wire": "capital_one_vx", "label": "Capital One VX", "route": "transaction", "classification": "fiat_card", "supportedActivities": ["spend"] },
+    { "wire": "river_bitcoin_bill_pay", "label": "River Bitcoin Bill Pay", "route": "btc_bill_pay", "classification": "bill_pay", "supportedActivities": ["btc_bill_pay"] }
+  ],
+  "bitcoinSpend": {
+    "paymentSource": "zeus_lightning",
+    "card": "zeus_lightning",
+    "kind": "spend",
+    "category": "Shopping",
+    "amountCents": "2500",
+    "amountSats": "25000",
+    "bitcoinAccountKey": "zeus"
+  },
+  "bitcoinIncome": {
+    "paymentSource": "strike",
+    "card": "strike",
+    "kind": "credit",
+    "category": "Income",
+    "amountCents": "2500",
+    "amountSats": "25000",
+    "bitcoinAccountKey": "strike"
+  },
+  "cardSpend": {
+    "paymentSource": "capital_one_vx",
+    "card": "capital_one_vx"
+  },
+  "billPay": {
+    "paymentSource": "river_bitcoin_bill_pay",
+    "route": "btc_bill_pay",
+    "platform": "river_bitcoin_bill_pay",
+    "budgetEffects": ["budget_category", "credit_card_payment"]
+  }
+}

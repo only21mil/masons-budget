@@ -17,6 +17,26 @@ export interface VogelVaultFiatValuation {
   readonly confidence?: string
 }
 
+/**
+ * Income row written atomically with the Bitcoin buy it funded.
+ *
+ * One user action, one write. The buy carries the only BTC balance posting, so
+ * this block never travels with `amountSats` on a separate Income transaction —
+ * both credit River and doing both would double the stack. `id`, `owner` and
+ * `date` must equal the enclosing buy's, and `amountCents` must equal its
+ * `usdCents`; the server rejects the write otherwise.
+ */
+export interface VogelVaultLinkedIncome {
+  readonly id: string
+  readonly owner: VogelVaultMember
+  readonly date: string
+  readonly amountCents: bigint
+  readonly source: string
+  readonly sourceFile: "income"
+  readonly note?: string
+  readonly loggedBy?: string
+}
+
 export interface VogelVaultTransactionRow {
   readonly txId: string
   readonly owner: VogelVaultMember
@@ -87,6 +107,13 @@ export interface VogelVaultBtcAccountRow {
   readonly updatedAtMs: number
 }
 
+/**
+ * Whether a bill pay comes out of a budget category or is a credit-card
+ * payment that contributes no budget spend. Closed set; persist the wire
+ * string, never a label.
+ */
+export type VogelVaultBillPayBudgetEffect = "budget_category" | "credit_card_payment"
+
 export interface VogelVaultBtcBillPayRow {
   readonly billPayId: string
   readonly owner: VogelVaultMember
@@ -94,6 +121,8 @@ export interface VogelVaultBtcBillPayRow {
   readonly month: string
   readonly merchant: string
   readonly category: string
+  /** Absent on rows written before the bill-pay budget amendment. */
+  readonly budgetEffect?: VogelVaultBillPayBudgetEffect
   readonly amountUsdCents: bigint
   readonly btcSpentSats: bigint
   readonly btcPriceCents: bigint
@@ -493,8 +522,10 @@ export type VogelVaultMutationRequest =
       readonly category: string
       readonly card?: string
       readonly note?: string
-      /** Present only when Income is explicitly entered in sats. */
+      /** Present for sat-Income and for a Bitcoin-denominated payment source. */
       readonly amountSats?: bigint
+      /** Required by the payment-source contract for lightning and on_chain. */
+      readonly bitcoinAccountKey?: string
       /** Omit only for a create whose natural key has never existed. */
       readonly baseUpdatedAtMs?: number
     })
@@ -563,6 +594,8 @@ export type VogelVaultMutationRequest =
       readonly costBasisStatus?: string
       readonly loggedBy?: string
       readonly archimedesRequestId?: string
+      /** Present only when this buy was funded by income saved in the same action. */
+      readonly linkedIncome?: VogelVaultLinkedIncome
       /** Omit only for a create whose natural key has never existed. */
       readonly baseUpdatedAtMs?: number
     })
@@ -579,6 +612,12 @@ export type VogelVaultMutationRequest =
       readonly date: string
       readonly merchant: string
       readonly category: string
+      /**
+       * Required on every new client write. "credit_card_payment" must carry
+       * the canonical "Credit Card Payment" category and contributes no
+       * budget spend; "budget_category" requires a real selected category.
+       */
+      readonly budgetEffect: VogelVaultBillPayBudgetEffect
       readonly amountUsdCents: bigint
       readonly btcSpentSats: bigint
       readonly btcPriceCents: bigint

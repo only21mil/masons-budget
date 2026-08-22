@@ -38,7 +38,7 @@ const WIDE = { name: "1920", width: 1920, height: 1200 }
 
 const ALL_PAGES = [
   "dashboard", "budget", "activity", "bitcoin", "bitcoin-buys", "bills",
-  "retirement", "net-worth",
+  "net-worth",
   "today", "inbox", "upcoming", "flagged", "projects",
   "family", "sync-health", "export", "csv-import", "settings", "onboarding", "lock",
 ]

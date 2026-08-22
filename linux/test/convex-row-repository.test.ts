@@ -69,6 +69,23 @@ function income(overrides: Record<string, unknown> = {}): Record<string, unknown
   }
 }
 
+function billPay(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    billPayId: "pay-1",
+    owner: "victor",
+    date: "2026-07-03",
+    month: "2026-07",
+    merchant: "Example",
+    category: "Bills",
+    amountUsdCents: int64(5_000n),
+    btcSpentSats: int64(50n),
+    btcPriceCents: int64(10_000_000n),
+    feeUsdCents: int64(100n),
+    updatedAtMs: 40,
+    ...overrides,
+  }
+}
+
 function btcBalanceDocument(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     owner: "victor",
@@ -84,7 +101,7 @@ function btcBalanceDocument(overrides: Record<string, unknown> = {}): Record<str
       },
       {
         key: "coldcard",
-        label: "Coldcard",
+        label: "Multisig",
         custody: "self_custody",
         sats: int64(150_000_000n),
         fiatCents: int64(14_700_000n),
@@ -537,6 +554,56 @@ describe("main-process row repository", () => {
     })
   })
 
+  // A Bitcoin-native spend is a positive-sats row with a non-Income category and
+  // an account key. The ledger's own contract writes exactly this shape through
+  // api.transaction (convex/btcLedger.test.ts:418-422) and the write validator
+  // accepts it (electron/convexMutations.ts bitcoin branch). The read decoder
+  // must surface it, not fail the whole envelope. Positivity and the account
+  // requirement are pinned in the same test so the admission cannot widen again.
+  it("decodes a bitcoin-native spend and keeps non-positive sats fail-closed", async () => {
+    const decode = (row: Record<string, unknown>) => {
+      const repository = createConvexRowRepository({
+        configuration: () => ({ generation: 1, settings }),
+        post: async () => success({ complete: true, rows: [transaction(row)] }),
+      })
+      return repository.query({ kind: "transactions" }, "victor")
+    }
+
+    const spend = {
+      txId: "btc-spend",
+      merchant: "Merchant",
+      amountCents: int64(10_000n),
+      category: "Shopping",
+      card: "zeus_lightning",
+      bitcoinAccountKey: "zeus",
+    }
+
+    // Positive sats, non-Income, account present -> decodes.
+    const ok = await decode({ ...spend, amountSats: int64(25_000n) })
+    expect(ok.status).toBe("ok")
+    expect(ok).toMatchObject({ kind: "transactions" })
+    if (ok.status !== "ok" || ok.kind !== "transactions") return
+    expect(ok.rows[0]).toMatchObject({
+      txId: "btc-spend",
+      category: "Shopping",
+      amountSats: 25_000n,
+      bitcoinAccountKey: "zeus",
+      card: "zeus_lightning",
+      spendAmount: 10_000n,
+      hasOppositeSpendSign: false,
+    })
+
+    // Negative sats, non-Income, account present -> fail closed.
+    const negative = await decode({ ...spend, amountSats: int64(-25_000n) })
+    expect(negative.status).toBe("error")
+    expect(negative).toMatchObject({ code: "invalid-response" })
+
+    // Zero sats, non-Income, account present -> fail closed.
+    const zero = await decode({ ...spend, amountSats: int64(0n) })
+    expect(zero.status).toBe("error")
+    expect(zero).toMatchObject({ code: "invalid-response" })
+  })
+
   it("asserts visibility locally even if the backend returns the wrong owner", async () => {
     const repository = createConvexRowRepository({
       configuration: () => ({ generation: 1, settings }),
@@ -591,7 +658,7 @@ describe("main-process row repository", () => {
         row: {
           key: "coldcard",
           owner: "victor",
-          label: "Coldcard",
+          label: "Multisig",
           custody: "self_custody",
           sats: int64(1_000n),
           fiatCents: int64(500_000n),
@@ -874,7 +941,7 @@ describe("main-process row repository", () => {
     const legacyUnavailableDocument = btcBalanceDocument({
       accounts: [{
         key: "coldcard",
-        label: "Coldcard",
+        label: "Multisig",
         custody: "self_custody",
         sats: int64(541_782_856n),
         fiatCents: int64(0n),
@@ -890,7 +957,7 @@ describe("main-process row repository", () => {
     const explicitUnavailableDocument = btcBalanceDocument({
       accounts: [{
         key: "coldcard",
-        label: "Coldcard",
+        label: "Multisig",
         custody: "self_custody",
         sats: int64(541_782_856n),
         fiatCents: int64(0n),
@@ -1050,6 +1117,77 @@ describe("main-process row repository", () => {
     await expect(
       badBillPay.query({ kind: "btcBillPays", scope: "netWorth" }, "victor"),
     ).resolves.toEqual({ status: "error", code: "invalid-response" })
+  })
+
+  describe("the bill-pay budget effect at the read boundary", () => {
+    function readBillPay(row: Record<string, unknown>) {
+      const repository = createConvexRowRepository({
+        configuration: () => ({ generation: 1, settings }),
+        post: async () => success({ complete: true, rows: [row] }),
+      })
+      return repository.query({ kind: "btcBillPays", scope: "visible" }, "victor")
+    }
+
+    // toStrictEqual, not toMatchObject: the claim is that the property is
+    // ABSENT from the decoded row, not that it decoded to undefined. Only an
+    // absent property lets the renderer apply its credit_card_payment default.
+    it("passes a pre-amendment row through with no budgetEffect property", async () => {
+      await expect(readBillPay(billPay())).resolves.toStrictEqual({
+        status: "ok",
+        kind: "btcBillPays",
+        complete: true,
+        rows: [{
+          billPayId: "pay-1",
+          owner: "victor",
+          date: "2026-07-03",
+          month: "2026-07",
+          merchant: "Example",
+          category: "Bills",
+          amountUsdCents: 5_000n,
+          btcSpentSats: 50n,
+          btcPriceCents: 10_000_000n,
+          feeUsdCents: 100n,
+          updatedAtMs: 40,
+        }],
+      })
+    })
+
+    it("accepts a budget-category effect against a real category", async () => {
+      await expect(
+        readBillPay(billPay({ budgetEffect: "budget_category", category: "Utilities" })),
+      ).resolves.toMatchObject({
+        status: "ok",
+        rows: [{ category: "Utilities", budgetEffect: "budget_category" }],
+      })
+    })
+
+    it("accepts a credit-card payment under the one category that names it", async () => {
+      await expect(
+        readBillPay(billPay({
+          budgetEffect: "credit_card_payment",
+          category: "Credit Card Payment",
+        })),
+      ).resolves.toMatchObject({
+        status: "ok",
+        rows: [{ category: "Credit Card Payment", budgetEffect: "credit_card_payment" }],
+      })
+    })
+
+    it.each([
+      ["an unknown wire value", { budgetEffect: "budget" }],
+      ["an empty string", { budgetEffect: "" }],
+      ["a null", { budgetEffect: null }],
+      ["a non-string", { budgetEffect: 1 }],
+      [
+        "a credit-card payment under some other category",
+        { budgetEffect: "credit_card_payment", category: "Utilities" },
+      ],
+    ])("rejects the whole row for %s", async (_reason, overrides) => {
+      await expect(readBillPay(billPay(overrides))).resolves.toEqual({
+        status: "error",
+        code: "invalid-response",
+      })
+    })
   })
 
   it("enforces response byte and row-count bounds", async () => {

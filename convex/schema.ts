@@ -70,6 +70,11 @@ export const custodyValidator = v.union(
   v.literal("self_custody"),
 );
 
+export const btcBillPayBudgetEffectValidator = v.union(
+  v.literal("budget_category"),
+  v.literal("credit_card_payment"),
+);
+
 const balanceAmountsSatsValidator = v.object({
   cashAppSats: v.optional(v.int64()),
   coldcardSats: v.optional(v.int64()),
@@ -464,6 +469,10 @@ export default defineSchema({
     costBasisStatus: v.optional(v.string()),
     loggedBy: v.optional(v.string()),
     archimedesRequestId: v.optional(v.string()),
+    // Backend-only marker for the atomic income-plus-buy contract. Public
+    // projections intentionally omit it so existing client wire shapes stay
+    // backward compatible.
+    linkedIncomeId: v.optional(v.string()),
     balanceAccountKey: v.optional(v.string()),
     balancePostingVersion: v.optional(v.int64()),
     sourceFile: v.string(), // "bitcoin-buys" | "mason-bitcoin-buys"
@@ -487,6 +496,8 @@ export default defineSchema({
     month: v.string(),
     merchant: v.string(),
     category: v.string(),
+    // Legacy rows omit this and are treated as excluded credit-card payments.
+    budgetEffect: v.optional(btcBillPayBudgetEffectValidator),
     amountUsdCents: v.int64(),
     btcSpentSats: v.int64(),
     btcPriceCents: v.int64(),
