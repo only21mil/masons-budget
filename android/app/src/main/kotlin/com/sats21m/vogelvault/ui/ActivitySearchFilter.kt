@@ -1,19 +1,12 @@
 package com.sats21m.vogelvault.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,18 +18,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.testTag
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Transaction
-import com.sats21m.vogelvault.ui.theme.VaultAccent
-import com.sats21m.vogelvault.ui.theme.VaultAccentDim
-import com.sats21m.vogelvault.ui.theme.VaultCream
-import com.sats21m.vogelvault.ui.theme.VaultLine
 import com.sats21m.vogelvault.ui.theme.VaultSpace
-import com.sats21m.vogelvault.ui.theme.VaultSurface
-import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.math.BigInteger
@@ -50,6 +35,8 @@ internal enum class ActivityTransactionFilter(val label: String) {
     LIGHTNING("Lightning"),
     ON_CHAIN("On-chain"),
 }
+
+internal const val ACTIVITY_FILTER_GROUP_TEST_TAG = "activity-filter-group"
 
 /**
  * Immutable, normalized search data built once per locally cached ledger.
@@ -201,44 +188,22 @@ internal fun ActivitySearchControls(projection: ActivitySearchProjection) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
+                .horizontalScroll(rememberScrollState())
+                .selectableGroup()
+                .testTag(ACTIVITY_FILTER_GROUP_TEST_TAG),
             horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ActivityTransactionFilter.entries.forEach { filter ->
-                ActivityFilterChip(
+                SelectionChip(
                     label = filter.label,
+                    semanticLabel = "${filter.label} activity filter",
+                    actionLabel = "Filter activity by ${filter.label}",
                     selected = projection.filter == filter,
                     onSelect = { projection.onFilterChange(filter) },
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun ActivityFilterChip(
-    label: String,
-    selected: Boolean,
-    onSelect: () -> Unit,
-) {
-    val shape = RoundedCornerShape(99.dp)
-    Box(
-        modifier = Modifier
-            .heightIn(min = 40.dp)
-            .clip(shape)
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
-            .background(if (selected) VaultAccentDim else VaultSurface, shape)
-            .border(1.dp, if (selected) VaultAccent.copy(alpha = 0.42f) else VaultLine, shape)
-            .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (selected) VaultCream else VaultTextMuted,
-            maxLines = 1,
-        )
     }
 }
 

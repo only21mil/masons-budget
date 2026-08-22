@@ -69,7 +69,8 @@ internal fun HorizonSelector(
 }
 
 /**
- * Ledger choice-chip language shared by month, horizon, and display-unit pickers.
+ * Ledger choice-chip language shared by activity filters, month, horizon, and
+ * display-unit pickers.
  * Orange marks selection only in the border and fill. Text stays cream or muted.
  */
 @Composable
