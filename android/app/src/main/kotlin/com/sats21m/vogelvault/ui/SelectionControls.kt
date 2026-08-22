@@ -97,7 +97,7 @@ internal fun SelectionChip(
                 }
             }
             .background(if (selected) VaultAccentDim else VaultSurface, shape)
-            .border(1.dp, if (selected) VaultAccent.copy(alpha = 0.42f) else VaultLine, shape)
+            .border(1.dp, if (selected) VaultAccent.copy(alpha = 0.75f) else VaultLine, shape)
             .padding(
                 horizontal = if (compact) VaultSpace.sm else VaultSpace.md,
                 vertical = if (compact) VaultSpace.xs else VaultSpace.sm,
