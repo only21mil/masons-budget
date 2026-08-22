@@ -131,6 +131,7 @@ test("manual workflow retains branch signer cleanup and retention gates", async 
     "workflow_dispatch:",
     "github.event.repository.default_branch",
     "ANDROID_DEBUG_KEYSTORE_BASE64",
+    "PAIRING: ${{ inputs.mode == 'bootstrap-pair' && secrets.ANDROID_READ_BOOTSTRAP_PAIR || '' }}",
     "VOGEL_VAULT_ANDROID_BOOTSTRAP_CI_PURPOSE: android-read-bootstrap-apk-v1",
     "retention-days: 1",
     "if: always()",

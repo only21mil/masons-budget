@@ -56,7 +56,7 @@ jobs:
         id: private_inputs
         env:
           MODE: ${{ inputs.mode }}
-          PAIRING: ${{ secrets.ANDROID_READ_BOOTSTRAP_PAIR }}
+          PAIRING: ${{ inputs.mode == 'bootstrap-pair' && secrets.ANDROID_READ_BOOTSTRAP_PAIR || '' }}
           KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
           VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
           VOGEL_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
