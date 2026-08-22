@@ -87,7 +87,7 @@ class ConvexWireGoldenValuesTest {
             "rowCounts",
         )
         assertEquals(993L, counts.transactions)
-        assertEquals(12L, counts.todos)
+        assertEquals(9L, counts.todos)
         assertEquals(35L, counts.btcBuys)
         assertEquals(37L, counts.btcBillPays)
         assertEquals(8L, counts.btcAccounts)

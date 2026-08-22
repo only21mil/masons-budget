@@ -171,7 +171,7 @@ describe("real Convex wire values", () => {
     }
     expect(result.value).toEqual({
       transactions: 993,
-      todos: 12,
+      todos: 9,
       btcBuys: 35,
       btcBillPays: 37,
       btcTransfers: 0,
