@@ -49,7 +49,9 @@ jobs:
         working-directory: linux
         run: |
           set -euo pipefail
-          helper="$(node -p "require('path').join(require('path').dirname(require('electron')), 'chrome-sandbox')")"
+          node -e "require('electron')"
+          helper="$(node -p "require('path').join(require('path').dirname(require.resolve('electron')), 'dist', 'chrome-sandbox')")"
+          echo "chrome-sandbox helper path: $helper"
           test -f "$helper"
           sudo chown root:root "$helper"
           sudo chmod 4755 "$helper"
