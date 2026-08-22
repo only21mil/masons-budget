@@ -47,7 +47,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
-import com.sats21m.vogelvault.csvimport.CsvImportLauncher
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcBalance
 import com.sats21m.vogelvault.domain.BillPayBudgetEffect
@@ -390,15 +389,6 @@ fun ScreenHost(
             when (destination) {
                 Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit)
                 Destination.ACTIVITY -> {
-                    item {
-                        CsvImportLauncher(
-                            owner = state.activeProfile,
-                            existingTransactions = collections.visibleTransactions,
-                            displayUnit = displayUnit,
-                            quote = state.operationalBitcoinQuote(),
-                            onWriteSucceeded = onWriteSucceeded,
-                        )
-                    }
                     activity(state, checkNotNull(activitySearch), displayUnit) {
                         selectedTransactionKey = it.selectionKey
                     }

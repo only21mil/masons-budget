@@ -18,12 +18,8 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
-import com.sats21m.vogelvault.csvimport.CsvImportService
-import com.sats21m.vogelvault.csvimport.CsvImportSource
-import com.sats21m.vogelvault.csvimport.writeCsvImport
 import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexMutationClient
-import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.ConvexSyncTokenSource
 import com.sats21m.vogelvault.data.ConvexDeviceCredential
 import com.sats21m.vogelvault.data.ConvexDeviceCredentialSource
@@ -40,7 +36,6 @@ import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
 import java.util.UUID
 import kotlin.test.assertEquals
-import kotlin.test.assertIs
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
@@ -282,41 +277,6 @@ class RefreshAfterWriteSurfaceTest {
                 rejectionText = "Change not saved (http 500)",
             ),
         )
-    }
-
-    @Test
-    fun `CSV import refreshes after success and not after rejection`() = runBlocking {
-        val service = CsvImportService()
-        val prepared = service.prepareTransactions(
-            service.parse(
-                "date,amount,memo\n2026-07-29,500,Costco".toByteArray(),
-                CsvImportSource.CUSTOM,
-                btcPriceCents = 10_000_000L,
-            ),
-            FamilyMember.VICTOR,
-        )
-
-        application.poster.response = SUCCESS
-        var refreshCount = 0
-        val accepted = writeCsvImport(
-            prepared = prepared,
-            client = application.convexMutationClient,
-            onWriteSucceeded = { refreshCount++ },
-        )
-        assertEquals(1, accepted.savedCount)
-        assertEquals(null, accepted.failure)
-        assertEquals(1, refreshCount)
-
-        application.poster.response = REJECTION
-        refreshCount = 0
-        val rejected = writeCsvImport(
-            prepared = prepared,
-            client = application.convexMutationClient,
-            onWriteSucceeded = { refreshCount++ },
-        )
-        assertEquals(0, rejected.savedCount)
-        assertEquals("http 500", assertIs<ConvexResult.Failed>(rejected.failure).reason)
-        assertEquals(0, refreshCount)
     }
 
     @Test
