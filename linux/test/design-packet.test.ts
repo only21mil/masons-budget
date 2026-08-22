@@ -56,7 +56,7 @@ test("child pages in the packet are actually reachable by a child", () => {
 test("the state sample only covers data-backed pages", () => {
   // A static page has no loading/error/stale rendering, so photographing it in
   // those states produces four identical images.
-  const staticPages = new Set(["family", "settings", "export", "csv-import", "onboarding", "lock"])
+  const staticPages = new Set(["family", "settings", "export", "onboarding", "lock"])
   for (const id of arrayLiteral("STATE_SAMPLE")) {
     assert.ok(!staticPages.has(id), `STATE_SAMPLE includes static page "${id}"`)
   }

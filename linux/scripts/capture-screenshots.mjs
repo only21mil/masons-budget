@@ -40,7 +40,7 @@ const ALL_PAGES = [
   "dashboard", "budget", "activity", "bitcoin", "bitcoin-buys", "bills",
   "net-worth",
   "today", "inbox", "upcoming", "flagged", "projects",
-  "family", "sync-health", "export", "csv-import", "settings", "onboarding", "lock",
+  "family", "sync-health", "export", "settings", "onboarding", "lock",
 ]
 
 // Pages a child profile can reach (adult-only ones are excluded by the router).

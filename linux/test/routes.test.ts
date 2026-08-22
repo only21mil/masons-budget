@@ -76,8 +76,8 @@ function renderPage(
 
 // ── Structure ───────────────────────────────────────────────────────────────
 
-test("the cockpit has exactly 19 primary pages", () => {
-  assert.equal(ALL_PAGES.length, 19, ALL_PAGES.map((page) => page.id).join(", "))
+test("the cockpit has exactly 18 primary pages", () => {
+  assert.equal(ALL_PAGES.length, 18, ALL_PAGES.map((page) => page.id).join(", "))
 })
 
 test("retirement is no longer a tab and its deep link lands on net worth", () => {
@@ -169,7 +169,6 @@ const STATIC_PAGES = new Set([
   "family", // profile matrix, derived from the shared visibility contract
   "settings", // runtime info from the preload bridge plus the QA control
   "export", // a form; the export path itself is gated
-  "csv-import", // a form; the import path is gated
   "onboarding", // static first-run copy
   "lock", // static
 ])
