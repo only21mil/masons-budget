@@ -1,12 +1,20 @@
-name: Android read + todo bootstrap APKs
+name: Android signed debug APKs
 
-# This is an exceptional combined read + todo-write enrollment path. It is
-# manual-only and uses the existing stable debug signing identity so both APKs
-# update the installed Fold app without an uninstall. The temporary pairing
-# secret must be removed by a repository administrator after the run; this
-# workflow never changes it.
+# This manual workflow uses the persistent stable debug signing secrets so its
+# APKs update the installed Fold app without an uninstall. Bootstrap-pair mode
+# is an exceptional combined read + todo-write enrollment path; its temporary
+# pairing secret must be removed by a repository administrator after that run.
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: APK build mode
+        required: true
+        type: choice
+        default: clean-only
+        options:
+          - clean-only
+          - bootstrap-pair
 
 permissions:
   contents: read
@@ -47,6 +55,7 @@ jobs:
       - name: Materialize and validate private inputs
         id: private_inputs
         env:
+          MODE: ${{ inputs.mode }}
           PAIRING: ${{ secrets.ANDROID_READ_BOOTSTRAP_PAIR }}
           KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
           VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
@@ -59,7 +68,7 @@ jobs:
           pairing_file="$private_root/pairing.txt"
           keystore_file="$private_root/vogel-debug.keystore"
 
-          if [ -z "${PAIRING:-}" ]; then
+          if [ "$MODE" = "bootstrap-pair" ] && [ -z "${PAIRING:-}" ]; then
             echo "::error::A todo-write-enabled ANDROID_READ_BOOTSTRAP_PAIR is required for this manual run."
             exit 1
           fi
@@ -70,12 +79,15 @@ jobs:
 
           mkdir -p "$private_root/artifacts"
           chmod 700 "$private_root" "$private_root/artifacts"
-          printf '%s' "$PAIRING" > "$pairing_file"
+          if [ "$MODE" = "bootstrap-pair" ]; then
+            printf '%s' "$PAIRING" > "$pairing_file"
+            chmod 600 "$pairing_file"
+          fi
           if ! printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keystore_file"; then
             echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 is not valid base64."
             exit 1
           fi
-          chmod 600 "$pairing_file" "$keystore_file"
+          chmod 600 "$keystore_file"
 
           KEYSTORE_PATH="$keystore_file" \
             .github/workflows/scripts/validate_android_debug_keystore.sh
@@ -83,6 +95,7 @@ jobs:
 
       - name: Build same-signed bootstrap and clean APKs
         env:
+          MODE: ${{ inputs.mode }}
           CONVEX_READ_TOKEN: ""
           CONVEX_SYNC_TOKEN: ""
           VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
@@ -96,39 +109,55 @@ jobs:
           bootstrap_apk="$artifacts/vogel-vault-read-bootstrap.apk"
           clean_apk="$artifacts/vogel-vault-clean-replacement.apk"
           export VOGEL_DEBUG_KEYSTORE="$private_root/vogel-debug.keystore"
-          export VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE="$private_root/pairing.txt"
+          if [ "$MODE" = "clean-only" ]; then
+            node scripts/build-android-read-bootstrap.mjs \
+              --clean-only \
+              --out "$clean_apk"
+          else
+            export VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE="$private_root/pairing.txt"
 
-          node scripts/build-android-read-bootstrap.mjs \
-            --out "$bootstrap_apk" \
-            --clean-out "$clean_apk"
+            node scripts/build-android-read-bootstrap.mjs \
+              --out "$bootstrap_apk" \
+              --clean-out "$clean_apk"
 
-          # The helper deletes the entire app build tree between assemblies.
-          # It also verifies the non-secret todo-write intent is true only in
-          # the first BuildConfig and false in the clean replacement. Inspect
-          # decompressed dex strings without placing the pairing in argv or
-          # output: bootstrap must carry it and the fresh replacement must not.
-          unzip -p "$bootstrap_apk" 'classes*.dex' > "$private_root/bootstrap.dex"
-          unzip -p "$clean_apk" 'classes*.dex' > "$private_root/clean.dex"
-          if ! grep --binary-files=text --fixed-strings --quiet \
-            --file="$VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE" \
-            "$private_root/bootstrap.dex"; then
-            echo "::error::The bootstrap APK does not contain the requested one-time pairing."
-            exit 1
-          fi
-          if grep --binary-files=text --fixed-strings --quiet \
-            --file="$VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE" \
-            "$private_root/clean.dex"; then
-            echo "::error::The clean replacement APK inherited the one-time capability."
-            exit 1
+            # The helper deletes the entire app build tree between assemblies.
+            # It also verifies the non-secret todo-write intent is true only in
+            # the first BuildConfig and false in the clean replacement. Inspect
+            # decompressed dex strings without placing the pairing in argv or
+            # output: bootstrap must carry it and the fresh replacement must not.
+            unzip -p "$bootstrap_apk" 'classes*.dex' > "$private_root/bootstrap.dex"
+            unzip -p "$clean_apk" 'classes*.dex' > "$private_root/clean.dex"
+            if ! grep --binary-files=text --fixed-strings --quiet \
+              --file="$VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE" \
+              "$private_root/bootstrap.dex"; then
+              echo "::error::The bootstrap APK does not contain the requested one-time pairing."
+              exit 1
+            fi
+            if grep --binary-files=text --fixed-strings --quiet \
+              --file="$VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE" \
+              "$private_root/clean.dex"; then
+              echo "::error::The clean replacement APK inherited the one-time capability."
+              exit 1
+            fi
           fi
 
       - name: Upload both same-signed APKs
+        if: inputs.mode == 'bootstrap-pair'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: vogel-vault-read-bootstrap-and-clean
           path: |
             ${{ steps.private_inputs.outputs.artifacts }}/vogel-vault-read-bootstrap.apk
             ${{ steps.private_inputs.outputs.artifacts }}/vogel-vault-clean-replacement.apk
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload clean same-signed APK
+        if: inputs.mode == 'clean-only'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vogel-vault-clean-replacement
+          path: ${{ steps.private_inputs.outputs.artifacts }}/vogel-vault-clean-replacement.apk
           if-no-files-found: error
           retention-days: 1
 
