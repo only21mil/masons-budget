@@ -220,7 +220,7 @@ private fun BtcAccountPicker(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    selected?.let { "${it.label} · ${Money.formatSats(it.sats)}" }
+                    selected?.let { "${it.displayLabel()} · ${Money.formatSats(it.sats)}" }
                         ?: stringResource(R.string.btc_transfer_select_account),
                 )
             }
@@ -231,7 +231,7 @@ private fun BtcAccountPicker(
                 accounts.forEach { account ->
                     DropdownMenuItem(
                         text = {
-                            Text("${account.label} · ${Money.formatSats(account.sats)}")
+                            Text("${account.displayLabel()} · ${Money.formatSats(account.sats)}")
                         },
                         onClick = {
                             expanded = false

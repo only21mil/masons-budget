@@ -594,12 +594,12 @@ internal fun AddTransactionSheet(
     )
     val accountOptionLabels = remember(eligibleBitcoinAccounts) {
         eligibleBitcoinAccounts.associateBy { account ->
-            "${account.label} · ${account.key}"
+            "${account.displayLabel()} · ${account.key}"
         }
     }
     val selectedAccountLabel = eligibleBitcoinAccounts
         .firstOrNull { it.key == selectedBitcoinAccountKey }
-        ?.let { "${it.label} · ${it.key}" }
+        ?.let { "${it.displayLabel()} · ${it.key}" }
         ?: "Select a Bitcoin account"
     val categories = remember(state.data.budget.value, type) {
         when (type) {

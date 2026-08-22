@@ -320,15 +320,6 @@ fun ScreenHost(
             selfCustodySats = collections.netWorthBalance?.selfCustodySats ?: 0L,
         )
     }
-    val netWorthProjection = remember(profile, collections.netWorthAccounts, collections.visibleAccounts) {
-        NetWorthProjection(
-            accounts = collections.netWorthAccounts,
-            excludedAccounts = collections.visibleAccounts.filterNot {
-                profile.sharesNetWorth(it.owner)
-            },
-            balance = collections.netWorthBalance,
-        )
-    }
 
     if (addingTransaction) {
         AddTransactionSheet(
@@ -458,7 +449,8 @@ fun ScreenHost(
                         showBtcBillPayEditor = true
                     },
                 )
-                Destination.NET_WORTH -> netWorth(state, netWorthProjection, displayUnit)
+                Destination.NET_WORTH -> netWorth(state, displayUnit)
+                Destination.RETIREMENT -> retirement(state, displayUnit)
                 Destination.EXPORT -> item { ExportScreen(state) }
                 // Rendered above, outside the shared ledger column.
                 Destination.TODAY -> Unit
@@ -545,6 +537,7 @@ private fun ScreenHeader(
         Destination.BTC_BUYS -> "Purchases visible to this profile"
         Destination.BTC_BILL_PAYS -> "Bitcoin spent on bills visible to this profile"
         Destination.NET_WORTH -> "Household for adults; self only for children"
+        Destination.RETIREMENT -> "Retirement accounts and long-range scenario"
         Destination.EXPORT -> "Owner-filtered files shared outside the app"
         Destination.TODAY -> "Due today or overdue"
         Destination.TASKS -> "Projects, areas and smart lists"
@@ -601,6 +594,7 @@ internal val Destination.supportsFinancialDisplayUnit: Boolean
             Destination.BTC_BUYS,
             Destination.BTC_BILL_PAYS,
             Destination.NET_WORTH,
+            Destination.RETIREMENT,
         )
 
 @Composable
@@ -1382,75 +1376,11 @@ private fun VaultLazyListScope.bitcoin(
 
 private fun VaultLazyListScope.netWorth(
     state: VaultUiState,
-    projection: NetWorthProjection,
     displayUnit: DisplayUnit,
 ) {
     financeNetWorthSummary(state, displayUnit)
-    val slice = state.data.btcBalance
-    val unavailable = projection.balance == null
-    val quote = state.operationalBitcoinQuote()
-    val requiresOperationalQuote = projection.balance?.let { balance ->
-        balance.fiatValuation == null || projection.accounts.any { it.fiatValuation == null }
-    } == true
-
-    if (displayUnit == DisplayUnit.USD && requiresOperationalQuote) {
-        item { BitcoinConversionNotice(state) }
-    }
-
-    item {
-        KpiStrip(
-            listOf(
-                Kpi(
-                    "Bitcoin",
-                    figure(unavailable) {
-                        state.formatBalance(requireNotNull(projection.balance), displayUnit)
-                    },
-                    provenance = canonicalBitcoinProvenance(
-                        projection.balance?.fiatValuation != null,
-                        displayUnit,
-                        quote,
-                    ),
-                ),
-                Kpi(
-                    "Accounts",
-                    figure(unavailable) { projection.accounts.size.toString() },
-                    hint = figure(unavailable) {
-                        balanceSnapshotBasis(requireNotNull(projection.balance))
-                    },
-                ),
-            ),
-        )
-    }
-    item { StaleNotice(slice.status) }
-    accountList(
-        sectionKey = "net-worth-in-scope",
-        title = "In scope",
-        source = slice.source,
-        accounts = projection.accounts,
-        status = slice.status,
-        displayUnit = displayUnit,
-        quote = quote,
-    )
-    if (projection.excludedAccounts.isNotEmpty()) {
-        item {
-            StatusBanner(
-                "${projection.excludedAccounts.size} account(s) visible but excluded",
-                "Children's stacks are shown for oversight but never roll into adult totals.",
-                tone = VaultTextMuted,
-            )
-        }
-        accountList(
-            sectionKey = "net-worth-excluded",
-            title = "Visible but excluded",
-            source = null,
-            accounts = projection.excludedAccounts,
-            status = slice.status,
-            displayUnit = displayUnit,
-            quote = quote,
-        )
-    }
-    retirementHoldings(state, displayUnit)
-    item { RetirementScreen(state, displayUnit) }
+    netWorthRetirementAccounts(state, displayUnit)
+    item { NetWorthProjectionPanel(state, displayUnit) }
 }
 
 private fun VaultLazyListScope.accountList(
@@ -1490,7 +1420,7 @@ private fun VaultLazyListScope.accountList(
         rowKey = { "${it.owner.key}:${it.key}" },
     ) { account ->
         LedgerRow(
-            primary = account.label,
+            primary = account.displayLabel(),
             secondary = buildString {
                 append(account.owner.displayName)
                 if (
