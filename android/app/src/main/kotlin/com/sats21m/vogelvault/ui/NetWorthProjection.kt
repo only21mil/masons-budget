@@ -1,12 +1,9 @@
 package com.sats21m.vogelvault.ui
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -45,7 +42,6 @@ internal fun BtcAccount.displayLabel(): String =
 private val MONTHS_PER_YEAR = BigDecimal(12)
 private val WEEKS_PER_YEAR = BigDecimal(52)
 private val BASIS_POINTS = BigDecimal(10_000)
-private val PROJECTION_HORIZONS = listOf(10, 20, 30)
 
 internal data class NetWorthProjectionResult(
     val years: Int,
@@ -158,13 +154,7 @@ internal fun NetWorthProjectionPanel(state: VaultUiState, displayUnit: DisplayUn
 
     Panel("Net worth projections", "Scenario, not a forecast") {
         Column(Modifier.padding(VaultSpace.md)) {
-            Row(Modifier.fillMaxWidth()) {
-                PROJECTION_HORIZONS.forEach { horizon ->
-                    TextButton(onClick = { years = horizon }, modifier = Modifier.weight(1f)) {
-                        Text("$horizon years")
-                    }
-                }
-            }
+            HorizonPicker(years) { years = it }
             if (projection == null) {
                 StateBlock(
                     Freshness.EMPTY,

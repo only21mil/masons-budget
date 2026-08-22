@@ -322,7 +322,7 @@ private fun RetirementUnavailable(reason: RetirementUnavailableReason) {
 }
 
 @Composable
-private fun HorizonPicker(selected: Int, onSelect: (Int) -> Unit) {
+internal fun HorizonPicker(selected: Int, onSelect: (Int) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
         Text(
             stringResource(R.string.retirement_horizon_label),
