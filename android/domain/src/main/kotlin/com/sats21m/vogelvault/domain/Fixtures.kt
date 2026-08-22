@@ -124,7 +124,7 @@ object Fixtures {
         BudgetCategory(name, Money.parseCents(budget), Money.parseCents(spent))
 
     private val BTC_ACCOUNTS = listOf(
-        account("coldcard", "Cold Storage", Custody.SELF_CUSTODY, "0.42000000", "39270.00", FamilyMember.VICTOR),
+        account("coldcard", "Multisig", Custody.SELF_CUSTODY, "0.42000000", "39270.00", FamilyMember.VICTOR),
         account("lightning", "Lightning Wallet", Custody.SELF_CUSTODY, "0.01850000", "1729.75", FamilyMember.VICTOR),
         account("exchange-dca", "DCA Exchange", Custody.EXCHANGE, "0.03400000", "3179.00", FamilyMember.VICTOR),
         account("mason-stack", "Mason Stack", Custody.EXCHANGE, "0.00120000", "112.20", FamilyMember.MASON),

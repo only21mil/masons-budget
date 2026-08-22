@@ -68,7 +68,7 @@ class AndroidFinanceRegressionTest {
     }
 
     @Test
-    fun `live BTC quote values Total stack and Coldcard when embedded fiat is absent`() {
+    fun `live BTC quote values Total stack and Multisig when embedded fiat is absent`() {
         // A live operational quote may fill only the missing USD side, and the
         // accessibility contract must identify that quote-derived value as estimated.
         val coldcard = bitcoinAccount(
@@ -93,9 +93,9 @@ class AndroidFinanceRegressionTest {
         compose.onNodeWithContentDescription(
             "Total stack, \$100,000.00, estimated figure",
         ).fetchSemanticsNode()
-        contentList().performScrollToNode(hasContentDescription("Coldcard", substring = true))
+        contentList().performScrollToNode(hasContentDescription("Multisig", substring = true))
         compose.onNodeWithContentDescription(
-            "Coldcard, Victor · Estimated, Self custody, \$75,000.00",
+            "Multisig, Victor · Estimated, Self custody, \$75,000.00",
         ).fetchSemanticsNode()
     }
 
@@ -123,9 +123,9 @@ class AndroidFinanceRegressionTest {
 
         compose.onNodeWithContentDescription("Total stack, Price unavailable")
             .fetchSemanticsNode()
-        contentList().performScrollToNode(hasContentDescription("Coldcard", substring = true))
+        contentList().performScrollToNode(hasContentDescription("Multisig", substring = true))
         compose.onNodeWithContentDescription(
-            "Coldcard, Victor, Self custody, Price unavailable",
+            "Multisig, Victor, Self custody, Price unavailable",
         ).fetchSemanticsNode()
     }
 
@@ -161,7 +161,7 @@ class AndroidFinanceRegressionTest {
     }
 
     @Test
-    fun `net worth keeps retirement holdings and current Bitcoin visible when income is unavailable`() {
+    fun `net worth stays clean while retirement keeps holding and scenario detail`() {
         // Current Bitcoin is factual snapshot data, independent from projection inputs.
         val balance = bitcoinBalance(
             owner = FamilyMember.VICTOR,
@@ -202,6 +202,19 @@ class AndroidFinanceRegressionTest {
         )
 
         show(Destination.NET_WORTH, state, DisplayUnit.BTC)
+
+        contentList().performScrollToNode(hasContentDescription("Retirement Provider", substring = true))
+        compose.onNodeWithContentDescription("Retirement Provider", substring = true)
+            .fetchSemanticsNode()
+        contentList().performScrollToNode(hasText("Net worth projections"))
+        compose.onNodeWithText("Net worth projections").fetchSemanticsNode()
+        assertEquals(
+            0,
+            compose.onAllNodesWithContentDescription("Index holding", substring = true).fetchSemanticsNodes().size,
+            "holding detail belongs on the separate Retirement tab",
+        )
+
+        show(Destination.RETIREMENT, state, DisplayUnit.BTC)
 
         contentList().performScrollToNode(hasContentDescription("Index holding", substring = true))
         compose.onNodeWithContentDescription("Index holding", substring = true)

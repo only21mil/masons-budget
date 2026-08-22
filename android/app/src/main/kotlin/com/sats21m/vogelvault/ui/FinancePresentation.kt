@@ -149,6 +149,17 @@ internal fun VaultLazyListScope.financeNetWorthSummary(
                     hint = labels.retirementHint,
                     provenance = Provenance.ESTIMATED,
                 ),
+                Kpi(
+                    label = "Bitcoin stack",
+                    value = selection?.let { selected ->
+                        when (displayUnit) {
+                            DisplayUnit.USD -> selected.bitcoinValueCents?.let(Money::formatUsd)
+                            DisplayUnit.BTC -> Money.formatBtc(selected.bitcoinSats)
+                            DisplayUnit.SATS -> Money.formatSats(selected.bitcoinSats)
+                        }
+                    } ?: SUPPRESSED,
+                    provenance = Provenance.ESTIMATED,
+                ),
             ),
         )
     }
@@ -166,6 +177,50 @@ internal fun VaultLazyListScope.financeNetWorthSummary(
                     else -> "The BTC quote is unavailable. Retirement remains visible, but the combined USD total does not."
                 },
                 tone = VaultWarning,
+            )
+        }
+    }
+}
+
+internal fun VaultLazyListScope.netWorthRetirementAccounts(
+    state: VaultUiState,
+    displayUnit: DisplayUnit,
+) {
+    val accounts = state.retirementAccountsResult().getOrNull()
+    when {
+        accounts == null -> item {
+            Panel("Retirement accounts", "Convex finance document") {
+                StateBlock(
+                    Freshness.ERROR,
+                    "Retirement values unavailable",
+                    "The retirement snapshot could not be valued.",
+                )
+            }
+        }
+        accounts.isEmpty() -> item {
+            Panel("Retirement accounts", "Convex finance document") {
+                StateBlock(
+                    Freshness.EMPTY,
+                    "No retirement accounts in scope",
+                    state.netWorthPresentationLabels().emptyRetirementDetail,
+                )
+            }
+        }
+        else -> keyedPanel(
+            sectionKey = "net-worth-retirement-accounts",
+            title = "Retirement accounts",
+            source = state.financeDocument?.lastUpdated?.let { "Finance snapshot · $it" },
+            rows = accounts,
+            rowKey = { "${it.account.owner.key}:${it.account.key}" },
+        ) { account ->
+            LedgerRow(
+                primary = account.account.provider,
+                secondary = state.formatFinanceCentsOrNull(
+                    account.account.weeklyContributionCents,
+                    displayUnit,
+                )?.let { "$it weekly" } ?: "Weekly contribution unavailable",
+                figure = state.formatFinanceCentsOrNull(account.valueCents, displayUnit)
+                    ?: Money.PRICE_UNAVAILABLE,
             )
         }
     }

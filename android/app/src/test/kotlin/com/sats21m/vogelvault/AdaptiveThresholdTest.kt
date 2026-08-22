@@ -47,8 +47,9 @@ class AdaptiveThresholdTest {
 class DestinationVisibilityTest {
 
     @Test
-    fun `retirement is no longer a navigation destination`() {
-        assertTrue(Destination.entries.none { it.label == "Retirement" })
+    fun `retirement and net worth remain separate navigation destinations`() {
+        assertTrue(Destination.RETIREMENT in Destination.entries)
+        assertTrue(Destination.NET_WORTH in Destination.entries)
     }
 
     @Test
@@ -63,6 +64,7 @@ class DestinationVisibilityTest {
                 Destination.BTC_BUYS,
                 Destination.BTC_BILL_PAYS,
                 Destination.NET_WORTH,
+                Destination.RETIREMENT,
                 Destination.EXPORT,
                 Destination.TODAY,
                 Destination.TASKS,
