@@ -82,7 +82,7 @@ final class ConvexRowsTests: XCTestCase {
             counts,
             ConvexRowCounts(
                 transactions: 993,
-                todos: 12,
+                todos: 9,
                 btcBuys: 35,
                 btcBillPays: 37,
                 btcAccounts: 8,
