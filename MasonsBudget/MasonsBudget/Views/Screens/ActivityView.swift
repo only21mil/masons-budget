@@ -10,7 +10,6 @@ struct ActivityView: View {
 
     @State private var filter: TxFilter = .all
     @State private var searchText = ""
-    @State private var showCSVImport = false
 
     private var unit: DisplayUnit {
         DisplayUnit(rawValue: displayUnitRaw) ?? .btc
@@ -87,24 +86,6 @@ struct ActivityView: View {
                         eyebrow: "Lightning + On-chain",
                     )
                     Spacer()
-                    Button {
-                        showCSVImport = true
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "square.and.arrow.down")
-                                .font(AppFont.labelSmall)
-                            Text("Import")
-                                .font(AppFont.labelSmall)
-                        }
-                        .foregroundStyle(theme.accent)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(theme.accentSoft)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.trailing, AppLayout.sectionPadding)
-                    .padding(.top, 16)
                 }
 
                 filterPills
@@ -116,9 +97,6 @@ struct ActivityView: View {
         }
         .background(theme.bg)
         .searchable(text: $searchText, prompt: "Search activity")
-        .sheet(isPresented: $showCSVImport) {
-            CSVImportView()
-        }
     }
 
     // MARK: - Filter Pills
