@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto"
-import { readdir, readFile } from "node:fs/promises"
+import { access, readdir, readFile } from "node:fs/promises"
+import { spawnSync } from "node:child_process"
 import path from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
@@ -19,8 +20,26 @@ import {
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const goldenRoot = path.join(repoRoot, "shared/domain/fixtures/convex-wire-golden")
 const provenancePath = path.join(repoRoot, "shared/domain/convex-wire-golden-provenance.json")
+const linuxRoot = path.join(repoRoot, "linux")
+const valueTestPath = path.join(linuxRoot, "test/convex-wire-golden-values.test.ts")
+const vitestCandidates = [
+  path.join(repoRoot, "node_modules/.bin/vitest"),
+  path.join(linuxRoot, "node_modules/.bin/vitest"),
+]
 const provenance = JSON.parse(await readFile(provenancePath, "utf8"))
 const failures = []
+
+async function resolveVitestPath() {
+  for (const candidate of vitestCandidates) {
+    try {
+      await access(candidate)
+      return candidate
+    } catch {
+      // Try the next supported install layout.
+    }
+  }
+  return null
+}
 
 if (provenance.version !== 2) {
   failures.push(`unsupported provenance version ${String(provenance.version)}`)
@@ -181,8 +200,52 @@ if (ageDays >= warningAfterDays) {
   )
 }
 
+try {
+  await access(valueTestPath)
+} catch {
+  failures.push(`missing Linux production value test ${path.relative(repoRoot, valueTestPath)}`)
+}
+
+if (failures.length === 0) {
+  const vitestPath = await resolveVitestPath()
+  if (vitestPath === null) {
+    failures.push(
+      "could not find Vitest runner at repoRoot/node_modules/.bin/vitest "
+        + "or linux/node_modules/.bin/vitest",
+    )
+  } else {
+    const valueTest = spawnSync(
+      vitestPath,
+      ["run", "test/convex-wire-golden-values.test.ts"],
+      {
+        cwd: linuxRoot,
+        encoding: "utf8",
+      },
+    )
+    if (valueTest.error) {
+      failures.push(`could not run Linux production value test: ${valueTest.error.message}`)
+    } else if (valueTest.status !== 0) {
+      const output = [valueTest.stdout, valueTest.stderr]
+        .filter((text) => text.trim() !== "")
+        .join("\n")
+        .trim()
+      failures.push(
+        `Linux production value test failed with exit ${String(valueTest.status)}`
+          + (output === "" ? "" : `:\n${output}`),
+      )
+    }
+  }
+}
+
+if (failures.length > 0) {
+  for (const failure of failures) {
+    console.error(`FAIL: ${failure}`)
+  }
+  process.exit(1)
+}
+
 console.log(
   `PASS: ${captureFiles.length} production wire captures match their provenance checksums `
     + `and ${Object.keys(actualQueryShapeDigests).length} attested query shapes; `
-    + `age ${ageDays} days.`,
+    + `Linux production value test passed; age ${ageDays} days.`,
 )
