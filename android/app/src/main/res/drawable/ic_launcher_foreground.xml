@@ -1,18 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Vogel Vault mark — a vault door.
-  
-  Thick orange ring for the door edge, four bolts seated ON the ring, and a cream
-  keyhole. The Bitcoin reference is two slots cut vertically through the keyhole
-  stem: at a glance it is a keyhole, up close it is the double-bar. Contained
-  inside the keyhole silhouette on purpose — nothing overshoots, so the mark stays
-  a single readable object at 48dp.
-  
-  v1 drew the bars over the keyhole and let them run past it top and bottom, and
-  set the bolts floating outside the ring. On the device it read as a clock face.
-  
-  All artwork sits inside the 72dp adaptive safe zone (18..90 of the 108 viewport),
-  so no launcher mask can clip it.
+  Vogel Vault mark — the Apple app icon's Bitcoin glyph, ported to Android.
+
+  What came across from Apple: the letterform and the colourway. Orange ₿ on a
+  warm near-black field.
+
+  What did not, and why:
+    - "FAMILY BUDGET". Apple sets the old product name under the mark. At 48dp a
+      wordmark is an unreadable smear, and the name is wrong since the rename.
+    - The chart squiggle. Same reason: it is 2px of detail at launcher size.
+    - The gradient. See ic_launcher_background.xml.
+
+  No keyhole. Victor, 2026-08-22: "I am fine with the apple icon and no text."
+  The Apple icon has never had one, and he answered the keyhole question by
+  choosing the Apple mark as it stands. The earlier keyhole request is superseded.
+
+  Glyph colour is #F7931A, the Bitcoin-branding orange. Apple's raster samples
+  #FCB23C at the glyph centre because it carries a gradient; #F7931A is that
+  gradient's own base and is the house value for a Bitcoin surface.
+
+  Geometry is v4 candidate C, which Victor approved on shape: spine, two lobes,
+  four protruding serif bars, ~54 units tall.
+
+  Safe zone: extremes (48,25.5) and (39,30)-(39,78) sit within 29.1 units of
+  centre, inside the r=33 adaptive safe circle; every coordinate is in 18..90.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -20,36 +31,33 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Vault door edge -->
+    <!-- ₿ spine -->
     <path
-        android:strokeColor="#FF9F0A"
-        android:strokeWidth="5"
-        android:fillColor="@android:color/transparent"
-        android:pathData="M54,28 A26,26 0 1,1 53.99,28" />
-
-    <!-- Bolts seated on the ring at the diagonals, not floating beside it. -->
-    <path
-        android:strokeColor="#0E0E11"
-        android:strokeWidth="4.5"
+        android:strokeColor="#F7931A"
+        android:strokeWidth="6"
         android:strokeLineCap="butt"
-        android:pathData="M39.6,39.6 L37.2,37.2 M68.4,39.6 L70.8,37.2 M39.6,68.4 L37.2,70.8 M68.4,68.4 L70.8,70.8" />
+        android:fillColor="@android:color/transparent"
+        android:pathData="M42,30 L42,78" />
+    <!-- Upper loop -->
+    <path
+        android:strokeColor="#F7931A"
+        android:strokeWidth="6"
+        android:strokeLineCap="butt"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M42,33 L53,33 A10.5,10.5 0 1,1 53,54 L42,54" />
+    <!-- Lower loop, slightly wider like the letterform -->
+    <path
+        android:strokeColor="#F7931A"
+        android:strokeWidth="6"
+        android:strokeLineCap="butt"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M42,54 L54,54 A10.5,10.5 0 1,1 54,75 L42,75" />
+    <!-- The four protruding serif bars — the ₿ signature -->
+    <path
+        android:strokeColor="#F7931A"
+        android:strokeWidth="3.4"
+        android:strokeLineCap="butt"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M49,25.5 L49,31.5 M55,25.5 L55,31.5 M49,73.5 L49,79.5 M55,73.5 L55,79.5" />
 
-    <!-- Keyhole bowl -->
-    <path
-        android:fillColor="#F5F2EA"
-        android:pathData="M54,46 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0" />
-
-    <!-- Keyhole stem, flaring to the base like a real escutcheon -->
-    <path
-        android:fillColor="#F5F2EA"
-        android:pathData="M50.4,52 L57.6,52 L60.4,68 L47.6,68 z" />
-
-    <!-- The double-bar, cut THROUGH the keyhole rather than drawn over it.
-         Base graphite so it reads as a slot, and confined to the stem. -->
-    <path
-        android:fillColor="#111114"
-        android:pathData="M52.2,53.5 L53.6,53.5 L54.7,66.5 L53.1,66.5 z" />
-    <path
-        android:fillColor="#111114"
-        android:pathData="M55.6,53.5 L57.0,53.5 L58.1,66.5 L56.5,66.5 z" />
 </vector>

@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Vault door face. Deep graphite rather than pure black so the icon reads as an
-  object on a black launcher wallpaper instead of a floating orange glyph.
-  A faint radial lift centres the eye; no gloss, no bevel.
+  Vogel Vault launcher field — ported from the Apple app icon (Victor, 2026-08-22:
+  "we are going to use the icon from the apple app").
+
+  Apple ships a warm near-black field, sampled #2A1D19 at the top corners falling
+  to #070604 at the bottom. That is a gradient on a 1024px raster. Android draws
+  this at 108dp through whatever mask the launcher picks, so the gradient buys
+  banding and a visible seam at the mask edge and buys nothing else. Flattened to
+  #12100E, the warm dark the Apple field spends most of its area on.
+
+  Warm, not neutral: #12100E carries the same red bias as Apple's field, so the
+  orange mark sits on it the way it does on iOS rather than going cold.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -11,26 +19,6 @@
     android:viewportHeight="108">
 
     <path
-        android:fillColor="#111114"
+        android:fillColor="#12100E"
         android:pathData="M0,0h108v108h-108z" />
-
-    <!-- Subtle centre lift. Kept well inside the 72dp safe zone. -->
-    <path android:pathData="M0,0h108v108h-108z">
-        <aapt:attr name="android:fillColor" xmlns:aapt="http://schemas.android.com/aapt">
-            <gradient
-                android:type="radial"
-                android:centerX="54"
-                android:centerY="50"
-                android:gradientRadius="52"
-                android:startColor="#1C1C20"
-                android:endColor="#0B0B0D" />
-        </aapt:attr>
-    </path>
-
-    <!-- Machined ring, off-centre-safe: the launcher may mask to a circle. -->
-    <path
-        android:strokeColor="#26262C"
-        android:strokeWidth="1.5"
-        android:fillColor="@android:color/transparent"
-        android:pathData="M54,20 A34,34 0 1,1 53.99,20" />
 </vector>
