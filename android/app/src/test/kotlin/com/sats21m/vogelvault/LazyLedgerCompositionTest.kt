@@ -145,6 +145,48 @@ class LazyLedgerCompositionTest {
     }
 
     @Test
+    fun `budget suppresses actuals and remaining when bill pay ledger is unavailable`() {
+        val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+        val state = VaultUiState(
+            activeProfile = FamilyMember.VICTOR,
+            destination = Destination.BUDGET,
+            data = base.copy(
+                btcBillPays = base.btcBillPays.copy(
+                    status = Freshness.ERROR,
+                    value = emptyList(),
+                ),
+            ),
+        )
+
+        compose.runOnUiThread {
+            activityController.get().setContent {
+                VogelVaultTheme {
+                    Box(Modifier.size(width = 411.dp, height = 640.dp)) {
+                        ScreenHost(
+                            destination = Destination.BUDGET,
+                            state = state,
+                        )
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        assertTrue(
+            compose.onAllNodesWithContentDescription("Actual, unavailable", substring = false)
+                .fetchSemanticsNodes()
+                .isNotEmpty(),
+            "bill pay read failure must not be rendered as a zero or partial actual",
+        )
+        assertTrue(
+            compose.onAllNodesWithContentDescription("Remaining, unavailable", substring = false)
+                .fetchSemanticsNodes()
+                .isNotEmpty(),
+            "bill pay read failure must not be rendered as a confident remaining balance",
+        )
+    }
+
+    @Test
     fun `keyed panel keeps remembered row state with its record after reordering`() {
         val nextToken = AtomicInteger()
         val observedTokens = mutableMapOf<String, Int>()

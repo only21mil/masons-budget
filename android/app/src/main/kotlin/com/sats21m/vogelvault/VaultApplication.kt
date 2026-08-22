@@ -1,14 +1,18 @@
 package com.sats21m.vogelvault
 
 import android.app.Application
+import android.content.Context
+import android.content.SharedPreferences
+import androidx.annotation.CheckResult
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.sats21m.vogelvault.data.ConvexConfig
-import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexDeviceCredential
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
+import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexReadBootstrapRepository
+import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.FinanceQueryRepositories
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.data.RecoveringFinanceReadSource
@@ -20,7 +24,12 @@ import com.sats21m.vogelvault.data.ReadBootstrapStatus
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.cache.VaultDatabase
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.ui.BtcBillPayMutationGateway
+import com.sats21m.vogelvault.ui.BtcBuyIncomeMutationGateway
 import com.sats21m.vogelvault.ui.ConvexTransactionActions
+import com.sats21m.vogelvault.ui.BtcTransferMutationGateway
+import com.sats21m.vogelvault.ui.PaymentSourceStore
+import com.sats21m.vogelvault.ui.TransactionDeviceMutationGateway
 import com.sats21m.vogelvault.ui.TodoMutationGateway
 import com.sats21m.vogelvault.ui.VaultViewModel
 import java.io.IOException
@@ -34,32 +43,49 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Process-owned identity for drafts awaiting a definitive server acceptance,
- * one pending id per server scope. Ambiguous retries deliberately reuse the
- * scope's id so Convex supersedes the same row instead of inserting another
- * one. One instance per money-write surface; a surface's pending ids are
- * independent of the others'.
+ * Application-owned identity leases for drafts awaiting a definitive server
+ * acceptance, one pending id per caller-provided lease scope. Ambiguous retries
+ * deliberately reuse the scope's id so Convex supersedes the same row instead
+ * of inserting another one. When backed by preferences, leases survive process
+ * death. Each lease scope keeps pending ids independent across surfaces and
+ * profiles. Pre-scope Bitcoin-buy markers are deliberately ignored because
+ * their missing surface and profile identity makes safe ownership impossible.
  *
- * The scope key is the exact `sourceFile` the mutation sends, because that is
- * the server's natural idempotency domain: Convex keys these rows by
- * `(sourceFile, id)`. A process-global slot loses a cross-profile race — an
- * adult id retained after an ambiguous write could be handed to a Mason sheet,
- * legitimately accepted under Mason's sourceFile, and its acceptance would
- * then release the lease the adult retry still needs, minting a fresh id and
- * crediting the adult row twice.
+ * The scope is usually the server's natural source-file idempotency domain, but
+ * Bitcoin buys need a narrower explicit scope because standalone and
+ * income-linked writes can share a source file and adult profiles share the
+ * canonical Victor owner. Callers must use the same scope for acquisition and
+ * compare-and-clear release.
  */
-internal class TransactionDraftIdStore {
+internal class TransactionDraftIdStore(
+    private val preferences: SharedPreferences? = null,
+) {
     private val lock = Any()
-    private val pendingIdsByScope = mutableMapOf<String, String>()
+    private val pendingIdsByScope =
+        preferences
+            ?.all
+            ?.mapNotNull { (scope, value) ->
+                (value as? String)?.let { pendingId -> scope to pendingId }
+            }
+            ?.toMap()
+            ?.toMutableMap()
+            ?: mutableMapOf()
 
     fun currentId(scope: String): String = synchronized(lock) {
-        pendingIdsByScope.getOrPut(scope) { "android-${UUID.randomUUID()}" }
+        pendingIdsByScope[scope]
+            ?: "android-${UUID.randomUUID()}".also { pendingId ->
+                if (preferences != null) {
+                    check(preferences.edit().putString(scope, pendingId).commit()) {
+                        "pending draft id could not be persisted"
+                    }
+                }
+                pendingIdsByScope[scope] = pendingId
+            }
     }
 
     /**
-     * Compare-and-clear within one scope: releases the scope's pending id ONLY
-     * when it is still the id that was accepted, and only for the scope the
-     * server actually accepted it under.
+     * Compare-and-clear within one scope: releases the scope's pending id only
+     * when it is still the id that was accepted.
      *
      * A blind clear loses a race. Two overlapping requests can carry the same
      * id X (dismiss, reopen, retry before the first returns) and Convex accepts
@@ -70,12 +96,37 @@ internal class TransactionDraftIdStore {
      * the cross-profile variant: an acceptance under one sourceFile can never
      * release another sourceFile's lease, even for an equal id.
      */
-    fun rotateAfterAcceptance(scope: String, acceptedId: String) {
+    @CheckResult
+    fun rotateAfterAcceptance(scope: String, acceptedId: String): Boolean =
         synchronized(lock) {
-            if (pendingIdsByScope[scope] == acceptedId) {
+            if (pendingIdsByScope[scope] != acceptedId) return@synchronized true
+            val removed = preferences?.edit()?.remove(scope)?.commit() ?: true
+            if (removed) {
                 pendingIdsByScope.remove(scope)
             }
+            removed
         }
+}
+
+internal sealed interface DraftIdWriteOutcome<out T> {
+    data class Accepted<T>(val value: T) : DraftIdWriteOutcome<T>
+    data object AcceptedLeaseResetFailed : DraftIdWriteOutcome<Nothing>
+    data class Rejected<T>(val result: ConvexResult<T>) : DraftIdWriteOutcome<T>
+}
+
+internal fun <T> draftIdWriteOutcome(
+    result: ConvexResult<T>,
+    leaseReset: Boolean,
+): DraftIdWriteOutcome<T> =
+    when {
+        result !is ConvexResult.Ok -> DraftIdWriteOutcome.Rejected(result)
+        leaseReset -> DraftIdWriteOutcome.Accepted(result.value)
+        else -> DraftIdWriteOutcome.AcceptedLeaseResetFailed
+    }
+
+internal inline fun DraftIdWriteOutcome<*>.onServerAccepted(block: () -> Unit) {
+    if (this !is DraftIdWriteOutcome.Rejected) {
+        block()
     }
 }
 
@@ -97,15 +148,76 @@ open class VaultApplication : Application() {
         CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     }
 
+    /** The selected payment-source wire survives Activity recreation. */
+    internal open val paymentSourceStore: PaymentSourceStore by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        PaymentSourceStore(this)
+    }
+
+    /** Capability-scoped transaction writes for the Android add surface. */
+    internal open val transactionDeviceMutationGateway: TransactionDeviceMutationGateway by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        TransactionDeviceMutationGateway(
+            ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(writeConvexConfig()),
+                credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
+            ),
+        )
+    }
+
     /** Shared by every sheet instance until Convex confirms the pending row. */
-    internal val transactionDraftIds = TransactionDraftIdStore()
+    internal val transactionDraftIds: TransactionDraftIdStore by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        TransactionDraftIdStore(
+            getSharedPreferences(TRANSACTION_DRAFT_ID_PREFERENCES, Context.MODE_PRIVATE),
+        )
+    }
 
     /**
      * The Bitcoin buy sheet carries the same duplicate-credit hazard as the
      * transaction sheet: its buy credits River, so a dismissed-then-reopened
      * resubmit after an ambiguous write must reuse one id.
      */
-    internal val btcBuyDraftIds = TransactionDraftIdStore()
+    internal val btcBuyDraftIds: TransactionDraftIdStore by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        TransactionDraftIdStore(
+            getSharedPreferences(BTC_BUY_DRAFT_ID_PREFERENCES, Context.MODE_PRIVATE),
+        )
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        transactionDraftIds
+        btcBuyDraftIds
+        btcBillPayDraftIds
+        btcTransferDraftIds
+    }
+
+    /** Stable retry ids for the one source-scoped Bitcoin bill-pay table. */
+    internal val btcBillPayDraftIds: TransactionDraftIdStore by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        TransactionDraftIdStore(
+            getSharedPreferences(BTC_BILL_PAY_DRAFT_ID_PREFERENCES, Context.MODE_PRIVATE),
+        )
+    }
+
+    /**
+     * The Bitcoin transfer editor has the same duplicate-post hazard as buys:
+     * a lost response must retry the exact same transfer id until Convex confirms
+     * the idempotent row.
+     */
+    internal val btcTransferDraftIds: TransactionDraftIdStore by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        TransactionDraftIdStore(
+            getSharedPreferences(BTC_TRANSFER_DRAFT_ID_PREFERENCES, Context.MODE_PRIVATE),
+        )
+    }
 
     /**
      * Process-owned acceptance signal for writes that may outlive the surface
@@ -128,6 +240,13 @@ open class VaultApplication : Application() {
     override fun onTerminate() {
         applicationScope.cancel()
         super.onTerminate()
+    }
+
+    private companion object {
+        const val TRANSACTION_DRAFT_ID_PREFERENCES = "transaction_draft_ids"
+        const val BTC_BUY_DRAFT_ID_PREFERENCES = "btc_buy_draft_ids"
+        const val BTC_BILL_PAY_DRAFT_ID_PREFERENCES = "btc_bill_pay_draft_ids"
+        const val BTC_TRANSFER_DRAFT_ID_PREFERENCES = "btc_transfer_draft_ids"
     }
 
     val database: VaultDatabase by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -212,6 +331,40 @@ open class VaultApplication : Application() {
     /** Capability-scoped todo writes, isolated from the legacy sync-token transport. */
     internal open val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         TodoMutationGateway(
+            ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(writeConvexConfig()),
+                credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
+            ),
+        )
+    }
+
+    /** Capability-scoped Bitcoin bill-pay writes use the paired-device credential. */
+    internal open val btcBillPayMutationGateway: BtcBillPayMutationGateway by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        BtcBillPayMutationGateway(
+            ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(writeConvexConfig()),
+                credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
+            ),
+        )
+    }
+
+    /** Atomic adult-household Bitcoin-buy plus linked-income writes. */
+    internal open val btcBuyIncomeMutationGateway: BtcBuyIncomeMutationGateway by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        BtcBuyIncomeMutationGateway(
+            ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(writeConvexConfig()),
+                credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
+            ),
+        )
+    }
+
+    /** Capability-scoped Bitcoin transfer writes. */
+    internal open val btcTransferMutationGateway: BtcTransferMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        BtcTransferMutationGateway(
             ConvexDeviceMutationClient(
                 configSource = MutableConvexConfigSource(writeConvexConfig()),
                 credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),

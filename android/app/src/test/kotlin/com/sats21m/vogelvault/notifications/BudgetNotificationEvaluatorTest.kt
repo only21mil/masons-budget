@@ -2,6 +2,8 @@ package com.sats21m.vogelvault.notifications
 
 import com.sats21m.vogelvault.domain.Budget
 import com.sats21m.vogelvault.domain.BudgetCategory
+import com.sats21m.vogelvault.domain.BillPayBudgetEffect
+import com.sats21m.vogelvault.domain.BtcBillPay
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
@@ -40,6 +42,52 @@ class BudgetNotificationEvaluatorTest {
         assertEquals(BudgetAlertLevel.NEARING_LIMIT, alert.level)
         assertEquals(8_501L, alert.spentCents)
         assertEquals(ADULT_GROCERIES_CENTS, alert.budgetCents)
+    }
+
+    @Test
+    fun `budget-category bill pay participates in thresholds while credit-card payment is excluded`() {
+        val budgetPayment = billPay(
+            id = "bitcoin-groceries",
+            amountCents = 8_501L,
+            effect = BillPayBudgetEffect.BUDGET_CATEGORY,
+        )
+        val withBudgetPayment =
+            state(
+                viewer = FamilyMember.VICTOR,
+                budgetOwner = FamilyMember.VICTOR,
+                transactions = emptyList(),
+            ).withBillPays(Freshness.LIVE, listOf(budgetPayment))
+
+        val alert = evaluator.evaluate(withBudgetPayment).single()
+        assertEquals(BudgetAlertLevel.NEARING_LIMIT, alert.level)
+        assertEquals(8_501L, alert.spentCents)
+
+        val creditCardPayment = budgetPayment.copy(
+            id = "bitcoin-credit-card-payment",
+            amountUsdCents = 99_999L,
+            budgetEffect = BillPayBudgetEffect.CREDIT_CARD_PAYMENT,
+        )
+        assertEquals(
+            emptyList(),
+            evaluator.evaluate(withBudgetPayment.withBillPays(Freshness.LIVE, listOf(creditCardPayment))),
+            "credit-card bill pays are transfers, not budget spend",
+        )
+    }
+
+    @Test
+    fun `failed bill-pay ledger suppresses notification thresholds`() {
+        val state =
+            state(
+                viewer = FamilyMember.VICTOR,
+                budgetOwner = FamilyMember.VICTOR,
+                transactions = listOf(transaction("ordinary-spend", 8_501L, FamilyMember.VICTOR)),
+            ).withBillPays(Freshness.ERROR, emptyList())
+
+        assertEquals(
+            emptyList(),
+            evaluator.evaluate(state),
+            "a failed required ledger must not publish a partial threshold result",
+        )
     }
 
     @Test
@@ -393,6 +441,31 @@ class BudgetNotificationEvaluatorTest {
 
     private fun VaultUiState.withStatuses(status: Freshness): VaultUiState =
         withBudgetStatus(status).withTransactionsStatus(status)
+
+    private fun VaultUiState.withBillPays(
+        status: Freshness,
+        billPays: List<BtcBillPay>,
+    ): VaultUiState =
+        copy(data = data.copy(btcBillPays = data.btcBillPays.copy(status = status, value = billPays)))
+
+    private fun billPay(
+        id: String,
+        amountCents: Long,
+        effect: BillPayBudgetEffect,
+    ) = BtcBillPay(
+        id = id,
+        date = "$MONTH-10",
+        merchant = id,
+        category = GROCERIES,
+        budgetEffect = effect,
+        amountUsdCents = amountCents,
+        btcSpentSats = 1_000L,
+        btcPriceCents = 200_000L,
+        feeUsdCents = 0L,
+        platform = "river_bitcoin_bill_pay",
+        note = null,
+        owner = FamilyMember.VICTOR,
+    )
 
     private fun transaction(
         id: String,

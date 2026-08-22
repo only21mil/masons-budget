@@ -195,6 +195,17 @@ class ReadModelTest {
     }
 
     @Test
+    fun `a complete empty bill-pay ledger is an authoritative zero for budget actuals`() {
+        val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+        val model = base.copy(
+            btcBillPays = base.btcBillPays.copy(value = emptyList()),
+        )
+
+        assertTrue(model.billPayLedgerUnavailable)
+        assertFalse(model.budgetActualsUnavailable)
+    }
+
+    @Test
     fun `an empty envelope really is empty`() {
         val empty = Fixtures.envelope(FamilyMember.VICTOR, Freshness.EMPTY)
         assertTrue(empty.transactions.value.isEmpty())

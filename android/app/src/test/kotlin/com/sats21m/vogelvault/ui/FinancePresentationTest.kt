@@ -54,15 +54,27 @@ class FinancePresentationTest {
         assertEquals(Money.PRICE_UNAVAILABLE, state.formatFinanceCents(Long.MAX_VALUE, DisplayUnit.SATS))
     }
     @Test
-    fun `adult total uses quote-valued retirement once and excludes child accounts`() {
-        val state = financeState(FamilyMember.VICTOR)
+    fun `adult total uses all shared adult retirement once and excludes child accounts`() {
+        val state = financeState(FamilyMember.VICTOR).copy(
+            financeDocument = document().copy(
+                accounts = listOf(
+                    account("victor_401k", FamilyMember.VICTOR),
+                    account("rachel_401k", FamilyMember.RACHEL),
+                    account("mason_401k", FamilyMember.MASON),
+                    account("maddox_401k", FamilyMember.MADDOX),
+                ),
+            ),
+        )
 
         val selection = requireNotNull(state.netWorthSelection())
 
-        assertEquals(1, selection.accounts.size)
-        assertEquals(12_000L, selection.retirementValueCents)
+        assertEquals(
+            listOf("victor_401k", "rachel_401k"),
+            selection.accounts.map { it.account.key },
+        )
+        assertEquals(24_000L, selection.retirementValueCents)
         assertEquals(10_000_000L, selection.bitcoinValueCents)
-        assertEquals(10_012_000L, selection.totalValueCents)
+        assertEquals(10_024_000L, selection.totalValueCents)
         assertEquals(
             "market service · 2026-07-31T12:00:00Z",
             selection.valuationQualityHint(),

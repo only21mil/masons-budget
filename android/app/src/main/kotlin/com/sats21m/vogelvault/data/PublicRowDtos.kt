@@ -2,6 +2,7 @@ package com.sats21m.vogelvault.data
 
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcBuy
+import com.sats21m.vogelvault.domain.BillPayBudgetEffect
 import com.sats21m.vogelvault.domain.Custody
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.FiatValuation
@@ -21,7 +22,7 @@ data class RowSnapshot<out T>(
     val complete: Boolean,
 )
 
-/** A Bitcoin bill-payment row. Android has no domain/UI consumer yet. */
+/** A Bitcoin bill-payment row, including the budget participation contract. */
 data class BtcBillPayRow(
     val id: String,
     val owner: FamilyMember,
@@ -29,6 +30,7 @@ data class BtcBillPayRow(
     val month: String,
     val merchant: String,
     val category: String,
+    val budgetEffect: BillPayBudgetEffect = BillPayBudgetEffect.CREDIT_CARD_PAYMENT,
     val amountUsdCents: Long,
     val btcSpentSats: Long,
     val btcPriceCents: Long,
@@ -184,6 +186,7 @@ internal data class PublicTransactionDto(
     val card: String?,
     val note: String?,
     val amountSats: Long?,
+    val bitcoinAccountKey: String?,
     val updatedAtMs: Long,
 ) {
     fun toDomain(): Transaction = Transaction(
@@ -195,6 +198,7 @@ internal data class PublicTransactionDto(
         card = card,
         note = note,
         amountSats = amountSats,
+        bitcoinAccountKey = bitcoinAccountKey,
         owner = owner,
         updatedAtMs = updatedAtMs,
         spendAmount = spendAmount,
@@ -207,6 +211,7 @@ internal data class PublicTransactionDto(
             val card = row.decodedOptionalString("card") ?: return null
             val note = row.decodedOptionalString("note") ?: return null
             val amountSats = row.decodedOptionalInt64("amountSats") ?: return null
+            val bitcoinAccountKey = row.decodedOptionalString("bitcoinAccountKey") ?: return null
             val amountCents = row.rowInt64("amountCents") ?: return null
             // abs(Long.MIN_VALUE) overflows back to Long.MIN_VALUE, so this
             // canonical amount cannot produce a nonnegative display magnitude.
@@ -236,6 +241,7 @@ internal data class PublicTransactionDto(
                 card = card.value,
                 note = note.value,
                 amountSats = amountSats.value,
+                bitcoinAccountKey = bitcoinAccountKey.value,
                 updatedAtMs = row.requiredLong("updatedAtMs") ?: return null,
             )
         }
@@ -438,6 +444,7 @@ internal data class PublicBtcBillPayDto(
     val month: String,
     val merchant: String,
     val category: String,
+    val budgetEffect: BillPayBudgetEffect,
     val amountUsdCents: Long,
     val btcSpentSats: Long,
     val btcPriceCents: Long,
@@ -454,6 +461,7 @@ internal data class PublicBtcBillPayDto(
         month = month,
         merchant = merchant,
         category = category,
+        budgetEffect = budgetEffect,
         amountUsdCents = amountUsdCents,
         btcSpentSats = btcSpentSats,
         btcPriceCents = btcPriceCents,
@@ -467,9 +475,15 @@ internal data class PublicBtcBillPayDto(
     companion object {
         fun decode(element: JsonElement): PublicBtcBillPayDto? {
             val row = element as? JsonObject ?: return null
+            val budgetEffect = row.decodedOptionalString("budgetEffect") ?: return null
             val platform = row.decodedOptionalString("platform") ?: return null
             val note = row.decodedOptionalString("note") ?: return null
             val reference = row.decodedOptionalString("reference") ?: return null
+            val parsedBudgetEffect = if (budgetEffect.value == null) {
+                BillPayBudgetEffect.CREDIT_CARD_PAYMENT
+            } else {
+                BillPayBudgetEffect.fromWireOrNull(budgetEffect.value) ?: return null
+            }
             return PublicBtcBillPayDto(
                 billPayId = row.rowString("billPayId") ?: return null,
                 owner = row.rowOwner() ?: return null,
@@ -477,6 +491,7 @@ internal data class PublicBtcBillPayDto(
                 month = row.rowString("month") ?: return null,
                 merchant = row.rowStringAllowEmpty("merchant") ?: return null,
                 category = row.rowStringAllowEmpty("category") ?: return null,
+                budgetEffect = parsedBudgetEffect,
                 amountUsdCents = row.rowInt64("amountUsdCents") ?: return null,
                 btcSpentSats = row.rowInt64("btcSpentSats") ?: return null,
                 btcPriceCents = row.rowInt64("btcPriceCents") ?: return null,
