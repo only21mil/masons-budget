@@ -596,36 +596,6 @@ function ExportPage() {
 }
 
 
-// ── CSV Import ──────────────────────────────────────────────────────────────
-
-function CSVImportPage() {
-  return (
-    <>
-      <PageHeader title="CSV Import" subtitle="Unavailable in this build" />
-      <StatusBanner
-        tone="warning"
-        title="Import is a write path and is not enabled"
-        detail="This client has no file-selection or row-mutation path for imports. No statement can be imported here."
-      />
-      <Panel title="Required safety contract">
-        <ol className="vv-muted" style={{ margin: 0, paddingLeft: "1.2rem", lineHeight: 1.8 }}>
-          <li>Any proposed implementation must preview merchant, date, amount, category, and owner before writing.</li>
-          <li>Amounts must be parsed directly to exact integer cents, never through floating point.</li>
-          <li>Purchases must stay positive and refunds negative for every owner.</li>
-          <li>Rows must use the authenticated Convex row mutation API only after explicit confirmation.</li>
-        </ol>
-      </Panel>
-      <Panel title="Preview" flush>
-        <StateBlock
-          state="empty"
-          title="Import unavailable"
-          detail="There is no reviewed file picker, preview parser, or bulk-import mutation path in this build."
-        />
-      </Panel>
-    </>
-  )
-}
-
 // ── Settings / Admin ────────────────────────────────────────────────────────
 
 function SettingsPage() {
@@ -991,7 +961,6 @@ export const adminPageManifest: PageManifest = {
     { id: "family", label: "Family & Profiles", icon: "users", Component: FamilyProfilesPage },
     { id: "sync-health", label: "Sync Health", icon: "refresh", Component: SyncHealthPage },
     { id: "export", label: "Export", icon: "download", Component: ExportPage, adultOnly: true },
-    { id: "csv-import", label: "CSV Import", icon: "receipt", Component: CSVImportPage, adultOnly: true },
     { id: "settings", label: "Settings", icon: "settings", Component: SettingsPage },
     { id: "onboarding", label: "Onboarding", icon: "sparkles", Component: OnboardingPage },
     { id: "lock", label: "Lock Screen", icon: "lock", Component: LockScreenPage },
