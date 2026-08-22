@@ -4,6 +4,8 @@ import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcBalance
 import com.sats21m.vogelvault.domain.Budget
 import com.sats21m.vogelvault.domain.BudgetCategory
+import com.sats21m.vogelvault.domain.BillPayBudgetEffect
+import com.sats21m.vogelvault.domain.BtcBillPay
 import com.sats21m.vogelvault.domain.Custody
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
@@ -65,6 +67,64 @@ class ExportReportsTest {
     }
 
     @Test
+    fun `transaction export renders a known payment-source label and preserves a legacy card`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR)
+        val data = fixture.copy(
+            transactions = fixture.transactions.copy(
+                value = listOf(
+                    transaction(
+                        merchant = "canonical-wire",
+                        amount = 100L,
+                        owner = FamilyMember.VICTOR,
+                        card = "coinbase_card",
+                    ),
+                    transaction(
+                        merchant = "legacy-card",
+                        amount = 200L,
+                        owner = FamilyMember.VICTOR,
+                        card = "Fold card",
+                    ),
+                ),
+            ),
+        )
+
+        val csv = ExportReports.transactions(
+            FamilyMember.VICTOR,
+            data,
+            LocalDate.parse("2026-07-29"),
+        )
+
+        assertContains(csv.content, "canonical-wire,1.00,Groceries,Coinbase Card")
+        assertFalse(csv.content.contains("coinbase_card"), csv.content)
+        assertContains(csv.content, "legacy-card,2.00,Groceries,Fold card")
+    }
+
+    @Test
+    fun `transaction export renders a missing payment source as On-chain`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR)
+        val data = fixture.copy(
+            transactions = fixture.transactions.copy(
+                value = listOf(
+                    transaction(
+                        merchant = "missing-source",
+                        amount = 100L,
+                        owner = FamilyMember.VICTOR,
+                        card = null,
+                    ),
+                ),
+            ),
+        )
+
+        val csv = ExportReports.transactions(
+            FamilyMember.VICTOR,
+            data,
+            LocalDate.parse("2026-07-29"),
+        )
+
+        assertContains(csv.content, "missing-source,1.00,Groceries,On-chain")
+    }
+
+    @Test
     fun `budget summary preserves purchase and refund signs without child spend`() {
         val fixture = Fixtures.envelope(FamilyMember.VICTOR)
         val budget = Budget(
@@ -86,6 +146,70 @@ class ExportReportsTest {
         val csv = ExportReports.budgetSummary(FamilyMember.VICTOR, data)
 
         assertContains(csv.content, "Groceries,100.00,15.00,85.00,15%")
+    }
+
+    @Test
+    fun `budget export includes budget-category bill pays and excludes credit-card payments`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR)
+        val budget = Budget(
+            month = "2026-07",
+            categories = listOf(BudgetCategory("Groceries", 10_000L, 0L)),
+            owner = FamilyMember.VICTOR,
+        )
+        val budgetBillPay = billPay(
+            id = "budget-bill-pay",
+            amountCents = 2_000L,
+            effect = BillPayBudgetEffect.BUDGET_CATEGORY,
+        )
+        val creditCardPayment = billPay(
+            id = "credit-card-payment",
+            amountCents = 99_999L,
+            effect = BillPayBudgetEffect.CREDIT_CARD_PAYMENT,
+        )
+        val data = fixture.copy(
+            budget = fixture.budget.copy(value = budget),
+            transactions = fixture.transactions.copy(value = emptyList()),
+            btcBillPays = fixture.btcBillPays.copy(
+                status = com.sats21m.vogelvault.domain.Freshness.LIVE,
+                value = listOf(budgetBillPay, creditCardPayment),
+            ),
+        )
+
+        val csv = ExportReports.budgetSummary(FamilyMember.VICTOR, data)
+
+        assertContains(csv.content, "Groceries,100.00,20.00,80.00,20%")
+        assertFalse(csv.content.contains("999.99"), csv.content)
+    }
+
+    @Test
+    fun `budget export marks actuals unavailable when bill-pay ledger fails`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR)
+        val budget = Budget(
+            month = "2026-07",
+            categories = listOf(BudgetCategory("Groceries", 10_000L, 0L)),
+            owner = FamilyMember.VICTOR,
+        )
+        val data = fixture.copy(
+            budget = fixture.budget.copy(value = budget),
+            transactions = fixture.transactions.copy(value = emptyList()),
+            btcBillPays = fixture.btcBillPays.copy(
+                status = com.sats21m.vogelvault.domain.Freshness.ERROR,
+                value = listOf(
+                    billPay(
+                        id = "stale-bill-pay",
+                        amountCents = 2_000L,
+                        effect = BillPayBudgetEffect.BUDGET_CATEGORY,
+                    ),
+                ),
+            ),
+        )
+
+        val csv = ExportReports.budgetSummary(FamilyMember.VICTOR, data)
+
+        assertEquals(
+            "Category,Budget,Actual,Remaining,Percent Used\nUNAVAILABLE,,,,\n",
+            csv.content,
+        )
     }
 
     @Test
@@ -176,10 +300,30 @@ class ExportReportsTest {
         assertFalse(csv.content.contains(",'-2.50,"), csv.content)
     }
 
+    private fun billPay(
+        id: String,
+        amountCents: Long,
+        effect: BillPayBudgetEffect,
+    ) = BtcBillPay(
+        id = id,
+        date = "2026-07-20",
+        merchant = id,
+        category = "Groceries",
+        budgetEffect = effect,
+        amountUsdCents = amountCents,
+        btcSpentSats = 1_000L,
+        btcPriceCents = 200_000L,
+        feeUsdCents = 0L,
+        platform = "river_bitcoin_bill_pay",
+        note = null,
+        owner = FamilyMember.VICTOR,
+    )
+
     private fun transaction(
         merchant: String,
         amount: Long,
         owner: FamilyMember,
+        card: String? = null,
     ) = Transaction(
         id = "$owner-$merchant",
         date = "2026-07-20",
@@ -187,6 +331,7 @@ class ExportReportsTest {
         amount = amount,
         spendAmount = amount,
         category = "Groceries",
+        card = card,
         owner = owner,
     )
 

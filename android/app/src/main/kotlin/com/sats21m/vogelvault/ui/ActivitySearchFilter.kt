@@ -80,9 +80,12 @@ internal class ActivitySearchIndex private constructor(
                 ActivityTransactionFilter.ALL -> true
                 ActivityTransactionFilter.INCOME -> isIncome
                 ActivityTransactionFilter.SPENDS -> !isIncome && transaction.amount != 0L
-                ActivityTransactionFilter.LIGHTNING -> transaction.card == "lightning"
+                ActivityTransactionFilter.LIGHTNING ->
+                    transaction.card == "lightning" || transaction.card == PaymentSource.ZEUS_LIGHTNING.wire
                 ActivityTransactionFilter.ON_CHAIN ->
-                    transaction.card == null || transaction.card == "on-chain"
+                    transaction.card == null ||
+                        transaction.card == "on-chain" ||
+                        transaction.card == PaymentSource.ZEUS_ON_CHAIN.wire
             }
         }
     }

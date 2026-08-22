@@ -274,6 +274,39 @@ dependencies {
     testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.36.0")
 }
 
+// These files live outside the Android Gradle root, so Gradle cannot infer them
+// from the app test sources. The app's wire and finance tests read them directly;
+// a cached test result must never make a changed shared contract look green.
+val repositoryRoot = rootProject.layout.projectDirectory.dir("..")
+val sharedAppTestFixtures =
+    objects.fileCollection().from(
+        repositoryRoot.file("shared/domain/fixtures/finance-market-cases.json"),
+        repositoryRoot.file("shared/domain/fixtures/payment-source-cases.json"),
+        repositoryRoot.dir("shared/domain/fixtures/convex-wire-golden"),
+    )
+
+val verifySharedAppTestInputs =
+    tasks.register("verifySharedAppTestInputs") {
+        group = "verification"
+        description = "Verifies that shared fixtures invalidate :app:testDebugUnitTest."
+
+        doLast {
+            val expected = sharedAppTestFixtures.files.mapTo(linkedSetOf()) { it.canonicalFile }
+            val registered =
+                tasks.named<Test>("testDebugUnitTest").get().inputs.files.files
+                    .mapTo(linkedSetOf()) { it.canonicalFile }
+            val missing = expected - registered
+            check(missing.isEmpty()) {
+                val relative = missing.map { it.relativeTo(repositoryRoot.asFile).invariantSeparatorsPath }
+                "Shared app test fixtures missing from :app:testDebugUnitTest inputs: ${relative.sorted()}"
+            }
+        }
+    }
+
+tasks.withType<Test>().configureEach {
+    if (name == "testDebugUnitTest") dependsOn(verifySharedAppTestInputs)
+}
+
 // CI keeps the behavioural app suite in the required PR check while moving the
 // screenshot-producing design packet to a separate default-branch step. The
 // ordinary local task remains unchanged and includes every test.
@@ -289,6 +322,10 @@ val robolectricDependencyDir = providers.gradleProperty("robolectricDependencyDi
 
 tasks.withType<Test>().configureEach {
     if (name != "testDebugUnitTest") return@configureEach
+
+    inputs.files(sharedAppTestFixtures)
+        .withPropertyName("sharedAppTestFixtures")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 
     filter {
         when (designPacketTestMode.get()) {

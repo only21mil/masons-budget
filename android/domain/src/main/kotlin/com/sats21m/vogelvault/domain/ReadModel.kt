@@ -85,6 +85,8 @@ data class Transaction(
     val displaySpendAmount: Long = kotlin.math.abs(spendAmount),
     /** Exact BTC Income quantity when the row posts to the Bitcoin ledger. */
     val amountSats: Long? = null,
+    /** Stored Bitcoin account identity for exact edit round-trips. */
+    val bitcoinAccountKey: String? = null,
     /** Exact remote revision for optimistic writeback. */
     val updatedAtMs: Long = 0L,
 ) : Owned {
@@ -190,6 +192,46 @@ data class BtcBuy(
     override val owner: FamilyMember,
 ) : Owned
 
+/**
+ * An internal movement between two Bitcoin accounts.
+ *
+ * The principal is moved from one account to another; only the network fee
+ * changes the aggregate Bitcoin balance. Transfers never become fiat income or
+ * spending rows.
+ */
+data class BtcTransfer(
+    val id: String,
+    override val owner: FamilyMember,
+    val date: String,
+    val fromAccountKey: String,
+    val toAccountKey: String,
+    val sats: Long,
+    val feeSats: Long,
+    val note: String? = null,
+) : Owned {
+    init {
+        require(id.isNotBlank()) { "Bitcoin transfer id must not be empty" }
+        require(date.isNotBlank()) { "Bitcoin transfer date must not be empty" }
+        require(fromAccountKey.isNotBlank()) { "Bitcoin transfer source account must not be empty" }
+        require(toAccountKey.isNotBlank()) { "Bitcoin transfer destination account must not be empty" }
+        require(fromAccountKey != toAccountKey) {
+            "Bitcoin transfer source and destination must differ"
+        }
+        require(sats > 0L) { "Bitcoin transfer sats must be positive" }
+        require(feeSats >= 0L) { "Bitcoin transfer feeSats must be nonnegative" }
+        require(sats <= Long.MAX_VALUE - feeSats) {
+            "Bitcoin transfer debit exceeds signed int64"
+        }
+    }
+
+    val principalSats: Long get() = sats
+    val totalBtcDeltaSats: Long get() = -feeSats
+    val netWorthDeltaSats: Long get() = -feeSats
+    val incomeCentsDelta: Long get() = 0L
+    val spendCentsDelta: Long get() = 0L
+    val affectsIncomeOrSpend: Boolean get() = false
+}
+
 /** The single scoped BTC balance document that supplies net-worth totals. */
 data class BtcBalance(
     override val owner: FamilyMember,
@@ -217,16 +259,35 @@ data class IncomeEntry(
     override val owner: FamilyMember,
 ) : Owned
 
+/** How a Bitcoin bill pay participates in the monthly budget. */
+enum class BillPayBudgetEffect(val wireValue: String) {
+    BUDGET_CATEGORY("budget_category"),
+    CREDIT_CARD_PAYMENT("credit_card_payment"),
+    ;
+
+    companion object {
+        /** Old rows predate this field and were all budget-excluded payments. */
+        fun fromWireOrNull(value: String?): BillPayBudgetEffect? =
+            entries.firstOrNull { it.wireValue == value }
+
+        fun fromWireOrDefault(value: String?): BillPayBudgetEffect =
+            value?.let(::fromWireOrNull) ?: CREDIT_CARD_PAYMENT
+    }
+}
+
 data class BtcBillPay(
     val id: String,
     val date: String,
     val merchant: String,
     val category: String,
+    val budgetEffect: BillPayBudgetEffect = BillPayBudgetEffect.CREDIT_CARD_PAYMENT,
     val amountUsdCents: Long,
     val btcSpentSats: Long,
+    val btcPriceCents: Long = 0L,
     val feeUsdCents: Long,
     val platform: String?,
     val note: String?,
+    val reference: String? = null,
     override val owner: FamilyMember,
 ) : Owned
 
@@ -299,6 +360,27 @@ data class ReadModel(
 
     val billPayLedgerUnavailable: Boolean
         get() = btcBillPays.requiredProjectionUnavailable || btcBillPays.value.isEmpty()
+
+    /**
+     * Budget actuals require every ledger that can contribute to monthly spend.
+     *
+     * A failed or absent bill-pay projection is not an empty spend list: treating
+     * it as zero would make Actual, Remaining, exports, and alerts under-report
+     * the household budget.
+     */
+    val budgetActualsUnavailable: Boolean
+        get() =
+            budget.requiredProjectionUnavailable ||
+                transactions.requiredProjectionUnavailable ||
+                btcBillPays.requiredProjectionUnavailable
+
+    /** The source status to explain why budget actuals cannot be trusted. */
+    val budgetActualsStatus: Freshness
+        get() = when {
+            budget.requiredProjectionUnavailable -> budget.status
+            transactions.requiredProjectionUnavailable -> transactions.status
+            else -> btcBillPays.status
+        }
 }
 
 // ── Month scoping ───────────────────────────────────────────────────────────
@@ -319,10 +401,35 @@ fun List<Transaction>.budgetTransactionsFor(viewer: FamilyMember): List<Transact
     if (viewer.isAdult) netWorthScopeFor(viewer) else visibleTo(viewer)
 
 /** Months that can contribute to [viewer]'s budget, newest first. */
-fun List<Transaction>.budgetMonthsFor(viewer: FamilyMember, budgetMonth: String?): List<String> {
+fun List<Transaction>.budgetMonthsFor(
+    viewer: FamilyMember,
+    budgetMonth: String?,
+    billPays: List<BtcBillPay> = emptyList(),
+): List<String> {
     val present = budgetTransactionsFor(viewer).monthsPresent()
-    return (listOfNotNull(budgetMonth) + present).distinct().sortedDescending()
+    val billPayMonths = billPays
+        .budgetBillPaysFor(viewer)
+        .asSequence()
+        .filter { it.budgetEffect == BillPayBudgetEffect.BUDGET_CATEGORY }
+        .map { monthOf(it.date) }
+    return (listOfNotNull(budgetMonth) + present + billPayMonths).distinct().sortedDescending()
 }
+
+/** Bill pays that count toward a viewer's budget, using the same adult/child scope as transactions. */
+fun List<BtcBillPay>.budgetBillPaysFor(viewer: FamilyMember): List<BtcBillPay> =
+    if (viewer.isAdult) netWorthScopeFor(viewer) else visibleTo(viewer)
+
+/** Bill pays shown in one budget category drilldown. */
+fun List<BtcBillPay>.budgetCategoryBillPaysFor(
+    viewer: FamilyMember,
+    month: String,
+    category: String,
+): List<BtcBillPay> =
+    budgetBillPaysFor(viewer).filter {
+        it.budgetEffect == BillPayBudgetEffect.BUDGET_CATEGORY &&
+            monthOf(it.date) == month &&
+            it.category == category
+    }
 
 /** Resolve a persisted selection against the months still valid for this budget. */
 fun resolveBudgetMonth(selected: String?, months: List<String>, budgetMonth: String?): String? =
@@ -382,13 +489,28 @@ data class BudgetSpend(
  * Returns null when any category, aggregate, remaining, or uncategorised value
  * cannot be represented as exact signed 64-bit cents.
  */
-fun deriveBudgetSpend(budget: Budget, transactions: List<Transaction>): BudgetSpend? {
+fun deriveBudgetSpend(
+    budget: Budget,
+    transactions: List<Transaction>,
+    billPays: List<BtcBillPay> = emptyList(),
+): BudgetSpend? {
     val spentByCategory = mutableMapOf<String, Long>()
     for (transaction in transactions.inMonth(budget.month)) {
         val contribution = transaction.spendAmount
         if (contribution == 0L) continue
         spentByCategory[transaction.category] =
             addExactOrNull(spentByCategory[transaction.category] ?: 0L, contribution)
+                ?: return null
+    }
+    for (billPay in billPays) {
+        if (
+            billPay.budgetEffect != BillPayBudgetEffect.BUDGET_CATEGORY ||
+            monthOf(billPay.date) != budget.month
+        ) {
+            continue
+        }
+        spentByCategory[billPay.category] =
+            addExactOrNull(spentByCategory[billPay.category] ?: 0L, billPay.amountUsdCents)
                 ?: return null
     }
 

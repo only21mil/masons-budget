@@ -178,6 +178,7 @@ private class CachingRowQueryRepository(
                                 card = it.card,
                                 note = it.note,
                                 amountSats = it.amountSats,
+                                bitcoinAccountKey = it.bitcoinAccountKey,
                                 updatedAtMs = it.updatedAtMs,
                             )
                         },
@@ -404,6 +405,7 @@ private fun CachedTransactionEntity.toDomain() =
         note = note,
         owner = owner,
         amountSats = amountSats,
+        bitcoinAccountKey = bitcoinAccountKey,
         updatedAtMs = updatedAtMs,
     )
 

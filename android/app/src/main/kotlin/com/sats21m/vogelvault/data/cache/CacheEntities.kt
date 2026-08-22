@@ -109,6 +109,7 @@ data class CachedTransactionEntity(
     val note: String?,
     @ColumnInfo(name = "updated_at_ms") val updatedAtMs: Long,
     @ColumnInfo(name = "amount_sats") val amountSats: Long? = null,
+    @ColumnInfo(name = "bitcoin_account_key") val bitcoinAccountKey: String? = null,
 )
 
 @Entity(
@@ -227,6 +228,7 @@ data class TransactionCacheRow(
     val note: String? = null,
     val updatedAtMs: Long,
     val amountSats: Long? = null,
+    val bitcoinAccountKey: String? = null,
 )
 
 data class TodoCacheRow(
@@ -301,6 +303,7 @@ internal fun TransactionCacheRow.inSnapshot(
     card = card,
     note = note,
     amountSats = amountSats,
+    bitcoinAccountKey = bitcoinAccountKey,
     updatedAtMs = updatedAtMs,
 )
 

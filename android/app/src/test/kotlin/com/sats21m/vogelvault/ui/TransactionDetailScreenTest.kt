@@ -70,6 +70,43 @@ class TransactionDetailScreenTest {
     }
 
     @Test
+    fun `active Bitcoin edit forwards the stored posting fields unchanged`() {
+        assertBitcoinEditPosting(
+            card = "zeus_lightning",
+            accountKey = "zeus-wallet",
+        )
+    }
+
+    @Test
+    fun `retired Bitcoin edit forwards the stored posting fields unchanged`() {
+        assertBitcoinEditPosting(
+            card = "lightning",
+            accountKey = "legacy-lightning-wallet",
+        )
+    }
+
+    @Test
+    fun `unrecognised legacy card survives an edit byte for byte`() {
+        val poster = RecordingPoster(success(owner = "victor"))
+        val legacyCard = "  Fold card  "
+        val original = transaction(card = legacyCard)
+
+        val result = runBlocking {
+            actions(poster).save(
+                original,
+                draft(method = legacyCard),
+            )
+        }
+
+        assertEquals(TransactionActionResult.Success, result)
+        val sent =
+            Json.parseToJsonElement(poster.bodies.single()).jsonObject["args"]!!
+                .jsonObject["transaction"]!!
+                .jsonObject
+        assertEquals(legacyCard, sent["card"]?.jsonPrimitive?.content)
+    }
+
+    @Test
     fun `editing a server row without a revision refuses instead of sending unfenced`() {
         val poster = RecordingPoster(success())
         val actions = actions(poster)
@@ -162,35 +199,70 @@ class TransactionDetailScreenTest {
             ),
         )
 
+    private fun assertBitcoinEditPosting(
+        card: String,
+        accountKey: String,
+    ) {
+        val poster = RecordingPoster(success(owner = "victor"))
+        val original =
+            transaction(
+                card = card,
+                amountSats = 21_000L,
+                bitcoinAccountKey = accountKey,
+            )
+
+        val result = runBlocking { actions(poster).save(original, draft(method = card)) }
+
+        assertEquals(TransactionActionResult.Success, result)
+        val sent =
+            Json.parseToJsonElement(poster.bodies.single()).jsonObject["args"]!!
+                .jsonObject["transaction"]!!
+                .jsonObject
+        assertEquals(card, sent["card"]?.jsonPrimitive?.content)
+        assertEquals(
+            "CFIAAAAAAAA=",
+            sent["amountSats"]?.jsonObject?.get("\$integer")?.jsonPrimitive?.content,
+        )
+        assertEquals(accountKey, sent["bitcoinAccountKey"]?.jsonPrimitive?.content)
+    }
+
     private fun transaction(
         owner: FamilyMember = FamilyMember.VICTOR,
         updatedAtMs: Long = REVISION,
+        card: String = "Visa",
+        amountSats: Long? = null,
+        bitcoinAccountKey: String? = null,
     ) = Transaction(
         id = "activity-row",
         date = "2026-07-29",
         merchant = "Neighborhood Market",
         amount = 14_218L,
         category = "Groceries",
-        card = "Visa",
+        card = card,
         note = "original",
         owner = owner,
+        amountSats = amountSats,
+        bitcoinAccountKey = bitcoinAccountKey,
         updatedAtMs = updatedAtMs,
     )
 
-    private fun draft(amount: String = "142.18") =
+    private fun draft(
+        amount: String = "142.18",
+        method: String = "Visa",
+    ) =
         TransactionDraft(
             merchant = "Neighborhood Market",
             category = "Groceries",
             amount = amount,
-            method = "Visa",
+            method = method,
             date = "2026-07-29",
             note = "original",
         )
 
-    private fun success() =
+    private fun success(owner: String = "mason") =
         HttpTextResponse(
             200,
-            """{"status":"success","value":{"txId":"activity-row","owner":"mason","month":"2026-07","outcome":"updated","updatedAtMs":1777777777778}}""",
+            """{"status":"success","value":{"txId":"activity-row","owner":"$owner","month":"2026-07","outcome":"updated","updatedAtMs":1777777777778}}""",
         )
 
     private companion object {

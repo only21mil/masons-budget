@@ -71,6 +71,44 @@ class ActivitySearchFilterTest {
     }
 
     @Test
+    fun `active and retired Bitcoin rail values remain filterable without admitting card sources`() {
+        val cardRows = listOf(
+            transaction("coinbase", amount = 100L, category = "Shopping", card = "Coinbase Card"),
+            transaction("aven", amount = 200L, category = "Shopping", card = "Aven"),
+            transaction("sofi", amount = 300L, category = "Shopping", card = "SoFi Card"),
+            transaction("capital-one", amount = 400L, category = "Shopping", card = "Capital One VX"),
+        )
+        val lightning = transaction("lightning-canonical", amount = 500L, category = "Other", card = "lightning")
+        val onChain = transaction("on-chain-canonical", amount = 600L, category = "Other", card = "on-chain")
+        val selectorWire = transaction("on-chain-wire", amount = 700L, category = "Other", card = "on_chain")
+        val zeusLightning =
+            transaction("zeus-lightning", amount = 800L, category = "Other", card = "zeus_lightning")
+        val zeusOnChain =
+            transaction("zeus-on-chain", amount = 900L, category = "Other", card = "zeus_on_chain")
+        val index =
+            ActivitySearchIndex.build(
+                cardRows + lightning + onChain + selectorWire + zeusLightning + zeusOnChain,
+            )
+
+        assertEquals(
+            listOf(lightning, zeusLightning),
+            index.search("", ActivityTransactionFilter.LIGHTNING),
+        )
+        assertEquals(
+            listOf(onChain, zeusOnChain),
+            index.search("", ActivityTransactionFilter.ON_CHAIN),
+        )
+        assertTrue(
+            index.search("", ActivityTransactionFilter.LIGHTNING)
+                .none { it.card in cardRows.map(Transaction::card) },
+        )
+        assertTrue(
+            index.search("", ActivityTransactionFilter.ON_CHAIN)
+                .none { it.card in cardRows.map(Transaction::card) },
+        )
+    }
+
+    @Test
     fun `production sized cached ledger indexes and filters within bounded time`() {
         val transactions = List(911) { index ->
             transaction(

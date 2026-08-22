@@ -161,7 +161,7 @@ class AndroidFinanceRegressionTest {
     }
 
     @Test
-    fun `retirement keeps holdings and current Bitcoin visible when income is unavailable`() {
+    fun `net worth keeps retirement holdings and current Bitcoin visible when income is unavailable`() {
         // Current Bitcoin is factual snapshot data, independent from projection inputs.
         val balance = bitcoinBalance(
             owner = FamilyMember.VICTOR,
@@ -201,7 +201,7 @@ class AndroidFinanceRegressionTest {
             ),
         )
 
-        show(Destination.RETIREMENT, state, DisplayUnit.BTC)
+        show(Destination.NET_WORTH, state, DisplayUnit.BTC)
 
         contentList().performScrollToNode(hasContentDescription("Index holding", substring = true))
         compose.onNodeWithContentDescription("Index holding", substring = true)
@@ -255,7 +255,7 @@ class AndroidFinanceRegressionTest {
         settle()
         compose.onNodeWithContentDescription("SATS display unit").assertIsSelected()
 
-        compose.runOnUiThread { destination.value = Destination.RETIREMENT }
+        compose.runOnUiThread { destination.value = Destination.NET_WORTH }
         settle()
         compose.onNodeWithContentDescription("SATS display unit").assertIsSelected()
     }

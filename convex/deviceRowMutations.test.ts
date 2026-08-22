@@ -291,7 +291,7 @@ describe("device row authorization", () => {
     expect(stored!.lastSeenAt).toBe(0);
   });
 
-  it("requires bitcoin authority for sat-Income create, edit, and delete", async () => {
+  it("requires bitcoin authority for sat-Income and Bitcoin-spend postings", async () => {
     await seedBtcLedger("victor");
     const transactionOnly = await pairMobileDevice(
       t,
@@ -317,6 +317,24 @@ describe("device row authorization", () => {
         owner: "victor",
         sourceFile: "transactions",
         transaction: income,
+      }),
+    ).rejects.toThrow(/Unauthorized mobile device/);
+    await expect(
+      t.mutation(api.upsertTransaction, {
+        ...authArgs(transactionOnly),
+        owner: "victor",
+        sourceFile: "transactions",
+        transaction: {
+          ...income,
+          id: "device-zeus-lightning-spend",
+          merchant: "Zeus Lightning merchant",
+          amountCents: 100n,
+          amountSats: 50n,
+          bitcoinAccountKey: "river",
+          kind: "spend",
+          category: "Food",
+          card: "zeus_lightning",
+        },
       }),
     ).rejects.toThrow(/Unauthorized mobile device/);
     await expect(
@@ -362,6 +380,294 @@ describe("device row authorization", () => {
         baseUpdatedAtMs,
       }),
     ).resolves.toMatchObject({ removed: true });
+  });
+
+  it("enforces the closed payment-source matrix at the device boundary", async () => {
+    await seedBtcLedger("victor");
+    const device = await fullDevice("payment-source-matrix-device");
+    const request = (transaction: Record<string, unknown>, baseUpdatedAtMs?: number) =>
+      t.mutation(api.upsertTransaction, {
+        ...authArgs(device),
+        owner: "victor",
+        sourceFile: "transactions",
+        baseUpdatedAtMs,
+        transaction,
+      });
+    const base = {
+      owner: "victor" as const,
+      date: "2026-07-30",
+      merchant: "Merchant",
+      amountCents: 100n,
+      kind: "spend" as const,
+      category: "Food",
+    };
+
+    await expectDeviceError(
+      request({ ...base, id: "label-source", card: "On-chain" }),
+      "VALIDATION_FAILED",
+    );
+    await expectDeviceError(
+      request({ ...base, id: "unknown-source", card: "visa" }),
+      "VALIDATION_FAILED",
+    );
+    await expectDeviceError(
+      request({ ...base, id: "wrong-route", card: "river_bitcoin_bill_pay" }),
+      "VALIDATION_FAILED",
+    );
+    await expectDeviceError(
+      request({
+        ...base,
+        id: "fiat-bitcoin-fields",
+        card: "aven",
+        amountSats: 50n,
+        bitcoinAccountKey: "river",
+      }),
+      "VALIDATION_FAILED",
+    );
+    for (const source of ["river", "zeus_lightning", "zeus_on_chain", "strike"]) {
+      await expect(
+        request({
+          ...base,
+          id: `valid-${source}`,
+          card: source,
+          amountSats: 50n,
+          bitcoinAccountKey: "river",
+        }),
+      ).resolves.toMatchObject({ outcome: "inserted" });
+    }
+    for (const source of ["river", "zeus_lightning", "zeus_on_chain", "strike"]) {
+      await expect(
+        request({
+          ...base,
+          id: `income-${source}`,
+          merchant: "Bitcoin income",
+          kind: "credit",
+          category: "Income",
+          card: source,
+          amountSats: 60n,
+          bitcoinAccountKey: "river",
+        }),
+      ).resolves.toMatchObject({ outcome: "inserted" });
+    }
+    await expectDeviceError(
+      request({
+        ...base,
+        id: "income-missing-account",
+        merchant: "Bitcoin income",
+        kind: "credit",
+        category: "Income",
+        card: "strike",
+        amountSats: 60n,
+      }),
+      "VALIDATION_FAILED",
+    );
+    await expectDeviceError(
+      request({
+        ...base,
+        id: "spend-as-credit",
+        merchant: "Refund",
+        amountCents: -100n,
+        kind: "credit",
+        card: "zeus_lightning",
+        amountSats: 60n,
+        bitcoinAccountKey: "river",
+      }),
+      "VALIDATION_FAILED",
+    );
+    for (const source of ["lightning", "on_chain"]) {
+      await expectDeviceError(
+        request({
+          ...base,
+          id: `retired-${source}`,
+          card: source,
+          amountSats: 50n,
+          bitcoinAccountKey: "river",
+        }),
+        "VALIDATION_FAILED",
+      );
+    }
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("transactions", {
+        txId: "legacy-card",
+        owner: "victor",
+        date: "2026-07-30",
+        month: "2026-07",
+        merchant: "Legacy merchant",
+        amountCents: 100n,
+        category: "Food",
+        card: "Legacy Card",
+        sourceFile: "transactions",
+        updatedAtMs: 1,
+      });
+    });
+    await expect(
+      request(
+        { ...base, id: "legacy-card", card: "Legacy Card", note: "metadata edit" },
+        1,
+      ),
+    ).resolves.toMatchObject({ outcome: "updated" });
+    const legacyRevision = await transactionRevision("legacy-card");
+    await expectDeviceError(
+      request(
+        { ...base, id: "legacy-card", card: "different legacy value" },
+        legacyRevision,
+      ),
+      "VALIDATION_FAILED",
+    );
+    await expectDeviceError(
+      request({ ...base, id: "legacy-card" }, legacyRevision),
+      "VALIDATION_FAILED",
+    );
+
+    for (const source of ["lightning", "on_chain"]) {
+      const id = `legacy-${source}`;
+      await t.run(async (ctx) => {
+        await ctx.db.insert("transactions", {
+          txId: id,
+          owner: "victor",
+          date: "2026-07-30",
+          month: "2026-07",
+          merchant: "Legacy Bitcoin merchant",
+          amountCents: 100n,
+          category: "Food",
+          card: source,
+          amountSats: 50n,
+          bitcoinAccountKey: "river",
+          balancePostingVersion: 1n,
+          sourceFile: "transactions",
+          updatedAtMs: 1,
+        });
+      });
+      await expect(
+        request(
+          {
+            ...base,
+            id,
+            card: source,
+            amountSats: 50n,
+            bitcoinAccountKey: "river",
+            note: "metadata edit",
+          },
+          1,
+        ),
+      ).resolves.toMatchObject({ outcome: "updated" });
+      await expectDeviceError(
+        request(
+          {
+            ...base,
+            id,
+            merchant: "Legacy Bitcoin income",
+            kind: "credit",
+            category: "Income",
+            card: source,
+            amountSats: 50n,
+            bitcoinAccountKey: "river",
+          },
+          await transactionRevision(id),
+        ),
+        "VALIDATION_FAILED",
+      );
+    }
+
+    const state = await t.run(async (ctx) => ({
+      rows: await ctx.db.query("transactions").collect(),
+      balance: await ctx.db
+        .query("btcBalanceDocuments")
+        .withIndex("by_source_file", (q) =>
+          q.eq("sourceFile", "btc-balance-snapshot"),
+        )
+        .unique(),
+    }));
+    expect(state.rows.map((row) => row.txId).sort()).toEqual([
+      "income-river",
+      "income-strike",
+      "income-zeus_lightning",
+      "income-zeus_on_chain",
+      "legacy-card",
+      "legacy-lightning",
+      "legacy-on_chain",
+      "valid-river",
+      "valid-strike",
+      "valid-zeus_lightning",
+      "valid-zeus_on_chain",
+    ]);
+    expect(state.balance!.accounts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "river", sats: 1_000_040n }),
+      ]),
+    );
+  });
+
+  it("requires transaction and Bitcoin authority for linked income buys", async () => {
+    await seedBtcLedger("victor");
+    const bitcoinOnly = await pairMobileDevice(t, syncToken, "linked-buy-bitcoin-only", [
+      "bitcoin:write",
+    ]);
+    const transactionOnly = await pairMobileDevice(
+      t,
+      syncToken,
+      "linked-buy-transaction-only",
+      ["transactions:write"],
+    );
+    const full = await fullDevice("linked-buy-full");
+    const pair = {
+      owner: "rachel" as const,
+      sourceFile: "bitcoin-buys" as const,
+      buy: {
+        id: "device-linked-income",
+        owner: "rachel" as const,
+        date: "2026-07-30",
+        source: "river",
+        sats: 100n,
+        priceUsdCents: 2_500_000n,
+        usdCents: 25n,
+      },
+      linkedIncome: {
+        id: "device-linked-income",
+        owner: "rachel" as const,
+        date: "2026-07-30",
+        amountCents: 25n,
+        source: "Payroll",
+        sourceFile: "income" as const,
+      },
+    };
+
+    await expect(
+      t.mutation(api.upsertBtcBuy, { ...authArgs(bitcoinOnly), ...pair }),
+    ).rejects.toThrow(/Unauthorized mobile device/);
+    await expect(
+      t.mutation(api.upsertBtcBuy, { ...authArgs(transactionOnly), ...pair }),
+    ).rejects.toThrow(/Unauthorized mobile device/);
+    await expect(
+      t.mutation(api.upsertBtcBuy, { ...authArgs(full), ...pair }),
+    ).resolves.toMatchObject({ outcome: "inserted" });
+    await expect(
+      t.mutation(api.upsertBtcBuy, { ...authArgs(full), ...pair }),
+    ).resolves.toMatchObject({ outcome: "updated" });
+
+    const rows = await t.run(async (ctx) => ({
+      income: await ctx.db.query("income").collect(),
+      buys: await ctx.db.query("btcBuys").collect(),
+      balance: await ctx.db
+        .query("btcBalanceDocuments")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "btc-balance-snapshot"))
+        .unique(),
+    }));
+    expect(rows.income).toHaveLength(1);
+    expect(rows.income[0]).toMatchObject({ owner: "victor", sourceKey: "id:device-linked-income" });
+    expect(rows.buys).toHaveLength(1);
+    expect(rows.buys[0]).toMatchObject({ owner: "victor", buyId: "device-linked-income" });
+    expect(rows.balance?.totals.sats).toBe(1_000_100n);
+    await expect(
+      t.mutation(api.deleteBtcBuy, {
+        ...authArgs(full),
+        owner: "rachel",
+        sourceFile: "bitcoin-buys",
+        entityId: "device-linked-income",
+        baseUpdatedAtMs: rows.buys[0]!.updatedAtMs,
+      }),
+    ).rejects.toThrow(/cannot be deleted until paired correction and deletion/);
   });
 
   it("rejects owner/source and request/payload owner mismatches", async () => {
@@ -513,6 +819,8 @@ describe("device row authorization", () => {
             date: "2026-07-30",
             merchant: "",
             category: "Bills",
+            budgetEffect: "budget_category",
+            platform: "river_bitcoin_bill_pay",
             amountUsdCents: 100n,
             btcSpentSats: 1n,
             btcPriceCents: 10_000_000n,
@@ -714,6 +1022,8 @@ describe("device transaction and todo mutations", () => {
         date: "2026-07-30",
         merchant: "Utility",
         category: "Bills",
+        budgetEffect: "budget_category",
+        platform: "river_bitcoin_bill_pay",
         amountUsdCents: 100n,
         btcSpentSats: 1n,
         btcPriceCents: 10_000_000n,
@@ -1509,6 +1819,8 @@ describe("device bitcoin mutations", () => {
           date: "2026-07-30",
           merchant: "Must not land",
           category: "Bills",
+          budgetEffect: "budget_category",
+          platform: "river_bitcoin_bill_pay",
           amountUsdCents: 100n,
           btcSpentSats: 1n,
           btcPriceCents: 10_000_000n,
@@ -1582,6 +1894,8 @@ describe("device bitcoin mutations", () => {
         date: "2026-07-30",
         merchant: "Shared bill",
         category: "Bills",
+        budgetEffect: "budget_category",
+        platform: "river_bitcoin_bill_pay",
         amountUsdCents: 100n,
         btcSpentSats: 10n,
         btcPriceCents: 10_000_000n,
@@ -1611,6 +1925,7 @@ describe("device bitcoin mutations", () => {
         .unique())!.owner,
       buy: (await ctx.db.query("btcBuys").unique())!.owner,
       bill: (await ctx.db.query("btcBillPays").unique())!.owner,
+      billEffect: (await ctx.db.query("btcBillPays").unique())!.budgetEffect,
       accountDocument: (await ctx.db
         .query("btcBalanceDocuments")
         .withIndex("by_source_file", (q) =>
@@ -1629,6 +1944,7 @@ describe("device bitcoin mutations", () => {
       budget: "victor",
       buy: "victor",
       bill: "victor",
+      billEffect: "budget_category",
       accountDocument: "victor",
       accountMirror: "victor",
     });
@@ -1698,12 +2014,28 @@ describe("device bitcoin mutations", () => {
         date: "2026-07-30",
         merchant: "Utility",
         category: "Bills",
+        budgetEffect: "budget_category",
+        platform: "river_bitcoin_bill_pay",
         amountUsdCents: 5_000n,
         btcSpentSats: 50_000n,
         btcPriceCents: 10_000_000n,
         feeUsdCents: 0n,
       },
     };
+    await expectDeviceError(
+      t.mutation(api.upsertBtcBillPay, {
+        ...billPay,
+        billPay: { ...billPay.billPay, platform: undefined },
+      }),
+      "VALIDATION_FAILED",
+    );
+    await expectDeviceError(
+      t.mutation(api.upsertBtcBillPay, {
+        ...billPay,
+        billPay: { ...billPay.billPay, platform: "River Bitcoin Bill Pay" },
+      }),
+      "VALIDATION_FAILED",
+    );
     await t.mutation(api.upsertBtcBillPay, billPay);
     const billBase = await billPayRevision("bill-1");
     await expectDeviceError(

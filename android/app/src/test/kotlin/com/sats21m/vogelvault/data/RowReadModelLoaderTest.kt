@@ -16,6 +16,7 @@ import java.util.logging.LogRecord
 import java.util.logging.Logger
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -306,7 +307,7 @@ class RowReadModelLoaderTest {
         assertEquals(Freshness.EMPTY, model.btcAccounts.status)
         assertEquals(Freshness.EMPTY, model.income.status)
         assertEquals(Freshness.EMPTY, model.btcBalance.status)
-        assertEquals(Freshness.EMPTY, model.btcBillPays.status)
+        assertEquals(Freshness.LIVE, model.btcBillPays.status)
         assertEquals(true, model.incomeFiguresUnavailable)
         assertEquals(true, model.netWorthFiguresUnavailable)
         assertEquals(true, model.billPayLedgerUnavailable)
@@ -330,6 +331,40 @@ class RowReadModelLoaderTest {
         assertEquals(emptyList(), model.transactions.value)
         assertEquals(false, model.transactions.requiredProjectionUnavailable)
         assertEquals(456L, model.transactions.updatedAt)
+    }
+
+    @Test
+    fun `complete empty bill-pay response stays live for budget actuals`() = runBlocking {
+        val model = RowReadModelLoader(
+            FakeRows(
+                transactions = ok(
+                    Transaction(
+                        id = "june-spend",
+                        date = "2026-06-18",
+                        merchant = "Grocer",
+                        amount = 12_345L,
+                        category = "Groceries",
+                        owner = FamilyMember.VICTOR,
+                    ),
+                ),
+                budget = ConvexResult.Ok(
+                    BudgetDocumentSnapshot(budgetDocument("2026-06"), complete = true),
+                ),
+                billPays = ConvexResult.Ok(RowSnapshot(emptyList(), complete = true)),
+            ),
+        ) { 456L }.load(FamilyMember.VICTOR)
+
+        assertEquals(Freshness.LIVE, model.btcBillPays.status)
+        assertEquals(emptyList(), model.btcBillPays.value)
+        assertFalse(model.budgetActualsUnavailable)
+        val spend = requireNotNull(
+            deriveBudgetSpend(
+                requireNotNull(model.budget.value),
+                model.transactions.value.budgetTransactionsFor(FamilyMember.VICTOR),
+                model.btcBillPays.value,
+            ),
+        )
+        assertEquals(12_345L, spend.actualCents)
     }
 
     @Test

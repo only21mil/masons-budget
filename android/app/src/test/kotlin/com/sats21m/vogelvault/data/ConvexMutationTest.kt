@@ -225,6 +225,85 @@ class ConvexMutationTest {
     }
 
     @Test
+    fun `device bitcoin buy can atomically carry a linked income with matching identity`() {
+        val poster = RecordingPoster(success())
+        val buy = BtcBuyInput(
+            id = "income-buy-1",
+            date = "2026-08-01",
+            source = "River",
+            sats = 100_000L,
+            priceUsdCents = 6_500_000L,
+            usdCents = 6_500L,
+            owner = FamilyMember.VICTOR,
+            note = "paycheck DCA",
+            loggedBy = "android",
+        )
+        val income = LinkedIncomeInput(
+            id = "income-buy-1",
+            owner = FamilyMember.VICTOR,
+            date = "2026-08-01",
+            amountCents = 6_500L,
+            source = "Payroll",
+            note = "August paycheck",
+            loggedBy = "android",
+        )
+
+        runBlocking {
+            client(poster).mutate(
+                ConvexMutation.UpsertBtcBuyFromDevice(
+                    owner = FamilyMember.VICTOR,
+                    sourceFile = "bitcoin-buys",
+                    buy = buy,
+                    linkedIncome = income,
+                ),
+            )
+        }
+
+        val wire = sentBody(poster)
+        assertEquals("tables:upsertBtcBuyFromDevice", wire["path"]?.jsonPrimitive?.content)
+        val args = wire["args"]!!.jsonObject
+        assertEquals("victor", args["owner"]?.jsonPrimitive?.content)
+        assertEquals("bitcoin-buys", args["sourceFile"]?.jsonPrimitive?.content)
+        assertEquals("income-buy-1", args["buy"]!!.jsonObject["id"]?.jsonPrimitive?.content)
+        val linkedIncome = args["linkedIncome"]!!.jsonObject
+        assertEquals(
+            setOf("id", "owner", "date", "amountCents", "source", "sourceFile", "note", "loggedBy"),
+            linkedIncome.keys,
+        )
+        assertEquals("income", linkedIncome["sourceFile"]?.jsonPrimitive?.content)
+        assertEquals("income-buy-1", linkedIncome["id"]?.jsonPrimitive?.content)
+        assertEquals("victor", linkedIncome["owner"]?.jsonPrimitive?.content)
+        assertTagged(args["buy"]!!.jsonObject, "usdCents", "ZBkAAAAAAAA=")
+        assertTagged(linkedIncome, "amountCents", "ZBkAAAAAAAA=")
+    }
+
+    @Test
+    fun `device bitcoin buy rejects an unmatched linked income`() {
+        assertFailsWith<IllegalArgumentException> {
+            ConvexMutation.UpsertBtcBuyFromDevice(
+                owner = FamilyMember.VICTOR,
+                sourceFile = "bitcoin-buys",
+                buy = BtcBuyInput(
+                    id = "buy-1",
+                    date = "2026-08-01",
+                    source = "River",
+                    sats = 100_000L,
+                    priceUsdCents = 6_500_000L,
+                    usdCents = 6_500L,
+                    owner = FamilyMember.VICTOR,
+                ),
+                linkedIncome = LinkedIncomeInput(
+                    id = "other-id",
+                    owner = FamilyMember.VICTOR,
+                    date = "2026-08-01",
+                    amountCents = 6_500L,
+                    source = "Payroll",
+                ),
+            )
+        }
+    }
+
+    @Test
     fun `transaction upsert returns and stores the accepted revision`() {
         val revision = 1_888_888_888_888L
         val store = TransactionRevisionStore()

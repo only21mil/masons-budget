@@ -1,5 +1,6 @@
 package com.sats21m.vogelvault.ui
 
+import com.sats21m.vogelvault.DraftIdWriteOutcome
 import com.sats21m.vogelvault.TransactionDraftIdStore
 import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexMutationClient
@@ -16,6 +17,7 @@ import com.sats21m.vogelvault.data.TransactionWriteReceipt
 import com.sats21m.vogelvault.data.testToken
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.IncomeEntry
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -37,6 +39,15 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 class AddTransactionSheetTest {
+    @Test
+    fun `accepted transaction with a stale draft id reports local recovery`() {
+        assertEquals(
+            "Convex accepted this transaction, but this device could not retire its draft id. " +
+                "Do not submit another transaction until local storage is repaired.",
+            transactionWriteFailureMessage(DraftIdWriteOutcome.AcceptedLeaseResetFailed),
+        )
+    }
+
     @Test
     fun `fiat purchase reaches the payload as positive integer cents`() {
         val prepared = prepare(
@@ -69,6 +80,30 @@ class AddTransactionSheetTest {
                 category = "",
             )
         }
+    }
+
+    @Test
+    fun `Budget income draft becomes the linked income seed without posting a sat transaction`() {
+        val seed = assertIs<WriteDraftResult.Valid<IncomeEntry>>(
+            incomeEntryForBitcoinBuy(
+                draft(
+                    amount = "21.00",
+                    unit = DisplayUnit.USD,
+                    type = AddTransactionType.INCOME,
+                    category = "Income",
+                    owner = FamilyMember.RACHEL,
+                ),
+                btcPriceCents = BTC_PRICE_CENTS,
+                id = "atomic-income-buy-1",
+            ),
+        ).request
+
+        assertEquals("atomic-income-buy-1", seed.id)
+        assertEquals("2026-07-29", seed.date)
+        assertEquals("2026-07", seed.month)
+        assertEquals(2_100L, seed.amountCents)
+        assertEquals("Neighborhood Market", seed.sourceName)
+        assertEquals(FamilyMember.VICTOR, seed.owner)
     }
 
     @Test

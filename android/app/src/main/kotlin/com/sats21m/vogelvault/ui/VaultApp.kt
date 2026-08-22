@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.CircularProgressIndicator
@@ -93,7 +92,6 @@ enum class Destination(
     BTC_BUYS("BTC Buys", Icons.Filled.CurrencyBitcoin),
     BTC_BILL_PAYS("BTC Bill Pays", Icons.AutoMirrored.Filled.ReceiptLong),
     NET_WORTH("Net Worth", Icons.Filled.AccountBalance),
-    RETIREMENT("Retirement", Icons.Filled.Savings),
     EXPORT("Export", Icons.Filled.FileDownload),
     TODAY("Today", Icons.Filled.WbSunny),
     TASKS("Tasks", Icons.Filled.Checklist),
@@ -146,6 +144,7 @@ fun VaultApp(
     onEnableRemoteRows: (String) -> Unit = {},
     onRemoteRowsConnected: () -> Unit = {},
     onWriteSucceeded: () -> Unit = {},
+    onStartRiverBillPay: (BillPayPrefill) -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -183,6 +182,7 @@ fun VaultApp(
                             onEnableRemoteRows = onEnableRemoteRows,
                             onRemoteRowsConnected = onRemoteRowsConnected,
                             onWriteSucceeded = onWriteSucceeded,
+                            onStartRiverBillPay = onStartRiverBillPay,
                             displayUnit = displayUnit,
                             onDisplayUnitChange = onDisplayUnitChange,
                             modifier = Modifier.weight(1f),
@@ -205,6 +205,7 @@ fun VaultApp(
                         onEnableRemoteRows = onEnableRemoteRows,
                         onRemoteRowsConnected = onRemoteRowsConnected,
                         onWriteSucceeded = onWriteSucceeded,
+                            onStartRiverBillPay = onStartRiverBillPay,
                         displayUnit = displayUnit,
                         onDisplayUnitChange = onDisplayUnitChange,
                         modifier = Modifier.weight(1f),
