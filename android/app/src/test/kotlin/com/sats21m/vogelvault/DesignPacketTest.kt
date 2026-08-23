@@ -1,12 +1,29 @@
 package com.sats21m.vogelvault
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Modifier
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.ui.Destination
 import com.sats21m.vogelvault.ui.VaultApp
 import com.sats21m.vogelvault.ui.VaultUiState
+import com.sats21m.vogelvault.ui.components.Kpi
+import com.sats21m.vogelvault.ui.components.KpiStrip
+import com.sats21m.vogelvault.ui.components.LedgerRow
+import com.sats21m.vogelvault.ui.components.StatusBanner
+import com.sats21m.vogelvault.ui.theme.VaultBlack
+import com.sats21m.vogelvault.ui.theme.VaultInfo
+import com.sats21m.vogelvault.ui.theme.VaultNegative
+import com.sats21m.vogelvault.ui.theme.VaultPositive
+import com.sats21m.vogelvault.ui.theme.VaultSpace
+import com.sats21m.vogelvault.ui.theme.VaultWarning
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -50,10 +67,42 @@ private fun capture(
     }
 }
 
+private fun captureStatusAndUnavailableTokens() {
+    captureRoboImage("build/outputs/roborazzi/folded-status-and-unavailable-tokens.png") {
+        VogelVaultTheme {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .background(VaultBlack)
+                    .padding(VaultSpace.lg),
+                verticalArrangement = Arrangement.spacedBy(VaultSpace.md),
+            ) {
+                KpiStrip(
+                    listOf(
+                        Kpi("Unavailable gain", "Price unavailable", tone = VaultPositive),
+                        Kpi("Unavailable loss", "Price unavailable", tone = VaultNegative),
+                        Kpi("Odd final KPI", "Spans the row"),
+                    ),
+                )
+                LedgerRow("Unavailable ledger figure", figure = "Price unavailable", figureColor = VaultNegative)
+                StatusBanner("Positive status", tone = VaultPositive)
+                StatusBanner("Error status", tone = VaultNegative)
+                StatusBanner("Warning status", tone = VaultWarning)
+                StatusBanner("Informational status", tone = VaultInfo)
+            }
+        }
+    }
+}
+
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [34], qualifiers = RobolectricDeviceQualifiers.FOLDED)
 class DesignPacketFoldedTest {
+
+    @Test
+    fun statusAndUnavailableTokens() {
+        captureStatusAndUnavailableTokens()
+    }
 
     @Test
     fun adultDestinations() {
@@ -96,6 +145,9 @@ class DesignPacketFoldedTest {
                     btcBuys = state.data.btcBuys.copy(
                         status = Freshness.EMPTY,
                         value = emptyList(),
+                    ),
+                    btcBalance = state.data.btcBalance.copy(
+                        value = Fixtures.btcBalanceWithoutFiatValuation(),
                     ),
                     btcPriceCents = 0L,
                     btcPriceAsOf = null,

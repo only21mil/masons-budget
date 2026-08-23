@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.Freshness
+import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.ui.theme.LedgerNumeral
 import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultCream
@@ -67,6 +69,12 @@ import com.sats21m.vogelvault.ui.theme.VaultWarning
  * implies a reading that does not exist.
  */
 const val SUPPRESSED = "—"
+
+internal fun String.isUnavailableFigure(): Boolean =
+    this == SUPPRESSED || this == Money.PRICE_UNAVAILABLE
+
+internal fun resolvedFigureColor(value: String, requested: Color): Color =
+    if (value.isUnavailableFigure()) VaultTextDim else requested
 
 /** Provenance of a figure. The cockpit never lets an estimate look settled. */
 enum class Provenance { ACTUAL, PLANNED, ESTIMATED }
@@ -242,10 +250,6 @@ fun KpiStrip(items: List<Kpi>, modifier: Modifier = Modifier) {
                     if (index > 0) VerticalHairline(Modifier.fillMaxHeight())
                     KpiCell(item, Modifier.weight(1f).fillMaxHeight())
                 }
-                if (row.size == 1) {
-                    VerticalHairline(Modifier.fillMaxHeight())
-                    Spacer(Modifier.weight(1f).fillMaxHeight().background(VaultSurface))
-                }
             }
         }
     }
@@ -263,7 +267,7 @@ private fun Kpi.spoken(): String = buildString {
     append(", ")
     append(spokenFigure(value))
     // Nothing after this point describes a figure that was not read.
-    if (value == SUPPRESSED) return@buildString
+    if (value.isUnavailableFigure()) return@buildString
     when (provenance) {
         Provenance.PLANNED -> append(", planned figure")
         Provenance.ESTIMATED -> append(", estimated figure")
@@ -277,7 +281,7 @@ private fun Kpi.spoken(): String = buildString {
 
 @Composable
 private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
-    val suppressed = item.value == SUPPRESSED
+    val unavailable = item.value.isUnavailableFigure()
     val spoken = item.spoken()
     Column(
         modifier = modifier
@@ -298,7 +302,7 @@ private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
             overflow = TextOverflow.Ellipsis,
             style = LedgerNumeral.copy(fontSize = 18.sp),
             color = when {
-                suppressed -> VaultTextDim
+                unavailable -> VaultTextDim
                 item.tone != null -> item.tone
                 item.provenance == Provenance.PLANNED -> VaultTextMuted
                 item.provenance == Provenance.ESTIMATED -> VaultTextDim
@@ -306,7 +310,7 @@ private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
             },
             textAlign = TextAlign.Start,
         )
-        if (!suppressed && item.hint != null) {
+        if (!unavailable && item.hint != null) {
             Text(item.hint, style = MaterialTheme.typography.labelSmall, color = VaultTextMuted)
         }
     }
@@ -407,7 +411,7 @@ fun LedgerRow(
             Badge(badge, accented = badgeAccented)
             Spacer(Modifier.width(VaultSpace.sm))
         }
-        Text(figure, style = LedgerNumeral, color = figureColor)
+        Text(figure, style = LedgerNumeral, color = resolvedFigureColor(figure, figureColor))
     }
 }
 
@@ -561,7 +565,7 @@ fun StatusBanner(text: String, detail: String? = null, tone: Color = VaultInfo) 
             .padding(VaultSpace.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = tone)
+        Icon(statusBannerIcon(tone), contentDescription = null, tint = tone)
         Spacer(Modifier.width(VaultSpace.sm))
         Column {
             Text(text, style = MaterialTheme.typography.bodySmall, color = VaultCream)
@@ -570,6 +574,13 @@ fun StatusBanner(text: String, detail: String? = null, tone: Color = VaultInfo) 
             }
         }
     }
+}
+
+internal fun statusBannerIcon(tone: Color): ImageVector = when (tone) {
+    VaultPositive -> Icons.Filled.CheckCircle
+    VaultNegative -> Icons.Filled.ErrorOutline
+    VaultWarning -> Icons.Filled.WarningAmber
+    else -> Icons.Filled.Info
 }
 
 @Composable

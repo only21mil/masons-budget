@@ -26,10 +26,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
-import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultAccentDim
 import com.sats21m.vogelvault.ui.theme.VaultCream
 import com.sats21m.vogelvault.ui.theme.VaultLine
+import com.sats21m.vogelvault.ui.theme.VaultSelectionBorder
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import com.sats21m.vogelvault.ui.theme.VaultSurface
 import com.sats21m.vogelvault.ui.theme.VaultTextDim
@@ -98,7 +98,7 @@ internal fun SelectionChip(
                 }
             }
             .background(if (selected) VaultAccentDim else VaultSurface, shape)
-            .border(1.dp, if (selected) VaultAccent.copy(alpha = 0.75f) else VaultLine, shape)
+            .border(1.dp, if (selected) VaultSelectionBorder else VaultLine, shape)
             .padding(
                 horizontal = if (compact) VaultSpace.sm else VaultSpace.md,
                 vertical = if (compact) VaultSpace.xs else VaultSpace.sm,
