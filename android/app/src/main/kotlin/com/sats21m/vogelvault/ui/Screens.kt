@@ -1505,7 +1505,7 @@ private fun VaultLazyListScope.settings(
             StatusBanner(
                 "Convex row reads are enabled",
                 "Every query is authenticated. Writes require the separate sync credential below.",
-                tone = VaultTextMuted,
+                tone = VaultPositive,
             )
         } else {
             StatusBanner(

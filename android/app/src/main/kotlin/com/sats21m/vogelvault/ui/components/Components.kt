@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -568,7 +569,7 @@ fun StatusBanner(text: String, detail: String? = null, tone: Color = VaultInfo) 
             .padding(VaultSpace.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = tone)
+        Icon(statusBannerIcon(tone), contentDescription = null, tint = tone)
         Spacer(Modifier.width(VaultSpace.sm))
         Column {
             Text(text, style = MaterialTheme.typography.bodySmall, color = VaultCream)
@@ -577,6 +578,13 @@ fun StatusBanner(text: String, detail: String? = null, tone: Color = VaultInfo) 
             }
         }
     }
+}
+
+internal fun statusBannerIcon(tone: Color): ImageVector = when (tone) {
+    VaultPositive -> Icons.Filled.CheckCircle
+    VaultNegative -> Icons.Filled.ErrorOutline
+    VaultWarning -> Icons.Filled.WarningAmber
+    else -> Icons.Filled.Info
 }
 
 @Composable
