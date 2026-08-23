@@ -38,7 +38,7 @@ val VaultSurfaceSunken = Color(0xFF08080A)
 
 val VaultCream = Color(0xFFF5F2EA)
 val VaultTextMuted = Color(0xFFA3A09A)
-val VaultTextDim = Color(0xFF6F6C67)
+val VaultTextDim = Color(0xFF7C7974)
 
 val VaultLine = Color(0xFF1F1F22)
 val VaultLineStrong = Color(0xFF2E2E33)
