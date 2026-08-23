@@ -1,10 +1,12 @@
 package com.sats21m.vogelvault.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -134,6 +136,10 @@ fun VogelVaultTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = VaultColorScheme,
         typography = VaultTypography,
-        content = content,
-    )
+    ) {
+        CompositionLocalProvider(
+            LocalContentColor provides MaterialTheme.colorScheme.onBackground,
+            content = content,
+        )
+    }
 }
