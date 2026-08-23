@@ -15,6 +15,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotSame
 import kotlin.test.assertTrue
+import com.sats21m.vogelvault.domain.Freshness
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -61,6 +62,24 @@ class VaultViewModelDispatcherTest {
 
     @Test
     fun `refresh reloads rows without resetting destination or selected month`() {
+        // connectRows launches source.observe (which emits from Room) and
+        // source.load (which runs on Dispatchers.Default) concurrently. Both
+        // update _state asynchronously via MutableStateFlow.update, which is
+        // thread-safe. The initial state is loadingModel(VICTOR) with all
+        // slices at Freshness.LOADING. The observe emission and load completion
+        // replace that with settled data (Freshness.ERROR from the failed
+        // proxy, or Freshness.EMPTY from the empty Room cache).
+        //
+        // The race: the latch fires when listTransactions starts, but
+        // source.load is still running. If we capture beforeRefresh before
+        // the initial load's state update lands, the update arrives later
+        // and changes model.state.value.data, failing the exact-equality
+        // assertion.
+        //
+        // Fix: poll the StateFlow until the initial load settles (transactions
+        // status leaves LOADING), then capture beforeRefresh against a
+        // landed state. MutableStateFlow.value is readable from any thread,
+        // so the poll sees background-thread updates without idle().
         val loadSignal = AtomicReference(CountDownLatch(1))
         val remote =
             proxy<RowQueryRepository> { methodName ->
@@ -76,6 +95,27 @@ class VaultViewModelDispatcherTest {
         try {
             val model = VaultViewModel(rowSource = CachedRowDataSource(remote, database.cacheDao()))
             assertTrue(loadSignal.get().await(5, TimeUnit.SECONDS), "initial row load never started")
+
+            // Poll until every row slice settles, not just transactions.
+            // source.load calls multiple repository methods sequentially; the
+            // latch fires on the first (listTransactions), but the remaining
+            // slices (budget, btcAccounts, btcBuys, todos) may still be
+            // LOADING. If any of them settles between the beforeRefresh
+            // capture and the exact-equality assertion, the comparison fails.
+            // The StateFlow is updated from Dispatchers.Default and Room's
+            // executor; idle() cannot flush those because they are not
+            // main-thread tasks. But MutableStateFlow.value reflects the
+            // latest atomic write from any thread, so a read loop sees the
+            // update as soon as it lands.
+            val settleDeadline = System.nanoTime() + 5_000_000_000L
+            while (model.state.value.data.run {
+                listOf(transactions, budget, btcAccounts, btcBuys, todos)
+            }.any { it.status == Freshness.LOADING }) {
+                assertTrue(System.nanoTime() < settleDeadline, "initial load never settled")
+                shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(10)
+            }
+
             model.navigate(Destination.BUDGET)
             model.seedSelectedMonth("2026-06")
             val beforeRefresh = model.state.value
