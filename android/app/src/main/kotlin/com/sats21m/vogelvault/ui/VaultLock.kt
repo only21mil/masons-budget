@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -140,7 +139,7 @@ internal fun VaultLockedScreen(
             style = MaterialTheme.typography.bodyMedium,
             color = VaultTextDim,
         )
-        Button(
+        VaultButton(
             enabled = !state.isAuthenticating,
             onClick = onUnlock,
         ) {

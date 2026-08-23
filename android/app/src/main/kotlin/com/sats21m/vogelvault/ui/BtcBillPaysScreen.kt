@@ -1,7 +1,6 @@
 package com.sats21m.vogelvault.ui
 
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -146,7 +145,7 @@ internal fun VaultLazyListScope.btcBillPaysScreen(
 
 @Composable
 internal fun BtcBillPayEntryAction(onClick: () -> Unit) {
-    Button(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+    VaultButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Text(stringResource(R.string.btc_bill_pay_add_action))
     }
 }

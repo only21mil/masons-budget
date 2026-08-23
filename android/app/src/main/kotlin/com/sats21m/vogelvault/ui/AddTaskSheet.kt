@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
@@ -159,7 +158,7 @@ internal fun AddTaskSheet(
                 ) {
                     Text(stringResource(R.string.tasks_cancel))
                 }
-                Button(
+                VaultButton(
                     onClick = {
                         val taskTitle = title.trim()
                         val task = prepareTask(
@@ -173,12 +172,12 @@ internal fun AddTaskSheet(
                             ),
                         ).getOrElse {
                             message = it.message ?: "Task is invalid"
-                            return@Button
+                            return@VaultButton
                         }
                         val client = gateway
                         if (client == null) {
                             message = todoWriteUnavailableMessage(TodoWriteAction.ADD)
-                            return@Button
+                            return@VaultButton
                         }
                         saving = true
                         scope.launch {

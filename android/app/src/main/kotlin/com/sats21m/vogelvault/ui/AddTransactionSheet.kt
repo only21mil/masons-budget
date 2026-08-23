@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
@@ -836,11 +835,11 @@ internal fun AddTransactionSheet(
                 ) {
                     Text(stringResource(R.string.add_transaction_cancel))
                 }
-                Button(
+                VaultButton(
                     onClick = {
                         val selectedDate = runCatching { LocalDate.parse(dateIso) }.getOrElse {
                             errorMessage = "Enter a valid date"
-                            return@Button
+                            return@VaultButton
                         }
                         val draft = AddTransactionDraft(
                             type = type,
@@ -859,11 +858,11 @@ internal fun AddTransactionSheet(
                         if (paymentSource.route == PaymentSourceRoute.BILL_PAY) {
                             val handoff = prepareBillPayHandoff(draft).getOrElse {
                                 errorMessage = it.message ?: "Bill-pay details are invalid"
-                                return@Button
+                                return@VaultButton
                             }
                             onStartRiverBillPay(handoff)
                             onDismiss()
-                            return@Button
+                            return@VaultButton
                         }
 
                         val row = prepareTransaction(
@@ -873,17 +872,17 @@ internal fun AddTransactionSheet(
                             bitcoinAccounts = state.data.btcAccounts.value,
                         ).getOrElse {
                             errorMessage = it.message ?: "Transaction is invalid"
-                            return@Button
+                            return@VaultButton
                         }
                         val gateway = transactionGateway
                         if (gateway == null) {
                             errorMessage = "Transaction writing is not configured"
-                            return@Button
+                            return@VaultButton
                         }
                         val scope = saveScope
                         if (scope == null) {
                             errorMessage = "Transaction writing is not configured"
-                            return@Button
+                            return@VaultButton
                         }
                         saving = true
                         launchPreparedTransactionSave(
@@ -970,7 +969,7 @@ private fun <T> OptionRow(
     ) {
         options.forEach { option ->
             if (option == selected) {
-                Button(
+                VaultButton(
                     onClick = { onSelect(option) },
                     modifier = Modifier.weight(1f),
                 ) {

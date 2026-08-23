@@ -15,7 +15,6 @@ import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.Upcoming
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
@@ -222,7 +221,7 @@ private fun ProfileTaskListsScreen(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.md)) {
-        Button(
+        VaultButton(
             onClick = { addingTask = true },
             enabled = credentialStored,
         ) {

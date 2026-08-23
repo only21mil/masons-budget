@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,7 +43,7 @@ internal const val BTC_TRANSFER_SAVE_TEST_TAG = "btc-transfer-save"
 
 @Composable
 internal fun BtcTransferEntryAction(onClick: () -> Unit) {
-    Button(
+    VaultButton(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
@@ -153,7 +152,7 @@ internal fun BtcTransferEntrySheet(
                 TextButton(onClick = onDismiss, enabled = !submitting) {
                     Text(stringResource(R.string.write_cancel))
                 }
-                Button(
+                VaultButton(
                     modifier = Modifier.testTag(BTC_TRANSFER_SAVE_TEST_TAG),
                     enabled = !submitting && eligibleAccounts.size >= 2,
                     onClick = {
@@ -215,7 +214,7 @@ private fun BtcAccountPicker(
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium)
         Box {
-            Button(
+            VaultButton(
                 onClick = { expanded = true },
                 modifier = Modifier.fillMaxWidth(),
             ) {

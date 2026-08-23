@@ -3,7 +3,6 @@ package com.sats21m.vogelvault.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -74,10 +73,10 @@ internal fun ReadBootstrapConfiguration(
         )
 
         if (access == BootstrapAccess.NONE && available && activeEnrollment != null) {
-            Button(
+            VaultButton(
                 enabled = !busy,
                 onClick = {
-                    if (busy) return@Button
+                    if (busy) return@VaultButton
                     busy = true
                     status = null
                     resetFailed = false
@@ -122,7 +121,7 @@ internal fun ReadBootstrapConfiguration(
                 }
             } else {
                 Text(stringResource(R.string.read_bootstrap_reset_warning), color = VaultWarning)
-                Button(
+                VaultButton(
                     enabled = !busy,
                     onClick = {
                         val remaining = runCatching { activeEnrollment.reset() }.getOrNull()

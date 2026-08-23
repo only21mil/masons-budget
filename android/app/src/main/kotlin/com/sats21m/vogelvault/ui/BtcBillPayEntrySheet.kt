@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -335,7 +334,7 @@ internal fun BtcBillPayEntrySheet(
                 TextButton(onClick = onDismiss, enabled = !submitting) {
                     Text(stringResource(R.string.write_cancel))
                 }
-                Button(
+                VaultButton(
                     enabled = !submitting,
                     onClick = {
                         when (
@@ -362,7 +361,7 @@ internal fun BtcBillPayEntrySheet(
                                 val processDraftIds = draftIds
                                 if (writeGateway == null || processScope == null || processDraftIds == null) {
                                     message = "Bitcoin bill pay not saved: the app write client is unavailable."
-                                    return@Button
+                                    return@VaultButton
                                 }
                                 submitting = true
                                 launchBtcBillPaySave(

@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.MaterialTheme
@@ -491,7 +490,7 @@ private val BudgetHealthStatus.color: Color
 
 @Composable
 internal fun BtcBuyEntryAction(onClick: () -> Unit) {
-    Button(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+    VaultButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Text(stringResource(R.string.btc_buy_add_action))
     }
 }
@@ -532,7 +531,7 @@ internal fun BudgetCategoryEditorSheet(
                 TextButton(onClick = onDismiss, enabled = !submitting) {
                     Text(stringResource(R.string.write_cancel))
                 }
-                Button(
+                VaultButton(
                     enabled = !submitting,
                     onClick = {
                         when (val draft = budgetCategoryWriteRequest(seed, dollars)) {
@@ -541,7 +540,7 @@ internal fun BudgetCategoryEditorSheet(
                                 val client = mutationClient
                                 if (client == null) {
                                     message = "Budget not saved: the app write client is unavailable."
-                                    return@Button
+                                    return@VaultButton
                                 }
                                 submitting = true
                                 scope.launch {
@@ -687,7 +686,7 @@ internal fun BtcBuyEntrySheet(
                 TextButton(onClick = onDismiss, enabled = !submitting) {
                     Text(stringResource(R.string.write_cancel))
                 }
-                Button(
+                VaultButton(
                     enabled = !submitting,
                     onClick = {
                         when (
@@ -707,13 +706,13 @@ internal fun BtcBuyEntrySheet(
                                 val client = mutationClient
                                 if (client == null) {
                                     message = "Bitcoin buy not saved: the app write client is unavailable."
-                                    return@Button
+                                    return@VaultButton
                                 }
                                 val writeScope = saveScope
                                 val draftIds = buyDraftIds
                                 if (writeScope == null || draftIds == null) {
                                     message = "Bitcoin buy not saved: the app write client is unavailable."
-                                    return@Button
+                                    return@VaultButton
                                 }
                                 submitting = true
                                 // The application scope owns the request so a
@@ -804,7 +803,7 @@ internal fun BtcBuyFromIncomeEntrySheet(
                 TextButton(onClick = onDismiss, enabled = !submitting) {
                     Text(stringResource(R.string.write_cancel))
                 }
-                Button(
+                VaultButton(
                     enabled = !submitting,
                     onClick = {
                         when (
@@ -825,7 +824,7 @@ internal fun BtcBuyFromIncomeEntrySheet(
                                 val processScope = writeScope
                                 if (writeGateway == null || processDraftIds == null || processScope == null) {
                                     message = "Income and Bitcoin buy not saved: the app write client is unavailable."
-                                    return@Button
+                                    return@VaultButton
                                 }
                                 submitting = true
                                 launchBtcBuyFromIncomeSave(

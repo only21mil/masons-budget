@@ -12,7 +12,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -310,7 +309,7 @@ internal fun TodoEditDialog(
             )
         },
         confirmButton = {
-            Button(
+            VaultButton(
                 enabled = writeEnabled && !busy && title.isNotBlank(),
                 onClick = { onSave(todo.withTitle(title, Instant.now())) },
             ) {

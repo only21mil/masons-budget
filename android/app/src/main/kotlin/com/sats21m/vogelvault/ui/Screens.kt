@@ -15,7 +15,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -558,7 +557,7 @@ private fun ScreenHeader(
                 destination == Destination.ACTIVITY ||
                 destination == Destination.BUDGET
             ) {
-                Button(onClick = onAddTransaction) {
+                VaultButton(onClick = onAddTransaction) {
                     Text(stringResource(R.string.add_transaction_action))
                 }
             }
@@ -1604,7 +1603,7 @@ internal fun SyncTokenConfiguration() {
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
             )
-            Button(
+            VaultButton(
                 enabled = token.isNotBlank() && application != null,
                 onClick = {
                     val app = checkNotNull(application)
