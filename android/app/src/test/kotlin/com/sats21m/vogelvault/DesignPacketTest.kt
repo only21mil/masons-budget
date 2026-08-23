@@ -81,6 +81,7 @@ private fun captureStatusAndUnavailableTokens() {
                     listOf(
                         Kpi("Unavailable gain", "Price unavailable", tone = VaultPositive),
                         Kpi("Unavailable loss", "Price unavailable", tone = VaultNegative),
+                        Kpi("Odd final KPI", "Spans the row"),
                     ),
                 )
                 LedgerRow("Unavailable ledger figure", figure = "Price unavailable", figureColor = VaultNegative)

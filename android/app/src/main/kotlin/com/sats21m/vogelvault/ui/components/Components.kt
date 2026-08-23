@@ -250,10 +250,6 @@ fun KpiStrip(items: List<Kpi>, modifier: Modifier = Modifier) {
                     if (index > 0) VerticalHairline(Modifier.fillMaxHeight())
                     KpiCell(item, Modifier.weight(1f).fillMaxHeight())
                 }
-                if (row.size == 1) {
-                    VerticalHairline(Modifier.fillMaxHeight())
-                    Spacer(Modifier.weight(1f).fillMaxHeight().background(VaultSurface))
-                }
             }
         }
     }
