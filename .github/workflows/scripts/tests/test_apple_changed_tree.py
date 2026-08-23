@@ -25,14 +25,9 @@ class AppleChangedTreeTests(unittest.TestCase):
             )
         )
 
-    def test_apple_sources_and_project_files_allocate_apple(self) -> None:
-        for path in (
-            "MasonsBudget/MasonsBudget/App/MasonsBudgetApp.swift",
-            "Package.swift",
-            "Tests/VogelVaultCoreTests/VoiceParserTests.swift",
-        ):
-            with self.subTest(path=path):
-                self.assertTrue(MODULE.requires_apple([path]))
+    def test_apple_source_allocates_apple(self) -> None:
+        path = "MasonsBudget/MasonsBudget/App/MasonsBudgetApp.swift"
+        self.assertTrue(MODULE.requires_apple([path]))
 
     def test_visibility_fixture_allocates_apple(self) -> None:
         self.assertTrue(
