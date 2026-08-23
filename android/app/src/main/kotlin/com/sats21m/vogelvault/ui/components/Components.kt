@@ -279,9 +279,12 @@ private fun Kpi.spoken(): String = buildString {
     }
 }
 
+internal fun kpiFigureWraps(value: String): Boolean = value == Money.PRICE_UNAVAILABLE
+
 @Composable
 private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
     val unavailable = item.value.isUnavailableFigure()
+    val wrapsUnavailablePrice = kpiFigureWraps(item.value)
     val spoken = item.spoken()
     Column(
         modifier = modifier
@@ -297,8 +300,8 @@ private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
         Spacer(Modifier.height(2.dp))
         Text(
             item.value,
-            maxLines = 1,
-            softWrap = false,
+            maxLines = if (wrapsUnavailablePrice) 2 else 1,
+            softWrap = wrapsUnavailablePrice,
             overflow = TextOverflow.Ellipsis,
             style = LedgerNumeral.copy(fontSize = 18.sp),
             color = when {

@@ -18,4 +18,11 @@ class UnavailableFigureTest {
     fun availableFigureKeepsRequestedTone() {
         assertEquals(VaultPositive, resolvedFigureColor("\$1,250.00", VaultPositive))
     }
+
+    @Test
+    fun onlyUnavailablePriceWrapsInKpiCells() {
+        assertEquals(true, kpiFigureWraps(Money.PRICE_UNAVAILABLE))
+        assertEquals(false, kpiFigureWraps(SUPPRESSED))
+        assertEquals(false, kpiFigureWraps("\$1,250.00"))
+    }
 }
