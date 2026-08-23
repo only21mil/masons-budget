@@ -3,6 +3,7 @@ package com.sats21m.vogelvault
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.ui.Destination
 import com.sats21m.vogelvault.ui.VaultApp
@@ -96,6 +97,9 @@ class DesignPacketFoldedTest {
                     btcBuys = state.data.btcBuys.copy(
                         status = Freshness.EMPTY,
                         value = emptyList(),
+                    ),
+                    btcBalance = state.data.btcBalance.copy(
+                        value = Fixtures.btcBalanceWithoutFiatValuation(),
                     ),
                     btcPriceCents = 0L,
                     btcPriceAsOf = null,
