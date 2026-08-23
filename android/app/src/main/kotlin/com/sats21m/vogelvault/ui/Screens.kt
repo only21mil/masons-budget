@@ -67,7 +67,6 @@ import com.sats21m.vogelvault.domain.isSpend
 import com.sats21m.vogelvault.domain.netWorthScopeFor
 import com.sats21m.vogelvault.domain.resolveBudgetMonth
 import com.sats21m.vogelvault.domain.visibleTo
-import com.sats21m.vogelvault.ui.components.FreshnessTag
 import com.sats21m.vogelvault.ui.components.HorizontalHairline
 import com.sats21m.vogelvault.ui.components.Kpi
 import com.sats21m.vogelvault.ui.components.KpiStrip
@@ -542,7 +541,6 @@ private fun ScreenHeader(
                 color = VaultCream,
                 modifier = Modifier.weight(1f),
             )
-            FreshnessTag(state.worstStatus, state.worstUpdatedAt, state.now)
         }
         Row(
             Modifier.fillMaxWidth(),
