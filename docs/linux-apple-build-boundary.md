@@ -98,12 +98,9 @@ Linux can compile and test pure Swift packages. The best long-term boundary
 reduction is to move platform-neutral logic behind a Swift Package target and
 keep SwiftUI/SwiftData/Xcode-specific wiring in the app target.
 
-The first package surface is now the root `Package.swift`:
-
-- product: `VogelVaultCore`
-- current source: existing `MasonsBudget/MasonsBudget/Services/VoiceParser.swift`
-- current tests: `Tests/VogelVaultCoreTests`
-- command: `swift test --package-path .` (runs on Linux)
+The former `VogelVaultCore` package was removed with the retired voice-entry
+feature. The Apple lane now relies on the Xcode project consistency check, app
+build, and XCTest suite.
 
 Recommended next candidates:
 
