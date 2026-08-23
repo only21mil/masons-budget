@@ -13,103 +13,29 @@
 // Rows the list does not recognise are never rewritten: an unknown or legacy
 // `card` string round-trips verbatim through the form.
 
-/** Wire values, persisted verbatim. Never store or match on the label. */
-export type PaymentSource =
-  | "river"
-  | "zeus_lightning"
-  | "zeus_on_chain"
-  | "strike"
-  | "coinbase_card"
-  | "aven"
-  | "sofi_card"
-  | "capital_one_vx"
-  | "river_bitcoin_bill_pay"
+import {
+  PAYMENT_SOURCES as CONTRACT_PAYMENT_SOURCES,
+  isPaymentSource as contractIsPaymentSource,
+  paymentSourceClassification as contractClassification,
+  paymentSourceLabel as contractLabel,
+  paymentSourceSupportedActivities as contractSupportedActivities,
+  paymentSourceSupportsActivity,
+  type PaymentSource,
+  type PaymentSourceActivity,
+  type PaymentSourceClassification,
+} from "@vogel-vault/domain"
 
-/** Display order is the product order and is not sorted or derived. */
-export const PAYMENT_SOURCES: readonly PaymentSource[] = [
-  "river",
-  "zeus_lightning",
-  "zeus_on_chain",
-  "strike",
-  "coinbase_card",
-  "aven",
-  "sofi_card",
-  "capital_one_vx",
-  "river_bitcoin_bill_pay",
-]
-
-export const PAYMENT_SOURCE_LABELS: Readonly<Record<PaymentSource, string>> = {
-  river: "River",
-  zeus_lightning: "Zeus Lightning",
-  zeus_on_chain: "Zeus On-chain",
-  strike: "Strike",
-  coinbase_card: "Coinbase Card",
-  aven: "Aven",
-  sofi_card: "SoFi Card",
-  capital_one_vx: "Capital One VX",
-  river_bitcoin_bill_pay: "River Bitcoin Bill Pay",
+export {
+  type PaymentSource,
+  type PaymentSourceActivity,
+  type PaymentSourceClassification,
 }
+
+/** Display order is the fixture order. */
+export const PAYMENT_SOURCES = CONTRACT_PAYMENT_SOURCES
 
 /** Which table a source writes to. Only River Bitcoin Bill Pay leaves transactions. */
 export type PaymentSourceRoute = "transaction" | "billPay"
-export type PaymentSourceClassification = "bitcoin_native" | "fiat_card" | "bill_pay"
-export type PaymentSourceActivity = "spend" | "income" | "transfer" | "btc_bill_pay"
-
-interface PaymentSourceMapping {
-  readonly route: PaymentSourceRoute
-  readonly classification: PaymentSourceClassification
-  readonly supportedActivities: readonly PaymentSourceActivity[]
-}
-
-// CONTRACT NOTE binding: this table is the only place a source's row route and
-// BTC field requirements are decided.
-const PAYMENT_SOURCE_MAPPING: Readonly<Record<PaymentSource, PaymentSourceMapping>> = {
-  river: {
-    route: "transaction",
-    classification: "bitcoin_native",
-    supportedActivities: ["spend", "income", "transfer"],
-  },
-  zeus_lightning: {
-    route: "transaction",
-    classification: "bitcoin_native",
-    supportedActivities: ["spend", "income", "transfer"],
-  },
-  zeus_on_chain: {
-    route: "transaction",
-    classification: "bitcoin_native",
-    supportedActivities: ["spend", "income", "transfer"],
-  },
-  strike: {
-    route: "transaction",
-    classification: "bitcoin_native",
-    supportedActivities: ["spend", "income", "transfer"],
-  },
-  coinbase_card: {
-    route: "transaction",
-    classification: "fiat_card",
-    supportedActivities: ["spend"],
-  },
-  aven: {
-    route: "transaction",
-    classification: "fiat_card",
-    supportedActivities: ["spend"],
-  },
-  sofi_card: {
-    route: "transaction",
-    classification: "fiat_card",
-    supportedActivities: ["spend"],
-  },
-  capital_one_vx: {
-    route: "transaction",
-    classification: "fiat_card",
-    supportedActivities: ["spend"],
-  },
-  river_bitcoin_bill_pay: {
-    route: "billPay",
-    classification: "bill_pay",
-    supportedActivities: ["btc_bill_pay"],
-  },
-}
 
 /** Row fields a source drives, discriminated by the table it writes to. */
 export type PaymentSourceRowFields =
@@ -126,11 +52,17 @@ export type PaymentSourceRowFields =
     }
 
 export function paymentSourceLabel(source: PaymentSource): string {
-  return PAYMENT_SOURCE_LABELS[source]
+  return contractLabel(source)
 }
 
 export function isPaymentSource(value: unknown): value is PaymentSource {
-  return typeof value === "string" && Object.hasOwn(PAYMENT_SOURCE_MAPPING, value)
+  return contractIsPaymentSource(value)
+}
+
+export function paymentSourceSupportedActivities(
+  source: PaymentSource,
+): readonly PaymentSourceActivity[] {
+  return contractSupportedActivities(source)
 }
 
 export function isRetiredBitcoinSource(value: unknown): value is "lightning" | "on_chain" {
@@ -139,21 +71,15 @@ export function isRetiredBitcoinSource(value: unknown): value is "lightning" | "
 
 /** True when the source posts Bitcoin and therefore needs exact sats. */
 export function isBitcoinDenominatedSource(source: PaymentSource): boolean {
-  return PAYMENT_SOURCE_MAPPING[source].classification !== "fiat_card"
+  return contractClassification(source) !== "fiat_card"
 }
 
 export function paymentSourceRoute(source: PaymentSource): PaymentSourceRoute {
-  return PAYMENT_SOURCE_MAPPING[source].route
+  return contractClassification(source) === "bill_pay" ? "billPay" : "transaction"
 }
 
 export function paymentSourceClassification(source: PaymentSource): PaymentSourceClassification {
-  return PAYMENT_SOURCE_MAPPING[source].classification
-}
-
-export function paymentSourceSupportedActivities(
-  source: PaymentSource,
-): readonly PaymentSourceActivity[] {
-  return PAYMENT_SOURCE_MAPPING[source].supportedActivities
+  return contractClassification(source)
 }
 
 /** The source-choice state that owns the form's Bitcoin-only fields. */
@@ -217,10 +143,11 @@ export function paymentSourceToRowFields(
     readonly bitcoinAccountKey?: string | null
   } = {},
 ): PaymentSourceRowFields {
-  const mapping = PAYMENT_SOURCE_MAPPING[source]
+  const route = paymentSourceRoute(source)
+  const classification = paymentSourceClassification(source)
   const sats = options.amountSats ?? null
   const positiveSats = sats !== null && sats > 0n ? sats : null
-  if (mapping.route === "billPay") {
+  if (route === "billPay") {
     return {
       route: "billPay",
       platform: "river_bitcoin_bill_pay",
@@ -231,10 +158,10 @@ export function paymentSourceToRowFields(
   return {
     route: "transaction",
     card: source,
-    ...(mapping.classification === "bitcoin_native" && positiveSats !== null
+    ...(classification === "bitcoin_native" && positiveSats !== null
       ? { amountSats: positiveSats }
       : {}),
-    ...(mapping.classification === "bitcoin_native" && accountKey
+    ...(classification === "bitcoin_native" && accountKey
       ? { bitcoinAccountKey: accountKey }
       : {}),
   }
@@ -306,6 +233,13 @@ export function paymentSourceBlockReason(selection: PaymentSourceSelection): str
   if (paymentSourceRoute(source) === "billPay") {
     return `${paymentSourceLabel(source)} is recorded on the Bills page so the River balance ` +
       "is debited. Add it there instead of as a transaction."
+  }
+  const activity: PaymentSourceActivity = category === INCOME_CATEGORY ? "income" : "spend"
+  if (!paymentSourceSupportsActivity(source, activity)) {
+    const supported = paymentSourceSupportedActivities(source)
+      .map((value) => value === "spend" ? "Spend" : value === "income" ? "Income" : value)
+      .join(", ")
+    return `${paymentSourceLabel(source)} supports ${supported} only.`
   }
   const isSpend = selection.kind === "spend" && category !== INCOME_CATEGORY
   const isIncome = selection.kind === "credit" && category === INCOME_CATEGORY

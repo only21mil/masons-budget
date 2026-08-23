@@ -17,39 +17,76 @@ import {
   transactionsDataFileName,
 } from "./family.ts"
 import { isIsoDate } from "./todo.ts"
+import paymentSourceFixture from "../fixtures/payment-source-cases.json" with { type: "json" }
 
 export const CONVEX_WRITE_FORMAT = "convex_encoded_json" as const
 export const UPSERT_TRANSACTION_PATH = "tables:upsertTransaction" as const
 export const UPSERT_BTC_BILL_PAY_PATH = "tables:upsertBtcBillPay" as const
 
-export const PAYMENT_SOURCES = [
-  "river",
-  "zeus_lightning",
-  "zeus_on_chain",
-  "strike",
-  "coinbase_card",
-  "aven",
-  "sofi_card",
-  "capital_one_vx",
-  "river_bitcoin_bill_pay",
-] as const
-
-export type PaymentSource = (typeof PAYMENT_SOURCES)[number]
+export type PaymentSource =
+  | "river"
+  | "zeus_lightning"
+  | "zeus_on_chain"
+  | "strike"
+  | "coinbase_card"
+  | "aven"
+  | "sofi_card"
+  | "capital_one_vx"
+  | "river_bitcoin_bill_pay"
 export type PaymentSourceRoute = "transaction" | "btc_bill_pay"
+export type PaymentSourceClassification = "bitcoin_native" | "fiat_card" | "bill_pay"
+export type PaymentSourceActivity = "spend" | "income" | "transfer" | "btc_bill_pay"
 
-const BITCOIN_NATIVE_SOURCES: ReadonlySet<PaymentSource> = new Set([
-  "river",
-  "zeus_lightning",
-  "zeus_on_chain",
-  "strike",
-])
+interface PaymentSourceContractEntry {
+  readonly wire: PaymentSource
+  readonly label: string
+  readonly route: PaymentSourceRoute
+  readonly classification: PaymentSourceClassification
+  readonly supportedActivities: readonly PaymentSourceActivity[]
+}
+
+const PAYMENT_SOURCE_CONTRACT =
+  paymentSourceFixture.sources as readonly PaymentSourceContractEntry[]
+const PAYMENT_SOURCE_BY_WIRE: ReadonlyMap<PaymentSource, PaymentSourceContractEntry> =
+  new Map(PAYMENT_SOURCE_CONTRACT.map((entry) => [entry.wire, entry]))
+
+/** Canonical fixture order. Runtime payment-source policy comes from the same rows. */
+export const PAYMENT_SOURCES: readonly PaymentSource[] =
+  PAYMENT_SOURCE_CONTRACT.map((entry) => entry.wire)
+
+function paymentSourceContract(source: PaymentSource): PaymentSourceContractEntry {
+  const entry = PAYMENT_SOURCE_BY_WIRE.get(source)
+  if (entry === undefined) throw new Error(`Payment source ${source} is missing from the contract`)
+  return entry
+}
 
 export function isPaymentSource(value: unknown): value is PaymentSource {
-  return typeof value === "string" && (PAYMENT_SOURCES as readonly string[]).includes(value)
+  return typeof value === "string" && PAYMENT_SOURCE_BY_WIRE.has(value as PaymentSource)
 }
 
 export function paymentSourceRoute(source: PaymentSource): PaymentSourceRoute {
-  return source === "river_bitcoin_bill_pay" ? "btc_bill_pay" : "transaction"
+  return paymentSourceContract(source).route
+}
+
+export function paymentSourceLabel(source: PaymentSource): string {
+  return paymentSourceContract(source).label
+}
+
+export function paymentSourceClassification(source: PaymentSource): PaymentSourceClassification {
+  return paymentSourceContract(source).classification
+}
+
+export function paymentSourceSupportedActivities(
+  source: PaymentSource,
+): readonly PaymentSourceActivity[] {
+  return paymentSourceContract(source).supportedActivities
+}
+
+export function paymentSourceSupportsActivity(
+  source: PaymentSource,
+  activity: PaymentSourceActivity,
+): boolean {
+  return paymentSourceSupportedActivities(source).includes(activity)
 }
 
 export type TransactionWriteKind = "spend" | "credit"
@@ -417,6 +454,13 @@ function transactionPaymentFields(
       "river_bitcoin_bill_pay must use tables:upsertBtcBillPay",
     )
   }
+  const activity: PaymentSourceActivity = category === "Income" ? "income" : "spend"
+  if (!paymentSourceSupportsActivity(paymentSource, activity)) {
+    throw new WriteContractError(
+      "payment-source-fields",
+      `${paymentSourceLabel(paymentSource)} does not support ${activity}`,
+    )
+  }
   if (candidate.card !== undefined && candidate.card !== paymentSource) {
     throw new WriteContractError(
       "payment-source-fields",
@@ -424,7 +468,7 @@ function transactionPaymentFields(
     )
   }
 
-  if (BITCOIN_NATIVE_SOURCES.has(paymentSource)) {
+  if (paymentSourceClassification(paymentSource) === "bitcoin_native") {
     if (!isAdult(owner)) {
       throw new WriteContractError(
         "write-not-authorized",

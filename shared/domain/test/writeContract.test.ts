@@ -335,6 +335,12 @@ test("payment-source builder rejects wrong routes and field combinations", () =>
       bitcoinAccountKey: "",
     },
     { ...base, paymentSource: "aven", amountSats: 10n, bitcoinAccountKey: "river" },
+    {
+      ...base,
+      paymentSource: "coinbase_card",
+      kind: "credit" as const,
+      category: "Income",
+    },
     { ...base, paymentSource: "not-a-source" },
   ]
   for (const candidate of rejected) {

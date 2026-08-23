@@ -1405,7 +1405,7 @@ describe("the payment-source matrix at the IPC boundary", () => {
     expect(forged({ bitcoinAccountKey: ACCOUNT })).toBeNull()
   })
 
-  it("leaves fiat card spend, refund, and Income semantics to the base contract", () => {
+  it("accepts fiat card spend and refund but rejects Income", () => {
     expect(forged({ card: "coinbase_card" })).toMatchObject({
       card: "coinbase_card",
       transactionKind: "spend",
@@ -1424,11 +1424,7 @@ describe("the payment-source matrix at the IPC boundary", () => {
       card: "coinbase_card",
       transactionKind: "credit",
       category: "Income",
-    })).toMatchObject({
-      card: "coinbase_card",
-      transactionKind: "credit",
-      category: "Income",
-    })
+    })).toBeNull()
   })
 
   it("refuses an unknown card string on a create", () => {

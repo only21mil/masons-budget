@@ -295,7 +295,7 @@ describe("direction and Bitcoin-native sources", () => {
     })).toMatch(/account it enters/)
   })
 
-  it("leaves fiat card direction and category to the base transaction contract", () => {
+  it("allows fiat-card spend and refund but blocks Income", () => {
     expect(paymentSourceBlockReason({
       source: "coinbase_card",
       kind: "spend",
@@ -310,7 +310,7 @@ describe("direction and Bitcoin-native sources", () => {
       source: "coinbase_card",
       kind: "credit",
       category: "Income",
-    })).toBeNull()
+    })).toBe("Coinbase Card supports Spend only.")
   })
 
   it("blocks malformed or direction-changed retired Bitcoin postings", () => {
@@ -384,14 +384,16 @@ describe("the transaction submission payload builder", () => {
     })
   })
 
-  it("submits Income on a fiat card as the card alone", () => {
-    expect(transactionSubmission({
-      source: "coinbase_card",
+  it("blocks Income on a spend-only fiat card", () => {
+    const state = {
+      source: "coinbase_card" as const,
       amountSats: SATS,
       bitcoinAccountKey: ACCOUNT,
-      kind: "credit",
+      kind: "credit" as const,
       category: "Income",
-    })).toEqual({ card: "coinbase_card" })
+    }
+    expect(paymentSourceBlockReason(state)).toBe("Coinbase Card supports Spend only.")
+    expect(transactionSubmission(state)).toEqual({})
   })
 
   it("keeps the optional sat-Income row when no source is chosen", () => {

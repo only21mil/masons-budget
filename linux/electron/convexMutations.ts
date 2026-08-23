@@ -7,9 +7,15 @@
 import { createHash, randomBytes } from "node:crypto"
 
 import {
+  PAYMENT_SOURCES,
   buildTransactionWriteRequest,
   encodeConvexInt64,
   isFamilyMember,
+  isPaymentSource,
+  paymentSourceClassification,
+  paymentSourceLabel,
+  paymentSourceSupportsActivity,
+  type PaymentSource,
 } from "@vogel-vault/domain"
 
 import type {
@@ -78,31 +84,9 @@ const INCOME_CATEGORY = "Income"
  * including a River bill-pay value on a transaction or a Bitcoin-native row
  * with no sats and no account.
  */
-const TRANSACTION_CARDS = {
-  river: "bitcoin",
-  zeus_lightning: "bitcoin",
-  zeus_on_chain: "bitcoin",
-  strike: "bitcoin",
-  coinbase_card: "fiat",
-  aven: "fiat",
-  sofi_card: "fiat",
-  capital_one_vx: "fiat",
-  river_bitcoin_bill_pay: "billPay",
-} as const satisfies Readonly<Record<string, "billPay" | "fiat" | "bitcoin">>
-
-type TransactionCard = keyof typeof TRANSACTION_CARDS
-
 /** Presentation strings for the same list. A stored row never carries one. */
 const PAYMENT_SOURCE_LABELS: ReadonlySet<string> = new Set([
-  "River",
-  "Zeus Lightning",
-  "Zeus On-chain",
-  "Strike",
-  "Coinbase Card",
-  "Aven",
-  "SoFi Card",
-  "Capital One VX",
-  "River Bitcoin Bill Pay",
+  ...PAYMENT_SOURCES.map(paymentSourceLabel),
   // Retired labels remain presentation strings rather than editable legacy text.
   "Lightning",
   "On-chain",
@@ -112,11 +96,10 @@ function isRetiredBitcoinCard(card: string): card is "lightning" | "on_chain" {
   return card === "lightning" || card === "on_chain"
 }
 
-function transactionCardKind(card: string | undefined): TransactionCard | null {
+function transactionCardKind(card: string | undefined): PaymentSource | null {
   // Matched against the raw string. A value that only becomes a wire value
   // after trimming is somebody else's text, not ours.
-  if (card === undefined || !Object.hasOwn(TRANSACTION_CARDS, card)) return null
-  return card as TransactionCard
+  return isPaymentSource(card) ? card : null
 }
 
 /** How a validated transaction's payment source is denominated. */
@@ -154,11 +137,11 @@ function transactionPaymentSource(input: {
 
   const known = transactionCardKind(raw)
   if (known !== null) {
-    switch (TRANSACTION_CARDS[known]) {
-      case "billPay":
+    switch (paymentSourceClassification(known)) {
+      case "bill_pay":
         // River is btcBillPays and nothing else.
         throw new InvalidRequest()
-      case "bitcoin":
+      case "bitcoin_native":
         if (sats === undefined || sats <= 0n || accountKey === "") throw new InvalidRequest()
         if (
           !(input.transactionKind === "spend" && input.category !== INCOME_CATEGORY) &&
@@ -167,10 +150,13 @@ function transactionPaymentSource(input: {
           throw new InvalidRequest()
         }
         return "bitcoin"
-      case "fiat":
+      case "fiat_card":
+        if (!paymentSourceSupportsActivity(known, input.category === INCOME_CATEGORY ? "income" : "spend")) {
+          throw new InvalidRequest()
+        }
         if (sats !== undefined || accountKey !== "") throw new InvalidRequest()
-        // Direction and category follow the base transaction contract. This
-        // branch owns only the rule that a fiat card cannot post Bitcoin.
+        // Refunds remain part of Spend activity. Income was rejected by the
+        // fixture-derived activity check above; fiat cards never post Bitcoin.
         return "fiat"
     }
   }

@@ -29,6 +29,7 @@ import {
   paymentSourceFromRow,
   paymentSourceLabel,
   paymentSourceRoute,
+  paymentSourceSupportedActivities,
   transactionSubmission,
   type PaymentSource,
   type TransactionFormState,
@@ -176,6 +177,12 @@ export function TransactionFormDialog({
   )
 
   const isIncome = category.trim() === "Income"
+  const transactionActivity = isIncome ? "income" : "spend"
+  const availablePaymentSources = PAYMENT_SOURCES.filter((source) => {
+    const activities = paymentSourceSupportedActivities(source)
+    return activities.includes(transactionActivity) ||
+      (!isIncome && activities.includes("btc_bill_pay"))
+  })
   // Editing an existing row cannot switch it onto the paired write: the pair is
   // keyed by one shared id, and an already-stored transaction id is not it.
   const buyAvailable = isIncome && transaction === null
@@ -506,7 +513,7 @@ export function TransactionFormDialog({
             <Select value={sourceChoice} onChange={(e) => chooseSource(e.target.value)}>
               <option value="">No source</option>
               {legacyCard ? <option value={LEGACY_SOURCE_CHOICE}>{legacyCard}</option> : null}
-              {PAYMENT_SOURCES.map((source) => (
+              {availablePaymentSources.map((source) => (
                 <option key={source} value={source}>{paymentSourceLabel(source)}</option>
               ))}
             </Select>

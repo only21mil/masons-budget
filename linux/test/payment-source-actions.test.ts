@@ -495,15 +495,16 @@ describe("Income against a payment source", () => {
     expect(markup).not.toContain("Bitcoin spent (sats)")
   })
 
-  it("leaves fiat-card Income to the base transaction contract", () => {
+  it("does not offer spend-only fiat cards when adding Income", () => {
     const markup = withState(
       createElement(TransactionFormDialog, {
         open: true,
-        transaction: rowOnSource("coinbase_card", { category: "Income" }),
+        transaction: null,
+        defaultCategory: "Income",
         onClose: () => undefined,
       }),
     )
-    expect(markup).not.toContain("Coinbase Card cannot be used on Income.")
-    expect(markup).toContain('<option value="coinbase_card" selected="">Coinbase Card</option>')
+    expect(markup).not.toContain('<option value="coinbase_card">Coinbase Card</option>')
+    expect(markup).toContain('<option value="strike">Strike</option>')
   })
 })
