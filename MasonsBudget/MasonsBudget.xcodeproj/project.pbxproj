@@ -12,6 +12,7 @@
 		012AAE1E5EF54E82BA42EB70 /* InlineAddTaskBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5514024FC5632566C2498B75 /* InlineAddTaskBar.swift */; };
 		05217F09961107F47A0EA45D /* CategoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBBF456CA8F45467DE539B3 /* CategoryDetailView.swift */; };
 		064EE72180F8557196303AF4 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D9D2114CBEC645F03E11CE8 /* AppTheme.swift */; };
+		069B116A7FBB1D18183F1A90 /* manual-fee-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = 2F0D156432CA423919571400 /* manual-fee-cases.json */; };
 		06A4626D7CE3ECA5F430755B /* WriteFeedbackStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 230D932174FB25E1E6FA335C /* WriteFeedbackStore.swift */; };
 		07D0AA232411368DDBE5A262 /* BudgetMonthScopingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39F9FEE550CB799FCADD40AF /* BudgetMonthScopingTests.swift */; };
 		07F997E66D8676FA7608605E /* ExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42CB31DA7B47761B37A90E9C /* ExportView.swift */; };
@@ -38,6 +39,7 @@
 		17BBEDB466265654289AAE51 /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BCFC0CB64EDE2474B2E5620 /* TransactionDetailView.swift */; };
 		1937D7FCF5D407C26B8C83EC /* Hairline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 598608F085B0A81286803F0F /* Hairline.swift */; };
 		1DCAE04D1FD4D959FD8F4048 /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BCFC0CB64EDE2474B2E5620 /* TransactionDetailView.swift */; };
+		1E248E2DBD6DBD013AE7BD64 /* MoneyOutTodayService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2906B9D375E1697544F4A6B2 /* MoneyOutTodayService.swift */; };
 		1F1C8AF4B264D3CD836DE6E4 /* CostBasisLot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 460FAFA4D544CE62A5974814 /* CostBasisLot.swift */; };
 		1FD655B5F5F84FD9B852D99B /* SearchMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2283F2AE36B94EF55B4AAD6 /* SearchMatcher.swift */; };
 		20134ADD1754A47D210AF2DA /* Transaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28C9AC48788F6BD75F27ADC1 /* Transaction.swift */; };
@@ -121,6 +123,7 @@
 		6D9F88BEA980C5F18C00E5D5 /* BTCAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC62602DF8D847C5671804D /* BTCAccount.swift */; };
 		6FCFC09A23B2D4FE242B0E9B /* TaskUndoBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9217F015BEE5502E0937BDC3 /* TaskUndoBanner.swift */; };
 		6FE8B184183F43327912A71A /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2EE11ADEBED01F399DA8F0F /* DashboardView.swift */; };
+		70F0499B648D21DFE5668E7B /* MoneyOutTodayService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2906B9D375E1697544F4A6B2 /* MoneyOutTodayService.swift */; };
 		713310A2FC852F3ED403DD16 /* AmountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EAD4E4602D4D4566CD78E35 /* AmountView.swift */; };
 		7278CE8F39F5AFB791DE48D4 /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BCFC0CB64EDE2474B2E5620 /* TransactionDetailView.swift */; };
 		727E7F9A70589881AA409AC7 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2EE11ADEBED01F399DA8F0F /* DashboardView.swift */; };
@@ -134,6 +137,7 @@
 		78CD410FBB0B0F30FC04C2B5 /* AreaTodoListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A36EDB41C72B5F230F05789 /* AreaTodoListView.swift */; };
 		7A23F98EAE7CC04F98559625 /* LedgerMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91E4D6A837EBFF6D4985DF22 /* LedgerMapper.swift */; };
 		7D48872896D49FB898A12EC5 /* BitcoinIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF60F6C9AFB730F4A27C9A10 /* BitcoinIcons.swift */; };
+		7E342AEF01715269AE9A04D4 /* money-out-today-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = AEDD1C1FA9DFF789429491D4 /* money-out-today-cases.json */; };
 		7EB78B1C7E862DC7C62818C1 /* IncomingEventsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DA02D07A5F77E55C69B00DF /* IncomingEventsSection.swift */; };
 		7F206C7332A7AFA5BB962E49 /* BudgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 941AE83F8125080834B45397 /* BudgetView.swift */; };
 		7F8A473271BB9A5EA21AA6C5 /* AmountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EAD4E4602D4D4566CD78E35 /* AmountView.swift */; };
@@ -196,6 +200,7 @@
 		B348E53CF2F397BC7DA7FE98 /* BTCAccountDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB39E4E9476D6B0B76703693 /* BTCAccountDetailView.swift */; };
 		B4EDB5E700BF7C5162C6804E /* ProfileSwitcherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6DC67CB4C872B77EB725922 /* ProfileSwitcherView.swift */; };
 		B754C97FC84C831388A66151 /* ConvexRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8998D9F9DC9435AE8FBBBCBC /* ConvexRows.swift */; };
+		B8752458E7C92FE295407862 /* todo-visibility-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = D73554169E81ED9939029F22 /* todo-visibility-cases.json */; };
 		B9BB77FF6FDB83BA802A2564 /* SharedEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97885C819FB926B04D0E8D3F /* SharedEnums.swift */; };
 		BA080D383822B146E5BDC0C1 /* MoreMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C4688B09BFCB16C26276040 /* MoreMenuView.swift */; };
 		BAA8B13B0A0FAC1F790BE8EB /* LedgerMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91E4D6A837EBFF6D4985DF22 /* LedgerMapper.swift */; };
@@ -238,6 +243,7 @@
 		F12B99F5E2C30602F5A71F05 /* MasonsBudgetApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8388ECD356E3E00B77790681 /* MasonsBudgetApp.swift */; };
 		F1CAC198C07A1B0C06A294AE /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2EE11ADEBED01F399DA8F0F /* DashboardView.swift */; };
 		F56EC18C9DF0CB4349162063 /* TodoArea.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEF1482C8EFC171A27117F7 /* TodoArea.swift */; };
+		F6D96FA476DB31DD5516CB0C /* budget-category-deletion-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = E0B7DF8FCA7F7468FBA58251 /* budget-category-deletion-cases.json */; };
 		F7BC632EB189C29BFBD81043 /* BTCAccountDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB39E4E9476D6B0B76703693 /* BTCAccountDetailView.swift */; };
 		F8512C01C795496D2CC7EA3A /* StockPriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F721A6FC17530024B35A0C6 /* StockPriceService.swift */; };
 		F9371209D19D48A735D4FBED /* WriteFeedbackStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 230D932174FB25E1E6FA335C /* WriteFeedbackStore.swift */; };
@@ -245,6 +251,7 @@
 		F9EAF981A0A2BBC7BF5398C7 /* LockScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E117823C6DA6138431AE80C8 /* LockScreenView.swift */; };
 		F9EC699ACF79979C781CB21A /* TaskSmartListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 859D4699AA8657478F0E4D21 /* TaskSmartListView.swift */; };
 		FBB4AE269CCCEC5D4EEABC02 /* MonthlyBudgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B2D2A739D76D88CF2D981C6 /* MonthlyBudgetSnapshot.swift */; };
+		FC20D589AFB6032197E879BE /* MoneyOutTodayService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2906B9D375E1697544F4A6B2 /* MoneyOutTodayService.swift */; };
 		FF258DF4502036BA0FF85FF6 /* StockPriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F721A6FC17530024B35A0C6 /* StockPriceService.swift */; };
 		FF53E751B802F5EFB8382F76 /* BudgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 941AE83F8125080834B45397 /* BudgetView.swift */; };
 		FF848533C741DC91C85E63A6 /* MC2DTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 130D186945E2F17AE4A79132 /* MC2DTOs.swift */; };
@@ -270,9 +277,11 @@
 		25CE52C2D21FE78FC3334E5D /* btc-fiat-availability-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "btc-fiat-availability-cases.json"; sourceTree = "<group>"; };
 		273950057898C808021DD99E /* BTCBillPayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BTCBillPayView.swift; sourceTree = "<group>"; };
 		28C9AC48788F6BD75F27ADC1 /* Transaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transaction.swift; sourceTree = "<group>"; };
+		2906B9D375E1697544F4A6B2 /* MoneyOutTodayService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyOutTodayService.swift; sourceTree = "<group>"; };
 		2A36EDB41C72B5F230F05789 /* AreaTodoListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AreaTodoListView.swift; sourceTree = "<group>"; };
 		2AC58C7449FBDB08006CFC23 /* FamilyVisibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyVisibilityTests.swift; sourceTree = "<group>"; };
 		2DA02D07A5F77E55C69B00DF /* IncomingEventsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncomingEventsSection.swift; sourceTree = "<group>"; };
+		2F0D156432CA423919571400 /* manual-fee-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "manual-fee-cases.json"; sourceTree = "<group>"; };
 		310E21BFB1D9D582BCD6A71B /* MasonsBudget.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MasonsBudget.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3250E7396C07FAB87774D194 /* ConvexInt64WireTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexInt64WireTests.swift; sourceTree = "<group>"; };
 		355DA4D064A09FC72695758B /* ActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityView.swift; sourceTree = "<group>"; };
@@ -334,6 +343,7 @@
 		A1BBFC0B4CB494B00C7FBF13 /* visibility-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "visibility-cases.json"; sourceTree = "<group>"; };
 		A4B3C65C1FD9F1E13141EE7C /* TaskDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetailView.swift; sourceTree = "<group>"; };
 		AC71D565300376FE836CAA75 /* ConvexRowsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexRowsTests.swift; sourceTree = "<group>"; };
+		AEDD1C1FA9DFF789429491D4 /* money-out-today-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "money-out-today-cases.json"; sourceTree = "<group>"; };
 		B0A3F46E4A07D5AA25C0F87E /* ConvexWriteResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexWriteResult.swift; sourceTree = "<group>"; };
 		B2FE9738F0574D3031E44C26 /* ProjectTodoListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectTodoListView.swift; sourceTree = "<group>"; };
 		B6DC67CB4C872B77EB725922 /* ProfileSwitcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSwitcherView.swift; sourceTree = "<group>"; };
@@ -349,7 +359,9 @@
 		CD36C9FAE3B0F9A09581EC60 /* listTransactions.json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = listTransactions.json.json; sourceTree = "<group>"; };
 		CF60F6C9AFB730F4A27C9A10 /* BitcoinIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinIcons.swift; sourceTree = "<group>"; };
 		D2EE11ADEBED01F399DA8F0F /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		D73554169E81ED9939029F22 /* todo-visibility-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "todo-visibility-cases.json"; sourceTree = "<group>"; };
 		D86340D4ABE8A55B4DA49FF6 /* SyncStatusStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStatusStore.swift; sourceTree = "<group>"; };
+		E0B7DF8FCA7F7468FBA58251 /* budget-category-deletion-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "budget-category-deletion-cases.json"; sourceTree = "<group>"; };
 		E117823C6DA6138431AE80C8 /* LockScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenView.swift; sourceTree = "<group>"; };
 		E2283F2AE36B94EF55B4AAD6 /* SearchMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchMatcher.swift; sourceTree = "<group>"; };
 		E4DF0247EF288DCF8C3F9782 /* ConvexDataReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexDataReader.swift; sourceTree = "<group>"; };
@@ -459,6 +471,7 @@
 				91E4D6A837EBFF6D4985DF22 /* LedgerMapper.swift */,
 				40F757710D47100DAE386F72 /* LegacyBlobDTOs.swift */,
 				130D186945E2F17AE4A79132 /* MC2DTOs.swift */,
+				2906B9D375E1697544F4A6B2 /* MoneyOutTodayService.swift */,
 				24D0567CEA50C9D8FB8CC4E1 /* OptimisticSaveFlow.swift */,
 				E2283F2AE36B94EF55B4AAD6 /* SearchMatcher.swift */,
 				1F721A6FC17530024B35A0C6 /* StockPriceService.swift */,
@@ -473,13 +486,17 @@
 			isa = PBXGroup;
 			children = (
 				25CE52C2D21FE78FC3334E5D /* btc-fiat-availability-cases.json */,
+				E0B7DF8FCA7F7468FBA58251 /* budget-category-deletion-cases.json */,
 				EF30B8FE8B7986AB2D87D572 /* convex-int64-wire-cases.json */,
 				F3B18B925AF533486B8311C0 /* finance-market-cases.json */,
 				C56884C1E938AB8A70C8FDB7 /* income-buy-write-cases.json */,
 				1A5243A1FDF7F650A8DB6182 /* json-number-money-cases.json */,
+				2F0D156432CA423919571400 /* manual-fee-cases.json */,
+				AEDD1C1FA9DFF789429491D4 /* money-out-today-cases.json */,
 				C2099C401266495C974A62BC /* month-cases.json */,
 				3FF15F6E86DFC6A8BE2EAFDA /* payment-source-cases.json */,
 				C8C3FD95CD5DDA1D13FAC403 /* todo-cases.json */,
+				D73554169E81ED9939029F22 /* todo-visibility-cases.json */,
 				A1BBFC0B4CB494B00C7FBF13 /* visibility-cases.json */,
 				162F7C9725775ADC39BF6B0C /* write-payload-cases.json */,
 				8F0485833021E80E8CB4C896 /* convex-wire-golden */,
@@ -715,6 +732,7 @@
 			files = (
 				A9879A70BEBAAD08D3FA3628 /* README.md in Resources */,
 				9F25069AA8D8C74899777A13 /* btc-fiat-availability-cases.json in Resources */,
+				F6D96FA476DB31DD5516CB0C /* budget-category-deletion-cases.json in Resources */,
 				6132ABC2B1A85E41529AC2D6 /* convex-int64-wire-cases.json in Resources */,
 				D735B252616C9B242950D664 /* finance-market-cases.json in Resources */,
 				17976960E05ECF3D6C23827A /* getBudgetDocument.convex_encoded_json.json in Resources */,
@@ -731,11 +749,14 @@
 				5670DFDF1980D1529656CEBA /* listTodos.json.json in Resources */,
 				12A5E7048C0FED8784BDBD4C /* listTransactions.convex_encoded_json.json in Resources */,
 				68FE0A7DD7D21BA4FEDF12C9 /* listTransactions.json.json in Resources */,
+				069B116A7FBB1D18183F1A90 /* manual-fee-cases.json in Resources */,
+				7E342AEF01715269AE9A04D4 /* money-out-today-cases.json in Resources */,
 				A8667EC9D620FC51CE030C09 /* month-cases.json in Resources */,
 				003988134AF5ADC9C1D34A97 /* payment-source-cases.json in Resources */,
 				3DA0967F56F807FEDD46D888 /* rowCounts.convex_encoded_json.json in Resources */,
 				CA666BE0514416974E0790EC /* rowCounts.json.json in Resources */,
 				6081768770E661C6EDF63DBA /* todo-cases.json in Resources */,
+				B8752458E7C92FE295407862 /* todo-visibility-cases.json in Resources */,
 				08C73AA7B882462F31726692 /* visibility-cases.json in Resources */,
 				9CD68674D5B5B73B017EFC08 /* write-payload-cases.json in Resources */,
 			);
@@ -802,6 +823,7 @@
 				F9EAF981A0A2BBC7BF5398C7 /* LockScreenView.swift in Sources */,
 				FF848533C741DC91C85E63A6 /* MC2DTOs.swift in Sources */,
 				C022EFD8A3AF0B3748433C49 /* MasonsBudgetApp.swift in Sources */,
+				1E248E2DBD6DBD013AE7BD64 /* MoneyOutTodayService.swift in Sources */,
 				E2F8586BAC515B8742BA438A /* MonthlyBudgetSnapshot.swift in Sources */,
 				E47423E8CDB190F1BB982E95 /* MoreMenuView.swift in Sources */,
 				627817036F8B1B2C7497C8BB /* NetWorthSnapshot.swift in Sources */,
@@ -876,6 +898,7 @@
 				D1F0030EFC8EF2EF555C9F9B /* LockScreenView.swift in Sources */,
 				80A637E625F3EF70CF7EF91A /* MC2DTOs.swift in Sources */,
 				F12B99F5E2C30602F5A71F05 /* MasonsBudgetApp.swift in Sources */,
+				FC20D589AFB6032197E879BE /* MoneyOutTodayService.swift in Sources */,
 				FBB4AE269CCCEC5D4EEABC02 /* MonthlyBudgetSnapshot.swift in Sources */,
 				BA080D383822B146E5BDC0C1 /* MoreMenuView.swift in Sources */,
 				F9ABB4FF696573BDEF25CB28 /* NetWorthSnapshot.swift in Sources */,
@@ -959,6 +982,7 @@
 				C156A53D5E586FF9A67A0545 /* LockScreenView.swift in Sources */,
 				E678847B04562368D94CD18E /* MC2DTOs.swift in Sources */,
 				6D8FD1A7D21195F90F959E8D /* MasonsBudgetTests.swift in Sources */,
+				70F0499B648D21DFE5668E7B /* MoneyOutTodayService.swift in Sources */,
 				E0FCD4B89D605971E357D92B /* MonthlyBudgetSnapshot.swift in Sources */,
 				C4732154C67A071211508A18 /* MoreMenuView.swift in Sources */,
 				50A640E5700293AAB0B52CCB /* NetWorthSnapshot.swift in Sources */,
