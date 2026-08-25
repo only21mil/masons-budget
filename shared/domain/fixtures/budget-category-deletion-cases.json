@@ -1,0 +1,23 @@
+{
+  "$comment": "Current-month budget category deletion produces intent only. It does not name a mutation path or authorize optimistic local deletion.",
+  "contractVersion": 1,
+  "accepted": {
+    "activeProfile": "rachel",
+    "currentMonth": "2026-08",
+    "sourceFile": "budget",
+    "categoryName": "Groceries",
+    "baseUpdatedAtMs": 1787654321000
+  },
+  "rejected": [
+    { "name": "invalid current month", "replace": { "currentMonth": "2026-8" }, "reason": "invalid-current-month" },
+    { "name": "historical month", "replace": { "currentMonth": "2026-09" }, "reason": "month-mismatch" },
+    { "name": "future month", "replace": { "currentMonth": "2026-07" }, "reason": "month-mismatch" },
+    { "name": "source mismatch", "replace": { "sourceFile": "mason-budget" }, "reason": "source-mismatch" },
+    { "name": "missing category", "replace": { "categoryName": "GROCERIES" }, "reason": "missing-category" },
+    { "name": "invalid revision", "replace": { "baseUpdatedAtMs": 1.5 }, "reason": "invalid-revision" },
+    { "name": "unsafe revision", "replace": { "baseUpdatedAtMs": 9007199254740992 }, "reason": "invalid-revision" },
+    { "name": "stale revision", "replace": { "baseUpdatedAtMs": 1787654320999 }, "reason": "revision-mismatch" },
+    { "name": "child actor", "replace": { "activeProfile": "mason" }, "reason": "unsupported-child-budget" },
+    { "name": "child budget", "budgetOwner": "mason", "reason": "unsupported-child-budget" }
+  ]
+}

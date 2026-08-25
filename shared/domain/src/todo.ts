@@ -15,13 +15,31 @@
 // Where the two disagree, the divergences are enumerated in the fixture's
 // $comment blocks and reproduced deliberately here, never accidentally.
 //
-// HARD RULE (repo AGENTS.md): owner resolution goes through coerceOwner and
-// visibility through canSeeDataOwnedBy. Untagged adult records default to
-// "victor", so a strict `owner === activeMember` check empties Rachel's todo
-// list. That bug shipped in v0.3.
+// Todos are profile-private. This is intentionally narrower than the financial
+// visibility rules in family.ts. An adult sees another owner's todos only after
+// a secure profile switch makes that owner the active profile.
 
 import { DEFAULT_OWNER, type FamilyMember, coerceOwner } from "./family.ts"
 import type { TodoItem } from "./readModel.ts"
+
+export interface TodoOwned {
+  readonly owner: FamilyMember
+}
+
+export function canSeeTodoOwnedBy(activeProfile: FamilyMember, owner: FamilyMember): boolean {
+  return activeProfile === owner
+}
+
+export function canWriteTodoOwnedBy(activeProfile: FamilyMember, owner: FamilyMember): boolean {
+  return activeProfile === owner
+}
+
+export function todosForActiveProfile<T extends TodoOwned>(
+  activeProfile: FamilyMember,
+  todos: readonly T[],
+): T[] {
+  return todos.filter((todo) => canSeeTodoOwnedBy(activeProfile, todo.owner))
+}
 
 // ── Lanes ───────────────────────────────────────────────────────────────────
 

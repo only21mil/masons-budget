@@ -1,0 +1,18 @@
+{
+  "$comment": "Manual River fees are exact non-negative signed-int64 USD cents. Missing and null become zero. No other amount participates in this contract.",
+  "contractVersion": 1,
+  "accepted": [
+    { "name": "missing", "expected": "0" },
+    { "name": "null", "input": null, "expected": "0" },
+    { "name": "explicit zero", "input": "0", "expected": "0" },
+    { "name": "manual fee", "input": "125", "expected": "125" },
+    { "name": "int64 maximum", "input": "9223372036854775807", "expected": "9223372036854775807" }
+  ],
+  "rejected": [
+    { "name": "negative", "input": "-1" },
+    { "name": "fractional string", "input": "1.25" },
+    { "name": "fractional number", "input": 1.25 },
+    { "name": "unsafe number", "input": 9007199254740992 },
+    { "name": "int64 overflow", "input": "9223372036854775808" }
+  ]
+}

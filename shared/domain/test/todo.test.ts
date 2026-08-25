@@ -12,7 +12,7 @@ import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
-import { type FamilyMember, visibleTo } from "../src/family.ts"
+import { type FamilyMember } from "../src/family.ts"
 import {
   type CanonicalTodo,
   type RawTodo,
@@ -34,6 +34,7 @@ import {
   normalizeTodoWire,
   reconcileTodos,
   resolveTodoLane,
+  todosForActiveProfile,
   todoUpdatedMillis,
   toTodoItem,
   upsertTodo,
@@ -136,12 +137,6 @@ function pull(raw: RawTodo): CanonicalTodo {
 
 function tombstonesOf(raws: readonly RawTombstone[]): TodoTombstone[] {
   return raws.map((raw) => ({ id: raw.id, deletedAtMillis: raw.deletedAt }))
-}
-
-function titleOf(id: string): string {
-  const raw = fixtures.sampleTodos.find((todo) => todo.id === id)
-  assert.ok(raw, `sampleTodos is missing ${id}`)
-  return String(raw.title)
 }
 
 const sampleTodos = fixtures.sampleTodos.map((raw) => normalizeTodoRecord(raw, { nowMillis: NOW }))
@@ -398,25 +393,25 @@ test("a deleted todo cannot come back on the next pull", () => {
 
 // ── Visibility ──────────────────────────────────────────────────────────────
 
-test("todo visibility follows the household rule, not strict owner equality", () => {
+test("todo list projection is exact-owner for the active profile", () => {
   for (const testCase of fixtures.visibility) {
     assert.deepEqual(
-      visibleTo(testCase.viewer, sampleTodos).map((todo) => todo.id),
+      todosForActiveProfile(testCase.viewer, sampleTodos).map((todo) => todo.id),
       testCase.expectedIds,
       `${testCase.viewer}${testCase.note ? ` (${testCase.note})` : ""}`,
     )
   }
 })
 
-test("Rachel sees the untagged todo that defaulted to Victor", () => {
-  const visible = visibleTo("rachel", sampleTodos).map((todo) => todo.title)
-  assert.ok(visible.includes(titleOf("t-5")))
+test("an untagged Victor todo is hidden until Victor is the active profile", () => {
+  assert.equal(todosForActiveProfile("rachel", sampleTodos).some((todo) => todo.id === "t-5"), false)
+  assert.equal(todosForActiveProfile("victor", sampleTodos).some((todo) => todo.id === "t-5"), true)
 })
 
 test("empty collections do not throw", () => {
   assert.deepEqual(applyTodoTombstones([], []), [])
   assert.deepEqual(mergeTodoLists([], [], NOW), [])
-  assert.deepEqual(visibleTo("mason", []), [])
+  assert.deepEqual(todosForActiveProfile("mason", []), [])
 })
 
 // ── Read-model projection ───────────────────────────────────────────────────

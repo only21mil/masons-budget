@@ -628,12 +628,8 @@
   ],
 
   "visibility": [
-    { "viewer": "victor", "expectedIds": ["t-1", "t-2", "t-3", "t-4", "t-5", "t-6"] },
-    {
-      "viewer": "rachel",
-      "expectedIds": ["t-1", "t-2", "t-3", "t-4", "t-5", "t-6"],
-      "note": "CRITICAL regression: an untagged todo defaults to victor, and strict equality emptied this list in v0.3"
-    },
+    { "viewer": "victor", "expectedIds": ["t-1", "t-5"] },
+    { "viewer": "rachel", "expectedIds": ["t-2"] },
     { "viewer": "mason", "expectedIds": ["t-3", "t-6"] },
     { "viewer": "maddox", "expectedIds": ["t-4"] }
   ],

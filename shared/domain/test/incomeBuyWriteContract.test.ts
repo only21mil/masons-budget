@@ -20,7 +20,7 @@ const fixture = JSON.parse(
 }
 
 test("paired income-buy golden payload uses one id and canonical adult ownership", () => {
-  assert.equal(fixture.contractVersion, 1)
+  assert.equal(fixture.contractVersion, 2)
   assert.deepEqual(
     buildLinkedIncomeBuyWriteRequest(fixture.actor, fixture.input),
     fixture.expected,

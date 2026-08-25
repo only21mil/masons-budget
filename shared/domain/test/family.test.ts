@@ -62,11 +62,6 @@ interface SampleAccount {
   btc: string
   owner: FamilyMember
 }
-interface SampleTodo {
-  id: string
-  title: string
-  owner: FamilyMember
-}
 type ByMember<T> = Record<FamilyMember, T>
 
 interface Fixtures {
@@ -83,16 +78,12 @@ interface Fixtures {
   hasDedicatedChildFinanceFiles: MemberCase<boolean>[]
   sampleTransactions: SampleTransaction[]
   sampleAccounts: SampleAccount[]
-  sampleTodos: SampleTodo[]
   expectations: {
     visibleTransactionCount: ByMember<number>
     visibleTransactionMerchants: Partial<ByMember<string[]>>
     visibleAccountCount: ByMember<number>
     visibleAccountLabels: Partial<ByMember<string[]>>
     netWorthAccountLabels: ByMember<string[]>
-    visibleTodoCount: ByMember<number>
-    visibleTodoTitles: Partial<ByMember<string[]>>
-    rachelSeesVictorTodo: string
     visibleSpend: ByMember<string>
     budgetSpend: ByMember<string>
     budgetOwners: ByMember<FamilyMember[]>
@@ -233,27 +224,6 @@ test("an adult sees Mason's account but excludes it from net worth", () => {
   const netWorth = netWorthScopeFor("victor", fixtures.sampleAccounts).map((a: { label: string }) => a.label)
   assert.ok(visible.includes("Mason Strike"))
   assert.ok(!netWorth.includes("Mason Strike"))
-})
-
-test("todo filtering matches expected counts and titles", () => {
-  for (const member of members) {
-    assert.equal(
-      visibleTo(member, fixtures.sampleTodos).length,
-      fixtures.expectations.visibleTodoCount[member],
-      `${member} todo visibility`,
-    )
-  }
-  for (const [member, titles] of Object.entries(fixtures.expectations.visibleTodoTitles)) {
-    assert.deepEqual(
-      visibleTo(member as FamilyMember, fixtures.sampleTodos).map((t: { title: string }) => t.title),
-      titles,
-    )
-  }
-})
-
-test("Rachel sees Victor-owned todos", () => {
-  const titles = visibleTo("rachel", fixtures.sampleTodos).map((t: { title: string }) => t.title)
-  assert.ok(titles.includes(fixtures.expectations.rachelSeesVictorTodo))
 })
 
 test("visible spend retains child rows for adult oversight", () => {
