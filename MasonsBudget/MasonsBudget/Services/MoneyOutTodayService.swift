@@ -10,7 +10,7 @@ enum MoneyOutTodayService {
         billPays: [BTCBillPay],
     ) throws -> Int64 {
         let day = dayString(now, calendar: calendar)
-        let transactionRows = try transactions.compactMap { transaction in
+        let transactionRows: [MoneyOutTodayTransaction] = try transactions.compactMap { transaction -> MoneyOutTodayTransaction? in
             guard calendar.isDate(transaction.date, inSameDayAs: now),
                   ownerIsInScope(transaction.ownerMember, viewer: viewer)
             else { return nil }
@@ -24,7 +24,7 @@ enum MoneyOutTodayService {
                 category: transaction.category,
             )
         }
-        let billPayRows = try billPays.compactMap { billPay in
+        let billPayRows: [MoneyOutTodayBillPay] = try billPays.compactMap { billPay -> MoneyOutTodayBillPay? in
             guard calendar.isDate(billPay.date, inSameDayAs: now),
                   ownerIsInScope(billPay.ownerMember, viewer: viewer)
             else { return nil }

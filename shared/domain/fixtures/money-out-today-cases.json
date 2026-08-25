@@ -6,6 +6,7 @@
     { "id": "adult-spend", "date": "2026-08-25", "amountCents": "2500", "category": "Groceries", "owner": "victor" },
     { "id": "adult-refund", "date": "2026-08-25", "amountCents": "-3000", "category": "Groceries", "owner": "victor" },
     { "id": "adult-income", "date": "2026-08-25", "amountCents": "9000", "category": "Income", "owner": "victor" },
+    { "id": "adult-card-transfer", "date": "2026-08-25", "amountCents": "3000", "category": "cReDiT CaRd PaYmEnT", "owner": "victor" },
     { "id": "noncanonical-rachel", "date": "2026-08-25", "amountCents": "700", "category": "Shopping", "owner": "rachel" },
     { "id": "mason-spend", "date": "2026-08-25", "amountCents": "600", "category": "Entertainment", "owner": "mason" },
     { "id": "other-day", "date": "2026-08-24", "amountCents": "10000", "category": "Shopping", "owner": "victor" }

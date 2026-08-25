@@ -323,8 +323,9 @@ final class ConvexRowMutationTests: XCTestCase {
             owner: FamilyMember.victor.rawValue,
         )
 
-        XCTAssertNil(try await client.upsertBTCBuyRow(buy, owner: .victor))
-        let request = try XCTUnwrap(capture.values.first)
+        let acceptedBuyRevision = try await client.upsertBTCBuyRow(buy, owner: .victor)
+        XCTAssertNil(acceptedBuyRevision)
+        let request = try XCTUnwrap(capture.values().first)
         let arguments = try XCTUnwrap(request["args"] as? [String: Any])
         let row = try XCTUnwrap(arguments["buy"] as? [String: Any])
         XCTAssertEqual(

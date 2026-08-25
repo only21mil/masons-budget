@@ -241,7 +241,6 @@ final class FamilyVisibilityTests: XCTestCase {
 
         XCTAssertEqual(fixture.sampleTransactions.count, 9)
         XCTAssertEqual(fixture.sampleAccounts.count, 3)
-        XCTAssertEqual(fixture.sampleTodos.count, 4)
 
         XCTAssertEqual(Set(fixture.expectations.visibleTransactionCount.keys), expectedMembers)
         XCTAssertEqual(Set(fixture.expectations.visibleAccountCount.keys), expectedMembers)
@@ -318,15 +317,6 @@ final class FamilyVisibilityTests: XCTestCase {
                 custody: custody,
                 btc: try decimal(sample.btc),
                 owner: try familyMember(sample.owner),
-            )
-        }
-
-        let todos = try fixture.sampleTodos.map { sample in
-            TodoItem(
-                id: sample.id,
-                title: sample.title,
-                owner: try familyMember(sample.owner),
-                createdBy: "fixture",
             )
         }
 
@@ -451,7 +441,6 @@ private struct VisibilityFixture: Decodable {
     let hasDedicatedChildFinanceFiles: [MemberBoolExpectation]
     let sampleTransactions: [FixtureTransaction]
     let sampleAccounts: [FixtureAccount]
-    let sampleTodos: [FixtureTodo]
     let expectations: FixtureExpectations
 
     private enum CodingKeys: String, CodingKey {
@@ -470,7 +459,6 @@ private struct VisibilityFixture: Decodable {
         case legacyDedicatedChildFinanceFiles = "hasDedicatedMC2ChildFinanceFiles"
         case sampleTransactions
         case sampleAccounts
-        case sampleTodos
         case expectations
     }
 
@@ -497,7 +485,6 @@ private struct VisibilityFixture: Decodable {
         ) ?? container.decode([MemberBoolExpectation].self, forKey: .legacyDedicatedChildFinanceFiles)
         sampleTransactions = try container.decode([FixtureTransaction].self, forKey: .sampleTransactions)
         sampleAccounts = try container.decode([FixtureAccount].self, forKey: .sampleAccounts)
-        sampleTodos = try container.decode([FixtureTodo].self, forKey: .sampleTodos)
         expectations = try container.decode(FixtureExpectations.self, forKey: .expectations)
     }
 }
@@ -537,12 +524,6 @@ private struct FixtureAccount: Decodable {
     let label: String
     let custody: String
     let btc: String
-    let owner: String
-}
-
-private struct FixtureTodo: Decodable {
-    let id: String
-    let title: String
     let owner: String
 }
 
@@ -916,7 +897,7 @@ final class Phase1ContractsTests: XCTestCase {
                 transactions: rows,
                 billPays: [billPay],
             ),
-            8_259,
+            3_259,
         )
     }
 
@@ -1334,7 +1315,7 @@ final class Phase1ContractsTests: XCTestCase {
 
     private func sharedDeletionReason(_ error: Error) -> String? {
         guard let error = error as? BudgetCategoryDeletionEligibilityError else { return nil }
-        switch error {
+        return switch error {
         case .invalidCurrentMonth, .invalidBudgetMonth:
             "invalid-current-month"
         case .unsupportedChildBudget:

@@ -280,7 +280,9 @@ enum MoneyOutTodayContract {
         var total: Int64 = 0
 
         for transaction in transactions where ownerIsInSpendingScope(transaction.owner, viewer: viewer) && transaction.day == day {
-            guard transaction.category.caseInsensitiveCompare("Income") != .orderedSame else { continue }
+            guard transaction.category.caseInsensitiveCompare("Income") != .orderedSame,
+                  transaction.category.caseInsensitiveCompare(BTCBillPayBudgetEffect.creditCardPaymentCategory) != .orderedSame
+            else { continue }
             total = try adding(transaction.amountCents, to: total)
         }
 

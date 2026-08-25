@@ -88,6 +88,17 @@ test("Money Out Today excludes Income case-insensitively", () => {
   assert.deepEqual(result.sources, [])
 })
 
+test("Money Out Today excludes credit-card payment transactions case-insensitively", () => {
+  const result = deriveMoneyOutToday({
+    activeProfile: "victor",
+    date: fixture.date,
+    transactions: [{ ...transactions[0]!, category: "cReDiT CaRd PaYmEnT" }],
+    billPays: [],
+  })
+  assert.equal(result.totalCents, 0n)
+  assert.deepEqual(result.sources, [])
+})
+
 test("Money Out Today validates the injected day and never clamps a negative result", () => {
   assert.throws(
     () => deriveMoneyOutToday({ activeProfile: "victor", date: "2026-02-30", transactions, billPays }),

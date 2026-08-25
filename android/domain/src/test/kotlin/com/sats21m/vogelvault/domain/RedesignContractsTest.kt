@@ -63,6 +63,20 @@ class RedesignContractsTest {
     }
 
     @Test
+    fun `money out today excludes credit-card payment transactions case-insensitively`() {
+        val transactions = listOf(
+            transaction(
+                "mixed-case-card-transfer",
+                FamilyMember.VICTOR,
+                20_000L,
+                category = "cReDiT CaRd PaYmEnT",
+            ),
+        )
+
+        assertEquals(0L, deriveMoneyOutTodayCents(FamilyMember.VICTOR, DAY, transactions, emptyList()))
+    }
+
+    @Test
     fun `money out today adds bill-pay principal and manual fee once`() {
         val payment = billPay("bill", FamilyMember.VICTOR, amount = 12_345L, fee = 67L)
 
