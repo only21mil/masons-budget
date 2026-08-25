@@ -244,7 +244,7 @@ struct MoneyOutTodayBillPay: Equatable, Sendable {
         day: String,
         principalUsdCents: Int64,
         feeUsdCents: Int64? = nil,
-        budgetEffect: BTCBillPayBudgetEffect = .creditCardPayment,
+        budgetEffect: BTCBillPayBudgetEffect,
     ) throws {
         guard Phase1DateContract.isValidDay(day) else {
             throw MoneyOutTodayError.invalidDay(day)
