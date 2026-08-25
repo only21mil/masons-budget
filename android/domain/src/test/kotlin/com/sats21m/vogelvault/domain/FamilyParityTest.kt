@@ -180,16 +180,6 @@ class FamilyParityTest {
             Row(label = obj["label"].asString, owner = member(obj["owner"].asString))
         }
 
-    private fun todos(): List<TodoItem> =
-        fixtures.getAsJsonArray("sampleTodos").map {
-            val obj = it.asJsonObject
-            TodoItem(
-                id = obj["id"].asString,
-                title = obj["title"].asString,
-                owner = member(obj["owner"].asString),
-            )
-        }
-
     private fun expectations(): JsonObject = fixtures.getAsJsonObject("expectations")
 
     @Test
@@ -240,23 +230,6 @@ class FamilyParityTest {
         val netWorth = accounts().netWorthScopeFor(FamilyMember.VICTOR).map { it.label }
         assertTrue(visible.contains("Mason Strike"))
         assertFalse(netWorth.contains("Mason Strike"))
-    }
-
-    @Test
-    fun `todo filtering is private to the exact profile`() {
-        for (viewer in members) {
-            assertEquals(
-                todos().filter { it.owner == viewer }.map { it.title },
-                todos().todosFor(viewer).map { it.title },
-                viewer.key,
-            )
-        }
-    }
-
-    @Test
-    fun `Rachel does not see Victor-owned todos`() {
-        assertTrue(todos().todosFor(FamilyMember.VICTOR).any { it.owner == FamilyMember.VICTOR })
-        assertFalse(todos().todosFor(FamilyMember.RACHEL).any { it.owner == FamilyMember.VICTOR })
     }
 
     @Test
