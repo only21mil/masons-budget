@@ -12,6 +12,7 @@
   ],
   "billPays": [
     { "id": "adult-bill", "date": "2026-08-25", "principalCents": "1000", "feeUsdCents": "25", "owner": "rachel" },
+    { "id": "adult-credit-card-payment", "date": "2026-08-25", "principalCents": "5000", "feeUsdCents": "10", "owner": "victor", "budgetEffect": "credit_card_payment" },
     { "id": "mason-bill", "date": "2026-08-25", "principalCents": "200", "feeUsdCents": "5", "owner": "mason" }
   ],
   "cases": [

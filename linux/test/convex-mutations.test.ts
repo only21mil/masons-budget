@@ -1191,6 +1191,7 @@ describe("paired-device main controller", () => {
       sats: 270_000n,
       priceUsdCents: 9_259_259_00n,
       usdCents: 250_000n,
+      feeUsdCents: 125n,
       linkedIncome: {
         id: "income-buy-01",
         owner: "victor" as const,
@@ -1201,8 +1202,11 @@ describe("paired-device main controller", () => {
       },
     }
     expect(validateMutationRequest(linked)).toMatchObject({
+      feeUsdCents: 125n,
       linkedIncome: { id: "income-buy-01", amountCents: 250_000n },
     })
+    expect(validateMutationRequest({ ...linked, feeUsdCents: -1n })).toBeNull()
+    expect(validateMutationRequest({ ...linked, feeUsdCents: 1n << 63n })).toBeNull()
 
     // Every field the server requires to agree is re-checked here, so a request
     // that cannot be accepted never reaches the network.
@@ -1235,7 +1239,11 @@ describe("paired-device main controller", () => {
       path: PAIRED_DEVICE_PATHS["btcBuy.upsert"],
       args: {
         sourceFile: "bitcoin-buys",
-        buy: { id: "income-buy-01", usdCents: encodeConvexInt64(250_000n) },
+        buy: {
+          id: "income-buy-01",
+          usdCents: encodeConvexInt64(250_000n),
+          feeUsdCents: encodeConvexInt64(125n),
+        },
         linkedIncome: {
           id: "income-buy-01",
           owner: "victor",
@@ -1258,6 +1266,21 @@ describe("paired-device main controller", () => {
       "source",
       "sourceFile",
     ])
+  })
+
+  it("requires a positive exact budget-category deletion revision", () => {
+    const request = {
+      kind: "budgetCategory.delete" as const,
+      requestId: "request_budget_delete_revision",
+      actor: "mason" as const,
+      owner: "mason" as const,
+      month: "2026-08",
+      name: "School",
+      baseUpdatedAtMs: 1,
+    }
+    expect(validateMutationRequest(request)).toEqual(request)
+    expect(validateMutationRequest({ ...request, baseUpdatedAtMs: 0 })).toBeNull()
+    expect(validateMutationRequest({ ...request, baseUpdatedAtMs: 1.5 })).toBeNull()
   })
 
   it("pins the bill-pay platform on the wire over a legacy inbound label", async () => {

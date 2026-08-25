@@ -221,7 +221,7 @@ export const MIGRATION_FILES = MIGRATION_SOURCES.map((source) => source.file);
  */
 export const MONEY_COLUMNS: Record<MigrationKind, readonly string[]> = {
   transaction: ["amountCents"],
-  btcBuy: ["sats", "priceUsdCents", "usdCents"],
+  btcBuy: ["sats", "priceUsdCents", "usdCents", "feeUsdCents"],
   btcBillPay: [
     "amountUsdCents",
     "btcSpentSats",
@@ -477,6 +477,19 @@ export function jsonNumberToSats(value: number): bigint {
 
 export function parseCents(value: unknown): bigint {
   return parseMinorUnits(value, 2);
+}
+
+function parseManualFeeCents(value: unknown): bigint {
+  if (value === undefined || value === null) return 0n;
+  const text = String(value).trim();
+  if (!/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(text)) {
+    throw new RangeError("fee_usd must be an exact non-negative cent value");
+  }
+  const cents = parseCents(text);
+  if (cents > (1n << 63n) - 1n) {
+    throw new RangeError("fee_usd must fit signed int64 cents");
+  }
+  return cents;
 }
 
 export function parseBtcToSats(value: unknown): bigint {
@@ -999,6 +1012,7 @@ export function projectRow(
             : parseBtcToSats(raw.amount_btc),
         priceUsdCents: parseCents(raw.price_usd),
         usdCents: parseCents(raw.usd),
+        feeUsdCents: parseManualFeeCents(raw.fee_usd),
         note: optionalString(raw.note),
         status: optionalString(raw.status),
         costBasisStatus: optionalString(raw.cost_basis_status),
@@ -1021,7 +1035,7 @@ export function projectRow(
         btcPriceCents: parseCents(raw.btc_price),
         platform: optionalString(raw.platform),
         note: optionalString(raw.note),
-        feeUsdCents: parseCents(raw.fee_usd),
+        feeUsdCents: parseManualFeeCents(raw.fee_usd),
         reference: optionalString(raw.reference),
       };
     }

@@ -9,33 +9,40 @@ import {
 import type { FamilyMember } from "../src/family.ts"
 import type { Budget } from "../src/readModel.ts"
 
+type Accepted = {
+  name: string
+  activeProfile: FamilyMember
+  budgetOwner: FamilyMember
+  currentMonth: string
+  sourceFile: string
+  categoryName: string
+  baseUpdatedAtMs: number
+  expectedOwner: "victor" | "mason"
+}
+
 const fixture = JSON.parse(
   readFileSync(new URL("../fixtures/budget-category-deletion-cases.json", import.meta.url), "utf8"),
 ) as {
   contractVersion: number
-  accepted: {
-    activeProfile: FamilyMember
-    currentMonth: string
-    sourceFile: string
-    categoryName: string
-    baseUpdatedAtMs: number
-  }
+  accepted: Accepted[]
   rejected: Array<{
     name: string
-    replace?: Partial<typeof fixture.accepted>
+    replace?: Partial<Omit<Accepted, "name" | "budgetOwner" | "expectedOwner">>
     budgetOwner?: FamilyMember
+    budgetMonth?: string
     reason: BudgetCategoryDeletionRejection
   }>
 }
 
-const budget = (owner: FamilyMember = "victor"): Budget => ({
+const budget = (
+  owner: FamilyMember = "victor",
+  month = "2026-08",
+  categories = ["Groceries", "School"],
+): Budget => ({
   updatedAtMs: 1787654321000,
-  month: "2026-08",
+  month,
   coinbaseOneBalance: 0n,
-  categories: [
-    { name: "Groceries", icon: null, budget: 10000n, spent: 0n },
-    { name: "groceries", icon: null, budget: 500n, spent: 0n },
-  ],
+  categories: categories.map((name) => ({ name, icon: null, budget: 10000n, spent: 0n })),
   effectiveApr: null,
   strategyNote: null,
   income: null,
@@ -45,55 +52,67 @@ const budget = (owner: FamilyMember = "victor"): Budget => ({
   owner,
 })
 
-test("current-month category deletion returns canonical exact-revision intent only", () => {
-  assert.equal(fixture.contractVersion, 1)
-  assert.deepEqual(
-    budgetCategoryDeletionEligibility({ ...fixture.accepted, budget: budget() }),
-    {
-      eligible: true,
-      intent: {
-        owner: "victor",
-        sourceFile: "budget",
-        month: "2026-08",
-        categoryName: "Groceries",
-        baseUpdatedAtMs: 1787654321000,
-      },
-    },
-  )
-})
-
-test("both adult profiles can delete from the shared current-month budget", () => {
-  for (const [activeProfile, budgetOwner] of [
-    ["victor", "rachel"],
-    ["rachel", "victor"],
-  ] as const) {
+test("current-month category deletion supports canonical adult and Mason budgets", () => {
+  assert.equal(fixture.contractVersion, 2)
+  for (const row of fixture.accepted) {
     const result = budgetCategoryDeletionEligibility({
-      ...fixture.accepted,
-      activeProfile,
-      budget: budget(budgetOwner),
+      activeProfile: row.activeProfile,
+      currentMonth: row.currentMonth,
+      budget: budget(row.budgetOwner),
+      sourceFile: row.sourceFile,
+      categoryName: row.categoryName,
+      baseUpdatedAtMs: row.baseUpdatedAtMs,
     })
-    assert.equal(result.eligible, true)
-    if (result.eligible) assert.equal(result.intent.owner, "victor")
+    assert.equal(result.eligible, true, row.name)
+    if (!result.eligible) continue
+    assert.equal(result.intent.owner, row.expectedOwner, row.name)
+    assert.equal(
+      result.intent.sourceFile,
+      row.expectedOwner === "victor" ? "budget" : "mason-budget",
+      row.name,
+    )
   }
 })
 
-test("category deletion rejects month, source, category, revision, and child mismatches", () => {
+test("category deletion rejects invalid identity, month, name, and revision", () => {
+  const accepted = fixture.accepted[0]!
   for (const row of fixture.rejected) {
     const result = budgetCategoryDeletionEligibility({
-      ...fixture.accepted,
+      activeProfile: accepted.activeProfile,
+      currentMonth: accepted.currentMonth,
+      sourceFile: accepted.sourceFile,
+      categoryName: accepted.categoryName,
+      baseUpdatedAtMs: accepted.baseUpdatedAtMs,
       ...row.replace,
-      budget: budget(row.budgetOwner),
+      budget: budget(row.budgetOwner ?? accepted.budgetOwner, row.budgetMonth),
     })
     assert.deepEqual(result, { eligible: false, reason: row.reason }, row.name)
   }
 })
 
-test("category matching is exact, including case", () => {
+test("folded collisions fail closed instead of deleting an arbitrary category", () => {
+  const accepted = fixture.accepted[0]!
   const result = budgetCategoryDeletionEligibility({
-    ...fixture.accepted,
+    activeProfile: accepted.activeProfile,
+    currentMonth: accepted.currentMonth,
+    sourceFile: accepted.sourceFile,
+    categoryName: accepted.categoryName,
+    baseUpdatedAtMs: accepted.baseUpdatedAtMs,
+    budget: budget("victor", "2026-08", ["Groceries", "groceries"]),
+  })
+  assert.deepEqual(result, { eligible: false, reason: "ambiguous-category" })
+})
+
+test("a unique folded match resolves to the stored canonical category name", () => {
+  const accepted = fixture.accepted[0]!
+  const result = budgetCategoryDeletionEligibility({
+    activeProfile: accepted.activeProfile,
+    currentMonth: accepted.currentMonth,
+    sourceFile: accepted.sourceFile,
     categoryName: "groceries",
+    baseUpdatedAtMs: accepted.baseUpdatedAtMs,
     budget: budget(),
   })
   assert.equal(result.eligible, true)
-  if (result.eligible) assert.equal(result.intent.categoryName, "groceries")
+  if (result.eligible) assert.equal(result.intent.categoryName, "Groceries")
 })

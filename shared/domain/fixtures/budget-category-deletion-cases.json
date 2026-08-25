@@ -1,23 +1,21 @@
 {
-  "$comment": "Current-month budget category deletion produces intent only. It does not name a mutation path or authorize optimistic local deletion.",
-  "contractVersion": 1,
-  "accepted": {
-    "activeProfile": "rachel",
-    "currentMonth": "2026-08",
-    "sourceFile": "budget",
-    "categoryName": "Groceries",
-    "baseUpdatedAtMs": 1787654321000
-  },
+  "$comment": "Current-month budget category deletion uses canonical budget identity, an exact stored category name, collision-safe folded matching, and a positive exact revision.",
+  "contractVersion": 2,
+  "accepted": [
+    { "name": "adult shared budget", "activeProfile": "rachel", "budgetOwner": "victor", "currentMonth": "2026-08", "sourceFile": "budget", "categoryName": "Groceries", "baseUpdatedAtMs": 1787654321000, "expectedOwner": "victor" },
+    { "name": "Mason budget", "activeProfile": "mason", "budgetOwner": "mason", "currentMonth": "2026-08", "sourceFile": "mason-budget", "categoryName": "School", "baseUpdatedAtMs": 1787654321000, "expectedOwner": "mason" }
+  ],
   "rejected": [
     { "name": "invalid current month", "replace": { "currentMonth": "2026-8" }, "reason": "invalid-current-month" },
-    { "name": "historical month", "replace": { "currentMonth": "2026-09" }, "reason": "month-mismatch" },
-    { "name": "future month", "replace": { "currentMonth": "2026-07" }, "reason": "month-mismatch" },
+    { "name": "historical document", "budgetMonth": "2026-07", "reason": "month-mismatch" },
     { "name": "source mismatch", "replace": { "sourceFile": "mason-budget" }, "reason": "source-mismatch" },
-    { "name": "missing category", "replace": { "categoryName": "GROCERIES" }, "reason": "missing-category" },
-    { "name": "invalid revision", "replace": { "baseUpdatedAtMs": 1.5 }, "reason": "invalid-revision" },
+    { "name": "owner mismatch", "budgetOwner": "mason", "reason": "owner-mismatch" },
+    { "name": "missing category", "replace": { "categoryName": "Utilities" }, "reason": "missing-category" },
+    { "name": "trimmed alias", "replace": { "categoryName": " Groceries " }, "reason": "invalid-category" },
+    { "name": "invalid zero revision", "replace": { "baseUpdatedAtMs": 0 }, "reason": "invalid-revision" },
+    { "name": "fractional revision", "replace": { "baseUpdatedAtMs": 1.5 }, "reason": "invalid-revision" },
     { "name": "unsafe revision", "replace": { "baseUpdatedAtMs": 9007199254740992 }, "reason": "invalid-revision" },
     { "name": "stale revision", "replace": { "baseUpdatedAtMs": 1787654320999 }, "reason": "revision-mismatch" },
-    { "name": "child actor", "replace": { "activeProfile": "mason" }, "reason": "unsupported-child-budget" },
-    { "name": "child budget", "budgetOwner": "mason", "reason": "unsupported-child-budget" }
+    { "name": "unsupported Maddox budget", "replace": { "activeProfile": "maddox" }, "reason": "unsupported-profile" }
   ]
 }

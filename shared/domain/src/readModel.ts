@@ -365,11 +365,11 @@ export function normalizeBTCBuy(raw: Record<string, unknown>, fallbackOwner?: Fa
     sats: raw.amount_sats !== undefined ? BigInt(String(raw.amount_sats)) : parseBtcToSats(raw.amount_btc),
     priceUsd: parseCents(raw.price_usd),
     usd: parseCents(raw.usd),
-    feeUsd: Object.hasOwn(raw, "feeUsdCents")
+    feeUsd: Object.prototype.hasOwnProperty.call(raw, "feeUsdCents")
       ? parseManualFeeUsdCents(raw.feeUsdCents)
       : raw.fee_usd === undefined || raw.fee_usd === null
         ? 0n
-        : parseCents(raw.fee_usd),
+        : parseLegacyManualFeeUsdCents(raw.fee_usd),
     note: optionalString(raw.note),
     status: optionalString(raw.status),
     costBasisStatus: optionalString(raw.cost_basis_status),
@@ -406,14 +406,26 @@ export function normalizeBTCBillPay(raw: Record<string, unknown>, fallbackOwner?
       : BigInt(String(raw.btcPriceCents)),
     platform: optionalString(raw.platform),
     note: optionalString(raw.note),
-    feeUsd: Object.hasOwn(raw, "feeUsdCents")
+    feeUsd: Object.prototype.hasOwnProperty.call(raw, "feeUsdCents")
       ? parseManualFeeUsdCents(raw.feeUsdCents)
       : raw.fee_usd === undefined || raw.fee_usd === null
         ? 0n
-        : parseCents(raw.fee_usd),
+        : parseLegacyManualFeeUsdCents(raw.fee_usd),
     reference: optionalString(raw.reference),
     owner: raw.owner === undefined && fallbackOwner ? fallbackOwner : coerceOwner(raw.owner),
   }
+}
+
+function parseLegacyManualFeeUsdCents(value: unknown): bigint {
+  const text = String(value).trim()
+  if (!/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(text)) {
+    throw new RangeError("legacy fee_usd must be an exact non-negative cent value")
+  }
+  const cents = parseCents(text)
+  if (cents > (1n << 63n) - 1n) {
+    throw new RangeError("legacy fee_usd must fit signed int64 cents")
+  }
+  return cents
 }
 
 // ── Todos ───────────────────────────────────────────────────────────────────

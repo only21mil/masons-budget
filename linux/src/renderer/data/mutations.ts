@@ -207,6 +207,8 @@ export interface BitcoinBuyLinkInput {
   readonly incomeSource: string
   readonly sats: bigint | null
   readonly priceUsdCents: bigint | null
+  /** Empty manual input is represented as null or omission and stored as zero. */
+  readonly feeUsdCents?: bigint | null
   readonly note?: string
   readonly loggedBy?: string
 }
@@ -241,6 +243,8 @@ export function bitcoinBuyLinkFor(input: BitcoinBuyLinkInput): BitcoinBuyLink | 
   if (!id || !input.date || !buySource || !incomeSource) return null
   if (input.sats === null || input.sats <= 0n) return null
   if (input.priceUsdCents === null || input.priceUsdCents <= 0n) return null
+  const feeUsdCents = input.feeUsdCents ?? 0n
+  if (feeUsdCents < 0n || !isConvexInt64(feeUsdCents)) return null
   const note = input.note?.trim()
   const loggedBy = input.loggedBy?.trim()
 
@@ -255,6 +259,7 @@ export function bitcoinBuyLinkFor(input: BitcoinBuyLinkInput): BitcoinBuyLink | 
     sats: input.sats,
     priceUsdCents: input.priceUsdCents,
     usdCents: input.amountCents,
+    feeUsdCents,
     ...(note ? { note } : {}),
     ...(loggedBy ? { loggedBy } : {}),
     linkedIncome: {
@@ -650,6 +655,7 @@ export function applyOptimisticMutation(
         sats: request.sats,
         priceUsd: request.priceUsdCents,
         usd: request.usdCents,
+        feeUsd: request.feeUsdCents ?? 0n,
         note: request.note ?? null,
         status: request.buyStatus ?? null,
         costBasisStatus: request.costBasisStatus ?? null,

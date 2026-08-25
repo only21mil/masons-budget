@@ -1,4 +1,5 @@
 import { type FamilyMember, ledgerOwner } from "./family.ts"
+import { isConvexInt64 } from "./convexInt64.ts"
 import type { BTCBillPay, Transaction } from "./readModel.ts"
 import { spendAmount } from "./readModel.ts"
 import { isIsoDate } from "./todo.ts"
@@ -49,20 +50,35 @@ export function deriveMoneyOutToday(input: {
     )
     .map((row) => ({ kind: "transaction", row, contributionCents: spendAmount(row) }))
   const billPaySources: MoneyOutBillPaySource[] = input.billPays
-    .filter((row) => ledgerOwner(row.owner) === owner && row.date === input.date)
+    .filter((row) =>
+      ledgerOwner(row.owner) === owner &&
+      row.date === input.date &&
+      row.budgetEffect !== "credit_card_payment"
+    )
     .map((row) => ({
       kind: "btc_bill_pay",
       row,
       principalCents: row.amountUsd,
       feeUsdCents: row.feeUsd,
-      contributionCents: row.amountUsd + row.feeUsd,
+      contributionCents: checkedCentsAdd(row.amountUsd, row.feeUsd),
     }))
   const sources: MoneyOutTodaySource[] = [...transactionSources, ...billPaySources]
 
   return {
     date: input.date,
     owner,
-    totalCents: sources.reduce((total, source) => total + source.contributionCents, 0n),
+    totalCents: sources.reduce(
+      (total, source) => checkedCentsAdd(total, source.contributionCents),
+      0n,
+    ),
     sources,
   }
+}
+
+function checkedCentsAdd(left: bigint, right: bigint): bigint {
+  const total = left + right
+  if (!isConvexInt64(left) || !isConvexInt64(right) || !isConvexInt64(total)) {
+    throw new RangeError("Money Out Today cents must fit signed int64")
+  }
+  return total
 }

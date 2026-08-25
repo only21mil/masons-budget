@@ -391,7 +391,7 @@ function todo(value: unknown, viewer: VogelVaultMember): VogelVaultTodoRow {
     ["todoId", "owner", "title", "done", "flagged", "updatedAtMs"],
   )
   const owner = member(row)
-  assertVisible(viewer, owner)
+  if (owner !== viewer) throw new InvalidValue()
   return {
     todoId: text(row, "todoId", 256),
     owner,
@@ -419,6 +419,8 @@ function btcBuy(value: unknown, viewer: VogelVaultMember, scope: VogelVaultBtcSc
   const owner = member(row)
   assertVisible(viewer, owner, scope)
   const { date, month } = dateAndMonth(row)
+  const feeUsdCents = optionalInt64(row, "feeUsdCents") ?? 0n
+  if (feeUsdCents < 0n) throw new InvalidValue()
   return {
     buyId: text(row, "buyId", 256),
     owner,
@@ -428,6 +430,7 @@ function btcBuy(value: unknown, viewer: VogelVaultMember, scope: VogelVaultBtcSc
     sats: int64(row, "sats"),
     priceUsdCents: int64(row, "priceUsdCents"),
     usdCents: int64(row, "usdCents"),
+    feeUsdCents,
     ...optionalField("note", optionalText(row, "note")),
     ...optionalField("status", optionalText(row, "status")),
     ...optionalField("costBasisStatus", optionalText(row, "costBasisStatus")),

@@ -185,6 +185,7 @@ function btcBuy(row: VogelVaultBtcBuyRow): BTCBuy {
     sats: row.sats,
     priceUsd: row.priceUsdCents,
     usd: row.usdCents,
+    feeUsd: row.feeUsdCents ?? 0n,
     note: row.note ?? null,
     status: row.status ?? null,
     costBasisStatus: row.costBasisStatus ?? null,

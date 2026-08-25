@@ -39,8 +39,7 @@ export interface LinkedIncomeBuyWriteRequest {
 }
 
 /**
- * Describe one atomic canonical-income plus Bitcoin-buy request. This Phase 1
- * client contract does not assert that a deployed backend accepts the fee field.
+ * Describe one atomic canonical-income plus Bitcoin-buy request.
  *
  * The same stable caller-generated id identifies both rows. The buy is the only
  * side that carries sats, so retrying the pair cannot post the Bitcoin twice.

@@ -14,6 +14,8 @@
     "./budgetCategoryDeletion": "./src/budgetCategoryDeletion.ts",
     "./manualFee": "./src/manualFee.ts",
     "./moneyOutToday": "./src/moneyOutToday.ts",
+    "./incomeBuyWriteContract": "./src/incomeBuyWriteContract.ts",
+    "./writeContract": "./src/writeContract.ts",
     "./fixtures/budget-category-deletion-cases.json": "./fixtures/budget-category-deletion-cases.json",
     "./fixtures/finance-market-cases.json": "./fixtures/finance-market-cases.json",
     "./fixtures/manual-fee-cases.json": "./fixtures/manual-fee-cases.json",

@@ -107,3 +107,10 @@ test("read normalization defaults missing and null fees without changing legacy 
   assert.equal(normalizeBTCBillPay({ owner: "victor", feeUsdCents: null }).feeUsd, 0n)
   assert.equal(normalizeBTCBillPay({ owner: "victor", fee_usd: "1.25" }).feeUsd, 125n)
 })
+
+test("legacy fee_usd rejects negative, fractional-cent, and int64-overflow values", () => {
+  for (const feeUsd of ["-0.01", "0.001", "92233720368547758.08"]) {
+    assert.throws(() => normalizeBTCBuy({ owner: "victor", fee_usd: feeUsd }), RangeError)
+    assert.throws(() => normalizeBTCBillPay({ owner: "victor", fee_usd: feeUsd }), RangeError)
+  }
+})

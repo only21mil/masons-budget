@@ -539,6 +539,7 @@ function projectBtcBuy(row: {
   sats: bigint;
   priceUsdCents: bigint;
   usdCents: bigint;
+  feeUsdCents?: bigint;
   note?: string;
   status?: string;
   costBasisStatus?: string;
@@ -555,6 +556,7 @@ function projectBtcBuy(row: {
     sats: row.sats,
     priceUsdCents: row.priceUsdCents,
     usdCents: row.usdCents,
+    feeUsdCents: row.feeUsdCents ?? 0n,
     note: row.note,
     status: row.status,
     costBasisStatus: row.costBasisStatus,
@@ -1150,7 +1152,7 @@ export const listIncome = query({
   },
 });
 
-/** Todos a viewer may see, most recently updated first. */
+/** Todos owned by the exact active profile, most recently updated first. */
 export const listTodos = query({
   args: {
     viewer: familyMemberValidator,
@@ -1160,21 +1162,18 @@ export const listTodos = query({
   },
   handler: async (ctx, { viewer, done, limit, token }) => {
     validateReadToken(token);
-    const owners = ownersInScope(viewer, "visible");
     const cap = requestedRowCap(limit, "listTodos");
     const wanted = done === undefined ? [false, true] : [done];
 
     const perOwner = await Promise.all(
-      owners.flatMap((owner) =>
-        wanted.map((doneValue) =>
-          ctx.db
-            .query("todos")
-            .withIndex(PUBLIC_QUERY_INDEX_PLAN.listTodos.all.name, (q) =>
-              q.eq("owner", owner).eq("done", doneValue),
-            )
-            .order("desc")
-            .take(cap),
-        ),
+      wanted.map((doneValue) =>
+        ctx.db
+          .query("todos")
+          .withIndex(PUBLIC_QUERY_INDEX_PLAN.listTodos.all.name, (q) =>
+            q.eq("owner", viewer).eq("done", doneValue),
+          )
+          .order("desc")
+          .take(cap),
       ),
     );
 
@@ -1837,6 +1836,10 @@ function requireDeviceMonth(value: string) {
   }
 }
 
+function trustedCurrentMonth(now = Date.now()): string {
+  return new Date(now).toISOString().slice(0, 7);
+}
+
 function requireDeviceNonnegative(value: bigint, field: string) {
   if (value < 0n) {
     deviceFailure("VALIDATION_FAILED", `${field} must not be negative.`);
@@ -2455,6 +2458,7 @@ async function upsertBtcBuyRow(
   requireDevicePositive(row.sats, "buy.sats");
   requireDevicePositive(row.priceUsdCents, "buy.priceUsdCents");
   requireDevicePositive(row.usdCents, "buy.usdCents");
+  requireDeviceNonnegative(row.feeUsdCents ?? 0n, "buy.feeUsdCents");
   const existing = await ctx.db
     .query("btcBuys")
     .withIndex("by_source_buy_id", (q: any) =>
@@ -2489,6 +2493,7 @@ async function upsertBtcBuyRow(
       existing.sats === row.sats &&
       existing.priceUsdCents === row.priceUsdCents &&
       existing.usdCents === row.usdCents &&
+      (existing.feeUsdCents ?? 0n) === (row.feeUsdCents ?? 0n) &&
       existing.note === row.note &&
       existing.status === row.status &&
       existing.costBasisStatus === row.costBasisStatus &&
@@ -3285,6 +3290,7 @@ const btcBuyDeviceInput = v.object({
   sats: v.int64(),
   priceUsdCents: v.int64(),
   usdCents: v.int64(),
+  feeUsdCents: v.optional(v.int64()),
   note: v.optional(v.string()),
   status: v.optional(v.string()),
   costBasisStatus: v.optional(v.string()),
@@ -3632,6 +3638,7 @@ const btcBuyInput = v.object({
   sats: v.int64(),
   priceUsdCents: v.int64(),
   usdCents: v.int64(),
+  feeUsdCents: v.optional(v.int64()),
   note: v.optional(v.string()),
   status: v.optional(v.string()),
   costBasisStatus: v.optional(v.string()),
@@ -3671,6 +3678,7 @@ export const upsertBtcBuy = mutation({
       sats: buy.sats,
       priceUsdCents: buy.priceUsdCents,
       usdCents: buy.usdCents,
+      feeUsdCents: buy.feeUsdCents ?? 0n,
       note: optionalText(buy.note),
       status: optionalText(buy.status),
       costBasisStatus: optionalText(buy.costBasisStatus),
@@ -4081,6 +4089,15 @@ async function deleteBudgetCategoryCore(
   name: string,
   optimistic?: OptimisticWrite,
 ): Promise<boolean> {
+  const currentMonth = trustedCurrentMonth();
+  if (month !== currentMonth) {
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      `Budget category deletion is limited to the current month ${currentMonth}.`,
+      "budgetCategory",
+      name,
+    );
+  }
   const expectedOwner = budgetOwnerForSource(sourceFile);
   if (owner !== expectedOwner) {
     deviceFailure(
@@ -4125,10 +4142,27 @@ async function deleteBudgetCategoryCore(
       name,
     );
   }
+  if (optimistic?.baseUpdatedAtMs !== undefined && optimistic.baseUpdatedAtMs <= 0) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "baseUpdatedAtMs must be a positive exact revision for category deletion.",
+      "budgetCategory",
+      name,
+    );
+  }
   const targetFold = foldedCategoryName(name);
-  const index = existing.categories.findIndex(
-    (candidate) => foldedCategoryName(candidate.name) === targetFold,
-  );
+  const foldedMatches = existing.categories
+    .map((candidate, index) => ({ candidate, index }))
+    .filter(({ candidate }) => foldedCategoryName(candidate.name) === targetFold);
+  if (foldedMatches.length > 1) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      `Budget category ${JSON.stringify(name)} has a case-folded identity collision.`,
+      "budgetCategory",
+      name,
+    );
+  }
+  const index = foldedMatches[0]?.index ?? -1;
   const tombstoneId = targetFold;
   const tombstone = optimistic
     ? await findRowTombstone(ctx, "budgetCategory", sourceFile, tombstoneId)
@@ -4143,7 +4177,7 @@ async function deleteBudgetCategoryCore(
         ? "The category deletion does not match the current revision."
         : "The budget category to delete does not exist.",
       "budgetCategory",
-      name,
+      foldedMatches[0]?.candidate.name ?? name,
     );
   }
   if (optimistic && optimistic.baseUpdatedAtMs !== existing.updatedAtMs) {
@@ -5560,6 +5594,7 @@ export const upsertBtcBuyFromDevice = mutation({
     requireDevicePositive(args.buy.sats, "buy.sats");
     requireDevicePositive(args.buy.priceUsdCents, "buy.priceUsdCents");
     requireDevicePositive(args.buy.usdCents, "buy.usdCents");
+    requireDeviceNonnegative(args.buy.feeUsdCents ?? 0n, "buy.feeUsdCents");
     requireDeviceOptionalText(args.buy.note, "buy.note");
     requireDeviceOptionalText(args.buy.status, "buy.status");
     requireDeviceOptionalText(args.buy.costBasisStatus, "buy.costBasisStatus");
@@ -5616,6 +5651,7 @@ export const upsertBtcBuyFromDevice = mutation({
       sats: args.buy.sats,
       priceUsdCents: args.buy.priceUsdCents,
       usdCents: args.buy.usdCents,
+      feeUsdCents: args.buy.feeUsdCents ?? 0n,
       note: optionalText(args.buy.note),
       status: optionalText(args.buy.status),
       costBasisStatus: optionalText(args.buy.costBasisStatus),

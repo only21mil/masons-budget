@@ -398,6 +398,7 @@ describe("income recorded as a Bitcoin buy", () => {
       sats: 270_000n,
       priceUsdCents: 9_259_259_00n,
       usdCents: 250_000n,
+      feeUsdCents: 0n,
       linkedIncome: {
         id: "transaction-linked-01",
         owner: "victor",
@@ -466,8 +467,18 @@ describe("income recorded as a Bitcoin buy", () => {
       expect(buys).toHaveLength(1)
       expect(income).toHaveLength(1)
       expect(buys[0]!.sats).toBe(270_000n)
+      expect(buys[0]!.feeUsd).toBe(0n)
       expect(income[0]!.amount).toBe(250_000n)
       expect(income[0]!.month).toBe("2026-08")
     }
+  })
+
+  it("preserves a manual buy fee through request construction and optimistic rows", () => {
+    const link = bitcoinBuyLinkFor({ ...base, feeUsdCents: 125n })!
+    expect(link.feeUsdCents).toBe(125n)
+    const envelope = applyOptimisticMutation(buildSanitizedFixtureEnvelope("victor"), link)
+    expect(envelope.btcBuys.value.find((row) => row.id === link.id)?.feeUsd).toBe(125n)
+    expect(bitcoinBuyLinkFor({ ...base, feeUsdCents: -1n })).toBeNull()
+    expect(bitcoinBuyLinkFor({ ...base, feeUsdCents: 1n << 63n })).toBeNull()
   })
 })
