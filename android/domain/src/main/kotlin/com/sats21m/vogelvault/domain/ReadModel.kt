@@ -129,6 +129,8 @@ data class Budget(
     val income: BudgetIncome? = null,
     val strategyNote: String? = null,
     override val owner: FamilyMember,
+    /** Exact remote document revision used by budget write fences. */
+    val updatedAtMs: Long = 0L,
 ) : Owned {
     val plannedCents: Long? get() = categories.sumExactOrNull(BudgetCategory::budgetCents)
     val actualCents: Long? get() = categories.sumExactOrNull(BudgetCategory::spentCents)

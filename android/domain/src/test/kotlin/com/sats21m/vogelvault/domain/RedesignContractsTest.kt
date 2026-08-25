@@ -64,6 +64,19 @@ class RedesignContractsTest {
     }
 
     @Test
+    fun `money out today excludes credit-card bill payments`() {
+        val payment = billPay(
+            "card",
+            FamilyMember.VICTOR,
+            amount = 12_345L,
+            fee = 67L,
+            budgetEffect = BillPayBudgetEffect.CREDIT_CARD_PAYMENT,
+        )
+
+        assertEquals(0L, deriveMoneyOutTodayCents(FamilyMember.VICTOR, DAY, emptyList(), listOf(payment)))
+    }
+
+    @Test
     fun `money out today rejects invalid days and every overflow boundary`() {
         assertFailsWith<IllegalArgumentException> {
             deriveMoneyOutTodayCents(FamilyMember.VICTOR, "2026-02-30", emptyList(), emptyList())
@@ -113,25 +126,36 @@ class RedesignContractsTest {
     @Test
     fun `adult current-month category delete requires canonical owner source category and revision`() {
         val budget = budget(FamilyMember.VICTOR)
-        val intent = intent()
 
-        assertEligible(
+        val accepted =
             validateCurrentMonthCategoryDelete(
                 FamilyMember.RACHEL,
                 MONTH,
                 budget,
+                "budget",
+                "groceries",
                 REVISION,
-                intent,
+            )
+        assertEligible(accepted)
+        assertEquals(
+            CurrentMonthCategoryDeleteIntent(
+                owner = FamilyMember.VICTOR,
+                sourceFile = "budget",
+                month = MONTH,
+                categoryName = "Groceries",
+                baseUpdatedAtMs = REVISION,
             ),
+            accepted.intent,
         )
         assertRejected(
             CategoryDeleteRejection.OWNER_MISMATCH,
             validateCurrentMonthCategoryDelete(
                 FamilyMember.RACHEL,
                 MONTH,
-                budget.copy(owner = FamilyMember.RACHEL),
+                budget.copy(owner = FamilyMember.MASON),
+                "budget",
+                "Groceries",
                 REVISION,
-                intent,
             ),
         )
         assertRejected(
@@ -140,18 +164,20 @@ class RedesignContractsTest {
                 FamilyMember.RACHEL,
                 MONTH,
                 budget,
+                "mason-budget",
+                "Groceries",
                 REVISION,
-                intent.copy(source = "mason-budget"),
             ),
         )
         assertRejected(
-            CategoryDeleteRejection.CATEGORY_MISSING,
+            CategoryDeleteRejection.MISSING_CATEGORY,
             validateCurrentMonthCategoryDelete(
                 FamilyMember.RACHEL,
                 MONTH,
                 budget,
+                "budget",
+                "Missing",
                 REVISION,
-                intent.copy(categoryName = "groceries"),
             ),
         )
     }
@@ -167,53 +193,71 @@ class RedesignContractsTest {
                     FamilyMember.VICTOR,
                     invalidMonth,
                     budget,
+                    "budget",
+                    "Groceries",
                     REVISION,
-                    intent(),
                 ),
             )
         }
         for (month in listOf("2026-07", "2026-09")) {
             assertRejected(
-                CategoryDeleteRejection.NOT_CURRENT_MONTH,
+                CategoryDeleteRejection.MONTH_MISMATCH,
                 validateCurrentMonthCategoryDelete(
                     FamilyMember.VICTOR,
                     MONTH,
                     budget.copy(month = month),
+                    "budget",
+                    "Groceries",
                     REVISION,
-                    intent(month = month),
                 ),
             )
         }
         assertRejected(
-            CategoryDeleteRejection.NOT_CURRENT_MONTH,
+            CategoryDeleteRejection.INVALID_CATEGORY,
             validateCurrentMonthCategoryDelete(
                 FamilyMember.VICTOR,
                 MONTH,
                 budget,
+                "budget",
+                " Groceries ",
                 REVISION,
-                intent(month = "2026-07"),
             ),
         )
-        for (revision in listOf(0L, -1L, REVISION - 1L)) {
+        for (revision in listOf(0L, -1L, 9_007_199_254_740_992L)) {
             assertRejected(
                 CategoryDeleteRejection.INVALID_REVISION,
                 validateCurrentMonthCategoryDelete(
                     FamilyMember.VICTOR,
                     MONTH,
                     budget,
-                    REVISION,
-                    intent().copy(baseUpdatedAtMs = revision),
+                    "budget",
+                    "Groceries",
+                    revision,
                 ),
             )
         }
         assertRejected(
-            CategoryDeleteRejection.INVALID_REVISION,
+            CategoryDeleteRejection.REVISION_MISMATCH,
             validateCurrentMonthCategoryDelete(
                 FamilyMember.VICTOR,
                 MONTH,
                 budget,
-                0L,
-                intent(),
+                "budget",
+                "Groceries",
+                REVISION - 1L,
+            ),
+        )
+        assertRejected(
+            CategoryDeleteRejection.AMBIGUOUS_CATEGORY,
+            validateCurrentMonthCategoryDelete(
+                FamilyMember.VICTOR,
+                MONTH,
+                budget.copy(
+                    categories = budget.categories + BudgetCategory(" groceries ", 1L, 0L),
+                ),
+                "budget",
+                "Groceries",
+                REVISION,
             ),
         )
     }
@@ -225,18 +269,20 @@ class RedesignContractsTest {
                 FamilyMember.MASON,
                 MONTH,
                 budget(FamilyMember.MASON),
+                "mason-budget",
+                "Groceries",
                 REVISION,
-                intent(owner = FamilyMember.MASON, source = "mason-budget"),
             ),
         )
         assertRejected(
-            CategoryDeleteRejection.UNSUPPORTED_CHILD_BUDGET,
+            CategoryDeleteRejection.UNSUPPORTED_PROFILE,
             validateCurrentMonthCategoryDelete(
                 FamilyMember.MADDOX,
                 MONTH,
                 budget(FamilyMember.MADDOX),
+                "maddox-budget",
+                "Groceries",
                 REVISION,
-                intent(owner = FamilyMember.MADDOX, source = "maddox-budget"),
             ),
         )
     }
@@ -263,11 +309,13 @@ class RedesignContractsTest {
         owner: FamilyMember,
         amount: Long,
         fee: Long = 0L,
+        budgetEffect: BillPayBudgetEffect = BillPayBudgetEffect.BUDGET_CATEGORY,
     ) = BtcBillPay(
         id = id,
         date = DAY,
         merchant = id,
         category = "Bills",
+        budgetEffect = budgetEffect,
         amountUsdCents = amount,
         btcSpentSats = 1L,
         feeUsdCents = fee,
@@ -291,23 +339,13 @@ class RedesignContractsTest {
         month = MONTH,
         categories = listOf(BudgetCategory("Groceries", 50_000L, 12_000L)),
         owner = owner,
-    )
-
-    private fun intent(
-        month: String = MONTH,
-        owner: FamilyMember = FamilyMember.VICTOR,
-        source: String = "budget",
-    ) = CurrentMonthCategoryDeleteIntent(
-        month = month,
-        owner = owner,
-        source = source,
-        categoryName = "Groceries",
-        baseUpdatedAtMs = REVISION,
+        updatedAtMs = REVISION,
     )
 
     private fun assertEligible(result: CategoryDeleteEligibility) {
         assertTrue(result.eligible)
         assertEquals(null, result.rejection)
+        assertTrue(result.intent != null)
     }
 
     private fun assertRejected(
@@ -316,6 +354,7 @@ class RedesignContractsTest {
     ) {
         assertFalse(result.eligible)
         assertEquals(rejection, result.rejection)
+        assertEquals(null, result.intent)
     }
 
     private companion object {

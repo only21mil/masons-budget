@@ -16,7 +16,7 @@ class TodayLogicTest {
         ).state.value
 
         assertEquals(
-            listOf("todo-0001", "todo-0007", "todo-0009"),
+            listOf("todo-0001"),
             todosDueToday(state, ZoneOffset.UTC).map { it.id },
         )
     }

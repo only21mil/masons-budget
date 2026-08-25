@@ -213,11 +213,17 @@ private class CachingRowQueryRepository(
                                 title = it.title,
                                 done = it.done,
                                 flagged = it.flagged,
+                                lane = it.lane,
                                 project = it.project,
                                 area = it.area,
                                 due = it.due,
-                                updatedAtMs = stamp,
-                                sourceFile = it.owner.key,
+                                notes = it.notes,
+                                priority = it.priority,
+                                createdAt = it.createdAt,
+                                updatedAt = it.updatedAt,
+                                completedAt = it.completedAt,
+                                updatedAtMs = it.updatedAtMs,
+                                sourceFile = "todos",
                             )
                         },
                     fetchedAtMs = stamp,
@@ -263,6 +269,7 @@ private class CachingRowQueryRepository(
                                 sats = it.sats,
                                 priceUsdCents = it.priceUsdCents,
                                 usdCents = it.usdCents,
+                                feeUsdCents = it.feeUsdCents,
                                 costBasisStatus = it.costBasisStatus,
                                 updatedAtMs = stamp,
                             )
@@ -410,10 +417,26 @@ private fun CachedTransactionEntity.toDomain() =
     )
 
 private fun CachedTodoEntity.toDomain() =
-    TodoItem(todoId, title, done, project, area, due, flagged, owner)
+    TodoItem(
+        id = todoId,
+        title = title,
+        done = done,
+        project = project,
+        area = area,
+        due = due,
+        flagged = flagged,
+        owner = owner,
+        lane = lane,
+        notes = notes,
+        priority = priority,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+        completedAt = completedAt,
+        updatedAtMs = updatedAtMs,
+    )
 
 private fun CachedBtcBuyEntity.toDomain() =
-    BtcBuy(buyId, date, source, sats, priceUsdCents, usdCents, costBasisStatus, owner)
+    BtcBuy(buyId, date, source, sats, priceUsdCents, usdCents, costBasisStatus, owner, feeUsdCents)
 
 private fun CachedBtcAccountEntity.toDomain() =
     BtcAccount(

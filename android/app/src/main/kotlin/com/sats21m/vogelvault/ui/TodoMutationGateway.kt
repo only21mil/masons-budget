@@ -7,7 +7,9 @@ import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.toConvexInt64
+import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.TodoItem
+import com.sats21m.vogelvault.domain.isAccessibleTo
 import java.io.IOException
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -27,10 +29,12 @@ internal class TodoMutationGateway(
     private val client: ConvexDeviceMutationClient,
 ) {
     suspend fun upsert(
+        activeProfile: FamilyMember,
         todo: TodoItem,
         baseUpdatedAtMs: Long?,
-    ): ConvexResult<TodoUpsertReceipt> =
-        client.mutate(
+    ): ConvexResult<TodoUpsertReceipt> {
+        require(todo.isAccessibleTo(activeProfile)) { "todo owner must match the active profile" }
+        return client.mutate(
             ConvexMutation.UpsertTodoFromDevice(
                 owner = todo.owner,
                 todo = todo.toDeviceMutationJson(),
@@ -48,9 +52,14 @@ internal class TodoMutationGateway(
             }
             TodoUpsertReceipt(entityId, parsedOutcome)
         }
+    }
 
-    suspend fun delete(todo: TodoItem): ConvexResult<TodoDeleteReceipt> =
-        client.mutate(
+    suspend fun delete(
+        activeProfile: FamilyMember,
+        todo: TodoItem,
+    ): ConvexResult<TodoDeleteReceipt> {
+        require(todo.isAccessibleTo(activeProfile)) { "todo owner must match the active profile" }
+        return client.mutate(
             ConvexMutation.DeleteTodoFromDevice(
                 todoId = todo.id,
                 owner = todo.owner,
@@ -63,9 +72,14 @@ internal class TodoMutationGateway(
             if (objectValue.boolean("ok") != true || entityId != todo.id) return@mapSuccess null
             TodoDeleteReceipt(entityId, removed)
         }
+    }
 
-    suspend fun restore(todo: TodoItem): ConvexResult<TodoRestoreReceipt> =
-        client.mutate(
+    suspend fun restore(
+        activeProfile: FamilyMember,
+        todo: TodoItem,
+    ): ConvexResult<TodoRestoreReceipt> {
+        require(todo.isAccessibleTo(activeProfile)) { "todo owner must match the active profile" }
+        return client.mutate(
             ConvexMutation.RestoreTodoFromDevice(
                 owner = todo.owner,
                 todo = todo.toDeviceMutationJson(),
@@ -86,6 +100,7 @@ internal class TodoMutationGateway(
             if (objectValue.boolean("ok") != true || entityId != todo.id) return@mapSuccess null
             TodoRestoreReceipt(entityId, updatedAtMs)
         }
+    }
 }
 
 internal enum class TodoUpsertOutcome { INSERTED, UPDATED }

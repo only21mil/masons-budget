@@ -31,10 +31,14 @@ class TaskListLogicTest {
     )
 
     @Test
-    fun `adult smart lists include all visible owners but children never see adult tasks`() {
+    fun `every smart list uses exact active-profile ownership`() {
         val rachel = TaskListModel.build(todos, FamilyMember.RACHEL, today)
-        assertTrue(rachel.visibleTasks.any { it.id == "adult-inbox" })
-        assertTrue(rachel.visibleTasks.any { it.id == "mason-today" })
+        assertEquals(
+            setOf("rachel-overdue", "rachel-trip", "home-area"),
+            rachel.visibleTasks.map { it.id }.toSet(),
+        )
+        assertFalse(rachel.visibleTasks.any { it.id == "adult-inbox" })
+        assertFalse(rachel.visibleTasks.any { it.id == "mason-today" })
 
         val mason = TaskListModel.build(todos, FamilyMember.MASON, today)
         assertEquals(setOf("mason-today", "mason-trip"), mason.visibleTasks.map { it.id }.toSet())
@@ -48,9 +52,6 @@ class TaskListLogicTest {
         assertEquals(
             setOf(
                 "adult-inbox",
-                "rachel-overdue",
-                "mason-today",
-                "maddox-upcoming",
                 "adult-week-edge",
                 "adult-later",
                 "adult-someday",
@@ -59,11 +60,11 @@ class TaskListLogicTest {
             model.tasksFor(TaskSmartList.INBOX).map { it.id }.toSet(),
         )
         assertEquals(
-            setOf("rachel-overdue", "mason-today"),
+            emptySet(),
             model.tasksFor(TaskSmartList.TODAY).map { it.id }.toSet(),
         )
         assertEquals(
-            setOf("maddox-upcoming", "adult-week-edge", "adult-later"),
+            setOf("adult-week-edge", "adult-later"),
             model.tasksFor(TaskSmartList.UPCOMING).map { it.id }.toSet(),
         )
         assertEquals(listOf("adult-flag"), model.tasksFor(TaskSmartList.FLAGGED).map { it.id })
@@ -73,8 +74,8 @@ class TaskListLogicTest {
     fun `hub time buckets do not overlap and the seven day boundary is this week`() {
         val model = TaskListModel.build(todos, FamilyMember.VICTOR, today)
 
-        assertEquals(setOf("rachel-overdue", "mason-today"), model.today.map { it.id }.toSet())
-        assertEquals(setOf("maddox-upcoming", "adult-week-edge"), model.thisWeek.map { it.id }.toSet())
+        assertEquals(emptySet(), model.today.map { it.id }.toSet())
+        assertEquals(setOf("adult-week-edge"), model.thisWeek.map { it.id }.toSet())
         assertEquals(
             setOf(
                 "adult-inbox",
@@ -82,9 +83,6 @@ class TaskListLogicTest {
                 "adult-someday",
                 "adult-flag",
                 "victor-trip",
-                "rachel-trip",
-                "mason-trip",
-                "home-area",
             ),
             model.longTerm.map { it.id }.toSet(),
         )
@@ -96,11 +94,15 @@ class TaskListLogicTest {
 
         assertFalse(model.projects.any { it.name.equals("Inbox", ignoreCase = true) })
         assertEquals(
-            listOf("mason|Trip", "rachel|Trip", "victor|Trip"),
+            listOf("victor|Trip"),
             model.projects.map { it.key },
         )
-        assertEquals(listOf("rachel|Home"), model.areas.map { it.key })
+        assertEquals(emptyList(), model.areas.map { it.key })
         assertTrue(model.projects.all { it.openCount == 1 })
+
+        val rachel = TaskListModel.build(todos, FamilyMember.RACHEL, today)
+        assertEquals(listOf("rachel|Trip"), rachel.projects.map { it.key })
+        assertEquals(listOf("rachel|Home"), rachel.areas.map { it.key })
     }
 
     private fun todo(

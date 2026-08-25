@@ -104,6 +104,7 @@ internal fun TodoScreen(
     val context = LocalContext.current
     val writes = rememberTodoWriteState(
         gateway = gateway,
+        activeProfile = viewer,
         snackbar = snackbar,
         onWriteSucceeded = onWriteSucceeded,
         onCredentialRejected = {

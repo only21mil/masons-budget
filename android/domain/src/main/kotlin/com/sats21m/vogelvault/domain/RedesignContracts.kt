@@ -3,6 +3,7 @@ package com.sats21m.vogelvault.domain
 import java.time.DateTimeException
 import java.time.LocalDate
 import java.time.YearMonth
+import java.util.Locale
 
 /** Todo representations stay outside the adult-wide financial [Owned] contract. */
 interface ProfileScopedTodo {
@@ -16,6 +17,13 @@ fun ProfileScopedTodo.isAccessibleTo(activeProfile: FamilyMember): Boolean = own
 fun <T : ProfileScopedTodo> List<T>.todosFor(activeProfile: FamilyMember): List<T> =
     filter { it.isAccessibleTo(activeProfile) }
 
+data class MoneyOutToday(
+    val date: String,
+    val owner: FamilyMember,
+    val totalCents: Long,
+    val sourceIds: List<String>,
+)
+
 /**
  * Derive Money Out Today for an injected ISO calendar day.
  *
@@ -27,49 +35,72 @@ fun deriveMoneyOutTodayCents(
     day: String,
     transactions: List<Transaction>,
     billPays: List<BtcBillPay>,
-): Long {
+): Long = deriveMoneyOutToday(activeProfile, day, transactions, billPays).totalCents
+
+fun deriveMoneyOutToday(
+    activeProfile: FamilyMember,
+    day: String,
+    transactions: List<Transaction>,
+    billPays: List<BtcBillPay>,
+): MoneyOutToday {
     require(day.isCanonicalIsoDay()) { "Money Out Today day must be ISO yyyy-MM-dd: $day" }
     var total = 0L
+    val sourceIds = mutableListOf<String>()
 
     for (transaction in transactions) {
         if (
-            activeProfile.sharesNetWorth(transaction.owner) &&
+            activeProfile.ledgerOwner == transaction.owner.ledgerOwner &&
             transaction.date == day &&
             transaction.category != "Income"
         ) {
             total = Math.addExact(total, transaction.spendAmount)
+            sourceIds += transaction.id
         }
     }
 
     for (billPay in billPays) {
-        if (activeProfile.sharesNetWorth(billPay.owner) && billPay.date == day) {
+        if (
+            activeProfile.ledgerOwner == billPay.owner.ledgerOwner &&
+            billPay.date == day &&
+            billPay.budgetEffect != BillPayBudgetEffect.CREDIT_CARD_PAYMENT
+        ) {
             total = Math.addExact(total, billPay.amountUsdCents)
             total = Math.addExact(total, billPay.feeUsdCents)
+            sourceIds += billPay.id
         }
     }
 
-    return total
+    return MoneyOutToday(
+        date = day,
+        owner = activeProfile.ledgerOwner,
+        totalCents = total,
+        sourceIds = sourceIds,
+    )
 }
 
 data class CurrentMonthCategoryDeleteIntent(
-    val month: String,
     val owner: FamilyMember,
-    val source: String,
+    val sourceFile: String,
+    val month: String,
     val categoryName: String,
     val baseUpdatedAtMs: Long,
 )
 
 enum class CategoryDeleteRejection {
     INVALID_CURRENT_MONTH,
-    NOT_CURRENT_MONTH,
+    UNSUPPORTED_PROFILE,
     OWNER_MISMATCH,
+    MONTH_MISMATCH,
     SOURCE_MISMATCH,
-    CATEGORY_MISSING,
+    INVALID_CATEGORY,
+    MISSING_CATEGORY,
+    AMBIGUOUS_CATEGORY,
     INVALID_REVISION,
-    UNSUPPORTED_CHILD_BUDGET,
+    REVISION_MISMATCH,
 }
 
 data class CategoryDeleteEligibility(
+    val intent: CurrentMonthCategoryDeleteIntent? = null,
     val rejection: CategoryDeleteRejection?,
 ) {
     val eligible: Boolean get() = rejection == null
@@ -85,41 +116,61 @@ fun validateCurrentMonthCategoryDelete(
     activeProfile: FamilyMember,
     currentMonth: String,
     budget: Budget,
-    budgetUpdatedAtMs: Long,
-    intent: CurrentMonthCategoryDeleteIntent,
+    sourceFile: String,
+    categoryName: String,
+    baseUpdatedAtMs: Long,
 ): CategoryDeleteEligibility {
     if (!currentMonth.isCanonicalIsoMonth()) {
-        return CategoryDeleteEligibility(CategoryDeleteRejection.INVALID_CURRENT_MONTH)
+        return CategoryDeleteEligibility(rejection = CategoryDeleteRejection.INVALID_CURRENT_MONTH)
     }
 
     val canonicalSource = when {
         activeProfile.isAdult -> "budget"
         activeProfile == FamilyMember.MASON -> "mason-budget"
-        else -> return CategoryDeleteEligibility(CategoryDeleteRejection.UNSUPPORTED_CHILD_BUDGET)
+        else -> return CategoryDeleteEligibility(rejection = CategoryDeleteRejection.UNSUPPORTED_PROFILE)
     }
     val canonicalOwner = activeProfile.ledgerOwner
 
-    if (budget.month != currentMonth || intent.month != budget.month) {
-        return CategoryDeleteEligibility(CategoryDeleteRejection.NOT_CURRENT_MONTH)
+    if (budget.owner.ledgerOwner != canonicalOwner) {
+        return CategoryDeleteEligibility(rejection = CategoryDeleteRejection.OWNER_MISMATCH)
     }
-    if (budget.owner != canonicalOwner || intent.owner != canonicalOwner) {
-        return CategoryDeleteEligibility(CategoryDeleteRejection.OWNER_MISMATCH)
+    if (budget.month != currentMonth) {
+        return CategoryDeleteEligibility(rejection = CategoryDeleteRejection.MONTH_MISMATCH)
     }
-    if (intent.source != canonicalSource) {
-        return CategoryDeleteEligibility(CategoryDeleteRejection.SOURCE_MISMATCH)
+    if (sourceFile != canonicalSource) {
+        return CategoryDeleteEligibility(rejection = CategoryDeleteRejection.SOURCE_MISMATCH)
     }
-    if (budget.categories.none { it.name == intent.categoryName }) {
-        return CategoryDeleteEligibility(CategoryDeleteRejection.CATEGORY_MISSING)
+    if (categoryName.isEmpty() || categoryName.trim() != categoryName) {
+        return CategoryDeleteEligibility(rejection = CategoryDeleteRejection.INVALID_CATEGORY)
     }
-    if (
-        budgetUpdatedAtMs <= 0L ||
-        intent.baseUpdatedAtMs <= 0L ||
-        intent.baseUpdatedAtMs != budgetUpdatedAtMs
-    ) {
-        return CategoryDeleteEligibility(CategoryDeleteRejection.INVALID_REVISION)
+    val foldedName = categoryName.foldedCategoryName()
+    val matches = budget.categories.filter { it.name.foldedCategoryName() == foldedName }
+    if (matches.size > 1) {
+        return CategoryDeleteEligibility(rejection = CategoryDeleteRejection.AMBIGUOUS_CATEGORY)
     }
-    return CategoryDeleteEligibility(rejection = null)
+    val canonicalCategoryName = matches.singleOrNull()?.name
+        ?: return CategoryDeleteEligibility(rejection = CategoryDeleteRejection.MISSING_CATEGORY)
+    if (baseUpdatedAtMs <= 0L || baseUpdatedAtMs > MAX_SAFE_INTEGER) {
+        return CategoryDeleteEligibility(rejection = CategoryDeleteRejection.INVALID_REVISION)
+    }
+    if (baseUpdatedAtMs != budget.updatedAtMs) {
+        return CategoryDeleteEligibility(rejection = CategoryDeleteRejection.REVISION_MISMATCH)
+    }
+    return CategoryDeleteEligibility(
+        intent = CurrentMonthCategoryDeleteIntent(
+            owner = canonicalOwner,
+            sourceFile = canonicalSource,
+            month = currentMonth,
+            categoryName = canonicalCategoryName,
+            baseUpdatedAtMs = baseUpdatedAtMs,
+        ),
+        rejection = null,
+    )
 }
+
+private fun String.foldedCategoryName(): String = trim().lowercase(Locale.US)
+
+private const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
 
 private fun String.isCanonicalIsoDay(): Boolean {
     if (!matches(Regex("""\d{4}-\d{2}-\d{2}"""))) return false

@@ -131,6 +131,45 @@ class VaultDatabaseMigrationTest {
         }
     }
 
+    private fun seedVersion4BitcoinBuy(databaseName: String) {
+        val context: Application = RuntimeEnvironment.getApplication()
+        val db =
+            android.database.sqlite.SQLiteDatabase.openDatabase(
+                context.getDatabasePath(databaseName).path,
+                null,
+                android.database.sqlite.SQLiteDatabase.OPEN_READWRITE,
+            )
+        try {
+            db.execSQL(
+                """
+                INSERT INTO query_snapshots (
+                    query_key, generation, kind, started_at_ms, finished_at_ms,
+                    expected_row_count, row_count, is_complete, completeness,
+                    is_active, activated_at_ms, authorization, freshness, invalidated_at_ms
+                ) VALUES (
+                    'btc-buys|victor|visible', 1, 'btc_buys', 100, 101,
+                    1, 1, 1, 'complete', 1, 101, 'authorized', 'current', NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                INSERT INTO cached_btc_buys (
+                    query_key, generation, source_file, buy_id, owner, date, month,
+                    source, sats, price_usd_cents, usd_cents, note, status,
+                    cost_basis_status, logged_by, archimedes_request_id, updated_at_ms
+                ) VALUES (
+                    'btc-buys|victor|visible', 1, 'bitcoin-buys', 'buy-v4', 'victor',
+                    '2026-08-25', '2026-08', 'River', 100000, 6500000, 6500,
+                    NULL, NULL, NULL, 'android', NULL, 1800000000000
+                )
+                """.trimIndent(),
+            )
+        } finally {
+            db.close()
+        }
+    }
+
     private fun openMigrated(databaseName: String): VaultDatabase {
         val context: Application = RuntimeEnvironment.getApplication()
         return Room
@@ -139,13 +178,14 @@ class VaultDatabaseMigrationTest {
                 VaultDatabase.MIGRATION_1_2,
                 VaultDatabase.MIGRATION_2_3,
                 VaultDatabase.MIGRATION_3_4,
+                VaultDatabase.MIGRATION_4_5,
             )
             .build()
     }
 
     @Test
-    fun `v2 cache upgrades through v4 without losing rows`() {
-        val databaseName = "migration-v2-v4.db"
+    fun `v2 cache upgrades through v5 without losing rows`() {
+        val databaseName = "migration-v2-v5.db"
         createVersionDatabase(databaseName, 2)
         seedLegacyTransaction(databaseName, "tx-legacy")
 
@@ -165,7 +205,7 @@ class VaultDatabaseMigrationTest {
                 assertTrue(it.isNull(4), "bitcoin_account_key is absent on pre-upgrade rows")
                 assertEquals(1, it.count)
             }
-            assertEquals(4, migrated.openHelper.readableDatabase.version)
+            assertEquals(5, migrated.openHelper.readableDatabase.version)
         } finally {
             migrated.close()
         }
@@ -198,15 +238,15 @@ class VaultDatabaseMigrationTest {
     }
 
     @Test
-    fun `v3 to v4 Bitcoin row survives and gains a nullable account key`() {
-        val databaseName = "migration-v3-v4-bitcoin.db"
+    fun `v3 Bitcoin row survives through v5 and gains a nullable account key`() {
+        val databaseName = "migration-v3-v5-bitcoin.db"
         createVersionDatabase(databaseName, 3)
         seedVersion3BitcoinTransaction(databaseName)
 
         val context: Application = RuntimeEnvironment.getApplication()
         val migrated =
             Room.databaseBuilder(context, VaultDatabase::class.java, databaseName)
-                .addMigrations(VaultDatabase.MIGRATION_3_4)
+                .addMigrations(VaultDatabase.MIGRATION_3_4, VaultDatabase.MIGRATION_4_5)
                 .build()
         try {
             val cursor = migrated.openHelper.readableDatabase.query(
@@ -233,7 +273,35 @@ class VaultDatabaseMigrationTest {
                 assertTrue(it.isNull(14), "pre-v4 rows gain an absent account key")
                 assertEquals(1, it.count)
             }
-            assertEquals(4, migrated.openHelper.readableDatabase.version)
+            assertEquals(5, migrated.openHelper.readableDatabase.version)
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun `v4 Bitcoin buy survives and defaults its missing fee to zero`() {
+        val databaseName = "migration-v4-v5-bitcoin-buy.db"
+        createVersionDatabase(databaseName, 4)
+        seedVersion4BitcoinBuy(databaseName)
+
+        val context: Application = RuntimeEnvironment.getApplication()
+        val migrated =
+            Room.databaseBuilder(context, VaultDatabase::class.java, databaseName)
+                .addMigrations(VaultDatabase.MIGRATION_4_5)
+                .build()
+        try {
+            val cursor = migrated.openHelper.readableDatabase.query(
+                "SELECT buy_id, usd_cents, fee_usd_cents FROM cached_btc_buys",
+            )
+            cursor.use {
+                assertTrue(it.moveToFirst(), "the v4 Bitcoin buy survived")
+                assertEquals("buy-v4", it.getString(0))
+                assertEquals(6_500L, it.getLong(1))
+                assertEquals(0L, it.getLong(2))
+                assertEquals(1, it.count)
+            }
+            assertEquals(5, migrated.openHelper.readableDatabase.version)
         } finally {
             migrated.close()
         }

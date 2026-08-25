@@ -146,6 +146,23 @@ class ConvexMutationTest {
         assertTagged(buy, "sats", "AQAAAAAAAAA=")
         assertTagged(buy, "priceUsdCents", "//////////8=")
         assertTagged(buy, "usdCents", "AAAAAAAAAIA=")
+        assertTagged(buy, "feeUsdCents", "AAAAAAAAAAA=")
+    }
+
+    @Test
+    fun `Bitcoin buy fee is exact explicit and nonnegative on the wire`() {
+        val input = BtcBuyInput(
+            id = "buy-fee",
+            date = "2026-08-25",
+            source = "River",
+            sats = 1L,
+            priceUsdCents = 1L,
+            usdCents = 1L,
+            feeUsdCents = 25L,
+        )
+
+        assertTagged(input.toJson(), "feeUsdCents", "GQAAAAAAAAA=")
+        assertFailsWith<IllegalArgumentException> { input.copy(feeUsdCents = -1L) }
     }
 
     @Test
@@ -234,6 +251,7 @@ class ConvexMutationTest {
             sats = 100_000L,
             priceUsdCents = 6_500_000L,
             usdCents = 6_500L,
+            feeUsdCents = 25L,
             owner = FamilyMember.VICTOR,
             note = "paycheck DCA",
             loggedBy = "android",
@@ -274,6 +292,7 @@ class ConvexMutationTest {
         assertEquals("income-buy-1", linkedIncome["id"]?.jsonPrimitive?.content)
         assertEquals("victor", linkedIncome["owner"]?.jsonPrimitive?.content)
         assertTagged(args["buy"]!!.jsonObject, "usdCents", "ZBkAAAAAAAA=")
+        assertTagged(args["buy"]!!.jsonObject, "feeUsdCents", "GQAAAAAAAAA=")
         assertTagged(linkedIncome, "amountCents", "ZBkAAAAAAAA=")
     }
 

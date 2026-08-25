@@ -13,7 +13,7 @@ class TodoCrudLogicTest {
     private val now = Instant.parse("2026-07-29T16:00:00Z")
 
     @Test
-    fun `children see only their own due todos while adults see the household`() {
+    fun `every profile sees only its own due todos`() {
         val todos = FamilyMember.entries.map { owner ->
             todo(id = owner.key, owner = owner)
         }
@@ -21,7 +21,7 @@ class TodoCrudLogicTest {
         assertEquals(listOf("mason"), todosForToday(todos, FamilyMember.MASON, "2026-07-29").map { it.id })
         assertEquals(listOf("maddox"), todosForToday(todos, FamilyMember.MADDOX, "2026-07-29").map { it.id })
         assertEquals(
-            FamilyMember.entries.map { it.key }.sorted(),
+            listOf("rachel"),
             todosForToday(todos, FamilyMember.RACHEL, "2026-07-29").map { it.id }.sorted(),
         )
     }

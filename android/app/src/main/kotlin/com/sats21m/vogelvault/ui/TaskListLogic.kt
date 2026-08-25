@@ -3,7 +3,7 @@ package com.sats21m.vogelvault.ui
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.domain.isDueBy
-import com.sats21m.vogelvault.domain.visibleTo
+import com.sats21m.vogelvault.domain.todosFor
 import java.time.LocalDate
 
 /**
@@ -47,7 +47,7 @@ internal data class TaskListModel(
             // ScreenHost filters before TaskListsScreen receives rows. Keep this
             // second check deliberately: direct model callers must not become a
             // route around the family visibility contract.
-            val visible = todos.visibleTo(viewer)
+            val visible = todos.todosFor(viewer)
             val open = visible.filterNot(TodoItem::done)
             val weekFromToday = today.plusDays(7)
 

@@ -67,6 +67,7 @@ import java.util.UUID
 @Stable
 internal class TodoWriteState(
     private val gateway: TodoMutationGateway?,
+    private val activeProfile: FamilyMember,
     private val scope: CoroutineScope,
     private val snackbar: SnackbarHostState,
     private val nowMillis: () -> Long,
@@ -115,7 +116,7 @@ internal class TodoWriteState(
         if (todo.id in busyIds) return
         busyIds = busyIds + todo.id
         scope.launch {
-            val result = gateway?.upsert(todo, baseUpdatedAtMs)
+            val result = gateway?.upsert(activeProfile, todo, baseUpdatedAtMs)
             val failure = failureMessage(action, result)
             if (failure == null) {
                 onAccepted(todo)
@@ -155,7 +156,7 @@ internal class TodoWriteState(
         expiryJob?.cancel()
 
         scope.launch {
-            val result = gateway?.delete(todo)
+            val result = gateway?.delete(activeProfile, todo)
             if (pendingDeletion?.operationToken != operationToken) {
                 busyIds = busyIds - todo.id
                 return@launch
@@ -189,7 +190,7 @@ internal class TodoWriteState(
                             accepted.canUndo(nowMillis())
                         ) {
                             restoreInFlightToken = operationToken
-                            val restoreResult = gateway?.restore(todo)
+                            val restoreResult = gateway?.restore(activeProfile, todo)
                             if (pendingDeletion?.operationToken == operationToken) {
                                 when (restoreResult) {
                                     is ConvexResult.Ok -> {
@@ -258,6 +259,7 @@ internal class TodoWriteState(
 @Composable
 internal fun rememberTodoWriteState(
     gateway: TodoMutationGateway?,
+    activeProfile: FamilyMember,
     snackbar: SnackbarHostState,
     onWriteSucceeded: () -> Unit,
     onCredentialRejected: () -> String?,
@@ -269,9 +271,10 @@ internal fun rememberTodoWriteState(
     val currentCredentialRejected = rememberUpdatedState(onCredentialRejected)
     val currentClock = rememberUpdatedState(nowMillis)
     val undoLabel = stringResource(R.string.todo_undo)
-    val state = remember(gateway, scope, snackbar, context, undoLabel) {
+    val state = remember(gateway, activeProfile, scope, snackbar, context, undoLabel) {
         TodoWriteState(
             gateway = gateway,
+            activeProfile = activeProfile,
             scope = scope,
             snackbar = snackbar,
             nowMillis = { currentClock.value() },
