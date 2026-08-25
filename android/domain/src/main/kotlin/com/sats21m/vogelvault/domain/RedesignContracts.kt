@@ -51,7 +51,7 @@ fun deriveMoneyOutToday(
         if (
             activeProfile.ledgerOwner == transaction.owner.ledgerOwner &&
             transaction.date == day &&
-            transaction.category != "Income"
+            !transaction.category.equals("Income", ignoreCase = true)
         ) {
             total = Math.addExact(total, transaction.spendAmount)
             sourceIds += transaction.id

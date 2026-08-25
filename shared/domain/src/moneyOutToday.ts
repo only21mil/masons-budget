@@ -46,7 +46,7 @@ export function deriveMoneyOutToday(input: {
     .filter((row) =>
       ledgerOwner(row.owner) === owner &&
       row.date === input.date &&
-      row.category !== "Income"
+      row.category.toLowerCase() !== "income"
     )
     .map((row) => ({ kind: "transaction", row, contributionCents: spendAmount(row) }))
   const billPaySources: MoneyOutBillPaySource[] = input.billPays
