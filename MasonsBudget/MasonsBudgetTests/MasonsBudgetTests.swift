@@ -920,19 +920,22 @@ final class MasonsBudgetTests: XCTestCase {
             amountSats: 123_456,
             priceUSD: XCTUnwrap(Decimal(string: "100000")),
             usd: XCTUnwrap(Decimal(string: "123.456")),
+            feeUsdCents: 123,
             note: "Logged in app",
             loggedBy: "app",
             owner: .rachel,
         )
 
-        let dto = LegacyBTCBuyDTO(appBuy: buy, owner: .rachel)
+        let dto = try LegacyBTCBuyDTO(appBuy: buy, owner: .rachel)
         let object = try dto.convexJSONObject()
 
         XCTAssertEqual(dto.amountBtc, Decimal(string: "0.00123456"))
         XCTAssertEqual(dto.amountSats, 123_456)
         XCTAssertEqual(dto.owner, FamilyMember.victor.rawValue)
+        XCTAssertEqual(dto.feeUsd, Decimal(string: "1.23"))
         XCTAssertEqual(object["owner"] as? String, FamilyMember.victor.rawValue)
         XCTAssertEqual((object["amount_sats"] as? NSNumber)?.int64Value, 123_456)
+        XCTAssertEqual((object["fee_usd"] as? NSNumber)?.decimalValue, Decimal(string: "1.23"))
     }
 
     func testBTCBuyFileRoutingUsesDedicatedMasonFileOnly() {
@@ -1039,7 +1042,7 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertEqual(dtos.first?.completedAt, "1774914863035")
     }
 
-    func testTodoMapperKeepsRecognizedNonVictorOwnersAndDropsUnknownOwners() throws {
+    func testTodoMapperDropsRecognizedOtherProfilesAndUnknownOwners() throws {
         let json = """
         [
           {
@@ -1061,10 +1064,9 @@ final class MasonsBudgetTests: XCTestCase {
         """.data(using: .utf8)!
 
         let dtos = try JSONDecoder().decode([LegacyTodoDTO].self, from: json)
-        let todos = LedgerMapper.mapTodos(dtos, viewer: .victor)
-
-        XCTAssertEqual(todos.map(\.id), ["rachel-task", "mason-task"])
-        XCTAssertEqual(todos.map(\.ownerMember), [.rachel, .mason])
+        XCTAssertTrue(LedgerMapper.mapTodos(dtos, viewer: .victor).isEmpty)
+        XCTAssertEqual(LedgerMapper.mapTodos(dtos, viewer: .rachel).map(\.id), ["rachel-task"])
+        XCTAssertEqual(LedgerMapper.mapTodos(dtos, viewer: .mason).map(\.id), ["mason-task"])
     }
 
     func testAppTodoPayloadPreservesTodoOwner() {

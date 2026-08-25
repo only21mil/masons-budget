@@ -287,7 +287,7 @@ struct TaskSmartListView: View {
         let cal = Calendar.current
         let now = Date()
         return allTodos.filter { todo in
-            activeMember.canSee(dataOwnedBy: todo.ownerMember) &&
+            activeMember.canAccessTodo(ownedBy: todo.ownerMember) &&
                 !todo.isDone &&
                 filter.matches(todo, now: now, calendar: cal)
         }
