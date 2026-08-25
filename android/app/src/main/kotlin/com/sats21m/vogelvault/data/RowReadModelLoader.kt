@@ -289,6 +289,7 @@ private fun BudgetDocumentRow.toDomain(): Budget? {
         },
         strategyNote = strategyNote,
         owner = owner,
+        updatedAtMs = updatedAtMs,
     )
 }
 

@@ -19,6 +19,7 @@ import {
   visibleTo,
 } from "./family.ts"
 import { type Cents, type Sats, parseBtcToSats, parseCents, parseMinorUnits } from "./money.ts"
+import { parseManualFeeUsdCents } from "./manualFee.ts"
 
 /** Freshness of a slice of the read model, surfaced explicitly in the UI. */
 export type Freshness = "demo" | "live" | "stale" | "error" | "empty" | "loading"
@@ -274,6 +275,8 @@ export interface BTCBuy {
   readonly sats: Sats
   readonly priceUsd: Cents
   readonly usd: Cents
+  /** Optional manual River fee. Missing and null wire values normalize to zero. */
+  readonly feeUsd: Cents
   readonly note: string | null
   readonly status: string | null
   readonly costBasisStatus: string | null
@@ -296,6 +299,7 @@ export interface BTCBillPay {
   readonly btcPrice: Cents
   readonly platform: string | null
   readonly note: string | null
+  /** Optional manual River fee. Missing and null wire values normalize to zero. */
   readonly feeUsd: Cents
   readonly reference: string | null
   readonly owner: FamilyMember
@@ -361,6 +365,11 @@ export function normalizeBTCBuy(raw: Record<string, unknown>, fallbackOwner?: Fa
     sats: raw.amount_sats !== undefined ? BigInt(String(raw.amount_sats)) : parseBtcToSats(raw.amount_btc),
     priceUsd: parseCents(raw.price_usd),
     usd: parseCents(raw.usd),
+    feeUsd: Object.prototype.hasOwnProperty.call(raw, "feeUsdCents")
+      ? parseManualFeeUsdCents(raw.feeUsdCents)
+      : raw.fee_usd === undefined || raw.fee_usd === null
+        ? 0n
+        : parseLegacyManualFeeUsdCents(raw.fee_usd),
     note: optionalString(raw.note),
     status: optionalString(raw.status),
     costBasisStatus: optionalString(raw.cost_basis_status),
@@ -397,12 +406,26 @@ export function normalizeBTCBillPay(raw: Record<string, unknown>, fallbackOwner?
       : BigInt(String(raw.btcPriceCents)),
     platform: optionalString(raw.platform),
     note: optionalString(raw.note),
-    feeUsd: raw.feeUsdCents === undefined
-      ? parseCents(raw.fee_usd)
-      : BigInt(String(raw.feeUsdCents)),
+    feeUsd: Object.prototype.hasOwnProperty.call(raw, "feeUsdCents")
+      ? parseManualFeeUsdCents(raw.feeUsdCents)
+      : raw.fee_usd === undefined || raw.fee_usd === null
+        ? 0n
+        : parseLegacyManualFeeUsdCents(raw.fee_usd),
     reference: optionalString(raw.reference),
     owner: raw.owner === undefined && fallbackOwner ? fallbackOwner : coerceOwner(raw.owner),
   }
+}
+
+function parseLegacyManualFeeUsdCents(value: unknown): bigint {
+  const text = String(value).trim()
+  if (!/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(text)) {
+    throw new RangeError("legacy fee_usd must be an exact non-negative cent value")
+  }
+  const cents = parseCents(text)
+  if (cents > (1n << 63n) - 1n) {
+    throw new RangeError("legacy fee_usd must fit signed int64 cents")
+  }
+  return cents
 }
 
 // ── Todos ───────────────────────────────────────────────────────────────────

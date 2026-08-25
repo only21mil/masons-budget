@@ -1478,10 +1478,23 @@ describe("migrating every file", () => {
     });
     expect(verification.ok).toBe(true);
     expect(Object.keys(verification.tableSums).sort()).toEqual([
+      "feeUsdCents",
       "priceUsdCents",
       "sats",
       "usdCents",
     ]);
+  });
+
+  test("BTC buy migration defaults missing fees and rejects invalid manual values", () => {
+    const source = MIGRATION_SOURCES.find((entry) => entry.kind === "btcBuy")!;
+    const base = BTC_BUYS[0]!;
+    const projected = projectFile(source, [{ ...base, fee_usd: undefined }])!;
+    expect(projected.docs[0]!.feeUsdCents).toBe(0n);
+    for (const feeUsd of ["-0.01", "0.001", "92233720368547758.08"]) {
+      expect(() => projectFile(source, [{ ...base, fee_usd: feeUsd }])).toThrow(
+        RangeError,
+      );
+    }
   });
 
   test("income and balances preserve exact cents, sats, and reconciliation provenance", async () => {

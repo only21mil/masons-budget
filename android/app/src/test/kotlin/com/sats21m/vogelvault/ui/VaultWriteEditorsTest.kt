@@ -17,6 +17,7 @@ import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.IncomeEntry
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlinx.coroutines.CoroutineScope
@@ -69,6 +70,35 @@ class VaultWriteEditorsTest {
         assertEquals(123_456L, result.request.sats)
         assertEquals(11_700_025L, result.request.priceUsdCents)
         assertEquals(12_199L, result.request.usdCents)
+        assertEquals(0L, result.request.feeUsdCents)
+    }
+
+    @Test
+    fun `standalone Bitcoin buy sends an explicit exact fee and rejects a negative fee`() {
+        val store = TransactionDraftIdStore()
+        val poster = BuyPoster(accepted())
+        val client = buyClient(poster)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+
+        try {
+            val id = store.currentId(adultBuyScope)
+            runBlocking {
+                saveBuy(
+                    scope = scope,
+                    store = store,
+                    client = client,
+                    id = id,
+                    feeUsdCents = 25L,
+                ).join()
+            }
+
+            assertEquals("GQAAAAAAAAA=", wireBuyFee(poster.bodies.single()))
+            assertFailsWith<IllegalArgumentException> {
+                buyRequest(id = "negative-fee", feeUsdCents = -1L)
+            }
+        } finally {
+            scope.cancel()
+        }
     }
 
     @Test
@@ -459,20 +489,28 @@ class VaultWriteEditorsTest {
         client: ConvexMutationClient,
         id: String,
         owner: FamilyMember = FamilyMember.VICTOR,
+        feeUsdCents: Long = 0L,
     ) = launchBtcBuySave(
         scope = scope,
-        request = BtcBuyWriteRequest(
-            id = id,
-            owner = owner,
-            date = "2026-08-01",
-            source = "River",
-            sats = 100_000L,
-            priceUsdCents = 6_500_000L,
-            usdCents = 6_500L,
-        ),
+        request = buyRequest(id = id, owner = owner, feeUsdCents = feeUsdCents),
         client = client,
         buyDraftIds = store,
         onResult = {},
+    )
+
+    private fun buyRequest(
+        id: String,
+        owner: FamilyMember = FamilyMember.VICTOR,
+        feeUsdCents: Long = 0L,
+    ) = BtcBuyWriteRequest(
+        id = id,
+        owner = owner,
+        date = "2026-08-01",
+        source = "River",
+        sats = 100_000L,
+        priceUsdCents = 6_500_000L,
+        usdCents = 6_500L,
+        feeUsdCents = feeUsdCents,
     )
 
     private fun buyClient(poster: HttpPoster) = ConvexMutationClient(
@@ -495,6 +533,10 @@ class VaultWriteEditorsTest {
     private fun wireBuySourceFile(body: String): String =
         Json.parseToJsonElement(body).jsonObject["args"]!!
             .jsonObject["sourceFile"]!!.jsonPrimitive.content
+
+    private fun wireBuyFee(body: String): String =
+        Json.parseToJsonElement(body).jsonObject["args"]!!.jsonObject["buy"]!!
+            .jsonObject["feeUsdCents"]!!.jsonObject["\$integer"]!!.jsonPrimitive.content
 
     private class BuyPoster(private val response: HttpTextResponse) : HttpPoster {
         val bodies = mutableListOf<String>()

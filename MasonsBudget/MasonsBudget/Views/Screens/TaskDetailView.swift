@@ -9,6 +9,7 @@ struct TaskDetailView: View {
     @Environment(\.theme) var theme
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
     let todo: TodoItem
 
@@ -34,7 +35,19 @@ struct TaskDetailView: View {
 
     private static let priorityLabels = ["None", "Low", "Medium", "High"]
 
+    private var activeMember: FamilyMember {
+        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    }
+
     var body: some View {
+        if activeMember.canAccessTodo(ownedBy: todo.ownerMember) {
+            taskEditor
+        } else {
+            Color.clear.onAppear { dismiss() }
+        }
+    }
+
+    private var taskEditor: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppLayout.cardSpacing) {
                 ScreenHeader(title: "Task", eyebrow: todo.isDone ? "Completed" : "Editing")
@@ -154,6 +167,10 @@ struct TaskDetailView: View {
     }
 
     private func save() {
+        guard activeMember.canAccessTodo(ownedBy: todo.ownerMember) else {
+            dismiss()
+            return
+        }
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let previous = DeletedTodoSnapshot(todo: todo)
@@ -175,6 +192,10 @@ struct TaskDetailView: View {
     }
 
     private func deleteTask() {
+        guard activeMember.canAccessTodo(ownedBy: todo.ownerMember) else {
+            dismiss()
+            return
+        }
         if TaskUndoStore.shared.delete(todo, in: modelContext) {
             dismiss()
         }

@@ -172,10 +172,14 @@ enum LedgerMapper {
         }
     }
 
-    static func mapBTCBuy(_ dto: LegacyBTCBuyDTO, owner: FamilyMember = .victor) -> BTCBuy {
+    static func mapBTCBuy(_ dto: LegacyBTCBuyDTO, owner: FamilyMember = .victor) throws -> BTCBuy {
         let resolvedOwner = dto.owner
             .flatMap { FamilyMember(rawValue: $0.lowercased()) }
             ?? owner
+        let feeUsdCents = try ExactMoney.manualFeeCents(
+            from: dto.feeUsd,
+            field: "btcBuy.feeUsd",
+        )
 
         return BTCBuy(
             id: dto.id,
@@ -185,19 +189,30 @@ enum LedgerMapper {
             amountSats: dto.amountSats,
             priceUSD: dto.priceUsd,
             usd: dto.usd,
+            feeUsdCents: feeUsdCents,
             note: dto.note,
             status: dto.status ?? "complete",
             costBasisStatus: dto.costBasisStatus ?? "complete",
             loggedBy: dto.loggedBy,
             archimedesRequestId: dto.archimedesRequestId,
             owner: resolvedOwner,
+            updatedAtMs: dto.updatedAtMs,
         )
     }
 
-    static func mapBTCBillPay(_ dto: LegacyBTCBillPayDTO) -> BTCBillPay {
+    static func mapBTCBillPay(_ dto: LegacyBTCBillPayDTO) throws -> BTCBillPay {
         let owner = dto.owner
             .flatMap { FamilyMember(rawValue: $0.lowercased()) }
             ?? .victor
+        if dto.budgetEffect == .creditCardPayment,
+           dto.category != BTCBillPayBudgetEffect.creditCardPaymentCategory
+        {
+            throw BTCBillPayContractError.inconsistentCreditCardPaymentCategory(dto.category)
+        }
+        let feeUsdCents = try ExactMoney.manualFeeCents(
+            from: dto.feeUsd,
+            field: "btcBillPay.feeUsd",
+        )
         return BTCBillPay(
             id: dto.id,
             date: parseDate(dto.date),
@@ -206,11 +221,13 @@ enum LedgerMapper {
             amountUSD: dto.amountUsd,
             btcSpent: dto.btcSpent,
             btcPrice: dto.effectiveBtcPrice,
-            feeUSD: dto.feeUsd,
+            feeUSD: Decimal(feeUsdCents) / 100,
+            budgetEffect: dto.budgetEffect,
             platform: dto.platform ?? "Strike",
             note: dto.note,
             reference: dto.reference,
             owner: owner,
+            updatedAtMs: dto.updatedAtMs,
         )
     }
 
@@ -308,11 +325,12 @@ enum LedgerMapper {
         ]
     }
 
-    static func mapTodos(_ dtos: [LegacyTodoDTO], viewer _: FamilyMember) -> [TodoItem] {
+    static func mapTodos(_ dtos: [LegacyTodoDTO], viewer: FamilyMember) -> [TodoItem] {
         dtos.compactMap { dto in
             // Drop todos whose owner string is a non-nil unrecognized value; an absent owner
-            // defaults to .victor via effectiveOwner. All recognized owners are mapped (multi-profile).
+            // defaults to .victor via effectiveOwner. Exact-owner filtering prevents adult aggregation.
             guard let owner = dto.effectiveOwner else { return nil }
+            guard viewer.canAccessTodo(ownedBy: owner) else { return nil }
 
             return TodoItem(
                 id: dto.id,

@@ -19,7 +19,7 @@ struct TasksView: View {
     }
 
     private var myTodos: [TodoItem] {
-        allTodos.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) && !$0.isDone }
+        allTodos.filter { activeMember.canAccessTodo(ownedBy: $0.ownerMember) && !$0.isDone }
     }
 
     private func count(_ filter: SmartListFilter) -> Int {
@@ -80,7 +80,7 @@ struct TasksView: View {
     }
 
     private var visibleTodos: [TodoItem] {
-        allTodos.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+        allTodos.filter { activeMember.canAccessTodo(ownedBy: $0.ownerMember) }
     }
 
     private func projectName(for todo: TodoItem) -> String? {
@@ -109,7 +109,7 @@ struct TasksView: View {
     private var derivedProjects: [ProjectSummary] {
         let metaByKey = Dictionary(
             projects
-                .filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+                .filter { activeMember.canAccessTodo(ownedBy: $0.ownerMember) }
                 .compactMap { project -> (String, TodoProject)? in
                     let name = project.name.trimmingCharacters(in: .whitespacesAndNewlines)
                     return name.isEmpty ? nil : ("\(project.ownerMember.rawValue)|\(name)", project)
@@ -132,7 +132,7 @@ struct TasksView: View {
     private var derivedAreas: [AreaSummary] {
         let metaByKey = Dictionary(
             areas
-                .filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+                .filter { activeMember.canAccessTodo(ownedBy: $0.ownerMember) }
                 .compactMap { area -> (String, TodoArea)? in
                     let name = area.name.trimmingCharacters(in: .whitespacesAndNewlines)
                     return name.isEmpty ? nil : ("\(area.ownerMember.rawValue)|\(name)", area)

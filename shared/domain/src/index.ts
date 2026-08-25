@@ -5,9 +5,18 @@
 // pinned by ../fixtures/visibility-cases.json.
 
 export * from "./convexInt64.ts"
+export * from "./budgetCategoryDeletion.ts"
 export * from "./family.ts"
 export * from "./finance.ts"
 export * from "./incomeBuyWriteContract.ts"
+export * from "./manualFee.ts"
 export * from "./money.ts"
+export * from "./moneyOutToday.ts"
 export * from "./readModel.ts"
+export {
+  canSeeTodoOwnedBy,
+  canWriteTodoOwnedBy,
+  todosForActiveProfile,
+  type TodoOwned,
+} from "./todo.ts"
 export * from "./writeContract.ts"

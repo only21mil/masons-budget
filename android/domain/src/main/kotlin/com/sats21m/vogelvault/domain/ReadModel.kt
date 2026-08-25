@@ -129,6 +129,8 @@ data class Budget(
     val income: BudgetIncome? = null,
     val strategyNote: String? = null,
     override val owner: FamilyMember,
+    /** Exact remote document revision used by budget write fences. */
+    val updatedAtMs: Long = 0L,
 ) : Owned {
     val plannedCents: Long? get() = categories.sumExactOrNull(BudgetCategory::budgetCents)
     val actualCents: Long? get() = categories.sumExactOrNull(BudgetCategory::spentCents)
@@ -190,7 +192,12 @@ data class BtcBuy(
     val usdCents: Long,
     val costBasisStatus: String? = null,
     override val owner: FamilyMember,
-) : Owned
+    val feeUsdCents: Long = 0L,
+) : Owned {
+    init {
+        require(feeUsdCents >= 0L) { "Bitcoin buy feeUsdCents must be nonnegative" }
+    }
+}
 
 /**
  * An internal movement between two Bitcoin accounts.
@@ -284,12 +291,16 @@ data class BtcBillPay(
     val amountUsdCents: Long,
     val btcSpentSats: Long,
     val btcPriceCents: Long = 0L,
-    val feeUsdCents: Long,
+    val feeUsdCents: Long = 0L,
     val platform: String?,
     val note: String?,
     val reference: String? = null,
     override val owner: FamilyMember,
-) : Owned
+) : Owned {
+    init {
+        require(feeUsdCents >= 0L) { "Bitcoin bill pay feeUsdCents must be nonnegative" }
+    }
+}
 
 // ── Todos ───────────────────────────────────────────────────────────────────
 
@@ -309,7 +320,7 @@ data class TodoItem(
     val updatedAt: String? = null,
     val completedAt: String? = null,
     val updatedAtMs: Long = 0L,
-) : Owned
+) : ProfileScopedTodo
 
 /**
  * Due on or before [date], comparing ISO `yyyy-MM-dd` strings lexically.
@@ -330,8 +341,9 @@ fun TodoItem.isDueBy(date: String): Boolean = !done && isDueOnOrBefore(date)
 /**
  * Everything a screen can read, unfiltered and tagged with canonical owners.
  *
- * Screens apply [visibleTo] / [netWorthScopeFor] themselves. Handing pre-filtered
- * data to the UI would hide a missing filter instead of exposing it.
+ * Screens apply [visibleTo] / [netWorthScopeFor] to financial rows and [todosFor]
+ * to todos. Handing pre-filtered data to the UI would hide a missing projection
+ * instead of exposing it.
  */
 data class ReadModel(
     val transactions: Slice<List<Transaction>>,

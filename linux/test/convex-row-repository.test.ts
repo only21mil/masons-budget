@@ -388,6 +388,39 @@ describe("main-process row repository", () => {
     expect(calls).toBe(2)
   })
 
+  it("keeps exact buy fees in the completed cache", async () => {
+    let calls = 0
+    const repository = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => {
+        calls += 1
+        return success({
+          complete: true,
+          rows: [{
+            buyId: "buy-cached-fee",
+            owner: "victor",
+            date: "2026-08-25",
+            month: "2026-08",
+            source: "river",
+            sats: int64(1_000n),
+            priceUsdCents: int64(10_000_000n),
+            usdCents: int64(100n),
+            feeUsdCents: int64(25n),
+            updatedAtMs: 1,
+          }],
+        })
+      },
+      now: () => 1,
+    })
+
+    const request = { kind: "btcBuys", scope: "visible" } as const
+    const first = await repository.query(request, "victor")
+    const second = await repository.query(request, "victor")
+    expect(first).toMatchObject({ rows: [{ feeUsdCents: 25n }] })
+    expect(second).toEqual(first)
+    expect(calls).toBe(1)
+  })
+
   it("admits every row request in one renderer refresh", async () => {
     const releases: Array<() => void> = []
     let calls = 0
@@ -615,6 +648,27 @@ describe("main-process row repository", () => {
     })
   })
 
+  it("rejects another profile's todo even for an adult viewer", async () => {
+    const repository = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => success({
+        complete: true,
+        rows: [{
+          todoId: "todo-rachel-private",
+          owner: "rachel",
+          title: "Private",
+          done: false,
+          flagged: false,
+          updatedAtMs: 1,
+        }],
+      }),
+    })
+    await expect(repository.query({ kind: "todos" }, "victor")).resolves.toEqual({
+      status: "error",
+      code: "invalid-response",
+    })
+  })
+
   it("projects todos, BTC buys, accounts, and bill pays through public allowlists", async () => {
     const cases: ReadonlyArray<{
       readonly request: Record<string, unknown>
@@ -627,14 +681,14 @@ describe("main-process row repository", () => {
         path: "tables:listTodos",
         row: {
           todoId: "todo-1",
-          owner: "mason",
+          owner: "victor",
           title: "Example todo",
           done: false,
           flagged: true,
           priority: int64(2n),
           updatedAtMs: 10,
         },
-        expected: { todoId: "todo-1", owner: "mason", priority: 2n },
+        expected: { todoId: "todo-1", owner: "victor", priority: 2n },
       },
       {
         request: { kind: "btcBuys", scope: "visible" },
@@ -650,7 +704,7 @@ describe("main-process row repository", () => {
           usdCents: int64(10_000n),
           updatedAtMs: 20,
         },
-        expected: { buyId: "buy-1", owner: "mason", sats: 100n },
+        expected: { buyId: "buy-1", owner: "mason", sats: 100n, feeUsdCents: 0n },
       },
       {
         request: { kind: "btcAccounts", scope: "netWorth" },
@@ -726,6 +780,30 @@ describe("main-process row repository", () => {
         format: "convex_encoded_json",
       })
     }
+  })
+
+  it("rejects negative buy fees at the HTTP-to-IPC boundary", async () => {
+    const repository = createConvexRowRepository({
+      configuration: () => ({ generation: 1, settings }),
+      post: async () => success({
+        complete: true,
+        rows: [{
+          buyId: "buy-negative-fee",
+          owner: "victor",
+          date: "2026-08-25",
+          month: "2026-08",
+          source: "river",
+          sats: int64(1_000n),
+          priceUsdCents: int64(10_000_000n),
+          usdCents: int64(100n),
+          feeUsdCents: int64(-1n),
+          updatedAtMs: 1,
+        }],
+      }),
+    })
+    await expect(
+      repository.query({ kind: "btcBuys", scope: "visible" }, "victor"),
+    ).resolves.toEqual({ status: "error", code: "invalid-response" })
   })
 
   it("decodes legacy budget month labels, tagged savingsBps, and BTC snapshot metadata", async () => {

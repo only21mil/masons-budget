@@ -107,13 +107,6 @@
     { "key": "strike-mason", "label": "Mason Strike", "custody": "exchange", "btc": "0.01", "owner": "mason" }
   ],
 
-  "sampleTodos": [
-    { "id": "todo-1", "title": "Pay mortgage", "owner": "victor" },
-    { "id": "todo-2", "title": "Schedule dentist", "owner": "rachel" },
-    { "id": "todo-3", "title": "Finish homework", "owner": "mason" },
-    { "id": "todo-4", "title": "Pack lunch", "owner": "maddox" }
-  ],
-
   "serverResponseCompatibility": {
     "$comment": "Pass each complete response through the production decoder. Unknown members at the response, envelope, row, and rowCounts levels are deliberate and must not be removed before decoding. Known malformed fields and unknown closed owner values must still fail.",
     "rowCounts": {
@@ -219,9 +212,6 @@
       "mason": ["Mason Strike"],
       "maddox": []
     },
-    "visibleTodoCount": { "victor": 4, "rachel": 4, "mason": 1, "maddox": 1 },
-    "visibleTodoTitles": { "mason": ["Finish homework"], "maddox": ["Pack lunch"] },
-    "rachelSeesVictorTodo": "Pay mortgage",
     "visibleSpend": { "victor": "239", "rachel": "239", "mason": "52", "maddox": "7" },
     "budgetSpend": { "victor": "180", "rachel": "180", "mason": "52", "maddox": "7" },
     "budgetOwners": {

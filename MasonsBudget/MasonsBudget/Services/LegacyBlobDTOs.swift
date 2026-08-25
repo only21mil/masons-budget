@@ -211,12 +211,15 @@ struct LegacyBTCBuyDTO: Codable {
     let amountBtc: Decimal
     let priceUsd: Decimal
     let usd: Decimal
+    /// Optional manual fee. Missing pre-fee rows decode as zero at the model boundary.
+    let feeUsd: Decimal?
     let note: String?
     let status: String?
     let costBasisStatus: String?
     let loggedBy: String?
     let archimedesRequestId: String?
     let owner: String?
+    let updatedAtMs: Double?
 
     init(
         id: String,
@@ -232,6 +235,8 @@ struct LegacyBTCBuyDTO: Codable {
         loggedBy: String?,
         archimedesRequestId: String?,
         owner: String? = nil,
+        feeUsd: Decimal? = nil,
+        updatedAtMs: Double? = nil,
     ) {
         self.id = id
         self.date = date
@@ -240,12 +245,14 @@ struct LegacyBTCBuyDTO: Codable {
         self.amountBtc = amountBtc
         self.priceUsd = priceUsd
         self.usd = usd
+        self.feeUsd = feeUsd
         self.note = note
         self.status = status
         self.costBasisStatus = costBasisStatus
         self.loggedBy = loggedBy
         self.archimedesRequestId = archimedesRequestId
         self.owner = owner
+        self.updatedAtMs = updatedAtMs
     }
 
     enum CodingKeys: String, CodingKey {
@@ -253,15 +260,59 @@ struct LegacyBTCBuyDTO: Codable {
         case amountSats = "amount_sats"
         case amountBtc = "amount_btc"
         case priceUsd = "price_usd"
+        case feeUsd = "fee_usd"
         case costBasisStatus = "cost_basis_status"
         case loggedBy = "logged_by"
         case archimedesRequestId = "archimedes_request_id"
+        case updatedAtMs = "updated_at_ms"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        date = try container.decode(String.self, forKey: .date)
+        source = try container.decode(String.self, forKey: .source)
+        amountSats = try container.decode(Int64.self, forKey: .amountSats)
+        amountBtc = try container.decode(Decimal.self, forKey: .amountBtc)
+        priceUsd = try container.decode(Decimal.self, forKey: .priceUsd)
+        usd = try container.decode(Decimal.self, forKey: .usd)
+        feeUsd = try container.decodeIfPresent(Decimal.self, forKey: .feeUsd)
+        note = try container.decodeIfPresent(String.self, forKey: .note)
+        status = try container.decodeIfPresent(String.self, forKey: .status)
+        costBasisStatus = try container.decodeIfPresent(String.self, forKey: .costBasisStatus)
+        loggedBy = try container.decodeIfPresent(String.self, forKey: .loggedBy)
+        archimedesRequestId = try container.decodeIfPresent(String.self, forKey: .archimedesRequestId)
+        owner = try container.decodeIfPresent(String.self, forKey: .owner)
+        updatedAtMs = try container.decodeIfPresent(Double.self, forKey: .updatedAtMs)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(date, forKey: .date)
+        try container.encode(source, forKey: .source)
+        try container.encode(amountSats, forKey: .amountSats)
+        try container.encode(amountBtc, forKey: .amountBtc)
+        try container.encode(priceUsd, forKey: .priceUsd)
+        try container.encode(usd, forKey: .usd)
+        try container.encodeIfPresent(feeUsd, forKey: .feeUsd)
+        try container.encodeIfPresent(note, forKey: .note)
+        try container.encodeIfPresent(status, forKey: .status)
+        try container.encodeIfPresent(costBasisStatus, forKey: .costBasisStatus)
+        try container.encodeIfPresent(loggedBy, forKey: .loggedBy)
+        try container.encodeIfPresent(archimedesRequestId, forKey: .archimedesRequestId)
+        try container.encodeIfPresent(owner, forKey: .owner)
+        try container.encodeIfPresent(updatedAtMs, forKey: .updatedAtMs)
     }
 }
 
 extension LegacyBTCBuyDTO {
-    init(appBuy buy: BTCBuy, owner: FamilyMember) {
+    init(appBuy buy: BTCBuy, owner: FamilyMember) throws {
         let canonicalOwner = owner.ledgerOwner
+        let feeUsd = try ExactMoney.optionalDollars(
+            from: buy.feeUsdCents,
+            field: "btcBuy.feeUsdCents",
+        )
         self.init(
             id: buy.id,
             date: LegacyTransactionDTO.dateString(from: buy.date),
@@ -276,6 +327,8 @@ extension LegacyBTCBuyDTO {
             loggedBy: buy.loggedBy,
             archimedesRequestId: buy.archimedesRequestId,
             owner: canonicalOwner.rawValue,
+            feeUsd: feeUsd,
+            updatedAtMs: buy.updatedAtMs,
         )
     }
 
@@ -343,6 +396,40 @@ struct LegacyBTCBillPayDTO: Codable {
     let feeUsd: Decimal?
     let reference: String?
     let owner: String?
+    let budgetEffect: BTCBillPayBudgetEffect?
+    let updatedAtMs: Double?
+
+    init(
+        id: String,
+        date: String,
+        merchant: String,
+        category: String,
+        amountUsd: Decimal,
+        btcSpent: Decimal,
+        btcPrice: Decimal?,
+        platform: String?,
+        note: String?,
+        feeUsd: Decimal?,
+        reference: String?,
+        owner: String?,
+        budgetEffect: BTCBillPayBudgetEffect? = nil,
+        updatedAtMs: Double? = nil,
+    ) {
+        self.id = id
+        self.date = date
+        self.merchant = merchant
+        self.category = category
+        self.amountUsd = amountUsd
+        self.btcSpent = btcSpent
+        self.btcPrice = btcPrice
+        self.platform = platform
+        self.note = note
+        self.feeUsd = feeUsd
+        self.reference = reference
+        self.owner = owner
+        self.budgetEffect = budgetEffect
+        self.updatedAtMs = updatedAtMs
+    }
 
     /// BTC price at time of bill pay — computed from amount/btc when missing.
     var effectiveBtcPrice: Decimal {
@@ -357,6 +444,8 @@ struct LegacyBTCBillPayDTO: Codable {
         case btcSpent = "btc_spent"
         case btcPrice = "btc_price"
         case feeUsd = "fee_usd"
+        case budgetEffect = "budget_effect"
+        case updatedAtMs = "updated_at_ms"
     }
 }
 

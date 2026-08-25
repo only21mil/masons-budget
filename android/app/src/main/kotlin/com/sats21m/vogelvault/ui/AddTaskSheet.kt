@@ -181,7 +181,7 @@ internal fun AddTaskSheet(
                         }
                         saving = true
                         scope.launch {
-                            val result = client.upsert(task, baseUpdatedAtMs = null)
+                            val result = client.upsert(owner, task, baseUpdatedAtMs = null)
                             saving = false
                             val recoveryFailure = if (result === ConvexResult.Unauthorized) {
                                 credentialRejected = true

@@ -187,11 +187,13 @@ struct ConvexBTCBuyRow: Decodable {
     let sats: Int64
     let priceUsdCents: Int64
     let usdCents: Int64
+    let feeUsdCents: Int64?
     let note: String?
     let status: String?
     let costBasisStatus: String?
     let loggedBy: String?
     let archimedesRequestId: String?
+    let updatedAtMs: Double?
 
     func legacyDTO() throws -> LegacyBTCBuyDTO {
         try validateDateMonth(date: date, month: month)
@@ -209,6 +211,8 @@ struct ConvexBTCBuyRow: Decodable {
             loggedBy: loggedBy,
             archimedesRequestId: archimedesRequestId,
             owner: owner.rawValue,
+            feeUsd: feeUsdCents.map { decimalMinorUnits($0, scale: 2) },
+            updatedAtMs: updatedAtMs,
         )
     }
 }
@@ -225,11 +229,18 @@ struct ConvexBTCBillPayRow: Decodable {
     let btcPriceCents: Int64
     let platform: String?
     let note: String?
-    let feeUsdCents: Int64
+    let feeUsdCents: Int64?
+    let budgetEffect: BTCBillPayBudgetEffect?
     let reference: String?
+    let updatedAtMs: Double?
 
     func legacyDTO() throws -> LegacyBTCBillPayDTO {
         try validateDateMonth(date: date, month: month)
+        if budgetEffect == .creditCardPayment,
+           category != BTCBillPayBudgetEffect.creditCardPaymentCategory
+        {
+            throw BTCBillPayContractError.inconsistentCreditCardPaymentCategory(category)
+        }
         return LegacyBTCBillPayDTO(
             id: billPayId,
             date: date,
@@ -240,9 +251,11 @@ struct ConvexBTCBillPayRow: Decodable {
             btcPrice: decimalMinorUnits(btcPriceCents, scale: 2),
             platform: platform,
             note: note,
-            feeUsd: decimalMinorUnits(feeUsdCents, scale: 2),
+            feeUsd: feeUsdCents.map { decimalMinorUnits($0, scale: 2) },
             reference: reference,
             owner: owner.rawValue,
+            budgetEffect: budgetEffect,
+            updatedAtMs: updatedAtMs,
         )
     }
 }
@@ -356,6 +369,38 @@ struct ConvexBudgetDocumentRow: Decodable {
     let mtdIncomeCents: Int64
     let ytdIncomeCents: Int64
     let monthlyHistory: [MonthlyHistory]
+    let updatedAtMs: Double?
+
+    func categoryDeletionIntent(
+        viewer: FamilyMember,
+        trustedCurrentMonth: String,
+        categoryName: String,
+        source: String? = nil,
+    ) throws -> BudgetCategoryDeletionIntent {
+        guard let resolvedSource = source ?? BudgetCategoryDeletionIntent.canonicalSource(for: viewer) else {
+            throw BudgetCategoryDeletionEligibilityError.unsupportedChildBudget(viewer)
+        }
+        guard let updatedAtMs else {
+            throw BudgetCategoryDeletionEligibilityError.missingRevision
+        }
+        guard updatedAtMs > 0,
+              updatedAtMs <= Double(BudgetCategoryDeletionIntent.maximumExactJSONRevision),
+              let exactRevision = Int64(exactly: updatedAtMs)
+        else {
+            throw BudgetCategoryDeletionEligibilityError.invalidRevisionNumber(updatedAtMs)
+        }
+        return try BudgetCategoryDeletionIntent.make(
+            viewer: viewer,
+            currentMonth: trustedCurrentMonth,
+            budgetMonth: month,
+            budgetOwner: owner,
+            budgetSource: resolvedSource,
+            existingCategoryNames: categories.map(\.name),
+            categoryName: categoryName,
+            budgetUpdatedAtMs: exactRevision,
+            baseUpdatedAtMs: exactRevision,
+        )
+    }
 
     func adultBudgetDTO() -> LegacyBudgetDTO {
         LegacyBudgetDTO(
@@ -469,7 +514,7 @@ struct ConvexRowReader: Sendable {
             as: ConvexRowEnvelope<ConvexTodoRow>.self,
         )
         let rows = try envelope.completeRows()
-        guard rows.allSatisfy({ viewer.canSee(dataOwnedBy: $0.owner) }) else {
+        guard rows.allSatisfy({ viewer.canAccessTodo(ownedBy: $0.owner) }) else {
             throw ConvexRowDecodeError.ownerOutOfScope
         }
         return try rows.map { try $0.legacyDTO() }

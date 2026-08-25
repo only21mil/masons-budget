@@ -5,9 +5,17 @@ struct TaskUndoBanner: View {
     @Environment(\.theme) private var theme
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var undoStore: TaskUndoStore
+    @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
+
+    private var activeMember: FamilyMember {
+        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    }
 
     var body: some View {
-        if let todo = undoStore.pending {
+        if let todo = undoStore.pending,
+           let owner = todo.ownerMember,
+           activeMember.canAccessTodo(ownedBy: owner)
+        {
             HStack(spacing: 10) {
                 Image(systemName: "trash")
                     .font(AppFont.labelLargeStrong)

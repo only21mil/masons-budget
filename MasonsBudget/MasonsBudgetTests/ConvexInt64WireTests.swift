@@ -254,12 +254,16 @@ final class ConvexRowMutationTests: XCTestCase {
             loggedBy: nil,
             archimedesRequestId: nil,
             owner: FamilyMember.maddox.rawValue,
+            feeUsd: Decimal(string: "1.23"),
+            updatedAtMs: 1_777_777_777_777,
         )
-        try await client.upsertBTCBuyRow(
+        let acceptedBuyRevision = try await client.upsertBTCBuyRow(
             buy,
             owner: .maddox,
             sourceFile: "bitcoin-buys",
         )
+        // tables:upsertBtcBuy returns identity/outcome, but not a revision.
+        XCTAssertNil(acceptedBuyRevision)
 
         let requests = capture.values()
         XCTAssertEqual(
@@ -295,7 +299,73 @@ final class ConvexRowMutationTests: XCTestCase {
             ["$integer": "SSZkAAAAAAA="],
         )
         XCTAssertEqual(buyRow["usdCents"] as? [String: String], ["$integer": "px8AAAAAAAA="])
+        XCTAssertEqual(buyRow["feeUsdCents"] as? [String: String], ["$integer": "ewAAAAAAAAA="])
         XCTAssertEqual(buyRow["owner"] as? String, "maddox")
+        XCTAssertEqual(buyArgs["baseUpdatedAtMs"] as? Double, 1_777_777_777_777)
+    }
+
+    func testBTCBuyWriteEmitsExplicitZeroFeeWhenManualFeeIsMissing() async throws {
+        let capture = RowMutationRequestCapture()
+        let client = makeClient(capture: capture)
+        let buy = LegacyBTCBuyDTO(
+            id: "buy-1",
+            date: "2026-07-29",
+            source: "River",
+            amountSats: 1,
+            amountBtc: Decimal(string: "0.00000001")!,
+            priceUsd: 100_000,
+            usd: 1,
+            note: nil,
+            status: nil,
+            costBasisStatus: nil,
+            loggedBy: nil,
+            archimedesRequestId: nil,
+            owner: FamilyMember.victor.rawValue,
+        )
+
+        XCTAssertNil(try await client.upsertBTCBuyRow(buy, owner: .victor))
+        let request = try XCTUnwrap(capture.values.first)
+        let arguments = try XCTUnwrap(request["args"] as? [String: Any])
+        let row = try XCTUnwrap(arguments["buy"] as? [String: Any])
+        XCTAssertEqual(
+            row["feeUsdCents"] as? [String: String],
+            ["$integer": "AAAAAAAAAAA="],
+        )
+    }
+
+    func testBTCBuyWriteRejectsInvalidManualFeesBeforeNetworkIO() async throws {
+        for invalidFee in [
+            Decimal(string: "-0.01")!,
+            Decimal(string: "0.001")!,
+            Decimal(string: "92233720368547758.08")!,
+        ] {
+            let capture = RowMutationRequestCapture()
+            let client = makeClient(capture: capture)
+            let buy = LegacyBTCBuyDTO(
+                id: "buy-1",
+                date: "2026-07-29",
+                source: "River",
+                amountSats: 1,
+                amountBtc: Decimal(string: "0.00000001")!,
+                priceUsd: 100_000,
+                usd: 1,
+                note: nil,
+                status: nil,
+                costBasisStatus: nil,
+                loggedBy: nil,
+                archimedesRequestId: nil,
+                owner: FamilyMember.victor.rawValue,
+                feeUsd: invalidFee,
+            )
+
+            do {
+                _ = try await client.upsertBTCBuyRow(buy, owner: .victor)
+                XCTFail("Invalid manual fee was accepted")
+            } catch {
+                XCTAssertTrue(error is ExactMoneyError)
+            }
+            XCTAssertTrue(capture.values().isEmpty)
+        }
     }
 
     func testSatIncomeWritePreservesSatsAndRevisionFence() async throws {
@@ -453,7 +523,7 @@ final class ConvexRowMutationTests: XCTestCase {
                 case "tables:deleteTransaction":
                     value = ["txId": "tx-1", "removed": true]
                 case "tables:upsertBtcBuy":
-                    value = ["buyId": "buy-1"]
+                    value = ["buyId": "buy-1", "owner": "victor", "month": "2026-07", "outcome": "inserted"]
                 case "tables:upsertTodo":
                     value = ["todoId": "todo-1"]
                 case "tables:deleteTodo":
@@ -469,6 +539,7 @@ final class ConvexRowMutationTests: XCTestCase {
                             "mtdIncomeCents": ConvexTaggedInt64Encoder.encode(0),
                             "ytdIncomeCents": ConvexTaggedInt64Encoder.encode(0),
                             "monthlyHistory": [],
+                            "updatedAtMs": 1_777_777_777_777,
                         ],
                     ]
                 case "tables:upsertBudgetCategory":

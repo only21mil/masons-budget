@@ -17,6 +17,7 @@ import {
   transactionsDataFileName,
 } from "./family.ts"
 import { isIsoDate } from "./todo.ts"
+import { parseManualFeeUsdCents } from "./manualFee.ts"
 
 export const CONVEX_WRITE_FORMAT = "convex_encoded_json" as const
 export const UPSERT_TRANSACTION_PATH = "tables:upsertTransaction" as const
@@ -136,7 +137,7 @@ export interface BtcBillPayWriteInput {
   readonly amountUsdCents: string | bigint
   readonly btcSpentSats: string | bigint
   readonly btcPriceCents: string | bigint
-  readonly feeUsdCents: string | bigint
+  readonly feeUsdCents?: string | bigint | null
   readonly owner: FamilyMember
   readonly sourceFile: "bitcoin-bill-pays"
   readonly paymentSource: "river_bitcoin_bill_pay"
@@ -275,6 +276,10 @@ export function buildTransactionWriteRequest(
   }
 }
 
+/**
+ * Describe the existing bill-pay route with the Phase 1 fee field. This client
+ * contract does not assert that a deployed backend accepts that field.
+ */
 export function buildBtcBillPayWriteRequest(
   actor: unknown,
   candidate: unknown,
@@ -333,10 +338,7 @@ export function buildBtcBillPayWriteRequest(
   const amountUsdCents = positiveWriteInt64(candidate.amountUsdCents, "amountUsdCents")
   const btcSpentSats = positiveWriteInt64(candidate.btcSpentSats, "btcSpentSats")
   const btcPriceCents = positiveWriteInt64(candidate.btcPriceCents, "btcPriceCents")
-  const feeUsdCents = parseWriteInt64(candidate.feeUsdCents)
-  if (feeUsdCents < 0n) {
-    throw new WriteContractError("invalid-input", "feeUsdCents must be nonnegative")
-  }
+  const feeUsdCents = manualFee(candidate.feeUsdCents)
 
   const optional = (field: "note" | "reference") => {
     const value = candidate[field]
@@ -367,6 +369,18 @@ export function buildBtcBillPayWriteRequest(
         ...optional("reference"),
       },
     },
+  }
+}
+
+function manualFee(value: unknown): bigint {
+  try {
+    return parseManualFeeUsdCents(value)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "feeUsdCents is invalid"
+    throw new WriteContractError(
+      message.includes("int64") ? "int64-out-of-range" : "invalid-minor-units",
+      message,
+    )
   }
 }
 

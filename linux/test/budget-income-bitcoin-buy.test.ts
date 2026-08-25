@@ -75,6 +75,7 @@ const LINKED_BUY: BTCBuy = {
   sats: parseBtcToSats("0.00270000"),
   priceUsd: parseCents("92592.59"),
   usd: parseCents("2500.00"),
+  feeUsd: 0n,
   note: null,
   status: "settled",
   costBasisStatus: "confirmed",

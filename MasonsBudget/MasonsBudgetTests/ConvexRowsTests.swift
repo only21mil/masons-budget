@@ -40,6 +40,7 @@ final class ConvexRowsTests: XCTestCase {
         XCTAssertEqual(buys.rows[0].sats, 6_572_537)
         XCTAssertEqual(buys.rows[0].priceUsdCents, 6_414_981)
         XCTAssertEqual(buys.rows[0].usdCents, 425_843)
+        XCTAssertNil(buys.rows[0].feeUsdCents)
 
         let billPays: ConvexRowEnvelope<ConvexBTCBillPayRow> = try await client.fetchRows(
             .btcBillPays(viewer: .victor, scope: .visible),
@@ -257,15 +258,25 @@ final class ConvexRowsTests: XCTestCase {
                 "mtdIncomeCents": int64("AAAAAAAAAAA="),
                 "ytdIncomeCents": int64("AAAAAAAAAAA="),
                 "monthlyHistory": [],
+                "updatedAtMs": 1_777_777_777_777,
             ],
         ])
 
-        let budget = try envelope.completeDocument().adultBudgetDTO()
+        let document = try envelope.completeDocument()
+        let budget = document.adultBudgetDTO()
         XCTAssertEqual(
             budget.categories[0].budget,
             Decimal(string: "90071992547409.93")!,
         )
         XCTAssertNil(budget.categories[0].spent, "Row budget spend must remain transaction-derived.")
+        let intent = try document.categoryDeletionIntent(
+            viewer: .rachel,
+            trustedCurrentMonth: "2026-07",
+            categoryName: "Precision",
+        )
+        XCTAssertEqual(intent.owner, .victor)
+        XCTAssertEqual(intent.source, "budget")
+        XCTAssertEqual(intent.baseUpdatedAtMs, 1_777_777_777_777)
     }
 
     func testUnknownOwnerAndIncompleteSnapshotAreRejected() throws {
@@ -327,17 +338,75 @@ final class ConvexRowsTests: XCTestCase {
         }
     }
 
+    func testPreFeeBillPayRowDecodesWithLegacyCreditCardPaymentDefaults() throws {
+        let envelope: ConvexRowEnvelope<ConvexBTCBillPayRow> = try decodeTaggedJSON([
+            "complete": true,
+            "rows": [[
+                "billPayId": "legacy-bill-pay",
+                "owner": "victor",
+                "date": "2026-08-25",
+                "month": "2026-08",
+                "merchant": "Card",
+                "category": "Legacy category",
+                "amountUsdCents": int64(value: 10_000),
+                "btcSpentSats": int64(value: 100_000),
+                "btcPriceCents": int64(value: 10_000_000),
+                "updatedAtMs": 1_777_777_777_777,
+            ]],
+        ])
+        let dto = try XCTUnwrap(envelope.completeRows().first).legacyDTO()
+        let model = try LedgerMapper.mapBTCBillPay(dto)
+
+        XCTAssertNil(dto.feeUsd)
+        XCTAssertNil(dto.budgetEffect)
+        XCTAssertEqual(model.effectiveFeeUSD, 0)
+        XCTAssertEqual(try model.validatedBudgetEffect(), .creditCardPayment)
+        XCTAssertEqual(model.updatedAtMs, 1_777_777_777_777)
+    }
+
+    func testTodoRowReaderRejectsCrossProfileRowsFromTheServer() async throws {
+        let victorReader = try todoReader(serverRows: [[
+            "todoId": "victor-private",
+            "owner": "victor",
+            "title": "Victor private",
+            "done": false,
+            "flagged": false,
+        ]])
+        let victorTodos = try await victorReader.todos(viewer: .victor)
+        XCTAssertEqual(victorTodos.map(\.id), ["victor-private"])
+
+        let crossProfileReader = try todoReader(serverRows: [[
+            "todoId": "rachel-private",
+            "owner": "rachel",
+            "title": "Rachel private",
+            "done": false,
+            "flagged": false,
+        ]])
+        do {
+            _ = try await crossProfileReader.todos(viewer: .victor)
+            XCTFail("Cross-profile server todo was accepted")
+        } catch {
+            XCTAssertEqual(error as? ConvexRowDecodeError, .ownerOutOfScope)
+        }
+    }
+
     @MainActor
-    func testCompleteRowOwnerScopeReconcilesAnOwnerWithZeroTodos() throws {
+    func testCompleteRowOwnerScopeReconcilesOnlyTheExactTodoOwner() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: TodoItem.self, configurations: configuration)
         let context = ModelContext(container)
         let service = ConvexSyncService(context: context)
         context.insert(TodoItem(
-            id: "stale-rachel",
-            title: "Stale",
-            owner: .rachel,
+            id: "stale-victor",
+            title: "Stale Victor",
+            owner: .victor,
             createdBy: "mc2",
+        ))
+        context.insert(TodoItem(
+            id: "stale-rachel",
+            title: "Stale Rachel",
+            owner: .rachel,
+            createdBy: "app",
         ))
         try context.save()
 
@@ -348,7 +417,23 @@ final class ConvexRowsTests: XCTestCase {
         )
         try context.save()
 
-        XCTAssertTrue(try context.fetch(FetchDescriptor<TodoItem>()).isEmpty)
+        let remaining = try context.fetch(FetchDescriptor<TodoItem>())
+        XCTAssertEqual(remaining.map(\.id), ["stale-rachel"])
+        XCTAssertEqual(remaining.first?.createdBy, "app")
+    }
+
+    @MainActor
+    func testTodoReplacementRejectsCrossOwnerRows() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: TodoItem.self, configurations: configuration)
+        let service = ConvexSyncService(context: ModelContext(container))
+        let rachelTodo = TodoItem(id: "rachel", title: "Private", owner: .rachel)
+
+        XCTAssertThrowsError(
+            try service.replaceTodos(visibleTo: .victor, with: [rachelTodo]),
+        ) { error in
+            XCTAssertEqual(error as? ConvexRowDecodeError, .ownerOutOfScope)
+        }
     }
 
     func testCanonicalBTCUsesOneDocumentTotalWithoutSummingAccounts() throws {
@@ -527,7 +612,9 @@ final class ConvexRowsTests: XCTestCase {
                 platform: "River",
                 note: nil,
                 feeUsdCents: 0,
+                budgetEffect: .budgetCategory,
                 reference: nil,
+                updatedAtMs: 1,
             )
         }
         let ledger = try XCTUnwrap(CanonicalFinancialProjection.btcBillPays(rows: rows).value)
@@ -548,6 +635,32 @@ final class ConvexRowsTests: XCTestCase {
             "category": "Other",
             "updatedAtMs": 1,
         ]
+    }
+
+    private func todoReader(serverRows: [[String: Any]]) throws -> ConvexRowReader {
+        let envelope: [String: Any] = [
+            "status": "success",
+            "value": [
+                "complete": true,
+                "rows": serverRows,
+            ],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: envelope)
+        let client = ConvexClient(
+            deploymentURL: URL(string: "https://todo-privacy.invalid")!,
+            requestExecutor: { request in
+                guard let url = request.url,
+                      let response = HTTPURLResponse(
+                          url: url,
+                          statusCode: 200,
+                          httpVersion: "HTTP/1.1",
+                          headerFields: ["Content-Type": "application/json"],
+                      )
+                else { throw URLError(.badServerResponse) }
+                return (data, response)
+            },
+        )
+        return ConvexRowReader(client: client)
     }
 
     /// Takes an already-encoded Convex payload: base64 of eight little-endian

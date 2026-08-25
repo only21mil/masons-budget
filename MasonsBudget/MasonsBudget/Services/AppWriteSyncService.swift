@@ -290,12 +290,28 @@ enum AppWriteSyncService {
     ) {
         let canonicalOwner = owner.ledgerOwner
         let fileName = canonicalOwner.btcBuysDataFileName
-        let payload = LegacyBTCBuyDTO(appBuy: buy, owner: canonicalOwner)
+        let label = "Save BTC buy"
+        let payload: LegacyBTCBuyDTO
+        do {
+            payload = try LegacyBTCBuyDTO(appBuy: buy, owner: canonicalOwner)
+        } catch {
+            let operationID = reportSyncStart(label)
+            onOperationStart?(operationID)
+            reportSyncResult(
+                label: label,
+                operationID: operationID,
+                result: ConvexWriteResult.classify(error),
+                retry: nil,
+                onResult: onResult,
+            )
+            return
+        }
         pushBTCBuyPayload(
             payload,
             owner: canonicalOwner,
             to: fileName,
             onOperationStart: onOperationStart,
+            onAcceptedRevision: { buy.updatedAtMs = $0 },
             onResult: onResult,
         )
     }
@@ -305,6 +321,7 @@ enum AppWriteSyncService {
         owner: FamilyMember,
         to fileName: String,
         onOperationStart: (@MainActor @Sendable (UUID) -> Void)? = nil,
+        onAcceptedRevision: (@MainActor @Sendable (Double) -> Void)? = nil,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         let label = "Save BTC buy"
@@ -317,6 +334,7 @@ enum AppWriteSyncService {
                     owner: owner,
                     to: fileName,
                     onOperationStart: onOperationStart,
+                    onAcceptedRevision: onAcceptedRevision,
                     onResult: onResult,
                 )
             }, onResult: onResult)
@@ -325,12 +343,16 @@ enum AppWriteSyncService {
 
         Task {
             let client = makeClient()
+            let revision = AcceptedRevisionBox()
             let result = await withRetry(label: "push btc buy \(payload.id)") {
-                try await client.upsertBTCBuyRow(
+                revision.value = try await client.upsertBTCBuyRow(
                     payload,
                     owner: owner,
                     sourceFile: fileName,
                 )
+            }
+            if case .ok = result, let accepted = revision.value {
+                onAcceptedRevision?(accepted)
             }
             reportSyncResult(label: label, operationID: operationID, result: result, retry: {
                 pushBTCBuyPayload(
@@ -338,6 +360,7 @@ enum AppWriteSyncService {
                     owner: owner,
                     to: fileName,
                     onOperationStart: onOperationStart,
+                    onAcceptedRevision: onAcceptedRevision,
                     onResult: onResult,
                 )
             }, onResult: onResult)
@@ -537,6 +560,32 @@ enum AppWriteSyncService {
                     viewer: viewer,
                     onResult: onResult,
                 )
+            }, onResult: onResult)
+        }
+    }
+
+    /// Contract-only support for current-month deletion. No visual delete control
+    /// is added here; callers must first build a validated deletion intent.
+    static func deleteBudgetCategory(
+        _ intent: BudgetCategoryDeletionIntent,
+        onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
+    ) {
+        let label = "Delete budget category"
+        let operationID = reportSyncStart(label)
+        if let blocked = writeBlocker(requiresSyncToken: false) {
+            reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
+                deleteBudgetCategory(intent, onResult: onResult)
+            }, onResult: onResult)
+            return
+        }
+
+        Task {
+            let client = AppWritebackClient()
+            let result = await withRetry(label: "delete category \(intent.categoryName)") {
+                _ = try await client.deleteBudgetCategory(intent)
+            }
+            reportSyncResult(label: label, operationID: operationID, result: result, retry: {
+                deleteBudgetCategory(intent, onResult: onResult)
             }, onResult: onResult)
         }
     }

@@ -949,7 +949,7 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
         assertDecimalClose(buys[0].priceUsd, 68271.41)
     }
 
-    func testMapBTCBuy() {
+    func testMapBTCBuy() throws {
         let dto = LegacyBTCBuyDTO(
             id: "b-strike-2026-04-01",
             date: "2026-04-01",
@@ -965,7 +965,7 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
             archimedesRequestId: "arch-001",
         )
 
-        let model = LedgerMapper.mapBTCBuy(dto)
+        let model = try LedgerMapper.mapBTCBuy(dto)
         XCTAssertEqual(model.id, "b-strike-2026-04-01")
         XCTAssertEqual(model.amountSats, 732_371)
         XCTAssertEqual(model.source, "Strike")
@@ -973,7 +973,7 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
         XCTAssertNotEqual(model.date, .distantPast)
     }
 
-    func testMapBTCBuyPreservesExplicitOwner() {
+    func testMapBTCBuyPreservesExplicitOwner() throws {
         let dto = LegacyBTCBuyDTO(
             id: "b-app-rachel",
             date: "2026-04-01",
@@ -990,7 +990,7 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
             owner: "rachel",
         )
 
-        let model = LedgerMapper.mapBTCBuy(dto)
+        let model = try LedgerMapper.mapBTCBuy(dto)
 
         XCTAssertEqual(model.ownerMember, .rachel)
         XCTAssertEqual(model.amountSats, 100_000)
@@ -1025,7 +1025,7 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
         assertDecimalClose(wrapper.billPays[0].feeUsd, 28.55)
     }
 
-    func testMapBTCBillPay() {
+    func testMapBTCBillPay() throws {
         let dto = LegacyBTCBillPayDTO(
             id: "bp005",
             date: "2026-03-01",
@@ -1041,14 +1041,14 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
             owner: nil,
         )
 
-        let model = LedgerMapper.mapBTCBillPay(dto)
+        let model = try LedgerMapper.mapBTCBillPay(dto)
         XCTAssertEqual(model.platform, "Strike")
         XCTAssertEqual(model.feeUSD, 28.55)
         XCTAssertEqual(model.btcSpent, 0.05425107)
         XCTAssertEqual(model.ownerMember, .victor)
     }
 
-    func testMapBTCBillPayMasonOwner() {
+    func testMapBTCBillPayMasonOwner() throws {
         let dto = LegacyBTCBillPayDTO(
             id: "bp-mason-allowance",
             date: "2026-04-15",
@@ -1064,8 +1064,10 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
             owner: "mason",
         )
 
-        let model = LedgerMapper.mapBTCBillPay(dto)
+        let model = try LedgerMapper.mapBTCBillPay(dto)
         XCTAssertEqual(model.ownerMember, .mason)
+        XCTAssertEqual(model.feeUSD, 0)
+        XCTAssertEqual(model.effectiveFeeUSD, 0)
     }
 
     // MARK: - finances.json

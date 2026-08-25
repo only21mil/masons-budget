@@ -119,6 +119,7 @@ private fun ProfileTaskListsScreen(
     val snackbar = remember { SnackbarHostState() }
     val writes = rememberTodoWriteState(
         gateway = gateway,
+        activeProfile = state.activeProfile,
         snackbar = snackbar,
         onWriteSucceeded = onWriteSucceeded,
         onCredentialRejected = {

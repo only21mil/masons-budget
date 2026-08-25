@@ -1464,6 +1464,33 @@ describe("owner is first class, and the two visibility rules keep their widths",
     const mason = await queryRows(fn.listTodos, { viewer: "mason" });
     expect(mason.map((todo) => todo.todoId)).toContain("todo-3");
   });
+
+  it("todo snapshots are exact-profile even for adult viewers", async () => {
+    await t.mutation(fn.upsertTodo, {
+      todo: {
+        id: "todo-rachel-private",
+        title: "Rachel private",
+        owner: "rachel",
+        updated_at: "2026-07-12T10:00:00Z",
+      },
+    });
+    await t.mutation(fn.upsertTodo, {
+      todo: {
+        id: "todo-mason-private",
+        title: "Mason private",
+        owner: "mason",
+        updated_at: "2026-07-12T11:00:00Z",
+      },
+    });
+
+    const victor = await queryRows(fn.listTodos, { viewer: "victor" });
+    const rachel = await queryRows(fn.listTodos, { viewer: "rachel" });
+    const mason = await queryRows(fn.listTodos, { viewer: "mason" });
+    expect(victor.every((todo) => todo.owner === "victor")).toBe(true);
+    expect(rachel.map((todo) => todo.todoId)).toEqual(["todo-rachel-private"]);
+    expect(mason.map((todo) => todo.todoId)).toContain("todo-mason-private");
+    expect(mason.every((todo) => todo.owner === "mason")).toBe(true);
+  });
 });
 
 describe("indexed month and date", () => {

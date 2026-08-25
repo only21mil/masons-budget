@@ -201,7 +201,7 @@ final class ConvexSyncService {
     private func syncBTCBuys(_ errors: inout [String]) async -> Int {
         do {
             let dtos = try await reader.readBTCBuys(viewer: currentMember)
-            let models = dtos.map { LedgerMapper.mapBTCBuy($0) }
+            let models = try dtos.map { try LedgerMapper.mapBTCBuy($0) }
             try replaceBTCBuys(ownedBy: [.victor, .rachel], with: models)
             return models.count
         } catch {
@@ -214,7 +214,7 @@ final class ConvexSyncService {
     private func syncBTCBillPays(_ errors: inout [String]) async -> Int {
         do {
             let dtos = try await reader.readBTCBillPays(viewer: currentMember)
-            let models = dtos.map { LedgerMapper.mapBTCBillPay($0) }
+            let models = try dtos.map { try LedgerMapper.mapBTCBillPay($0) }
             try replaceBTCBillPays(ownedBy: [.victor, .rachel], with: models)
             return models.count
         } catch {
@@ -330,7 +330,7 @@ final class ConvexSyncService {
     private func syncMasonBTCBuys(_ errors: inout [String]) async -> Int {
         do {
             let dtos = try await reader.readMasonBTCBuys(viewer: currentMember)
-            let models = dtos.map { LedgerMapper.mapBTCBuy($0, owner: .mason) }
+            let models = try dtos.map { try LedgerMapper.mapBTCBuy($0, owner: .mason) }
             try replaceBTCBuys(ownedBy: [.mason], with: models)
             return models.count
         } catch {
@@ -578,12 +578,14 @@ final class ConvexSyncService {
         local.amountSats = remote.amountSats
         local.priceUSD = remote.priceUSD
         local.usd = remote.usd
+        local.feeUsdCents = remote.feeUsdCents
         local.note = remote.note
         local.status = remote.status
         local.costBasisStatus = remote.costBasisStatus
         local.loggedBy = remote.loggedBy
         local.archimedesRequestId = remote.archimedesRequestId
         local.owner = remote.owner
+        local.updatedAtMs = remote.updatedAtMs
     }
 
     private func replaceBTCBillPays(ownedBy owners: [FamilyMember], with billPays: [BTCBillPay]) throws {
@@ -617,26 +619,33 @@ final class ConvexSyncService {
         local.btcSpent = remote.btcSpent
         local.btcPrice = remote.btcPrice
         local.feeUSD = remote.feeUSD
+        local.budgetEffect = remote.budgetEffect
         local.platform = remote.platform
         local.note = remote.note
         local.reference = remote.reference
         local.owner = remote.owner
+        local.updatedAtMs = remote.updatedAtMs
     }
 
     func replaceTodos(
-        visibleTo _: FamilyMember,
+        visibleTo viewer: FamilyMember,
         with remoteTodos: [TodoItem],
         replacementOwners: Set<FamilyMember>? = nil,
     ) throws {
+        guard remoteTodos.allSatisfy({ viewer.canAccessTodo(ownedBy: $0.ownerMember) }) else {
+            throw ConvexRowDecodeError.ownerOutOfScope
+        }
         let existing = try context.fetch(FetchDescriptor<TodoItem>())
+        let exactOwnerExisting = existing.filter { viewer.canAccessTodo(ownedBy: $0.ownerMember) }
 
         // A complete row snapshot explicitly names its replacement scope, even
         // when one owner currently has zero rows. Legacy payloads can only prove
-        // absence for owners actually present in the payload. App-only todos are
-        // untouched in either mode.
-        let remoteOwners = replacementOwners ?? Set(remoteTodos.map(\.ownerMember))
+        // absence for owners actually present in the payload. App-created and
+        // other-profile todos are untouched in either mode.
+        let requestedOwners = replacementOwners ?? Set(remoteTodos.map(\.ownerMember))
+        let remoteOwners = requestedOwners.intersection([viewer])
         // `mc2` is persisted provenance from the legacy import, not a live system name.
-        let scopedLegacyImports = existing.filter {
+        let scopedLegacyImports = exactOwnerExisting.filter {
             $0.createdBy == "mc2" && remoteOwners.contains($0.ownerMember)
         }
         // Full id index across ALL existing rows so an insert can never collide with an
@@ -650,6 +659,10 @@ final class ConvexSyncService {
 
         for remote in remoteTodos {
             if let local = existingById[remote.id] {
+                guard viewer.canAccessTodo(ownedBy: local.ownerMember) else {
+                    log.warning("Skipping imported todo \(remote.id): id belongs to another profile")
+                    continue
+                }
                 // An app-created row owns this id: never overwrite user-entered data and never
                 // insert a duplicate of the unique id.
                 if local.createdBy == "app" {

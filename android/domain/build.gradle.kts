@@ -29,7 +29,9 @@ val sharedDomainFixtureNames =
     listOf(
         "btc-fiat-availability-cases.json",
         "finance-market-cases.json",
+        "money-out-today-cases.json",
         "month-cases.json",
+        "budget-category-deletion-cases.json",
         "todo-cases.json",
         "visibility-cases.json",
     )

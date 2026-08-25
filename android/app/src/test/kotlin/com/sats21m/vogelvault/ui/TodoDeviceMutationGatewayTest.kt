@@ -14,6 +14,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -34,7 +35,7 @@ class TodoDeviceMutationGatewayTest {
     @Test
     fun `update sends device auth owner source and original base revision`() = runBlocking {
         val poster = RecordingPoster(upsertSuccess("updated"))
-        val result = gateway(poster).upsert(todo.copy(title = "Changed"), todo.updatedAtMs)
+        val result = gateway(poster).upsert(FamilyMember.MASON, todo.copy(title = "Changed"), todo.updatedAtMs)
         val wire = sent(poster)
         val args = wire["args"]!!.jsonObject
 
@@ -51,18 +52,18 @@ class TodoDeviceMutationGatewayTest {
     @Test
     fun `new todo omits base revision while delete and restore require it`() = runBlocking {
         val insertPoster = RecordingPoster(upsertSuccess("inserted"))
-        gateway(insertPoster).upsert(todo, null)
+        gateway(insertPoster).upsert(FamilyMember.MASON, todo, null)
         assertFalse(sent(insertPoster)["args"]!!.jsonObject.containsKey("baseUpdatedAtMs"))
 
         val deletePoster = RecordingPoster(deleteSuccess(removed = false))
-        val deleted = gateway(deletePoster).delete(todo)
+        val deleted = gateway(deletePoster).delete(FamilyMember.MASON, todo)
         val deleteWire = sent(deletePoster)
         assertEquals("tables:deleteTodoFromDevice", deleteWire["path"]!!.jsonPrimitive.content)
         assertEquals(todo.updatedAtMs.toString(), deleteWire["args"]!!.jsonObject["baseUpdatedAtMs"]!!.jsonPrimitive.content)
         assertFalse(assertIs<ConvexResult.Ok<TodoDeleteReceipt>>(deleted).value.removed)
 
         val restorePoster = RecordingPoster(restoreSuccess())
-        val restored = gateway(restorePoster).restore(todo)
+        val restored = gateway(restorePoster).restore(FamilyMember.MASON, todo)
         val restoreWire = sent(restorePoster)
         assertEquals("tables:restoreTodoFromDevice", restoreWire["path"]!!.jsonPrimitive.content)
         assertEquals(todo.updatedAtMs.toString(), restoreWire["args"]!!.jsonObject["baseUpdatedAtMs"]!!.jsonPrimitive.content)
@@ -87,7 +88,7 @@ class TodoDeviceMutationGatewayTest {
                     """{"status":"error","errorData":{"code":"$code","message":"$secretServerText"}}""",
                 ),
             )
-            val result = gateway(poster).delete(todo)
+            val result = gateway(poster).delete(FamilyMember.MASON, todo)
             assertEquals(outcome, result, code)
             assertFalse(result.toString().contains(secretServerText))
         }
@@ -103,8 +104,18 @@ class TodoDeviceMutationGatewayTest {
         )
         assertEquals(
             ConvexResult.Failed("invalid write response"),
-            gateway(wrong).delete(todo),
+            gateway(wrong).delete(FamilyMember.MASON, todo),
         )
+    }
+
+    @Test
+    fun `adult cannot mutate another adult profile todo`() = runBlocking {
+        val poster = RecordingPoster(upsertSuccess("updated"))
+
+        assertFailsWith<IllegalArgumentException> {
+            gateway(poster).upsert(FamilyMember.RACHEL, todo.copy(owner = FamilyMember.VICTOR), todo.updatedAtMs)
+        }
+        assertTrue(poster.bodies.isEmpty())
     }
 
     @Test

@@ -82,7 +82,7 @@ struct DashboardView: View {
         let cal = Calendar.current
         return allTodos.filter { todo in
             !todo.isDone &&
-                activeMember.canSee(dataOwnedBy: todo.ownerMember) &&
+                activeMember.canAccessTodo(ownedBy: todo.ownerMember) &&
                 (todo.dueDate.map { cal.isDateInToday($0) } ?? false)
         }
     }

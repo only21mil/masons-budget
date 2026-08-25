@@ -106,6 +106,7 @@ data class BtcBuyWriteRequest(
     val sats: Long,
     val priceUsdCents: Long,
     val usdCents: Long,
+    val feeUsdCents: Long = 0L,
 ) {
     init {
         require(id.isNotBlank())
@@ -114,6 +115,7 @@ data class BtcBuyWriteRequest(
         require(sats > 0L)
         require(priceUsdCents > 0L)
         require(usdCents > 0L)
+        require(feeUsdCents >= 0L)
     }
 }
 
@@ -128,6 +130,7 @@ internal data class BtcBuyFromIncomeWriteRequest(
     val sats: Long,
     val priceUsdCents: Long,
     val usdCents: Long,
+    val feeUsdCents: Long = 0L,
     val incomeSource: String,
     val incomeNote: String?,
     val buyNote: String?,
@@ -141,6 +144,7 @@ internal data class BtcBuyFromIncomeWriteRequest(
         sats = sats,
         priceUsdCents = priceUsdCents,
         usdCents = usdCents,
+        feeUsdCents = feeUsdCents,
         note = buyNote,
         loggedBy = loggedBy,
     )
@@ -164,6 +168,7 @@ internal data class BtcBuyFromIncomeWriteRequest(
         require(sats > 0L)
         require(priceUsdCents > 0L)
         require(usdCents > 0L)
+        require(feeUsdCents >= 0L)
         require(incomeSource.isNotBlank())
     }
 }
@@ -625,6 +630,7 @@ internal fun launchBtcBuySave(
                 sats = request.sats,
                 priceUsdCents = request.priceUsdCents,
                 usdCents = request.usdCents,
+                feeUsdCents = request.feeUsdCents,
                 owner = explicitBtcBuyOwner(request.owner),
             ),
             sourceFile = sourceFile,

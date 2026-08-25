@@ -180,10 +180,14 @@ class FamilyParityTest {
             Row(label = obj["label"].asString, owner = member(obj["owner"].asString))
         }
 
-    private fun todos(): List<Row> =
+    private fun todos(): List<TodoItem> =
         fixtures.getAsJsonArray("sampleTodos").map {
             val obj = it.asJsonObject
-            Row(label = obj["title"].asString, owner = member(obj["owner"].asString))
+            TodoItem(
+                id = obj["id"].asString,
+                title = obj["title"].asString,
+                owner = member(obj["owner"].asString),
+            )
         }
 
     private fun expectations(): JsonObject = fixtures.getAsJsonObject("expectations")
@@ -239,25 +243,20 @@ class FamilyParityTest {
     }
 
     @Test
-    fun `todo filtering matches expected counts and titles`() {
-        val counts = expectations().getAsJsonObject("visibleTodoCount")
+    fun `todo filtering is private to the exact profile`() {
         for (viewer in members) {
-            assertEquals(counts[viewer.key].asInt, todos().visibleTo(viewer).size, viewer.key)
-        }
-        val titles = expectations().getAsJsonObject("visibleTodoTitles")
-        for ((key, value) in titles.entrySet()) {
             assertEquals(
-                value.asJsonArray.map { it.asString },
-                todos().visibleTo(member(key)).map { it.label },
-                key,
+                todos().filter { it.owner == viewer }.map { it.title },
+                todos().todosFor(viewer).map { it.title },
+                viewer.key,
             )
         }
     }
 
     @Test
-    fun `Rachel sees Victor-owned todos`() {
-        val expected = expectations()["rachelSeesVictorTodo"].asString
-        assertTrue(todos().visibleTo(FamilyMember.RACHEL).any { it.label == expected })
+    fun `Rachel does not see Victor-owned todos`() {
+        assertTrue(todos().todosFor(FamilyMember.VICTOR).any { it.owner == FamilyMember.VICTOR })
+        assertFalse(todos().todosFor(FamilyMember.RACHEL).any { it.owner == FamilyMember.VICTOR })
     }
 
     @Test

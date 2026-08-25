@@ -2,7 +2,7 @@ package com.sats21m.vogelvault.ui
 
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.TodoItem
-import com.sats21m.vogelvault.domain.visibleTo
+import com.sats21m.vogelvault.domain.todosFor
 import java.time.Instant
 import java.time.format.DateTimeFormatterBuilder
 import java.util.UUID
@@ -48,7 +48,7 @@ internal fun todosForToday(
     viewer: FamilyMember,
     today: String,
 ): List<TodoItem> =
-    todos.visibleTo(viewer)
+    todos.todosFor(viewer)
         .filter { todo -> todo.due?.let { it <= today } == true }
         .sortedWith(TODO_ORDER)
 

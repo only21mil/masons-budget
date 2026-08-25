@@ -25,7 +25,7 @@ struct ProjectTodoListView: View {
 
     private var todos: [TodoItem] {
         allTodos.filter {
-            activeMember.canSee(dataOwnedBy: $0.ownerMember) &&
+            activeMember.canAccessTodo(ownedBy: $0.ownerMember) &&
                 $0.ownerMember == owner &&
                 projectName(for: $0) == normalizedProjectName
         }

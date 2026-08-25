@@ -300,6 +300,7 @@ function buy(
     sats: parseBtcToSats(btc),
     priceUsd: parseCents(price),
     usd: parseCents(usd),
+    feeUsd: 0n,
     note: null,
     status: "settled",
     costBasisStatus: "confirmed",

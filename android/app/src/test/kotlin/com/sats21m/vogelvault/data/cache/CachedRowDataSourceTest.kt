@@ -93,6 +93,72 @@ class CachedRowDataSourceTest {
         }
 
     @Test
+    fun `Bitcoin buy fee survives remote cache and cached domain mapping`() =
+        runBlocking {
+            val buy = BtcBuy(
+                id = "fee-buy",
+                date = "2026-08-25",
+                source = "River",
+                sats = 100_000L,
+                priceUsdCents = 6_500_000L,
+                usdCents = 6_500L,
+                owner = FamilyMember.VICTOR,
+                feeUsdCents = 25L,
+            )
+            val remote = FakeRows().apply {
+                buys = ConvexResult.Ok(RowSnapshot(listOf(buy), true))
+            }
+            val source = CachedRowDataSource(remote, dao, clock = { 123L })
+
+            source.load(FamilyMember.VICTOR)
+
+            val key = CacheQueryKeys.btcBuys("victor", "visible")
+            assertEquals(25L, dao.observeBtcBuys(key).first().single().feeUsdCents)
+            val cached = source.observe(FamilyMember.VICTOR).first {
+                it.data.btcBuys.value.singleOrNull()?.id == buy.id
+            }
+            assertEquals(25L, cached.data.btcBuys.value.single().feeUsdCents)
+        }
+
+    @Test
+    fun `todo cache preserves exact owner revision and mutation fields`() =
+        runBlocking {
+            val todo = TodoItem(
+                id = "mason-task",
+                title = "Finish report",
+                done = true,
+                project = "School",
+                area = "Classes",
+                due = "2026-08-25",
+                flagged = true,
+                owner = FamilyMember.MASON,
+                lane = "sats",
+                notes = "Keep this private",
+                priority = 3L,
+                createdAt = "2026-08-24T00:00:00.000Z",
+                updatedAt = "2026-08-25T00:00:00.000Z",
+                completedAt = "2026-08-25T00:00:00.000Z",
+                updatedAtMs = 1_800_000_000_000L,
+            )
+            val remote = FakeRows().apply {
+                todos = ConvexResult.Ok(RowSnapshot(listOf(todo), true))
+            }
+            val source = CachedRowDataSource(remote, dao, clock = { 1_900_000_000_000L })
+
+            source.load(FamilyMember.MASON)
+
+            val key = CacheQueryKeys.todos("mason")
+            val entity = dao.observeTodos(key).first().single()
+            assertEquals("todos", entity.sourceFile)
+            assertEquals(todo.updatedAtMs, entity.updatedAtMs)
+            assertEquals(todo.notes, entity.notes)
+            val cached = source.observe(FamilyMember.MASON).first {
+                it.data.todos.value.singleOrNull()?.id == todo.id
+            }.data.todos.value.single()
+            assertEquals(todo, cached)
+        }
+
+    @Test
     fun `Bitcoin posting fields and remote revision survive the Room cache`() =
         runBlocking {
             val revision = 1_777_777_777_777L
@@ -410,7 +476,7 @@ class CachedRowDataSourceTest {
                                 }
                             }
                         }
-                assertEquals(4, oldDatabase.openHelper.readableDatabase.version)
+                assertEquals(5, oldDatabase.openHelper.readableDatabase.version)
                 assertTrue("amount_cents" in columns)
                 assertTrue("amount_sats" in columns)
                 assertFalse("spend_amount" in columns)
@@ -432,7 +498,7 @@ class CachedRowDataSourceTest {
                         }
                 val transaction = cached.data.transactions.value.single()
 
-                assertEquals(4, reopenedDatabase.openHelper.readableDatabase.version)
+                assertEquals(5, reopenedDatabase.openHelper.readableDatabase.version)
                 assertEquals(3_750L, transaction.amount)
                 assertEquals(3_750L, transaction.spendAmount)
                 assertEquals(3_750L, transaction.displaySpendAmount)
@@ -504,6 +570,8 @@ private class FakeRows : RowQueryRepository {
     var offline = false
     var failedReason: String? = null
     var transactions: ConvexResult<RowSnapshot<Transaction>> = ConvexResult.Ok(RowSnapshot(emptyList(), true))
+    var todos: ConvexResult<RowSnapshot<TodoItem>> = ConvexResult.Ok(RowSnapshot(emptyList(), true))
+    var buys: ConvexResult<RowSnapshot<BtcBuy>> = ConvexResult.Ok(RowSnapshot(emptyList(), true))
     var accounts: ConvexResult<RowSnapshot<BtcAccount>>? = null
 
     override suspend fun listTransactions(
@@ -527,7 +595,7 @@ private class FakeRows : RowQueryRepository {
             unauthorized -> ConvexResult.Unauthorized
             failedReason != null -> ConvexResult.Failed(requireNotNull(failedReason))
             offline -> ConvexResult.Failed("transport failure")
-            else -> ConvexResult.Ok(RowSnapshot(emptyList(), true))
+            else -> todos
         }
 
     override suspend fun listIncome(
@@ -551,7 +619,7 @@ private class FakeRows : RowQueryRepository {
             unauthorized -> ConvexResult.Unauthorized
             failedReason != null -> ConvexResult.Failed(requireNotNull(failedReason))
             offline -> ConvexResult.Failed("transport failure")
-            else -> ConvexResult.Ok(RowSnapshot(emptyList(), true))
+            else -> buys
         }
 
     override suspend fun listBtcBillPays(

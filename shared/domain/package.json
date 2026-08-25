@@ -11,9 +11,18 @@
     "./money": "./src/money.ts",
     "./readModel": "./src/readModel.ts",
     "./todo": "./src/todo.ts",
+    "./budgetCategoryDeletion": "./src/budgetCategoryDeletion.ts",
+    "./manualFee": "./src/manualFee.ts",
+    "./moneyOutToday": "./src/moneyOutToday.ts",
+    "./incomeBuyWriteContract": "./src/incomeBuyWriteContract.ts",
+    "./writeContract": "./src/writeContract.ts",
+    "./fixtures/budget-category-deletion-cases.json": "./fixtures/budget-category-deletion-cases.json",
     "./fixtures/finance-market-cases.json": "./fixtures/finance-market-cases.json",
+    "./fixtures/manual-fee-cases.json": "./fixtures/manual-fee-cases.json",
+    "./fixtures/money-out-today-cases.json": "./fixtures/money-out-today-cases.json",
     "./fixtures/payment-source-cases.json": "./fixtures/payment-source-cases.json",
     "./fixtures/income-buy-write-cases.json": "./fixtures/income-buy-write-cases.json",
+    "./fixtures/todo-visibility-cases.json": "./fixtures/todo-visibility-cases.json",
     "./fixtures/visibility-cases.json": "./fixtures/visibility-cases.json"
   },
   "scripts": {

@@ -687,6 +687,8 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
         const { requestId, actor } = common(record)
         const owner = canonicalFinancialOwner(member(record["owner"]))
         budgetSource(owner)
+        const baseUpdatedAtMs = revision(record["baseUpdatedAtMs"])
+        if (baseUpdatedAtMs === 0) throw new InvalidRequest()
         return {
           kind,
           requestId,
@@ -694,7 +696,7 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           owner,
           month: exactMonth(record["month"]),
           name: boundedText(record["name"]),
-          baseUpdatedAtMs: revision(record["baseUpdatedAtMs"]),
+          baseUpdatedAtMs,
         }
       }
       case "btcBuy.upsert": {
@@ -704,7 +706,7 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           ["id", "owner", "date", "source", "sats", "priceUsdCents", "usdCents"],
           [
             "note", "buyStatus", "costBasisStatus", "loggedBy", "archimedesRequestId",
-            "linkedIncome", "baseUpdatedAtMs",
+            "feeUsdCents", "linkedIncome", "baseUpdatedAtMs",
           ],
         )
         const { requestId, actor } = common(record)
@@ -724,6 +726,9 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           sats: positiveInt64(record["sats"]),
           priceUsdCents: positiveInt64(record["priceUsdCents"]),
           usdCents,
+          feeUsdCents: Object.hasOwn(record, "feeUsdCents")
+            ? nonnegativeInt64(record["feeUsdCents"])
+            : 0n,
           ...optionalField("note", optionalText(record, "note")),
           ...optionalField("buyStatus", optionalText(record, "buyStatus")),
           ...optionalField("costBasisStatus", optionalText(record, "costBasisStatus")),
@@ -1058,6 +1063,7 @@ function mutationArgs(
           sats: encoded(request.sats),
           priceUsdCents: encoded(request.priceUsdCents),
           usdCents: encoded(request.usdCents),
+          feeUsdCents: encoded(request.feeUsdCents ?? 0n),
           ...optionalField("note", request.note),
           ...optionalField("status", request.buyStatus),
           ...optionalField("costBasisStatus", request.costBasisStatus),
