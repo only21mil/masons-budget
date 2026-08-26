@@ -252,6 +252,7 @@
 		D4D00A5A4054A43453F6CBB1 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 083F88D8EB4768C9BEDF39F9 /* OnboardingView.swift */; };
 		D735B252616C9B242950D664 /* finance-market-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = F3B18B925AF533486B8311C0 /* finance-market-cases.json */; };
 		DA400DF45A592D3A83188DF1 /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FBD5FB3989AEA4A2A5A5B9A /* TodayView.swift */; };
+		DBCF22AABC97C56CD90D9A9E /* task-write-wire-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = FDF72B2FFC72BFA2FCC73999 /* task-write-wire-cases.json */; };
 		DD95463755A63ABE04964599 /* BTCBillPay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DC543643B1F2899DDB38FE5 /* BTCBillPay.swift */; };
 		DE2E2A91C446B557794A2592 /* LegacyBlobDTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40F757710D47100DAE386F72 /* LegacyBlobDTOs.swift */; };
 		E0D92C6C6EC72A61D5CD620D /* LedgerDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D87AD3812997CFF8FDDCF5B /* LedgerDesignSystem.swift */; };
@@ -416,6 +417,7 @@
 		F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexClient.swift; sourceTree = "<group>"; };
 		F3B18B925AF533486B8311C0 /* finance-market-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "finance-market-cases.json"; sourceTree = "<group>"; };
 		F77DC014DA99E364F0D6572E /* PillButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PillButton.swift; sourceTree = "<group>"; };
+		FDF72B2FFC72BFA2FCC73999 /* task-write-wire-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-write-wire-cases.json"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -556,6 +558,7 @@
 				AEDD1C1FA9DFF789429491D4 /* money-out-today-cases.json */,
 				C2099C401266495C974A62BC /* month-cases.json */,
 				3FF15F6E86DFC6A8BE2EAFDA /* payment-source-cases.json */,
+				FDF72B2FFC72BFA2FCC73999 /* task-write-wire-cases.json */,
 				C8C3FD95CD5DDA1D13FAC403 /* todo-cases.json */,
 				D73554169E81ED9939029F22 /* todo-visibility-cases.json */,
 				A1BBFC0B4CB494B00C7FBF13 /* visibility-cases.json */,
@@ -819,6 +822,7 @@
 				003988134AF5ADC9C1D34A97 /* payment-source-cases.json in Resources */,
 				3DA0967F56F807FEDD46D888 /* rowCounts.convex_encoded_json.json in Resources */,
 				CA666BE0514416974E0790EC /* rowCounts.json.json in Resources */,
+				DBCF22AABC97C56CD90D9A9E /* task-write-wire-cases.json in Resources */,
 				6081768770E661C6EDF63DBA /* todo-cases.json in Resources */,
 				B8752458E7C92FE295407862 /* todo-visibility-cases.json in Resources */,
 				08C73AA7B882462F31726692 /* visibility-cases.json in Resources */,
