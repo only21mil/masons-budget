@@ -18,6 +18,14 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>SourceCodePro-Light.ttf</string>
+		<string>SourceCodePro-Regular.ttf</string>
+		<string>SourceCodePro-Medium.ttf</string>
+		<string>SourceCodePro-Semibold.ttf</string>
+		<string>SourceCodePro-Bold.ttf</string>
+	</array>
 	<key>VogelVaultBundledPairingURLsB64</key>
 	<string>$(VOGEL_VAULT_BUNDLED_PAIRING_URLS_B64)</string>
 </dict>

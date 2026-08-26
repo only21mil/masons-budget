@@ -28,6 +28,7 @@ targets:
           - "**/.DS_Store"
     resources:
       - path: MasonsBudget/Resources/Assets.xcassets
+      - path: MasonsBudget/Resources/Fonts
       - path: MasonsBudget/Preview Content
     settings:
       base:
@@ -59,6 +60,12 @@ targets:
       path: Config/Info-iOS-generated.plist
       properties:
         VogelVaultBundledPairingURLsB64: "$(VOGEL_VAULT_BUNDLED_PAIRING_URLS_B64)"
+        UIAppFonts:
+          - SourceCodePro-Light.ttf
+          - SourceCodePro-Regular.ttf
+          - SourceCodePro-Medium.ttf
+          - SourceCodePro-Semibold.ttf
+          - SourceCodePro-Bold.ttf
     dependencies: []
 
   MasonsBudgetMac:
@@ -70,6 +77,7 @@ targets:
           - "**/.DS_Store"
     resources:
       - path: MasonsBudget/Resources/Assets.xcassets
+      - path: MasonsBudget/Resources/Fonts
       - path: MasonsBudget/Preview Content
     settings:
       base:
@@ -90,6 +98,7 @@ targets:
       path: Config/Info-macOS-generated.plist
       properties:
         VogelVaultBundledPairingURLsB64: "$(VOGEL_VAULT_BUNDLED_PAIRING_URLS_B64)"
+        ATSApplicationFontsPath: "."
     dependencies: []
 
   MasonsBudgetTests:
