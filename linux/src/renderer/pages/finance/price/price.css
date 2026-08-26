@@ -1,0 +1,234 @@
+.vv-price-page {
+  box-sizing: border-box;
+  display: flex;
+  min-height: calc(100vh - var(--vv-topbar-height));
+  max-width: 720px;
+  flex-direction: column;
+  padding: var(--vv-ledger-screen-gutter) var(--vv-ledger-screen-gutter) 0;
+  color: var(--vv-ledger-ink);
+  font-family: var(--vv-ledger-font);
+  font-variant-numeric: tabular-nums;
+}
+
+.vv-price-back {
+  min-height: var(--vv-ledger-hit-target);
+  margin: -10px 0 4px -8px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--vv-ledger-ink-meta);
+  cursor: pointer;
+  font: var(--vv-ledger-weight-medium) var(--vv-ledger-text-chip) var(--vv-ledger-font);
+  letter-spacing: 0.14em;
+}
+
+.vv-price-back:hover,
+.vv-price-back:focus-visible {
+  color: var(--vv-ledger-bitcoin);
+}
+
+.vv-price-back:focus-visible,
+.vv-price-convert input:focus-visible {
+  outline: 2px solid var(--vv-ledger-bitcoin);
+  outline-offset: 3px;
+}
+
+.vv-price-kicker,
+.vv-price-convert h2,
+.vv-price-chart h2 {
+  margin: 0;
+  color: var(--vv-ledger-ink-meta);
+  font-size: var(--vv-ledger-text-meta);
+  font-weight: var(--vv-ledger-weight-medium);
+  letter-spacing: 0.18em;
+  line-height: 1.4;
+}
+
+.vv-price-hero__value {
+  margin: 10px 0 0;
+  color: var(--vv-ledger-bitcoin);
+  font-size: var(--vv-ledger-text-price);
+  font-weight: var(--vv-ledger-weight-semibold);
+  letter-spacing: var(--vv-ledger-tracking-price);
+  line-height: 1.1;
+}
+
+.vv-price-hero__value--unavailable {
+  color: var(--vv-ledger-ink-meta);
+  font-size: var(--vv-ledger-text-kpi);
+  letter-spacing: var(--vv-ledger-tracking-button);
+}
+
+.vv-price-hero__decimals {
+  opacity: 0.55;
+  font-size: var(--vv-ledger-text-kpi);
+}
+
+.vv-price-hero__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 9px;
+  color: var(--vv-ledger-ink-meta);
+  font-size: var(--vv-ledger-text-chip);
+  font-weight: var(--vv-ledger-weight-regular);
+  letter-spacing: var(--vv-ledger-tracking-meta);
+}
+
+.vv-price-delta {
+  font-size: var(--vv-ledger-text-button);
+  font-weight: var(--vv-ledger-weight-medium);
+  letter-spacing: 0;
+}
+
+.vv-price-delta--positive {
+  color: var(--vv-ledger-gain);
+}
+
+.vv-price-delta--negative {
+  color: var(--vv-ledger-loss);
+}
+
+.vv-price-delta--neutral {
+  color: var(--vv-ledger-ink-meta);
+}
+
+.vv-price-chart {
+  margin-top: 22px;
+}
+
+.vv-price-chart__heading,
+.vv-price-chart__ticks {
+  display: flex;
+  justify-content: space-between;
+  color: var(--vv-ledger-ink-meta);
+  font-size: var(--vv-ledger-text-kpi-label);
+  font-weight: var(--vv-ledger-weight-medium);
+  letter-spacing: 0.16em;
+}
+
+.vv-price-sparkline {
+  display: flex;
+  height: 74px;
+  align-items: flex-end;
+  gap: 3px;
+  margin-top: 14px;
+}
+
+.vv-price-sparkline__bar {
+  height: var(--vv-price-bar-height);
+  min-width: 2px;
+  flex: 1;
+  border-radius: 1px;
+  background: var(--vv-ledger-rule);
+}
+
+.vv-price-sparkline__bar--current {
+  background: var(--vv-ledger-bitcoin);
+}
+
+.vv-price-chart__ticks {
+  margin-top: 9px;
+  font-size: var(--vv-ledger-text-tab);
+  font-weight: var(--vv-ledger-weight-regular);
+  letter-spacing: 0.12em;
+}
+
+.vv-price-convert {
+  margin-top: 24px;
+  padding: var(--vv-ledger-space-7);
+  border: 1px var(--vv-ledger-rule-style) var(--vv-ledger-rule);
+  border-radius: var(--vv-ledger-radius-card);
+  background: var(--vv-ledger-panel);
+}
+
+.vv-price-convert__label {
+  display: block;
+  margin-top: 12px;
+  color: var(--vv-ledger-ink-meta);
+  font-size: var(--vv-ledger-text-kpi-label);
+  font-weight: var(--vv-ledger-weight-medium);
+  letter-spacing: 0.16em;
+}
+
+.vv-price-convert__input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--vv-ledger-ink-meta);
+  font-size: var(--vv-ledger-text-input);
+  font-weight: var(--vv-ledger-weight-medium);
+}
+
+.vv-price-convert input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 1px var(--vv-ledger-rule-style) var(--vv-ledger-rule);
+  border-radius: 0;
+  background: transparent;
+  color: var(--vv-ledger-ink);
+  font: var(--vv-ledger-weight-medium) 26px var(--vv-ledger-font);
+  font-variant-numeric: tabular-nums;
+}
+
+.vv-price-convert__note {
+  margin: 7px 0 0;
+  color: var(--vv-ledger-ink-meta);
+  font-size: var(--vv-ledger-text-tab);
+  letter-spacing: var(--vv-ledger-tracking-meta);
+  text-transform: uppercase;
+}
+
+.vv-price-convert__outputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.vv-price-convert__outputs > div:last-child {
+  text-align: right;
+}
+
+.vv-price-convert__outputs span {
+  display: block;
+  color: var(--vv-ledger-ink-meta);
+  font-size: var(--vv-ledger-text-kpi-label);
+  font-weight: var(--vv-ledger-weight-medium);
+  letter-spacing: 0.16em;
+}
+
+.vv-price-convert__outputs strong {
+  display: block;
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--vv-ledger-ink);
+  font-size: var(--vv-ledger-text-input);
+  font-weight: var(--vv-ledger-weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vv-price-convert__output--sats strong {
+  color: var(--vv-ledger-bitcoin);
+}
+
+.vv-price-footer {
+  margin-top: auto;
+  padding: 24px 0 14px;
+  color: var(--vv-ledger-ink-meta);
+  font-size: var(--vv-ledger-text-kpi-label);
+  font-weight: var(--vv-ledger-weight-regular);
+  letter-spacing: var(--vv-ledger-tracking-button);
+}
+
+@media (max-width: 560px) {
+  .vv-price-hero__meta {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+}
