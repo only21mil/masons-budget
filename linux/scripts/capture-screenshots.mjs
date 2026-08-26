@@ -43,6 +43,8 @@ const ALL_PAGES = [
   "family", "sync-health", "export", "settings", "awards", "more", "onboarding", "lock",
 ]
 
+const ROUTE_ONLY_PAGES = ["price"]
+
 // Pages a child profile can reach (adult-only ones are excluded by the router).
 const CHILD_PAGES = [
   "dashboard", "budget", "activity", "bitcoin", "net-worth", "today", "tasks",
@@ -58,6 +60,11 @@ function buildTargets() {
   const targets = []
 
   for (const page of ALL_PAGES) {
+    targets.push({ page, profile: "victor", state: "normal", viewport: COMPACT })
+    targets.push({ page, profile: "victor", state: "normal", viewport: WIDE })
+  }
+
+  for (const page of ROUTE_ONLY_PAGES) {
     targets.push({ page, profile: "victor", state: "normal", viewport: COMPACT })
     targets.push({ page, profile: "victor", state: "normal", viewport: WIDE })
   }
@@ -203,6 +210,7 @@ async function main() {
     viewports: [COMPACT, WIDE],
     coverage: {
       pagesAtBothWidths: ALL_PAGES.length,
+      routeOnlyPages: ROUTE_ONLY_PAGES,
       stateSamplePages: STATE_SAMPLE,
       nonNormalStates: NON_NORMAL_STATES,
       childProfilePages: CHILD_PAGES,
