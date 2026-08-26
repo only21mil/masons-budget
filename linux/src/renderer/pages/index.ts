@@ -5,6 +5,7 @@ import type { FamilyMember } from "@vogel-vault/domain/family"
 import type { NavSection } from "../components/index.ts"
 import { adminPageManifest } from "./admin/index.tsx"
 import { financePageManifest } from "./finance/index.tsx"
+import { pricePageDefinition } from "./finance/priceRoute.tsx"
 import { tasksPageManifest } from "./tasks/index.tsx"
 import { type PageDefinition, type PageManifest, visiblePages } from "./types.ts"
 
@@ -19,6 +20,9 @@ export const PAGE_MANIFESTS: readonly PageManifest[] = [
 export const ALL_PAGES: readonly PageDefinition[] = PAGE_MANIFESTS.flatMap(
   (manifest) => manifest.pages,
 )
+
+const ROUTE_ONLY_PAGES: readonly PageDefinition[] = [pricePageDefinition]
+const ROUTABLE_PAGES: readonly PageDefinition[] = [...ALL_PAGES, ...ROUTE_ONLY_PAGES]
 
 export const DEFAULT_ROUTE = "dashboard"
 
@@ -56,7 +60,7 @@ export function navSectionsFor(member: FamilyMember): NavSection[] {
  * so the router can fall back rather than rendering an adult page for a child.
  */
 export function resolvePage(routeId: string, member: FamilyMember): PageDefinition | null {
-  const page = ALL_PAGES.find((candidate) => candidate.id === canonicalRoute(routeId))
+  const page = ROUTABLE_PAGES.find((candidate) => candidate.id === canonicalRoute(routeId))
   if (!page) return null
   const isChild = member === "mason" || member === "maddox"
   if (isChild && page.adultOnly) return null

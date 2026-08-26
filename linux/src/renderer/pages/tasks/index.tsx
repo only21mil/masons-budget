@@ -1,12 +1,13 @@
 // Tasks page slice.
 //
-// Task lists are profile-owned. Adults see the household's tasks (including the
-// kids'); a child sees only their own. That is the same canSeeDataOwnedBy rule
-// the finance pages use — there is deliberately no second visibility model.
+// Task lists are profile-owned. Unlike household money, each active profile has
+// its own private task ledger; the write owner remains the active profile.
 
 import { useMemo, useState } from "react"
+import type { ReactNode } from "react"
 
 import { type FamilyMember, visibleTo } from "@vogel-vault/domain/family"
+import { formatMinorUnits } from "@vogel-vault/domain/money"
 import type { TodoItem } from "@vogel-vault/domain/readModel"
 
 import { useAppState } from "../../app/AppState.tsx"
@@ -32,6 +33,7 @@ import {
   stableId,
 } from "../../data/mutations.ts"
 import type { PageManifest } from "../types.ts"
+import { spendAmount } from "../../data/transactionAmounts.ts"
 import { type TaskNow, useTaskNow, useTaskToday } from "./taskClock.tsx"
 
 /**
@@ -69,9 +71,17 @@ export function taskFiltersFor(today: string) {
   } satisfies Record<string, (todo: TodoItem) => boolean>
 }
 
+/** Today is a ledger view: due/overdue rows remain visible after completion. */
+export function todayLedgerTaskFilter(today: string) {
+  return (todo: TodoItem): boolean => todo.due !== null && todo.due <= today
+}
+
 function useVisibleTodos(): readonly TodoItem[] {
   const { activeProfile, data } = useAppState()
-  return useMemo(() => visibleTo(activeProfile, data.todos.value), [activeProfile, data.todos.value])
+  return useMemo(
+    () => data.todos.value.filter((todo) => todo.owner === activeProfile),
+    [activeProfile, data.todos.value],
+  )
 }
 
 function tableState(status: string): "normal" | "empty" | "error" | "stale" | "loading" {
@@ -164,7 +174,7 @@ export const todoColumns: ReadonlyArray<Column<TodoItem>> = [
     key: "title",
     header: "Task",
     render: (row) => (
-      <span className={row.done ? "vv-dim" : undefined}>
+      <span className={row.done ? "vv-dim vv-task-complete" : undefined}>
         {row.title}
         {row.flagged ? (
           <>
@@ -301,6 +311,7 @@ function TodoListPage({
   emptyDetail,
   showComposer = false,
   defaultDue,
+  after,
 }: {
   title: string
   subtitle?: string
@@ -309,6 +320,7 @@ function TodoListPage({
   emptyDetail: string
   showComposer?: boolean
   defaultDue?: string
+  after?: ReactNode
 }) {
   const {
     activeProfile,
@@ -401,6 +413,7 @@ function TodoListPage({
           className="vv-task-table"
         />
       </Panel>
+      {after}
       <TodoFormDialog
         open={adding}
         todo={null}
@@ -413,17 +426,81 @@ function TodoListPage({
 
 function TodayPage() {
   const today = useTaskToday()
-  const filters = useMemo(() => taskFiltersFor(today), [today])
+  const filter = useMemo(() => todayLedgerTaskFilter(today), [today])
   return (
     <TodoListPage
       title="Today"
-      subtitle="Due today or overdue"
-      filter={filters.today}
+      subtitle="Due today or overdue, including completed tasks"
+      filter={filter}
       emptyTitle="Nothing due today"
-      emptyDetail="No open tasks are due on or before today for this profile."
+      emptyDetail="Nothing is due today."
       showComposer
       defaultDue={today}
+      after={<TodayMoneyOut today={today} />}
     />
+  )
+}
+
+function TodayMoneyOut({ today }: { readonly today: string }) {
+  const { activeProfile, data } = useAppState()
+  const rows = visibleTo(activeProfile, data.transactions.value).filter(
+    (transaction) => transaction.date === today && spendAmount(transaction) > 0n,
+  )
+
+  return (
+    <Panel title="Money out today" source="Scoped outgoing ledger rows" flush>
+      <DataTable
+        columns={[
+          { key: "merchant", header: "Merchant", render: (row) => row.merchant },
+          { key: "category", header: "Category", render: (row) => row.category, secondary: true },
+          {
+            key: "amount",
+            header: "USD",
+            numeric: true,
+            render: (row) => `−$${formatMinorUnits(spendAmount(row), 2)}`,
+          },
+        ]}
+        rows={rows}
+        rowKey={(row) => row.id}
+        state={tableState(data.transactions.status)}
+        emptyTitle="Nothing spent today"
+        emptyDetail="No outgoing ledger rows posted today for this profile."
+      />
+    </Panel>
+  )
+}
+
+function TasksPage() {
+  const today = useTaskToday()
+  const filters = useMemo(() => taskFiltersFor(today), [today])
+  const todos = useVisibleTodos()
+  const open = todos.filter((todo) => !todo.done)
+  const dueToday = open.filter(filters.today).length
+
+  return (
+    <>
+      <PageHeader title="Tasks" subtitle={`${open.length} open · ${dueToday} due today`} />
+      <div className="vv-task-buckets" aria-label="Task buckets">
+        {[
+          ["Inbox", open.filter(filters.inbox).length],
+          ["Today", dueToday],
+          ["Upcoming", open.filter(filters.upcoming).length],
+          ["Flagged", open.filter(filters.flagged).length],
+        ].map(([label, count]) => (
+          <Panel key={label} title={label} className="vv-task-bucket">
+            <strong className="vv-task-bucket__count vv-num">{count}</strong>
+          </Panel>
+        ))}
+      </div>
+      <TodoListPage
+        title="Open ledger"
+        subtitle="All open tasks for this profile"
+        filter={(todo) => !todo.done}
+        emptyTitle="Nothing here. Clear."
+        emptyDetail="This profile has no open tasks."
+        showComposer
+      />
+    </>
   )
 }
 
@@ -587,6 +664,7 @@ export const tasksPageManifest: PageManifest = {
   label: "Tasks",
   pages: [
     { id: "today", label: "Today", icon: "today", Component: TodayPage },
+    { id: "tasks", label: "Tasks", icon: "check", Component: TasksPage },
     { id: "inbox", label: "Inbox", icon: "inbox", Component: InboxPage },
     { id: "upcoming", label: "Upcoming", icon: "calendar", Component: UpcomingPage },
     { id: "flagged", label: "Flagged", icon: "flag", Component: FlaggedPage },

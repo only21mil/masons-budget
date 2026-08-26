@@ -964,3 +964,644 @@
 .vv-negative {
   color: var(--vv-negative);
 }
+
+/* ── Sovereign full-screen adoption ───────────────────────────────────── */
+
+.vv-ledger-root {
+  --vv-sidebar-width: 130px;
+  --vv-topbar-height: 52px;
+  --vv-content-max: 1680px;
+  --vv-radius: var(--vv-ledger-radius-card);
+  --vv-radius-sm: var(--vv-ledger-radius-control);
+  --vv-transition: var(--vv-ledger-motion-chip);
+  position: relative;
+  isolation: isolate;
+  font-family: var(--vv-ledger-font);
+  transition: background var(--vv-ledger-motion-theme), color var(--vv-ledger-motion-theme);
+}
+
+.vv-sidebar,
+.vv-topbar {
+  position: relative;
+  z-index: 4;
+  background: var(--vv-ledger-panel);
+  border-color: var(--vv-ledger-rule);
+  border-style: var(--vv-ledger-rule-style);
+}
+
+.vv-sidebar__brand {
+  height: 72px;
+  padding: 12px;
+  gap: 8px;
+  border-color: var(--vv-ledger-rule);
+  border-style: var(--vv-ledger-rule-style);
+}
+
+.vv-sidebar__mark {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+}
+
+.vv-sidebar__wordmark {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.vv-sidebar__wordmark strong {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.055em;
+}
+
+.vv-sidebar__wordmark small {
+  color: var(--vv-ledger-bitcoin);
+  font-size: 8.5px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  white-space: nowrap;
+}
+
+.vv-sidebar__scroll {
+  padding: 12px 8px 24px;
+}
+
+.vv-navgroup + .vv-navgroup {
+  margin-top: 20px;
+}
+
+.vv-navgroup__label {
+  padding: 0 8px;
+  color: var(--vv-ledger-ink-meta);
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+}
+
+.vv-navitem {
+  min-height: var(--vv-ledger-hit-target);
+  padding: 9px 10px;
+  border-radius: 3px;
+  color: var(--vv-ledger-ink-meta);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vv-navitem--active {
+  color: var(--vv-ledger-bitcoin);
+  background: var(--vv-ledger-bitcoin-soft);
+  box-shadow: inset 2px 0 0 var(--vv-ledger-bitcoin);
+}
+
+.vv-main,
+.vv-content {
+  position: relative;
+  z-index: 1;
+}
+
+.vv-topbar {
+  padding: 0 var(--vv-ledger-screen-gutter);
+}
+
+.vv-content {
+  padding: var(--vv-ledger-screen-gutter);
+}
+
+.vv-page__head {
+  margin-bottom: 22px;
+}
+
+.vv-page__title {
+  font-size: var(--vv-ledger-screen-title-size);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.vv-page__subtitle,
+.vv-panel__source {
+  color: var(--vv-ledger-ink-meta);
+  font-size: var(--vv-ledger-text-meta);
+  font-weight: 400;
+  letter-spacing: var(--vv-ledger-tracking-label);
+  text-transform: uppercase;
+}
+
+.vv-panel {
+  border: 1px var(--vv-ledger-rule-style) var(--vv-ledger-rule);
+  border-radius: var(--vv-ledger-radius-card);
+  background: transparent;
+  box-shadow: none;
+}
+
+.vv-panel__head {
+  min-height: 44px;
+  padding: 12px 16px 9px;
+  border-bottom: 1px var(--vv-ledger-rule-style) var(--vv-ledger-rule);
+}
+
+.vv-panel__title {
+  font-size: var(--vv-ledger-text-meta);
+  font-weight: 600;
+  letter-spacing: var(--vv-ledger-tracking-label);
+  text-transform: uppercase;
+}
+
+.vv-panel__body:not(.vv-panel__body--flush) {
+  padding: 16px;
+}
+
+.vv-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 22px;
+  border-top: 1px var(--vv-ledger-rule-style) var(--vv-ledger-rule);
+  border-left: 1px var(--vv-ledger-rule-style) var(--vv-ledger-rule);
+  background: transparent;
+}
+
+.vv-kpi {
+  min-height: 104px;
+  padding: 16px;
+  border: 0;
+  border-right: 1px var(--vv-ledger-rule-style) var(--vv-ledger-rule);
+  border-bottom: 1px var(--vv-ledger-rule-style) var(--vv-ledger-rule);
+  background: transparent;
+}
+
+.vv-kpi__label {
+  color: var(--vv-ledger-ink-meta);
+  font-size: var(--vv-ledger-text-kpi-label);
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.vv-kpi__value {
+  margin-top: 8px;
+  font-size: var(--vv-ledger-text-kpi);
+  font-weight: 500;
+}
+
+.vv-ledger-root[data-vv-phosphor="on"] .vv-kpi--accent .vv-kpi__value,
+.vv-ledger-root[data-vv-phosphor="on"] .vv-ledger-semantic--bitcoin {
+  text-shadow: 0 0 8px color-mix(in oklch, var(--vv-ledger-bitcoin) 44%, transparent);
+}
+
+.vv-table th {
+  color: var(--vv-ledger-ink-meta);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.vv-table th,
+.vv-table td {
+  border-color: var(--vv-ledger-rule-subtle);
+  border-style: var(--vv-ledger-rule-style);
+}
+
+.vv-table td {
+  padding-top: var(--vv-ledger-row-padding-block);
+  padding-bottom: var(--vv-ledger-row-padding-block);
+  font-size: var(--vv-ledger-row-text-size);
+}
+
+.vv-button,
+.vv-input,
+.vv-select,
+.vv-badge {
+  border-radius: var(--vv-ledger-radius-control);
+  font-family: var(--vv-ledger-font);
+}
+
+.vv-button {
+  min-height: 30px;
+  font-size: var(--vv-ledger-text-button);
+  font-weight: 600;
+  letter-spacing: var(--vv-ledger-tracking-button);
+  text-transform: uppercase;
+  transition-duration: var(--vv-ledger-motion-control);
+}
+
+.vv-button--primary {
+  border-color: var(--vv-ledger-bitcoin-fill);
+  background: var(--vv-ledger-bitcoin-fill);
+  color: var(--vv-ledger-on-bitcoin);
+}
+
+.vv-input,
+.vv-select {
+  min-height: 44px;
+  border-color: var(--vv-ledger-rule);
+  background: var(--vv-ledger-panel);
+  color: var(--vv-ledger-ink);
+  font-size: var(--vv-ledger-text-input);
+}
+
+.vv-ledger-scanlines {
+  z-index: 3;
+}
+
+.vv-payment-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.vv-payment-rail--lightning {
+  color: var(--vv-ledger-bitcoin);
+}
+
+.vv-payment-rail--chain {
+  color: var(--vv-ledger-ink-meta);
+}
+
+.vv-activity-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.vv-activity-search {
+  display: flex;
+  align-items: center;
+  min-width: 280px;
+  border: 1px var(--vv-ledger-rule-style) var(--vv-ledger-rule);
+  border-radius: 3px;
+  background: var(--vv-ledger-panel);
+  color: var(--vv-ledger-gain);
+}
+
+.vv-activity-search > span:first-child {
+  padding-left: 12px;
+}
+
+.vv-activity-search .vv-input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+}
+
+.vv-filter-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.vv-task-complete {
+  text-decoration: line-through;
+}
+
+.vv-task-buckets,
+.vv-family-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.vv-task-bucket__count {
+  color: var(--vv-ledger-bitcoin);
+  font-size: 28px;
+  font-weight: 500;
+}
+
+.vv-family-cards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.vv-family-card--active {
+  border-color: var(--vv-ledger-bitcoin);
+  background: var(--vv-ledger-bitcoin-soft);
+}
+
+.vv-family-card__head,
+.vv-family-card__head > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.vv-family-card__head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.vv-scope-list {
+  margin: 14px 0 0;
+  padding-top: 10px;
+  border-top: 1px var(--vv-ledger-rule-style) var(--vv-ledger-rule);
+}
+
+.vv-settings-brand,
+.vv-settings-brand .vv-panel__body,
+.vv-onboarding__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.vv-wordmark {
+  display: flex;
+  flex-direction: column;
+}
+
+.vv-wordmark strong {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.055em;
+}
+
+.vv-wordmark span {
+  color: var(--vv-ledger-bitcoin);
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  white-space: nowrap;
+}
+
+.vv-setting-group + .vv-setting-group {
+  margin-top: 18px;
+}
+
+.vv-setting-group__label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--vv-ledger-ink-secondary);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.vv-settings-toggles {
+  display: grid;
+  gap: 0;
+}
+
+.vv-setting-toggle {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px var(--vv-ledger-rule-style) var(--vv-ledger-rule-subtle);
+}
+
+.vv-setting-toggle > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.vv-setting-toggle strong {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.vv-setting-toggle span {
+  color: var(--vv-ledger-ink-meta);
+  font-size: 9.5px;
+}
+
+.vv-toggle {
+  position: relative;
+  width: var(--vv-ledger-toggle-width);
+  height: var(--vv-ledger-toggle-height);
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--vv-ledger-rule);
+  border-radius: var(--vv-ledger-radius-toggle);
+  background: var(--vv-ledger-panel-raised);
+  cursor: pointer;
+}
+
+.vv-toggle span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--vv-ledger-toggle-knob);
+  transition: transform var(--vv-ledger-motion-toggle);
+}
+
+.vv-toggle[aria-checked="true"] {
+  border-color: var(--vv-ledger-bitcoin);
+  background: var(--vv-ledger-bitcoin-soft);
+}
+
+.vv-toggle[aria-checked="true"] span {
+  transform: translateX(18px);
+}
+
+.vv-awards-list {
+  display: grid;
+}
+
+.vv-award-row {
+  display: grid;
+  min-height: 64px;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px var(--vv-ledger-rule-style) var(--vv-ledger-rule-subtle);
+}
+
+.vv-award-row:last-child {
+  border-bottom: 0;
+}
+
+.vv-award-row__icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: var(--vv-ledger-radius-card);
+  background: var(--vv-ledger-panel-raised);
+  color: var(--vv-ledger-ink-meta);
+}
+
+.vv-award-row__icon--earned {
+  background: var(--vv-ledger-bitcoin-soft);
+  color: var(--vv-ledger-bitcoin);
+}
+
+.vv-award-row strong,
+.vv-award-row small {
+  display: block;
+}
+
+.vv-award-row strong {
+  font-size: var(--vv-ledger-row-text-size);
+  font-weight: 600;
+}
+
+.vv-award-row small {
+  margin-top: 3px;
+  color: var(--vv-ledger-ink-meta);
+  font-size: var(--vv-ledger-text-meta);
+}
+
+.vv-more-list {
+  border-top: 1px var(--vv-ledger-rule-style) var(--vv-ledger-rule);
+}
+
+.vv-more-list button {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto 18px;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 1px var(--vv-ledger-rule-style) var(--vv-ledger-rule-subtle);
+  background: transparent;
+  color: var(--vv-ledger-ink);
+  font: inherit;
+  font-size: var(--vv-ledger-row-text-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+.vv-more-list button:hover {
+  background: var(--vv-ledger-bitcoin-soft);
+}
+
+.vv-more-list button > .vv-icon:first-child {
+  color: var(--vv-ledger-bitcoin);
+}
+
+.vv-more-list strong {
+  color: var(--vv-ledger-ink-secondary);
+  font-weight: 500;
+}
+
+.vv-onboarding {
+  display: grid;
+  min-height: 100%;
+  grid-template-rows: auto 1fr auto;
+  padding: 32px;
+}
+
+.vv-onboarding__content {
+  width: min(620px, 100%);
+  align-self: center;
+  justify-self: center;
+}
+
+.vv-onboarding__step {
+  color: var(--vv-ledger-bitcoin);
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+}
+
+.vv-onboarding__content h1 {
+  max-width: 18ch;
+  margin: 14px 0;
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.vv-onboarding__content > p {
+  max-width: 58ch;
+  color: var(--vv-ledger-ink-secondary);
+  font-size: 12.5px;
+  line-height: 1.85;
+}
+
+.vv-onboarding__cursor {
+  color: var(--vv-ledger-bitcoin);
+  animation: vv-onboarding-cursor var(--vv-ledger-motion-cursor) infinite;
+}
+
+.vv-onboarding__card .vv-panel__body {
+  display: grid;
+  gap: 8px;
+}
+
+.vv-onboarding__card span {
+  color: var(--vv-ledger-ink-meta);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.vv-onboarding__card strong {
+  color: var(--vv-ledger-bitcoin);
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.vv-onboarding__footer {
+  display: grid;
+  width: min(620px, 100%);
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 7px;
+  justify-self: center;
+}
+
+.vv-onboarding__progress {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(40px, 1fr));
+  gap: 6px;
+}
+
+.vv-onboarding__progress span {
+  height: 2px;
+  background: var(--vv-ledger-rule);
+}
+
+.vv-onboarding__progress .is-complete {
+  background: var(--vv-ledger-bitcoin);
+}
+
+.vv-shell[data-vv-route="onboarding"] {
+  grid-template-columns: 1fr;
+}
+
+.vv-shell[data-vv-route="onboarding"] .vv-sidebar,
+.vv-shell[data-vv-route="onboarding"] .vv-topbar {
+  display: none;
+}
+
+.vv-shell[data-vv-route="onboarding"] .vv-content {
+  padding: 0;
+}
+
+@keyframes vv-onboarding-cursor {
+  50% { opacity: 0; }
+}
+
+@media (max-width: 1100px) {
+  .vv-task-buckets,
+  .vv-family-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .vv-activity-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce), (prefers-reduced-transparency: reduce) {
+  .vv-ledger-root[data-vv-phosphor="on"] .vv-kpi--accent .vv-kpi__value,
+  .vv-ledger-root[data-vv-phosphor="on"] .vv-ledger-semantic--bitcoin {
+    text-shadow: none;
+  }
+}

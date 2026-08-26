@@ -31,7 +31,7 @@ describe("renderer CRUD routes", () => {
     expect(markup).toContain("<dialog")
   })
 
-  it.each(["today", "inbox", "upcoming", "flagged", "projects"])(
+  it.each(["tasks", "inbox", "upcoming", "flagged", "projects"])(
     "%s keeps completion, edit, and delete controls in a sticky task-action column",
     (route) => {
       const markup = renderRoute(route)
@@ -46,7 +46,7 @@ describe("renderer CRUD routes", () => {
   it("keeps task controls inside the active profile visibility boundary", () => {
     const adultMarkup = renderRoute("projects", "victor")
     expect(adultMarkup).toContain("Reconcile July statements")
-    expect(adultMarkup).toContain("Finish reading assignment")
+    expect(adultMarkup).not.toContain("Finish reading assignment")
 
     const masonMarkup = renderRoute("projects", "mason")
     expect(masonMarkup).toContain("Finish reading assignment")

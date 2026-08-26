@@ -94,6 +94,32 @@ export function PawGlyph(props: LedgerVectorProps) {
   )
 }
 
+export type PaymentRail = "lightning" | "on-chain"
+
+/** Exact Bolt/Chain wire glyphs from Design/icons.jsx. */
+export function PaymentRailGlyph({ rail, ...props }: LedgerVectorProps & { readonly rail: PaymentRail }) {
+  return (
+    <VectorFrame
+      {...props}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {rail === "lightning" ? (
+        <path d="M13 3 5 13h6l-1 8 8-10h-6l1-8z" />
+      ) : (
+        <>
+          <rect x="3" y="8" width="7" height="8" rx="1.5" />
+          <rect x="14" y="8" width="7" height="8" rx="1.5" />
+          <path d="M10 12h4" />
+        </>
+      )}
+    </VectorFrame>
+  )
+}
+
 export interface LedgerScanlinesProps {
   readonly className?: string
   readonly enabled?: boolean

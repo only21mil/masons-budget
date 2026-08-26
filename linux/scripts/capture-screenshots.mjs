@@ -39,21 +39,32 @@ const WIDE = { name: "1920", width: 1920, height: 1200 }
 const ALL_PAGES = [
   "dashboard", "budget", "activity", "bitcoin", "bitcoin-buys", "bills",
   "net-worth",
-  "today", "inbox", "upcoming", "flagged", "projects",
-  "family", "sync-health", "export", "settings", "onboarding", "lock",
+  "today", "tasks", "inbox", "upcoming", "flagged", "projects",
+  "family", "sync-health", "export", "settings", "awards", "more", "onboarding", "lock",
 ]
 
+const ROUTE_ONLY_PAGES = ["price"]
+
 // Pages a child profile can reach (adult-only ones are excluded by the router).
-const CHILD_PAGES = ["dashboard", "budget", "activity", "bitcoin", "net-worth", "today", "family"]
+const CHILD_PAGES = [
+  "dashboard", "budget", "activity", "bitcoin", "net-worth", "today", "tasks",
+  "family", "awards", "more",
+]
 
 // Pages that read synced data, so the four non-normal states are meaningful.
 const STATE_SAMPLE = ["dashboard", "budget", "activity", "net-worth", "today"]
 const NON_NORMAL_STATES = ["stale", "error", "empty", "loading"]
+const LIGHT_SAMPLE = ["dashboard", "family", "settings"]
 
 function buildTargets() {
   const targets = []
 
   for (const page of ALL_PAGES) {
+    targets.push({ page, profile: "victor", state: "normal", viewport: COMPACT })
+    targets.push({ page, profile: "victor", state: "normal", viewport: WIDE })
+  }
+
+  for (const page of ROUTE_ONLY_PAGES) {
     targets.push({ page, profile: "victor", state: "normal", viewport: COMPACT })
     targets.push({ page, profile: "victor", state: "normal", viewport: WIDE })
   }
@@ -67,6 +78,13 @@ function buildTargets() {
   // Child profile: proves the reduced surface and the locked profile switcher.
   for (const page of CHILD_PAGES) {
     targets.push({ page, profile: "mason", state: "normal", viewport: COMPACT })
+  }
+
+  // Daylight Ledger changes density and rule style, so keep a deterministic
+  // visual sample rather than proving only the dark palette.
+  for (const page of LIGHT_SAMPLE) {
+    targets.push({ page, profile: "victor", state: "normal", viewport: COMPACT, theme: "light" })
+    targets.push({ page, profile: "victor", state: "normal", viewport: WIDE, theme: "light" })
   }
 
   return only ? targets.filter((t) => JSON.stringify(t).includes(only)) : targets
@@ -129,14 +147,19 @@ async function main() {
 
   try {
     for (const target of targets) {
-      const { page: route, profile, state, viewport } = target
-      const name = `${viewport.name}-${route}-${profile}-${state}.png`
+      const { page: route, profile, state, viewport, theme = "dark" } = target
+      const name = `${viewport.name}-${route}-${profile}-${state}${theme === "light" ? "-light" : ""}.png`
       const context = await browser.newContext({
         viewport: { width: viewport.width, height: viewport.height },
         deviceScaleFactor: 1,
-        colorScheme: "dark",
+        colorScheme: theme,
         reducedMotion: "reduce",
       })
+      if (theme === "light") {
+        await context.addInitScript(() => {
+          globalThis.localStorage.setItem("vogel-vault.ledger-theme", "light")
+        })
+      }
       const tab = await context.newPage()
 
       const errors = []
@@ -187,9 +210,11 @@ async function main() {
     viewports: [COMPACT, WIDE],
     coverage: {
       pagesAtBothWidths: ALL_PAGES.length,
+      routeOnlyPages: ROUTE_ONLY_PAGES,
       stateSamplePages: STATE_SAMPLE,
       nonNormalStates: NON_NORMAL_STATES,
       childProfilePages: CHILD_PAGES,
+      daylightSamplePages: LIGHT_SAMPLE,
       note:
         "Non-normal states and the child profile are sampled, not exhaustive. " +
         "The headless render matrix in test/routes.test.ts covers every " +
