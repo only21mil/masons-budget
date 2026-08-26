@@ -35,8 +35,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.domain.Freshness
+import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.TodoItem
+import com.sats21m.vogelvault.ui.components.Kpi
+import com.sats21m.vogelvault.ui.components.KpiStrip
 import com.sats21m.vogelvault.ui.components.StateBlock
+import com.sats21m.vogelvault.ui.components.ledgerColor
 import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultBlack
 import com.sats21m.vogelvault.ui.theme.VaultCream
@@ -44,6 +48,7 @@ import com.sats21m.vogelvault.ui.theme.VaultNegative
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import com.sats21m.vogelvault.ui.theme.VaultSurface
 import com.sats21m.vogelvault.ui.theme.VaultTextDim
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import java.time.Instant
 import java.time.ZoneId
 
@@ -83,6 +88,7 @@ internal fun TodoScreen(
      */
     nowMillis: () -> Long = System::currentTimeMillis,
 ) {
+    val ledgerTokens = LocalLedgerTheme.current
     val application = LocalContext.current.applicationContext as? VaultApplication
     // One process-scoped client, sharing the one encrypted credential store with
     // Settings and every other write surface.
@@ -95,6 +101,9 @@ internal fun TodoScreen(
         Instant.ofEpochMilli(state.now).atZone(ZoneId.systemDefault()).toLocalDate().toString()
     }
     var localTodos by remember(viewer) { mutableStateOf(todosForToday(todos, viewer, today)) }
+    val moneyOut = remember(state.activeProfile, state.now, state.data.transactions, state.data.btcBillPays) {
+        moneyOutToday(state)
+    }
     var credentialStored by remember(application) {
         mutableStateOf(application?.hasTodoWriteCredential() == true)
     }
@@ -132,23 +141,41 @@ internal fun TodoScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = VaultBlack,
+        containerColor = ledgerTokens.colors.background,
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         LazyColumn(
             Modifier.padding(padding).fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(VaultSpace.md),
-            verticalArrangement = Arrangement.spacedBy(VaultSpace.md),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(ledgerTokens.density.screenGutter),
+            verticalArrangement = Arrangement.spacedBy(ledgerTokens.density.sectionTopSpace),
         ) {
             item {
                 Column {
-                    Text("Today", style = MaterialTheme.typography.headlineMedium, color = VaultCream)
+                    Text("Today", style = ledgerTokens.type.screenTitle, color = ledgerTokens.colors.foreground)
                     Text(
-                        stringResource(R.string.todo_today_subtitle),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = VaultTextDim,
+                        stringResource(R.string.todo_today_subtitle).uppercase(),
+                        style = ledgerTokens.type.screenSubtitle,
+                        color = ledgerTokens.colors.foregroundSecondary,
                     )
                 }
+            }
+
+            item {
+                KpiStrip(
+                    listOf(
+                        Kpi(
+                            "Money out",
+                            moneyOut?.let { Money.formatUsd(it.totalCents) } ?: "—",
+                            hint = moneyOut?.let { "${it.sourceIds.size} ledger rows" },
+                            tone = com.sats21m.vogelvault.ui.theme.VaultNegative,
+                        ),
+                        Kpi(
+                            "Completed tasks",
+                            localTodos.count(TodoItem::done).toString(),
+                            hint = "Completed items stay reopenable",
+                        ),
+                    ),
+                )
             }
 
             if (!credentialStored) {
@@ -171,7 +198,7 @@ internal fun TodoScreen(
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .background(VaultSurface)
+                        .background(ledgerColor(VaultSurface))
                         .padding(VaultSpace.sm),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -217,7 +244,7 @@ internal fun TodoScreen(
                 item {
                     Text(
                         stringResource(R.string.todo_empty),
-                        color = VaultTextDim,
+                        color = ledgerColor(VaultTextDim),
                         modifier = Modifier.padding(VaultSpace.md),
                     )
                 }
@@ -303,15 +330,15 @@ internal fun TodoWriteCredentialCard(save: (String) -> String?) {
     Column(
         Modifier
             .fillMaxWidth()
-            .background(VaultSurface)
+            .background(ledgerColor(VaultSurface))
             .padding(VaultSpace.md),
         verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
     ) {
-        Text(stringResource(R.string.todo_write_access_title), color = VaultCream)
+        Text(stringResource(R.string.todo_write_access_title), color = ledgerColor(VaultCream))
         Text(
             stringResource(R.string.todo_write_access_detail),
             style = MaterialTheme.typography.bodySmall,
-            color = VaultTextDim,
+            color = ledgerColor(VaultTextDim),
         )
         OutlinedTextField(
             value = token,

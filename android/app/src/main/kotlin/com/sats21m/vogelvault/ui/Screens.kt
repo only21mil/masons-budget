@@ -77,6 +77,7 @@ import com.sats21m.vogelvault.ui.components.StateBlock
 import com.sats21m.vogelvault.ui.components.StatusBanner
 import com.sats21m.vogelvault.ui.components.VaultLazyListScope
 import com.sats21m.vogelvault.ui.components.figure
+import com.sats21m.vogelvault.ui.components.ledgerColor
 import com.sats21m.vogelvault.ui.components.vaultContent
 import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultCream
@@ -87,6 +88,7 @@ import com.sats21m.vogelvault.ui.theme.VaultSpace
 import com.sats21m.vogelvault.ui.theme.VaultTextDim
 import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 import com.sats21m.vogelvault.ui.theme.VaultWarning
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 
 private data class ScreenCollections(
     val visibleTransactions: List<Transaction>,
@@ -101,7 +103,7 @@ private data class ScreenCollections(
 
 internal const val BITCOIN_UNIT_TOGGLE_TEST_TAG = "bitcoin-unit-toggle"
 
-private data class DashboardProjection(
+internal data class DashboardProjection(
     val activity: List<Transaction>,
     val accounts: List<BtcAccount>,
     val balance: BtcBalance?,
@@ -164,6 +166,8 @@ fun ScreenHost(
     onStartRiverBillPay: (BillPayPrefill) -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
+    ledgerSettings: LedgerUiSettings = LedgerUiSettings(),
+    onLedgerSettingsChange: (LedgerUiSettings) -> Unit = {},
     modifier: Modifier = Modifier,
     taskListsContent: @Composable (VaultUiState, List<TodoItem>) -> Unit = { taskState, todos ->
         TaskListsScreen(
@@ -173,6 +177,7 @@ fun ScreenHost(
         )
     },
 ) {
+    val ledgerTokens = LocalLedgerTheme.current
     var addingTransaction by rememberSaveable { mutableStateOf(false) }
     var incomeBitcoinBuySeed by remember(state.activeProfile) { mutableStateOf<IncomeEntry?>(null) }
     var selectedTransactionKey by rememberSaveable(state.activeProfile) {
@@ -353,7 +358,7 @@ fun ScreenHost(
 
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(VaultSpace.md),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(ledgerTokens.density.screenGutter),
     ) {
         vaultContent {
             item {
@@ -451,7 +456,13 @@ fun ScreenHost(
                     taskListsContent(state, collections.visibleTodos)
                 }
                 Destination.FAMILY -> family(state)
-                Destination.SETTINGS -> settings(state, remoteReadReady, onRemoteRowsConnected)
+                Destination.SETTINGS -> settings(
+                    state,
+                    remoteReadReady,
+                    onRemoteRowsConnected,
+                    ledgerSettings,
+                    onLedgerSettingsChange,
+                )
             }
         }
     }
@@ -513,6 +524,7 @@ private fun ScreenHeader(
     onDisplayUnitChange: (DisplayUnit) -> Unit,
     onAddTransaction: () -> Unit,
 ) {
+    val tokens = LocalLedgerTheme.current
     val subtitle = when (destination) {
         Destination.DASHBOARD ->
             if (state.activeProfile.isAdult) "Household command center"
@@ -537,8 +549,8 @@ private fun ScreenHeader(
         Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text(
                 destination.label,
-                style = MaterialTheme.typography.headlineMedium,
-                color = VaultCream,
+                style = tokens.type.screenTitle,
+                color = tokens.colors.foreground,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -548,9 +560,9 @@ private fun ScreenHeader(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = VaultTextMuted,
+                subtitle.uppercase(),
+                style = tokens.type.screenSubtitle,
+                color = tokens.colors.foregroundSecondary,
                 modifier = Modifier.weight(1f),
             )
             if (
@@ -759,6 +771,56 @@ private fun VaultLazyListScope.dashboard(
         displayUnit = displayUnit,
         quote = quote,
     )
+    item { DashboardAwards(state, projection) }
+}
+
+internal data class DashboardAward(val label: String, val earned: Boolean, val detail: String)
+
+internal fun dashboardAwards(
+    state: VaultUiState,
+    projection: DashboardProjection,
+): List<DashboardAward> {
+    val balance = projection.balance.takeIf {
+        state.data.btcBalance.status == Freshness.LIVE ||
+            state.data.btcBalance.status == Freshness.STALE
+    }
+    val custodyRate = balance?.let {
+        Money.basisPoints(it.selfCustodySats, it.totalSats)
+    } ?: 0
+    val tasksTrusted = state.data.todos.status == Freshness.LIVE ||
+        state.data.todos.status == Freshness.STALE ||
+        state.data.todos.status == Freshness.EMPTY
+    val budget = state.data.budget.value.takeIf {
+        state.data.budget.status == Freshness.LIVE ||
+            state.data.budget.status == Freshness.STALE
+    }
+    return listOf(
+        DashboardAward("Keys in hand", balance != null && custodyRate >= 5_000, "At least half the stack is self-custodied"),
+        DashboardAward("Ledger closer", tasksTrusted && projection.openTodos == 0, "No open tasks in this profile"),
+        DashboardAward(
+            "Within plan",
+            budget != null && budget.remainingCents?.let { it >= 0L } == true,
+            "Current budget document has room remaining",
+        ),
+    )
+}
+
+@Composable
+private fun DashboardAwards(state: VaultUiState, projection: DashboardProjection) {
+    val awards = dashboardAwards(state, projection)
+    Panel("Awards", "${awards.count(DashboardAward::earned)} of ${awards.size} earned") {
+        Column {
+            awards.forEachIndexed { index, award ->
+                if (index > 0) HorizontalHairline()
+                LedgerRow(
+                    primary = award.label,
+                    secondary = award.detail,
+                    figure = if (award.earned) "earned" else "locked",
+                    figureColor = if (award.earned) VaultPositive else VaultTextDim,
+                )
+            }
+        }
+    }
 }
 
 // ── Activity ────────────────────────────────────────────────────────────────
@@ -787,7 +849,7 @@ private fun VaultLazyListScope.activity(
                 Text(
                     "Filtering cached records...",
                     modifier = Modifier.padding(VaultSpace.md),
-                    color = VaultTextMuted,
+                    color = ledgerColor(VaultTextMuted),
                 )
             }
         }
@@ -797,11 +859,11 @@ private fun VaultLazyListScope.activity(
         item {
             Panel {
                 Column(Modifier.padding(VaultSpace.md)) {
-                    Text("No matching records", color = VaultCream)
+                    Text("No matching records", color = ledgerColor(VaultCream))
                     Text(
                         "Try another search or filter.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = VaultTextMuted,
+                        color = ledgerColor(VaultTextMuted),
                     )
                 }
             }
@@ -1006,6 +1068,8 @@ private fun VaultLazyListScope.budget(
                             displayedMonth = derived.month,
                             budgetDocumentMonth = budget.month,
                             category = category,
+                            budget = budget,
+                            sourceFile = budgetCategoryDeleteSourceFile(state.activeProfile),
                         ),
                     )
                 },
@@ -1049,11 +1113,14 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
                 source = "${state.data.transactions.source} · ${scope.month}",
             ) {
                 Column(Modifier.padding(VaultSpace.md)) {
-                    Text(stringResource(R.string.budget_category_transactions_empty), color = VaultCream)
+                    Text(
+                        stringResource(R.string.budget_category_transactions_empty),
+                        color = ledgerColor(VaultCream),
+                    )
                     Text(
                         stringResource(R.string.budget_category_transactions_empty_detail),
                         style = MaterialTheme.typography.bodySmall,
-                        color = VaultTextMuted,
+                        color = ledgerColor(VaultTextMuted),
                     )
                 }
             }
@@ -1136,7 +1203,7 @@ private fun MonthPicker(months: List<String>, selected: String, onSelect: (Strin
         Text(
             "MONTH",
             style = MaterialTheme.typography.labelSmall,
-            color = VaultTextDim,
+            color = ledgerColor(VaultTextDim),
         )
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -1193,6 +1260,8 @@ private fun VaultLazyListScope.bitcoin(
     val unavailable = projection.balance == null
     val quote = state.operationalBitcoinQuote()
 
+    item { BitcoinPriceHero(quote) }
+
     if (displayUnit == DisplayUnit.USD && !unavailable) {
         item { BitcoinConversionNotice(state) }
     }
@@ -1210,12 +1279,6 @@ private fun VaultLazyListScope.bitcoin(
                         displayUnit,
                         quote,
                     ),
-                ),
-                Kpi(
-                    "Reference price",
-                    formatOperationalBitcoinPrice(quote),
-                    hint = operationalBitcoinPriceBasis(quote),
-                    provenance = Provenance.ESTIMATED,
                 ),
                 Kpi(
                     "Self custody",
@@ -1307,6 +1370,43 @@ private fun VaultLazyListScope.bitcoin(
                 figure = formatBtcBillPayAmount(payment, displayUnit),
                 figureColor = VaultNegative,
                 badge = payment.platform,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun BitcoinPriceHero(quote: MarketQuote?) {
+    val tokens = LocalLedgerTheme.current
+    val formatted = formatOperationalBitcoinPrice(quote)
+    val decimalStart = formatted.lastIndexOf('.').takeIf { it > 0 }
+    Panel {
+        Column(Modifier.padding(tokens.density.cardPadding)) {
+            Text(
+                "BTC REFERENCE PRICE",
+                style = tokens.type.kpiLabel,
+                color = tokens.colors.foregroundTertiary,
+            )
+            if (decimalStart == null) {
+                Text(formatted, style = tokens.type.priceHero, color = tokens.colors.foregroundTertiary)
+            } else {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        formatted.substring(0, decimalStart),
+                        style = tokens.type.priceHero,
+                        color = tokens.colors.foreground,
+                    )
+                    Text(
+                        formatted.substring(decimalStart),
+                        style = tokens.type.priceHeroDecimals,
+                        color = tokens.colors.foregroundSecondary,
+                    )
+                }
+            }
+            Text(
+                operationalBitcoinPriceBasis(quote).uppercase(),
+                style = tokens.type.rowMeta,
+                color = tokens.colors.foregroundTertiary,
             )
         }
     }
@@ -1450,7 +1550,40 @@ internal fun balanceSnapshotBasis(balance: BtcBalance): String = "Balance snapsh
 
 // ── Family ──────────────────────────────────────────────────────────────────
 
+internal data class FamilyScopeSummary(
+    val finance: String,
+    val tasks: String,
+    val netWorth: String,
+)
+
+internal fun familyScopeSummary(profile: FamilyMember): FamilyScopeSummary =
+    if (profile.isAdult) {
+        FamilyScopeSummary(
+            finance = "Adult household + child oversight",
+            tasks = "${profile.displayName} only",
+            netWorth = "Adult household only",
+        )
+    } else {
+        FamilyScopeSummary(
+            finance = "${profile.displayName} only",
+            tasks = "${profile.displayName} only",
+            netWorth = "${profile.displayName} only",
+        )
+    }
+
 private fun VaultLazyListScope.family(state: VaultUiState) {
+    val scope = familyScopeSummary(state.activeProfile)
+    item {
+        Panel("Active profile scope", state.activeProfile.displayName) {
+            Column {
+                LedgerRow("Finance visibility", figure = scope.finance, figureColor = VaultTextMuted)
+                HorizontalHairline()
+                LedgerRow("Private tasks", figure = scope.tasks, figureColor = VaultTextMuted)
+                HorizontalHairline()
+                LedgerRow("Net worth total", figure = scope.netWorth, figureColor = VaultTextMuted)
+            }
+        }
+    }
     item {
         StatusBanner(
             "Victor and Rachel are one household",
@@ -1497,6 +1630,8 @@ private fun VaultLazyListScope.settings(
     state: VaultUiState,
     remoteReadReady: Boolean,
     onRemoteRowsConnected: () -> Unit,
+    ledgerSettings: LedgerUiSettings,
+    onLedgerSettingsChange: (LedgerUiSettings) -> Unit,
 ) {
     item {
         if (remoteReadReady) {
@@ -1513,6 +1648,7 @@ private fun VaultLazyListScope.settings(
             )
         }
     }
+    item { LedgerAppearanceSettings(ledgerSettings, onLedgerSettingsChange) }
     state.remoteConfigurationError?.let { detail ->
         item {
             StatusBanner(
@@ -1579,7 +1715,7 @@ internal fun SyncTokenConfiguration() {
         ) {
             Text(
                 text = stringResource(R.string.write_credential_source),
-                color = VaultTextMuted,
+                color = ledgerColor(VaultTextMuted),
                 style = MaterialTheme.typography.labelSmall,
             )
             Text(
@@ -1591,7 +1727,7 @@ internal fun SyncTokenConfiguration() {
                             R.string.write_credential_unconfigured
                         },
                     ),
-                color = VaultTextDim,
+                color = ledgerColor(VaultTextDim),
                 style = MaterialTheme.typography.bodySmall,
             )
             OutlinedTextField(

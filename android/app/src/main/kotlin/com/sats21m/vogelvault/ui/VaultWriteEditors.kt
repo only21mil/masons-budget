@@ -46,6 +46,7 @@ import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.explicitBtcBuyOwner
 import com.sats21m.vogelvault.data.BtcBuyInput
 import com.sats21m.vogelvault.data.BudgetCategoryInput
+import com.sats21m.vogelvault.data.BudgetCategoryDeleteResult
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexMutationClient
@@ -53,6 +54,7 @@ import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.ConvexValue
 import com.sats21m.vogelvault.data.LinkedIncomeInput
 import com.sats21m.vogelvault.domain.BudgetHealth
+import com.sats21m.vogelvault.domain.Budget
 import com.sats21m.vogelvault.domain.BudgetHealthStatus
 import com.sats21m.vogelvault.domain.CategorySpend
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -82,7 +84,15 @@ data class BudgetCategoryEditorSeed(
     val displayedMonth: String,
     val budgetDocumentMonth: String,
     val category: CategorySpend,
+    val budget: Budget? = null,
+    val sourceFile: String? = null,
 )
+
+internal fun budgetCategoryDeleteSourceFile(viewer: FamilyMember): String? = when {
+    viewer.isAdult -> "budget"
+    viewer == FamilyMember.MASON -> "mason-budget"
+    else -> null
+}
 
 data class BudgetCategoryWriteRequest(
     val viewer: FamilyMember,
@@ -514,6 +524,7 @@ internal fun BudgetCategoryEditorSheet(
     }
     var message by remember(seed) { mutableStateOf<String?>(null) }
     var submitting by remember(seed) { mutableStateOf(false) }
+    var confirmingDelete by remember(seed) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -533,6 +544,58 @@ internal fun BudgetCategoryEditorSheet(
             )
             message?.let { Text(it) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                if (
+                    seed.budget != null &&
+                    seed.sourceFile != null &&
+                    seed.displayedMonth == seed.budgetDocumentMonth &&
+                    seed.budget.updatedAtMs > 0L
+                ) {
+                    TextButton(
+                        enabled = !submitting,
+                        onClick = {
+                            if (!confirmingDelete) {
+                                confirmingDelete = true
+                                message = "Tap delete again to remove ${seed.category.name} from the current budget."
+                                return@TextButton
+                            }
+                            val app = application
+                            if (app == null) {
+                                message = "Category not deleted: the app write client is unavailable."
+                                return@TextButton
+                            }
+                            submitting = true
+                            scope.launch {
+                                val result = app.budgetCategoryDeletionGateway.delete(
+                                    activeProfile = seed.viewer,
+                                    budget = seed.budget,
+                                    sourceFile = seed.sourceFile,
+                                    categoryName = seed.category.name,
+                                    baseUpdatedAtMs = seed.budget.updatedAtMs,
+                                )
+                                submitting = false
+                                when (result) {
+                                    is BudgetCategoryDeleteResult.Rejected -> {
+                                        confirmingDelete = false
+                                        message = "Category not deleted: ${result.reason.name.lowercase().replace('_', ' ')}."
+                                    }
+                                    is BudgetCategoryDeleteResult.Submitted -> when (val submitted = result.result) {
+                                        is ConvexResult.Ok -> {
+                                            onWriteSucceeded()
+                                            onDismiss()
+                                        }
+                                        ConvexResult.Unauthorized -> message = "Category not deleted: this device is not authorized."
+                                        ConvexResult.NotConfigured -> message = "Category not deleted: Convex is not configured."
+                                        ConvexResult.Disabled -> message = "Category not deleted: authenticated writes are disabled."
+                                        ConvexResult.Missing -> message = "Category not deleted: Convex returned no result."
+                                        is ConvexResult.Failed -> message = "Category not deleted: ${submitted.reason}."
+                                    }
+                                }
+                            }
+                        },
+                    ) {
+                        Text(if (confirmingDelete) "Confirm delete" else "Delete category", color = VaultNegative)
+                    }
+                }
                 TextButton(onClick = onDismiss, enabled = !submitting) {
                     Text(stringResource(R.string.write_cancel))
                 }

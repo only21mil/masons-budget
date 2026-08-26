@@ -18,6 +18,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.data.BudgetCategoryDeletionGateway
 import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexSyncTokenSource
@@ -28,6 +29,8 @@ import com.sats21m.vogelvault.data.HttpPoster
 import com.sats21m.vogelvault.data.HttpTextResponse
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.domain.CategorySpend
+import com.sats21m.vogelvault.domain.Budget
+import com.sats21m.vogelvault.domain.BudgetCategory
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
@@ -132,6 +135,51 @@ class RefreshAfterWriteSurfaceTest {
                 content,
                 interact,
                 rejectionText = "Budget not saved: the write failed (http 500).",
+            ),
+        )
+    }
+
+    @Test
+    fun `budget category delete uses the paired-device gateway and refreshes only after success`() {
+        val category = BudgetCategory("Groceries", 90_000L, 50_000L)
+        val budget = Budget(
+            month = BUDGET_DELETE_MONTH,
+            categories = listOf(category),
+            owner = FamilyMember.VICTOR,
+            updatedAtMs = BUDGET_DELETE_REVISION,
+        )
+        val seed = BudgetCategoryEditorSeed(
+            viewer = FamilyMember.RACHEL,
+            displayedMonth = BUDGET_DELETE_MONTH,
+            budgetDocumentMonth = BUDGET_DELETE_MONTH,
+            category = CategorySpend("Groceries", 90_000L, 50_000L),
+            budget = budget,
+            sourceFile = "budget",
+        )
+        val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
+            BudgetCategoryEditorSheet(
+                seed = seed,
+                onDismiss = {},
+                onWriteSucceeded = onWriteSucceeded,
+            )
+        }
+        val interact = {
+            compose.onNode(hasText("Delete category") and hasClickAction())
+                .performSemanticsAction(SemanticsActions.OnClick)
+            settle()
+            compose.onNode(hasText("Confirm delete") and hasClickAction())
+                .performSemanticsAction(SemanticsActions.OnClick)
+            Unit
+        }
+
+        assertEquals(1, runSurface(SUCCESS, content, interact))
+        assertEquals(
+            0,
+            runSurface(
+                REJECTION,
+                content,
+                interact,
+                rejectionText = "Category not deleted: http 500.",
             ),
         )
     }
@@ -554,6 +602,8 @@ class RefreshAfterWriteSurfaceTest {
     }
 
     private companion object {
+        const val BUDGET_DELETE_MONTH = "2026-08"
+        const val BUDGET_DELETE_REVISION = 1_787_654_321_000L
         val SUCCESS = HttpTextResponse(
             200,
             """{"status":"success","value":"accepted"}""",
@@ -649,6 +699,23 @@ internal class RefreshAfterWriteApplication : VaultApplication() {
                 },
                 http = poster,
             ),
+        )
+    }
+
+    override val budgetCategoryDeletionGateway: BudgetCategoryDeletionGateway by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        BudgetCategoryDeletionGateway(
+            client = ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(
+                    ConvexConfig(deploymentUrl = "https://refresh-after-write-test.convex.cloud"),
+                ),
+                credentialSource = ConvexDeviceCredentialSource {
+                    ConvexDeviceCredential("test-device", "t".repeat(43))
+                },
+                http = poster,
+            ),
+            trustedCurrentMonth = { "2026-08" },
         )
     }
 
