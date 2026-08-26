@@ -42,12 +42,14 @@ export {
   LedgerScanlines,
   LedgerSemanticValue,
   PawGlyph,
+  PaymentRailGlyph,
 } from "./LedgerFoundations.tsx"
 export type {
   LedgerScanlinesProps,
   LedgerSemanticTone,
   LedgerSemanticValueProps,
   LedgerVectorProps,
+  PaymentRail,
 } from "./LedgerFoundations.tsx"
 
 export {

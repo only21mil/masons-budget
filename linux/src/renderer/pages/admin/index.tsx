@@ -17,8 +17,13 @@ import {
   showsFullBudget,
   visibleTo,
 } from "@vogel-vault/domain/family"
-import { formatMinorUnits } from "@vogel-vault/domain/money"
-import { type Freshness, type Transaction } from "@vogel-vault/domain/readModel"
+import { formatMinorUnits, sum } from "@vogel-vault/domain/money"
+import {
+  budgetTransactionsFor,
+  transactionsInMonth,
+  type Freshness,
+  type Transaction,
+} from "@vogel-vault/domain/readModel"
 
 import { useAppState } from "../../app/AppState.tsx"
 import type { FixtureEnvelope } from "../../data/fixtures.ts"
@@ -35,7 +40,9 @@ import {
   DialogFrame,
   Field,
   FreshnessTag,
+  HorizonMark,
   IconGlyph,
+  type IconName,
   PageGrid,
   PageHeader,
   Panel,
@@ -66,12 +73,44 @@ function FamilyProfilesPage() {
 
   return (
     <>
-      <PageHeader title="Family & Profiles" subtitle="Who can see what" />
+      <PageHeader title="Family & Profiles" subtitle="Profiles and what each one sees" />
       <StatusBanner
         tone="info"
         title="Victor and Rachel are one household"
         detail="They see identical finance data. Mason and Maddox are isolated and see only their own records."
       />
+      <div className="vv-family-cards">
+        {rows.map(({ member, canSwitch }) => {
+          const active = member === activeProfile
+          const switchLabel = active ? "Active" : canSwitch ? "Switch" : "Locked"
+          return (
+            <Panel key={member} className={active ? "vv-family-card vv-family-card--active" : "vv-family-card"}>
+              <div className="vv-family-card__head">
+                <div>
+                  <h2>{displayName(member)}</h2>
+                  <Badge tone={isAdult(member) ? "accent" : "neutral"}>
+                    {isAdult(member) ? "Adult" : "Child"}
+                  </Badge>
+                </div>
+                <Button
+                  variant={active ? "primary" : "secondary"}
+                  disabled={!canSwitch || active}
+                  onClick={() => switchProfile(member)}
+                >
+                  {switchLabel}
+                </Button>
+              </div>
+              <p className="vv-muted">{profileDescription(member)}</p>
+              <dl className="vv-scope-list">
+                <RuntimeRow label="Ledger" value={isAdult(member) ? "Shared household" : "Own rows"} />
+                <RuntimeRow label="Todos" value="Active profile only" />
+                <RuntimeRow label="Sees" value={isAdult(member) ? "Household + children" : "Self only"} />
+                <RuntimeRow label="Net worth" value={isAdult(member) ? "Adult household" : "Self only"} />
+              </dl>
+            </Panel>
+          )
+        })}
+      </div>
       <PageGrid>
         <Panel title="Profiles" flush className="vv-span-2">
           <DataTable
@@ -83,6 +122,12 @@ function FamilyProfilesPage() {
       </PageGrid>
       <Panel title="Visibility matrix" source="Derived from canSeeDataOwnedBy — not a separate rule">
         <VisibilityMatrix />
+      </Panel>
+      <Panel title="How scoping works" className="vv-scoping-card">
+        <p className="vv-muted">
+          Victor and Rachel share one financial ledger. Child money stays isolated, child balances
+          never enter adult net worth, and todos always belong to the active profile.
+        </p>
       </Panel>
     </>
   )
@@ -599,13 +644,104 @@ function ExportPage() {
 // ── Settings / Admin ────────────────────────────────────────────────────────
 
 function SettingsPage() {
-  const { data, stateOverride, setStateOverride } = useAppState()
+  const {
+    biometricUnlockEnabled,
+    budgetAlertsEnabled,
+    data,
+    displayUnit,
+    ledgerTheme,
+    navigate,
+    phosphorEnabled,
+    scanlinesEnabled,
+    setBiometricUnlockEnabled,
+    setBudgetAlertsEnabled,
+    setDisplayUnit,
+    setLedgerTheme,
+    setPhosphorEnabled,
+    setScanlinesEnabled,
+    stateOverride,
+    setStateOverride,
+  } = useAppState()
   const runtime = typeof window !== "undefined" ? window.vogelVault?.getRuntimeInfo() : undefined
   const readsRows = data.transactions.source.startsWith("Convex row tables")
 
   return (
     <>
-      <PageHeader title="Settings" subtitle="Runtime and diagnostics" />
+      <PageHeader title="Settings" subtitle="Runtime and boundaries" />
+      <Panel className="vv-settings-brand">
+        <HorizonMark size={40} title="Sovereign Budget App" />
+        <div className="vv-wordmark">
+          <strong>SOVEREIGN</strong>
+          <span>BUDGET APP</span>
+        </div>
+      </Panel>
+      <StatusBanner
+        tone={readsRows ? "positive" : "info"}
+        title={readsRows ? "Row reads enabled" : "Sanitized review data"}
+        detail="Every remote query is authenticated. Writes use the protected device sync credential."
+      />
+      <PageGrid>
+        <Panel title="Appearance" source="Terminal Ledger and Daylight Ledger">
+          <div className="vv-setting-group">
+            <span className="vv-setting-group__label">Theme</span>
+            <Toolbar>
+              {(["dark", "light"] as const).map((theme) => (
+                <Button
+                  key={theme}
+                  variant={ledgerTheme === theme ? "primary" : "secondary"}
+                  aria-pressed={ledgerTheme === theme}
+                  onClick={() => setLedgerTheme(theme)}
+                >
+                  {theme}
+                </Button>
+              ))}
+            </Toolbar>
+          </div>
+          <div className="vv-setting-group">
+            <span className="vv-setting-group__label">Default unit</span>
+            <Toolbar>
+              {(["btc", "sats", "usd"] as const).map((unit) => (
+                <Button
+                  key={unit}
+                  variant={displayUnit === unit ? "primary" : "secondary"}
+                  aria-pressed={displayUnit === unit}
+                  onClick={() => setDisplayUnit(unit)}
+                >
+                  {unit}
+                </Button>
+              ))}
+            </Toolbar>
+          </div>
+        </Panel>
+        <Panel title="Behaviour" source="Local display preferences">
+          <div className="vv-settings-toggles">
+            <SettingsToggle
+              label="Budget alerts"
+              hint="Ping at 85% and again when a category tips over."
+              enabled={budgetAlertsEnabled}
+              onChange={setBudgetAlertsEnabled}
+            />
+            <SettingsToggle
+              label="Phosphor glow"
+              hint="Apply a restrained bloom to Bitcoin hero figures and the sync dot."
+              enabled={phosphorEnabled}
+              onChange={setPhosphorEnabled}
+            />
+            <SettingsToggle
+              label="Scanlines"
+              hint="Overlay a non-interactive three-pixel ledger texture."
+              enabled={scanlinesEnabled}
+              onChange={setScanlinesEnabled}
+            />
+            <SettingsToggle
+              label="Biometric unlock"
+              hint="Require the operating-system unlock boundary when available."
+              enabled={biometricUnlockEnabled}
+              onChange={setBiometricUnlockEnabled}
+            />
+          </div>
+        </Panel>
+      </PageGrid>
       <PageGrid>
         <Panel title="Runtime" source="Desktop main process">
           {runtime ? (
@@ -653,7 +789,41 @@ function SettingsPage() {
           </li>
         </ul>
       </Panel>
+      <Button variant="secondary" onClick={() => navigate("onboarding")}>
+        Replay onboarding
+      </Button>
     </>
+  )
+}
+
+function SettingsToggle({
+  enabled,
+  hint,
+  label,
+  onChange,
+}: {
+  readonly enabled: boolean
+  readonly hint: string
+  readonly label: string
+  readonly onChange: (enabled: boolean) => void
+}) {
+  return (
+    <div className="vv-setting-toggle">
+      <div>
+        <strong>{label}</strong>
+        <span>{hint}</span>
+      </div>
+      <button
+        type="button"
+        className="vv-toggle"
+        role="switch"
+        aria-checked={enabled}
+        aria-label={label}
+        onClick={() => onChange(!enabled)}
+      >
+        <span />
+      </button>
+    </div>
   )
 }
 
@@ -887,47 +1057,76 @@ function RuntimeRow({ label, value }: { label: string; value: string }) {
 // ── Onboarding ──────────────────────────────────────────────────────────────
 
 function OnboardingPage() {
-  const { switchProfile, switchTargets } = useAppState()
+  const { activeProfile, data, navigate } = useAppState()
+  const [step, setStep] = useState(0)
+  const document = data.btcBalanceDocument.value
+  const accounts = document?.accounts ?? []
+  const selfCustody = document?.totals.selfCustodySats ?? 0n
+  const total = document?.totals.sats ?? 0n
+  const custodyPercent = total > 0n ? Number((selfCustody * 10_000n) / total) / 100 : 0
+  const openTasks = data.todos.value.filter(
+    (todo) => todo.owner === activeProfile && !todo.done,
+  ).length
+  const budget = data.budget.value
+  const monthRows = budget
+    ? transactionsInMonth(budgetTransactionsFor(activeProfile, data.transactions.value), budget.month)
+    : []
+  const remaining = budget
+    ? sum(budget.categories.map((category) => category.budget)) - sum(monthRows.map(spendAmount))
+    : null
+  const steps = [
+    {
+      title: "Everything in BTC, sats, or dollars",
+      body: "One unit control reconverts balances, budgets, bill pays, and every ledger figure.",
+      label: "Reference price",
+      value: data.btcPriceUsd === null ? "QUOTE UNAVAILABLE" : `$${formatMinorUnits(data.btcPriceUsd, 2)} / BTC`,
+    },
+    {
+      title: "Track your BTC and net worth",
+      body: "Balances are read-only snapshots. Writes require the protected sync credential on this device.",
+      label: "Row access · custody",
+      value: document ? `${custodyPercent.toFixed(1)}% self custody · ${accounts.length} accounts` : "NO BALANCE SOURCE",
+    },
+    {
+      title: "Money and tasks, one ledger",
+      body: "A bill pay and a todo share one timeline without sharing their security boundary.",
+      label: "This month",
+      value: `${remaining === null ? "—" : `$${formatMinorUnits(remaining, 2)} left`} · ${openTasks} tasks open`,
+    },
+  ] as const
+  const current = steps[step]!
 
   return (
-    <>
-      <PageHeader title="Welcome" subtitle="First run" />
-      <Panel title="Pick a profile">
-        <p className="vv-muted" style={{ marginTop: 0 }}>
-          The Vogel Vault shows different data per profile. Adults share the household ledger;
-          children see only their own records.
-        </p>
-        <Toolbar>
-          {switchTargets.map((member) => (
-            <Button key={member} variant="secondary" onClick={() => switchProfile(member)}>
-              {displayName(member)}
-            </Button>
+    <section className="vv-onboarding" aria-label="Sovereign Budget App onboarding">
+      <span className="vv-sr-only">Row access uses authenticated Convex row tables.</span>
+      <div className="vv-onboarding__brand">
+        <HorizonMark size={48} title="Sovereign Budget App" />
+        <div className="vv-wordmark"><strong>SOVEREIGN</strong><span>BUDGET APP</span></div>
+      </div>
+      <div className="vv-onboarding__content">
+        <span className="vv-onboarding__step">STEP {String(step + 1).padStart(2, "0")} / 03</span>
+        <h1>{current.title}<span className="vv-onboarding__cursor" aria-hidden="true">_</span></h1>
+        <p>{current.body}</p>
+        <Panel className="vv-onboarding__card">
+          <span>{current.label}</span>
+          <strong className="vv-num">{current.value}</strong>
+        </Panel>
+      </div>
+      <footer className="vv-onboarding__footer">
+        <div className="vv-onboarding__progress" aria-label={`Step ${step + 1} of 3`}>
+          {steps.map((item, index) => (
+            <span key={item.title} className={index <= step ? "is-complete" : undefined} />
           ))}
-        </Toolbar>
-      </Panel>
-      <Panel title="Row access" source="Convex row-table scope by profile">
-        <DataTable
-          columns={[
-            { key: "member", header: "Profile", render: (row: { member: FamilyMember }) => displayName(row.member) },
-            {
-              key: "tx",
-              header: "Transactions",
-              render: (row: { member: FamilyMember }) =>
-                isAdult(row.member) ? "Household + visible children" : "Own rows",
-            },
-            {
-              key: "btc",
-              header: "Bitcoin buys",
-              render: (row: { member: FamilyMember }) =>
-                isAdult(row.member) ? "Household + visible children" : "Own rows",
-              secondary: true,
-            },
-          ]}
-          rows={FAMILY_MEMBERS.map((member) => ({ member }))}
-          rowKey={(row) => row.member}
-        />
-      </Panel>
-    </>
+        </div>
+        <Button
+          variant="primary"
+          onClick={() => step === steps.length - 1 ? navigate("dashboard") : setStep(step + 1)}
+        >
+          {step === steps.length - 1 ? "Open ledger" : "Continue"}
+        </Button>
+        <Button variant="ghost" onClick={() => navigate("dashboard")}>Skip</Button>
+      </footer>
+    </section>
   )
 }
 
@@ -954,6 +1153,112 @@ function LockScreenPage() {
   )
 }
 
+// ── Awards / More ───────────────────────────────────────────────────────────
+
+function AwardsPage() {
+  const { activeProfile, data } = useAppState()
+  const tasks = data.todos.value.filter((todo) => todo.owner === activeProfile)
+  const accounts = data.btcBalanceDocument.value?.accounts ?? []
+  const status = data.todos.status
+
+  if (status === "loading" || status === "error" || status === "empty" || status === "stale") {
+    return (
+      <>
+        <PageHeader title="Awards" subtitle="Recorded milestones only" />
+        <StateBlock state={status} detail="Awards wait for the scoped task ledger to load." />
+      </>
+    )
+  }
+
+  const milestones = [
+    { label: "Completed tasks", value: tasks.filter((todo) => todo.done).length },
+    { label: "Bitcoin accounts", value: accounts.length },
+    { label: "Self-custody accounts", value: accounts.filter((account) => account.custody === "self_custody").length },
+  ]
+
+  return (
+    <>
+      <PageHeader title="Awards" subtitle="Milestones from this profile's ledger" />
+      <div className="vv-awards-grid">
+        {milestones.map((milestone) => (
+          <Panel key={milestone.label} className="vv-award">
+            <IconGlyph name="sparkles" size={18} />
+            <strong className="vv-num">{milestone.value}</strong>
+            <span>{milestone.label}</span>
+          </Panel>
+        ))}
+      </div>
+      <StatusBanner
+        tone="info"
+        title="No inferred badges"
+        detail="This screen reports recorded milestones and never guesses a threshold from missing data."
+      />
+    </>
+  )
+}
+
+function MorePage() {
+  const { activeProfile, data, financeModel, navigate } = useAppState()
+  const status = data.transactions.status
+  if (status === "loading" || status === "error" || status === "empty" || status === "stale") {
+    return (
+      <>
+        <PageHeader title="More" subtitle="Everything else in the household" />
+        <StateBlock state={status} detail="Scoped counts are unavailable until the ledger read completes." />
+      </>
+    )
+  }
+
+  const buys = visibleTo(activeProfile, data.btcBuys.value).length
+  const billPays = visibleTo(activeProfile, data.billPays.value).length
+  const tasks = data.todos.value.filter((todo) => todo.owner === activeProfile)
+  const today = new Date(data.generatedAt).toISOString().slice(0, 10)
+  const todayCount = tasks.filter((todo) => todo.due !== null && todo.due <= today).length
+  const openTasks = tasks.filter((todo) => !todo.done).length
+  const retirement = financeModel.finance.status === "live"
+    ? sum(financeModel.finance.value.accounts
+        .filter((account) => sharesNetWorthWith(activeProfile, account.owner))
+        .map((account) => account.totalValueCents))
+    : null
+  const bitcoin = data.btcBalanceDocument.value
+    ? fiatCentsOf(data.btcBalanceDocument.value.totals)
+    : null
+  const netWorth = retirement !== null && bitcoin !== null ? retirement + bitcoin : null
+  const currency = (value: bigint | null) => value === null ? "—" : `$${formatMinorUnits(value, 2)}`
+  const rows: ReadonlyArray<{
+    readonly icon: IconName
+    readonly label: string
+    readonly route: string
+    readonly value: string
+  }> = [
+    { icon: "wallet", label: "BTC Buys", route: "bitcoin-buys", value: String(buys) },
+    { icon: "receipt", label: "BTC Bill Pays", route: "bills", value: String(billPays) },
+    { icon: "bank", label: "Net Worth", route: "net-worth", value: currency(netWorth) },
+    { icon: "retirement", label: "Retirement", route: "net-worth", value: currency(retirement) },
+    { icon: "today", label: "Today", route: "today", value: String(todayCount) },
+    { icon: "check", label: "Tasks", route: "tasks", value: String(openTasks) },
+    { icon: "sparkles", label: "Awards", route: "awards", value: String(tasks.filter((todo) => todo.done).length) },
+    { icon: "users", label: "Family", route: "family", value: String(FAMILY_MEMBERS.length) },
+    { icon: "settings", label: "Settings", route: "settings", value: "" },
+  ]
+
+  return (
+    <>
+      <PageHeader title="More" subtitle="Everything else in the household" />
+      <div className="vv-more-list">
+        {rows.map((row) => (
+          <button key={`${row.label}-${row.route}`} type="button" onClick={() => navigate(row.route)}>
+            <IconGlyph name={row.icon} size={18} />
+            <span>{row.label}</span>
+            <strong className="vv-num">{row.value}</strong>
+            <IconGlyph name="chevron-right" size={14} />
+          </button>
+        ))}
+      </div>
+    </>
+  )
+}
+
 export const adminPageManifest: PageManifest = {
   id: "admin",
   label: "System",
@@ -962,6 +1267,8 @@ export const adminPageManifest: PageManifest = {
     { id: "sync-health", label: "Sync Health", icon: "refresh", Component: SyncHealthPage },
     { id: "export", label: "Export", icon: "download", Component: ExportPage, adultOnly: true },
     { id: "settings", label: "Settings", icon: "settings", Component: SettingsPage },
+    { id: "awards", label: "Awards", icon: "sparkles", Component: AwardsPage },
+    { id: "more", label: "More", icon: "chevron-right", Component: MorePage },
     { id: "onboarding", label: "Onboarding", icon: "sparkles", Component: OnboardingPage },
     { id: "lock", label: "Lock Screen", icon: "lock", Component: LockScreenPage },
   ],

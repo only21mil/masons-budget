@@ -48,8 +48,14 @@ import {
 } from "../data/mutations.ts"
 
 export type StateOverride = Freshness | "normal"
+export type LedgerTheme = "dark" | "light"
 
 const DISPLAY_UNIT_STORAGE_KEY = "vogel-vault.display-unit"
+const LEDGER_THEME_STORAGE_KEY = "vogel-vault.ledger-theme"
+const SCANLINES_STORAGE_KEY = "vogel-vault.scanlines"
+const PHOSPHOR_STORAGE_KEY = "vogel-vault.phosphor"
+const BUDGET_ALERTS_STORAGE_KEY = "vogel-vault.budget-alerts"
+const BIOMETRIC_STORAGE_KEY = "vogel-vault.biometric-unlock"
 
 interface AppStateValue {
   readonly activeProfile: FamilyMember
@@ -71,6 +77,16 @@ interface AppStateValue {
   readonly setStateOverride: (state: StateOverride) => void
   readonly displayUnit: DisplayUnit
   readonly setDisplayUnit: (unit: DisplayUnit) => void
+  readonly ledgerTheme: LedgerTheme
+  readonly setLedgerTheme: (theme: LedgerTheme) => void
+  readonly scanlinesEnabled: boolean
+  readonly setScanlinesEnabled: (enabled: boolean) => void
+  readonly phosphorEnabled: boolean
+  readonly setPhosphorEnabled: (enabled: boolean) => void
+  readonly budgetAlertsEnabled: boolean
+  readonly setBudgetAlertsEnabled: (enabled: boolean) => void
+  readonly biometricUnlockEnabled: boolean
+  readonly setBiometricUnlockEnabled: (enabled: boolean) => void
   readonly data: FixtureEnvelope
   /** Finance/quote rows are remote-only and never synthesized from QA fixtures. */
   readonly financeModel: LinuxFinanceReadModel
@@ -151,6 +167,19 @@ export function AppStateProvider({
   const [displayUnit, setStoredDisplayUnit] = useState<DisplayUnit>(
     () => initialDisplayUnit ?? readDisplayUnit(),
   )
+  const [ledgerTheme, setStoredLedgerTheme] = useState<LedgerTheme>(readLedgerTheme)
+  const [scanlinesEnabled, setStoredScanlinesEnabled] = useState(
+    () => readBooleanPreference(SCANLINES_STORAGE_KEY, true),
+  )
+  const [phosphorEnabled, setStoredPhosphorEnabled] = useState(
+    () => readBooleanPreference(PHOSPHOR_STORAGE_KEY, true),
+  )
+  const [budgetAlertsEnabled, setStoredBudgetAlertsEnabled] = useState(
+    () => readBooleanPreference(BUDGET_ALERTS_STORAGE_KEY, true),
+  )
+  const [biometricUnlockEnabled, setStoredBiometricUnlockEnabled] = useState(
+    () => readBooleanPreference(BIOMETRIC_STORAGE_KEY, true),
+  )
   const [remoteData, setRemoteData] = useState<{
     readonly profile: FamilyMember
     readonly data: FixtureEnvelope
@@ -213,6 +242,27 @@ export function AppStateProvider({
     } catch {
       // A blocked storage area must not make the display control unusable.
     }
+  }, [])
+
+  const setLedgerTheme = useCallback((theme: LedgerTheme) => {
+    setStoredLedgerTheme(theme)
+    writePreference(LEDGER_THEME_STORAGE_KEY, theme)
+  }, [])
+  const setScanlinesEnabled = useCallback((enabled: boolean) => {
+    setStoredScanlinesEnabled(enabled)
+    writePreference(SCANLINES_STORAGE_KEY, String(enabled))
+  }, [])
+  const setPhosphorEnabled = useCallback((enabled: boolean) => {
+    setStoredPhosphorEnabled(enabled)
+    writePreference(PHOSPHOR_STORAGE_KEY, String(enabled))
+  }, [])
+  const setBudgetAlertsEnabled = useCallback((enabled: boolean) => {
+    setStoredBudgetAlertsEnabled(enabled)
+    writePreference(BUDGET_ALERTS_STORAGE_KEY, String(enabled))
+  }, [])
+  const setBiometricUnlockEnabled = useCallback((enabled: boolean) => {
+    setStoredBiometricUnlockEnabled(enabled)
+    writePreference(BIOMETRIC_STORAGE_KEY, String(enabled))
   }, [])
 
   const switchProfile = useCallback(
@@ -514,6 +564,16 @@ export function AppStateProvider({
       setStateOverride,
       displayUnit,
       setDisplayUnit,
+      ledgerTheme,
+      setLedgerTheme,
+      scanlinesEnabled,
+      setScanlinesEnabled,
+      phosphorEnabled,
+      setPhosphorEnabled,
+      budgetAlertsEnabled,
+      setBudgetAlertsEnabled,
+      biometricUnlockEnabled,
+      setBiometricUnlockEnabled,
       data,
       financeModel,
       dataOrigin,
@@ -538,6 +598,16 @@ export function AppStateProvider({
       stateOverride,
       displayUnit,
       setDisplayUnit,
+      ledgerTheme,
+      setLedgerTheme,
+      scanlinesEnabled,
+      setScanlinesEnabled,
+      phosphorEnabled,
+      setPhosphorEnabled,
+      budgetAlertsEnabled,
+      setBudgetAlertsEnabled,
+      biometricUnlockEnabled,
+      setBiometricUnlockEnabled,
       data,
       financeModel,
       dataOrigin,
@@ -612,11 +682,44 @@ export function useAppState(): AppStateValue {
   return value
 }
 
+/** AppShell also renders in isolated design-foundation tests without a provider. */
+export function useOptionalAppState(): AppStateValue | null {
+  return useContext(AppStateContext)
+}
+
 function readDisplayUnit(): DisplayUnit {
   if (typeof window === "undefined") return "btc"
   try {
     return displayUnitFromStorageKey(window.localStorage.getItem(DISPLAY_UNIT_STORAGE_KEY))
   } catch {
     return "btc"
+  }
+}
+
+function readLedgerTheme(): LedgerTheme {
+  if (typeof window === "undefined") return "dark"
+  try {
+    return window.localStorage.getItem(LEDGER_THEME_STORAGE_KEY) === "light" ? "light" : "dark"
+  } catch {
+    return "dark"
+  }
+}
+
+function readBooleanPreference(key: string, fallback: boolean): boolean {
+  if (typeof window === "undefined") return fallback
+  try {
+    const stored = window.localStorage.getItem(key)
+    return stored === null ? fallback : stored === "true"
+  } catch {
+    return fallback
+  }
+}
+
+function writePreference(key: string, value: string): void {
+  if (typeof window === "undefined") return
+  try {
+    window.localStorage.setItem(key, value)
+  } catch {
+    // Appearance controls remain usable when storage is blocked.
   }
 }

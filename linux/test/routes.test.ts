@@ -76,8 +76,8 @@ function renderPage(
 
 // ── Structure ───────────────────────────────────────────────────────────────
 
-test("the cockpit has exactly 18 primary pages", () => {
-  assert.equal(ALL_PAGES.length, 18, ALL_PAGES.map((page) => page.id).join(", "))
+test("the cockpit has exactly 21 primary pages", () => {
+  assert.equal(ALL_PAGES.length, 21, ALL_PAGES.map((page) => page.id).join(", "))
 })
 
 test("retirement is no longer a tab and its deep link lands on net worth", () => {
@@ -262,18 +262,18 @@ test("siblings cannot see each other's records", () => {
   }
 })
 
-test("Rachel sees the same household records as Victor", () => {
+test("Rachel sees the same household financial records as Victor", () => {
   // The v0.3 regression, checked at the rendered-page level rather than only in
   // the domain unit tests: adult records are tagged owner "victor", so a strict
   // equality filter anywhere in a page would empty Rachel's screen.
-  for (const pageId of ["activity", "dashboard", "projects"]) {
+  for (const pageId of ["activity", "dashboard"]) {
     const page = ALL_PAGES.find((candidate) => candidate.id === pageId)
     assert.ok(page, `${pageId} not found`)
     const victorMarkup = renderPage(page, "victor", "normal")
     const rachelMarkup = renderPage(page, "rachel", "normal")
 
     let comparedRecords = 0
-    for (const shared of ["Neighborhood Market", "Payroll Deposit", "Reconcile July statements"]) {
+    for (const shared of ["Neighborhood Market", "Payroll Deposit"]) {
       if (victorMarkup.includes(shared)) {
         comparedRecords += 1
         assert.ok(
@@ -284,6 +284,18 @@ test("Rachel sees the same household records as Victor", () => {
     }
     assert.ok(comparedRecords > 0, `${pageId}: Victor rendered no household record to compare`)
   }
+})
+
+test("adult todos remain private to the active profile", () => {
+  const projects = ALL_PAGES.find((page) => page.id === "projects")
+  assert.ok(projects)
+  const victorMarkup = renderPage(projects, "victor", "normal")
+  const rachelMarkup = renderPage(projects, "rachel", "normal")
+
+  assert.ok(victorMarkup.includes("Reconcile July statements"))
+  assert.ok(!rachelMarkup.includes("Reconcile July statements"))
+  assert.ok(rachelMarkup.includes("Plan birthday weekend"))
+  assert.ok(!victorMarkup.includes("Plan birthday weekend"))
 })
 
 test("a child's stack never appears in an adult net-worth total", () => {
