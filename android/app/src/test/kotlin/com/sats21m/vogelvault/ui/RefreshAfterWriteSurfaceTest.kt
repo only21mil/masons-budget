@@ -217,6 +217,7 @@ class RefreshAfterWriteSurfaceTest {
 
     @Test
     fun `task add refreshes after success and not after rejection`() {
+        application.todoCredentialProfile = FamilyMember.MADDOX
         val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
             AddTaskSheet(
                 owner = FamilyMember.MADDOX,
@@ -365,6 +366,7 @@ class RefreshAfterWriteSurfaceTest {
 
     @Test
     fun `screen host wires task success to refresh and rejects do not refresh`() {
+        application.todoCredentialProfile = FamilyMember.MADDOX
         val state = VaultUiState(
             activeProfile = FamilyMember.MADDOX,
             destination = Destination.TASKS,
@@ -671,7 +673,12 @@ internal class RefreshAfterWriteApplication : VaultApplication() {
 
     override fun hasConvexWriteCredential(): Boolean = true
     override fun hasTodoWriteCredential(): Boolean = true
-    override fun hasTodoWriteCredential(profile: FamilyMember): Boolean = true
+
+    @Volatile
+    var todoCredentialProfile: FamilyMember = FamilyMember.VICTOR
+
+    override fun hasTodoWriteCredential(profile: FamilyMember): Boolean =
+        profile == todoCredentialProfile
 
     override val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         TodoMutationGateway(
@@ -683,7 +690,7 @@ internal class RefreshAfterWriteApplication : VaultApplication() {
                     ConvexDeviceCredential(
                         "test-device",
                         "t".repeat(43),
-                        FamilyMember.VICTOR,
+                        todoCredentialProfile,
                     )
                 },
                 http = poster,
