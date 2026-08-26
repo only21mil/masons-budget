@@ -1,6 +1,7 @@
 import { encodeConvexInt64, type ConvexInt64WireValue } from "./convexInt64.ts"
 import { isAdult, isFamilyMember, ledgerOwner, type FamilyMember } from "./family.ts"
 import { isIsoDate } from "./todo.ts"
+import { parseManualFeeUsdCents } from "./manualFee.ts"
 import {
   CONVEX_WRITE_FORMAT,
   WriteContractError,
@@ -22,6 +23,7 @@ export interface LinkedIncomeBuyWriteRequest {
       readonly sats: ConvexInt64WireValue
       readonly priceUsdCents: ConvexInt64WireValue
       readonly usdCents: ConvexInt64WireValue
+      readonly feeUsdCents: ConvexInt64WireValue
       readonly note?: string
     }
     readonly linkedIncome: {
@@ -37,7 +39,7 @@ export interface LinkedIncomeBuyWriteRequest {
 }
 
 /**
- * Build one atomic canonical-income plus Bitcoin-buy request.
+ * Describe one atomic canonical-income plus Bitcoin-buy request.
  *
  * The same stable caller-generated id identifies both rows. The buy is the only
  * side that carries sats, so retrying the pair cannot post the Bitcoin twice.
@@ -64,6 +66,16 @@ export function buildLinkedIncomeBuyWriteRequest(
   const id = requiredString(buy.id, "buy.id")
   const date = requiredDate(buy.date, "buy.date")
   const usdCents = positiveInt64(buy.usdCents, "buy.usdCents")
+  let feeUsdCents: bigint
+  try {
+    feeUsdCents = parseManualFeeUsdCents(buy.feeUsdCents)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "buy.feeUsdCents is invalid"
+    throw new WriteContractError(
+      message.includes("int64") ? "int64-out-of-range" : "invalid-minor-units",
+      message,
+    )
+  }
 
   if (
     requiredString(income.id, "linkedIncome.id") !== id ||
@@ -106,6 +118,7 @@ export function buildLinkedIncomeBuyWriteRequest(
           positiveInt64(buy.priceUsdCents, "buy.priceUsdCents"),
         ),
         usdCents: encodeConvexInt64(usdCents),
+        feeUsdCents: encodeConvexInt64(feeUsdCents),
         ...(note === undefined ? {} : { note }),
       },
       linkedIncome: {

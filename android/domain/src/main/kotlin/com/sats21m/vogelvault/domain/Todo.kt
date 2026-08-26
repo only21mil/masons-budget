@@ -24,10 +24,9 @@ import java.time.format.DateTimeFormatter
  * Where the two disagree, the divergences are listed in the fixture's
  * `$divergences` block and reproduced deliberately, never accidentally.
  *
- * HARD RULE (repo AGENTS.md): owner resolution goes through
- * [FamilyMember.coerceOwner] and visibility through [visibleTo]. Adult compatibility
- * records default to "victor", so a strict `owner == activeMember` check empties
- * Rachel's todo list. That bug shipped in v0.3.
+ * Owner resolution goes through [FamilyMember.coerceOwner]. Unlike financial
+ * visibility, todo access is private to the exact active profile and list reads
+ * go through [todosFor].
  */
 enum class TodoLane(val key: String) {
     WORK("work"),
@@ -80,7 +79,7 @@ data class CanonicalTodo(
     val syncSource: String,
     val completedAt: String?,
     val completedBy: String?,
-) : Owned
+) : ProfileScopedTodo
 
 /** A delete that has to outlive the record it deleted (SAT-1327). */
 data class TodoTombstone(val id: String, val deletedAtMillis: Long)

@@ -361,6 +361,7 @@ function buy(id: string, date: string, priceUsd: bigint, owner: FamilyMember): B
     sats: 1n,
     priceUsd,
     usd: 1n,
+    feeUsd: 0n,
     note: null,
     status: "settled",
     costBasisStatus: "confirmed",

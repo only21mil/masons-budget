@@ -145,7 +145,7 @@ actor ConvexDataReader {
         if rowReadsEnabled() {
             do {
                 let rows = try await rowReader.todos(viewer: viewer)
-                let owners = Set(FamilyMember.allCases.filter { viewer.canSee(dataOwnedBy: $0) })
+                let owners: Set<FamilyMember> = [viewer]
                 return ConvexReadBatch(value: rows, replacementOwners: owners, source: .rowAPI)
             } catch let error as ConvexError where error.isRowAPIUnavailable {
                 log.notice("Public row API is not deployed; reading authenticated todos blob")

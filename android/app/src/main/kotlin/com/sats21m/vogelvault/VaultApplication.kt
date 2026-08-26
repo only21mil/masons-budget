@@ -13,6 +13,7 @@ import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexReadBootstrapRepository
 import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.BudgetCategoryDeletionGateway
 import com.sats21m.vogelvault.data.FinanceQueryRepositories
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.data.RecoveringFinanceReadSource
@@ -33,6 +34,8 @@ import com.sats21m.vogelvault.ui.TransactionDeviceMutationGateway
 import com.sats21m.vogelvault.ui.TodoMutationGateway
 import com.sats21m.vogelvault.ui.VaultViewModel
 import java.io.IOException
+import java.time.YearMonth
+import java.time.ZoneOffset
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -335,6 +338,21 @@ open class VaultApplication : Application() {
                 configSource = MutableConvexConfigSource(writeConvexConfig()),
                 credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
             ),
+        )
+    }
+
+    /** Current-month budget deletion stays behind the paired-device capability. */
+    internal open val budgetCategoryDeletionGateway: BudgetCategoryDeletionGateway by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        BudgetCategoryDeletionGateway(
+            client = ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(writeConvexConfig()),
+                credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
+            ),
+            // UI month pickers cannot supply or override this value. Convex
+            // repeats the current-month check against its own clock.
+            trustedCurrentMonth = { YearMonth.now(ZoneOffset.UTC).toString() },
         )
     }
 

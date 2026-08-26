@@ -231,6 +231,47 @@ internal sealed class ConvexMutation(val path: String) {
                 "category" to category.toJson(),
             )
     }
+
+    /** Capability-scoped current-month category deletion. */
+    data class DeleteBudgetCategoryFromDevice(
+        val owner: FamilyMember,
+        val sourceFile: String,
+        val month: String,
+        val entityId: String,
+        val baseUpdatedAtMs: Long,
+        val trustedCurrentMonth: String,
+    ) : ConvexMutation("tables:deleteBudgetCategoryFromDevice") {
+        init {
+            require(trustedCurrentMonth.matches(BUDGET_MONTH_PATTERN)) {
+                "trusted current month must be canonical yyyy-MM"
+            }
+            require(month == trustedCurrentMonth) {
+                "budget category deletion is limited to the trusted current month"
+            }
+            require(entityId.isNotBlank() && entityId.trim() == entityId) {
+                "budget category name must be nonblank and canonical"
+            }
+            require(baseUpdatedAtMs in 1L..MAX_SAFE_JSON_INTEGER) {
+                "budget category revision must be a positive safe integer"
+            }
+            val expectedSource = when (owner) {
+                FamilyMember.VICTOR -> "budget"
+                FamilyMember.MASON -> "mason-budget"
+                else -> error("budget category deletion requires canonical Victor or Mason ownership")
+            }
+            require(sourceFile == expectedSource) {
+                "budget category source file must match its canonical owner"
+            }
+        }
+
+        override fun arguments(): JsonObject = jsonObject(
+            "owner" to JsonPrimitive(owner.key),
+            "sourceFile" to JsonPrimitive(sourceFile),
+            "month" to JsonPrimitive(month),
+            "entityId" to JsonPrimitive(entityId),
+            "baseUpdatedAtMs" to JsonPrimitive(baseUpdatedAtMs),
+        )
+    }
 }
 
 internal enum class TransactionKind(val wireValue: String) {
@@ -300,6 +341,7 @@ internal data class BtcBuyInput(
     val sats: Long,
     val priceUsdCents: Long,
     val usdCents: Long,
+    val feeUsdCents: Long = 0L,
     val note: String? = null,
     val status: String? = null,
     val costBasisStatus: String? = null,
@@ -311,6 +353,7 @@ internal data class BtcBuyInput(
         require(id.isNotBlank()) { "bitcoin buy id must not be blank" }
         require(date.isNotBlank()) { "bitcoin buy date must not be blank" }
         require(source.isNotBlank()) { "bitcoin buy source must not be blank" }
+        require(feeUsdCents >= 0L) { "bitcoin buy fee must not be negative" }
     }
 
     fun toJson(): JsonObject = buildMap<String, JsonElement> {
@@ -320,6 +363,7 @@ internal data class BtcBuyInput(
         put("sats", sats.toConvexInt64())
         put("priceUsdCents", priceUsdCents.toConvexInt64())
         put("usdCents", usdCents.toConvexInt64())
+        put("feeUsdCents", feeUsdCents.toConvexInt64())
         note?.let { put("note", JsonPrimitive(it)) }
         status?.let { put("status", JsonPrimitive(it)) }
         costBasisStatus?.let { put("costBasisStatus", JsonPrimitive(it)) }
@@ -521,3 +565,4 @@ private fun jsonObject(vararg entries: Pair<String, JsonElement>): JsonObject =
     JsonObject(linkedMapOf(*entries))
 
 private val BUDGET_MONTH_PATTERN = Regex("""\d{4}-(0[1-9]|1[0-2])""")
+private const val MAX_SAFE_JSON_INTEGER = 9_007_199_254_740_991L

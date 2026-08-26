@@ -85,6 +85,8 @@ export interface VogelVaultBtcBuyRow {
   readonly sats: bigint
   readonly priceUsdCents: bigint
   readonly usdCents: bigint
+  /** Always projected by current servers; old wire rows decode as zero. */
+  readonly feeUsdCents?: bigint
   readonly note?: string
   readonly status?: string
   readonly costBasisStatus?: string
@@ -589,6 +591,8 @@ export type VogelVaultMutationRequest =
       readonly sats: bigint
       readonly priceUsdCents: bigint
       readonly usdCents: bigint
+      /** Optional manual exact-cent fee. Missing input means zero. */
+      readonly feeUsdCents?: bigint
       readonly note?: string
       readonly buyStatus?: string
       readonly costBasisStatus?: string

@@ -31,9 +31,9 @@
       "getBudgetDocument": "9b705a4c690b9e13e85335f16e978f83b9ce49aef621a72ec0edf74bd45355a7",
       "listBtcAccounts": "4fcfb421c5fc13b07f2d66686227fcce7f57bd35987c3ac8fbf98a9cf18195ba",
       "listBtcBillPays": "5e2562fe25999f2a1c38057bc9c200a0f5291a4a27a716fa469f5b77bec7178e",
-      "listBtcBuys": "b3ac2ee15fc8ff69df2788bdbb2defb5d78034880f2d01056f083f286b7a26a7",
+      "listBtcBuys": "654029cee0e6d0ebde271273388f6724748b118be543c6ad55c4e9c6e162c6bd",
       "listIncome": "e63d424ad7791e6a80a80c49d9492c090a2c4eb6478e7bff334729930794045d",
-      "listTodos": "73a9cbd2208992a8030c8f9e47308514f71fc54ea9773bf1c2037bc21cf8abe9",
+      "listTodos": "af4996ac4677385466e77556aa97faffe1b6bb19c80aa8d9f749363f944b7c28",
       "listTransactions": "2731c848a0e8454b152301c96119737a162cc7842d1f8bf9a05a74f7ad67eefb",
       "rowCounts": "c4a03cf9e822f069957159a69c3f935a273cac6138a54a76d5cf71fd5824d822"
     },

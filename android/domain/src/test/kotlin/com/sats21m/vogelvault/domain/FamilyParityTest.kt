@@ -180,12 +180,6 @@ class FamilyParityTest {
             Row(label = obj["label"].asString, owner = member(obj["owner"].asString))
         }
 
-    private fun todos(): List<Row> =
-        fixtures.getAsJsonArray("sampleTodos").map {
-            val obj = it.asJsonObject
-            Row(label = obj["title"].asString, owner = member(obj["owner"].asString))
-        }
-
     private fun expectations(): JsonObject = fixtures.getAsJsonObject("expectations")
 
     @Test
@@ -236,28 +230,6 @@ class FamilyParityTest {
         val netWorth = accounts().netWorthScopeFor(FamilyMember.VICTOR).map { it.label }
         assertTrue(visible.contains("Mason Strike"))
         assertFalse(netWorth.contains("Mason Strike"))
-    }
-
-    @Test
-    fun `todo filtering matches expected counts and titles`() {
-        val counts = expectations().getAsJsonObject("visibleTodoCount")
-        for (viewer in members) {
-            assertEquals(counts[viewer.key].asInt, todos().visibleTo(viewer).size, viewer.key)
-        }
-        val titles = expectations().getAsJsonObject("visibleTodoTitles")
-        for ((key, value) in titles.entrySet()) {
-            assertEquals(
-                value.asJsonArray.map { it.asString },
-                todos().visibleTo(member(key)).map { it.label },
-                key,
-            )
-        }
-    }
-
-    @Test
-    fun `Rachel sees Victor-owned todos`() {
-        val expected = expectations()["rachelSeesVictorTodo"].asString
-        assertTrue(todos().visibleTo(FamilyMember.RACHEL).any { it.label == expected })
     }
 
     @Test

@@ -345,6 +345,7 @@ internal data class PublicBtcBuyDto(
     val sats: Long,
     val priceUsdCents: Long,
     val usdCents: Long,
+    val feeUsdCents: Long,
     val note: String?,
     val status: String?,
     val costBasisStatus: String?,
@@ -361,6 +362,7 @@ internal data class PublicBtcBuyDto(
         usdCents = usdCents,
         costBasisStatus = costBasisStatus,
         owner = owner,
+        feeUsdCents = feeUsdCents,
     )
 
     companion object {
@@ -371,6 +373,9 @@ internal data class PublicBtcBuyDto(
             val costBasisStatus = row.decodedOptionalString("costBasisStatus") ?: return null
             val loggedBy = row.decodedOptionalString("loggedBy") ?: return null
             val requestId = row.decodedOptionalString("archimedesRequestId") ?: return null
+            val fee = row.decodedOptionalInt64("feeUsdCents") ?: return null
+            val feeUsdCents = fee.value ?: 0L
+            if (feeUsdCents < 0L) return null
             return PublicBtcBuyDto(
                 buyId = row.rowString("buyId") ?: return null,
                 owner = row.rowOwner() ?: return null,
@@ -380,6 +385,7 @@ internal data class PublicBtcBuyDto(
                 sats = row.rowInt64("sats") ?: return null,
                 priceUsdCents = row.rowInt64("priceUsdCents") ?: return null,
                 usdCents = row.rowInt64("usdCents") ?: return null,
+                feeUsdCents = feeUsdCents,
                 note = note.value,
                 status = status.value,
                 costBasisStatus = costBasisStatus.value,

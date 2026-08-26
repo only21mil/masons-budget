@@ -21,13 +21,13 @@ struct ProjectsView: View {
 
     private var searchableTodos: [TodoItem] {
         allTodos.filter {
-            activeMember.canSee(dataOwnedBy: $0.ownerMember) &&
+            activeMember.canAccessTodo(ownedBy: $0.ownerMember) &&
                 SearchMatcher.matches(todo: $0, query: searchText)
         }
     }
 
     private var visibleTodos: [TodoItem] {
-        allTodos.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+        allTodos.filter { activeMember.canAccessTodo(ownedBy: $0.ownerMember) }
     }
 
     private func projectName(for todo: TodoItem) -> String? {
@@ -79,7 +79,7 @@ struct ProjectsView: View {
     private var derivedProjects: [ProjectSummary] {
         let metaByKey = Dictionary(
             projects
-                .filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+                .filter { activeMember.canAccessTodo(ownedBy: $0.ownerMember) }
                 .map { ("\($0.ownerMember.rawValue)|\($0.name)", $0) },
             uniquingKeysWith: { a, _ in a },
         )
@@ -98,7 +98,7 @@ struct ProjectsView: View {
     private var derivedAreas: [AreaSummary] {
         let metaByKey = Dictionary(
             areas
-                .filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+                .filter { activeMember.canAccessTodo(ownedBy: $0.ownerMember) }
                 .map { ("\($0.ownerMember.rawValue)|\($0.name)", $0) },
             uniquingKeysWith: { a, _ in a },
         )
@@ -116,7 +116,7 @@ struct ProjectsView: View {
 
     private var inboxCount: Int {
         allTodos.count(where: {
-            activeMember.canSee(dataOwnedBy: $0.ownerMember) &&
+            activeMember.canAccessTodo(ownedBy: $0.ownerMember) &&
                 !$0.isDone &&
                 projectName(for: $0) == nil &&
                 areaName(for: $0) == nil
@@ -127,7 +127,7 @@ struct ProjectsView: View {
         let cal = Calendar.current
         let now = Date()
         return allTodos.count(where: { todo in
-            activeMember.canSee(dataOwnedBy: todo.ownerMember) && !todo.isDone &&
+            activeMember.canAccessTodo(ownedBy: todo.ownerMember) && !todo.isDone &&
                 SmartListFilter.today.matches(todo, now: now, calendar: cal)
         })
     }
@@ -136,14 +136,14 @@ struct ProjectsView: View {
         let cal = Calendar.current
         let now = Date()
         return allTodos.count(where: { todo in
-            activeMember.canSee(dataOwnedBy: todo.ownerMember) && !todo.isDone &&
+            activeMember.canAccessTodo(ownedBy: todo.ownerMember) && !todo.isDone &&
                 SmartListFilter.upcoming.matches(todo, now: now, calendar: cal)
         })
     }
 
     private var flaggedCount: Int {
         allTodos.count(where: {
-            activeMember.canSee(dataOwnedBy: $0.ownerMember) &&
+            activeMember.canAccessTodo(ownedBy: $0.ownerMember) &&
                 !$0.isDone &&
                 $0.isFlagged
         })

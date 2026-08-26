@@ -1,0 +1,25 @@
+{
+  "$comment": "Money Out Today is a pure same-day projection. BTC buys are deliberately absent because they never contribute.",
+  "contractVersion": 1,
+  "date": "2026-08-25",
+  "transactions": [
+    { "id": "adult-spend", "date": "2026-08-25", "amountCents": "2500", "category": "Groceries", "owner": "victor" },
+    { "id": "adult-refund", "date": "2026-08-25", "amountCents": "-3000", "category": "Groceries", "owner": "victor" },
+    { "id": "adult-income", "date": "2026-08-25", "amountCents": "9000", "category": "Income", "owner": "victor" },
+    { "id": "adult-card-transfer", "date": "2026-08-25", "amountCents": "3000", "category": "cReDiT CaRd PaYmEnT", "owner": "victor" },
+    { "id": "noncanonical-rachel", "date": "2026-08-25", "amountCents": "700", "category": "Shopping", "owner": "rachel" },
+    { "id": "mason-spend", "date": "2026-08-25", "amountCents": "600", "category": "Entertainment", "owner": "mason" },
+    { "id": "other-day", "date": "2026-08-24", "amountCents": "10000", "category": "Shopping", "owner": "victor" }
+  ],
+  "billPays": [
+    { "id": "adult-bill", "date": "2026-08-25", "principalCents": "1000", "feeUsdCents": "25", "owner": "rachel" },
+    { "id": "adult-credit-card-payment", "date": "2026-08-25", "principalCents": "5000", "feeUsdCents": "10", "owner": "victor", "budgetEffect": "credit_card_payment" },
+    { "id": "mason-bill", "date": "2026-08-25", "principalCents": "200", "feeUsdCents": "5", "owner": "mason" }
+  ],
+  "cases": [
+    { "activeProfile": "victor", "expectedOwner": "victor", "expectedTotalCents": "1225", "expectedSourceIds": ["adult-spend", "adult-refund", "noncanonical-rachel", "adult-bill"] },
+    { "activeProfile": "rachel", "expectedOwner": "victor", "expectedTotalCents": "1225", "expectedSourceIds": ["adult-spend", "adult-refund", "noncanonical-rachel", "adult-bill"] },
+    { "activeProfile": "mason", "expectedOwner": "mason", "expectedTotalCents": "805", "expectedSourceIds": ["mason-spend", "mason-bill"] },
+    { "activeProfile": "maddox", "expectedOwner": "maddox", "expectedTotalCents": "0", "expectedSourceIds": [] }
+  ]
+}

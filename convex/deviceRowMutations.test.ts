@@ -18,6 +18,7 @@ type UpsertResult = {
   outcome: "inserted" | "updated";
 };
 type DeleteResult = { ok: true; entityId: string; removed: boolean };
+const CURRENT_MONTH = new Date().toISOString().slice(0, 7);
 type RestoreResult = {
   ok: true;
   entityId: string;
@@ -188,7 +189,7 @@ async function seedBudgets() {
     await ctx.db.insert("budgetDocuments", {
       sourceFile: "budget",
       owner: "victor",
-      month: "2026-07",
+      month: CURRENT_MONTH,
       coinbaseOneBalanceCents: 0n,
       categories: [
         { name: "Food", icon: "fork", budgetCents: 40_000n },
@@ -202,7 +203,7 @@ async function seedBudgets() {
     await ctx.db.insert("budgetDocuments", {
       sourceFile: "mason-budget",
       owner: "mason",
-      month: "2026-07",
+      month: CURRENT_MONTH,
       coinbaseOneBalanceCents: 0n,
       categories: [],
       mtdIncomeCents: 0n,
@@ -1063,7 +1064,7 @@ describe("device transaction and todo mutations", () => {
       ...auth,
       owner: "victor",
       sourceFile: "budget",
-      month: "2026-07",
+      month: CURRENT_MONTH,
       baseUpdatedAtMs: await budgetRevision("budget"),
       category: { name: "Locked category", budgetCents: 100n },
     });
@@ -1750,7 +1751,7 @@ describe("device budget mutations", () => {
       ...authArgs(device),
       owner: "victor",
       sourceFile: "budget",
-      month: "2026-07",
+      month: CURRENT_MONTH,
       entityId: "food",
       baseUpdatedAtMs,
     };
@@ -1792,7 +1793,7 @@ describe("device budget mutations", () => {
       ...authArgs(device),
       owner: "victor",
       sourceFile: "budget",
-      month: "2026-07",
+      month: CURRENT_MONTH,
     };
     const initialRevision = await budgetRevision("budget");
     await expect(
@@ -1839,11 +1840,11 @@ describe("device budget mutations", () => {
     await expect(
       t.mutation(api.deleteBudgetCategory, {
         ...base,
-        month: "2026-06",
+        month: "1900-01",
         entityId: "Groceries",
         baseUpdatedAtMs: renamedRevision,
       }),
-    ).rejects.toThrow(/does not match/);
+    ).rejects.toThrow(/limited to the current month/);
     const deleteArgs = {
       ...base,
       entityId: "Groceries",
@@ -1864,9 +1865,108 @@ describe("device budget mutations", () => {
       removed: false,
     });
   });
+
+  it("supports Mason, rejects folded collisions, and requires a positive revision", async () => {
+    await seedBudgets();
+    const device = await fullDevice("mason-budget-delete-device");
+    await t.run(async (ctx) => {
+      const mason = await ctx.db
+        .query("budgetDocuments")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "mason-budget"))
+        .unique();
+      await ctx.db.patch(mason!._id, {
+        categories: [{ name: "School", budgetCents: 1_000n }],
+      });
+      const adult = await ctx.db
+        .query("budgetDocuments")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "budget"))
+        .unique();
+      await ctx.db.patch(adult!._id, {
+        categories: [
+          { name: "Food", budgetCents: 1_000n },
+          { name: "food", budgetCents: 2_000n },
+        ],
+      });
+    });
+
+    await expect(
+      t.mutation(api.deleteBudgetCategory, {
+        ...authArgs(device),
+        owner: "mason",
+        sourceFile: "mason-budget",
+        month: CURRENT_MONTH,
+        entityId: "school",
+        baseUpdatedAtMs: await budgetRevision("mason-budget"),
+      }),
+    ).resolves.toMatchObject({ removed: true });
+
+    await expectDeviceError(
+      t.mutation(api.deleteBudgetCategory, {
+        ...authArgs(device),
+        owner: "victor",
+        sourceFile: "budget",
+        month: CURRENT_MONTH,
+        entityId: "food",
+        baseUpdatedAtMs: await budgetRevision("budget"),
+      }),
+      "VALIDATION_FAILED",
+      "food",
+    );
+    await expectDeviceError(
+      t.mutation(api.deleteBudgetCategory, {
+        ...authArgs(device),
+        owner: "mason",
+        sourceFile: "mason-budget",
+        month: CURRENT_MONTH,
+        entityId: "School",
+        baseUpdatedAtMs: 0,
+      }),
+      "VALIDATION_FAILED",
+    );
+  });
 });
 
 describe("device bitcoin mutations", () => {
+  it("stores missing buy fees as zero, preserves manual cents, and rejects negatives", async () => {
+    await seedBtcLedger("victor");
+    const device = await fullDevice("buy-fee-device");
+    const buy = {
+      owner: "victor",
+      date: new Date().toISOString().slice(0, 10),
+      source: "river",
+      sats: 1_000n,
+      priceUsdCents: 10_000_000n,
+      usdCents: 100n,
+    } as const;
+
+    await t.mutation(api.upsertBtcBuy, {
+      ...authArgs(device),
+      owner: "victor",
+      sourceFile: "bitcoin-buys",
+      buy: { ...buy, id: "buy-fee-default" },
+    });
+    await t.mutation(api.upsertBtcBuy, {
+      ...authArgs(device),
+      owner: "victor",
+      sourceFile: "bitcoin-buys",
+      buy: { ...buy, id: "buy-fee-manual", feeUsdCents: 125n },
+    });
+    await expectDeviceError(
+      t.mutation(api.upsertBtcBuy, {
+        ...authArgs(device),
+        owner: "victor",
+        sourceFile: "bitcoin-buys",
+        buy: { ...buy, id: "buy-fee-negative", feeUsdCents: -1n },
+      }),
+      "VALIDATION_FAILED",
+    );
+
+    const rows = await t.run(async (ctx) => ctx.db.query("btcBuys").collect());
+    expect(
+      Object.fromEntries(rows.map((row) => [row.buyId, row.feeUsdCents])),
+    ).toEqual({ "buy-fee-default": 0n, "buy-fee-manual": 125n });
+  });
+
   it("rejects child writes to the adult-only bill-pay source before side effects", async () => {
     const device = await fullDevice("child-bill-device");
     await t.run(async (ctx) => {
@@ -1935,7 +2035,7 @@ describe("device bitcoin mutations", () => {
       ...auth,
       owner: "rachel",
       sourceFile: "budget",
-      month: "2026-07",
+      month: CURRENT_MONTH,
       baseUpdatedAtMs: await budgetRevision("budget"),
       category: { name: "Rachel shared", budgetCents: 1_000n },
     });

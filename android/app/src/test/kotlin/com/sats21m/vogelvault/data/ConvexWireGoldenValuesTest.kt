@@ -65,6 +65,7 @@ class ConvexWireGoldenValuesTest {
         assertEquals(6_572_537L, buys.rows[0].sats)
         assertEquals(6_414_981L, buys.rows[0].priceUsdCents)
         assertEquals(425_843L, buys.rows[0].usdCents)
+        assertEquals(0L, buys.rows[0].feeUsdCents)
 
         val billPays = requireOk(
             runBlocking {

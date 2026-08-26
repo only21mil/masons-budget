@@ -1,6 +1,6 @@
 {
   "$comment": "Atomic tables:upsertBtcBuy payload for one canonical income row and one Bitcoin buy. Both rows share one stable caller-generated id. The buy is the only sats posting. Runtime credentials are intentionally absent.",
-  "contractVersion": 1,
+  "contractVersion": 2,
   "actor": "rachel",
   "input": {
     "sourceFile": "bitcoin-buys",
@@ -37,6 +37,7 @@
         "sats": { "$integer": "ZAAAAAAAAAA=" },
         "priceUsdCents": { "$integer": "oCUmAAAAAAA=" },
         "usdCents": { "$integer": "GQAAAAAAAAA=" },
+        "feeUsdCents": { "$integer": "AAAAAAAAAAA=" },
         "note": "Budget income invested in Bitcoin"
       },
       "linkedIncome": {

@@ -464,6 +464,9 @@ export default defineSchema({
     sats: v.int64(),
     priceUsdCents: v.int64(), // BTC price at purchase
     usdCents: v.int64(), // fiat spent
+    // Added after the initial row cutover. Legacy rows remain valid and project
+    // as an exact zero fee until migration rewrites them.
+    feeUsdCents: v.optional(v.int64()),
     note: v.optional(v.string()),
     status: v.optional(v.string()),
     costBasisStatus: v.optional(v.string()),

@@ -65,6 +65,7 @@ import com.sats21m.vogelvault.domain.incomeAmount
 import com.sats21m.vogelvault.domain.isSpend
 import com.sats21m.vogelvault.domain.netWorthScopeFor
 import com.sats21m.vogelvault.domain.resolveBudgetMonth
+import com.sats21m.vogelvault.domain.todosFor
 import com.sats21m.vogelvault.domain.visibleTo
 import com.sats21m.vogelvault.ui.components.HorizontalHairline
 import com.sats21m.vogelvault.ui.components.Kpi
@@ -244,7 +245,7 @@ fun ScreenHost(
             visibleAccounts = accountsInput.visibleTo(profile),
             visibleBuys = buysInput.visibleTo(profile),
             visibleBillPays = billPaysInput.visibleTo(profile),
-            visibleTodos = todosInput.visibleTo(profile),
+            visibleTodos = todosInput.todosFor(profile),
         )
     }
     val activitySearch = if (destination == Destination.ACTIVITY) {

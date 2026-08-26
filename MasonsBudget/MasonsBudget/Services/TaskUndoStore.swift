@@ -16,6 +16,10 @@ struct DeletedTodoSnapshot: Identifiable {
     let updatedAt: Date
     let sourceFile: String?
 
+    var ownerMember: FamilyMember? {
+        FamilyMember(rawValue: owner)
+    }
+
     init(todo: TodoItem) {
         id = todo.id
         title = todo.title

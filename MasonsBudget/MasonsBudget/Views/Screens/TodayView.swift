@@ -17,7 +17,7 @@ struct TodayView: View {
     }
 
     private var myTodos: [TodoItem] {
-        allTodos.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) && !$0.isDone }
+        allTodos.filter { activeMember.canAccessTodo(ownedBy: $0.ownerMember) && !$0.isDone }
     }
 
     private var todayTodos: [TodoItem] {

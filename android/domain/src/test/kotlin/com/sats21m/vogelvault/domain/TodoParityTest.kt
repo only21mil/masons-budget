@@ -335,30 +335,29 @@ class TodoParityTest {
     // ── Visibility ──────────────────────────────────────────────────────────
 
     @Test
-    fun `todo visibility follows the household rule not strict owner equality`() {
-        val todos = sampleTodos
-        for (case in cases("visibility")) {
-            val viewer = member(case["viewer"].asString)
+    fun `todo lists use exact profile ownership`() {
+        for (viewer in FamilyMember.entries) {
             assertEquals(
-                case.getAsJsonArray("expectedIds").map { it.asString },
-                todos.visibleTo(viewer).map { it.id },
-                case.noteOr(viewer.key),
+                sampleTodos.filter { it.owner == viewer }.map { it.id },
+                sampleTodos.todosFor(viewer).map { it.id },
+                viewer.key,
             )
         }
     }
 
     @Test
-    fun `Rachel sees the untagged todo that defaulted to Victor`() {
+    fun `an untagged todo defaults to Victor without leaking to Rachel`() {
         val untagged = sample("t-5")
         assertEquals(FamilyMember.VICTOR, untagged.owner)
-        assertTrue(sampleTodos.visibleTo(FamilyMember.RACHEL).any { it.id == untagged.id })
+        assertTrue(sampleTodos.todosFor(FamilyMember.VICTOR).any { it.id == untagged.id })
+        assertFalse(sampleTodos.todosFor(FamilyMember.RACHEL).any { it.id == untagged.id })
     }
 
     @Test
     fun `empty collections do not throw`() {
         assertTrue(emptyList<CanonicalTodo>().applyTombstones(emptyList()).isEmpty())
         assertTrue(emptyList<CanonicalTodo>().mergeTodos(emptyList(), nowMillis).isEmpty())
-        assertTrue(emptyList<CanonicalTodo>().visibleTo(FamilyMember.MASON).isEmpty())
+        assertTrue(emptyList<CanonicalTodo>().todosFor(FamilyMember.MASON).isEmpty())
     }
 
     // ── Read-model projection ───────────────────────────────────────────────

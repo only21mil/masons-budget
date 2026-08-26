@@ -703,6 +703,60 @@ final class AppWritebackClient: Sendable {
         return try await upsertTodoViaConvex(baseURL: baseURL, todo: todo)
     }
 
+    @discardableResult
+    func deleteBudgetCategory(_ intent: BudgetCategoryDeletionIntent) async throws -> Bool {
+        if !AppWritebackConfig.isConfigured {
+            #if os(iOS)
+                let deviceName = "Vogel Vault iOS"
+            #else
+                let deviceName = "Vogel Vault macOS"
+            #endif
+            try await claimBundledPairing(deviceName: deviceName)
+        }
+
+        guard let baseURL = AppWritebackConfig.baseURL,
+              !AppWritebackConfig.deviceID.isEmpty,
+              !AppWritebackConfig.deviceToken.isEmpty
+        else { throw AppWritebackError.notConfigured }
+        guard Self.isConvexBaseURL(baseURL) else {
+            throw AppWritebackError.serverError
+        }
+
+        let value = try await convexMutation(
+            baseURL: baseURL,
+            path: "tables:deleteBudgetCategoryFromDevice",
+            args: Self.budgetCategoryDeletionArguments(
+                intent,
+                deviceID: AppWritebackConfig.deviceID,
+                deviceToken: AppWritebackConfig.deviceToken,
+            ),
+        )
+        guard let object = value as? [String: Any],
+              object["ok"] as? Bool == true,
+              object["entityId"] as? String == intent.categoryName,
+              let removed = object["removed"] as? Bool
+        else {
+            throw AppWritebackError.unexpectedResponse
+        }
+        return removed
+    }
+
+    static func budgetCategoryDeletionArguments(
+        _ intent: BudgetCategoryDeletionIntent,
+        deviceID: String,
+        deviceToken: String,
+    ) -> [String: Any] {
+        [
+            "deviceId": deviceID,
+            "deviceToken": deviceToken,
+            "owner": intent.owner.rawValue,
+            "sourceFile": intent.source,
+            "month": intent.month,
+            "entityId": intent.categoryName,
+            "baseUpdatedAtMs": intent.baseUpdatedAtMs,
+        ]
+    }
+
     private func claimConvexPairing(
         baseURL: URL,
         pair: (pairID: String, proofHash: String),
@@ -1234,11 +1288,12 @@ final class ConvexClient: Sendable {
     }
 
     /// Insert or replace one Bitcoin purchase row using exact cents and sats.
+    @discardableResult
     func upsertBTCBuyRow(
         _ buy: LegacyBTCBuyDTO,
         owner: FamilyMember,
         sourceFile: String = "bitcoin-buys",
-    ) async throws {
+    ) async throws -> Double? {
         guard buy.owner == owner.rawValue else {
             throw ConvexRowMutationError.ownerMismatch(
                 field: "btcBuy",
@@ -1261,21 +1316,31 @@ final class ConvexClient: Sendable {
         if let costBasisStatus = buy.costBasisStatus { row["costBasisStatus"] = costBasisStatus }
         if let loggedBy = buy.loggedBy { row["loggedBy"] = loggedBy }
         if let requestID = buy.archimedesRequestId { row["archimedesRequestId"] = requestID }
+        let feeUsdCents = try ExactMoney.manualFeeCents(
+            from: buy.feeUsd,
+            field: "btcBuy.feeUsd",
+        )
+        row["feeUsdCents"] = ConvexTaggedInt64Encoder.encode(feeUsdCents)
         // Adult blob rows are canonical to Victor and resolved from sourceFile.
         // Children must carry their own owner even when no dedicated legacy buy
         // file exists (Maddox), or their balance would enter the adult ledger.
         if !owner.isAdult { row["owner"] = owner.rawValue }
 
         let path = "tables:upsertBtcBuy"
-        let raw = try await mutation(path, args: [
+        var args: [String: Any] = [
             "sourceFile": sourceFile,
             "buy": row,
-        ])
+        ]
+        if let baseUpdatedAtMs = buy.updatedAtMs {
+            args["baseUpdatedAtMs"] = baseUpdatedAtMs
+        }
+        let raw = try await mutation(path, args: args)
         guard let result = raw as? [String: Any],
               result["buyId"] as? String == buy.id
         else {
             throw ConvexRowMutationError.unexpectedResponse(path: path)
         }
+        return Self.acceptedRevision(result["updatedAtMs"])
     }
 
     /// Upsert one app-created or app-edited todo row.

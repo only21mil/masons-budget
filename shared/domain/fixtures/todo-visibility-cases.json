@@ -1,0 +1,34 @@
+{
+  "$comment": "Todo visibility is exact-owner against the active profile. This matrix is separate from financial visibility because adults do not aggregate todos across profiles.",
+  "contractVersion": 1,
+  "matrix": [
+    { "activeProfile": "victor", "owner": "victor", "expected": true },
+    { "activeProfile": "victor", "owner": "rachel", "expected": false },
+    { "activeProfile": "victor", "owner": "mason", "expected": false },
+    { "activeProfile": "victor", "owner": "maddox", "expected": false },
+    { "activeProfile": "rachel", "owner": "victor", "expected": false },
+    { "activeProfile": "rachel", "owner": "rachel", "expected": true },
+    { "activeProfile": "rachel", "owner": "mason", "expected": false },
+    { "activeProfile": "rachel", "owner": "maddox", "expected": false },
+    { "activeProfile": "mason", "owner": "victor", "expected": false },
+    { "activeProfile": "mason", "owner": "rachel", "expected": false },
+    { "activeProfile": "mason", "owner": "mason", "expected": true },
+    { "activeProfile": "mason", "owner": "maddox", "expected": false },
+    { "activeProfile": "maddox", "owner": "victor", "expected": false },
+    { "activeProfile": "maddox", "owner": "rachel", "expected": false },
+    { "activeProfile": "maddox", "owner": "mason", "expected": false },
+    { "activeProfile": "maddox", "owner": "maddox", "expected": true }
+  ],
+  "sampleTodos": [
+    { "id": "todo-victor", "title": "Victor private", "owner": "victor" },
+    { "id": "todo-rachel", "title": "Rachel private", "owner": "rachel" },
+    { "id": "todo-mason", "title": "Mason private", "owner": "mason" },
+    { "id": "todo-maddox", "title": "Maddox private", "owner": "maddox" }
+  ],
+  "lists": [
+    { "activeProfile": "victor", "expectedIds": ["todo-victor"] },
+    { "activeProfile": "rachel", "expectedIds": ["todo-rachel"] },
+    { "activeProfile": "mason", "expectedIds": ["todo-mason"] },
+    { "activeProfile": "maddox", "expectedIds": ["todo-maddox"] }
+  ]
+}
