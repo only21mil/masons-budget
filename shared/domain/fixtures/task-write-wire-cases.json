@@ -1,0 +1,136 @@
+{
+  "$comment": "Interactive task writes use a profile-bound device credential. activeProfile and owner only echo the server-bound profile. Runtime deviceToken is injected by transport and is absent here. Create is accepted only for an unused untombstoned id. Update, delete, and restore require the exact positive server revision. Restore identifies the server-owned deletion capsule by id and sends no task replacement.",
+  "contractVersion": 1,
+  "format": "convex_encoded_json",
+  "session": {
+    "deviceId": "device-profile-mason",
+    "profile": "mason"
+  },
+  "accepted": [
+    {
+      "name": "create fresh task id",
+      "operation": "create",
+      "input": {
+        "todo": {
+          "id": "task-fresh-01",
+          "owner": "mason",
+          "title": "Pack school bag",
+          "done": false,
+          "flagged": true,
+          "lane": "personal",
+          "priority": "2"
+        }
+      },
+      "expected": {
+        "path": "tables:upsertTodoFromDevice",
+        "format": "convex_encoded_json",
+        "args": {
+          "deviceId": "device-profile-mason",
+          "activeProfile": "mason",
+          "owner": "mason",
+          "sourceFile": "todos",
+          "operation": "create",
+          "todo": {
+            "id": "task-fresh-01",
+            "owner": "mason",
+            "title": "Pack school bag",
+            "done": false,
+            "flagged": true,
+            "lane": "personal",
+            "priority": { "$integer": "AgAAAAAAAAA=" }
+          }
+        }
+      }
+    },
+    {
+      "name": "update exact authoritative revision",
+      "operation": "update",
+      "input": {
+        "baseUpdatedAtMs": 1787702400123,
+        "todo": {
+          "id": "task-fresh-01",
+          "owner": "mason",
+          "title": "Pack school bag and lunch",
+          "done": false,
+          "flagged": true
+        }
+      },
+      "expected": {
+        "path": "tables:upsertTodoFromDevice",
+        "format": "convex_encoded_json",
+        "args": {
+          "deviceId": "device-profile-mason",
+          "activeProfile": "mason",
+          "owner": "mason",
+          "sourceFile": "todos",
+          "operation": "update",
+          "baseUpdatedAtMs": 1787702400123,
+          "todo": {
+            "id": "task-fresh-01",
+            "owner": "mason",
+            "title": "Pack school bag and lunch",
+            "done": false,
+            "flagged": true
+          }
+        }
+      }
+    },
+    {
+      "name": "delete exact authoritative revision",
+      "operation": "delete",
+      "input": {
+        "entityId": "task-fresh-01",
+        "baseUpdatedAtMs": 1787702400456
+      },
+      "expected": {
+        "path": "tables:deleteTodoFromDevice",
+        "format": "convex_encoded_json",
+        "args": {
+          "deviceId": "device-profile-mason",
+          "activeProfile": "mason",
+          "owner": "mason",
+          "sourceFile": "todos",
+          "entityId": "task-fresh-01",
+          "baseUpdatedAtMs": 1787702400456
+        }
+      }
+    },
+    {
+      "name": "restore server-owned deletion capsule",
+      "operation": "restore",
+      "input": {
+        "entityId": "task-fresh-01",
+        "baseUpdatedAtMs": 1787702400456
+      },
+      "expected": {
+        "path": "tables:restoreTodoFromDevice",
+        "format": "convex_encoded_json",
+        "args": {
+          "deviceId": "device-profile-mason",
+          "activeProfile": "mason",
+          "owner": "mason",
+          "sourceFile": "todos",
+          "entityId": "task-fresh-01",
+          "baseUpdatedAtMs": 1787702400456
+        }
+      }
+    }
+  ],
+  "serverRejections": [
+    { "name": "unbound legacy device credential", "operation": "create", "errorCode": "PROFILE_BINDING_REQUIRED" },
+    { "name": "revisionless legacy update", "operation": "update", "errorCode": "REVISION_REQUIRED" },
+    { "name": "revisionless legacy delete", "operation": "delete", "errorCode": "REVISION_REQUIRED" },
+    { "name": "revisionless legacy restore", "operation": "restore", "errorCode": "REVISION_REQUIRED" },
+    { "name": "create id already exists", "operation": "create", "errorCode": "ENTITY_CONFLICT" },
+    { "name": "create id has a tombstone", "operation": "create", "errorCode": "ENTITY_DELETED" },
+    { "name": "owner echo disagrees with credential profile", "operation": "update", "errorCode": "OWNER_MISMATCH" },
+    { "name": "active profile echo disagrees with credential profile", "operation": "update", "errorCode": "OWNER_MISMATCH" },
+    { "name": "stale update revision", "operation": "update", "errorCode": "ENTITY_CONFLICT" },
+    { "name": "stale delete revision", "operation": "delete", "errorCode": "ENTITY_CONFLICT" },
+    { "name": "stale restore revision", "operation": "restore", "errorCode": "ENTITY_CONFLICT" }
+  ],
+  "syncTokenTaskWrites": {
+    "mode": "admin-only",
+    "interactive": false
+  }
+}
