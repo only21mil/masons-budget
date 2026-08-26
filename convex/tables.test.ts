@@ -448,13 +448,19 @@ const fn = {
   upsertTodo: "tables:upsertTodo" as unknown as FunctionReference<
     "mutation",
     "public",
-    { todo: Record<string, unknown>; token?: string },
+    {
+      todo: Record<string, unknown>;
+      token?: string;
+    },
     { todoId: string; owner: Member; done: boolean; outcome: string }
   >,
   deleteTodo: "tables:deleteTodo" as unknown as FunctionReference<
     "mutation",
     "public",
-    { todoId: string; token?: string },
+    {
+      todoId: string;
+      token?: string;
+    },
     { todoId: string; removed: boolean }
   >,
   upsertBtcBuy: "tables:upsertBtcBuy" as unknown as FunctionReference<
@@ -1058,9 +1064,11 @@ describe("the blob path is untouched", () => {
     });
     await t.mutation(fn.deleteTransaction, { txId: "app-1" });
     await t.mutation(fn.upsertTodo, {
-      todo: { id: "app-todo", title: "Ship it" },
+      todo: { id: "app-todo", title: "Ship it", owner: "victor" },
     });
-    await t.mutation(fn.deleteTodo, { todoId: "app-todo" });
+    await t.mutation(fn.deleteTodo, {
+      todoId: "app-todo",
+    });
     await t.mutation(fn.upsertBudgetCategory, {
       viewer: "victor",
       month: "2026-07",
@@ -1074,7 +1082,9 @@ describe("the blob path is untouched", () => {
 
   it("deleteTodo preserves the legacy tombstone while clients still read blobs", async () => {
     await migrateAll(t);
-    await t.mutation(fn.deleteTodo, { todoId: "todo-1" });
+    await t.mutation(fn.deleteTodo, {
+      todoId: "todo-1",
+    });
 
     const tombstones = await t.run(async (ctx) =>
       ctx.db.query("todoTombstones").collect(),
@@ -1703,6 +1713,7 @@ describe("indexed month and date", () => {
       todo: {
         id: "older-done",
         title: "Older but done",
+        owner: "victor",
         done: true,
         updated_at: "2026-07-20T09:00:00Z",
       },
@@ -1711,6 +1722,7 @@ describe("indexed month and date", () => {
       todo: {
         id: "recent-open",
         title: "Newest",
+        owner: "victor",
         done: false,
         updated_at: "2026-07-30T09:00:00Z",
       },
@@ -3269,7 +3281,7 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
       name: "upsertTodo",
       call: (token?: string) =>
         t.mutation(fn.upsertTodo, {
-          todo: { id: "auth-todo", title: "Probe" },
+          todo: { id: "auth-todo", title: "Probe", owner: "victor" },
           token,
         }),
     },
@@ -3281,7 +3293,10 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
     {
       name: "deleteTodo",
       call: (token?: string) =>
-        t.mutation(fn.deleteTodo, { todoId: "auth-todo", token }),
+        t.mutation(fn.deleteTodo, {
+          todoId: "auth-todo",
+          token,
+        }),
     },
     {
       name: "upsertBtcBuy",

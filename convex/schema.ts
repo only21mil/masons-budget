@@ -1,7 +1,10 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
-import { deviceCapabilityValidator } from "./deviceAuth";
+import {
+  deviceCapabilityValidator,
+  deviceProfileValidator,
+} from "./deviceAuth";
 
 // The Vogel Vault — Convex Schema
 //
@@ -323,6 +326,7 @@ export default defineSchema({
     claimedAt: v.optional(v.float64()),
     deviceId: v.optional(v.string()),
     capabilities: v.optional(v.array(deviceCapabilityValidator)),
+    profile: v.optional(deviceProfileValidator),
   }).index("by_pair_id", ["pairId"]),
 
   mobileDevices: defineTable({
@@ -334,6 +338,8 @@ export default defineSchema({
     revokedAt: v.optional(v.float64()),
     pairId: v.string(),
     capabilities: v.optional(v.array(deviceCapabilityValidator)),
+    // Optional only for stored pre-cutover credentials. Task writes require it.
+    profile: v.optional(deviceProfileValidator),
   }).index("by_device_id", ["deviceId"]),
 
   // ── Operational market quote cache ──

@@ -42,7 +42,11 @@ import { ConvexError, v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { query, mutation, type MutationCtx } from "./_generated/server";
 import { isRealIsoDate, requireIsoDate } from "./dateValidation";
-import { authenticateDevice, markDeviceSeen } from "./deviceAuth";
+import {
+  authenticateDevice,
+  markDeviceSeen,
+  requireTaskProfileBinding,
+} from "./deviceAuth";
 import {
   addDelta,
   applyBtcAccountDeltas,
@@ -334,6 +338,24 @@ function satsFromBuy(raw: Record<string, unknown>): bigint {
  */
 function monthOf(date: string): string {
   return date.slice(0, 7);
+}
+
+const INT64_MIN = -(1n << 63n);
+const INT64_MAX = (1n << 63n) - 1n;
+
+function checkedMoneyOutCentsAdd(left: bigint, right: bigint): bigint {
+  const total = left + right;
+  if (
+    left < INT64_MIN ||
+    left > INT64_MAX ||
+    right < INT64_MIN ||
+    right > INT64_MAX ||
+    total < INT64_MIN ||
+    total > INT64_MAX
+  ) {
+    throw new ConvexError("Money Out Today cents must fit signed int64.");
+  }
+  return total;
 }
 
 function rejectRowDate(code: string, field: string, message: string): never {
@@ -1284,6 +1306,92 @@ export const listBtcBillPays = query({
   },
 });
 
+/** Exact same-day spending for the active profile's ledger. */
+export const getMoneyOutToday = query({
+  args: {
+    viewer: familyMemberValidator,
+    date: v.string(),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { viewer, date, token }) => {
+    validateReadToken(token);
+    if (!isRealIsoDate(date)) {
+      throw new ConvexError(
+        "getMoneyOutToday: date must be a real ISO calendar date in yyyy-MM-dd form.",
+      );
+    }
+
+    // Net-worth scope is the spending scope here: adults share one household
+    // ledger, while a child gets only their exact owner rows.
+    const owners = ownersInScope(viewer, "netWorth");
+    const [transactionRows, billPayRows] = await Promise.all([
+      Promise.all(
+        owners.map((owner) =>
+          ctx.db
+            .query("transactions")
+            .withIndex("by_owner_date", (q) =>
+              q.eq("owner", owner).eq("date", date),
+            )
+            .collect(),
+        ),
+      ),
+      Promise.all(
+        owners.map((owner) =>
+          ctx.db
+            .query("btcBillPays")
+            .withIndex("by_owner_date", (q) =>
+              q.eq("owner", owner).eq("date", date),
+            )
+            .collect(),
+        ),
+      ),
+    ]);
+
+    const transactionSources = transactionRows
+      .flat()
+      .filter((row) => {
+        const category = row.category.toLowerCase();
+        return category !== "income" && category !== "credit card payment";
+      })
+      .map((row) => ({
+        kind: "transaction" as const,
+        row: projectTransaction(row),
+        contributionCents: row.amountCents,
+      }));
+    const billPaySources = billPayRows
+      .flat()
+      .filter(
+        (row) =>
+          (row.budgetEffect ?? "credit_card_payment") === "budget_category",
+      )
+      .map((row) => {
+        const feeUsdCents = row.feeUsdCents ?? 0n;
+        return {
+          kind: "btc_bill_pay" as const,
+          row: projectBtcBillPay({ ...row, feeUsdCents }),
+          principalCents: row.amountUsdCents,
+          feeUsdCents,
+          contributionCents: checkedMoneyOutCentsAdd(
+            row.amountUsdCents,
+            feeUsdCents,
+          ),
+        };
+      });
+    const sources = [...transactionSources, ...billPaySources];
+
+    return {
+      date,
+      owner: canonicalLedgerOwner(viewer),
+      totalCents: sources.reduce(
+        (total, source) =>
+          checkedMoneyOutCentsAdd(total, source.contributionCents),
+        0n,
+      ),
+      sources,
+    };
+  },
+});
+
 /** Owned-wallet transfers, newest first, for correction and audit. */
 export const listBtcTransfers = query({
   args: {
@@ -1720,6 +1828,7 @@ type DeviceErrorCode =
   | "ENTITY_NOT_FOUND"
   | "OWNER_MISMATCH"
   | "OWNER_SOURCE_MISMATCH"
+  | "PROFILE_BINDING_REQUIRED"
   | "REVISION_REQUIRED"
   | "VALIDATION_FAILED";
 
@@ -1825,6 +1934,18 @@ function requireDeviceRevision(value: number | undefined, required: boolean) {
       value === undefined
         ? "baseUpdatedAtMs is required for this operation."
         : "baseUpdatedAtMs must be a non-negative safe integer.",
+    );
+  }
+}
+
+function requireTaskRevision(value: number | undefined) {
+  if (value === undefined) {
+    deviceFailure("REVISION_REQUIRED", "baseUpdatedAtMs is required for this operation.");
+  }
+  if (!Number.isSafeInteger(value) || value < 0) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "baseUpdatedAtMs must be a non-negative safe integer.",
     );
   }
 }
@@ -2379,15 +2500,35 @@ async function upsertTodoRow(
   ctx: MutationCtx,
   row: ReturnType<typeof buildTodoRow>,
   optimistic?: OptimisticWrite,
+  operation?: "create" | "update",
 ): Promise<UpsertOutcome> {
   const existing = await ctx.db
     .query("todos")
     .withIndex("by_todo_id", (q: any) => q.eq("todoId", row.todoId))
     .unique();
-  const tombstone = optimistic
-    ? await findRowTombstone(ctx, "todo", row.sourceFile, row.todoId)
-    : null;
+  const tombstone = await findRowTombstone(
+    ctx,
+    "todo",
+    row.sourceFile,
+    row.todoId,
+  );
+  if (tombstone && tombstone.owner !== row.owner) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Deleted todo ${row.todoId} belongs to ${tombstone.owner}, not ${row.owner}.`,
+      "todo",
+      row.todoId,
+    );
+  }
   if (existing) {
+    if (operation === "create") {
+      deviceFailure(
+        "ENTITY_CONFLICT",
+        "A todo create requires a fresh unused id.",
+        "todo",
+        row.todoId,
+      );
+    }
     if (existing.owner !== row.owner) {
       deviceFailure(
         "OWNER_MISMATCH",
@@ -2425,6 +2566,16 @@ async function upsertTodoRow(
     // not also rewrite that blob with the authoritative row.
     return "updated";
   }
+  if (operation === "update") {
+    deviceFailure(
+      tombstone ? "ENTITY_DELETED" : "ENTITY_NOT_FOUND",
+      tombstone
+        ? "The todo was deleted after it was read."
+        : "The todo to update does not exist.",
+      "todo",
+      row.todoId,
+    );
+  }
   if (optimistic?.baseUpdatedAtMs !== undefined) {
     deviceFailure(
       tombstone ? "ENTITY_DELETED" : "ENTITY_NOT_FOUND",
@@ -2435,7 +2586,7 @@ async function upsertTodoRow(
       row.todoId,
     );
   }
-  if (tombstone) {
+  if (optimistic && tombstone) {
     deviceFailure(
       "ENTITY_DELETED",
       "A deleted todo id cannot be silently resurrected.",
@@ -3282,6 +3433,11 @@ const todoDeviceInput = v.object({
   completedAt: v.optional(v.string()),
 });
 
+const todoWriteOperationValidator = v.union(
+  v.literal("create"),
+  v.literal("update"),
+);
+
 const btcBuyDeviceInput = v.object({
   id: v.string(),
   owner: familyMemberValidator,
@@ -3327,7 +3483,7 @@ const btcBillPayDeviceInput = v.object({
   btcPriceCents: v.int64(),
   platform: v.optional(v.string()),
   note: v.optional(v.string()),
-  feeUsdCents: v.int64(),
+  feeUsdCents: v.optional(v.int64()),
   reference: v.optional(v.string()),
 });
 
@@ -3569,7 +3725,8 @@ export const deleteTransaction = mutation({
   },
 });
 
-/** Insert or replace ONE todo, keyed on its MC2 id. */
+/** Administrative compatibility upsert. Interactive clients use the bound
+ * device mutation below; this sync-token route accepts no active-profile echo. */
 export const upsertTodo = mutation({
   args: {
     todo: v.any(),
@@ -3579,40 +3736,44 @@ export const upsertTodo = mutation({
     validateSyncToken(token);
     const raw = asRecord(todo);
     if (!raw) throw new ConvexError("upsertTodo: todo must be an object");
-    if (
-      Object.prototype.hasOwnProperty.call(raw, "owner") &&
-      !isFamilyMember(raw.owner)
-    ) {
+    if (!isFamilyMember(raw.owner)) {
       throw new ConvexError(
         `upsertTodo: owner must be one of ${FAMILY_MEMBERS.join(", ")}, got ` +
           `${JSON.stringify(raw.owner)}.`,
       );
     }
-    const row = buildTodoRow(raw, DEFAULT_OWNER, "todos", Date.now());
+    const row = buildTodoRow(raw, raw.owner, "todos", Date.now());
     const outcome = await upsertTodoRow(ctx, row);
     return { todoId: row.todoId, owner: row.owner, done: row.done, outcome };
   },
 });
 
 /**
- * Delete ONE todo row.
+ * Administratively delete ONE todo row. Interactive clients use the
+ * profile-bound, revision-fenced device mutation below.
  *
  * Writes both row-native and legacy todo tombstones. The legacy marker remains
  * required while shipped clients still converge through the todos blob.
  */
 export const deleteTodo = mutation({
-  args: { todoId: v.string(), token: v.optional(v.string()) },
+  args: {
+    todoId: v.string(),
+    token: v.optional(v.string()),
+  },
   handler: async (ctx, { todoId, token }) => {
     validateSyncToken(token);
     const existing = await ctx.db
       .query("todos")
       .withIndex("by_todo_id", (q) => q.eq("todoId", todoId))
       .unique();
+    const tombstone = existing
+      ? null
+      : await findRowTombstone(ctx, "todo", "todos", todoId);
+    const effectiveOwner = existing?.owner ?? tombstone?.owner ?? DEFAULT_OWNER;
     if (!existing) {
       await lockRuntimeSource(ctx, "todos");
-      const tombstone = await findRowTombstone(ctx, "todo", "todos", todoId);
       if (!tombstone) {
-        await upsertRowTombstone(ctx, "todo", "todos", todoId, DEFAULT_OWNER);
+        await upsertRowTombstone(ctx, "todo", "todos", todoId, effectiveOwner);
       }
       await upsertLegacyTodoTombstone(ctx, todoId);
       return { todoId, removed: false };
@@ -3713,7 +3874,7 @@ const btcBillPayInput = v.object({
   btcPriceCents: v.int64(),
   platform: v.optional(v.string()),
   note: v.optional(v.string()),
-  feeUsdCents: v.int64(),
+  feeUsdCents: v.optional(v.int64()),
   reference: v.optional(v.string()),
   owner: v.optional(familyMemberValidator),
 });
@@ -3745,7 +3906,8 @@ export const upsertBtcBillPay = mutation({
     // equivalent, so a client still carrying the pre-fix inverted convention
     // could store negatives and make every aggregate under-report by twice the
     // payment.
-    requireBillPayAmounts(billPay);
+    const feeUsdCents = billPay.feeUsdCents ?? 0n;
+    requireBillPayAmounts({ ...billPay, feeUsdCents });
     const budgetEffect = billPay.budgetEffect ?? "credit_card_payment";
     const category = budgetEffect === "credit_card_payment"
       ? "Credit Card Payment"
@@ -3764,7 +3926,7 @@ export const upsertBtcBillPay = mutation({
       btcPriceCents: billPay.btcPriceCents,
       platform: optionalText(billPay.platform),
       note: optionalText(billPay.note),
-      feeUsdCents: billPay.feeUsdCents,
+      feeUsdCents,
       reference: optionalText(billPay.reference),
       sourceFile: file,
       updatedAtMs: now,
@@ -3949,6 +4111,37 @@ function foldedCategoryName(value: string): string {
     );
   }
   return normalized.toLocaleLowerCase("en-US");
+}
+
+/** Match the exact stored category name inside its canonical owner and month. */
+async function budgetCategoryHasLedgerRows(
+  ctx: MutationCtx,
+  owner: FamilyMember,
+  month: string,
+  categoryName: string,
+): Promise<boolean> {
+  const [transaction, billPay] = await Promise.all([
+    ctx.db
+      .query("transactions")
+      .withIndex("by_owner_month", (q) =>
+        q.eq("owner", owner).eq("month", month),
+      )
+      .filter((q) => q.eq(q.field("category"), categoryName))
+      .first(),
+    ctx.db
+      .query("btcBillPays")
+      .withIndex("by_owner_month", (q) =>
+        q.eq("owner", owner).eq("month", month),
+      )
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("category"), categoryName),
+          q.eq(q.field("budgetEffect"), "budget_category"),
+        ),
+      )
+      .first(),
+  ]);
+  return transaction !== null || billPay !== null;
 }
 
 async function upsertBudgetCategoryCore(
@@ -4189,6 +4382,18 @@ async function deleteBudgetCategoryCore(
     );
   }
   if (index !== -1) {
+    const categoryName = foldedMatches[0]!.candidate.name;
+    if (
+      await budgetCategoryHasLedgerRows(ctx, owner, month, categoryName)
+    ) {
+      deviceFailure(
+        "ENTITY_CONFLICT",
+        `Budget category ${JSON.stringify(categoryName)} still has current-month ` +
+          "ledger rows; move or delete them before deleting the category.",
+        "budgetCategory",
+        categoryName,
+      );
+    }
     const categories = [...existing.categories];
     categories.splice(index, 1);
     await lockRuntimeSource(ctx, sourceFile);
@@ -4410,6 +4615,14 @@ async function deleteTodoCore(
   const tombstone = optimistic
     ? await findRowTombstone(ctx, "todo", "todos", todoId)
     : null;
+  if (tombstone && tombstone.owner !== owner) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Deleted todo ${todoId} belongs to ${tombstone.owner}, not ${owner}.`,
+      "todo",
+      todoId,
+    );
+  }
   if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
     deviceFailure(
       "REVISION_REQUIRED",
@@ -4469,27 +4682,27 @@ async function deleteTodoCore(
 async function restoreTodoCore(
   ctx: MutationCtx,
   owner: FamilyMember,
-  requestedRow: ReturnType<typeof deviceTodoRow>,
+  todoId: string,
   baseUpdatedAtMs: number,
 ) {
   const existing = await ctx.db
     .query("todos")
-    .withIndex("by_todo_id", (q) => q.eq("todoId", requestedRow.todoId))
+    .withIndex("by_todo_id", (q) => q.eq("todoId", todoId))
     .unique();
   if (existing) {
     if (existing.owner !== owner) {
       deviceFailure(
         "OWNER_MISMATCH",
-        `Todo ${requestedRow.todoId} belongs to ${existing.owner}, not ${owner}.`,
+        `Todo ${todoId} belongs to ${existing.owner}, not ${owner}.`,
         "todo",
-        requestedRow.todoId,
+        todoId,
       );
     }
     deviceFailure(
       "ENTITY_CONFLICT",
       "The todo is not deleted and cannot be restored.",
       "todo",
-      requestedRow.todoId,
+      todoId,
     );
   }
 
@@ -4497,22 +4710,22 @@ async function restoreTodoCore(
     ctx,
     "todo",
     "todos",
-    requestedRow.todoId,
+    todoId,
   );
   if (!tombstone) {
     deviceFailure(
       "ENTITY_NOT_FOUND",
       "No deleted todo revision exists to restore.",
       "todo",
-      requestedRow.todoId,
+      todoId,
     );
   }
   if (tombstone.owner !== owner) {
     deviceFailure(
       "OWNER_MISMATCH",
-      `Deleted todo ${requestedRow.todoId} belongs to ${tombstone.owner}, not ${owner}.`,
+      `Deleted todo ${todoId} belongs to ${tombstone.owner}, not ${owner}.`,
       "todo",
-      requestedRow.todoId,
+      todoId,
     );
   }
   if (tombstone.deletedFromUpdatedAtMs !== baseUpdatedAtMs) {
@@ -4520,14 +4733,14 @@ async function restoreTodoCore(
       "ENTITY_CONFLICT",
       "The todo deletion does not match the revision being restored.",
       "todo",
-      requestedRow.todoId,
+      todoId,
     );
   }
 
   const capsule = tombstone.todoRestoreCapsule;
   if (
     !capsule ||
-    capsule.todoId !== requestedRow.todoId ||
+    capsule.todoId !== todoId ||
     capsule.owner !== owner ||
     capsule.sourceFile !== "todos" ||
     capsule.updatedAtMs !== baseUpdatedAtMs
@@ -4536,7 +4749,7 @@ async function restoreTodoCore(
       "ENTITY_CONFLICT",
       "The deleted todo revision has no matching authoritative restore data.",
       "todo",
-      requestedRow.todoId,
+      todoId,
     );
   }
 
@@ -4552,7 +4765,7 @@ async function restoreTodoCore(
   // The legacy blob still contains the pre-row-authority value. Keep its
   // compatibility tombstone until a later cutover removes or rewrites that
   // source; clearing it here would show stale content on Apple/legacy clients.
-  await upsertLegacyTodoTombstone(ctx, requestedRow.todoId);
+  await upsertLegacyTodoTombstone(ctx, todoId);
   return updatedAtMs;
 }
 
@@ -5382,8 +5595,10 @@ export const upsertTodoFromDevice = mutation({
   args: {
     deviceId: v.string(),
     deviceToken: v.string(),
+    activeProfile: v.optional(familyMemberValidator),
     owner: familyMemberValidator,
     sourceFile: v.literal("todos"),
+    operation: v.optional(todoWriteOperationValidator),
     baseUpdatedAtMs: v.optional(v.float64()),
     todo: todoDeviceInput,
   },
@@ -5395,7 +5610,24 @@ export const upsertTodoFromDevice = mutation({
       args.deviceToken,
       "todos:write",
     );
-    requireDeviceRevision(args.baseUpdatedAtMs, false);
+    requireTaskProfileBinding(
+      device,
+      args.activeProfile,
+      args.owner,
+      args.todo.id,
+    );
+    if (args.operation === "create") {
+      if (args.baseUpdatedAtMs !== undefined) {
+        deviceFailure(
+          "VALIDATION_FAILED",
+          "baseUpdatedAtMs must be omitted for todo create.",
+          "todo",
+          args.todo.id,
+        );
+      }
+    } else {
+      requireTaskRevision(args.baseUpdatedAtMs);
+    }
     validateDeviceTodo(args.todo);
     if (args.todo.owner !== args.owner) {
       deviceFailure(
@@ -5409,6 +5641,7 @@ export const upsertTodoFromDevice = mutation({
       ctx,
       deviceTodoRow(args.todo, Date.now()),
       { baseUpdatedAtMs: args.baseUpdatedAtMs },
+      args.operation,
     );
     await markDeviceSeen(ctx, device);
     return { ok: true as const, entityId: args.todo.id, outcome };
@@ -5420,16 +5653,17 @@ export const upsertTodoFromDevice = mutation({
  * `baseUpdatedAtMs` is the exact revision accepted by deleteTodoFromDevice;
  * it must still be recorded on the current tombstone. The complete authoritative
  * row comes from the server-owned restore capsule captured by delete; the client
- * projection supplies only the compatible request identity/owner shape.
+ * request supplies only the deleted entity id and consistency echoes.
  */
 export const restoreTodoFromDevice = mutation({
   args: {
     deviceId: v.string(),
     deviceToken: v.string(),
+    activeProfile: v.optional(familyMemberValidator),
     owner: familyMemberValidator,
     sourceFile: v.literal("todos"),
-    baseUpdatedAtMs: v.float64(),
-    todo: todoDeviceInput,
+    entityId: v.string(),
+    baseUpdatedAtMs: v.optional(v.float64()),
   },
   returns: deviceRestoreResultValidator,
   handler: async (ctx, args) => {
@@ -5439,24 +5673,22 @@ export const restoreTodoFromDevice = mutation({
       args.deviceToken,
       "todos:write",
     );
-    requireDeviceRevision(args.baseUpdatedAtMs, true);
-    validateDeviceTodo(args.todo);
-    if (args.todo.owner !== args.owner) {
-      deviceFailure(
-        "OWNER_MISMATCH",
-        "Todo owner does not match request owner.",
-        "todo",
-        args.todo.id,
-      );
-    }
+    requireTaskProfileBinding(
+      device,
+      args.activeProfile,
+      args.owner,
+      args.entityId,
+    );
+    requireTaskRevision(args.baseUpdatedAtMs);
+    requireDeviceIdentifier(args.entityId, "entityId");
     const updatedAtMs = await restoreTodoCore(
       ctx,
       args.owner,
-      deviceTodoRow(args.todo, Date.now()),
-      args.baseUpdatedAtMs,
+      args.entityId,
+      args.baseUpdatedAtMs!,
     );
     await markDeviceSeen(ctx, device);
-    return { ok: true as const, entityId: args.todo.id, updatedAtMs };
+    return { ok: true as const, entityId: args.entityId, updatedAtMs };
   },
 });
 
@@ -5464,10 +5696,11 @@ export const deleteTodoFromDevice = mutation({
   args: {
     deviceId: v.string(),
     deviceToken: v.string(),
+    activeProfile: v.optional(familyMemberValidator),
     owner: familyMemberValidator,
     sourceFile: v.literal("todos"),
     entityId: v.string(),
-    baseUpdatedAtMs: v.float64(),
+    baseUpdatedAtMs: v.optional(v.float64()),
   },
   returns: deviceDeleteResultValidator,
   handler: async (ctx, args) => {
@@ -5477,10 +5710,16 @@ export const deleteTodoFromDevice = mutation({
       args.deviceToken,
       "todos:write",
     );
-    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    requireTaskProfileBinding(
+      device,
+      args.activeProfile,
+      args.owner,
+      args.entityId,
+    );
+    requireTaskRevision(args.baseUpdatedAtMs);
     requireDeviceIdentifier(args.entityId, "entityId");
     const removed = await deleteTodoCore(ctx, args.owner, args.entityId, {
-      baseUpdatedAtMs: args.baseUpdatedAtMs,
+      baseUpdatedAtMs: args.baseUpdatedAtMs!,
     });
     await markDeviceSeen(ctx, device);
     return { ok: true as const, entityId: args.entityId, removed };
@@ -5752,7 +5991,8 @@ export const upsertBtcBillPayFromDevice = mutation({
     }
     const ledgerOwner = canonicalLedgerOwner(args.owner);
     requireSourceOwner(args.sourceFile, "btcBillPays", ledgerOwner);
-    requireBillPayAmounts(args.billPay);
+    const feeUsdCents = args.billPay.feeUsdCents ?? 0n;
+    requireBillPayAmounts({ ...args.billPay, feeUsdCents });
     const budgetEffect = args.billPay.budgetEffect ?? "credit_card_payment";
     const category = budgetEffect === "credit_card_payment"
       ? "Credit Card Payment"
@@ -5781,7 +6021,7 @@ export const upsertBtcBillPayFromDevice = mutation({
         btcPriceCents: args.billPay.btcPriceCents,
         platform: optionalText(args.billPay.platform),
         note: optionalText(args.billPay.note),
-        feeUsdCents: args.billPay.feeUsdCents,
+        feeUsdCents,
         reference: optionalText(args.billPay.reference),
         sourceFile: args.sourceFile,
         updatedAtMs: now,

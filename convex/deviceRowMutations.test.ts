@@ -8,6 +8,7 @@ import {
   testConvex,
   useIsolatedDeploymentEnv,
 } from "./harness.test-utils";
+import type { DeviceProfile } from "./deviceAuth";
 
 useIsolatedDeploymentEnv();
 
@@ -82,13 +83,16 @@ beforeEach(() => {
   setDeploymentEnv({ CONVEX_SYNC_TOKEN: syncToken });
 });
 
-async function fullDevice(deviceId = "linux-device") {
+async function fullDevice(
+  deviceId = "linux-device",
+  profile: DeviceProfile = "victor",
+) {
   return await pairMobileDevice(t, syncToken, deviceId, [
     "todos:write",
     "transactions:write",
     "budget:write",
     "bitcoin:write",
-  ]);
+  ], profile);
 }
 
 async function transactionRevision(txId: string) {
@@ -672,7 +676,7 @@ describe("device row authorization", () => {
   });
 
   it("rejects owner/source and request/payload owner mismatches", async () => {
-    const device = await fullDevice();
+    const device = await fullDevice("mismatch-device", "mason");
     await t.run(async (ctx) => {
       const row = await ctx.db
         .query("mobileDevices")
@@ -699,8 +703,10 @@ describe("device row authorization", () => {
     await expect(
       t.mutation(api.upsertTodo, {
         ...authArgs(device),
+        activeProfile: "mason",
         owner: "mason",
         sourceFile: "todos",
+        operation: "create",
         todo: {
           id: "todo-1",
           owner: "victor",
@@ -748,8 +754,10 @@ describe("device row authorization", () => {
       () =>
         t.mutation(api.upsertTodo, {
           ...authArgs(device),
+          activeProfile: "victor",
           owner: "victor",
           sourceFile: "todos",
+          operation: "create",
           todo: {
             id: "todo-invalid",
             owner: "victor",
@@ -761,8 +769,10 @@ describe("device row authorization", () => {
       () =>
         t.mutation(api.upsertTodo, {
           ...authArgs(device),
+          activeProfile: "victor",
           owner: "victor",
           sourceFile: "todos",
+          operation: "create",
           todo: {
             id: "todo-invalid-due",
             owner: "victor",
@@ -775,8 +785,10 @@ describe("device row authorization", () => {
       () =>
         t.mutation(api.upsertTodo, {
           ...authArgs(device),
+          activeProfile: "victor",
           owner: "victor",
           sourceFile: "todos",
+          operation: "create",
           todo: {
             id: "todo-invalid-timestamp",
             owner: "victor",
@@ -961,8 +973,10 @@ describe("device transaction and todo mutations", () => {
     const device = await fullDevice("todo-timestamp-device");
     const request = {
       ...authArgs(device),
+      activeProfile: "victor" as const,
       owner: "victor" as const,
       sourceFile: "todos" as const,
+      operation: "create" as const,
       todo: {
         id: "todo-high-precision",
         owner: "victor" as const,
@@ -982,6 +996,7 @@ describe("device transaction and todo mutations", () => {
     await expect(
       t.mutation(api.upsertTodo, {
         ...request,
+        operation: "update",
         baseUpdatedAtMs: revision,
         todo: { ...request.todo, done: true, updatedAt },
       }),
@@ -1010,8 +1025,10 @@ describe("device transaction and todo mutations", () => {
     await expectDeviceError(
       t.mutation(api.upsertTodo, {
         ...authArgs(device),
+        activeProfile: "victor",
         owner: "victor",
         sourceFile: "todos",
+        operation: "create",
         todo: {
           id: `todo-${_case}-timestamp`,
           owner: "victor",
@@ -1048,8 +1065,10 @@ describe("device transaction and todo mutations", () => {
     });
     await t.mutation(api.upsertTodo, {
       ...auth,
+      activeProfile: "victor",
       owner: "victor",
       sourceFile: "todos",
+      operation: "create",
       todo: {
         id: "lock-todo",
         owner: "victor",
@@ -1261,11 +1280,13 @@ describe("device transaction and todo mutations", () => {
   });
 
   it("blocks cross-owner todo replacement and preserves both tombstone systems", async () => {
-    const device = await fullDevice();
+    const device = await fullDevice("cross-owner-todo-device", "mason");
     const upsert = {
       ...authArgs(device),
+      activeProfile: "mason" as const,
       owner: "mason",
       sourceFile: "todos",
+      operation: "create" as const,
       todo: {
         id: "todo-1",
         owner: "mason",
@@ -1279,12 +1300,14 @@ describe("device transaction and todo mutations", () => {
     await expect(
       t.mutation(api.upsertTodo, {
         ...upsert,
+        activeProfile: "victor",
         owner: "victor",
         todo: { ...upsert.todo, owner: "victor" },
       }),
-    ).rejects.toThrow(/belongs to mason/);
+    ).rejects.toThrow(/must match credential profile mason/);
     await t.mutation(api.deleteTodo, {
       ...authArgs(device),
+      activeProfile: "mason",
       owner: "mason",
       sourceFile: "todos",
       entityId: "todo-1",
@@ -1299,7 +1322,7 @@ describe("device transaction and todo mutations", () => {
   });
 
   it("restores only the matching device-deleted todo revision", async () => {
-    const device = await fullDevice("todo-restore-device");
+    const device = await fullDevice("todo-restore-device", "mason");
     const todo = {
       id: "todo-restore",
       owner: "mason" as const,
@@ -1317,14 +1340,17 @@ describe("device transaction and todo mutations", () => {
     };
     const request = {
       ...authArgs(device),
+      activeProfile: "mason" as const,
       owner: "mason" as const,
       sourceFile: "todos" as const,
+      operation: "create" as const,
       todo,
     };
     await t.mutation(api.upsertTodo, request);
     const baseUpdatedAtMs = await todoRevision(todo.id);
     await t.mutation(api.deleteTodo, {
       ...authArgs(device),
+      activeProfile: "mason",
       owner: "mason",
       sourceFile: "todos",
       entityId: todo.id,
@@ -1339,7 +1365,11 @@ describe("device transaction and todo mutations", () => {
       todo.id,
     );
     const restored = await t.mutation(api.restoreTodo, {
-      ...request,
+      ...authArgs(device),
+      activeProfile: "mason",
+      owner: "mason",
+      sourceFile: "todos",
+      entityId: todo.id,
       baseUpdatedAtMs,
     });
     expect(restored).toMatchObject({
@@ -1378,7 +1408,7 @@ describe("device transaction and todo mutations", () => {
   });
 
   it("restores the exact migrated server row and keeps its stale blob suppressed", async () => {
-    const device = await fullDevice("todo-provenance-restore-device");
+    const device = await fullDevice("todo-provenance-restore-device", "mason");
     const todoId = "todo-migrated-restore";
     const migrationRaw = {
       id: todoId,
@@ -1419,6 +1449,7 @@ describe("device transaction and todo mutations", () => {
 
     await t.mutation(api.deleteTodo, {
       ...authArgs(device),
+      activeProfile: "mason",
       owner: "mason",
       sourceFile: "todos",
       entityId: todoId,
@@ -1449,22 +1480,15 @@ describe("device transaction and todo mutations", () => {
     });
     expect(deleted.legacy).toMatchObject({ id: todoId });
 
-    // The request remains the compatible public shape, but its lossy/tampered
-    // value is not authoritative. Only identity/owner and the accepted revision
-    // select the server-owned capsule.
+    // Restore accepts no client row or replacement capsule. Identity/owner and
+    // the accepted revision select the server-owned capsule.
     const restored = await t.mutation(api.restoreTodo, {
       ...authArgs(device),
+      activeProfile: "mason",
       owner: "mason",
       sourceFile: "todos",
+      entityId: todoId,
       baseUpdatedAtMs: original.updatedAtMs,
-      todo: {
-        id: todoId,
-        owner: "mason",
-        title: "Client snapshot must not win",
-        done: true,
-        flagged: false,
-        notes: "Lossy client copy",
-      },
     });
 
     const restoredState = await t.run(async (ctx) => ({
@@ -1502,8 +1526,10 @@ describe("device transaction and todo mutations", () => {
     // the unchanged stale blob.
     await t.mutation(api.upsertTodo, {
       ...authArgs(device),
+      activeProfile: "mason",
       owner: "mason",
       sourceFile: "todos",
+      operation: "update",
       baseUpdatedAtMs: restored.updatedAtMs,
       todo: {
         id: todoId,
@@ -1523,7 +1549,7 @@ describe("device transaction and todo mutations", () => {
   });
 
   it("rejects unauthorized, wrong-owner, stale, and non-deleted restores", async () => {
-    const device = await fullDevice("todo-restore-conflict-device");
+    const device = await fullDevice("todo-restore-conflict-device", "mason");
     const unauthorized = await pairMobileDevice(
       t,
       syncToken,
@@ -1539,14 +1565,24 @@ describe("device transaction and todo mutations", () => {
     };
     const request = {
       ...authArgs(device),
+      activeProfile: "mason" as const,
       owner: "mason" as const,
       sourceFile: "todos" as const,
+      operation: "create" as const,
       todo,
+    };
+    const restoreRequest = {
+      ...authArgs(device),
+      activeProfile: "mason" as const,
+      owner: "mason" as const,
+      sourceFile: "todos" as const,
+      entityId: todo.id,
     };
     await t.mutation(api.upsertTodo, request);
     const firstRevision = await todoRevision(todo.id);
     await t.mutation(api.deleteTodo, {
       ...authArgs(device),
+      activeProfile: "mason",
       owner: "mason",
       sourceFile: "todos",
       entityId: todo.id,
@@ -1562,7 +1598,7 @@ describe("device transaction and todo mutations", () => {
 
     await expectDeviceError(
       t.mutation(api.restoreTodo, {
-        ...request,
+        ...restoreRequest,
         ...authArgs(unauthorized),
         baseUpdatedAtMs: firstRevision,
       }),
@@ -1570,9 +1606,9 @@ describe("device transaction and todo mutations", () => {
     );
     await expectDeviceError(
       t.mutation(api.restoreTodo, {
-        ...request,
+        ...restoreRequest,
+        activeProfile: "victor",
         owner: "victor",
-        todo: { ...todo, owner: "victor" },
         baseUpdatedAtMs: firstRevision,
       }),
       "OWNER_MISMATCH",
@@ -1580,7 +1616,7 @@ describe("device transaction and todo mutations", () => {
     );
     await expectDeviceError(
       t.mutation(api.restoreTodo, {
-        ...request,
+        ...restoreRequest,
         baseUpdatedAtMs: firstRevision + 1,
       }),
       "ENTITY_CONFLICT",
@@ -1588,8 +1624,8 @@ describe("device transaction and todo mutations", () => {
     );
     await expectDeviceError(
       t.mutation(api.restoreTodo, {
-        ...request,
-        todo: { ...todo, id: "never-deleted" },
+        ...restoreRequest,
+        entityId: "never-deleted",
         baseUpdatedAtMs: firstRevision,
       }),
       "ENTITY_NOT_FOUND",
@@ -1607,8 +1643,8 @@ describe("device transaction and todo mutations", () => {
     });
     await expectDeviceError(
       t.mutation(api.restoreTodo, {
-        ...request,
-        todo: { ...todo, id: "deleted-without-capsule" },
+        ...restoreRequest,
+        entityId: "deleted-without-capsule",
         baseUpdatedAtMs: firstRevision,
       }),
       "ENTITY_CONFLICT",
@@ -1616,12 +1652,12 @@ describe("device transaction and todo mutations", () => {
     );
 
     const firstRestore = await t.mutation(api.restoreTodo, {
-      ...request,
+      ...restoreRequest,
       baseUpdatedAtMs: firstRevision,
     });
     await expectDeviceError(
       t.mutation(api.restoreTodo, {
-        ...request,
+        ...restoreRequest,
         baseUpdatedAtMs: firstRevision,
       }),
       "ENTITY_CONFLICT",
@@ -1630,12 +1666,14 @@ describe("device transaction and todo mutations", () => {
 
     await t.mutation(api.upsertTodo, {
       ...request,
+      operation: "update",
       baseUpdatedAtMs: firstRestore.updatedAtMs,
       todo: { ...todo, title: "Newer" },
     });
     const newerRevision = await todoRevision(todo.id);
     await t.mutation(api.deleteTodo, {
       ...authArgs(device),
+      activeProfile: "mason",
       owner: "mason",
       sourceFile: "todos",
       entityId: todo.id,
@@ -1643,7 +1681,7 @@ describe("device transaction and todo mutations", () => {
     });
     await expectDeviceError(
       t.mutation(api.restoreTodo, {
-        ...request,
+        ...restoreRequest,
         baseUpdatedAtMs: firstRevision,
       }),
       "ENTITY_CONFLICT",
@@ -1676,11 +1714,13 @@ describe("device transaction and todo mutations", () => {
   });
 
   it("rejects stale todo writes without changing the row, tombstones, or lastSeen", async () => {
-    const device = await fullDevice();
+    const device = await fullDevice("stale-todo-device", "mason");
     const upsert = {
       ...authArgs(device),
+      activeProfile: "mason" as const,
       owner: "mason",
       sourceFile: "todos",
+      operation: "create" as const,
       todo: {
         id: "todo-occ",
         owner: "mason",
@@ -1693,6 +1733,7 @@ describe("device transaction and todo mutations", () => {
     const revision = await todoRevision("todo-occ");
     await t.mutation(api.upsertTodo, {
       ...upsert,
+      operation: "update",
       baseUpdatedAtMs: revision,
       todo: { ...upsert.todo, title: "Current" },
     });
@@ -1706,6 +1747,7 @@ describe("device transaction and todo mutations", () => {
     await expectDeviceError(
       t.mutation(api.upsertTodo, {
         ...upsert,
+        operation: "update",
         baseUpdatedAtMs: revision,
         todo: { ...upsert.todo, title: "Stale" },
       }),
@@ -1715,6 +1757,7 @@ describe("device transaction and todo mutations", () => {
     await expectDeviceError(
       t.mutation(api.deleteTodo, {
         ...authArgs(device),
+        activeProfile: "mason",
         owner: "mason",
         sourceFile: "todos",
         entityId: "todo-occ",
