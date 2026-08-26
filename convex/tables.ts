@@ -1841,6 +1841,22 @@ function deviceFailure(
   });
 }
 
+/** Tasks are private to the profile selected through the client's auth gate. */
+function requireTodoProfileOwner(
+  activeProfile: FamilyMember,
+  owner: FamilyMember,
+  todoId: string,
+) {
+  if (activeProfile !== owner) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Active profile ${activeProfile} may not access todos owned by ${owner}.`,
+      "todo",
+      todoId,
+    );
+  }
+}
+
 const DEVICE_MAX_IDENTIFIER = 256;
 const DEVICE_MAX_TEXT = 16_384;
 const DEVICE_CONTROL = /[\u0000-\u001f\u007f]/;
@@ -2491,6 +2507,14 @@ async function upsertTodoRow(
   const tombstone = optimistic
     ? await findRowTombstone(ctx, "todo", row.sourceFile, row.todoId)
     : null;
+  if (tombstone && tombstone.owner !== row.owner) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Deleted todo ${row.todoId} belongs to ${tombstone.owner}, not ${row.owner}.`,
+      "todo",
+      row.todoId,
+    );
+  }
   if (existing) {
     if (existing.owner !== row.owner) {
       deviceFailure(
@@ -3676,22 +3700,21 @@ export const deleteTransaction = mutation({
 /** Insert or replace ONE todo, keyed on its MC2 id. */
 export const upsertTodo = mutation({
   args: {
+    activeProfile: familyMemberValidator,
     todo: v.any(),
     token: v.optional(v.string()),
   },
-  handler: async (ctx, { todo, token }) => {
+  handler: async (ctx, { activeProfile, todo, token }) => {
     validateSyncToken(token);
     const raw = asRecord(todo);
     if (!raw) throw new ConvexError("upsertTodo: todo must be an object");
-    if (
-      Object.prototype.hasOwnProperty.call(raw, "owner") &&
-      !isFamilyMember(raw.owner)
-    ) {
+    if (!isFamilyMember(raw.owner)) {
       throw new ConvexError(
         `upsertTodo: owner must be one of ${FAMILY_MEMBERS.join(", ")}, got ` +
           `${JSON.stringify(raw.owner)}.`,
       );
     }
+    requireTodoProfileOwner(activeProfile, raw.owner, String(raw.id ?? ""));
     const row = buildTodoRow(raw, DEFAULT_OWNER, "todos", Date.now());
     const outcome = await upsertTodoRow(ctx, row);
     return { todoId: row.todoId, owner: row.owner, done: row.done, outcome };
@@ -3705,18 +3728,40 @@ export const upsertTodo = mutation({
  * required while shipped clients still converge through the todos blob.
  */
 export const deleteTodo = mutation({
-  args: { todoId: v.string(), token: v.optional(v.string()) },
-  handler: async (ctx, { todoId, token }) => {
+  args: {
+    activeProfile: familyMemberValidator,
+    owner: familyMemberValidator,
+    todoId: v.string(),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { activeProfile, owner, todoId, token }) => {
     validateSyncToken(token);
+    requireTodoProfileOwner(activeProfile, owner, todoId);
     const existing = await ctx.db
       .query("todos")
       .withIndex("by_todo_id", (q) => q.eq("todoId", todoId))
       .unique();
+    if (existing && existing.owner !== owner) {
+      deviceFailure(
+        "OWNER_MISMATCH",
+        `Todo ${todoId} belongs to ${existing.owner}, not ${owner}.`,
+        "todo",
+        todoId,
+      );
+    }
     if (!existing) {
       await lockRuntimeSource(ctx, "todos");
       const tombstone = await findRowTombstone(ctx, "todo", "todos", todoId);
+      if (tombstone && tombstone.owner !== owner) {
+        deviceFailure(
+          "OWNER_MISMATCH",
+          `Deleted todo ${todoId} belongs to ${tombstone.owner}, not ${owner}.`,
+          "todo",
+          todoId,
+        );
+      }
       if (!tombstone) {
-        await upsertRowTombstone(ctx, "todo", "todos", todoId, DEFAULT_OWNER);
+        await upsertRowTombstone(ctx, "todo", "todos", todoId, owner);
       }
       await upsertLegacyTodoTombstone(ctx, todoId);
       return { todoId, removed: false };
@@ -4558,6 +4603,14 @@ async function deleteTodoCore(
   const tombstone = optimistic
     ? await findRowTombstone(ctx, "todo", "todos", todoId)
     : null;
+  if (tombstone && tombstone.owner !== owner) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Deleted todo ${todoId} belongs to ${tombstone.owner}, not ${owner}.`,
+      "todo",
+      todoId,
+    );
+  }
   if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
     deviceFailure(
       "REVISION_REQUIRED",
@@ -5530,6 +5583,7 @@ export const upsertTodoFromDevice = mutation({
   args: {
     deviceId: v.string(),
     deviceToken: v.string(),
+    activeProfile: familyMemberValidator,
     owner: familyMemberValidator,
     sourceFile: v.literal("todos"),
     baseUpdatedAtMs: v.optional(v.float64()),
@@ -5543,6 +5597,7 @@ export const upsertTodoFromDevice = mutation({
       args.deviceToken,
       "todos:write",
     );
+    requireTodoProfileOwner(args.activeProfile, args.owner, args.todo.id);
     requireDeviceRevision(args.baseUpdatedAtMs, false);
     validateDeviceTodo(args.todo);
     if (args.todo.owner !== args.owner) {
@@ -5574,6 +5629,7 @@ export const restoreTodoFromDevice = mutation({
   args: {
     deviceId: v.string(),
     deviceToken: v.string(),
+    activeProfile: familyMemberValidator,
     owner: familyMemberValidator,
     sourceFile: v.literal("todos"),
     baseUpdatedAtMs: v.float64(),
@@ -5587,6 +5643,7 @@ export const restoreTodoFromDevice = mutation({
       args.deviceToken,
       "todos:write",
     );
+    requireTodoProfileOwner(args.activeProfile, args.owner, args.todo.id);
     requireDeviceRevision(args.baseUpdatedAtMs, true);
     validateDeviceTodo(args.todo);
     if (args.todo.owner !== args.owner) {
@@ -5612,6 +5669,7 @@ export const deleteTodoFromDevice = mutation({
   args: {
     deviceId: v.string(),
     deviceToken: v.string(),
+    activeProfile: familyMemberValidator,
     owner: familyMemberValidator,
     sourceFile: v.literal("todos"),
     entityId: v.string(),
@@ -5625,6 +5683,7 @@ export const deleteTodoFromDevice = mutation({
       args.deviceToken,
       "todos:write",
     );
+    requireTodoProfileOwner(args.activeProfile, args.owner, args.entityId);
     requireDeviceRevision(args.baseUpdatedAtMs, true);
     requireDeviceIdentifier(args.entityId, "entityId");
     const removed = await deleteTodoCore(ctx, args.owner, args.entityId, {
