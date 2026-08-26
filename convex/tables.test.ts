@@ -448,13 +448,22 @@ const fn = {
   upsertTodo: "tables:upsertTodo" as unknown as FunctionReference<
     "mutation",
     "public",
-    { todo: Record<string, unknown>; token?: string },
+    {
+      activeProfile: Member;
+      todo: Record<string, unknown>;
+      token?: string;
+    },
     { todoId: string; owner: Member; done: boolean; outcome: string }
   >,
   deleteTodo: "tables:deleteTodo" as unknown as FunctionReference<
     "mutation",
     "public",
-    { todoId: string; token?: string },
+    {
+      activeProfile: Member;
+      owner: Member;
+      todoId: string;
+      token?: string;
+    },
     { todoId: string; removed: boolean }
   >,
   upsertBtcBuy: "tables:upsertBtcBuy" as unknown as FunctionReference<
@@ -1058,9 +1067,14 @@ describe("the blob path is untouched", () => {
     });
     await t.mutation(fn.deleteTransaction, { txId: "app-1" });
     await t.mutation(fn.upsertTodo, {
-      todo: { id: "app-todo", title: "Ship it" },
+      activeProfile: "victor",
+      todo: { id: "app-todo", title: "Ship it", owner: "victor" },
     });
-    await t.mutation(fn.deleteTodo, { todoId: "app-todo" });
+    await t.mutation(fn.deleteTodo, {
+      activeProfile: "victor",
+      owner: "victor",
+      todoId: "app-todo",
+    });
     await t.mutation(fn.upsertBudgetCategory, {
       viewer: "victor",
       month: "2026-07",
@@ -1074,7 +1088,11 @@ describe("the blob path is untouched", () => {
 
   it("deleteTodo preserves the legacy tombstone while clients still read blobs", async () => {
     await migrateAll(t);
-    await t.mutation(fn.deleteTodo, { todoId: "todo-1" });
+    await t.mutation(fn.deleteTodo, {
+      activeProfile: "victor",
+      owner: "victor",
+      todoId: "todo-1",
+    });
 
     const tombstones = await t.run(async (ctx) =>
       ctx.db.query("todoTombstones").collect(),
@@ -1453,6 +1471,7 @@ describe("owner is first class, and the two visibility rules keep their widths",
 
   it("a recognised owner inside a file still wins over the file's default", async () => {
     await t.mutation(fn.upsertTodo, {
+      activeProfile: "mason",
       todo: {
         id: "todo-3",
         title: "Mason chore",
@@ -1467,6 +1486,7 @@ describe("owner is first class, and the two visibility rules keep their widths",
 
   it("todo snapshots are exact-profile even for adult viewers", async () => {
     await t.mutation(fn.upsertTodo, {
+      activeProfile: "rachel",
       todo: {
         id: "todo-rachel-private",
         title: "Rachel private",
@@ -1475,6 +1495,7 @@ describe("owner is first class, and the two visibility rules keep their widths",
       },
     });
     await t.mutation(fn.upsertTodo, {
+      activeProfile: "mason",
       todo: {
         id: "todo-mason-private",
         title: "Mason private",
@@ -1700,17 +1721,21 @@ describe("indexed month and date", () => {
     // matter: the done one sorts ahead of the open one on the index even though
     // it is older.
     await t.mutation(fn.upsertTodo, {
+      activeProfile: "victor",
       todo: {
         id: "older-done",
         title: "Older but done",
+        owner: "victor",
         done: true,
         updated_at: "2026-07-20T09:00:00Z",
       },
     });
     await t.mutation(fn.upsertTodo, {
+      activeProfile: "victor",
       todo: {
         id: "recent-open",
         title: "Newest",
+        owner: "victor",
         done: false,
         updated_at: "2026-07-30T09:00:00Z",
       },
@@ -3093,6 +3118,7 @@ describe("row mutations", () => {
   it("refuses an unknown todo owner instead of defaulting it to an adult", async () => {
     await expect(
       t.mutation(fn.upsertTodo, {
+        activeProfile: "mason",
         todo: {
           id: "bad-owner-todo",
           title: "Must not become Victor's",
@@ -3269,7 +3295,8 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
       name: "upsertTodo",
       call: (token?: string) =>
         t.mutation(fn.upsertTodo, {
-          todo: { id: "auth-todo", title: "Probe" },
+          activeProfile: "victor",
+          todo: { id: "auth-todo", title: "Probe", owner: "victor" },
           token,
         }),
     },
@@ -3281,7 +3308,12 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
     {
       name: "deleteTodo",
       call: (token?: string) =>
-        t.mutation(fn.deleteTodo, { todoId: "auth-todo", token }),
+        t.mutation(fn.deleteTodo, {
+          activeProfile: "victor",
+          owner: "victor",
+          todoId: "auth-todo",
+          token,
+        }),
     },
     {
       name: "upsertBtcBuy",
