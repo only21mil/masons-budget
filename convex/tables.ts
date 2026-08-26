@@ -336,6 +336,24 @@ function monthOf(date: string): string {
   return date.slice(0, 7);
 }
 
+const INT64_MIN = -(1n << 63n);
+const INT64_MAX = (1n << 63n) - 1n;
+
+function checkedMoneyOutCentsAdd(left: bigint, right: bigint): bigint {
+  const total = left + right;
+  if (
+    left < INT64_MIN ||
+    left > INT64_MAX ||
+    right < INT64_MIN ||
+    right > INT64_MAX ||
+    total < INT64_MIN ||
+    total > INT64_MAX
+  ) {
+    throw new ConvexError("Money Out Today cents must fit signed int64.");
+  }
+  return total;
+}
+
 function rejectRowDate(code: string, field: string, message: string): never {
   throw new ConvexError({ code, field, message });
 }
@@ -1281,6 +1299,92 @@ export const listBtcBillPays = query({
       limit,
       "listBtcBillPays",
     );
+  },
+});
+
+/** Exact same-day spending for the active profile's ledger. */
+export const getMoneyOutToday = query({
+  args: {
+    viewer: familyMemberValidator,
+    date: v.string(),
+    token: v.optional(v.string()),
+  },
+  handler: async (ctx, { viewer, date, token }) => {
+    validateReadToken(token);
+    if (!isRealIsoDate(date)) {
+      throw new ConvexError(
+        "getMoneyOutToday: date must be a real ISO calendar date in yyyy-MM-dd form.",
+      );
+    }
+
+    // Net-worth scope is the spending scope here: adults share one household
+    // ledger, while a child gets only their exact owner rows.
+    const owners = ownersInScope(viewer, "netWorth");
+    const [transactionRows, billPayRows] = await Promise.all([
+      Promise.all(
+        owners.map((owner) =>
+          ctx.db
+            .query("transactions")
+            .withIndex("by_owner_date", (q) =>
+              q.eq("owner", owner).eq("date", date),
+            )
+            .collect(),
+        ),
+      ),
+      Promise.all(
+        owners.map((owner) =>
+          ctx.db
+            .query("btcBillPays")
+            .withIndex("by_owner_date", (q) =>
+              q.eq("owner", owner).eq("date", date),
+            )
+            .collect(),
+        ),
+      ),
+    ]);
+
+    const transactionSources = transactionRows
+      .flat()
+      .filter((row) => {
+        const category = row.category.toLowerCase();
+        return category !== "income" && category !== "credit card payment";
+      })
+      .map((row) => ({
+        kind: "transaction" as const,
+        row: projectTransaction(row),
+        contributionCents: row.amountCents,
+      }));
+    const billPaySources = billPayRows
+      .flat()
+      .filter(
+        (row) =>
+          (row.budgetEffect ?? "credit_card_payment") === "budget_category",
+      )
+      .map((row) => {
+        const feeUsdCents = row.feeUsdCents ?? 0n;
+        return {
+          kind: "btc_bill_pay" as const,
+          row: projectBtcBillPay({ ...row, feeUsdCents }),
+          principalCents: row.amountUsdCents,
+          feeUsdCents,
+          contributionCents: checkedMoneyOutCentsAdd(
+            row.amountUsdCents,
+            feeUsdCents,
+          ),
+        };
+      });
+    const sources = [...transactionSources, ...billPaySources];
+
+    return {
+      date,
+      owner: canonicalLedgerOwner(viewer),
+      totalCents: sources.reduce(
+        (total, source) =>
+          checkedMoneyOutCentsAdd(total, source.contributionCents),
+        0n,
+      ),
+      sources,
+    };
   },
 });
 
@@ -3327,7 +3431,7 @@ const btcBillPayDeviceInput = v.object({
   btcPriceCents: v.int64(),
   platform: v.optional(v.string()),
   note: v.optional(v.string()),
-  feeUsdCents: v.int64(),
+  feeUsdCents: v.optional(v.int64()),
   reference: v.optional(v.string()),
 });
 
@@ -3713,7 +3817,7 @@ const btcBillPayInput = v.object({
   btcPriceCents: v.int64(),
   platform: v.optional(v.string()),
   note: v.optional(v.string()),
-  feeUsdCents: v.int64(),
+  feeUsdCents: v.optional(v.int64()),
   reference: v.optional(v.string()),
   owner: v.optional(familyMemberValidator),
 });
@@ -3745,7 +3849,8 @@ export const upsertBtcBillPay = mutation({
     // equivalent, so a client still carrying the pre-fix inverted convention
     // could store negatives and make every aggregate under-report by twice the
     // payment.
-    requireBillPayAmounts(billPay);
+    const feeUsdCents = billPay.feeUsdCents ?? 0n;
+    requireBillPayAmounts({ ...billPay, feeUsdCents });
     const budgetEffect = billPay.budgetEffect ?? "credit_card_payment";
     const category = budgetEffect === "credit_card_payment"
       ? "Credit Card Payment"
@@ -3764,7 +3869,7 @@ export const upsertBtcBillPay = mutation({
       btcPriceCents: billPay.btcPriceCents,
       platform: optionalText(billPay.platform),
       note: optionalText(billPay.note),
-      feeUsdCents: billPay.feeUsdCents,
+      feeUsdCents,
       reference: optionalText(billPay.reference),
       sourceFile: file,
       updatedAtMs: now,
@@ -5752,7 +5857,8 @@ export const upsertBtcBillPayFromDevice = mutation({
     }
     const ledgerOwner = canonicalLedgerOwner(args.owner);
     requireSourceOwner(args.sourceFile, "btcBillPays", ledgerOwner);
-    requireBillPayAmounts(args.billPay);
+    const feeUsdCents = args.billPay.feeUsdCents ?? 0n;
+    requireBillPayAmounts({ ...args.billPay, feeUsdCents });
     const budgetEffect = args.billPay.budgetEffect ?? "credit_card_payment";
     const category = budgetEffect === "credit_card_payment"
       ? "Credit Card Payment"
@@ -5781,7 +5887,7 @@ export const upsertBtcBillPayFromDevice = mutation({
         btcPriceCents: args.billPay.btcPriceCents,
         platform: optionalText(args.billPay.platform),
         note: optionalText(args.billPay.note),
-        feeUsdCents: args.billPay.feeUsdCents,
+        feeUsdCents,
         reference: optionalText(args.billPay.reference),
         sourceFile: args.sourceFile,
         updatedAtMs: now,
