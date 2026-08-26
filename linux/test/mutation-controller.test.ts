@@ -7,6 +7,7 @@ import {
   beginMutation,
   finishRefresh,
   isEntityPending,
+  mutationResultMessage,
   optimisticEnvelope,
   settleMutation,
   type RendererMutationRequest,
@@ -278,5 +279,66 @@ describe("renderer mutation controller", () => {
       13,
     )
     expect(optimisticEnvelope(refreshedData, failed, "rachel", 13)).toBe(refreshedData)
+  })
+
+  it("uses local recovery text for profile binding and revision failures", () => {
+    expect(mutationResultMessage({
+      status: "failed",
+      requestId: "request-profile-binding",
+      kind: "todo.upsert",
+      code: "PROFILE_BINDING_REQUIRED",
+    })).toContain("Pair this profile again")
+    expect(mutationResultMessage({
+      status: "failed",
+      requestId: "request-revision-required",
+      kind: "todo.upsert",
+      code: "REVISION_REQUIRED",
+    })).toContain("authoritative server revision")
+  })
+
+  it("rolls an offline delete back to the exact cached row and permits an exact retry", () => {
+    const data = buildSanitizedFixtureEnvelope("mason")
+    const todo = data.todos.value[0]!
+    const deletion: RendererMutationRequest = {
+      kind: "todo.delete",
+      requestId: "request-delete-offline",
+      actor: "mason",
+      id: todo.id,
+      owner: todo.owner,
+      baseUpdatedAtMs: todo.updatedAtMs,
+    }
+    const started = beginMutation(EMPTY_MUTATION_CONTROLLER, deletion, data, "mason", 3)
+    expect(started.status).toBe("started")
+    if (started.status !== "started") return
+    expect(optimisticEnvelope(data, started.state, "mason", 3).todos.value)
+      .not.toContain(todo)
+
+    const failed = settleMutation(started.state, started.pending, {
+      status: "failed",
+      requestId: deletion.requestId,
+      kind: deletion.kind,
+      code: "unavailable",
+    }, "mason", 3)
+    expect(optimisticEnvelope(data, failed, "mason", 3)).toBe(data)
+    const retry = beginMutation(failed, deletion, data, "mason", 3)
+    expect(retry.status).toBe("started")
+    if (retry.status === "started") expect(retry.pending.request).toBe(deletion)
+  })
+
+  it("does not invent an optimistic replacement for capsule-backed restore", () => {
+    const data = buildSanitizedFixtureEnvelope("mason")
+    const restore: RendererMutationRequest = {
+      kind: "todo.restore",
+      requestId: "request-restore-capsule",
+      actor: "mason",
+      id: "deleted-task-01",
+      owner: "mason",
+      baseUpdatedAtMs: 1_787_702_400_456,
+    }
+    const started = beginMutation(EMPTY_MUTATION_CONTROLLER, restore, data, "mason", 4)
+    expect(started.status).toBe("started")
+    if (started.status !== "started") return
+    expect(started.pending.snapshot).toBeUndefined()
+    expect(optimisticEnvelope(data, started.state, "mason", 4)).toBe(data)
   })
 })

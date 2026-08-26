@@ -45,6 +45,7 @@ function fixture() {
     deploymentOrigin: "https://example.convex.cloud",
     deviceId: "abcdefghijklmnopqrs",
     deviceCredential: "abcdefghijklmnopqrstuvwxyz0123456789_AAAAAA",
+    profile: "mason" as const,
     pairedAt: 1_774_000_000_000,
     capabilities: ["transaction.upsert", "transaction.delete"],
   } as const
@@ -118,6 +119,35 @@ describe("paired-device credential storage", () => {
     expect((await stat(directory)).mode & 0o777).toBe(0o700)
     expect((await stat(file)).mode & 0o777).toBe(0o600)
     await expect(store.load()).resolves.toEqual(saved)
+  })
+
+  it("reads schema-1 credentials as explicitly unbound while new saves retain the profile", async () => {
+    const root = await temporaryRoot()
+    const store = createDeviceCredentialStore({
+      appReady: () => true,
+      platform: "linux",
+      safeStorage: protectedStorage(),
+      userDataPath: root,
+    })
+    const saved = await store.save(fixture())
+    expect(saved.profile).toBe("mason")
+
+    const file = path.join(root, "paired-device", "credential.json")
+    const envelope = JSON.parse(await readFile(file, "utf8")) as {
+      schemaVersion: number
+      encryptedPayload: string
+    }
+    const protectedPayload = Buffer.from(envelope.encryptedPayload, "base64").toString("utf8")
+    const payload = JSON.parse(protectedPayload.slice("protected:".length)) as Record<string, unknown>
+    payload.schemaVersion = 1
+    delete payload.profile
+    envelope.encryptedPayload = Buffer.from(
+      `protected:${JSON.stringify(payload)}`,
+      "utf8",
+    ).toString("base64")
+    await writeFile(file, JSON.stringify(envelope), { mode: 0o600 })
+
+    await expect(store.load()).resolves.toEqual({ ...saved, profile: null })
   })
 
   it.each([

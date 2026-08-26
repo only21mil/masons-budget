@@ -16,11 +16,12 @@ import {
 } from "node:fs/promises"
 import path from "node:path"
 
-import type { VogelVaultMutationKind } from "../shared/ipc.ts"
+import type { VogelVaultMember, VogelVaultMutationKind } from "../shared/ipc.ts"
 
 const STORE_DIRECTORY = "paired-device"
 const STORE_FILE = "credential.json"
-const STORE_SCHEMA = 1
+const ENVELOPE_SCHEMA = 1
+const CREDENTIAL_SCHEMA = 2
 const MAX_STORE_BYTES = 16 * 1024
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 const BASE64_URL = /^[A-Za-z0-9_-]+$/
@@ -29,6 +30,7 @@ const MUTATION_KINDS = [
   "transaction.delete",
   "todo.upsert",
   "todo.delete",
+  "todo.restore",
   "budgetCategory.upsert",
   "budgetCategory.delete",
   "btcBuy.upsert",
@@ -66,9 +68,16 @@ export interface DeviceCredentialSnapshot {
   readonly deploymentOrigin: string
   readonly deviceId: string
   readonly deviceCredential: string
+  /** Local pairing-session echo, never server authority. Null means schema-1 legacy state. */
+  readonly profile: VogelVaultMember | null
   readonly pairedAt: number
   readonly capabilities: readonly VogelVaultMutationKind[]
 }
+
+export type NewDeviceCredentialSnapshot =
+  Omit<DeviceCredentialSnapshot, "revision" | "profile"> & {
+    readonly profile: VogelVaultMember
+  }
 
 interface StoredCredentialEnvelope {
   readonly schemaVersion: 1
@@ -76,11 +85,12 @@ interface StoredCredentialEnvelope {
 }
 
 interface StoredCredentialPayload {
-  readonly schemaVersion: 1
+  readonly schemaVersion: 2
   readonly revision: string
   readonly deploymentOrigin: string
   readonly deviceId: string
   readonly deviceCredential: string
+  readonly profile: VogelVaultMember
   readonly pairedAt: number
   readonly capabilities: readonly VogelVaultMutationKind[]
 }
@@ -95,7 +105,7 @@ export class CredentialStorageError extends Error {
 export interface DeviceCredentialStore {
   readiness(): CredentialStorageReadiness
   load(): Promise<DeviceCredentialSnapshot | null>
-  save(input: Omit<DeviceCredentialSnapshot, "revision">): Promise<DeviceCredentialSnapshot>
+  save(input: NewDeviceCredentialSnapshot): Promise<DeviceCredentialSnapshot>
   clearIfCurrent(revision: string): Promise<boolean>
 }
 
@@ -161,7 +171,7 @@ function envelopeFromText(text: string): StoredCredentialEnvelope {
       "schemaVersion",
       "encryptedPayload",
     ]) ||
-    record["schemaVersion"] !== STORE_SCHEMA
+    record["schemaVersion"] !== ENVELOPE_SCHEMA
   ) {
     throw new CredentialStorageError("invalid")
   }
@@ -175,12 +185,12 @@ function envelopeFromText(text: string): StoredCredentialEnvelope {
     throw new CredentialStorageError("invalid")
   }
   return {
-    schemaVersion: STORE_SCHEMA,
+    schemaVersion: ENVELOPE_SCHEMA,
     encryptedPayload: encrypted,
   }
 }
 
-function payloadFromText(text: string): StoredCredentialPayload {
+function payloadFromText(text: string): DeviceCredentialSnapshot {
   let value: unknown
   try {
     value = JSON.parse(text)
@@ -191,17 +201,20 @@ function payloadFromText(text: string): StoredCredentialPayload {
     throw new CredentialStorageError("invalid")
   }
   const record = value as Record<string, unknown>
+  const legacy = record["schemaVersion"] === 1
+  const expectedKeys = [
+    "schemaVersion",
+    "revision",
+    "deploymentOrigin",
+    "deviceId",
+    "deviceCredential",
+    ...(legacy ? [] : ["profile"]),
+    "pairedAt",
+    "capabilities",
+  ]
   if (
-    !exactKeys(record, [
-      "schemaVersion",
-      "revision",
-      "deploymentOrigin",
-      "deviceId",
-      "deviceCredential",
-      "pairedAt",
-      "capabilities",
-    ]) ||
-    record["schemaVersion"] !== STORE_SCHEMA ||
+    !exactKeys(record, expectedKeys) ||
+    (!legacy && record["schemaVersion"] !== CREDENTIAL_SCHEMA) ||
     typeof record["pairedAt"] !== "number" ||
     !Number.isSafeInteger(record["pairedAt"]) ||
     record["pairedAt"] < 0
@@ -209,14 +222,21 @@ function payloadFromText(text: string): StoredCredentialPayload {
     throw new CredentialStorageError("invalid")
   }
   return {
-    schemaVersion: STORE_SCHEMA,
     revision: boundedBase64Url(record["revision"], 16, 128),
     deploymentOrigin: deploymentOrigin(record["deploymentOrigin"]),
     deviceId: boundedBase64Url(record["deviceId"], 16, 128),
     deviceCredential: boundedBase64Url(record["deviceCredential"], 32, 256),
+    profile: legacy ? null : validatedProfile(record["profile"]),
     pairedAt: record["pairedAt"],
     capabilities: validatedCapabilities(record["capabilities"]),
   }
+}
+
+function validatedProfile(value: unknown): VogelVaultMember {
+  if (value !== "victor" && value !== "rachel" && value !== "mason" && value !== "maddox") {
+    throw new CredentialStorageError("invalid")
+  }
+  return value
 }
 
 function validatedCapabilities(value: unknown): readonly VogelVaultMutationKind[] {
@@ -352,7 +372,7 @@ export function createDeviceCredentialStore(
     }
   }
 
-  function decryptPayload(envelope: StoredCredentialEnvelope): StoredCredentialPayload {
+  function decryptPayload(envelope: StoredCredentialEnvelope): DeviceCredentialSnapshot {
     try {
       return payloadFromText(
         options.safeStorage.decryptString(
@@ -373,24 +393,17 @@ export function createDeviceCredentialStore(
         requireReady()
         const envelope = await readEnvelope()
         if (envelope === null) return null
-        const payload = decryptPayload(envelope)
-        return {
-          revision: payload.revision,
-          deploymentOrigin: payload.deploymentOrigin,
-          deviceId: payload.deviceId,
-          deviceCredential: payload.deviceCredential,
-          pairedAt: payload.pairedAt,
-          capabilities: payload.capabilities,
-        }
+        return decryptPayload(envelope)
       })
     },
 
-    save(input: Omit<DeviceCredentialSnapshot, "revision">): Promise<DeviceCredentialSnapshot> {
+    save(input: NewDeviceCredentialSnapshot): Promise<DeviceCredentialSnapshot> {
       return exclusive(async () => {
         requireReady()
         const origin = deploymentOrigin(input.deploymentOrigin)
         const deviceId = boundedBase64Url(input.deviceId, 16, 128)
         const credential = boundedBase64Url(input.deviceCredential, 32, 256)
+        const profile = validatedProfile(input.profile)
         const capabilities = validatedCapabilities(input.capabilities)
         if (!Number.isSafeInteger(input.pairedAt) || input.pairedAt < 0) {
           throw new CredentialStorageError("invalid")
@@ -401,12 +414,19 @@ export function createDeviceCredentialStore(
           deploymentOrigin: origin,
           deviceId,
           deviceCredential: credential,
+          profile,
           pairedAt: input.pairedAt,
           capabilities,
         }
         const payload: StoredCredentialPayload = {
-          schemaVersion: STORE_SCHEMA,
-          ...snapshot,
+          schemaVersion: CREDENTIAL_SCHEMA,
+          revision: snapshot.revision,
+          deploymentOrigin: snapshot.deploymentOrigin,
+          deviceId: snapshot.deviceId,
+          deviceCredential: snapshot.deviceCredential,
+          profile,
+          pairedAt: snapshot.pairedAt,
+          capabilities: snapshot.capabilities,
         }
         let encrypted: Buffer
         try {
@@ -419,7 +439,7 @@ export function createDeviceCredentialStore(
         }
 
         const envelope: StoredCredentialEnvelope = {
-          schemaVersion: STORE_SCHEMA,
+          schemaVersion: ENVELOPE_SCHEMA,
           encryptedPayload: encrypted.toString("base64"),
         }
         const body = `${JSON.stringify(envelope)}\n`

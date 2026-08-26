@@ -71,6 +71,14 @@ const requests = [
     baseUpdatedAtMs: 100,
   },
   {
+    kind: "todo.restore",
+    requestId: "request-restore",
+    actor: "mason",
+    id: "todo-01",
+    owner: "mason",
+    baseUpdatedAtMs: 100,
+  },
+  {
     kind: "budgetCategory.upsert",
     requestId: "request-05",
     actor: "victor",
@@ -192,6 +200,8 @@ const mutationFailureCodes = [
   "unavailable",
   "invalid-response",
   "credential-storage",
+  "PROFILE_BINDING_REQUIRED",
+  "REVISION_REQUIRED",
 ] as const satisfies readonly VogelVaultMutationFailureCode[]
 
 const pairingFailureCodes = [
@@ -228,12 +238,13 @@ describe("paired-device IPC contract", () => {
     ])
   })
 
-  it("has exactly fourteen closed mutation discriminators", () => {
+  it("has exactly fifteen closed mutation discriminators", () => {
     expect(requests.map((request) => request.kind)).toEqual([
       "transaction.upsert",
       "transaction.delete",
       "todo.upsert",
       "todo.delete",
+      "todo.restore",
       "budgetCategory.upsert",
       "budgetCategory.delete",
       "btcBuy.upsert",
@@ -245,7 +256,7 @@ describe("paired-device IPC contract", () => {
       "btcTransfer.upsert",
       "btcTransfer.delete",
     ])
-    expect(new Set(requests.map((request) => request.requestId)).size).toBe(14)
+    expect(new Set(requests.map((request) => request.requestId)).size).toBe(15)
   })
 
   it("keeps mutation results to six text-free outer states", () => {
@@ -277,7 +288,7 @@ describe("paired-device IPC contract", () => {
       "missing",
       "failed",
     ])
-    expect(mutationFailureCodes).toHaveLength(6)
+    expect(mutationFailureCodes).toHaveLength(8)
   })
 
   it("keeps pairing and unpairing results credential-free", () => {
@@ -347,7 +358,7 @@ describe("paired-device IPC contract", () => {
     expect(pairHandler.indexOf("dialog.showMessageBox(window")).toBeGreaterThan(0)
     expect(pairHandler).toContain("nativeConfirmation.run(")
     expect(pairHandler.indexOf("dialog.showMessageBox(window"))
-      .toBeLessThan(pairHandler.indexOf("controller.pair(request)"))
+      .toBeLessThan(pairHandler.indexOf("controller.pair(request,"))
     expect(pairHandler).toContain("Maximum possible grants: tasks, transactions, budget, and bitcoin")
     expect(pairHandler).toContain("confirmation.response !== 1")
     expect(unpairHandler.indexOf("dialog.showMessageBox(window")).toBeGreaterThan(0)

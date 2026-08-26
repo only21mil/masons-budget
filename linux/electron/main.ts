@@ -249,10 +249,9 @@ function registerRemoteSnapshot(): void {
  */
 let rowRepository: ConvexRowRepository | null = null
 
-// One session store for reads and writes. A window's active profile is its
-// identity, and `activate` already refuses to let a child window become an
-// adult, so binding writes to the same store is what stops a renderer from
-// simply declaring `actor: "victor"` in a mutation payload.
+// One main-owned active-profile store for read visibility and write echoes.
+// The server-bound device credential remains task authority. Keeping the echo
+// here stops a renderer from choosing both `actor` and `activeProfile`.
 const profiles = createReadProfileSessions<WebContents>()
 
 function registerConvexRows(): void {
@@ -331,7 +330,7 @@ function registerPairedDeviceWrites(): void {
           if (confirmation.response !== 1) {
             return { status: "failed", code: "cancelled" }
           }
-          return controller.pair(request)
+          return controller.pair(request, profiles.current(event.sender))
         },
       )
     },
@@ -362,6 +361,7 @@ function registerPairedDeviceWrites(): void {
       if (result.status !== "failed") {
         rowRepository?.invalidate([
           "transactions",
+          "todos",
           "btcBalanceDocuments",
           "btcAccounts",
           "btcBuys",
