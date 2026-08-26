@@ -343,8 +343,12 @@ enum LedgerMapper {
                 isDone: dto.effectiveDone,
                 owner: owner,
                 createdBy: "mc2",
+                createdAt: dto.createdAt.map(parseDate),
                 updatedAt: dto.updatedAt.map(parseDate) ?? .now,
+                completedAt: dto.completedAt.map(parseDate),
                 sourceFile: "todos.json",
+                updatedAtMs: dto.updatedAtMs,
+                hasServerAuthority: true,
             )
         }
     }

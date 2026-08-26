@@ -663,10 +663,20 @@ final class ConvexSyncService {
                     log.warning("Skipping imported todo \(remote.id): id belongs to another profile")
                     continue
                 }
-                // An app-created row owns this id: never overwrite user-entered data and never
-                // insert a duplicate of the unique id.
+                // Keep optimistic app content, but let the matching authoritative
+                // row install its exact revision. Without this, an accepted create
+                // stays revisionless forever and every later edit must fail closed.
                 if local.createdBy == "app" {
-                    log.warning("Skipping imported todo \(remote.id): id already owned by app-created row")
+                    guard local.ownerMember == remote.ownerMember else {
+                        log.warning("Skipping imported todo \(remote.id): id belongs to another profile")
+                        continue
+                    }
+                    if let remoteRevision = remote.updatedAtMs,
+                       local.updatedAtMs == nil || remoteRevision >= (local.updatedAtMs ?? -1)
+                    {
+                        local.updatedAtMs = remoteRevision
+                        local.hasServerAuthority = true
+                    }
                     continue
                 }
                 guard local.createdBy == "mc2" else {
@@ -682,9 +692,17 @@ final class ConvexSyncService {
                     local.isFlagged = remote.isFlagged
                     local.isDone = remote.isDone
                     local.owner = remote.owner
+                    local.createdAt = remote.createdAt
                     local.updatedAt = remote.updatedAt
+                    local.completedAt = remote.completedAt
                     local.sourceFile = remote.sourceFile
                     local.createdBy = "mc2"
+                }
+                if let remoteRevision = remote.updatedAtMs,
+                   local.updatedAtMs == nil || remoteRevision >= (local.updatedAtMs ?? -1)
+                {
+                    local.updatedAtMs = remoteRevision
+                    local.hasServerAuthority = true
                 }
             } else if remote.id != pendingDeleteID {
                 context.insert(remote)

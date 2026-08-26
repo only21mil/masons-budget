@@ -149,6 +149,7 @@ struct ConvexTodoRow: Decodable {
     let createdAt: String?
     let updatedAt: String?
     let completedAt: String?
+    let updatedAtMs: Double
 
     func legacyDTO() throws -> LegacyTodoDTO {
         let decodedPriority: Int?
@@ -174,6 +175,7 @@ struct ConvexTodoRow: Decodable {
             createdAt: createdAt,
             updatedAt: updatedAt,
             completedAt: completedAt,
+            updatedAtMs: updatedAtMs,
         )
     }
 }
