@@ -73,6 +73,11 @@ type StoredFinanceDocument = Omit<
   "_id" | "_creationTime"
 >;
 
+type StoredBtcBuy = Omit<
+  DocumentByName<DataModel, "btcBuys">,
+  "_id" | "_creationTime"
+>;
+
 interface Verification {
   file: string;
   table: string;
@@ -1364,7 +1369,7 @@ describe("migrating every file", () => {
     ).not.toContain(deletedId);
   });
 
-  test("budget and BTC document projections honor indexed nested tombstones", async () => {
+  test("budget and BTC document projections honor revisioned tombstones on every rerun", async () => {
     const t = harness();
     await seedBlob(t, "budget", ADULT_BUDGET);
     await seedBlob(t, "btc-balance-snapshot", BTC_SNAPSHOT);
@@ -1375,6 +1380,7 @@ describe("migrating every file", () => {
         entityId: "adult category 0",
         owner: "victor",
         deletedAtMs: Date.now(),
+        deletedFromUpdatedAtMs: 1_787_654_321_000,
       });
       await ctx.db.insert("rowTombstones", {
         entityType: "btcAccount",
@@ -1382,14 +1388,31 @@ describe("migrating every file", () => {
         entityId: "coldcard",
         owner: "victor",
         deletedAtMs: Date.now(),
+        deletedFromUpdatedAtMs: 1_787_654_321_001,
       });
     });
 
-    await applyFile(t, { file: "budget" });
-    const btcResult = await applyFile(t, {
+    const firstBudget = await applyFile(t, { file: "budget" });
+    const firstBtc = await applyFile(t, {
       file: "btc-balance-snapshot",
     });
-    expect(btcResult.projectedRowCount).toBe(5);
+    const secondBudget = await applyFile(t, { file: "budget" });
+    const secondBtc = await applyFile(t, {
+      file: "btc-balance-snapshot",
+    });
+    expect(firstBudget).toMatchObject({ inserted: 1, updated: 0 });
+    expect(firstBtc).toMatchObject({ projectedRowCount: 5, inserted: 5 });
+    expect(secondBudget).toMatchObject({
+      inserted: 0,
+      updated: 0,
+      unchanged: 1,
+    });
+    expect(secondBtc).toMatchObject({
+      projectedRowCount: 5,
+      inserted: 0,
+      updated: 0,
+      unchanged: 5,
+    });
 
     const [budget] = await rowsIn(t, "budgetDocuments");
     expect(
@@ -1411,6 +1434,28 @@ describe("migrating every file", () => {
     expect(
       (await rowsIn(t, "btcAccounts")).map((row) => row.key),
     ).not.toContain("coldcard");
+    expect(
+      await t.run(async (ctx) =>
+        (await ctx.db.query("rowTombstones").collect())
+          .map((row) => ({
+            entityType: row.entityType,
+            entityId: row.entityId,
+            deletedFromUpdatedAtMs: row.deletedFromUpdatedAtMs,
+          }))
+          .sort((left, right) => left.entityId.localeCompare(right.entityId)),
+      ),
+    ).toEqual([
+      {
+        entityType: "budgetCategory",
+        entityId: "adult category 0",
+        deletedFromUpdatedAtMs: 1_787_654_321_000,
+      },
+      {
+        entityType: "btcAccount",
+        entityId: "coldcard",
+        deletedFromUpdatedAtMs: 1_787_654_321_001,
+      },
+    ]);
   });
 
   test("migration refuses more than the bounded indexed tombstone window", async () => {
@@ -1485,16 +1530,131 @@ describe("migrating every file", () => {
     ]);
   });
 
-  test("BTC buy migration defaults missing fees and rejects invalid manual values", () => {
+  test("BTC buy migration defaults missing and null fees and enforces exact int64 values", () => {
     const source = MIGRATION_SOURCES.find((entry) => entry.kind === "btcBuy")!;
     const base = BTC_BUYS[0]!;
-    const projected = projectFile(source, [{ ...base, fee_usd: undefined }])!;
-    expect(projected.docs[0]!.feeUsdCents).toBe(0n);
+    const projected = projectFile(source, [
+      { ...base, id: "missing-fee" },
+      { ...base, id: "null-fee", fee_usd: null },
+      {
+        ...base,
+        id: "max-fee",
+        fee_usd: "92233720368547758.07",
+        amount_sats: "9223372036854775807",
+      },
+    ])!;
+    expect(projected.docs.map((row) => row.feeUsdCents)).toEqual([
+      0n,
+      0n,
+      9_223_372_036_854_775_807n,
+    ]);
+    expect(projected.docs[2]!.sats).toBe(9_223_372_036_854_775_807n);
     for (const feeUsd of ["-0.01", "0.001", "92233720368547758.08"]) {
       expect(() => projectFile(source, [{ ...base, fee_usd: feeUsd }])).toThrow(
         RangeError,
       );
     }
+    for (const amountSats of [
+      "1.5",
+      "9223372036854775808",
+      9_007_199_254_740_992,
+    ]) {
+      expect(() =>
+        projectFile(source, [{ ...base, amount_sats: amountSats }]),
+      ).toThrow(RangeError);
+    }
+  });
+
+  test("bill-pay migration preserves explicit budget effects and revision fences", async () => {
+    const t = harness();
+    const rows = [
+      { ...BILL_PAYS[0]!, id: "legacy-missing" },
+      {
+        ...BILL_PAYS[0]!,
+        id: "legacy-null",
+        budget_effect: null,
+        updated_at_ms: null,
+      },
+      {
+        ...BILL_PAYS[0]!,
+        id: "budgeted",
+        owner: "rachel",
+        budget_effect: "budget_category",
+        updated_at_ms: 1_787_654_321_002,
+      },
+      {
+        ...BILL_PAYS[0]!,
+        id: "excluded",
+        budgetEffect: "credit_card_payment",
+        updatedAtMs: 1_787_654_321_003,
+      },
+    ];
+    await seedBlob(t, "bitcoin-bill-pays", { bill_pays: rows });
+
+    const first = await applyFile(t, { file: "bitcoin-bill-pays" });
+    const second = await applyFile(t, { file: "bitcoin-bill-pays" });
+    expect(first).toMatchObject({ inserted: 4, updated: 0, unchanged: 0 });
+    expect(second).toMatchObject({ inserted: 0, updated: 0, unchanged: 4 });
+
+    const stored = await rowsIn(t, "btcBillPays");
+    const byId = new Map(stored.map((row) => [row.billPayId, row]));
+    expect(byId.get("legacy-missing")).not.toHaveProperty("budgetEffect");
+    expect(byId.get("legacy-null")).not.toHaveProperty("budgetEffect");
+    expect(byId.get("legacy-missing")!.updatedAtMs).toBe(0);
+    expect(byId.get("legacy-null")!.updatedAtMs).toBe(0);
+    expect(byId.get("budgeted")).toMatchObject({
+      owner: "rachel",
+      budgetEffect: "budget_category",
+      updatedAtMs: 1_787_654_321_002,
+    });
+    expect(byId.get("excluded")).toMatchObject({
+      budgetEffect: "credit_card_payment",
+      updatedAtMs: 1_787_654_321_003,
+    });
+
+    const source = MIGRATION_SOURCES.find(
+      (entry) => entry.kind === "btcBillPay",
+    )!;
+    for (const invalid of [
+      { budget_effect: "other" },
+      { updated_at_ms: "" },
+      { updated_at_ms: 0 },
+      { updated_at_ms: 1.5 },
+      { updated_at_ms: 9_007_199_254_740_992 },
+      { budget_effect: "budget_category", budgetEffect: "credit_card_payment" },
+    ]) {
+      expect(() =>
+        projectFile(source, [{ ...BILL_PAYS[0]!, ...invalid }]),
+      ).toThrow();
+    }
+  });
+
+  test("every projected bigint is checked against the Convex signed-int64 boundary", () => {
+    const transactionSource = MIGRATION_SOURCES.find(
+      (entry) => entry.file === "transactions",
+    )!;
+    expect(
+      projectFile(transactionSource, [
+        { ...TRANSACTIONS[0]!, amount: "92233720368547758.07" },
+      ])!.docs[0]!.amountCents,
+    ).toBe(9_223_372_036_854_775_807n);
+    expect(() =>
+      projectFile(transactionSource, [
+        { ...TRANSACTIONS[0]!, amount: "92233720368547758.08" },
+      ]),
+    ).toThrow(/signed int64/);
+
+    const budgetSource = MIGRATION_SOURCES.find(
+      (entry) => entry.file === "budget",
+    )!;
+    expect(() =>
+      projectFile(budgetSource, {
+        ...ADULT_BUDGET,
+        categories: [
+          { ...ADULT_BUDGET.categories[0]!, budget: "92233720368547758.08" },
+        ],
+      }),
+    ).toThrow(/signed int64/);
   });
 
   test("income and balances preserve exact cents, sats, and reconciliation provenance", async () => {
@@ -1877,6 +2037,83 @@ describe("migrating every file", () => {
 // ─── Idempotency ─────────────────────────────────────────────────────────────
 
 describe("running it twice", () => {
+  test("backfills an old BTC buy fee without resetting its revision, then becomes idempotent", async () => {
+    const t = harness();
+    const source = MIGRATION_SOURCES.find((entry) => entry.kind === "btcBuy")!;
+    const raw = {
+      ...BTC_BUYS[0]!,
+      id: "fee-backfill",
+      updated_at_ms: 1_787_654_321_005,
+    };
+    const projected = projectFile(source, [raw])!;
+    const current = projected.docs[0] as StoredBtcBuy;
+    const { feeUsdCents: _missingInOldSchema, ...legacy } = current;
+
+    await seedBlob(t, "bitcoin-buys", [raw]);
+    const oldId = await t.run(
+      async (ctx) => await ctx.db.insert("btcBuys", legacy),
+    );
+
+    const first = await applyFile(t, { file: "bitcoin-buys" });
+    const afterFirst = (await rowsIn(t, "btcBuys"))[0]!;
+    const second = await applyFile(t, { file: "bitcoin-buys" });
+    const afterSecond = (await rowsIn(t, "btcBuys"))[0]!;
+
+    expect(first).toMatchObject({ inserted: 0, updated: 1, unchanged: 0 });
+    expect(second).toMatchObject({ inserted: 0, updated: 0, unchanged: 1 });
+    expect(afterFirst).toMatchObject({
+      _id: oldId,
+      feeUsdCents: 0n,
+      updatedAtMs: 1_787_654_321_005,
+      migrationRaw: raw,
+    });
+    expect(afterSecond).toEqual(afterFirst);
+  });
+
+  test("a revisioned BTC-buy tombstone suppresses every fee backfill rerun", async () => {
+    const t = harness();
+    const raw = {
+      ...BTC_BUYS[0]!,
+      id: "deleted-fee-row",
+      fee_usd: "1.25",
+      updated_at_ms: 1_787_654_321_006,
+    };
+    await seedBlob(t, "bitcoin-buys", [raw]);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("rowTombstones", {
+        entityType: "btcBuy",
+        sourceFile: "bitcoin-buys",
+        entityId: "deleted-fee-row",
+        owner: "victor",
+        deletedAtMs: 1_787_654_321_007,
+        deletedFromUpdatedAtMs: 1_787_654_321_006,
+      });
+    });
+
+    const first = await applyFile(t, { file: "bitcoin-buys" });
+    const second = await applyFile(t, { file: "bitcoin-buys" });
+    expect(first).toMatchObject({
+      projectedRowCount: 0,
+      inserted: 0,
+      updated: 0,
+      unchanged: 0,
+    });
+    expect(second).toMatchObject({
+      projectedRowCount: 0,
+      inserted: 0,
+      updated: 0,
+      unchanged: 0,
+    });
+    expect(await rowsIn(t, "btcBuys")).toEqual([]);
+    expect(
+      await t.run(
+        async (ctx) =>
+          (await ctx.db.query("rowTombstones").unique())!
+            .deletedFromUpdatedAtMs,
+      ),
+    ).toBe(1_787_654_321_006);
+  });
+
   test("atomic documents and derived BTC accounts are idempotent together", async () => {
     const t = harness();
     await seedAll(t);

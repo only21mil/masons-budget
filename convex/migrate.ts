@@ -368,6 +368,32 @@ function sourceFor(file: string): MigrationSource {
 // Mirror of shared/domain/src/money.ts. See the header for why it is copied.
 
 const MAX_SAFE_MINOR_UNITS = BigInt(Number.MAX_SAFE_INTEGER);
+const INT64_MIN = -(1n << 63n);
+const INT64_MAX = (1n << 63n) - 1n;
+
+function requireSignedInt64(value: bigint, path: string): bigint {
+  if (value < INT64_MIN || value > INT64_MAX) {
+    throw new RangeError(`${path} must fit signed int64`);
+  }
+  return value;
+}
+
+function exactInt64(value: unknown, path: string): bigint {
+  let parsed: bigint;
+  if (typeof value === "bigint") {
+    parsed = value;
+  } else if (typeof value === "number") {
+    if (!Number.isSafeInteger(value)) {
+      throw new RangeError(`${path} must be an exact signed int64 integer`);
+    }
+    parsed = BigInt(value);
+  } else if (typeof value === "string" && /^-?\d+$/.test(value)) {
+    parsed = BigInt(value);
+  } else {
+    throw new RangeError(`${path} must be an exact signed int64 integer`);
+  }
+  return requireSignedInt64(parsed, path);
+}
 
 /**
  * Parse a decimal value into integer minor units without going through Number.
@@ -486,7 +512,7 @@ function parseManualFeeCents(value: unknown): bigint {
     throw new RangeError("fee_usd must be an exact non-negative cent value");
   }
   const cents = parseCents(text);
-  if (cents > (1n << 63n) - 1n) {
+  if (cents > INT64_MAX) {
     throw new RangeError("fee_usd must fit signed int64 cents");
   }
   return cents;
@@ -601,6 +627,54 @@ function optionalString(value: unknown): string | undefined {
   if (value === null || value === undefined) return undefined;
   const text = String(value);
   return text === "" ? undefined : text;
+}
+
+function aliasedLegacyValue(
+  raw: Record<string, unknown>,
+  snakeCaseKey: string,
+  camelCaseKey: string,
+  path: string,
+): unknown {
+  const snakeCaseValue = raw[snakeCaseKey];
+  const camelCaseValue = raw[camelCaseKey];
+  const hasSnakeCase = snakeCaseValue !== null && snakeCaseValue !== undefined;
+  const hasCamelCase = camelCaseValue !== null && camelCaseValue !== undefined;
+  if (
+    hasSnakeCase &&
+    hasCamelCase &&
+    canonicalJson(snakeCaseValue) !== canonicalJson(camelCaseValue)
+  ) {
+    throw new ConvexError(
+      `${path} has conflicting ${snakeCaseKey} and ${camelCaseKey} values`,
+    );
+  }
+  return hasSnakeCase ? snakeCaseValue : camelCaseValue;
+}
+
+function sourceRevision(value: unknown, path: string): number {
+  if (value === null || value === undefined) return 0;
+  if (!Number.isSafeInteger(value) || Number(value) <= 0) {
+    throw new ConvexError(`${path} must be a positive exact revision`);
+  }
+  return Number(value);
+}
+
+function legacyBudgetEffect(
+  raw: Record<string, unknown>,
+): "budget_category" | "credit_card_payment" | undefined {
+  const value = aliasedLegacyValue(
+    raw,
+    "budget_effect",
+    "budgetEffect",
+    "btcBillPay.budgetEffect",
+  );
+  if (value === null || value === undefined || value === "") return undefined;
+  if (value === "budget_category" || value === "credit_card_payment") {
+    return value;
+  }
+  throw new ConvexError(
+    `btcBillPay.budgetEffect is not a known value: ${JSON.stringify(value)}`,
+  );
 }
 
 function monthOf(date: string): string {
@@ -1008,7 +1082,7 @@ export function projectRow(
         // only carries 8 dp of a double. Same precedence as normalizeBTCBuy.
         sats:
           raw.amount_sats !== undefined && raw.amount_sats !== null
-            ? parseMinorUnits(String(raw.amount_sats), 0)
+            ? exactInt64(raw.amount_sats, "btcBuy.amount_sats")
             : parseBtcToSats(raw.amount_btc),
         priceUsdCents: parseCents(raw.price_usd),
         usdCents: parseCents(raw.usd),
@@ -1018,6 +1092,15 @@ export function projectRow(
         costBasisStatus: optionalString(raw.cost_basis_status),
         loggedBy: optionalString(raw.logged_by),
         archimedesRequestId: optionalString(raw.archimedes_request_id),
+        updatedAtMs: sourceRevision(
+          aliasedLegacyValue(
+            raw,
+            "updated_at_ms",
+            "updatedAtMs",
+            "btcBuy.updatedAtMs",
+          ),
+          "btcBuy.updatedAtMs",
+        ),
       };
     }
 
@@ -1030,6 +1113,7 @@ export function projectRow(
         month: monthOf(date),
         merchant: String(raw.merchant ?? ""),
         category: String(raw.category ?? "Other"),
+        budgetEffect: legacyBudgetEffect(raw),
         amountUsdCents: parseCents(raw.amount_usd),
         btcSpentSats: parseBtcToSats(raw.btc_spent),
         btcPriceCents: parseCents(raw.btc_price),
@@ -1037,6 +1121,15 @@ export function projectRow(
         note: optionalString(raw.note),
         feeUsdCents: parseManualFeeCents(raw.fee_usd),
         reference: optionalString(raw.reference),
+        updatedAtMs: sourceRevision(
+          aliasedLegacyValue(
+            raw,
+            "updated_at_ms",
+            "updatedAtMs",
+            "btcBillPay.updatedAtMs",
+          ),
+          "btcBillPay.updatedAtMs",
+        ),
       };
     }
 
@@ -1138,6 +1231,31 @@ function projectAtomicDocument(
   };
 }
 
+function validateProjectedInt64s(value: unknown, path: string): void {
+  if (typeof value === "bigint") {
+    requireSignedInt64(value, path);
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) =>
+      validateProjectedInt64s(entry, `${path}[${index}]`),
+    );
+    return;
+  }
+  if (typeof value !== "object" || value === null) return;
+  for (const [key, entry] of Object.entries(value)) {
+    validateProjectedInt64s(entry, path === "" ? key : `${path}.${key}`);
+  }
+}
+
+function validateProjectedDocuments(
+  docs: readonly Record<string, unknown>[],
+): void {
+  docs.forEach((document, index) =>
+    validateProjectedInt64s(document, `projection[${index}]`),
+  );
+}
+
 /**
  * Project a whole blob. Pure — no ctx, no writes — so the dry run, the write
  * and the verification all reason about one identical list of documents.
@@ -1151,7 +1269,7 @@ export function projectFile(
       return null;
     }
     const raw = data as Record<string, unknown>;
-    return {
+    const projected = {
       rows: [raw],
       docs: [
         projectAtomicDocument(
@@ -1165,6 +1283,8 @@ export function projectFile(
         ),
       ],
     };
+    validateProjectedDocuments(projected.docs);
+    return projected;
   }
 
   const rows =
@@ -1187,6 +1307,7 @@ export function projectFile(
     });
   });
 
+  validateProjectedDocuments(docs);
   return { rows, docs };
 }
 
