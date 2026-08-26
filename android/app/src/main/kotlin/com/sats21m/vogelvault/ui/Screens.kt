@@ -103,7 +103,7 @@ private data class ScreenCollections(
 
 internal const val BITCOIN_UNIT_TOGGLE_TEST_TAG = "bitcoin-unit-toggle"
 
-private data class DashboardProjection(
+internal data class DashboardProjection(
     val activity: List<Transaction>,
     val accounts: List<BtcAccount>,
     val balance: BtcBalance?,
@@ -776,18 +776,27 @@ private fun VaultLazyListScope.dashboard(
 
 internal data class DashboardAward(val label: String, val earned: Boolean, val detail: String)
 
-private fun dashboardAwards(
+internal fun dashboardAwards(
     state: VaultUiState,
     projection: DashboardProjection,
 ): List<DashboardAward> {
-    val balance = projection.balance
+    val balance = projection.balance.takeIf {
+        state.data.btcBalance.status == Freshness.LIVE ||
+            state.data.btcBalance.status == Freshness.STALE
+    }
     val custodyRate = balance?.let {
         Money.basisPoints(it.selfCustodySats, it.totalSats)
     } ?: 0
-    val budget = state.data.budget.value
+    val tasksTrusted = state.data.todos.status == Freshness.LIVE ||
+        state.data.todos.status == Freshness.STALE ||
+        state.data.todos.status == Freshness.EMPTY
+    val budget = state.data.budget.value.takeIf {
+        state.data.budget.status == Freshness.LIVE ||
+            state.data.budget.status == Freshness.STALE
+    }
     return listOf(
         DashboardAward("Keys in hand", balance != null && custodyRate >= 5_000, "At least half the stack is self-custodied"),
-        DashboardAward("Ledger closer", !state.data.todos.suppressFigures && projection.openTodos == 0, "No open tasks in this profile"),
+        DashboardAward("Ledger closer", tasksTrusted && projection.openTodos == 0, "No open tasks in this profile"),
         DashboardAward(
             "Within plan",
             budget != null && budget.remainingCents?.let { it >= 0L } == true,

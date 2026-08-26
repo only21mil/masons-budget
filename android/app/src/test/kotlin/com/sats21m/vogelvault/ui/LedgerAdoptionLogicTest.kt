@@ -75,6 +75,39 @@ class LedgerAdoptionLogicTest {
     }
 
     @Test
+    fun `awards never treat demo or failed slices as earned milestones`() {
+        fun projection(state: VaultUiState) = DashboardProjection(
+            activity = emptyList(),
+            accounts = emptyList(),
+            balance = state.data.btcBalance.value,
+            incomeEntries = emptyList(),
+            spendCents = null,
+            incomeCents = null,
+            openTodos = 0,
+        )
+
+        val demo = VaultUiState(
+            activeProfile = FamilyMember.VICTOR,
+            data = Fixtures.envelope(FamilyMember.VICTOR, Freshness.DEMO),
+        )
+        assertTrue(dashboardAwards(demo, projection(demo)).none(DashboardAward::earned))
+
+        val failedData = Fixtures.envelope(FamilyMember.VICTOR, Freshness.ERROR)
+        val failed = VaultUiState(activeProfile = FamilyMember.VICTOR, data = failedData)
+        assertTrue(dashboardAwards(failed, projection(failed)).none(DashboardAward::earned))
+
+        val live = VaultUiState(
+            activeProfile = FamilyMember.VICTOR,
+            data = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE),
+        )
+        assertTrue(
+            dashboardAwards(live, projection(live))
+                .single { it.label == "Ledger closer" }
+                .earned,
+        )
+    }
+
+    @Test
     fun `Today money out includes adult rows and bill pay fees while completed tasks remain in list`() {
         val fixture = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
         val billPay = BtcBillPay(
