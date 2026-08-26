@@ -645,7 +645,6 @@ function ExportPage() {
 
 function SettingsPage() {
   const {
-    biometricUnlockEnabled,
     budgetAlertsEnabled,
     data,
     displayUnit,
@@ -653,7 +652,6 @@ function SettingsPage() {
     navigate,
     phosphorEnabled,
     scanlinesEnabled,
-    setBiometricUnlockEnabled,
     setBudgetAlertsEnabled,
     setDisplayUnit,
     setLedgerTheme,
@@ -735,9 +733,10 @@ function SettingsPage() {
             />
             <SettingsToggle
               label="Biometric unlock"
-              hint="Require the operating-system unlock boundary when available."
-              enabled={biometricUnlockEnabled}
-              onChange={setBiometricUnlockEnabled}
+              hint="Unavailable on Linux. Profile switching does not perform an operating-system authentication check."
+              enabled={false}
+              disabled
+              onChange={() => {}}
             />
           </div>
         </Panel>
@@ -797,11 +796,13 @@ function SettingsPage() {
 }
 
 function SettingsToggle({
+  disabled = false,
   enabled,
   hint,
   label,
   onChange,
 }: {
+  readonly disabled?: boolean
   readonly enabled: boolean
   readonly hint: string
   readonly label: string
@@ -818,7 +819,9 @@ function SettingsToggle({
         className="vv-toggle"
         role="switch"
         aria-checked={enabled}
+        aria-disabled={disabled}
         aria-label={label}
+        disabled={disabled}
         onClick={() => onChange(!enabled)}
       >
         <span />

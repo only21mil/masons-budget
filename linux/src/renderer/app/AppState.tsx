@@ -55,7 +55,7 @@ const LEDGER_THEME_STORAGE_KEY = "vogel-vault.ledger-theme"
 const SCANLINES_STORAGE_KEY = "vogel-vault.scanlines"
 const PHOSPHOR_STORAGE_KEY = "vogel-vault.phosphor"
 const BUDGET_ALERTS_STORAGE_KEY = "vogel-vault.budget-alerts"
-const BIOMETRIC_STORAGE_KEY = "vogel-vault.biometric-unlock"
+const LEGACY_BIOMETRIC_STORAGE_KEY = "vogel-vault.biometric-unlock"
 
 interface AppStateValue {
   readonly activeProfile: FamilyMember
@@ -85,8 +85,6 @@ interface AppStateValue {
   readonly setPhosphorEnabled: (enabled: boolean) => void
   readonly budgetAlertsEnabled: boolean
   readonly setBudgetAlertsEnabled: (enabled: boolean) => void
-  readonly biometricUnlockEnabled: boolean
-  readonly setBiometricUnlockEnabled: (enabled: boolean) => void
   readonly data: FixtureEnvelope
   /** Finance/quote rows are remote-only and never synthesized from QA fixtures. */
   readonly financeModel: LinuxFinanceReadModel
@@ -177,9 +175,6 @@ export function AppStateProvider({
   const [budgetAlertsEnabled, setStoredBudgetAlertsEnabled] = useState(
     () => readBooleanPreference(BUDGET_ALERTS_STORAGE_KEY, true),
   )
-  const [biometricUnlockEnabled, setStoredBiometricUnlockEnabled] = useState(
-    () => readBooleanPreference(BIOMETRIC_STORAGE_KEY, true),
-  )
   const [remoteData, setRemoteData] = useState<{
     readonly profile: FamilyMember
     readonly data: FixtureEnvelope
@@ -260,9 +255,16 @@ export function AppStateProvider({
     setStoredBudgetAlertsEnabled(enabled)
     writePreference(BUDGET_ALERTS_STORAGE_KEY, String(enabled))
   }, [])
-  const setBiometricUnlockEnabled = useCallback((enabled: boolean) => {
-    setStoredBiometricUnlockEnabled(enabled)
-    writePreference(BIOMETRIC_STORAGE_KEY, String(enabled))
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    try {
+      // Electron has no supported Linux OS-auth API. A legacy renderer preference
+      // must never survive as apparent authority for profile switching.
+      window.localStorage.removeItem(LEGACY_BIOMETRIC_STORAGE_KEY)
+    } catch {
+      // Blocked storage is already non-authoritative, so there is nothing to do.
+    }
   }, [])
 
   const switchProfile = useCallback(
@@ -572,8 +574,6 @@ export function AppStateProvider({
       setPhosphorEnabled,
       budgetAlertsEnabled,
       setBudgetAlertsEnabled,
-      biometricUnlockEnabled,
-      setBiometricUnlockEnabled,
       data,
       financeModel,
       dataOrigin,
@@ -606,8 +606,6 @@ export function AppStateProvider({
       setPhosphorEnabled,
       budgetAlertsEnabled,
       setBudgetAlertsEnabled,
-      biometricUnlockEnabled,
-      setBiometricUnlockEnabled,
       data,
       financeModel,
       dataOrigin,
