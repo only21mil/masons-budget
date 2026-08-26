@@ -1261,7 +1261,6 @@
 }
 
 .vv-task-buckets,
-.vv-awards-grid,
 .vv-family-cards {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1269,8 +1268,7 @@
   margin-bottom: 20px;
 }
 
-.vv-task-bucket__count,
-.vv-award strong {
+.vv-task-bucket__count {
   color: var(--vv-ledger-bitcoin);
   font-size: 28px;
   font-weight: 500;
@@ -1407,14 +1405,53 @@
   transform: translateX(18px);
 }
 
-.vv-award .vv-panel__body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.vv-awards-list {
+  display: grid;
 }
 
-.vv-award .vv-icon {
+.vv-award-row {
+  display: grid;
+  min-height: 64px;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px var(--vv-ledger-rule-style) var(--vv-ledger-rule-subtle);
+}
+
+.vv-award-row:last-child {
+  border-bottom: 0;
+}
+
+.vv-award-row__icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: var(--vv-ledger-radius-card);
+  background: var(--vv-ledger-panel-raised);
+  color: var(--vv-ledger-ink-meta);
+}
+
+.vv-award-row__icon--earned {
+  background: var(--vv-ledger-bitcoin-soft);
   color: var(--vv-ledger-bitcoin);
+}
+
+.vv-award-row strong,
+.vv-award-row small {
+  display: block;
+}
+
+.vv-award-row strong {
+  font-size: var(--vv-ledger-row-text-size);
+  font-weight: 600;
+}
+
+.vv-award-row small {
+  margin-top: 3px;
+  color: var(--vv-ledger-ink-meta);
+  font-size: var(--vv-ledger-text-meta);
 }
 
 .vv-more-list {
@@ -1552,7 +1589,6 @@
 
 @media (max-width: 1100px) {
   .vv-task-buckets,
-  .vv-awards-grid,
   .vv-family-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

@@ -1155,43 +1155,127 @@ function LockScreenPage() {
 
 // ── Awards / More ───────────────────────────────────────────────────────────
 
+type LedgerPageState = "empty" | "error" | "loading" | "stale"
+
+function combinedLedgerState(statuses: readonly Freshness[]): LedgerPageState | null {
+  if (statuses.includes("error")) return "error"
+  if (statuses.includes("loading")) return "loading"
+  if (statuses.includes("stale")) return "stale"
+  if (statuses.every((status) => status === "empty")) return "empty"
+  return null
+}
+
+export interface LedgerAward {
+  readonly title: string
+  readonly detail: string
+  readonly earned: boolean
+}
+
+export function ledgerAwards(
+  transactionCount: number,
+  bitcoinBuyCount: number,
+  completedTaskCount: number,
+): readonly LedgerAward[] {
+  return [
+    {
+      title: "First entry",
+      detail: "Record one ledger transaction",
+      earned: transactionCount > 0,
+    },
+    {
+      title: "Stacking",
+      detail: "Log a Bitcoin buy",
+      earned: bitcoinBuyCount > 0,
+    },
+    {
+      title: "Clear the board",
+      detail: "Complete a task",
+      earned: completedTaskCount > 0,
+    },
+    {
+      title: "Ten clean closes",
+      detail: "Complete ten tasks",
+      earned: completedTaskCount >= 10,
+    },
+  ]
+}
+
+export function moreCountLabel(count: number): string {
+  if (count <= 0) return ""
+  return count > 999 ? "999+" : String(count)
+}
+
+function readableCount(status: Freshness, count: number): string {
+  if (status === "error" || status === "loading" || status === "stale") return SUPPRESSED
+  return moreCountLabel(count)
+}
+
+function countValueLabel(status: Freshness, count: number, label: string): string {
+  if (status === "error" || status === "loading" || status === "stale") {
+    return `${label} unavailable`
+  }
+  return `${count} ${label}`
+}
+
 function AwardsPage() {
   const { activeProfile, data } = useAppState()
   const tasks = data.todos.value.filter((todo) => todo.owner === activeProfile)
-  const accounts = data.btcBalanceDocument.value?.accounts ?? []
-  const status = data.todos.status
+  const transactions = visibleTo(activeProfile, data.transactions.value)
+  const buys = visibleTo(activeProfile, data.btcBuys.value)
+  const status = combinedLedgerState([
+    data.transactions.status,
+    data.btcBuys.status,
+    data.todos.status,
+  ])
 
-  if (status === "loading" || status === "error" || status === "empty" || status === "stale") {
+  if (status) {
     return (
       <>
-        <PageHeader title="Awards" subtitle="Recorded milestones only" />
-        <StateBlock state={status} detail="Awards wait for the scoped task ledger to load." />
+        <PageHeader title="Awards" subtitle="Ledger progress" />
+        <StateBlock
+          state={status}
+          detail="Awards wait for the scoped transaction, Bitcoin buy, and task ledgers."
+        />
       </>
     )
   }
 
-  const milestones = [
-    { label: "Completed tasks", value: tasks.filter((todo) => todo.done).length },
-    { label: "Bitcoin accounts", value: accounts.length },
-    { label: "Self-custody accounts", value: accounts.filter((account) => account.custody === "self_custody").length },
-  ]
+  const awards = ledgerAwards(
+    transactions.length,
+    buys.length,
+    tasks.filter((todo) => todo.done).length,
+  )
+  const earned = awards.filter((award) => award.earned).length
 
   return (
     <>
-      <PageHeader title="Awards" subtitle="Milestones from this profile's ledger" />
-      <div className="vv-awards-grid">
-        {milestones.map((milestone) => (
-          <Panel key={milestone.label} className="vv-award">
-            <IconGlyph name="sparkles" size={18} />
-            <strong className="vv-num">{milestone.value}</strong>
-            <span>{milestone.label}</span>
-          </Panel>
-        ))}
-      </div>
+      <PageHeader
+        title="Awards"
+        subtitle="Ledger progress"
+        actions={<Badge tone="accent">{earned}/{awards.length} earned</Badge>}
+      />
+      <Panel flush>
+        <div className="vv-awards-list">
+          {awards.map((award) => (
+            <div key={award.title} className="vv-award-row">
+              <span className={award.earned ? "vv-award-row__icon vv-award-row__icon--earned" : "vv-award-row__icon"}>
+                <IconGlyph name="sparkles" size={18} />
+              </span>
+              <span>
+                <strong>{award.title}</strong>
+                <small>{award.detail}</small>
+              </span>
+              <Badge tone={award.earned ? "positive" : "neutral"}>
+                {award.earned ? "Earned" : "Locked"}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      </Panel>
       <StatusBanner
         tone="info"
         title="No inferred badges"
-        detail="This screen reports recorded milestones and never guesses a threshold from missing data."
+        detail="Every award comes from a recorded ledger row. Missing data never unlocks one."
       />
     </>
   )
@@ -1199,58 +1283,111 @@ function AwardsPage() {
 
 function MorePage() {
   const { activeProfile, data, financeModel, navigate } = useAppState()
-  const status = data.transactions.status
-  if (status === "loading" || status === "error" || status === "empty" || status === "stale") {
-    return (
-      <>
-        <PageHeader title="More" subtitle="Everything else in the household" />
-        <StateBlock state={status} detail="Scoped counts are unavailable until the ledger read completes." />
-      </>
-    )
-  }
-
-  const buys = visibleTo(activeProfile, data.btcBuys.value).length
-  const billPays = visibleTo(activeProfile, data.billPays.value).length
+  const transactionCount = visibleTo(activeProfile, data.transactions.value).length
+  const buyCount = visibleTo(activeProfile, data.btcBuys.value).length
+  const billPayCount = visibleTo(activeProfile, data.billPays.value).length
   const tasks = data.todos.value.filter((todo) => todo.owner === activeProfile)
   const today = new Date(data.generatedAt).toISOString().slice(0, 10)
   const todayCount = tasks.filter((todo) => todo.due !== null && todo.due <= today).length
   const openTasks = tasks.filter((todo) => !todo.done).length
+  const completedTasks = tasks.filter((todo) => todo.done).length
+  const awardCount = ledgerAwards(transactionCount, buyCount, completedTasks)
+    .filter((award) => award.earned).length
+  const awardStatus = combinedLedgerState([
+    data.transactions.status,
+    data.btcBuys.status,
+    data.todos.status,
+  ]) ?? "live"
   const retirement = financeModel.finance.status === "live"
     ? sum(financeModel.finance.value.accounts
         .filter((account) => sharesNetWorthWith(activeProfile, account.owner))
         .map((account) => account.totalValueCents))
     : null
-  const bitcoin = data.btcBalanceDocument.value
+  const bitcoin = data.btcBalanceDocument.status !== "error" &&
+    data.btcBalanceDocument.status !== "loading" &&
+    data.btcBalanceDocument.status !== "stale" &&
+    data.btcBalanceDocument.value
     ? fiatCentsOf(data.btcBalanceDocument.value.totals)
     : null
   const netWorth = retirement !== null && bitcoin !== null ? retirement + bitcoin : null
   const currency = (value: bigint | null) => value === null ? "—" : `$${formatMinorUnits(value, 2)}`
+  const state = combinedLedgerState([
+    data.transactions.status,
+    data.btcBuys.status,
+    data.billPays.status,
+    data.btcBalanceDocument.status,
+    data.todos.status,
+    financeModel.finance.status,
+  ])
   const rows: ReadonlyArray<{
     readonly icon: IconName
     readonly label: string
     readonly route: string
     readonly value: string
+    readonly valueLabel?: string
   }> = [
-    { icon: "wallet", label: "BTC Buys", route: "bitcoin-buys", value: String(buys) },
-    { icon: "receipt", label: "BTC Bill Pays", route: "bills", value: String(billPays) },
+    {
+      icon: "wallet",
+      label: "BTC Buys",
+      route: "bitcoin-buys",
+      value: readableCount(data.btcBuys.status, buyCount),
+      valueLabel: countValueLabel(data.btcBuys.status, buyCount, "Bitcoin buys"),
+    },
+    {
+      icon: "receipt",
+      label: "BTC Bill Pays",
+      route: "bills",
+      value: readableCount(data.billPays.status, billPayCount),
+      valueLabel: countValueLabel(data.billPays.status, billPayCount, "Bitcoin bill pays"),
+    },
     { icon: "bank", label: "Net Worth", route: "net-worth", value: currency(netWorth) },
     { icon: "retirement", label: "Retirement", route: "net-worth", value: currency(retirement) },
-    { icon: "today", label: "Today", route: "today", value: String(todayCount) },
-    { icon: "check", label: "Tasks", route: "tasks", value: String(openTasks) },
-    { icon: "sparkles", label: "Awards", route: "awards", value: String(tasks.filter((todo) => todo.done).length) },
-    { icon: "users", label: "Family", route: "family", value: String(FAMILY_MEMBERS.length) },
+    {
+      icon: "today",
+      label: "Today",
+      route: "today",
+      value: readableCount(data.todos.status, todayCount),
+      valueLabel: countValueLabel(data.todos.status, todayCount, "tasks due today or overdue"),
+    },
+    {
+      icon: "check",
+      label: "Tasks",
+      route: "tasks",
+      value: readableCount(data.todos.status, openTasks),
+      valueLabel: countValueLabel(data.todos.status, openTasks, "open tasks"),
+    },
+    {
+      icon: "sparkles",
+      label: "Awards",
+      route: "awards",
+      value: readableCount(awardStatus, awardCount),
+      valueLabel: countValueLabel(awardStatus, awardCount, "earned awards"),
+    },
+    {
+      icon: "users",
+      label: "Family",
+      route: "family",
+      value: moreCountLabel(FAMILY_MEMBERS.length),
+      valueLabel: `${FAMILY_MEMBERS.length} family profiles`,
+    },
     { icon: "settings", label: "Settings", route: "settings", value: "" },
   ]
 
   return (
     <>
       <PageHeader title="More" subtitle="Everything else in the household" />
+      {state ? (
+        <StateBlock
+          state={state}
+          detail="Navigation remains available. A dash replaces each count that cannot be read safely."
+        />
+      ) : null}
       <div className="vv-more-list">
         {rows.map((row) => (
           <button key={`${row.label}-${row.route}`} type="button" onClick={() => navigate(row.route)}>
             <IconGlyph name={row.icon} size={18} />
             <span>{row.label}</span>
-            <strong className="vv-num">{row.value}</strong>
+            <strong className="vv-num" aria-label={row.valueLabel}>{row.value}</strong>
             <IconGlyph name="chevron-right" size={14} />
           </button>
         ))}

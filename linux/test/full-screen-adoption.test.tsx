@@ -9,6 +9,10 @@ import { test } from "vitest"
 import { AppShell } from "../src/renderer/components/AppShell.tsx"
 import { PaymentRailGlyph } from "../src/renderer/components/LedgerFoundations.tsx"
 import {
+  ledgerAwards,
+  moreCountLabel,
+} from "../src/renderer/pages/admin/index.tsx"
+import {
   activityMatchesFilter,
   paymentRailForCard,
 } from "../src/renderer/pages/finance/index.tsx"
@@ -135,4 +139,24 @@ test("Family, Settings, onboarding, Awards, Tasks, and More close the packet gap
     assert.match(more, new RegExp(copy))
   }
   assert.doesNotMatch(more, /Export/)
+
+  assert.equal(moreCountLabel(0), "")
+  assert.equal(moreCountLabel(8), "8")
+  assert.equal(moreCountLabel(1_000), "999+")
+
+  const awards = ledgerAwards(1, 1, 1)
+  assert.deepEqual(
+    awards.map(({ title, earned }) => [title, earned]),
+    [
+      ["First entry", true],
+      ["Stacking", true],
+      ["Clear the board", true],
+      ["Ten clean closes", false],
+    ],
+  )
+  const awardMarkup = renderRoute("awards")
+  assert.match(awardMarkup, /First entry/)
+  assert.match(awardMarkup, /Ten clean closes/)
+  assert.match(awardMarkup, /Earned/)
+  assert.match(awardMarkup, /Locked/)
 })
