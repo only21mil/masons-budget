@@ -69,12 +69,12 @@ struct AddTransactionView: View {
 
     @Query private var categories: [BudgetCategory]
 
-    @State private var txType: TxType = .spend
+    @State private var txType: TxType
     @State private var inputUnit: DisplayUnit = .usd
     @State private var amount = ""
     @State private var selectedCategory = ""
     /// Selected payment-source wire (TransactionSourceCatalog), never a display label.
-    @State private var method: String = TransactionSourceCatalog.defaultSource(for: .spend)
+    @State private var method: String
     /// Bitcoin account for a Bitcoin-native method. Synced BTCAccounts are
     /// queried; a Bitcoin-native save requires a selection.
     @State private var bitcoinAccountKey: String?
@@ -99,7 +99,10 @@ struct AddTransactionView: View {
         BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
     }
 
-    init() {
+    init(initialType: TransactionActivityType = .spend) {
+        _txType = State(initialValue: TxType(activity: initialType))
+        _method = State(initialValue: TransactionSourceCatalog.defaultSource(for: initialType))
+
         let storedOwner = UserDefaults.standard.string(forKey: "selected_family_member")
             ?? FamilyMember.victor.rawValue
 
@@ -144,6 +147,15 @@ struct AddTransactionView: View {
         /// Owned-wallet movement requires the dedicated atomic ledger flow.
         /// Keep the legacy case decodable, but never offer it as budget spend.
         static let selectableCases: [TxType] = [.spend, .income, .btcBuy]
+
+        init(activity: TransactionActivityType) {
+            switch activity {
+            case .spend, .btcBillPay: self = .spend
+            case .income: self = .income
+            case .transfer: self = .transfer
+            case .btcBuy: self = .btcBuy
+            }
+        }
     }
 
     private var numericAmount: Decimal {

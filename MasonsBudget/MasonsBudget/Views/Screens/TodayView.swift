@@ -9,6 +9,8 @@ struct TodayView: View {
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
     @Query(sort: \TodoItem.priority, order: .reverse) private var allTodos: [TodoItem]
+    @Query(sort: \Transaction.date, order: .reverse) private var allTransactions: [Transaction]
+    @Query(sort: \BTCBillPay.date, order: .reverse) private var allBillPays: [BTCBillPay]
 
     @State private var showingDraft = false
 
@@ -16,8 +18,12 @@ struct TodayView: View {
         FamilyMember(rawValue: selectedMemberRaw) ?? .victor
     }
 
+    private var visibleTodos: [TodoItem] {
+        allTodos.filter { activeMember.canAccessTodo(ownedBy: $0.ownerMember) }
+    }
+
     private var myTodos: [TodoItem] {
-        allTodos.filter { activeMember.canAccessTodo(ownedBy: $0.ownerMember) && !$0.isDone }
+        visibleTodos.filter { !$0.isDone }
     }
 
     private var todayTodos: [TodoItem] {
@@ -48,6 +54,22 @@ struct TodayView: View {
         }
     }
 
+    private var completedToday: [TodoItem] {
+        visibleTodos.filter { Self.wasCompletedToday($0, now: Date(), calendar: .current) }
+    }
+
+    private var moneyOutToday: Result<Int64, Error> {
+        Result {
+            try MoneyOutTodayService.deriveCents(
+                viewer: activeMember,
+                now: Date(),
+                calendar: .current,
+                transactions: allTransactions,
+                billPays: allBillPays
+            )
+        }
+    }
+
     private var todayEyebrow: String {
         let df = DateFormatter()
         df.dateFormat = "EEEE · MMM d"
@@ -59,8 +81,17 @@ struct TodayView: View {
             VStack(spacing: 0) {
                 ScreenHeader(title: "Today", eyebrow: todayEyebrow)
 
+                moneyOutCard
+                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.bottom, AppLayout.cardSpacing)
+
                 tasksSection
                     .padding(.bottom, AppLayout.cardSpacing)
+
+                if !completedToday.isEmpty {
+                    completedSection
+                        .padding(.bottom, AppLayout.cardSpacing)
+                }
 
                 if !shortTermTodos.isEmpty {
                     shortTermSection
@@ -79,6 +110,46 @@ struct TodayView: View {
     static func isDueTodayOrOverdue(_ dueDate: Date?, now: Date = Date(), calendar: Calendar = .current) -> Bool {
         guard let dueDate else { return false }
         return calendar.startOfDay(for: dueDate) <= calendar.startOfDay(for: now)
+    }
+
+    static func wasCompletedToday(_ todo: TodoItem, now: Date = Date(), calendar: Calendar = .current) -> Bool {
+        guard todo.isDone else { return false }
+        if let completedAt = todo.completedAt {
+            return calendar.isDate(completedAt, inSameDayAs: now)
+        }
+        return todo.dueDate.map { calendar.isDate($0, inSameDayAs: now) } ?? false
+    }
+
+    private var moneyOutCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("MONEY OUT TODAY")
+                    .font(AppFont.monoMicroStrong)
+                    .foregroundStyle(theme.textMuted)
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(AppFont.labelSmall)
+                    .foregroundStyle(theme.danger)
+            }
+
+            switch moneyOutToday {
+            case let .success(cents):
+                Text(AppFormatter.formatCurrency(decimalMinorUnits(cents, scale: 2)))
+                    .font(AppFont.largeNumberMono)
+                    .foregroundStyle(theme.text)
+                Text("Transactions plus eligible bill-pay principal and exact manual fees")
+                    .font(AppFont.smallRegular)
+                    .foregroundStyle(theme.textMuted)
+            case .failure:
+                Text("UNAVAILABLE")
+                    .font(AppFont.largeNumberMono)
+                    .foregroundStyle(theme.warn)
+                Text("An exact-cent input could not be verified.")
+                    .font(AppFont.smallRegular)
+                    .foregroundStyle(theme.textMuted)
+            }
+        }
+        .glassCard(padding: 16, radius: AppLayout.radiusMedium)
     }
 
     // MARK: - Today Tasks
@@ -139,6 +210,33 @@ struct TodayView: View {
                 ForEach(Array(shortTermTodos.enumerated()), id: \.element.id) { idx, todo in
                     TaskRowView(todo: todo)
                     if idx < shortTermTodos.count - 1 {
+                        Hairline(indent: 48)
+                    }
+                }
+            }
+            .glassCard(padding: 0)
+            .padding(.horizontal, AppLayout.sectionPadding)
+        }
+    }
+
+    private var completedSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("COMPLETED TODAY")
+                    .font(AppFont.labelSmallStrong)
+                    .tracking(AppFont.sectionTracking)
+                    .foregroundStyle(theme.textMuted)
+                Spacer()
+                Text("\(completedToday.count) done")
+                    .font(AppFont.labelSmallRegular)
+                    .foregroundStyle(theme.success)
+            }
+            .padding(.horizontal, AppLayout.sectionPadding + 4)
+
+            VStack(spacing: 0) {
+                ForEach(Array(completedToday.enumerated()), id: \.element.id) { idx, todo in
+                    TaskRowView(todo: todo)
+                    if idx < completedToday.count - 1 {
                         Hairline(indent: 48)
                     }
                 }

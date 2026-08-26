@@ -27,8 +27,16 @@ struct ActivityView: View {
         case all = "All"
         case income = "Income"
         case spends = "Spends"
-        case lightning = "Lightning"
-        case onChain = "On-chain"
+        case lightning = "Bolt"
+        case onChain = "Chain"
+
+        var rail: PaymentRailPresentation? {
+            switch self {
+            case .lightning: .bolt
+            case .onChain: .chain
+            default: nil
+            }
+        }
     }
 
     private var filtered: [Transaction] {
@@ -83,7 +91,7 @@ struct ActivityView: View {
                 HStack(alignment: .top) {
                     ScreenHeader(
                         title: "Activity",
-                        eyebrow: "Lightning + On-chain",
+                        eyebrow: "Bolt + Chain",
                     )
                     Spacer()
                 }
