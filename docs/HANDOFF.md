@@ -1,5 +1,10 @@
 # The Vogel Vault — build handoff
 
+> Redesign work starts with [`Design/FOUNDATIONS.md`](../Design/FOUNDATIONS.md).
+> It is the canonical cross-client source for accepted tokens, asset geometry,
+> font files, provenance, and proposed-versus-accepted status. Prototype HTML
+> and runtime are evidence only, never production code.
+
 **Tree audit: 2026-07-29 at `62c41bb` (`main` after the Wave 1b merge).** This
 is a source-tree handoff, not a fresh production
 probe. Production observations below are explicitly dated. Inspect current
