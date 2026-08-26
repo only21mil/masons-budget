@@ -61,7 +61,7 @@ final class TodoItem {
         self.completedAt = completedAt
         self.sourceFile = sourceFile
         self.updatedAtMs = updatedAtMs
-        self.hasServerAuthority = hasServerAuthority ?? createdBy != "app"
+        self.hasServerAuthority = hasServerAuthority ?? (createdBy != "app")
     }
 
     var ownerMember: FamilyMember {
