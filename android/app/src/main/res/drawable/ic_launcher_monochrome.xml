@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Themed-icon layer (Android 13+). All paths are positive paint, so the whole
-  mark survives the launcher
-  tint as a single-colour silhouette with natural alpha counters.
+  Sovereign Horizon monochrome layer (Android 13+ themed icons).
+  Canonical: Design/assets/horizon-monochrome.svg at ae9cf05. Same accepted
+  geometry as the foreground, but the rule opacity ramp is removed: all paint
+  is solid, so the launcher tint carries the whole mark as one silhouette.
+  Multi-file: applied to all strokes and rule fills.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -11,28 +13,39 @@
     android:viewportHeight="108"
     android:tint="#FFFFFF">
 
+    <!-- bitcoin mark: body -->
     <path
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="6"
-        android:strokeLineCap="butt"
+        android:strokeWidth="4.894"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
         android:fillColor="@android:color/transparent"
-        android:pathData="M42,30 L42,78" />
+        android:pathData="M 46.953 29.185 h 8.222 c 3.328 0.000 5.873 2.153 5.873 5.285 c 0.000 2.740 -1.958 4.698 -4.698 5.285 c 3.328 0.392 5.677 2.545 5.677 5.677 c 0.000 3.328 -2.740 5.677 -6.460 5.677 H 46.953 V 29.185 z" />
+    <!-- bitcoin mark: crossbar -->
     <path
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="6"
-        android:strokeLineCap="butt"
+        android:strokeWidth="4.894"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
         android:fillColor="@android:color/transparent"
-        android:pathData="M42,33 L53,33 A10.5,10.5 0 1,1 53,54 L42,54" />
+        android:pathData="M 46.953 39.755 h 9.005" />
+    <!-- bitcoin mark: serifs -->
     <path
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="6"
-        android:strokeLineCap="butt"
+        android:strokeWidth="4.894"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
         android:fillColor="@android:color/transparent"
-        android:pathData="M42,54 L54,54 A10.5,10.5 0 1,1 54,75 L42,75" />
+        android:pathData="M 50.085 23.704 v 5.481 M 50.085 55.415 v 5.481 M 55.174 23.704 v 5.481 M 55.174 55.415 v 5.481" />
+
+    <!-- horizon rules, edge to edge, ramp removed (solid) -->
     <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="3.4"
-        android:strokeLineCap="butt"
-        android:fillColor="@android:color/transparent"
-        android:pathData="M49,25.5 L49,31.5 M55,25.5 L55,31.5 M49,73.5 L49,79.5 M55,73.5 L55,79.5" />
+        android:fillColor="#FFFFFF"
+        android:pathData="M0,67.95h108v7.2h-108z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M0,79.2h108v5.625h-108z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M0,88.875h108v4.275h-108z" />
 </vector>

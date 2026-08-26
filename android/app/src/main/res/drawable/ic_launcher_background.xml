@@ -1,16 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Vogel Vault launcher field — ported from the Apple app icon (Victor, 2026-08-22:
-  "we are going to use the icon from the apple app").
-
-  Apple ships a warm near-black field, sampled #2A1D19 at the top corners falling
-  to #070604 at the bottom. That is a gradient on a 1024px raster. Android draws
-  this at 108dp through whatever mask the launcher picks, so the gradient buys
-  banding and a visible seam at the mask edge and buys nothing else. Flattened to
-  #12100E, the warm dark the Apple field spends most of its area on.
-
-  Warm, not neutral: #12100E carries the same red bias as Apple's field, so the
-  orange mark sits on it the way it does on iOS rather than going cold.
+  Sovereign Horizon launcher field (Android 12+/13 adaptive icon).
+  Canonical: Design/FOUNDATIONS.md and Design/assets/horizon-opaque.svg at
+  budget-redesign-design-shared ae9cf05. Flat #0A0D0C, full 108-unit tile.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -19,6 +11,6 @@
     android:viewportHeight="108">
 
     <path
-        android:fillColor="#12100E"
+        android:fillColor="#0A0D0C"
         android:pathData="M0,0h108v108h-108z" />
 </vector>
