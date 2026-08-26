@@ -4,7 +4,7 @@ import SwiftUI
 // MARK: - iOS Tabs
 
 enum AppTab: String, CaseIterable, Identifiable {
-    case home, budget, tasks, vault, more
+    case home, budget, today, vault, more
 
     var id: String {
         rawValue
@@ -12,9 +12,9 @@ enum AppTab: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .home: "Home"
+        case .home: "Bitcoin"
         case .budget: "Budget"
-        case .tasks: "Tasks"
+        case .today: "Today"
         case .vault: "Vault"
         case .more: "More"
         }
@@ -24,7 +24,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         switch self {
         case .home: "bitcoinsign.circle"
         case .budget: "chart.bar.fill"
-        case .tasks: "checklist"
+        case .today: "checkmark.circle.fill"
         case .vault: "lock.shield.fill"
         case .more: "ellipsis.circle"
         }
@@ -34,8 +34,8 @@ enum AppTab: String, CaseIterable, Identifiable {
 // MARK: - macOS Sidebar Navigation
 
 enum MacNav: String, CaseIterable, Identifiable {
-    case dashboard, budget, activity, btcBuys, billPay, retirement, netWorth
-    case today, inbox, upcoming, flagged, projects, syncSetup, export
+    case dashboard, price, budget, activity, btcBuys, billPay, transfer, retirement, netWorth
+    case today, inbox, upcoming, flagged, projects, family, awards, settings, syncSetup, export
 
     var id: String {
         rawValue
@@ -43,11 +43,13 @@ enum MacNav: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .dashboard: "Dashboard"
+        case .dashboard: "Bitcoin"
+        case .price: "Price"
         case .budget: "Budget"
         case .activity: "Activity"
         case .btcBuys: "Bitcoin Buys"
         case .billPay: "Bill Pay"
+        case .transfer: "Transfer"
         case .retirement: "Retirement"
         case .netWorth: "Net Worth"
         case .today: "Today"
@@ -55,6 +57,9 @@ enum MacNav: String, CaseIterable, Identifiable {
         case .upcoming: "Upcoming"
         case .flagged: "Flagged"
         case .projects: "Projects"
+        case .family: "Family"
+        case .awards: "Awards"
+        case .settings: "Settings"
         case .syncSetup: "Sync Setup"
         case .export: "Export"
         }
@@ -63,10 +68,12 @@ enum MacNav: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .dashboard: "bitcoinsign.circle"
+        case .price: "chart.xyaxis.line"
         case .budget: "chart.bar.fill"
         case .activity: "bolt.fill"
         case .btcBuys: "bitcoinsign.circle.fill"
         case .billPay: "banknote.fill"
+        case .transfer: "arrow.left.arrow.right"
         case .retirement: "lock.shield.fill"
         case .netWorth: "target"
         case .today: "checkmark.circle"
@@ -74,14 +81,17 @@ enum MacNav: String, CaseIterable, Identifiable {
         case .upcoming: "calendar"
         case .flagged: "flag.fill"
         case .projects: "tray.fill"
+        case .family: "person.3.fill"
+        case .awards: "medal.fill"
+        case .settings: "gearshape"
         case .syncSetup: "arrow.triangle.2.circlepath"
         case .export: "square.and.arrow.up"
         }
     }
 
-    static let moneyItems: [MacNav] = [.dashboard, .budget, .activity, .btcBuys, .billPay, .retirement, .netWorth]
+    static let moneyItems: [MacNav] = [.dashboard, .price, .budget, .activity, .btcBuys, .billPay, .transfer, .retirement, .netWorth]
     static let taskItems: [MacNav] = [.today, .inbox, .upcoming, .flagged, .projects]
-    static let toolItems: [MacNav] = [.syncSetup, .export]
+    static let toolItems: [MacNav] = [.family, .awards, .settings, .syncSetup, .export]
 }
 
 // MARK: - Content View
@@ -184,6 +194,7 @@ struct ContentView: View {
                         Image(systemName: tab.icon)
                         Text(tab.label)
                     }
+                    .badge(tab == .more ? AppleMoreScreen.allCases.count : 0)
                     .tag(tab)
                 }
             }
@@ -261,11 +272,13 @@ struct ContentView: View {
         private var macDetail: some View {
             NavigationStack {
                 switch macNav ?? .dashboard {
-                case .dashboard: DashboardView()
+                case .dashboard: BitcoinOverviewView()
+                case .price: BitcoinPriceView()
                 case .budget: BudgetView()
                 case .activity: ActivityView()
                 case .btcBuys: BTCBuysView()
                 case .billPay: BTCBillPayView()
+                case .transfer: BitcoinTransferView()
                 case .retirement: RetirementView()
                 case .netWorth: NetWorthView()
                 case .today: TodayView()
@@ -273,6 +286,9 @@ struct ContentView: View {
                 case .upcoming: TaskSmartListView(filter: .upcoming)
                 case .flagged: TaskSmartListView(filter: .flagged)
                 case .projects: ProjectsView()
+                case .family: FamilyView()
+                case .awards: AwardsView()
+                case .settings: SettingsView()
                 case .syncSetup: SyncSetupView()
                 case .export: ExportView()
                 }
@@ -578,9 +594,9 @@ struct ContentView: View {
     @ViewBuilder
     private func screenForTab(_ tab: AppTab) -> some View {
         switch tab {
-        case .home: DashboardView()
+        case .home: BitcoinOverviewView()
         case .budget: BudgetView()
-        case .tasks: TasksView()
+        case .today: TodayView()
         case .vault: RetirementView()
         case .more: MoreMenuView()
         }

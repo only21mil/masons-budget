@@ -4,6 +4,7 @@ import SwiftUI
 struct CategoryDetailView: View {
     @Environment(\.theme) private var theme
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
     @Bindable var category: BudgetCategory
@@ -14,6 +15,8 @@ struct CategoryDetailView: View {
     /// Cause-specific feedback for the budget write. Nothing reported the outcome
     /// of this save at all before: a rejected budget looked identical to a saved one.
     @StateObject private var writeFeedback = WriteFeedbackStore()
+    @StateObject private var deletion = CategoryDeletionStore()
+    @State private var showDeleteConfirmation = false
 
     init(category: BudgetCategory, selectedMonth: Date) {
         self.category = category
@@ -40,6 +43,11 @@ struct CategoryDetailView: View {
             category: category.name,
             selectedMonth: selectedMonth,
         )
+    }
+
+    private var canDelete: Bool {
+        activeMember != .maddox &&
+            Calendar.current.isDate(selectedMonth, equalTo: Date(), toGranularity: .month)
     }
 
     static func transactions(
@@ -138,6 +146,30 @@ struct CategoryDetailView: View {
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
                 .padding(.horizontal, AppLayout.sectionPadding)
+
+                if canDelete {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if let message = deletion.message {
+                            Text(message)
+                                .font(AppFont.labelSmall)
+                                .foregroundStyle(theme.danger)
+                        }
+                        Button(role: .destructive) {
+                            showDeleteConfirmation = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "trash")
+                                Text(deletion.isDeleting ? "DELETING" : "DELETE CATEGORY")
+                                    .font(AppFont.monoCaptionStrong)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(deletion.isDeleting)
+                    }
+                    .padding(.horizontal, AppLayout.sectionPadding)
+                }
             }
             .padding(.bottom, 100)
         }
@@ -152,6 +184,22 @@ struct CategoryDetailView: View {
                         .font(AppFont.bodyBold)
                         .foregroundStyle(theme.accent)
                         .disabled(writeFeedback.isSaving)
+                }
+            }
+            .alert("Delete \(category.name)?", isPresented: $showDeleteConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete", role: .destructive) { deleteCategory() }
+            } message: {
+                Text("This deletes the current canonical budget category after its server revision is verified.")
+            }
+            .onChange(of: deletion.accepted) { _, accepted in
+                guard accepted else { return }
+                modelContext.delete(category)
+                do {
+                    try modelContext.save()
+                    dismiss()
+                } catch {
+                    deletion.failLocal(error)
                 }
             }
     }
@@ -184,10 +232,72 @@ struct CategoryDetailView: View {
         }
     }
 
+    private func deleteCategory() {
+        deletion.begin()
+        let viewer = activeMember
+        let categoryName = category.name
+        Task {
+            do {
+                let client = ConvexClient(deploymentURL: ConvexConfig.deploymentURL)
+                let document = try await ConvexRowReader(client: client).budget(viewer: viewer)
+                let intent = try document.categoryDeletionIntent(
+                    viewer: viewer,
+                    trustedCurrentMonth: Self.monthKey(for: Date()),
+                    categoryName: categoryName
+                )
+                AppWriteSyncService.deleteBudgetCategory(intent) { result in
+                    deletion.finish(result)
+                }
+            } catch {
+                deletion.reject(error.localizedDescription)
+            }
+        }
+    }
+
+    static func monthKey(for date: Date, calendar: Calendar = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM"
+        return formatter.string(from: date)
+    }
+
     private func formatDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
         return formatter.string(from: date)
+    }
+}
+
+@MainActor
+final class CategoryDeletionStore: ObservableObject {
+    @Published private(set) var isDeleting = false
+    @Published private(set) var message: String?
+    @Published private(set) var accepted = false
+
+    func begin() {
+        isDeleting = true
+        message = nil
+        accepted = false
+    }
+
+    func finish(_ result: ConvexWriteResult) {
+        isDeleting = false
+        accepted = result.isOk
+        message = result.userMessage(operation: "Delete category")
+    }
+
+    func reject(_ text: String) {
+        isDeleting = false
+        accepted = false
+        message = text
+    }
+
+    func failLocal(_ error: Error) {
+        isDeleting = false
+        accepted = false
+        message = "Category deleted remotely, but the local copy could not be removed: \(error.localizedDescription)"
     }
 }

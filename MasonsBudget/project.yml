@@ -26,6 +26,12 @@ targets:
       - path: MasonsBudget
         excludes:
           - "**/.DS_Store"
+          - "Views/Components/AppleScreenAdoption.swift"
+          - "Views/Screens/BitcoinOverviewView.swift"
+          - "Views/Screens/FamilySettingsAwardsViews.swift"
+      - path: MasonsBudget/Views/Components/AppleScreenAdoption.swift
+      - path: MasonsBudget/Views/Screens/BitcoinOverviewView.swift
+      - path: MasonsBudget/Views/Screens/FamilySettingsAwardsViews.swift
     resources:
       - path: MasonsBudget/Resources/Assets.xcassets
       - path: MasonsBudget/Resources/Fonts
@@ -75,6 +81,12 @@ targets:
       - path: MasonsBudget
         excludes:
           - "**/.DS_Store"
+          - "Views/Components/AppleScreenAdoption.swift"
+          - "Views/Screens/BitcoinOverviewView.swift"
+          - "Views/Screens/FamilySettingsAwardsViews.swift"
+      - path: MasonsBudget/Views/Components/AppleScreenAdoption.swift
+      - path: MasonsBudget/Views/Screens/BitcoinOverviewView.swift
+      - path: MasonsBudget/Views/Screens/FamilySettingsAwardsViews.swift
     resources:
       - path: MasonsBudget/Resources/Assets.xcassets
       - path: MasonsBudget/Resources/Fonts
@@ -108,12 +120,20 @@ targets:
       - path: MasonsBudgetTests
         excludes:
           - "**/.DS_Store"
+          - "AppleScreenAdoptionTests.swift"
+      - path: MasonsBudgetTests/AppleScreenAdoptionTests.swift
       - path: MasonsBudget
         excludes:
           - "App/MasonsBudgetApp.swift"
           - "Preview Content/**"
           - "Resources/**"
           - "**/.DS_Store"
+          - "Views/Components/AppleScreenAdoption.swift"
+          - "Views/Screens/BitcoinOverviewView.swift"
+          - "Views/Screens/FamilySettingsAwardsViews.swift"
+      - path: MasonsBudget/Views/Components/AppleScreenAdoption.swift
+      - path: MasonsBudget/Views/Screens/BitcoinOverviewView.swift
+      - path: MasonsBudget/Views/Screens/FamilySettingsAwardsViews.swift
       - path: ../shared/domain/fixtures
         group: shared/domain
         createIntermediateGroups: false

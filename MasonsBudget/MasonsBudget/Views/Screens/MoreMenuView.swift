@@ -1,35 +1,107 @@
+import SwiftData
 import SwiftUI
 
 struct MoreMenuView: View {
     @Environment(\.theme) var theme
+    @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
+    @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
+    @Query private var transactions: [Transaction]
+    @Query private var todos: [TodoItem]
+    @Query private var buys: [BTCBuy]
+    @Query private var billPays: [BTCBillPay]
+
+    private var activeMember: FamilyMember {
+        FamilyMember(rawValue: selectedMemberRaw) ?? .victor
+    }
+
+    private var transactionCount: Int {
+        transactions.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }.count
+    }
+
+    private var taskCount: Int {
+        todos.filter { activeMember.canAccessTodo(ownedBy: $0.ownerMember) && !$0.isDone }.count
+    }
+
+    private var buyCount: Int {
+        buys.filter {
+            guard let owner = $0.ownerMember else { return false }
+            return activeMember.sharesNetWorth(with: owner)
+        }.count
+    }
+
+    private var billPayCount: Int {
+        billPays.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }.count
+    }
+
+    private var awardCount: Int {
+        var count = 0
+        if transactionCount > 0 { count += 1 }
+        if buyCount > 0 { count += 1 }
+        let completed = todos.filter { activeMember.canAccessTodo(ownedBy: $0.ownerMember) && $0.isDone }.count
+        if completed > 0 { count += 1 }
+        if completed >= 10 { count += 1 }
+        return count
+    }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                ScreenHeader(title: "More", eyebrow: "Explore")
+                ScreenHeader(title: "More", eyebrow: "Explore") {
+                    Text("\(AppleMoreScreen.allCases.count) ROUTES")
+                        .font(AppFont.monoMicroStrong)
+                        .foregroundStyle(theme.accent)
+                }
 
-                VStack(spacing: 0) {
+                menuSection("BITCOIN") {
+                    moreRow(icon: "chart.xyaxis.line", label: "Price", destination: BitcoinPriceView())
+                    Hairline(indent: 52)
+                    moreRow(icon: "bolt.fill", label: "Activity", count: transactionCount, destination: ActivityView())
+                    Hairline(indent: 52)
+                    moreRow(icon: "bitcoinsign.circle.fill", label: "Bitcoin Buys", count: buyCount, destination: BTCBuysView())
+                    Hairline(indent: 52)
+                    moreRow(icon: "banknote.fill", label: "Bill Pay", count: billPayCount, destination: BTCBillPayView())
+                    Hairline(indent: 52)
+                    moreRow(icon: "arrow.left.arrow.right", label: "Transfer", destination: BitcoinTransferView())
+                }
+
+                menuSection("HOUSEHOLD") {
                     moreRow(icon: "target", label: "Net Worth", destination: NetWorthView())
                     Hairline(indent: 52)
-                    moreRow(icon: "bolt.fill", label: "Activity", destination: ActivityView())
+                    moreRow(icon: "checklist", label: "Tasks", count: taskCount, destination: TasksView())
                     Hairline(indent: 52)
-                    moreRow(icon: "bitcoinsign.circle.fill", label: "Bitcoin Buys", destination: BTCBuysView())
+                    moreRow(icon: "person.3.fill", label: "Family", count: FamilyMember.allCases.count, destination: FamilyView())
                     Hairline(indent: 52)
-                    moreRow(icon: "banknote.fill", label: "Bill Pay", destination: BTCBillPayView())
+                    moreRow(icon: "medal.fill", label: "Awards", count: awardCount, destination: AwardsView())
+                }
+
+                menuSection("TOOLS") {
+                    moreRow(icon: "gearshape", label: "Settings", destination: SettingsView())
                     Hairline(indent: 52)
                     moreRow(icon: "arrow.triangle.2.circlepath", label: "Sync Setup", destination: SyncSetupView())
                     Hairline(indent: 52)
                     moreRow(icon: "square.and.arrow.up", label: "Export", destination: ExportView())
                 }
-                .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
             }
             .padding(.bottom, 100)
         }
         .background(theme.bg)
     }
 
-    private func moreRow(icon: String, label: String, destination: some View) -> some View {
+    private func menuSection(_ title: String, @ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(AppFont.sectionHeader)
+                .tracking(AppFont.sectionTracking)
+                .foregroundStyle(theme.textMuted)
+                .padding(.horizontal, AppLayout.sectionPadding + 4)
+            VStack(spacing: 0) { content() }
+                .glassCard(padding: 0, radius: AppLayout.radiusMedium)
+                .padding(.horizontal, AppLayout.sectionPadding)
+        }
+        .padding(.bottom, AppLayout.cardSpacing)
+    }
+
+    private func moreRow(icon: String, label: String, count: Int = 0, destination: some View) -> some View {
         NavigationLink {
             destination
         } label: {
@@ -44,6 +116,16 @@ struct MoreMenuView: View {
                     .foregroundStyle(theme.text)
 
                 Spacer()
+
+                if let badge = MoreCountFormatter.badge(count) {
+                    Text(badge)
+                        .font(AppFont.monoMicroStrong)
+                        .foregroundStyle(theme.accent)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(theme.accentSoft)
+                        .clipShape(Capsule())
+                }
 
                 Image(systemName: "chevron.right")
                     .font(AppFont.labelSmall)
