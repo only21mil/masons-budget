@@ -1,0 +1,217 @@
+/*
+ * Sovereign Budget App redesign foundations.
+ *
+ * This file is registered globally so Vite bundles the local font, but none of
+ * its classes are adopted by a route or screen yet. A future screen migration
+ * opts in with .vv-ledger-root and data-vv-theme="dark|light".
+ */
+
+@font-face {
+  font-family: "Source Code Pro";
+  src: url("../assets/fonts/source-code-pro/SourceCodePro[wght].ttf")
+    format("truetype-variations");
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+}
+
+:root,
+[data-vv-theme="dark"] {
+  /* Terminal Ledger, exact handoff colours. */
+  --vv-ledger-bg: #0a0d0c;
+  --vv-ledger-panel: #0c100e;
+  --vv-ledger-panel-raised: #111614;
+  --vv-ledger-rule: rgba(214, 238, 224, 0.1);
+  --vv-ledger-rule-subtle: rgba(214, 238, 224, 0.06);
+  --vv-ledger-ink: #e8efe9;
+  --vv-ledger-ink-secondary: rgba(232, 239, 233, 0.56);
+  --vv-ledger-ink-meta: rgba(232, 239, 233, 0.36);
+  --vv-ledger-bitcoin: #f7931a;
+  --vv-ledger-bitcoin-fill: #f7931a;
+  --vv-ledger-on-bitcoin: #0a0d0c;
+  --vv-ledger-bitcoin-soft: rgba(247, 147, 26, 0.12);
+  --vv-ledger-gain: oklch(0.74 0.155 158);
+  --vv-ledger-loss: oklch(0.7 0.155 28);
+  --vv-ledger-scanline: rgba(255, 255, 255, 0.022);
+  --vv-ledger-toggle-knob: #e8efe9;
+
+  /* Dark and light are separate treatments, not a palette swap. */
+  --vv-ledger-rule-style: solid;
+  --vv-ledger-screen-gutter: 20px;
+  --vv-ledger-row-padding-block: 12px;
+  --vv-ledger-screen-title-size: 26px;
+  --vv-ledger-row-text-size: 12.5px;
+  --vv-ledger-meta-text-size: 9.5px;
+
+  /* Source Code Pro weights used by the handoff: 300, 400, 500, 600, 700. */
+  --vv-ledger-font: "Source Code Pro", ui-monospace, monospace;
+  --vv-ledger-weight-light: 300;
+  --vv-ledger-weight-regular: 400;
+  --vv-ledger-weight-medium: 500;
+  --vv-ledger-weight-semibold: 600;
+  --vv-ledger-weight-bold: 700;
+
+  --vv-ledger-text-tab: 8.5px;
+  --vv-ledger-text-kpi-label: 9px;
+  --vv-ledger-text-meta: 9.5px;
+  --vv-ledger-text-chip: 10px;
+  --vv-ledger-text-body: 10.5px;
+  --vv-ledger-text-button: 11px;
+  --vv-ledger-text-row: var(--vv-ledger-row-text-size);
+  --vv-ledger-text-input: 15px;
+  --vv-ledger-text-kpi: 20px;
+  --vv-ledger-text-drilldown-title: 24px;
+  --vv-ledger-text-hero: 28px;
+  --vv-ledger-text-price: 38px;
+
+  --vv-ledger-tracking-title: -0.02em;
+  --vv-ledger-tracking-price: -0.03em;
+  --vv-ledger-tracking-meta: 0.05em;
+  --vv-ledger-tracking-button: 0.1em;
+  --vv-ledger-tracking-label: 0.18em;
+
+  --vv-ledger-space-1: 4px;
+  --vv-ledger-space-2: 6px;
+  --vv-ledger-space-3: 7px;
+  --vv-ledger-space-4: 9px;
+  --vv-ledger-space-5: 12px;
+  --vv-ledger-space-6: 15px;
+  --vv-ledger-space-7: 16px;
+  --vv-ledger-space-8: 17px;
+  --vv-ledger-space-9: 20px;
+  --vv-ledger-space-10: 22px;
+
+  --vv-ledger-radius-control: 3px;
+  --vv-ledger-radius-card: 4px;
+  --vv-ledger-radius-toggle: 12px;
+  --vv-ledger-radius-status: 50%;
+
+  --vv-ledger-hit-target: 44px;
+  --vv-ledger-stepper-width: 30px;
+  --vv-ledger-stepper-height: 28px;
+  --vv-ledger-stepper-editor: 34px;
+  --vv-ledger-toggle-width: 42px;
+  --vv-ledger-toggle-height: 24px;
+
+  --vv-ledger-motion-chip: 160ms ease;
+  --vv-ledger-motion-control: 180ms ease;
+  --vv-ledger-motion-toggle: 200ms ease;
+  --vv-ledger-motion-progress: 300ms ease;
+  --vv-ledger-motion-theme: 300ms ease;
+  --vv-ledger-motion-cursor: 1.1s step-end;
+}
+
+[data-vv-theme="light"] {
+  color-scheme: light;
+
+  /* Daylight Ledger, exact handoff colours. */
+  --vv-ledger-bg: #f4f3ee;
+  --vv-ledger-panel: #edebe4;
+  --vv-ledger-panel-raised: #ffffff;
+  --vv-ledger-rule: rgba(20, 23, 21, 0.14);
+  --vv-ledger-rule-subtle: rgba(20, 23, 21, 0.08);
+  --vv-ledger-ink: #141715;
+  --vv-ledger-ink-secondary: rgba(20, 23, 21, 0.6);
+  --vv-ledger-ink-meta: rgba(20, 23, 21, 0.42);
+  --vv-ledger-bitcoin: #c96a05;
+  --vv-ledger-bitcoin-fill: #f7931a;
+  --vv-ledger-on-bitcoin: #0a0d0c;
+  --vv-ledger-bitcoin-soft: rgba(201, 106, 5, 0.1);
+  --vv-ledger-gain: oklch(0.52 0.13 158);
+  --vv-ledger-loss: oklch(0.52 0.15 28);
+  --vv-ledger-scanline: rgba(0, 0, 0, 0.012);
+  --vv-ledger-toggle-knob: #ffffff;
+
+  --vv-ledger-rule-style: dashed;
+  --vv-ledger-screen-gutter: 22px;
+  --vv-ledger-row-padding-block: 15px;
+  --vv-ledger-screen-title-size: 29px;
+  --vv-ledger-row-text-size: 13.5px;
+  --vv-ledger-meta-text-size: 9.5px;
+}
+
+[data-vv-theme="dark"] {
+  color-scheme: dark;
+}
+
+.vv-ledger-root {
+  background: var(--vv-ledger-bg);
+  color: var(--vv-ledger-ink);
+  font-family: var(--vv-ledger-font);
+  font-synthesis: none;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.vv-ledger-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.vv-ledger-rule {
+  border-color: var(--vv-ledger-rule);
+  border-style: var(--vv-ledger-rule-style);
+}
+
+.vv-ledger-semantic {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.vv-ledger-semantic--bitcoin {
+  color: var(--vv-ledger-bitcoin);
+}
+
+.vv-ledger-semantic--positive {
+  color: var(--vv-ledger-gain);
+}
+
+.vv-ledger-semantic--negative {
+  color: var(--vv-ledger-loss);
+}
+
+.vv-ledger-semantic--unavailable {
+  color: var(--vv-ledger-ink-meta);
+}
+
+/*
+ * Decorative texture sits above content and below chrome. The React component
+ * also fixes aria-hidden="true"; do not make this element interactive.
+ */
+.vv-ledger-scanlines {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    180deg,
+    var(--vv-ledger-scanline) 0 1px,
+    transparent 1px 3px
+  );
+}
+
+.vv-ledger-glow {
+  text-shadow: 0 0 8px color-mix(in oklch, var(--vv-ledger-bitcoin) 44%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  [data-vv-theme] {
+    --vv-ledger-motion-chip: 0ms;
+    --vv-ledger-motion-control: 0ms;
+    --vv-ledger-motion-toggle: 0ms;
+    --vv-ledger-motion-progress: 0ms;
+    --vv-ledger-motion-theme: 0ms;
+    --vv-ledger-motion-cursor: 0ms;
+  }
+}
+
+@media (prefers-reduced-motion: reduce), (prefers-reduced-transparency: reduce) {
+  .vv-ledger-scanlines {
+    display: none;
+  }
+
+  .vv-ledger-glow {
+    text-shadow: none;
+  }
+}
