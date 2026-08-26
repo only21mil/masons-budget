@@ -8,17 +8,49 @@ const Icon = ({ children, size = 20, color = 'currentColor', strokeWidth = 1.6, 
   </svg>
 );
 
-// The Bitcoin "₿" glyph — drawn as an icon (not text), in our visual language.
-const BtcGlyph = ({ size = 20, color = '#F7931A', filled = false }) => (
+const BTC_GLYPH_PATHS = Object.freeze({
+  body: 'M9.4 6h4.2c1.7 0 3 1.1 3 2.7 0 1.4-1 2.4-2.4 2.7 1.7.2 2.9 1.3 2.9 2.9 0 1.7-1.4 2.9-3.3 2.9H9.4V6z',
+  interfaceCrossbar: 'M9.4 11.4h4.2M9.4 11.4h4.6',
+  interfaceSerifs: 'M11.0 4.5v1.5M11.0 17.2v1.8M13.2 4.5v1.5M13.2 17.2v1.8',
+  iconCrossbar: 'M9.4 11.4h4.6',
+  iconSerifs: 'M11 3.2v2.8M11 19.4v2.8M13.6 3.2v2.8M13.6 19.4v2.8',
+});
+
+// The interface glyph remains the default. The accepted app-icon variant has
+// longer serifs and a heavier stroke so the mark survives launcher sizes.
+const BtcGlyph = ({ size = 20, color = '#F7931A', filled = false, variant = 'interface' }) => {
+  const appIcon = variant === 'app-icon';
+  const ink = filled ? '#fff' : color;
+  const strokeWidth = appIcon ? 2.5 : 1.6;
+
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      {filled && <circle cx="12" cy="12" r="11" fill={color} />}
+      <g transform={filled ? 'translate(0 0)' : ''}>
+        <path d={BTC_GLYPH_PATHS.body} stroke={ink} strokeWidth={strokeWidth} strokeLinejoin="round" fill="none" />
+        <path d={appIcon ? BTC_GLYPH_PATHS.iconCrossbar : BTC_GLYPH_PATHS.interfaceCrossbar}
+              stroke={ink} strokeWidth={strokeWidth} strokeLinecap="round"/>
+        <path d={appIcon ? BTC_GLYPH_PATHS.iconSerifs : BTC_GLYPH_PATHS.interfaceSerifs}
+              stroke={ink} strokeWidth={strokeWidth} strokeLinecap="round"/>
+      </g>
+    </svg>
+  );
+};
+
+// Accepted Horizon app mark. Rules bleed to the 24x24 canvas edge by design.
+// Monochrome drops the opacity ramp because the operating system supplies tint.
+const HorizonGlyph = ({ size = 24, color = '#F7931A', monochrome = false }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    {filled && <circle cx="12" cy="12" r="11" fill={color} />}
-    <g transform={filled ? 'translate(0 0)' : ''}>
-      <path
-        d="M9.4 6h4.2c1.7 0 3 1.1 3 2.7 0 1.4-1.0 2.4-2.4 2.7 1.7.2 2.9 1.3 2.9 2.9 0 1.7-1.4 2.9-3.3 2.9H9.4V6z"
-        stroke={filled ? '#fff' : color} strokeWidth="1.6" strokeLinejoin="round" fill="none"
-      />
-      <path d="M9.4 11.4h4.2M9.4 11.4h4.6" stroke={filled ? '#fff' : color} strokeWidth="1.6" strokeLinecap="round"/>
-      <path d="M11.0 4.5v1.5M11.0 17.2v1.8M13.2 4.5v1.5M13.2 17.2v1.8" stroke={filled ? '#fff' : color} strokeWidth="1.6" strokeLinecap="round"/>
+    <g transform="translate(12 9.4) scale(0.435) translate(-13 -12.7)"
+       stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d={BTC_GLYPH_PATHS.body}/>
+      <path d={BTC_GLYPH_PATHS.iconCrossbar}/>
+      <path d={BTC_GLYPH_PATHS.iconSerifs}/>
+    </g>
+    <g fill={color}>
+      <rect x="0" y="15.1" width="24" height="1.6" fillOpacity={monochrome ? 1 : 0.5}/>
+      <rect x="0" y="17.6" width="24" height="1.25" fillOpacity={monochrome ? 1 : 0.3}/>
+      <rect x="0" y="19.75" width="24" height="0.95" fillOpacity={monochrome ? 1 : 0.17}/>
     </g>
   </svg>
 );
@@ -177,6 +209,9 @@ const CatGlyph = ({ kind, size = 18, color = '#fff' }) => {
   switch (kind) {
     case 'fork':   return <Icon size={size} color={color}><path d="M7 3v8a2 2 0 0 0 2 2v8M7 3v6a2 2 0 0 1-2 2M9 3v6a2 2 0 0 0 2 2"/><path d="M17 3c-2 0-3 2-3 5s1 5 3 5v8"/></Icon>;
     case 'home':   return <Icon size={size} color={color}><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-7H10v7H4a1 1 0 0 1-1-1v-9z"/></Icon>;
+    // Proposed in the redesign handoff. These exact paths still need visual review at 15px.
+    case 'car':    return <Icon size={size} color={color}><path d="M3 13.5 5 8h14l2 5.5v3.5h-2.6M3 13.5V17h2.6m0 0h11.8M5 13.5h14"/><path d="M5.6 17a1.7 1.7 0 1 0 3.4 0 1.7 1.7 0 1 0-3.4 0M15 17a1.7 1.7 0 1 0 3.4 0 1.7 1.7 0 1 0-3.4 0"/></Icon>;
+    case 'pet':    return <Icon size={size} color={color}><path d="M5.4 9.6a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 1 0-3.2 0M10.4 7.6a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 1 0-3.2 0M15.4 9.6a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 1 0-3.2 0"/><path d="M8.2 15.4c0-2.1 1.7-3.4 3.8-3.4s3.8 1.3 3.8 3.4c0 2.3-1.7 3.5-3.8 3.5s-3.8-1.2-3.8-3.5z"/></Icon>;
     case 'plane':  return <Icon size={size} color={color}><path d="M21 12L3 19l3-7-3-7 18 7z"/></Icon>;
     case 'heart':  return <Icon size={size} color={color}><path d="M12 21s-7.5-4.5-9-9.5C2 7 5 4 8 4c2 0 3 1 4 2.5C13 5 14 4 16 4c3 0 6 3 5 7.5-1.5 5-9 9.5-9 9.5z"/></Icon>;
     case 'bolt':   return <Bolt size={size} color={color}/>;
@@ -192,7 +227,7 @@ const CatGlyph = ({ kind, size = 18, color = '#fff' }) => {
 };
 
 Object.assign(window, {
-  Icon, BtcGlyph, SatsGlyph, Bolt, Chain, Vault, Wallet, Stack,
+  Icon, BtcGlyph, HorizonGlyph, SatsGlyph, Bolt, Chain, Vault, Wallet, Stack,
   CheckCircle, Flag, Plus, Search, Filter, Dots,
   ArrowUp, ArrowDown, ArrowRight, Calendar, Inbox, Target, Bars, Cog, CatGlyph,
 });
