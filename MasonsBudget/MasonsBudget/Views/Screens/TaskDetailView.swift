@@ -181,10 +181,11 @@ struct TaskDetailView: View {
         todo.priority = priority
         todo.isFlagged = isFlagged
         todo.updatedAt = .now
-        guard LocalMutationSave.perform(operation: "Todo", in: modelContext, rollbackMutation: {
+        todo.hasServerAuthority = false
+        guard TaskMutationSave.perform(operation: "Todo", in: modelContext, rollbackMutation: {
             previous.apply(to: todo)
-        }, remoteWrite: {
-            AppWriteSyncService.pushTodo(todo)
+        }, remoteWrite: { completion in
+            AppWriteSyncService.pushTodo(todo, onResult: completion)
         }) else {
             return
         }

@@ -159,6 +159,22 @@ final class TaskUndoStore: ObservableObject {
                 id: snapshot.id,
                 owner: snapshot.ownerMember,
                 baseUpdatedAtMs: snapshot.updatedAtMs,
+                onResult: { result in
+                    if !result.isOk, !result.isRetryable,
+                       self.existingTodo(id: snapshot.id, in: modelContext) == nil
+                    {
+                        modelContext.insert(snapshot.restoredTodo())
+                        self.clearPending(matching: snapshot.id)
+                    }
+                    do {
+                        try modelContext.save()
+                    } catch {
+                        SyncStatusStore.shared.recordLocalFailure(
+                            "Delete todo",
+                            failure: .persistence,
+                        )
+                    }
+                },
             )
         }
     }
@@ -177,14 +193,14 @@ final class TaskUndoStore: ObservableObject {
             modelContext.insert(restored)
             todo = restored
         }
-        LocalMutationSave.perform(operation: "Restore todo", in: modelContext, rollbackMutation: {
+        todo.hasServerAuthority = false
+        TaskMutationSave.perform(operation: "Restore todo", in: modelContext, rollbackMutation: {
             if let previous {
                 previous.apply(to: todo)
             } else {
                 modelContext.delete(todo)
             }
-        }) {
-            clearPending()
+        }) { completion in
             AppWriteSyncService.restoreTodo(
                 id: snapshot.id,
                 owner: snapshot.ownerMember,
@@ -192,6 +208,12 @@ final class TaskUndoStore: ObservableObject {
                 onAcceptedRevision: { revision in
                     todo.updatedAtMs = revision
                     todo.hasServerAuthority = true
+                },
+                onResult: { result in
+                    completion(result)
+                    if result.isOk {
+                        self.clearPending(matching: snapshot.id)
+                    }
                 },
             )
         }

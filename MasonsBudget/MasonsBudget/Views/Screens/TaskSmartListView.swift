@@ -225,30 +225,28 @@ struct TaskRowView: View {
     }
 
     private func toggleDone() {
-        let previousDone = todo.isDone
-        let previousUpdatedAt = todo.updatedAt
+        let previous = DeletedTodoSnapshot(todo: todo)
         withAnimation(.easeOut(duration: 0.25)) {
             todo.isDone.toggle()
             todo.updatedAt = .now
-            LocalMutationSave.perform(operation: "Todo completion", in: modelContext, rollbackMutation: {
-                todo.isDone = previousDone
-                todo.updatedAt = previousUpdatedAt
-            }) {
-                AppWriteSyncService.setTodoCompletion(todo)
+            todo.hasServerAuthority = false
+            TaskMutationSave.perform(operation: "Todo completion", in: modelContext, rollbackMutation: {
+                previous.apply(to: todo)
+            }) { completion in
+                AppWriteSyncService.setTodoCompletion(todo, onResult: completion)
             }
         }
     }
 
     private func toggleFlag() {
-        let previousFlag = todo.isFlagged
-        let previousUpdatedAt = todo.updatedAt
+        let previous = DeletedTodoSnapshot(todo: todo)
         todo.isFlagged.toggle()
         todo.updatedAt = .now
-        LocalMutationSave.perform(operation: "Todo flag", in: modelContext, rollbackMutation: {
-            todo.isFlagged = previousFlag
-            todo.updatedAt = previousUpdatedAt
-        }) {
-            AppWriteSyncService.pushTodo(todo)
+        todo.hasServerAuthority = false
+        TaskMutationSave.perform(operation: "Todo flag", in: modelContext, rollbackMutation: {
+            previous.apply(to: todo)
+        }) { completion in
+            AppWriteSyncService.pushTodo(todo, onResult: completion)
         }
     }
 

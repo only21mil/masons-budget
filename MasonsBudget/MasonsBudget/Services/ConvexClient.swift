@@ -766,6 +766,28 @@ final class AppWritebackClient: Sendable {
         return true
     }
 
+    /// Fetches the exact canonical revision after an accepted create or update.
+    /// The device mutation response deliberately contains only its outcome, so
+    /// callers must not derive authority from the optimistic `updatedAt` value.
+    func todoRevision(
+        id: String,
+        activeProfile: FamilyMember,
+    ) async throws -> Double {
+        let taskSession = try await taskSession(activeProfile: activeProfile)
+        let reader = ConvexRowReader(client: ConvexClient(
+            deploymentURL: taskSession.baseURL,
+            session: session,
+        ))
+        let matches = try await reader.todos(viewer: activeProfile).filter { todo in
+            todo.id == id && todo.effectiveOwner == activeProfile
+        }
+        guard matches.count == 1,
+              let revision = matches[0].updatedAtMs,
+              Self.isValidTaskRevision(revision)
+        else { throw AppWritebackError.unexpectedResponse }
+        return revision
+    }
+
     func restoreTodo(
         id: String,
         activeProfile: FamilyMember,

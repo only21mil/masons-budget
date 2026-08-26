@@ -18,6 +18,16 @@ enum AppWriteSyncService {
         FamilyMember,
         String
     ) async throws -> Double?
+    typealias TodoWrite = @MainActor @Sendable (
+        LegacyTodoDTO,
+        FamilyMember,
+        TodoDeviceWriteOperation,
+        Double?
+    ) async throws -> Void
+    typealias TodoRevisionRead = @MainActor @Sendable (
+        String,
+        FamilyMember
+    ) async throws -> Double
 
     /// Process-local ownership for an optimistic create attempt or retained
     /// retry. A row sync may reconcile this ID from the server, but must not reap
@@ -374,17 +384,7 @@ enum AppWriteSyncService {
         _ todo: TodoItem,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
-        let payload = LegacyTodoDTO(appTodo: todo)
-        let operation: TodoDeviceWriteOperation = todo.hasServerAuthority ? .update : .create
-        pushTodoPayload(
-            payload,
-            operation: operation,
-            activeProfile: AppWritebackConfig.activeProfile,
-            onAccepted: {
-                todo.hasServerAuthority = true
-            },
-            onResult: onResult,
-        )
+        pushTodo(todo, label: "Save todo", onResult: onResult)
     }
 
     static func setTodoCompletion(
@@ -392,14 +392,76 @@ enum AppWriteSyncService {
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         todo.completedAt = todo.isDone ? todo.updatedAt : nil
+        pushTodo(todo, label: "Update todo completion", onResult: onResult)
+    }
+
+    private static func pushTodo(
+        _ todo: TodoItem,
+        label: String,
+        onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)?,
+    ) {
+        pushTodo(
+            todo,
+            label: label,
+            statusStore: nil,
+            automaticRetries: maxRetries,
+            retryDelayNanoseconds: retryDelay,
+            preflight: { writeBlocker(requiresSyncToken: false) },
+            write: { payload, activeProfile, operation, baseUpdatedAtMs in
+                let client = AppWritebackClient()
+                let synced = try await client.upsertTodo(
+                    payload,
+                    activeProfile: activeProfile,
+                    operation: operation,
+                    baseUpdatedAtMs: baseUpdatedAtMs,
+                )
+                guard synced else { throw AppWriteSyncError.unexpectedPayload }
+            },
+            readRevision: { id, activeProfile in
+                try await AppWritebackClient().todoRevision(
+                    id: id,
+                    activeProfile: activeProfile,
+                )
+            },
+            onResult: onResult,
+        )
+    }
+
+    /// Injection seam for the accepted-revision regression. Production uses
+    /// this path with the paired-device writer and authenticated row reader.
+    static func pushTodo(
+        _ todo: TodoItem,
+        label: String = "Save todo",
+        statusStore: SyncStatusStore?,
+        automaticRetries: Int,
+        retryDelayNanoseconds: UInt64,
+        preflight: @escaping @MainActor @Sendable () -> ConvexWriteResult?,
+        write: @escaping TodoWrite,
+        readRevision: @escaping TodoRevisionRead,
+        onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
+    ) {
         let payload = LegacyTodoDTO(appTodo: todo)
-        let operation: TodoDeviceWriteOperation = todo.hasServerAuthority ? .update : .create
+        let isFreshAppCreate = todo.createdBy == "app" &&
+            !todo.hasServerAuthority && todo.updatedAtMs == nil
+        let operation: TodoDeviceWriteOperation = isFreshAppCreate ? .create : .update
+        let baseUpdatedAtMs = todo.updatedAtMs
+        // The user's optimistic content is not authoritative until the write is
+        // accepted and its canonical row revision has been read back.
+        todo.hasServerAuthority = false
         pushTodoPayload(
             payload,
             operation: operation,
+            baseUpdatedAtMs: baseUpdatedAtMs,
             activeProfile: AppWritebackConfig.activeProfile,
-            label: "Update todo completion",
-            onAccepted: {
+            label: label,
+            statusStore: statusStore,
+            automaticRetries: automaticRetries,
+            retryDelayNanoseconds: retryDelayNanoseconds,
+            preflight: preflight,
+            write: write,
+            readRevision: readRevision,
+            onAcceptedRevision: { revision in
+                todo.updatedAtMs = revision
                 todo.hasServerAuthority = true
             },
             onResult: onResult,
@@ -409,48 +471,95 @@ enum AppWriteSyncService {
     private static func pushTodoPayload(
         _ payload: LegacyTodoDTO,
         operation: TodoDeviceWriteOperation,
+        baseUpdatedAtMs: Double?,
         activeProfile: FamilyMember,
         label: String = "Save todo",
-        onAccepted: (@MainActor @Sendable () -> Void)? = nil,
+        statusStore: SyncStatusStore?,
+        automaticRetries: Int,
+        retryDelayNanoseconds: UInt64,
+        preflight: @escaping @MainActor @Sendable () -> ConvexWriteResult?,
+        write: @escaping TodoWrite,
+        readRevision: @escaping TodoRevisionRead,
+        writeAlreadyAccepted: Bool = false,
+        onAcceptedRevision: (@MainActor @Sendable (Double) -> Void)? = nil,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
-        let operationID = reportSyncStart(label)
-        if let blocked = writeBlocker(requiresSyncToken: false) {
+        let operationID = reportSyncStart(label, statusStore: statusStore)
+        if !writeAlreadyAccepted, let blocked = preflight() {
             reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
                 pushTodoPayload(
                     payload,
                     operation: operation,
+                    baseUpdatedAtMs: baseUpdatedAtMs,
                     activeProfile: activeProfile,
                     label: label,
-                    onAccepted: onAccepted,
+                    statusStore: statusStore,
+                    automaticRetries: automaticRetries,
+                    retryDelayNanoseconds: retryDelayNanoseconds,
+                    preflight: preflight,
+                    write: write,
+                    readRevision: readRevision,
+                    onAcceptedRevision: onAcceptedRevision,
                     onResult: onResult,
                 )
-            }, onResult: onResult)
+            }, onResult: onResult, statusStore: statusStore)
             return
         }
 
         Task {
-            let client = AppWritebackClient()
-            let result = await withRetry(label: "push todo via paired device \(payload.id)") {
-                let synced = try await client.upsertTodo(
-                    payload,
-                    activeProfile: activeProfile,
-                    operation: operation,
-                    baseUpdatedAtMs: payload.updatedAtMs,
-                )
-                guard synced else { throw AppWriteSyncError.unexpectedPayload }
+            var accepted = writeAlreadyAccepted
+            var result = ConvexWriteResult.ok
+            if !accepted {
+                result = await withRetry(
+                    label: "push todo via paired device \(payload.id)",
+                    maxRetryCount: automaticRetries,
+                    retryDelayNanoseconds: retryDelayNanoseconds,
+                ) {
+                    try await write(payload, activeProfile, operation, baseUpdatedAtMs)
+                }
+                accepted = result.isOk
             }
-            if case .ok = result { onAccepted?() }
+            let revision = AcceptedRevisionBox()
+            if accepted {
+                result = await withRetry(
+                    label: "refresh accepted todo revision \(payload.id)",
+                    maxRetryCount: automaticRetries,
+                    retryDelayNanoseconds: retryDelayNanoseconds,
+                ) {
+                    let acceptedRevision = try await readRevision(payload.id, activeProfile)
+                    guard AppWritebackClient.isValidTaskRevision(acceptedRevision) else {
+                        throw AppWriteSyncError.unexpectedPayload
+                    }
+                    revision.value = acceptedRevision
+                }
+                if result.isOk, let acceptedRevision = revision.value {
+                    onAcceptedRevision?(acceptedRevision)
+                } else if !result.isOk {
+                    // The mutation is already committed. Keep the local row
+                    // explicitly non-authoritative and retry only this readback;
+                    // a terminal-looking read failure must never roll the
+                    // accepted mutation back or resubmit its create/update.
+                    result = .failed(.transport)
+                }
+            }
             reportSyncResult(label: label, operationID: operationID, result: result, retry: {
                 pushTodoPayload(
                     payload,
                     operation: operation,
+                    baseUpdatedAtMs: baseUpdatedAtMs,
                     activeProfile: activeProfile,
                     label: label,
-                    onAccepted: onAccepted,
+                    statusStore: statusStore,
+                    automaticRetries: automaticRetries,
+                    retryDelayNanoseconds: retryDelayNanoseconds,
+                    preflight: preflight,
+                    write: write,
+                    readRevision: readRevision,
+                    writeAlreadyAccepted: accepted,
+                    onAcceptedRevision: onAcceptedRevision,
                     onResult: onResult,
                 )
-            }, onResult: onResult)
+            }, onResult: onResult, statusStore: statusStore)
         }
     }
 

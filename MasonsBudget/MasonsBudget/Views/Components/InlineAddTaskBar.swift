@@ -90,10 +90,13 @@ struct InlineAddTaskBar: View {
             createdBy: "app",
         )
         modelContext.insert(todo)
-        if LocalMutationSave.perform(operation: "Todo", in: modelContext, rollbackMutation: {
+        if TaskMutationSave.perform(operation: "Todo", in: modelContext, rollbackMutation: {
             modelContext.delete(todo)
-        }, remoteWrite: {
-            AppWriteSyncService.pushTodo(todo, onResult: onResult)
+        }, remoteWrite: { completion in
+            AppWriteSyncService.pushTodo(todo) { result in
+                onResult?(result)
+                completion(result)
+            }
         }) {
             draftText = ""
             isExpanded = false

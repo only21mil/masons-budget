@@ -59,6 +59,43 @@ enum LocalMutationSave {
     }
 }
 
+/// Persists the metadata installed by an accepted task write and rolls a
+/// terminal rejection back to the last authoritative local snapshot.
+@MainActor
+enum TaskMutationSave {
+    @discardableResult
+    static func perform(
+        operation: String,
+        in context: ModelContext,
+        rollbackMutation: @escaping @MainActor @Sendable () -> Void,
+        remoteWrite: (
+            @escaping @MainActor @Sendable (ConvexWriteResult) -> Void,
+        ) -> Void,
+        onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
+    ) -> Bool {
+        LocalMutationSave.perform(
+            operation: operation,
+            in: context,
+            rollbackMutation: rollbackMutation,
+        ) {
+            remoteWrite { result in
+                if !result.isOk, !result.isRetryable {
+                    rollbackMutation()
+                }
+                do {
+                    try context.save()
+                } catch {
+                    SyncStatusStore.shared.recordLocalFailure(
+                        operation,
+                        failure: .persistence,
+                    )
+                }
+                onResult?(result)
+            }
+        }
+    }
+}
+
 @MainActor
 final class SyncStatusStore: ObservableObject {
     static let shared = SyncStatusStore()
