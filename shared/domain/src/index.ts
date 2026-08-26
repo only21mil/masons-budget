@@ -13,6 +13,7 @@ export * from "./manualFee.ts"
 export * from "./money.ts"
 export * from "./moneyOutToday.ts"
 export * from "./readModel.ts"
+export * from "./taskWriteContract.ts"
 export {
   canSeeTodoOwnedBy,
   canWriteTodoOwnedBy,
