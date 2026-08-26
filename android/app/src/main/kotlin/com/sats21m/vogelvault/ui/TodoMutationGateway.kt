@@ -6,6 +6,8 @@ import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.DEVICE_REVISION_REQUIRED_REASON
+import com.sats21m.vogelvault.data.TodoWriteOperation
 import com.sats21m.vogelvault.data.toConvexInt64
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.TodoItem
@@ -32,11 +34,42 @@ internal class TodoMutationGateway(
         activeProfile: FamilyMember,
         todo: TodoItem,
         baseUpdatedAtMs: Long?,
+    ): ConvexResult<TodoUpsertReceipt> =
+        if (baseUpdatedAtMs == null) {
+            create(activeProfile, todo)
+        } else {
+            update(activeProfile, todo, baseUpdatedAtMs)
+        }
+
+    suspend fun create(
+        activeProfile: FamilyMember,
+        todo: TodoItem,
+    ): ConvexResult<TodoUpsertReceipt> =
+        write(activeProfile, todo, TodoWriteOperation.CREATE, null)
+
+    suspend fun update(
+        activeProfile: FamilyMember,
+        todo: TodoItem,
+        baseUpdatedAtMs: Long?,
+    ): ConvexResult<TodoUpsertReceipt> {
+        if (baseUpdatedAtMs == null) {
+            return ConvexResult.Failed(DEVICE_REVISION_REQUIRED_REASON)
+        }
+        return write(activeProfile, todo, TodoWriteOperation.UPDATE, baseUpdatedAtMs)
+    }
+
+    private suspend fun write(
+        activeProfile: FamilyMember,
+        todo: TodoItem,
+        operation: TodoWriteOperation,
+        baseUpdatedAtMs: Long?,
     ): ConvexResult<TodoUpsertReceipt> {
         require(todo.isAccessibleTo(activeProfile)) { "todo owner must match the active profile" }
         return client.mutate(
             ConvexMutation.UpsertTodoFromDevice(
+                activeProfile = activeProfile,
                 owner = todo.owner,
+                operation = operation,
                 todo = todo.toDeviceMutationJson(),
                 baseUpdatedAtMs = baseUpdatedAtMs,
             ),
@@ -62,6 +95,7 @@ internal class TodoMutationGateway(
         return client.mutate(
             ConvexMutation.DeleteTodoFromDevice(
                 todoId = todo.id,
+                activeProfile = activeProfile,
                 owner = todo.owner,
                 baseUpdatedAtMs = todo.updatedAtMs,
             ),
@@ -81,8 +115,9 @@ internal class TodoMutationGateway(
         require(todo.isAccessibleTo(activeProfile)) { "todo owner must match the active profile" }
         return client.mutate(
             ConvexMutation.RestoreTodoFromDevice(
+                todoId = todo.id,
+                activeProfile = activeProfile,
                 owner = todo.owner,
-                todo = todo.toDeviceMutationJson(),
                 baseUpdatedAtMs = todo.updatedAtMs,
             ),
         ).mapSuccess { value ->

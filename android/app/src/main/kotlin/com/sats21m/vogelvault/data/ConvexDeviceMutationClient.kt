@@ -46,6 +46,10 @@ internal fun interface ConvexDeviceCredentialSource {
 
 internal const val DEVICE_ENTITY_DELETED_REASON = "task was deleted on another device"
 internal const val DEVICE_ENTITY_NOT_FOUND_REASON = "task no longer exists"
+internal const val DEVICE_PROFILE_BINDING_REQUIRED_REASON =
+    "PROFILE_BINDING_REQUIRED: pair a credential bound to this profile"
+internal const val DEVICE_REVISION_REQUIRED_REASON =
+    "REVISION_REQUIRED: refresh tasks before retrying"
 
 /**
  * Mutation transport for the capability-scoped device endpoints.
@@ -115,7 +119,9 @@ internal class ConvexDeviceMutationClient(
         } ?: return ConvexResult.Failed("convex rejection")
         return when (data.string("code")) {
             "DEVICE_UNAUTHORIZED" -> ConvexResult.Unauthorized
-            "ENTITY_CONFLICT", "REVISION_REQUIRED" -> ConvexResult.Failed("task changed on another device")
+            "PROFILE_BINDING_REQUIRED" -> ConvexResult.Failed(DEVICE_PROFILE_BINDING_REQUIRED_REASON)
+            "REVISION_REQUIRED" -> ConvexResult.Failed(DEVICE_REVISION_REQUIRED_REASON)
+            "ENTITY_CONFLICT" -> ConvexResult.Failed("task changed on another device")
             "ENTITY_DELETED" -> ConvexResult.Failed(DEVICE_ENTITY_DELETED_REASON)
             "ENTITY_NOT_FOUND" -> ConvexResult.Failed(DEVICE_ENTITY_NOT_FOUND_REASON)
             "OWNER_MISMATCH", "OWNER_SOURCE_MISMATCH" -> ConvexResult.Failed("task owner was rejected")

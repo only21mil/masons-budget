@@ -279,11 +279,12 @@ internal class SecureConvexDeviceCredentialSource(
 }
 
 /**
- * Production mutation credential source backed by AndroidKeyStore encryption.
+ * Admin mutation credential source backed by AndroidKeyStore encryption.
  *
  * Keeping this adapter internal prevents UI and logging code from gaining
  * access to the credential while still allowing [ConvexMutationClient] to read
- * the latest saved value for every request.
+ * the latest saved value for every request. Interactive task writes must use
+ * [SecureConvexDeviceCredentialSource], never this shared sync-token source.
  */
 internal class SecureConvexSyncTokenSource(
     private val stored: SecureConvexConfigSource,

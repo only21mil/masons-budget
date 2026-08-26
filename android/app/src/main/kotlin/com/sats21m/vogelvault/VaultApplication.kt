@@ -299,8 +299,8 @@ open class VaultApplication : Application() {
         )
 
     /**
-     * Shared write transport. Every mutation reads the latest encrypted sync
-     * token at request time; no write credential is baked into the app.
+     * Shared sync-token transport for non-task editors and admin-compatible
+     * mutations. Interactive tasks are deliberately absent from this client.
      */
     internal open val convexMutationClient: ConvexMutationClient by lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,
