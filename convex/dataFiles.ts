@@ -697,6 +697,7 @@ export const createAndroidReadBootstrap = mutation({
     proofHash: v.string(),
     expiresAt: v.float64(),
     capabilities: v.optional(v.array(deviceCapabilityValidator)),
+    profile: v.optional(deviceProfileValidator),
     token: v.optional(v.string()),
   },
   returns: v.object({
@@ -705,12 +706,16 @@ export const createAndroidReadBootstrap = mutation({
   }),
   handler: async (
     ctx,
-    { pairId, proofHash, expiresAt, capabilities, token },
+    { pairId, proofHash, expiresAt, capabilities, profile, token },
   ) => {
     validateAndroidReadBootstrapSyncToken(token);
     validateAndroidReadBootstrapPairId(pairId);
     validateAndroidReadBootstrapProofHash(proofHash);
     validateAndroidReadBootstrapCapabilities(capabilities);
+    const grantsTodoWrite = capabilities?.length === 1;
+    if (grantsTodoWrite !== (profile !== undefined)) {
+      androidReadBootstrapFailure("VALIDATION_FAILED");
+    }
 
     const now = Date.now();
     if (
@@ -739,6 +744,7 @@ export const createAndroidReadBootstrap = mutation({
         capabilities === undefined
           ? undefined
           : [ANDROID_TODO_WRITE_CAPABILITY],
+      profile,
     });
     return { pairId, expiresAt };
   },
@@ -833,6 +839,7 @@ export const claimAndroidReadBootstrap = mutation({
         revokedAt: undefined,
         pairId,
         capabilities: [ANDROID_TODO_WRITE_CAPABILITY],
+        profile: bootstrap.profile,
       });
 
       await ctx.db.patch(bootstrap._id, { claimedAt: now });

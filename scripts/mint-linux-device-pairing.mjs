@@ -18,6 +18,7 @@ export const LINUX_DEVICE_CAPABILITIES = [
   "budget:write",
   "bitcoin:write",
 ];
+export const DEVICE_PROFILES = ["victor", "rachel", "mason", "maddox"];
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repoRoot = path.resolve(path.dirname(scriptPath), "..");
@@ -144,6 +145,7 @@ export async function mintLinuxDevicePairing({
   convexUrl,
   syncToken,
   name,
+  profile,
   hours,
   output,
   fetchImpl = fetch,
@@ -151,6 +153,9 @@ export async function mintLinuxDevicePairing({
   now = Date.now(),
 }) {
   const convexOrigin = approvedConvexOrigin(convexUrl);
+  if (!DEVICE_PROFILES.includes(profile)) {
+    throw new Error(`profile must be one of: ${DEVICE_PROFILES.join(", ")}.`);
+  }
   if (!syncToken) {
     throw new Error(
       "CONVEX_SYNC_TOKEN is required on the trusted operator machine.",
@@ -184,6 +189,7 @@ export async function mintLinuxDevicePairing({
           expiresAt,
           createdBy: name,
           capabilities: LINUX_DEVICE_CAPABILITIES,
+          profile,
           token: syncToken,
         },
         format: "json",
@@ -212,6 +218,7 @@ export async function mintLinuxDevicePairing({
         pairingCode,
         expiresAt,
         capabilities: LINUX_DEVICE_CAPABILITIES,
+        profile,
       },
       null,
       2,
@@ -236,6 +243,7 @@ function usage() {
 Options:
   --name <name>  Household-admin device label. Default: Vogel Vault Linux
   --hours <n>    Pairing lifetime. Default: 24
+  --profile <p>  Required credential-bound task profile.
   --out <path>   0600 secret JSON destination.
   --dry-run      Validate configuration without minting, writing, or generating secrets.
 
@@ -255,6 +263,7 @@ export async function main(
 
   const name = value(args, "--name", "Vogel Vault Linux").trim();
   const hours = Number(value(args, "--hours", "24"));
+  const profile = value(args, "--profile", null);
   const output = path.resolve(
     value(
       args,
@@ -274,6 +283,9 @@ export async function main(
   if (!Number.isFinite(hours) || hours <= 0 || hours > 168) {
     throw new Error("--hours must be greater than 0 and at most 168.");
   }
+  if (profile === null || !DEVICE_PROFILES.includes(profile)) {
+    throw new Error(`--profile must be one of: ${DEVICE_PROFILES.join(", ")}.`);
+  }
 
   const env = {
     ...parseEnvFile(path.join(repoRoot, ".env.local")),
@@ -292,6 +304,7 @@ export async function main(
     console.log(`name=${name}`);
     console.log(`hours=${hours}`);
     console.log(`capabilities=${LINUX_DEVICE_CAPABILITIES.join(",")}`);
+    console.log(`profile=${profile}`);
     console.log(`out=${output}`);
     return;
   }
@@ -300,6 +313,7 @@ export async function main(
     convexUrl: convexOrigin,
     syncToken,
     name,
+    profile,
     hours,
     output,
   });

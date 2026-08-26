@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const defaultConvexUrl = "https://keen-elephant-452.convex.cloud";
+const deviceProfiles = ["victor", "rachel", "mason", "maddox"];
 
 function parseEnvFile(file) {
   const out = {};
@@ -53,6 +54,7 @@ Options:
   --build <n>   Build number used in pairId naming. Required.
   --count <n>   Number of one-time URLs to mint. Default: 8.
   --days <n>    Expiration window in days. Default: 365.
+  --profile <p> Required credential-bound task profile.
   --out <path>  Private output JSON path. Default: ~/.openclaw/private/vogel-vault-pairing/vv-build<n>-pairing-urls.json
   --dry-run     Validate arguments and show destination paths without minting or writing files.
 
@@ -78,6 +80,7 @@ if (!/^\d+$/.test(build)) {
 }
 const count = Number(argValue("--count", "8"));
 const days = Number(argValue("--days", "365"));
+const profile = argValue("--profile", null);
 const dryRun = args.includes("--dry-run");
 if (!Number.isInteger(count) || count < 1 || count > 50) {
   console.error("ERROR: --count must be an integer from 1 to 50.");
@@ -85,6 +88,10 @@ if (!Number.isInteger(count) || count < 1 || count > 50) {
 }
 if (!Number.isFinite(days) || days < 1) {
   console.error("ERROR: --days must be a number >= 1.");
+  process.exit(2);
+}
+if (profile === null || !deviceProfiles.includes(profile)) {
+  console.error(`ERROR: --profile must be one of: ${deviceProfiles.join(", ")}.`);
   process.exit(2);
 }
 const outFile = argValue(
@@ -112,6 +119,7 @@ if (dryRun) {
   console.log(`build=${build}`);
   console.log(`count=${count}`);
   console.log(`days=${days}`);
+  console.log(`profile=${profile}`);
   console.log(`out=${outFile}`);
   console.log(`b64=${outFile.replace(/\.json$/, ".b64")}`);
   process.exit(0);
@@ -152,6 +160,7 @@ for (let i = 1; i <= count; i++) {
     proofHash,
     expiresAt,
     createdBy: `SAT-1508 build${build} slot-${i}`,
+    profile,
     token: syncToken,
   });
 

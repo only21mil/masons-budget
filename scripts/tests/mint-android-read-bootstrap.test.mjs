@@ -51,7 +51,7 @@ test("dry-run needs no token and creates no pairing material", async () => {
   const output = await destination("vv-android-bootstrap-dry-");
   const result = spawnSync(
     process.execPath,
-    [script, "--dry-run", "--out", output],
+    [script, "--dry-run", "--profile", "victor", "--out", output],
     {
       cwd: repoRoot,
       env: {
@@ -75,6 +75,7 @@ test("mint sends the exact locked wire shape and writes only pairId dot canonica
   const requests = [];
   const result = await mintAndroidReadBootstrap({
     syncToken,
+    profile: "victor",
     output,
     homeDirectory: os.homedir(),
     now: 1_000,
@@ -95,6 +96,7 @@ test("mint sends the exact locked wire shape and writes only pairId dot canonica
     "capabilities",
     "expiresAt",
     "pairId",
+    "profile",
     "proofHash",
     "token",
   ]);
@@ -102,6 +104,7 @@ test("mint sends the exact locked wire shape and writes only pairId dot canonica
   assert.deepEqual(body.args.capabilities, ["todos:write"]);
   assert.deepEqual(ANDROID_BOOTSTRAP_CAPABILITIES, ["todos:write"]);
   assert.equal(Object.isFrozen(ANDROID_BOOTSTRAP_CAPABILITIES), true);
+  assert.equal(body.args.profile, "victor");
   assert.equal(body.args.token, syncToken);
   assert.match(body.args.pairId, /^android-read-[A-Za-z0-9_-]{16,64}$/);
   assert.match(body.args.proofHash, /^[0-9a-f]{64}$/);
@@ -128,6 +131,7 @@ test("TTL is bounded to one through thirty integer minutes", async () => {
     await assert.rejects(
       mintAndroidReadBootstrap({
         syncToken: "test-token",
+        profile: "victor",
         minutes: invalid,
         output,
         homeDirectory: os.homedir(),
@@ -175,6 +179,7 @@ test("redirect and malformed or oversized responses leave no file", async () => 
     await assert.rejects(
       mintAndroidReadBootstrap({
         syncToken: "test-token",
+        profile: "victor",
         output,
         homeDirectory: os.homedir(),
         fetchImpl: async (_url, request) => {

@@ -15,6 +15,7 @@ export const MAX_TTL_MINUTES = 30;
 export const REQUEST_TIMEOUT_MS = 10_000;
 export const RESPONSE_LIMIT_BYTES = 16 * 1024;
 export const ANDROID_BOOTSTRAP_CAPABILITIES = Object.freeze(["todos:write"]);
+export const DEVICE_PROFILES = Object.freeze(["victor", "rachel", "mason", "maddox"]);
 export const PAIRING_CODE_PATTERN =
   /^android-read-[A-Za-z0-9_-]{16,64}\.[A-Za-z0-9_-]{43}$/;
 
@@ -34,9 +35,17 @@ function validateTtlMinutes(value) {
   return minutes;
 }
 
+function validateProfile(value) {
+  if (!DEVICE_PROFILES.includes(value)) {
+    throw new Error(`--profile must be one of: ${DEVICE_PROFILES.join(", ")}.`);
+  }
+  return value;
+}
+
 function parseArgs(args) {
   let output;
   let minutes = DEFAULT_TTL_MINUTES;
+  let profile;
   let dryRun = false;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -50,6 +59,11 @@ function parseArgs(args) {
         throw new Error("--minutes requires a value.");
       }
       minutes = validateTtlMinutes(args[++index]);
+    } else if (argument === "--profile") {
+      if (args[index + 1] === undefined) {
+        throw new Error("--profile requires a value.");
+      }
+      profile = validateProfile(args[++index]);
     } else if (argument === "--dry-run") {
       dryRun = true;
     } else if (argument === "--help" || argument === "-h") {
@@ -61,7 +75,10 @@ function parseArgs(args) {
   if (output === undefined) {
     throw new Error("--out is required; there is no default secret destination.");
   }
-  return { output, minutes, dryRun, help: false };
+  if (profile === undefined) {
+    throw new Error("--profile is required for a profile-bound task credential.");
+  }
+  return { output, minutes, profile, dryRun, help: false };
 }
 
 function pathInside(parent, candidate) {
@@ -166,6 +183,7 @@ function writePrivateFile(output, pairingCode) {
 export async function mintAndroidReadBootstrap({
   syncToken,
   minutes = DEFAULT_TTL_MINUTES,
+  profile,
   output,
   homeDirectory,
   fetchImpl = fetch,
@@ -176,6 +194,7 @@ export async function mintAndroidReadBootstrap({
     throw new Error("CONVEX_SYNC_TOKEN is required on the trusted operator host.");
   }
   const ttlMinutes = validateTtlMinutes(minutes);
+  const deviceProfile = validateProfile(profile);
   const destination = validateOutputPath(output, homeDirectory);
   const pairId = `android-read-${base64url(randomBytes(18))}`;
   const proof = base64url(randomBytes(32));
@@ -200,6 +219,7 @@ export async function mintAndroidReadBootstrap({
           proofHash,
           expiresAt,
           capabilities: ANDROID_BOOTSTRAP_CAPABILITIES,
+          profile: deviceProfile,
           token: syncToken,
         },
         format: "json",
@@ -226,6 +246,7 @@ function usage() {
 Options:
   --out <path>     Required new mode-0600 file beneath $HOME/work.
   --minutes <n>    Pairing lifetime, 1-${MAX_TTL_MINUTES}. Default: ${DEFAULT_TTL_MINUTES}.
+  --profile <name> Required credential-bound task profile.
   --dry-run        Validate configuration without a request, file, or secret generation.
 
 CONVEX_SYNC_TOKEN must come from the environment. No credential is accepted in argv.
@@ -247,12 +268,14 @@ export async function main(args = process.argv.slice(2), processEnv = process.en
     console.log("DRY RUN: no request, file write, or secret generation occurred.");
     console.log(`minutes=${options.minutes}`);
     console.log(`capabilities=${ANDROID_BOOTSTRAP_CAPABILITIES.join(",")}`);
+    console.log(`profile=${options.profile}`);
     console.log(`out=${output}`);
     return;
   }
   await mintAndroidReadBootstrap({
     syncToken: processEnv.CONVEX_SYNC_TOKEN || "",
     minutes: options.minutes,
+    profile: options.profile,
     output,
     homeDirectory: processEnv.HOME,
   });

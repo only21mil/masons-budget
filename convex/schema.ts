@@ -310,6 +310,7 @@ export default defineSchema({
     expiresAt: v.float64(),
     claimedAt: v.optional(v.float64()),
     capabilities: v.optional(v.array(deviceCapabilityValidator)),
+    profile: v.optional(deviceProfileValidator),
   }).index("by_pair_id", ["pairId"]),
 
   // ── Mobile writeback pairing (SAT-1429) ──

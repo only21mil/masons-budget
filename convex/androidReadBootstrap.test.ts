@@ -25,6 +25,7 @@ const createAndroidReadBootstrap =
       proofHash: string;
       expiresAt: number;
       capabilities?: Array<"todos:write">;
+      profile?: "victor" | "rachel" | "mason" | "maddox";
       token?: string;
     },
     { pairId: string; expiresAt: number }
@@ -75,12 +76,15 @@ async function createBootstrap(
   proof = newProof(),
   expiresAt = Date.now() + 60_000,
   capabilities?: Array<"todos:write">,
+  profile: "victor" | "rachel" | "mason" | "maddox" | undefined =
+    capabilities?.length === 1 ? "victor" : undefined,
 ) {
   await t.mutation(createAndroidReadBootstrap, {
     pairId,
     proofHash: proofHash(proof),
     expiresAt,
     capabilities,
+    profile,
     token: syncToken,
   });
   return { pairId, proof };
@@ -243,6 +247,34 @@ describe("createAndroidReadBootstrap", () => {
     }
   });
 
+  it("rejects a todo-write bootstrap without a bound profile and inserts nothing", async () => {
+    const pairId = newPairId();
+    await expect(
+      t.mutation(createAndroidReadBootstrap, {
+        pairId,
+        proofHash: freshProofHash(),
+        expiresAt: Date.now() + 60_000,
+        capabilities: ["todos:write"],
+        token: syncToken,
+      }),
+    ).rejects.toThrow(/VALIDATION_FAILED/);
+    await expect(storedBootstrap(pairId)).resolves.toBeNull();
+  });
+
+  it("keeps read-only legacy bootstraps unbound", async () => {
+    const pairId = newPairId();
+    await expect(
+      t.mutation(createAndroidReadBootstrap, {
+        pairId,
+        proofHash: freshProofHash(),
+        expiresAt: Date.now() + 60_000,
+        profile: "victor",
+        token: syncToken,
+      }),
+    ).rejects.toThrow(/VALIDATION_FAILED/);
+    await expect(storedBootstrap(pairId)).resolves.toBeNull();
+  });
+
   it("rejects extra arguments at the Convex boundary", async () => {
     await expect(
       t.mutation(createAndroidReadBootstrap, {
@@ -322,6 +354,7 @@ describe("claimAndroidReadBootstrap", () => {
       pairedAt: result.pairedAt,
       lastSeenAt: result.pairedAt,
       capabilities: ["todos:write"],
+      profile: "victor",
     });
     expect(device!.tokenHash).toBe(proofHash(deviceToken));
     expect(JSON.stringify(device)).not.toContain(deviceToken);

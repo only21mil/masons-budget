@@ -42,7 +42,7 @@ test("dry-run generates no secret, writes no file, and needs no token", async ()
   const output = await destination("vv-linux-pair-dry-");
   const result = spawnSync(
     process.execPath,
-    [script, "--dry-run", "--out", output],
+    [script, "--dry-run", "--profile", "victor", "--out", output],
     {
       cwd: repoRoot,
       env: {
@@ -90,6 +90,7 @@ test("trusted mint sends all four grants and writes one raw unprinted pairing co
     convexUrl: APPROVED_CONVEX_ORIGIN,
     syncToken: token,
     name: "Test Linux",
+    profile: "victor",
     hours: 24,
     output,
     now: 1_000,
@@ -109,6 +110,7 @@ test("trusted mint sends all four grants and writes one raw unprinted pairing co
   assert.equal(requestBody.path, "dataFiles:createMobilePairing");
   assert.equal(requestBody.args.token, token);
   assert.deepEqual(requestBody.args.capabilities, LINUX_DEVICE_CAPABILITIES);
+  assert.equal(requestBody.args.profile, "victor");
 
   const artifactText = await readFile(output, "utf8");
   const artifact = JSON.parse(artifactText);
@@ -116,6 +118,7 @@ test("trusted mint sends all four grants and writes one raw unprinted pairing co
   assert.equal(artifactText.includes(token), false);
   assert.equal(artifact.convexUrl, undefined);
   assert.equal(artifact.pairId, undefined);
+  assert.equal(artifact.profile, "victor");
   assert.equal((await stat(output)).mode & 0o777, 0o600);
 });
 
@@ -127,6 +130,7 @@ test("a redirect is rejected without issuing a second request", async () => {
       convexUrl: APPROVED_CONVEX_ORIGIN,
       syncToken: "test-token",
       name: "Test Linux",
+      profile: "victor",
       hours: 24,
       output,
       fetchImpl: async (_url, request) => {
@@ -174,6 +178,7 @@ test("oversized, malformed, and wrong-schema responses write no artifact", async
         convexUrl: APPROVED_CONVEX_ORIGIN,
         syncToken: "test-token",
         name: "Test Linux",
+        profile: "victor",
         hours: 24,
         output,
         fetchImpl: async () => fixture.response,
