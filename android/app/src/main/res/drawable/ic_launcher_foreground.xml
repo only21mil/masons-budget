@@ -1,29 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Vogel Vault mark — the Apple app icon's Bitcoin glyph, ported to Android.
+  Sovereign Horizon mark, foreground layer.
+  Canonical: Design/assets/horizon-foreground.svg at ae9cf05. Accepted Horizon
+  geometry (24x24 viewBox) expanded affine into 108-space:
 
-  What came across from Apple: the letterform and the colourway. Orange ₿ on a
-  warm near-black field.
+    transform  translate(12 9.4) scale(0.435) translate(-13 -12.7) x4.5
+    -> FX = 1.9575, TX = 28.5525, TY = 17.4398
+    stroke 2.5 in 24-space (inside the scale group) -> 4.894 in 108-space
 
-  What did not, and why:
-    - "FAMILY BUDGET". Apple sets the old product name under the mark. At 48dp a
-      wordmark is an unreadable smear, and the name is wrong since the rename.
-    - The chart squiggle. Same reason: it is 2px of detail at launcher size.
-    - The gradient. See ic_launcher_background.xml.
+  Mark extents sit inside the Android 66dp safe circle (radius 33 about
+  centre 54): with half-stroke 2.447 the extremes are top 21.26, bottom 63.35,
+  left 44.51, right 57.62. Meaningful geometry stays inside the 72dp visible
+  viewport.
 
-  No keyhole. Victor, 2026-08-22: "I am fine with the apple icon and no text."
-  The Apple icon has never had one, and he answered the keyhole question by
-  choosing the Apple mark as it stands. The earlier keyhole request is superseded.
-
-  Glyph colour is #F7931A, the Bitcoin-branding orange. Apple's raster samples
-  #FCB23C at the glyph centre because it carries a gradient; #F7931A is that
-  gradient's own base and is the house value for a Bitcoin surface.
-
-  Geometry is v4 candidate C, which Victor approved on shape: spine, two lobes,
-  four protruding serif bars, ~54 units tall.
-
-  Safe zone: extremes (48,25.5) and (39,30)-(39,78) sit within 29.1 units of
-  centre, inside the r=33 adaptive safe circle; every coordinate is in 18..90.
+  The three rules are edge-to-edge and keep the canonical opacity ramp. Themed
+  icons carry the mark on a flat #0A0D0C layer.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -31,33 +22,42 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- ₿ spine -->
+    <!-- bitcoin mark: body -->
     <path
         android:strokeColor="#F7931A"
-        android:strokeWidth="6"
-        android:strokeLineCap="butt"
+        android:strokeWidth="4.894"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
         android:fillColor="@android:color/transparent"
-        android:pathData="M42,30 L42,78" />
-    <!-- Upper loop -->
+        android:pathData="M 46.953 29.185 h 8.222 c 3.328 0.000 5.873 2.153 5.873 5.285 c 0.000 2.740 -1.958 4.698 -4.698 5.285 c 3.328 0.392 5.677 2.545 5.677 5.677 c 0.000 3.328 -2.740 5.677 -6.460 5.677 H 46.953 V 29.185 z" />
+    <!-- bitcoin mark: crossbar -->
     <path
         android:strokeColor="#F7931A"
-        android:strokeWidth="6"
-        android:strokeLineCap="butt"
+        android:strokeWidth="4.894"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
         android:fillColor="@android:color/transparent"
-        android:pathData="M42,33 L53,33 A10.5,10.5 0 1,1 53,54 L42,54" />
-    <!-- Lower loop, slightly wider like the letterform -->
+        android:pathData="M 46.953 39.755 h 9.005" />
+    <!-- bitcoin mark: serifs -->
     <path
         android:strokeColor="#F7931A"
-        android:strokeWidth="6"
-        android:strokeLineCap="butt"
+        android:strokeWidth="4.894"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
         android:fillColor="@android:color/transparent"
-        android:pathData="M42,54 L54,54 A10.5,10.5 0 1,1 54,75 L42,75" />
-    <!-- The four protruding serif bars — the ₿ signature -->
-    <path
-        android:strokeColor="#F7931A"
-        android:strokeWidth="3.4"
-        android:strokeLineCap="butt"
-        android:fillColor="@android:color/transparent"
-        android:pathData="M49,25.5 L49,31.5 M55,25.5 L55,31.5 M49,73.5 L49,79.5 M55,73.5 L55,79.5" />
+        android:pathData="M 50.085 23.704 v 5.481 M 50.085 55.415 v 5.481 M 55.174 23.704 v 5.481 M 55.174 55.415 v 5.481" />
 
+    <!-- horizon rules, edge to edge, opacity ramp -->
+    <path
+        android:fillColor="#F7931A"
+        android:fillAlpha="0.50"
+        android:pathData="M0,67.95h108v7.2h-108z" />
+    <path
+        android:fillColor="#F7931A"
+        android:fillAlpha="0.30"
+        android:pathData="M0,79.2h108v5.625h-108z" />
+    <path
+        android:fillColor="#F7931A"
+        android:fillAlpha="0.17"
+        android:pathData="M0,88.875h108v4.275h-108z" />
 </vector>
