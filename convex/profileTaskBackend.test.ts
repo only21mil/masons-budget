@@ -187,6 +187,73 @@ describe("profile-private task backend", () => {
     ).resolves.toEqual({ todoId: "private-rachel", removed: true });
   });
 
+  it("keeps another profile's tombstone while allowing same-owner legacy recreation", async () => {
+    const todoId = "legacy-recreated-todo";
+    await t.mutation(api.upsertTodo, {
+      activeProfile: "mason",
+      todo: { id: todoId, title: "Mason private", owner: "mason" },
+      token: syncToken,
+    });
+    await t.mutation(api.deleteTodo, {
+      activeProfile: "mason",
+      owner: "mason",
+      todoId,
+      token: syncToken,
+    });
+    const deletedState = await t.run(async (ctx) => ({
+      rowTombstones: await ctx.db.query("rowTombstones").collect(),
+      legacyTombstones: await ctx.db.query("todoTombstones").collect(),
+      runtimeSourceLocks: await ctx.db.query("runtimeSourceLocks").collect(),
+    }));
+
+    await expect(
+      t.mutation(api.upsertTodo, {
+        activeProfile: "victor",
+        todo: { id: todoId, title: "Victor reuse", owner: "victor" },
+        token: syncToken,
+      }),
+    ).rejects.toThrow(/Deleted todo legacy-recreated-todo belongs to mason, not victor/);
+
+    const rejectedState = await t.run(async (ctx) => ({
+      row: await ctx.db
+        .query("todos")
+        .withIndex("by_todo_id", (q) => q.eq("todoId", todoId))
+        .unique(),
+      rowTombstones: await ctx.db.query("rowTombstones").collect(),
+      legacyTombstones: await ctx.db.query("todoTombstones").collect(),
+      runtimeSourceLocks: await ctx.db.query("runtimeSourceLocks").collect(),
+    }));
+    expect(rejectedState.row).toBeNull();
+    expect(rejectedState.rowTombstones).toEqual(deletedState.rowTombstones);
+    expect(rejectedState.legacyTombstones).toEqual(deletedState.legacyTombstones);
+    expect(rejectedState.runtimeSourceLocks).toEqual(
+      deletedState.runtimeSourceLocks,
+    );
+
+    await expect(
+      t.mutation(api.upsertTodo, {
+        activeProfile: "mason",
+        todo: { id: todoId, title: "Mason recreated", owner: "mason" },
+        token: syncToken,
+      }),
+    ).resolves.toMatchObject({ owner: "mason", outcome: "inserted" });
+    const recreatedState = await t.run(async (ctx) => ({
+      row: await ctx.db
+        .query("todos")
+        .withIndex("by_todo_id", (q) => q.eq("todoId", todoId))
+        .unique(),
+      rowTombstones: await ctx.db.query("rowTombstones").collect(),
+      legacyTombstones: await ctx.db.query("todoTombstones").collect(),
+    }));
+    expect(recreatedState.row).toMatchObject({
+      todoId,
+      owner: "mason",
+      title: "Mason recreated",
+    });
+    expect(recreatedState.rowTombstones).toEqual([]);
+    expect(recreatedState.legacyTombstones).toEqual([]);
+  });
+
   it("authenticates the device before enforcing exact-profile task ownership", async () => {
     const device = await pairMobileDevice(t, syncToken, "profile-task-device", [
       "todos:write",
