@@ -46,6 +46,7 @@ import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.ui.components.HorizontalHairline
 import com.sats21m.vogelvault.ui.components.StateBlock
+import com.sats21m.vogelvault.ui.components.ledgerColor
 import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultCream
 import com.sats21m.vogelvault.ui.theme.VaultSpace
@@ -372,14 +373,14 @@ private fun SmartListCard(
 ) {
     Column(
         modifier
-            .background(VaultSurface, RoundedCornerShape(8.dp))
+            .background(ledgerColor(VaultSurface), RoundedCornerShape(8.dp))
             .clickable(role = Role.Button, onClick = onClick)
             .padding(VaultSpace.md),
         verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
     ) {
-        Icon(kind.icon(), contentDescription = null, tint = VaultAccent)
-        Text(kind.title(), style = MaterialTheme.typography.titleSmall, color = VaultTextMuted)
-        Text(count.toString(), style = MaterialTheme.typography.headlineMedium, color = VaultCream)
+        Icon(kind.icon(), contentDescription = null, tint = ledgerColor(VaultAccent))
+        Text(kind.title(), style = MaterialTheme.typography.titleSmall, color = ledgerColor(VaultTextMuted))
+        Text(count.toString(), style = MaterialTheme.typography.headlineMedium, color = ledgerColor(VaultCream))
     }
 }
 
@@ -412,7 +413,7 @@ private fun TaskGroupSection(
             Text(
                 emptyText,
                 style = MaterialTheme.typography.bodySmall,
-                color = VaultTextMuted,
+                color = ledgerColor(VaultTextMuted),
                 modifier = Modifier.padding(VaultSpace.md),
             )
         } else {
@@ -428,24 +429,24 @@ private fun TaskGroupSection(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text(group.name, style = MaterialTheme.typography.bodyMedium, color = VaultCream)
+                        Text(group.name, style = MaterialTheme.typography.bodyMedium, color = ledgerColor(VaultCream))
                         if (group.owner != viewer) {
                             Text(
                                 group.owner.displayName,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = VaultTextDim,
+                                color = ledgerColor(VaultTextDim),
                             )
                         }
                     }
                     Text(
                         group.openCount.toString(),
                         style = MaterialTheme.typography.labelSmall,
-                        color = VaultTextMuted,
+                        color = ledgerColor(VaultTextMuted),
                     )
                     Icon(
                         Icons.Filled.ChevronRight,
                         contentDescription = null,
-                        tint = VaultTextDim,
+                        tint = ledgerColor(VaultTextDim),
                     )
                 }
             }
@@ -473,7 +474,7 @@ private fun TaskDetailList(
             Icon(
                 Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = stringResource(R.string.tasks_back),
-                tint = VaultAccent,
+                tint = ledgerColor(VaultAccent),
             )
             Text(stringResource(R.string.tasks_all_lists), color = VaultAccent)
         }
@@ -482,7 +483,7 @@ private fun TaskDetailList(
             Text(
                 stringResource(R.string.tasks_nothing_here),
                 style = MaterialTheme.typography.bodySmall,
-                color = VaultTextMuted,
+                color = ledgerColor(VaultTextMuted),
                 modifier = Modifier.padding(VaultSpace.md),
             )
         } else {
@@ -525,12 +526,12 @@ private fun TaskPanel(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(VaultSurface, RoundedCornerShape(8.dp)),
+            .background(ledgerColor(VaultSurface), RoundedCornerShape(8.dp)),
     ) {
         Text(
             title,
             style = MaterialTheme.typography.titleSmall,
-            color = VaultCream,
+            color = ledgerColor(VaultCream),
             modifier = Modifier
                 .fillMaxWidth()
                 .semantics { heading() }

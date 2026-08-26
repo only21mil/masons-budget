@@ -49,6 +49,9 @@ import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.ui.theme.LedgerNumeral
+import com.sats21m.vogelvault.ui.theme.LedgerRadii
+import com.sats21m.vogelvault.ui.theme.LedgerSpacing
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultCream
 import com.sats21m.vogelvault.ui.theme.VaultInfo
@@ -75,6 +78,24 @@ internal fun String.isUnavailableFigure(): Boolean =
 
 internal fun resolvedFigureColor(value: String, requested: Color): Color =
     if (value.isUnavailableFigure()) VaultTextDim else requested
+
+/** Maps the retired cockpit aliases onto the active Terminal or Daylight ledger. */
+@Composable
+internal fun ledgerColor(requested: Color): Color {
+    val colors = LocalLedgerTheme.current.colors
+    return when (requested) {
+        VaultCream -> colors.foreground
+        VaultTextMuted -> colors.foregroundSecondary
+        VaultTextDim -> colors.foregroundTertiary
+        VaultAccent -> colors.bitcoin
+        VaultPositive -> colors.gain
+        VaultNegative -> colors.loss
+        VaultLine -> colors.line
+        VaultSurface -> colors.panel
+        VaultSurfaceSunken -> colors.background
+        else -> requested
+    }
+}
 
 /** Provenance of a figure. The cockpit never lets an estimate look settled. */
 enum class Provenance { ACTUAL, PLANNED, ESTIMATED }
@@ -156,12 +177,13 @@ class VaultLazyListScope internal constructor(
     }
 
     private fun separateFromPreviousSection() {
+        val spacing = LedgerSpacing.section
         if (hasContent) {
             delegate.item(
                 key = "vault-section-gap:${gapIndex++}",
                 contentType = "vault-section-gap",
             ) {
-                Spacer(Modifier.height(VaultSpace.md))
+                Spacer(Modifier.height(spacing))
             }
         } else {
             hasContent = true
@@ -176,24 +198,25 @@ fun LazyListScope.vaultContent(content: VaultLazyListScope.() -> Unit) {
 
 @Composable
 private fun LazyPanelHeader(title: String, source: String?) {
-    val shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)
+    val tokens = LocalLedgerTheme.current
+    val shape = RoundedCornerShape(topStart = LedgerRadii.card, topEnd = LedgerRadii.card)
     Column(
         Modifier
             .fillMaxWidth()
-            .border(1.dp, VaultLine, shape)
-            .background(VaultSurface, shape),
+            .border(1.dp, tokens.colors.line, shape)
+            .background(tokens.colors.panel, shape),
     ) {
         Column(
-            Modifier.padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
+            Modifier.padding(horizontal = tokens.density.cardPadding, vertical = LedgerSpacing.medium),
         ) {
             Text(
                 title,
-                style = MaterialTheme.typography.titleSmall,
-                color = VaultCream,
+                style = tokens.type.sectionLabel,
+                color = tokens.colors.foreground,
                 modifier = Modifier.semantics { heading() },
             )
             if (source != null) {
-                Text(source, style = MaterialTheme.typography.labelSmall, color = VaultTextDim)
+                Text(source.uppercase(), style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
             }
         }
     }
@@ -204,16 +227,17 @@ private fun LazyPanelRow(
     isLast: Boolean,
     content: @Composable () -> Unit,
 ) {
+    val tokens = LocalLedgerTheme.current
     val shape = if (isLast) {
-        RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp)
+        RoundedCornerShape(bottomStart = LedgerRadii.card, bottomEnd = LedgerRadii.card)
     } else {
         RoundedCornerShape(0.dp)
     }
     Column(
         Modifier
             .fillMaxWidth()
-            .border(1.dp, VaultLine, shape)
-            .background(VaultSurface, shape),
+            .border(1.dp, tokens.colors.line, shape)
+            .background(tokens.colors.panel, shape),
     ) {
         content()
     }
@@ -235,10 +259,12 @@ private fun spokenFigure(value: String): String =
 
 @Composable
 fun KpiStrip(items: List<Kpi>, modifier: Modifier = Modifier) {
+    val tokens = LocalLedgerTheme.current
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .border(1.dp, VaultLine, RoundedCornerShape(8.dp)),
+            .border(1.dp, tokens.colors.line, RoundedCornerShape(LedgerRadii.card))
+            .background(tokens.colors.panel, RoundedCornerShape(LedgerRadii.card)),
     ) {
         items.chunked(2).forEachIndexed { rowIndex, row ->
             if (rowIndex > 0) HorizontalHairline()
@@ -283,19 +309,20 @@ internal fun kpiFigureWraps(value: String): Boolean = value == Money.PRICE_UNAVA
 
 @Composable
 private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
+    val tokens = LocalLedgerTheme.current
     val unavailable = item.value.isUnavailableFigure()
     val wrapsUnavailablePrice = kpiFigureWraps(item.value)
     val spoken = item.spoken()
     Column(
         modifier = modifier
             .clearAndSetSemantics { contentDescription = spoken }
-            .background(VaultSurface)
-            .padding(horizontal = VaultSpace.md, vertical = VaultSpace.md),
+            .background(tokens.colors.panel)
+            .padding(horizontal = tokens.density.cardPadding, vertical = tokens.density.cardPadding),
     ) {
         Text(
             item.label.uppercase(),
-            style = MaterialTheme.typography.labelSmall,
-            color = VaultTextDim,
+            style = tokens.type.kpiLabel,
+            color = tokens.colors.foregroundTertiary,
         )
         Spacer(Modifier.height(2.dp))
         Text(
@@ -303,18 +330,18 @@ private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
             maxLines = if (wrapsUnavailablePrice) 2 else 1,
             softWrap = wrapsUnavailablePrice,
             overflow = TextOverflow.Ellipsis,
-            style = LedgerNumeral.copy(fontSize = 18.sp),
+            style = tokens.type.kpiValue,
             color = when {
-                unavailable -> VaultTextDim
-                item.tone != null -> item.tone
-                item.provenance == Provenance.PLANNED -> VaultTextMuted
-                item.provenance == Provenance.ESTIMATED -> VaultTextDim
-                else -> VaultCream
+                unavailable -> tokens.colors.foregroundTertiary
+                item.tone != null -> ledgerColor(item.tone)
+                item.provenance == Provenance.PLANNED -> tokens.colors.foregroundSecondary
+                item.provenance == Provenance.ESTIMATED -> tokens.colors.foregroundTertiary
+                else -> tokens.colors.foreground
             },
             textAlign = TextAlign.Start,
         )
         if (!unavailable && item.hint != null) {
-            Text(item.hint, style = MaterialTheme.typography.labelSmall, color = VaultTextMuted)
+            Text(item.hint.uppercase(), style = tokens.type.kpiSub, color = tokens.colors.foregroundSecondary)
         }
     }
 }
@@ -327,17 +354,19 @@ fun Panel(
     trailing: @Composable (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
+    val tokens = LocalLedgerTheme.current
+    val shape = RoundedCornerShape(LedgerRadii.card)
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .border(1.dp, VaultLine, RoundedCornerShape(8.dp))
-            .background(VaultSurface, RoundedCornerShape(8.dp)),
+            .border(1.dp, tokens.colors.line, shape)
+            .background(tokens.colors.panel, shape),
     ) {
         if (title != null) {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
+                    .padding(horizontal = tokens.density.cardPadding, vertical = LedgerSpacing.medium),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
@@ -345,12 +374,12 @@ fun Panel(
                     // panel to panel; a long ledger screen is unusable swipe by swipe.
                     Text(
                         title,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = VaultCream,
+                        style = tokens.type.sectionLabel,
+                        color = tokens.colors.foreground,
                         modifier = Modifier.semantics { heading() },
                     )
                     if (source != null) {
-                        Text(source, style = MaterialTheme.typography.labelSmall, color = VaultTextDim)
+                        Text(source.uppercase(), style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
                     }
                 }
                 trailing?.invoke()
@@ -363,12 +392,12 @@ fun Panel(
 
 @Composable
 fun HorizontalHairline(modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth().height(1.dp).background(VaultLine))
+    LedgerRule(modifier)
 }
 
 @Composable
 fun VerticalHairline(modifier: Modifier = Modifier) {
-    Box(modifier.width(1.dp).background(VaultLine))
+    Box(modifier.width(1.dp).background(LocalLedgerTheme.current.colors.line))
 }
 
 /** A ledger row: label on the left, monospace figure hard right. */
@@ -381,6 +410,7 @@ fun LedgerRow(
     badge: String? = null,
     badgeAccented: Boolean = false,
 ) {
+    val tokens = LocalLedgerTheme.current
     LocalLedgerRowCompositionObserver.current?.invoke()
     // One stop per row rather than four, and the figure keeps the label that gives
     // it meaning — a bare "-412.30" swiped in isolation says nothing.
@@ -401,20 +431,24 @@ fun LedgerRow(
         Modifier
             .fillMaxWidth()
             .clearAndSetSemantics { contentDescription = spoken }
-            .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
+            .padding(horizontal = tokens.density.cardPadding, vertical = tokens.density.rowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(primary, style = MaterialTheme.typography.bodyMedium, color = VaultCream)
+            Text(primary, style = tokens.type.rowPrimary, color = tokens.colors.foreground)
             if (secondary != null) {
-                Text(secondary, style = MaterialTheme.typography.labelSmall, color = VaultTextDim)
+                Text(secondary.uppercase(), style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
             }
         }
         if (badge != null) {
             Badge(badge, accented = badgeAccented)
             Spacer(Modifier.width(VaultSpace.sm))
         }
-        Text(figure, style = LedgerNumeral, color = resolvedFigureColor(figure, figureColor))
+        Text(
+            figure,
+            style = tokens.type.rowFigure,
+            color = if (figure.isUnavailableFigure()) tokens.colors.foregroundTertiary else ledgerColor(figureColor),
+        )
     }
 }
 
@@ -427,7 +461,9 @@ fun Badge(
     /** What the pill means, when the visible text is not the whole story. */
     spoken: String = text,
 ) {
-    val border = tone ?: if (accented) VaultAccent.copy(alpha = 0.42f) else VaultLine
+    val tokens = LocalLedgerTheme.current
+    val resolvedTone = tone?.let { ledgerColor(it) }
+    val border = resolvedTone ?: if (accented) tokens.colors.bitcoin.copy(alpha = 0.42f) else tokens.colors.line
     Box(
         Modifier
             // role = Role.Button: a bare clickable() announces as static text with
@@ -438,14 +474,14 @@ fun Badge(
             )
             // Merged rather than cleared so the click action above survives.
             .semantics(mergeDescendants = true) { contentDescription = spoken }
-            .border(1.dp, border, RoundedCornerShape(99.dp))
+            .border(1.dp, border, RoundedCornerShape(LedgerRadii.control))
             .background(
-                if (accented) VaultAccent.copy(alpha = 0.16f) else VaultSurfaceSunken,
-                RoundedCornerShape(99.dp),
+                if (accented) tokens.colors.bitcoinSoft else tokens.colors.background,
+                RoundedCornerShape(LedgerRadii.control),
             )
             .padding(horizontal = 7.dp, vertical = 2.dp),
     ) {
-        Text(text, style = MaterialTheme.typography.labelSmall, color = tone ?: VaultTextMuted)
+        Text(text, style = tokens.type.chip, color = resolvedTone ?: tokens.colors.foregroundSecondary)
     }
 }
 
@@ -493,6 +529,7 @@ fun StateBlock(
     title: String? = null,
     detail: String? = null,
 ) {
+    val tokens = LocalLedgerTheme.current
     val icon: ImageVector
     val fallbackTitle: String
     val fallbackDetail: String
@@ -541,17 +578,17 @@ fun StateBlock(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(VaultSpace.xs),
     ) {
-        Icon(icon, contentDescription = null, tint = tint)
+        Icon(icon, contentDescription = null, tint = ledgerColor(tint))
         Text(
             title ?: fallbackTitle,
-            style = MaterialTheme.typography.bodyMedium,
-            color = VaultCream,
+            style = tokens.type.rowPrimary,
+            color = tokens.colors.foreground,
             textAlign = TextAlign.Center,
         )
         Text(
             detail ?: fallbackDetail,
-            style = MaterialTheme.typography.bodySmall,
-            color = VaultTextMuted,
+            style = tokens.type.body,
+            color = tokens.colors.foregroundSecondary,
             textAlign = TextAlign.Center,
         )
     }
@@ -559,21 +596,23 @@ fun StateBlock(
 
 @Composable
 fun StatusBanner(text: String, detail: String? = null, tone: Color = VaultInfo) {
+    val tokens = LocalLedgerTheme.current
+    val resolvedTone = ledgerColor(tone)
     Row(
         Modifier
             .fillMaxWidth()
             .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
-            .border(1.dp, VaultLine, RoundedCornerShape(6.dp))
-            .background(VaultSurface, RoundedCornerShape(6.dp))
-            .padding(VaultSpace.md),
+            .border(1.dp, tokens.colors.line, RoundedCornerShape(LedgerRadii.card))
+            .background(tokens.colors.panel, RoundedCornerShape(LedgerRadii.card))
+            .padding(tokens.density.cardPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(statusBannerIcon(tone), contentDescription = null, tint = tone)
+        Icon(statusBannerIcon(tone), contentDescription = null, tint = resolvedTone)
         Spacer(Modifier.width(VaultSpace.sm))
         Column {
-            Text(text, style = MaterialTheme.typography.bodySmall, color = VaultCream)
+            Text(text, style = tokens.type.rowPrimary, color = tokens.colors.foreground)
             if (detail != null) {
-                Text(detail, style = MaterialTheme.typography.labelSmall, color = VaultTextMuted)
+                Text(detail, style = tokens.type.body, color = tokens.colors.foregroundSecondary)
             }
         }
     }
@@ -588,12 +627,13 @@ internal fun statusBannerIcon(tone: Color): ImageVector = when (tone) {
 
 @Composable
 fun SectionLabel(text: String) {
+    val tokens = LocalLedgerTheme.current
     Text(
         text.uppercase(),
-        style = MaterialTheme.typography.labelSmall,
-        color = VaultTextDim,
+        style = tokens.type.sectionLabel,
+        color = tokens.colors.foregroundTertiary,
         modifier = Modifier
-            .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm)
+            .padding(horizontal = tokens.density.cardPadding, vertical = LedgerSpacing.medium)
             // Speak the original casing: TalkBack spells short all-caps strings out
             // letter by letter, so "BTC" and "CASH" arrive as initialisms.
             .clearAndSetSemantics {

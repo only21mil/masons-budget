@@ -2,6 +2,7 @@ package com.sats21m.vogelvault.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Box
@@ -58,6 +59,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -70,6 +72,8 @@ import com.sats21m.vogelvault.ui.components.FreshnessTag
 import com.sats21m.vogelvault.ui.components.HorizontalHairline
 import com.sats21m.vogelvault.ui.components.StatusBanner
 import com.sats21m.vogelvault.ui.theme.LocalIsUnfolded
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
+import com.sats21m.vogelvault.ui.theme.SovereignLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultAccentDim
 import com.sats21m.vogelvault.ui.theme.VaultBlack
@@ -147,6 +151,8 @@ internal fun foldedOverflowDestinations(destinations: List<Destination>): List<D
         destinations.drop(FOLDED_PRIMARY_ITEMS_WITH_OVERFLOW)
     }
 
+internal fun moreNavigationLabel(count: Int): String = "More ($count)"
+
 /**
  * @param onRequestProfileSwitchAuthentication the receiver that must authenticate
  * a profile switch before it happens. Null means the shell was composed without
@@ -177,8 +183,23 @@ fun VaultApp(
         onRequestProfileSwitchAuthentication
             ?: { unwiredRefusal = ProfileSwitchRefusal.SHELL_NOT_CONNECTED }
     val refusal = unwiredRefusal ?: profileSwitchRefusal
+    val context = LocalContext.current
+    val preferenceStore = remember(context.applicationContext) {
+        LedgerUiPreferences(context.applicationContext)
+    }
+    var ledgerSettings by remember(preferenceStore) { mutableStateOf(preferenceStore.current()) }
+    val systemDark = isSystemInDarkTheme()
+    val updateLedgerSettings: (LedgerUiSettings) -> Unit = { next ->
+        if (preferenceStore.save(next)) ledgerSettings = next
+    }
 
-    BoxWithConstraints(modifier.fillMaxSize().background(VaultBlack)) {
+    SovereignLedgerTheme(
+        treatment = ledgerSettings.treatment(systemDark),
+        effectSettings = ledgerSettings.effectSettings,
+        accessibility = ledgerSettings.accessibility,
+    ) {
+    val tokens = LocalLedgerTheme.current
+    BoxWithConstraints(modifier.fillMaxSize().background(tokens.colors.background)) {
         val unfolded = maxWidth.value >= UNFOLDED_MIN_WIDTH_DP
 
         CompositionLocalProvider(LocalIsUnfolded provides unfolded) {
@@ -206,6 +227,8 @@ fun VaultApp(
                             onStartRiverBillPay = onStartRiverBillPay,
                             displayUnit = displayUnit,
                             onDisplayUnitChange = onDisplayUnitChange,
+                            ledgerSettings = ledgerSettings,
+                            onLedgerSettingsChange = updateLedgerSettings,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -229,13 +252,17 @@ fun VaultApp(
                             onStartRiverBillPay = onStartRiverBillPay,
                         displayUnit = displayUnit,
                         onDisplayUnitChange = onDisplayUnitChange,
+                        ledgerSettings = ledgerSettings,
+                        onLedgerSettingsChange = updateLedgerSettings,
                         modifier = Modifier.weight(1f),
                     )
                     HorizontalHairline()
                     VaultBottomBar(destinations, current, onNavigate)
                 }
             }
+            LedgerAtmosphere()
         }
+    }
     }
 }
 
@@ -301,12 +328,13 @@ private fun NavigationDestinationIcon(
     indicatorWidth: Dp,
     contentDescription: String? = destination.label,
 ) {
+    val colors = LocalLedgerTheme.current.colors
     Box(
         modifier = Modifier
             .size(width = indicatorWidth, height = NAVIGATION_INDICATOR_HEIGHT)
             .then(
                 if (selected) {
-                    Modifier.border(1.dp, VaultSelectionBorder, CircleShape)
+                    Modifier.border(1.dp, colors.bitcoin, CircleShape)
                 } else {
                     Modifier
                 },
@@ -318,13 +346,14 @@ private fun NavigationDestinationIcon(
 }
 
 @Composable
-private fun MoreNavigationIcon(selected: Boolean) {
+private fun MoreNavigationIcon(selected: Boolean, overflowCount: Int) {
+    val colors = LocalLedgerTheme.current.colors
     Box(
         modifier = Modifier
             .size(width = BAR_INDICATOR_WIDTH, height = NAVIGATION_INDICATOR_HEIGHT)
             .then(
                 if (selected) {
-                    Modifier.border(1.dp, VaultSelectionBorder, CircleShape)
+                    Modifier.border(1.dp, colors.bitcoin, CircleShape)
                 } else {
                     Modifier
                 },
@@ -333,7 +362,7 @@ private fun MoreNavigationIcon(selected: Boolean) {
     ) {
         Icon(
             Icons.Filled.MoreHoriz,
-            contentDescription = stringResource(R.string.navigation_more),
+            contentDescription = moreNavigationLabel(overflowCount),
         )
     }
 }
@@ -344,6 +373,7 @@ private fun VaultRail(
     current: Destination,
     onNavigate: (Destination) -> Unit,
 ) {
+    val tokens = LocalLedgerTheme.current
     val currentIndex = destinations.indexOf(current).coerceAtLeast(0)
     val railState = rememberLazyListState(initialFirstVisibleItemIndex = currentIndex)
 
@@ -354,10 +384,10 @@ private fun VaultRail(
     }
 
     NavigationRail(
-        containerColor = VaultSurfaceSunken,
+        containerColor = tokens.colors.panel,
         header = {
             Spacer(Modifier.height(VaultSpace.md))
-            Icon(Icons.Filled.AccountBalance, contentDescription = null, tint = VaultAccent)
+            Icon(Icons.Filled.AccountBalance, contentDescription = null, tint = tokens.colors.bitcoin)
         },
     ) {
         LazyColumn(
@@ -384,11 +414,11 @@ private fun VaultRail(
                     },
                     label = { Text(destination.label, style = MaterialTheme.typography.labelSmall) },
                     colors = NavigationRailItemDefaults.colors(
-                        selectedIconColor = destination.navigationSelectedTint,
-                        selectedTextColor = VaultCream,
-                        indicatorColor = VaultAccentDim,
-                        unselectedIconColor = destination.navigationRestingTint,
-                        unselectedTextColor = VaultTextDim,
+                        selectedIconColor = tokens.colors.bitcoin,
+                        selectedTextColor = tokens.colors.foreground,
+                        indicatorColor = tokens.colors.bitcoinSoft,
+                        unselectedIconColor = tokens.colors.foregroundTertiary,
+                        unselectedTextColor = tokens.colors.foregroundTertiary,
                     ),
                 )
             }
@@ -402,11 +432,12 @@ private fun VaultBottomBar(
     current: Destination,
     onNavigate: (Destination) -> Unit,
 ) {
+    val tokens = LocalLedgerTheme.current
     val primary = foldedPrimaryDestinations(destinations)
     val overflow = foldedOverflowDestinations(destinations)
     var overflowExpanded by remember { mutableStateOf(false) }
 
-    NavigationBar(containerColor = VaultSurfaceSunken) {
+    NavigationBar(containerColor = tokens.colors.panel) {
         primary.forEach { destination ->
             NavigationBarItem(
                 selected = destination == current,
@@ -420,11 +451,11 @@ private fun VaultBottomBar(
                 },
                 label = { Text(destination.label, style = MaterialTheme.typography.labelSmall) },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = destination.navigationSelectedTint,
-                    selectedTextColor = VaultCream,
-                    indicatorColor = VaultAccentDim,
-                    unselectedIconColor = destination.navigationRestingTint,
-                    unselectedTextColor = VaultTextDim,
+                    selectedIconColor = tokens.colors.bitcoin,
+                    selectedTextColor = tokens.colors.foreground,
+                    indicatorColor = tokens.colors.bitcoinSoft,
+                    unselectedIconColor = tokens.colors.foregroundTertiary,
+                    unselectedTextColor = tokens.colors.foregroundTertiary,
                 ),
             )
         }
@@ -434,11 +465,14 @@ private fun VaultBottomBar(
                 onClick = { overflowExpanded = true },
                 icon = {
                     Box {
-                        MoreNavigationIcon(selected = current in overflow)
+                        MoreNavigationIcon(
+                            selected = current in overflow,
+                            overflowCount = overflow.size,
+                        )
                         DropdownMenu(
                             expanded = overflowExpanded,
                             onDismissRequest = { overflowExpanded = false },
-                            containerColor = VaultSurfaceSunken,
+                            containerColor = tokens.colors.panel,
                         ) {
                             overflow.forEach { destination ->
                                 DropdownMenuItem(
@@ -446,9 +480,9 @@ private fun VaultBottomBar(
                                         Text(
                                             destination.label,
                                             color = if (destination == current) {
-                                                VaultCream
+                                                tokens.colors.foreground
                                             } else {
-                                                VaultTextDim
+                                                tokens.colors.foregroundTertiary
                                             },
                                         )
                                     },
@@ -462,9 +496,9 @@ private fun VaultBottomBar(
                                             contentDescription = null,
                                             tint = when {
                                                 destination == current &&
-                                                    destination.navigationRestingTint == VaultBitcoin -> VaultBitcoin
-                                                destination == current -> VaultCream
-                                                else -> destination.navigationRestingTint
+                                                    destination.navigationRestingTint == VaultBitcoin -> tokens.colors.bitcoin
+                                                destination == current -> tokens.colors.foreground
+                                                else -> tokens.colors.foregroundTertiary
                                             },
                                         )
                                     },
@@ -475,16 +509,16 @@ private fun VaultBottomBar(
                 },
                 label = {
                     Text(
-                        stringResource(R.string.navigation_more),
+                        moreNavigationLabel(overflow.size),
                         style = MaterialTheme.typography.labelSmall,
                     )
                 },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = VaultCream,
-                    selectedTextColor = VaultCream,
-                    indicatorColor = VaultAccentDim,
-                    unselectedIconColor = VaultNavSlate,
-                    unselectedTextColor = VaultTextDim,
+                    selectedIconColor = tokens.colors.bitcoin,
+                    selectedTextColor = tokens.colors.foreground,
+                    indicatorColor = tokens.colors.bitcoinSoft,
+                    unselectedIconColor = tokens.colors.foregroundTertiary,
+                    unselectedTextColor = tokens.colors.foregroundTertiary,
                 ),
             )
         }
@@ -498,10 +532,11 @@ private fun VaultTopBar(
     onAuthorizedSwitch: (FamilyMember) -> Unit,
     onRefresh: () -> Unit,
 ) {
+    val tokens = LocalLedgerTheme.current
     Row(
         Modifier
             .fillMaxWidth()
-            .background(VaultSurfaceSunken)
+            .background(tokens.colors.panel)
             .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -514,7 +549,7 @@ private fun VaultTopBar(
         if (state.worstStatus == Freshness.LOADING) {
             CircularProgressIndicator(
                 modifier = Modifier.size(24.dp),
-                color = VaultAccent,
+                color = tokens.colors.bitcoin,
                 strokeWidth = 2.dp,
             )
         } else {
@@ -531,12 +566,12 @@ private fun VaultTopBar(
                             R.string.refresh_data
                         },
                     ),
-                    tint = if (state.worstStatus == Freshness.DEMO) VaultTextDim else VaultCream,
+                    tint = if (state.worstStatus == Freshness.DEMO) tokens.colors.foregroundTertiary else tokens.colors.foreground,
                 )
             }
         }
         Spacer(Modifier.width(VaultSpace.xs))
-        Text("SYNC", style = MaterialTheme.typography.labelSmall, color = VaultTextDim)
+        Text("SYNC", style = tokens.type.tabLabel, color = tokens.colors.foregroundTertiary)
         Spacer(Modifier.width(VaultSpace.xs))
         FreshnessTag(state.worstStatus, state.worstUpdatedAt, state.now)
     }

@@ -704,6 +704,7 @@ internal fun AddTransactionSheet(
                     }
                 },
             )
+            PaymentRail(paymentSource)
 
             if (paymentSource.route == PaymentSourceRoute.BILL_PAY) {
                 Text(

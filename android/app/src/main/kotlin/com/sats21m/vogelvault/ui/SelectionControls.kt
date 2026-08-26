@@ -34,6 +34,8 @@ import com.sats21m.vogelvault.ui.theme.VaultSpace
 import com.sats21m.vogelvault.ui.theme.VaultSurface
 import com.sats21m.vogelvault.ui.theme.VaultTextDim
 import com.sats21m.vogelvault.ui.theme.VaultTextMuted
+import com.sats21m.vogelvault.ui.theme.LedgerRadii
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 
 @Composable
 internal fun HorizonSelector(
@@ -41,13 +43,14 @@ internal fun HorizonSelector(
     selected: Int,
     onSelect: (Int) -> Unit,
 ) {
+    val tokens = LocalLedgerTheme.current
     require(options.isNotEmpty())
     require(selected in options)
     Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
         Text(
             stringResource(R.string.horizon_label),
-            style = MaterialTheme.typography.labelSmall,
-            color = VaultTextDim,
+            style = tokens.type.sectionLabel,
+            color = tokens.colors.foregroundTertiary,
             modifier = Modifier.semantics { heading() },
         )
         Row(
@@ -83,7 +86,8 @@ internal fun SelectionChip(
     modifier: Modifier = Modifier,
     onSelect: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(99.dp)
+    val tokens = LocalLedgerTheme.current
+    val shape = RoundedCornerShape(LedgerRadii.control)
     Box(
         modifier
             .heightIn(min = 48.dp)
@@ -97,8 +101,8 @@ internal fun SelectionChip(
                     true
                 }
             }
-            .background(if (selected) VaultAccentDim else VaultSurface, shape)
-            .border(1.dp, if (selected) VaultSelectionBorder else VaultLine, shape)
+            .background(if (selected) tokens.colors.bitcoinSoft else tokens.colors.panel, shape)
+            .border(1.dp, if (selected) tokens.colors.bitcoin else tokens.colors.line, shape)
             .padding(
                 horizontal = if (compact) VaultSpace.sm else VaultSpace.md,
                 vertical = if (compact) VaultSpace.xs else VaultSpace.sm,
@@ -107,8 +111,8 @@ internal fun SelectionChip(
     ) {
         Text(
             label,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (selected) VaultCream else VaultTextMuted,
+            style = tokens.type.chip,
+            color = if (selected) tokens.colors.foreground else tokens.colors.foregroundSecondary,
             maxLines = 1,
         )
     }
