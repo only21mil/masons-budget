@@ -81,6 +81,18 @@ enum ConvexWriteFailure: Sendable, Equatable {
     /// identifier this module authors; the offending owner value is not carried.
     case ownerMismatch(field: String)
 
+    /// A pre-cutover device credential has no server-side profile binding.
+    case profileBindingRequired
+
+    /// A legacy or not-yet-refreshed task has no authoritative row revision.
+    case revisionRequired
+
+    /// The supplied task revision is no longer current.
+    case staleWrite
+
+    /// The task is deleted or has no authoritative row/tombstone to mutate.
+    case entityUnavailable
+
     /// A non-200 HTTP status.
     case http(status: Int)
 
@@ -105,6 +117,14 @@ enum ConvexWriteFailure: Sendable, Equatable {
             "\(field) is not a writable amount"
         case let .ownerMismatch(field):
             "\(field) belongs to a different profile"
+        case .profileBindingRequired:
+            "the device credential must be paired to this profile"
+        case .revisionRequired:
+            "the task must refresh before it can be changed"
+        case .staleWrite:
+            "the task changed on another device"
+        case .entityUnavailable:
+            "the task is no longer available"
         case let .http(status):
             "HTTP \(status)"
         }
@@ -184,6 +204,23 @@ extension ConvexWriteResult {
                 return .failed(.credentialStorage)
             case .unexpectedResponse:
                 return .failed(.malformedResponse)
+            case let .remote(code):
+                switch code {
+                case .deviceUnauthorized:
+                    return .unauthorized
+                case .profileBindingRequired:
+                    return .failed(.profileBindingRequired)
+                case .revisionRequired:
+                    return .failed(.revisionRequired)
+                case .entityConflict:
+                    return .failed(.staleWrite)
+                case .entityDeleted, .entityNotFound:
+                    return .failed(.entityUnavailable)
+                case .ownerMismatch, .ownerSourceMismatch:
+                    return .failed(.ownerMismatch(field: "todo"))
+                case .validationFailed:
+                    return .failed(.serverRejected)
+                }
             }
 
         case is AppWriteSyncError:
@@ -220,7 +257,8 @@ extension ConvexWriteResult {
             true
         case let .failed(failure):
             switch failure {
-            case .invalidAmount, .ownerMismatch, .payloadEncoding, .credentialStorage, .cancelled:
+            case .invalidAmount, .ownerMismatch, .payloadEncoding, .credentialStorage, .cancelled,
+                 .profileBindingRequired, .revisionRequired, .staleWrite, .entityUnavailable:
                 false
             case .transport:
                 true
@@ -252,6 +290,10 @@ extension ConvexWriteResult {
             case .malformedResponse: "malformed_response"
             case .invalidAmount: "invalid_amount"
             case .ownerMismatch: "owner_mismatch"
+            case .profileBindingRequired: "PROFILE_BINDING_REQUIRED"
+            case .revisionRequired: "REVISION_REQUIRED"
+            case .staleWrite: "ENTITY_CONFLICT"
+            case .entityUnavailable: "ENTITY_NOT_FOUND"
             case let .http(status): "http_\(status)"
             }
         }

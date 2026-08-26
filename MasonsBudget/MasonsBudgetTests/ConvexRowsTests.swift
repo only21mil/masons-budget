@@ -371,9 +371,14 @@ final class ConvexRowsTests: XCTestCase {
             "title": "Victor private",
             "done": false,
             "flagged": false,
+            "updatedAtMs": 1_777_777_777_777,
         ]])
         let victorTodos = try await victorReader.todos(viewer: .victor)
         XCTAssertEqual(victorTodos.map(\.id), ["victor-private"])
+        XCTAssertEqual(victorTodos.first?.updatedAtMs, 1_777_777_777_777)
+        let cached = LedgerMapper.mapTodos(victorTodos, viewer: .victor)
+        XCTAssertEqual(cached.first?.updatedAtMs, 1_777_777_777_777)
+        XCTAssertTrue(cached.first?.hasServerAuthority == true)
 
         let crossProfileReader = try todoReader(serverRows: [[
             "todoId": "rachel-private",
@@ -381,6 +386,7 @@ final class ConvexRowsTests: XCTestCase {
             "title": "Rachel private",
             "done": false,
             "flagged": false,
+            "updatedAtMs": 1_777_777_777_778,
         ]])
         do {
             _ = try await crossProfileReader.todos(viewer: .victor)
@@ -420,6 +426,42 @@ final class ConvexRowsTests: XCTestCase {
         let remaining = try context.fetch(FetchDescriptor<TodoItem>())
         XCTAssertEqual(remaining.map(\.id), ["stale-rachel"])
         XCTAssertEqual(remaining.first?.createdBy, "app")
+    }
+
+    @MainActor
+    func testTodoRefreshInstallsAuthorityOnAnOfflineAppCreateWithoutReplacingItsContent() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: TodoItem.self, configurations: configuration)
+        let context = ModelContext(container)
+        let service = ConvexSyncService(context: context)
+        let local = TodoItem(
+            id: "offline-create",
+            title: "Local optimistic title",
+            owner: .mason,
+            createdBy: "app",
+            hasServerAuthority: false,
+        )
+        context.insert(local)
+        try context.save()
+
+        let remote = TodoItem(
+            id: local.id,
+            title: "Server projection",
+            owner: .mason,
+            createdBy: "mc2",
+            updatedAtMs: 1_888_888_888_888,
+            hasServerAuthority: true,
+        )
+        try service.replaceTodos(
+            visibleTo: .mason,
+            with: [remote],
+            replacementOwners: [.mason],
+        )
+
+        XCTAssertEqual(local.title, "Local optimistic title")
+        XCTAssertEqual(local.updatedAtMs, 1_888_888_888_888)
+        XCTAssertTrue(local.hasServerAuthority)
+        XCTAssertEqual(local.createdBy, "app")
     }
 
     @MainActor

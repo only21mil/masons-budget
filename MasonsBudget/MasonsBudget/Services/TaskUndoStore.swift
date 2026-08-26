@@ -13,8 +13,12 @@ struct DeletedTodoSnapshot: Identifiable {
     let isDone: Bool
     let owner: String
     let createdBy: String
+    let createdAt: Date?
     let updatedAt: Date
+    let completedAt: Date?
     let sourceFile: String?
+    let updatedAtMs: Double?
+    let hasServerAuthority: Bool
 
     var ownerMember: FamilyMember? {
         FamilyMember(rawValue: owner)
@@ -31,8 +35,12 @@ struct DeletedTodoSnapshot: Identifiable {
         isDone = todo.isDone
         owner = todo.owner
         createdBy = todo.createdBy
+        createdAt = todo.createdAt
         updatedAt = todo.updatedAt
+        completedAt = todo.completedAt
         sourceFile = todo.sourceFile
+        updatedAtMs = todo.updatedAtMs
+        hasServerAuthority = todo.hasServerAuthority
     }
 
     func restoredTodo() -> TodoItem {
@@ -47,8 +55,12 @@ struct DeletedTodoSnapshot: Identifiable {
             isDone: isDone,
             owner: FamilyMember(rawValue: owner) ?? .victor,
             createdBy: createdBy,
+            createdAt: createdAt,
             updatedAt: updatedAt,
+            completedAt: completedAt,
             sourceFile: sourceFile,
+            updatedAtMs: updatedAtMs,
+            hasServerAuthority: hasServerAuthority,
         )
         todo.owner = owner
         return todo
@@ -64,8 +76,12 @@ struct DeletedTodoSnapshot: Identifiable {
         todo.isDone = isDone
         todo.owner = owner
         todo.createdBy = createdBy
+        todo.createdAt = createdAt
         todo.updatedAt = updatedAt
+        todo.completedAt = completedAt
         todo.sourceFile = sourceFile
+        todo.updatedAtMs = updatedAtMs
+        todo.hasServerAuthority = hasServerAuthority
     }
 }
 
@@ -139,7 +155,11 @@ final class TaskUndoStore: ObservableObject {
             rollback.commit()
             clearPending()
             present(snapshot)
-            AppWriteSyncService.deleteTodo(id: snapshot.id)
+            AppWriteSyncService.deleteTodo(
+                id: snapshot.id,
+                owner: snapshot.ownerMember,
+                baseUpdatedAtMs: snapshot.updatedAtMs,
+            )
         }
     }
 
@@ -165,7 +185,15 @@ final class TaskUndoStore: ObservableObject {
             }
         }) {
             clearPending()
-            AppWriteSyncService.pushTodo(todo)
+            AppWriteSyncService.restoreTodo(
+                id: snapshot.id,
+                owner: snapshot.ownerMember,
+                baseUpdatedAtMs: snapshot.updatedAtMs,
+                onAcceptedRevision: { revision in
+                    todo.updatedAtMs = revision
+                    todo.hasServerAuthority = true
+                },
+            )
         }
     }
 

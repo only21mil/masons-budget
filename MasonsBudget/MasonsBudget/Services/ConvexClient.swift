@@ -363,6 +363,12 @@ enum AppWritebackConfig {
     private static let baseURLKey = "mc2_mobile_base_url"
     private static let deviceIDKey = "mc2_mobile_device_id"
     private static let deviceTokenKey = "mc2_mobile_device_token"
+    private static let deviceProfileKey = "vogel_vault_mobile_device_profile"
+
+    static var activeProfile: FamilyMember {
+        let raw = UserDefaults.standard.string(forKey: ConvexSyncService.selectedMemberKey)
+        return raw.flatMap(FamilyMember.init(rawValue:)) ?? .victor
+    }
 
     static var baseURL: URL? {
         guard let raw = UserDefaults.standard.string(forKey: baseURLKey)?
@@ -399,8 +405,21 @@ enum AppWritebackConfig {
         !deviceToken.isEmpty
     }
 
-    static var isConfigured: Bool {
+    static var boundProfile: FamilyMember? {
+        UserDefaults.standard.string(forKey: deviceProfileKey)
+            .flatMap(FamilyMember.init(rawValue:))
+    }
+
+    /// A pre-cutover credential can be present but has no profile binding. Keep
+    /// that state distinct so task writes report PROFILE_BINDING_REQUIRED and do
+    /// not silently claim or use a different credential. This local value is a
+    /// consistency check only; the server-stored credential profile is authority.
+    static var hasStoredCredential: Bool {
         baseURL != nil && !deviceID.isEmpty && hasDeviceToken
+    }
+
+    static var isConfigured: Bool {
+        hasStoredCredential
     }
 
     static var bundledPairingURLs: [String] {
@@ -437,6 +456,7 @@ enum AppWritebackConfig {
         baseURL: String,
         deviceID: String,
         deviceToken: String,
+        profile: FamilyMember = activeProfile,
         credentialStore: any CredentialStoring = AppWritebackDeviceTokenStore.store,
     ) -> Bool {
         let trimmedBaseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -448,6 +468,7 @@ enum AppWritebackConfig {
         guard credentialStore.save(trimmedDeviceToken) else { return false }
         UserDefaults.standard.set(trimmedBaseURL, forKey: baseURLKey)
         UserDefaults.standard.set(trimmedDeviceID, forKey: deviceIDKey)
+        UserDefaults.standard.set(profile.rawValue, forKey: deviceProfileKey)
         UserDefaults.standard.removeObject(forKey: deviceTokenKey)
         return true
     }
@@ -456,6 +477,7 @@ enum AppWritebackConfig {
         UserDefaults.standard.removeObject(forKey: baseURLKey)
         UserDefaults.standard.removeObject(forKey: deviceIDKey)
         UserDefaults.standard.removeObject(forKey: deviceTokenKey)
+        UserDefaults.standard.removeObject(forKey: deviceProfileKey)
         AppWritebackDeviceTokenStore.store.clear()
     }
 }
@@ -482,6 +504,7 @@ enum AppWritebackError: LocalizedError {
     case serverError
     case credentialStorageFailed
     case unexpectedResponse
+    case remote(AppWritebackRemoteErrorCode)
 
     var errorDescription: String? {
         switch self {
@@ -499,18 +522,101 @@ enum AppWritebackError: LocalizedError {
             "The device credential could not be stored securely."
         case .unexpectedResponse:
             "The writeback endpoint returned an unexpected response."
+        case let .remote(code):
+            "The writeback endpoint rejected the request with \(code.rawValue)."
         }
     }
 }
 
+enum AppWritebackRemoteErrorCode: String, Sendable, Equatable {
+    case profileBindingRequired = "PROFILE_BINDING_REQUIRED"
+    case revisionRequired = "REVISION_REQUIRED"
+    case entityConflict = "ENTITY_CONFLICT"
+    case entityDeleted = "ENTITY_DELETED"
+    case entityNotFound = "ENTITY_NOT_FOUND"
+    case ownerMismatch = "OWNER_MISMATCH"
+    case ownerSourceMismatch = "OWNER_SOURCE_MISMATCH"
+    case deviceUnauthorized = "DEVICE_UNAUTHORIZED"
+    case validationFailed = "VALIDATION_FAILED"
+}
+
+enum TodoDeviceWriteOperation: String, Sendable, Equatable {
+    case create
+    case update
+}
+
+/// Strict task payload for `tables:upsertTodoFromDevice`. The legacy blob DTO
+/// contains compatibility aliases that the row mutation deliberately rejects.
+struct TodoDeviceWritePayload: Sendable, Equatable {
+    let id: String
+    let owner: FamilyMember
+    let title: String
+    let done: Bool
+    let flagged: Bool
+    let project: String?
+    let area: String?
+    let due: String?
+    let notes: String?
+    let priority: Int?
+    let createdAt: String?
+    let updatedAt: String?
+    let completedAt: String?
+
+    init(_ todo: LegacyTodoDTO) throws {
+        guard let owner = todo.effectiveOwner else {
+            throw AppWritebackError.remote(.ownerMismatch)
+        }
+        id = todo.id
+        self.owner = owner
+        title = todo.effectiveTitle
+        done = todo.effectiveDone
+        flagged = todo.effectiveFlagged
+        project = todo.project
+        area = todo.area
+        due = todo.effectiveDueDate
+        notes = todo.text
+        priority = todo.priority
+        createdAt = todo.createdAt
+        updatedAt = todo.updatedAt
+        completedAt = todo.completedAt
+    }
+
+    func convexJSONObject() -> [String: Any] {
+        var object: [String: Any] = [
+            "id": id,
+            "owner": owner.rawValue,
+            "title": title,
+            "done": done,
+            "flagged": flagged,
+        ]
+        if let project { object["project"] = project }
+        if let area { object["area"] = area }
+        if let due { object["due"] = due }
+        if let notes { object["notes"] = notes }
+        if let priority { object["priority"] = ConvexTaggedInt64Encoder.encode(Int64(priority)) }
+        if let createdAt { object["createdAt"] = createdAt }
+        if let updatedAt { object["updatedAt"] = updatedAt }
+        if let completedAt { object["completedAt"] = completedAt }
+        return object
+    }
+}
+
 final class AppWritebackClient: Sendable {
+    static let todoUpsertPath = "tables:upsertTodoFromDevice"
+    static let todoDeletePath = "tables:deleteTodoFromDevice"
+    static let todoRestorePath = "tables:restoreTodoFromDevice"
+
     private let session: URLSession
 
     init(session: URLSession = .shared) {
         self.session = session
     }
 
-    func claimPairing(pairingURL rawURL: String, deviceName: String) async throws {
+    func claimPairing(
+        pairingURL rawURL: String,
+        deviceName: String,
+        profile: FamilyMember = AppWritebackConfig.activeProfile,
+    ) async throws {
         let trimmed = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed),
               let scheme = url.scheme,
@@ -529,7 +635,12 @@ final class AppWritebackClient: Sendable {
         }
 
         if Self.isConvexBaseURL(baseURL) {
-            try await claimConvexPairing(baseURL: baseURL, pair: pair, deviceName: deviceName)
+            try await claimConvexPairing(
+                baseURL: baseURL,
+                pair: pair,
+                deviceName: deviceName,
+                profile: profile,
+            )
             return
         }
 
@@ -569,10 +680,14 @@ final class AppWritebackClient: Sendable {
             baseURL: baseURL.absoluteString,
             deviceID: deviceID,
             deviceToken: deviceToken,
+            profile: profile,
         ) else { throw AppWritebackError.credentialStorageFailed }
     }
 
-    func claimBundledPairing(deviceName: String) async throws {
+    func claimBundledPairing(
+        deviceName: String,
+        profile: FamilyMember = AppWritebackConfig.activeProfile,
+    ) async throws {
         if AppWritebackConfig.isConfigured { return }
 
         let urls = AppWritebackConfig.bundledPairingURLs
@@ -583,7 +698,7 @@ final class AppWritebackClient: Sendable {
         var lastError: Error?
         for url in urls {
             do {
-                try await claimPairing(pairingURL: url, deviceName: deviceName)
+                try await claimPairing(pairingURL: url, deviceName: deviceName, profile: profile)
                 return
             } catch {
                 lastError = error
@@ -594,113 +709,90 @@ final class AppWritebackClient: Sendable {
     }
 
     @discardableResult
-    func completeTodo(id: String, title: String) async throws -> Bool {
-        try await setTodoDone(id: id, title: title, isDone: true)
+    func removeTodo(
+        id: String,
+        activeProfile: FamilyMember,
+        owner: FamilyMember,
+        baseUpdatedAtMs: Double?,
+    ) async throws -> Bool {
+        let taskSession = try await taskSession(activeProfile: activeProfile)
+        let args = try Self.todoDeleteArguments(
+            id: id,
+            activeProfile: activeProfile,
+            owner: owner,
+            baseUpdatedAtMs: baseUpdatedAtMs,
+            deviceID: taskSession.deviceID,
+            deviceToken: taskSession.deviceToken,
+        )
+        let value = try await convexMutation(
+            baseURL: taskSession.baseURL,
+            path: Self.todoDeletePath,
+            args: args,
+        )
+        guard let object = value as? [String: Any],
+              object["ok"] as? Bool == true,
+              object["entityId"] as? String == id,
+              let removed = object["removed"] as? Bool
+        else { throw AppWritebackError.unexpectedResponse }
+        return removed
     }
 
     @discardableResult
-    func setTodoDone(id: String, title: String, isDone: Bool) async throws -> Bool {
-        if !AppWritebackConfig.isConfigured {
-            #if os(iOS)
-                let deviceName = "Vogel Vault iOS"
-            #else
-                let deviceName = "Vogel Vault macOS"
-            #endif
-            try await claimBundledPairing(deviceName: deviceName)
-        }
-
-        guard let baseURL = AppWritebackConfig.baseURL,
-              !AppWritebackConfig.deviceID.isEmpty,
-              !AppWritebackConfig.deviceToken.isEmpty
-        else { throw AppWritebackError.notConfigured }
-
-        if Self.isConvexBaseURL(baseURL) {
-            return try await setTodoDoneViaConvex(baseURL: baseURL, id: id, title: title, isDone: isDone)
-        }
-
-        guard isDone else {
-            throw AppWritebackError.serverError
-        }
-
-        let endpoint = baseURL
-            .appendingPathComponent("api")
-            .appendingPathComponent("mobile")
-            .appendingPathComponent("todos")
-            .appendingPathComponent("complete")
-        guard endpoint.scheme == "https" || endpoint.host == "localhost" || endpoint.host == "127.0.0.1" else {
-            throw AppWritebackError.invalidBaseURL
-        }
-
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(AppWritebackConfig.deviceID, forHTTPHeaderField: "x-mobile-device-id")
-        request.setValue(AppWritebackConfig.deviceToken, forHTTPHeaderField: "x-mobile-device-token")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "id": id,
-            "title": title,
-        ])
-
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw AppWritebackError.httpError(0)
-        }
-
-        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        if http.statusCode != 200 {
-            throw AppWritebackError.serverError
-        }
-        guard let object else { throw AppWritebackError.unexpectedResponse }
-        guard object["ok"] as? Bool == true else {
-            throw AppWritebackError.serverError
-        }
+    func upsertTodo(
+        _ todo: LegacyTodoDTO,
+        activeProfile: FamilyMember,
+        operation: TodoDeviceWriteOperation,
+        baseUpdatedAtMs: Double?,
+    ) async throws -> Bool {
+        let taskSession = try await taskSession(activeProfile: activeProfile)
+        let args = try Self.todoUpsertArguments(
+            try TodoDeviceWritePayload(todo),
+            activeProfile: activeProfile,
+            operation: operation,
+            baseUpdatedAtMs: baseUpdatedAtMs,
+            deviceID: taskSession.deviceID,
+            deviceToken: taskSession.deviceToken,
+        )
+        let value = try await convexMutation(
+            baseURL: taskSession.baseURL,
+            path: Self.todoUpsertPath,
+            args: args,
+        )
+        guard let object = value as? [String: Any],
+              object["ok"] as? Bool == true,
+              object["entityId"] as? String == todo.id,
+              object["outcome"] as? String == (operation == .create ? "inserted" : "updated")
+        else { throw AppWritebackError.unexpectedResponse }
         return true
     }
 
-    @discardableResult
-    func removeTodo(id: String) async throws -> Bool {
-        if !AppWritebackConfig.isConfigured {
-            #if os(iOS)
-                let deviceName = "Vogel Vault iOS"
-            #else
-                let deviceName = "Vogel Vault macOS"
-            #endif
-            try await claimBundledPairing(deviceName: deviceName)
-        }
-
-        guard let baseURL = AppWritebackConfig.baseURL,
-              !AppWritebackConfig.deviceID.isEmpty,
-              !AppWritebackConfig.deviceToken.isEmpty
-        else { throw AppWritebackError.notConfigured }
-
-        guard Self.isConvexBaseURL(baseURL) else {
-            throw AppWritebackError.serverError
-        }
-
-        return try await removeTodoViaConvex(baseURL: baseURL, id: id)
-    }
-
-    @discardableResult
-    func upsertTodo(_ todo: LegacyTodoDTO) async throws -> Bool {
-        if !AppWritebackConfig.isConfigured {
-            #if os(iOS)
-                let deviceName = "Vogel Vault iOS"
-            #else
-                let deviceName = "Vogel Vault macOS"
-            #endif
-            try await claimBundledPairing(deviceName: deviceName)
-        }
-
-        guard let baseURL = AppWritebackConfig.baseURL,
-              !AppWritebackConfig.deviceID.isEmpty,
-              !AppWritebackConfig.deviceToken.isEmpty
-        else { throw AppWritebackError.notConfigured }
-
-        guard Self.isConvexBaseURL(baseURL) else {
-            throw AppWritebackError.serverError
-        }
-
-        return try await upsertTodoViaConvex(baseURL: baseURL, todo: todo)
+    func restoreTodo(
+        id: String,
+        activeProfile: FamilyMember,
+        owner: FamilyMember,
+        baseUpdatedAtMs: Double?,
+    ) async throws -> Double {
+        let taskSession = try await taskSession(activeProfile: activeProfile)
+        let args = try Self.todoRestoreArguments(
+            id: id,
+            activeProfile: activeProfile,
+            owner: owner,
+            baseUpdatedAtMs: baseUpdatedAtMs,
+            deviceID: taskSession.deviceID,
+            deviceToken: taskSession.deviceToken,
+        )
+        let value = try await convexMutation(
+            baseURL: taskSession.baseURL,
+            path: Self.todoRestorePath,
+            args: args,
+        )
+        guard let object = value as? [String: Any],
+              object["ok"] as? Bool == true,
+              object["entityId"] as? String == id,
+              let revision = object["updatedAtMs"] as? Double,
+              Self.isValidTaskRevision(revision)
+        else { throw AppWritebackError.unexpectedResponse }
+        return revision
     }
 
     @discardableResult
@@ -757,10 +849,162 @@ final class AppWritebackClient: Sendable {
         ]
     }
 
+    static func todoUpsertArguments(
+        _ todo: TodoDeviceWritePayload,
+        activeProfile: FamilyMember,
+        operation: TodoDeviceWriteOperation,
+        baseUpdatedAtMs: Double?,
+        deviceID: String,
+        deviceToken: String,
+    ) throws -> [String: Any] {
+        guard todo.owner == activeProfile else {
+            throw AppWritebackError.remote(.ownerMismatch)
+        }
+        switch operation {
+        case .create:
+            guard baseUpdatedAtMs == nil else {
+                throw AppWritebackError.remote(.validationFailed)
+            }
+        case .update:
+            guard let baseUpdatedAtMs else {
+                throw AppWritebackError.remote(.revisionRequired)
+            }
+            guard isValidTaskRevision(baseUpdatedAtMs) else {
+                throw AppWritebackError.remote(.validationFailed)
+            }
+        }
+
+        var args: [String: Any] = [
+            "deviceId": deviceID,
+            "deviceToken": deviceToken,
+            "activeProfile": activeProfile.rawValue,
+            "owner": todo.owner.rawValue,
+            "sourceFile": "todos",
+            "operation": operation.rawValue,
+            "todo": todo.convexJSONObject(),
+        ]
+        if let baseUpdatedAtMs { args["baseUpdatedAtMs"] = baseUpdatedAtMs }
+        return args
+    }
+
+    static func todoDeleteArguments(
+        id: String,
+        activeProfile: FamilyMember,
+        owner: FamilyMember,
+        baseUpdatedAtMs: Double?,
+        deviceID: String,
+        deviceToken: String,
+    ) throws -> [String: Any] {
+        try todoIdentityArguments(
+            id: id,
+            activeProfile: activeProfile,
+            owner: owner,
+            baseUpdatedAtMs: baseUpdatedAtMs,
+            deviceID: deviceID,
+            deviceToken: deviceToken,
+        )
+    }
+
+    static func todoRestoreArguments(
+        id: String,
+        activeProfile: FamilyMember,
+        owner: FamilyMember,
+        baseUpdatedAtMs: Double?,
+        deviceID: String,
+        deviceToken: String,
+    ) throws -> [String: Any] {
+        try todoIdentityArguments(
+            id: id,
+            activeProfile: activeProfile,
+            owner: owner,
+            baseUpdatedAtMs: baseUpdatedAtMs,
+            deviceID: deviceID,
+            deviceToken: deviceToken,
+        )
+    }
+
+    private static func todoIdentityArguments(
+        id: String,
+        activeProfile: FamilyMember,
+        owner: FamilyMember,
+        baseUpdatedAtMs: Double?,
+        deviceID: String,
+        deviceToken: String,
+    ) throws -> [String: Any] {
+        guard owner == activeProfile else {
+            throw AppWritebackError.remote(.ownerMismatch)
+        }
+        guard let baseUpdatedAtMs else {
+            throw AppWritebackError.remote(.revisionRequired)
+        }
+        guard isValidTaskRevision(baseUpdatedAtMs) else {
+            throw AppWritebackError.remote(.validationFailed)
+        }
+        return [
+            "deviceId": deviceID,
+            "deviceToken": deviceToken,
+            "activeProfile": activeProfile.rawValue,
+            "owner": owner.rawValue,
+            "sourceFile": "todos",
+            "entityId": id,
+            "baseUpdatedAtMs": baseUpdatedAtMs,
+        ]
+    }
+
+    static func isValidTaskRevision(_ value: Double) -> Bool {
+        value.isFinite &&
+            value >= 0 &&
+            value <= Double(BudgetCategoryDeletionIntent.maximumExactJSONRevision) &&
+            value.rounded(.towardZero) == value
+    }
+
+    static func taskProfileBindingError(
+        hasStoredCredential: Bool,
+        boundProfile: FamilyMember?,
+        activeProfile: FamilyMember,
+    ) -> AppWritebackRemoteErrorCode? {
+        guard hasStoredCredential else { return nil }
+        guard let boundProfile else { return .profileBindingRequired }
+        return boundProfile == activeProfile ? nil : .ownerMismatch
+    }
+
+    private func taskSession(
+        activeProfile: FamilyMember,
+    ) async throws -> (baseURL: URL, deviceID: String, deviceToken: String) {
+        if !AppWritebackConfig.hasStoredCredential {
+            #if os(iOS)
+                let deviceName = "Vogel Vault iOS"
+            #else
+                let deviceName = "Vogel Vault macOS"
+            #endif
+            try await claimBundledPairing(deviceName: deviceName, profile: activeProfile)
+        }
+
+        guard AppWritebackConfig.hasStoredCredential,
+              let baseURL = AppWritebackConfig.baseURL
+        else { throw AppWritebackError.notConfigured }
+        if let bindingError = Self.taskProfileBindingError(
+            hasStoredCredential: AppWritebackConfig.hasStoredCredential,
+            boundProfile: AppWritebackConfig.boundProfile,
+            activeProfile: activeProfile,
+        ) {
+            throw AppWritebackError.remote(bindingError)
+        }
+        guard Self.isConvexBaseURL(baseURL) else {
+            throw AppWritebackError.invalidBaseURL
+        }
+        return (
+            baseURL,
+            AppWritebackConfig.deviceID,
+            AppWritebackConfig.deviceToken
+        )
+    }
+
     private func claimConvexPairing(
         baseURL: URL,
         pair: (pairID: String, proofHash: String),
         deviceName: String,
+        profile: FamilyMember,
     ) async throws {
         let deviceID = try Self.randomBase64URL(byteCount: 14)
         let deviceToken = try Self.randomBase64URL(byteCount: 32)
@@ -779,45 +1023,8 @@ final class AppWritebackClient: Sendable {
             baseURL: baseURL.absoluteString,
             deviceID: deviceID,
             deviceToken: deviceToken,
+            profile: profile,
         ) else { throw AppWritebackError.credentialStorageFailed }
-    }
-
-    private func setTodoDoneViaConvex(baseURL: URL, id: String, title: String, isDone: Bool) async throws -> Bool {
-        let value = try await convexMutation(baseURL: baseURL, path: "dataFiles:completeTodoFromMobile", args: [
-            "deviceId": AppWritebackConfig.deviceID,
-            "deviceToken": AppWritebackConfig.deviceToken,
-            "id": id,
-            "title": title,
-            "done": isDone,
-        ])
-        guard let object = value as? [String: Any], object["ok"] as? Bool == true else {
-            throw AppWritebackError.unexpectedResponse
-        }
-        return true
-    }
-
-    private func upsertTodoViaConvex(baseURL: URL, todo: LegacyTodoDTO) async throws -> Bool {
-        let value = try await convexMutation(baseURL: baseURL, path: "dataFiles:upsertTodoFromMobile", args: [
-            "deviceId": AppWritebackConfig.deviceID,
-            "deviceToken": AppWritebackConfig.deviceToken,
-            "todo": todo.convexJSONObject(),
-        ])
-        guard let object = value as? [String: Any], object["ok"] as? Bool == true else {
-            throw AppWritebackError.unexpectedResponse
-        }
-        return true
-    }
-
-    private func removeTodoViaConvex(baseURL: URL, id: String) async throws -> Bool {
-        let value = try await convexMutation(baseURL: baseURL, path: "dataFiles:removeTodoFromMobile", args: [
-            "deviceId": AppWritebackConfig.deviceID,
-            "deviceToken": AppWritebackConfig.deviceToken,
-            "id": id,
-        ])
-        guard let object = value as? [String: Any], object["ok"] as? Bool == true else {
-            throw AppWritebackError.unexpectedResponse
-        }
-        return true
     }
 
     private func convexMutation(baseURL: URL, path: String, args: [String: Any]) async throws -> Any {
@@ -846,14 +1053,33 @@ final class AppWritebackClient: Sendable {
             throw AppWritebackError.httpError(http.statusCode)
         }
         if object?["status"] as? String == "error" {
-            // ConvexError application errors carry the real reason in errorData;
-            // errorMessage is the prod-masked "Server Error" string (SAT-1508).
+            if let code = Self.remoteErrorCode(from: object?["errorData"]) {
+                throw AppWritebackError.remote(code)
+            }
+            // Never surface errorMessage. Production masks it inconsistently,
+            // and an upstream message is not safe user-facing diagnostic text.
             throw AppWritebackError.serverError
         }
         guard object?["status"] as? String == "success" else {
             throw AppWritebackError.unexpectedResponse
         }
         return object?["value"] ?? [:]
+    }
+
+    static func remoteErrorCode(from raw: Any?) -> AppWritebackRemoteErrorCode? {
+        let object: [String: Any]?
+        if let dictionary = raw as? [String: Any] {
+            object = dictionary
+        } else if let string = raw as? String,
+                  string.utf8.count <= 2_048,
+                  let data = string.data(using: .utf8)
+        {
+            object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        } else {
+            object = nil
+        }
+        guard let code = object?["code"] as? String else { return nil }
+        return AppWritebackRemoteErrorCode(rawValue: code)
     }
 
     private static func isConvexBaseURL(_ url: URL) -> Bool {
@@ -1343,7 +1569,8 @@ final class ConvexClient: Sendable {
         return Self.acceptedRevision(result["updatedAtMs"])
     }
 
-    /// Upsert one app-created or app-edited todo row.
+    /// Admin-only compatibility write. Interactive app tasks use the
+    /// profile-bound device methods on `AppWritebackClient`.
     func upsertTodoRow(_ todo: LegacyTodoDTO) async throws {
         let path = "tables:upsertTodo"
         let raw = try await mutation(path, args: [
@@ -1356,7 +1583,8 @@ final class ConvexClient: Sendable {
         }
     }
 
-    /// Delete one todo row. A missing row is still a successful idempotent delete.
+    /// Admin-only compatibility delete. Interactive app tasks use the
+    /// profile-bound device methods on `AppWritebackClient`.
     func deleteTodoRow(id: String) async throws {
         let path = "tables:deleteTodo"
         let raw = try await mutation(path, args: [

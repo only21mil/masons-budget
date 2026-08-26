@@ -375,88 +375,81 @@ enum AppWriteSyncService {
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         let payload = LegacyTodoDTO(appTodo: todo)
-        pushTodoPayload(payload, onResult: onResult)
+        let operation: TodoDeviceWriteOperation = todo.hasServerAuthority ? .update : .create
+        pushTodoPayload(
+            payload,
+            operation: operation,
+            activeProfile: AppWritebackConfig.activeProfile,
+            onAccepted: {
+                todo.hasServerAuthority = true
+            },
+            onResult: onResult,
+        )
     }
 
     static func setTodoCompletion(
         _ todo: TodoItem,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
+        todo.completedAt = todo.isDone ? todo.updatedAt : nil
         let payload = LegacyTodoDTO(appTodo: todo)
-        setTodoCompletionPayload(payload, isDone: todo.isDone, onResult: onResult)
+        let operation: TodoDeviceWriteOperation = todo.hasServerAuthority ? .update : .create
+        pushTodoPayload(
+            payload,
+            operation: operation,
+            activeProfile: AppWritebackConfig.activeProfile,
+            label: "Update todo completion",
+            onAccepted: {
+                todo.hasServerAuthority = true
+            },
+            onResult: onResult,
+        )
     }
 
     private static func pushTodoPayload(
         _ payload: LegacyTodoDTO,
+        operation: TodoDeviceWriteOperation,
+        activeProfile: FamilyMember,
+        label: String = "Save todo",
+        onAccepted: (@MainActor @Sendable () -> Void)? = nil,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
-        let label = "Save todo"
         let operationID = reportSyncStart(label)
         if let blocked = writeBlocker(requiresSyncToken: false) {
             reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
-                pushTodoPayload(payload, onResult: onResult)
+                pushTodoPayload(
+                    payload,
+                    operation: operation,
+                    activeProfile: activeProfile,
+                    label: label,
+                    onAccepted: onAccepted,
+                    onResult: onResult,
+                )
             }, onResult: onResult)
             return
         }
 
         Task {
-            let result: ConvexWriteResult
-            if ConvexConfig.hasSyncToken {
-                let client = makeClient()
-                result = await withRetry(label: "push todo \(payload.id)") {
-                    try await client.upsertTodoRow(payload)
-                }
-            } else {
-                // Genuine row-API gap: paired-device credentials are accepted
-                // only by the legacy mobile todo mutations. Row mutations
-                // currently require the runtime-injected shared sync token.
-                //
-                // This reroute used to hide the case where NEITHER path had a
-                // usable credential. `AppWritebackError.notConfigured` and an
-                // unclaimable pairing now classify as `.unauthorized`.
-                let client = AppWritebackClient()
-                result = await withRetry(label: "push todo via paired writeback \(payload.id)") {
-                    let synced = try await client.upsertTodo(payload)
-                    guard synced else { throw AppWriteSyncError.unexpectedPayload }
-                }
+            let client = AppWritebackClient()
+            let result = await withRetry(label: "push todo via paired device \(payload.id)") {
+                let synced = try await client.upsertTodo(
+                    payload,
+                    activeProfile: activeProfile,
+                    operation: operation,
+                    baseUpdatedAtMs: payload.updatedAtMs,
+                )
+                guard synced else { throw AppWriteSyncError.unexpectedPayload }
             }
+            if case .ok = result { onAccepted?() }
             reportSyncResult(label: label, operationID: operationID, result: result, retry: {
-                pushTodoPayload(payload, onResult: onResult)
-            }, onResult: onResult)
-        }
-    }
-
-    private static func setTodoCompletionPayload(
-        _ payload: LegacyTodoDTO,
-        isDone: Bool,
-        onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
-    ) {
-        let label = "Update todo completion"
-        let operationID = reportSyncStart(label)
-        if let blocked = writeBlocker(requiresSyncToken: false) {
-            reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
-                setTodoCompletionPayload(payload, isDone: isDone, onResult: onResult)
-            }, onResult: onResult)
-            return
-        }
-
-        Task {
-            let result: ConvexWriteResult
-            if ConvexConfig.hasSyncToken {
-                let client = makeClient()
-                result = await withRetry(label: "set todo completion \(payload.id)") {
-                    try await client.upsertTodoRow(payload)
-                }
-            } else {
-                // See pushTodoPayload: no paired-device row mutation exists.
-                let client = AppWritebackClient()
-                result = await withRetry(label: "set todo completion via paired writeback \(payload.id)") {
-                    let synced = try await client.setTodoDone(id: payload.id, title: payload.effectiveTitle, isDone: isDone)
-                    guard synced else { throw AppWriteSyncError.unexpectedPayload }
-                }
-            }
-            reportSyncResult(label: label, operationID: operationID, result: result, retry: {
-                setTodoCompletionPayload(payload, isDone: isDone, onResult: onResult)
+                pushTodoPayload(
+                    payload,
+                    operation: operation,
+                    activeProfile: activeProfile,
+                    label: label,
+                    onAccepted: onAccepted,
+                    onResult: onResult,
+                )
             }, onResult: onResult)
         }
     }
@@ -465,40 +458,115 @@ enum AppWriteSyncService {
         _ todo: TodoItem,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
-        let todoId = todo.id
-        deleteTodo(id: todoId, onResult: onResult)
+        deleteTodo(
+            id: todo.id,
+            owner: todo.ownerMember,
+            baseUpdatedAtMs: todo.updatedAtMs,
+            onResult: onResult,
+        )
     }
 
     static func deleteTodo(
         id todoId: String,
+        owner: FamilyMember? = nil,
+        baseUpdatedAtMs: Double? = nil,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
         let label = "Delete todo"
+        let activeProfile = AppWritebackConfig.activeProfile
         let operationID = reportSyncStart(label)
         if let blocked = writeBlocker(requiresSyncToken: false) {
             reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
-                deleteTodo(id: todoId, onResult: onResult)
+                deleteTodo(
+                    id: todoId,
+                    owner: owner,
+                    baseUpdatedAtMs: baseUpdatedAtMs,
+                    onResult: onResult,
+                )
             }, onResult: onResult)
             return
         }
 
         Task {
             let result: ConvexWriteResult
-            if ConvexConfig.hasSyncToken {
-                let client = makeClient()
-                result = await withRetry(label: "delete todo \(todoId)") {
-                    try await client.deleteTodoRow(id: todoId)
+            if baseUpdatedAtMs == nil {
+                result = .failed(.revisionRequired)
+            } else if let owner {
+                let client = AppWritebackClient()
+                result = await withRetry(label: "delete todo via paired device \(todoId)") {
+                    _ = try await client.removeTodo(
+                        id: todoId,
+                        activeProfile: activeProfile,
+                        owner: owner,
+                        baseUpdatedAtMs: baseUpdatedAtMs,
+                    )
                 }
             } else {
-                // See pushTodoPayload: no paired-device row mutation exists.
-                let client = AppWritebackClient()
-                result = await withRetry(label: "delete todo via paired writeback \(todoId)") {
-                    let synced = try await client.removeTodo(id: todoId)
-                    guard synced else { throw AppWriteSyncError.unexpectedPayload }
-                }
+                result = .failed(.ownerMismatch(field: "todo"))
             }
             reportSyncResult(label: label, operationID: operationID, result: result, retry: {
-                deleteTodo(id: todoId, onResult: onResult)
+                deleteTodo(
+                    id: todoId,
+                    owner: owner,
+                    baseUpdatedAtMs: baseUpdatedAtMs,
+                    onResult: onResult,
+                )
+            }, onResult: onResult)
+        }
+    }
+
+    static func restoreTodo(
+        id todoId: String,
+        owner: FamilyMember?,
+        baseUpdatedAtMs: Double?,
+        onAcceptedRevision: (@MainActor @Sendable (Double) -> Void)? = nil,
+        onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
+    ) {
+        let label = "Restore todo"
+        let activeProfile = AppWritebackConfig.activeProfile
+        let operationID = reportSyncStart(label)
+        if let blocked = writeBlocker(requiresSyncToken: false) {
+            reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
+                restoreTodo(
+                    id: todoId,
+                    owner: owner,
+                    baseUpdatedAtMs: baseUpdatedAtMs,
+                    onAcceptedRevision: onAcceptedRevision,
+                    onResult: onResult,
+                )
+            }, onResult: onResult)
+            return
+        }
+
+        Task {
+            let result: ConvexWriteResult
+            let revision = AcceptedRevisionBox()
+            if baseUpdatedAtMs == nil {
+                result = .failed(.revisionRequired)
+            } else if let owner {
+                let client = AppWritebackClient()
+                result = await withRetry(label: "restore todo via paired device \(todoId)") {
+                    revision.value = try await client.restoreTodo(
+                        id: todoId,
+                        activeProfile: activeProfile,
+                        owner: owner,
+                        baseUpdatedAtMs: baseUpdatedAtMs,
+                    )
+                }
+            } else {
+                result = .failed(.ownerMismatch(field: "todo"))
+            }
+            if case .ok = result, let revision = revision.value {
+                onAcceptedRevision?(revision)
+            }
+            reportSyncResult(label: label, operationID: operationID, result: result, retry: {
+                restoreTodo(
+                    id: todoId,
+                    owner: owner,
+                    baseUpdatedAtMs: baseUpdatedAtMs,
+                    onAcceptedRevision: onAcceptedRevision,
+                    onResult: onResult,
+                )
             }, onResult: onResult)
         }
     }

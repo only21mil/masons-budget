@@ -633,6 +633,8 @@ struct LegacyTodoDTO: Codable {
     let updatedAt: String?
     let createdAt: String?
     let completedAt: String?
+    /// Exact row revision. Legacy blobs omit it; row reads preserve it.
+    let updatedAtMs: Double?
 
     enum CodingKeys: String, CodingKey {
         case id, title, text, project, area, category, type, due, date, deadline, when, priority, flag, flagged, done, completed, status, owner, assignee
@@ -642,6 +644,7 @@ struct LegacyTodoDTO: Codable {
         case camelUpdatedAt = "updatedAt"
         case createdAt
         case completedAt
+        case updatedAtMs
     }
 
     init(
@@ -654,7 +657,10 @@ struct LegacyTodoDTO: Codable {
         flag: Bool = false,
         done: Bool = false,
         owner: String = FamilyMember.victor.rawValue,
+        createdAt: String? = nil,
         updatedAt: String? = nil,
+        completedAt: String? = nil,
+        updatedAtMs: Double? = nil,
     ) {
         self.id = id
         self.title = title
@@ -677,8 +683,9 @@ struct LegacyTodoDTO: Codable {
         self.owner = owner
         assignee = owner
         self.updatedAt = updatedAt
-        createdAt = nil
-        completedAt = nil
+        self.createdAt = createdAt
+        self.completedAt = completedAt
+        self.updatedAtMs = updatedAtMs
     }
 
     init(
@@ -695,6 +702,7 @@ struct LegacyTodoDTO: Codable {
         createdAt: String?,
         updatedAt: String?,
         completedAt: String?,
+        updatedAtMs: Double,
     ) {
         id = rowId
         self.title = title
@@ -719,6 +727,7 @@ struct LegacyTodoDTO: Codable {
         self.updatedAt = updatedAt
         self.createdAt = createdAt
         self.completedAt = completedAt
+        self.updatedAtMs = updatedAtMs
     }
 
     init(from decoder: Decoder) throws {
@@ -754,6 +763,7 @@ struct LegacyTodoDTO: Codable {
             ?? Self.decodeFlexibleString(from: container, forKey: .camelUpdatedAt)
         createdAt = Self.decodeFlexibleString(from: container, forKey: .createdAt)
         completedAt = Self.decodeFlexibleString(from: container, forKey: .completedAt)
+        updatedAtMs = try container.decodeIfPresent(Double.self, forKey: .updatedAtMs)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -776,6 +786,7 @@ struct LegacyTodoDTO: Codable {
         try container.encodeIfPresent(owner, forKey: .owner)
         try container.encodeIfPresent(assignee, forKey: .assignee)
         try container.encodeIfPresent(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(updatedAtMs, forKey: .updatedAtMs)
     }
 
     init(appTodo todo: TodoItem) {
@@ -789,7 +800,10 @@ struct LegacyTodoDTO: Codable {
             flag: todo.isFlagged,
             done: todo.isDone,
             owner: todo.owner,
+            createdAt: todo.createdAt.map(Self.dateTimeString),
             updatedAt: Self.dateTimeString(todo.updatedAt),
+            completedAt: todo.completedAt.map(Self.dateTimeString),
+            updatedAtMs: todo.updatedAtMs,
         )
     }
 
@@ -872,9 +886,12 @@ struct LegacyTodoDTO: Codable {
 
     func convexJSONObject() throws -> [String: Any] {
         let data = try JSONEncoder().encode(self)
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw ConvexError.decodeFailed("todo", NSError(domain: "LegacyBlobTodo", code: -1))
         }
+        // Admin upsert stamps its own revision. Device writes use the dedicated
+        // payload and send this value only as `baseUpdatedAtMs`.
+        object.removeValue(forKey: "updatedAtMs")
         return object
     }
 }
