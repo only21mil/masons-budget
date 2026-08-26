@@ -83,14 +83,17 @@ import {
   PageGrid,
   PageHeader,
   Panel,
+  PaymentRailGlyph,
   MutationNotice,
   RowActions,
   SUPPRESSED,
   Select,
   StateBlock,
   StatusBanner,
+  TextInput,
   TransactionFormDialog,
 } from "../../components/index.ts"
+import type { PaymentRail } from "../../components/index.ts"
 import { linkedBitcoinBuyFor, mutationOwner, stableId } from "../../data/mutations.ts"
 import { paymentSourceDisplay } from "../../data/paymentSource.ts"
 import {
@@ -335,6 +338,22 @@ function formatSnapshotBitcoin(
 
 function incomeOf(transaction: Transaction): bigint {
   return transaction.category === "Income" ? transaction.amount : 0n
+}
+
+export type ActivityFilter = "all" | "income" | "spends" | "lightning" | "on-chain"
+
+/** Card-wire classification for the two Bitcoin payment rails. Unknown/fiat cards stay unmarked. */
+export function paymentRailForCard(card: string | null): PaymentRail | null {
+  if (card === "lightning" || card === "zeus_lightning") return "lightning"
+  if (card === "on_chain" || card === "zeus_on_chain") return "on-chain"
+  return null
+}
+
+export function activityMatchesFilter(transaction: Transaction, filter: ActivityFilter): boolean {
+  if (filter === "all") return true
+  if (filter === "income") return transaction.category.toLowerCase() === "income"
+  if (filter === "spends") return transaction.category.toLowerCase() !== "income"
+  return paymentRailForCard(transaction.card) === filter
 }
 
 const INT64_MIN = -(1n << 63n)
@@ -908,7 +927,7 @@ function DashboardPage() {
   const visibleTransactions = visibleTo(activeProfile, data.transactions.value)
   const budgetTransactions = budgetTransactionsFor(activeProfile, data.transactions.value)
   const accounts = data.btcBalanceDocument.value?.accounts ?? []
-  const todos = visibleTo(activeProfile, data.todos.value).filter((todo) => !todo.done)
+  const todos = data.todos.value.filter((todo) => todo.owner === activeProfile && !todo.done)
   const btcQuote = operationalBtcQuote(financeModel)
   const btcPriceCents = btcQuote?.priceCents ?? null
 
@@ -1016,7 +1035,22 @@ function transactionColumns(
         key: "card",
         header: "Source",
         // A card string the closed list does not know is shown verbatim.
-        render: (row: Transaction) => paymentSourceDisplay(row) ?? "—",
+        render: (row: Transaction) => {
+          const rail = paymentRailForCard(row.card)
+          return (
+            <span className="vv-payment-source">
+              {rail ? (
+                <PaymentRailGlyph
+                  rail={rail}
+                  size={11}
+                  className={rail === "lightning" ? "vv-payment-rail--lightning" : "vv-payment-rail--chain"}
+                  title={rail === "lightning" ? "Lightning payment" : "On-chain payment"}
+                />
+              ) : null}
+              {paymentSourceDisplay(row) ?? "—"}
+            </span>
+          )
+        },
         secondary: true,
       },
       { key: "owner", header: "Owner", render: (row: Transaction) => <Badge tone="neutral">{row.owner}</Badge>, secondary: true },
@@ -1461,7 +1495,15 @@ function ActivityPage() {
     refresh,
   } = useAppState()
   const [adding, setAdding] = useState(false)
+  const [query, setQuery] = useState("")
+  const [filter, setFilter] = useState<ActivityFilter>("all")
   const transactions = visibleTo(activeProfile, data.transactions.value)
+  const normalizedQuery = query.trim().toLowerCase()
+  const filteredTransactions = transactions.filter((transaction) =>
+    activityMatchesFilter(transaction, filter) &&
+    (!normalizedQuery || [transaction.merchant, transaction.category, transaction.card ?? ""]
+      .some((value) => value.toLowerCase().includes(normalizedQuery))),
+  )
   const btcPriceCents = operationalBtcPrice(financeModel)
   const addGate = mutationGate(
     "transaction.upsert",
@@ -1504,13 +1546,41 @@ function ActivityPage() {
       <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
       <StaleNotice status={data.transactions.status} />
       <BitcoinQuoteNotice available={displayUnit === "usd" || btcPriceCents !== null} />
-      <Panel source={data.transactions.source} flush>
+      <div className="vv-activity-controls">
+        <label className="vv-activity-search">
+          <span aria-hidden="true">/</span>
+          <span className="vv-sr-only">Search activity</span>
+          <TextInput
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="SEARCH LEDGER"
+          />
+        </label>
+        <div className="vv-filter-chips" role="group" aria-label="Activity filter">
+          {(["all", "income", "spends", "lightning", "on-chain"] as const).map((choice) => (
+            <Button
+              key={choice}
+              variant={filter === choice ? "primary" : "secondary"}
+              aria-pressed={filter === choice}
+              onClick={() => setFilter(choice)}
+            >
+              {choice}
+            </Button>
+          ))}
+        </div>
+      </div>
+      <Panel
+        title="Ledger"
+        source={`${filteredTransactions.length} records visible · ${data.transactions.source}`}
+        flush
+      >
         <DataTable
           columns={columns}
-          rows={transactions}
+          rows={filteredTransactions}
           rowKey={(row) => row.id}
           state={tableState(data.transactions.status)}
-          footer={`${transactions.length} of ${data.transactions.value.length} records visible to ${activeProfile}`}
+          emptyTitle={normalizedQuery ? `No records match “${query.trim()}”` : "No records match this filter"}
+          footer={`${filteredTransactions.length} of ${transactions.length} scoped records shown`}
         />
       </Panel>
       <AddTransactionDialogs open={adding} onClose={() => setAdding(false)} />

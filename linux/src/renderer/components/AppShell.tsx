@@ -6,7 +6,9 @@
 
 import type { ReactNode } from "react"
 
+import { useOptionalAppState } from "../app/AppState.tsx"
 import { IconGlyph, type IconName } from "./IconGlyph.tsx"
+import { HorizonMark, LedgerScanlines } from "./LedgerFoundations.tsx"
 import { cx } from "./cx.ts"
 
 export interface NavItem {
@@ -34,12 +36,26 @@ export interface AppShellProps {
 }
 
 export function AppShell({ sections, activeId, onNavigate, topBar, children }: AppShellProps) {
+  const preferences = useOptionalAppState()
+  const theme = preferences?.ledgerTheme ?? "dark"
+  const scanlines = preferences?.scanlinesEnabled ?? true
+  const phosphor = preferences?.phosphorEnabled ?? true
+
   return (
-    <div className="vv-shell vv-ledger-root">
+    <div
+      className="vv-shell vv-ledger-root"
+      data-vv-theme={theme}
+      data-vv-route={activeId}
+      data-vv-phosphor={phosphor ? "on" : "off"}
+    >
+      <LedgerScanlines enabled={scanlines} />
       <nav className="vv-sidebar" aria-label="Primary">
         <div className="vv-sidebar__brand">
-          <IconGlyph name="shield" size={18} className="vv-sidebar__mark" />
-          <span className="vv-sidebar__wordmark">The Vogel Vault</span>
+          <HorizonMark size={32} className="vv-sidebar__mark" title="Sovereign Budget App" />
+          <span className="vv-sidebar__wordmark">
+            <strong>SOVEREIGN</strong>
+            <small>BUDGET APP</small>
+          </span>
         </div>
         <div className="vv-sidebar__scroll vv-scroll">
           {sections.map((section) => (
