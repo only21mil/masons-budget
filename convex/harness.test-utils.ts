@@ -6,7 +6,7 @@ import { convexTest } from "convex-test";
 import type { FunctionReference } from "convex/server";
 import { afterEach, beforeEach } from "vitest";
 
-import type { DeviceCapability } from "./deviceAuth";
+import type { DeviceCapability, DeviceProfile } from "./deviceAuth";
 import schema from "./schema";
 
 /**
@@ -148,6 +148,7 @@ export const api = {
         expiresAt: number;
         createdBy?: string;
         capabilities?: DeviceCapability[];
+        profile?: DeviceProfile;
         token?: string;
       },
       { pairId: string; expiresAt: number }
@@ -386,6 +387,7 @@ export async function pairMobileDevice(
   syncToken: string,
   deviceId = "device-under-test",
   capabilities?: DeviceCapability[],
+  profile: DeviceProfile = "victor",
 ) {
   const pairId = `pair-${crypto.randomUUID()}`;
   const proofHash = freshProofHash();
@@ -396,6 +398,7 @@ export async function pairMobileDevice(
     proofHash,
     expiresAt: Date.now() + 60_000,
     token: syncToken,
+    profile,
     ...(capabilities === undefined ? {} : { capabilities }),
   };
   await t.mutation(api.createMobilePairing, createArgs);
