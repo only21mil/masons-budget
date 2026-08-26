@@ -6,7 +6,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   api,
   freshSecret,
-  pairMobileDevice,
   readDataFile,
   readTodos,
   seedDataFile,
@@ -194,21 +193,19 @@ describe("applyTodoUpsert: last write wins", () => {
     expect(result).toMatchObject({ version: 8, applied: true });
   });
 
-  it("does not bump the version for a stale write through the mobile door", async () => {
-    const { deviceId, deviceToken } = await pairMobileDevice(t, syncToken);
+  it("does not bump the version for a stale admin compatibility write", async () => {
     await seedDataFile(t, "todos", [STORED], 7);
 
-    const result = await t.mutation(api.upsertTodoFromMobile, {
-      deviceId,
-      deviceToken,
+    const result = await t.mutation(api.upsertTodo, {
       todo: {
         id: "todo-1",
         title: "Stale from phone",
         updated_at: "2026-07-09T12:00:00.000Z",
       },
+      token: syncToken,
     });
 
-    expect(result).toMatchObject({ ok: true, version: 7, applied: false });
+    expect(result).toMatchObject({ version: 7, applied: false });
     const versions = await t.query(api.getVersions, { token: readToken });
     expect(versions.todos).toBe(7);
   });
@@ -252,21 +249,18 @@ describe("applyTodoUpsert: last write wins", () => {
   // applyTodoUpsert REPLACES the stored todo with the normalized incoming one
   // instead of merging, and normalizeTodoRecord fills every absent field with a
   // default. A partial upsert therefore silently destroys notes, project, area,
-  // due date and owner. completeTodoFromMobile dodges this by merging with the
-  // stored record first; upsertTodoFromMobile and upsertTodo do not.
+  // due date and owner.
 
-  it("shares the same semantics through the mobile front door", async () => {
-    const { deviceId, deviceToken } = await pairMobileDevice(t, syncToken);
+  it("keeps stale-write semantics on the admin compatibility path", async () => {
     await seedDataFile(t, "todos", [STORED]);
 
-    await t.mutation(api.upsertTodoFromMobile, {
-      deviceId,
-      deviceToken,
+    await t.mutation(api.upsertTodo, {
       todo: {
         id: "todo-1",
         title: "Stale from phone",
         updated_at: "2026-07-09T12:00:00.000Z",
       },
+      token: syncToken,
     });
 
     const [todo] = await readTodos(t);
@@ -556,18 +550,16 @@ describe("applyTodoUpsert: merges a partial payload", () => {
     expect(custom).toMatchObject({ category: "work", type: "reminder" });
   });
 
-  it("merges through the mobile front door too", async () => {
-    const { deviceId, deviceToken } = await pairMobileDevice(t, syncToken);
+  it("merges through the admin compatibility path too", async () => {
     await seedDataFile(t, "todos", [RICH]);
 
-    await t.mutation(api.upsertTodoFromMobile, {
-      deviceId,
-      deviceToken,
+    await t.mutation(api.upsertTodo, {
       todo: {
         id: "todo-1",
         done: true,
         updated_at: "2026-07-11T12:00:00.000Z",
       },
+      token: syncToken,
     });
 
     const [todo] = await readTodos(t);
@@ -576,7 +568,7 @@ describe("applyTodoUpsert: merges a partial payload", () => {
       notes: "semi-skimmed",
       project: "Errands",
       owner: "rachel",
-      sync_source: "vogel-vault",
+      sync_source: "",
     });
   });
 
@@ -653,17 +645,15 @@ describe("removeTodo: tombstones", () => {
     ).resolves.toMatchObject([{ id: "todo-ghost" }]);
   });
 
-  it("reports the version through the mobile door too", async () => {
-    const { deviceId, deviceToken } = await pairMobileDevice(t, syncToken);
+  it("reports the version through the admin compatibility path too", async () => {
     await seedDataFile(t, "todos", [{ id: "todo-2", title: "Kept" }], 3);
 
-    const result = await t.mutation(api.removeTodoFromMobile, {
-      deviceId,
-      deviceToken,
-      id: "todo-ghost",
+    const result = await t.mutation(api.removeTodo, {
+      todoId: "todo-ghost",
+      token: syncToken,
     });
 
-    expect(result).toMatchObject({ ok: true, removed: false, version: 3 });
+    expect(result).toMatchObject({ removed: false, version: 3 });
   });
 
   it("keeps one tombstone row per id and refreshes deletedAt", async () => {

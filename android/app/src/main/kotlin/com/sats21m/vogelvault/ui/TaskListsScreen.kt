@@ -114,8 +114,8 @@ private fun ProfileTaskListsScreen(
     val context = LocalContext.current
     val application = context.applicationContext as? VaultApplication
     val gateway = remember(application) { application?.todoMutationGateway }
-    var credentialStored by remember(application) {
-        mutableStateOf(application?.hasTodoWriteCredential() == true)
+    var credentialStored by remember(application, state.activeProfile) {
+        mutableStateOf(application?.hasTodoWriteCredential(state.activeProfile) == true)
     }
     val snackbar = remember { SnackbarHostState() }
     val writes = rememberTodoWriteState(
@@ -230,17 +230,7 @@ private fun ProfileTaskListsScreen(
             Text(stringResource(R.string.tasks_add))
         }
         if (!credentialStored) {
-            TodoWriteCredentialCard { token ->
-                val app = application
-                    ?: return@TodoWriteCredentialCard "This build cannot store a credential"
-                app.saveTodoWriteCredential(token).fold(
-                    onSuccess = {
-                        credentialStored = true
-                        null
-                    },
-                    onFailure = { credentialSaveFailureMessage(it).resolve(context) },
-                )
-            }
+            TodoWriteReprovisionCard()
         }
         writeNotice?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = VaultAccent)

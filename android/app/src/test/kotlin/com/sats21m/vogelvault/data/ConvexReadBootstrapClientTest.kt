@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Base64
+import com.sats21m.vogelvault.domain.FamilyMember
 import java.io.IOException
 import java.util.UUID
 import kotlin.test.Test
@@ -104,6 +105,7 @@ class ConvexReadBootstrapClientTest {
         assertEquals(32, decodeCanonicalBase64Url(deviceToken).size)
         assertEquals(deviceId, success.credential.deviceCredential?.deviceId)
         assertEquals(deviceToken, success.credential.deviceCredential?.deviceToken)
+        assertEquals(FamilyMember.MASON, success.credential.deviceCredential?.profile)
         assertFalse("readToken" in args)
         assertFalse("syncToken" in args)
         assertFalse("token" in args)
@@ -160,13 +162,14 @@ class ConvexReadBootstrapClientTest {
             deviceToken = deviceToken,
         )
         val validValue =
-            """{"ok":true,"readToken":"$readToken","pairedAt":1,"deviceId":"${requested.deviceId}","capabilities":["todos:write"]}"""
+            """{"ok":true,"readToken":"$readToken","pairedAt":1,"deviceId":"${requested.deviceId}","capabilities":["todos:write"],"profile":"mason"}"""
         val invalidValues = listOf(
             """{"ok":true,"readToken":"$readToken","pairedAt":1,"capabilities":["todos:write"]}""",
             validValue.replace(requested.deviceId, "different-device"),
             validValue.replace("[\"todos:write\"]", "[]"),
             validValue.replace("[\"todos:write\"]", "[\"todos:write\",\"todos:write\"]"),
             validValue.replace("todos:write", "budget:write"),
+            validValue.replace("\"mason\"", "\"unknown\""),
             validValue.replace("[\"todos:write\"]", "\"todos:write\""),
             validValue.dropLast(1) + ",\"extra\":true}",
         )
@@ -230,7 +233,11 @@ class ConvexReadBootstrapClientTest {
         val preferences = context.getSharedPreferences("bootstrap-${UUID.randomUUID()}", Context.MODE_PRIVATE)
         val stored = SecureConvexConfigSource(preferences, TestCipher)
         val syncToken = "s".repeat(43)
-        val device = ConvexDeviceCredential("existing-device", "d".repeat(43))
+        val device = ConvexDeviceCredential(
+            "existing-device",
+            "d".repeat(43),
+            FamilyMember.MASON,
+        )
         stored.updateSyncToken(syncToken)
         stored.updateDeviceCredential(device)
         val effective = MutableConvexConfigSource(ConvexConfig())
@@ -270,7 +277,7 @@ class ConvexReadBootstrapClientTest {
             ReadBootstrapStatus.CONNECTED,
             repository.connect(bundle, requestTodoWrite = true),
         )
-        assertEquals(device, store.deviceCredential)
+        assertEquals(device.copy(profile = FamilyMember.MASON), store.deviceCredential)
         assertEquals(readToken, store.readConfig?.readTokenOrNull())
         assertEquals(readToken, effective.current().readTokenOrNull())
     }
@@ -306,7 +313,7 @@ class ConvexReadBootstrapClientTest {
         """{"status":"success","value":{"ok":true,"readToken":"$token","pairedAt":1800000000000,"capabilities":[]}}"""
 
     private fun writeSuccess(token: String, deviceId: String): String =
-        """{"status":"success","value":{"ok":true,"readToken":"$token","pairedAt":1800000000000,"deviceId":"$deviceId","capabilities":["todos:write"]}}"""
+        """{"status":"success","value":{"ok":true,"readToken":"$token","pairedAt":1800000000000,"deviceId":"$deviceId","capabilities":["todos:write"],"profile":"mason"}}"""
 }
 
 private data class HttpTextResponseFixture(
@@ -337,7 +344,7 @@ private class EchoingWriteBootstrapPoster(private val readToken: String) : ReadB
         val deviceId = args["deviceId"]!!.jsonPrimitive.content
         return ReadBootstrapHttpResponse(
             200,
-            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":1,"deviceId":"$deviceId","capabilities":["todos:write"]}}""",
+            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":1,"deviceId":"$deviceId","capabilities":["todos:write"],"profile":"mason"}}""",
         )
     }
 

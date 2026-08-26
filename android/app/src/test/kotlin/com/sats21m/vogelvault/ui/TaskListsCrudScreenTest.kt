@@ -589,6 +589,7 @@ class TaskListsCrudApplication : VaultApplication() {
         private set
 
     override fun hasTodoWriteCredential(): Boolean = credentialPresent
+    override fun hasTodoWriteCredential(profile: FamilyMember): Boolean = credentialPresent
 
     override fun removeTodoWriteCredential(): Result<Unit> {
         credentialRemovalCalls += 1
@@ -608,7 +609,7 @@ class TaskListsCrudApplication : VaultApplication() {
                     ConvexConfig(deploymentUrl = "https://task-lists-test.convex.cloud"),
                 ),
                 credentialSource = ConvexDeviceCredentialSource {
-                    ConvexDeviceCredential("test-device", "t".repeat(43))
+                    ConvexDeviceCredential("test-device", "t".repeat(43), FamilyMember.VICTOR)
                 },
                 http = poster,
             ),

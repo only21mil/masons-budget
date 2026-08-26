@@ -47,7 +47,11 @@ class TodoWriteAuthorityStateTest {
                         ConvexConfig(deploymentUrl = "https://todo-device-test.convex.cloud"),
                     ),
                     credentialSource = ConvexDeviceCredentialSource {
-                        ConvexDeviceCredential("test-device", "t".repeat(43))
+                        ConvexDeviceCredential(
+                            "test-device",
+                            "t".repeat(43),
+                            FamilyMember.MASON,
+                        )
                     },
                     http = poster,
                 ),

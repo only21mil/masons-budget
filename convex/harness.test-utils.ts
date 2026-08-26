@@ -41,6 +41,30 @@ export type TestConvexInstance = ReturnType<typeof testConvex>;
 // tests type-checked against the real signatures without needing codegen.
 
 type TodoPayload = Record<string, unknown>;
+type DeviceTodoPayload = {
+  id: string;
+  owner: DeviceProfile;
+  title: string;
+  done: boolean;
+  flagged: boolean;
+  lane?: string;
+  project?: string;
+  area?: string;
+  due?: string;
+  notes?: string;
+  priority?: bigint;
+  createdAt?: string;
+  updatedAt?: string;
+  completedAt?: string;
+};
+
+type DeviceTodoAuthority = {
+  deviceId: string;
+  deviceToken: string;
+  activeProfile?: DeviceProfile;
+  owner: DeviceProfile;
+  sourceFile: "todos";
+};
 
 export const api = {
   get: "dataFiles:get" as unknown as FunctionReference<
@@ -175,41 +199,32 @@ export const api = {
     "dataFiles:upsertTodoFromMobile" as unknown as FunctionReference<
       "mutation",
       "public",
-      { deviceId: string; deviceToken: string; todo: TodoPayload },
-      {
-        ok: boolean;
-        name: string;
-        version: number;
-        id: string;
-        applied: boolean;
-      }
+      DeviceTodoAuthority & {
+        operation?: "create" | "update";
+        baseUpdatedAtMs?: number;
+        todo: DeviceTodoPayload;
+      },
+      { ok: true; entityId: string; outcome: "inserted" | "updated" }
     >,
   completeTodoFromMobile:
     "dataFiles:completeTodoFromMobile" as unknown as FunctionReference<
       "mutation",
       "public",
-      {
-        deviceId: string;
-        deviceToken: string;
-        id: string;
-        title?: string;
-        done?: boolean;
+      DeviceTodoAuthority & {
+        baseUpdatedAtMs?: number;
+        todo: DeviceTodoPayload;
       },
-      {
-        ok: boolean;
-        id: string;
-        done: boolean;
-        completedAt: string | null;
-        version: number;
-        titleMatched: boolean;
-      }
+      { ok: true; entityId: string; outcome: "inserted" | "updated" }
     >,
   removeTodoFromMobile:
     "dataFiles:removeTodoFromMobile" as unknown as FunctionReference<
       "mutation",
       "public",
-      { deviceId: string; deviceToken: string; id: string },
-      { ok: boolean; name: string; version: number; removed: boolean }
+      DeviceTodoAuthority & {
+        entityId: string;
+        baseUpdatedAtMs?: number;
+      },
+      { ok: true; entityId: string; removed: boolean }
     >,
   revokeMobileDevice:
     "dataFiles:revokeMobileDevice" as unknown as FunctionReference<

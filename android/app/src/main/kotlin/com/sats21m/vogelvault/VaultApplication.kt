@@ -8,7 +8,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.sats21m.vogelvault.data.ConvexConfig
-import com.sats21m.vogelvault.data.ConvexDeviceCredential
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexReadBootstrapRepository
@@ -390,24 +389,16 @@ open class VaultApplication : Application() {
         )
     }
 
-    /** Whether the capability-scoped todo device credential exists. */
+    /** Whether a backend-bound capability-scoped todo credential exists. */
     internal open fun hasTodoWriteCredential(): Boolean =
         synchronized(convexConfigLock) {
             storedConvexConfigSource.hasDeviceCredential()
         }
 
-    /**
-     * Stores a provisioned `<device id>.<device token>` pair. Provisioning is
-     * intentionally separate from the legacy sync token used by other editors.
-     */
-    internal open fun saveTodoWriteCredential(value: String): Result<Unit> =
+    /** Whether the selected profile matches the persisted backend binding. */
+    internal open fun hasTodoWriteCredential(profile: FamilyMember): Boolean =
         synchronized(convexConfigLock) {
-            runCatching {
-                storedConvexConfigSource.updateDeviceCredential(ConvexDeviceCredential.parse(value.trim()))
-                check(storedConvexConfigSource.hasDeviceCredential()) {
-                    "the stored todo device credential could not be read back"
-                }
-            }
+            storedConvexConfigSource.currentDeviceCredential()?.profile == profile
         }
 
     internal open fun removeTodoWriteCredential(): Result<Unit> =

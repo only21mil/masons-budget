@@ -1,6 +1,7 @@
 package com.sats21m.vogelvault.data
 
 import android.util.Base64
+import com.sats21m.vogelvault.domain.FamilyMember
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -261,7 +262,7 @@ internal class ConvexReadBootstrapClient(
         val expectedKeys = if (requestedDeviceCredential == null) {
             setOf("ok", "readToken", "pairedAt", "capabilities")
         } else {
-            setOf("ok", "readToken", "pairedAt", "deviceId", "capabilities")
+            setOf("ok", "readToken", "pairedAt", "deviceId", "capabilities", "profile")
         }
         if (value.keys != expectedKeys) {
             return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
@@ -288,23 +289,30 @@ internal class ConvexReadBootstrapClient(
                     ?: return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
             }
             ?: return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
-        if (requestedDeviceCredential == null) {
+        val boundDeviceCredential = if (requestedDeviceCredential == null) {
             if (capabilities.isNotEmpty()) {
                 return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
             }
+            null
         } else {
             val returnedDeviceId = (value["deviceId"] as? JsonPrimitive)
                 ?.takeIf(JsonPrimitive::isString)
                 ?.contentOrNull
+            val profile = (value["profile"] as? JsonPrimitive)
+                ?.takeIf(JsonPrimitive::isString)
+                ?.contentOrNull
+                ?.let(FamilyMember::fromKeyOrNull)
+                ?: return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
             if (
                 returnedDeviceId != requestedDeviceCredential.deviceId ||
                 capabilities != listOf(TODO_WRITE_CAPABILITY)
             ) {
                 return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
             }
+            requestedDeviceCredential.copy(profile = profile)
         }
         return BootstrapClientResult.Success(
-            BootstrapCredential(token, requestedDeviceCredential),
+            BootstrapCredential(token, boundDeviceCredential),
         )
     }
 

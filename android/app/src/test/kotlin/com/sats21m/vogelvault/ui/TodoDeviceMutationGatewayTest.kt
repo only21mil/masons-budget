@@ -6,6 +6,7 @@ import com.sats21m.vogelvault.data.ConvexDeviceCredentialSource
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.DEVICE_PROFILE_BINDING_REQUIRED_REASON
+import com.sats21m.vogelvault.data.DEVICE_PROFILE_MISMATCH_REASON
 import com.sats21m.vogelvault.data.DEVICE_REVISION_REQUIRED_REASON
 import com.sats21m.vogelvault.data.HttpPoster
 import com.sats21m.vogelvault.data.HttpTextResponse
@@ -154,6 +155,28 @@ class TodoDeviceMutationGatewayTest {
     }
 
     @Test
+    fun `credential without a persisted profile never sends a task request`() = runBlocking {
+        val poster = RecordingPoster(upsertSuccess("updated"))
+        val gateway = TodoMutationGateway(
+            ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(
+                    ConvexConfig(deploymentUrl = "https://todo-device-test.convex.cloud"),
+                ),
+                credentialSource = ConvexDeviceCredentialSource {
+                    ConvexDeviceCredential("test-device", "t".repeat(43))
+                },
+                http = poster,
+            ),
+        )
+
+        assertEquals(
+            ConvexResult.Failed(DEVICE_PROFILE_BINDING_REQUIRED_REASON),
+            gateway.update(FamilyMember.MASON, todo, todo.updatedAtMs),
+        )
+        assertTrue(poster.bodies.isEmpty())
+    }
+
+    @Test
     fun `offline retry preserves the exact cached authoritative revision and identity`() = runBlocking {
         val poster = RetryPoster(upsertSuccess("updated"))
         val gateway = gateway(poster)
@@ -192,6 +215,34 @@ class TodoDeviceMutationGatewayTest {
     }
 
     @Test
+    fun `profile switch disables task actions before the owner mismatch request`() = runBlocking {
+        val poster = RecordingPoster(upsertSuccess("updated"))
+        val client = ConvexDeviceMutationClient(
+            configSource = MutableConvexConfigSource(
+                ConvexConfig(deploymentUrl = "https://todo-device-test.convex.cloud"),
+            ),
+            credentialSource = ConvexDeviceCredentialSource {
+                ConvexDeviceCredential(
+                    "test-device",
+                    "t".repeat(43),
+                    FamilyMember.MASON,
+                )
+            },
+            http = poster,
+        )
+        val rachelTodo = todo.copy(owner = FamilyMember.RACHEL)
+
+        val result = TodoMutationGateway(client).update(
+            FamilyMember.RACHEL,
+            rachelTodo,
+            rachelTodo.updatedAtMs,
+        )
+
+        assertEquals(ConvexResult.Failed(DEVICE_PROFILE_MISMATCH_REASON), result)
+        assertTrue(poster.bodies.isEmpty())
+    }
+
+    @Test
     fun `paired credential format is validated before storage`() {
         val parsed = ConvexDeviceCredential.parse("test-device.${"t".repeat(43)}")
         assertEquals("test-device", parsed.deviceId)
@@ -204,7 +255,11 @@ class TodoDeviceMutationGatewayTest {
                 ConvexConfig(deploymentUrl = "https://todo-device-test.convex.cloud"),
             ),
             credentialSource = ConvexDeviceCredentialSource {
-                ConvexDeviceCredential("test-device", "t".repeat(43))
+                ConvexDeviceCredential(
+                    "test-device",
+                    "t".repeat(43),
+                    FamilyMember.MASON,
+                )
             },
             http = poster,
         ),

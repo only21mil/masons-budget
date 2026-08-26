@@ -671,6 +671,7 @@ internal class RefreshAfterWriteApplication : VaultApplication() {
 
     override fun hasConvexWriteCredential(): Boolean = true
     override fun hasTodoWriteCredential(): Boolean = true
+    override fun hasTodoWriteCredential(profile: FamilyMember): Boolean = true
 
     override val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         TodoMutationGateway(
@@ -679,7 +680,11 @@ internal class RefreshAfterWriteApplication : VaultApplication() {
                     ConvexConfig(deploymentUrl = "https://refresh-after-write-test.convex.cloud"),
                 ),
                 credentialSource = ConvexDeviceCredentialSource {
-                    ConvexDeviceCredential("test-device", "t".repeat(43))
+                    ConvexDeviceCredential(
+                        "test-device",
+                        "t".repeat(43),
+                        FamilyMember.VICTOR,
+                    )
                 },
                 http = poster,
             ),

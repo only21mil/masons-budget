@@ -15,6 +15,7 @@ import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -94,6 +95,27 @@ class TaskStateProfileSwitchTest {
             0,
             nodesWithText(victorDraft),
             "Victor's Today draft remained visible after switching to Rachel.",
+        )
+    }
+
+    @Test
+    fun `profile switch disables task controls until explicit reprovisioning`() {
+        navigateTo(Destination.TODAY)
+        showScreenHost()
+
+        switchTo(FamilyMember.RACHEL)
+
+        compose.onNode(
+            hasText(context.getString(R.string.todo_new_task)),
+        ).assertIsNotEnabled()
+        compose.onNodeWithText(context.getString(R.string.todo_write_access_title))
+            .fetchSemanticsNode()
+        compose.onNodeWithText(context.getString(R.string.todo_write_access_detail))
+            .fetchSemanticsNode()
+        assertEquals(
+            0,
+            nodesWithText("Paired-device credential"),
+            "The blocked screen exposed the retired raw task-credential field.",
         )
     }
 
@@ -235,4 +257,6 @@ class TaskStateProfileSwitchTest {
 
 class ProfileScopedTaskStateApplication : VaultApplication() {
     override fun hasTodoWriteCredential(): Boolean = true
+    override fun hasTodoWriteCredential(profile: FamilyMember): Boolean =
+        profile == FamilyMember.VICTOR
 }

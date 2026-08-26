@@ -31,7 +31,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.domain.Freshness
@@ -44,7 +43,6 @@ import com.sats21m.vogelvault.ui.components.ledgerColor
 import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultBlack
 import com.sats21m.vogelvault.ui.theme.VaultCream
-import com.sats21m.vogelvault.ui.theme.VaultNegative
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import com.sats21m.vogelvault.ui.theme.VaultSurface
 import com.sats21m.vogelvault.ui.theme.VaultTextDim
@@ -104,8 +102,8 @@ internal fun TodoScreen(
     val moneyOut = remember(state.activeProfile, state.now, state.data.transactions, state.data.btcBillPays) {
         moneyOutToday(state)
     }
-    var credentialStored by remember(application) {
-        mutableStateOf(application?.hasTodoWriteCredential() == true)
+    var credentialStored by remember(application, viewer) {
+        mutableStateOf(application?.hasTodoWriteCredential(viewer) == true)
     }
     var draft by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<TodoItem?>(null) }
@@ -180,17 +178,7 @@ internal fun TodoScreen(
 
             if (!credentialStored) {
                 item {
-                    TodoWriteCredentialCard { token ->
-                        val app = application
-                            ?: return@TodoWriteCredentialCard "This build cannot store a credential"
-                        app.saveTodoWriteCredential(token).fold(
-                            onSuccess = {
-                                credentialStored = true
-                                null
-                            },
-                            onFailure = { credentialSaveFailureMessage(it).resolve(context) },
-                        )
-                    }
+                    TodoWriteReprovisionCard()
                 }
             }
 
@@ -315,18 +303,9 @@ internal fun TodoScreen(
     }
 }
 
-/**
- * One-time entry for the shared write credential.
- *
- * [save] returns null when the credential was stored, otherwise the reason it
- * was not. Settings owns the same credential; this card exists so a blocked
- * Today screen can be unblocked without hunting for that panel. The value is
- * never read back, never saved into instance state, and never shown again.
- */
+/** Directs task reprovisioning through the backend-attested bootstrap flow. */
 @Composable
-internal fun TodoWriteCredentialCard(save: (String) -> String?) {
-    var token by remember { mutableStateOf("") }
-    var failure by remember { mutableStateOf<String?>(null) }
+internal fun TodoWriteReprovisionCard() {
     Column(
         Modifier
             .fillMaxWidth()
@@ -340,29 +319,5 @@ internal fun TodoWriteCredentialCard(save: (String) -> String?) {
             style = MaterialTheme.typography.bodySmall,
             color = ledgerColor(VaultTextDim),
         )
-        OutlinedTextField(
-            value = token,
-            onValueChange = {
-                token = it
-                failure = null
-            },
-            label = { Text(stringResource(R.string.todo_sync_token)) },
-            visualTransformation = PasswordVisualTransformation(),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        VaultButton(
-            enabled = token.isNotBlank(),
-            onClick = {
-                val problem = save(token)
-                failure = problem
-                if (problem == null) token = ""
-            },
-        ) {
-            Text(stringResource(R.string.todo_save_access))
-        }
-        failure?.let {
-            Text(it, color = VaultNegative, style = MaterialTheme.typography.bodySmall)
-        }
     }
 }

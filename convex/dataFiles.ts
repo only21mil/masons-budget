@@ -2,11 +2,9 @@ import { ConvexError, v } from "convex/values";
 import { query, mutation, type MutationCtx } from "./_generated/server";
 import { isValidAndroidReadToken } from "./androidReadToken";
 import {
-  authenticateDevice,
   authenticateDeviceForSelfRevoke,
   deviceCapabilityValidator,
   deviceProfileValidator,
-  markDeviceSeen,
   normalizeDeviceCapabilities,
   sha256Hex,
   validateDeviceCredentialShape,
@@ -16,6 +14,13 @@ import {
   normalizeTodoRecord,
   todoUpdatedMs,
 } from "./todoNormalize";
+import { familyMemberValidator } from "./schema";
+import {
+  executeTodoDeleteFromDevice,
+  executeTodoUpsertFromDevice,
+  todoDeviceInput,
+  todoWriteOperationValidator,
+} from "./tables";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -528,12 +533,7 @@ export const appendTransaction = mutation({
   },
 });
 
-/**
- * Shared todo-upsert core used by both the token-authenticated `upsertTodo`
- * and the device-token `upsertTodoFromMobile` paths (SAT-1508). Same LWW +
- * normalization semantics regardless of which auth front-door admitted the
- * write. Upsert one todo into todos.json and bump its version.
- */
+/** Token-authenticated legacy todo upsert into todos.json. */
 async function applyTodoUpsert(
   ctx: MutationCtx,
   todo: Record<string, any>,
@@ -652,36 +652,27 @@ export const upsertTodo = mutation({
   },
 });
 
-/** Upsert one todo from a paired public iPhone. */
+/**
+ * Compatibility alias for clients that still call the old dataFiles path.
+ * Its contract is intentionally identical to the canonical device task path.
+ */
 export const upsertTodoFromMobile = mutation({
   args: {
     deviceId: v.string(),
     deviceToken: v.string(),
-    todo: appTodoValidator,
+    activeProfile: v.optional(familyMemberValidator),
+    owner: familyMemberValidator,
+    sourceFile: v.literal("todos"),
+    operation: v.optional(todoWriteOperationValidator),
+    baseUpdatedAtMs: v.optional(v.float64()),
+    todo: todoDeviceInput,
   },
   returns: v.object({
     ok: v.literal(true),
-    name: v.string(),
-    version: v.float64(),
-    id: v.string(),
-    applied: v.boolean(),
+    entityId: v.string(),
+    outcome: v.union(v.literal("inserted"), v.literal("updated")),
   }),
-  handler: async (ctx, { deviceId, deviceToken, todo }) => {
-    const device = await authenticateDevice(
-      ctx,
-      deviceId,
-      deviceToken,
-      "todos:write",
-    );
-
-    const record: Record<string, any> = {
-      ...(todo as Record<string, any>),
-      sync_source: "vogel-vault",
-    };
-    const result = await applyTodoUpsert(ctx, record, "todos");
-    await markDeviceSeen(ctx, device);
-    return { ok: true as const, ...result };
-  },
+  handler: executeTodoUpsertFromDevice,
 });
 
 /**
@@ -777,6 +768,7 @@ export const claimAndroidReadBootstrap = mutation({
       pairedAt: v.float64(),
       deviceId: v.string(),
       capabilities: v.array(deviceCapabilityValidator),
+      profile: deviceProfileValidator,
     }),
   ),
   handler: async (ctx, { pairId, proof, deviceId, deviceToken }) => {
@@ -822,6 +814,9 @@ export const claimAndroidReadBootstrap = mutation({
       }
 
       const tokenHash = await sha256Hex(deviceToken);
+      if (bootstrap.profile === undefined) {
+        androidReadBootstrapFailure("VALIDATION_FAILED");
+      }
       const existingDevice = await ctx.db
         .query("mobileDevices")
         .withIndex("by_device_id", (q) => q.eq("deviceId", deviceId))
@@ -849,6 +844,7 @@ export const claimAndroidReadBootstrap = mutation({
         pairedAt: now,
         deviceId,
         capabilities: [ANDROID_TODO_WRITE_CAPABILITY],
+        profile: bootstrap.profile,
       };
     }
     if (deviceId !== undefined || deviceToken !== undefined) {
@@ -1023,97 +1019,24 @@ export const revokeMobileDevice = mutation({
   },
 });
 
-/** Complete or reopen an existing todo from a paired public iPhone. */
+/** Compatibility alias for an exact-revision canonical task update. */
 export const completeTodoFromMobile = mutation({
   args: {
     deviceId: v.string(),
     deviceToken: v.string(),
-    id: v.string(),
-    title: v.optional(v.string()),
-    done: v.optional(v.boolean()),
+    activeProfile: v.optional(familyMemberValidator),
+    owner: familyMemberValidator,
+    sourceFile: v.literal("todos"),
+    baseUpdatedAtMs: v.optional(v.float64()),
+    todo: todoDeviceInput,
   },
   returns: v.object({
     ok: v.literal(true),
-    id: v.string(),
-    done: v.boolean(),
-    completedAt: v.union(v.string(), v.null()),
-    version: v.float64(),
-    titleMatched: v.boolean(),
+    entityId: v.string(),
+    outcome: v.union(v.literal("inserted"), v.literal("updated")),
   }),
-  handler: async (ctx, { deviceId, deviceToken, id, title, done }) => {
-    const device = await authenticateDevice(
-      ctx,
-      deviceId,
-      deviceToken,
-      "todos:write",
-    );
-
-    const name = "todos";
-    const now = Date.now();
-    const updatedAt = new Date(now).toISOString();
-    const isDone = done ?? true;
-    const completedAt = isDone ? updatedAt : null;
-    const existing = await ctx.db
-      .query("dataFiles")
-      .withIndex("by_name", (q) => q.eq("name", name))
-      .first();
-
-    const currentData = existing?.data;
-    const currentTodos: any[] = Array.isArray(currentData)
-      ? currentData
-      : currentData &&
-          typeof currentData === "object" &&
-          Array.isArray((currentData as any).todos)
-        ? (currentData as any).todos
-        : [];
-
-    const idx = currentTodos.findIndex(
-      (item) =>
-        item && typeof item === "object" && "id" in item && item.id === id,
-    );
-
-    // SAT-1508: tolerate ids missing from the todos file (e.g. an app-created
-    // todo that never reached MC2) by upserting a fresh record instead of
-    // throwing Not-found — completion is an authoritative user action.
-    const base: Record<string, any> =
-      idx >= 0
-        ? { ...(currentTodos[idx] as Record<string, any>) }
-        : { id, title: title ?? "", created_by: "vogel-vault" };
-
-    const titleMatched =
-      idx === -1 ||
-      title == null ||
-      !title.trim() ||
-      String(base.title || base.text || "").trim() === title.trim();
-
-    const record: Record<string, any> = {
-      ...base,
-      done: isDone,
-      completed: isDone,
-      status: isDone ? "completed" : "pending",
-      completedAt,
-      updatedAt,
-      updated_at: updatedAt,
-      completed_by: isDone ? "vogel-vault-mobile" : undefined,
-      sync_source: "vogel-vault",
-    };
-    if (!isDone) {
-      delete record.completedAt;
-      delete record.completed_by;
-    }
-
-    const result = await applyTodoUpsert(ctx, record, name);
-    await markDeviceSeen(ctx, device);
-
-    return {
-      ok: true as const,
-      id,
-      done: isDone,
-      completedAt,
-      version: result.version,
-      titleMatched,
-    };
-  },
+  handler: (ctx, args) =>
+    executeTodoUpsertFromDevice(ctx, { ...args, operation: "update" }),
 });
 
 async function removeTodoById(ctx: MutationCtx, todoId: string) {
@@ -1204,31 +1127,23 @@ export const removeTodo = mutation({
   },
 });
 
-/** Remove an existing todo from a paired public iPhone. */
+/** Compatibility alias for canonical exact-revision task deletion. */
 export const removeTodoFromMobile = mutation({
   args: {
     deviceId: v.string(),
     deviceToken: v.string(),
-    id: v.string(),
+    activeProfile: v.optional(familyMemberValidator),
+    owner: familyMemberValidator,
+    sourceFile: v.literal("todos"),
+    entityId: v.string(),
+    baseUpdatedAtMs: v.optional(v.float64()),
   },
   returns: v.object({
     ok: v.literal(true),
-    name: v.string(),
-    version: v.float64(),
+    entityId: v.string(),
     removed: v.boolean(),
   }),
-  handler: async (ctx, { deviceId, deviceToken, id }) => {
-    const device = await authenticateDevice(
-      ctx,
-      deviceId,
-      deviceToken,
-      "todos:write",
-    );
-
-    const result = await removeTodoById(ctx, id);
-    await markDeviceSeen(ctx, device);
-    return { ok: true as const, ...result };
-  },
+  handler: executeTodoDeleteFromDevice,
 });
 
 /**

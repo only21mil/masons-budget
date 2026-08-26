@@ -1,5 +1,6 @@
 package com.sats21m.vogelvault.data
 
+import com.sats21m.vogelvault.domain.FamilyMember
 import java.io.IOException
 import java.net.URI
 import java.net.URISyntaxException
@@ -14,6 +15,7 @@ import kotlinx.serialization.json.contentOrNull
 internal data class ConvexDeviceCredential(
     val deviceId: String,
     val deviceToken: String,
+    val profile: FamilyMember? = null,
 ) {
     init {
         require(DEVICE_ID.matches(deviceId)) { "device id is malformed" }
@@ -48,6 +50,8 @@ internal const val DEVICE_ENTITY_DELETED_REASON = "task was deleted on another d
 internal const val DEVICE_ENTITY_NOT_FOUND_REASON = "task no longer exists"
 internal const val DEVICE_PROFILE_BINDING_REQUIRED_REASON =
     "PROFILE_BINDING_REQUIRED: pair a credential bound to this profile"
+internal const val DEVICE_PROFILE_MISMATCH_REASON =
+    "OWNER_MISMATCH: reprovision a credential bound to the selected profile"
 internal const val DEVICE_REVISION_REQUIRED_REASON =
     "REVISION_REQUIRED: refresh tasks before retrying"
 
@@ -68,6 +72,14 @@ internal class ConvexDeviceMutationClient(
             ?: return ConvexResult.NotConfigured
         val credential = credentialSource.currentDeviceCredential()
             ?: return ConvexResult.Unauthorized
+        val taskProfile = mutation.taskActiveProfile()
+        if (taskProfile != null) {
+            val credentialProfile = credential.profile
+                ?: return ConvexResult.Failed(DEVICE_PROFILE_BINDING_REQUIRED_REASON)
+            if (credentialProfile != taskProfile) {
+                return ConvexResult.Failed(DEVICE_PROFILE_MISMATCH_REASON)
+            }
+        }
         val args = JsonObject(
             mutation.arguments() + mapOf(
                 "deviceId" to JsonPrimitive(credential.deviceId),
@@ -149,4 +161,11 @@ internal class ConvexDeviceMutationClient(
             return if (secure) base.trimEnd('/') + "/api/mutation" else null
         }
     }
+}
+
+private fun ConvexMutation.taskActiveProfile(): FamilyMember? = when (this) {
+    is ConvexMutation.UpsertTodoFromDevice -> activeProfile
+    is ConvexMutation.DeleteTodoFromDevice -> activeProfile
+    is ConvexMutation.RestoreTodoFromDevice -> activeProfile
+    else -> null
 }

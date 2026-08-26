@@ -3416,7 +3416,7 @@ const transactionSourceValidator = v.union(
   v.literal("maddox-transactions"),
 );
 
-const todoDeviceInput = v.object({
+export const todoDeviceInput = v.object({
   id: v.string(),
   owner: familyMemberValidator,
   title: v.string(),
@@ -3433,7 +3433,7 @@ const todoDeviceInput = v.object({
   completedAt: v.optional(v.string()),
 });
 
-const todoWriteOperationValidator = v.union(
+export const todoWriteOperationValidator = v.union(
   v.literal("create"),
   v.literal("update"),
 );
@@ -5591,6 +5591,80 @@ export const deleteTransactionFromDevice = mutation({
   },
 });
 
+export type DeviceTodoWriteArgs = {
+  deviceId: string;
+  deviceToken: string;
+  activeProfile?: FamilyMember;
+  owner: FamilyMember;
+  sourceFile: "todos";
+  operation?: "create" | "update";
+  baseUpdatedAtMs?: number;
+  todo: {
+    id: string;
+    owner: FamilyMember;
+    title: string;
+    done: boolean;
+    flagged: boolean;
+    lane?: string;
+    project?: string;
+    area?: string;
+    due?: string;
+    notes?: string;
+    priority?: bigint;
+    createdAt?: string;
+    updatedAt?: string;
+    completedAt?: string;
+  };
+};
+
+/** Shared authority and revision boundary for every public device task alias. */
+export async function executeTodoUpsertFromDevice(
+  ctx: MutationCtx,
+  args: DeviceTodoWriteArgs,
+) {
+  const device = await authenticateDevice(
+    ctx,
+    args.deviceId,
+    args.deviceToken,
+    "todos:write",
+  );
+  requireTaskProfileBinding(
+    device,
+    args.activeProfile,
+    args.owner,
+    args.todo.id,
+  );
+  if (args.operation === "create") {
+    if (args.baseUpdatedAtMs !== undefined) {
+      deviceFailure(
+        "VALIDATION_FAILED",
+        "baseUpdatedAtMs must be omitted for todo create.",
+        "todo",
+        args.todo.id,
+      );
+    }
+  } else {
+    requireTaskRevision(args.baseUpdatedAtMs);
+  }
+  validateDeviceTodo(args.todo);
+  if (args.todo.owner !== args.owner) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      "Todo owner does not match request owner.",
+      "todo",
+      args.todo.id,
+    );
+  }
+  const outcome = await upsertTodoRow(
+    ctx,
+    deviceTodoRow(args.todo, Date.now()),
+    { baseUpdatedAtMs: args.baseUpdatedAtMs },
+    args.operation,
+  );
+  await markDeviceSeen(ctx, device);
+  return { ok: true as const, entityId: args.todo.id, outcome };
+}
+
 export const upsertTodoFromDevice = mutation({
   args: {
     deviceId: v.string(),
@@ -5603,49 +5677,7 @@ export const upsertTodoFromDevice = mutation({
     todo: todoDeviceInput,
   },
   returns: deviceUpsertResultValidator,
-  handler: async (ctx, args) => {
-    const device = await authenticateDevice(
-      ctx,
-      args.deviceId,
-      args.deviceToken,
-      "todos:write",
-    );
-    requireTaskProfileBinding(
-      device,
-      args.activeProfile,
-      args.owner,
-      args.todo.id,
-    );
-    if (args.operation === "create") {
-      if (args.baseUpdatedAtMs !== undefined) {
-        deviceFailure(
-          "VALIDATION_FAILED",
-          "baseUpdatedAtMs must be omitted for todo create.",
-          "todo",
-          args.todo.id,
-        );
-      }
-    } else {
-      requireTaskRevision(args.baseUpdatedAtMs);
-    }
-    validateDeviceTodo(args.todo);
-    if (args.todo.owner !== args.owner) {
-      deviceFailure(
-        "OWNER_MISMATCH",
-        "Todo owner does not match request owner.",
-        "todo",
-        args.todo.id,
-      );
-    }
-    const outcome = await upsertTodoRow(
-      ctx,
-      deviceTodoRow(args.todo, Date.now()),
-      { baseUpdatedAtMs: args.baseUpdatedAtMs },
-      args.operation,
-    );
-    await markDeviceSeen(ctx, device);
-    return { ok: true as const, entityId: args.todo.id, outcome };
-  },
+  handler: executeTodoUpsertFromDevice,
 });
 
 /**
@@ -5692,6 +5724,42 @@ export const restoreTodoFromDevice = mutation({
   },
 });
 
+export type DeviceTodoDeleteArgs = {
+  deviceId: string;
+  deviceToken: string;
+  activeProfile?: FamilyMember;
+  owner: FamilyMember;
+  sourceFile: "todos";
+  entityId: string;
+  baseUpdatedAtMs?: number;
+};
+
+/** Shared exact-revision delete boundary for every public device task alias. */
+export async function executeTodoDeleteFromDevice(
+  ctx: MutationCtx,
+  args: DeviceTodoDeleteArgs,
+) {
+  const device = await authenticateDevice(
+    ctx,
+    args.deviceId,
+    args.deviceToken,
+    "todos:write",
+  );
+  requireTaskProfileBinding(
+    device,
+    args.activeProfile,
+    args.owner,
+    args.entityId,
+  );
+  requireTaskRevision(args.baseUpdatedAtMs);
+  requireDeviceIdentifier(args.entityId, "entityId");
+  const removed = await deleteTodoCore(ctx, args.owner, args.entityId, {
+    baseUpdatedAtMs: args.baseUpdatedAtMs!,
+  });
+  await markDeviceSeen(ctx, device);
+  return { ok: true as const, entityId: args.entityId, removed };
+}
+
 export const deleteTodoFromDevice = mutation({
   args: {
     deviceId: v.string(),
@@ -5703,27 +5771,7 @@ export const deleteTodoFromDevice = mutation({
     baseUpdatedAtMs: v.optional(v.float64()),
   },
   returns: deviceDeleteResultValidator,
-  handler: async (ctx, args) => {
-    const device = await authenticateDevice(
-      ctx,
-      args.deviceId,
-      args.deviceToken,
-      "todos:write",
-    );
-    requireTaskProfileBinding(
-      device,
-      args.activeProfile,
-      args.owner,
-      args.entityId,
-    );
-    requireTaskRevision(args.baseUpdatedAtMs);
-    requireDeviceIdentifier(args.entityId, "entityId");
-    const removed = await deleteTodoCore(ctx, args.owner, args.entityId, {
-      baseUpdatedAtMs: args.baseUpdatedAtMs!,
-    });
-    await markDeviceSeen(ctx, device);
-    return { ok: true as const, entityId: args.entityId, removed };
-  },
+  handler: executeTodoDeleteFromDevice,
 });
 
 export const upsertBudgetCategoryFromDevice = mutation({

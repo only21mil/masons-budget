@@ -6,6 +6,7 @@ import android.content.SharedPreferences
 import com.sats21m.vogelvault.initialConvexConfig
 import com.sats21m.vogelvault.recoverRejectedStoredConvexConfig
 import com.sats21m.vogelvault.resetStoredConvexBootstrap
+import com.sats21m.vogelvault.domain.FamilyMember
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -77,7 +78,7 @@ class SecureConvexConfigSourceTest {
                 readToken = readToken,
                 remoteReadEnabled = true,
             )
-        val device = ConvexDeviceCredential("android-device", "d".repeat(43))
+        val device = ConvexDeviceCredential("android-device", "d".repeat(43), FamilyMember.MASON)
 
         val committed = source.commitBootstrap(readConfig, device)
         val restarted = reconstructedSource()
@@ -94,7 +95,7 @@ class SecureConvexConfigSourceTest {
 
     @Test
     fun `read-only bootstrap preserves an existing valid device credential across restart`() {
-        val existingDevice = ConvexDeviceCredential("existing-device", "e".repeat(43))
+        val existingDevice = ConvexDeviceCredential("existing-device", "e".repeat(43), FamilyMember.MASON)
         source.updateDeviceCredential(existingDevice)
         val nextRead =
             ConvexConfig(
@@ -121,7 +122,7 @@ class SecureConvexConfigSourceTest {
                 readToken = readToken,
                 remoteReadEnabled = true,
             )
-        val device = ConvexDeviceCredential("android-device", "d".repeat(43))
+        val device = ConvexDeviceCredential("android-device", "d".repeat(43), FamilyMember.MASON)
         source.commitBootstrap(readConfig, device)
 
         source.clearDeviceCredential()
@@ -144,7 +145,7 @@ class SecureConvexConfigSourceTest {
                 readToken = "vv-read-${UUID.randomUUID()}",
                 remoteReadEnabled = true,
             )
-        val device = ConvexDeviceCredential("android-device", "d".repeat(43))
+        val device = ConvexDeviceCredential("android-device", "d".repeat(43), FamilyMember.MASON)
         val effective = MutableConvexConfigSource(readConfig)
         source.commitBootstrap(readConfig, device)
 
@@ -166,7 +167,11 @@ class SecureConvexConfigSourceTest {
                     readToken = "vv-read-${UUID.randomUUID()}",
                     remoteReadEnabled = true,
                 ),
-            deviceCredential = ConvexDeviceCredential("android-device", "d".repeat(43)),
+            deviceCredential = ConvexDeviceCredential(
+                "android-device",
+                "d".repeat(43),
+                FamilyMember.MASON,
+            ),
         )
         context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .edit()
@@ -188,7 +193,7 @@ class SecureConvexConfigSourceTest {
                 readToken = "vv-old-${UUID.randomUUID()}",
                 remoteReadEnabled = true,
             )
-        val oldDevice = ConvexDeviceCredential("old-device", "o".repeat(43))
+        val oldDevice = ConvexDeviceCredential("old-device", "o".repeat(43), FamilyMember.MASON)
         source.commitBootstrap(oldRead, oldDevice)
         val failingSource =
             SecureConvexConfigSource(
@@ -207,7 +212,11 @@ class SecureConvexConfigSourceTest {
                         readToken = "vv-new-${UUID.randomUUID()}",
                         remoteReadEnabled = true,
                     ),
-                deviceCredential = ConvexDeviceCredential("new-device", "n".repeat(43)),
+                deviceCredential = ConvexDeviceCredential(
+                    "new-device",
+                    "n".repeat(43),
+                    FamilyMember.MASON,
+                ),
             )
         }
 
@@ -294,7 +303,7 @@ class SecureConvexConfigSourceTest {
     fun `rejected read recovery preserves sync and paired device credentials`() {
         val readToken = "vv-read-${UUID.randomUUID()}"
         val syncToken = "vv-sync-${UUID.randomUUID()}"
-        val device = ConvexDeviceCredential("android-device", "d".repeat(43))
+        val device = ConvexDeviceCredential("android-device", "d".repeat(43), FamilyMember.MASON)
         val rejected =
             ConvexConfig(
                 deploymentUrl = "https://example.convex.cloud",
@@ -322,7 +331,7 @@ class SecureConvexConfigSourceTest {
 
     @Test
     fun `paired device credential is encrypted atomic and independent of sync token`() {
-        val device = ConvexDeviceCredential("android-device", "d".repeat(43))
+        val device = ConvexDeviceCredential("android-device", "d".repeat(43), FamilyMember.MASON)
         val syncToken = "vv-sync-${UUID.randomUUID()}"
         source.updateSyncToken(syncToken)
         source.updateDeviceCredential(device)
@@ -340,7 +349,9 @@ class SecureConvexConfigSourceTest {
 
     @Test
     fun `partial or tampered paired credential fails closed`() {
-        source.updateDeviceCredential(ConvexDeviceCredential("android-device", "d".repeat(43)))
+        source.updateDeviceCredential(
+            ConvexDeviceCredential("android-device", "d".repeat(43), FamilyMember.MASON),
+        )
         context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .edit()
             .remove("device_token")
@@ -348,6 +359,34 @@ class SecureConvexConfigSourceTest {
 
         assertFalse(source.hasDeviceCredential())
         assertNull(SecureConvexDeviceCredentialSource(source).currentDeviceCredential())
+    }
+
+    @Test
+    fun `legacy credential without a persisted profile stays disabled after restart`() {
+        source.updateDeviceCredential(
+            ConvexDeviceCredential("android-device", "d".repeat(43), FamilyMember.MASON),
+        )
+        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+            .edit()
+            .remove("device_profile")
+            .commit()
+
+        val restarted = reconstructedSource()
+
+        assertFalse(restarted.hasDeviceCredential())
+        assertNull(SecureConvexDeviceCredentialSource(restarted).currentDeviceCredential())
+    }
+
+    @Test
+    fun `unbound raw task credential cannot become durable`() {
+        assertFailsWith<IllegalArgumentException> {
+            source.updateDeviceCredential(
+                ConvexDeviceCredential("android-device", "d".repeat(43)),
+            )
+        }
+
+        assertFalse(source.hasDeviceCredential())
+        assertNull(reconstructedSource().currentDeviceCredential())
     }
 
     @Test

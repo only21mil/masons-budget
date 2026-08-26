@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import com.sats21m.vogelvault.domain.FamilyMember
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
@@ -89,12 +90,17 @@ internal class SecureConvexConfigSource internal constructor(
             putOrRemove(editor, KEY_READ_TOKEN, readConfig.readTokenOrNull())
             putOrRemove(editor, KEY_REMOTE_READ_ENABLED, readConfig.remoteReadEnabled.toString())
             if (deviceCredential != null) {
+                val profile = requireNotNull(deviceCredential.profile) {
+                    "device credential must include its server-bound profile"
+                }
                 putOrRemove(editor, KEY_DEVICE_ID, deviceCredential.deviceId)
                 putOrRemove(editor, KEY_DEVICE_TOKEN, deviceCredential.deviceToken)
+                putOrRemove(editor, KEY_DEVICE_PROFILE, profile.key)
             } else if (preservedDeviceCredential == null) {
                 // Do not carry a partial or unauthenticated old pair into a new enrollment.
                 editor.remove(KEY_DEVICE_ID)
                 editor.remove(KEY_DEVICE_TOKEN)
+                editor.remove(KEY_DEVICE_PROFILE)
             }
             if (!editor.commit()) throw IOException("encrypted Convex bootstrap was not persisted")
 
@@ -147,12 +153,16 @@ internal class SecureConvexConfigSource internal constructor(
             readDeviceCredentialLocked() != null
         }
 
-    /** Atomically store the two-part credential required by safe row mutations. */
+    /** Atomically store the backend-bound credential required by safe row mutations. */
     internal fun updateDeviceCredential(credential: ConvexDeviceCredential) =
         synchronized(lock) {
+            val profile = requireNotNull(credential.profile) {
+                "device credential must include its server-bound profile"
+            }
             val editor = preferences.edit()
             putOrRemove(editor, KEY_DEVICE_ID, credential.deviceId)
             putOrRemove(editor, KEY_DEVICE_TOKEN, credential.deviceToken)
+            putOrRemove(editor, KEY_DEVICE_PROFILE, profile.key)
             if (!editor.commit()) throw IOException("encrypted Convex device credential was not persisted")
         }
 
@@ -161,6 +171,7 @@ internal class SecureConvexConfigSource internal constructor(
             val editor = preferences.edit()
             editor.remove(KEY_DEVICE_ID)
             editor.remove(KEY_DEVICE_TOKEN)
+            editor.remove(KEY_DEVICE_PROFILE)
             if (!editor.commit()) throw IOException("encrypted Convex device credential was not cleared")
         }
 
@@ -230,7 +241,8 @@ internal class SecureConvexConfigSource internal constructor(
         runCatching {
             val deviceId = read(KEY_DEVICE_ID)?.trim()?.takeIf { it.isNotEmpty() } ?: return@runCatching null
             val deviceToken = read(KEY_DEVICE_TOKEN)?.trim()?.takeIf { it.isNotEmpty() } ?: return@runCatching null
-            ConvexDeviceCredential(deviceId, deviceToken)
+            val profile = FamilyMember.fromKeyOrNull(read(KEY_DEVICE_PROFILE)) ?: return@runCatching null
+            ConvexDeviceCredential(deviceId, deviceToken, profile)
         }.getOrNull()
 
     private fun clearReadConfigurationLocked() {
@@ -269,6 +281,7 @@ internal class SecureConvexConfigSource internal constructor(
         const val KEY_SYNC_TOKEN = "sync_token"
         const val KEY_DEVICE_ID = "device_id"
         const val KEY_DEVICE_TOKEN = "device_token"
+        const val KEY_DEVICE_PROFILE = "device_profile"
     }
 }
 

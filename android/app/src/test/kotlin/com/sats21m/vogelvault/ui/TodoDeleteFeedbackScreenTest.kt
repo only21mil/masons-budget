@@ -323,6 +323,7 @@ class GatedTodoWriteApplication : VaultApplication() {
     val poster = GatedPoster()
 
     override fun hasTodoWriteCredential(): Boolean = true
+    override fun hasTodoWriteCredential(profile: FamilyMember): Boolean = true
 
     override val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         TodoMutationGateway(
@@ -332,7 +333,11 @@ class GatedTodoWriteApplication : VaultApplication() {
                 ),
                 // Invented per run, so no string here can be mistaken for a real one.
                 credentialSource = ConvexDeviceCredentialSource {
-                    ConvexDeviceCredential("test-device", "t".repeat(43))
+                    ConvexDeviceCredential(
+                        "test-device",
+                        "t".repeat(43),
+                        FamilyMember.VICTOR,
+                    )
                 },
                 http = poster,
             ),

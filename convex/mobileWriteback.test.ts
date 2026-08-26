@@ -16,6 +16,7 @@ import {
   testConvex,
   useIsolatedDeploymentEnv,
 } from "./harness.test-utils";
+import { sha256Hex } from "./deviceAuth";
 
 useIsolatedDeploymentEnv();
 
@@ -23,6 +24,15 @@ type T = ReturnType<typeof testConvex>;
 
 let t: T;
 let syncToken: string;
+
+async function expectCode(request: Promise<unknown>, code: string) {
+  try {
+    await request;
+    throw new Error(`Expected ${code}`);
+  } catch (error) {
+    expect((error as { data?: { code?: string } }).data?.code).toBe(code);
+  }
+}
 
 beforeEach(() => {
   t = testConvex();
@@ -37,7 +47,17 @@ const MOBILE_MUTATIONS = [
       t.mutation(api.upsertTodoFromMobile, {
         deviceId,
         deviceToken,
-        todo: { id: "todo-1", title: "From the phone" },
+        activeProfile: "mason",
+        owner: "mason",
+        sourceFile: "todos",
+        operation: "create",
+        todo: {
+          id: "todo-1",
+          owner: "mason",
+          title: "From the phone",
+          done: false,
+          flagged: false,
+        },
       }),
   },
   {
@@ -46,7 +66,17 @@ const MOBILE_MUTATIONS = [
       t.mutation(api.completeTodoFromMobile, {
         deviceId,
         deviceToken,
-        id: "todo-1",
+        activeProfile: "mason",
+        owner: "mason",
+        sourceFile: "todos",
+        baseUpdatedAtMs: 0,
+        todo: {
+          id: "todo-1",
+          owner: "mason",
+          title: "From the phone",
+          done: true,
+          flagged: false,
+        },
       }),
   },
   {
@@ -55,7 +85,11 @@ const MOBILE_MUTATIONS = [
       t.mutation(api.removeTodoFromMobile, {
         deviceId,
         deviceToken,
-        id: "todo-1",
+        activeProfile: "mason",
+        owner: "mason",
+        sourceFile: "todos",
+        entityId: "todo-1",
+        baseUpdatedAtMs: 0,
       }),
   },
 ] as const;
@@ -162,7 +196,17 @@ describe("pairing", () => {
       t.mutation(api.upsertTodoFromMobile, {
         deviceId: paired.deviceId,
         deviceToken: paired.deviceToken,
-        todo: { id: "todo-1", title: "Must not land" },
+        activeProfile: "mason",
+        owner: "mason",
+        sourceFile: "todos",
+        operation: "create",
+        todo: {
+          id: "todo-1",
+          owner: "mason",
+          title: "Must not land",
+          done: false,
+          flagged: false,
+        },
       }),
     ).rejects.toThrow(/Unauthorized mobile device/);
   });
@@ -247,7 +291,13 @@ describe("pairing", () => {
   });
 
   it("does not let a new pairing take over an existing device id", async () => {
-    const existing = await pairMobileDevice(t, syncToken, "stable-device");
+    const existing = await pairMobileDevice(
+      t,
+      syncToken,
+      "stable-device",
+      ["todos:write"],
+      "mason",
+    );
     const pairId = `pair-${crypto.randomUUID()}`;
     const proofHash = freshProofHash();
     await t.mutation(api.createMobilePairing, {
@@ -270,7 +320,17 @@ describe("pairing", () => {
       t.mutation(api.upsertTodoFromMobile, {
         deviceId: existing.deviceId,
         deviceToken: existing.deviceToken,
-        todo: { id: "todo-1", title: "Original token still works" },
+        activeProfile: "mason",
+        owner: "mason",
+        sourceFile: "todos",
+        operation: "create",
+        todo: {
+          id: "todo-1",
+          owner: "mason",
+          title: "Original token still works",
+          done: false,
+          flagged: false,
+        },
       }),
     ).resolves.toMatchObject({ ok: true });
   });
@@ -360,184 +420,270 @@ describe("pairing", () => {
       t.mutation(api.upsertTodoFromMobile, {
         deviceId: paired.deviceId,
         deviceToken: paired.deviceToken,
-        todo: { id: "todo-1", title: "Must not land" },
+        activeProfile: "mason",
+        owner: "mason",
+        sourceFile: "todos",
+        operation: "create",
+        todo: {
+          id: "todo-1",
+          owner: "mason",
+          title: "Must not land",
+          done: false,
+          flagged: false,
+        },
       }),
     ).rejects.toThrow(/Unauthorized mobile device/);
   });
 });
 
-describe("mobile writeback with a live device", () => {
-  it("upsertTodoFromMobile stamps the write as app-sourced", async () => {
-    const { deviceId, deviceToken } = await pairMobileDevice(t, syncToken);
-    await t.mutation(api.upsertTodoFromMobile, {
-      deviceId,
-      deviceToken,
-      todo: { id: "todo-1", title: "Buy milk", category: "personal" },
-    });
+describe("mobile compatibility task authority", () => {
+  const todo = {
+    id: "compat-task",
+    owner: "mason" as const,
+    title: "Mason private",
+    done: false,
+    flagged: false,
+  };
 
-    const todos = await readTodos(t);
-    expect(todos).toHaveLength(1);
-    expect(todos[0]).toMatchObject({
-      id: "todo-1",
-      title: "Buy milk",
-      category: "personal",
-      sync_source: "vogel-vault",
-    });
-  });
+  async function state() {
+    return t.run(async (ctx) => ({
+      rows: await ctx.db.query("todos").collect(),
+      rowTombstones: await ctx.db.query("rowTombstones").collect(),
+      legacyTombstones: await ctx.db.query("todoTombstones").collect(),
+      locks: await ctx.db.query("runtimeSourceLocks").collect(),
+    }));
+  }
 
-  it("completeTodoFromMobile marks an existing todo done and keeps its other fields", async () => {
-    const { deviceId, deviceToken } = await pairMobileDevice(t, syncToken);
-    await seedDataFile(t, "todos", [
-      {
-        id: "todo-1",
-        title: "Buy milk",
-        notes: "semi-skimmed",
-        project: "Errands",
-        due_date: "2026-08-01",
-        updated_at: "2026-07-01T00:00:00.000Z",
-      },
-    ]);
-
-    const result = await t.mutation(api.completeTodoFromMobile, {
-      deviceId,
-      deviceToken,
-      id: "todo-1",
-      title: "Buy milk",
-    });
-
-    expect(result.ok).toBe(true);
-    expect(result.done).toBe(true);
-    expect(result.titleMatched).toBe(true);
-
-    const [todo] = await readTodos(t);
-    expect(todo).toMatchObject({
-      id: "todo-1",
-      done: true,
-      status: "completed",
-      completed_by: "vogel-vault-mobile",
-      sync_source: "vogel-vault",
-      // Merged from the stored record rather than reset — completeTodo reads
-      // the existing todo as its base.
-      notes: "semi-skimmed",
-      project: "Errands",
-      dueDate: "2026-08-01",
-    });
-  });
-
-  it("completeTodoFromMobile reopens a todo and clears the completion fields", async () => {
-    const { deviceId, deviceToken } = await pairMobileDevice(t, syncToken);
-    await seedDataFile(t, "todos", [
-      {
-        id: "todo-1",
-        title: "Buy milk",
-        done: true,
-        status: "completed",
-        completedAt: "2026-07-01T00:00:00.000Z",
-        completed_by: "vogel-vault-mobile",
-        updated_at: "2026-07-01T00:00:00.000Z",
-      },
-    ]);
-
-    const result = await t.mutation(api.completeTodoFromMobile, {
-      deviceId,
-      deviceToken,
-      id: "todo-1",
-      done: false,
-    });
-
-    expect(result.done).toBe(false);
-    expect(result.completedAt).toBeNull();
-
-    const [todo] = await readTodos(t);
-    expect(todo).toMatchObject({ done: false, status: "pending" });
-    expect(todo).not.toHaveProperty("completedAt");
-    expect(todo).not.toHaveProperty("completed_by");
-  });
-
-  it("completeTodoFromMobile creates a missing todo instead of failing (SAT-1508)", async () => {
-    const { deviceId, deviceToken } = await pairMobileDevice(t, syncToken);
-    const result = await t.mutation(api.completeTodoFromMobile, {
-      deviceId,
-      deviceToken,
-      id: "todo-ghost",
-      title: "Never reached MC2",
-    });
-
-    expect(result.ok).toBe(true);
-    const [todo] = await readTodos(t);
-    expect(todo).toMatchObject({
-      id: "todo-ghost",
-      title: "Never reached MC2",
-      done: true,
-      created_by: "vogel-vault",
-    });
-  });
-
-  it("completeTodoFromMobile reports a title mismatch but still applies the write", async () => {
-    // Documented, not endorsed: `titleMatched` is advisory. The caller is told
-    // the id it completed was not the todo it thought it was, after the fact.
-    const { deviceId, deviceToken } = await pairMobileDevice(t, syncToken);
-    await seedDataFile(t, "todos", [{ id: "todo-1", title: "Buy milk" }]);
-
-    const result = await t.mutation(api.completeTodoFromMobile, {
-      deviceId,
-      deviceToken,
-      id: "todo-1",
-      title: "Something else entirely",
-    });
-
-    expect(result.titleMatched).toBe(false);
-    const [todo] = await readTodos(t);
-    expect(todo).toMatchObject({ id: "todo-1", done: true });
-  });
-
-  it("removeTodoFromMobile deletes the todo and leaves a tombstone", async () => {
-    const { deviceId, deviceToken } = await pairMobileDevice(t, syncToken);
-    await seedDataFile(t, "todos", [
-      { id: "todo-1", title: "Buy milk" },
-      { id: "todo-2", title: "Keep me" },
-    ]);
-
-    const result = await t.mutation(api.removeTodoFromMobile, {
-      deviceId,
-      deviceToken,
-      id: "todo-1",
-    });
-
-    expect(result).toMatchObject({ ok: true, removed: true });
-    expect(await readTodos(t)).toEqual([{ id: "todo-2", title: "Keep me" }]);
-
-    const tombstones = await t.run(async (ctx) =>
-      ctx.db.query("todoTombstones").collect(),
+  async function boundDevice() {
+    return pairMobileDevice(
+      t,
+      syncToken,
+      `compat-${crypto.randomUUID()}`,
+      ["todos:write"],
+      "mason",
     );
-    expect(tombstones.map((row) => row.id)).toEqual(["todo-1"]);
+  }
+
+  function createRequest(device: { deviceId: string; deviceToken: string }) {
+    return {
+      deviceId: device.deviceId,
+      deviceToken: device.deviceToken,
+      activeProfile: "mason",
+      owner: "mason",
+      sourceFile: "todos",
+      operation: "create",
+      todo,
+    } as const;
+  }
+
+  it("rejects a credential without a server profile and writes nothing", async () => {
+    const deviceToken = freshSecret();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("mobileDevices", {
+        deviceId: "legacy-unbound-compat",
+        name: "Legacy",
+        tokenHash: await sha256Hex(deviceToken),
+        pairedAt: 1,
+        lastSeenAt: 1,
+        pairId: "legacy-unbound-compat-pair",
+        capabilities: ["todos:write"],
+      });
+    });
+    const before = await state();
+    const credential = {
+      deviceId: "legacy-unbound-compat",
+      deviceToken,
+    };
+    const requests = [
+      () => t.mutation(api.upsertTodoFromMobile, createRequest(credential)),
+      () =>
+        t.mutation(api.completeTodoFromMobile, {
+          ...credential,
+          activeProfile: "mason",
+          owner: "mason",
+          sourceFile: "todos",
+          baseUpdatedAtMs: 0,
+          todo,
+        }),
+      () =>
+        t.mutation(api.removeTodoFromMobile, {
+          ...credential,
+          activeProfile: "mason",
+          owner: "mason",
+          sourceFile: "todos",
+          entityId: todo.id,
+          baseUpdatedAtMs: 0,
+        }),
+    ];
+    for (const request of requests) {
+      await expectCode(request(), "PROFILE_BINDING_REQUIRED");
+    }
+    expect(await state()).toEqual(before);
   });
 
-  it("bumps lastSeenAt on a successful write", async () => {
-    const { deviceId, deviceToken } = await pairMobileDevice(t, syncToken);
-    const before = await t.run(async (ctx) => {
-      const device = await ctx.db
-        .query("mobileDevices")
-        .withIndex("by_device_id", (q) => q.eq("deviceId", deviceId))
-        .first();
-      // Backdate so the bump is observable even inside one millisecond.
-      await ctx.db.patch(device!._id, { lastSeenAt: 0 });
-      return 0;
-    });
+  it("rejects a wrong active profile or owner before mutation", async () => {
+    const device = await boundDevice();
+    const before = await state();
+    const { activeProfile: _activeProfile, ...missingProfile } =
+      createRequest(device);
+    await expectCode(
+      t.mutation(api.upsertTodoFromMobile, missingProfile),
+      "OWNER_MISMATCH",
+    );
+    await expectCode(
+      t.mutation(api.upsertTodoFromMobile, {
+        ...createRequest(device),
+        activeProfile: "victor",
+      }),
+      "OWNER_MISMATCH",
+    );
+    await expectCode(
+      t.mutation(api.completeTodoFromMobile, {
+        deviceId: device.deviceId,
+        deviceToken: device.deviceToken,
+        activeProfile: "victor",
+        owner: "mason",
+        sourceFile: "todos",
+        baseUpdatedAtMs: 0,
+        todo,
+      }),
+      "OWNER_MISMATCH",
+    );
+    await expectCode(
+      t.mutation(api.removeTodoFromMobile, {
+        deviceId: device.deviceId,
+        deviceToken: device.deviceToken,
+        activeProfile: "victor",
+        owner: "mason",
+        sourceFile: "todos",
+        entityId: todo.id,
+        baseUpdatedAtMs: 0,
+      }),
+      "OWNER_MISMATCH",
+    );
+    await expectCode(
+      t.mutation(api.upsertTodoFromMobile, {
+        ...createRequest(device),
+        owner: "victor",
+      }),
+      "OWNER_MISMATCH",
+    );
+    expect(await state()).toEqual(before);
+  });
 
-    await t.mutation(api.upsertTodoFromMobile, {
-      deviceId,
-      deviceToken,
-      todo: { id: "todo-1", title: "Buy milk" },
+  it("requires a server-fresh id and exact revision for every update", async () => {
+    const device = await boundDevice();
+    const create = createRequest(device);
+    await expect(
+      t.mutation(api.upsertTodoFromMobile, create),
+    ).resolves.toMatchObject({
+      entityId: todo.id,
+      outcome: "inserted",
     });
+    const revision = await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("todos")
+        .withIndex("by_todo_id", (q) => q.eq("todoId", todo.id))
+        .unique();
+      return row!.updatedAtMs;
+    });
+    const afterCreate = await state();
+    await expectCode(
+      t.mutation(api.upsertTodoFromMobile, create),
+      "ENTITY_CONFLICT",
+    );
+    await expectCode(
+      t.mutation(api.completeTodoFromMobile, {
+        deviceId: device.deviceId,
+        deviceToken: device.deviceToken,
+        activeProfile: "mason",
+        owner: "mason",
+        sourceFile: "todos",
+        todo: { ...todo, done: true },
+      }),
+      "REVISION_REQUIRED",
+    );
+    expect(await state()).toEqual(afterCreate);
 
-    const after = await t.run(async (ctx) => {
-      const device = await ctx.db
-        .query("mobileDevices")
-        .withIndex("by_device_id", (q) => q.eq("deviceId", deviceId))
-        .first();
-      return device!.lastSeenAt;
+    const update = {
+      deviceId: device.deviceId,
+      deviceToken: device.deviceToken,
+      activeProfile: "mason",
+      owner: "mason",
+      sourceFile: "todos",
+      baseUpdatedAtMs: revision,
+      todo: { ...todo, done: true },
+    } as const;
+    await expect(
+      t.mutation(api.completeTodoFromMobile, update),
+    ).resolves.toMatchObject({
+      outcome: "updated",
     });
-    expect(after).toBeGreaterThan(before);
+    const afterUpdate = await state();
+    await expectCode(
+      t.mutation(api.completeTodoFromMobile, update),
+      "ENTITY_CONFLICT",
+    );
+    expect(await state()).toEqual(afterUpdate);
+  });
+
+  it("requires an exact delete revision and makes replay a no-op", async () => {
+    const device = await boundDevice();
+    await t.mutation(api.upsertTodoFromMobile, createRequest(device));
+    const revision = await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("todos")
+        .withIndex("by_todo_id", (q) => q.eq("todoId", todo.id))
+        .unique();
+      return row!.updatedAtMs;
+    });
+    const request = {
+      deviceId: device.deviceId,
+      deviceToken: device.deviceToken,
+      activeProfile: "mason",
+      owner: "mason",
+      sourceFile: "todos",
+      entityId: todo.id,
+    } as const;
+    const before = await state();
+    await expectCode(
+      t.mutation(api.removeTodoFromMobile, request),
+      "REVISION_REQUIRED",
+    );
+    await expectCode(
+      t.mutation(api.removeTodoFromMobile, {
+        ...request,
+        baseUpdatedAtMs: revision + 1,
+      }),
+      "ENTITY_CONFLICT",
+    );
+    expect(await state()).toEqual(before);
+
+    await expect(
+      t.mutation(api.removeTodoFromMobile, {
+        ...request,
+        baseUpdatedAtMs: revision,
+      }),
+    ).resolves.toMatchObject({ removed: true });
+    const afterDelete = await state();
+    await expect(
+      t.mutation(api.removeTodoFromMobile, {
+        ...request,
+        baseUpdatedAtMs: revision,
+      }),
+    ).resolves.toMatchObject({ removed: false });
+    expect(await state()).toEqual(afterDelete);
+
+    await expectCode(
+      t.mutation(api.upsertTodoFromMobile, createRequest(device)),
+      "ENTITY_DELETED",
+    );
+    await expect(
+      t.mutation(api.upsertTodoFromMobile, {
+        ...createRequest(device),
+        restoreCapsule: { todo },
+      } as never),
+    ).rejects.toThrow();
+    expect(await state()).toEqual(afterDelete);
   });
 });

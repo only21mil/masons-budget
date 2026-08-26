@@ -47,6 +47,7 @@ const claimAndroidReadBootstrap =
       pairedAt: number;
       deviceId?: string;
       capabilities: Array<"todos:write">;
+      profile?: "victor" | "rachel" | "mason" | "maddox";
     }
   >;
 
@@ -337,6 +338,7 @@ describe("claimAndroidReadBootstrap", () => {
       "deviceId",
       "ok",
       "pairedAt",
+      "profile",
       "readToken",
     ]);
     expect(result).toEqual({
@@ -345,6 +347,7 @@ describe("claimAndroidReadBootstrap", () => {
       pairedAt: result.pairedAt,
       deviceId,
       capabilities: ["todos:write"],
+      profile: "victor",
     });
     expect((await storedBootstrap(pairId))!.claimedAt).toBe(result.pairedAt);
     const device = await storedDevice(deviceId);
