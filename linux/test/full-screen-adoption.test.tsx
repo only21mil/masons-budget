@@ -127,6 +127,10 @@ test("Family, Settings, onboarding, Awards, Tasks, and More close the packet gap
     "Replay onboarding",
   ]) assert.match(settings, new RegExp(copy, "i"))
   assert.equal((settings.match(/role="switch"/g) ?? []).length, 4)
+  assert.match(
+    settings,
+    /Biometric unlock[\s\S]*Unavailable on Linux\.[\s\S]*aria-checked="false"[\s\S]*disabled=""/,
+  )
 
   const onboarding = renderRoute("onboarding")
   assert.match(onboarding, /STEP 01 \/ 03/)
