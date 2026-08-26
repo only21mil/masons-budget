@@ -194,6 +194,7 @@
 		A08D8C317D5AF5D62EF1C62D /* TaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4B3C65C1FD9F1E13141EE7C /* TaskDetailView.swift */; };
 		A14E8E51D94738A7CA25C9CB /* BitcoinIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF60F6C9AFB730F4A27C9A10 /* BitcoinIcons.swift */; };
 		A2757F55A7495EBA3A48C270 /* ConvexClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */; };
+		A3C01F1C701961BDFFB0F05C /* TaskRevisionPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B8E4F2BF4CDE845E9DBB6B3 /* TaskRevisionPersistenceTests.swift */; };
 		A4B5229E70D176AF587F9634 /* ConvexRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8998D9F9DC9435AE8FBBBCBC /* ConvexRows.swift */; };
 		A4E32DC184BE027F9F9BF879 /* PaymentSourceConformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57B55FD0C0F021AD800D8EFC /* PaymentSourceConformanceTests.swift */; };
 		A8667EC9D620FC51CE030C09 /* month-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = C2099C401266495C974A62BC /* month-cases.json */; };
@@ -322,6 +323,7 @@
 		36545B2D9E1B7DF435989A8B /* listBtcAccounts.json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = listBtcAccounts.json.json; sourceTree = "<group>"; };
 		39F9FEE550CB799FCADD40AF /* BudgetMonthScopingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetMonthScopingTests.swift; sourceTree = "<group>"; };
 		3B417CB2054592300B60B5D4 /* SourceCodePro-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceCodePro-Regular.ttf"; sourceTree = "<group>"; };
+		3B8E4F2BF4CDE845E9DBB6B3 /* TaskRevisionPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRevisionPersistenceTests.swift; sourceTree = "<group>"; };
 		3D424253F2EA585494807458 /* AppWriteSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppWriteSyncService.swift; sourceTree = "<group>"; };
 		3D87AD3812997CFF8FDDCF5B /* LedgerDesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerDesignSystem.swift; sourceTree = "<group>"; };
 		3FF15F6E86DFC6A8BE2EAFDA /* payment-source-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "payment-source-cases.json"; sourceTree = "<group>"; };
@@ -509,6 +511,7 @@
 				EF5C5935A12805ECA579168B /* MasonsBudgetTests.swift */,
 				974E8027F86EF14E53108D7C /* OptimisticSaveFlowTests.swift */,
 				57B55FD0C0F021AD800D8EFC /* PaymentSourceConformanceTests.swift */,
+				3B8E4F2BF4CDE845E9DBB6B3 /* TaskRevisionPersistenceTests.swift */,
 			);
 			path = MasonsBudgetTests;
 			sourceTree = "<group>";
@@ -1099,6 +1102,7 @@
 				14611BD57EFBBF83C6BBDA69 /* SyncEvent.swift in Sources */,
 				E72C1516754CC4B60DCF93C6 /* SyncStatusStore.swift in Sources */,
 				8CC6FEC8882669FA45A4B8B1 /* TaskDetailView.swift in Sources */,
+				A3C01F1C701961BDFFB0F05C /* TaskRevisionPersistenceTests.swift in Sources */,
 				4BD1E0F73E843E2217A7FC04 /* TaskSmartListView.swift in Sources */,
 				92F0489AD93C51D921395285 /* TaskUndoBanner.swift in Sources */,
 				3C2F0D3CBBB8D2A03A23CE1F /* TaskUndoStore.swift in Sources */,
