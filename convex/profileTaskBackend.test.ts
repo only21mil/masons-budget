@@ -8,6 +8,7 @@ import {
   testConvex,
   useIsolatedDeploymentEnv,
 } from "./harness.test-utils";
+import { sha256Hex } from "./deviceAuth";
 
 useIsolatedDeploymentEnv();
 
@@ -63,6 +64,15 @@ const api = {
 let t: T;
 let readToken: string;
 let syncToken: string;
+
+async function expectCode(request: Promise<unknown>, code: string) {
+  try {
+    await request;
+    throw new Error(`Expected ${code}`);
+  } catch (error) {
+    expect((error as { data?: { code?: string } }).data?.code).toBe(code);
+  }
+}
 
 beforeEach(() => {
   t = testConvex();
@@ -129,74 +139,40 @@ describe("profile-private task backend", () => {
     ]);
   });
 
-  it("requires an exact active profile and owner on sync-token task writes", async () => {
-    await expect(
-      t.mutation(api.upsertTodo, {
-        activeProfile: "victor",
-        todo: { id: "private-rachel", title: "Rachel private" },
-        token: syncToken,
-      }),
-    ).rejects.toThrow(/owner must be one of/);
-
+  it("keeps sync-token task writes on the non-interactive admin surface", async () => {
     await expect(
       t.mutation(api.upsertTodo, {
         activeProfile: "victor",
         todo: {
-          id: "private-rachel",
-          title: "Rachel private",
+          id: "interactive-admin-write",
+          title: "Must use a profile-bound device route",
           owner: "rachel",
         },
         token: syncToken,
       }),
-    ).rejects.toThrow(/Active profile victor may not access todos owned by rachel/);
+    ).rejects.toThrow();
 
     await expect(
-      t.mutation(api.upsertTodo, {
-        activeProfile: "rachel",
-        todo: {
-          id: "private-rachel",
-          title: "Rachel private",
-          owner: "rachel",
-        },
+      t.mutation(api.deleteTodo, {
+        activeProfile: "victor",
+        owner: "rachel",
+        todoId: "interactive-admin-write",
         token: syncToken,
       }),
-    ).resolves.toMatchObject({ owner: "rachel", outcome: "inserted" });
+    ).rejects.toThrow();
 
-    const [rachel, victor] = await Promise.all([
+    await expect(
       t.query(api.listTodos, { viewer: "rachel", token: readToken }),
-      t.query(api.listTodos, { viewer: "victor", token: readToken }),
-    ]);
-    expect(rachel.rows.map((row) => row.todoId)).toEqual(["private-rachel"]);
-    expect(victor.rows).toEqual([]);
-
-    await expect(
-      t.mutation(api.deleteTodo, {
-        activeProfile: "victor",
-        owner: "rachel",
-        todoId: "private-rachel",
-        token: syncToken,
-      }),
-    ).rejects.toThrow(/Active profile victor may not access todos owned by rachel/);
-    await expect(
-      t.mutation(api.deleteTodo, {
-        activeProfile: "rachel",
-        owner: "rachel",
-        todoId: "private-rachel",
-        token: syncToken,
-      }),
-    ).resolves.toEqual({ todoId: "private-rachel", removed: true });
+    ).resolves.toMatchObject({ rows: [] });
   });
 
   it("keeps another profile's tombstone while allowing same-owner legacy recreation", async () => {
     const todoId = "legacy-recreated-todo";
     await t.mutation(api.upsertTodo, {
-      activeProfile: "mason",
       todo: { id: todoId, title: "Mason private", owner: "mason" },
       token: syncToken,
     });
     await t.mutation(api.deleteTodo, {
-      activeProfile: "mason",
-      owner: "mason",
       todoId,
       token: syncToken,
     });
@@ -208,7 +184,6 @@ describe("profile-private task backend", () => {
 
     await expect(
       t.mutation(api.upsertTodo, {
-        activeProfile: "victor",
         todo: { id: todoId, title: "Victor reuse", owner: "victor" },
         token: syncToken,
       }),
@@ -232,7 +207,6 @@ describe("profile-private task backend", () => {
 
     await expect(
       t.mutation(api.upsertTodo, {
-        activeProfile: "mason",
         todo: { id: todoId, title: "Mason recreated", owner: "mason" },
         token: syncToken,
       }),
@@ -254,10 +228,158 @@ describe("profile-private task backend", () => {
     expect(recreatedState.legacyTombstones).toEqual([]);
   });
 
+  it("binds task authority to the credential and fences every state transition", async () => {
+    const legacyToken = freshSecret();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("mobileDevices", {
+        deviceId: "legacy-unbound-task-device",
+        name: "Legacy device",
+        tokenHash: await sha256Hex(legacyToken),
+        pairedAt: 1,
+        lastSeenAt: 1,
+        pairId: "legacy-unbound-task-pairing",
+        capabilities: ["todos:write"],
+      });
+    });
+    const todo = {
+      id: "fenced-profile-task",
+      owner: "mason" as const,
+      title: "Authoritative",
+      done: false,
+      flagged: false,
+    };
+    const legacyRequest = {
+      deviceId: "legacy-unbound-task-device",
+      deviceToken: legacyToken,
+      activeProfile: "mason",
+      owner: "mason",
+      sourceFile: "todos",
+      operation: "create",
+      todo,
+    };
+    await expectCode(
+      t.mutation(api.upsertTodoFromDevice, legacyRequest),
+      "PROFILE_BINDING_REQUIRED",
+    );
+
+    const device = await pairMobileDevice(
+      t,
+      syncToken,
+      "bound-task-device",
+      ["todos:write"],
+      "mason",
+    );
+    expect(
+      await t.run(async (ctx) => {
+        const row = await ctx.db
+          .query("mobileDevices")
+          .withIndex("by_device_id", (q) => q.eq("deviceId", device.deviceId))
+          .unique();
+        return row!.profile;
+      }),
+    ).toBe("mason");
+    const create = {
+      ...legacyRequest,
+      deviceId: device.deviceId,
+      deviceToken: device.deviceToken,
+    };
+    await expect(
+      t.mutation(api.upsertTodoFromDevice, create),
+    ).resolves.toMatchObject({ outcome: "inserted" });
+    await expectCode(
+      t.mutation(api.upsertTodoFromDevice, create),
+      "ENTITY_CONFLICT",
+    );
+    await expectCode(
+      t.mutation(api.upsertTodoFromDevice, {
+        ...create,
+        operation: "update",
+      }),
+      "REVISION_REQUIRED",
+    );
+    await expectCode(
+      t.mutation(api.upsertTodoFromDevice, {
+        deviceId: device.deviceId,
+        deviceToken: device.deviceToken,
+        activeProfile: "mason",
+        owner: "mason",
+        sourceFile: "todos",
+        todo,
+      }),
+      "REVISION_REQUIRED",
+    );
+
+    const revision = await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("todos")
+        .withIndex("by_todo_id", (q) => q.eq("todoId", todo.id))
+        .unique();
+      return row!.updatedAtMs;
+    });
+    await expect(
+      t.mutation(api.upsertTodoFromDevice, {
+        ...create,
+        operation: "update",
+        baseUpdatedAtMs: revision,
+        todo: { ...todo, title: "Updated" },
+      }),
+    ).resolves.toMatchObject({ outcome: "updated" });
+    await expectCode(
+      t.mutation(api.upsertTodoFromDevice, {
+        ...create,
+        operation: "update",
+        baseUpdatedAtMs: revision,
+      }),
+      "ENTITY_CONFLICT",
+    );
+
+    const updatedRevision = await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("todos")
+        .withIndex("by_todo_id", (q) => q.eq("todoId", todo.id))
+        .unique();
+      return row!.updatedAtMs;
+    });
+    const deleteRequest = {
+      deviceId: device.deviceId,
+      deviceToken: device.deviceToken,
+      activeProfile: "mason",
+      owner: "mason",
+      sourceFile: "todos",
+      entityId: todo.id,
+    };
+    await expectCode(
+      t.mutation(api.deleteTodoFromDevice, deleteRequest),
+      "REVISION_REQUIRED",
+    );
+    await expect(
+      t.mutation(api.deleteTodoFromDevice, {
+        ...deleteRequest,
+        baseUpdatedAtMs: updatedRevision,
+      }),
+    ).resolves.toMatchObject({ removed: true });
+    await expectCode(
+      t.mutation(api.upsertTodoFromDevice, create),
+      "ENTITY_DELETED",
+    );
+
+    const restoreRequest = { ...deleteRequest };
+    await expectCode(
+      t.mutation(api.restoreTodoFromDevice, restoreRequest),
+      "REVISION_REQUIRED",
+    );
+    await expect(
+      t.mutation(api.restoreTodoFromDevice, {
+        ...restoreRequest,
+        baseUpdatedAtMs: updatedRevision,
+      }),
+    ).resolves.toMatchObject({ entityId: todo.id });
+  });
+
   it("authenticates the device before enforcing exact-profile task ownership", async () => {
     const device = await pairMobileDevice(t, syncToken, "profile-task-device", [
       "todos:write",
-    ]);
+    ], "mason");
     const todo = {
       id: "mason-private",
       owner: "mason",
@@ -271,6 +393,7 @@ describe("profile-private task backend", () => {
       activeProfile: "mason",
       owner: "mason",
       sourceFile: "todos",
+      operation: "create",
       todo,
     };
 
@@ -294,7 +417,7 @@ describe("profile-private task backend", () => {
         ...request,
         activeProfile: "victor",
       }),
-    ).rejects.toThrow(/Active profile victor may not access todos owned by mason/);
+    ).rejects.toThrow(/must match credential profile mason/);
     expect(
       await t.run(async (ctx) => {
         const stored = await ctx.db
@@ -328,7 +451,7 @@ describe("profile-private task backend", () => {
         ...deleteRequest,
         activeProfile: "victor",
       }),
-    ).rejects.toThrow(/Active profile victor may not access todos owned by mason/);
+    ).rejects.toThrow(/must match credential profile mason/);
     await t.mutation(api.deleteTodoFromDevice, deleteRequest);
     await expect(
       t.mutation(api.deleteTodoFromDevice, {
@@ -336,31 +459,41 @@ describe("profile-private task backend", () => {
         activeProfile: "victor",
         owner: "victor",
       }),
-    ).rejects.toThrow(/Deleted todo mason-private belongs to mason, not victor/);
+    ).rejects.toThrow(/must match credential profile mason/);
 
     await expect(
       t.mutation(api.restoreTodoFromDevice, {
-        ...request,
+        deviceId: device.deviceId,
+        deviceToken: device.deviceToken,
         activeProfile: "victor",
+        owner: "mason",
+        sourceFile: "todos",
+        entityId: todo.id,
         baseUpdatedAtMs: revision,
       }),
-    ).rejects.toThrow(/Active profile victor may not access todos owned by mason/);
+    ).rejects.toThrow(/must match credential profile mason/);
     await expect(
       t.mutation(api.restoreTodoFromDevice, {
-        ...request,
+        deviceId: device.deviceId,
+        deviceToken: device.deviceToken,
+        activeProfile: "mason",
+        owner: "mason",
+        sourceFile: "todos",
+        entityId: todo.id,
         baseUpdatedAtMs: revision,
       }),
     ).resolves.toMatchObject({ entityId: todo.id });
   });
 
   it.each(["Linux", "Android"])(
-    "accepts shipped %s device upsert, delete, and restore payloads",
+    "accepts profile-bound %s device upsert, delete, and restore payloads",
     async (client) => {
       const device = await pairMobileDevice(
         t,
         syncToken,
         `${client.toLowerCase()}-wire-device`,
         ["todos:write"],
+        "mason",
       );
       const todo = {
         id: `${client.toLowerCase()}-wire-todo`,
@@ -372,8 +505,10 @@ describe("profile-private task backend", () => {
       const request = {
         deviceId: device.deviceId,
         deviceToken: device.deviceToken,
+        activeProfile: "mason",
         owner: "mason",
         sourceFile: "todos",
+        operation: "create",
         todo,
       };
 
@@ -392,6 +527,7 @@ describe("profile-private task backend", () => {
         t.mutation(api.deleteTodoFromDevice, {
           deviceId: device.deviceId,
           deviceToken: device.deviceToken,
+          activeProfile: "mason",
           owner: "mason",
           sourceFile: "todos",
           entityId: todo.id,
@@ -401,7 +537,12 @@ describe("profile-private task backend", () => {
 
       await expect(
         t.mutation(api.restoreTodoFromDevice, {
-          ...request,
+          deviceId: device.deviceId,
+          deviceToken: device.deviceToken,
+          activeProfile: "mason",
+          owner: "mason",
+          sourceFile: "todos",
+          entityId: todo.id,
           baseUpdatedAtMs: revision,
         }),
       ).resolves.toMatchObject({ entityId: todo.id });

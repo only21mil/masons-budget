@@ -10,6 +10,17 @@ export const DEVICE_CAPABILITIES = [
   "bitcoin:write",
 ] as const;
 
+export const DEVICE_PROFILES = ["victor", "rachel", "mason", "maddox"] as const;
+
+export type DeviceProfile = (typeof DEVICE_PROFILES)[number];
+
+export const deviceProfileValidator = v.union(
+  v.literal("victor"),
+  v.literal("rachel"),
+  v.literal("mason"),
+  v.literal("maddox"),
+);
+
 export type DeviceCapability = (typeof DEVICE_CAPABILITIES)[number];
 
 export const deviceCapabilityValidator = v.union(
@@ -83,6 +94,32 @@ export async function authenticateDevice(
     });
   }
   return device;
+}
+
+/** Task authority comes from the credential's server-stored profile. */
+export function requireTaskProfileBinding(
+  device: { profile?: DeviceProfile },
+  activeProfile: DeviceProfile | undefined,
+  owner: DeviceProfile,
+  todoId: string,
+): DeviceProfile {
+  if (device.profile === undefined) {
+    throw new ConvexError({
+      code: "PROFILE_BINDING_REQUIRED",
+      message: "This device credential is not bound to a task profile.",
+      entityType: "todo",
+      entityId: todoId,
+    });
+  }
+  if (activeProfile !== device.profile || owner !== device.profile) {
+    throw new ConvexError({
+      code: "OWNER_MISMATCH",
+      message: `Task request profile and owner must match credential profile ${device.profile}.`,
+      entityType: "todo",
+      entityId: todoId,
+    });
+  }
+  return device.profile;
 }
 
 /** Authenticate the device token without granting any data capability. */

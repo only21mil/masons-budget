@@ -42,7 +42,11 @@ import { ConvexError, v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { query, mutation, type MutationCtx } from "./_generated/server";
 import { isRealIsoDate, requireIsoDate } from "./dateValidation";
-import { authenticateDevice, markDeviceSeen } from "./deviceAuth";
+import {
+  authenticateDevice,
+  markDeviceSeen,
+  requireTaskProfileBinding,
+} from "./deviceAuth";
 import {
   addDelta,
   applyBtcAccountDeltas,
@@ -1824,6 +1828,7 @@ type DeviceErrorCode =
   | "ENTITY_NOT_FOUND"
   | "OWNER_MISMATCH"
   | "OWNER_SOURCE_MISMATCH"
+  | "PROFILE_BINDING_REQUIRED"
   | "REVISION_REQUIRED"
   | "VALIDATION_FAILED";
 
@@ -1839,22 +1844,6 @@ function deviceFailure(
     ...(entityType === undefined ? {} : { entityType }),
     ...(entityId === undefined ? {} : { entityId }),
   });
-}
-
-/** A supplied active profile must match the task's exact validated owner. */
-function requireTodoProfileOwner(
-  activeProfile: FamilyMember | undefined,
-  owner: FamilyMember,
-  todoId: string,
-) {
-  if (activeProfile !== undefined && activeProfile !== owner) {
-    deviceFailure(
-      "OWNER_MISMATCH",
-      `Active profile ${activeProfile} may not access todos owned by ${owner}.`,
-      "todo",
-      todoId,
-    );
-  }
 }
 
 const DEVICE_MAX_IDENTIFIER = 256;
@@ -1945,6 +1934,18 @@ function requireDeviceRevision(value: number | undefined, required: boolean) {
       value === undefined
         ? "baseUpdatedAtMs is required for this operation."
         : "baseUpdatedAtMs must be a non-negative safe integer.",
+    );
+  }
+}
+
+function requireTaskRevision(value: number | undefined) {
+  if (value === undefined) {
+    deviceFailure("REVISION_REQUIRED", "baseUpdatedAtMs is required for this operation.");
+  }
+  if (!Number.isSafeInteger(value) || value < 0) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "baseUpdatedAtMs must be a non-negative safe integer.",
     );
   }
 }
@@ -2499,6 +2500,7 @@ async function upsertTodoRow(
   ctx: MutationCtx,
   row: ReturnType<typeof buildTodoRow>,
   optimistic?: OptimisticWrite,
+  operation?: "create" | "update",
 ): Promise<UpsertOutcome> {
   const existing = await ctx.db
     .query("todos")
@@ -2519,6 +2521,14 @@ async function upsertTodoRow(
     );
   }
   if (existing) {
+    if (operation === "create") {
+      deviceFailure(
+        "ENTITY_CONFLICT",
+        "A todo create requires a fresh unused id.",
+        "todo",
+        row.todoId,
+      );
+    }
     if (existing.owner !== row.owner) {
       deviceFailure(
         "OWNER_MISMATCH",
@@ -2555,6 +2565,16 @@ async function upsertTodoRow(
     // surviving legacy blob. Row-native edits cannot clear it because they do
     // not also rewrite that blob with the authoritative row.
     return "updated";
+  }
+  if (operation === "update") {
+    deviceFailure(
+      tombstone ? "ENTITY_DELETED" : "ENTITY_NOT_FOUND",
+      tombstone
+        ? "The todo was deleted after it was read."
+        : "The todo to update does not exist.",
+      "todo",
+      row.todoId,
+    );
   }
   if (optimistic?.baseUpdatedAtMs !== undefined) {
     deviceFailure(
@@ -3413,6 +3433,11 @@ const todoDeviceInput = v.object({
   completedAt: v.optional(v.string()),
 });
 
+const todoWriteOperationValidator = v.union(
+  v.literal("create"),
+  v.literal("update"),
+);
+
 const btcBuyDeviceInput = v.object({
   id: v.string(),
   owner: familyMemberValidator,
@@ -3700,14 +3725,14 @@ export const deleteTransaction = mutation({
   },
 });
 
-/** Insert or replace ONE todo, keyed on its MC2 id. */
+/** Administrative compatibility upsert. Interactive clients use the bound
+ * device mutation below; this sync-token route accepts no active-profile echo. */
 export const upsertTodo = mutation({
   args: {
-    activeProfile: v.optional(familyMemberValidator),
     todo: v.any(),
     token: v.optional(v.string()),
   },
-  handler: async (ctx, { activeProfile, todo, token }) => {
+  handler: async (ctx, { todo, token }) => {
     validateSyncToken(token);
     const raw = asRecord(todo);
     if (!raw) throw new ConvexError("upsertTodo: todo must be an object");
@@ -3717,7 +3742,6 @@ export const upsertTodo = mutation({
           `${JSON.stringify(raw.owner)}.`,
       );
     }
-    requireTodoProfileOwner(activeProfile, raw.owner, String(raw.id ?? ""));
     const row = buildTodoRow(raw, raw.owner, "todos", Date.now());
     const outcome = await upsertTodoRow(ctx, row);
     return { todoId: row.todoId, owner: row.owner, done: row.done, outcome };
@@ -3725,19 +3749,18 @@ export const upsertTodo = mutation({
 });
 
 /**
- * Delete ONE todo row.
+ * Administratively delete ONE todo row. Interactive clients use the
+ * profile-bound, revision-fenced device mutation below.
  *
  * Writes both row-native and legacy todo tombstones. The legacy marker remains
  * required while shipped clients still converge through the todos blob.
  */
 export const deleteTodo = mutation({
   args: {
-    activeProfile: v.optional(familyMemberValidator),
-    owner: v.optional(familyMemberValidator),
     todoId: v.string(),
     token: v.optional(v.string()),
   },
-  handler: async (ctx, { activeProfile, owner, todoId, token }) => {
+  handler: async (ctx, { todoId, token }) => {
     validateSyncToken(token);
     const existing = await ctx.db
       .query("todos")
@@ -3747,15 +3770,6 @@ export const deleteTodo = mutation({
       ? null
       : await findRowTombstone(ctx, "todo", "todos", todoId);
     const effectiveOwner = existing?.owner ?? tombstone?.owner ?? DEFAULT_OWNER;
-    if (owner !== undefined && owner !== effectiveOwner) {
-      deviceFailure(
-        "OWNER_MISMATCH",
-        `Todo ${todoId} belongs to ${effectiveOwner}, not ${owner}.`,
-        "todo",
-        todoId,
-      );
-    }
-    requireTodoProfileOwner(activeProfile, effectiveOwner, todoId);
     if (!existing) {
       await lockRuntimeSource(ctx, "todos");
       if (!tombstone) {
@@ -4668,27 +4682,27 @@ async function deleteTodoCore(
 async function restoreTodoCore(
   ctx: MutationCtx,
   owner: FamilyMember,
-  requestedRow: ReturnType<typeof deviceTodoRow>,
+  todoId: string,
   baseUpdatedAtMs: number,
 ) {
   const existing = await ctx.db
     .query("todos")
-    .withIndex("by_todo_id", (q) => q.eq("todoId", requestedRow.todoId))
+    .withIndex("by_todo_id", (q) => q.eq("todoId", todoId))
     .unique();
   if (existing) {
     if (existing.owner !== owner) {
       deviceFailure(
         "OWNER_MISMATCH",
-        `Todo ${requestedRow.todoId} belongs to ${existing.owner}, not ${owner}.`,
+        `Todo ${todoId} belongs to ${existing.owner}, not ${owner}.`,
         "todo",
-        requestedRow.todoId,
+        todoId,
       );
     }
     deviceFailure(
       "ENTITY_CONFLICT",
       "The todo is not deleted and cannot be restored.",
       "todo",
-      requestedRow.todoId,
+      todoId,
     );
   }
 
@@ -4696,22 +4710,22 @@ async function restoreTodoCore(
     ctx,
     "todo",
     "todos",
-    requestedRow.todoId,
+    todoId,
   );
   if (!tombstone) {
     deviceFailure(
       "ENTITY_NOT_FOUND",
       "No deleted todo revision exists to restore.",
       "todo",
-      requestedRow.todoId,
+      todoId,
     );
   }
   if (tombstone.owner !== owner) {
     deviceFailure(
       "OWNER_MISMATCH",
-      `Deleted todo ${requestedRow.todoId} belongs to ${tombstone.owner}, not ${owner}.`,
+      `Deleted todo ${todoId} belongs to ${tombstone.owner}, not ${owner}.`,
       "todo",
-      requestedRow.todoId,
+      todoId,
     );
   }
   if (tombstone.deletedFromUpdatedAtMs !== baseUpdatedAtMs) {
@@ -4719,14 +4733,14 @@ async function restoreTodoCore(
       "ENTITY_CONFLICT",
       "The todo deletion does not match the revision being restored.",
       "todo",
-      requestedRow.todoId,
+      todoId,
     );
   }
 
   const capsule = tombstone.todoRestoreCapsule;
   if (
     !capsule ||
-    capsule.todoId !== requestedRow.todoId ||
+    capsule.todoId !== todoId ||
     capsule.owner !== owner ||
     capsule.sourceFile !== "todos" ||
     capsule.updatedAtMs !== baseUpdatedAtMs
@@ -4735,7 +4749,7 @@ async function restoreTodoCore(
       "ENTITY_CONFLICT",
       "The deleted todo revision has no matching authoritative restore data.",
       "todo",
-      requestedRow.todoId,
+      todoId,
     );
   }
 
@@ -4751,7 +4765,7 @@ async function restoreTodoCore(
   // The legacy blob still contains the pre-row-authority value. Keep its
   // compatibility tombstone until a later cutover removes or rewrites that
   // source; clearing it here would show stale content on Apple/legacy clients.
-  await upsertLegacyTodoTombstone(ctx, requestedRow.todoId);
+  await upsertLegacyTodoTombstone(ctx, todoId);
   return updatedAtMs;
 }
 
@@ -5584,6 +5598,7 @@ export const upsertTodoFromDevice = mutation({
     activeProfile: v.optional(familyMemberValidator),
     owner: familyMemberValidator,
     sourceFile: v.literal("todos"),
+    operation: v.optional(todoWriteOperationValidator),
     baseUpdatedAtMs: v.optional(v.float64()),
     todo: todoDeviceInput,
   },
@@ -5595,8 +5610,24 @@ export const upsertTodoFromDevice = mutation({
       args.deviceToken,
       "todos:write",
     );
-    requireTodoProfileOwner(args.activeProfile, args.owner, args.todo.id);
-    requireDeviceRevision(args.baseUpdatedAtMs, false);
+    requireTaskProfileBinding(
+      device,
+      args.activeProfile,
+      args.owner,
+      args.todo.id,
+    );
+    if (args.operation === "create") {
+      if (args.baseUpdatedAtMs !== undefined) {
+        deviceFailure(
+          "VALIDATION_FAILED",
+          "baseUpdatedAtMs must be omitted for todo create.",
+          "todo",
+          args.todo.id,
+        );
+      }
+    } else {
+      requireTaskRevision(args.baseUpdatedAtMs);
+    }
     validateDeviceTodo(args.todo);
     if (args.todo.owner !== args.owner) {
       deviceFailure(
@@ -5610,6 +5641,7 @@ export const upsertTodoFromDevice = mutation({
       ctx,
       deviceTodoRow(args.todo, Date.now()),
       { baseUpdatedAtMs: args.baseUpdatedAtMs },
+      args.operation,
     );
     await markDeviceSeen(ctx, device);
     return { ok: true as const, entityId: args.todo.id, outcome };
@@ -5621,7 +5653,7 @@ export const upsertTodoFromDevice = mutation({
  * `baseUpdatedAtMs` is the exact revision accepted by deleteTodoFromDevice;
  * it must still be recorded on the current tombstone. The complete authoritative
  * row comes from the server-owned restore capsule captured by delete; the client
- * projection supplies only the compatible request identity/owner shape.
+ * request supplies only the deleted entity id and consistency echoes.
  */
 export const restoreTodoFromDevice = mutation({
   args: {
@@ -5630,8 +5662,8 @@ export const restoreTodoFromDevice = mutation({
     activeProfile: v.optional(familyMemberValidator),
     owner: familyMemberValidator,
     sourceFile: v.literal("todos"),
-    baseUpdatedAtMs: v.float64(),
-    todo: todoDeviceInput,
+    entityId: v.string(),
+    baseUpdatedAtMs: v.optional(v.float64()),
   },
   returns: deviceRestoreResultValidator,
   handler: async (ctx, args) => {
@@ -5641,25 +5673,22 @@ export const restoreTodoFromDevice = mutation({
       args.deviceToken,
       "todos:write",
     );
-    requireTodoProfileOwner(args.activeProfile, args.owner, args.todo.id);
-    requireDeviceRevision(args.baseUpdatedAtMs, true);
-    validateDeviceTodo(args.todo);
-    if (args.todo.owner !== args.owner) {
-      deviceFailure(
-        "OWNER_MISMATCH",
-        "Todo owner does not match request owner.",
-        "todo",
-        args.todo.id,
-      );
-    }
+    requireTaskProfileBinding(
+      device,
+      args.activeProfile,
+      args.owner,
+      args.entityId,
+    );
+    requireTaskRevision(args.baseUpdatedAtMs);
+    requireDeviceIdentifier(args.entityId, "entityId");
     const updatedAtMs = await restoreTodoCore(
       ctx,
       args.owner,
-      deviceTodoRow(args.todo, Date.now()),
-      args.baseUpdatedAtMs,
+      args.entityId,
+      args.baseUpdatedAtMs!,
     );
     await markDeviceSeen(ctx, device);
-    return { ok: true as const, entityId: args.todo.id, updatedAtMs };
+    return { ok: true as const, entityId: args.entityId, updatedAtMs };
   },
 });
 
@@ -5671,7 +5700,7 @@ export const deleteTodoFromDevice = mutation({
     owner: familyMemberValidator,
     sourceFile: v.literal("todos"),
     entityId: v.string(),
-    baseUpdatedAtMs: v.float64(),
+    baseUpdatedAtMs: v.optional(v.float64()),
   },
   returns: deviceDeleteResultValidator,
   handler: async (ctx, args) => {
@@ -5681,11 +5710,16 @@ export const deleteTodoFromDevice = mutation({
       args.deviceToken,
       "todos:write",
     );
-    requireTodoProfileOwner(args.activeProfile, args.owner, args.entityId);
-    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    requireTaskProfileBinding(
+      device,
+      args.activeProfile,
+      args.owner,
+      args.entityId,
+    );
+    requireTaskRevision(args.baseUpdatedAtMs);
     requireDeviceIdentifier(args.entityId, "entityId");
     const removed = await deleteTodoCore(ctx, args.owner, args.entityId, {
-      baseUpdatedAtMs: args.baseUpdatedAtMs,
+      baseUpdatedAtMs: args.baseUpdatedAtMs!,
     });
     await markDeviceSeen(ctx, device);
     return { ok: true as const, entityId: args.entityId, removed };

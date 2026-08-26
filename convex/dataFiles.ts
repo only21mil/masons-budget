@@ -5,6 +5,7 @@ import {
   authenticateDevice,
   authenticateDeviceForSelfRevoke,
   deviceCapabilityValidator,
+  deviceProfileValidator,
   markDeviceSeen,
   normalizeDeviceCapabilities,
   sha256Hex,
@@ -864,6 +865,7 @@ export const createMobilePairing = mutation({
     expiresAt: v.float64(),
     createdBy: v.optional(v.string()),
     capabilities: v.optional(v.array(deviceCapabilityValidator)),
+    profile: v.optional(deviceProfileValidator),
     token: v.optional(v.string()),
   },
   returns: v.object({
@@ -872,7 +874,7 @@ export const createMobilePairing = mutation({
   }),
   handler: async (
     ctx,
-    { pairId, proofHash, expiresAt, createdBy, capabilities, token },
+    { pairId, proofHash, expiresAt, createdBy, capabilities, profile, token },
   ) => {
     validateConfiguredSyncToken(token);
     const now = Date.now();
@@ -903,6 +905,7 @@ export const createMobilePairing = mutation({
         capabilities === undefined
           ? undefined
           : normalizeDeviceCapabilities(capabilities),
+      profile,
     };
 
     await ctx.db.insert("mobilePairings", record);
@@ -974,6 +977,7 @@ export const claimMobilePairing = mutation({
       revokedAt: undefined,
       pairId,
       capabilities: pairing.capabilities,
+      profile: pairing.profile,
     };
 
     await ctx.db.insert("mobileDevices", deviceRecord);
