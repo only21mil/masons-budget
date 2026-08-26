@@ -25,7 +25,7 @@ const api = {
     "mutation",
     "public",
     {
-      activeProfile: Member;
+      activeProfile?: Member;
       todo: Record<string, unknown>;
       token: string;
     },
@@ -34,7 +34,7 @@ const api = {
   deleteTodo: "tables:deleteTodo" as unknown as FunctionReference<
     "mutation",
     "public",
-    { activeProfile: Member; owner: Member; todoId: string; token: string },
+    { activeProfile?: Member; owner?: Member; todoId: string; token: string },
     { todoId: string; removed: boolean }
   >,
   upsertTodoFromDevice:
@@ -75,6 +75,60 @@ beforeEach(() => {
 });
 
 describe("profile-private task backend", () => {
+  it("accepts the shipped Swift sync-token todo payloads", async () => {
+    await expect(
+      t.mutation(api.upsertTodo, {
+        todo: {
+          id: "swift-missing-owner",
+          title: "Must not default to an adult",
+        },
+        token: syncToken,
+      }),
+    ).rejects.toThrow(/owner must be one of/);
+
+    await expect(
+      t.mutation(api.upsertTodo, {
+        todo: {
+          id: "swift-todo",
+          title: "Shipped Swift payload",
+          owner: "mason",
+        },
+        token: syncToken,
+      }),
+    ).resolves.toMatchObject({ owner: "mason", outcome: "inserted" });
+
+    await expect(
+      t.mutation(api.deleteTodo, {
+        todoId: "swift-todo",
+        token: syncToken,
+      }),
+    ).resolves.toEqual({ todoId: "swift-todo", removed: true });
+
+    await expect(
+      t.mutation(api.deleteTodo, {
+        todoId: "swift-todo",
+        token: syncToken,
+      }),
+    ).resolves.toEqual({ todoId: "swift-todo", removed: false });
+
+    await expect(
+      t.mutation(api.deleteTodo, {
+        todoId: "swift-never-created",
+        token: syncToken,
+      }),
+    ).resolves.toEqual({ todoId: "swift-never-created", removed: false });
+    const tombstones = await t.run(async (ctx) =>
+      ctx.db.query("rowTombstones").collect(),
+    );
+    expect(tombstones).toEqual([
+      expect.objectContaining({ entityId: "swift-todo", owner: "mason" }),
+      expect.objectContaining({
+        entityId: "swift-never-created",
+        owner: "victor",
+      }),
+    ]);
+  });
+
   it("requires an exact active profile and owner on sync-token task writes", async () => {
     await expect(
       t.mutation(api.upsertTodo, {
@@ -231,4 +285,59 @@ describe("profile-private task backend", () => {
       }),
     ).resolves.toMatchObject({ entityId: todo.id });
   });
+
+  it.each(["Linux", "Android"])(
+    "accepts shipped %s device upsert, delete, and restore payloads",
+    async (client) => {
+      const device = await pairMobileDevice(
+        t,
+        syncToken,
+        `${client.toLowerCase()}-wire-device`,
+        ["todos:write"],
+      );
+      const todo = {
+        id: `${client.toLowerCase()}-wire-todo`,
+        owner: "mason",
+        title: `${client} shipped payload`,
+        done: false,
+        flagged: false,
+      };
+      const request = {
+        deviceId: device.deviceId,
+        deviceToken: device.deviceToken,
+        owner: "mason",
+        sourceFile: "todos",
+        todo,
+      };
+
+      await expect(
+        t.mutation(api.upsertTodoFromDevice, request),
+      ).resolves.toMatchObject({ entityId: todo.id, outcome: "inserted" });
+      const revision = await t.run(async (ctx) => {
+        const row = await ctx.db
+          .query("todos")
+          .withIndex("by_todo_id", (q) => q.eq("todoId", todo.id))
+          .unique();
+        return row!.updatedAtMs;
+      });
+
+      await expect(
+        t.mutation(api.deleteTodoFromDevice, {
+          deviceId: device.deviceId,
+          deviceToken: device.deviceToken,
+          owner: "mason",
+          sourceFile: "todos",
+          entityId: todo.id,
+          baseUpdatedAtMs: revision,
+        }),
+      ).resolves.toMatchObject({ entityId: todo.id, removed: true });
+
+      await expect(
+        t.mutation(api.restoreTodoFromDevice, {
+          ...request,
+          baseUpdatedAtMs: revision,
+        }),
+      ).resolves.toMatchObject({ entityId: todo.id });
+    },
+  );
 });
