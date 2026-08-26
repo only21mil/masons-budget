@@ -3951,6 +3951,37 @@ function foldedCategoryName(value: string): string {
   return normalized.toLocaleLowerCase("en-US");
 }
 
+/** Match the exact stored category name inside its canonical owner and month. */
+async function budgetCategoryHasLedgerRows(
+  ctx: MutationCtx,
+  owner: FamilyMember,
+  month: string,
+  categoryName: string,
+): Promise<boolean> {
+  const [transaction, billPay] = await Promise.all([
+    ctx.db
+      .query("transactions")
+      .withIndex("by_owner_month", (q) =>
+        q.eq("owner", owner).eq("month", month),
+      )
+      .filter((q) => q.eq(q.field("category"), categoryName))
+      .first(),
+    ctx.db
+      .query("btcBillPays")
+      .withIndex("by_owner_month", (q) =>
+        q.eq("owner", owner).eq("month", month),
+      )
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("category"), categoryName),
+          q.eq(q.field("budgetEffect"), "budget_category"),
+        ),
+      )
+      .first(),
+  ]);
+  return transaction !== null || billPay !== null;
+}
+
 async function upsertBudgetCategoryCore(
   ctx: MutationCtx,
   sourceFile: "budget" | "mason-budget",
@@ -4189,6 +4220,18 @@ async function deleteBudgetCategoryCore(
     );
   }
   if (index !== -1) {
+    const categoryName = foldedMatches[0]!.candidate.name;
+    if (
+      await budgetCategoryHasLedgerRows(ctx, owner, month, categoryName)
+    ) {
+      deviceFailure(
+        "ENTITY_CONFLICT",
+        `Budget category ${JSON.stringify(categoryName)} still has current-month ` +
+          "ledger rows; move or delete them before deleting the category.",
+        "budgetCategory",
+        categoryName,
+      );
+    }
     const categories = [...existing.categories];
     categories.splice(index, 1);
     await lockRuntimeSource(ctx, sourceFile);
