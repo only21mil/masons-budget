@@ -1841,13 +1841,13 @@ function deviceFailure(
   });
 }
 
-/** Tasks are private to the profile selected through the client's auth gate. */
+/** A supplied active profile must match the task's exact validated owner. */
 function requireTodoProfileOwner(
-  activeProfile: FamilyMember,
+  activeProfile: FamilyMember | undefined,
   owner: FamilyMember,
   todoId: string,
 ) {
-  if (activeProfile !== owner) {
+  if (activeProfile !== undefined && activeProfile !== owner) {
     deviceFailure(
       "OWNER_MISMATCH",
       `Active profile ${activeProfile} may not access todos owned by ${owner}.`,
@@ -3700,7 +3700,7 @@ export const deleteTransaction = mutation({
 /** Insert or replace ONE todo, keyed on its MC2 id. */
 export const upsertTodo = mutation({
   args: {
-    activeProfile: familyMemberValidator,
+    activeProfile: v.optional(familyMemberValidator),
     todo: v.any(),
     token: v.optional(v.string()),
   },
@@ -3715,7 +3715,7 @@ export const upsertTodo = mutation({
       );
     }
     requireTodoProfileOwner(activeProfile, raw.owner, String(raw.id ?? ""));
-    const row = buildTodoRow(raw, DEFAULT_OWNER, "todos", Date.now());
+    const row = buildTodoRow(raw, raw.owner, "todos", Date.now());
     const outcome = await upsertTodoRow(ctx, row);
     return { todoId: row.todoId, owner: row.owner, done: row.done, outcome };
   },
@@ -3729,39 +3729,34 @@ export const upsertTodo = mutation({
  */
 export const deleteTodo = mutation({
   args: {
-    activeProfile: familyMemberValidator,
-    owner: familyMemberValidator,
+    activeProfile: v.optional(familyMemberValidator),
+    owner: v.optional(familyMemberValidator),
     todoId: v.string(),
     token: v.optional(v.string()),
   },
   handler: async (ctx, { activeProfile, owner, todoId, token }) => {
     validateSyncToken(token);
-    requireTodoProfileOwner(activeProfile, owner, todoId);
     const existing = await ctx.db
       .query("todos")
       .withIndex("by_todo_id", (q) => q.eq("todoId", todoId))
       .unique();
-    if (existing && existing.owner !== owner) {
+    const tombstone = existing
+      ? null
+      : await findRowTombstone(ctx, "todo", "todos", todoId);
+    const effectiveOwner = existing?.owner ?? tombstone?.owner ?? DEFAULT_OWNER;
+    if (owner !== undefined && owner !== effectiveOwner) {
       deviceFailure(
         "OWNER_MISMATCH",
-        `Todo ${todoId} belongs to ${existing.owner}, not ${owner}.`,
+        `Todo ${todoId} belongs to ${effectiveOwner}, not ${owner}.`,
         "todo",
         todoId,
       );
     }
+    requireTodoProfileOwner(activeProfile, effectiveOwner, todoId);
     if (!existing) {
       await lockRuntimeSource(ctx, "todos");
-      const tombstone = await findRowTombstone(ctx, "todo", "todos", todoId);
-      if (tombstone && tombstone.owner !== owner) {
-        deviceFailure(
-          "OWNER_MISMATCH",
-          `Deleted todo ${todoId} belongs to ${tombstone.owner}, not ${owner}.`,
-          "todo",
-          todoId,
-        );
-      }
       if (!tombstone) {
-        await upsertRowTombstone(ctx, "todo", "todos", todoId, owner);
+        await upsertRowTombstone(ctx, "todo", "todos", todoId, effectiveOwner);
       }
       await upsertLegacyTodoTombstone(ctx, todoId);
       return { todoId, removed: false };
@@ -5583,7 +5578,7 @@ export const upsertTodoFromDevice = mutation({
   args: {
     deviceId: v.string(),
     deviceToken: v.string(),
-    activeProfile: familyMemberValidator,
+    activeProfile: v.optional(familyMemberValidator),
     owner: familyMemberValidator,
     sourceFile: v.literal("todos"),
     baseUpdatedAtMs: v.optional(v.float64()),
@@ -5629,7 +5624,7 @@ export const restoreTodoFromDevice = mutation({
   args: {
     deviceId: v.string(),
     deviceToken: v.string(),
-    activeProfile: familyMemberValidator,
+    activeProfile: v.optional(familyMemberValidator),
     owner: familyMemberValidator,
     sourceFile: v.literal("todos"),
     baseUpdatedAtMs: v.float64(),
@@ -5669,7 +5664,7 @@ export const deleteTodoFromDevice = mutation({
   args: {
     deviceId: v.string(),
     deviceToken: v.string(),
-    activeProfile: familyMemberValidator,
+    activeProfile: v.optional(familyMemberValidator),
     owner: familyMemberValidator,
     sourceFile: v.literal("todos"),
     entityId: v.string(),
