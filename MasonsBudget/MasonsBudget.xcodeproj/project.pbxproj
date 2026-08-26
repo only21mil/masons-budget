@@ -10,6 +10,7 @@
 		003988134AF5ADC9C1D34A97 /* payment-source-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = 3FF15F6E86DFC6A8BE2EAFDA /* payment-source-cases.json */; };
 		0079C75072FC413931C2BB2F /* UnitToggleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 709F4C2338EDE5D2BBB8C9F8 /* UnitToggleView.swift */; };
 		012AAE1E5EF54E82BA42EB70 /* InlineAddTaskBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5514024FC5632566C2498B75 /* InlineAddTaskBar.swift */; };
+		015AAF7950925FA801DA92EC /* LedgerAdoptionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D761EFAED478A3508622C89B /* LedgerAdoptionTests.swift */; };
 		0277118AD5FAAC5AB9883F91 /* SourceCodePro-Semibold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2EFC238E2DEC69CA90D81D29 /* SourceCodePro-Semibold.ttf */; };
 		05217F09961107F47A0EA45D /* CategoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBBF456CA8F45467DE539B3 /* CategoryDetailView.swift */; };
 		05EEA1FAE432CCE41C06C662 /* SourceCodePro-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A93F8520856CF28341FA9711 /* SourceCodePro-Medium.ttf */; };
@@ -386,6 +387,7 @@
 		D2EE11ADEBED01F399DA8F0F /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		D6A79423DEDC497A0F44FE23 /* LICENSE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = LICENSE.md; sourceTree = "<group>"; };
 		D73554169E81ED9939029F22 /* todo-visibility-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "todo-visibility-cases.json"; sourceTree = "<group>"; };
+		D761EFAED478A3508622C89B /* LedgerAdoptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerAdoptionTests.swift; sourceTree = "<group>"; };
 		D86340D4ABE8A55B4DA49FF6 /* SyncStatusStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStatusStore.swift; sourceTree = "<group>"; };
 		E0B7DF8FCA7F7468FBA58251 /* budget-category-deletion-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "budget-category-deletion-cases.json"; sourceTree = "<group>"; };
 		E117823C6DA6138431AE80C8 /* LockScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenView.swift; sourceTree = "<group>"; };
@@ -484,6 +486,7 @@
 				AC71D565300376FE836CAA75 /* ConvexRowsTests.swift */,
 				8442D5C22B6167F76BFFBE9E /* ConvexSyncServiceTests.swift */,
 				2AC58C7449FBDB08006CFC23 /* FamilyVisibilityTests.swift */,
+				D761EFAED478A3508622C89B /* LedgerAdoptionTests.swift */,
 				196CEA0279F5A6BEA5F39E8F /* LegacyBlobCompatibilityTests.swift */,
 				EF5C5935A12805ECA579168B /* MasonsBudgetTests.swift */,
 				974E8027F86EF14E53108D7C /* OptimisticSaveFlowTests.swift */,
@@ -1035,6 +1038,7 @@
 				BCDB4955AE6195145DB25EB0 /* HoldingAccount.swift in Sources */,
 				8FA1F5019016A229F4F7FE7B /* IncomingEventsSection.swift in Sources */,
 				012AAE1E5EF54E82BA42EB70 /* InlineAddTaskBar.swift in Sources */,
+				015AAF7950925FA801DA92EC /* LedgerAdoptionTests.swift in Sources */,
 				71D218811D3DBCEDDF2833BF /* LedgerDesignSystem.swift in Sources */,
 				7A23F98EAE7CC04F98559625 /* LedgerMapper.swift in Sources */,
 				9A9E95488C6473659AC40BF2 /* LegacyBlobCompatibilityTests.swift in Sources */,
