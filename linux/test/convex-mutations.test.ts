@@ -28,6 +28,7 @@ const snapshot: DeviceCredentialSnapshot = {
   deploymentOrigin: "https://household.convex.cloud",
   deviceId: "device_abcdefghijklmnop",
   deviceCredential: "credential_abcdefghijklmnopqrstuvwxyz0123456789",
+  profile: "victor",
   pairedAt: 1_774_000_000_000,
   capabilities: ["transaction.upsert", "transaction.delete"],
 }
@@ -376,7 +377,10 @@ describe("paired-device main controller", () => {
     })
 
     const pairingInput = "pair_identifier.secret_identifier"
-    const result = await controller.pair({ pairingInput, deviceName: "Fedora desktop" })
+    const result = await controller.pair(
+      { pairingInput, deviceName: "Fedora desktop" },
+      "victor",
+    )
     const body = JSON.parse(calls[0]?.body ?? "{}")
 
     expect(calls[0]?.endpoint).toBe("https://household.convex.cloud/api/mutation")
@@ -388,6 +392,7 @@ describe("paired-device main controller", () => {
     )
     expect(body.args.deviceToken).toHaveLength(43)
     expect(localStore.current?.deviceCredential).toBe(body.args.deviceToken)
+    expect(localStore.current?.profile).toBe("victor")
     expect(result).toEqual({
       status: "paired",
       pairedAt: 1_774_000_000_000,
@@ -417,7 +422,7 @@ describe("paired-device main controller", () => {
     await expect(controller.pair({
       pairingInput: "pair_identifier.secret_identifier",
       deviceName: "Fedora desktop",
-    })).resolves.toEqual({ status: "failed", code: "credential-storage" })
+    }, "victor")).resolves.toEqual({ status: "failed", code: "credential-storage" })
     expect(post).not.toHaveBeenCalled()
   })
 
@@ -442,7 +447,7 @@ describe("paired-device main controller", () => {
     await expect(controller.pair({
       pairingInput: "pair_identifier.secret_identifier",
       deviceName: "Fedora desktop",
-    })).resolves.toEqual({
+    }, "mason")).resolves.toEqual({
       status: "paired",
       pairedAt: 1_774_000_000_000,
       capabilities: [],
@@ -464,7 +469,7 @@ describe("paired-device main controller", () => {
       pairingInput:
         "https://keen-elephant-452.convex.cloud/#pair=pair_identifier.secret_identifier",
       deviceName: "Fedora desktop",
-    })).resolves.toEqual({ status: "failed", code: "invalid-input" })
+    }, "victor")).resolves.toEqual({ status: "failed", code: "invalid-input" })
   })
 
   it("best-effort revokes a claimed device when its response cannot be trusted", async () => {
@@ -492,7 +497,7 @@ describe("paired-device main controller", () => {
     await expect(controller.pair({
       pairingInput: "pair_identifier.secret_identifier",
       deviceName: "Fedora desktop",
-    })).resolves.toEqual({ status: "failed", code: "invalid-response" })
+    }, "victor")).resolves.toEqual({ status: "failed", code: "invalid-response" })
     expect(paths).toEqual([PAIRED_DEVICE_PATHS.claim, PAIRED_DEVICE_PATHS.revoke])
   })
 

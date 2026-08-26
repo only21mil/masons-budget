@@ -37,6 +37,7 @@ export const PAIRED_DEVICE_PATHS = {
   "transaction.delete": "tables:deleteTransactionFromDevice",
   "todo.upsert": "tables:upsertTodoFromDevice",
   "todo.delete": "tables:deleteTodoFromDevice",
+  "todo.restore": "tables:restoreTodoFromDevice",
   "budgetCategory.upsert": "tables:upsertBudgetCategoryFromDevice",
   "budgetCategory.delete": "tables:deleteBudgetCategoryFromDevice",
   "btcBuy.upsert": "tables:upsertBtcBuyFromDevice",
@@ -203,6 +204,7 @@ const MUTATION_KINDS = [
   "transaction.delete",
   "todo.upsert",
   "todo.delete",
+  "todo.restore",
   "budgetCategory.upsert",
   "budgetCategory.delete",
   "btcBuy.upsert",
@@ -244,13 +246,13 @@ interface SuccessEnvelope {
 }
 
 export interface PairedDeviceController {
-  pair(input: unknown): Promise<VogelVaultPairingResult>
+  pair(input: unknown, sessionActor: VogelVaultMember): Promise<VogelVaultPairingResult>
   status(): Promise<VogelVaultPairingStatus>
   /**
-   * `sessionActor` is the member this window is authenticated as, established
-   * by the main process rather than by the request. It is required: without it
-   * the payload's own `actor` would be the only claim of identity, and any
-   * renderer could write another family member's ledger by declaring theirs.
+   * `sessionActor` is the main-owned active-profile echo, not task authority.
+   * The credential's server-stored profile grants task access. Keeping this
+   * echo outside the renderer payload prevents a renderer from choosing both
+   * sides of the server's consistency check.
    */
   mutate(
     input: unknown,
@@ -604,6 +606,18 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           baseUpdatedAtMs: revision(record["baseUpdatedAtMs"]),
         }
       }
+      case "todo.restore": {
+        const record = withCommon(input, kind, ["id", "owner", "baseUpdatedAtMs"])
+        const { requestId, actor } = common(record)
+        return {
+          kind,
+          requestId,
+          actor,
+          id: boundedText(record["id"], PAIRED_DEVICE_LIMITS.maxIdentifier),
+          owner: member(record["owner"]),
+          baseUpdatedAtMs: revision(record["baseUpdatedAtMs"]),
+        }
+      }
       case "btcAccount.delete": {
         const record = withCommon(input, kind, ["key", "owner", "baseUpdatedAtMs"])
         const { requestId, actor } = common(record)
@@ -944,6 +958,7 @@ function encodeValuation(value: VogelVaultFiatValuation): Record<string, unknown
 function mutationArgs(
   request: VogelVaultMutationRequest,
   snapshot: DeviceCredentialSnapshot,
+  sessionActor: VogelVaultMember,
 ): Record<string, unknown> {
   const auth = {
     deviceId: snapshot.deviceId,
@@ -998,8 +1013,10 @@ function mutationArgs(
     case "todo.upsert":
       return {
         ...auth,
+        activeProfile: sessionActor,
         owner: request.owner,
         sourceFile: "todos",
+        operation: request.baseUpdatedAtMs === undefined ? "create" : "update",
         todo: {
           id: request.id,
           owner: request.owner,
@@ -1021,6 +1038,16 @@ function mutationArgs(
     case "todo.delete":
       return {
         ...auth,
+        activeProfile: sessionActor,
+        entityId: request.id,
+        owner: request.owner,
+        sourceFile: "todos",
+        baseUpdatedAtMs: request.baseUpdatedAtMs,
+      }
+    case "todo.restore":
+      return {
+        ...auth,
+        activeProfile: sessionActor,
         entityId: request.id,
         owner: request.owner,
         sourceFile: "todos",
@@ -1233,6 +1260,7 @@ type RemoteErrorCode =
   | "PAIRING_EXPIRED"
   | "PAIRING_NOT_FOUND"
   | "PAIRING_PROOF_INVALID"
+  | "PROFILE_BINDING_REQUIRED"
   | "REVISION_REQUIRED"
   | "VALIDATION_FAILED"
 
@@ -1249,6 +1277,7 @@ const REMOTE_ERROR_CODES: ReadonlySet<string> = new Set<RemoteErrorCode>([
   "PAIRING_EXPIRED",
   "PAIRING_NOT_FOUND",
   "PAIRING_PROOF_INVALID",
+  "PROFILE_BINDING_REQUIRED",
   "REVISION_REQUIRED",
   "VALIDATION_FAILED",
 ])
@@ -1303,7 +1332,8 @@ function structuredRemoteError(response: JsonPostResponse): RemoteErrorCode | nu
 
 function remoteClassification(
   response: JsonPostResponse,
-): "unauthorized" | "missing" | "conflict" | "rejected" | "expired" | "already-claimed" | null {
+): "unauthorized" | "missing" | "conflict" | "rejected" | "profile-binding-required" |
+  "revision-required" | "expired" | "already-claimed" | null {
   if (response.httpStatus === 401 || response.httpStatus === 403) return "unauthorized"
   const code = structuredRemoteError(response)
   if (code === "DEVICE_UNAUTHORIZED") return "unauthorized"
@@ -1311,14 +1341,18 @@ function remoteClassification(
     return "already-claimed"
   }
   if (code === "PAIRING_EXPIRED" || code === "PAIRING_NOT_FOUND") return "expired"
+  if (code === "PROFILE_BINDING_REQUIRED") return "profile-binding-required"
+  if (code === "REVISION_REQUIRED") return "revision-required"
   if (code === "ENTITY_NOT_FOUND" || code === "ENTITY_DELETED") return "missing"
-  if (code === "ENTITY_CONFLICT" || code === "REVISION_REQUIRED") return "conflict"
-  if (code === "VALIDATION_FAILED") return "rejected"
+  if (code === "ENTITY_CONFLICT") return "conflict"
+  if (code === "OWNER_MISMATCH" || code === "OWNER_SOURCE_MISMATCH" || code === "VALIDATION_FAILED") {
+    return "rejected"
+  }
   return null
 }
 
 const RESOURCE_CAPABILITIES = {
-  "todos:write": ["todo.upsert", "todo.delete"],
+  "todos:write": ["todo.upsert", "todo.delete", "todo.restore"],
   "transactions:write": ["transaction.upsert", "transaction.delete"],
   "budget:write": ["budgetCategory.upsert", "budgetCategory.delete"],
   "bitcoin:write": [
@@ -1361,6 +1395,11 @@ function storedCapabilities(value: unknown): readonly VogelVaultMutationKind[] {
     throw new InvalidResponse()
   }
   const capabilities = value as VogelVaultMutationKind[]
+  const todoGrant = ["todo.upsert", "todo.delete"] as const satisfies readonly VogelVaultMutationKind[]
+  const withTaskRestore = todoGrant.every((kind) => capabilities.includes(kind)) &&
+    !capabilities.includes("todo.restore")
+      ? [...capabilities, "todo.restore" as const]
+      : capabilities
   const legacyBitcoinGrant = [
     "btcBuy.upsert",
     "btcBuy.delete",
@@ -1370,17 +1409,17 @@ function storedCapabilities(value: unknown): readonly VogelVaultMutationKind[] {
     "btcAccount.delete",
   ] as const satisfies readonly VogelVaultMutationKind[]
   if (
-    legacyBitcoinGrant.every((kind) => capabilities.includes(kind)) &&
-    !capabilities.includes("btcTransfer.upsert") &&
-    !capabilities.includes("btcTransfer.delete")
+    legacyBitcoinGrant.every((kind) => withTaskRestore.includes(kind)) &&
+    !withTaskRestore.includes("btcTransfer.upsert") &&
+    !withTaskRestore.includes("btcTransfer.delete")
   ) {
     // Stored grants are the expanded renderer vocabulary, while Convex keeps
     // the durable coarse `bitcoin:write` capability. Preserve that original
     // grant across this vocabulary addition so existing paired desktops do
     // not need to re-pair merely to use the new Bitcoin transfer endpoint.
-    return [...capabilities, "btcTransfer.upsert", "btcTransfer.delete"]
+    return [...withTaskRestore, "btcTransfer.upsert", "btcTransfer.delete"]
   }
-  return capabilities
+  return withTaskRestore
 }
 
 function pairValue(
@@ -1409,6 +1448,29 @@ function mutationValue(
   request: VogelVaultMutationRequest,
 ): VogelVaultMutationResult {
   if (!isRecord(value) || value["ok"] !== true) throw new InvalidResponse()
+  if (request.kind === "todo.restore") {
+    if (!exactKeys(value, ["ok", "entityId", "updatedAtMs"])) {
+      throw new InvalidResponse()
+    }
+    const entityId = value["entityId"]
+    const updatedAtMs = value["updatedAtMs"]
+    if (
+      entityId !== request.id ||
+      typeof updatedAtMs !== "number" ||
+      !Number.isSafeInteger(updatedAtMs) ||
+      updatedAtMs < 0
+    ) {
+      throw new InvalidResponse()
+    }
+    return {
+      status: "ok",
+      requestId: request.requestId,
+      kind: request.kind,
+      outcome: "restored",
+      entityId,
+      updatedAtMs,
+    }
+  }
   const isUpsert = request.kind.endsWith(".upsert")
   if (
     !exactKeys(
@@ -1527,7 +1589,10 @@ export function createPairedDeviceController(
   }
 
   return {
-    async pair(input: unknown): Promise<VogelVaultPairingResult> {
+    async pair(
+      input: unknown,
+      sessionActor: VogelVaultMember,
+    ): Promise<VogelVaultPairingResult> {
       if (!options.writesEnabled()) return { status: "disabled" }
       let claim: PairingClaim
       try {
@@ -1594,13 +1659,14 @@ export function createPairedDeviceController(
           })
           return { status: "failed", code: "invalid-response" }
         }
-        const pending: Omit<DeviceCredentialSnapshot, "revision"> = {
+        const pending = {
           deploymentOrigin: approvedOrigin,
           deviceId,
           deviceCredential,
+          profile: sessionActor,
           pairedAt: paired.pairedAt,
           capabilities: paired.capabilities,
-        }
+        } as const
         try {
           await options.store.save(pending)
         } catch {
@@ -1662,6 +1728,9 @@ export function createPairedDeviceController(
       if (!ADULTS.has(sessionActor) && request.owner !== sessionActor) {
         return { ...identity, status: "unauthorized" }
       }
+      if (request.kind.startsWith("todo.") && request.owner !== sessionActor) {
+        return { ...identity, status: "unauthorized" }
+      }
       if (!options.writesEnabled()) {
         return { ...identity, status: "disabled" }
       }
@@ -1696,6 +1765,14 @@ export function createPairedDeviceController(
           if (snapshot.deploymentOrigin !== approvedOrigin) {
             return { ...identity, status: "unauthorized" }
           }
+          if (request.kind.startsWith("todo.")) {
+            if (snapshot.profile === null) {
+              return { ...identity, status: "failed", code: "PROFILE_BINDING_REQUIRED" }
+            }
+            if (snapshot.profile !== sessionActor) {
+              return { ...identity, status: "unauthorized" }
+            }
+          }
           const capabilities = storedCapabilities(snapshot.capabilities)
           if (!capabilities.includes(request.kind)) {
             return { ...identity, status: "unauthorized" }
@@ -1725,7 +1802,10 @@ export function createPairedDeviceController(
 
           const response = await options.post(
             mutationEndpoint(approvedOrigin),
-            requestBody(PAIRED_DEVICE_PATHS[request.kind], mutationArgs(request, snapshot)),
+            requestBody(
+              PAIRED_DEVICE_PATHS[request.kind],
+              mutationArgs(request, snapshot, sessionActor),
+            ),
             PAIRED_DEVICE_LIMITS.maxResponseBytes,
           )
           const classified = remoteClassification(response)
@@ -1734,6 +1814,12 @@ export function createPairedDeviceController(
             return { ...identity, status: "unauthorized" }
           }
           if (classified === "missing") return { ...identity, status: "missing" }
+          if (classified === "profile-binding-required") {
+            return { ...identity, status: "failed", code: "PROFILE_BINDING_REQUIRED" }
+          }
+          if (classified === "revision-required") {
+            return { ...identity, status: "failed", code: "REVISION_REQUIRED" }
+          }
           if (classified === "conflict") {
             return { ...identity, status: "failed", code: "conflict" }
           }

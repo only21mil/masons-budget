@@ -489,6 +489,7 @@ export type VogelVaultMutationKind =
   | "transaction.delete"
   | "todo.upsert"
   | "todo.delete"
+  | "todo.restore"
   | "budgetCategory.upsert"
   | "budgetCategory.delete"
   | "btcBuy.upsert"
@@ -506,8 +507,8 @@ interface VogelVaultMutationBase {
   /**
    * Non-authoritative UI intent for local audit/telemetry only.
    *
-   * A paired Linux credential is household-wide authority. Neither main nor
-   * Convex uses this renderer-controlled value to grant access.
+   * Task authority comes from the credential's server-bound profile. Neither
+   * main nor Convex uses this renderer-controlled value to grant access.
    */
   readonly actor: VogelVaultMember
 }
@@ -553,13 +554,20 @@ export type VogelVaultMutationRequest =
       readonly createdAt?: string
       readonly updatedAt?: string
       readonly completedAt?: string
-      /** Omit only for a create whose natural key has never existed. */
+      /** Omit only for a create whose id has never existed or been tombstoned. */
       readonly baseUpdatedAtMs?: number
     })
   | (VogelVaultMutationBase & {
       readonly kind: "todo.delete"
       readonly id: string
       readonly owner: VogelVaultMember
+      readonly baseUpdatedAtMs: number
+    })
+  | (VogelVaultMutationBase & {
+      readonly kind: "todo.restore"
+      readonly id: string
+      readonly owner: VogelVaultMember
+      /** Exact revision accepted by the delete that created the server capsule. */
       readonly baseUpdatedAtMs: number
     })
   | (VogelVaultMutationBase & {
@@ -686,6 +694,7 @@ export type VogelVaultMutationOutcome =
   | "inserted"
   | "updated"
   | "deleted"
+  | "restored"
   | "not-found"
 
 /** Locally classified failure detail; never backend-authored text. */
@@ -696,6 +705,8 @@ export type VogelVaultMutationFailureCode =
   | "unavailable"
   | "invalid-response"
   | "credential-storage"
+  | "PROFILE_BINDING_REQUIRED"
+  | "REVISION_REQUIRED"
 
 interface VogelVaultMutationReplyBase {
   readonly requestId: string
@@ -711,6 +722,8 @@ export type VogelVaultMutationResult =
       readonly status: "ok"
       readonly outcome: VogelVaultMutationOutcome
       readonly entityId: string
+      /** Authoritative restore receipt; present only for todo.restore. */
+      readonly updatedAtMs?: number
     })
   | (VogelVaultMutationReplyBase & { readonly status: "disabled" })
   | (VogelVaultMutationReplyBase & { readonly status: "not-configured" })

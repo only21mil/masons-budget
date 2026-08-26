@@ -54,6 +54,21 @@ export const MUTATION_MESSAGES: Readonly<Record<RendererMutationResult["status"]
   failed: "The ledger could not be reached. Your change was rolled back; try again.",
 }
 
+/** Local copy for allow-listed task failures; backend-authored text never crosses IPC. */
+export function mutationResultMessage(result: RendererMutationResult): string {
+  if (result.status !== "failed") return MUTATION_MESSAGES[result.status]
+  if (result.code === "PROFILE_BINDING_REQUIRED") {
+    return "This paired credential predates profile-bound task writes. Pair this profile again. Nothing was saved."
+  }
+  if (result.code === "REVISION_REQUIRED") {
+    return "This task has no authoritative server revision. Refresh and try again. Nothing was saved."
+  }
+  if (result.code === "conflict") {
+    return "This item changed on another device. Refresh before trying again. Nothing was saved."
+  }
+  return MUTATION_MESSAGES.failed
+}
+
 export interface MutationGateInput {
   readonly dataOrigin: DataOrigin
   readonly bridgeAvailable: boolean
@@ -419,7 +434,7 @@ export function settleMutation(
     committed: result.status === "ok" ? [...state.committed, current] : state.committed,
     notice: {
       tone: result.status === "ok" ? "positive" : "negative",
-      text: MUTATION_MESSAGES[result.status],
+      text: mutationResultMessage(result),
     },
   }
 }
@@ -500,6 +515,7 @@ function mutationSnapshot(
       return data.transactions.value.find((row) => row.id === request.id)
     case "todo.upsert":
     case "todo.delete":
+    case "todo.restore":
       return data.todos.value.find((row) => row.id === request.id)
     case "budgetCategory.upsert":
     case "budgetCategory.delete":
@@ -604,6 +620,10 @@ export function applyOptimisticMutation(
         ...data,
         todos: { ...data.todos, value: data.todos.value.filter((row) => row.id !== request.id) },
       }
+    case "todo.restore":
+      // The server owns the deleted-row capsule. Do not reconstruct or send a
+      // client copy; the authoritative refresh installs the restored row.
+      return data
     case "budgetCategory.upsert": {
       const budget = data.budget.value
       if (!budget) return data
