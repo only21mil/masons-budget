@@ -2504,9 +2504,12 @@ async function upsertTodoRow(
     .query("todos")
     .withIndex("by_todo_id", (q: any) => q.eq("todoId", row.todoId))
     .unique();
-  const tombstone = optimistic
-    ? await findRowTombstone(ctx, "todo", row.sourceFile, row.todoId)
-    : null;
+  const tombstone = await findRowTombstone(
+    ctx,
+    "todo",
+    row.sourceFile,
+    row.todoId,
+  );
   if (tombstone && tombstone.owner !== row.owner) {
     deviceFailure(
       "OWNER_MISMATCH",
@@ -2563,7 +2566,7 @@ async function upsertTodoRow(
       row.todoId,
     );
   }
-  if (tombstone) {
+  if (optimistic && tombstone) {
     deviceFailure(
       "ENTITY_DELETED",
       "A deleted todo id cannot be silently resurrected.",
