@@ -35,7 +35,7 @@ export interface AppShellProps {
 
 export function AppShell({ sections, activeId, onNavigate, topBar, children }: AppShellProps) {
   return (
-    <div className="vv-shell">
+    <div className="vv-shell vv-ledger-root">
       <nav className="vv-sidebar" aria-label="Primary">
         <div className="vv-sidebar__brand">
           <IconGlyph name="shield" size={18} className="vv-sidebar__mark" />

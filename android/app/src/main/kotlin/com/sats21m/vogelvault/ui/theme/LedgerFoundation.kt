@@ -2,6 +2,7 @@ package com.sats21m.vogelvault.ui.theme
 
 import androidx.annotation.FontRes
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -291,7 +292,7 @@ val LocalLedgerEffects = staticCompositionLocalOf {
     LedgerEffectSettings().resolve(LedgerAccessibilityPreferences())
 }
 
-/** Existing routes remain on [VogelVaultTheme] until a later screen-adoption wave. */
+/** Installs the accepted ledger palette, typography, and composition-local tokens. */
 @Composable
 fun SovereignLedgerTheme(
     treatment: LedgerTreatment,
@@ -307,6 +308,7 @@ fun SovereignLedgerTheme(
         CompositionLocalProvider(
             LocalLedgerTheme provides tokens,
             LocalLedgerEffects provides effectSettings.resolve(accessibility),
+            LocalContentColor provides tokens.colors.foreground,
             content = content,
         )
     }

@@ -1,6 +1,36 @@
 @import "./ledger-foundations.css";
 @import "./tokens.css";
 
+/*
+ * The shell owns the Sovereign ledger scope. Existing screens keep their
+ * established variable names until their own adoption waves, while this root
+ * bridge makes those names resolve to the accepted ledger palette now.
+ */
+.vv-ledger-root {
+  --vv-bg: var(--vv-ledger-bg);
+  --vv-surface: var(--vv-ledger-panel);
+  --vv-surface-raised: var(--vv-ledger-panel-raised);
+  --vv-surface-sunken: var(--vv-ledger-bg);
+  --vv-overlay: color-mix(in srgb, var(--vv-ledger-bg) 82%, transparent);
+
+  --vv-text: var(--vv-ledger-ink);
+  --vv-text-muted: var(--vv-ledger-ink-secondary);
+  --vv-text-dim: var(--vv-ledger-ink-meta);
+  --vv-text-inverse: var(--vv-ledger-on-bitcoin);
+
+  --vv-line: var(--vv-ledger-rule-subtle);
+  --vv-line-strong: var(--vv-ledger-rule);
+
+  --vv-accent: var(--vv-ledger-bitcoin);
+  --vv-accent-dim: var(--vv-ledger-bitcoin-soft);
+  --vv-accent-line: color-mix(in srgb, var(--vv-ledger-bitcoin) 42%, transparent);
+
+  --vv-positive: var(--vv-ledger-gain);
+  --vv-negative: var(--vv-ledger-loss);
+  --vv-font-ui: var(--vv-ledger-font);
+  --vv-font-mono: var(--vv-ledger-font);
+}
+
 *,
 *::before,
 *::after {

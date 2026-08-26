@@ -13,6 +13,7 @@ import {
   LedgerSemanticValue,
   PawGlyph,
 } from "../src/renderer/components/LedgerFoundations.tsx"
+import { AppShell } from "../src/renderer/components/AppShell.tsx"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const renderer = join(here, "..", "src", "renderer")
@@ -27,6 +28,18 @@ const fontPath = join(
 )
 
 describe("ledger design foundations", () => {
+  it("adopts the ledger scope at the application shell", () => {
+    const shell = renderToStaticMarkup(
+      <AppShell sections={[]} activeId="home" onNavigate={() => {}} topBar={null}>
+        Ledger content
+      </AppShell>,
+    )
+
+    expect(shell).toContain('class="vv-shell vv-ledger-root"')
+    expect(globalStyles).toContain("--vv-bg: var(--vv-ledger-bg)")
+    expect(globalStyles).toContain("--vv-font-ui: var(--vv-ledger-font)")
+  })
+
   it("keeps the exact Terminal and Daylight semantic tokens", () => {
     for (const token of [
       "--vv-ledger-bg: #0a0d0c",
