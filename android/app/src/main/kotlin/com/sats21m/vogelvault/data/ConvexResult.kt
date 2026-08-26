@@ -74,6 +74,8 @@ enum class ConvexServerRejection(internal val safeReason: String) {
     TASK_CHANGED("task changed on another device"),
     TASK_DELETED("task was deleted on another device"),
     TASK_MISSING("task no longer exists"),
+    PROFILE_BINDING_REQUIRED("PROFILE_BINDING_REQUIRED: pair a credential bound to this profile"),
+    REVISION_REQUIRED("REVISION_REQUIRED: refresh tasks before retrying"),
     OWNER_REJECTED("task owner was rejected"),
     VALIDATION_REJECTED("task was rejected as invalid"),
     ;
@@ -84,6 +86,8 @@ enum class ConvexServerRejection(internal val safeReason: String) {
             TASK_CHANGED.safeReason -> TASK_CHANGED
             TASK_DELETED.safeReason -> TASK_DELETED
             TASK_MISSING.safeReason -> TASK_MISSING
+            PROFILE_BINDING_REQUIRED.safeReason -> PROFILE_BINDING_REQUIRED
+            REVISION_REQUIRED.safeReason -> REVISION_REQUIRED
             OWNER_REJECTED.safeReason -> OWNER_REJECTED
             VALIDATION_REJECTED.safeReason -> VALIDATION_REJECTED
             else -> GENERIC_ERROR

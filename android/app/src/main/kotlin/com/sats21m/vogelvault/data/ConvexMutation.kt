@@ -7,6 +7,11 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
+internal enum class TodoWriteOperation(val wireValue: String) {
+    CREATE("create"),
+    UPDATE("update"),
+}
+
 /**
  * Closed catalogue for the public row mutations Android is allowed to call.
  *
@@ -75,13 +80,31 @@ internal sealed class ConvexMutation(val path: String) {
     }
 
     data class UpsertTodoFromDevice(
+        val activeProfile: FamilyMember,
         val owner: FamilyMember,
+        val operation: TodoWriteOperation,
         val todo: JsonObject,
         val baseUpdatedAtMs: Long?,
     ) : ConvexMutation("tables:upsertTodoFromDevice") {
+        init {
+            require(activeProfile == owner) {
+                "active profile and todo owner echoes must agree"
+            }
+            when (operation) {
+                TodoWriteOperation.CREATE -> require(baseUpdatedAtMs == null) {
+                    "todo create must not include a base revision"
+                }
+                TodoWriteOperation.UPDATE -> require(baseUpdatedAtMs != null && baseUpdatedAtMs >= 0L) {
+                    "todo update requires an authoritative base revision"
+                }
+            }
+        }
+
         override fun arguments(): JsonObject = buildMap<String, JsonElement> {
+            put("activeProfile", JsonPrimitive(activeProfile.key))
             put("owner", JsonPrimitive(owner.key))
             put("sourceFile", JsonPrimitive("todos"))
+            put("operation", JsonPrimitive(operation.wireValue))
             put("todo", todo)
             baseUpdatedAtMs?.let { put("baseUpdatedAtMs", JsonPrimitive(it)) }
         }.let(::JsonObject)
@@ -89,15 +112,21 @@ internal sealed class ConvexMutation(val path: String) {
 
     data class DeleteTodoFromDevice(
         val todoId: String,
+        val activeProfile: FamilyMember,
         val owner: FamilyMember,
         val baseUpdatedAtMs: Long,
     ) : ConvexMutation("tables:deleteTodoFromDevice") {
         init {
             require(todoId.isNotBlank()) { "todo id must not be blank" }
+            require(activeProfile == owner) {
+                "active profile and todo owner echoes must agree"
+            }
+            require(baseUpdatedAtMs >= 0L) { "todo delete requires an authoritative base revision" }
         }
 
         override fun arguments(): JsonObject = jsonObject(
             "entityId" to JsonPrimitive(todoId),
+            "activeProfile" to JsonPrimitive(activeProfile.key),
             "owner" to JsonPrimitive(owner.key),
             "sourceFile" to JsonPrimitive("todos"),
             "baseUpdatedAtMs" to JsonPrimitive(baseUpdatedAtMs),
@@ -105,14 +134,24 @@ internal sealed class ConvexMutation(val path: String) {
     }
 
     data class RestoreTodoFromDevice(
+        val todoId: String,
+        val activeProfile: FamilyMember,
         val owner: FamilyMember,
-        val todo: JsonObject,
         val baseUpdatedAtMs: Long,
     ) : ConvexMutation("tables:restoreTodoFromDevice") {
+        init {
+            require(todoId.isNotBlank()) { "todo id must not be blank" }
+            require(activeProfile == owner) {
+                "active profile and todo owner echoes must agree"
+            }
+            require(baseUpdatedAtMs >= 0L) { "todo restore requires an authoritative base revision" }
+        }
+
         override fun arguments(): JsonObject = jsonObject(
+            "entityId" to JsonPrimitive(todoId),
+            "activeProfile" to JsonPrimitive(activeProfile.key),
             "owner" to JsonPrimitive(owner.key),
             "sourceFile" to JsonPrimitive("todos"),
-            "todo" to todo,
             "baseUpdatedAtMs" to JsonPrimitive(baseUpdatedAtMs),
         )
     }

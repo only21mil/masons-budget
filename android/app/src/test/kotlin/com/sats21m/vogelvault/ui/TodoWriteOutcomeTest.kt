@@ -2,6 +2,8 @@ package com.sats21m.vogelvault.ui
 
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.ConvexValue
+import com.sats21m.vogelvault.data.DEVICE_PROFILE_BINDING_REQUIRED_REASON
+import com.sats21m.vogelvault.data.DEVICE_REVISION_REQUIRED_REASON
 import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -72,6 +74,25 @@ class TodoWriteOutcomeTest {
 
         assertTrue(unauthorized.contains("paired-device credential is missing or was rejected"))
         assertTrue(failed.contains("transport failure (IOException)"))
+    }
+
+    @Test
+    fun `profile binding and revision requirements stay visible by exact code`() {
+        val profile = assertNotNull(
+            todoWriteFailureMessage(
+                TodoWriteAction.ADD,
+                ConvexResult.Failed(DEVICE_PROFILE_BINDING_REQUIRED_REASON),
+            ),
+        )
+        val revision = assertNotNull(
+            todoWriteFailureMessage(
+                TodoWriteAction.UPDATE,
+                ConvexResult.Failed(DEVICE_REVISION_REQUIRED_REASON),
+            ),
+        )
+
+        assertTrue(profile.contains("PROFILE_BINDING_REQUIRED"))
+        assertTrue(revision.contains("REVISION_REQUIRED"))
     }
 
     @Test

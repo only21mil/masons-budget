@@ -84,6 +84,7 @@ internal class TodoWriteState(
     private var restoreInFlightToken: String? = null
     private var restoredOperationToken: String? = null
     private val authoritativeRows = mutableMapOf<String, TodoItem>()
+    private val awaitingAuthoritativeRevision = mutableMapOf<String, Long>()
 
     val deletePending: Boolean
         get() = pendingDeletion != null
@@ -116,15 +117,24 @@ internal class TodoWriteState(
         if (todo.id in busyIds) return
         busyIds = busyIds + todo.id
         scope.launch {
-            val result = gateway?.upsert(activeProfile, todo, baseUpdatedAtMs)
+            val result = when (action) {
+                TodoWriteAction.ADD -> gateway?.create(activeProfile, todo)
+                TodoWriteAction.UPDATE -> gateway?.update(activeProfile, todo, baseUpdatedAtMs)
+                TodoWriteAction.DELETE, TodoWriteAction.RESTORE ->
+                    ConvexResult.Failed("invalid task write operation")
+            }
             val failure = failureMessage(action, result)
             if (failure == null) {
-                onAccepted(todo)
+                val accepted = todo.copy(updatedAtMs = baseUpdatedAtMs ?: 0L)
+                awaitingAuthoritativeRevision[todo.id] = baseUpdatedAtMs ?: -1L
+                onAccepted(accepted)
                 onWriteSucceeded()
             } else {
                 report(failure)
             }
-            busyIds = busyIds - todo.id
+            if (todo.id !in awaitingAuthoritativeRevision) {
+                busyIds = busyIds - todo.id
+            }
         }
     }
 
@@ -243,6 +253,11 @@ internal class TodoWriteState(
         rows.forEach { row ->
             val known = authoritativeRows[row.id]
             if (known == null || row.updatedAtMs >= known.updatedAtMs) authoritativeRows[row.id] = row
+            val baseRevision = awaitingAuthoritativeRevision[row.id]
+            if (baseRevision != null && row.updatedAtMs > baseRevision) {
+                awaitingAuthoritativeRevision.remove(row.id)
+                busyIds = busyIds - row.id
+            }
         }
         val pending = pendingDeletion
         val tombstonedId = pending?.todo?.id
