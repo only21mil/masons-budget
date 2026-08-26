@@ -127,6 +127,21 @@ object VaultSpace {
  */
 val LocalIsUnfolded = staticCompositionLocalOf { false }
 
+/** The active app root. System dark uses Terminal Ledger; light uses Daylight Ledger. */
+@Composable
+fun LedgerTheme(content: @Composable () -> Unit) {
+    SovereignLedgerTheme(
+        treatment =
+            if (isSystemInDarkTheme()) {
+                LedgerTreatment.TERMINAL_DARK
+            } else {
+                LedgerTreatment.DAYLIGHT_LIGHT
+            },
+        content = content,
+    )
+}
+
+/** Legacy test and preview wrapper. The shipped app root uses [LedgerTheme]. */
 @Composable
 fun VogelVaultTheme(content: @Composable () -> Unit) {
     // isSystemInDarkTheme is read but intentionally ignored: there is one theme.

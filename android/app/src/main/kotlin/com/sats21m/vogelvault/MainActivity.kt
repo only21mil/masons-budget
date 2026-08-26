@@ -29,7 +29,7 @@ import com.sats21m.vogelvault.ui.VaultLockSnapshot
 import com.sats21m.vogelvault.ui.VaultLockedScreen
 import com.sats21m.vogelvault.ui.VaultViewModel
 import com.sats21m.vogelvault.ui.requiresOnboarding
-import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
+import com.sats21m.vogelvault.ui.theme.LedgerTheme
 
 class MainActivity : FragmentActivity() {
     private val lockController = VaultLockController()
@@ -98,7 +98,7 @@ class MainActivity : FragmentActivity() {
             getSharedPreferences(DISPLAY_PREFERENCES, MODE_PRIVATE)
         budgetNotifications = BudgetNotificationController(this)
         setContent {
-            VogelVaultTheme {
+            LedgerTheme {
                 val state by model.state.collectAsStateWithLifecycle()
                 val effectiveReadReady by app.effectiveReadReady.collectAsStateWithLifecycle()
                 val currentLockState by lockState

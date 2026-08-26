@@ -10,11 +10,21 @@ import kotlin.test.assertTrue
 
 class ThemeContrastTest {
     @Test
-    fun `dim text is the darkest matching warm gray that clears AA`() {
-        assertEquals(Color(0xFF7C7974), VaultTextDim)
-        assertTrue(contrastRatio(VaultTextDim, VaultBlack) >= 4.5)
-        assertTrue(contrastRatio(VaultTextDim, VaultSurface) >= 4.5)
-        assertTrue(contrastRatio(Color(0xFF7B7873), VaultSurface) < 4.5)
+    fun `sovereign ledger foreground clears AA in both treatments`() {
+        assertEquals(Color(0xFFE8EFE9), LedgerPalettes.TerminalDark.foreground)
+        assertEquals(Color(0xFF141715), LedgerPalettes.DaylightLight.foreground)
+        assertTrue(
+            contrastRatio(
+                LedgerPalettes.TerminalDark.foreground,
+                LedgerPalettes.TerminalDark.background,
+            ) >= 4.5,
+        )
+        assertTrue(
+            contrastRatio(
+                LedgerPalettes.DaylightLight.foreground,
+                LedgerPalettes.DaylightLight.background,
+            ) >= 4.5,
+        )
     }
 }
 
