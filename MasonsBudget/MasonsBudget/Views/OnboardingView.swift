@@ -14,15 +14,23 @@ struct OnboardingView: View {
         ZStack {
             theme.bg.ignoresSafeArea()
             VStack(spacing: 24) {
-                HStack(spacing: 6) {
-                    ForEach(OnboardingStep.all.indices, id: \.self) { index in
-                        Capsule()
-                            .fill(index <= stepIndex ? theme.accent : theme.border)
-                            .frame(height: 3)
+                VStack(spacing: 8) {
+                    Text(OnboardingStep.progressLabel(for: stepIndex).uppercased())
+                        .font(AppFont.monoMicroStrong)
+                        .foregroundStyle(theme.textMuted)
+
+                    HStack(spacing: 6) {
+                        ForEach(OnboardingStep.all.indices, id: \.self) { index in
+                            Capsule()
+                                .fill(index <= stepIndex ? theme.accent : theme.border)
+                                .frame(height: 3)
+                        }
                     }
                 }
                 .padding(.horizontal, AppLayout.sectionPadding)
                 .padding(.top, 18)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(OnboardingStep.progressLabel(for: stepIndex))
 
                 Spacer()
 

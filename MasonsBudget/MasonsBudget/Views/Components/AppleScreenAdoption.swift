@@ -16,10 +16,10 @@ enum AppleMoreScreen: String, CaseIterable, Identifiable {
     case price
     case activity
     case bitcoinBuys
-    case tasks
     case billPay
     case transfer
     case netWorth
+    case tasks
     case family
     case awards
     case settings
@@ -40,6 +40,39 @@ enum PaymentRailPresentation: String, CaseIterable {
         case .bolt: "bolt.fill"
         case .chain: "link"
         }
+    }
+
+    init(activityRail: TransactionSourceCatalog.ActivityRail) {
+        switch activityRail {
+        case .lightning: self = .bolt
+        case .onChain: self = .chain
+        }
+    }
+
+    static func forCard(_ card: String?) -> PaymentRailPresentation? {
+        TransactionSourceCatalog.activityRail(forCard: card).map(PaymentRailPresentation.init)
+    }
+}
+
+struct FamilyScopePresentation: Equatable {
+    let finance: String
+    let tasks: String
+    let netWorth: String
+
+    static func forMember(_ member: FamilyMember) -> FamilyScopePresentation {
+        if member.isAdult {
+            return FamilyScopePresentation(
+                finance: "Adult household + child oversight",
+                tasks: "\(member.displayName) only",
+                netWorth: "Adult household only",
+            )
+        }
+
+        return FamilyScopePresentation(
+            finance: "\(member.displayName) only",
+            tasks: "\(member.displayName) only",
+            netWorth: "\(member.displayName) only",
+        )
     }
 }
 
@@ -77,6 +110,11 @@ struct OnboardingStep: Equatable {
             icon: "checkmark.circle.fill",
         ),
     ]
+
+    static func progressLabel(for index: Int) -> String {
+        let boundedIndex = min(max(index, 0), all.count - 1)
+        return "Step \(boundedIndex + 1) of \(all.count)"
+    }
 }
 
 enum MoreCountFormatter {

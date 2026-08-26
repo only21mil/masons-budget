@@ -46,7 +46,11 @@ struct MoreMenuView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                ScreenHeader(title: "More", eyebrow: "Explore")
+                ScreenHeader(title: "More", eyebrow: "Explore") {
+                    Text("\(AppleMoreScreen.allCases.count) ROUTES")
+                        .font(AppFont.monoMicroStrong)
+                        .foregroundStyle(theme.accent)
+                }
 
                 menuSection("BITCOIN") {
                     moreRow(icon: "chart.xyaxis.line", label: "Price", destination: BitcoinPriceView())

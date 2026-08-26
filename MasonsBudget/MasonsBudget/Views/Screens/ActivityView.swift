@@ -186,12 +186,21 @@ struct ActivityView: View {
                         .foregroundStyle(theme.text)
                         .lineLimit(1)
                     HStack(spacing: 5) {
-                        Image(systemName: PaymentMethod.icon(forWire: tx.card))
-                            .font(AppFont.micro)
-                            .foregroundStyle(theme.textMuted)
-                        Text(PaymentMethod.label(forWire: tx.card))
-                            .font(AppFont.smallRegular)
-                            .foregroundStyle(theme.textMuted)
+                        if let rail = PaymentRailPresentation.forCard(tx.card) {
+                            Image(systemName: rail.icon)
+                                .font(AppFont.micro)
+                                .foregroundStyle(theme.accent)
+                            Text(rail.rawValue)
+                                .font(AppFont.monoMicroStrong)
+                                .foregroundStyle(theme.textMuted)
+                        } else {
+                            Image(systemName: PaymentMethod.icon(forWire: tx.card))
+                                .font(AppFont.micro)
+                                .foregroundStyle(theme.textMuted)
+                            Text(PaymentMethod.label(forWire: tx.card))
+                                .font(AppFont.smallRegular)
+                                .foregroundStyle(theme.textMuted)
+                        }
                     }
                 }
 

@@ -11,6 +11,7 @@ final class AppleScreenAdoptionTests: XCTestCase {
 
     func testMoreCatalogIncludesFullAdoptionRoutes() {
         XCTAssertEqual(Set(AppleMoreScreen.allCases.map(\.rawValue)).count, AppleMoreScreen.allCases.count)
+        XCTAssertEqual(AppleMoreScreen.allCases.count, 12)
         XCTAssertTrue(AppleMoreScreen.allCases.contains(.price))
         XCTAssertTrue(AppleMoreScreen.allCases.contains(.transfer))
         XCTAssertTrue(AppleMoreScreen.allCases.contains(.billPay))
@@ -26,6 +27,29 @@ final class AppleScreenAdoptionTests: XCTestCase {
         XCTAssertEqual(ActivityView.TxFilter.onChain.rail, .chain)
         XCTAssertEqual(TransactionSourceCatalog.activityRail(forCard: "lightning"), .lightning)
         XCTAssertEqual(TransactionSourceCatalog.activityRail(forCard: "on-chain"), .onChain)
+        XCTAssertEqual(PaymentRailPresentation.forCard("zeus_lightning"), .bolt)
+        XCTAssertEqual(PaymentRailPresentation.forCard("zeus_on_chain"), .chain)
+        XCTAssertEqual(PaymentRailPresentation.forCard(nil), .chain)
+        XCTAssertNil(PaymentRailPresentation.forCard("coinbase_card"))
+    }
+
+    func testFamilyScopeKeepsTasksPrivateAndAdultNetWorthHouseholdOnly() {
+        XCTAssertEqual(
+            FamilyScopePresentation.forMember(.rachel),
+            FamilyScopePresentation(
+                finance: "Adult household + child oversight",
+                tasks: "Rachel only",
+                netWorth: "Adult household only",
+            ),
+        )
+        XCTAssertEqual(
+            FamilyScopePresentation.forMember(.mason),
+            FamilyScopePresentation(
+                finance: "Mason only",
+                tasks: "Mason only",
+                netWorth: "Mason only",
+            ),
+        )
     }
 
     func testRiverBillPayFeeAlwaysRequiresManualValue() {
@@ -41,11 +65,14 @@ final class AppleScreenAdoptionTests: XCTestCase {
     func testOnboardingHasThreeAuthoredSteps() {
         XCTAssertEqual(OnboardingStep.all.count, 3)
         XCTAssertEqual(OnboardingStep.all.map(\.eyebrow), ["01 · LEDGER", "02 · FAMILY", "03 · READY"])
+        XCTAssertEqual(OnboardingStep.progressLabel(for: 0), "Step 1 of 3")
+        XCTAssertEqual(OnboardingStep.progressLabel(for: 2), "Step 3 of 3")
     }
 
     func testMoreCountBadgesHideZeroAndCapLargeCounts() {
         XCTAssertNil(MoreCountFormatter.badge(0))
         XCTAssertEqual(MoreCountFormatter.badge(8), "8")
+        XCTAssertEqual(MoreCountFormatter.badge(AppleMoreScreen.allCases.count), "12")
         XCTAssertEqual(MoreCountFormatter.badge(1000), "999+")
     }
 

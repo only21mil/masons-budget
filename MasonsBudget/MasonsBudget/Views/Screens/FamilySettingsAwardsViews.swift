@@ -10,6 +10,10 @@ struct FamilyView: View {
         FamilyMember(rawValue: selectedMemberRaw) ?? .victor
     }
 
+    private var scope: FamilyScopePresentation {
+        FamilyScopePresentation.forMember(activeMember)
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: AppLayout.cardSpacing) {
@@ -39,6 +43,16 @@ struct FamilyView: View {
                         .foregroundStyle(theme.textMuted)
                 }
                 .glassCard(padding: 16, radius: AppLayout.radiusMedium)
+                .padding(.horizontal, AppLayout.sectionPadding)
+
+                VStack(spacing: 0) {
+                    scopeRow("FINANCE VISIBILITY", value: scope.finance)
+                    Hairline()
+                    scopeRow("PRIVATE TASKS", value: scope.tasks)
+                    Hairline()
+                    scopeRow("NET WORTH TOTAL", value: scope.netWorth)
+                }
+                .glassCard(padding: 0, radius: AppLayout.radiusMedium)
                 .padding(.horizontal, AppLayout.sectionPadding)
 
                 VStack(spacing: 0) {
@@ -78,8 +92,22 @@ struct FamilyView: View {
 
     private var activeScopeMessage: String {
         activeMember.isAdult
-            ? "Household finances plus each child's isolated records are visible. Adult net worth remains adult-only."
-            : "Only \(activeMember.displayName)'s records are visible. Adult and sibling data remain outside this profile."
+            ? "Household finances and child oversight are visible. Tasks stay private to \(activeMember.displayName), and adult net worth remains adult-only."
+            : "Only \(activeMember.displayName)'s finances, tasks, and net worth are visible. Adult and sibling data remain outside this profile."
+    }
+
+    private func scopeRow(_ label: String, value: String) -> some View {
+        HStack(spacing: 12) {
+            Text(label)
+                .font(AppFont.monoMicroStrong)
+                .foregroundStyle(theme.textMuted)
+            Spacer()
+            Text(value)
+                .font(AppFont.smallRegular)
+                .foregroundStyle(theme.text)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(14)
     }
 
     private func memberRow(_ member: FamilyMember) -> some View {
@@ -114,6 +142,8 @@ struct SettingsView: View {
     @Environment(\.theme) private var theme
     @AppStorage("appearance_mode") private var appearanceRaw = AppearanceMode.system.rawValue
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
+    @AppStorage("app_lock_enabled") private var appLockEnabled = true
+    @AppStorage("has_completed_onboarding") private var hasCompletedOnboarding = false
 
     var body: some View {
         ScrollView {
@@ -132,6 +162,41 @@ struct SettingsView: View {
                             Text(unit.label).tag(unit.rawValue)
                         }
                     }
+                }
+                .glassCard(padding: 0, radius: AppLayout.radiusMedium)
+                .padding(.horizontal, AppLayout.sectionPadding)
+
+                VStack(spacing: 0) {
+                    Toggle(isOn: $appLockEnabled) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("APP LOCK")
+                                .font(AppFont.monoMicroStrong)
+                                .foregroundStyle(theme.text)
+                            Text("Require device authentication when the app opens")
+                                .font(AppFont.smallRegular)
+                                .foregroundStyle(theme.textMuted)
+                        }
+                    }
+                    .tint(theme.accent)
+                    .padding(14)
+
+                    Hairline()
+
+                    Button {
+                        hasCompletedOnboarding = false
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "arrow.counterclockwise")
+                                .foregroundStyle(theme.accent)
+                                .frame(width: 28)
+                            Text("REPLAY ONBOARDING")
+                                .font(AppFont.monoCaptionStrong)
+                                .foregroundStyle(theme.text)
+                            Spacer()
+                        }
+                        .padding(14)
+                    }
+                    .buttonStyle(.plain)
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
                 .padding(.horizontal, AppLayout.sectionPadding)

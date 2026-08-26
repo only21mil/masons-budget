@@ -194,6 +194,7 @@ struct ContentView: View {
                         Image(systemName: tab.icon)
                         Text(tab.label)
                     }
+                    .badge(tab == .more ? AppleMoreScreen.allCases.count : 0)
                     .tag(tab)
                 }
             }
