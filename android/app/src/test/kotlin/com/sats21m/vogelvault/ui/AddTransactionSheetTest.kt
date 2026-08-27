@@ -15,6 +15,8 @@ import com.sats21m.vogelvault.data.TransactionRevisionStore
 import com.sats21m.vogelvault.data.TransactionWriteOutcome
 import com.sats21m.vogelvault.data.TransactionWriteReceipt
 import com.sats21m.vogelvault.data.testToken
+import com.sats21m.vogelvault.domain.BtcAccount
+import com.sats21m.vogelvault.domain.Custody
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.IncomeEntry
@@ -95,6 +97,7 @@ class AddTransactionSheetTest {
                 ),
                 btcPriceCents = BTC_PRICE_CENTS,
                 id = "atomic-income-buy-1",
+                bitcoinAccounts = listOf(testBitcoinAccount(FamilyMember.VICTOR)),
             ),
         ).request
 
@@ -380,11 +383,17 @@ class AddTransactionSheetTest {
         type: AddTransactionType = AddTransactionType.SPEND,
         category: String = "Groceries",
         id: String = "test-id",
-    ) = prepareTransaction(
-        draft(amount, unit, owner, type, category),
-        btcPriceCents = BTC_PRICE_CENTS,
-        id = id,
-    ).getOrThrow()
+    ): PreparedTransaction {
+        val transactionDraft = draft(amount, unit, owner, type, category)
+        return prepareTransaction(
+            draft = transactionDraft,
+            btcPriceCents = BTC_PRICE_CENTS,
+            id = id,
+            bitcoinAccounts = transactionDraft.bitcoinAccountKey?.let {
+                listOf(testBitcoinAccount(owner.ledgerOwner))
+            }.orEmpty(),
+        ).getOrThrow()
+    }
 
     private fun draft(
         amount: String,
@@ -392,15 +401,29 @@ class AddTransactionSheetTest {
         owner: FamilyMember = FamilyMember.VICTOR,
         type: AddTransactionType = AddTransactionType.SPEND,
         category: String = "Groceries",
-    ) = AddTransactionDraft(
-        type = type,
-        merchant = "Neighborhood Market",
-        category = category,
-        amount = amount,
-        inputUnit = unit,
-        card = "Debit",
-        date = LocalDate.parse("2026-07-29"),
-        note = "Regression test",
+    ): AddTransactionDraft {
+        val source = paymentSourceForAddTransaction(type, PaymentSource.DEFAULT)
+        return AddTransactionDraft(
+            type = type,
+            merchant = "Neighborhood Market",
+            category = category,
+            amount = amount,
+            inputUnit = unit,
+            card = source.wire,
+            date = LocalDate.parse("2026-07-29"),
+            note = "Regression test",
+            owner = owner,
+            paymentSource = source,
+            bitcoinAccountKey = "test-bitcoin-account".takeIf { source.isBitcoinTransaction },
+        )
+    }
+
+    private fun testBitcoinAccount(owner: FamilyMember) = BtcAccount(
+        key = "test-bitcoin-account",
+        label = "Test Bitcoin account",
+        custody = Custody.SELF_CUSTODY,
+        sats = 100_000L,
+        fiatCents = 100L,
         owner = owner,
     )
 

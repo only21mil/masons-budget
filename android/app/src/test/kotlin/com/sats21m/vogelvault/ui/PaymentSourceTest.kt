@@ -37,7 +37,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34], application = Application::class)
 class PaymentSourceTest {
     @Test
-    fun `catalog matches the fixture ordered wire label route and classification contract`() {
+    fun `catalog matches the complete ordered payment source fixture contract`() {
         val fixtureSources = paymentSourceFixture()["sources"]!!.jsonArray
         assertEquals(
             fixtureSources.map { source ->
@@ -47,6 +47,9 @@ class PaymentSourceTest {
                         it["label"]!!.jsonPrimitive.content,
                         it["route"]!!.jsonPrimitive.content,
                         it["classification"]!!.jsonPrimitive.content,
+                        it["supportedActivities"]!!.jsonArray.map { activity ->
+                            activity.jsonPrimitive.content
+                        },
                     )
                 }
             },
@@ -60,6 +63,7 @@ class PaymentSourceTest {
                         PaymentSourceRoute.BITCOIN_TRANSACTION -> "bitcoin_native"
                         PaymentSourceRoute.CARD_TRANSACTION -> "fiat_card"
                     },
+                    source.supportedActivities.map(PaymentSourceActivity::wire),
                 )
             },
         )
@@ -70,6 +74,62 @@ class PaymentSourceTest {
         assertNull(PaymentSource.fromWireOrNull("on_chain"))
         assertEquals(PaymentSource.DEFAULT, PaymentSource.fromWireOrDefault("lightning"))
         assertEquals(PaymentSource.DEFAULT, PaymentSource.fromWireOrDefault("on_chain"))
+    }
+
+    @Test
+    fun `default Add Income selects the first valid Bitcoin source instead of Coinbase Card`() {
+        assertEquals(
+            PaymentSource.RIVER,
+            paymentSourceForAddTransaction(
+                type = AddTransactionType.INCOME,
+                current = PaymentSource.DEFAULT,
+            ),
+        )
+    }
+
+    @Test
+    fun `Add Income picker offers only sources with Income activity`() {
+        assertEquals(
+            listOf(
+                PaymentSource.RIVER,
+                PaymentSource.ZEUS_LIGHTNING,
+                PaymentSource.ZEUS_ON_CHAIN,
+                PaymentSource.STRIKE,
+            ),
+            paymentSourcesForAddTransaction(AddTransactionType.INCOME),
+        )
+        assertEquals(
+            PaymentSource.entries,
+            paymentSourcesForAddTransaction(AddTransactionType.SPEND),
+        )
+    }
+
+    @Test
+    fun `prepareTransaction rejects every explicit fiat Income bypass`() {
+        PaymentSource.entries
+            .filter { it.route == PaymentSourceRoute.CARD_TRANSACTION }
+            .forEach { source ->
+                val result = prepareTransaction(
+                    AddTransactionDraft(
+                        type = AddTransactionType.INCOME,
+                        merchant = "Invalid fiat Income",
+                        category = "Income",
+                        amount = "12.34",
+                        inputUnit = DisplayUnit.USD,
+                        paymentSource = source,
+                        date = LocalDate.parse("2026-08-01"),
+                        owner = FamilyMember.VICTOR,
+                    ),
+                    btcPriceCents = BTC_PRICE_CENTS,
+                )
+
+                assertTrue(result.isFailure, source.name)
+                assertEquals(
+                    "${source.label} does not support income activity",
+                    result.exceptionOrNull()?.message,
+                    source.name,
+                )
+            }
     }
 
     @Test
