@@ -314,6 +314,55 @@ test("payment-source transaction mapping persists cards and Bitcoin spend intent
   assert.deepEqual(typedAlias, bitcoin)
 })
 
+test("fiat cards support spend and refund transactions but reject Income", () => {
+  const base = {
+    id: "fiat-source-activity",
+    date: "2026-08-20",
+    merchant: "Merchant",
+    owner: "victor" as const,
+    sourceFile: "transactions",
+  }
+  const fiatSources = paymentSourceFixtures.sources.filter(
+    ({ supportedActivities }) =>
+      supportedActivities.includes("spend") && !supportedActivities.includes("income"),
+  )
+  assert.equal(fiatSources.length, 4)
+
+  for (const { wire } of fiatSources) {
+    const spend = buildTransactionWriteRequest("victor", {
+      ...base,
+      card: wire,
+      amountCents: 2_500n,
+      kind: "spend",
+      category: "Shopping",
+    }).args.transaction
+    assert.equal(spend.card, wire)
+
+    const refund = buildTransactionWriteRequest("victor", {
+      ...base,
+      id: `fiat-refund-${wire}`,
+      card: wire,
+      amountCents: -2_500n,
+      kind: "credit",
+      category: "Shopping",
+    }).args.transaction
+    assert.equal(refund.card, wire)
+
+    assert.throws(
+      () => buildTransactionWriteRequest("victor", {
+        ...base,
+        id: `fiat-income-${wire}`,
+        card: wire,
+        amountCents: 2_500n,
+        kind: "credit",
+        category: "Income",
+      }),
+      (error: unknown) =>
+        error instanceof WriteContractError && error.code === "invalid-payment-source",
+    )
+  }
+})
+
 test("payment-source builder rejects wrong routes and field combinations", () => {
   const base = {
     id: "payment-source-reject",

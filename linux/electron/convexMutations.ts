@@ -170,8 +170,8 @@ function transactionPaymentSource(input: {
         return "bitcoin"
       case "fiat":
         if (sats !== undefined || accountKey !== "") throw new InvalidRequest()
-        // Direction and category follow the base transaction contract. This
-        // branch owns only the rule that a fiat card cannot post Bitcoin.
+        // The shared builder below enforces spend-only activity and base
+        // transaction semantics. This branch bars Bitcoin posting fields.
         return "fiat"
     }
   }

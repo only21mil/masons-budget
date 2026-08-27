@@ -309,9 +309,13 @@ export function paymentSourceBlockReason(selection: PaymentSourceSelection): str
   }
   const isSpend = selection.kind === "spend" && category !== INCOME_CATEGORY
   const isIncome = selection.kind === "credit" && category === INCOME_CATEGORY
+  const activity: PaymentSourceActivity = category === INCOME_CATEGORY ? "income" : "spend"
+  if (!paymentSourceSupportedActivities(source).includes(activity)) {
+    return `${paymentSourceLabel(source)} cannot be used on Income.`
+  }
   const classification = paymentSourceClassification(source)
-  // A fiat card is metadata on the base transaction shape. Its direction and
-  // category follow that base contract; only Bitcoin posting fields are barred.
+  // A fiat card is metadata on a spend or refund. The supported-activity check
+  // above keeps it off Income; the base contract still owns amount direction.
   if (classification === "fiat_card") return null
   if (!isSpend && !isIncome) {
     return `${paymentSourceLabel(source)} requires a spend outside Income or a credit in Income.`

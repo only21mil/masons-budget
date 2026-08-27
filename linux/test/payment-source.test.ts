@@ -36,6 +36,9 @@ const paymentSourceFixture = JSON.parse(
     supportedActivities: string[]
   }>
 }
+const FIAT_SOURCES = PAYMENT_SOURCES.filter(
+  (source) => paymentSourceClassification(source) === "fiat_card",
+)
 
 describe("payment source contract", () => {
   it("matches the shared fixture in canonical picker order", () => {
@@ -295,22 +298,26 @@ describe("direction and Bitcoin-native sources", () => {
     })).toMatch(/account it enters/)
   })
 
-  it("leaves fiat card direction and category to the base transaction contract", () => {
+  it.each(FIAT_SOURCES)("keeps %s for spend and refund but blocks Income", (source) => {
     expect(paymentSourceBlockReason({
-      source: "coinbase_card",
+      source,
       kind: "spend",
       category: "Shopping",
     })).toBeNull()
     expect(paymentSourceBlockReason({
-      source: "coinbase_card",
+      source,
       kind: "credit",
       category: "Shopping",
     })).toBeNull()
-    expect(paymentSourceBlockReason({
-      source: "coinbase_card",
+    const income = {
+      source,
       kind: "credit",
       category: "Income",
-    })).toBeNull()
+    } as const
+    expect(paymentSourceBlockReason(income)).toBe(
+      `${paymentSourceLabel(source)} cannot be used on Income.`,
+    )
+    expect(transactionSourceFields(income)).toEqual({})
   })
 
   it("blocks malformed or direction-changed retired Bitcoin postings", () => {
@@ -384,14 +391,14 @@ describe("the transaction submission payload builder", () => {
     })
   })
 
-  it("submits Income on a fiat card as the card alone", () => {
+  it("submits no source fields for Income on a fiat card", () => {
     expect(transactionSubmission({
       source: "coinbase_card",
       amountSats: SATS,
       bitcoinAccountKey: ACCOUNT,
       kind: "credit",
       category: "Income",
-    })).toEqual({ card: "coinbase_card" })
+    })).toEqual({})
   })
 
   it("keeps the optional sat-Income row when no source is chosen", () => {

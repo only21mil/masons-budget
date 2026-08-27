@@ -438,6 +438,13 @@ function transactionPaymentFields(
     )
   }
 
+  if (category === "Income" && !BITCOIN_NATIVE_SOURCES.has(paymentSource)) {
+    throw new WriteContractError(
+      "invalid-payment-source",
+      "Fiat card payment sources support spend and refund transactions, not Income",
+    )
+  }
+
   if (BITCOIN_NATIVE_SOURCES.has(paymentSource)) {
     if (!isAdult(owner)) {
       throw new WriteContractError(
