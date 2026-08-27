@@ -44,6 +44,7 @@ const paymentSourceFixture = JSON.parse(
     wire: string;
     route: "transaction" | "btc_bill_pay";
     classification: "bill_pay" | "fiat_card" | "bitcoin_native";
+    supportedActivities: string[];
   }>;
 };
 
@@ -54,6 +55,16 @@ describe("payment-source catalogue conformance", () => {
       paymentSourceFixture.sources
         .filter((source) => source.classification === "fiat_card")
         .map((source) => source.wire),
+    );
+    expect(
+      paymentSourceFixture.sources
+        .filter((source) => source.classification === "fiat_card")
+        .map(({ wire, supportedActivities }) => ({ wire, supportedActivities })),
+    ).toEqual(
+      [...FIAT_PAYMENT_SOURCES].map((wire) => ({
+        wire,
+        supportedActivities: ["spend"],
+      })),
     );
     expect([...BITCOIN_PAYMENT_SOURCES]).toEqual(
       paymentSourceFixture.sources
@@ -428,6 +439,8 @@ const fn = {
         note?: string;
         owner?: Member;
         kind?: "spend" | "credit";
+        amountSats?: bigint;
+        bitcoinAccountKey?: string;
       };
       sourceFile?: string;
       token?: string;
@@ -1000,6 +1013,22 @@ async function seedPostingLedgers(t: T) {
       });
     }
   });
+}
+
+async function expectTransactionValidationFailure(
+  request: Promise<unknown>,
+  entityId: string,
+) {
+  try {
+    await request;
+    throw new Error("Expected transaction validation failure");
+  } catch (error) {
+    expect((error as { data?: Record<string, unknown> }).data).toMatchObject({
+      code: "VALIDATION_FAILED",
+      entityType: "transaction",
+      entityId,
+    });
+  }
 }
 
 /**
@@ -2396,6 +2425,77 @@ describe("row mutations", () => {
     expect(rows.find((row) => row.txId === "legacy-rachel")?.owner).toBe(
       "victor",
     );
+  });
+
+  it("keeps every fiat card spend-only at the direct transaction boundary", async () => {
+    await seedPostingLedgers(t);
+
+    for (const card of FIAT_PAYMENT_SOURCES) {
+      const id = `fiat-income-${card}`;
+      await expectTransactionValidationFailure(
+        t.mutation(fn.upsertTransaction, {
+          transaction: {
+            id,
+            date: "2026-08-20",
+            merchant: "Invalid card income",
+            amountCents: 100n,
+            kind: "credit",
+            category: "Income",
+            card,
+          },
+        }),
+        id,
+      );
+    }
+
+    const valid = [
+      {
+        id: "fiat-card-spend",
+        merchant: "Card purchase",
+        amountCents: 250n,
+        kind: "spend" as const,
+        category: "Shopping",
+        card: "coinbase_card",
+      },
+      {
+        id: "fiat-card-refund",
+        merchant: "Card refund",
+        amountCents: -250n,
+        kind: "credit" as const,
+        category: "Shopping",
+        card: "aven",
+      },
+      {
+        id: "income-without-source",
+        merchant: "Payroll",
+        amountCents: 10_000n,
+        kind: "credit" as const,
+        category: "Income",
+      },
+      {
+        id: "bitcoin-income-source",
+        merchant: "Bitcoin income",
+        amountCents: 1n,
+        kind: "credit" as const,
+        category: "Income",
+        card: "strike",
+        amountSats: 100n,
+        bitcoinAccountKey: "river",
+      },
+    ];
+    for (const transaction of valid) {
+      await expect(
+        t.mutation(fn.upsertTransaction, {
+          transaction: { ...transaction, date: "2026-08-20" },
+        }),
+      ).resolves.toMatchObject({ outcome: "inserted" });
+    }
+
+    expect(
+      (await queryRows(fn.listTransactions, { viewer: "victor" }))
+        .map((row) => row.txId)
+        .sort(),
+    ).toEqual(valid.map(({ id }) => id).sort());
   });
 
   it("deletes one source-scoped transaction and is idempotent when retried", async () => {
