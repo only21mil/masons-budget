@@ -4,6 +4,8 @@ import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 
 const GITHUB_ACTIONS_APP_ID = 15368
+const EXACT_RELEASE_POLICY_SOURCE = "exact-main-release-commit"
+const FULL_SHA = /^[0-9a-f]{40}$/
 
 export const REQUIRED_SUCCESS_CHECKS = Object.freeze([
   "Detect changed trees",
@@ -25,12 +27,13 @@ function timestamp(check) {
   return check.completed_at ?? check.started_at ?? check.created_at ?? ""
 }
 
-export function conclusionOf(checks, name) {
+export function conclusionOf(checks, name, releaseSha) {
   const matching = checks
     .filter(
       (check) =>
         check?.name === name &&
-        check?.app?.id === GITHUB_ACTIONS_APP_ID,
+        check?.app?.id === GITHUB_ACTIONS_APP_ID &&
+        check?.head_sha === releaseSha,
     )
     .sort((left, right) => timestamp(left).localeCompare(timestamp(right)))
   const latest = matching.at(-1)
@@ -39,13 +42,47 @@ export function conclusionOf(checks, name) {
   return latest.conclusion ?? "missing"
 }
 
-export function evaluateReleaseChecks(payload) {
+export function exactMainReleaseApplicability(env) {
+  const releaseSha = env.RELEASE_SHA ?? ""
+  if (
+    !FULL_SHA.test(releaseSha) ||
+    env.GITHUB_SHA !== releaseSha ||
+    env.GITHUB_REF !== "refs/heads/main"
+  ) {
+    return null
+  }
+
+  // clients.yml verifies every client tree on a main push or manual dispatch,
+  // and its wire-golden job is unconditional. This policy comes from the gate
+  // checked out at the exact release commit, not from a skipped check result.
+  return Object.freeze({
+    releaseSha,
+    source: EXACT_RELEASE_POLICY_SOURCE,
+    checks: Object.freeze(
+      Object.fromEntries(CONDITIONAL_CHECKS.map((name) => [name, true])),
+    ),
+  })
+}
+
+function applicabilityOf(evidence, name) {
+  if (
+    evidence?.source !== EXACT_RELEASE_POLICY_SOURCE ||
+    !FULL_SHA.test(evidence?.releaseSha ?? "") ||
+    typeof evidence?.checks?.[name] !== "boolean"
+  ) {
+    return "missing"
+  }
+  return evidence.checks[name] ? "applicable" : "inapplicable"
+}
+
+export function evaluateReleaseChecks(payload, applicabilityEvidence) {
   const checks = Array.isArray(payload?.check_runs) ? payload.check_runs : []
+  const releaseSha = applicabilityEvidence?.releaseSha ?? ""
   const lines = []
   let passed = true
 
   for (const name of REQUIRED_SUCCESS_CHECKS) {
-    const conclusion = conclusionOf(checks, name)
+    const conclusion = conclusionOf(checks, name, releaseSha)
     if (conclusion === "success") {
       lines.push(`PASS  ${name}`)
     } else {
@@ -55,13 +92,18 @@ export function evaluateReleaseChecks(payload) {
   }
 
   for (const name of CONDITIONAL_CHECKS) {
-    const conclusion = conclusionOf(checks, name)
+    const conclusion = conclusionOf(checks, name, releaseSha)
+    const applicability = applicabilityOf(applicabilityEvidence, name)
     if (conclusion === "success") {
       lines.push(`PASS  ${name}`)
-    } else if (conclusion === "skipped") {
-      lines.push(`SKIP  ${name} (not applicable to this commit)`)
+    } else if (conclusion === "skipped" && applicability === "inapplicable") {
+      lines.push(`SKIP  ${name} (exact-commit policy says inapplicable)`)
     } else {
-      lines.push(`FAIL  ${name} (${conclusion})`)
+      const detail =
+        conclusion === "skipped"
+          ? `${conclusion}; applicability ${applicability}`
+          : conclusion
+      lines.push(`FAIL  ${name} (${detail})`)
       passed = false
     }
   }
@@ -81,7 +123,10 @@ async function main() {
     return 1
   }
 
-  const result = evaluateReleaseChecks(payload)
+  const result = evaluateReleaseChecks(
+    payload,
+    exactMainReleaseApplicability(process.env),
+  )
   for (const line of result.lines) console.log(line)
   if (!result.passed) {
     console.error(
