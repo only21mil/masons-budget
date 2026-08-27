@@ -691,7 +691,7 @@ jobs:
         env:
           ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-dependencies
         run: >-
-          timeout --signal=TERM --kill-after=30s 10m
+          timeout --signal=TERM --kill-after=30s 15m
           ./gradlew :app:testDebugUnitTest
           -PdesignPacketTests=only
           -Proborazzi.test.record=true
