@@ -13,55 +13,83 @@ internal enum class PaymentSource(
     val wire: String,
     val label: String,
     val route: PaymentSourceRoute,
+    val supportedActivities: Set<PaymentSourceActivity>,
 ) {
     RIVER(
         wire = "river",
         label = "River",
         route = PaymentSourceRoute.BITCOIN_TRANSACTION,
+        supportedActivities = setOf(
+            PaymentSourceActivity.SPEND,
+            PaymentSourceActivity.INCOME,
+            PaymentSourceActivity.TRANSFER,
+        ),
     ),
     ZEUS_LIGHTNING(
         wire = "zeus_lightning",
         label = "Zeus Lightning",
         route = PaymentSourceRoute.BITCOIN_TRANSACTION,
+        supportedActivities = setOf(
+            PaymentSourceActivity.SPEND,
+            PaymentSourceActivity.INCOME,
+            PaymentSourceActivity.TRANSFER,
+        ),
     ),
     ZEUS_ON_CHAIN(
         wire = "zeus_on_chain",
         label = "Zeus On-chain",
         route = PaymentSourceRoute.BITCOIN_TRANSACTION,
+        supportedActivities = setOf(
+            PaymentSourceActivity.SPEND,
+            PaymentSourceActivity.INCOME,
+            PaymentSourceActivity.TRANSFER,
+        ),
     ),
     STRIKE(
         wire = "strike",
         label = "Strike",
         route = PaymentSourceRoute.BITCOIN_TRANSACTION,
+        supportedActivities = setOf(
+            PaymentSourceActivity.SPEND,
+            PaymentSourceActivity.INCOME,
+            PaymentSourceActivity.TRANSFER,
+        ),
     ),
     COINBASE_CARD(
         wire = "coinbase_card",
         label = "Coinbase Card",
         route = PaymentSourceRoute.CARD_TRANSACTION,
+        supportedActivities = setOf(PaymentSourceActivity.SPEND),
     ),
     AVEN(
         wire = "aven",
         label = "Aven",
         route = PaymentSourceRoute.CARD_TRANSACTION,
+        supportedActivities = setOf(PaymentSourceActivity.SPEND),
     ),
     SOFI_CARD(
         wire = "sofi_card",
         label = "SoFi Card",
         route = PaymentSourceRoute.CARD_TRANSACTION,
+        supportedActivities = setOf(PaymentSourceActivity.SPEND),
     ),
     CAPITAL_ONE_VX(
         wire = "capital_one_vx",
         label = "Capital One VX",
         route = PaymentSourceRoute.CARD_TRANSACTION,
+        supportedActivities = setOf(PaymentSourceActivity.SPEND),
     ),
     RIVER_BITCOIN_BILL_PAY(
         wire = "river_bitcoin_bill_pay",
         label = "River Bitcoin Bill Pay",
         route = PaymentSourceRoute.BILL_PAY,
+        supportedActivities = setOf(PaymentSourceActivity.BTC_BILL_PAY),
     );
 
     val isBitcoinTransaction: Boolean
         get() = route == PaymentSourceRoute.BITCOIN_TRANSACTION
+
+    fun supports(activity: PaymentSourceActivity): Boolean = activity in supportedActivities
 
     companion object {
         val DEFAULT: PaymentSource = COINBASE_CARD
@@ -77,6 +105,13 @@ internal enum class PaymentSource(
         fun isRetiredTransactionWire(wire: String?): Boolean =
             wire in RETIRED_TRANSACTION_WIRES
     }
+}
+
+internal enum class PaymentSourceActivity(val wire: String) {
+    SPEND("spend"),
+    INCOME("income"),
+    TRANSFER("transfer"),
+    BTC_BILL_PAY("btc_bill_pay"),
 }
 
 internal enum class PaymentSourceRoute {

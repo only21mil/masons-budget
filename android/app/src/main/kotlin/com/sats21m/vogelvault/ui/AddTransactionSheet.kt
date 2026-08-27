@@ -72,6 +72,29 @@ internal enum class AddTransactionType(val label: String) {
     TRANSFER("Transfer"),
 }
 
+private val AddTransactionType.paymentSourceActivity: PaymentSourceActivity
+    get() = when (this) {
+        AddTransactionType.SPEND -> PaymentSourceActivity.SPEND
+        AddTransactionType.INCOME -> PaymentSourceActivity.INCOME
+        AddTransactionType.TRANSFER -> PaymentSourceActivity.TRANSFER
+    }
+
+/** Sources offered by this sheet for the selected activity. */
+internal fun paymentSourcesForAddTransaction(type: AddTransactionType): List<PaymentSource> =
+    PaymentSource.entries.filter { source ->
+        source.supports(type.paymentSourceActivity) ||
+            (type == AddTransactionType.SPEND && source.supports(PaymentSourceActivity.BTC_BILL_PAY))
+    }
+
+/** Keep a valid selection across type changes, falling back to fixture order. */
+internal fun paymentSourceForAddTransaction(
+    type: AddTransactionType,
+    current: PaymentSource,
+): PaymentSource = paymentSourcesForAddTransaction(type).let { allowed ->
+    current.takeIf { it in allowed }
+        ?: checkNotNull(allowed.firstOrNull()) { "No payment source supports ${type.label}" }
+}
+
 internal data class AddTransactionDraft(
     val type: AddTransactionType,
     val merchant: String,
@@ -292,6 +315,10 @@ internal fun prepareTransaction(
     require(source.route != PaymentSourceRoute.BILL_PAY) {
         "River bill pay must be handed off to the bill-pay form"
     }
+    val activity = draft.type.paymentSourceActivity
+    require(source.supports(activity)) {
+        "${source.label} does not support ${activity.wire} activity"
+    }
     val merchant = draft.merchant.trim()
     require(merchant.isNotEmpty()) { "Enter a merchant or transfer destination" }
 
@@ -379,6 +406,7 @@ internal fun incomeEntryForBitcoinBuy(
     draft: AddTransactionDraft,
     btcPriceCents: Long,
     id: String,
+    bitcoinAccounts: List<BtcAccount> = emptyList(),
 ): WriteDraftResult<IncomeEntry> {
     if (!draft.owner.isAdult) {
         return WriteDraftResult.Invalid(
@@ -391,7 +419,7 @@ internal fun incomeEntryForBitcoinBuy(
     if (id.isBlank()) {
         return WriteDraftResult.Invalid("The Bitcoin-buy draft id is missing.")
     }
-    val prepared = prepareTransaction(draft, btcPriceCents, id).getOrElse {
+    val prepared = prepareTransaction(draft, btcPriceCents, id, bitcoinAccounts).getOrElse {
         return WriteDraftResult.Invalid(it.message ?: "Income is invalid.")
     }
     return WriteDraftResult.Valid(
@@ -549,8 +577,6 @@ internal fun AddTransactionSheet(
     var paymentSourceWire by rememberSaveable {
         mutableStateOf(paymentSourceStore.current().wire)
     }
-    val paymentSource = PaymentSource.fromWireOrDefault(paymentSourceWire)
-
     // One process-owned id survives dismissal and Activity recreation until the
     // device endpoint confirms acceptance. Every retry therefore addresses the
     // same server row in the same source-file scope.
@@ -573,6 +599,11 @@ internal fun AddTransactionSheet(
     var saving by remember { mutableStateOf(false) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
     val type = AddTransactionType.valueOf(typeName)
+    val paymentSourceOptions = paymentSourcesForAddTransaction(type)
+    val paymentSource = paymentSourceForAddTransaction(
+        type = type,
+        current = PaymentSource.fromWireOrDefault(paymentSourceWire),
+    )
     val inputUnit = if (paymentSource.route == PaymentSourceRoute.BILL_PAY) {
         DisplayUnit.USD
     } else {
@@ -675,10 +706,10 @@ internal fun AddTransactionSheet(
             DropdownField(
                 label = "Payment source",
                 selected = paymentSource.label,
-                options = PaymentSource.entries.map(PaymentSource::label),
+                options = paymentSourceOptions.map(PaymentSource::label),
                 modifier = Modifier.testTag(PAYMENT_SOURCE_SELECTOR_TEST_TAG),
                 onSelect = { selectedLabel ->
-                    val next = PaymentSource.entries.first { it.label == selectedLabel }
+                    val next = paymentSourceOptions.first { it.label == selectedLabel }
                     if (!paymentSourceStore.select(next)) {
                         errorMessage = "Payment source could not be saved"
                     } else {
@@ -802,6 +833,7 @@ internal fun AddTransactionSheet(
                                     draft = currentDraft(),
                                     btcPriceCents = operationalBtcPriceCents,
                                     id = "validation-only",
+                                    bitcoinAccounts = state.data.btcAccounts.value,
                                 )
                             when (seed) {
                                 is WriteDraftResult.Invalid -> errorMessage = seed.reason

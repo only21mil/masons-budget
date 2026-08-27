@@ -72,6 +72,37 @@ class TransactionDetailPaymentSourcePickerTest {
     }
 
     @Test
+    fun `non-Income refund keeps the fiat Spend source choices`() {
+        show(
+            card = "coinbase_card",
+            amount = -1_000L,
+            category = "Refund",
+        )
+
+        compose.onNode(hasText("Coinbase Card") and hasClickAction())
+            .performScrollTo()
+            .performClick()
+
+        PaymentSource.entries.filter {
+            it.route == PaymentSourceRoute.CARD_TRANSACTION &&
+                it.supports(PaymentSourceActivity.SPEND)
+        }.forEach { source ->
+            check(
+                compose.onAllNodes(hasText(source.label) and hasClickAction())
+                    .fetchSemanticsNodes()
+                    .isNotEmpty(),
+            ) { "${source.label} must remain available for a non-Income refund" }
+        }
+        PaymentSource.entries.filter { it.route != PaymentSourceRoute.CARD_TRANSACTION }.forEach { source ->
+            check(
+                compose.onAllNodes(hasText(source.label) and hasClickAction())
+                    .fetchSemanticsNodes()
+                    .isEmpty(),
+            ) { "${source.label} is not a transaction Spend source" }
+        }
+    }
+
+    @Test
     fun `Bitcoin transaction offers only Bitcoin transaction sources`() {
         show(
             card = "zeus_on_chain",
@@ -157,13 +188,21 @@ class TransactionDetailPaymentSourcePickerTest {
         card: String?,
         amountSats: Long? = null,
         bitcoinAccountKey: String? = null,
+        amount: Long = 1_000L,
+        category: String = "Other",
         actions: TransactionActions = NoOpTransactionActions,
     ) {
         compose.runOnUiThread {
             activityController.get().setContent {
                 VogelVaultTheme {
                     TransactionDetailScreen(
-                        transaction = transaction(card, amountSats, bitcoinAccountKey),
+                        transaction = transaction(
+                            card = card,
+                            amountSats = amountSats,
+                            bitcoinAccountKey = bitcoinAccountKey,
+                            amount = amount,
+                            category = category,
+                        ),
                         actions = actions,
                         onClose = {},
                         onChanged = {},
@@ -178,13 +217,15 @@ class TransactionDetailPaymentSourcePickerTest {
         card: String?,
         amountSats: Long?,
         bitcoinAccountKey: String?,
+        amount: Long,
+        category: String,
     ) =
         Transaction(
             id = "source-picker-row",
             date = "2026-08-21",
             merchant = "Source Picker",
-            amount = 1_000L,
-            category = "Other",
+            amount = amount,
+            category = category,
             card = card,
             amountSats = amountSats,
             bitcoinAccountKey = bitcoinAccountKey,
