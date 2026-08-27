@@ -128,7 +128,7 @@ jobs:
           # preflights, so they must not spend Linux or Android client minutes.
           declare -A job_paths=(
             [linux]='^linux/'
-            [android]='^(android/|\.github/workflows/scripts/(report_android_debug_signing|validate_android_debug_keystore)\.sh$)'
+            [android]='^(android/|\.github/workflows/scripts/(report_android_debug_signing\.sh|validate_android_debug_keystore\.sh|verify_android_design_packet\.py|tests/test_verify_android_design_packet\.py)$)'
             [tooling]='^(\.github/workflows/android-read-bootstrap\.yml|android/app/build\.gradle\.kts|scripts/((build-android-read-bootstrap|mint-(android-read-bootstrap|linux-device-pairing|mobile-pairing-slots))\.mjs|tests/(build-android-read-bootstrap|mint-(android-read-bootstrap|linux-device-pairing|mobile-pairing-slots))\.test\.mjs))$'
           )
 
@@ -369,6 +369,7 @@ jobs:
       needs.shared-domain.result == 'success' &&
       (needs.changes.result != 'success' || needs.changes.outputs.android == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -675,6 +676,10 @@ jobs:
           --no-daemon
         working-directory: android
 
+      - name: Design-packet verifier tests
+        if: steps.probe.outputs.app == 'true'
+        run: python3 .github/workflows/scripts/tests/test_verify_android_design_packet.py
+
       # Renders Compose to PNG under Robolectric — no emulator, no display.
       # It remains a genuine default-branch test gate; pull requests warm the
       # same API 34 runtime because ordinary app tests also declare that SDK.
@@ -686,6 +691,7 @@ jobs:
         env:
           ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-dependencies
         run: >-
+          timeout --signal=TERM --kill-after=30s 10m
           ./gradlew :app:testDebugUnitTest
           -PdesignPacketTests=only
           -Proborazzi.test.record=true
@@ -694,9 +700,18 @@ jobs:
           --no-daemon
         working-directory: android
 
+      - name: Verify complete Android design packet
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: >-
+          python3 .github/workflows/scripts/verify_android_design_packet.py
+          android/app/build/outputs/roborazzi
+
       - name: Upload Android design packet
         if: >-
-          always() &&
+          success() &&
           steps.probe.outputs.app == 'true' &&
           github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
           (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
