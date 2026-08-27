@@ -110,6 +110,9 @@ jobs:
       - name: Apple changed-tree routing tests
         run: python3 .github/workflows/scripts/tests/test_apple_changed_tree.py
 
+      - name: Client credential-tooling routing tests
+        run: python3 .github/workflows/scripts/tests/test_clients_credential_tooling.py
+
       - name: Apple simulator selection tests
         run: python3 .github/workflows/scripts/tests/test_ensure_ios_simulator.py
 

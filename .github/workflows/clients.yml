@@ -46,6 +46,7 @@ jobs:
       linux: ${{ steps.filter.outputs.linux }}
       android: ${{ steps.filter.outputs.android }}
       backend: ${{ steps.filter.outputs.backend }}
+      tooling: ${{ steps.filter.outputs.tooling }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -65,7 +66,7 @@ jobs:
 
           verify_all() {
             echo "::notice::$1"
-            for t in linux android backend; do echo "$t=true" >> "$GITHUB_OUTPUT"; done
+            for t in linux android backend tooling; do echo "$t=true" >> "$GITHUB_OUTPUT"; done
           }
 
           diff_base=""
@@ -116,7 +117,7 @@ jobs:
           printf '%s\n' "$files" | sed 's/^/  /'
 
           # shared/, convex/ and the workflow itself reach every client, so they
-          # mark all three. Erring toward running a job is the safe direction:
+          # mark every detected tree. Erring toward running a job is the safe direction:
           # a needless run costs minutes, a skipped one costs a regression.
           wide=false
           printf '%s\n' "$files" | grep -qE '^(shared/|convex/|package(-lock)?\.json|\.github/workflows/clients\.yml)' && wide=true
@@ -128,9 +129,10 @@ jobs:
           declare -A job_paths=(
             [linux]='^linux/'
             [android]='^(android/|\.github/workflows/scripts/(report_android_debug_signing|validate_android_debug_keystore)\.sh$)'
+            [tooling]='^(\.github/workflows/android-read-bootstrap\.yml|android/app/build\.gradle\.kts|scripts/((build-android-read-bootstrap|mint-(android-read-bootstrap|linux-device-pairing|mobile-pairing-slots))\.mjs|tests/(build-android-read-bootstrap|mint-(android-read-bootstrap|linux-device-pairing|mobile-pairing-slots))\.test\.mjs))$'
           )
 
-          for t in linux android; do
+          for t in linux android tooling; do
             if [ "$wide" = true ] || printf '%s\n' "$files" | grep -qE "${job_paths[$t]}"; then
               echo "$t=true" >> "$GITHUB_OUTPUT"
             else
@@ -140,6 +142,33 @@ jobs:
           # The contract and Convex suites are cheap and guard the money rules;
           # they run whenever anything at all changed.
           echo "backend=true" >> "$GITHUB_OUTPUT"
+
+  credential-tooling:
+    name: Credential mint tooling
+    needs: changes
+    # A detector failure runs this small test set. Skipping credential checks is
+    # never the safe fallback.
+    if: >-
+      always() &&
+      github.repository == 'only21mil/masons-budget' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.tooling == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      # These tests use injected fetch implementations or --dry-run. The job
+      # binds no repository secrets and cannot mint a live credential.
+      - name: Credential mint tests
+        run: >-
+          node --test
+          scripts/tests/mint-android-read-bootstrap.test.mjs
+          scripts/tests/build-android-read-bootstrap.test.mjs
+          scripts/tests/mint-linux-device-pairing.test.mjs
+          scripts/tests/mint-mobile-pairing-slots.test.mjs
 
   shared-domain:
     name: Shared domain contract
@@ -364,13 +393,6 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-
-      - name: Android read-bootstrap tooling tests
-        if: steps.probe.outputs.app == 'true'
-        run: >-
-          node --test
-          scripts/tests/mint-android-read-bootstrap.test.mjs
-          scripts/tests/build-android-read-bootstrap.test.mjs
 
       # setup-gradle configures caching; the committed, checksummed wrapper owns
       # the Gradle version. The domain module is plain Kotlin/JVM and needs no
