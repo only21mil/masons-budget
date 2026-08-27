@@ -2289,6 +2289,24 @@ function validateTransactionBitcoinFields(
   }
 }
 
+function validateTransactionPaymentSource(
+  row: Omit<Doc<"transactions">, "_id" | "_creationTime">,
+) {
+  if (
+    row.card !== undefined &&
+    FIAT_PAYMENT_SOURCES.has(row.card) &&
+    row.category === "Income"
+  ) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      "Fiat card payment sources are spend activity and cannot use the Income category.",
+      "transaction",
+      row.txId,
+    );
+  }
+  validateTransactionBitcoinFields(row);
+}
+
 function storedTransactionBalanceDelta(row: {
   txId: string;
   category: string;
@@ -2367,7 +2385,7 @@ async function upsertTransactionRow(
   row: Omit<Doc<"transactions">, "_id" | "_creationTime">,
   optimistic?: OptimisticWrite,
 ): Promise<UpsertOutcome> {
-  validateTransactionBitcoinFields(row);
+  validateTransactionPaymentSource(row);
   const existing = await ctx.db
     .query("transactions")
     .withIndex("by_source_tx_id", (q: any) =>

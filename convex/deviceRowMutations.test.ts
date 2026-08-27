@@ -429,6 +429,47 @@ describe("device row authorization", () => {
       }),
       "VALIDATION_FAILED",
     );
+    for (const source of [
+      "coinbase_card",
+      "aven",
+      "sofi_card",
+      "capital_one_vx",
+    ]) {
+      await expectDeviceError(
+        request({
+          ...base,
+          id: `fiat-income-${source}`,
+          merchant: "Invalid card income",
+          kind: "credit",
+          category: "Income",
+          card: source,
+        }),
+        "VALIDATION_FAILED",
+        `fiat-income-${source}`,
+      );
+    }
+    await expect(
+      request({ ...base, id: "fiat-spend", card: "coinbase_card" }),
+    ).resolves.toMatchObject({ outcome: "inserted" });
+    await expect(
+      request({
+        ...base,
+        id: "fiat-refund",
+        merchant: "Card refund",
+        amountCents: -100n,
+        kind: "credit",
+        card: "aven",
+      }),
+    ).resolves.toMatchObject({ outcome: "inserted" });
+    await expect(
+      request({
+        ...base,
+        id: "income-no-source",
+        merchant: "Payroll",
+        kind: "credit",
+        category: "Income",
+      }),
+    ).resolves.toMatchObject({ outcome: "inserted" });
     for (const source of ["river", "zeus_lightning", "zeus_on_chain", "strike"]) {
       await expect(
         request({
@@ -585,6 +626,9 @@ describe("device row authorization", () => {
         .unique(),
     }));
     expect(state.rows.map((row) => row.txId).sort()).toEqual([
+      "fiat-refund",
+      "fiat-spend",
+      "income-no-source",
       "income-river",
       "income-strike",
       "income-zeus_lightning",
