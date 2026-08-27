@@ -1433,31 +1433,30 @@ describe("the payment-source matrix at the IPC boundary", () => {
     expect(forged({ bitcoinAccountKey: ACCOUNT })).toBeNull()
   })
 
-  it("leaves fiat card spend, refund, and Income semantics to the base contract", () => {
-    expect(forged({ card: "coinbase_card" })).toMatchObject({
-      card: "coinbase_card",
-      transactionKind: "spend",
-      category: "Home",
-    })
-    expect(forged({
-      card: "coinbase_card",
-      transactionKind: "credit",
-      amountCents: -4_218n,
-    })).toMatchObject({
-      card: "coinbase_card",
-      transactionKind: "credit",
-      category: "Home",
-    })
-    expect(forged({
-      card: "coinbase_card",
-      transactionKind: "credit",
-      category: "Income",
-    })).toMatchObject({
-      card: "coinbase_card",
-      transactionKind: "credit",
-      category: "Income",
-    })
-  })
+  it.each(["coinbase_card", "aven", "sofi_card", "capital_one_vx"])(
+    "admits fiat %s for spend and refund but rejects Income",
+    (card) => {
+      expect(forged({ card })).toMatchObject({
+        card,
+        transactionKind: "spend",
+        category: "Home",
+      })
+      expect(forged({
+        card,
+        transactionKind: "credit",
+        amountCents: -4_218n,
+      })).toMatchObject({
+        card,
+        transactionKind: "credit",
+        category: "Home",
+      })
+      expect(forged({
+        card,
+        transactionKind: "credit",
+        category: "Income",
+      })).toBeNull()
+    },
+  )
 
   it("refuses an unknown card string on a create", () => {
     // The validator cannot read the stored row, so it cannot tell a card string

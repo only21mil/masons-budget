@@ -205,10 +205,11 @@ describe("the Bitcoin buy option on the income form", () => {
     expect(markup).toContain("Record as Bitcoin buy")
     expect(markup).toContain("One save records the income and the purchase together.")
     expect(markup).toContain("Bitcoin received (sats)")
-    // Untoggled, the form is still an ordinary transaction form: the closed
-    // payment-source list is there beside the Bitcoin option.
+    // Untoggled, the form is still an ordinary Income transaction form. It
+    // offers Bitcoin-native sources but no spend-only fiat cards.
     expect(markup).toContain("Payment source")
-    expect(markup).toContain("Capital One VX")
+    expect(markup).toContain("Strike")
+    expect(markup).not.toContain("Capital One VX")
   })
 
   it("withholds the option outside income", () => {

@@ -29,6 +29,7 @@ import {
   paymentSourceFromRow,
   paymentSourceLabel,
   paymentSourceRoute,
+  paymentSourceSupportedActivities,
   transactionSubmission,
   type PaymentSource,
   type TransactionFormState,
@@ -203,6 +204,9 @@ export function TransactionFormDialog({
   )
   const selectedSource: PaymentSource | null =
     !recordingBitcoinBuy && isPaymentSource(sourceChoice) ? sourceChoice : null
+  const offeredPaymentSources = PAYMENT_SOURCES.filter((source) =>
+    !isIncome || paymentSourceSupportedActivities(source).includes("income")
+  )
   // Bitcoin-native sources post a debit or credit on the transaction row.
   // River Bitcoin Bill Pay writes a different table and does not qualify here.
   const bitcoinNativeRow = selectedSource !== null &&
@@ -506,7 +510,7 @@ export function TransactionFormDialog({
             <Select value={sourceChoice} onChange={(e) => chooseSource(e.target.value)}>
               <option value="">No source</option>
               {legacyCard ? <option value={LEGACY_SOURCE_CHOICE}>{legacyCard}</option> : null}
-              {PAYMENT_SOURCES.map((source) => (
+              {offeredPaymentSources.map((source) => (
                 <option key={source} value={source}>{paymentSourceLabel(source)}</option>
               ))}
             </Select>
