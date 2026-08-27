@@ -147,18 +147,18 @@ final class TaskRevisionPersistenceTests: XCTestCase {
         }
     }
 
-    func testAcceptedWriteRefreshRetryDoesNotResubmitTheMutation() async throws {
+    func testAcceptedWriteRemainsSuccessfulWhenTerminalRevisionReadFails() async throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: TodoItem.self, configurations: configuration)
         let context = ModelContext(container)
         let todo = TodoItem(
-            id: "accepted-refresh-retry",
+            id: "accepted-refresh-http-403",
             title: "Keep one create",
             owner: .maddox,
             createdBy: "app",
         )
         let harness = Harness()
-        harness.readError = URLError(.timedOut)
+        harness.readError = ConvexError.httpError(403)
         let statusStore = SyncStatusStore()
         context.insert(todo)
 
@@ -172,29 +172,29 @@ final class TaskRevisionPersistenceTests: XCTestCase {
         ))
         await waitForResults(1, in: harness)
 
-        XCTAssertEqual(harness.results, [.failed(.transport)])
+        XCTAssertEqual(harness.results, [.ok])
         XCTAssertEqual(harness.writes.count, 1)
         XCTAssertFalse(todo.hasServerAuthority)
-        XCTAssertTrue(statusStore.canRetry)
+        XCTAssertFalse(statusStore.canRetry)
+        XCTAssertNil(statusStore.lastError)
 
         harness.readError = nil
         harness.revisions = [1_800_000_000_003]
         statusStore.retry()
-        await waitForResults(2, in: harness)
 
-        XCTAssertEqual(harness.results, [.failed(.transport), .ok])
+        XCTAssertEqual(harness.results, [.ok])
+        XCTAssertEqual(harness.revisions, [1_800_000_000_003])
         XCTAssertEqual(
             harness.writes,
             [WriteCall(id: todo.id, operation: .create, baseUpdatedAtMs: nil)],
-            "Revision retry must not submit the accepted create again.",
+            "An accepted create must not surface a mutation retry.",
         )
-        try assertPersisted(
-            id: todo.id,
-            title: todo.title,
-            revision: 1_800_000_000_003,
-            authoritative: true,
-            in: container,
-        )
+        let reloaded = ModelContext(container)
+        let rows = try reloaded.fetch(FetchDescriptor<TodoItem>())
+        let persisted = try XCTUnwrap(rows.first(where: { $0.id == todo.id }))
+        XCTAssertEqual(persisted.title, todo.title)
+        XCTAssertNil(persisted.updatedAtMs)
+        XCTAssertFalse(persisted.hasServerAuthority)
     }
 
     private func runMutation(

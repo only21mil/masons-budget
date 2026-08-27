@@ -521,7 +521,7 @@ enum AppWriteSyncService {
             }
             let revision = AcceptedRevisionBox()
             if accepted {
-                result = await withRetry(
+                let revisionResult = await withRetry(
                     label: "refresh accepted todo revision \(payload.id)",
                     maxRetryCount: automaticRetries,
                     retryDelayNanoseconds: retryDelayNanoseconds,
@@ -532,15 +532,12 @@ enum AppWriteSyncService {
                     }
                     revision.value = acceptedRevision
                 }
-                if result.isOk, let acceptedRevision = revision.value {
+                if revisionResult.isOk, let acceptedRevision = revision.value {
                     onAcceptedRevision?(acceptedRevision)
-                } else if !result.isOk {
-                    // The mutation is already committed. Keep the local row
-                    // explicitly non-authoritative and retry only this readback;
-                    // a terminal-looking read failure must never roll the
-                    // accepted mutation back or resubmit its create/update.
-                    result = .failed(.transport)
                 }
+                // Readback uses the separate read credential lane. It can
+                // install local authority, but it cannot change an accepted
+                // write into an unsaved failure or offer a mutation retry.
             }
             reportSyncResult(label: label, operationID: operationID, result: result, retry: {
                 pushTodoPayload(
