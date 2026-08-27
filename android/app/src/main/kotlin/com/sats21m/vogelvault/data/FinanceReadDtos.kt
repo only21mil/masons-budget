@@ -6,6 +6,7 @@ import com.sats21m.vogelvault.domain.FinanceDocument
 import com.sats21m.vogelvault.domain.FinanceHolding
 import com.sats21m.vogelvault.domain.FinanceLot
 import com.sats21m.vogelvault.domain.MarketQuote
+import com.sats21m.vogelvault.domain.MarketQuoteErrorCode
 import com.sats21m.vogelvault.domain.MarketQuoteSnapshot
 import com.sats21m.vogelvault.domain.MarketQuoteStatus
 import com.sats21m.vogelvault.domain.MarketSymbol
@@ -136,6 +137,16 @@ internal object FinanceReadDecoder {
         }
         val price = row.optionalInt64("priceCents") ?: return null
         val fetchedAt = row.optionalString("fetchedAt") ?: return null
+        val lastAttemptedAt = row.optionalString("lastAttemptedAt") ?: return null
+        val encodedError = row.optionalString("errorCode") ?: return null
+        val errorCode = when (encodedError.value) {
+            null -> null
+            "timeout" -> MarketQuoteErrorCode.TIMEOUT
+            "http_error" -> MarketQuoteErrorCode.HTTP_ERROR
+            "invalid_response" -> MarketQuoteErrorCode.INVALID_RESPONSE
+            "network_error" -> MarketQuoteErrorCode.NETWORK_ERROR
+            else -> return null
+        }
         return try {
             MarketQuote(
                 symbol = symbol,
@@ -143,6 +154,8 @@ internal object FinanceReadDecoder {
                 source = row.nonEmptyString("source") ?: return null,
                 fetchedAt = fetchedAt.value,
                 status = status,
+                lastAttemptedAt = lastAttemptedAt.value,
+                errorCode = errorCode,
             )
         } catch (_: IllegalArgumentException) {
             null

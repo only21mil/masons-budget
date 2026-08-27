@@ -7,9 +7,11 @@ import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.MarketQuote
 import com.sats21m.vogelvault.domain.MarketQuoteSnapshot
 import com.sats21m.vogelvault.domain.MarketQuoteStatus
+import com.sats21m.vogelvault.domain.MarketQuoteErrorCode
 import com.sats21m.vogelvault.domain.MarketSymbol
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.Transaction
+import com.sats21m.vogelvault.ui.components.ledgerRowContentDescription
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -124,6 +126,54 @@ class FinancialDisplayTest {
     }
 
     @Test
+    fun `stale display quote is visible but refused for writes`() {
+        val now = java.time.Instant.parse("2026-07-30T10:20:00Z").toEpochMilli()
+        val state = VaultUiState(
+            now = now,
+            marketQuotes = quoteSnapshot(
+                marketQuote(10_000_000L).copy(
+                    status = MarketQuoteStatus.STALE,
+                    lastAttemptedAt = "2026-07-30T10:05:00Z",
+                    errorCode = MarketQuoteErrorCode.TIMEOUT,
+                ),
+            ),
+            marketQuoteStatus = Freshness.LIVE,
+        )
+
+        assertEquals(MarketQuoteStatus.STALE, state.operationalBitcoinQuote()?.status)
+        assertEquals(null, state.liveBitcoinQuote())
+        assertEquals(
+            "market adapter · cached · updated 20 minutes ago · refresh failed: timeout",
+            state.operationalBitcoinQuote()?.quoteHint(now),
+        )
+        assertEquals(
+            "BTC, market adapter · cached · updated 20 minutes ago · refresh failed: timeout, STALE, $100,000.00",
+            ledgerRowContentDescription(
+                primary = "BTC",
+                secondary = state.operationalBitcoinQuote()?.quoteHint(now),
+                figure = "$100,000.00",
+                badge = "STALE",
+            ),
+        )
+        assertEquals(
+            "market adapter · updated now",
+            marketQuote(10_000_000L).quoteHint(
+                java.time.Instant.parse("2026-07-30T10:00:00Z").toEpochMilli(),
+            ),
+        )
+        assertEquals(
+            "market adapter · unavailable",
+            MarketQuote(
+                MarketSymbol.BTC,
+                null,
+                "market adapter",
+                null,
+                MarketQuoteStatus.UNAVAILABLE,
+            ).quoteHint(now),
+        )
+    }
+
+    @Test
     fun `newer buy execution price cannot override operational quote`() {
         val data = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE).copy(
             btcPriceCents = 20_000_000L,
@@ -131,6 +181,7 @@ class FinancialDisplayTest {
         )
         val state = VaultUiState(
             data = data,
+            now = java.time.Instant.parse("2026-07-30T12:01:00Z").toEpochMilli(),
             marketQuotes = quoteSnapshot(marketQuote(10_000_000L, fetchedAt = "2026-07-30T12:00:00Z")),
             marketQuoteStatus = Freshness.LIVE,
         )

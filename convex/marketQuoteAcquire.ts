@@ -8,10 +8,7 @@
 export const MARKET_SYMBOLS = ["BTC", "VOO", "IBIT"] as const;
 export type MarketSymbol = (typeof MARKET_SYMBOLS)[number];
 export type MarketQuoteErrorCode =
-  | "timeout"
-  | "http_error"
-  | "invalid_response"
-  | "network_error";
+  "timeout" | "http_error" | "invalid_response" | "network_error";
 
 export type MarketQuoteAcquisition =
   | {
@@ -33,7 +30,8 @@ type FetchImplementation = (
   init?: RequestInit,
 ) => Promise<Response>;
 
-const SOURCE = "Vogel Vault";
+const VOGEL_SOURCE = "Vogel Vault";
+const KRAKEN_SOURCE = "Kraken";
 const REQUEST_TIMEOUT_MS = 5_000;
 const MAX_RESPONSE_BYTES = 32 * 1024;
 const MAX_JSON_DEPTH = 64;
@@ -41,19 +39,16 @@ const MAX_INT64 = 9_223_372_036_854_775_807n;
 
 class AcquisitionError extends Error {
   constructor(
-    readonly code: Exclude<
-      MarketQuoteErrorCode,
-      "timeout" | "network_error"
-    >,
+    readonly code: Exclude<MarketQuoteErrorCode, "timeout" | "network_error">,
   ) {
     super(code);
   }
 }
 
-// Reviewed endpoints from the existing Apple price services. Each endpoint is
-// a literal HTTPS URL under the Vogel Vault domain. Keep this record closed.
+// Fixed reviewed endpoints. BTC uses Kraken's public ticker; VOO and IBIT keep
+// the existing Vogel Vault sources. Callers cannot supply or redirect a URL.
 const ENDPOINTS: Readonly<Record<MarketSymbol, string>> = Object.freeze({
-  BTC: "https://sats21m.com/api/price/btc",
+  BTC: "https://api.kraken.com/0/public/Ticker?pair=XBTUSD",
   VOO: "https://sats21m.com/api/price/voo",
   IBIT: "https://sats21m.com/api/price/ibit",
 });
@@ -192,7 +187,9 @@ class QuoteJsonScanner {
           if (!/^[0-9a-fA-F]{4}$/.test(hex)) this.invalid();
           decoded += String.fromCharCode(Number.parseInt(hex, 16));
           this.index += 4;
-        } else if (Object.prototype.hasOwnProperty.call(simpleEscapes, escape)) {
+        } else if (
+          Object.prototype.hasOwnProperty.call(simpleEscapes, escape)
+        ) {
           decoded += simpleEscapes[escape];
         } else {
           this.invalid();
@@ -278,6 +275,34 @@ export function extractRootPriceDecimal(text: string): string {
     throw new Error("Quote response is too large");
   }
   return new QuoteJsonScanner(text).extractRootPriceDecimal();
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Decode the documented Kraken XBT/USD ticker close without accepting aliases. */
+export function extractKrakenBtcPriceDecimal(text: string): string {
+  if (new TextEncoder().encode(text).byteLength > MAX_RESPONSE_BYTES) {
+    throw new Error("Quote response is too large");
+  }
+  const decoded: unknown = JSON.parse(text);
+  if (!isJsonObject(decoded))
+    throw new Error("Kraken response must be an object");
+  const error = decoded.error;
+  if (!Array.isArray(error) || error.length !== 0) {
+    throw new Error("Kraken response contains an error");
+  }
+  const result = decoded.result;
+  if (!isJsonObject(result)) throw new Error("Kraken result is missing");
+  const ticker = result.XXBTZUSD;
+  if (!isJsonObject(ticker))
+    throw new Error("Kraken XBT/USD ticker is missing");
+  const close = ticker.c;
+  if (!Array.isArray(close) || typeof close[0] !== "string") {
+    throw new Error("Kraken close price is missing");
+  }
+  return close[0];
 }
 
 /**
@@ -391,14 +416,17 @@ async function acquireOne(
     if (!contentType.startsWith("application/json")) {
       throw new AcquisitionError("invalid_response");
     }
+    const body = await readBoundedResponse(response);
     const priceCents = decimalUsdToCents(
-      extractRootPriceDecimal(await readBoundedResponse(response)),
+      symbol === "BTC"
+        ? extractKrakenBtcPriceDecimal(body)
+        : extractRootPriceDecimal(body),
     );
     return {
       symbol,
       ok: true,
       priceCents,
-      source: SOURCE,
+      source: symbol === "BTC" ? KRAKEN_SOURCE : VOGEL_SOURCE,
       fetchedAt: now().toISOString(),
     };
   } catch (error) {

@@ -630,7 +630,7 @@ internal fun BitcoinConversionNotice(state: VaultUiState) {
     if (quote != null) {
         StatusBanner(
             text = if (quote.status == MarketQuoteStatus.STALE) "BTC conversion · stale quote" else "BTC conversion",
-            detail = "Uses the operational BTC market quote from ${quote.source} fetched at ${quote.fetchedAt}.",
+            detail = "Uses ${quote.quoteHint(state.now)}.",
             tone = if (quote.status == MarketQuoteStatus.STALE) VaultWarning else VaultTextMuted,
         )
     } else {
@@ -643,13 +643,8 @@ internal fun BitcoinConversionNotice(state: VaultUiState) {
 }
 
 internal fun VaultUiState.bitcoinConversionProvenance(): String =
-    operationalBitcoinQuote()?.let { quote ->
-        buildString {
-            append("BTC conversion: ${quote.source} · ")
-            if (quote.status == MarketQuoteStatus.STALE) append("stale · ")
-            append(quote.fetchedAt)
-        }
-    } ?: "BTC conversion unavailable"
+    operationalBitcoinQuote()?.let { quote -> "BTC conversion: ${quote.quoteHint(now)}" }
+        ?: "BTC conversion unavailable"
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
 
@@ -1258,9 +1253,10 @@ private fun VaultLazyListScope.bitcoin(
 ) {
     val slice = state.data.btcBalance
     val unavailable = projection.balance == null
+    val observation = state.bitcoinQuoteObservation()
     val quote = state.operationalBitcoinQuote()
 
-    item { BitcoinPriceHero(quote) }
+    item { BitcoinPriceHero(observation, state.now) }
 
     if (displayUnit == DisplayUnit.USD && !unavailable) {
         item { BitcoinConversionNotice(state) }
@@ -1376,7 +1372,7 @@ private fun VaultLazyListScope.bitcoin(
 }
 
 @Composable
-internal fun BitcoinPriceHero(quote: MarketQuote?) {
+internal fun BitcoinPriceHero(quote: MarketQuote?, nowMillis: Long? = null) {
     val tokens = LocalLedgerTheme.current
     val formatted = formatOperationalBitcoinPrice(quote)
     val decimalStart = formatted.lastIndexOf('.').takeIf { it > 0 }
@@ -1404,7 +1400,7 @@ internal fun BitcoinPriceHero(quote: MarketQuote?) {
                 }
             }
             Text(
-                operationalBitcoinPriceBasis(quote).uppercase(),
+                operationalBitcoinPriceBasis(quote, nowMillis).uppercase(),
                 style = tokens.type.rowMeta,
                 color = tokens.colors.foregroundTertiary,
             )
@@ -1535,14 +1531,15 @@ private fun canonicalBitcoinProvenance(
 internal fun formatOperationalBitcoinPrice(quote: MarketQuote?): String =
     quote?.priceCents?.let(Money::formatUsd) ?: Money.PRICE_UNAVAILABLE
 
-internal fun operationalBitcoinPriceBasis(quote: MarketQuote?): String =
-    quote?.let {
-        buildString {
-            append(it.source)
-            if (it.status == MarketQuoteStatus.STALE) append(" · stale")
-            append(" · ${it.fetchedAt}")
-        }
-    } ?: "No operational quote"
+internal fun operationalBitcoinPriceBasis(quote: MarketQuote?, nowMillis: Long? = null): String {
+    quote ?: return "No operational quote"
+    if (nowMillis != null) return quote.quoteHint(nowMillis)
+    return buildString {
+        append(quote.source)
+        if (quote.status == MarketQuoteStatus.STALE) append(" · stale")
+        append(" · ${quote.fetchedAt}")
+    }
+}
 
 internal fun balanceSnapshotBasis(balance: BtcBalance): String = "Balance snapshot · ${balance.asOf}"
 

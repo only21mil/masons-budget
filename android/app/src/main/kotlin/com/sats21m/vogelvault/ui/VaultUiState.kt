@@ -469,6 +469,7 @@ class VaultViewModel(
                 financeReadDiagnostics = next.readDiagnostics,
                 financeUnauthorized = next.unauthorized,
                 staleAuthorization = current.rowUnauthorized || next.unauthorized,
+                now = clock(),
             )
         }
     }

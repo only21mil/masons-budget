@@ -76,8 +76,8 @@ class FinancePresentationTest {
         assertEquals(10_000_000L, selection.bitcoinValueCents)
         assertEquals(10_024_000L, selection.totalValueCents)
         assertEquals(
-            "market service · 2026-07-31T12:00:00Z",
-            selection.valuationQualityHint(),
+            "market service · updated 1 minute ago",
+            selection.valuationQualityHint(state.now),
         )
     }
 
@@ -126,7 +126,7 @@ class FinancePresentationTest {
                         MarketSymbol.VOO,
                         6_000L,
                         "market service",
-                        "2026-07-30T12:00:00Z",
+                        "2026-07-31T11:00:00Z",
                         MarketQuoteStatus.STALE,
                     ),
                     MarketQuote(
@@ -143,8 +143,8 @@ class FinancePresentationTest {
         val selection = requireNotNull(state.netWorthSelection())
 
         assertEquals(
-            "market service · 2026-07-31T12:00:00Z · Retirement: 1 stale quote · 1 stored value",
-            selection.valuationQualityHint(),
+            "market service · updated 1 minute ago · Retirement: 1 stale quote · 1 stored value",
+            selection.valuationQualityHint(state.now),
         )
         assertEquals(
             listOf(HoldingValuationBasis.MARKET_QUOTE, HoldingValuationBasis.STORED_VALUE),
@@ -315,6 +315,7 @@ class FinancePresentationTest {
         )
         return VaultUiState(
             activeProfile = viewer,
+            now = java.time.Instant.parse("2026-07-31T12:01:00Z").toEpochMilli(),
             data = Fixtures.envelope(viewer).copy(
                 btcBalance = Slice(Freshness.LIVE, balance, 1L, "test balance"),
             ),

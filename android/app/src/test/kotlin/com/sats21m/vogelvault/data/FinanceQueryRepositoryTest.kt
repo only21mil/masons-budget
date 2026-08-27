@@ -3,6 +3,7 @@ package com.sats21m.vogelvault.data
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.HoldingValuationBasis
 import com.sats21m.vogelvault.domain.MarketQuoteStatus
+import com.sats21m.vogelvault.domain.MarketQuoteErrorCode
 import com.sats21m.vogelvault.domain.MarketSymbol
 import com.sats21m.vogelvault.domain.selectNetWorth
 import java.io.File
@@ -89,7 +90,7 @@ class FinanceQueryRepositoryTest {
             success(
                 quoteSnapshot(
                     btc = quote("BTC", int64(6_485_500), "live", "2026-07-30T15:00:00Z"),
-                    voo = quote("VOO", int64(68_179), "stale", "2026-07-29T15:00:00Z"),
+                    voo = """{"symbol":"VOO","priceCents":${int64(68_179)},"source":"reviewed-provider","fetchedAt":"2026-07-29T15:00:00Z","status":"stale","lastAttemptedAt":"2026-07-30T15:00:00Z","errorCode":"timeout"}""",
                     ibit = unavailable("IBIT"),
                 ),
             ),
@@ -108,6 +109,8 @@ class FinanceQueryRepositoryTest {
         assertEquals(68_179L, result.snapshot.quotes[1].priceCents)
         assertEquals("reviewed-provider", result.snapshot.quotes[1].source)
         assertEquals("2026-07-29T15:00:00Z", result.snapshot.quotes[1].fetchedAt)
+        assertEquals("2026-07-30T15:00:00Z", result.snapshot.quotes[1].lastAttemptedAt)
+        assertEquals(MarketQuoteErrorCode.TIMEOUT, result.snapshot.quotes[1].errorCode)
         assertEquals(MarketQuoteStatus.UNAVAILABLE, result.snapshot.quotes[2].status)
         assertNull(result.snapshot.quotes[2].priceCents)
         assertNull(result.snapshot.quotes[2].fetchedAt)

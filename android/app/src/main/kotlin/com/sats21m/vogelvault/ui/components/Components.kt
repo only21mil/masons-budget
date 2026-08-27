@@ -414,19 +414,7 @@ fun LedgerRow(
     LocalLedgerRowCompositionObserver.current?.invoke()
     // One stop per row rather than four, and the figure keeps the label that gives
     // it meaning — a bare "-412.30" swiped in isolation says nothing.
-    val spoken = buildString {
-        append(primary)
-        secondary?.let {
-            append(", ")
-            append(it)
-        }
-        badge?.let {
-            append(", ")
-            append(it)
-        }
-        append(", ")
-        append(spokenFigure(figure))
-    }
+    val spoken = ledgerRowContentDescription(primary, secondary, figure, badge)
     Row(
         Modifier
             .fillMaxWidth()
@@ -450,6 +438,25 @@ fun LedgerRow(
             color = if (figure.isUnavailableFigure()) tokens.colors.foregroundTertiary else ledgerColor(figureColor),
         )
     }
+}
+
+internal fun ledgerRowContentDescription(
+    primary: String,
+    secondary: String?,
+    figure: String,
+    badge: String?,
+): String = buildString {
+    append(primary)
+    secondary?.let {
+        append(", ")
+        append(it)
+    }
+    badge?.let {
+        append(", ")
+        append(it)
+    }
+    append(", ")
+    append(spokenFigure(figure))
 }
 
 @Composable

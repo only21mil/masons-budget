@@ -8,6 +8,8 @@ import com.sats21m.vogelvault.domain.HoldingValuationBasis
 import com.sats21m.vogelvault.domain.MarketQuote
 import com.sats21m.vogelvault.domain.MarketQuoteStatus
 import com.sats21m.vogelvault.domain.MarketSymbol
+import com.sats21m.vogelvault.domain.ageMinutesAt
+import com.sats21m.vogelvault.domain.at
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.NetWorthSelection
 import com.sats21m.vogelvault.domain.marketValue
@@ -47,7 +49,7 @@ private val retirementMarketTickers = setOf("VOO", "IBIT")
 internal fun VaultUiState.retirementAccountsResult(): Result<List<AccountValuation>> {
     if (financeStatus != Freshness.LIVE) return Result.success(emptyList())
     return try {
-        val quotes = marketQuotes?.quotes.orEmpty()
+        val quotes = marketQuotes?.at(now)?.quotes.orEmpty()
         Result.success(
             financeDocument?.accounts.orEmpty()
                 .netWorthScopeFor(activeProfile)
@@ -64,7 +66,7 @@ internal fun VaultUiState.retirementAccounts(): List<AccountValuation> =
 internal fun VaultUiState.netWorthSelectionResult(): Result<NetWorthSelection?> {
     if (financeStatus != Freshness.LIVE) return Result.success(null)
     val document = financeDocument ?: return Result.success(null)
-    val quotes = marketQuotes?.quotes ?: return Result.success(null)
+    val quotes = marketQuotes?.at(now)?.quotes ?: return Result.success(null)
     val balance = data.netWorthBalanceForDisplay()
         ?.takeIf { activeProfile.sharesNetWorth(it.owner) }
         ?: return Result.success(null)
@@ -134,7 +136,7 @@ internal fun VaultLazyListScope.financeNetWorthSummary(
                             DisplayUnit.SATS -> selected.totalValueSats?.let(Money::formatSats)
                         }
                     } ?: SUPPRESSED,
-                    hint = selection?.valuationQualityHint(),
+                    hint = selection?.valuationQualityHint(state.now),
                     provenance = Provenance.ESTIMATED,
                 ),
                 Kpi(
@@ -365,7 +367,7 @@ internal fun VaultUiState.formatFinanceCentsOrNull(
     displayUnit: DisplayUnit,
 ): String? {
     if (displayUnit == DisplayUnit.USD) return Money.formatUsd(cents)
-    val btcQuote = marketQuotes?.quotes
+    val btcQuote = marketQuotes?.at(now)?.quotes
         ?.firstOrNull { it.symbol == MarketSymbol.BTC && it.status != MarketQuoteStatus.UNAVAILABLE }
         ?: return null
     return try {
@@ -383,7 +385,7 @@ private fun List<AccountValuation>.sumAccountValuesOrNull(): Long? =
         null
     }
 
-internal fun NetWorthSelection.valuationQualityHint(): String? {
+internal fun NetWorthSelection.valuationQualityHint(nowMillis: Long = System.currentTimeMillis()): String? {
     val retirementHoldings = accounts.flatMap(AccountValuation::holdings)
         .filter { holding ->
             holding.holding.ticker?.trim()?.uppercase() in retirementMarketTickers
@@ -400,14 +402,14 @@ internal fun NetWorthSelection.valuationQualityHint(): String? {
         if (storedValues > 0) add("$storedValues stored value${if (storedValues == 1) "" else "s"}")
     }.takeIf { it.isNotEmpty() }?.joinToString(" · ", prefix = "Retirement: ")
 
-    return listOfNotNull(btcQuote?.quoteHint(), retirementQuality)
+    return listOfNotNull(btcQuote?.quoteHint(nowMillis), retirementQuality)
         .takeIf { it.isNotEmpty() }
         ?.joinToString(" · ")
 }
 
 @androidx.compose.runtime.Composable
 private fun QuotePanel(state: VaultUiState) {
-    val quotes = state.marketQuotes?.quotes
+    val quotes = state.marketQuotes?.at(state.now)?.quotes
     if (quotes == null) {
         Panel("Market prices", "BTC · VOO · IBIT") {
             StateBlock(
@@ -423,7 +425,7 @@ private fun QuotePanel(state: VaultUiState) {
             val quote = quotes.first { it.symbol == symbol }
             LedgerRow(
                 primary = symbol.name,
-                secondary = quote.quoteHint(),
+                secondary = quote.quoteHint(state.now),
                 figure = quote.priceCents?.let(Money::formatUsd) ?: Money.PRICE_UNAVAILABLE,
                 badge = quote.status.name,
                 badgeAccented = quote.status == MarketQuoteStatus.LIVE,
@@ -437,8 +439,22 @@ private fun QuotePanel(state: VaultUiState) {
     }
 }
 
-private fun MarketQuote.quoteHint(): String = when (status) {
-    MarketQuoteStatus.LIVE -> "$source · $fetchedAt"
-    MarketQuoteStatus.STALE -> "$source · stale since $fetchedAt"
-    MarketQuoteStatus.UNAVAILABLE -> "$source · unavailable"
+internal fun MarketQuote.quoteHint(nowMillis: Long): String {
+    val age = ageMinutesAt(nowMillis)?.let {
+        when (it) {
+            0L -> "now"
+            1L -> "1 minute ago"
+            else -> "$it minutes ago"
+        }
+    }
+    val failure = errorCode?.name?.lowercase()?.replace('_', ' ')
+    return buildString {
+        append(source)
+        when (status) {
+            MarketQuoteStatus.LIVE -> append(" · updated ${age ?: "now"}")
+            MarketQuoteStatus.STALE -> append(" · cached · updated ${age ?: "at an unknown time"}")
+            MarketQuoteStatus.UNAVAILABLE -> append(" · unavailable")
+        }
+        if (failure != null) append(" · refresh failed: $failure")
+    }
 }
