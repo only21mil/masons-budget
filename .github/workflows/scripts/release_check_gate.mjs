@@ -11,6 +11,7 @@ export const REQUIRED_SUCCESS_CHECKS = Object.freeze([
   "Detect changed trees",
   "Detect Apple changes",
   "actionlint + secret inventory",
+  "Credential mint tooling",
   "Shared domain contract",
   "Convex functions",
   "Verify committed Xcode project",

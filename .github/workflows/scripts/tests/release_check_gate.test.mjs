@@ -13,6 +13,7 @@ import {
 const SUCCESS = "success"
 const SKIPPED = "skipped"
 const RELEASE_SHA = "1234567890abcdef1234567890abcdef12345678"
+const CREDENTIAL_MINT_TOOLING = "Credential mint tooling"
 
 function check(name, conclusion, overrides = {}) {
   return {
@@ -55,6 +56,62 @@ function applicability(overrides = {}) {
 test("all successful exact-SHA checks satisfy the release gate", () => {
   assert.equal(evaluateReleaseChecks(payload(), applicability()).passed, true)
 })
+
+test("successful exact-SHA credential mint tooling satisfies its requirement", () => {
+  const result = evaluateReleaseChecks(payload(), applicability())
+
+  assert.equal(result.passed, true)
+  assert.ok(result.lines.includes(`PASS  ${CREDENTIAL_MINT_TOOLING}`))
+})
+
+const invalidCredentialMintChecks = [
+  ["missing", null, "missing"],
+  ["skipped", check(CREDENTIAL_MINT_TOOLING, SKIPPED), SKIPPED],
+  [
+    "external",
+    check(CREDENTIAL_MINT_TOOLING, SUCCESS, { app: { id: 999 } }),
+    "missing",
+  ],
+  [
+    "wrong-SHA",
+    check(CREDENTIAL_MINT_TOOLING, SUCCESS, {
+      head_sha: "abcdef1234567890abcdef1234567890abcdef12",
+    }),
+    "missing",
+  ],
+  [
+    "pending",
+    check(CREDENTIAL_MINT_TOOLING, null, {
+      status: "in_progress",
+      completed_at: null,
+      started_at: "2026-07-30T14:00:00Z",
+    }),
+    "pending",
+  ],
+]
+
+for (const [
+  state,
+  credentialCheck,
+  expectedConclusion,
+] of invalidCredentialMintChecks) {
+  test(`${state} credential mint tooling does not satisfy the release gate`, () => {
+    const base = payload()
+    base.check_runs = base.check_runs.filter(
+      (entry) => entry.name !== CREDENTIAL_MINT_TOOLING,
+    )
+    if (credentialCheck != null) base.check_runs.push(credentialCheck)
+
+    const result = evaluateReleaseChecks(base, applicability())
+
+    assert.equal(result.passed, false)
+    assert.ok(
+      result.lines.includes(
+        `FAIL  ${CREDENTIAL_MINT_TOOLING} (${expectedConclusion})`,
+      ),
+    )
+  })
+}
 
 for (const name of CONDITIONAL_CHECKS) {
   test(`an applicable skipped ${name} check blocks release`, () => {
