@@ -158,7 +158,7 @@ provenance tags.
   by 800dp with a 130dp rail and a 296dp secondary column where specified.
 - The scanline is `repeating-linear-gradient(180deg, scan 0 1px, transparent 1px 3px)`.
   It never intercepts input or enters the accessibility tree.
-- Scanlines and phosphor glow are separate settings, default on. Reduce-motion
+- Scanlines and phosphor glow are separate settings, default off. Reduce-motion
   or reduce-transparency settings force both effects off.
 
 Transitions are 160ms for chips and navigation, 180ms for controls, 200ms for

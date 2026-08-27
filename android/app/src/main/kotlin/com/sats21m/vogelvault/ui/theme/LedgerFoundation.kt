@@ -70,14 +70,14 @@ data class LedgerColors(
 
 object LedgerPalettes {
     val TerminalDark = LedgerColors(
-        background = Color(0xFF0A0D0C),
-        panel = Color(0xFF0C100E),
-        panelRaised = Color(0xFF111614),
-        line = Color(0xFFD6EEE0).copy(alpha = 0.10f),
-        lineSubtle = Color(0xFFD6EEE0).copy(alpha = 0.06f),
-        foreground = Color(0xFFE8EFE9),
-        foregroundSecondary = Color(0xFFE8EFE9).copy(alpha = 0.56f),
-        foregroundTertiary = Color(0xFFE8EFE9).copy(alpha = 0.36f),
+        background = Color(0xFF050505),
+        panel = Color(0xFF0C0C0D),
+        panelRaised = Color(0xFF141416),
+        line = Color(0xFFF5F2EA).copy(alpha = 0.44f),
+        lineSubtle = Color(0xFFF5F2EA).copy(alpha = 0.38f),
+        foreground = Color(0xFFF5F2EA),
+        foregroundSecondary = Color(0xFFF5F2EA).copy(alpha = 0.68f),
+        foregroundTertiary = Color(0xFFF5F2EA).copy(alpha = 0.52f),
         bitcoin = Color(0xFFF7931A),
         bitcoinSoft = Color(0xFFF7931A).copy(alpha = 0.12f),
         gainSpec = LedgerOklch(0.74f, 0.155f, 158f),
@@ -90,15 +90,15 @@ object LedgerPalettes {
         background = Color(0xFFF4F3EE),
         panel = Color(0xFFEDEBE4),
         panelRaised = Color.White,
-        line = Color(0xFF141715).copy(alpha = 0.14f),
-        lineSubtle = Color(0xFF141715).copy(alpha = 0.08f),
+        line = Color(0xFF141715).copy(alpha = 0.54f),
+        lineSubtle = Color(0xFF141715).copy(alpha = 0.48f),
         foreground = Color(0xFF141715),
-        foregroundSecondary = Color(0xFF141715).copy(alpha = 0.60f),
-        foregroundTertiary = Color(0xFF141715).copy(alpha = 0.42f),
+        foregroundSecondary = Color(0xFF141715).copy(alpha = 0.70f),
+        foregroundTertiary = Color(0xFF141715).copy(alpha = 0.62f),
         bitcoin = Color(0xFFC96A05),
         bitcoinSoft = Color(0xFFC96A05).copy(alpha = 0.10f),
-        gainSpec = LedgerOklch(0.52f, 0.13f, 158f),
-        lossSpec = LedgerOklch(0.52f, 0.15f, 28f),
+        gainSpec = LedgerOklch(0.48f, 0.13f, 158f),
+        lossSpec = LedgerOklch(0.48f, 0.15f, 28f),
         scanline = Color.Black.copy(alpha = 0.012f),
         knob = Color.White,
     )
@@ -235,8 +235,8 @@ data class LedgerAccessibilityPreferences(
 
 @Immutable
 data class LedgerEffectSettings(
-    val scanlinesEnabled: Boolean = true,
-    val phosphorGlowEnabled: Boolean = true,
+    val scanlinesEnabled: Boolean = false,
+    val phosphorGlowEnabled: Boolean = false,
 )
 
 @Immutable

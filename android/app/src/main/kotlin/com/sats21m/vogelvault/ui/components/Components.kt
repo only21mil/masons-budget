@@ -463,7 +463,7 @@ fun Badge(
 ) {
     val tokens = LocalLedgerTheme.current
     val resolvedTone = tone?.let { ledgerColor(it) }
-    val border = resolvedTone ?: if (accented) tokens.colors.bitcoin.copy(alpha = 0.42f) else tokens.colors.line
+    val border = resolvedTone ?: if (accented) tokens.colors.bitcoin else tokens.colors.line
     Box(
         Modifier
             // role = Role.Button: a bare clickable() announces as static text with

@@ -29,8 +29,8 @@ enum class LedgerAppearance(val storageKey: String, val label: String) {
 
 data class LedgerUiSettings(
     val appearance: LedgerAppearance = LedgerAppearance.SYSTEM,
-    val scanlinesEnabled: Boolean = true,
-    val phosphorGlowEnabled: Boolean = true,
+    val scanlinesEnabled: Boolean = false,
+    val phosphorGlowEnabled: Boolean = false,
     val reduceMotion: Boolean = false,
     val reduceTransparency: Boolean = false,
 ) {
@@ -52,15 +52,19 @@ internal class LedgerUiPreferences(private val preferences: SharedPreferences) {
         context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE),
     )
 
-    fun current(): LedgerUiSettings = LedgerUiSettings(
-        appearance = LedgerAppearance.fromStorageKey(preferences.getString(KEY_APPEARANCE, null)),
-        scanlinesEnabled = preferences.getBoolean(KEY_SCANLINES, true),
-        phosphorGlowEnabled = preferences.getBoolean(KEY_PHOSPHOR, true),
-        reduceMotion = preferences.getBoolean(KEY_REDUCE_MOTION, false),
-        reduceTransparency = preferences.getBoolean(KEY_REDUCE_TRANSPARENCY, false),
-    )
+    fun current(): LedgerUiSettings {
+        migrateEffectsDefault()
+        return LedgerUiSettings(
+            appearance = LedgerAppearance.fromStorageKey(preferences.getString(KEY_APPEARANCE, null)),
+            scanlinesEnabled = preferences.getBoolean(KEY_SCANLINES, false),
+            phosphorGlowEnabled = preferences.getBoolean(KEY_PHOSPHOR, false),
+            reduceMotion = preferences.getBoolean(KEY_REDUCE_MOTION, false),
+            reduceTransparency = preferences.getBoolean(KEY_REDUCE_TRANSPARENCY, false),
+        )
+    }
 
     fun save(settings: LedgerUiSettings): Boolean = preferences.edit()
+        .putInt(KEY_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION)
         .putString(KEY_APPEARANCE, settings.appearance.storageKey)
         .putBoolean(KEY_SCANLINES, settings.scanlinesEnabled)
         .putBoolean(KEY_PHOSPHOR, settings.phosphorGlowEnabled)
@@ -68,8 +72,25 @@ internal class LedgerUiPreferences(private val preferences: SharedPreferences) {
         .putBoolean(KEY_REDUCE_TRANSPARENCY, settings.reduceTransparency)
         .commit()
 
+    /**
+     * Version 1 supplied both effects as unstored `true` defaults. Key presence
+     * distinguishes that inherited state from a user choice, so only missing
+     * keys move to the quieter default.
+     */
+    private fun migrateEffectsDefault() {
+        if (preferences.getInt(KEY_SCHEMA_VERSION, 1) >= CURRENT_SCHEMA_VERSION) return
+
+        preferences.edit().apply {
+            if (!preferences.contains(KEY_SCANLINES)) putBoolean(KEY_SCANLINES, false)
+            if (!preferences.contains(KEY_PHOSPHOR)) putBoolean(KEY_PHOSPHOR, false)
+            putInt(KEY_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION)
+        }.commit()
+    }
+
     private companion object {
+        const val CURRENT_SCHEMA_VERSION = 2
         const val PREFERENCES_NAME = "ledger-ui-settings"
+        const val KEY_SCHEMA_VERSION = "schema_version"
         const val KEY_APPEARANCE = "appearance"
         const val KEY_SCANLINES = "scanlines"
         const val KEY_PHOSPHOR = "phosphor_glow"

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -88,7 +89,11 @@ internal fun OnboardingView(
                 Modifier.fillMaxWidth().padding(tokens.density.cardPadding),
                 verticalArrangement = Arrangement.spacedBy(tokens.density.sectionLabelBottomSpace),
             ) {
-                Text(step.eyebrow.uppercase(), style = tokens.type.sectionLabel, color = tokens.colors.bitcoin)
+                Text(
+                    step.eyebrow.uppercase(),
+                    style = tokens.type.sectionLabel,
+                    color = tokens.colors.foregroundSecondary,
+                )
                 Text(step.title, style = tokens.type.drilldownTitle, color = tokens.colors.foreground)
                 Text(step.detail, style = tokens.type.body, color = tokens.colors.foregroundSecondary)
                 if (step == OnboardingStep.CONNECT) {
@@ -106,6 +111,10 @@ internal fun OnboardingView(
             TextButton(
                 enabled = stepIndex > 0,
                 onClick = { stepIndex-- },
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = tokens.colors.foreground,
+                    disabledContentColor = tokens.colors.foregroundTertiary,
+                ),
             ) { Text("Back") }
             if (stepIndex < OnboardingStep.entries.lastIndex) {
                 VaultButton(onClick = { stepIndex++ }) { Text("Next") }
