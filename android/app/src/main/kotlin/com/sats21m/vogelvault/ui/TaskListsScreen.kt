@@ -209,17 +209,19 @@ private fun ProfileTaskListsScreen(
         )
     }
 
-    // ScreenHost owns the scrolling container, so a flow-positioned snackbar
-    // could be off-screen when a lower task is changed. The window popup keeps
-    // accepted/rejected write feedback and Undo reachable at the viewport edge.
-    Popup(
-        alignment = Alignment.BottomCenter,
-        properties = PopupProperties(focusable = false),
-    ) {
-        SnackbarHost(
-            hostState = snackbar,
-            modifier = Modifier.padding(VaultSpace.md),
-        )
+    if (snackbar.currentSnackbarData != null) {
+        // ScreenHost owns the scrolling container, so a flow-positioned snackbar
+        // could be off-screen when a lower task is changed. The window popup keeps
+        // accepted/rejected write feedback and Undo reachable at the viewport edge.
+        Popup(
+            alignment = Alignment.BottomCenter,
+            properties = PopupProperties(focusable = false),
+        ) {
+            SnackbarHost(
+                hostState = snackbar,
+                modifier = Modifier.padding(VaultSpace.md),
+            )
+        }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.md)) {

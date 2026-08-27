@@ -12,8 +12,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -293,6 +295,22 @@ class TaskListsCrudScreenTest {
             checkNotNull(application.poster.lastBody).contains("\"baseUpdatedAtMs\":1800000000001"),
             "the restored task discarded the server receipt revision",
         )
+    }
+
+    @Test
+    fun `task snackbar popup exists only while feedback is active`() {
+        assertTrue(
+            compose.onAllNodes(isPopup()).fetchSemanticsNodes().isEmpty(),
+            "an empty Tasks screen created a popup window",
+        )
+
+        deleteTodo(todo.title)
+        application.poster.answer(success("deleted"))
+        settle()
+
+        compose.onNode(
+            hasText(application.getString(R.string.todo_undo)) and hasAnyAncestor(isPopup()),
+        ).fetchSemanticsNode()
     }
 
     @Test
