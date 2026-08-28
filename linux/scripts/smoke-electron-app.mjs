@@ -37,9 +37,9 @@ const EXPECTED = {
   height: 900,
   backgroundColor: "#050505",
   bodyBackground: "rgb(5, 5, 5)",
-  sidebarWide: 232,
-  sidebarCompact: 68,
-  // The stylesheet's compact pass is `max-width: 1365px`, so 1365 must collapse
+  sidebarWide: 130,
+  sidebarCompact: 130,
+  // The stylesheet's compact pass is `max-width: 1365px`, so 1365 must switch to icon-only
   // and 1366 must not. Testing both sides is the only way to prove the
   // breakpoint is where the design says it is rather than merely nearby.
   breakpointCollapsesAt: 1365,
@@ -276,7 +276,7 @@ async function inspect(window) {
 
   const collapsed = await setViewport(window, EXPECTED.breakpointCollapsesAt, EXPECTED.height)
   record(
-    `sidebar collapses to icons at ${EXPECTED.breakpointCollapsesAt}px`,
+    `sidebar switches to icon-only at ${EXPECTED.breakpointCollapsesAt}px`,
     collapsed.sidebarWidth === EXPECTED.sidebarCompact && collapsed.labelDisplay === "none",
     `${collapsed.sidebarWidth}px, labels ${collapsed.labelDisplay}`,
   )
