@@ -19,7 +19,7 @@ A full `npm audit` reports 10 cascading high-severity package nodes from the
 toolchain. `temp@0.9.4` requires the callback API from rimraf 2; forcing it to
 rimraf 6 made tracked cleanup throw a `TypeError`, so the incompatible override
 was removed and an executable cleanup test now protects that contract. This
-repository packages only Linux `.deb` and AppImage targets, and neither calls
+repository packages only the Linux AppImage target, which does not call
 `electron-winstaller`, `temp`, rimraf, or the affected glob expansion path.
 `npm audit --omit=dev` remains clean, but that view alone is not treated as
 proof of shipped-runtime safety.

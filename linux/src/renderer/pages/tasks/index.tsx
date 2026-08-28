@@ -375,7 +375,11 @@ function TodoListPage({
             >
               Add task
             </Button>
-            <FreshnessTag status={data.todos.status} updatedAt={data.todos.updatedAt} />
+            <FreshnessTag
+              status={data.todos.status}
+              updatedAt={data.todos.updatedAt}
+              checkedAt={data.checkedAt}
+            />
           </>
         }
       />
@@ -471,27 +475,34 @@ function TodayMoneyOut({ today }: { readonly today: string }) {
 }
 
 function TasksPage() {
+  const { data } = useAppState()
   const today = useTaskToday()
   const filters = useMemo(() => taskFiltersFor(today), [today])
   const todos = useVisibleTodos()
   const open = todos.filter((todo) => !todo.done)
   const dueToday = open.filter(filters.today).length
+  const loading = data.todos.status === "loading"
 
   return (
     <>
-      <PageHeader title="Tasks" subtitle={`${open.length} open · ${dueToday} due today`} />
-      <div className="vv-task-buckets" aria-label="Task buckets">
-        {[
-          ["Inbox", open.filter(filters.inbox).length],
-          ["Today", dueToday],
-          ["Upcoming", open.filter(filters.upcoming).length],
-          ["Flagged", open.filter(filters.flagged).length],
-        ].map(([label, count]) => (
-          <Panel key={label} title={label} className="vv-task-bucket">
-            <strong className="vv-task-bucket__count vv-num">{count}</strong>
-          </Panel>
-        ))}
-      </div>
+      <PageHeader
+        title="Tasks"
+        subtitle={loading ? "Loading tasks" : `${open.length} open · ${dueToday} due today`}
+      />
+      {loading ? null : (
+        <div className="vv-task-buckets" aria-label="Task buckets">
+          {[
+            ["Inbox", open.filter(filters.inbox).length],
+            ["Today", dueToday],
+            ["Upcoming", open.filter(filters.upcoming).length],
+            ["Flagged", open.filter(filters.flagged).length],
+          ].map(([label, count]) => (
+            <Panel key={label} title={label} className="vv-task-bucket">
+              <strong className="vv-task-bucket__count vv-num">{count}</strong>
+            </Panel>
+          ))}
+        </div>
+      )}
       <TodoListPage
         title="Open ledger"
         subtitle="All open tasks for this profile"
@@ -626,7 +637,11 @@ function ProjectsPage() {
             >
               Add task
             </Button>
-            <FreshnessTag status={data.todos.status} updatedAt={data.todos.updatedAt} />
+            <FreshnessTag
+              status={data.todos.status}
+              updatedAt={data.todos.updatedAt}
+              checkedAt={data.checkedAt}
+            />
           </>
         }
       />

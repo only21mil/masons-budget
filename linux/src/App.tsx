@@ -59,12 +59,12 @@ function ProfileControl() {
 }
 
 /**
- * Global sync indicator.
+ * Global read indicator.
  *
  * Reports the WORST state across every slice, not one arbitrary slice — a single
- * failed read matters even when the rest are fine. Labelled "Sync" so it reads
- * as the app-wide indicator rather than duplicating the per-slice badge that
- * each page header already shows.
+ * failed read matters even when the rest are fine. Labelled "Read" so it reads
+ * as the app-wide indicator rather than implying that row age is read recency
+ * or duplicating the per-slice badge that each page header already shows.
  */
 function GlobalSyncState() {
   const { data } = useAppState()
@@ -83,9 +83,13 @@ function GlobalSyncState() {
   return (
     <span className="vv-row">
       <span className="vv-dim" style={{ fontSize: "var(--vv-text-2xs)", letterSpacing: "0.06em" }}>
-        SYNC
+        READ
       </span>
-      <FreshnessTag status={worst.status} updatedAt={worst.updatedAt} />
+      <FreshnessTag
+        status={worst.status}
+        updatedAt={worst.updatedAt}
+        checkedAt={data.checkedAt}
+      />
     </span>
   )
 }

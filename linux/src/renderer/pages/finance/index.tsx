@@ -985,7 +985,13 @@ function DashboardPage() {
         title="Dashboard"
         showDisplayUnit
         subtitle={`${isAdult(activeProfile) ? "Household command center" : `${displayName(activeProfile)}'s money`} · ${monthLabel(month)}`}
-        actions={<FreshnessTag status={data.transactions.status} updatedAt={data.transactions.updatedAt} />}
+        actions={
+          <FreshnessTag
+            status={data.transactions.status}
+            updatedAt={data.transactions.updatedAt}
+            checkedAt={data.checkedAt}
+          />
+        }
       />
       <StaleNotice status={data.transactions.status} />
       <BitcoinQuoteNotice available={displayUnit === "usd" || btcPriceCents !== null} />
@@ -1234,7 +1240,11 @@ function BudgetPage() {
               Add income
             </Button>
             {actualsUnavailable ? null : <MonthPicker scope={scope} label="Budget month" />}
-            <FreshnessTag status={data.budget.status} updatedAt={data.budget.updatedAt} />
+            <FreshnessTag
+              status={data.budget.status}
+              updatedAt={data.budget.updatedAt}
+              checkedAt={data.checkedAt}
+            />
           </>
         }
       />
@@ -1539,7 +1549,11 @@ function ActivityPage() {
             >
               Add transaction
             </Button>
-            <FreshnessTag status={data.transactions.status} updatedAt={data.transactions.updatedAt} />
+            <FreshnessTag
+              status={data.transactions.status}
+              updatedAt={data.transactions.updatedAt}
+              checkedAt={data.checkedAt}
+            />
           </>
         }
       />
@@ -1694,6 +1708,7 @@ function BitcoinOverviewPage() {
             <FreshnessTag
               status={data.btcBalanceDocument.status}
               updatedAt={data.btcBalanceDocument.updatedAt}
+              checkedAt={data.checkedAt}
             />
           </>
         }
@@ -1852,7 +1867,11 @@ function BitcoinBuysPage() {
             >
               Add buy
             </Button>
-            <FreshnessTag status={data.btcBuys.status} updatedAt={data.btcBuys.updatedAt} />
+            <FreshnessTag
+              status={data.btcBuys.status}
+              updatedAt={data.btcBuys.updatedAt}
+              checkedAt={data.checkedAt}
+            />
           </>
         }
       />
@@ -1985,7 +2004,11 @@ function BillsPage() {
             >
               Add bill payment
             </Button>
-            <FreshnessTag status={data.billPays.status} updatedAt={data.billPays.updatedAt} />
+            <FreshnessTag
+              status={data.billPays.status}
+              updatedAt={data.billPays.updatedAt}
+              checkedAt={data.checkedAt}
+            />
           </>
         }
       />
@@ -2101,7 +2124,7 @@ function BillsPage() {
  * states) comes from the same finance slice the headline reads.
  */
 function RetirementAccountsPanel({ accounts }: { accounts: readonly AccountValuation[] }) {
-  const { displayUnit, financeModel, stateOverride } = useAppState()
+  const { data, displayUnit, financeModel, stateOverride } = useAppState()
   const btcQuote = operationalBtcQuote(financeModel)
   const showFinance = stateOverride === "normal" && financeModel.finance.status === "live"
   const updatedAt = financeModel.finance.status === "live"
@@ -2121,10 +2144,14 @@ function RetirementAccountsPanel({ accounts }: { accounts: readonly AccountValua
     <Panel
       title="Retirement accounts"
       source={showFinance
-        ? `Synced finance document · ${financeModel.finance.value.lastUpdated}`
+        ? `Finance document rows changed · ${financeModel.finance.value.lastUpdated}`
         : "Authenticated finance document unavailable"}
       actions={
-        <FreshnessTag status={financeStatus} updatedAt={showFinance ? updatedAt : null} />
+        <FreshnessTag
+          status={financeStatus}
+          updatedAt={showFinance ? updatedAt : null}
+          checkedAt={data.checkedAt}
+        />
       }
       flush
     >
@@ -2255,6 +2282,7 @@ function NetWorthPage() {
           <FreshnessTag
             status={data.btcBalanceDocument.status}
             updatedAt={data.btcBalanceDocument.updatedAt}
+            checkedAt={data.checkedAt}
           />
         }
       />

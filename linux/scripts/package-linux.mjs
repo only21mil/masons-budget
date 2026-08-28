@@ -34,16 +34,15 @@ if (!existsSync(builderCli)) fail("electron-builder is not installed; run `npm c
 
 await rm(releaseDir, { recursive: true, force: true })
 run("npm", ["run", "build:release"])
-run(process.execPath, [builderCli, "--linux", "deb", "AppImage", "--x64", "--publish", "never"])
+run(process.execPath, [builderCli, "--linux", "AppImage", "--x64", "--publish", "never"])
 
 const artifacts = (await readdir(releaseDir))
-  .filter((name) => name.endsWith(".deb") || name.endsWith(".AppImage"))
+  .filter((name) => name.endsWith(".AppImage"))
   .sort()
 
-const debs = artifacts.filter((name) => name.endsWith(".deb"))
 const appImages = artifacts.filter((name) => name.endsWith(".AppImage"))
-if (debs.length !== 1 || appImages.length !== 1) {
-  fail(`expected one x86_64 .deb and one x86_64 AppImage, found ${artifacts.join(", ") || "none"}.`)
+if (appImages.length !== 1) {
+  fail(`expected one x86_64 AppImage, found ${artifacts.join(", ") || "none"}.`)
 }
 if (artifacts.some((name) => !name.includes("x86_64"))) {
   fail(`artifact names must identify x86_64 explicitly: ${artifacts.join(", ")}.`)

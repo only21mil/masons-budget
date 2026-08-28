@@ -89,33 +89,44 @@ export function LoadingBlock({ rows = 5, className }: { rows?: number; className
 export function FreshnessTag({
   status,
   updatedAt,
+  checkedAt,
 }: {
   status: Freshness
   updatedAt: number | null
+  checkedAt: number | null
 }) {
   if (status === "demo") {
     return <Badge tone="info" icon="circle-alert">DEMO DATA</Badge>
   }
   if (status === "live") {
-    // The live tag shows a bare timestamp; that it means "synced" is carried by
-    // the green pill and the tick, neither of which a screen reader reports.
     return (
       <Badge tone="positive" icon="check">
-        <span className="vv-sr-only">Synced</span>
-        {formatWhen(updatedAt)}
+        Last checked {formatWhen(checkedAt)} · Rows changed {formatWhen(updatedAt)}
       </Badge>
     )
   }
   if (status === "stale") {
-    return <Badge tone="warning" icon="circle-alert">Stale · {formatWhen(updatedAt)}</Badge>
+    return (
+      <Badge tone="warning" icon="circle-alert">
+        Stale · Last checked {formatWhen(checkedAt)} · Rows changed {formatWhen(updatedAt)}
+      </Badge>
+    )
   }
   if (status === "error") {
-    return <Badge tone="negative" icon="alert">Read failed</Badge>
+    return (
+      <Badge tone="negative" icon="alert">
+        Read failed{checkedAt === null ? "" : ` · Last checked ${formatWhen(checkedAt)}`}
+      </Badge>
+    )
   }
   if (status === "loading") {
     return <Badge tone="info" icon="refresh">Loading</Badge>
   }
-  return <Badge tone="neutral" icon="circle-dashed">No data</Badge>
+  return (
+    <Badge tone="neutral" icon="circle-dashed">
+      No rows{checkedAt === null ? "" : ` · Last checked ${formatWhen(checkedAt)}`}
+    </Badge>
+  )
 }
 
 function formatWhen(updatedAt: number | null): string {

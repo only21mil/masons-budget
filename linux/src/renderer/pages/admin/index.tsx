@@ -308,7 +308,13 @@ function SyncHealthPage() {
             {
               key: "status",
               header: "State",
-              render: (row) => <FreshnessTag status={row.slice.status} updatedAt={row.slice.updatedAt} />,
+              render: (row) => (
+                <FreshnessTag
+                  status={row.slice.status}
+                  updatedAt={row.slice.updatedAt}
+                  checkedAt={data.checkedAt}
+                />
+              ),
             },
           ]}
           rows={slices}

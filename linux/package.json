@@ -17,12 +17,14 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json",
     "lint": "eslint .",
-    "test": "vitest run && node --test test/temp-tracked-cleanup.check.mjs",
+    "test": "vitest run && npm run test:launcher && node --test test/temp-tracked-cleanup.check.mjs",
     "qa:preload-boundary": "node scripts/qa-preload-boundary.mjs",
     "build:release": "npm run typecheck && vite build --mode release",
     "package": "npm run package:linux",
     "package:linux": "node scripts/package-linux.mjs",
     "package:verify": "node scripts/package-verify-linux.mjs",
+    "install:linux": "node scripts/install-linux.mjs",
+    "test:launcher": "node --test test/install-linux.test.mjs test/package-config.test.mjs",
     "screenshots": "node scripts/capture-screenshots.mjs",
     "smoke": "node scripts/smoke-electron.mjs",
     "smoke:packaged": "node scripts/smoke-packaged-linux.mjs"
@@ -78,12 +80,6 @@
     ],
     "linux": {
       "target": [
-        {
-          "target": "deb",
-          "arch": [
-            "x64"
-          ]
-        },
         {
           "target": "AppImage",
           "arch": [

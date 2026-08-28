@@ -441,7 +441,7 @@ test("sync health does not timestamp a degraded snapshot from its newest quote",
     }),
   )
 
-  assert.ok(markup.includes("Stale · never"))
+  assert.ok(markup.includes("Stale · Last checked never · Rows changed never"))
 })
 
 test("default fixture mode never labels retirement or market quotes as live", () => {

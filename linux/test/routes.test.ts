@@ -177,7 +177,7 @@ test("data-backed pages surface an explicit marker for every non-normal state", 
   const markers: Record<string, string[]> = {
     loading: ["Loading", "vv-loading", "aria-busy"],
     error: ["Could not load", "vv-state--error", "Read failed"],
-    empty: ["vv-state--empty", "No data", "Nothing", "not wired"],
+    empty: ["vv-state--empty", "No rows", "Nothing", "not wired"],
     stale: ["stale", "Stale"],
   }
 
@@ -194,6 +194,24 @@ test("data-backed pages surface an explicit marker for every non-normal state", 
     }
   }
   assert.equal(checked, (ALL_PAGES.length - STATIC_PAGES.size) * 4)
+})
+
+test("loading tasks and Bitcoin surfaces contain no demo counts or rows", () => {
+  const tasks = ALL_PAGES.find((page) => page.id === "tasks")
+  const bitcoin = ALL_PAGES.find((page) => page.id === "bitcoin")
+  assert.ok(tasks)
+  assert.ok(bitcoin)
+
+  const tasksMarkup = renderPage(tasks, "victor", "loading")
+  assert.match(tasksMarkup, /Loading tasks/)
+  assert.match(tasksMarkup, /aria-busy="true"/)
+  assert.doesNotMatch(tasksMarkup, /vv-task-buckets/)
+  assert.doesNotMatch(tasksMarkup, /Reconcile July statements|Schedule annual checkup/)
+
+  const bitcoinMarkup = renderPage(bitcoin, "victor", "loading")
+  assert.match(bitcoinMarkup, /Loading/)
+  assert.doesNotMatch(bitcoinMarkup, /account\(s\) visible but outside/)
+  assert.doesNotMatch(bitcoinMarkup, /Cold Storage|Mason Stack/)
 })
 
 test("every page in STATIC_PAGES actually exists", () => {

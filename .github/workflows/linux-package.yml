@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   package:
-    name: x86_64 deb + AppImage
+    name: x86_64 AppImage
     if: github.repository == 'only21mil/masons-budget' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -68,7 +68,6 @@ jobs:
         with:
           name: vogel-vault-linux-x86_64
           path: |
-            linux/release/*.deb
             linux/release/*.AppImage
             linux/release/SHA256SUMS
           if-no-files-found: error

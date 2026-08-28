@@ -106,6 +106,7 @@ function errorEnvelope(code: VogelVaultRowErrorCode, now: number): FixtureEnvelo
     btcTransfers: errorSlice([], code),
     todos: errorSlice([], code),
     btcPriceUsd: null,
+    checkedAt: null,
     generatedAt: now,
   }
 }
@@ -122,6 +123,7 @@ function emptyEnvelope(now: number): FixtureEnvelope {
     btcTransfers: populatedSlice([], false, null, `${SOURCE} · BTC transfers`),
     todos: populatedSlice([], false, null, `${SOURCE} · todos`),
     btcPriceUsd: null,
+    checkedAt: null,
     generatedAt: now,
   }
 }
@@ -586,6 +588,7 @@ export async function loadConvexRowEnvelope(
       btcTransfers,
       todos,
       btcPriceUsd: priceFromBalanceDocument(btcBalance.value),
+      checkedAt: null,
       generatedAt: timestamps.length > 0 ? Math.max(...timestamps) : now(),
     },
   }

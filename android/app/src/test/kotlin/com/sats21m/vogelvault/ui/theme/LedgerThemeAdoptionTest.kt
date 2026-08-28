@@ -2,6 +2,7 @@ package com.sats21m.vogelvault.ui.theme
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.graphics.Color
@@ -42,7 +43,7 @@ class LedgerThemeAdoptionTest {
     fun appRootProvidesTerminalLedgerTokensAndMaterialColors() {
         var treatment: LedgerTreatment? = null
         var ledgerBackground: Color? = null
-        var materialBackground: Color? = null
+        var materialColors: ColorScheme? = null
         var resolvedTextColor: Color? = null
 
         compose.runOnUiThread {
@@ -50,7 +51,7 @@ class LedgerThemeAdoptionTest {
                 LedgerTheme {
                     treatment = LocalLedgerTheme.current.treatment
                     ledgerBackground = LocalLedgerTheme.current.colors.background
-                    materialBackground = MaterialTheme.colorScheme.background
+                    materialColors = MaterialTheme.colorScheme
                     Text(
                         text = "Ledger root",
                         onTextLayout = { resolvedTextColor = it.layoutInput.style.color },
@@ -62,7 +63,53 @@ class LedgerThemeAdoptionTest {
 
         assertEquals(LedgerTreatment.TERMINAL_DARK, treatment)
         assertEquals(LedgerPalettes.TerminalDark.background, ledgerBackground)
-        assertEquals(LedgerPalettes.TerminalDark.background, materialBackground)
         assertEquals(LedgerPalettes.TerminalDark.foreground, resolvedTextColor)
+        assertLedgerMaterialColors(materialColors, LedgerPalettes.TerminalDark)
+    }
+
+    @Test
+    fun daylightMapsEveryMaterialContainerAndPrimaryInk() {
+        var materialColors: ColorScheme? = null
+
+        compose.runOnUiThread {
+            activityController.get().setContent {
+                SovereignLedgerTheme(LedgerTreatment.DAYLIGHT_LIGHT) {
+                    materialColors = MaterialTheme.colorScheme
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        assertLedgerMaterialColors(materialColors, LedgerPalettes.DaylightLight)
+    }
+
+    private fun assertLedgerMaterialColors(
+        materialColors: ColorScheme?,
+        palette: LedgerColors,
+    ) {
+        requireNotNull(materialColors)
+        assertEquals(palette.background, materialColors.background)
+        assertEquals(palette.background, materialColors.surfaceContainerLowest)
+        assertEquals(palette.panel, materialColors.surfaceContainerLow)
+        assertEquals(palette.panel, materialColors.surfaceContainer)
+        assertEquals(palette.panelRaised, materialColors.surfaceContainerHigh)
+        assertEquals(palette.panelRaised, materialColors.surfaceContainerHighest)
+        assertEquals(palette.bitcoin, materialColors.surfaceTint)
+        assertEquals(LedgerPalettes.TerminalDark.background, materialColors.onPrimary)
+        assertEquals(palette.background, materialColors.inversePrimary)
+        assertEquals(palette.foregroundSecondary, materialColors.secondary)
+        assertEquals(palette.background, materialColors.onSecondary)
+        assertEquals(palette.panelRaised, materialColors.secondaryContainer)
+        assertEquals(palette.foreground, materialColors.onSecondaryContainer)
+        assertEquals(palette.foregroundTertiary, materialColors.tertiary)
+        assertEquals(palette.background, materialColors.onTertiary)
+        assertEquals(palette.panelRaised, materialColors.tertiaryContainer)
+        assertEquals(palette.foreground, materialColors.onTertiaryContainer)
+        assertEquals(palette.foreground, materialColors.inverseSurface)
+        assertEquals(palette.background, materialColors.inverseOnSurface)
+        assertEquals(palette.background, materialColors.surfaceDim)
+        assertEquals(palette.panelRaised, materialColors.surfaceBright)
+        assertEquals(palette.panelRaised, materialColors.errorContainer)
+        assertEquals(palette.loss, materialColors.onErrorContainer)
     }
 }

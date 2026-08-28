@@ -2,6 +2,7 @@ package com.sats21m.vogelvault.ui
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.sats21m.vogelvault.ui.theme.LedgerTreatment
 import java.util.UUID
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -25,12 +26,22 @@ class LedgerUiPreferencesTest {
     }
 
     @Test
-    fun `fresh install keeps system appearance and Terminal effects on`() {
+    fun `fresh install defaults to Terminal with its effects on`() {
         val settings = store.current()
 
-        assertEquals(LedgerAppearance.SYSTEM, settings.appearance)
+        assertEquals(LedgerAppearance.TERMINAL, settings.appearance)
         assertTrue(settings.scanlinesEnabled)
         assertTrue(settings.phosphorGlowEnabled)
+    }
+
+    @Test
+    fun `explicit System appearance survives storage and still follows the phone`() {
+        assertTrue(store.save(LedgerUiSettings(appearance = LedgerAppearance.SYSTEM)))
+
+        val restored = store.current()
+        assertEquals(LedgerAppearance.SYSTEM, restored.appearance)
+        assertEquals(LedgerTreatment.TERMINAL_DARK, restored.treatment(systemDark = true))
+        assertEquals(LedgerTreatment.DAYLIGHT_LIGHT, restored.treatment(systemDark = false))
     }
 
     @Test

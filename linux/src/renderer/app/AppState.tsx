@@ -192,6 +192,18 @@ export function AppStateProvider({
       ? { profile: initialProfile, model: initialFinanceModel }
       : null,
   )
+  const [remotePhase, setRemotePhase] = useState<{
+    readonly profile: FamilyMember
+    readonly status: "loading" | "settled"
+  }>(() => ({
+    profile: initialProfile,
+    status: initialData || !rendererBridgeAvailable() ? "settled" : "loading",
+  }))
+  const lastCheckedRef = useRef<Partial<Record<FamilyMember, number>>>(
+    initialData?.checkedAt === null || initialData?.checkedAt === undefined
+      ? {}
+      : { [initialProfile]: initialData.checkedAt },
+  )
   const [mutationCapabilities, setMutationCapabilities] = useState<
     readonly RendererMutationKind[]
   >(initialMutationCapabilities)
@@ -281,8 +293,16 @@ export function AppStateProvider({
   )
 
   const loadRemote = useCallback(async (profile: FamilyMember, generation: number) => {
+    if (generationRef.current === generation) {
+      setRemotePhase({ profile, status: "loading" })
+    }
     const bridge = window.vogelVault
-    if (!bridge) return false
+    if (!bridge) {
+      if (generationRef.current === generation) {
+        setRemotePhase({ profile, status: "settled" })
+      }
+      return false
+    }
     let profileResult: Awaited<ReturnType<typeof bridge.setReadProfile>>
     try {
       profileResult = await bridge.setReadProfile(profile)
@@ -292,6 +312,7 @@ export function AppStateProvider({
     if (profileResult.status !== "active" || profileResult.profile !== profile) {
       if (generationRef.current === generation) {
         setRemoteFinance({ profile, model: ERROR_FINANCE_MODEL })
+        setRemotePhase({ profile, status: "settled" })
       }
       return false
     }
@@ -308,9 +329,23 @@ export function AppStateProvider({
     ])
     if (generationRef.current !== generation) return false
     setRemoteFinance({ profile, model: financeModel })
-    if (result.status !== "loaded") return false
-    setRemoteData({ profile, data: result.data, origin: "remote" })
-    return financeReadSucceeded(financeModel)
+    if (result.status !== "loaded") {
+      setRemotePhase({ profile, status: "settled" })
+      return false
+    }
+    const succeeded = rowReadSucceeded(result.data) && financeReadSucceeded(financeModel)
+    let checkedAt = lastCheckedRef.current[profile] ?? null
+    if (succeeded) {
+      checkedAt = Date.now()
+      lastCheckedRef.current[profile] = checkedAt
+    }
+    setRemoteData({
+      profile,
+      data: { ...result.data, checkedAt },
+      origin: "remote",
+    })
+    setRemotePhase({ profile, status: "settled" })
+    return succeeded
   }, [])
 
   useEffect(() => {
@@ -396,9 +431,12 @@ export function AppStateProvider({
     () => stateOverride === "normal"
         ? remoteData?.profile === activeProfile
           ? remoteData.data
-          : buildSanitizedFixtureEnvelope(activeProfile)
+          : rendererBridgeAvailable() &&
+              (remotePhase.profile !== activeProfile || remotePhase.status === "loading")
+            ? fixtureEnvelopeInState(activeProfile, "loading")
+            : buildSanitizedFixtureEnvelope(activeProfile)
         : fixtureEnvelopeInState(activeProfile, stateOverride),
-    [activeProfile, remoteData, stateOverride],
+    [activeProfile, remoteData, remotePhase, stateOverride],
   )
   const dataOrigin: DataOrigin =
     stateOverride === "normal" && remoteData?.profile === activeProfile
@@ -643,6 +681,24 @@ const ERROR_FINANCE_MODEL: LinuxFinanceReadModel = {
 export function financeReadSucceeded(model: LinuxFinanceReadModel): boolean {
   return model.finance.status !== "error" && model.finance.status !== "loading" &&
     model.marketQuotes.status !== "error" && model.marketQuotes.status !== "loading"
+}
+
+function rowReadSucceeded(data: FixtureEnvelope): boolean {
+  return [
+    data.transactions,
+    data.income,
+    data.budget,
+    data.btcBalanceDocument,
+    data.btcAccounts,
+    data.btcBuys,
+    data.billPays,
+    data.btcTransfers,
+    data.todos,
+  ].every((slice) => slice.status === "live" || slice.status === "empty")
+}
+
+function rendererBridgeAvailable(): boolean {
+  return typeof window !== "undefined" && Boolean(window.vogelVault)
 }
 
 function mutationAdapterFromWindow(): RendererMutationAdapter | null {

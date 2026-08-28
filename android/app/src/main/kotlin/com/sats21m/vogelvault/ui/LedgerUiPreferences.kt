@@ -52,7 +52,11 @@ internal class LedgerUiPreferences(private val preferences: SharedPreferences) {
     )
 
     fun current(): LedgerUiSettings = LedgerUiSettings(
-        appearance = LedgerAppearance.fromStorageKey(preferences.getString(KEY_APPEARANCE, null)),
+        appearance = if (preferences.contains(KEY_APPEARANCE)) {
+            LedgerAppearance.fromStorageKey(preferences.getString(KEY_APPEARANCE, null))
+        } else {
+            LedgerAppearance.TERMINAL
+        },
         scanlinesEnabled = preferences.getBoolean(KEY_SCANLINES, true),
         phosphorGlowEnabled = preferences.getBoolean(KEY_PHOSPHOR, true),
         reduceMotion = preferences.getBoolean(KEY_REDUCE_MOTION, false),

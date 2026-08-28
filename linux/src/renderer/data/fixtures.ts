@@ -410,6 +410,9 @@ export interface FixtureEnvelope {
   readonly btcTransfers: SliceState<readonly BtcTransferRecord[]>
   readonly todos: SliceState<readonly TodoItem[]>
   readonly btcPriceUsd: bigint | null
+  /** Completion time of the last fully successful authenticated read cycle. */
+  readonly checkedAt: number | null
+  /** Newest row mutation time, retained for export naming and deterministic fixtures. */
   readonly generatedAt: number
 }
 
@@ -464,6 +467,7 @@ export function buildSanitizedFixtureEnvelope(
       btcBalanceDocument.totals.sats > 0n
         ? (btcBalanceDocument.totals.fiat * 100_000_000n) / btcBalanceDocument.totals.sats
         : 0n,
+    checkedAt: null,
     generatedAt: NOW,
   }
 }
@@ -525,7 +529,7 @@ export function fixtureEnvelopeInState(
   activeProfile: FamilyMember,
   status: Freshness,
 ): FixtureEnvelope {
-  const empty = status === "empty"
+  const hasNoValues = status === "empty" || status === "loading"
   const base = buildSanitizedFixtureEnvelope(activeProfile, {
     transactions: status,
     income: status,
@@ -537,7 +541,7 @@ export function fixtureEnvelopeInState(
     btcTransfers: status,
     todos: status,
   })
-  if (!empty) return base
+  if (!hasNoValues) return base
   return {
     ...base,
     transactions: { ...base.transactions, value: [] },

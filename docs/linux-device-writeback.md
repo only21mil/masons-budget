@@ -7,6 +7,27 @@ trusted pairing-mint path.
 Desktop row writes are enabled only when the main process starts with
 `VOGEL_VAULT_DEVICE_WRITES=1`; pairing alone does not enable mutations.
 
+## Installed launcher
+
+After an approved AppImage has been packaged, install it from the repository:
+
+```bash
+cd linux
+npm run install:linux -- --appimage /approved/path/Vogel-Vault-<version>-x86_64.AppImage
+```
+
+The installer puts the raw artifact under `~/.local/opt/vogel-vault/`. It makes
+both `~/.local/bin/vogel-vault` and `~/.local/bin/vogel-vault-launch` resolve to
+the same repository-owned launcher, and writes the desktop entry against
+`~/.local/bin/vogel-vault`. The launcher reads the Convex read credential from
+the login keyring, enables authenticated reads and device writes, then executes
+the installed AppImage. A missing keyring credential stops the launch instead
+of silently opening the installed app with demo fixtures.
+
+Do not replace either command with a symlink to the raw AppImage. Directly
+running the artifact is an unconfigured diagnostic launch and may use the
+sanitized demo fallback.
+
 ## Capabilities
 
 Pairings and devices may carry this closed set:
@@ -123,7 +144,7 @@ silently choosing or overwriting one physical document.
 On the trusted operator machine:
 
 ```bash
-npm run linux-pairing:create -- --out /private/path/linux-device-pairing.json
+npm run linux-pairing:create -- --profile victor --out /private/path/linux-device-pairing.json
 ```
 
 The command requires `CONVEX_SYNC_TOKEN`, mints the household-admin set of all
@@ -134,8 +155,15 @@ and validates a bounded response before writing anything. Review configuration
 without a token or side effect:
 
 ```bash
-npm run linux-pairing:create -- --dry-run --out /private/path/linux-device-pairing.json
+npm run linux-pairing:create -- --dry-run --profile victor --out /private/path/linux-device-pairing.json
 ```
+
+`--profile` is required and accepts `victor`, `rachel`, `mason`, or `maddox`.
+The claimed device credential is bound to that task profile. The main process
+allows mutations only while the same profile is active, even when an adult can
+read or switch into other profiles. To move write authority to another profile,
+unpair the installed device, mint a new pairing for that profile, and claim it.
+The app stores one device credential at a time.
 
 The artifact contains one raw `pairingCode`. Paste that code only into the
 native-confirmed pairing UI. The native main process supplies the trusted
