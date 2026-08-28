@@ -12,7 +12,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.colorspace.ColorSpaces
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -120,6 +122,20 @@ private fun sourceCodeProFont(
 
 /** Explicit even with a monospaced face, so figures keep the contract if the face changes. */
 fun TextStyle.withLedgerTabularFigures(): TextStyle = copy(fontFeatureSettings = "tnum")
+
+/** The v2 bloom sits behind an unchanged, full-opacity accent glyph. */
+fun TextStyle.withLedgerPhosphorGlow(enabled: Boolean): TextStyle =
+    if (enabled) {
+        copy(
+            shadow = Shadow(
+                color = Color(0xFFF7931A).copy(alpha = 0.30f),
+                offset = Offset.Zero,
+                blurRadius = 18f,
+            ),
+        )
+    } else {
+        this
+    }
 
 @Immutable
 data class LedgerTypeTokens(
@@ -247,12 +263,14 @@ data class LedgerResolvedEffects(
 )
 
 fun LedgerEffectSettings.resolve(
+    treatment: LedgerTreatment,
     accessibility: LedgerAccessibilityPreferences,
 ): LedgerResolvedEffects {
     val suppressTexture = accessibility.reduceMotion || accessibility.reduceTransparency
+    val terminalTexture = treatment == LedgerTreatment.TERMINAL_DARK && !suppressTexture
     return LedgerResolvedEffects(
-        showScanlines = scanlinesEnabled && !suppressTexture,
-        showPhosphorGlow = phosphorGlowEnabled && !suppressTexture,
+        showScanlines = scanlinesEnabled && terminalTexture,
+        showPhosphorGlow = phosphorGlowEnabled && terminalTexture,
         animate = !accessibility.reduceMotion,
     )
 }
@@ -265,7 +283,7 @@ data class LedgerThemeTokens(
     val density: LedgerDensityTokens,
 )
 
-private fun themeTokens(treatment: LedgerTreatment): LedgerThemeTokens {
+internal fun themeTokens(treatment: LedgerTreatment): LedgerThemeTokens {
     val daylight = treatment == LedgerTreatment.DAYLIGHT_LIGHT
     return LedgerThemeTokens(
         treatment = treatment,
@@ -289,7 +307,10 @@ private fun themeTokens(treatment: LedgerTreatment): LedgerThemeTokens {
 
 val LocalLedgerTheme = staticCompositionLocalOf { themeTokens(LedgerTreatment.TERMINAL_DARK) }
 val LocalLedgerEffects = staticCompositionLocalOf {
-    LedgerEffectSettings().resolve(LedgerAccessibilityPreferences())
+    LedgerEffectSettings().resolve(
+        LedgerTreatment.TERMINAL_DARK,
+        LedgerAccessibilityPreferences(),
+    )
 }
 
 /** Installs the accepted ledger palette, typography, and composition-local tokens. */
@@ -307,7 +328,7 @@ fun SovereignLedgerTheme(
     ) {
         CompositionLocalProvider(
             LocalLedgerTheme provides tokens,
-            LocalLedgerEffects provides effectSettings.resolve(accessibility),
+            LocalLedgerEffects provides effectSettings.resolve(treatment, accessibility),
             LocalContentColor provides tokens.colors.foreground,
             content = content,
         )

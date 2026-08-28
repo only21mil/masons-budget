@@ -2,15 +2,14 @@ package com.sats21m.vogelvault.ui
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import com.sats21m.vogelvault.R
-import com.sats21m.vogelvault.ui.theme.VaultAccent
-import com.sats21m.vogelvault.ui.theme.VaultCream
-import com.sats21m.vogelvault.ui.theme.VaultSurfaceRaised
-import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
+import com.sats21m.vogelvault.ui.theme.LedgerColors
+import com.sats21m.vogelvault.ui.theme.LedgerPalettes
+import com.sats21m.vogelvault.ui.theme.LedgerTreatment
+import com.sats21m.vogelvault.ui.theme.SovereignLedgerTheme
 import kotlin.test.assertEquals
 import org.junit.After
 import org.junit.Before
@@ -43,15 +42,22 @@ class VaultButtonTest {
     }
 
     @Test
-    fun `primary actions use graphite fill without consuming the orange accent`() {
+    fun `Terminal primary actions use the full Bitcoin fill`() {
+        assertPrimaryActionColors(LedgerTreatment.TERMINAL_DARK, LedgerPalettes.TerminalDark)
+    }
+
+    @Test
+    fun `Daylight primary actions keep full orange as a fill`() {
+        assertPrimaryActionColors(LedgerTreatment.DAYLIGHT_LIGHT, LedgerPalettes.DaylightLight)
+    }
+
+    private fun assertPrimaryActionColors(treatment: LedgerTreatment, colors: LedgerColors) {
         var labelColor: Color? = null
         var containerColor: Color? = null
-        var primaryColor: Color? = null
 
         compose.runOnUiThread {
             activityController.get().setContent {
-                VogelVaultTheme {
-                    primaryColor = MaterialTheme.colorScheme.primary
+                SovereignLedgerTheme(treatment) {
                     containerColor = vaultButtonColors().containerColor
                     VaultButton(onClick = {}) {
                         Text(
@@ -64,8 +70,7 @@ class VaultButtonTest {
         }
         compose.waitForIdle()
 
-        assertEquals(VaultSurfaceRaised, containerColor)
-        assertEquals(VaultCream, labelColor)
-        assertEquals(VaultAccent, primaryColor)
+        assertEquals(colors.bitcoin, containerColor)
+        assertEquals(LedgerPalettes.TerminalDark.background, labelColor)
     }
 }

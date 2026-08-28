@@ -5,7 +5,8 @@ import com.sats21m.vogelvault.domain.MarketQuote
 import com.sats21m.vogelvault.domain.MarketQuoteStatus
 import com.sats21m.vogelvault.domain.MarketSymbol
 import com.sats21m.vogelvault.domain.Money
-import com.sats21m.vogelvault.domain.usableQuote
+import com.sats21m.vogelvault.domain.at
+import com.sats21m.vogelvault.domain.marketQuoteFor
 
 /**
  * Native values available for one financial amount.
@@ -29,8 +30,15 @@ internal fun FinancialAmount.requiresOperationalQuote(unit: DisplayUnit): Boolea
     }
 
 /** Global display conversion consumes only the operational market-quote feed. */
+internal fun VaultUiState.bitcoinQuoteObservation(): MarketQuote? =
+    marketQuotes?.at(now)?.quotes?.marketQuoteFor(MarketSymbol.BTC)
+
 internal fun VaultUiState.operationalBitcoinQuote(): MarketQuote? =
-    marketQuotes?.quotes?.usableQuote(MarketSymbol.BTC)
+    bitcoinQuoteObservation()?.takeIf { it.isUsable }
+
+/** Write conversions fail closed unless the locally aged quote is live. */
+internal fun VaultUiState.liveBitcoinQuote(): MarketQuote? =
+    operationalBitcoinQuote()?.takeIf { it.status == MarketQuoteStatus.LIVE }
 
 internal fun formatFinancialAmount(
     amount: FinancialAmount,

@@ -39,6 +39,7 @@ import com.sats21m.vogelvault.domain.MarketQuoteStatus
 import com.sats21m.vogelvault.domain.MarketSymbol
 import com.sats21m.vogelvault.domain.Slice
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
+import java.time.Instant
 import kotlin.test.assertEquals
 import org.junit.After
 import org.junit.Before
@@ -376,6 +377,7 @@ class AndroidFinanceRegressionTest {
         return VaultUiState(
             activeProfile = profile,
             data = data,
+            now = Instant.parse("2026-07-31T12:05:00Z").toEpochMilli(),
             financeDocument = FinanceDocument(
                 updatedAtMs = 1L,
                 lastUpdated = "2026-07-31",

@@ -11,12 +11,16 @@ enum class MarketSymbol { BTC, VOO, IBIT }
 
 enum class MarketQuoteStatus { LIVE, STALE, UNAVAILABLE }
 
+enum class MarketQuoteErrorCode { TIMEOUT, HTTP_ERROR, INVALID_RESPONSE, NETWORK_ERROR }
+
 data class MarketQuote(
     val symbol: MarketSymbol,
     val priceCents: Long?,
     val source: String,
     val fetchedAt: String?,
     val status: MarketQuoteStatus,
+    val lastAttemptedAt: String? = null,
+    val errorCode: MarketQuoteErrorCode? = null,
 ) {
     init {
         require(source.isNotBlank()) { "Market quote source must not be empty" }
@@ -32,11 +36,47 @@ data class MarketQuote(
                 }
             }
         }
+        require(lastAttemptedAt == null || lastAttemptedAt.isCanonicalQuoteInstant()) {
+            "Market quote attempt timestamp must be canonical ISO-8601"
+        }
     }
 
     val isUsable: Boolean
         get() = status != MarketQuoteStatus.UNAVAILABLE
 }
+
+private const val QUOTE_LIVE_MILLIS = 15 * 60 * 1_000L
+private const val QUOTE_VISIBLE_MILLIS = 24 * 60 * 60 * 1_000L
+
+/** Apply freshness from the observation time, independent of server status lag. */
+fun MarketQuote.at(nowMillis: Long): MarketQuote {
+    if (status == MarketQuoteStatus.UNAVAILABLE) return this
+    val observedMillis = fetchedAt
+        ?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
+    if (
+        observedMillis == null ||
+        observedMillis > nowMillis ||
+        nowMillis - observedMillis > QUOTE_VISIBLE_MILLIS
+    ) {
+        return copy(priceCents = null, fetchedAt = null, status = MarketQuoteStatus.UNAVAILABLE)
+    }
+    val effectiveStatus = if (
+        status == MarketQuoteStatus.STALE || nowMillis - observedMillis >= QUOTE_LIVE_MILLIS
+    ) {
+        MarketQuoteStatus.STALE
+    } else {
+        MarketQuoteStatus.LIVE
+    }
+    return copy(status = effectiveStatus)
+}
+
+fun MarketQuote.ageMinutesAt(nowMillis: Long): Long? = fetchedAt
+    ?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
+    ?.takeIf { it <= nowMillis }
+    ?.let { (nowMillis - it) / 60_000L }
+
+fun MarketQuoteSnapshot.at(nowMillis: Long): MarketQuoteSnapshot =
+    MarketQuoteSnapshot(quotes.map { it.at(nowMillis) })
 
 private val canonicalQuoteInstant =
     Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z""")

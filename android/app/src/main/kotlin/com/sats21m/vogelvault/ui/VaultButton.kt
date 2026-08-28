@@ -6,10 +6,10 @@ import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import com.sats21m.vogelvault.ui.theme.VaultCream
-import com.sats21m.vogelvault.ui.theme.VaultSurfaceRaised
+import com.sats21m.vogelvault.ui.theme.LedgerPalettes
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 
-/** Primary action without consuming the orange accent as a body fill. */
+/** Primary action uses the treatment's full-opacity Bitcoin fill. */
 @Composable
 internal fun VaultButton(
     onClick: () -> Unit,
@@ -27,7 +27,10 @@ internal fun VaultButton(
 }
 
 @Composable
-internal fun vaultButtonColors(): ButtonColors = ButtonDefaults.buttonColors(
-    containerColor = VaultSurfaceRaised,
-    contentColor = VaultCream,
-)
+internal fun vaultButtonColors(): ButtonColors {
+    val colors = LocalLedgerTheme.current.colors
+    return ButtonDefaults.buttonColors(
+        containerColor = colors.bitcoin,
+        contentColor = LedgerPalettes.TerminalDark.background,
+    )
+}

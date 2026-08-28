@@ -29,7 +29,7 @@ DISPLAY_UNITS = ("btc", "sats", "usd")
 SAMPLED_STATE_DESTINATIONS = ("dashboard", "budget", "activity", "net_worth")
 NON_NORMAL_STATES = ("stale", "error", "empty", "loading")
 
-EXPECTED_PNGS = frozenset(
+DAYLIGHT_PNGS = frozenset(
     {"folded-status-and-unavailable-tokens.png"}
     | {f"folded-{destination}-victor-normal.png" for destination in DESTINATIONS}
     | {f"folded-{destination}-mason-normal.png" for destination in DESTINATIONS}
@@ -50,8 +50,16 @@ EXPECTED_PNGS = frozenset(
         "unfolded-budget-victor-2026-06.png",
     }
 )
+TERMINAL_PNGS = frozenset(
+    {
+        "folded-dashboard-victor-terminal.png",
+        "folded-status-and-unavailable-tokens-terminal.png",
+        "unfolded-dashboard-victor-terminal.png",
+    }
+)
+EXPECTED_PNGS = DAYLIGHT_PNGS | TERMINAL_PNGS
 
-EXPECTED_COUNT = 64
+EXPECTED_COUNT = 67
 if len(EXPECTED_PNGS) != EXPECTED_COUNT:
     raise RuntimeError(
         f"design-packet manifest has {len(EXPECTED_PNGS)} names; expected {EXPECTED_COUNT}"

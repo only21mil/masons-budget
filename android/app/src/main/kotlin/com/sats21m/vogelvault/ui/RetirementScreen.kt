@@ -29,6 +29,7 @@ import com.sats21m.vogelvault.ui.components.StateBlock
 import com.sats21m.vogelvault.ui.components.StatusBanner
 import com.sats21m.vogelvault.ui.components.VaultLazyListScope
 import com.sats21m.vogelvault.ui.components.ledgerColor
+import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 import com.sats21m.vogelvault.ui.theme.VaultWarning
@@ -321,6 +322,7 @@ private fun ProjectionSummary(
                     quote,
                 ),
                 stringResource(R.string.retirement_scenario_hint),
+                tone = VaultAccent,
                 provenance = Provenance.ESTIMATED,
             ),
         ),

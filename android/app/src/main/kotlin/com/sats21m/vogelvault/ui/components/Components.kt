@@ -51,6 +51,7 @@ import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.ui.theme.LedgerNumeral
 import com.sats21m.vogelvault.ui.theme.LedgerRadii
 import com.sats21m.vogelvault.ui.theme.LedgerSpacing
+import com.sats21m.vogelvault.ui.theme.LocalLedgerEffects
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultCream
@@ -64,6 +65,7 @@ import com.sats21m.vogelvault.ui.theme.VaultSurfaceSunken
 import com.sats21m.vogelvault.ui.theme.VaultTextDim
 import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 import com.sats21m.vogelvault.ui.theme.VaultWarning
+import com.sats21m.vogelvault.ui.theme.withLedgerPhosphorGlow
 
 /**
  * Placeholder for a figure that could not be read.
@@ -310,9 +312,17 @@ internal fun kpiFigureWraps(value: String): Boolean = value == Money.PRICE_UNAVA
 @Composable
 private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
     val tokens = LocalLedgerTheme.current
+    val effects = LocalLedgerEffects.current
     val unavailable = item.value.isUnavailableFigure()
     val wrapsUnavailablePrice = kpiFigureWraps(item.value)
     val spoken = item.spoken()
+    val figureColor = when {
+        unavailable -> tokens.colors.foregroundTertiary
+        item.tone != null -> ledgerColor(item.tone)
+        item.provenance == Provenance.PLANNED -> tokens.colors.foregroundSecondary
+        item.provenance == Provenance.ESTIMATED -> tokens.colors.foregroundTertiary
+        else -> tokens.colors.foreground
+    }
     Column(
         modifier = modifier
             .clearAndSetSemantics { contentDescription = spoken }
@@ -330,14 +340,10 @@ private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
             maxLines = if (wrapsUnavailablePrice) 2 else 1,
             softWrap = wrapsUnavailablePrice,
             overflow = TextOverflow.Ellipsis,
-            style = tokens.type.kpiValue,
-            color = when {
-                unavailable -> tokens.colors.foregroundTertiary
-                item.tone != null -> ledgerColor(item.tone)
-                item.provenance == Provenance.PLANNED -> tokens.colors.foregroundSecondary
-                item.provenance == Provenance.ESTIMATED -> tokens.colors.foregroundTertiary
-                else -> tokens.colors.foreground
-            },
+            style = tokens.type.kpiValue.withLedgerPhosphorGlow(
+                enabled = effects.showPhosphorGlow && figureColor == tokens.colors.bitcoin,
+            ),
+            color = figureColor,
             textAlign = TextAlign.Start,
         )
         if (!unavailable && item.hint != null) {
@@ -414,19 +420,7 @@ fun LedgerRow(
     LocalLedgerRowCompositionObserver.current?.invoke()
     // One stop per row rather than four, and the figure keeps the label that gives
     // it meaning — a bare "-412.30" swiped in isolation says nothing.
-    val spoken = buildString {
-        append(primary)
-        secondary?.let {
-            append(", ")
-            append(it)
-        }
-        badge?.let {
-            append(", ")
-            append(it)
-        }
-        append(", ")
-        append(spokenFigure(figure))
-    }
+    val spoken = ledgerRowContentDescription(primary, secondary, figure, badge)
     Row(
         Modifier
             .fillMaxWidth()
@@ -452,6 +446,25 @@ fun LedgerRow(
     }
 }
 
+internal fun ledgerRowContentDescription(
+    primary: String,
+    secondary: String?,
+    figure: String,
+    badge: String?,
+): String = buildString {
+    append(primary)
+    secondary?.let {
+        append(", ")
+        append(it)
+    }
+    badge?.let {
+        append(", ")
+        append(it)
+    }
+    append(", ")
+    append(spokenFigure(figure))
+}
+
 @Composable
 fun Badge(
     text: String,
@@ -463,7 +476,7 @@ fun Badge(
 ) {
     val tokens = LocalLedgerTheme.current
     val resolvedTone = tone?.let { ledgerColor(it) }
-    val border = resolvedTone ?: if (accented) tokens.colors.bitcoin.copy(alpha = 0.42f) else tokens.colors.line
+    val border = resolvedTone ?: if (accented) tokens.colors.bitcoin else tokens.colors.line
     Box(
         Modifier
             // role = Role.Button: a bare clickable() announces as static text with
@@ -481,7 +494,11 @@ fun Badge(
             )
             .padding(horizontal = 7.dp, vertical = 2.dp),
     ) {
-        Text(text, style = tokens.type.chip, color = resolvedTone ?: tokens.colors.foregroundSecondary)
+        Text(
+            text,
+            style = tokens.type.chip,
+            color = resolvedTone ?: if (accented) tokens.colors.bitcoin else tokens.colors.foregroundSecondary,
+        )
     }
 }
 

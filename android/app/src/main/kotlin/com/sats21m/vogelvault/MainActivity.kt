@@ -16,7 +16,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.fragment.app.FragmentActivity
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.notifications.BudgetNotificationController
@@ -29,7 +32,9 @@ import com.sats21m.vogelvault.ui.VaultLockSnapshot
 import com.sats21m.vogelvault.ui.VaultLockedScreen
 import com.sats21m.vogelvault.ui.VaultViewModel
 import com.sats21m.vogelvault.ui.requiresOnboarding
+import com.sats21m.vogelvault.ui.refreshMarketQuotesPeriodically
 import com.sats21m.vogelvault.ui.theme.LedgerTheme
+import kotlinx.coroutines.launch
 
 class MainActivity : FragmentActivity() {
     private val lockController = VaultLockController()
@@ -64,6 +69,11 @@ class MainActivity : FragmentActivity() {
         enableEdgeToEdge()
         val app = application as VaultApplication
         model = ViewModelProvider(this, app.viewModelFactory)[VaultViewModel::class.java]
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                refreshMarketQuotesPeriodically(refresh = model::refreshActiveProfile)
+            }
+        }
         biometricPrompt =
             BiometricPrompt(
                 this,

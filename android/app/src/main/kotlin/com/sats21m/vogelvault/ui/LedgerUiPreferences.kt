@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.ui.theme.LedgerAccessibilityPreferences
@@ -83,21 +82,10 @@ internal class LedgerUiPreferences(private val preferences: SharedPreferences) {
 internal fun LedgerAtmosphere(modifier: Modifier = Modifier) {
     val effects = LocalLedgerEffects.current
     val colors = LocalLedgerTheme.current.colors
-    if (!effects.showScanlines && !effects.showPhosphorGlow) return
+    if (!effects.showScanlines) return
     Canvas(modifier.fillMaxSize()) {
-        if (effects.showPhosphorGlow) drawPhosphorGlow(colors.bitcoinSoft)
-        if (effects.showScanlines) drawScanlines(colors.scanline)
+        drawScanlines(colors.scanline)
     }
-}
-
-private fun DrawScope.drawPhosphorGlow(color: androidx.compose.ui.graphics.Color) {
-    drawRect(
-        brush = Brush.radialGradient(
-            colors = listOf(color, androidx.compose.ui.graphics.Color.Transparent),
-            center = Offset(size.width * 0.76f, 0f),
-            radius = size.maxDimension * 0.72f,
-        ),
-    )
 }
 
 private fun DrawScope.drawScanlines(color: androidx.compose.ui.graphics.Color) {

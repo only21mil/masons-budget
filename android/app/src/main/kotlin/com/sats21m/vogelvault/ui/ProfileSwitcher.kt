@@ -22,9 +22,7 @@ import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.ui.components.Badge
-import com.sats21m.vogelvault.ui.theme.VaultAccent
-import com.sats21m.vogelvault.ui.theme.VaultCream
-import com.sats21m.vogelvault.ui.theme.VaultTextDim
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 
 /**
  * A profile switch held at the authentication boundary.
@@ -63,9 +61,10 @@ fun ProfileSwitcher(
     onAuthorizedSwitch: (FamilyMember) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = LocalLedgerTheme.current.colors
     if (!activeProfile.isAdult) {
         Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-            Text(activeProfile.displayName, color = VaultCream)
+            Text(activeProfile.displayName, color = colors.foreground)
             Spacer(Modifier.width(8.dp))
             Badge(stringResource(R.string.profile_switcher_child_profile))
         }
@@ -75,11 +74,11 @@ fun ProfileSwitcher(
     var expanded by remember(activeProfile) { mutableStateOf(false) }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = { expanded = true }) {
-            Text(activeProfile.displayName, color = VaultCream)
+            Text(activeProfile.displayName, color = colors.foreground)
             Icon(
                 Icons.Filled.ExpandMore,
                 contentDescription = stringResource(R.string.profile_switcher_open),
-                tint = VaultAccent,
+                tint = colors.bitcoin,
             )
         }
         DropdownMenu(
@@ -91,7 +90,7 @@ fun ProfileSwitcher(
                     text = {
                         Text(
                             target.displayName,
-                            color = if (target == activeProfile) VaultTextDim else VaultCream,
+                            color = if (target == activeProfile) colors.foregroundTertiary else colors.foreground,
                         )
                     },
                     enabled = target != activeProfile,

@@ -28,8 +28,8 @@ const marketQuoteErrorCodeValidator = v.union(
   v.literal("network_error"),
 );
 type MarketQuoteStatus = "live" | "stale" | "unavailable";
-const LIVE_WINDOW_MS = 30 * 60 * 1_000;
-const MAX_FUTURE_SKEW_MS = 5 * 60 * 1_000;
+const LIVE_WINDOW_MS = 15 * 60 * 1_000;
+const MAX_VISIBLE_AGE_MS = 24 * 60 * 60 * 1_000;
 const CANONICAL_QUOTE_INSTANT =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?Z$/;
 type RefreshSummary = {
@@ -105,7 +105,7 @@ function unavailableQuote(
   return {
     symbol,
     priceCents: null,
-    source: "Vogel Vault",
+    source: symbol === "BTC" ? "Kraken" : "Vogel Vault",
     fetchedAt: null,
     status: "unavailable" as const,
     lastAttemptedAt,
@@ -139,7 +139,8 @@ export const getSnapshot = query({
         cached.priceCents <= 0n ||
         fetchedAt === undefined ||
         fetchedAtMs === null ||
-        fetchedAtMs > nowMs + MAX_FUTURE_SKEW_MS ||
+        fetchedAtMs > nowMs ||
+        nowMs - fetchedAtMs > MAX_VISIBLE_AGE_MS ||
         cached.source.trim() === ""
       ) {
         quotes.push(
@@ -151,8 +152,7 @@ export const getSnapshot = query({
         );
       } else {
         const effectiveStatus: "live" | "stale" =
-          cached.status === "stale" ||
-          nowMs >= fetchedAtMs + LIVE_WINDOW_MS
+          cached.status === "stale" || nowMs >= fetchedAtMs + LIVE_WINDOW_MS
             ? "stale"
             : "live";
         quotes.push({
@@ -186,8 +186,8 @@ export const recordSuccess = internalMutation({
     if (fetchedAtMs === null) {
       throw new Error("Quote success timestamp must be canonical UTC");
     }
-    if (fetchedAtMs > Date.now() + MAX_FUTURE_SKEW_MS) {
-      throw new Error("Quote success timestamp must not be materially future");
+    if (fetchedAtMs > Date.now()) {
+      throw new Error("Quote success timestamp must not be future");
     }
     const existing = await ctx.db
       .query("marketQuoteCache")
@@ -274,7 +274,7 @@ export const recordFailure = internalMutation({
       await ctx.db.patch(existing._id, {
         priceCents: undefined,
         fetchedAt: undefined,
-        source: "Vogel Vault",
+        source: args.symbol === "BTC" ? "Kraken" : "Vogel Vault",
         status: "unavailable",
         lastAttemptedAt: args.attemptedAt,
         lastErrorCode: args.errorCode,
@@ -282,7 +282,7 @@ export const recordFailure = internalMutation({
     } else {
       await ctx.db.insert("marketQuoteCache", {
         symbol: args.symbol,
-        source: "Vogel Vault",
+        source: args.symbol === "BTC" ? "Kraken" : "Vogel Vault",
         status: "unavailable",
         lastAttemptedAt: args.attemptedAt,
         lastErrorCode: args.errorCode,

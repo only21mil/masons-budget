@@ -16,6 +16,7 @@ import com.sats21m.vogelvault.domain.MarketQuoteStatus
 import com.sats21m.vogelvault.domain.MarketSymbol
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.Slice
+import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -153,6 +154,7 @@ class FinancialScreenValuesTest {
                 btcPriceCents = 20_000_000L,
                 btcPriceAsOf = "2026-07-31",
             ),
+            now = Instant.parse("2026-07-30T10:05:00Z").toEpochMilli(),
             marketQuotes = quoteSnapshot(operational),
             marketQuoteStatus = Freshness.STALE,
         )

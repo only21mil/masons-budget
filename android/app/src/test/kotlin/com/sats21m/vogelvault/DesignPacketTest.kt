@@ -1,30 +1,36 @@
 package com.sats21m.vogelvault
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
+import androidx.test.core.app.ApplicationProvider
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.ui.Destination
+import com.sats21m.vogelvault.ui.LedgerAppearance
+import com.sats21m.vogelvault.ui.LedgerUiPreferences
+import com.sats21m.vogelvault.ui.LedgerUiSettings
 import com.sats21m.vogelvault.ui.VaultApp
 import com.sats21m.vogelvault.ui.VaultUiState
 import com.sats21m.vogelvault.ui.components.Kpi
 import com.sats21m.vogelvault.ui.components.KpiStrip
 import com.sats21m.vogelvault.ui.components.LedgerRow
 import com.sats21m.vogelvault.ui.components.StatusBanner
-import com.sats21m.vogelvault.ui.theme.VaultBlack
 import com.sats21m.vogelvault.ui.theme.VaultInfo
 import com.sats21m.vogelvault.ui.theme.VaultNegative
 import com.sats21m.vogelvault.ui.theme.VaultPositive
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import com.sats21m.vogelvault.ui.theme.VaultWarning
-import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
+import com.sats21m.vogelvault.ui.theme.LedgerTreatment
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
+import com.sats21m.vogelvault.ui.theme.SovereignLedgerTheme
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -54,26 +60,35 @@ private fun capture(
     name: String,
     state: VaultUiState,
     displayUnit: DisplayUnit = DisplayUnit.BTC,
+    appearance: LedgerAppearance = LedgerAppearance.DAYLIGHT,
 ) {
+    setPacketAppearance(appearance)
     captureRoboImage("build/outputs/roborazzi/$name.png") {
-        VogelVaultTheme {
-            VaultApp(
-                state = state,
-                onNavigate = {},
-                onSwitchProfile = {},
-                displayUnit = displayUnit,
-            )
-        }
+        VaultApp(
+            state = state,
+            onNavigate = {},
+            onSwitchProfile = {},
+            displayUnit = displayUnit,
+        )
     }
 }
 
-private fun captureStatusAndUnavailableTokens() {
-    captureRoboImage("build/outputs/roborazzi/folded-status-and-unavailable-tokens.png") {
-        VogelVaultTheme {
+private fun setPacketAppearance(appearance: LedgerAppearance) {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    check(LedgerUiPreferences(context).save(LedgerUiSettings(appearance = appearance)))
+}
+
+private fun captureStatusAndUnavailableTokens(
+    name: String = "folded-status-and-unavailable-tokens",
+    treatment: LedgerTreatment = LedgerTreatment.DAYLIGHT_LIGHT,
+) {
+    captureRoboImage("build/outputs/roborazzi/$name.png") {
+        SovereignLedgerTheme(treatment) {
+            val colors = LocalLedgerTheme.current.colors
             Column(
                 Modifier
                     .fillMaxSize()
-                    .background(VaultBlack)
+                    .background(colors.background)
                     .padding(VaultSpace.lg),
                 verticalArrangement = Arrangement.spacedBy(VaultSpace.md),
             ) {
@@ -102,6 +117,19 @@ class DesignPacketFoldedTest {
     @Test
     fun statusAndUnavailableTokens() {
         captureStatusAndUnavailableTokens()
+    }
+
+    @Test
+    fun terminalTreatmentRootAndStatusTokens() {
+        capture(
+            "folded-dashboard-victor-terminal",
+            VaultUiState.of(FamilyMember.VICTOR, Destination.DASHBOARD),
+            appearance = LedgerAppearance.TERMINAL,
+        )
+        captureStatusAndUnavailableTokens(
+            name = "folded-status-and-unavailable-tokens-terminal",
+            treatment = LedgerTreatment.TERMINAL_DARK,
+        )
     }
 
     @Test
@@ -209,6 +237,15 @@ class DesignPacketFoldedTest {
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [34], qualifiers = RobolectricDeviceQualifiers.UNFOLDED)
 class DesignPacketUnfoldedTest {
+
+    @Test
+    fun terminalTreatmentRoot() {
+        capture(
+            "unfolded-dashboard-victor-terminal",
+            VaultUiState.of(FamilyMember.VICTOR, Destination.DASHBOARD),
+            appearance = LedgerAppearance.TERMINAL,
+        )
+    }
 
     @Test
     fun adultDestinations() {

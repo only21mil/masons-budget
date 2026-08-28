@@ -59,19 +59,35 @@ class LedgerAdoptionLogicTest {
     }
 
     @Test
-    fun `settings select appearance and accessibility suppresses both effects`() {
+    fun `settings preserve effect choices while Daylight and accessibility suppress rendering`() {
         val settings = LedgerUiSettings(
             appearance = LedgerAppearance.DAYLIGHT,
             scanlinesEnabled = true,
             phosphorGlowEnabled = true,
-            reduceMotion = true,
         )
 
         assertEquals(LedgerTreatment.DAYLIGHT_LIGHT, settings.treatment(systemDark = true))
-        val resolved = settings.effectSettings.resolve(settings.accessibility)
-        assertFalse(resolved.showScanlines)
-        assertFalse(resolved.showPhosphorGlow)
-        assertFalse(resolved.animate)
+        val daylight = settings.effectSettings.resolve(
+            LedgerTreatment.DAYLIGHT_LIGHT,
+            settings.accessibility,
+        )
+        assertFalse(daylight.showScanlines)
+        assertFalse(daylight.showPhosphorGlow)
+
+        val terminal = settings.effectSettings.resolve(
+            LedgerTreatment.TERMINAL_DARK,
+            settings.accessibility,
+        )
+        assertTrue(terminal.showScanlines)
+        assertTrue(terminal.showPhosphorGlow)
+
+        val reduced = settings.effectSettings.resolve(
+            LedgerTreatment.TERMINAL_DARK,
+            settings.accessibility.copy(reduceMotion = true),
+        )
+        assertFalse(reduced.showScanlines)
+        assertFalse(reduced.showPhosphorGlow)
+        assertFalse(reduced.animate)
     }
 
     @Test

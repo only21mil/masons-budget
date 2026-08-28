@@ -609,7 +609,7 @@ internal fun AddTransactionSheet(
     } else {
         DisplayUnit.valueOf(inputUnitName)
     }
-    val operationalBtcPriceCents = state.operationalBitcoinQuote()?.priceCents ?: 0L
+    val operationalBtcPriceCents = state.liveBitcoinQuote()?.priceCents ?: 0L
     val eligibleBitcoinAccounts = remember(state.activeProfile, state.data.btcAccounts.value) {
         bitcoinAccountsForEffectiveLedgerOwner(
             accounts = state.data.btcAccounts.value,

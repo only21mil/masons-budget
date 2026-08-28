@@ -8,7 +8,7 @@ const crons = cronJobs();
 // fixed and bounded; per-symbol failures preserve prior successful observations.
 crons.interval(
   "refresh fixed market quote snapshot",
-  { minutes: 15 },
+  { minutes: 5 },
   internal.marketQuotes.refresh,
   {},
 );

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   acquireFixedMarketQuotes,
   decimalUsdToCents,
+  extractKrakenBtcPriceDecimal,
   extractRootPriceDecimal,
 } from "./marketQuoteAcquire";
 import {
@@ -23,8 +24,32 @@ const jsonResponse = (price: string | number, init?: ResponseInit) =>
     headers: { "content-type": "application/json", ...init?.headers },
     ...init,
   });
+const krakenResponse = (price: string, error: unknown[] = []) =>
+  new Response(
+    JSON.stringify({ error, result: { XXBTZUSD: { c: [price, "1.0"] } } }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
 
 describe("exact quote response parsing", () => {
+  it("strictly extracts Kraken XBT/USD close only when error is empty", () => {
+    expect(
+      extractKrakenBtcPriceDecimal(
+        '{"error":[],"result":{"XXBTZUSD":{"c":["64855.125","1.0"]}}}',
+      ),
+    ).toBe("64855.125");
+    for (const payload of [
+      '{"error":["EGeneral:Internal error"],"result":{"XXBTZUSD":{"c":["1"]}}}',
+      '{"error":[],"result":{"XBTUSD":{"c":["1"]}}}',
+      '{"error":[],"result":{"XXBTZUSD":{"c":[1]}}}',
+      '{"error":[]}',
+      "not json",
+    ]) {
+      expect(() => extractKrakenBtcPriceDecimal(payload), payload).toThrow();
+    }
+    expect(() =>
+      extractKrakenBtcPriceDecimal(" ".repeat(32 * 1024 + 1)),
+    ).toThrow(/too large/);
+  });
   it("extracts only one root price without passing through a number", () => {
     expect(
       extractRootPriceDecimal(
@@ -32,9 +57,9 @@ describe("exact quote response parsing", () => {
       ),
     ).toBe("681.795");
     expect(extractRootPriceDecimal('{"price":"36.70"}')).toBe("36.70");
-    expect(
-      extractRootPriceDecimal('{"price":9007199254740993.125}'),
-    ).toBe("9007199254740993.125");
+    expect(extractRootPriceDecimal('{"price":9007199254740993.125}')).toBe(
+      "9007199254740993.125",
+    );
   });
 
   it("selects the semantic root price while allowing unrelated nested keys", () => {
@@ -100,13 +125,9 @@ describe("fixed upstream acquisition boundary", () => {
       init?: RequestInit,
     ) => {
       calls.push({ url: String(input), init });
-      return jsonResponse(
-        String(input).endsWith("/btc")
-          ? "64855"
-          : String(input).endsWith("/voo")
-            ? "681.79"
-            : "36.7",
-      );
+      return String(input).includes("api.kraken.com")
+        ? krakenResponse("64855")
+        : jsonResponse(String(input).endsWith("/voo") ? "681.79" : "36.7");
     };
 
     const results = await acquireFixedMarketQuotes(
@@ -115,7 +136,7 @@ describe("fixed upstream acquisition boundary", () => {
     );
 
     expect(calls.map(({ url }) => url)).toEqual([
-      "https://sats21m.com/api/price/btc",
+      "https://api.kraken.com/0/public/Ticker?pair=XBTUSD",
       "https://sats21m.com/api/price/voo",
       "https://sats21m.com/api/price/ibit",
     ]);
@@ -130,7 +151,7 @@ describe("fixed upstream acquisition boundary", () => {
         symbol: "BTC",
         ok: true,
         priceCents: 6_485_500n,
-        source: "Vogel Vault",
+        source: "Kraken",
         fetchedAt: FIXED_TIME,
       },
       {
@@ -153,7 +174,7 @@ describe("fixed upstream acquisition boundary", () => {
   it("isolates HTTP, content-type, and body-size failures by symbol", async () => {
     const fakeFetch = async (input: string | URL | Request) => {
       const url = String(input);
-      if (url.endsWith("/btc")) return jsonResponse("64855");
+      if (url.includes("api.kraken.com")) return krakenResponse("64855");
       if (url.endsWith("/voo")) {
         return new Response("<html>not json</html>", {
           status: 200,
@@ -198,6 +219,37 @@ describe("fixed upstream acquisition boundary", () => {
       results.map((result) => (result.ok ? null : result.errorCode)),
     ).toEqual(["http_error", "http_error", "http_error"]);
   });
+
+  it("reports a five-second timeout without retrying", async () => {
+    vi.useFakeTimers();
+    const calls: string[] = [];
+    try {
+      const pending = acquireFixedMarketQuotes(
+        (input, init) => {
+          calls.push(String(input));
+          return new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () =>
+              reject(new DOMException("Aborted", "AbortError")),
+            );
+          });
+        },
+        () => new Date(FIXED_TIME),
+      );
+      await vi.advanceTimersByTimeAsync(5_000);
+      await expect(pending).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            symbol: "BTC",
+            ok: false,
+            errorCode: "timeout",
+          }),
+        ]),
+      );
+      expect(calls).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("authenticated snapshot and cache transitions", () => {
@@ -237,7 +289,7 @@ describe("authenticated snapshot and cache transitions", () => {
         {
           symbol: "BTC",
           priceCents: null,
-          source: "Vogel Vault",
+          source: "Kraken",
           fetchedAt: null,
           status: "unavailable",
           lastAttemptedAt: null,
@@ -376,11 +428,12 @@ describe("authenticated snapshot and cache transitions", () => {
   it("expires only the unchanged live observation without inventing an error", async () => {
     const token = freshSecret();
     setDeploymentEnv({ CONVEX_READ_TOKEN: token });
+    const observed = new Date(Date.now() - 60_000).toISOString();
     await t.mutation(internalApi.recordMarketQuoteSuccess, {
       symbol: "BTC",
       priceCents: 6_485_500n,
-      source: "Vogel Vault",
-      fetchedAt: FIXED_TIME,
+      source: "Kraken",
+      fetchedAt: observed,
     });
 
     await expect(
@@ -392,7 +445,7 @@ describe("authenticated snapshot and cache transitions", () => {
     await expect(
       t.mutation(internalApi.expireLiveMarketQuote, {
         symbol: "BTC",
-        fetchedAt: FIXED_TIME,
+        fetchedAt: observed,
       }),
     ).resolves.toBe(true);
 
@@ -400,7 +453,7 @@ describe("authenticated snapshot and cache transitions", () => {
     expect(snapshot.quotes[0]).toMatchObject({
       symbol: "BTC",
       priceCents: 6_485_500n,
-      fetchedAt: FIXED_TIME,
+      fetchedAt: observed,
       status: "stale",
       errorCode: null,
     });
@@ -409,17 +462,20 @@ describe("authenticated snapshot and cache transitions", () => {
   it("runs the internal refresh end to end and reports a preserved stale quote", async () => {
     const token = freshSecret();
     setDeploymentEnv({ CONVEX_READ_TOKEN: token });
+    const priorVoo = new Date(Date.now() - 60 * 60 * 1_000).toISOString();
     await t.mutation(internalApi.recordMarketQuoteSuccess, {
       symbol: "VOO",
       priceCents: 67_000n,
       source: "Vogel Vault",
-      fetchedAt: "2026-07-30T14:00:00.000Z",
+      fetchedAt: priorVoo,
     });
 
     vi.stubGlobal("fetch", async (input: string | URL | Request) =>
       String(input).endsWith("/voo")
         ? new Response(null, { status: 503 })
-        : jsonResponse(String(input).endsWith("/btc") ? "64855" : "36.7"),
+        : String(input).includes("api.kraken.com")
+          ? krakenResponse("64855")
+          : jsonResponse("36.7"),
     );
     try {
       await expect(
@@ -445,7 +501,7 @@ describe("authenticated snapshot and cache transitions", () => {
       symbol: "VOO",
       priceCents: 67_000n,
       source: "Vogel Vault",
-      fetchedAt: "2026-07-30T14:00:00.000Z",
+      fetchedAt: priorVoo,
       status: "stale",
       lastAttemptedAt: expect.any(String),
       errorCode: "http_error",
@@ -510,7 +566,7 @@ describe("authenticated snapshot and cache transitions", () => {
         source: "Vogel Vault",
         fetchedAt: new Date(Date.now() + 6 * 60 * 1_000).toISOString(),
       }),
-    ).rejects.toThrow(/materially future/);
+    ).rejects.toThrow(/future/);
   });
 
   it("stores only canonical UTC failure timestamps", async () => {
@@ -562,13 +618,13 @@ describe("authenticated snapshot and cache transitions", () => {
     });
   });
 
-  it("derives aged and materially future cache freshness when read", async () => {
+  it("derives 15-minute, 24-hour, and future cache freshness when read", async () => {
     const token = freshSecret();
     setDeploymentEnv({ CONVEX_READ_TOKEN: token });
     const nowMs = Date.now();
-    const aged = new Date(nowMs - 30 * 60 * 1_000 - 1).toISOString();
-    const future = new Date(nowMs + 5 * 60 * 1_000 + 60_000).toISOString();
-    const recent = new Date(nowMs - 60_000).toISOString();
+    const aged = new Date(nowMs - 15 * 60 * 1_000).toISOString();
+    const future = new Date(nowMs + 60 * 1_000).toISOString();
+    const expired = new Date(nowMs - 24 * 60 * 60 * 1_000 - 1).toISOString();
     await t.run(async (ctx) => {
       await ctx.db.insert("marketQuoteCache", {
         symbol: "BTC",
@@ -590,9 +646,9 @@ describe("authenticated snapshot and cache transitions", () => {
         symbol: "IBIT",
         priceCents: 3_670n,
         source: "Vogel Vault",
-        fetchedAt: recent,
+        fetchedAt: expired,
         status: "live",
-        lastAttemptedAt: recent,
+        lastAttemptedAt: expired,
       });
     });
 
@@ -611,9 +667,9 @@ describe("authenticated snapshot and cache transitions", () => {
     });
     expect(snapshot.quotes[2]).toMatchObject({
       symbol: "IBIT",
-      priceCents: 3_670n,
-      fetchedAt: recent,
-      status: "live",
+      priceCents: null,
+      fetchedAt: null,
+      status: "unavailable",
     });
   });
 });

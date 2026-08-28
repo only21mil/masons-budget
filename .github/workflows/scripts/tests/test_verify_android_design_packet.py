@@ -50,7 +50,7 @@ class AndroidDesignPacketTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             errors = MODULE.verify(Path(directory))
 
-            self.assertTrue(any("missing PNGs (64)" in error for error in errors))
+            self.assertTrue(any("missing PNGs (67)" in error for error in errors))
 
     def test_rejects_duplicate_basename(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
