@@ -1746,7 +1746,7 @@ internal fun SyncTokenConfiguration() {
                             R.string.write_credential_unconfigured
                         },
                     ),
-                color = LocalLedgerTheme.current.colors.foregroundTertiary,
+                color = LocalLedgerTheme.current.colors.foregroundSecondary,
                 style = MaterialTheme.typography.bodySmall,
             )
             OutlinedTextField(
