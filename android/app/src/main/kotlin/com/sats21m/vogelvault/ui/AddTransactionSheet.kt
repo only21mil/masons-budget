@@ -52,9 +52,8 @@ import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.IncomeEntry
 import com.sats21m.vogelvault.domain.Money
-import com.sats21m.vogelvault.ui.theme.VaultNegative
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
-import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
@@ -779,7 +778,7 @@ internal fun AddTransactionSheet(
                 if (eligibleBitcoinAccounts.isEmpty()) {
                     Text(
                         "No Bitcoin accounts belong to ${state.activeProfile.ledgerOwner.displayName}",
-                        color = VaultNegative,
+                        color = LocalLedgerTheme.current.colors.loss,
                         style = MaterialTheme.typography.bodySmall,
                     )
                 } else {
@@ -813,14 +812,14 @@ internal fun AddTransactionSheet(
             )
 
             errorMessage?.let {
-                Text(it, color = VaultNegative, style = MaterialTheme.typography.bodySmall)
+                Text(it, color = LocalLedgerTheme.current.colors.loss, style = MaterialTheme.typography.bodySmall)
             }
 
             if (allowIncomeBitcoinBuy && state.activeProfile.isAdult) {
                 Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.xs)) {
                     Text(
                         stringResource(R.string.budget_income_add_as_bitcoin_buy_detail),
-                        color = VaultTextMuted,
+                        color = LocalLedgerTheme.current.colors.foregroundSecondary,
                         style = MaterialTheme.typography.bodySmall,
                     )
                     OutlinedButton(
