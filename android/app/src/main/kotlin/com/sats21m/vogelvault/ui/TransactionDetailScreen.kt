@@ -35,7 +35,7 @@ import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.TransactionInput
 import com.sats21m.vogelvault.data.TransactionKind
 import com.sats21m.vogelvault.domain.Transaction
-import com.sats21m.vogelvault.ui.theme.VaultNegative
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import java.math.BigDecimal
 import java.time.LocalDate
@@ -322,7 +322,7 @@ fun TransactionDetailScreen(
                     ) {
                         Text(
                             stringResource(R.string.transaction_delete),
-                            color = VaultNegative,
+                            color = LocalLedgerTheme.current.colors.loss,
                         )
                     }
                 }
@@ -344,7 +344,7 @@ fun TransactionDetailScreen(
                 ) {
                     Text(
                         stringResource(R.string.transaction_delete_confirm_action),
-                        color = VaultNegative,
+                        color = LocalLedgerTheme.current.colors.loss,
                     )
                 }
             },

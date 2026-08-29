@@ -190,10 +190,6 @@
   );
 }
 
-.vv-ledger-glow {
-  text-shadow: 0 0 8px color-mix(in oklch, var(--vv-ledger-bitcoin) 44%, transparent);
-}
-
 @media (prefers-reduced-motion: reduce) {
   :root,
   [data-vv-theme] {
@@ -209,9 +205,5 @@
 @media (prefers-reduced-motion: reduce), (prefers-reduced-transparency: reduce) {
   .vv-ledger-scanlines {
     display: none;
-  }
-
-  .vv-ledger-glow {
-    text-shadow: none;
   }
 }

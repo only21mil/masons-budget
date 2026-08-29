@@ -22,12 +22,12 @@ enum class LedgerAppearance(val storageKey: String, val label: String) {
 
     companion object {
         fun fromStorageKey(value: String?): LedgerAppearance =
-            entries.firstOrNull { it.storageKey == value } ?: SYSTEM
+            entries.firstOrNull { it.storageKey == value } ?: TERMINAL
     }
 }
 
 data class LedgerUiSettings(
-    val appearance: LedgerAppearance = LedgerAppearance.SYSTEM,
+    val appearance: LedgerAppearance = LedgerAppearance.TERMINAL,
     val scanlinesEnabled: Boolean = true,
     val phosphorGlowEnabled: Boolean = true,
     val reduceMotion: Boolean = false,
@@ -51,19 +51,21 @@ internal class LedgerUiPreferences(private val preferences: SharedPreferences) {
         context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE),
     )
 
-    fun current(): LedgerUiSettings = LedgerUiSettings(
-        appearance = if (preferences.contains(KEY_APPEARANCE)) {
-            LedgerAppearance.fromStorageKey(preferences.getString(KEY_APPEARANCE, null))
-        } else {
-            LedgerAppearance.TERMINAL
-        },
-        scanlinesEnabled = preferences.getBoolean(KEY_SCANLINES, true),
-        phosphorGlowEnabled = preferences.getBoolean(KEY_PHOSPHOR, true),
-        reduceMotion = preferences.getBoolean(KEY_REDUCE_MOTION, false),
-        reduceTransparency = preferences.getBoolean(KEY_REDUCE_TRANSPARENCY, false),
-    )
+    fun current(): LedgerUiSettings {
+        migrateAppearanceOnce()
+        return LedgerUiSettings(
+            appearance = LedgerAppearance.fromStorageKey(
+                preferences.getString(KEY_APPEARANCE, null),
+            ),
+            scanlinesEnabled = preferences.getBoolean(KEY_SCANLINES, true),
+            phosphorGlowEnabled = preferences.getBoolean(KEY_PHOSPHOR, true),
+            reduceMotion = preferences.getBoolean(KEY_REDUCE_MOTION, false),
+            reduceTransparency = preferences.getBoolean(KEY_REDUCE_TRANSPARENCY, false),
+        )
+    }
 
     fun save(settings: LedgerUiSettings): Boolean = preferences.edit()
+        .putInt(KEY_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION)
         .putString(KEY_APPEARANCE, settings.appearance.storageKey)
         .putBoolean(KEY_SCANLINES, settings.scanlinesEnabled)
         .putBoolean(KEY_PHOSPHOR, settings.phosphorGlowEnabled)
@@ -71,8 +73,28 @@ internal class LedgerUiPreferences(private val preferences: SharedPreferences) {
         .putBoolean(KEY_REDUCE_TRANSPARENCY, settings.reduceTransparency)
         .commit()
 
+    /**
+     * Version 1 corrects the old System/Daylight default once. Marking the schema
+     * in [save] means a choice made after this update is never mistaken for a
+     * legacy value, even if the caller saves before its first read.
+     */
+    private fun migrateAppearanceOnce() {
+        if (preferences.getInt(KEY_SCHEMA_VERSION, 0) >= CURRENT_SCHEMA_VERSION) return
+
+        val legacyAppearance = LedgerAppearance.fromStorageKey(
+            preferences.getString(KEY_APPEARANCE, null),
+        )
+        val editor = preferences.edit().putInt(KEY_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION)
+        if (legacyAppearance != LedgerAppearance.TERMINAL) {
+            editor.putString(KEY_APPEARANCE, LedgerAppearance.TERMINAL.storageKey)
+        }
+        editor.commit()
+    }
+
     private companion object {
+        const val CURRENT_SCHEMA_VERSION = 1
         const val PREFERENCES_NAME = "ledger-ui-settings"
+        const val KEY_SCHEMA_VERSION = "schema_version"
         const val KEY_APPEARANCE = "appearance"
         const val KEY_SCANLINES = "scanlines"
         const val KEY_PHOSPHOR = "phosphor_glow"

@@ -29,7 +29,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -63,14 +62,8 @@ import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.budgetHealth
 import com.sats21m.vogelvault.ui.components.Badge
 import com.sats21m.vogelvault.ui.theme.LedgerNumeral
-import com.sats21m.vogelvault.ui.theme.VaultCream
-import com.sats21m.vogelvault.ui.theme.VaultNegative
-import com.sats21m.vogelvault.ui.theme.VaultPositive
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
-import com.sats21m.vogelvault.ui.theme.VaultSurfaceRaised
-import com.sats21m.vogelvault.ui.theme.VaultTextDim
-import com.sats21m.vogelvault.ui.theme.VaultTextMuted
-import com.sats21m.vogelvault.ui.theme.VaultWarning
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
@@ -419,8 +412,13 @@ internal fun EditableBudgetCategoryRow(
     onOpenTransactions: () -> Unit = {},
     onEdit: () -> Unit,
 ) {
+    val colors = LocalLedgerTheme.current.colors
     val progress = budgetCategoryProgress(category.spentCents, category.budgetCents)
-    val progressColor = progress.health.status.color
+    val progressColor = when (progress.health.status) {
+        BudgetHealthStatus.ON_TRACK -> colors.gain
+        BudgetHealthStatus.CLOSE -> colors.foregroundSecondary
+        BudgetHealthStatus.OVER -> colors.loss
+    }
     Column {
         Box(
             Modifier
@@ -446,20 +444,20 @@ internal fun EditableBudgetCategoryRow(
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(category.name, style = MaterialTheme.typography.bodyMedium, color = VaultCream)
+                            Text(category.name, style = MaterialTheme.typography.bodyMedium, color = colors.foreground)
                             Box(Modifier.width(VaultSpace.sm))
                             Badge(progress.statusLabel, tone = progressColor)
                         }
                         Text(
                             "planned ${Money.formatUsd(category.budgetCents)}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = VaultTextDim,
+                            color = colors.foregroundTertiary,
                         )
                     }
                     Text(
                         Money.formatUsd(category.spentCents),
                         style = LedgerNumeral,
-                        color = VaultCream,
+                        color = colors.foreground,
                     )
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -468,7 +466,7 @@ internal fun EditableBudgetCategoryRow(
                             .weight(1f)
                             .height(6.dp)
                             .clip(RoundedCornerShape(3.dp))
-                            .background(VaultSurfaceRaised),
+                            .background(colors.panelRaised),
                     ) {
                         Box(
                             Modifier
@@ -496,13 +494,6 @@ internal fun EditableBudgetCategoryRow(
     }
 }
 
-private val BudgetHealthStatus.color: Color
-    get() = when (this) {
-        BudgetHealthStatus.ON_TRACK -> VaultPositive
-        BudgetHealthStatus.CLOSE -> VaultWarning
-        BudgetHealthStatus.OVER -> VaultNegative
-    }
-
 @Composable
 internal fun BtcBuyEntryAction(onClick: () -> Unit) {
     VaultButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
@@ -517,6 +508,7 @@ internal fun BudgetCategoryEditorSheet(
     onDismiss: () -> Unit,
     onWriteSucceeded: () -> Unit,
 ) {
+    val colors = LocalLedgerTheme.current.colors
     val application = LocalContext.current.applicationContext as? VaultApplication
     val mutationClient = remember(application) { application?.convexMutationClient }
     var dollars by remember(seed) {
@@ -593,7 +585,7 @@ internal fun BudgetCategoryEditorSheet(
                             }
                         },
                     ) {
-                        Text(if (confirmingDelete) "Confirm delete" else "Delete category", color = VaultNegative)
+                        Text(if (confirmingDelete) "Confirm delete" else "Delete category", color = colors.loss)
                     }
                 }
                 TextButton(onClick = onDismiss, enabled = !submitting) {
@@ -841,6 +833,7 @@ internal fun BtcBuyFromIncomeEntrySheet(
     onDismiss: () -> Unit,
     onWriteSucceeded: () -> Unit,
 ) {
+    val colors = LocalLedgerTheme.current.colors
     val application = LocalContext.current.applicationContext as? VaultApplication
     val gateway = remember(application) { application?.btcBuyIncomeMutationGateway }
     val draftIds = application?.btcBuyDraftIds
@@ -860,14 +853,14 @@ internal fun BtcBuyFromIncomeEntrySheet(
             Text(stringResource(R.string.budget_income_add_as_bitcoin_buy))
             Text(
                 "${income.sourceName} income: ${Money.formatUsd(income.amountCents)}",
-                color = VaultTextMuted,
+                color = colors.foregroundSecondary,
             )
             Text(stringResource(R.string.budget_income_add_as_bitcoin_buy_detail))
             EditorField(source, { source = it }, R.string.btc_buy_source_label)
             EditorField(sats, { sats = it }, R.string.btc_buy_sats_label, KeyboardType.Number)
             EditorField(priceUsd, { priceUsd = it }, R.string.btc_buy_price_label, KeyboardType.Decimal)
             EditorField(buyNote, { buyNote = it }, R.string.transaction_note)
-            message?.let { Text(it, color = VaultNegative) }
+            message?.let { Text(it, color = colors.loss) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss, enabled = !submitting) {
                     Text(stringResource(R.string.write_cancel))

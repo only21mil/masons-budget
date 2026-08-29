@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Vogel Vault</string>
-    <string name="launcher_label">Sovereign</string>
+    <string name="launcher_label">The Vogel Vault</string>
     <string name="convex_read_error_title">Convex row data unavailable</string>
     <string name="convex_read_error_detail">The row read failed. Check the connection and read-token settings, then retry.</string>
     <string name="convex_row_failure_unauthorized_title">Convex read credential rejected</string>

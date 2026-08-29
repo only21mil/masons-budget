@@ -2,7 +2,6 @@ package com.sats21m.vogelvault.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Box
@@ -59,7 +58,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -73,18 +71,11 @@ import com.sats21m.vogelvault.ui.components.HorizontalHairline
 import com.sats21m.vogelvault.ui.components.StatusBanner
 import com.sats21m.vogelvault.ui.theme.LocalIsUnfolded
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
-import com.sats21m.vogelvault.ui.theme.SovereignLedgerTheme
-import com.sats21m.vogelvault.ui.theme.VaultAccent
-import com.sats21m.vogelvault.ui.theme.VaultAccentDim
-import com.sats21m.vogelvault.ui.theme.VaultBlack
+import com.sats21m.vogelvault.ui.theme.LedgerColors
 import com.sats21m.vogelvault.ui.theme.VaultBitcoin
 import com.sats21m.vogelvault.ui.theme.VaultCream
 import com.sats21m.vogelvault.ui.theme.VaultNavSlate
-import com.sats21m.vogelvault.ui.theme.VaultSelectionBorder
 import com.sats21m.vogelvault.ui.theme.VaultSpace
-import com.sats21m.vogelvault.ui.theme.VaultSurfaceSunken
-import com.sats21m.vogelvault.ui.theme.VaultTextDim
-import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 
 /**
  * Destinations.
@@ -153,6 +144,13 @@ internal fun foldedOverflowDestinations(destinations: List<Destination>): List<D
 
 internal fun moreNavigationLabel(count: Int): String = "More ($count)"
 
+internal fun ledgerNavigationSelectedTint(
+    destination: Destination,
+    colors: LedgerColors,
+): Color = if (destination.navigationRestingTint == VaultBitcoin) colors.bitcoin else colors.foreground
+
+internal fun ledgerNavigationUnselectedTint(colors: LedgerColors): Color = colors.foregroundSecondary
+
 /**
  * @param onRequestProfileSwitchAuthentication the receiver that must authenticate
  * a profile switch before it happens. Null means the shell was composed without
@@ -174,6 +172,8 @@ fun VaultApp(
     onStartRiverBillPay: (BillPayPrefill) -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
+    ledgerSettings: LedgerUiSettings = LedgerUiSettings(),
+    onLedgerSettingsChange: (LedgerUiSettings) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // An unwired shell refuses loudly instead of swallowing the request: the user
@@ -183,21 +183,6 @@ fun VaultApp(
         onRequestProfileSwitchAuthentication
             ?: { unwiredRefusal = ProfileSwitchRefusal.SHELL_NOT_CONNECTED }
     val refusal = unwiredRefusal ?: profileSwitchRefusal
-    val context = LocalContext.current
-    val preferenceStore = remember(context.applicationContext) {
-        LedgerUiPreferences(context.applicationContext)
-    }
-    var ledgerSettings by remember(preferenceStore) { mutableStateOf(preferenceStore.current()) }
-    val systemDark = isSystemInDarkTheme()
-    val updateLedgerSettings: (LedgerUiSettings) -> Unit = { next ->
-        if (preferenceStore.save(next)) ledgerSettings = next
-    }
-
-    SovereignLedgerTheme(
-        treatment = ledgerSettings.treatment(systemDark),
-        effectSettings = ledgerSettings.effectSettings,
-        accessibility = ledgerSettings.accessibility,
-    ) {
     val tokens = LocalLedgerTheme.current
     BoxWithConstraints(modifier.fillMaxSize().background(tokens.colors.background)) {
         val unfolded = maxWidth.value >= UNFOLDED_MIN_WIDTH_DP
@@ -214,23 +199,28 @@ fun VaultApp(
                             onSwitchProfile(state.activeProfile)
                         }
                         HorizontalHairline()
-                        ProfileSwitchRefusalNotice(refusal)
-                        AuthorizationNotice(state)
-                        RowReadFailureNotice(state)
-                        RefreshFailureNotice(state)
-                        ScreenHost(
-                            destination = current,
-                            state = state,
-                            onEnableRemoteRows = onEnableRemoteRows,
-                            onRemoteRowsConnected = onRemoteRowsConnected,
-                            onWriteSucceeded = onWriteSucceeded,
-                            onStartRiverBillPay = onStartRiverBillPay,
-                            displayUnit = displayUnit,
-                            onDisplayUnitChange = onDisplayUnitChange,
-                            ledgerSettings = ledgerSettings,
-                            onLedgerSettingsChange = updateLedgerSettings,
-                            modifier = Modifier.weight(1f),
-                        )
+                        Box(Modifier.weight(1f)) {
+                            Column(Modifier.fillMaxSize()) {
+                                ProfileSwitchRefusalNotice(refusal)
+                                AuthorizationNotice(state)
+                                RowReadFailureNotice(state)
+                                RefreshFailureNotice(state)
+                                ScreenHost(
+                                    destination = current,
+                                    state = state,
+                                    onEnableRemoteRows = onEnableRemoteRows,
+                                    onRemoteRowsConnected = onRemoteRowsConnected,
+                                    onWriteSucceeded = onWriteSucceeded,
+                                    onStartRiverBillPay = onStartRiverBillPay,
+                                    displayUnit = displayUnit,
+                                    onDisplayUnitChange = onDisplayUnitChange,
+                                    ledgerSettings = ledgerSettings,
+                                    onLedgerSettingsChange = onLedgerSettingsChange,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            LedgerAtmosphere()
+                        }
                     }
                 }
             } else {
@@ -239,30 +229,33 @@ fun VaultApp(
                         onSwitchProfile(state.activeProfile)
                     }
                     HorizontalHairline()
-                    ProfileSwitchRefusalNotice(refusal)
-                    AuthorizationNotice(state)
-                    RowReadFailureNotice(state)
-                    RefreshFailureNotice(state)
-                    ScreenHost(
-                        destination = current,
-                        state = state,
-                        onEnableRemoteRows = onEnableRemoteRows,
-                        onRemoteRowsConnected = onRemoteRowsConnected,
-                        onWriteSucceeded = onWriteSucceeded,
-                            onStartRiverBillPay = onStartRiverBillPay,
-                        displayUnit = displayUnit,
-                        onDisplayUnitChange = onDisplayUnitChange,
-                        ledgerSettings = ledgerSettings,
-                        onLedgerSettingsChange = updateLedgerSettings,
-                        modifier = Modifier.weight(1f),
-                    )
+                    Box(Modifier.weight(1f)) {
+                        Column(Modifier.fillMaxSize()) {
+                            ProfileSwitchRefusalNotice(refusal)
+                            AuthorizationNotice(state)
+                            RowReadFailureNotice(state)
+                            RefreshFailureNotice(state)
+                            ScreenHost(
+                                destination = current,
+                                state = state,
+                                onEnableRemoteRows = onEnableRemoteRows,
+                                onRemoteRowsConnected = onRemoteRowsConnected,
+                                onWriteSucceeded = onWriteSucceeded,
+                                onStartRiverBillPay = onStartRiverBillPay,
+                                displayUnit = displayUnit,
+                                onDisplayUnitChange = onDisplayUnitChange,
+                                ledgerSettings = ledgerSettings,
+                                onLedgerSettingsChange = onLedgerSettingsChange,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        LedgerAtmosphere()
+                    }
                     HorizontalHairline()
                     VaultBottomBar(destinations, current, onNavigate)
                 }
             }
-            LedgerAtmosphere()
         }
-    }
     }
 }
 
@@ -374,6 +367,7 @@ private fun VaultRail(
     onNavigate: (Destination) -> Unit,
 ) {
     val tokens = LocalLedgerTheme.current
+    val unselectedTint = ledgerNavigationUnselectedTint(tokens.colors)
     val currentIndex = destinations.indexOf(current).coerceAtLeast(0)
     val railState = rememberLazyListState(initialFirstVisibleItemIndex = currentIndex)
 
@@ -414,11 +408,11 @@ private fun VaultRail(
                     },
                     label = { Text(destination.label, style = MaterialTheme.typography.labelSmall) },
                     colors = NavigationRailItemDefaults.colors(
-                        selectedIconColor = tokens.colors.bitcoin,
+                        selectedIconColor = ledgerNavigationSelectedTint(destination, tokens.colors),
                         selectedTextColor = tokens.colors.foreground,
                         indicatorColor = tokens.colors.bitcoinSoft,
-                        unselectedIconColor = tokens.colors.foregroundTertiary,
-                        unselectedTextColor = tokens.colors.foregroundTertiary,
+                        unselectedIconColor = unselectedTint,
+                        unselectedTextColor = unselectedTint,
                     ),
                 )
             }
@@ -433,6 +427,7 @@ private fun VaultBottomBar(
     onNavigate: (Destination) -> Unit,
 ) {
     val tokens = LocalLedgerTheme.current
+    val unselectedTint = ledgerNavigationUnselectedTint(tokens.colors)
     val primary = foldedPrimaryDestinations(destinations)
     val overflow = foldedOverflowDestinations(destinations)
     var overflowExpanded by remember { mutableStateOf(false) }
@@ -451,11 +446,11 @@ private fun VaultBottomBar(
                 },
                 label = { Text(destination.label, style = MaterialTheme.typography.labelSmall) },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = tokens.colors.bitcoin,
+                    selectedIconColor = ledgerNavigationSelectedTint(destination, tokens.colors),
                     selectedTextColor = tokens.colors.foreground,
                     indicatorColor = tokens.colors.bitcoinSoft,
-                    unselectedIconColor = tokens.colors.foregroundTertiary,
-                    unselectedTextColor = tokens.colors.foregroundTertiary,
+                    unselectedIconColor = unselectedTint,
+                    unselectedTextColor = unselectedTint,
                 ),
             )
         }
@@ -482,7 +477,7 @@ private fun VaultBottomBar(
                                             color = if (destination == current) {
                                                 tokens.colors.foreground
                                             } else {
-                                                tokens.colors.foregroundTertiary
+                                                unselectedTint
                                             },
                                         )
                                     },
@@ -495,10 +490,9 @@ private fun VaultBottomBar(
                                             destination.icon,
                                             contentDescription = null,
                                             tint = when {
-                                                destination == current &&
-                                                    destination.navigationRestingTint == VaultBitcoin -> tokens.colors.bitcoin
-                                                destination == current -> tokens.colors.foreground
-                                                else -> tokens.colors.foregroundTertiary
+                                                destination == current ->
+                                                    ledgerNavigationSelectedTint(destination, tokens.colors)
+                                                else -> unselectedTint
                                             },
                                         )
                                     },
@@ -514,11 +508,11 @@ private fun VaultBottomBar(
                     )
                 },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = tokens.colors.bitcoin,
+                    selectedIconColor = tokens.colors.foreground,
                     selectedTextColor = tokens.colors.foreground,
                     indicatorColor = tokens.colors.bitcoinSoft,
-                    unselectedIconColor = tokens.colors.foregroundTertiary,
-                    unselectedTextColor = tokens.colors.foregroundTertiary,
+                    unselectedIconColor = unselectedTint,
+                    unselectedTextColor = unselectedTint,
                 ),
             )
         }

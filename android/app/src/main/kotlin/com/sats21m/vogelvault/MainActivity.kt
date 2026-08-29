@@ -1,20 +1,24 @@
 package com.sats21m.vogelvault
 
 import android.app.KeyguardManager
-import android.os.Bundle
+import android.content.res.Configuration
 import android.os.Build
+import android.os.Bundle
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import androidx.biometric.BiometricPrompt
-import androidx.core.content.getSystemService
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.content.getSystemService
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
@@ -23,6 +27,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.fragment.app.FragmentActivity
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.notifications.BudgetNotificationController
+import com.sats21m.vogelvault.ui.LedgerUiPreferences
+import com.sats21m.vogelvault.ui.LedgerUiSettings
 import com.sats21m.vogelvault.ui.OnboardingView
 import com.sats21m.vogelvault.ui.ProfileSwitchAuthenticationGate
 import com.sats21m.vogelvault.ui.ProfileSwitchRefusal
@@ -33,8 +39,27 @@ import com.sats21m.vogelvault.ui.VaultLockedScreen
 import com.sats21m.vogelvault.ui.VaultViewModel
 import com.sats21m.vogelvault.ui.requiresOnboarding
 import com.sats21m.vogelvault.ui.refreshMarketQuotesPeriodically
+import com.sats21m.vogelvault.ui.theme.LedgerPalettes
 import com.sats21m.vogelvault.ui.theme.LedgerTheme
+import com.sats21m.vogelvault.ui.theme.LedgerTreatment
 import kotlinx.coroutines.launch
+
+internal data class LedgerSystemBarAppearance(
+    val background: Int,
+    val useDarkIcons: Boolean,
+)
+
+internal fun ledgerSystemBarAppearance(treatment: LedgerTreatment): LedgerSystemBarAppearance =
+    when (treatment) {
+        LedgerTreatment.TERMINAL_DARK -> LedgerSystemBarAppearance(
+            background = LedgerPalettes.TerminalDark.background.toArgb(),
+            useDarkIcons = false,
+        )
+        LedgerTreatment.DAYLIGHT_LIGHT -> LedgerSystemBarAppearance(
+            background = LedgerPalettes.DaylightLight.background.toArgb(),
+            useDarkIcons = true,
+        )
+    }
 
 class MainActivity : FragmentActivity() {
     private val lockController = VaultLockController()
@@ -66,7 +91,11 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        val ledgerUiPreferences = LedgerUiPreferences(applicationContext)
+        val initialLedgerSettings = ledgerUiPreferences.current()
+        applyLedgerSystemBars(
+            initialLedgerSettings.treatment(systemDark = systemIsDark()),
+        )
         val app = application as VaultApplication
         model = ViewModelProvider(this, app.viewModelFactory)[VaultViewModel::class.java]
         lifecycleScope.launch {
@@ -108,7 +137,16 @@ class MainActivity : FragmentActivity() {
             getSharedPreferences(DISPLAY_PREFERENCES, MODE_PRIVATE)
         budgetNotifications = BudgetNotificationController(this)
         setContent {
-            LedgerTheme {
+            var ledgerSettings by remember { mutableStateOf(initialLedgerSettings) }
+            val ledgerTreatment = ledgerSettings.treatment(isSystemInDarkTheme())
+            LaunchedEffect(ledgerTreatment) {
+                applyLedgerSystemBars(ledgerTreatment)
+            }
+            LedgerTheme(
+                treatment = ledgerTreatment,
+                effectSettings = ledgerSettings.effectSettings,
+                accessibility = ledgerSettings.accessibility,
+            ) {
                 val state by model.state.collectAsStateWithLifecycle()
                 val effectiveReadReady by app.effectiveReadReady.collectAsStateWithLifecycle()
                 val currentLockState by lockState
@@ -180,6 +218,12 @@ class MainActivity : FragmentActivity() {
                                     .putString(DISPLAY_UNIT_KEY, next.storageKey)
                                     .apply()
                             },
+                            ledgerSettings = ledgerSettings,
+                            onLedgerSettingsChange = { next ->
+                                if (ledgerUiPreferences.save(next)) {
+                                    ledgerSettings = next
+                                }
+                            },
                         )
                     }
                 }
@@ -197,6 +241,23 @@ class MainActivity : FragmentActivity() {
         publishLockState()
         budgetNotifications.cancelVisibleAlerts()
         super.onStop()
+    }
+
+    private fun systemIsDark(): Boolean =
+        resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+            Configuration.UI_MODE_NIGHT_YES
+
+    private fun applyLedgerSystemBars(treatment: LedgerTreatment) {
+        val appearance = ledgerSystemBarAppearance(treatment)
+        val style = if (appearance.useDarkIcons) {
+            SystemBarStyle.light(appearance.background, appearance.background)
+        } else {
+            SystemBarStyle.dark(appearance.background)
+        }
+        enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
     }
 
     private fun requestAppUnlock() {

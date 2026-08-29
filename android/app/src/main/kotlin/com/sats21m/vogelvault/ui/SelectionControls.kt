@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -26,16 +25,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
-import com.sats21m.vogelvault.ui.theme.VaultAccentDim
-import com.sats21m.vogelvault.ui.theme.VaultCream
-import com.sats21m.vogelvault.ui.theme.VaultLine
-import com.sats21m.vogelvault.ui.theme.VaultSelectionBorder
-import com.sats21m.vogelvault.ui.theme.VaultSpace
-import com.sats21m.vogelvault.ui.theme.VaultSurface
-import com.sats21m.vogelvault.ui.theme.VaultTextDim
-import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 import com.sats21m.vogelvault.ui.theme.LedgerRadii
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
+import com.sats21m.vogelvault.ui.theme.VaultSpace
 
 @Composable
 internal fun HorizonSelector(
@@ -50,7 +42,7 @@ internal fun HorizonSelector(
         Text(
             stringResource(R.string.horizon_label),
             style = tokens.type.sectionLabel,
-            color = tokens.colors.foregroundTertiary,
+            color = tokens.colors.foregroundSecondary,
             modifier = Modifier.semantics { heading() },
         )
         Row(

@@ -18,8 +18,8 @@ import androidx.compose.ui.res.stringResource
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.data.ReadBootstrapStatus
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
-import com.sats21m.vogelvault.ui.theme.VaultWarning
 import kotlinx.coroutines.launch
 
 /**
@@ -107,7 +107,7 @@ internal fun ReadBootstrapConfiguration(
         status?.takeUnless { it == ReadBootstrapStatus.CONNECTED }?.let { failure ->
             Text(
                 text = stringResource(failure.messageResource()),
-                color = VaultWarning,
+                color = LocalLedgerTheme.current.colors.loss,
             )
         }
 
@@ -120,7 +120,10 @@ internal fun ReadBootstrapConfiguration(
                     Text(stringResource(R.string.read_bootstrap_reset))
                 }
             } else {
-                Text(stringResource(R.string.read_bootstrap_reset_warning), color = VaultWarning)
+                Text(
+                    stringResource(R.string.read_bootstrap_reset_warning),
+                    color = LocalLedgerTheme.current.colors.loss,
+                )
                 VaultButton(
                     enabled = !busy,
                     onClick = {
@@ -139,7 +142,10 @@ internal fun ReadBootstrapConfiguration(
             }
         }
         if (resetFailed) {
-            Text(stringResource(R.string.read_bootstrap_reset_failed), color = VaultWarning)
+            Text(
+                stringResource(R.string.read_bootstrap_reset_failed),
+                color = LocalLedgerTheme.current.colors.loss,
+            )
         }
     }
 }

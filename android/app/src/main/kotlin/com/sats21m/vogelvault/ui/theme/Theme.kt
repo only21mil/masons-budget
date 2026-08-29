@@ -127,16 +127,18 @@ object VaultSpace {
  */
 val LocalIsUnfolded = staticCompositionLocalOf { false }
 
-/** The active app root. System dark uses Terminal Ledger; light uses Daylight Ledger. */
+/** The active app root. A fresh app is deterministically Terminal Ledger. */
 @Composable
-fun LedgerTheme(content: @Composable () -> Unit) {
+fun LedgerTheme(
+    treatment: LedgerTreatment = LedgerTreatment.TERMINAL_DARK,
+    effectSettings: LedgerEffectSettings = LedgerEffectSettings(),
+    accessibility: LedgerAccessibilityPreferences = LedgerAccessibilityPreferences(),
+    content: @Composable () -> Unit,
+) {
     SovereignLedgerTheme(
-        treatment =
-            if (isSystemInDarkTheme()) {
-                LedgerTreatment.TERMINAL_DARK
-            } else {
-                LedgerTreatment.DAYLIGHT_LIGHT
-            },
+        treatment = treatment,
+        effectSettings = effectSettings,
+        accessibility = accessibility,
         content = content,
     )
 }

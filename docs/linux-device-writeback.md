@@ -144,11 +144,13 @@ silently choosing or overwriting one physical document.
 On the trusted operator machine:
 
 ```bash
+set -a; . "$HOME/.config/sats/secrets.env"; set +a
 npm run linux-pairing:create -- --profile victor --out /private/path/linux-device-pairing.json
 ```
 
-The command requires `CONVEX_SYNC_TOKEN`, mints the household-admin set of all
-four grants explicitly, and writes the claim secret to a new `0600` file
+The command requires `CONVEX_SYNC_TOKEN` in its process environment. It does
+not load repository-local environment files. It mints the household-admin set
+of all four grants explicitly and writes the claim secret to a new `0600` file
 without printing it. It will send the credential only to the exact approved
 household origin `https://keen-elephant-452.convex.cloud`, refuses redirects,
 and validates a bounded response before writing anything. Review configuration

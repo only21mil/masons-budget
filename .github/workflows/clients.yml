@@ -7,8 +7,9 @@ name: Clients CI
 # gate.
 #
 # This workflow never touches the live Convex deployment, never signs anything,
-# and never publishes. Apple builds stay in deploy.yml behind their own manual
-# trigger.
+# and never publishes a distributable app artifact. Signed Android APKs stay in
+# android-read-bootstrap.yml behind its manual trigger; Apple builds stay in
+# deploy.yml behind their own manual trigger.
 
 on:
   # main is included deliberately: it was previously excluded to avoid duplicate
@@ -128,7 +129,7 @@ jobs:
           # preflights, so they must not spend Linux or Android client minutes.
           declare -A job_paths=(
             [linux]='^linux/'
-            [android]='^(android/|\.github/workflows/scripts/(report_android_debug_signing\.sh|validate_android_debug_keystore\.sh|verify_android_design_packet\.py|tests/test_verify_android_design_packet\.py)$)'
+            [android]='^(android/|\.github/workflows/scripts/(verify_android_design_packet\.py|tests/test_verify_android_design_packet\.py)$)'
             [tooling]='^(\.github/workflows/android-read-bootstrap\.yml|android/app/build\.gradle\.kts|scripts/((build-android-read-bootstrap|mint-(android-read-bootstrap|linux-device-pairing|mobile-pairing-slots))\.mjs|tests/(build-android-read-bootstrap|mint-(android-read-bootstrap|linux-device-pairing|mobile-pairing-slots))\.test\.mjs))$'
           )
 
@@ -532,83 +533,17 @@ jobs:
           fi
         working-directory: android
 
-      # Pull requests and other untrusted refs deliberately stay on AGP's
-      # per-run debug key. Repository key material may exist only when the
-      # default branch itself is built by a push or an explicit dispatch.
-      # Missing key material is a hard failure there: a default-branch artifact
-      # must never silently fall back to an ephemeral signing identity.
-      - name: Materialise and validate the stable debug keystore
-        id: debug_keystore
-        if: >-
-          steps.probe.outputs.app == 'true' &&
-          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
-          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
-          VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
-          VOGEL_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
-          VOGEL_DEBUG_KEY_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${KEYSTORE_BASE64:-}" ]; then
-            echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 is required for default-branch Android APK builds."
-            exit 1
-          fi
-
-          KEYSTORE_PATH="$RUNNER_TEMP/vogel-debug.keystore"
-          if ! printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"; then
-            echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 is not valid base64."
-            exit 1
-          fi
-          chmod 600 "$KEYSTORE_PATH"
-
-          KEYSTORE_PATH="$KEYSTORE_PATH" \
-            .github/workflows/scripts/validate_android_debug_keystore.sh
-
-          echo "path=$KEYSTORE_PATH" >> "$GITHUB_OUTPUT"
-          echo "stable=true" >> "$GITHUB_OUTPUT"
-
       - name: Domain parity tests (shared fixture, no Android SDK)
         if: steps.probe.outputs.gradle == 'true'
         run: ./gradlew :domain:test --no-daemon
         working-directory: android
 
-      - name: Assemble stable-signed debug APK
-        if: >-
-          steps.probe.outputs.app == 'true' &&
-          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
-          (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
-          steps.debug_keystore.outputs.stable == 'true'
-        env:
-          VOGEL_DEBUG_KEYSTORE: ${{ steps.debug_keystore.outputs.path }}
-          VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
-          VOGEL_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
-          VOGEL_DEBUG_KEY_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleDebug :app:lintDebug --no-daemon
-        working-directory: android
-
-      # The event check is intentionally explicit: pull requests cannot reach
-      # either secret-bearing step, and no other ref gets an APK build. PRs run
-      # lint directly, without packaging an ephemeral APK.
+      # Compile and lint the app without assembling an APK. Distributable
+      # Android builds use the separate manual-only workflow.
       - name: Lint Android app
-        if: >-
-          steps.probe.outputs.app == 'true' &&
-          (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+        if: steps.probe.outputs.app == 'true'
         run: ./gradlew :app:lintDebug --no-daemon
         working-directory: android
-
-      # The digest is public certificate metadata already embedded in the APK.
-      # The reporter emits exactly one normalized SHA-256 line, and the
-      # stable-signing default-branch run must produce it.
-      - name: Report the debug signing certificate
-        if: >-
-          steps.probe.outputs.app == 'true' &&
-          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
-          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        env:
-          STABLE_SIGNING: ${{ steps.debug_keystore.outputs.stable || 'false' }}
-        run: .github/workflows/scripts/report_android_debug_signing.sh
 
       # Required PR verification: every app unit test except the screenshot
       # packet. This includes the real Robolectric cache/config tests and runs
@@ -721,20 +656,6 @@ jobs:
           path: android/app/build/outputs/roborazzi
           retention-days: 30
 
-      # Debug-signed only — a sideload artifact for the Fold, never a release
-      # build. Release signing stays out of CI.
-      - name: Upload stable-signed debug APK
-        if: >-
-          steps.probe.outputs.app == 'true' &&
-          steps.debug_keystore.outputs.stable == 'true' &&
-          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
-          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: vogel-vault-debug-apk
-          path: android/app/build/outputs/apk/debug/*.apk
-          retention-days: 7
-
       - name: Upload test report on failure
         if: failure() && steps.probe.outputs.gradle == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -742,16 +663,3 @@ jobs:
           name: android-test-report
           path: android/**/build/reports/tests/**
           retention-days: 7
-
-      # Hosted runners are discarded anyway; still delete repository key material
-      # explicitly and prove that cleanup completed before the job can pass.
-      - name: Remove and verify cleanup of the debug keystore
-        if: always()
-        run: |
-          set -euo pipefail
-          KEYSTORE_PATH="$RUNNER_TEMP/vogel-debug.keystore"
-          rm -f "$KEYSTORE_PATH"
-          if [ -e "$KEYSTORE_PATH" ]; then
-            echo "::error::The Android debug keystore remained on the runner after cleanup."
-            exit 1
-          fi

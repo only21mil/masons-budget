@@ -77,17 +77,8 @@ import com.sats21m.vogelvault.ui.components.StateBlock
 import com.sats21m.vogelvault.ui.components.StatusBanner
 import com.sats21m.vogelvault.ui.components.VaultLazyListScope
 import com.sats21m.vogelvault.ui.components.figure
-import com.sats21m.vogelvault.ui.components.ledgerColor
 import com.sats21m.vogelvault.ui.components.vaultContent
-import com.sats21m.vogelvault.ui.theme.VaultAccent
-import com.sats21m.vogelvault.ui.theme.VaultCream
-import com.sats21m.vogelvault.ui.theme.VaultLine
-import com.sats21m.vogelvault.ui.theme.VaultNegative
-import com.sats21m.vogelvault.ui.theme.VaultPositive
 import com.sats21m.vogelvault.ui.theme.VaultSpace
-import com.sats21m.vogelvault.ui.theme.VaultTextDim
-import com.sats21m.vogelvault.ui.theme.VaultTextMuted
-import com.sats21m.vogelvault.ui.theme.VaultWarning
 import com.sats21m.vogelvault.ui.theme.LocalLedgerEffects
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.withLedgerPhosphorGlow
@@ -633,13 +624,17 @@ internal fun BitcoinConversionNotice(state: VaultUiState) {
         StatusBanner(
             text = if (quote.status == MarketQuoteStatus.STALE) "BTC conversion · stale quote" else "BTC conversion",
             detail = "Uses ${quote.quoteHint(state.now)}.",
-            tone = if (quote.status == MarketQuoteStatus.STALE) VaultWarning else VaultTextMuted,
+            tone = if (quote.status == MarketQuoteStatus.STALE) {
+                LocalLedgerTheme.current.colors.loss
+            } else {
+                LocalLedgerTheme.current.colors.foregroundSecondary
+            },
         )
     } else {
         StatusBanner(
             text = "BTC conversion unavailable",
             detail = "No usable operational BTC market quote is available. Recorded buys are execution metadata only.",
-            tone = VaultWarning,
+            tone = LocalLedgerTheme.current.colors.loss,
         )
     }
 }
@@ -679,7 +674,7 @@ private fun VaultLazyListScope.dashboard(
                             quote,
                         )
                     },
-                    tone = VaultNegative,
+                    tone = LocalLedgerTheme.current.colors.loss,
                 ),
                 Kpi(
                     "Income",
@@ -690,7 +685,7 @@ private fun VaultLazyListScope.dashboard(
                             quote,
                         )
                     },
-                    tone = VaultPositive,
+                    tone = LocalLedgerTheme.current.colors.gain,
                 ),
                 Kpi(
                     "Stack",
@@ -755,7 +750,7 @@ private fun VaultLazyListScope.dashboard(
                     displayUnit,
                     quote,
                 ),
-                figureColor = VaultPositive,
+                figureColor = LocalLedgerTheme.current.colors.gain,
             )
         }
     }
@@ -813,7 +808,11 @@ private fun DashboardAwards(state: VaultUiState, projection: DashboardProjection
                     primary = award.label,
                     secondary = award.detail,
                     figure = if (award.earned) "earned" else "locked",
-                    figureColor = if (award.earned) VaultPositive else VaultTextDim,
+                    figureColor = if (award.earned) {
+                        LocalLedgerTheme.current.colors.gain
+                    } else {
+                        LocalLedgerTheme.current.colors.foregroundTertiary
+                    },
                 )
             }
         }
@@ -846,7 +845,7 @@ private fun VaultLazyListScope.activity(
                 Text(
                     "Filtering cached records...",
                     modifier = Modifier.padding(VaultSpace.md),
-                    color = ledgerColor(VaultTextMuted),
+                    color = LocalLedgerTheme.current.colors.foregroundSecondary,
                 )
             }
         }
@@ -856,11 +855,11 @@ private fun VaultLazyListScope.activity(
         item {
             Panel {
                 Column(Modifier.padding(VaultSpace.md)) {
-                    Text("No matching records", color = ledgerColor(VaultCream))
+                    Text("No matching records", color = LocalLedgerTheme.current.colors.foreground)
                     Text(
                         "Try another search or filter.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = ledgerColor(VaultTextMuted),
+                        color = LocalLedgerTheme.current.colors.foregroundSecondary,
                     )
                 }
             }
@@ -909,7 +908,11 @@ private fun TransactionRow(
         primary = transaction.merchant,
         secondary = secondary,
         figure = formatTransactionAmount(transaction, displayUnit, quote),
-        figureColor = if (isSpend && !isCreditOrWrongSign) VaultNegative else VaultPositive,
+        figureColor = if (isSpend && !isCreditOrWrongSign) {
+            LocalLedgerTheme.current.colors.loss
+        } else {
+            LocalLedgerTheme.current.colors.gain
+        },
     )
 }
 
@@ -989,13 +992,17 @@ private fun VaultLazyListScope.budget(
                 Kpi(
                     "Remaining",
                     figure(actualsUnavailable) { Money.formatUsd(derived.remainingCents) },
-                    tone = if (derived.remainingCents < 0L) VaultNegative else VaultPositive,
+                    tone = if (derived.remainingCents < 0L) {
+                        LocalLedgerTheme.current.colors.loss
+                    } else {
+                        LocalLedgerTheme.current.colors.gain
+                    },
                 ),
                 Kpi(
                     "Over budget",
                     figure(actualsUnavailable) { derived.overBudgetCount.toString() },
                     hint = if (derived.overBudgetCount == 1) "1 category" else "${derived.overBudgetCount} categories",
-                    tone = if (derived.overBudgetCount > 0) VaultNegative else null,
+                    tone = if (derived.overBudgetCount > 0) LocalLedgerTheme.current.colors.loss else null,
                 ),
             ),
         )
@@ -1010,7 +1017,7 @@ private fun VaultLazyListScope.budget(
                     monthLabel(budget.month),
                     monthLabel(derived.month),
                 ),
-                tone = VaultWarning,
+                tone = LocalLedgerTheme.current.colors.loss,
             )
         }
     }
@@ -1112,12 +1119,12 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
                 Column(Modifier.padding(VaultSpace.md)) {
                     Text(
                         stringResource(R.string.budget_category_transactions_empty),
-                        color = ledgerColor(VaultCream),
+                        color = LocalLedgerTheme.current.colors.foreground,
                     )
                     Text(
                         stringResource(R.string.budget_category_transactions_empty_detail),
                         style = MaterialTheme.typography.bodySmall,
-                        color = ledgerColor(VaultTextMuted),
+                        color = LocalLedgerTheme.current.colors.foregroundSecondary,
                     )
                 }
             }
@@ -1179,7 +1186,7 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
                 primary = payment.merchant,
                 secondary = "${payment.date} · ${payment.owner.displayName}",
                 figure = formatBtcBillPayAmount(payment, DisplayUnit.USD),
-                figureColor = VaultNegative,
+                figureColor = LocalLedgerTheme.current.colors.loss,
                 badge = payment.platform,
             )
         }
@@ -1200,7 +1207,7 @@ private fun MonthPicker(months: List<String>, selected: String, onSelect: (Strin
         Text(
             "MONTH",
             style = MaterialTheme.typography.labelSmall,
-            color = ledgerColor(VaultTextDim),
+            color = LocalLedgerTheme.current.colors.foregroundTertiary,
         )
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -1344,7 +1351,7 @@ private fun VaultLazyListScope.bitcoin(
                 primary = buy.source,
                 secondary = "${buy.date} · ${Money.formatUsd(buy.priceUsdCents)}/BTC",
                 figure = formatBtcBuyAmount(buy, displayUnit),
-                figureColor = VaultCream,
+                figureColor = LocalLedgerTheme.current.colors.foreground,
             )
         }
     }
@@ -1366,7 +1373,7 @@ private fun VaultLazyListScope.bitcoin(
                 primary = payment.merchant,
                 secondary = "${payment.date} · ${payment.category}",
                 figure = formatBtcBillPayAmount(payment, displayUnit),
-                figureColor = VaultNegative,
+                figureColor = LocalLedgerTheme.current.colors.loss,
                 badge = payment.platform,
             )
         }
@@ -1473,7 +1480,7 @@ private fun VaultLazyListScope.accountList(
                 }
             },
             figure = formatCanonicalAccount(account, displayUnit, quote),
-            figureColor = VaultCream,
+            figureColor = LocalLedgerTheme.current.colors.foreground,
             badge = account.custody.label,
             badgeAccented = account.custody.key == "self_custody",
         )
@@ -1576,11 +1583,23 @@ private fun VaultLazyListScope.family(state: VaultUiState) {
     item {
         Panel("Active profile scope", state.activeProfile.displayName) {
             Column {
-                LedgerRow("Finance visibility", figure = scope.finance, figureColor = VaultTextMuted)
+                LedgerRow(
+                    "Finance visibility",
+                    figure = scope.finance,
+                    figureColor = LocalLedgerTheme.current.colors.foregroundSecondary,
+                )
                 HorizontalHairline()
-                LedgerRow("Private tasks", figure = scope.tasks, figureColor = VaultTextMuted)
+                LedgerRow(
+                    "Private tasks",
+                    figure = scope.tasks,
+                    figureColor = LocalLedgerTheme.current.colors.foregroundSecondary,
+                )
                 HorizontalHairline()
-                LedgerRow("Net worth total", figure = scope.netWorth, figureColor = VaultTextMuted)
+                LedgerRow(
+                    "Net worth total",
+                    figure = scope.netWorth,
+                    figureColor = LocalLedgerTheme.current.colors.foregroundSecondary,
+                )
             }
         }
     }
@@ -1588,7 +1607,7 @@ private fun VaultLazyListScope.family(state: VaultUiState) {
         StatusBanner(
             "Victor and Rachel are one household",
             "They see identical finance data. Mason and Maddox are isolated and see only their own records.",
-            tone = VaultTextMuted,
+            tone = LocalLedgerTheme.current.colors.foregroundSecondary,
         )
     }
     item {
@@ -1600,7 +1619,7 @@ private fun VaultLazyListScope.family(state: VaultUiState) {
                         primary = member.displayName,
                         secondary = member.profileDescription,
                         figure = if (member.isAdult) "adult" else "child",
-                        figureColor = VaultTextMuted,
+                        figureColor = LocalLedgerTheme.current.colors.foregroundSecondary,
                         badge = if (member == state.activeProfile) "active" else null,
                         badgeAccented = member == state.activeProfile,
                     )
@@ -1616,7 +1635,7 @@ private fun VaultLazyListScope.family(state: VaultUiState) {
                     LedgerRow(
                         primary = member.displayName,
                         figure = if (member.allowedSwitchTargets.size > 1) "all" else "self only",
-                        figureColor = VaultTextMuted,
+                        figureColor = LocalLedgerTheme.current.colors.foregroundSecondary,
                     )
                 }
             }
@@ -1638,13 +1657,13 @@ private fun VaultLazyListScope.settings(
             StatusBanner(
                 "Convex row reads are enabled",
                 "Every query is authenticated. Writes require the separate sync credential below.",
-                tone = VaultPositive,
+                tone = LocalLedgerTheme.current.colors.gain,
             )
         } else {
             StatusBanner(
                 stringResource(R.string.convex_rows_inactive_title),
                 stringResource(R.string.convex_rows_inactive_detail),
-                tone = VaultWarning,
+                tone = LocalLedgerTheme.current.colors.loss,
             )
         }
     }
@@ -1654,7 +1673,7 @@ private fun VaultLazyListScope.settings(
             StatusBanner(
                 "Could not enable Convex row reads",
                 detail,
-                tone = VaultWarning,
+                tone = LocalLedgerTheme.current.colors.loss,
             )
         }
     }
@@ -1686,7 +1705,7 @@ private fun VaultLazyListScope.settings(
                     LedgerRow(
                         primary = name,
                         figure = status.name.lowercase(),
-                        figureColor = VaultTextMuted,
+                        figureColor = LocalLedgerTheme.current.colors.foregroundSecondary,
                     )
                 }
             }
@@ -1715,7 +1734,7 @@ internal fun SyncTokenConfiguration() {
         ) {
             Text(
                 text = stringResource(R.string.write_credential_source),
-                color = ledgerColor(VaultTextMuted),
+                color = LocalLedgerTheme.current.colors.foregroundSecondary,
                 style = MaterialTheme.typography.labelSmall,
             )
             Text(
@@ -1727,7 +1746,7 @@ internal fun SyncTokenConfiguration() {
                             R.string.write_credential_unconfigured
                         },
                     ),
-                color = ledgerColor(VaultTextDim),
+                color = LocalLedgerTheme.current.colors.foregroundSecondary,
                 style = MaterialTheme.typography.bodySmall,
             )
             OutlinedTextField(
@@ -1775,11 +1794,11 @@ internal fun SyncTokenConfiguration() {
                     border =
                         androidx.compose.foundation.BorderStroke(
                             width = 1.dp,
-                            color = VaultLine,
+                            color = LocalLedgerTheme.current.colors.line,
                         ),
                     colors =
                         androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                            contentColor = VaultCream,
+                            contentColor = LocalLedgerTheme.current.colors.foreground,
                         ),
                 ) {
                     Text(stringResource(R.string.write_credential_remove))
@@ -1788,14 +1807,14 @@ internal fun SyncTokenConfiguration() {
             saveFailure?.let {
                 Text(
                     text = it,
-                    color = VaultWarning,
+                    color = LocalLedgerTheme.current.colors.loss,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
             removalFailure?.let {
                 Text(
                     text = it,
-                    color = VaultWarning,
+                    color = LocalLedgerTheme.current.colors.loss,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -1811,6 +1830,6 @@ private fun StaleNotice(status: Freshness) {
     StatusBanner(
         stringResource(R.string.convex_read_stale_title),
         stringResource(R.string.convex_read_stale_detail),
-        tone = VaultWarning,
+        tone = LocalLedgerTheme.current.colors.loss,
     )
 }

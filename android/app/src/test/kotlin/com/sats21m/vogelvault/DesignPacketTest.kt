@@ -1,13 +1,11 @@
 package com.sats21m.vogelvault
 
-import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
-import androidx.test.core.app.ApplicationProvider
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -15,7 +13,6 @@ import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.ui.Destination
 import com.sats21m.vogelvault.ui.LedgerAppearance
-import com.sats21m.vogelvault.ui.LedgerUiPreferences
 import com.sats21m.vogelvault.ui.LedgerUiSettings
 import com.sats21m.vogelvault.ui.VaultApp
 import com.sats21m.vogelvault.ui.VaultUiState
@@ -29,6 +26,7 @@ import com.sats21m.vogelvault.ui.theme.VaultPositive
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import com.sats21m.vogelvault.ui.theme.VaultWarning
 import com.sats21m.vogelvault.ui.theme.LedgerTreatment
+import com.sats21m.vogelvault.ui.theme.LedgerTheme
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.SovereignLedgerTheme
 import org.junit.Test
@@ -62,20 +60,22 @@ private fun capture(
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     appearance: LedgerAppearance = LedgerAppearance.DAYLIGHT,
 ) {
-    setPacketAppearance(appearance)
+    val settings = LedgerUiSettings(appearance = appearance)
     captureRoboImage("build/outputs/roborazzi/$name.png") {
-        VaultApp(
-            state = state,
-            onNavigate = {},
-            onSwitchProfile = {},
-            displayUnit = displayUnit,
-        )
+        LedgerTheme(
+            treatment = settings.treatment(systemDark = false),
+            effectSettings = settings.effectSettings,
+            accessibility = settings.accessibility,
+        ) {
+            VaultApp(
+                state = state,
+                onNavigate = {},
+                onSwitchProfile = {},
+                displayUnit = displayUnit,
+                ledgerSettings = settings,
+            )
+        }
     }
-}
-
-private fun setPacketAppearance(appearance: LedgerAppearance) {
-    val context = ApplicationProvider.getApplicationContext<Context>()
-    check(LedgerUiPreferences(context).save(LedgerUiSettings(appearance = appearance)))
 }
 
 private fun captureStatusAndUnavailableTokens(
