@@ -21,21 +21,6 @@ export const LINUX_DEVICE_CAPABILITIES = [
 export const DEVICE_PROFILES = ["victor", "rachel", "mason", "maddox"];
 
 const scriptPath = fileURLToPath(import.meta.url);
-const repoRoot = path.resolve(path.dirname(scriptPath), "..");
-
-function parseEnvFile(file) {
-  const result = {};
-  if (!fs.existsSync(file)) return result;
-  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
-    const match = line.trim().match(/^([A-Z0-9_]+)=(.*)$/);
-    if (!match) continue;
-    result[match[1]] = match[2]
-      .replace(/\s+#.*$/, "")
-      .replace(/^["']|["']$/g, "")
-      .trim();
-  }
-  return result;
-}
 
 function base64url(bytes) {
   return Buffer.from(bytes)
@@ -247,7 +232,9 @@ Options:
   --out <path>   0600 secret JSON destination.
   --dry-run      Validate configuration without minting, writing, or generating secrets.
 
-Requires CONVEX_SYNC_TOKEN in the environment or .env.local unless --dry-run.
+Requires CONVEX_SYNC_TOKEN in the process environment unless --dry-run.
+On the approved host, load it without output before running:
+  set -a; . "$HOME/.config/sats/secrets.env"; set +a
 Only the approved household origin ${APPROVED_CONVEX_ORIGIN} is accepted.
 `);
 }
@@ -287,14 +274,10 @@ export async function main(
     throw new Error(`--profile must be one of: ${DEVICE_PROFILES.join(", ")}.`);
   }
 
-  const env = {
-    ...parseEnvFile(path.join(repoRoot, ".env.local")),
-    ...processEnv,
-  };
   const convexOrigin = approvedConvexOrigin(
-    env.CONVEX_URL || APPROVED_CONVEX_ORIGIN,
+    processEnv.CONVEX_URL || APPROVED_CONVEX_ORIGIN,
   );
-  const syncToken = env.CONVEX_SYNC_TOKEN || "";
+  const syncToken = processEnv.CONVEX_SYNC_TOKEN || "";
 
   if (dryRun) {
     console.log(
