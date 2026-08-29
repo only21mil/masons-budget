@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.ui.graphics.Color
+import com.sats21m.vogelvault.ui.theme.LedgerPalettes
 import com.sats21m.vogelvault.ui.theme.VaultInfo
 import com.sats21m.vogelvault.ui.theme.VaultNegative
 import com.sats21m.vogelvault.ui.theme.VaultPositive
@@ -16,10 +17,18 @@ import org.junit.Test
 
 class StatusBannerIconTest {
     @Test
-    fun semanticTonesUseMatchingIcons() {
+    fun legacySemanticTonesUseMatchingIcons() {
         assertSame(Icons.Filled.CheckCircle, statusBannerIcon(VaultPositive))
         assertSame(Icons.Filled.ErrorOutline, statusBannerIcon(VaultNegative))
         assertSame(Icons.Filled.WarningAmber, statusBannerIcon(VaultWarning))
+    }
+
+    @Test
+    fun currentLedgerGainAndLossTonesUseMatchingIcons() {
+        assertSame(Icons.Filled.CheckCircle, statusBannerIcon(LedgerPalettes.TerminalDark.gain))
+        assertSame(Icons.Filled.CheckCircle, statusBannerIcon(LedgerPalettes.DaylightLight.gain))
+        assertSame(Icons.Filled.ErrorOutline, statusBannerIcon(LedgerPalettes.TerminalDark.loss))
+        assertSame(Icons.Filled.ErrorOutline, statusBannerIcon(LedgerPalettes.DaylightLight.loss))
     }
 
     @Test
