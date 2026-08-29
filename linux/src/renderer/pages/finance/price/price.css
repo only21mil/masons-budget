@@ -53,6 +53,11 @@
   line-height: 1.1;
 }
 
+.vv-ledger-root[data-vv-theme="dark"][data-vv-phosphor="on"]
+  .vv-price-hero__value:not(.vv-price-hero__value--unavailable) {
+  text-shadow: 0 0 18px rgba(247,147,26,.30);
+}
+
 .vv-price-hero__value--unavailable {
   color: var(--vv-ledger-ink-meta);
   font-size: var(--vv-ledger-text-kpi);
@@ -223,6 +228,13 @@
   font-size: var(--vv-ledger-text-kpi-label);
   font-weight: var(--vv-ledger-weight-regular);
   letter-spacing: var(--vv-ledger-tracking-button);
+}
+
+@media (prefers-reduced-motion: reduce), (prefers-reduced-transparency: reduce) {
+  .vv-ledger-root[data-vv-theme="dark"][data-vv-phosphor="on"]
+    .vv-price-hero__value:not(.vv-price-hero__value--unavailable) {
+    text-shadow: none;
+  }
 }
 
 @media (max-width: 560px) {
