@@ -41,6 +41,17 @@ test("the shell adopts the ledger theme, route scope, Horizon wordmark, and iner
   assert.match(styles, /font-family: var\(--vv-ledger-font\)/)
 })
 
+test("resting navigation controls stay above metadata contrast", () => {
+  assert.match(
+    styles,
+    /\.vv-navgroup__label\s*\{[^}]*color: var\(--vv-ledger-ink-meta\);/,
+  )
+  assert.match(
+    styles,
+    /\.vv-navitem\s*\{[^}]*color: var\(--vv-ledger-ink-secondary\);/,
+  )
+})
+
 test("Activity maps only exact card-wire rails to the accepted Bolt and Chain glyphs", () => {
   assert.equal(paymentRailForCard("lightning"), "lightning")
   assert.equal(paymentRailForCard("zeus_lightning"), "lightning")

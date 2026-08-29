@@ -157,4 +157,13 @@ describe("ledger design foundations", () => {
       /\[data-vv-theme="dark"\]\[data-vv-phosphor="on"\][^{]+\.vv-price-hero__value:not\(\.vv-price-hero__value--unavailable\)[^{]+\{\s*text-shadow: 0 0 18px rgba\(247,147,26,\.30\);/,
     )
   })
+
+  it("keeps the price back control above metadata contrast", () => {
+    expect(priceStyles).toMatch(
+      /\.vv-price-back\s*\{[^}]*color: var\(--vv-ledger-ink-secondary\);/,
+    )
+    expect(priceStyles).toMatch(
+      /\.vv-price-kicker,[^{]+\{[^}]*color: var\(--vv-ledger-ink-meta\);/,
+    )
+  })
 })
