@@ -49,6 +49,7 @@ import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.ui.theme.LedgerNumeral
+import com.sats21m.vogelvault.ui.theme.LedgerPalettes
 import com.sats21m.vogelvault.ui.theme.LedgerRadii
 import com.sats21m.vogelvault.ui.theme.LedgerSpacing
 import com.sats21m.vogelvault.ui.theme.LocalLedgerEffects
@@ -636,8 +637,14 @@ fun StatusBanner(text: String, detail: String? = null, tone: Color = VaultInfo) 
 }
 
 internal fun statusBannerIcon(tone: Color): ImageVector = when (tone) {
-    VaultPositive -> Icons.Filled.CheckCircle
-    VaultNegative -> Icons.Filled.ErrorOutline
+    VaultPositive,
+    LedgerPalettes.TerminalDark.gain,
+    LedgerPalettes.DaylightLight.gain,
+    -> Icons.Filled.CheckCircle
+    VaultNegative,
+    LedgerPalettes.TerminalDark.loss,
+    LedgerPalettes.DaylightLight.loss,
+    -> Icons.Filled.ErrorOutline
     VaultWarning -> Icons.Filled.WarningAmber
     else -> Icons.Filled.Info
 }
