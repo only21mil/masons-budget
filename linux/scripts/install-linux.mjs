@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-import { existsSync } from "node:fs"
-import { chmod, copyFile, mkdir, rename, rm, symlink, writeFile } from "node:fs/promises"
+import { createHash } from "node:crypto"
+import { createReadStream, existsSync } from "node:fs"
+import { chmod, copyFile, mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -69,12 +70,39 @@ async function replaceSymlink(target, linkPath) {
   await symlink(target, linkPath)
 }
 
+async function sha256(file) {
+  const hash = createHash("sha256")
+  for await (const chunk of createReadStream(file)) hash.update(chunk)
+  return hash.digest("hex")
+}
+
+export async function verifyAppImageChecksum(appImage, checksumFile, expectedName = path.basename(appImage)) {
+  const lines = (await readFile(checksumFile, "utf8")).split(/\r?\n/).filter((line) => line.length > 0)
+  const matchingChecksums = []
+
+  for (const line of lines) {
+    const match = /^([a-f\d]{64}) [ *](.+)$/i.exec(line)
+    if (match === null) fail(`Malformed checksum entry in ${checksumFile}.`)
+    if (match[2] === expectedName) matchingChecksums.push(match[1].toLowerCase())
+  }
+
+  if (matchingChecksums.length !== 1) {
+    fail(`Expected one checksum for ${expectedName} in ${checksumFile}, found ${matchingChecksums.length}.`)
+  }
+
+  const actualChecksum = await sha256(appImage)
+  if (actualChecksum !== matchingChecksums[0]) fail(`SHA-256 mismatch for ${expectedName}.`)
+}
+
 export async function installLinuxApp({ appImage, prefix, iconSource = path.join(linuxRoot, "build", "icon.png") }) {
   const source = path.resolve(appImage)
   const installPrefix = path.resolve(prefix)
   if (installPrefix === path.parse(installPrefix).root) fail("Refusing to install into the filesystem root.")
   if (!existsSync(source)) fail(`AppImage does not exist: ${source}`)
   if (!existsSync(iconSource)) fail(`Launcher icon does not exist: ${iconSource}`)
+
+  const siblingChecksums = path.join(path.dirname(source), "SHA256SUMS")
+  const verifiedChecksum = existsSync(siblingChecksums) ? siblingChecksums : null
 
   const installDir = path.join(installPrefix, "opt", "vogel-vault")
   const binDir = path.join(installPrefix, "bin")
@@ -88,6 +116,7 @@ export async function installLinuxApp({ appImage, prefix, iconSource = path.join
   ])
 
   const installedAppImage = path.join(installDir, "Vogel-Vault.AppImage")
+  const backupAppImage = `${installedAppImage}.backup`
   const installedLauncher = path.join(installDir, "vogel-vault-launch")
   const installedIcon = path.join(iconsDir, "vogel-vault.png")
   const desktopEntry = path.join(applicationsDir, "vogel-vault.desktop")
@@ -95,27 +124,59 @@ export async function installLinuxApp({ appImage, prefix, iconSource = path.join
   const nextLauncher = `${installedLauncher}.next-${process.pid}`
   const nextDesktop = `${desktopEntry}.next-${process.pid}`
 
-  await copyFile(source, nextAppImage)
-  await chmod(nextAppImage, 0o755)
-  await rename(nextAppImage, installedAppImage)
+  const hadInstalledAppImage = existsSync(installedAppImage)
+  let backupPrepared = false
+  let replacementActivated = false
 
-  await writeFile(nextLauncher, configuredLauncherSource(), { mode: 0o755 })
-  await chmod(nextLauncher, 0o755)
-  await rename(nextLauncher, installedLauncher)
+  try {
+    await copyFile(source, nextAppImage)
+    await chmod(nextAppImage, 0o755)
+    if (verifiedChecksum !== null) {
+      await verifyAppImageChecksum(nextAppImage, verifiedChecksum, path.basename(source))
+    }
+    if (hadInstalledAppImage) {
+      await rename(installedAppImage, backupAppImage)
+      backupPrepared = true
+    }
+    await rename(nextAppImage, installedAppImage)
+    replacementActivated = true
 
-  await copyFile(iconSource, installedIcon)
-  await Promise.all([
-    replaceSymlink(installedLauncher, path.join(binDir, "vogel-vault")),
-    replaceSymlink(installedLauncher, path.join(binDir, "vogel-vault-launch")),
-  ])
+    await writeFile(nextLauncher, configuredLauncherSource(), { mode: 0o755 })
+    await chmod(nextLauncher, 0o755)
+    await rename(nextLauncher, installedLauncher)
 
-  await writeFile(nextDesktop, desktopEntrySource(path.join(binDir, "vogel-vault"), installedIcon), {
-    mode: 0o644,
-  })
-  await rename(nextDesktop, desktopEntry)
+    await copyFile(iconSource, installedIcon)
+    await Promise.all([
+      replaceSymlink(installedLauncher, path.join(binDir, "vogel-vault")),
+      replaceSymlink(installedLauncher, path.join(binDir, "vogel-vault-launch")),
+    ])
+
+    await writeFile(nextDesktop, desktopEntrySource(path.join(binDir, "vogel-vault"), installedIcon), {
+      mode: 0o644,
+    })
+    await rename(nextDesktop, desktopEntry)
+  } catch (error) {
+    try {
+      if (backupPrepared) await rename(backupAppImage, installedAppImage)
+      else if (!hadInstalledAppImage && replacementActivated) await rm(installedAppImage, { force: true })
+    } catch (rollbackError) {
+      const cause = error instanceof Error ? error.message : "installation failed"
+      const rollback = rollbackError instanceof Error ? rollbackError.message : "rollback failed"
+      throw new Error(`${cause}; AppImage rollback failed: ${rollback}`, { cause: error })
+    }
+    throw error
+  } finally {
+    await Promise.all([
+      rm(nextAppImage, { force: true }),
+      rm(nextLauncher, { force: true }),
+      rm(nextDesktop, { force: true }),
+    ])
+  }
 
   return {
     installedAppImage,
+    backupAppImage: backupPrepared ? backupAppImage : null,
+    verifiedChecksum,
     installedLauncher,
     command: path.join(binDir, "vogel-vault"),
     launcherCommand: path.join(binDir, "vogel-vault-launch"),
@@ -128,8 +189,9 @@ function usage() {
   node scripts/install-linux.mjs --appimage <approved AppImage> [--prefix <path>]
 
 Installs one approved AppImage under the user prefix. Both command names and the
-desktop entry run the same keyring-backed configured launcher. Default prefix:
-$HOME/.local
+desktop entry run the same keyring-backed configured launcher. A sibling
+SHA256SUMS is verified when present, and an existing AppImage is retained as a
+recoverable .backup file. Default prefix: $HOME/.local
 `)
 }
 
@@ -145,7 +207,9 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   if (prefix === null) fail("--prefix is required when HOME is unavailable.")
 
   const installed = await installLinuxApp({ appImage, prefix })
+  if (installed.verifiedChecksum !== null) console.log(`Verified SHA-256 with ${installed.verifiedChecksum}`)
   console.log(`Installed Vogel Vault at ${installed.installedAppImage}`)
+  if (installed.backupAppImage !== null) console.log(`Previous AppImage: ${installed.backupAppImage}`)
   console.log(`Command: ${installed.command}`)
   console.log(`Desktop entry: ${installed.desktopEntry}`)
 }
