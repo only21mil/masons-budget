@@ -10,6 +10,7 @@ import {
   LINUX_DEVICE_CAPABILITIES,
   RESPONSE_LIMIT_BYTES,
   approvedConvexOrigin,
+  main,
   mintLinuxDevicePairing,
 } from "../mint-linux-device-pairing.mjs";
 
@@ -56,6 +57,35 @@ test("dry-run generates no secret, writes no file, and needs no token", async ()
   assert.equal(result.status, 0);
   assert.match(result.stdout, /no request, file write, or secret generation/);
   await assert.rejects(readFile(output), /ENOENT/);
+});
+
+test("production mint requires the token in the process environment", async () => {
+  const output = await destination("vv-linux-pair-env-");
+  await assert.rejects(
+    main(["--profile", "victor", "--out", output], {
+      HOME: path.dirname(output),
+      CONVEX_SYNC_TOKEN: "",
+    }),
+    /CONVEX_SYNC_TOKEN is required/,
+  );
+  await assert.rejects(readFile(output), /ENOENT/);
+
+  const source = await readFile(script, "utf8");
+  assert.doesNotMatch(source, /\.env\.local/);
+});
+
+test("help documents the approved host environment-loading pattern", () => {
+  const result = spawnSync(process.execPath, [script, "--help"], {
+    cwd: repoRoot,
+    env: { PATH: process.env.PATH },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /CONVEX_SYNC_TOKEN in the process environment/);
+  assert.match(
+    result.stdout,
+    /set -a; \. "\$HOME\/\.config\/sats\/secrets\.env"; set \+a/,
+  );
 });
 
 test("accepts only the exact approved HTTPS household origin", () => {
