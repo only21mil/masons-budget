@@ -93,6 +93,8 @@ internal fun ledgerColor(requested: Color): Color {
         VaultAccent -> colors.bitcoin
         VaultPositive -> colors.gain
         VaultNegative -> colors.loss
+        VaultWarning -> colors.loss
+        VaultInfo -> colors.foregroundSecondary
         VaultLine -> colors.line
         VaultSurface -> colors.panel
         VaultSurfaceSunken -> colors.background
