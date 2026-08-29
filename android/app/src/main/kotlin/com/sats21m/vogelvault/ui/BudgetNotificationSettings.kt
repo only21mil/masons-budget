@@ -26,12 +26,12 @@ import androidx.core.content.ContextCompat
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.notifications.BudgetNotificationController
 import com.sats21m.vogelvault.ui.components.Panel
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
-import com.sats21m.vogelvault.ui.theme.VaultTextMuted
-import com.sats21m.vogelvault.ui.theme.VaultWarning
 
 @Composable
 internal fun BudgetNotificationSettings(state: VaultUiState) {
+    val colors = LocalLedgerTheme.current.colors
     val context = LocalContext.current
     val appContext = context.applicationContext
     val notifications = remember(appContext) { BudgetNotificationController(appContext) }
@@ -73,10 +73,10 @@ internal fun BudgetNotificationSettings(state: VaultUiState) {
                             R.string.budget_notifications_disabled
                         },
                     ),
-                    color = VaultTextMuted,
+                    color = colors.foregroundSecondary,
                 )
                 rejectionMessage?.let { message ->
-                    Text(message, color = VaultWarning)
+                    Text(message, color = colors.loss)
                 }
             }
             Switch(
