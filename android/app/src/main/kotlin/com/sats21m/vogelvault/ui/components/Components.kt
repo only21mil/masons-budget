@@ -214,7 +214,7 @@ private fun LazyPanelHeader(title: String, source: String?) {
             Text(
                 title,
                 style = tokens.type.sectionLabel,
-                color = tokens.colors.foreground,
+                color = tokens.colors.foregroundSecondary,
                 modifier = Modifier.semantics { heading() },
             )
             if (source != null) {
@@ -347,7 +347,7 @@ private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
             textAlign = TextAlign.Start,
         )
         if (!unavailable && item.hint != null) {
-            Text(item.hint.uppercase(), style = tokens.type.kpiSub, color = tokens.colors.foregroundSecondary)
+            Text(item.hint.uppercase(), style = tokens.type.kpiSub, color = tokens.colors.foregroundTertiary)
         }
     }
 }
@@ -381,7 +381,7 @@ fun Panel(
                     Text(
                         title,
                         style = tokens.type.sectionLabel,
-                        color = tokens.colors.foreground,
+                        color = tokens.colors.foregroundSecondary,
                         modifier = Modifier.semantics { heading() },
                     )
                     if (source != null) {
@@ -648,7 +648,7 @@ fun SectionLabel(text: String) {
     Text(
         text.uppercase(),
         style = tokens.type.sectionLabel,
-        color = tokens.colors.foregroundTertiary,
+        color = tokens.colors.foregroundSecondary,
         modifier = Modifier
             .padding(horizontal = tokens.density.cardPadding, vertical = LedgerSpacing.medium)
             // Speak the original casing: TalkBack spells short all-caps strings out
