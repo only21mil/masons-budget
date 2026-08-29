@@ -31,7 +31,7 @@ import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.TodoItem
-import com.sats21m.vogelvault.ui.theme.VaultNegative
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import java.time.Instant
 import java.time.LocalDate
@@ -146,7 +146,7 @@ internal fun AddTaskSheet(
                 Checkbox(checked = flagged, onCheckedChange = { flagged = it })
                 Text(stringResource(R.string.tasks_flag_task))
             }
-            message?.let { Text(it, color = VaultNegative) }
+            message?.let { Text(it, color = LocalLedgerTheme.current.colors.loss) }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(VaultSpace.md),

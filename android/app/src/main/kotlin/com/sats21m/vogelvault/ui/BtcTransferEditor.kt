@@ -33,8 +33,8 @@ import com.sats21m.vogelvault.onServerAccepted
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Money
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
-import com.sats21m.vogelvault.ui.theme.VaultWarning
 import java.time.LocalDate
 import java.util.UUID
 
@@ -111,7 +111,7 @@ internal fun BtcTransferEntrySheet(
             if (eligibleAccounts.size < 2) {
                 Text(
                     stringResource(R.string.btc_transfer_accounts_unavailable),
-                    color = VaultWarning,
+                    color = LocalLedgerTheme.current.colors.loss,
                 )
             } else {
                 BtcAccountPicker(
@@ -144,7 +144,7 @@ internal fun BtcTransferEntrySheet(
                     label = stringResource(R.string.btc_transfer_note_label),
                 )
             }
-            message?.let { Text(it, color = VaultWarning) }
+            message?.let { Text(it, color = LocalLedgerTheme.current.colors.loss) }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
