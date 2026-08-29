@@ -1,6 +1,7 @@
 package com.sats21m.vogelvault.ui
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
 import com.sats21m.vogelvault.ui.theme.LedgerTreatment
 import java.util.UUID
@@ -16,12 +17,13 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class LedgerUiPreferencesTest {
+    private lateinit var preferences: SharedPreferences
     private lateinit var store: LedgerUiPreferences
 
     @BeforeTest
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val preferences = context.getSharedPreferences("ledger-ui-${UUID.randomUUID()}", Context.MODE_PRIVATE)
+        preferences = context.getSharedPreferences("ledger-ui-${UUID.randomUUID()}", Context.MODE_PRIVATE)
         store = LedgerUiPreferences(preferences)
     }
 
@@ -35,7 +37,36 @@ class LedgerUiPreferencesTest {
     }
 
     @Test
-    fun `explicit System appearance survives storage and still follows the phone`() {
+    fun `pre-correction System migrates to Terminal without changing other preferences`() {
+        preferences.edit()
+            .putString("appearance", LedgerAppearance.SYSTEM.storageKey)
+            .putBoolean("scanlines", false)
+            .putBoolean("phosphor_glow", false)
+            .putBoolean("reduce_motion", true)
+            .putBoolean("reduce_transparency", true)
+            .commit()
+
+        val migrated = store.current()
+
+        assertEquals(LedgerAppearance.TERMINAL, migrated.appearance)
+        assertFalse(migrated.scanlinesEnabled)
+        assertFalse(migrated.phosphorGlowEnabled)
+        assertTrue(migrated.reduceMotion)
+        assertTrue(migrated.reduceTransparency)
+    }
+
+    @Test
+    fun `pre-correction Daylight migrates to Terminal`() {
+        preferences.edit()
+            .putString("appearance", LedgerAppearance.DAYLIGHT.storageKey)
+            .commit()
+
+        assertEquals(LedgerAppearance.TERMINAL, store.current().appearance)
+    }
+
+    @Test
+    fun `System chosen after migration survives storage and still follows the phone`() {
+        store.current()
         assertTrue(store.save(LedgerUiSettings(appearance = LedgerAppearance.SYSTEM)))
 
         val restored = store.current()
@@ -46,6 +77,7 @@ class LedgerUiPreferencesTest {
 
     @Test
     fun `explicit effect choices survive appearance changes`() {
+        store.current()
         assertTrue(
             store.save(
                 LedgerUiSettings(

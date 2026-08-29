@@ -180,7 +180,7 @@ class LedgerAdoptionComposeTest {
         }
 
         compose.onNodeWithContentDescription("Daylight appearance").fetchSemanticsNode()
-        compose.onNodeWithContentDescription("Scanlines, on, disabled").fetchSemanticsNode()
+        compose.onNodeWithContentDescription("Scanlines, on").fetchSemanticsNode()
         compose.onNodeWithContentDescription("Reduce motion, off").fetchSemanticsNode()
     }
 

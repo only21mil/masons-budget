@@ -6,9 +6,13 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.ledgerSystemBarAppearance
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -20,7 +24,7 @@ import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], qualifiers = "night")
+@Config(sdk = [34], qualifiers = "notnight")
 class LedgerThemeAdoptionTest {
     @get:Rule
     val compose = createEmptyComposeRule()
@@ -40,7 +44,7 @@ class LedgerThemeAdoptionTest {
     }
 
     @Test
-    fun appRootProvidesTerminalLedgerTokensAndMaterialColors() {
+    fun appRootDefaultsToTerminalEvenWhenThePhoneIsLight() {
         var treatment: LedgerTreatment? = null
         var ledgerBackground: Color? = null
         var materialColors: ColorScheme? = null
@@ -81,6 +85,21 @@ class LedgerThemeAdoptionTest {
         compose.waitForIdle()
 
         assertLedgerMaterialColors(materialColors, LedgerPalettes.DaylightLight)
+    }
+
+    @Test
+    fun systemBarsMatchTheResolvedLedgerTreatmentAndIconContrast() {
+        val terminal = ledgerSystemBarAppearance(LedgerTreatment.TERMINAL_DARK)
+        val daylight = ledgerSystemBarAppearance(LedgerTreatment.DAYLIGHT_LIGHT)
+
+        assertEquals(LedgerPalettes.TerminalDark.background.toArgb(), terminal.background)
+        assertFalse(terminal.useDarkIcons)
+        assertEquals(LedgerPalettes.DaylightLight.background.toArgb(), daylight.background)
+        assertTrue(daylight.useDarkIcons)
+        assertEquals(
+            LedgerPalettes.TerminalDark.background.toArgb(),
+            activityController.get().getColor(R.color.ledger_terminal_background),
+        )
     }
 
     private fun assertLedgerMaterialColors(
