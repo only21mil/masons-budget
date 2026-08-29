@@ -162,7 +162,7 @@ export async function installLinuxApp({ appImage, prefix, iconSource = path.join
     } catch (rollbackError) {
       const cause = error instanceof Error ? error.message : "installation failed"
       const rollback = rollbackError instanceof Error ? rollbackError.message : "rollback failed"
-      throw new Error(`${cause}; AppImage rollback failed: ${rollback}`, { cause: error })
+      throw new Error(`${cause}; AppImage rollback failed: ${rollback}`, { cause: rollbackError })
     }
     throw error
   } finally {
