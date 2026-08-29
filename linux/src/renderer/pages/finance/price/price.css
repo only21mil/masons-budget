@@ -16,7 +16,7 @@
   padding: 0 8px;
   border: 0;
   background: transparent;
-  color: var(--vv-ledger-ink-meta);
+  color: var(--vv-ledger-ink-secondary);
   cursor: pointer;
   font: var(--vv-ledger-weight-medium) var(--vv-ledger-text-chip) var(--vv-ledger-font);
   letter-spacing: 0.14em;
