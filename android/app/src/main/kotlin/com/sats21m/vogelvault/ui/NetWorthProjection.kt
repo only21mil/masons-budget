@@ -21,8 +21,8 @@ import com.sats21m.vogelvault.ui.components.LedgerRow
 import com.sats21m.vogelvault.ui.components.Panel
 import com.sats21m.vogelvault.ui.components.Provenance
 import com.sats21m.vogelvault.ui.components.StateBlock
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
-import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 import java.math.BigDecimal
 import java.math.RoundingMode
 import kotlin.math.pow
@@ -145,6 +145,7 @@ internal fun projectAssetCents(current: Long, weeklyContribution: Long, annualGr
 
 @Composable
 internal fun NetWorthProjectionPanel(state: VaultUiState, displayUnit: DisplayUnit) {
+    val colors = LocalLedgerTheme.current.colors
     var years by rememberSaveable { mutableIntStateOf(DEFAULT_NET_WORTH_HORIZON_YEARS) }
     val selection = state.netWorthSelection()
     val accounts = state.retirementAccountsResult().getOrNull()
@@ -180,7 +181,7 @@ internal fun NetWorthProjectionPanel(state: VaultUiState, displayUnit: DisplayUn
                 Text(
                     "Victor specified VOO at 11% per year and IBIT and Bitcoin at 16% per year. The scenario uses the monthly rates equivalent to those annual returns, converts weekly contributions using 52 weeks per year, and splits each account's contribution by its current holding weights.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = VaultTextMuted,
+                    color = colors.foregroundSecondary,
                     modifier = Modifier.padding(top = VaultSpace.sm),
                 )
             }

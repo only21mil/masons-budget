@@ -44,11 +44,8 @@ import com.sats21m.vogelvault.data.DEVICE_ENTITY_DELETED_REASON
 import com.sats21m.vogelvault.data.DEVICE_ENTITY_NOT_FOUND_REASON
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.TodoItem
-import com.sats21m.vogelvault.ui.theme.VaultAccent
-import com.sats21m.vogelvault.ui.theme.VaultCream
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
-import com.sats21m.vogelvault.ui.theme.VaultSurface
-import com.sats21m.vogelvault.ui.theme.VaultTextDim
 import java.time.Instant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -364,6 +361,7 @@ internal fun TodoRow(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val colors = LocalLedgerTheme.current.colors
     val editDescription = stringResource(R.string.todo_edit_named, todo.title)
     val todoStateDescription = stringResource(
         when {
@@ -376,7 +374,7 @@ internal fun TodoRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .background(VaultSurface)
+            .background(colors.panel)
             .semantics {
                 contentDescription = editDescription
                 stateDescription = todoStateDescription
@@ -396,13 +394,13 @@ internal fun TodoRow(
                     },
                     todo.title,
                 ),
-                tint = if (todo.done) VaultAccent else VaultTextDim,
+                tint = if (todo.done) colors.bitcoin else colors.foregroundSecondary,
             )
         }
         Column(Modifier.weight(1f)) {
             Text(
                 todo.title,
-                color = VaultCream,
+                color = colors.foreground,
                 textDecoration = if (todo.done) TextDecoration.LineThrough else null,
             )
             listOfNotNull(
@@ -415,7 +413,7 @@ internal fun TodoRow(
                     Text(
                         it.joinToString(" · "),
                         style = MaterialTheme.typography.labelSmall,
-                        color = VaultTextDim,
+                        color = colors.foregroundTertiary,
                     )
                 }
         }
@@ -426,7 +424,7 @@ internal fun TodoRow(
                     if (todo.flagged) R.string.todo_remove_flag_named else R.string.todo_add_flag_named,
                     todo.title,
                 ),
-                tint = if (todo.flagged) VaultAccent else VaultTextDim,
+                tint = if (todo.flagged) colors.bitcoin else colors.foregroundSecondary,
             )
         }
         IconButton(enabled = deleteEnabled, onClick = onDelete) {

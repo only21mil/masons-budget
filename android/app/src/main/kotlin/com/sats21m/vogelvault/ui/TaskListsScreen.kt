@@ -46,13 +46,8 @@ import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.ui.components.HorizontalHairline
 import com.sats21m.vogelvault.ui.components.StateBlock
-import com.sats21m.vogelvault.ui.components.ledgerColor
-import com.sats21m.vogelvault.ui.theme.VaultAccent
-import com.sats21m.vogelvault.ui.theme.VaultCream
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
-import com.sats21m.vogelvault.ui.theme.VaultSurface
-import com.sats21m.vogelvault.ui.theme.VaultTextDim
-import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 import java.time.Instant
 import java.time.ZoneId
 
@@ -92,6 +87,7 @@ private fun ProfileTaskListsScreen(
     zoneId: ZoneId,
     nowMillis: () -> Long,
 ) {
+    val colors = LocalLedgerTheme.current.colors
     // ScreenHost has already scoped this handoff to the active profile.
     // TaskListModel deliberately checks again as defense in depth because the
     // model is also callable outside this composable.
@@ -235,7 +231,7 @@ private fun ProfileTaskListsScreen(
             TodoWriteReprovisionCard()
         }
         writeNotice?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = VaultAccent)
+            Text(it, style = MaterialTheme.typography.bodySmall, color = colors.bitcoin)
         }
 
         when (route) {
@@ -363,16 +359,17 @@ private fun SmartListCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = LocalLedgerTheme.current.colors
     Column(
         modifier
-            .background(ledgerColor(VaultSurface), RoundedCornerShape(8.dp))
+            .background(colors.panel, RoundedCornerShape(8.dp))
             .clickable(role = Role.Button, onClick = onClick)
             .padding(VaultSpace.md),
         verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
     ) {
-        Icon(kind.icon(), contentDescription = null, tint = ledgerColor(VaultAccent))
-        Text(kind.title(), style = MaterialTheme.typography.titleSmall, color = ledgerColor(VaultTextMuted))
-        Text(count.toString(), style = MaterialTheme.typography.headlineMedium, color = ledgerColor(VaultCream))
+        Icon(kind.icon(), contentDescription = null, tint = colors.bitcoin)
+        Text(kind.title(), style = MaterialTheme.typography.titleSmall, color = colors.foregroundSecondary)
+        Text(count.toString(), style = MaterialTheme.typography.headlineMedium, color = colors.foreground)
     }
 }
 
@@ -400,12 +397,13 @@ private fun TaskGroupSection(
     emptyText: String,
     onSelect: (TaskGroup) -> Unit,
 ) {
+    val colors = LocalLedgerTheme.current.colors
     TaskPanel(title) {
         if (groups.isEmpty()) {
             Text(
                 emptyText,
                 style = MaterialTheme.typography.bodySmall,
-                color = ledgerColor(VaultTextMuted),
+                color = colors.foregroundSecondary,
                 modifier = Modifier.padding(VaultSpace.md),
             )
         } else {
@@ -421,24 +419,24 @@ private fun TaskGroupSection(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text(group.name, style = MaterialTheme.typography.bodyMedium, color = ledgerColor(VaultCream))
+                        Text(group.name, style = MaterialTheme.typography.bodyMedium, color = colors.foreground)
                         if (group.owner != viewer) {
                             Text(
                                 group.owner.displayName,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = ledgerColor(VaultTextDim),
+                                color = colors.foregroundTertiary,
                             )
                         }
                     }
                     Text(
                         group.openCount.toString(),
                         style = MaterialTheme.typography.labelSmall,
-                        color = ledgerColor(VaultTextMuted),
+                        color = colors.foregroundSecondary,
                     )
                     Icon(
                         Icons.Filled.ChevronRight,
                         contentDescription = null,
-                        tint = ledgerColor(VaultTextDim),
+                        tint = colors.foregroundSecondary,
                     )
                 }
             }
@@ -454,6 +452,7 @@ private fun TaskDetailList(
     actions: TaskRowActions,
     onBack: () -> Unit,
 ) {
+    val colors = LocalLedgerTheme.current.colors
     TaskPanel(title) {
         Row(
             Modifier
@@ -466,16 +465,16 @@ private fun TaskDetailList(
             Icon(
                 Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = stringResource(R.string.tasks_back),
-                tint = ledgerColor(VaultAccent),
+                tint = colors.bitcoin,
             )
-            Text(stringResource(R.string.tasks_all_lists), color = VaultAccent)
+            Text(stringResource(R.string.tasks_all_lists), color = colors.bitcoin)
         }
         HorizontalHairline()
         if (tasks.isEmpty()) {
             Text(
                 stringResource(R.string.tasks_nothing_here),
                 style = MaterialTheme.typography.bodySmall,
-                color = ledgerColor(VaultTextMuted),
+                color = colors.foregroundSecondary,
                 modifier = Modifier.padding(VaultSpace.md),
             )
         } else {
@@ -515,15 +514,16 @@ private fun TaskPanel(
     title: String,
     content: @Composable () -> Unit,
 ) {
+    val colors = LocalLedgerTheme.current.colors
     Column(
         Modifier
             .fillMaxWidth()
-            .background(ledgerColor(VaultSurface), RoundedCornerShape(8.dp)),
+            .background(colors.panel, RoundedCornerShape(8.dp)),
     ) {
         Text(
             title,
             style = MaterialTheme.typography.titleSmall,
-            color = ledgerColor(VaultCream),
+            color = colors.foreground,
             modifier = Modifier
                 .fillMaxWidth()
                 .semantics { heading() }
