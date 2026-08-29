@@ -16,11 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.FamilyMember
-import com.sats21m.vogelvault.ui.theme.VaultAccent
-import com.sats21m.vogelvault.ui.theme.VaultBlack
-import com.sats21m.vogelvault.ui.theme.VaultCream
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
-import com.sats21m.vogelvault.ui.theme.VaultTextDim
 
 internal sealed interface VaultAuthenticationRequest {
     data object AppUnlock : VaultAuthenticationRequest
@@ -115,11 +112,12 @@ internal fun VaultLockedScreen(
     onUnlock: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = LocalLedgerTheme.current.colors
     Column(
         modifier =
             modifier
                 .fillMaxSize()
-                .background(VaultBlack)
+                .background(colors.background)
                 .padding(VaultSpace.xl),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(VaultSpace.md, Alignment.CenterVertically),
@@ -127,17 +125,17 @@ internal fun VaultLockedScreen(
         Icon(
             imageVector = Icons.Filled.Lock,
             contentDescription = null,
-            tint = VaultAccent,
+            tint = colors.bitcoin,
         )
         Text(
             text = stringResource(R.string.vault_locked_title),
             style = MaterialTheme.typography.headlineSmall,
-            color = VaultCream,
+            color = colors.foreground,
         )
         Text(
             text = state.error ?: stringResource(R.string.vault_locked_detail),
             style = MaterialTheme.typography.bodyMedium,
-            color = VaultTextDim,
+            color = colors.foregroundSecondary,
         )
         VaultButton(
             enabled = !state.isAuthenticating,
