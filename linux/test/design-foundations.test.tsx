@@ -1,11 +1,14 @@
+// @vitest-environment happy-dom
+
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 
+import { AppStateProvider } from "../src/renderer/app/AppState.tsx"
 import {
   CarGlyph,
   HorizonMark,
@@ -14,11 +17,14 @@ import {
   PawGlyph,
 } from "../src/renderer/components/LedgerFoundations.tsx"
 import { AppShell } from "../src/renderer/components/AppShell.tsx"
+import { renderRoute } from "./support/renderRoute.ts"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const renderer = join(here, "..", "src", "renderer")
 const foundations = readFileSync(join(renderer, "styles", "ledger-foundations.css"), "utf8")
 const globalStyles = readFileSync(join(renderer, "styles", "global.css"), "utf8")
+const componentStyles = readFileSync(join(renderer, "styles", "components.css"), "utf8")
+const priceStyles = readFileSync(join(renderer, "pages", "finance", "price", "price.css"), "utf8")
 const fontPath = join(
   renderer,
   "assets",
@@ -28,6 +34,8 @@ const fontPath = join(
 )
 
 describe("ledger design foundations", () => {
+  afterEach(() => window.localStorage.clear())
+
   it("adopts the ledger scope at the application shell", () => {
     const shell = renderToStaticMarkup(
       <AppShell sections={[]} activeId="home" onNavigate={() => {}} topBar={null}>
@@ -111,5 +119,42 @@ describe("ledger design foundations", () => {
     )
     expect(value).toContain("vv-ledger-semantic--negative")
     expect(value).toContain('<span class="vv-sr-only">Loss: </span>-$12.00')
+  })
+
+  it("disables terminal effects in light without clearing stored preferences", () => {
+    window.localStorage.setItem("vogel-vault.ledger-theme", "light")
+    window.localStorage.setItem("vogel-vault.scanlines", "true")
+    window.localStorage.setItem("vogel-vault.phosphor", "true")
+
+    const shell = renderToStaticMarkup(
+      <AppStateProvider>
+        <AppShell sections={[]} activeId="dashboard" onNavigate={() => {}} topBar={null}>
+          Ledger content
+        </AppShell>
+      </AppStateProvider>,
+    )
+    const settings = renderRoute("settings")
+
+    expect(shell).toContain('data-vv-theme="light"')
+    expect(shell).toContain('data-vv-phosphor="off"')
+    expect(shell).not.toContain("vv-ledger-scanlines")
+    for (const label of ["Phosphor glow", "Scanlines"]) {
+      expect(settings).toMatch(
+        new RegExp(
+          `${label}[\\s\\S]*Dark theme only — Daylight is ink on paper\\.[\\s\\S]*aria-checked="false"[\\s\\S]*aria-disabled="true"[\\s\\S]*disabled=""`,
+        ),
+      )
+    }
+    expect(window.localStorage.getItem("vogel-vault.scanlines")).toBe("true")
+    expect(window.localStorage.getItem("vogel-vault.phosphor")).toBe("true")
+  })
+
+  it("scopes phosphor glow to the available dark-theme price hero", () => {
+    expect(componentStyles).not.toMatch(/data-vv-phosphor[^}]+vv-kpi/s)
+    expect(componentStyles).not.toMatch(/data-vv-phosphor[^}]+vv-ledger-semantic/s)
+    expect(foundations).not.toContain(".vv-ledger-glow")
+    expect(priceStyles).toMatch(
+      /\[data-vv-theme="dark"\]\[data-vv-phosphor="on"\][^{]+\.vv-price-hero__value:not\(\.vv-price-hero__value--unavailable\)[^{]+\{\s*text-shadow: 0 0 18px rgba\(247,147,26,\.30\);/,
+    )
   })
 })

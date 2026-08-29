@@ -1145,11 +1145,6 @@
   font-weight: 500;
 }
 
-.vv-ledger-root[data-vv-phosphor="on"] .vv-kpi--accent .vv-kpi__value,
-.vv-ledger-root[data-vv-phosphor="on"] .vv-ledger-semantic--bitcoin {
-  text-shadow: 0 0 8px color-mix(in oklch, var(--vv-ledger-bitcoin) 44%, transparent);
-}
-
 .vv-table th {
   color: var(--vv-ledger-ink-meta);
   font-size: 9px;
@@ -1596,12 +1591,5 @@
   .vv-activity-controls {
     align-items: stretch;
     flex-direction: column;
-  }
-}
-
-@media (prefers-reduced-motion: reduce), (prefers-reduced-transparency: reduce) {
-  .vv-ledger-root[data-vv-phosphor="on"] .vv-kpi--accent .vv-kpi__value,
-  .vv-ledger-root[data-vv-phosphor="on"] .vv-ledger-semantic--bitcoin {
-    text-shadow: none;
   }
 }

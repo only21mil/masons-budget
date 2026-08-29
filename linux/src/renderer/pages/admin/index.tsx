@@ -668,6 +668,8 @@ function SettingsPage() {
   } = useAppState()
   const runtime = typeof window !== "undefined" ? window.vogelVault?.getRuntimeInfo() : undefined
   const readsRows = data.transactions.source.startsWith("Convex row tables")
+  const terminalEffectsAvailable = ledgerTheme === "dark"
+  const terminalEffectHint = "Dark theme only — Daylight is ink on paper."
 
   return (
     <>
@@ -727,14 +729,16 @@ function SettingsPage() {
             />
             <SettingsToggle
               label="Phosphor glow"
-              hint="Apply a restrained bloom to Bitcoin hero figures and the sync dot."
-              enabled={phosphorEnabled}
+              hint={terminalEffectsAvailable ? "Apply bloom to the Bitcoin price hero." : terminalEffectHint}
+              enabled={terminalEffectsAvailable && phosphorEnabled}
+              disabled={!terminalEffectsAvailable}
               onChange={setPhosphorEnabled}
             />
             <SettingsToggle
               label="Scanlines"
-              hint="Overlay a non-interactive three-pixel ledger texture."
-              enabled={scanlinesEnabled}
+              hint={terminalEffectsAvailable ? "Overlay a non-interactive three-pixel ledger texture." : terminalEffectHint}
+              enabled={terminalEffectsAvailable && scanlinesEnabled}
+              disabled={!terminalEffectsAvailable}
               onChange={setScanlinesEnabled}
             />
             <SettingsToggle

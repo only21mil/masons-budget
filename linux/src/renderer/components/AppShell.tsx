@@ -40,15 +40,16 @@ export function AppShell({ sections, activeId, onNavigate, topBar, children }: A
   const theme = preferences?.ledgerTheme ?? "dark"
   const scanlines = preferences?.scanlinesEnabled ?? true
   const phosphor = preferences?.phosphorEnabled ?? true
+  const terminalEffectsEnabled = theme === "dark"
 
   return (
     <div
       className="vv-shell vv-ledger-root"
       data-vv-theme={theme}
       data-vv-route={activeId}
-      data-vv-phosphor={phosphor ? "on" : "off"}
+      data-vv-phosphor={terminalEffectsEnabled && phosphor ? "on" : "off"}
     >
-      <LedgerScanlines enabled={scanlines} />
+      <LedgerScanlines enabled={terminalEffectsEnabled && scanlines} />
       <nav className="vv-sidebar" aria-label="Primary">
         <div className="vv-sidebar__brand">
           <HorizonMark size={32} className="vv-sidebar__mark" title="Sovereign Budget App" />
