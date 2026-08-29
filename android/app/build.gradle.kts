@@ -135,8 +135,8 @@ android {
         // 29 covers GrapheneOS-era devices comfortably while keeping modern APIs.
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
         // No variant receives a read credential at build time. Users configure
         // it manually and Android keeps it in encrypted app storage.
         buildConfigField("String", "CONVEX_READ_TOKEN", "\"\"")
