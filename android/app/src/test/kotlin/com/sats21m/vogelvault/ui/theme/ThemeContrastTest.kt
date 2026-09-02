@@ -23,7 +23,7 @@ class ThemeContrastTest {
         assertEquals(Color(0xFF111614), dark.panelRaised)
         assertEquals(Color(0xFFE8EFE9), LedgerPalettes.TerminalDark.foreground)
         assertEquals(Color(0xFFE8EFE9).copy(alpha = 0.56f), dark.foregroundSecondary)
-        assertEquals(Color(0xFFE8EFE9).copy(alpha = 0.36f), dark.foregroundTertiary)
+        assertEquals(Color(0xFFE8EFE9).copy(alpha = 0.52f), dark.foregroundTertiary)
         assertEquals(Color(0xFFF7931A), dark.bitcoin)
         assertEquals(LedgerOklch(0.74f, 0.155f, 158f), dark.gainSpec)
         assertEquals(LedgerOklch(0.70f, 0.155f, 28f), dark.lossSpec)
@@ -32,8 +32,8 @@ class ThemeContrastTest {
         assertEquals(Color(0xFFEDEBE4), light.panel)
         assertEquals(Color.White, light.panelRaised)
         assertEquals(Color(0xFF141715), light.foreground)
-        assertEquals(Color(0xFF141715).copy(alpha = 0.60f), light.foregroundSecondary)
-        assertEquals(Color(0xFF141715).copy(alpha = 0.42f), light.foregroundTertiary)
+        assertEquals(Color(0xFF141715).copy(alpha = 0.64f), light.foregroundSecondary)
+        assertEquals(Color(0xFF141715).copy(alpha = 0.62f), light.foregroundTertiary)
         assertEquals(Color(0xFFC96A05), light.bitcoin)
         assertEquals(LedgerOklch(0.52f, 0.13f, 158f), light.gainSpec)
         assertEquals(LedgerOklch(0.52f, 0.15f, 28f), light.lossSpec)
@@ -82,6 +82,17 @@ class ThemeContrastTest {
     }
 
     @Test
+    fun `secondary and tertiary ink clear AA on every ledger surface`() {
+        listOf(LedgerPalettes.TerminalDark, LedgerPalettes.DaylightLight).forEach { palette ->
+            listOf(palette.foregroundSecondary, palette.foregroundTertiary).forEach { ink ->
+                listOf(palette.background, palette.panel, palette.panelRaised).forEach { surface ->
+                    assertTrue(contrastRatio(ink, surface) >= 4.5)
+                }
+            }
+        }
+    }
+
+    @Test
     fun `dark ink clears AA on both Bitcoin primary fills`() {
         val onBitcoin = LedgerPalettes.TerminalDark.background
 
@@ -99,6 +110,7 @@ class ThemeContrastTest {
                 scheme.onPrimaryContainer to scheme.primaryContainer,
                 scheme.onSecondary to scheme.secondary,
                 scheme.onSecondaryContainer to scheme.secondaryContainer,
+                scheme.onTertiary to scheme.tertiary,
                 scheme.onTertiaryContainer to scheme.tertiaryContainer,
                 scheme.onBackground to scheme.background,
                 scheme.onSurface to scheme.surface,
