@@ -5,7 +5,7 @@ import type {
   VogelVaultRowResult,
 } from "../shared/ipc.ts"
 import { loadConvexRowEnvelope } from "../src/renderer/data/convexRows.ts"
-import { deriveBudgetSpend } from "../src/renderer/data/transactionAmounts.ts"
+import { deriveBudgetSpend } from "@vogel-vault/domain/readModel"
 
 function response(
   request: VogelVaultRowRequest,

@@ -45,7 +45,7 @@ describe("payment source contract", () => {
     expect(PAYMENT_SOURCES.map((source) => ({
       wire: source,
       label: paymentSourceLabel(source),
-      route: paymentSourceRoute(source) === "billPay" ? "btc_bill_pay" : "transaction",
+      route: paymentSourceRoute(source) === "btc_bill_pay" ? "btc_bill_pay" : "transaction",
       classification: paymentSourceClassification(source),
       supportedActivities: [...paymentSourceSupportedActivities(source)],
     }))).toEqual(paymentSourceFixture.sources)
@@ -56,19 +56,19 @@ describe("payment source contract", () => {
       amountSats: SATS,
       bitcoinAccountKey: ACCOUNT,
     })
-    const recovered = fields.route === "billPay"
+    const recovered = fields.route === "btc_bill_pay"
       ? paymentSourceFromRow({ platform: fields.platform })
       : paymentSourceFromRow({ card: fields.card })
     expect(recovered).toBe(source)
   })
 
   it("routes only River to the bill-pay table", () => {
-    expect(paymentSourceRoute("river_bitcoin_bill_pay")).toBe("billPay")
+    expect(paymentSourceRoute("river_bitcoin_bill_pay")).toBe("btc_bill_pay")
     for (const source of PAYMENT_SOURCES.filter((s) => s !== "river_bitcoin_bill_pay")) {
       expect(paymentSourceRoute(source)).toBe("transaction")
     }
     expect(paymentSourceToRowFields("river_bitcoin_bill_pay", { amountSats: SATS })).toEqual({
-      route: "billPay",
+      route: "btc_bill_pay",
       platform: "river_bitcoin_bill_pay",
       btcSpentSats: SATS,
     })

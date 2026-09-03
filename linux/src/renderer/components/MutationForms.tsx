@@ -45,6 +45,9 @@ import {
 import { localMutationError } from "./CrudControls.tsx"
 import { DialogFrame } from "./DialogFrame.tsx"
 import { Button, Field, Select, TextInput } from "./primitives.tsx"
+// The local task day, not a UTC slice of the timestamp: forms open at 23:30 in
+// Vancouver must pre-fill today's date, not tomorrow's.
+import { localDateKey } from "../pages/tasks/taskClock.tsx"
 
 function optional(value: string): string | undefined {
   const trimmed = value.trim()
@@ -52,7 +55,7 @@ function optional(value: string): string | undefined {
 }
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10)
+  return localDateKey(new Date())
 }
 
 /** Select value for a stored card string the closed source list does not know. */
@@ -251,7 +254,7 @@ export function TransactionFormDialog({
       ? bitcoinCapability.reason
       : sourceBlockReason
   const riverHandoff = selectedSource !== null &&
-    paymentSourceRoute(selectedSource) === "billPay" &&
+    paymentSourceRoute(selectedSource) === "btc_bill_pay" &&
     onRecordAsBillPay !== undefined
   // The bill pay needs the same floor a transaction save needs; the sats, the
   // BTC price, and the fee are still the user's to enter on the other side.

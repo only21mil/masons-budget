@@ -23,7 +23,7 @@ import {
 } from "../src/renderer/data/fixtures.ts"
 import { selectFinanceNetWorth } from "../src/renderer/data/financeReadModel.ts"
 import type { RendererMutationAdapter } from "../src/renderer/data/mutations.ts"
-import { deriveBudgetSpend } from "../src/renderer/data/transactionAmounts.ts"
+import { deriveBudgetSpend } from "@vogel-vault/domain/readModel"
 import { dashboardIncomeMtd } from "../src/renderer/pages/finance/index.tsx"
 import { ALL_PAGES } from "../src/renderer/pages/index.ts"
 import { TaskClockProvider } from "../src/renderer/pages/tasks/taskClock.tsx"

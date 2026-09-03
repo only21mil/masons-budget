@@ -25,7 +25,7 @@
   --vv-ledger-rule-subtle: rgba(214, 238, 224, 0.06);
   --vv-ledger-ink: #e8efe9;
   --vv-ledger-ink-secondary: rgba(232, 239, 233, 0.56);
-  --vv-ledger-ink-meta: rgba(232, 239, 233, 0.36);
+  --vv-ledger-ink-meta: rgba(232, 239, 233, 0.52);
   --vv-ledger-bitcoin: #f7931a;
   --vv-ledger-bitcoin-fill: #f7931a;
   --vv-ledger-on-bitcoin: #0a0d0c;
@@ -111,8 +111,8 @@
   --vv-ledger-rule: rgba(20, 23, 21, 0.14);
   --vv-ledger-rule-subtle: rgba(20, 23, 21, 0.08);
   --vv-ledger-ink: #141715;
-  --vv-ledger-ink-secondary: rgba(20, 23, 21, 0.6);
-  --vv-ledger-ink-meta: rgba(20, 23, 21, 0.42);
+  --vv-ledger-ink-secondary: rgba(20, 23, 21, 0.64);
+  --vv-ledger-ink-meta: rgba(20, 23, 21, 0.62);
   --vv-ledger-bitcoin: #c96a05;
   --vv-ledger-bitcoin-fill: #f7931a;
   --vv-ledger-on-bitcoin: #0a0d0c;
