@@ -587,7 +587,7 @@ describe("the money copy is the shared domain implementation", () => {
     }
     for (const bad of ["1e5", "01", "+1", "1234567890123", " 1"]) {
       expect(() => canonicalizeSharesDecimal(bad, "case")).toThrow(
-        domain.RangeError ? RangeError : Error,
+        RangeError,
       );
       expect(() => domain.canonicalizeSharesDecimal(bad)).toThrow();
     }

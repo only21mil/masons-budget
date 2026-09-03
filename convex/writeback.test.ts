@@ -206,7 +206,9 @@ interface AuditEntry {
   entity: string;
   file: string;
   id: string;
+  /** Server-derived from the credential; display-only claimedActor rides along. */
   actor: string;
+  claimedActor?: string;
   before: Row | null;
   after: Row;
 }
@@ -1308,7 +1310,8 @@ describe("audit log", () => {
         entity: "transaction",
         file: "transactions",
         id: `txn-${i}`,
-        actor: "victor@linux",
+        actor: "sync-token",
+        claimedActor: "victor@linux",
         before: null,
         after: { id: `txn-${i}` },
       });
@@ -1333,7 +1336,8 @@ describe("audit log", () => {
         entity: "transaction",
         file: "transactions",
         id: `txn-${i}`,
-        actor: "victor@linux",
+        actor: "sync-token",
+        claimedActor: "victor@linux",
         before: { note: fat },
         after: { note: fat },
       });
