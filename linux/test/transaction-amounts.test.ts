@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest"
 
-import type { Budget, Transaction } from "@vogel-vault/domain/readModel"
-
 import {
+  type Budget,
   deriveBudgetSpend,
   displaySpendAmount,
   hasOppositeSpendSign,
   spendAmount,
-} from "../src/renderer/data/transactionAmounts.ts"
+  type Transaction,
+} from "@vogel-vault/domain/readModel"
 
 function tx(id: string, owner: Transaction["owner"], amount: bigint): Transaction {
   return {

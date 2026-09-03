@@ -6,8 +6,9 @@
 import { useMemo, useState } from "react"
 import type { ReactNode } from "react"
 
-import { type FamilyMember, visibleTo } from "@vogel-vault/domain/family"
-import { formatMinorUnits } from "@vogel-vault/domain/money"
+import { type FamilyMember } from "@vogel-vault/domain/family"
+import { formatUsd } from "@vogel-vault/domain/money"
+import { deriveMoneyOutToday } from "@vogel-vault/domain/moneyOutToday"
 import type { TodoItem } from "@vogel-vault/domain/readModel"
 
 import { useAppState } from "../../app/AppState.tsx"
@@ -33,7 +34,6 @@ import {
   stableId,
 } from "../../data/mutations.ts"
 import type { PageManifest } from "../types.ts"
-import { spendAmount } from "../../data/transactionAmounts.ts"
 import { type TaskNow, useTaskNow, useTaskToday } from "./taskClock.tsx"
 
 /**
@@ -447,25 +447,36 @@ function TodayPage() {
 
 function TodayMoneyOut({ today }: { readonly today: string }) {
   const { activeProfile, data } = useAppState()
-  const rows = visibleTo(activeProfile, data.transactions.value).filter(
-    (transaction) => transaction.date === today && spendAmount(transaction) > 0n,
+  // The shared moneyOutToday contract, not a local re-derivation: adults scope
+  // to the canonical adult ledger, bill pays count (amount + fee), and
+  // credit-card-payment rows are excluded — the same numbers iOS and Android
+  // show under the same title.
+  const moneyOut = useMemo(
+    () =>
+      deriveMoneyOutToday({
+        activeProfile,
+        date: today,
+        transactions: data.transactions.value,
+        billPays: data.billPays.value,
+      }),
+    [activeProfile, today, data.transactions.value, data.billPays.value],
   )
 
   return (
-    <Panel title="Money out today" source="Scoped outgoing ledger rows" flush>
+    <Panel title="Money out today" source="Shared moneyOutToday contract" flush>
       <DataTable
         columns={[
-          { key: "merchant", header: "Merchant", render: (row) => row.merchant },
-          { key: "category", header: "Category", render: (row) => row.category, secondary: true },
+          { key: "merchant", header: "Merchant", render: (row) => row.row.merchant },
+          { key: "category", header: "Category", render: (row) => row.row.category, secondary: true },
           {
             key: "amount",
             header: "USD",
             numeric: true,
-            render: (row) => `−$${formatMinorUnits(spendAmount(row), 2)}`,
+            render: (row) => formatUsd(row.contributionCents),
           },
         ]}
-        rows={rows}
-        rowKey={(row) => row.id}
+        rows={moneyOut.sources}
+        rowKey={(row) => row.row.id}
         state={tableState(data.transactions.status)}
         emptyTitle="Nothing spent today"
         emptyDetail="No outgoing ledger rows posted today for this profile."

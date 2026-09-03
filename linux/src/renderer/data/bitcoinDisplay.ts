@@ -1,24 +1,35 @@
+// The renderer's Bitcoin display composition.
+//
+// The unit tokens themselves (DISPLAY_UNITS, DisplayUnit,
+// PRICE_UNAVAILABLE, displayUnitFromStorageKey, formatBitcoin,
+// usdCentsToSats) live in `@vogel-vault/domain/money` and are re-exported
+// here — one definition, shared with iOS and Android, so a divergence between
+// pages and clients cannot compile. This module adds only the composition the
+// renderer needs on top: the quote gate, the mixed-native-unit formatter, and
+// the newest-visible-buy price.
+
 import type { FamilyMember } from "@vogel-vault/domain/family"
 import { visibleTo } from "@vogel-vault/domain/family"
 import { type MarketQuote, usableMarketQuote } from "@vogel-vault/domain/finance"
 import {
-  SATS_PER_BTC,
+  type DisplayUnit,
+  PRICE_UNAVAILABLE,
   formatBtc,
   formatSats,
   formatUsd,
   satsToUsdCents,
+  usdCentsToSats,
 } from "@vogel-vault/domain/money"
 import type { BTCBuy } from "@vogel-vault/domain/readModel"
 
-export const DISPLAY_UNITS = [
-  { storageKey: "btc", label: "BTC" },
-  { storageKey: "sats", label: "SATS" },
-  { storageKey: "usd", label: "USD" },
-] as const
-
-export type DisplayUnit = (typeof DISPLAY_UNITS)[number]["storageKey"]
-
-export const PRICE_UNAVAILABLE = "Price unavailable"
+export {
+  DISPLAY_UNITS,
+  PRICE_UNAVAILABLE,
+  displayUnitFromStorageKey,
+  formatBitcoin,
+  usdCentsToSats,
+} from "@vogel-vault/domain/money"
+export type { DisplayUnit } from "@vogel-vault/domain/money"
 
 export interface DisplayAmount {
   /** Exact ledger quantity, when the source records sats. */
@@ -30,37 +41,6 @@ export interface DisplayAmount {
 export interface RecordedBitcoinPrice {
   readonly cents: bigint
   readonly date: string
-}
-
-export function displayUnitFromStorageKey(value: string | null | undefined): DisplayUnit {
-  return DISPLAY_UNITS.some((unit) => unit.storageKey === value)
-    ? value as DisplayUnit
-    : "btc"
-}
-
-/**
- * Format one exact satoshi value in the selected presentation unit.
- *
- * USD requires an explicitly supplied positive integer-cent price. Missing,
- * zero, and negative prices are unknown rather than a confident "$0.00".
- */
-export function formatBitcoin(
-  sats: bigint,
-  unit: DisplayUnit,
-  btcPriceCents?: bigint | null,
-): string {
-  switch (unit) {
-    case "btc":
-      return formatBtc(sats)
-    case "sats":
-      return formatSats(sats)
-    case "usd":
-      return btcPriceCents !== null &&
-        btcPriceCents !== undefined &&
-        btcPriceCents > 0n
-        ? formatUsd(satsToUsdCents(sats, btcPriceCents))
-        : PRICE_UNAVAILABLE
-  }
 }
 
 /**
@@ -77,33 +57,26 @@ export function availableBtcQuote(
   return usableMarketQuote(quotes, "BTC")
 }
 
-/** Convert cents to sats with the same half-away-from-zero rule as sats->USD. */
-export function usdCentsToSats(
-  usdCents: bigint,
-  btcPriceCents: bigint,
-): bigint | null {
-  if (btcPriceCents <= 0n) return null
-  const numerator = usdCents * SATS_PER_BTC
-  const half = btcPriceCents / 2n
-  return numerator >= 0n
-    ? (numerator + half) / btcPriceCents
-    : -((-numerator + half) / btcPriceCents)
-}
-
 /**
  * Format an amount in the selected unit, preferring the source's exact native
  * value and converting only through the explicit quote contract.
+ *
+ * `usdCentsToSats` throws on a non-positive price, so a price the shared
+ * contract refuses yields PRICE_UNAVAILABLE here rather than an exception on a
+ * render path — the same sentinel every other unavailable conversion produces.
  */
 export function formatDisplayAmount(
   amount: DisplayAmount,
   unit: DisplayUnit,
   btcPriceCents: bigint | null,
 ): string {
+  const usablePrice = btcPriceCents !== null && btcPriceCents > 0n
+
   if (unit === "usd") {
     if (amount.usdCents !== null && amount.usdCents !== undefined) {
       return formatUsd(amount.usdCents)
     }
-    return amount.sats !== null && amount.sats !== undefined && btcPriceCents !== null
+    return amount.sats !== null && amount.sats !== undefined && usablePrice
       ? formatUsd(satsToUsdCents(amount.sats, btcPriceCents))
       : PRICE_UNAVAILABLE
   }
@@ -112,7 +85,7 @@ export function formatDisplayAmount(
   if ((sats === null || sats === undefined) &&
       amount.usdCents !== null &&
       amount.usdCents !== undefined &&
-      btcPriceCents !== null) {
+      usablePrice) {
     sats = usdCentsToSats(amount.usdCents, btcPriceCents)
   }
   if (sats === null || sats === undefined) return PRICE_UNAVAILABLE

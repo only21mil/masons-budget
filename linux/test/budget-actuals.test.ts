@@ -7,7 +7,7 @@ import type { LinuxBillPay } from "../src/renderer/data/billPayBudgetEffect.ts"
 import {
   budgetBillPaysFor,
   deriveBudgetSpend,
-} from "../src/renderer/data/transactionAmounts.ts"
+} from "@vogel-vault/domain/readModel"
 
 const BUDGET: Budget = {
   updatedAtMs: 1,

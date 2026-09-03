@@ -10,6 +10,7 @@ import {
   FAMILY_MEMBERS,
   type FamilyMember,
   allowedSwitchTargets,
+  canSeeDataOwnedBy,
   displayName,
   isAdult,
   profileDescription,
@@ -20,6 +21,7 @@ import {
 import { formatMinorUnits, sum } from "@vogel-vault/domain/money"
 import {
   budgetTransactionsFor,
+  spendAmount,
   transactionsInMonth,
   type Freshness,
   type Transaction,
@@ -30,7 +32,7 @@ import type { FixtureEnvelope } from "../../data/fixtures.ts"
 import { fiatCentsOf } from "../../data/btcFiatValuation.ts"
 import { PRICE_UNAVAILABLE } from "../../data/bitcoinDisplay.ts"
 import { paymentSourceDisplay } from "../../data/paymentSource.ts"
-import { spendAmount } from "../../data/transactionAmounts.ts"
+import { useTaskToday } from "../tasks/taskClock.tsx"
 import {
   Badge,
   type BannerTone,
@@ -203,9 +205,10 @@ function VisibilityMatrix() {
               {displayName(viewer)}
             </th>
             {FAMILY_MEMBERS.map((owner) => {
-              // Rendered from the shared contract so this table cannot drift
-              // from the behaviour the rest of the app enforces.
-              const sees = viewer === owner || isAdult(viewer)
+              // The shared contract itself, not a copy of it: this table is
+              // the display surface for the visibility rule the rest of the
+              // app enforces, so it calls the same function.
+              const sees = canSeeDataOwnedBy(viewer, owner)
               return (
                 <td key={owner} className="vv-table__cell--num">
                   <span className={sees ? "vv-positive" : "vv-dim"}>{sees ? "yes" : "no"}</span>
@@ -255,10 +258,13 @@ function SyncHealthPage() {
 
   const slices = [
     { name: "transactions", slice: data.transactions },
+    { name: "income", slice: data.income },
     { name: "budget", slice: data.budget },
-    { name: "btc-balance-snapshot", slice: data.btcAccounts },
+    { name: "btc-balance-document", slice: data.btcBalanceDocument },
+    { name: "btc-accounts", slice: data.btcAccounts },
     { name: "bitcoin-buys", slice: data.btcBuys },
     { name: "bitcoin-bill-pays", slice: data.billPays },
+    { name: "btc-transfers", slice: data.btcTransfers },
     { name: "todos", slice: data.todos },
     {
       name: "finance-document",
@@ -1300,7 +1306,9 @@ function MorePage() {
   const buyCount = visibleTo(activeProfile, data.btcBuys.value).length
   const billPayCount = visibleTo(activeProfile, data.billPays.value).length
   const tasks = data.todos.value.filter((todo) => todo.owner === activeProfile)
-  const today = new Date(data.generatedAt).toISOString().slice(0, 10)
+  // The local task day, not a UTC slice of a timestamp: the Today list and the
+  // badge must agree on what "today" means for a profile west of Greenwich.
+  const today = useTaskToday()
   const todayCount = tasks.filter((todo) => todo.due !== null && todo.due <= today).length
   const openTasks = tasks.filter((todo) => !todo.done).length
   const completedTasks = tasks.filter((todo) => todo.done).length

@@ -26,16 +26,42 @@ export type BTCSnapshotWithFiatAvailability = BTCSnapshot & {
 }
 
 /**
+ * The structural input the legacy-decoding rule needs.
+ *
+ * Domain rows (`BTCAccount`, `BTCTotals`) and the IPC wire rows both satisfy
+ * this shape, so there is exactly one decoder for both — the wire adapter maps
+ * field names, never semantics. An embedded valuation's optional fields are
+ * normalised to nulls here so partial wire values cannot masquerade as full
+ * FiatValuation records.
+ */
+export type FiatValuationSource = {
+  readonly sats: bigint
+  readonly fiat: bigint
+  readonly fiatValuation?: {
+    readonly cents: bigint
+    readonly priceCents?: bigint | null
+    readonly quotedAt?: string | null
+    readonly source?: string | null
+    readonly confidence?: string | null
+  } | null
+}
+
+/**
  * Resolve transition rows without treating a confident sats balance as a USD
  * valuation. Explicit availability wins; legacy positive-sats/zero-fiat rows
  * are conservatively unavailable.
  */
-export function fiatValuationOf(
-  value: BTCAccount | BTCTotals,
-): FiatValuation | null {
-  const transition = value as BTCAccountWithFiatValuation | BTCTotalsWithFiatValuation
-  if (Object.hasOwn(transition, "fiatValuation")) {
-    return transition.fiatValuation ?? null
+export function fiatValuationOf(value: FiatValuationSource): FiatValuation | null {
+  if (Object.hasOwn(value, "fiatValuation")) {
+    const embedded = value.fiatValuation
+    if (embedded === null || embedded === undefined) return null
+    return {
+      cents: embedded.cents,
+      priceCents: embedded.priceCents ?? null,
+      quotedAt: embedded.quotedAt ?? null,
+      source: embedded.source ?? null,
+      confidence: embedded.confidence ?? null,
+    }
   }
   if (value.sats > 0n && value.fiat === 0n) return null
   return {

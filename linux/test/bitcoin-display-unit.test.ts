@@ -106,7 +106,9 @@ test("cross-unit values prefer exact native amounts and use only an accepted quo
 test("USD-to-sats rounds half away from zero without floating point", () => {
   assert.equal(usdCentsToSats(1n, 3n), 33_333_333n)
   assert.equal(usdCentsToSats(-1n, 3n), -33_333_333n)
-  assert.equal(usdCentsToSats(1n, 0n), null)
+  // The shared money contract throws on a non-positive price rather than
+  // returning a sentinel — one failure contract for every client.
+  assert.throws(() => usdCentsToSats(1n, 0n), RangeError)
 })
 
 test("only a live or explicitly stale operational BTC MarketQuote can convert", () => {

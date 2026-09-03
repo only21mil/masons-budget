@@ -19,7 +19,10 @@
 //     the app keeps rendering sanitized fallback fixtures.
 //  2. **The credential is never a constant.** Not in source, not in a `define`,
 //     not in the bundle. It arrives through the process environment at launch,
-//     lives in a `#private` field, and has no public accessor.
+//     lives in a `#private` field, and has no public accessor. The installed
+//     launcher instead hands it over as a 0600 file that main reads and deletes
+//     at startup, so the token never enters the process environment where
+//     `/proc/<pid>/environ` or a Chromium child would inherit it.
 //  3. **Nothing reaches the renderer but a read model.** The renderer gets file
 //     metadata and a status. Never the credential, never the deployment URL,
 //     never a server-authored string — see `RemoteSnapshotResult`.
@@ -27,6 +30,11 @@
 //     csvExport.ts: everything is pure except an injected poster, so
 //     scripts/qa-preload-boundary.mjs imports this module and exercises it
 //     directly, with no display, no deployment and no build step.
+//
+// The deployment origin is pinned exactly like the mutation path — both
+// transports resolve through electron/approvedDeployment.ts.
+
+import { resolveApprovedDeploymentOrigin } from "./approvedDeployment.ts"
 
 /** Environment as this module reads it. Injected so it can be exercised. */
 export type ReadEnvironment = Readonly<Record<string, string | undefined>>
@@ -54,11 +62,15 @@ export const READ_ENV_KEYS = {
  * configured" apart from "we are configured but sending nothing" — the second
  * reads fine against a permissive deployment and dies the instant the hatch is
  * removed, which is the exact failure the staged cutover exists to prevent.
+ * `untrusted-endpoint` is the origin pin: the URL is HTTPS but names a host
+ * other than the household deployment, exactly the configuration mutations
+ * already refuse.
  */
 export type RemoteReadReadiness =
   | "disabled"
   | "unconfigured"
   | "insecure-endpoint"
+  | "untrusted-endpoint"
   | "ready-unauthenticated"
   | "ready"
 
@@ -120,22 +132,26 @@ export class RemoteReadSettings {
 }
 
 /**
- * A deployment URL is usable only over HTTPS.
+ * A deployment URL is usable only when it names the household origin exactly.
  *
- * Refused rather than downgraded: cleartext would put the read credential and
+ * The read credential once rode along to any HTTPS host the environment named,
+ * while mutations were pinned to the approved origin. Reads now resolve through
+ * the same `resolveApprovedDeploymentOrigin` pin, so the asymmetry is gone: a
+ * URL that cannot serve writes cannot silently serve authenticated reads.
+ * Refused rather than downgraded — cleartext would put the read credential and
  * the family's finances on the wire in the clear, and "not configured" is a far
  * more legible failure than a silent plaintext read.
  */
-function secureQueryEndpoint(raw: string): string | null {
+function readEndpointFor(raw: string): { origin: string } | { refused: RemoteReadReadiness } {
+  const origin = resolveApprovedDeploymentOrigin(raw)
+  if (origin !== null) return { origin }
   let parsed: URL
   try {
-    parsed = new URL(raw)
+    parsed = new URL(raw.trim())
   } catch {
-    return null
+    return { refused: "insecure-endpoint" }
   }
-  if (parsed.protocol !== "https:") return null
-  if (parsed.hostname === "") return null
-  return `${raw.replace(/\/+$/, "")}/api/query`
+  return { refused: parsed.protocol === "https:" ? "untrusted-endpoint" : "insecure-endpoint" }
 }
 
 function trimmedOrNull(value: string | undefined): string | null {
@@ -170,13 +186,13 @@ export function resolveRemoteReadSettings(env: ReadEnvironment): RemoteReadSetti
   const rawUrl = trimmedOrNull(env[READ_ENV_KEYS.deploymentUrl])
   if (rawUrl === null) return new RemoteReadSettings("unconfigured", null, null)
 
-  const endpoint = secureQueryEndpoint(rawUrl)
-  if (endpoint === null) return new RemoteReadSettings("insecure-endpoint", null, null)
+  const resolved = readEndpointFor(rawUrl)
+  if ("refused" in resolved) return new RemoteReadSettings(resolved.refused, null, null)
 
   const credential = trimmedOrNull(env[READ_ENV_KEYS.credential])
   return new RemoteReadSettings(
     credential === null ? "ready-unauthenticated" : "ready",
-    endpoint,
+    `${resolved.origin}/api/query`,
     credential,
   )
 }
@@ -443,6 +459,11 @@ export function createRemoteReader(options: RemoteReaderOptions): RemoteReader {
         return { status: "unconfigured", reason: "No deployment is configured on this machine." }
       case "insecure-endpoint":
         return { status: "unconfigured", reason: "The configured deployment is not HTTPS." }
+      case "untrusted-endpoint":
+        return {
+          status: "unconfigured",
+          reason: "The configured deployment is not the approved household deployment.",
+        }
       case "ready-unauthenticated":
       case "ready":
         break

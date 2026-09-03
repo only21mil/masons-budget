@@ -197,6 +197,15 @@ function btcBuy(row: VogelVaultBtcBuyRow): BTCBuy {
   }
 }
 
+/**
+ * Decode the IPC row's fiat-availability fields through the one canonical
+ * legacy rule in btcFiatValuation.ts.
+ *
+ * This adapter only maps the wire field name (`fiatCents` → `fiat`) onto that
+ * rule; the decoding itself — the `Object.hasOwn` transition check, the
+ * conservative refusal of positive-sats/zero-fiat legacy rows, and the
+ * normalisation of partial valuations — lives in exactly one place.
+ */
 function ipcFiatValuation(row: {
   readonly sats: bigint
   readonly fiatCents: bigint
@@ -208,25 +217,15 @@ function ipcFiatValuation(row: {
     readonly confidence?: string
   } | null
 }): FiatValuation | null {
-  if (!Object.hasOwn(row, "fiatValuation")) {
-    if (row.sats > 0n && row.fiatCents === 0n) return null
-    return {
-      cents: row.fiatCents,
-      priceCents: null,
-      quotedAt: null,
-      source: null,
-      confidence: null,
-    }
-  }
-  return row.fiatValuation
-    ? {
-        cents: row.fiatValuation.cents,
-        priceCents: row.fiatValuation.priceCents ?? null,
-        quotedAt: row.fiatValuation.quotedAt ?? null,
-        source: row.fiatValuation.source ?? null,
-        confidence: row.fiatValuation.confidence ?? null,
-      }
-    : null
+  // The key's *presence* on the wire row is meaningful: absent means a legacy
+  // row to decode, explicitly null means explicitly unavailable. Spreading the
+  // field unconditionally would mint a present-but-undefined key and break
+  // that distinction, so the key is forwarded only when the wire carried it.
+  return fiatValuationOf({
+    sats: row.sats,
+    fiat: row.fiatCents,
+    ...(row.fiatValuation === undefined ? {} : { fiatValuation: row.fiatValuation }),
+  })
 }
 
 function btcAccount(row: VogelVaultBtcAccountRow): BTCAccountWithFiatValuation {
