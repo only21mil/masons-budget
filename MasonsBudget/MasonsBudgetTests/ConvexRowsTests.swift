@@ -19,7 +19,7 @@ final class ConvexRowsTests: XCTestCase {
         XCTAssertFalse(transactions.complete)
         XCTAssertEqual(transactions.rows.count, 3)
         XCTAssertEqual(transactions.rows[0].txId, "synthetic-tx-0000000001")
-        XCTAssertEqual(transactions.rows[0].amountCents, 2_366)
+        XCTAssertEqual(transactions.rows[0].amountCents, 1_000)
 
         let todos: ConvexRowEnvelope<ConvexTodoRow> = try await client.fetchRows(
             .todos(viewer: .victor),
@@ -27,7 +27,7 @@ final class ConvexRowsTests: XCTestCase {
         )
         XCTAssertFalse(todos.complete)
         XCTAssertEqual(todos.rows.count, 3)
-        XCTAssertEqual(todos.rows[0].todoId, "8A56A12C-DB12-4766-96BF-6E3AE7D1EFC9")
+        XCTAssertEqual(todos.rows[0].todoId, "00000000-0000-4000-8000-000000000001")
         XCTAssertEqual(todos.rows[0].priority, 0)
 
         let buys: ConvexRowEnvelope<ConvexBTCBuyRow> = try await client.fetchRows(
@@ -37,9 +37,9 @@ final class ConvexRowsTests: XCTestCase {
         XCTAssertFalse(buys.complete)
         XCTAssertEqual(buys.rows.count, 3)
         XCTAssertEqual(buys.rows[0].buyId, "sample-buy-0000000001")
-        XCTAssertEqual(buys.rows[0].sats, 6_572_537)
-        XCTAssertEqual(buys.rows[0].priceUsdCents, 6_414_981)
-        XCTAssertEqual(buys.rows[0].usdCents, 425_843)
+        XCTAssertEqual(buys.rows[0].sats, 100_000)
+        XCTAssertEqual(buys.rows[0].priceUsdCents, 500_000)
+        XCTAssertEqual(buys.rows[0].usdCents, 500_000)
         XCTAssertNil(buys.rows[0].feeUsdCents)
 
         let billPays: ConvexRowEnvelope<ConvexBTCBillPayRow> = try await client.fetchRows(
@@ -49,9 +49,9 @@ final class ConvexRowsTests: XCTestCase {
         XCTAssertFalse(billPays.complete)
         XCTAssertEqual(billPays.rows.count, 3)
         XCTAssertEqual(billPays.rows[0].billPayId, "sample-billpay-000000001")
-        XCTAssertEqual(billPays.rows[0].amountUsdCents, 179_200)
-        XCTAssertEqual(billPays.rows[0].btcSpentSats, 2_802_143)
-        XCTAssertEqual(billPays.rows[0].btcPriceCents, 6_395_105)
+        XCTAssertEqual(billPays.rows[0].amountUsdCents, 120_000)
+        XCTAssertEqual(billPays.rows[0].btcSpentSats, 24_000_000)
+        XCTAssertEqual(billPays.rows[0].btcPriceCents, 500_000)
         XCTAssertEqual(billPays.rows[0].feeUsdCents, 0)
 
         let accounts: ConvexRowEnvelope<ConvexBTCAccountRow> = try await client.fetchRows(
@@ -60,9 +60,9 @@ final class ConvexRowsTests: XCTestCase {
         )
         XCTAssertFalse(accounts.complete)
         XCTAssertEqual(accounts.rows.count, 3)
-        XCTAssertEqual(accounts.rows[0].key, "son-coldcard-mason")
+        XCTAssertEqual(accounts.rows[0].key, "sample-account-01")
         XCTAssertEqual(accounts.rows[0].owner, .mason)
-        XCTAssertEqual(accounts.rows[0].sats, 76_406_392)
+        XCTAssertEqual(accounts.rows[0].sats, 100_000_000)
 
         let budget: ConvexBudgetDocumentEnvelope = try await client.fetchRows(
             .budget(viewer: .victor),
@@ -71,22 +71,22 @@ final class ConvexRowsTests: XCTestCase {
         XCTAssertTrue(budget.complete)
         let budgetDocument = try XCTUnwrap(budget.document)
         XCTAssertEqual(budgetDocument.owner, .victor)
-        XCTAssertEqual(budgetDocument.month, "August 2026")
-        XCTAssertEqual(budgetDocument.coinbaseOneBalanceCents, 2_642)
-        XCTAssertEqual(budgetDocument.categories.first?.name, "Bills & Utilities")
-        XCTAssertEqual(budgetDocument.categories.first?.budgetCents, 620_000)
-        XCTAssertEqual(budgetDocument.monthlyHistory.first?.month, "January 2026")
-        XCTAssertEqual(budgetDocument.monthlyHistory.first?.savingsBps, 5_410)
+        XCTAssertEqual(budgetDocument.month, "June 2099")
+        XCTAssertEqual(budgetDocument.coinbaseOneBalanceCents, 0)
+        XCTAssertEqual(budgetDocument.categories.first?.name, "Sample Category 1")
+        XCTAssertEqual(budgetDocument.categories.first?.budgetCents, 400_000)
+        XCTAssertEqual(budgetDocument.monthlyHistory.first?.month, "January 2099")
+        XCTAssertEqual(budgetDocument.monthlyHistory.first?.savingsBps, 2_500)
 
         let counts = try await client.fetchRows(.rowCounts, as: ConvexRowCounts.self)
         XCTAssertEqual(
             counts,
             ConvexRowCounts(
-                transactions: 993,
-                todos: 9,
-                btcBuys: 35,
-                btcBillPays: 37,
-                btcAccounts: 8,
+                transactions: 10,
+                todos: 3,
+                btcBuys: 5,
+                btcBillPays: 5,
+                btcAccounts: 3,
             ),
         )
     }
