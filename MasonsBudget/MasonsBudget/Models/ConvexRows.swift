@@ -391,6 +391,13 @@ struct ConvexBudgetDocumentRow: Decodable {
         else {
             throw BudgetCategoryDeletionEligibilityError.invalidRevisionNumber(updatedAtMs)
         }
+        // The local name may carry the owner prefix used for SwiftData name
+        // uniqueness; the server document stores bare names, so fold-match the
+        // stripped name and carry it on the intent verbatim.
+        let bareCategoryName = LedgerMapper.wireBudgetCategoryName(
+            from: categoryName,
+            owner: viewer.ledgerOwner,
+        )
         return try BudgetCategoryDeletionIntent.make(
             viewer: viewer,
             currentMonth: trustedCurrentMonth,
@@ -398,7 +405,7 @@ struct ConvexBudgetDocumentRow: Decodable {
             budgetOwner: owner,
             budgetSource: resolvedSource,
             existingCategoryNames: categories.map(\.name),
-            categoryName: categoryName,
+            categoryName: bareCategoryName,
             budgetUpdatedAtMs: exactRevision,
             baseUpdatedAtMs: exactRevision,
         )

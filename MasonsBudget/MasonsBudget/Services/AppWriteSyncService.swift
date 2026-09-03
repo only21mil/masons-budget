@@ -681,7 +681,9 @@ enum AppWriteSyncService {
         _ category: BudgetCategory,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
-        let name = category.name
+        // The local name carries the owner prefix for SwiftData uniqueness;
+        // the server document stores bare names, so strip it at the wire.
+        let name = LedgerMapper.wireBudgetCategoryName(from: category.name, owner: category.ownerMember)
         let icon = category.icon
         let budget = category.monthlyBudget
         let viewer = category.ownerMember

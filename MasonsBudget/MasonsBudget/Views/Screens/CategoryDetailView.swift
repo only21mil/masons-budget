@@ -209,7 +209,9 @@ struct CategoryDetailView: View {
             .replacingOccurrences(of: "$", with: "")
             .replacingOccurrences(of: ",", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let value = Decimal(string: clean), value >= 0 else {
+        // Write-path parse: pinned POSIX locale so dot-decimal entry can't
+        // inflate in comma-decimal device regions.
+        guard let value = Decimal(string: clean, locale: Locale(identifier: "en_US_POSIX")), value >= 0 else {
             writeFeedback.reject("Enter a monthly limit of zero or more")
             return
         }

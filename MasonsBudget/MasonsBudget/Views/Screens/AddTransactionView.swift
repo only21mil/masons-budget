@@ -176,7 +176,9 @@ struct AddTransactionView: View {
             .replacingOccurrences(of: ",", with: "")
             .replacingOccurrences(of: "$", with: "")
             .replacingOccurrences(of: "₿", with: "")
-        return Decimal(string: cleaned) ?? 0
+        // The custom numpad always emits dot-decimal text; a device locale
+        // would parse "12.50" as 1250 in comma-decimal regions.
+        return Decimal(string: cleaned, locale: Locale(identifier: "en_US_POSIX")) ?? 0
     }
 
     private var computedSats: Decimal {

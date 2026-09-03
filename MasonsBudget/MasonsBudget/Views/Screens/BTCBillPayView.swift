@@ -181,13 +181,18 @@ struct BTCBillPayComposeView: View {
     @State private var category = ""
 
     private var parsedAmount: Decimal {
-        Decimal(string: amount.replacingOccurrences(of: ",", with: "").replacingOccurrences(of: "$", with: "")) ?? 0
+        // Write-path parse: pinned POSIX locale (the entry pad emits
+        // dot-decimal text; the device locale would read "12.50" as 1250).
+        Decimal(
+            string: amount.replacingOccurrences(of: ",", with: "").replacingOccurrences(of: "$", with: ""),
+            locale: Locale(identifier: "en_US_POSIX"),
+        ) ?? 0
     }
 
     private var parsedFee: Decimal? {
         let clean = fee.replacingOccurrences(of: ",", with: "").replacingOccurrences(of: "$", with: "")
         guard !clean.isEmpty else { return nil }
-        return Decimal(string: clean)
+        return Decimal(string: clean, locale: Locale(identifier: "en_US_POSIX"))
     }
 
     private var exactFee: Decimal? {

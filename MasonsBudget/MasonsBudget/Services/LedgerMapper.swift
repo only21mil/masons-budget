@@ -159,6 +159,19 @@ enum LedgerMapper {
         }
     }
 
+    /// BudgetCategory names carry the `"\(owner):\(name)"` prefix locally to
+    /// satisfy the globally-unique SwiftData `name` attribute; the server's
+    /// budget documents store bare names. Inverse of the prefix applied in
+    /// `mapBudgetCategories`: strip it at the wire boundary so child writes
+    /// never leak the local scheme into the canonical document. Bare names
+    /// (adult documents) pass through unchanged.
+    static func wireBudgetCategoryName(from localName: String, owner: FamilyMember) -> String {
+        guard owner != .victor else { return localName }
+        let prefix = "\(owner.rawValue):"
+        guard localName.hasPrefix(prefix) else { return localName }
+        return String(localName.dropFirst(prefix.count))
+    }
+
     static func mapBTCAccounts(_ snapshot: LegacyBTCSnapshotDTO, owner: FamilyMember) -> [BTCAccount] {
         snapshot.accounts.map { key, entry in
             BTCAccount(
@@ -170,6 +183,22 @@ enum LedgerMapper {
                 owner: owner,
             )
         }
+    }
+
+    /// The server's `btcAccounts` identity is the bare `(owner, key)` pair
+    /// ("strike", "river", …); the local SwiftData identity composes
+    /// `"\(asOf)-\(key)-\(owner)"` because `asOf` is rewritten server-side on
+    /// every posting and the `key` attribute is unique. Derive the wire key by
+    /// stripping that composite back to the bare server key. Server account
+    /// keys are single tokens, so the bare key is the segment after the final
+    /// dash of the owner-stripped composite. Keys stored bare (rows synced
+    /// from the server) carry no owner suffix and pass through unchanged.
+    static func wireAccountKey(from storedKey: String, owner: FamilyMember) -> String {
+        let ownerSuffix = "-\(owner.rawValue)"
+        guard storedKey.hasSuffix(ownerSuffix) else { return storedKey }
+        let withoutOwner = storedKey.dropLast(ownerSuffix.count)
+        guard let lastDash = withoutOwner.lastIndex(of: "-") else { return storedKey }
+        return String(withoutOwner[withoutOwner.index(after: lastDash)...])
     }
 
     static func mapBTCBuy(_ dto: LegacyBTCBuyDTO, owner: FamilyMember = .victor) throws -> BTCBuy {

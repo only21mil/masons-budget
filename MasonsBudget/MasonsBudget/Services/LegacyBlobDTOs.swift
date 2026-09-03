@@ -850,10 +850,12 @@ struct LegacyTodoDTO: Codable {
         guard let stringValue = try? container.decodeIfPresent(String.self, forKey: .priority) else {
             return nil
         }
+        // Legacy wire strings rank smaller-is-more-urgent; the app's editor and
+        // list queries rank 0=None..3=High, so remap onto that scale here.
         switch stringValue.lowercased() {
-        case "urgent", "high": return 1
+        case "urgent", "high": return 3
         case "medium", "normal": return 2
-        case "low": return 3
+        case "low": return 1
         default: return Int(stringValue)
         }
     }
