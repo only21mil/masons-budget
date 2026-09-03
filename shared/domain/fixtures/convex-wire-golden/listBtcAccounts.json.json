@@ -1,1 +1,41 @@
-{"status":"success","value":{"complete":false,"rows":[{"asOf":"2026-05-08","custody":"self_custody","fiatCents":"0","key":"son-coldcard-mason","label":"Coldcard","owner":"mason","sats":"76406392","schemaVersion":"0","updatedAtMs":0.0},{"asOf":"2026-05-08","custody":"exchange","fiatCents":"0","key":"son-river-mason","label":"River","owner":"mason","sats":"3367113","schemaVersion":"0","updatedAtMs":0.0},{"asOf":"2026-05-08","custody":"exchange","fiatCents":"0","key":"son-strike-mason","label":"Strike","owner":"mason","sats":"25947","schemaVersion":"0","updatedAtMs":0.0}]}}
+{
+  "status": "success",
+  "value": {
+    "complete": false,
+    "rows": [
+      {
+        "asOf": "2099-01-01",
+        "custody": "self_custody",
+        "fiatCents": "0",
+        "key": "sample-account-01",
+        "label": "Sample Cold Storage",
+        "owner": "mason",
+        "sats": "100000000",
+        "schemaVersion": "1",
+        "updatedAtMs": 1700000000000
+      },
+      {
+        "asOf": "2099-01-01",
+        "custody": "self_custody",
+        "fiatCents": "0",
+        "key": "sample-account-02",
+        "label": "Sample Savings",
+        "owner": "victor",
+        "sats": "200000000",
+        "schemaVersion": "1",
+        "updatedAtMs": 1700000000000
+      },
+      {
+        "asOf": "2099-01-01",
+        "custody": "exchange",
+        "fiatCents": "0",
+        "key": "sample-account-03",
+        "label": "Sample Exchange",
+        "owner": "rachel",
+        "sats": "50000000",
+        "schemaVersion": "1",
+        "updatedAtMs": 1700000000000
+      }
+    ]
+  }
+}

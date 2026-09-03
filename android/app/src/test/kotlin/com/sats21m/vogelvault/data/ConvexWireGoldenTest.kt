@@ -7,14 +7,15 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 
 /**
- * Contract tests against responses captured from the production Convex HTTP API.
+ * Contract tests against the committed synthetic Convex wire fixtures.
  *
- * These fixtures are observations of the wire format, not hand-authored payloads
- * shaped to match this decoder.
+ * These fixtures pin the wire format the decoders must accept; they are
+ * observations of shape, not hand-authored payloads shaped to match this
+ * decoder, and they carry no production household data.
  */
 class ConvexWireGoldenTest {
     @Test
-    fun `production convex encoded payloads validate through the real row repository`() {
+    fun `synthetic convex encoded payloads validate through the real row repository`() {
         val failures = buildList {
             verifyCurrentTransactionProjectionUsesCanonicalAmount()?.let(::add)
             verifyOk("listTodos") {
@@ -40,7 +41,7 @@ class ConvexWireGoldenTest {
         assertTrue(
             failures.isEmpty(),
             failures.joinToString(
-                prefix = "Production convex_encoded_json captures failed to decode:\n",
+                prefix = "Synthetic convex_encoded_json captures failed to decode:\n",
                 separator = "\n",
             ),
         )
@@ -52,16 +53,16 @@ class ConvexWireGoldenTest {
             repository.listTransactions(FamilyMember.VICTOR)
         }
         val snapshot = (result as? ConvexResult.Ok)?.value
-            ?: return "listTransactions: expected current production projection to decode, got $result"
+            ?: return "listTransactions: expected the synthetic capture to decode, got $result"
         val transaction = snapshot.rows.firstOrNull()
-            ?: return "listTransactions: production capture decoded with no rows"
+            ?: return "listTransactions: synthetic capture decoded with no rows"
         return when {
-            transaction.amount != 2_366L ->
-                "listTransactions: expected canonical amount 2366, got ${transaction.amount}"
-            transaction.spendAmount != 2_366L ->
-                "listTransactions: expected locally derived spend 2366, got ${transaction.spendAmount}"
-            transaction.displaySpendAmount != 2_366L ->
-                "listTransactions: expected locally derived display spend 2366, got ${transaction.displaySpendAmount}"
+            transaction.amount != 1_000L ->
+                "listTransactions: expected canonical amount 1000, got ${transaction.amount}"
+            transaction.spendAmount != 1_000L ->
+                "listTransactions: expected locally derived spend 1000, got ${transaction.spendAmount}"
+            transaction.displaySpendAmount != 1_000L ->
+                "listTransactions: expected locally derived display spend 1000, got ${transaction.displaySpendAmount}"
             transaction.hasOppositeSpendSign ->
                 "listTransactions: expected locally derived opposite-sign flag false"
             else -> null
@@ -105,6 +106,6 @@ class ConvexWireGoldenTest {
     }
 
     private companion object {
-        const val DEPLOYMENT = "https://keen-elephant-452.convex.cloud"
+        const val DEPLOYMENT = "https://example.invalid"
     }
 }

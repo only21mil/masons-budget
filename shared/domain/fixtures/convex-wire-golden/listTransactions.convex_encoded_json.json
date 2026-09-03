@@ -1,1 +1,71 @@
-{"status":"success","value":{"complete":false,"rows":[{"amountCents":{"$integer":"PgkAAAAAAAA="},"card":"Aven","category":"Dining & Drinks","date":"2026-08-01","displaySpendAmount":{"$integer":"PgkAAAAAAAA="},"hasOppositeSpendSign":false,"merchant":"Dunkin","month":"2026-08","note":"Aven activity screenshot batch 2026-08-01","owner":"victor","spendAmount":{"$integer":"PgkAAAAAAAA="},"txId":"aven-20260801-ef20d6dc6ad5bce1e3569287","updatedAtMs":1785605567371.0},{"amountCents":{"$integer":"WicAAAAAAAA="},"card":"Aven","category":"Dining & Drinks","date":"2026-08-01","displaySpendAmount":{"$integer":"WicAAAAAAAA="},"hasOppositeSpendSign":false,"merchant":"Paypal *uber Eats","month":"2026-08","note":"Aven activity screenshot batch 2026-08-01","owner":"victor","spendAmount":{"$integer":"WicAAAAAAAA="},"txId":"aven-20260801-9346fd6f323ee2d113230ecc","updatedAtMs":1785605567371.0},{"amountCents":{"$integer":"TAQAAAAAAAA="},"card":"Aven","category":"Dining & Drinks","date":"2026-08-01","displaySpendAmount":{"$integer":"TAQAAAAAAAA="},"hasOppositeSpendSign":false,"merchant":"Paypal *uber Eats","month":"2026-08","note":"Aven activity screenshot batch 2026-08-01","owner":"victor","spendAmount":{"$integer":"TAQAAAAAAAA="},"txId":"aven-20260801-f270a73690ecc62e4e710982","updatedAtMs":1785605567371.0}]}}
+{
+  "status": "success",
+  "value": {
+    "complete": false,
+    "rows": [
+      {
+        "amountCents": {
+          "$integer": "6AMAAAAAAAA="
+        },
+        "card": "0000",
+        "category": "Sample Category A",
+        "date": "2099-01-02",
+        "displaySpendAmount": {
+          "$integer": "6AMAAAAAAAA="
+        },
+        "hasOppositeSpendSign": false,
+        "merchant": "Sample Merchant One",
+        "month": "2099-01",
+        "note": "Synthetic transaction fixture row 1",
+        "owner": "victor",
+        "spendAmount": {
+          "$integer": "6AMAAAAAAAA="
+        },
+        "txId": "synthetic-tx-0000000001",
+        "updatedAtMs": 1700000000000
+      },
+      {
+        "amountCents": {
+          "$integer": "kNADAAAAAAA="
+        },
+        "card": "0000",
+        "category": "Sample Category B",
+        "date": "2099-01-03",
+        "displaySpendAmount": {
+          "$integer": "kNADAAAAAAA="
+        },
+        "hasOppositeSpendSign": false,
+        "merchant": "Sample Merchant Two",
+        "month": "2099-01",
+        "note": "Synthetic transaction fixture row 2",
+        "owner": "rachel",
+        "spendAmount": {
+          "$integer": "kNADAAAAAAA="
+        },
+        "txId": "synthetic-tx-0000000002",
+        "updatedAtMs": 1700000000000
+      },
+      {
+        "amountCents": {
+          "$integer": "9AEAAAAAAAA="
+        },
+        "card": "0000",
+        "category": "Sample Category C",
+        "date": "2099-01-04",
+        "displaySpendAmount": {
+          "$integer": "9AEAAAAAAAA="
+        },
+        "hasOppositeSpendSign": false,
+        "merchant": "Sample Merchant Three",
+        "month": "2099-01",
+        "note": "Synthetic transaction fixture row 3",
+        "owner": "mason",
+        "spendAmount": {
+          "$integer": "9AEAAAAAAAA="
+        },
+        "txId": "synthetic-tx-0000000003",
+        "updatedAtMs": 1700000000000
+      }
+    ]
+  }
+}

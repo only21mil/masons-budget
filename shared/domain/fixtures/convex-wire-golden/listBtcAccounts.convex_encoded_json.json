@@ -1,1 +1,59 @@
-{"status":"success","value":{"complete":false,"rows":[{"asOf":"2026-05-08","custody":"self_custody","fiatCents":{"$integer":"AAAAAAAAAAA="},"key":"son-coldcard-mason","label":"Coldcard","owner":"mason","sats":{"$integer":"eN6NBAAAAAA="},"schemaVersion":{"$integer":"AAAAAAAAAAA="},"updatedAtMs":0.0},{"asOf":"2026-05-08","custody":"exchange","fiatCents":{"$integer":"AAAAAAAAAAA="},"key":"son-river-mason","label":"River","owner":"mason","sats":{"$integer":"yWAzAAAAAAA="},"schemaVersion":{"$integer":"AAAAAAAAAAA="},"updatedAtMs":0.0},{"asOf":"2026-05-08","custody":"exchange","fiatCents":{"$integer":"AAAAAAAAAAA="},"key":"son-strike-mason","label":"Strike","owner":"mason","sats":{"$integer":"W2UAAAAAAAA="},"schemaVersion":{"$integer":"AAAAAAAAAAA="},"updatedAtMs":0.0}]}}
+{
+  "status": "success",
+  "value": {
+    "complete": false,
+    "rows": [
+      {
+        "asOf": "2099-01-01",
+        "custody": "self_custody",
+        "fiatCents": {
+          "$integer": "AAAAAAAAAAA="
+        },
+        "key": "sample-account-01",
+        "label": "Sample Cold Storage",
+        "owner": "mason",
+        "sats": {
+          "$integer": "AOH1BQAAAAA="
+        },
+        "schemaVersion": {
+          "$integer": "AQAAAAAAAAA="
+        },
+        "updatedAtMs": 1700000000000
+      },
+      {
+        "asOf": "2099-01-01",
+        "custody": "self_custody",
+        "fiatCents": {
+          "$integer": "AAAAAAAAAAA="
+        },
+        "key": "sample-account-02",
+        "label": "Sample Savings",
+        "owner": "victor",
+        "sats": {
+          "$integer": "AMLrCwAAAAA="
+        },
+        "schemaVersion": {
+          "$integer": "AQAAAAAAAAA="
+        },
+        "updatedAtMs": 1700000000000
+      },
+      {
+        "asOf": "2099-01-01",
+        "custody": "exchange",
+        "fiatCents": {
+          "$integer": "AAAAAAAAAAA="
+        },
+        "key": "sample-account-03",
+        "label": "Sample Exchange",
+        "owner": "rachel",
+        "sats": {
+          "$integer": "gPD6AgAAAAA="
+        },
+        "schemaVersion": {
+          "$integer": "AQAAAAAAAAA="
+        },
+        "updatedAtMs": 1700000000000
+      }
+    ]
+  }
+}

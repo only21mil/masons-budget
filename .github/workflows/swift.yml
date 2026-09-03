@@ -89,6 +89,7 @@ jobs:
   changes:
     name: Detect Apple changes
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       apple: ${{ steps.base-unchanged-edit.outputs.apple || steps.filter.outputs.apple }}
     steps:
@@ -111,20 +112,30 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # Manual runs verify everything. PRs compare with their merge base; normal
-      # main pushes compare the exact before/after pair from the push event.
-      # Ambiguous push history spends the runner rather than claiming a skip.
-      - name: Compare against the merge base
+      # Base selection and the fail-closed rules are shared with clients.yml via
+      # the changed-base action (audit 2026-09-02 finding 8: the two hand-rolled
+      # detectors had drifted). Main pushes keep the per-commit range policy:
+      # every consecutive main range is verified, never skipped.
+      - if: steps.base-unchanged-edit.outputs.apple != 'false'
+        name: Compute the comparison base
+        id: base
+        uses: ./.github/actions/changed-base
+        with:
+          event-name: ${{ github.event_name }}
+          event-ref: ${{ github.ref }}
+          head-sha: ${{ github.sha }}
+          before-sha: ${{ github.event.before }}
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          merge-group-base-sha: ${{ github.event.merge_group.base_sha }}
+          push-forced: ${{ github.event.forced }}
+          main-push-policy: use-range
+
+      - name: Match Apple-owned paths
         id: filter
         if: steps.base-unchanged-edit.outputs.apple != 'false'
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          EVENT_REF: ${{ github.ref }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
-          BEFORE_SHA: ${{ github.event.before }}
-          HEAD_SHA: ${{ github.sha }}
-          PUSH_FORCED: ${{ github.event.forced }}
+          VERIFY_ALL: ${{ steps.base.outputs.verify-all }}
+          CHANGED_FILES: ${{ steps.base.outputs.changed-files }}
         run: |
           set -euo pipefail
 
@@ -133,87 +144,16 @@ jobs:
             echo "apple=true" >> "$GITHUB_OUTPUT"
           }
 
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            run_apple "Manual dispatch requested full Apple verification."
+          if [ "$VERIFY_ALL" = "true" ]; then
+            run_apple "No usable comparison range; verifying Apple paths."
             exit 0
           fi
 
-          if [ "$EVENT_NAME" = "push" ]; then
-            if [ "$EVENT_REF" != "refs/heads/main" ]; then
-              run_apple "Unexpected push ref $EVENT_REF; failing closed."
-              exit 0
-            fi
-            if [[ "$BEFORE_SHA" =~ ^0{40}$ ]]; then
-              run_apple "Push has an all-zero before SHA; no safe comparison range exists."
-              exit 0
-            fi
-            if [ "$PUSH_FORCED" != "false" ]; then
-              run_apple "Push is forced or its forced status is ambiguous."
-              exit 0
-            fi
-            if [[ ! "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ || ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-              run_apple "Push SHAs are missing or malformed."
-              exit 0
-            fi
-            if ! git cat-file -e "${BEFORE_SHA}^{commit}" ||
-              ! git cat-file -e "${HEAD_SHA}^{commit}"; then
-              run_apple "Push comparison commit is unavailable in the full checkout."
-              exit 0
-            fi
-            if ! git merge-base --is-ancestor "$BEFORE_SHA" "$HEAD_SHA"; then
-              run_apple "Push before SHA is not an ancestor of the release SHA."
-              exit 0
-            fi
-            if ! files="$(git diff --name-only "$BEFORE_SHA" "$HEAD_SHA")"; then
-              run_apple "Push range could not be diffed."
-              exit 0
-            fi
-          elif [ "$EVENT_NAME" = "pull_request" ]; then
-            if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-              run_apple "Pull request base SHA is missing or malformed."
-              exit 0
-            fi
-            if ! git cat-file -e "${BASE_SHA}^{commit}"; then
-              run_apple "Pull request base is unavailable in the full checkout."
-              exit 0
-            fi
-            if ! diff_base="$(git merge-base HEAD "$BASE_SHA")"; then
-              run_apple "Pull request merge base could not be determined."
-              exit 0
-            fi
-            if ! files="$(git diff --name-only "$diff_base" HEAD)"; then
-              run_apple "Pull request range could not be diffed."
-              exit 0
-            fi
-          elif [ "$EVENT_NAME" = "merge_group" ]; then
-            if [[ ! "$MERGE_GROUP_BASE_SHA" =~ ^[0-9a-f]{40}$ ||
-              ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-              run_apple "Merge-group SHAs are missing or malformed."
-              exit 0
-            fi
-            if ! git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" ||
-              ! git cat-file -e "${HEAD_SHA}^{commit}"; then
-              run_apple "Merge-group comparison commit is unavailable in the full checkout."
-              exit 0
-            fi
-            if ! git merge-base --is-ancestor "$MERGE_GROUP_BASE_SHA" "$HEAD_SHA"; then
-              run_apple "Merge-group base SHA is not an ancestor of its head SHA."
-              exit 0
-            fi
-            if ! files="$(git diff --name-only "$MERGE_GROUP_BASE_SHA" "$HEAD_SHA")"; then
-              run_apple "Merge-group range could not be diffed."
-              exit 0
-            fi
-          else
-            run_apple "Unexpected event $EVENT_NAME; failing closed."
-            exit 0
-          fi
-
-          printf '%s\n' "$files" | sed 's/^/  /'
+          sed 's/^/  /' "$CHANGED_FILES"
 
           match_status=0
           python3 .github/workflows/scripts/apple_changed_tree.py \
-            <<< "$files" || match_status=$?
+            < "$CHANGED_FILES" || match_status=$?
 
           if [ "$match_status" -eq 0 ]; then
             run_apple "Apple-owned path changed."

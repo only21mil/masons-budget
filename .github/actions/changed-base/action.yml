@@ -1,0 +1,168 @@
+name: Detect changed base
+description: >
+  Shared fail-closed comparison-base computation for tree-scoped CI routing.
+  Both swift.yml and clients.yml previously carried hand-rolled detectors with
+  drifting semantics (audit 2026-09-02 finding 8). This action owns the base
+  selection and the fail-closed rule: any ambiguity verifies every tree.
+
+  Outputs: verify-all is 'true' when every tree must be verified (no diff is
+  available or the policy demands it); otherwise base/head hold the comparison
+  SHAs and changed-files holds the path of a newline-separated changed-file
+  list written outside the workspace.
+
+inputs:
+  event-name:
+    description: GitHub event name (push, pull_request, merge_group, workflow_dispatch).
+    required: true
+  event-ref:
+    description: Fully qualified event ref, e.g. refs/heads/main.
+    required: true
+  head-sha:
+    description: Head commit SHA (github.sha).
+    required: true
+  before-sha:
+    description: Push event before SHA (github.event.before). Empty for other events.
+    required: false
+    default: ''
+  base-sha:
+    description: Pull request base head SHA (github.event.pull_request.base.sha), if available.
+    required: false
+    default: ''
+  base-ref:
+    description: Pull request base branch name, fetched and merged when base-sha is unusable.
+    required: false
+    default: ''
+  merge-group-base-sha:
+    description: Merge-group base SHA (github.event.merge_group.base_sha).
+    required: false
+    default: ''
+  push-forced:
+    description: Push event forced flag (github.event.forced).
+    required: false
+    default: 'false'
+  main-push-policy:
+    description: >
+      'use-range' diffs before..head on a main push (Swift CI per-commit
+      verification); 'verify-all' reports every tree as changed (Clients CI
+      verifies main whole after a merge).
+    required: false
+    default: 'use-range'
+
+outputs:
+  verify-all:
+    description: "'true' when routing must verify every tree."
+    value: ${{ steps.base.outputs.verify-all }}
+  base:
+    description: Comparison base SHA, empty when verify-all is 'true'.
+    value: ${{ steps.base.outputs.base }}
+  head:
+    description: Comparison head SHA, empty when verify-all is 'true'.
+    value: ${{ steps.base.outputs.head }}
+  changed-files:
+    description: Path of the changed-file list, empty when verify-all is 'true'.
+    value: ${{ steps.base.outputs.changed-files }}
+
+runs:
+  using: composite
+  steps:
+    - id: base
+      shell: bash
+      env:
+        EVENT_NAME: ${{ inputs.event-name }}
+        EVENT_REF: ${{ inputs.event-ref }}
+        HEAD_SHA: ${{ inputs.head-sha }}
+        BEFORE_SHA: ${{ inputs.before-sha }}
+        BASE_SHA: ${{ inputs.base-sha }}
+        BASE_REF: ${{ inputs.base-ref }}
+        MERGE_GROUP_BASE_SHA: ${{ inputs.merge-group-base-sha }}
+        PUSH_FORCED: ${{ inputs.push-forced }}
+        MAIN_PUSH_POLICY: ${{ inputs.main-push-policy }}
+      run: |
+        set -euo pipefail
+
+        output_file="$RUNNER_TEMP/changed-files.txt"
+
+        verify_all() {
+          echo "::notice::$1"
+          {
+            echo "verify-all=true"
+            echo "base="
+            echo "head="
+            echo "changed-files="
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+        }
+
+        write_range() {
+          local base="$1" head="$2"
+          if ! git diff --name-only "$base" "$head" > "$output_file"; then
+            verify_all "Comparison range could not be diffed; verifying every tree."
+          fi
+          {
+            echo "verify-all=false"
+            echo "base=$base"
+            echo "head=$head"
+            echo "changed-files=$output_file"
+          } >> "$GITHUB_OUTPUT"
+        }
+
+        sha_is_usable() {
+          local sha="$1"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] \
+            && [ "$sha" != "0000000000000000000000000000000000000000" ] \
+            && git cat-file -e "${sha}^{commit}"
+        }
+
+        case "$EVENT_NAME" in
+          workflow_dispatch)
+            verify_all "Manual dispatch requested full verification."
+            ;;
+          push)
+            if [ "$EVENT_REF" != "refs/heads/main" ]; then
+              verify_all "Unexpected push ref $EVENT_REF; failing closed."
+            fi
+            if [ "$MAIN_PUSH_POLICY" = "verify-all" ]; then
+              verify_all "Main push policy verifies every tree whole after a merge."
+            fi
+            if [[ "$BEFORE_SHA" =~ ^0{40}$ ]]; then
+              verify_all "Push has an all-zero before SHA; no safe comparison range exists."
+            fi
+            if [ "$PUSH_FORCED" != "false" ]; then
+              verify_all "Push is forced or its forced status is ambiguous."
+            fi
+            if ! sha_is_usable "$BEFORE_SHA" || ! sha_is_usable "$HEAD_SHA"; then
+              verify_all "Push comparison commit is missing or malformed; verifying every tree."
+            fi
+            if ! git merge-base --is-ancestor "$BEFORE_SHA" "$HEAD_SHA"; then
+              verify_all "Push before SHA is not an ancestor of the head SHA."
+            fi
+            write_range "$BEFORE_SHA" "$HEAD_SHA"
+            ;;
+          pull_request)
+            if sha_is_usable "$BASE_SHA"; then
+              if ! diff_base="$(git merge-base HEAD "$BASE_SHA")"; then
+                verify_all "Pull request merge base could not be determined."
+              fi
+            elif [ -n "$BASE_REF" ]; then
+              git fetch -q origin "$BASE_REF"
+              if ! diff_base="$(git merge-base HEAD "origin/$BASE_REF")"; then
+                verify_all "Pull request merge base could not be determined."
+              fi
+            else
+              verify_all "Pull request base SHA is missing or malformed; verifying every tree."
+            fi
+            write_range "$diff_base" "$HEAD_SHA"
+            ;;
+          merge_group)
+            if ! sha_is_usable "$MERGE_GROUP_BASE_SHA" || ! sha_is_usable "$HEAD_SHA"; then
+              verify_all "Merge-group comparison commit is unavailable; verifying every tree."
+            fi
+            if ! git merge-base --is-ancestor "$MERGE_GROUP_BASE_SHA" "$HEAD_SHA"; then
+              verify_all "Merge-group base SHA is not an ancestor of its head SHA."
+            fi
+            write_range "$MERGE_GROUP_BASE_SHA" "$HEAD_SHA"
+            ;;
+          *)
+            verify_all "Unexpected event $EVENT_NAME; failing closed."
+            ;;
+        esac

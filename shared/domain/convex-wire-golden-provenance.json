@@ -1,11 +1,10 @@
 {
-  "version": 2,
-  "capturedDate": "2026-08-22",
-  "capturedDatePrecision": "day",
-  "deployment": "prod:keen-elephant-452",
-  "endpoint": "https://keen-elephant-452.convex.cloud/api/query",
+  "version": 3,
+  "generatedDate": "2026-09-03",
+  "origin": "synthetic",
+  "generator": "scripts/generate-convex-wire-golden-fixtures.mjs",
   "attestation": {
-    "method": "authenticated production HTTP capture",
+    "method": "synthetic fixture generation; contains no production household data",
     "credentialEchoChecked": true,
     "formats": [
       "json",
@@ -37,26 +36,22 @@
       "listTransactions": "2731c848a0e8454b152301c96119737a162cc7842d1f8bf9a05a74f7ad67eefb",
       "rowCounts": "c4a03cf9e822f069957159a69c3f935a273cac6138a54a76d5cf71fd5824d822"
     },
-    "reattestedNote": "Generated alongside this authenticated production capture using comment-free per-query TypeScript token dependency closures. Previously attested queries without wire captures are retained and refreshed."
-  },
-  "freshness": {
-    "warningAfterDays": 30,
-    "failAfterDays": 60
+    "reattestedNote": "Query shape digests carried over from the last attested production capture (2026-08-22); the committed fixtures themselves are now synthetic and carry no production values."
   },
   "captures": {
-    "getBudgetDocument.convex_encoded_json.json": "ccda4464ac654eab08e8695f28bda3417014ff2622c0f20c318f83afcd1fb1c7",
-    "getBudgetDocument.json.json": "81a76c835f107b280dbf29b613a2d95a632fc3c9ed8f69d1b48094e2dec9dcca",
-    "listBtcAccounts.convex_encoded_json.json": "3c05f70171a93fa231c2633cf820b713c40dcc97b4415a0ace9e4d2d1ca17498",
-    "listBtcAccounts.json.json": "b37f1c35fad5283a671a20accf42f1fb7780c08ac2d6a22fa9e1895422efae5b",
-    "listBtcBillPays.convex_encoded_json.json": "c8016b8156bb2c8a11ed4acd1782aae23a5cdb058e942243922be9e1352e5482",
-    "listBtcBillPays.json.json": "70695b8e4da98cc0fb3ca5421f0de6a094ff532ef63e5189e83637bc03899b38",
-    "listBtcBuys.convex_encoded_json.json": "8cd2e10b6f1e611a644a54e124314dd6b503e919a9f29c6fc798c9ec701be904",
-    "listBtcBuys.json.json": "5ce885273872f2f369a748e96d192241b3f1168598b8d459cacdcd17cf4ff34f",
-    "listTodos.convex_encoded_json.json": "336cf7b40eb6e62828c8ac83241185a272f115ef4ae7f3f84b9d19400c74286c",
-    "listTodos.json.json": "116817829c9662bec345397103add3d99ae9ed9008f8d2243a9f9f956f563878",
-    "listTransactions.convex_encoded_json.json": "88d906159dfbf1a15471757183a7cc56ebc3a1f14646f8ee69707e321ed23579",
-    "listTransactions.json.json": "07fe40a437cb66b6599d00b19c88cc512fc545047b2480f65cf3d887d9a32747",
-    "rowCounts.convex_encoded_json.json": "40fe4939659d520f9f29287c49e914f732500a11c1e646eb18a29e7151b8cb66",
-    "rowCounts.json.json": "40fe4939659d520f9f29287c49e914f732500a11c1e646eb18a29e7151b8cb66"
+    "getBudgetDocument.convex_encoded_json.json": "86e077806ed7086a43a8a4e1317f4095ccef69e79d2604d6a0e5f970ed635a9f",
+    "getBudgetDocument.json.json": "db2b0f435eee8b8fed81f193404083a176d3f0a00acd0eaca7a7d5969b6fd98d",
+    "listBtcAccounts.convex_encoded_json.json": "3ec3db1a797f2a9decede8b2c9839a7871a2430df40fa75584f8490974e47718",
+    "listBtcAccounts.json.json": "26ffeb48ff052244bffed544f1214d1590c0a149c755358e0420b68cfb9e271e",
+    "listBtcBillPays.convex_encoded_json.json": "7b39bed0d7a6fb91644545270a5e2248724688b150fd0f5ea0f00a647f32be9b",
+    "listBtcBillPays.json.json": "59a8cd70979fc4336f61d7ad981248f2ffd6226fc3e9dd6a110ff54e71b714fc",
+    "listBtcBuys.convex_encoded_json.json": "45de0aa5d06828552fe8d35fd5f51def4c25df7df783340e2fc6aac6e49787fe",
+    "listBtcBuys.json.json": "3a7d1b165699f0a5af58065e4a21aae6bafb50496b659208645acd23631c9eb2",
+    "listTodos.convex_encoded_json.json": "426f4896b139bd0fb388a9ed5b71a90eefae1867bdad1344c9f76a636610e009",
+    "listTodos.json.json": "5729dab4d19e6e2c0e2bcd5fde3084fd36d48bdf62ef6cd112a0fcca888b2135",
+    "listTransactions.convex_encoded_json.json": "5065301e5de2eb4aa829181ca9889bd11f1090ae8fba1ddcf514448738b01301",
+    "listTransactions.json.json": "d1527a2da84de5a5f13fa38c38365a05413804dd17d846514dc1c3669a55c4c0",
+    "rowCounts.convex_encoded_json.json": "7a993e1bc16367b9fe8d2e9a2964f56a499d27b67114db338a2c310f7795fdad",
+    "rowCounts.json.json": "7a993e1bc16367b9fe8d2e9a2964f56a499d27b67114db338a2c310f7795fdad"
   }
 }
