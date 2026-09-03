@@ -99,6 +99,11 @@ extension LegacyTransactionDTO {
             owner: canonicalOwner,
             amountSats: transaction.amountSats,
             enteredInBitcoin: transaction.enteredInBitcoin,
+            // The stored key carries the local composite identity
+            // "asOf-key-owner"; the server posts against the bare account key.
+            bitcoinAccountKey: transaction.bitcoinAccountKey.map {
+                LedgerMapper.wireAccountKey(from: $0, owner: canonicalOwner)
+            },
             updatedAtMs: transaction.updatedAtMs,
         )
     }
