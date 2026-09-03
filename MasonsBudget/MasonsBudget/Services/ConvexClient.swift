@@ -57,8 +57,8 @@ enum ConvexConfig {
     // presence checks stay cheap. The empty token is cached too: an
     // unconfigured build must not re-probe the Keychain on every request.
     private static let tokenCacheLock = NSLock()
-    private static var cachedSyncToken: (value: String)?
-    private static var cachedReadToken: (value: String)?
+    private static var cachedSyncToken: String?
+    private static var cachedReadToken: String?
 
     /// Optional sync token for an authorized write path. NEVER hardcode a shared secret here
     /// (see AGENTS.md). Stored in the Keychain after runtime injection; empty by default so
@@ -70,9 +70,9 @@ enum ConvexConfig {
     static var syncToken: String {
         tokenCacheLock.lock()
         defer { tokenCacheLock.unlock() }
-        if let cached = cachedSyncToken { return cached.value }
+        if let cached = cachedSyncToken { return cached }
         let resolved = syncTokenStore.token
-        cachedSyncToken = (value: resolved)
+        cachedSyncToken = resolved
         return resolved
     }
 
@@ -114,9 +114,9 @@ enum ConvexConfig {
     static var readToken: String {
         tokenCacheLock.lock()
         defer { tokenCacheLock.unlock() }
-        if let cached = cachedReadToken { return cached.value }
+        if let cached = cachedReadToken { return cached }
         let resolved = readTokenStore.token
-        cachedReadToken = (value: resolved)
+        cachedReadToken = resolved
         return resolved
     }
 
