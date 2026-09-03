@@ -109,13 +109,19 @@ extension LegacyTransactionDTO {
         )
     }
 
-    static func dateString(from date: Date) -> String {
+    // Shared date-only wire formatter. The transaction and todo DTOs must
+    // produce byte-identical yyyy-MM-dd strings, so this is the single copy.
+    private static let wireDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = .current
         formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    static func dateString(from date: Date) -> String {
+        wireDateFormatter.string(from: date)
     }
 
     func convexJSONObject() throws -> [String: Any] {
@@ -881,19 +887,20 @@ struct LegacyTodoDTO: Codable {
         return nil
     }
 
+    /// Delegates to the shared transaction formatter — one date-only wire
+    /// format for every DTO in this file.
     static func dateString(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+        LegacyTransactionDTO.dateString(from: date)
     }
 
-    static func dateTimeString(_ date: Date) -> String {
+    private static let wireDateTimeFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    static func dateTimeString(_ date: Date) -> String {
+        wireDateTimeFormatter.string(from: date)
     }
 
     func convexJSONObject() throws -> [String: Any] {

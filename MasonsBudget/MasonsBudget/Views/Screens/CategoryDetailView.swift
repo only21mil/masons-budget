@@ -256,20 +256,33 @@ struct CategoryDetailView: View {
         }
     }
 
+    // Cached: DateFormatter construction per call was the avoidable cost here.
+    private static var cachedMonthKeyFormatter: (calendar: Calendar, formatter: DateFormatter)?
+
     static func monthKey(for date: Date, calendar: Calendar = .current) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = calendar.timeZone
-        formatter.dateFormat = "yyyy-MM"
+        let formatter: DateFormatter
+        if let cached = cachedMonthKeyFormatter, cached.calendar == calendar {
+            formatter = cached.formatter
+        } else {
+            formatter = DateFormatter()
+            formatter.calendar = calendar
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = calendar.timeZone
+            formatter.dateFormat = "yyyy-MM"
+            cachedMonthKeyFormatter = (calendar, formatter)
+        }
         return formatter.string(from: date)
     }
 
-    private func formatDate(_ date: Date) -> String {
+    private static let mediumDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    private func formatDate(_ date: Date) -> String {
+        Self.mediumDateFormatter.string(from: date)
     }
 }
 

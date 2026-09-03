@@ -1,22 +1,42 @@
 import Foundation
 
 enum LedgerMapper {
+    // Cached: parseDate runs once per date string per sync (O(rows)), and
+    // DateFormatter/ISO8601DateFormatter construction is the dominant
+    // avoidable cost on that path.
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    private static let isoFractionalFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    private static let ymdFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .current
+        return f
+    }()
+
+    private static let ymdTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .current
+        return f
+    }()
+
     static func parseDate(_ raw: String) -> Date {
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime]
-        if let d = iso.date(from: raw) { return d }
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = iso.date(from: raw) { return d }
-
-        let ymd = DateFormatter()
-        ymd.dateFormat = "yyyy-MM-dd"
-        ymd.locale = Locale(identifier: "en_US_POSIX")
-        ymd.timeZone = .current
-        if let d = ymd.date(from: raw) { return d }
-
-        ymd.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        if let d = ymd.date(from: raw) { return d }
-
+        if let d = isoFormatter.date(from: raw) { return d }
+        if let d = isoFractionalFormatter.date(from: raw) { return d }
+        if let d = ymdFormatter.date(from: raw) { return d }
+        if let d = ymdTimeFormatter.date(from: raw) { return d }
         return .distantPast
     }
 

@@ -307,6 +307,49 @@ enum AppFormatter {
         return fmt.string(from: value as NSDecimalNumber) ?? "$0"
     }
 
+    // MARK: - Month grouping (shared by the buys and bill-pay lists)
+
+    private static let monthFormatterLock = NSLock()
+    private static var monthFormatters: [String: DateFormatter] = [:]
+
+    /// Cached per format string. View-only (MainActor) callers plus the lock
+    /// keep this safe; DateFormatter construction is too expensive to repeat.
+    private static func monthFormatter(for format: String) -> DateFormatter {
+        monthFormatterLock.lock()
+        defer { monthFormatterLock.unlock() }
+        if let cached = monthFormatters[format] { return cached }
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .current
+        f.dateFormat = format
+        monthFormatters[format] = f
+        return f
+    }
+
+    /// Groups items into month buckets keyed by a formatted month heading,
+    /// newest month first. Replaces the byte-identical per-view copies.
+    static func groupedByMonth<T>(
+        _ items: [T],
+        by date: (T) -> Date,
+        format: String = "MMMM yyyy",
+    ) -> [(String, [T])] {
+        let formatter = monthFormatter(for: format)
+        var map: [String: [T]] = [:]
+        for item in items {
+            map[formatter.string(from: date(item)), default: []].append(item)
+        }
+        let sortedKeys = map.keys.sorted { k1, k2 in
+            let d1 = map[k1]?.first.map(date) ?? .distantPast
+            let d2 = map[k2]?.first.map(date) ?? .distantPast
+            return d1 > d2
+        }
+        return sortedKeys.compactMap { key in
+            guard let bucket = map[key], !bucket.isEmpty else { return nil }
+            return (key, bucket)
+        }
+    }
+
     static func formatBtc(_ btc: Decimal) -> String {
         let mag = btc.magnitude
         let digits = if mag >= 1 { 4 }

@@ -129,12 +129,16 @@ struct BudgetView: View {
         }
     }
 
+    private static let monthChipFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateFormat = "MMM"
+        return df
+    }()
+
     private func monthChip(offset: Int) -> some View {
         let isSelected = offset == selectedMonthOffset
         let date = Calendar.current.date(byAdding: .month, value: -offset, to: Date()) ?? Date()
-        let df = DateFormatter()
-        df.dateFormat = "MMM"
-        let label = df.string(from: date)
+        let label = Self.monthChipFormatter.string(from: date)
         let year = Calendar.current.component(.year, from: date)
         let rate = savingsRateForOffset(offset)
 

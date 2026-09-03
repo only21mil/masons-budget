@@ -646,6 +646,29 @@ final class ConvexSyncService {
         local.updatedAtMs = remote.updatedAtMs
     }
 
+    // MARK: - LWW tie-break policy (single statement of record)
+    //
+    // Every reconciler resolves ties the same way; do not invent a local
+    // variant in a new updater:
+    //   * Content lane (Date `updatedAt`): strict `>`. On an exact tie the
+    //     local row stays — a sync must never rewrite a row it cannot prove
+    //     newer. The server's `listTodos` ordering prefers the
+    //     lexicographically larger todoId on equal `updatedAtMs`, but that is
+    //     a read-stability rule, not a write rule, and does not license
+    //     content churn on ties.
+    //   * Revision lane (`updatedAtMs`): non-strict `>=`. An equal revision
+    //     still proves the authoritative row's identity, so installing it
+    //     (with `hasServerAuthority`) is correct even though content is
+    //     untouched.
+    private static func installTodoRevision(_ local: TodoItem, revision: Double?) {
+        if let revision,
+           local.updatedAtMs == nil || revision >= (local.updatedAtMs ?? -1)
+        {
+            local.updatedAtMs = revision
+            local.hasServerAuthority = true
+        }
+    }
+
     func replaceTodos(
         visibleTo viewer: FamilyMember,
         with remoteTodos: [TodoItem],
@@ -690,18 +713,14 @@ final class ConvexSyncService {
                         log.warning("Skipping imported todo \(remote.id): id belongs to another profile")
                         continue
                     }
-                    if let remoteRevision = remote.updatedAtMs,
-                       local.updatedAtMs == nil || remoteRevision >= (local.updatedAtMs ?? -1)
-                    {
-                        local.updatedAtMs = remoteRevision
-                        local.hasServerAuthority = true
-                    }
+                    installTodoRevision(local, revision: remote.updatedAtMs)
                     continue
                 }
                 guard local.createdBy == "mc2" else {
                     log.warning("Skipping imported todo \(remote.id): id already owned by another source")
                     continue
                 }
+                // Content lane: strict `>` — see the tie-break policy above.
                 if remote.updatedAt > local.updatedAt {
                     local.title = remote.title
                     local.project = remote.project
@@ -717,12 +736,7 @@ final class ConvexSyncService {
                     local.sourceFile = remote.sourceFile
                     local.createdBy = "mc2"
                 }
-                if let remoteRevision = remote.updatedAtMs,
-                   local.updatedAtMs == nil || remoteRevision >= (local.updatedAtMs ?? -1)
-                {
-                    local.updatedAtMs = remoteRevision
-                    local.hasServerAuthority = true
-                }
+                installTodoRevision(local, revision: remote.updatedAtMs)
             } else if remote.id != pendingDeleteID {
                 context.insert(remote)
             }

@@ -37,22 +37,7 @@ struct BTCBuysView: View {
     }
 
     private var grouped: [(String, [BTCBuy])] {
-        let df = DateFormatter()
-        df.dateFormat = "MMMM yyyy"
-        var map: [String: [BTCBuy]] = [:]
-        for buy in visibleBuys {
-            let key = df.string(from: buy.date)
-            map[key, default: []].append(buy)
-        }
-        let sorted = map.keys.sorted { k1, k2 in
-            let d1 = map[k1]?.first?.date ?? .distantPast
-            let d2 = map[k2]?.first?.date ?? .distantPast
-            return d1 > d2
-        }
-        return sorted.compactMap { key in
-            guard let buys = map[key], !buys.isEmpty else { return nil }
-            return (key, buys)
-        }
+        AppFormatter.groupedByMonth(visibleBuys, by: \.date)
     }
 
     var body: some View {

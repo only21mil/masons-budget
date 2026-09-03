@@ -70,10 +70,14 @@ struct TodayView: View {
         }
     }
 
-    private var todayEyebrow: String {
+    private static let eyebrowFormatter: DateFormatter = {
         let df = DateFormatter()
         df.dateFormat = "EEEE · MMM d"
-        return df.string(from: Date())
+        return df
+    }()
+
+    private var todayEyebrow: String {
+        Self.eyebrowFormatter.string(from: Date())
     }
 
     var body: some View {

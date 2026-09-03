@@ -116,6 +116,12 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable, Sendable {
         if self == owner { return true }
         return isAdult && owner.isAdult
     }
+
+    /// Money-out-today spending scope, shared with the server rule: adults
+    /// aggregate the household, kids count only their own rows.
+    func isSpendingScope(of owner: FamilyMember) -> Bool {
+        isAdult ? owner.isAdult : owner == self
+    }
 }
 
 /// Bitcoin custody classification.
@@ -279,14 +285,14 @@ enum MoneyOutTodayContract {
 
         var total: Int64 = 0
 
-        for transaction in transactions where ownerIsInSpendingScope(transaction.owner, viewer: viewer) && transaction.day == day {
+        for transaction in transactions where viewer.isSpendingScope(of: transaction.owner) && transaction.day == day {
             guard transaction.category.caseInsensitiveCompare("Income") != .orderedSame,
                   transaction.category.caseInsensitiveCompare(BTCBillPayBudgetEffect.creditCardPaymentCategory) != .orderedSame
             else { continue }
             total = try adding(transaction.amountCents, to: total)
         }
 
-        for billPay in billPays where ownerIsInSpendingScope(billPay.owner, viewer: viewer) && billPay.day == day {
+        for billPay in billPays where viewer.isSpendingScope(of: billPay.owner) && billPay.day == day {
             guard billPay.budgetEffect != .creditCardPayment else { continue }
             let contribution = try adding(billPay.feeUsdCents, to: billPay.principalUsdCents)
             total = try adding(contribution, to: total)
@@ -301,12 +307,6 @@ enum MoneyOutTodayContract {
         return sum
     }
 
-    private static func ownerIsInSpendingScope(
-        _ owner: FamilyMember,
-        viewer: FamilyMember,
-    ) -> Bool {
-        viewer.isAdult ? owner.isAdult : owner == viewer
-    }
 }
 
 enum BudgetCategoryDeletionEligibilityError: LocalizedError, Equatable {

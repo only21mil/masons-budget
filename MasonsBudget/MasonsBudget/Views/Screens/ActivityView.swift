@@ -61,6 +61,12 @@ struct ActivityView: View {
         return scoped.filter { SearchMatcher.matches(transaction: $0, query: searchText) }
     }
 
+    private static let shortDateFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateFormat = "MMM d"
+        return df
+    }()
+
     private var grouped: [(String, [Transaction])] {
         let cal = Calendar.current
         var map: [String: [Transaction]] = [:]
@@ -69,9 +75,7 @@ struct ActivityView: View {
             if cal.isDateInToday(tx.date) { key = "Today" }
             else if cal.isDateInYesterday(tx.date) { key = "Yesterday" }
             else {
-                let df = DateFormatter()
-                df.dateFormat = "MMM d"
-                key = df.string(from: tx.date)
+                key = Self.shortDateFormatter.string(from: tx.date)
             }
             map[key, default: []].append(tx)
         }
