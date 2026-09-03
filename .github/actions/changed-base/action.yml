@@ -144,7 +144,12 @@ runs:
                 verify_all "Pull request merge base could not be determined."
               fi
             elif [ -n "$BASE_REF" ]; then
-              git fetch -q origin "$BASE_REF"
+              # The checkout may run with persist-credentials: false, so this
+              # fetch can fail on auth. verify-all is the conservative
+              # direction: a failed fetch must degrade, never die under -e.
+              if ! git fetch -q origin "$BASE_REF"; then
+                verify_all "Base ref fetch failed; verifying every tree."
+              fi
               if ! diff_base="$(git merge-base HEAD "origin/$BASE_REF")"; then
                 verify_all "Pull request merge base could not be determined."
               fi
