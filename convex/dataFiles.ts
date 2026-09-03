@@ -23,6 +23,7 @@ import {
   todoUpdatedMs,
 } from "./todoNormalize";
 import { familyMemberValidator } from "./schema";
+import { isRealIsoDate } from "./dateValidation";
 import {
   executeTodoDeleteFromDevice,
   executeTodoUpsertFromDevice,
@@ -416,6 +417,130 @@ export const list = query({
 
 // ── Mutations (called by the MC2 sync script) ──
 
+// ─────────────────────────────────────────────────────────────────────────────
+// LEGACY BLOB PAYLOAD VALIDATION (L-8 of the 2026-09-02 backend audit)
+//
+// The MC2-era doors stay open — that is their documented purpose — but "open"
+// means the shipped clients' decode contract must keep working, not that any
+// payload is accepted. These append mutations are the only route that can put
+// floats and arbitrary values into blobs shipped readers decode, so they
+// enforce the same class of rules the validating write path (writeback.ts)
+// applies one door over:
+//
+//   - amounts must be integer-cents-compatible exactly as the readers will
+//     parse them: the JSON number's shortest representation (Number#toString,
+//     which jsonNumberToMinorUnits parses lexically) may carry at most two
+//     fractional digits for USD and eight for BTC. 1.005 and float noise like
+//     0.1+0.2 are rejected outright — never rounded, never coerced.
+//   - the same $1,000,000 typo bound writeback.ts applies.
+//   - dates must be real ISO calendar dates, so a mistyped February cannot
+//     silently file spend under the wrong month.
+//   - signs follow the ledger convention: money out is positive, Income is
+//     positive, zero is always a typo.
+//
+// These doors stay open for whole-record payloads; the shape (which keys
+// exist) is unchanged, so every shipped decoder keeps reading what it read
+// before. Only values no reader should ever have been handed are refused.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MAX_ABS_BLOB_CENTS = 100_000_000; // $1,000,000.00, writeback parity
+const MAX_ABS_BLOB_SATS = 1_000_000_000; // ≈ $1M at $100k/BTC, row-layer parity
+
+const BLOB_CENTS_RE = /^-?\d+(?:\.\d{1,2})?$/;
+const BLOB_SATS_RE = /^-?\d+(?:\.\d{1,8})?$/;
+
+function rejectBlobPayload(message: string): never {
+  throw new ConvexError({ code: "VALIDATION_FAILED", message });
+}
+
+/** Integer-cents-compatible, bounded, and finite — the readers' own path. */
+function requireBlobCentsCompatible(value: number, field: string): number {
+  if (!Number.isFinite(value)) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: `${field} must be a finite number.`,
+    });
+  }
+  // The readers turn a stored JSON number back into cents via its shortest
+  // decimal representation, so THAT spelling is the contract.
+  if (!BLOB_CENTS_RE.test(value.toString())) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: `${field} of ${value} is not an exact number of cents; send ` +
+        `an amount that survives the cents round-trip.`,
+    });
+  }
+  const cents = Math.round(value * 100);
+  if (!Number.isSafeInteger(cents) || Math.abs(cents) > MAX_ABS_BLOB_CENTS) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: `${field} exceeds the ${MAX_ABS_BLOB_CENTS}-cent sanity limit; ` +
+        "if this is real, the limit is the thing to change.",
+    });
+  }
+  return value;
+}
+
+/** 8-dp-compatible satoshis, bounded like the row layer. */
+function requireBlobSatsCompatible(value: number, field: string): number {
+  if (!Number.isFinite(value)) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: `${field} must be a finite number.`,
+    });
+  }
+  if (!BLOB_SATS_RE.test(value.toString())) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: `${field} of ${value} is not an exact satoshi quantity.`,
+    });
+  }
+  const sats = Math.round(value * 100_000_000);
+  if (!Number.isSafeInteger(sats) || Math.abs(sats) > MAX_ABS_BLOB_SATS) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: `${field} exceeds the ${MAX_ABS_BLOB_SATS}-sat sanity limit; ` +
+        "if this is real, the limit is the thing to change.",
+    });
+  }
+  return value;
+}
+
+function requireBlobText(value: string, field: string, max: number): string {
+  if (
+    value.length === 0 ||
+    value.length > max ||
+    /[\u0000-\u001f\u007f]/.test(value)
+  ) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: `${field} must be 1-${max} characters with no control characters.`,
+    });
+  }
+  return value;
+}
+
+function requireBlobDate(value: string, field: string): string {
+  if (!isRealIsoDate(value)) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: `${field} must be a real ISO calendar date (yyyy-MM-dd).`,
+    });
+  }
+  return value;
+}
+
+const BLOB_FAMILY_MEMBERS = new Set(["victor", "rachel", "mason", "maddox"]);
+
+function requireBlobOwner(owner: string | null | undefined): void {
+  if (owner !== undefined && owner !== null && !BLOB_FAMILY_MEMBERS.has(owner)) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: "owner must name a family member.",
+    });
+  }
+}
+
 const appTransactionValidator = v.object({
   id: v.string(),
   date: v.string(),
@@ -584,6 +709,32 @@ export const appendTransaction = mutation({
     validateSyncToken(token);
     const name = fileName ?? "transactions";
     const now = Date.now();
+
+    // Legacy door, but not a garbage door: validate the record class the
+    // shipped readers decode. Shape is unchanged; only values no reader
+    // should ever have been handed are refused.
+    requireBlobText(transaction.id, "transaction.id", 128);
+    requireBlobText(transaction.merchant, "transaction.merchant", 200);
+    requireBlobText(transaction.category, "transaction.category", 64);
+    requireBlobDate(transaction.date, "transaction.date");
+    if (transaction.note !== undefined && transaction.note !== null) {
+      requireBlobText(transaction.note, "transaction.note", 2_000);
+    }
+    const amountCents = requireBlobCentsCompatible(
+      transaction.amount,
+      "transaction.amount",
+    );
+    if (amountCents === 0) {
+      rejectBlobPayload(
+        "transaction.amount must not be zero — a zero-value transaction " +
+          "has no sign to check and is a typo in every case seen so far.",
+      );
+    }
+    if (transaction.category === "Income" && amountCents <= 0) {
+      rejectBlobPayload(
+        'a transaction categorised "Income" must carry a positive amount.',
+      );
+    }
 
     const existing = await ctx.db
       .query("dataFiles")
@@ -1294,6 +1445,41 @@ export const appendBillPay = mutation({
     validateSyncToken(token);
     const name = "bitcoin-bill-pays";
     const now = Date.now();
+
+    // Same legacy-door validation as appendTransaction: shape unchanged,
+    // garbage refused. A bill payment is money leaving in both currencies,
+    // so the principal amounts are positive and a fee is never negative.
+    requireBlobText(billPay.id, "billPay.id", 128);
+    requireBlobText(billPay.merchant, "billPay.merchant", 200);
+    requireBlobText(billPay.category, "billPay.category", 64);
+    requireBlobDate(billPay.date, "billPay.date");
+    requireBlobOwner(billPay.owner ?? null);
+    if (billPay.note !== undefined && billPay.note !== null) {
+      requireBlobText(billPay.note, "billPay.note", 2_000);
+    }
+    if (billPay.reference !== undefined && billPay.reference !== null) {
+      requireBlobText(billPay.reference, "billPay.reference", 256);
+    }
+    if (requireBlobCentsCompatible(billPay.amount_usd, "billPay.amount_usd") <= 0) {
+      rejectBlobPayload("billPay.amount_usd must be positive (a bill payment is a spend).");
+    }
+    if (requireBlobSatsCompatible(billPay.btc_spent, "billPay.btc_spent") <= 0) {
+      rejectBlobPayload("billPay.btc_spent must be positive (a bill payment is a spend).");
+    }
+    if (
+      billPay.btc_price !== undefined &&
+      billPay.btc_price !== null &&
+      requireBlobCentsCompatible(billPay.btc_price, "billPay.btc_price") <= 0
+    ) {
+      rejectBlobPayload("billPay.btc_price must be positive when supplied.");
+    }
+    if (
+      billPay.fee_usd !== undefined &&
+      billPay.fee_usd !== null &&
+      requireBlobCentsCompatible(billPay.fee_usd, "billPay.fee_usd") < 0
+    ) {
+      rejectBlobPayload("billPay.fee_usd must not be negative.");
+    }
 
     const existing = await ctx.db
       .query("dataFiles")

@@ -391,9 +391,11 @@ function requireId(value: string, field: string): string {
 }
 
 /**
- * Who made the change, for the audit log. Free text rather than a family
- * member: "victor@linux" and "rachel@ios" are the useful answers, and a value
- * that cannot be attributed is worse than a coarse one.
+ * The caller's display name for the audit log. Free text rather than a family
+ * member: "victor@linux" and "rachel@ios" are the useful answers. It is
+ * recorded as `claimedActor` only — the audit entry's `actor` field is derived
+ * server-side from the credential, because any sync-token holder could claim
+ * any name here.
  */
 function requireActor(value: string): string {
   return requireText(value, "actor", MAX_ACTOR);
@@ -642,11 +644,28 @@ interface AuditEntry {
   entity: "transaction" | "todo";
   file: string;
   id: string;
-  actor: string;
+  /**
+   * Server-derived from the credential that authorized the write. The shared
+   * sync token identifies no human, so attribution evidence is exactly as
+   * strong as that credential — `claimedActor` is the caller's display string
+   * and is NOT part of the attribution.
+   */
+  actor: typeof SERVER_WRITE_PRINCIPAL;
+  /** Client-asserted display value ("victor@linux"); never verified. */
+  claimedActor?: string;
   /** The exact stored record this write replaced; null for a create. */
   before: Record<string, unknown> | null;
   after: Record<string, unknown>;
 }
+
+/**
+ * The principal every write on this module is authorized by. There is exactly
+ * one credential class here — the deployment-wide CONVEX_SYNC_TOKEN — so the
+ * honest server-side attribution is the credential itself, not whatever actor
+ * string the caller felt like sending (any sync-token holder could claim any
+ * name).
+ */
+const SERVER_WRITE_PRINCIPAL = "sync-token";
 
 interface AuditLog {
   schema: string;
@@ -864,7 +883,8 @@ export const createTransaction = mutation({
       entity: "transaction",
       file,
       id,
-      actor,
+      actor: SERVER_WRITE_PRINCIPAL,
+      claimedActor: actor,
       before: null,
       after: record,
     });
@@ -1047,7 +1067,8 @@ export const editTransaction = mutation({
       entity: "transaction",
       file,
       id,
-      actor,
+      actor: SERVER_WRITE_PRINCIPAL,
+      claimedActor: actor,
       before: stored,
       after: record,
     });
@@ -1183,7 +1204,8 @@ export const createTodo = mutation({
       entity: "todo",
       file: TODO_FILE,
       id,
-      actor,
+      actor: SERVER_WRITE_PRINCIPAL,
+      claimedActor: actor,
       before: null,
       after: record,
     });
@@ -1309,7 +1331,8 @@ export const editTodo = mutation({
       entity: "todo",
       file: TODO_FILE,
       id,
-      actor,
+      actor: SERVER_WRITE_PRINCIPAL,
+      claimedActor: actor,
       before: stored,
       after: record,
     });

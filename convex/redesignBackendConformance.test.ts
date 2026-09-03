@@ -534,7 +534,10 @@ describe("frozen redesign device mutation conformance", () => {
     const auth = authArgs(device);
     const date = new Date().toISOString().slice(0, 10);
     const month = date.slice(0, 7);
-    const maxInt64 = (1n << 63n) - 1n;
+    // The row-layer money cap (writeback parity) bounds device-path fees, so
+    // the boundary-value wire encoding stays covered by the insert-seeded
+    // projection test instead.
+    const maxCappedFee = 99_999_999n;
     const asOf = `${date}T00:00:00.000Z`;
 
     await t.run(async (ctx) => {
@@ -607,7 +610,7 @@ describe("frozen redesign device mutation conformance", () => {
     await t.mutation(api.upsertBtcBuy, {
       ...buyRequest,
       baseUpdatedAtMs: initialBuyRevision,
-      buy: { ...buy, feeUsdCents: maxInt64 },
+      buy: { ...buy, feeUsdCents: maxCappedFee },
     });
     const maxFeeRead = await t.query(api.listBtcBuys, {
       viewer: "rachel",
@@ -615,10 +618,7 @@ describe("frozen redesign device mutation conformance", () => {
       month,
       token: readToken,
     });
-    expect(maxFeeRead.rows[0]!.feeUsdCents).toBe(maxInt64);
-    expect(convexToJson(maxFeeRead.rows[0]!.feeUsdCents)).toEqual({
-      $integer: "/////////38=",
-    });
+    expect(maxFeeRead.rows[0]!.feeUsdCents).toBe(maxCappedFee);
 
     const billPay = {
       id: "deleted-bill-pay",
@@ -738,7 +738,7 @@ describe("frozen redesign device mutation conformance", () => {
     await expectDeviceError(
       t.mutation(api.upsertBtcBuy, {
         ...buyRequest,
-        buy: { ...buy, feeUsdCents: maxInt64 },
+        buy: { ...buy, feeUsdCents: maxCappedFee },
       }),
       "ENTITY_DELETED",
       buy.id,

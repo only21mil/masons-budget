@@ -2118,6 +2118,43 @@ function requireDevicePositive(value: bigint, field: string) {
   }
 }
 
+/**
+ * $1,000,000.00 in cents. A typo guard, not a policy — the same bound the
+ * validating write path applies to hand entry (writeback.ts MAX_ABS_MINOR).
+ * This household does not put a seven-figure line item through a budget app,
+ * but it does fat-finger an extra two zeros, and unlike the writeback path the
+ * row layer previously had no cap at all: a single int64-max "typo" landed in
+ * the ledger.
+ */
+const MAX_ABS_MONEY_CENTS = 100_000_000n;
+
+/**
+ * The same typo guard in satoshis: ≈ $1,000,000 at $100k/BTC. A single line
+ * item above ten BTC is almost certainly an extra zero; if it is real, the
+ * limit is the thing to change.
+ */
+const MAX_ABS_MONEY_SATS = 1_000_000_000n;
+
+function requireMoneyCentsCap(value: bigint, field: string) {
+  if (value > MAX_ABS_MONEY_CENTS || value < -MAX_ABS_MONEY_CENTS) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      `${field} of ${value} cents exceeds the ${MAX_ABS_MONEY_CENTS}-cent ` +
+        "sanity limit; if this is real, the limit is the thing to change.",
+    );
+  }
+}
+
+function requireMoneySatsCap(value: bigint, field: string) {
+  if (value > MAX_ABS_MONEY_SATS || value < -MAX_ABS_MONEY_SATS) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      `${field} of ${value} sats exceeds the ${MAX_ABS_MONEY_SATS}-sat sanity ` +
+        "limit; if this is real, the limit is the thing to change.",
+    );
+  }
+}
+
 async function lockRuntimeSource(ctx: MutationCtx, sourceFile: string) {
   const existing = await ctx.db
     .query("runtimeSourceLocks")
@@ -2531,6 +2568,10 @@ async function upsertTransactionRow(
   optimistic?: OptimisticWrite,
 ): Promise<UpsertOutcome> {
   validateTransactionPaymentSource(row);
+  requireMoneyCentsCap(row.amountCents, "transaction.amountCents");
+  if (row.amountSats !== undefined) {
+    requireMoneySatsCap(row.amountSats, "transaction.amountSats");
+  }
   const existing = await ctx.db
     .query("transactions")
     .withIndex("by_source_tx_id", (q: any) =>
@@ -2773,6 +2814,10 @@ async function upsertBtcBuyRow(
   requireDevicePositive(row.priceUsdCents, "buy.priceUsdCents");
   requireDevicePositive(row.usdCents, "buy.usdCents");
   requireDeviceNonnegative(row.feeUsdCents ?? 0n, "buy.feeUsdCents");
+  requireMoneySatsCap(row.sats, "buy.sats");
+  requireMoneyCentsCap(row.priceUsdCents, "buy.priceUsdCents");
+  requireMoneyCentsCap(row.usdCents, "buy.usdCents");
+  requireMoneyCentsCap(row.feeUsdCents ?? 0n, "buy.feeUsdCents");
   const existing = await ctx.db
     .query("btcBuys")
     .withIndex("by_source_buy_id", (q: any) =>
@@ -3165,6 +3210,8 @@ async function upsertBtcBillPayRow(
 }
 
 function validateBtcTransfer(row: BtcTransferRow) {
+  requireMoneySatsCap(row.sats, "transfer.sats");
+  requireMoneySatsCap(row.feeSats, "transfer.feeSats");
   if (!postsToHouseholdBitcoinLedger(row.owner)) {
     deviceFailure(
       "VALIDATION_FAILED",
@@ -3509,6 +3556,10 @@ function requireBillPayAmounts(billPay: {
         `got ${billPay.feeUsdCents}.`,
     );
   }
+  requireMoneyCentsCap(billPay.amountUsdCents, "billPay.amountUsdCents");
+  requireMoneyCentsCap(billPay.btcPriceCents, "billPay.btcPriceCents");
+  requireMoneyCentsCap(billPay.feeUsdCents, "billPay.feeUsdCents");
+  requireMoneySatsCap(billPay.btcSpentSats, "billPay.btcSpentSats");
 }
 
 function requireBillPayBudgetEffect(billPay: {
@@ -4360,6 +4411,12 @@ async function upsertBudgetCategoryCore(
   previousName?: string,
   optimistic?: OptimisticWrite,
 ): Promise<{ entityId: string; outcome: UpsertOutcome }> {
+  // Admin parity with the device path (requireDeviceNonnegative): a negative
+  // budget is a typo for a zero or a minus sign, never a real allocation. The
+  // same $1M sanity cap the device path applies — validated first, so a
+  // nonsense amount is rejected on its own terms.
+  requireDeviceNonnegative(category.budgetCents, "category.budgetCents");
+  requireMoneyCentsCap(category.budgetCents, "category.budgetCents");
   const expectedOwner = budgetOwnerForSource(sourceFile);
   if (owner !== expectedOwner) {
     deviceFailure(
@@ -5318,6 +5375,16 @@ async function upsertBtcAccountCore(
       "btcAccount",
       account.key,
     );
+  }
+  requireMoneySatsCap(account.sats, "account.sats");
+  if (account.fiatValuation !== undefined) {
+    requireMoneyCentsCap(account.fiatValuation.cents, "account.fiatValuation.cents");
+    if (account.fiatValuation.priceCents !== undefined) {
+      requireMoneyCentsCap(
+        account.fiatValuation.priceCents,
+        "account.fiatValuation.priceCents",
+      );
+    }
   }
   const existingDocument = await ctx.db
     .query("btcBalanceDocuments")

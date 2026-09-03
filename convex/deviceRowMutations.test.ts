@@ -2940,3 +2940,103 @@ describe("money writes bind to the credential profile", () => {
     );
   });
 });
+
+describe("money magnitude caps", () => {
+  it("rejects a single line item beyond the $1M sanity limit on every money surface", async () => {
+    await seedBudgets();
+    const device = await fullDevice("cap-device");
+    const today = new Date().toISOString().slice(0, 10);
+
+    await expectDeviceError(
+      t.mutation(api.upsertTransaction, {
+        ...authArgs(device),
+        owner: "victor",
+        sourceFile: "transactions",
+        transaction: {
+          id: "cap-tx",
+          owner: "victor",
+          date: today,
+          merchant: "Typo",
+          amountCents: 100_000_001n,
+          kind: "spend",
+          category: "Other",
+        },
+      }),
+      "VALIDATION_FAILED",
+    );
+    await expectDeviceError(
+      t.mutation(api.upsertTransaction, {
+        ...authArgs(device),
+        owner: "victor",
+        sourceFile: "transactions",
+        transaction: {
+          id: "cap-tx-sats",
+          owner: "victor",
+          date: today,
+          merchant: "Typo",
+          amountCents: 100n,
+          kind: "spend",
+          category: "Groceries",
+          card: "river",
+          amountSats: 1_000_000_001n,
+          bitcoinAccountKey: "river",
+        },
+      }),
+      "VALIDATION_FAILED",
+    );
+    await expectDeviceError(
+      t.mutation(api.upsertBtcBuy, {
+        ...authArgs(device),
+        owner: "victor",
+        sourceFile: "bitcoin-buys",
+        buy: {
+          id: "cap-buy",
+          owner: "victor",
+          date: today,
+          source: "river",
+          sats: 1_000_000_001n,
+          priceUsdCents: 1n,
+          usdCents: 1n,
+        },
+      }),
+      "VALIDATION_FAILED",
+    );
+    await expectDeviceError(
+      t.mutation(api.upsertBudgetCategory, {
+        ...authArgs(device),
+        owner: "victor",
+        sourceFile: "budget",
+        month: CURRENT_MONTH,
+        category: { name: "Cap", budgetCents: 100_000_001n },
+      }),
+      "VALIDATION_FAILED",
+    );
+  });
+
+  it("applies the same sign and magnitude rules to the admin budget upsert", async () => {
+    await seedBudgets();
+    const adminUpsertBudgetCategory =
+      "tables:upsertBudgetCategory" as unknown as Parameters<
+        typeof t.mutation
+      >[0];
+    for (const budgetCents of [-1n, 100_000_001n]) {
+      await expect(
+        t.mutation(adminUpsertBudgetCategory, {
+          viewer: "victor",
+          month: CURRENT_MONTH,
+          category: { name: "Parity", budgetCents },
+          token: syncToken,
+        } as never),
+      ).rejects.toThrow(/must not be negative|sanity limit/);
+    }
+    const budget = await t.run(async (ctx) =>
+      ctx.db
+        .query("budgetDocuments")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "budget"))
+        .unique(),
+    );
+    expect(
+      budget!.categories.find((category) => category.name === "Parity"),
+    ).toBeUndefined();
+  });
+});

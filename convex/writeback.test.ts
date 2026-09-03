@@ -1221,7 +1221,10 @@ describe("audit log", () => {
     expect(created.after.amount).toBe(12.34);
 
     expect(edited.op).toBe("edit");
-    expect(edited.actor).toBe("rachel@ios");
+    // Attribution is server-derived from the credential; the caller's string
+    // is display-only.
+    expect(edited.actor).toBe("sync-token");
+    expect(edited.claimedActor).toBe("rachel@ios");
     // This is the answer to "whole-file replace gave no history": the prior
     // value is recoverable, byte for byte, from the same deployment.
     expect(edited.before).toEqual(created.after);
