@@ -40,12 +40,15 @@
 import { ConvexError, v } from "convex/values";
 
 import type { Doc } from "./_generated/dataModel";
-import { query, mutation, type MutationCtx } from "./_generated/server";
+import { query, mutation, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { isRealIsoDate, requireIsoDate } from "./dateValidation";
 import {
   authenticateDevice,
+  authenticateDeviceForRead,
   markDeviceSeen,
   requireTaskProfileBinding,
+  timingSafeEqualStrings,
+  type DeviceProfile,
 } from "./deviceAuth";
 import {
   addDelta,
@@ -72,17 +75,22 @@ declare const process: { env: Record<string, string | undefined> };
 // MIRROR 1 — auth gates
 //
 // CANONICAL SOURCE: convex/dataFiles.ts (validateReadToken / validateSyncToken).
-// Copied verbatim, including the hatch-outranks-the-token precedence and the
-// asymmetric throw types (sync throws Error, read throws ConvexError). Do not
-// "tidy" either difference here: the point of a mirror is that a caller cannot
-// tell which file answered it. If you change a gate in dataFiles.ts you MUST
-// change it here, and the auth block in tables.test.ts will fail until you do.
+// Copied verbatim, including the hatch-outranks-the-token precedence, the
+// timing-safe token comparison, and the asymmetric throw types (sync throws
+// Error, read throws ConvexError). Do not "tidy" either difference here: the
+// point of a mirror is that a caller cannot tell which file answered it. If you
+// change a gate in dataFiles.ts you MUST change it here, and the auth block in
+// tables.test.ts will fail until you do.
 //
 // THE ESCAPE HATCH OUTRANKS THE TOKEN. ALLOW_TOKENLESS_{READ,SYNC}="true" admits
 // the call even when the matching token IS configured, and is checked first. The
 // full argument for that ordering is in the banner in dataFiles.ts; the short
 // version is that the opposite ordering locks the whole household out remotely
 // the instant a token is set, and nothing detects that.
+//
+// UNAUTHENTICATED-CALLER ERROR DISCIPLINE (mirrors dataFiles.ts): the
+// client-visible rejection is generic and names no environment variable; the
+// specific configuration detail goes to the server log only.
 //
 // CONVEX_SYNC_TOKEN is the legacy full-admin write credential, not a paired
 // device capability. It authorizes every mutation in this compatibility
@@ -114,13 +122,16 @@ function validateSyncToken(token?: string) {
     return;
   }
   if (!expected) {
+    console.error(
+      "AUTH-FAIL-CLOSED: CONVEX_SYNC_TOKEN is not configured; every write " +
+        "is being rejected. Configure the deployment write credential — do " +
+        "not set ALLOW_TOKENLESS_SYNC to recover.",
+    );
     throw new Error(
-      "Unauthorized: CONVEX_SYNC_TOKEN is not configured (fail-closed). " +
-        "Set the token on the deployment, or set ALLOW_TOKENLESS_SYNC=true to " +
-        "explicitly allow tokenless writes.",
+      "Unauthorized: write auth is not configured (fail-closed).",
     );
   }
-  if (!token || token !== expected) {
+  if (!token || !timingSafeEqualStrings(token, expected)) {
     throw new Error("Unauthorized: invalid sync token");
   }
 }
@@ -136,13 +147,16 @@ function validateReadToken(token?: string) {
     return;
   }
   if (!expected) {
+    console.error(
+      "AUTH-FAIL-CLOSED: CONVEX_READ_TOKEN is not configured; every read " +
+        "is being rejected. Configure the deployment read credential — do " +
+        "not set ALLOW_TOKENLESS_READ to recover.",
+    );
     throw new ConvexError(
-      "Unauthorized: CONVEX_READ_TOKEN is not configured (fail-closed). " +
-        "Set the token on the deployment, or set ALLOW_TOKENLESS_READ=true to " +
-        "explicitly allow unauthenticated reads during cutover.",
+      "Unauthorized: read auth is not configured (fail-closed).",
     );
   }
-  if (!token || token !== expected) {
+  if (!token || !timingSafeEqualStrings(token, expected)) {
     throw new ConvexError("Unauthorized: invalid read token");
   }
 }
@@ -210,12 +224,17 @@ function sharesNetWorthWith(
  * owners is what makes that an INDEX RANGE per owner rather than a table scan
  * plus a filter — the queries below never call `.filter()` on owner.
  *
- * HONEST SCOPE: `viewer` is asserted by the caller, and CONVEX_READ_TOKEN is one
- * shared household secret. This is not authorization and must not be described
- * as such — anyone holding the read token can pass any viewer. It is the same
- * trust level as today's client-side filter, with the bandwidth and correctness
- * win of doing it once, server-side, in one place. Per-identity auth is a
- * separate piece of work.
+ * HONEST SCOPE, shared-token path: `viewer` is asserted by the caller, and
+ * CONVEX_READ_TOKEN is one shared household secret. On that path this is not
+ * authorization and must not be described as such — anyone holding the read
+ * token can pass any viewer. It is the same trust level as today's client-side
+ * filter, with the bandwidth and correctness win of doing it once, server-side,
+ * in one place.
+ *
+ * Device-credential path: the authoritative viewer is the credential's
+ * server-stored profile and the client-asserted viewer is only an echo that
+ * must agree with it (authorizeQueryViewer below). A paired child credential
+ * therefore reads only its own rows through this layer.
  */
 type VisibilityScope = "visible" | "netWorth";
 
@@ -225,6 +244,71 @@ function ownersInScope(
 ): FamilyMember[] {
   const rule = scope === "netWorth" ? sharesNetWorthWith : canSeeDataOwnedBy;
   return FAMILY_MEMBERS.filter((owner) => rule(viewer, owner));
+}
+
+/**
+ * How a read authenticated, and whose eyes it sees through.
+ *
+ * `sharedToken` marks the legacy CONVEX_READ_TOKEN path, which is deprecated
+ * for reads: the response carries an explicit marker so every client can find
+ * its remaining shared-token calls and move them to deviceId + deviceToken.
+ */
+type ReadAuth =
+  | { viewer: FamilyMember; sharedToken: true }
+  | { viewer: FamilyMember; sharedToken: false };
+
+type DeviceReadRequest = {
+  viewer: FamilyMember;
+  token?: string;
+  deviceId?: string;
+  deviceToken?: string;
+};
+
+async function authorizeQueryViewer(
+  ctx: QueryCtx,
+  request: DeviceReadRequest,
+): Promise<ReadAuth> {
+  if (request.deviceId !== undefined || request.deviceToken !== undefined) {
+    if (request.deviceId === undefined || request.deviceToken === undefined) {
+      throw new ConvexError("Unauthorized: malformed device credential.");
+    }
+    const device = await authenticateDeviceForRead(
+      ctx,
+      request.deviceId,
+      request.deviceToken,
+    );
+    if (device.profile === undefined) {
+      throw new ConvexError({
+        code: "PROFILE_BINDING_REQUIRED",
+        message: "This device credential is not bound to a profile.",
+      });
+    }
+    // The credential decides whose eyes this is. A client-asserted viewer that
+    // disagrees is a spoofing attempt, not a preference.
+    if (request.viewer !== device.profile) {
+      throw new ConvexError(
+        "Unauthorized: viewer does not match the credential profile.",
+      );
+    }
+    return { viewer: device.profile, sharedToken: false };
+  }
+  validateReadToken(request.token);
+  return { viewer: request.viewer, sharedToken: true };
+}
+
+/**
+ * Deprecation marker on shared-token read envelopes. Additive and constant, so
+ * existing decoders that ignore unknown keys keep working; clients that read it
+ * can enumerate their remaining shared-token calls and migrate to
+ * deviceId + deviceToken, where the server — not a client assertion — decides
+ * whose data leaves the deployment.
+ */
+const SHARED_TOKEN_READ_MARKER = {
+  readAuth: { mode: "shared-token" as const, deprecated: true as const },
+};
+
+function readAuthDeprecation(auth: ReadAuth) {
+  return auth.sharedToken ? SHARED_TOKEN_READ_MARKER : {};
 }
 
 /**
@@ -246,6 +330,40 @@ function resolveOwner(raw: unknown, fileOwner: FamilyMember): FamilyMember {
 
 function postsToHouseholdBitcoinLedger(owner: FamilyMember): boolean {
   return owner === "victor" || owner === "rachel";
+}
+
+/**
+ * Owner scope of every named dataFiles blob, used by the device-credential
+ * read path so a paired child credential cannot pull an adult blob by name.
+ *
+ * Superset of BLOB_SOURCES (row upserts) plus the document-shaped blobs and
+ * the writeback audit log. The `todos` blob mixes every profile's rows into
+ * one file, so it is treated as adult-scope: children read todos through the
+ * profile-private row layer (listTodos), not the household blob.
+ *
+ * An unknown name is adult-scope only — a child credential must never read a
+ * file this map has not classified.
+ */
+export const DATA_FILE_OWNERS: Record<string, FamilyMember> = {
+  transactions: "victor",
+  "mason-transactions": "mason",
+  "maddox-transactions": "maddox",
+  todos: "victor",
+  "bitcoin-buys": "victor",
+  "mason-bitcoin-buys": "mason",
+  "bitcoin-bill-pays": "victor",
+  "btc-balance-snapshot": "victor",
+  "son-balances": "mason",
+  budget: "victor",
+  "mason-budget": "mason",
+  finances: "victor",
+  "writeback-audit": "victor",
+};
+
+export function dataFileVisibleTo(profile: DeviceProfile, name: string): boolean {
+  const owner = DATA_FILE_OWNERS[name];
+  if (owner === undefined) return isAdult(profile);
+  return canSeeDataOwnedBy(profile, owner);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1089,10 +1207,12 @@ export const listTransactions = query({
     month: v.optional(v.string()),
     limit: v.optional(v.float64()),
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, month, limit, token }) => {
-    validateReadToken(token);
-    const owners = ownersInScope(viewer, "visible");
+  handler: async (ctx, { viewer, month, limit, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const owners = ownersInScope(auth.viewer, "visible");
     const cap = requestedRowCap(limit, "listTransactions");
 
     const perOwner = await Promise.all(
@@ -1118,11 +1238,10 @@ export const listTransactions = query({
 
     const rows = perOwner.flat();
     rows.sort(byDateDescending);
-    return publicEnvelope(
-      rows.slice(0, cap).map(projectTransaction),
-      limit,
-      "listTransactions",
-    );
+    return {
+      ...publicEnvelope(rows.slice(0, cap).map(projectTransaction), limit, "listTransactions"),
+      ...readAuthDeprecation(auth),
+    };
   },
 });
 
@@ -1138,10 +1257,12 @@ export const listIncome = query({
     month: v.optional(v.string()),
     limit: v.optional(v.float64()),
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, month, limit, token }) => {
-    validateReadToken(token);
-    const owners = ownersInScope(viewer, "visible");
+  handler: async (ctx, { viewer, month, limit, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const owners = ownersInScope(auth.viewer, "visible");
     const cap = requestedRowCap(limit, "listIncome");
 
     const perOwner = await Promise.all(
@@ -1166,11 +1287,10 @@ export const listIncome = query({
 
     const rows = perOwner.flat();
     rows.sort(byIncomeDateDescending);
-    return publicEnvelope(
-      rows.slice(0, cap).map(projectIncome),
-      limit,
-      "listIncome",
-    );
+    return {
+      ...publicEnvelope(rows.slice(0, cap).map(projectIncome), limit, "listIncome"),
+      ...readAuthDeprecation(auth),
+    };
   },
 });
 
@@ -1181,9 +1301,11 @@ export const listTodos = query({
     done: v.optional(v.boolean()),
     limit: v.optional(v.float64()),
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, done, limit, token }) => {
-    validateReadToken(token);
+  handler: async (ctx, { viewer, done, limit, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
     const cap = requestedRowCap(limit, "listTodos");
     const wanted = done === undefined ? [false, true] : [done];
 
@@ -1207,11 +1329,10 @@ export const listTodos = query({
           : -1
         : b.updatedAtMs - a.updatedAtMs,
     );
-    return publicEnvelope(
-      rows.slice(0, cap).map(projectTodo),
-      limit,
-      "listTodos",
-    );
+    return {
+      ...publicEnvelope(rows.slice(0, cap).map(projectTodo), limit, "listTodos"),
+      ...readAuthDeprecation(auth),
+    };
   },
 });
 
@@ -1226,10 +1347,12 @@ export const listBtcBuys = query({
     month: v.optional(v.string()),
     limit: v.optional(v.float64()),
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, scope, month, limit, token }) => {
-    validateReadToken(token);
-    const owners = ownersInScope(viewer, scope);
+  handler: async (ctx, { viewer, scope, month, limit, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const owners = ownersInScope(auth.viewer, scope);
     const cap = requestedRowCap(limit, "listBtcBuys");
 
     const perOwner = await Promise.all(
@@ -1253,11 +1376,10 @@ export const listBtcBuys = query({
 
     const rows = perOwner.flat();
     rows.sort(byDateDescending);
-    return publicEnvelope(
-      rows.slice(0, cap).map(projectBtcBuy),
-      limit,
-      "listBtcBuys",
-    );
+    return {
+      ...publicEnvelope(rows.slice(0, cap).map(projectBtcBuy), limit, "listBtcBuys"),
+      ...readAuthDeprecation(auth),
+    };
   },
 });
 
@@ -1269,10 +1391,12 @@ export const listBtcBillPays = query({
     month: v.optional(v.string()),
     limit: v.optional(v.float64()),
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, scope, month, limit, token }) => {
-    validateReadToken(token);
-    const owners = ownersInScope(viewer, scope);
+  handler: async (ctx, { viewer, scope, month, limit, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const owners = ownersInScope(auth.viewer, scope);
     const cap = requestedRowCap(limit, "listBtcBillPays");
 
     const perOwner = await Promise.all(
@@ -1298,11 +1422,10 @@ export const listBtcBillPays = query({
 
     const rows = perOwner.flat();
     rows.sort(byDateDescending);
-    return publicEnvelope(
-      rows.slice(0, cap).map(projectBtcBillPay),
-      limit,
-      "listBtcBillPays",
-    );
+    return {
+      ...publicEnvelope(rows.slice(0, cap).map(projectBtcBillPay), limit, "listBtcBillPays"),
+      ...readAuthDeprecation(auth),
+    };
   },
 });
 
@@ -1312,9 +1435,11 @@ export const getMoneyOutToday = query({
     viewer: familyMemberValidator,
     date: v.string(),
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, date, token }) => {
-    validateReadToken(token);
+  handler: async (ctx, { viewer, date, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
     if (!isRealIsoDate(date)) {
       throw new ConvexError(
         "getMoneyOutToday: date must be a real ISO calendar date in yyyy-MM-dd form.",
@@ -1323,7 +1448,7 @@ export const getMoneyOutToday = query({
 
     // Net-worth scope is the spending scope here: adults share one household
     // ledger, while a child gets only their exact owner rows.
-    const owners = ownersInScope(viewer, "netWorth");
+    const owners = ownersInScope(auth.viewer, "netWorth");
     const [transactionRows, billPayRows] = await Promise.all([
       Promise.all(
         owners.map((owner) =>
@@ -1381,13 +1506,14 @@ export const getMoneyOutToday = query({
 
     return {
       date,
-      owner: canonicalLedgerOwner(viewer),
+      owner: canonicalLedgerOwner(auth.viewer),
       totalCents: sources.reduce(
         (total, source) =>
           checkedMoneyOutCentsAdd(total, source.contributionCents),
         0n,
       ),
       sources,
+      ...readAuthDeprecation(auth),
     };
   },
 });
@@ -1400,10 +1526,12 @@ export const listBtcTransfers = query({
     month: v.optional(v.string()),
     limit: v.optional(v.float64()),
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, scope, month, limit, token }) => {
-    validateReadToken(token);
-    const owners = ownersInScope(viewer, scope);
+  handler: async (ctx, { viewer, scope, month, limit, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const owners = ownersInScope(auth.viewer, scope);
     const cap = requestedRowCap(limit, "listBtcTransfers");
     const perOwner = await Promise.all(
       owners.map((owner) =>
@@ -1427,11 +1555,10 @@ export const listBtcTransfers = query({
     );
     const rows = perOwner.flat();
     rows.sort(byDateDescending);
-    return publicEnvelope(
-      rows.slice(0, cap).map(projectBtcTransfer),
-      limit,
-      "listBtcTransfers",
-    );
+    return {
+      ...publicEnvelope(rows.slice(0, cap).map(projectBtcTransfer), limit, "listBtcTransfers"),
+      ...readAuthDeprecation(auth),
+    };
   },
 });
 
@@ -1442,10 +1569,12 @@ export const listBtcAccounts = query({
     scope: scopeValidator,
     limit: v.optional(v.float64()),
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, scope, limit, token }) => {
-    validateReadToken(token);
-    const owners = ownersInScope(viewer, scope);
+  handler: async (ctx, { viewer, scope, limit, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const owners = ownersInScope(auth.viewer, scope);
     const cap = requestedRowCap(limit, "listBtcAccounts");
 
     const perOwner = await Promise.all(
@@ -1469,11 +1598,10 @@ export const listBtcAccounts = query({
           ? -1
           : 1,
     );
-    return publicEnvelope(
-      rows.slice(0, cap).map(projectBtcAccount),
-      limit,
-      "listBtcAccounts",
-    );
+    return {
+      ...publicEnvelope(rows.slice(0, cap).map(projectBtcAccount), limit, "listBtcAccounts"),
+      ...readAuthDeprecation(auth),
+    };
   },
 });
 
@@ -1488,10 +1616,12 @@ export const listBalanceDocuments = query({
     viewer: familyMemberValidator,
     scope: scopeValidator,
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, scope, token }) => {
-    validateReadToken(token);
-    const owners = ownersInScope(viewer, scope);
+  handler: async (ctx, { viewer, scope, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const owners = ownersInScope(auth.viewer, scope);
     const rows = (
       await Promise.all(
         owners.map((owner) =>
@@ -1508,6 +1638,7 @@ export const listBalanceDocuments = query({
 
     rows.sort((a, b) => (a.owner < b.owner ? -1 : a.owner > b.owner ? 1 : 0));
     return {
+      ...readAuthDeprecation(auth),
       rows: rows.map((row) => ({
         owner: row.owner,
         cashAppSats: row.cashAppSats,
@@ -1544,10 +1675,12 @@ export const getBudgetDocument = query({
     viewer: familyMemberValidator,
     scope: v.literal("netWorth"),
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, token }) => {
-    validateReadToken(token);
-    const source = budgetSourceFor(viewer);
+  handler: async (ctx, { viewer, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const source = budgetSourceFor(auth.viewer);
     if (source === null) return { document: null, complete: true };
     const doc = await ctx.db
       .query("budgetDocuments")
@@ -1558,6 +1691,7 @@ export const getBudgetDocument = query({
     return {
       document: doc ? publicBudgetDocument(doc) : null,
       complete: true,
+      ...readAuthDeprecation(auth),
     };
   },
 });
@@ -1572,10 +1706,12 @@ export const listBtcBalanceDocuments = query({
     viewer: familyMemberValidator,
     scope: scopeValidator,
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, scope, token }) => {
-    validateReadToken(token);
-    const owners = ownersInScope(viewer, scope);
+  handler: async (ctx, { viewer, scope, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const owners = ownersInScope(auth.viewer, scope);
     const rows = (
       await Promise.all(
         owners.map((owner) =>
@@ -1591,7 +1727,11 @@ export const listBtcBalanceDocuments = query({
     ).flat();
 
     rows.sort((a, b) => (a.owner < b.owner ? -1 : a.owner > b.owner ? 1 : 0));
-    return { rows: rows.map(publicBtcBalanceDocument), complete: true };
+    return {
+      ...readAuthDeprecation(auth),
+      rows: rows.map(publicBtcBalanceDocument),
+      complete: true,
+    };
   },
 });
 
@@ -1604,10 +1744,12 @@ export const getBtcSnapshotMetadata = query({
     viewer: familyMemberValidator,
     scope: scopeValidator,
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, scope, token }) => {
-    validateReadToken(token);
-    const owners = ownersInScope(viewer, scope);
+  handler: async (ctx, { viewer, scope, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const owners = ownersInScope(auth.viewer, scope);
     const rows = (
       await Promise.all(
         owners.map((owner) =>
@@ -1632,7 +1774,7 @@ export const getBtcSnapshotMetadata = query({
         updatedAtMs: row.updatedAtMs,
       }));
     rows.sort((a, b) => (a.owner < b.owner ? -1 : a.owner > b.owner ? 1 : 0));
-    return { rows, complete: true };
+    return { ...readAuthDeprecation(auth), rows, complete: true };
   },
 });
 
@@ -1646,9 +1788,11 @@ export const getFinanceDocument = query({
     viewer: familyMemberValidator,
     scope: scopeValidator,
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, scope, token }) => {
-    validateReadToken(token);
+  handler: async (ctx, { viewer, scope, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
     const doc = await ctx.db
       .query("financeDocuments")
       .withIndex(PUBLIC_QUERY_INDEX_PLAN.getFinanceDocument.all.name, (q) =>
@@ -1662,7 +1806,7 @@ export const getFinanceDocument = query({
     // still produces at most one constant log line rather than one per value.
     const repairs: SharesRepairTally = { repaired: false };
     const accounts = doc.accounts
-      .filter((account) => rule(viewer, account.owner))
+      .filter((account) => rule(auth.viewer, account.owner))
       .map((account) => publicFinanceAccount(account, repairs));
     if (repairs.repaired) console.warn(STORED_SHARES_REPAIRED_WARNING);
     if (accounts.length === 0) {
@@ -1679,6 +1823,7 @@ export const getFinanceDocument = query({
         updatedAtMs: doc.updatedAtMs,
       },
       complete: true,
+      ...readAuthDeprecation(auth),
     };
   },
 });
@@ -1973,6 +2118,43 @@ function requireDevicePositive(value: bigint, field: string) {
   }
 }
 
+/**
+ * $1,000,000.00 in cents. A typo guard, not a policy — the same bound the
+ * validating write path applies to hand entry (writeback.ts MAX_ABS_MINOR).
+ * This household does not put a seven-figure line item through a budget app,
+ * but it does fat-finger an extra two zeros, and unlike the writeback path the
+ * row layer previously had no cap at all: a single int64-max "typo" landed in
+ * the ledger.
+ */
+const MAX_ABS_MONEY_CENTS = 100_000_000n;
+
+/**
+ * The same typo guard in satoshis: ≈ $1,000,000 at $100k/BTC. A single line
+ * item above ten BTC is almost certainly an extra zero; if it is real, the
+ * limit is the thing to change.
+ */
+const MAX_ABS_MONEY_SATS = 1_000_000_000n;
+
+function requireMoneyCentsCap(value: bigint, field: string) {
+  if (value > MAX_ABS_MONEY_CENTS || value < -MAX_ABS_MONEY_CENTS) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      `${field} of ${value} cents exceeds the ${MAX_ABS_MONEY_CENTS}-cent ` +
+        "sanity limit; if this is real, the limit is the thing to change.",
+    );
+  }
+}
+
+function requireMoneySatsCap(value: bigint, field: string) {
+  if (value > MAX_ABS_MONEY_SATS || value < -MAX_ABS_MONEY_SATS) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      `${field} of ${value} sats exceeds the ${MAX_ABS_MONEY_SATS}-sat sanity ` +
+        "limit; if this is real, the limit is the thing to change.",
+    );
+  }
+}
+
 async function lockRuntimeSource(ctx: MutationCtx, sourceFile: string) {
   const existing = await ctx.db
     .query("runtimeSourceLocks")
@@ -2098,6 +2280,25 @@ function sameTransaction(
     existing.card === row.card &&
     existing.note === row.note &&
     existing.amountSats === row.amountSats &&
+    // THE ASYMMETRY IS DELIBERATE — do not "fix" it to strict equality.
+    //
+    // A row that carries amountSats always has a resolved key in storage: the
+    // write path stores nextPosting.accountKey (canonical River for Income
+    // rows whose caller omitted the key), so a retried create legitimately
+    // arrives with the key still omitted and MUST match its own stored row,
+    // or every retry of a now-posted create would demand a revision the
+    // original create never needed (see btcLedger.test.ts).
+    //
+    // The other direction — incoming row ADDS a key the stored row lacks —
+    // is NOT a replay: the disjunction is false, the full update path runs,
+    // requestedTransactionBalanceDelta applies the posting, and the key (and
+    // balance leg) is persisted. An incoming row that names a DIFFERENT key
+    // than storage likewise falls through to the full path, where the
+    // posted-Income account-change guard rejects it.
+    //
+    // Net contract: only an exact repeat, or a key-omitting retry that
+    // resolves to the same account, is idempotent; every key ADDITION or
+    // CHANGE reaches the writing path.
     (row.bitcoinAccountKey === undefined ||
       existing.bitcoinAccountKey === row.bitcoinAccountKey)
   );
@@ -2386,6 +2587,10 @@ async function upsertTransactionRow(
   optimistic?: OptimisticWrite,
 ): Promise<UpsertOutcome> {
   validateTransactionPaymentSource(row);
+  requireMoneyCentsCap(row.amountCents, "transaction.amountCents");
+  if (row.amountSats !== undefined) {
+    requireMoneySatsCap(row.amountSats, "transaction.amountSats");
+  }
   const existing = await ctx.db
     .query("transactions")
     .withIndex("by_source_tx_id", (q: any) =>
@@ -2628,6 +2833,10 @@ async function upsertBtcBuyRow(
   requireDevicePositive(row.priceUsdCents, "buy.priceUsdCents");
   requireDevicePositive(row.usdCents, "buy.usdCents");
   requireDeviceNonnegative(row.feeUsdCents ?? 0n, "buy.feeUsdCents");
+  requireMoneySatsCap(row.sats, "buy.sats");
+  requireMoneyCentsCap(row.priceUsdCents, "buy.priceUsdCents");
+  requireMoneyCentsCap(row.usdCents, "buy.usdCents");
+  requireMoneyCentsCap(row.feeUsdCents ?? 0n, "buy.feeUsdCents");
   const existing = await ctx.db
     .query("btcBuys")
     .withIndex("by_source_buy_id", (q: any) =>
@@ -3020,6 +3229,8 @@ async function upsertBtcBillPayRow(
 }
 
 function validateBtcTransfer(row: BtcTransferRow) {
+  requireMoneySatsCap(row.sats, "transfer.sats");
+  requireMoneySatsCap(row.feeSats, "transfer.feeSats");
   if (!postsToHouseholdBitcoinLedger(row.owner)) {
     deviceFailure(
       "VALIDATION_FAILED",
@@ -3364,6 +3575,10 @@ function requireBillPayAmounts(billPay: {
         `got ${billPay.feeUsdCents}.`,
     );
   }
+  requireMoneyCentsCap(billPay.amountUsdCents, "billPay.amountUsdCents");
+  requireMoneyCentsCap(billPay.btcPriceCents, "billPay.btcPriceCents");
+  requireMoneyCentsCap(billPay.feeUsdCents, "billPay.feeUsdCents");
+  requireMoneySatsCap(billPay.btcSpentSats, "billPay.btcSpentSats");
 }
 
 function requireBillPayBudgetEffect(billPay: {
@@ -3772,6 +3987,11 @@ export const upsertTodo = mutation({
  *
  * Writes both row-native and legacy todo tombstones. The legacy marker remains
  * required while shipped clients still converge through the todos blob.
+ *
+ * The restore capsule is captured exactly as deleteTodoCore does, with the
+ * deleted row's own revision as `deletedFromUpdatedAtMs` — so an
+ * admin-deleted todo is restorable through restoreTodoFromDevice with that
+ * revision, instead of being gone forever.
  */
 export const deleteTodo = mutation({
   args: {
@@ -3804,6 +4024,8 @@ export const deleteTodo = mutation({
       existing.sourceFile,
       todoId,
       existing.owner,
+      existing.updatedAtMs,
+      captureTodoForRestore(existing),
     );
     await upsertLegacyTodoTombstone(ctx, todoId);
     return { todoId, removed: true };
@@ -4085,14 +4307,26 @@ export const upsertBtcAccount = mutation({
     // Legacy bootstrap may populate the compatibility table before the typed
     // document migration creates its authority. Once that document exists,
     // every sync-token write above is routed through the atomic document path.
+    //
+    // Same normalization the document path gets (upsertBtcAccountCore): the
+    // key is trimmed and must be non-empty, and asOf is validated the way the
+    // device path validates it — an unnormalized instant would desynchronize
+    // the compatibility table from the document authority's clock. The result
+    // reports the trimmed key, matching the document branch's return.
+    const accountKey = account.key.trim();
+    if (!accountKey) {
+      throw new ConvexError("upsertBtcAccount: key must not be empty.");
+    }
+    requireDeviceTimestamp(account.asOf, "account.asOf");
     const row = {
       ...account,
+      key: accountKey,
       schemaVersion: account.schemaVersion ?? 0n,
       sourceFile: file,
       updatedAtMs: Date.now(),
     };
     const outcome = await upsertBtcAccountRow(ctx, row);
-    return { key: row.key, owner: row.owner, outcome };
+    return { key: accountKey, owner: row.owner, outcome };
   },
 });
 
@@ -4105,7 +4339,7 @@ export const upsertBtcAccount = mutation({
  * replaced in place so category ordering remains stable.
  *
  * `month` is an optimistic scope guard, not a month selector. getBudgetDocument
- * exposes the one document selected by budgetSourceFor(viewer), and callers
+ * exposes the one document selected by budgetSourceFor(auth.viewer), and callers
  * derive spend from that document's own month. Refusing a stale month here keeps
  * a category edit made from a June screen from changing the July document.
  */
@@ -4118,6 +4352,46 @@ function budgetOwnerForSource(
 /** Rachel shares the canonical adult financial ledger stored under Victor. */
 function canonicalLedgerOwner(owner: FamilyMember): FamilyMember {
   return owner === "rachel" ? "victor" : owner;
+}
+
+/**
+ * Money authority comes from the credential's server-stored profile, exactly as
+ * task authority does via requireTaskProfileBinding (deviceAuth.ts).
+ *
+ * The resolved owner is DERIVED from the device credential; the client-asserted
+ * owner is an echo that must agree with it. Without this, any paired device
+ * holding a money capability could write or delete any family member's ledger —
+ * a child credential posting to the adult household account, or editing the
+ * adult budget and BTC balance documents.
+ *
+ * Rachel's credential resolves to the canonical adult ledger ("victor"), so
+ * either adult spelling of the household ledger keeps working; a child
+ * credential resolves to itself and cannot name any other owner.
+ */
+function requireMoneyOwnerBinding(
+  device: { profile?: DeviceProfile },
+  requestedOwner: FamilyMember,
+  entityType: RowEntityType,
+  entityId: string,
+): FamilyMember {
+  if (device.profile === undefined) {
+    deviceFailure(
+      "PROFILE_BINDING_REQUIRED",
+      "This device credential is not bound to a profile.",
+      entityType,
+      entityId,
+    );
+  }
+  const authoritative = canonicalLedgerOwner(device.profile);
+  if (canonicalLedgerOwner(requestedOwner) !== authoritative) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Money request owner must match credential profile ${device.profile}.`,
+      entityType,
+      entityId,
+    );
+  }
+  return authoritative;
 }
 
 function foldedCategoryName(value: string): string {
@@ -4175,6 +4449,12 @@ async function upsertBudgetCategoryCore(
   previousName?: string,
   optimistic?: OptimisticWrite,
 ): Promise<{ entityId: string; outcome: UpsertOutcome }> {
+  // Admin parity with the device path (requireDeviceNonnegative): a negative
+  // budget is a typo for a zero or a minus sign, never a real allocation. The
+  // same $1M sanity cap the device path applies — validated first, so a
+  // nonsense amount is rejected on its own terms.
+  requireDeviceNonnegative(category.budgetCents, "category.budgetCents");
+  requireMoneyCentsCap(category.budgetCents, "category.budgetCents");
   const expectedOwner = budgetOwnerForSource(sourceFile);
   if (owner !== expectedOwner) {
     deviceFailure(
@@ -5134,6 +5414,16 @@ async function upsertBtcAccountCore(
       account.key,
     );
   }
+  requireMoneySatsCap(account.sats, "account.sats");
+  if (account.fiatValuation !== undefined) {
+    requireMoneyCentsCap(account.fiatValuation.cents, "account.fiatValuation.cents");
+    if (account.fiatValuation.priceCents !== undefined) {
+      requireMoneyCentsCap(
+        account.fiatValuation.priceCents,
+        "account.fiatValuation.priceCents",
+      );
+    }
+  }
   const existingDocument = await ctx.db
     .query("btcBalanceDocuments")
     .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
@@ -5510,7 +5800,12 @@ export const upsertTransactionFromDevice = mutation({
       "transaction.bitcoinAccountKey",
     );
     validateDeviceTransactionPaymentSource(args.transaction, existing);
-    const ledgerOwner = canonicalLedgerOwner(args.owner);
+    const ledgerOwner = requireMoneyOwnerBinding(
+      device,
+      args.owner,
+      "transaction",
+      args.transaction.id,
+    );
     requireSourceOwner(args.sourceFile, "transactions", ledgerOwner);
     if (args.transaction.owner !== args.owner) {
       deviceFailure(
@@ -5600,7 +5895,7 @@ export const deleteTransactionFromDevice = mutation({
     const removed = await deleteTransactionCore(
       ctx,
       args.sourceFile,
-      canonicalLedgerOwner(args.owner),
+      requireMoneyOwnerBinding(device, args.owner, "transaction", args.entityId),
       args.entityId,
       { baseUpdatedAtMs: args.baseUpdatedAtMs },
     );
@@ -5822,7 +6117,12 @@ export const upsertBudgetCategoryFromDevice = mutation({
     const result = await upsertBudgetCategoryCore(
       ctx,
       args.sourceFile,
-      canonicalLedgerOwner(args.owner),
+      requireMoneyOwnerBinding(
+        device,
+        args.owner,
+        "budgetCategory",
+        args.category.name,
+      ),
       args.month,
       args.category,
       args.previousName,
@@ -5857,7 +6157,12 @@ export const deleteBudgetCategoryFromDevice = mutation({
     const removed = await deleteBudgetCategoryCore(
       ctx,
       args.sourceFile,
-      canonicalLedgerOwner(args.owner),
+      requireMoneyOwnerBinding(
+        device,
+        args.owner,
+        "budgetCategory",
+        args.entityId,
+      ),
       args.month,
       args.entityId,
       { baseUpdatedAtMs: args.baseUpdatedAtMs },
@@ -5929,7 +6234,12 @@ export const upsertBtcBuyFromDevice = mutation({
         );
       }
     }
-    const ledgerOwner = canonicalLedgerOwner(args.owner);
+    const ledgerOwner = requireMoneyOwnerBinding(
+      device,
+      args.owner,
+      "btcBuy",
+      args.buy.id,
+    );
     requireSourceOwner(args.sourceFile, "btcBuys", ledgerOwner);
     if (args.buy.owner !== args.owner) {
       deviceFailure(
@@ -6006,7 +6316,7 @@ export const deleteBtcBuyFromDevice = mutation({
     const removed = await deleteBtcBuyCore(
       ctx,
       args.sourceFile,
-      canonicalLedgerOwner(args.owner),
+      requireMoneyOwnerBinding(device, args.owner, "btcBuy", args.entityId),
       args.entityId,
       { baseUpdatedAtMs: args.baseUpdatedAtMs },
     );
@@ -6055,7 +6365,12 @@ export const upsertBtcBillPayFromDevice = mutation({
         args.billPay.id,
       );
     }
-    const ledgerOwner = canonicalLedgerOwner(args.owner);
+    const ledgerOwner = requireMoneyOwnerBinding(
+      device,
+      args.owner,
+      "btcBillPay",
+      args.billPay.id,
+    );
     requireSourceOwner(args.sourceFile, "btcBillPays", ledgerOwner);
     const feeUsdCents = args.billPay.feeUsdCents ?? 0n;
     requireBillPayAmounts({ ...args.billPay, feeUsdCents });
@@ -6118,7 +6433,12 @@ export const deleteBtcBillPayFromDevice = mutation({
     );
     requireDeviceRevision(args.baseUpdatedAtMs, true);
     requireDeviceIdentifier(args.entityId, "entityId");
-    const ledgerOwner = canonicalLedgerOwner(args.owner);
+    const ledgerOwner = requireMoneyOwnerBinding(
+      device,
+      args.owner,
+      "btcBillPay",
+      args.entityId,
+    );
     requireSourceOwner(args.sourceFile, "btcBillPays", ledgerOwner);
     const removed = await deleteBtcBillPayCore(
       ctx,
@@ -6169,7 +6489,12 @@ export const upsertBtcTransferFromDevice = mutation({
         args.transfer.id,
       );
     }
-    const owner = canonicalLedgerOwner(args.owner);
+    const owner = requireMoneyOwnerBinding(
+      device,
+      args.owner,
+      "btcTransfer",
+      args.transfer.id,
+    );
     const now = Date.now();
     const date = requireIsoDate(
       args.transfer.date,
@@ -6221,7 +6546,7 @@ export const deleteBtcTransferFromDevice = mutation({
     requireDeviceIdentifier(args.entityId, "entityId");
     const removed = await deleteBtcTransferCore(
       ctx,
-      canonicalLedgerOwner(args.owner),
+      requireMoneyOwnerBinding(device, args.owner, "btcTransfer", args.entityId),
       args.entityId,
       { baseUpdatedAtMs: args.baseUpdatedAtMs },
     );
@@ -6292,7 +6617,12 @@ export const upsertBtcAccountFromDevice = mutation({
     }
     const account = {
       ...args.account,
-      owner: canonicalLedgerOwner(args.account.owner),
+      owner: requireMoneyOwnerBinding(
+        device,
+        args.owner,
+        "btcAccount",
+        args.account.key,
+      ),
     };
     const outcome = await upsertBtcAccountCore(ctx, args.sourceFile, account, {
       baseUpdatedAtMs: args.baseUpdatedAtMs,
@@ -6325,7 +6655,7 @@ export const deleteBtcAccountFromDevice = mutation({
     const removed = await deleteBtcAccountCore(
       ctx,
       args.sourceFile,
-      canonicalLedgerOwner(args.owner),
+      requireMoneyOwnerBinding(device, args.owner, "btcAccount", entityId),
       entityId,
       { baseUpdatedAtMs: args.baseUpdatedAtMs },
     );

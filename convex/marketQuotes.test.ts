@@ -261,7 +261,7 @@ describe("authenticated snapshot and cache transitions", () => {
 
   it("fails closed and rejects caller-controlled proxy arguments", async () => {
     await expect(t.query(api.getMarketQuoteSnapshot, {})).rejects.toThrow(
-      /CONVEX_READ_TOKEN is not configured/,
+      /read auth is not configured/,
     );
 
     const token = freshSecret();
