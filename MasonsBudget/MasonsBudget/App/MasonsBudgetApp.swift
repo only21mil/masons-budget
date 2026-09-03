@@ -71,6 +71,7 @@ struct MasonsBudgetApp: App {
     @StateObject private var taskUndoStore = TaskUndoStore.shared
     @State private var isUnlocked = false
     @State private var syncTimer: Timer?
+    @State private var priceTimer: Timer?
 
     private var appearanceMode: AppearanceMode {
         AppearanceMode(rawValue: appearanceModeRaw) ?? .system
@@ -146,10 +147,13 @@ struct MasonsBudgetApp: App {
     }
 
     /// Check if data has changed on Convex, and sync if so.
+    ///
+    /// The poll loop must stay a single lightweight versions query: refreshing
+    /// prices here ran the full BTC + stock price chains ~5,760 times per day
+    /// even with zero data changes. Prices refresh on their own 5-minute
+    /// cadence (and on foreground/profile switches via `syncFromConvex`).
     @MainActor
     private func syncIfChanged() async {
-        await BTCPriceService.shared.refreshAndStore()
-        await StockPriceService.shared.refreshAndStore()
         guard ConvexConfig.isConfigured else { return }
         let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
         let changed = await sync.hasUpdates()
@@ -158,13 +162,26 @@ struct MasonsBudgetApp: App {
         }
     }
 
-    /// Poll for changes every 15 seconds while the app is in the foreground.
-    /// This provides near-real-time updates for BTC buys, transactions, etc.
+    @MainActor
+    private func refreshPrices() async {
+        await BTCPriceService.shared.refreshAndStore()
+        await StockPriceService.shared.refreshAndStore()
+    }
+
+    /// Poll the versions endpoint every 15 seconds while the app is in the
+    /// foreground so ledger changes stay near-real-time; refresh prices on a
+    /// separate, much longer cadence to keep the radio/CPU cost bounded.
     private func startPeriodicSync() {
         syncTimer?.invalidate()
         syncTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in
             Task { @MainActor in
                 await syncIfChanged()
+            }
+        }
+        priceTimer?.invalidate()
+        priceTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
+            Task { @MainActor in
+                await refreshPrices()
             }
         }
     }

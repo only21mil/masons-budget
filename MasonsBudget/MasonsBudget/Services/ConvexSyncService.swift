@@ -200,9 +200,13 @@ final class ConvexSyncService {
 
     private func syncBTCBuys(_ errors: inout [String]) async -> Int {
         do {
-            let dtos = try await reader.readBTCBuys(viewer: currentMember)
-            let models = try dtos.map { try LedgerMapper.mapBTCBuy($0) }
-            try replaceBTCBuys(ownedBy: [.victor, .rachel], with: models)
+            let batch = try await reader.readBTCBuys(viewer: currentMember)
+            let models = try batch.value.map { try LedgerMapper.mapBTCBuy($0) }
+            try replaceBTCBuys(
+                ownedBy: [.victor, .rachel],
+                with: models,
+                rowAuthoritative: batch.isRowAuthoritative,
+            )
             return models.count
         } catch {
             log.error("BTC buys sync failed: \(error.localizedDescription)")
@@ -329,9 +333,13 @@ final class ConvexSyncService {
 
     private func syncMasonBTCBuys(_ errors: inout [String]) async -> Int {
         do {
-            let dtos = try await reader.readMasonBTCBuys(viewer: currentMember)
-            let models = try dtos.map { try LedgerMapper.mapBTCBuy($0, owner: .mason) }
-            try replaceBTCBuys(ownedBy: [.mason], with: models)
+            let batch = try await reader.readMasonBTCBuys(viewer: currentMember)
+            let models = try batch.value.map { try LedgerMapper.mapBTCBuy($0, owner: .mason) }
+            try replaceBTCBuys(
+                ownedBy: [.mason],
+                with: models,
+                rowAuthoritative: batch.isRowAuthoritative,
+            )
             return models.count
         } catch {
             log.error("Mason BTC buys sync failed: \(error.localizedDescription)")
@@ -546,7 +554,11 @@ final class ConvexSyncService {
         local.updatedAtMs = remote.updatedAtMs
     }
 
-    private func replaceBTCBuys(ownedBy owners: [FamilyMember], with buys: [BTCBuy]) throws {
+    private func replaceBTCBuys(
+        ownedBy owners: [FamilyMember],
+        with buys: [BTCBuy],
+        rowAuthoritative: Bool = false,
+    ) throws {
         let existing = try context.fetch(FetchDescriptor<BTCBuy>())
 
         let remoteIds = Set(buys.map(\.id))
@@ -558,7 +570,13 @@ final class ConvexSyncService {
         for buy in existing {
             guard let member = buy.ownerMember, owners.contains(member) else { continue }
             guard !remoteIds.contains(buy.id) else { continue }
-            guard buy.loggedBy != "app" else { continue }
+            // App-logged buys are exempt from the sweep only while the read is
+            // not row-authoritative: a blob or degraded read cannot prove
+            // absence. A complete authoritative row read does, so a
+            // server-absent app-logged buy is a rejected write or a dead
+            // optimistic row and is reaped instead of surviving every sync.
+            let exemptFromSweep = buy.loggedBy == "app" && !rowAuthoritative
+            guard !exemptFromSweep else { continue }
             context.delete(buy)
         }
 
