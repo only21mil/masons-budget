@@ -335,8 +335,11 @@ class MainActivity : FragmentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             builder.setAllowedAuthenticators(BIOMETRIC_STRONG or DEVICE_CREDENTIAL)
         } else {
-            // BIOMETRIC_STRONG | DEVICE_CREDENTIAL is not supported on API 29.
-            // This compatibility path still requires device-owner authentication.
+            // 1.2.x deprecates setDeviceCredentialAllowed and claims device-
+            // credential support on API 23-29, but the lock gate must not ride
+            // an unverifiable library claim. Until the pinned 1.2.0-alpha05 is
+            // verified on a real API 29 device, this branch stays explicit: it
+            // still requires device-owner authentication and fails closed.
             builder.setDeviceCredentialAllowed(true)
         }
         return builder.build()

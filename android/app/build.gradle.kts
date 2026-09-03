@@ -4,6 +4,7 @@ import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.Base64
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -48,7 +49,21 @@ val ciDebugKeyPassword = providers.environmentVariable("VOGEL_DEBUG_KEY_PASSWORD
  * an owned mode-0600 file under $HOME/work; no command-line property, Gradle cache,
  * release variant, or read-token environment variable can supply it. CI remains
  * forbidden except for the exact manual GitHub Actions purpose below.
+ *
+ * The environment file alone is not enough. A pairing is accepted only when
+ * `vogel.vault.android.readBootstrapOptIn=true` is ALSO set in android/local.properties
+ * (a git-ignored file), so a stray or leaked environment variable can never
+ * silently re-arm a claimable credential into an ordinary build.
  */
+fun localAndroidReadBootstrapOptIn(): Boolean {
+    val localProperties = Properties()
+    val file = rootProject.file("local.properties")
+    if (file.isFile) {
+        file.inputStream().use { stream -> localProperties.load(stream) }
+    }
+    return localProperties.getProperty("vogel.vault.android.readBootstrapOptIn") == "true"
+}
+
 fun localAndroidReadBootstrap(): String? {
     val rawPath = providers.environmentVariable("VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE")
         .orNull
@@ -65,6 +80,11 @@ fun localAndroidReadBootstrap(): String? {
         check(approved) {
             "Android read-bootstrap builds are forbidden in CI outside the approved GitHub Actions workflow_dispatch path."
         }
+    }
+    check(localAndroidReadBootstrapOptIn()) {
+        "VOGEL_VAULT_ANDROID_BOOTSTRAP_FILE is set, but local.properties does not carry " +
+            "vogel.vault.android.readBootstrapOptIn=true. Set that opt-in explicitly before " +
+            "building a credential-bearing APK."
     }
     check(gradle.startParameter.taskNames == listOf(":app:assembleDebug")) {
         "A bootstrap input is accepted only for the exact :app:assembleDebug task."
@@ -185,6 +205,12 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Structural backstop for the audit's L3: the pairing is only ever
+            // injected into the debug build type above, and a release build must
+            // refuse to configure at all if any future change regresses that.
+            check(localAndroidReadBootstrap == null) {
+                "A release build must never embed the read-bootstrap pairing."
+            }
         }
     }
 
@@ -232,7 +258,10 @@ dependencies {
 
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.9.3")
-    implementation("androidx.biometric:biometric:1.1.0")
+    // 1.1.0 (June 2020) predates the API 30 device-credential prompt regressions.
+    // The 1.2.x line carries those fixes; no stable 1.2.x release exists yet
+    // (1.2.0-alpha05 is the newest of the line), which the audit accepted.
+    implementation("androidx.biometric:biometric:1.2.0-alpha05")
     // Biometric 1.1.0 otherwise resolves Fragment 1.2.5. Activity 1.2.0+ requires
     // Fragment 1.3.0+ so ActivityResultRegistry permission codes are not rejected.
     implementation("androidx.fragment:fragment:1.8.9")
