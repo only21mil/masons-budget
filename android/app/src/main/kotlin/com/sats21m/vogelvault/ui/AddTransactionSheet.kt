@@ -56,7 +56,6 @@ import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import java.math.BigDecimal
-import java.math.RoundingMode
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -181,8 +180,7 @@ internal fun prepareBillPayHandoff(
     }
     val merchant = draft.merchant.trim()
     require(merchant.isNotEmpty()) { "Enter a merchant or bill-pay recipient" }
-    val cents = parsePositiveDecimal(draft.amount)
-        .toMinorUnitsExact(scale = 2, unitName = "USD")
+    val cents = Money.exactMinorUnits(Money.parsePositiveAmount(draft.amount), 2, "USD")
     require(cents > 0L) { "Amount must resolve to at least one cent" }
     BillPayPrefill(
         merchant = merchant,
@@ -316,15 +314,15 @@ internal fun prepareTransaction(
     val merchant = draft.merchant.trim()
     require(merchant.isNotEmpty()) { "Enter a merchant or transfer destination" }
 
-    val parsed = parsePositiveDecimal(draft.amount)
+    val parsed = Money.parsePositiveAmount(draft.amount)
     val (amountCents, satsFromInput) = when (draft.inputUnit) {
         DisplayUnit.USD -> {
-            val cents = parsed.toMinorUnitsExact(scale = 2, unitName = "USD")
+            val cents = Money.exactMinorUnits(parsed, 2, "USD")
             cents to btcPriceCents.takeIf { it > 0L }?.let { Money.usdCentsToSats(cents, it) }
         }
 
         DisplayUnit.BTC -> {
-            val exactSats = parsed.toMinorUnitsExact(scale = 8, unitName = "BTC")
+            val exactSats = Money.exactMinorUnits(parsed, 8, "BTC")
             require(btcPriceCents > 0L) {
                 "An operational Bitcoin market quote is required to save BTC input as USD cents"
             }
@@ -332,7 +330,7 @@ internal fun prepareTransaction(
         }
 
         DisplayUnit.SATS -> {
-            val exactSats = parsed.toMinorUnitsExact(scale = 0, unitName = "sats")
+            val exactSats = Money.exactMinorUnits(parsed, 0, "sats")
             require(btcPriceCents > 0L) {
                 "An operational Bitcoin market quote is required to save sats input as USD cents"
             }
@@ -434,10 +432,10 @@ internal fun conversionPreview(
     inputUnit: DisplayUnit,
     btcPriceCents: Long,
 ): String? = runCatching {
-    val parsed = parsePositiveDecimal(amount)
+    val parsed = Money.parsePositiveAmount(amount)
     when (inputUnit) {
         DisplayUnit.USD -> {
-            val cents = parsed.toMinorUnitsExact(2, "USD")
+            val cents = Money.exactMinorUnits(parsed, 2, "USD")
             if (btcPriceCents <= 0L) {
                 Money.PRICE_UNAVAILABLE
             } else {
@@ -447,7 +445,7 @@ internal fun conversionPreview(
         }
 
         DisplayUnit.BTC -> {
-            val sats = parsed.toMinorUnitsExact(8, "BTC")
+            val sats = Money.exactMinorUnits(parsed, 8, "BTC")
             if (btcPriceCents <= 0L) {
                 "${Money.formatSats(sats)} / ${Money.PRICE_UNAVAILABLE}"
             } else {
@@ -456,7 +454,7 @@ internal fun conversionPreview(
         }
 
         DisplayUnit.SATS -> {
-            val sats = parsed.toMinorUnitsExact(0, "sats")
+            val sats = Money.exactMinorUnits(parsed, 0, "sats")
             if (btcPriceCents <= 0L) {
                 "${Money.formatBtc(sats)} / ${Money.PRICE_UNAVAILABLE}"
             } else {
@@ -473,15 +471,15 @@ internal fun convertAmountForUnit(
     btcPriceCents: Long,
 ): String? = runCatching {
     if (from == to) return@runCatching amount
-    val parsed = parsePositiveDecimal(amount)
+    val parsed = Money.parsePositiveAmount(amount)
     val sats = when (from) {
         DisplayUnit.USD -> {
             require(btcPriceCents > 0L) { "Bitcoin price unavailable" }
-            val cents = parsed.toMinorUnitsExact(2, "USD")
+            val cents = Money.exactMinorUnits(parsed, 2, "USD")
             Money.usdCentsToSats(cents, btcPriceCents)
         }
-        DisplayUnit.BTC -> parsed.toMinorUnitsExact(8, "BTC")
-        DisplayUnit.SATS -> parsed.toMinorUnitsExact(0, "sats")
+        DisplayUnit.BTC -> Money.exactMinorUnits(parsed, 8, "BTC")
+        DisplayUnit.SATS -> Money.exactMinorUnits(parsed, 0, "sats")
     }
     when (to) {
         DisplayUnit.SATS -> sats.toString()
@@ -499,43 +497,11 @@ internal fun convertAmountForUnit(
     }
 }.getOrNull()
 
-private fun parsePositiveDecimal(raw: String): BigDecimal {
-    val cleaned = raw.trim()
-        .replace(",", "")
-        .removePrefix("$")
-        .removePrefix("₿")
-        .trim()
-    require(cleaned.isNotEmpty()) { "Enter an amount" }
-    val value = cleaned.toBigDecimalOrNull() ?: throw IllegalArgumentException("Enter a valid amount")
-    require(value > BigDecimal.ZERO) { "Amount must be positive" }
-    return value
-}
-
-private fun BigDecimal.toMinorUnitsExact(
-    scale: Int,
-    unitName: String,
-): Long = try {
-    setScale(scale, RoundingMode.UNNECESSARY)
-        .movePointRight(scale)
-        .longValueExact()
-} catch (error: ArithmeticException) {
-    throw IllegalArgumentException(
-        when (scale) {
-            0 -> "$unitName must be a whole number"
-            else -> "$unitName supports at most $scale decimal places"
-        },
-        error,
-    )
-}
-
 private fun satsToCentsExact(
     sats: Long,
     btcPriceCents: Long,
 ): Long = try {
-    BigDecimal(sats)
-        .multiply(BigDecimal(btcPriceCents))
-        .divide(BigDecimal(Money.SATS_PER_BTC), 0, RoundingMode.HALF_UP)
-        .longValueExact()
+    Money.satsToUsdCents(sats, btcPriceCents)
 } catch (error: ArithmeticException) {
     throw IllegalArgumentException("Amount is outside the supported range", error)
 }

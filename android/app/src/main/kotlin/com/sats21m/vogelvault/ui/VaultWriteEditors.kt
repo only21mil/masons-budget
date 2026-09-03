@@ -65,7 +65,6 @@ import com.sats21m.vogelvault.ui.components.Badge
 import com.sats21m.vogelvault.ui.theme.LedgerNumeral
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
-import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 import java.util.UUID
@@ -242,7 +241,7 @@ internal fun btcBuyFromIncomeWriteRequest(
     if (normalizedSource.isEmpty()) return WriteDraftResult.Invalid("Enter a purchase source.")
     val exactSats = sats.trim().toLongOrNull()?.takeIf { it > 0L }
         ?: return WriteDraftResult.Invalid("Sats must be a positive whole number.")
-    val priceCents = exactPositiveMinorUnits(priceUsd, 2, allowZero = false)
+    val priceCents = Money.exactPositiveMinorUnitsOrNull(priceUsd, 2, allowZero = false)
         ?: return WriteDraftResult.Invalid("Price must be positive with at most two decimal places.")
     if (income.amountCents <= 0L) {
         return WriteDraftResult.Invalid("Income amount must be positive.")
@@ -310,7 +309,7 @@ internal fun budgetCategoryWriteRequest(
     if (seed.displayedMonth != seed.budgetDocumentMonth) {
         return WriteDraftResult.Invalid("Only the current budget document month can be edited.")
     }
-    val cents = exactPositiveMinorUnits(dollars, 2, allowZero = true)
+    val cents = Money.exactPositiveMinorUnitsOrNull(dollars, 2, allowZero = true)
         ?: return WriteDraftResult.Invalid("Enter a non-negative amount with at most two decimal places.")
     return WriteDraftResult.Valid(
         BudgetCategoryWriteRequest(
@@ -375,9 +374,9 @@ internal fun btcBuyWriteRequest(
     if (normalizedSource.isEmpty()) return WriteDraftResult.Invalid("Enter a purchase source.")
     val exactSats = sats.trim().toLongOrNull()?.takeIf { it > 0L }
         ?: return WriteDraftResult.Invalid("Sats must be a positive whole number.")
-    val priceCents = exactPositiveMinorUnits(priceUsd, 2, allowZero = false)
+    val priceCents = Money.exactPositiveMinorUnitsOrNull(priceUsd, 2, allowZero = false)
         ?: return WriteDraftResult.Invalid("Price must be positive with at most two decimal places.")
-    val purchaseCents = exactPositiveMinorUnits(purchaseUsd, 2, allowZero = false)
+    val purchaseCents = Money.exactPositiveMinorUnitsOrNull(purchaseUsd, 2, allowZero = false)
         ?: return WriteDraftResult.Invalid("Purchase amount must be positive with at most two decimal places.")
     return WriteDraftResult.Valid(
         BtcBuyWriteRequest(
@@ -391,19 +390,6 @@ internal fun btcBuyWriteRequest(
         ),
     )
 }
-
-private fun exactPositiveMinorUnits(
-    raw: String,
-    scale: Int,
-    allowZero: Boolean,
-): Long? =
-    runCatching {
-        val normalized = raw.trim().removePrefix("$").replace(",", "")
-        val value = BigDecimal(normalized)
-        if (value.scale().coerceAtLeast(0) > scale) return null
-        val minorUnits = value.movePointRight(scale).longValueExact()
-        minorUnits.takeIf { if (allowZero) it >= 0L else it > 0L }
-    }.getOrNull()
 
 @Composable
 internal fun EditableBudgetCategoryRow(

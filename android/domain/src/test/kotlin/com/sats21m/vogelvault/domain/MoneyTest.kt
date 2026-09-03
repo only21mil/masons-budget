@@ -3,6 +3,7 @@ package com.sats21m.vogelvault.domain
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import java.math.BigDecimal
 
 /**
  * Money is Decimal, never Double (AGENTS.md). These cases mirror the TypeScript
@@ -155,5 +156,55 @@ class MoneyTest {
         assertEquals(5000, Money.basisPoints(50L, 100L))
         assertEquals(0, Money.basisPoints(0L, 100L))
         assertEquals(0, Money.basisPoints(100L, 0L))
+    }
+
+    @Test
+    fun `parsePositiveAmount strips adornments and refuses non-positive input`() {
+        assertEquals("1234.56", Money.parsePositiveAmount(" $1,234.56 ").toPlainString())
+        assertEquals("12.34", Money.parsePositiveAmount("₿12.34").toPlainString())
+        assertEquals("0.50", Money.parsePositiveAmount("0.50").toPlainString())
+
+        assertEquals("Enter an amount", assertFailsWith<IllegalArgumentException> {
+            Money.parsePositiveAmount("   ")
+        }.message)
+        assertEquals("Enter a valid amount", assertFailsWith<IllegalArgumentException> {
+            Money.parsePositiveAmount("abc")
+        }.message)
+        assertEquals("Amount must be positive", assertFailsWith<IllegalArgumentException> {
+            Money.parsePositiveAmount("0.00")
+        }.message)
+    }
+
+    @Test
+    fun `exactMinorUnits converts exactly and refuses scale overflow`() {
+        assertEquals(12_345L, Money.exactMinorUnits(BigDecimal("123.45"), 2, "USD"))
+        assertEquals(100L, Money.exactMinorUnits(BigDecimal("1"), 2, "USD"))
+        assertEquals(21_000_000L, Money.exactMinorUnits(BigDecimal("0.21"), 8, "BTC"))
+        assertEquals(50_000_000L, Money.exactMinorUnits(BigDecimal("50000000"), 0, "sats"))
+
+        assertEquals(
+            "USD supports at most 2 decimal places",
+            assertFailsWith<IllegalArgumentException> {
+                Money.exactMinorUnits(BigDecimal("1.001"), 2, "USD")
+            }.message,
+        )
+        assertEquals(
+            "sats must be a whole number",
+            assertFailsWith<IllegalArgumentException> {
+                Money.exactMinorUnits(BigDecimal("1.5"), 0, "sats")
+            }.message,
+        )
+    }
+
+    @Test
+    fun `exactPositiveMinorUnitsOrNull applies the sign policy or reports null`() {
+        assertEquals(19_999L, Money.exactPositiveMinorUnitsOrNull("$199.99", 2, allowZero = false))
+        assertEquals(999_999L, Money.exactPositiveMinorUnitsOrNull("9,999.99", 2, allowZero = false))
+        assertEquals(0L, Money.exactPositiveMinorUnitsOrNull("0", 2, allowZero = true))
+        assertEquals(null, Money.exactPositiveMinorUnitsOrNull("0", 2, allowZero = false))
+        assertEquals(null, Money.exactPositiveMinorUnitsOrNull("-5.00", 2, allowZero = false))
+        assertEquals(null, Money.exactPositiveMinorUnitsOrNull("1.001", 2, allowZero = false))
+        assertEquals(null, Money.exactPositiveMinorUnitsOrNull("", 2, allowZero = false))
+        assertEquals(null, Money.exactPositiveMinorUnitsOrNull("abc", 2, allowZero = false))
     }
 }
