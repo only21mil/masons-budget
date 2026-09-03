@@ -10,12 +10,20 @@ import com.sats21m.vogelvault.domain.Custody
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Transaction
+import java.io.File
 import java.time.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class ExportReportsTest {
     @Test
     fun `transaction export keeps shared adults and excludes child rows`() {
@@ -236,6 +244,46 @@ class ExportReportsTest {
 
         assertContains(csv.content, "2026-07-28,123.45,123.45")
         assertFalse(csv.content.contains("1111.10"), csv.content)
+    }
+
+    @Test
+    fun `overflowing account total degrades the export instead of crashing the click`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR)
+        val nearMax = account("near-max", Long.MAX_VALUE, FamilyMember.VICTOR)
+        val overflow = account("overflow", 1L, FamilyMember.RACHEL)
+        val balance = BtcBalance(
+            owner = FamilyMember.VICTOR,
+            asOf = "2026-07-28",
+            accounts = listOf(nearMax, overflow),
+            totalSats = 0L,
+            fiatCents = 0L,
+            exchangeSats = 0L,
+            selfCustodySats = 0L,
+        )
+        val data = fixture.copy(btcBalance = fixture.btcBalance.copy(value = balance))
+
+        val csv = ExportReports.netWorthHistory(
+            FamilyMember.VICTOR,
+            data,
+            LocalDate.parse("2026-07-29"),
+        )
+
+        assertEquals("Date,Total USD,BTC USD\n", csv.content)
+    }
+
+    @Test
+    fun `export cleanup removes leftover csv files from the exports cache directory`() {
+        val context = RuntimeEnvironment.getApplication()
+        val exportDirectory = File(context.cacheDir, "exports").apply { mkdirs() }
+        File(exportDirectory, "transactions-2026-07-29.csv").writeText("Date,Merchant\n")
+        File(exportDirectory, "budget-2026-07.csv").writeText("Category,Budget\n")
+        val subdirectory = File(exportDirectory, "keep-dir").apply { mkdirs() }
+
+        purgeExportedCsvFiles(context)
+
+        assertTrue(exportDirectory.isDirectory)
+        assertEquals(listOf("keep-dir"), exportDirectory.listFiles()?.map { it.name })
+        subdirectory.delete()
     }
 
     @Test

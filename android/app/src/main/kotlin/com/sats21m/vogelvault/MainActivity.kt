@@ -38,6 +38,7 @@ import com.sats21m.vogelvault.ui.VaultLockController
 import com.sats21m.vogelvault.ui.VaultLockSnapshot
 import com.sats21m.vogelvault.ui.VaultLockedScreen
 import com.sats21m.vogelvault.ui.VaultViewModel
+import com.sats21m.vogelvault.ui.purgeExportedCsvFiles
 import com.sats21m.vogelvault.ui.requiresOnboarding
 import com.sats21m.vogelvault.ui.refreshMarketQuotesPeriodically
 import com.sats21m.vogelvault.ui.theme.LedgerPalettes
@@ -101,6 +102,13 @@ class MainActivity : FragmentActivity() {
             WindowManager.LayoutParams.FLAG_SECURE,
             WindowManager.LayoutParams.FLAG_SECURE,
         )
+        // Sweep CSV exports a share could not clean up itself (process death
+        // while a share target held the file open, or a share that never
+        // returned). The next launch must not inherit the leftover plaintext.
+        val vaultApp = application as VaultApplication
+        vaultApp.applicationScope.launch {
+            purgeExportedCsvFiles(applicationContext)
+        }
         val ledgerUiPreferences = LedgerUiPreferences(applicationContext)
         val initialLedgerSettings = ledgerUiPreferences.current()
         applyLedgerSystemBars(
