@@ -2,7 +2,7 @@
 
 import { createHash } from "node:crypto"
 import { createReadStream, existsSync } from "node:fs"
-import { chmod, copyFile, mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises"
+import { chmod, copyFile, lstat, mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -19,7 +19,14 @@ function value(args, name, fallback) {
 }
 
 function quoteDesktopArgument(value) {
-  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("$", "\\$").replaceAll("`", "\\`")}"`
+  // `%%` is the Desktop Entry spec's encoding for a literal percent sign;
+  // without it a `%`-sequence in the prefix would be parsed as a field code.
+  return `"${value
+    .replaceAll("\\", "\\\\")
+    .replaceAll('"', '\\"')
+    .replaceAll("$", "\\$")
+    .replaceAll("`", "\\`")
+    .replaceAll("%", "%%")}"`
 }
 
 export function configuredLauncherSource() {
@@ -41,9 +48,17 @@ if [[ -z "\${credential}" ]]; then
   exit 1
 fi
 
+# The credential is handed over as a 0600 file, not an environment variable:
+# a process's environment stays readable for its whole lifetime through
+# /proc/<pid>/environ and 'ps eww', and every Chromium child would inherit it.
+# The app reads and deletes the file once at startup.
+readonly token_dir="\${XDG_RUNTIME_DIR:-\${TMPDIR:-/tmp}}"
+token_file="$(mktemp "\${token_dir}/vogel-vault-read-token.XXXXXXXX")"
+printf '%s' "\${credential}" > "\${token_file}"
+
 export VOGEL_VAULT_REMOTE_READ=1
 export VOGEL_VAULT_CONVEX_URL='${APPROVED_CONVEX_ORIGIN}'
-export VOGEL_VAULT_CONVEX_READ_TOKEN="\${credential}"
+export VOGEL_VAULT_CONVEX_READ_TOKEN_FILE="\${token_file}"
 export VOGEL_VAULT_DEVICE_WRITES=1
 
 exec "\${app_image}" "$@"
@@ -79,11 +94,17 @@ async function sha256(file) {
 export async function verifyAppImageChecksum(appImage, checksumFile, expectedName = path.basename(appImage)) {
   const lines = (await readFile(checksumFile, "utf8")).split(/\r?\n/).filter((line) => line.length > 0)
   const matchingChecksums = []
+  const seenNames = new Set()
 
   for (const line of lines) {
     const match = /^([a-f\d]{64}) [ *](.+)$/i.exec(line)
     if (match === null) fail(`Malformed checksum entry in ${checksumFile}.`)
-    if (match[2] === expectedName) matchingChecksums.push(match[1].toLowerCase())
+    const name = match[2]
+    // Two entries for one name is ambiguous provenance: which checksum ever
+    // matched, the file could not be attributed to one packaging run.
+    if (seenNames.has(name)) fail(`Duplicate checksum entry for ${name} in ${checksumFile}.`)
+    seenNames.add(name)
+    if (name === expectedName) matchingChecksums.push(match[1].toLowerCase())
   }
 
   if (matchingChecksums.length !== 1) {
@@ -94,6 +115,33 @@ export async function verifyAppImageChecksum(appImage, checksumFile, expectedNam
   if (actualChecksum !== matchingChecksums[0]) fail(`SHA-256 mismatch for ${expectedName}.`)
 }
 
+/**
+ * Locate the SHA256SUMS that must accompany the artifact.
+ *
+ * Verification is mandatory and fail-closed: an artifact whose checksums are
+ * missing installs nothing, because a payload with optional verification is
+ * indistinguishable from one whose checksums were deliberately removed.
+ * Provenance is checked on the checksum file itself — it must be a regular,
+ * non-symlink file sitting beside the artifact, exactly where
+ * scripts/package-linux.mjs writes it.
+ */
+export async function locateMandatoryChecksums(appImage) {
+  const siblingChecksums = path.join(path.dirname(appImage), "SHA256SUMS")
+  let stats
+  try {
+    stats = await lstat(siblingChecksums)
+  } catch {
+    fail(
+      `Mandatory SHA256SUMS not found next to ${path.basename(appImage)} ` +
+        `(${siblingChecksums}). Install refused; pass the packaging output directory verbatim.`,
+    )
+  }
+  if (stats.isSymbolicLink() || !stats.isFile()) {
+    fail(`SHA256SUMS must be a regular file, not a symlink or special file: ${siblingChecksums}`)
+  }
+  return siblingChecksums
+}
+
 export async function installLinuxApp({ appImage, prefix, iconSource = path.join(linuxRoot, "build", "icon.png") }) {
   const source = path.resolve(appImage)
   const installPrefix = path.resolve(prefix)
@@ -101,8 +149,7 @@ export async function installLinuxApp({ appImage, prefix, iconSource = path.join
   if (!existsSync(source)) fail(`AppImage does not exist: ${source}`)
   if (!existsSync(iconSource)) fail(`Launcher icon does not exist: ${iconSource}`)
 
-  const siblingChecksums = path.join(path.dirname(source), "SHA256SUMS")
-  const verifiedChecksum = existsSync(siblingChecksums) ? siblingChecksums : null
+  const verifiedChecksum = await locateMandatoryChecksums(source)
 
   const installDir = path.join(installPrefix, "opt", "vogel-vault")
   const binDir = path.join(installPrefix, "bin")
@@ -131,9 +178,7 @@ export async function installLinuxApp({ appImage, prefix, iconSource = path.join
   try {
     await copyFile(source, nextAppImage)
     await chmod(nextAppImage, 0o755)
-    if (verifiedChecksum !== null) {
-      await verifyAppImageChecksum(nextAppImage, verifiedChecksum, path.basename(source))
-    }
+    await verifyAppImageChecksum(nextAppImage, verifiedChecksum, path.basename(source))
     if (hadInstalledAppImage) {
       await rename(installedAppImage, backupAppImage)
       backupPrepared = true
@@ -189,9 +234,11 @@ function usage() {
   node scripts/install-linux.mjs --appimage <approved AppImage> [--prefix <path>]
 
 Installs one approved AppImage under the user prefix. Both command names and the
-desktop entry run the same keyring-backed configured launcher. A sibling
-SHA256SUMS is verified when present, and an existing AppImage is retained as a
-recoverable .backup file. Default prefix: $HOME/.local
+desktop entry run the same keyring-backed configured launcher. Verification
+against the sibling SHA256SUMS is mandatory — the install fails closed when the
+checksums are absent, malformed, ambiguous, or disagree with the artifact — and
+an existing AppImage is retained as a recoverable .backup file.
+Default prefix: $HOME/.local
 `)
 }
 
@@ -207,7 +254,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   if (prefix === null) fail("--prefix is required when HOME is unavailable.")
 
   const installed = await installLinuxApp({ appImage, prefix })
-  if (installed.verifiedChecksum !== null) console.log(`Verified SHA-256 with ${installed.verifiedChecksum}`)
+  console.log(`Verified SHA-256 with ${installed.verifiedChecksum}`)
   console.log(`Installed Vogel Vault at ${installed.installedAppImage}`)
   if (installed.backupAppImage !== null) console.log(`Previous AppImage: ${installed.backupAppImage}`)
   console.log(`Command: ${installed.command}`)

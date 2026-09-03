@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
-import { chmod, mkdtemp, mkdir, readFile, readlink, rm, writeFile } from "node:fs/promises"
+import { chmod, mkdtemp, mkdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import process from "node:process"
@@ -10,9 +10,8 @@ import test from "node:test"
 
 import { installLinuxApp } from "../scripts/install-linux.mjs"
 
-async function writeChecksums(appImage) {
+async function writeChecksums(appImage, checksumFile = path.join(path.dirname(appImage), "SHA256SUMS")) {
   const checksum = createHash("sha256").update(await readFile(appImage)).digest("hex")
-  const checksumFile = path.join(path.dirname(appImage), "SHA256SUMS")
   await writeFile(checksumFile, `${checksum}  ${path.basename(appImage)}\n`)
   return checksumFile
 }
@@ -31,9 +30,15 @@ test("installed command aliases and desktop entry use one configured launcher", 
 set -euo pipefail
 [[ "\${VOGEL_VAULT_REMOTE_READ:-}" == "1" ]]
 [[ "\${VOGEL_VAULT_CONVEX_URL:-}" == "https://keen-elephant-452.convex.cloud" ]]
-[[ -n "\${VOGEL_VAULT_CONVEX_READ_TOKEN:-}" ]]
 [[ "\${VOGEL_VAULT_DEVICE_WRITES:-}" == "1" ]]
-printf 'configured:%s\n' "$1"
+
+token_file="\${VOGEL_VAULT_CONVEX_READ_TOKEN_FILE:-}"
+[[ -n "\${token_file}" ]]
+[[ -f "\${token_file}" ]]
+[[ "$(stat -c '%a' "\${token_file}")" == "600" ]]
+[[ "$(cat "\${token_file}")" == "fixture-only-token" ]]
+
+printf 'configured:%s\\n' "$1"
 `,
       { mode: 0o755 },
     )
@@ -41,6 +46,7 @@ printf 'configured:%s\n' "$1"
     const secretTool = path.join(fakeBin, "secret-tool")
     await writeFile(secretTool, "#!/usr/bin/env bash\nprintf '%s' 'fixture-only-token'\n", { mode: 0o755 })
     await chmod(secretTool, 0o755)
+    await writeChecksums(appImage)
 
     const installed = await installLinuxApp({ appImage, prefix, iconSource: icon })
     assert.equal(await readlink(installed.command), installed.installedLauncher)
@@ -49,7 +55,12 @@ printf 'configured:%s\n' "$1"
     for (const command of [installed.command, installed.launcherCommand]) {
       const run = spawnSync(command, ["probe"], {
         encoding: "utf8",
-        env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+          TMPDIR: fixtureRoot,
+          XDG_RUNTIME_DIR: "",
+        },
       })
       assert.equal(run.status, 0, run.stderr)
       assert.equal(run.stdout, "configured:probe\n")
@@ -60,7 +71,7 @@ printf 'configured:%s\n' "$1"
     assert.match(desktop, new RegExp(`^TryExec=${installed.command}$`, "m"))
     assert.doesNotMatch(desktop, /AppImage/)
     assert.equal(installed.backupAppImage, null)
-    assert.equal(installed.verifiedChecksum, null)
+    assert.equal(installed.verifiedChecksum, path.join(fixtureRoot, "SHA256SUMS"))
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true })
   }
@@ -128,10 +139,85 @@ test("restores the previous AppImage when a later install step fails", async () 
     await writeFile(appImage, "replacement AppImage")
     await writeFile(icon, "fixture icon")
     await writeFile(installedAppImage, "working AppImage")
+    await writeChecksums(appImage)
 
     await assert.rejects(installLinuxApp({ appImage, prefix, iconSource: icon }))
     assert.equal(await readFile(installedAppImage, "utf8"), "working AppImage")
     assert.equal(existsSync(`${installedAppImage}.backup`), false)
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true })
+  }
+})
+
+test("fails closed when the sibling SHA256SUMS is missing", async () => {
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "vogel-vault-no-checksums-test-"))
+  try {
+    const appImage = path.join(fixtureRoot, "candidate.AppImage")
+    const icon = path.join(fixtureRoot, "icon.png")
+    const prefix = path.join(fixtureRoot, "prefix")
+    const installedAppImage = path.join(prefix, "opt", "vogel-vault", "Vogel-Vault.AppImage")
+    await mkdir(path.dirname(installedAppImage), { recursive: true })
+    await writeFile(appImage, "unverified AppImage")
+    await writeFile(icon, "fixture icon")
+    await writeFile(installedAppImage, "working AppImage")
+
+    await assert.rejects(
+      installLinuxApp({ appImage, prefix, iconSource: icon }),
+      /Mandatory SHA256SUMS not found/,
+    )
+    assert.equal(await readFile(installedAppImage, "utf8"), "working AppImage")
+    assert.equal(existsSync(`${installedAppImage}.backup`), false)
+    assert.equal(existsSync(installedAppImage), true)
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true })
+  }
+})
+
+test("refuses a symlinked SHA256SUMS", async () => {
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "vogel-vault-checksum-symlink-test-"))
+  try {
+    const artifactDir = path.join(fixtureRoot, "artifacts")
+    const appImage = path.join(artifactDir, "candidate.AppImage")
+    const icon = path.join(fixtureRoot, "icon.png")
+    const prefix = path.join(fixtureRoot, "prefix")
+    await mkdir(artifactDir)
+    await writeFile(appImage, "candidate AppImage")
+    await writeFile(icon, "fixture icon")
+    const realChecksums = path.join(fixtureRoot, "elsewhere-SHA256SUMS")
+    await writeChecksums(appImage, realChecksums)
+    await symlink(realChecksums, path.join(artifactDir, "SHA256SUMS"))
+
+    await assert.rejects(
+      installLinuxApp({ appImage, prefix, iconSource: icon }),
+      /must be a regular file, not a symlink/,
+    )
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true })
+  }
+})
+
+test("refuses an ambiguous SHA256SUMS with duplicate artifact entries", async () => {
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "vogel-vault-checksum-dup-test-"))
+  try {
+    const appImage = path.join(fixtureRoot, "candidate.AppImage")
+    const icon = path.join(fixtureRoot, "icon.png")
+    const prefix = path.join(fixtureRoot, "prefix")
+    const installedAppImage = path.join(prefix, "opt", "vogel-vault", "Vogel-Vault.AppImage")
+    await mkdir(path.dirname(installedAppImage), { recursive: true })
+    await writeFile(appImage, "candidate AppImage")
+    await writeFile(icon, "fixture icon")
+    await writeFile(installedAppImage, "working AppImage")
+    const checksum = createHash("sha256").update(await readFile(appImage)).digest("hex")
+    await writeFile(
+      path.join(fixtureRoot, "SHA256SUMS"),
+      `${checksum}  candidate.AppImage\n${"0".repeat(64)}  candidate.AppImage\n`,
+    )
+
+    await assert.rejects(
+      installLinuxApp({ appImage, prefix, iconSource: icon }),
+      /Duplicate checksum entry for candidate\.AppImage/,
+    )
+    assert.equal(await readFile(installedAppImage, "utf8"), "working AppImage")
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true })
   }
