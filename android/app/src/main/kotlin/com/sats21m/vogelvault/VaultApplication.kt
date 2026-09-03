@@ -199,6 +199,20 @@ open class VaultApplication : Application() {
         btcBuyDraftIds
         btcBillPayDraftIds
         btcTransferDraftIds
+        todoDraftIds
+    }
+
+    /**
+     * Task creates carry the same duplicate-row hazard as every other sheet:
+     * an ambiguous create that outlived its sheet must retry the same id, or
+     * the retry inserts a second server row instead of superseding the first.
+     */
+    internal val todoDraftIds: TransactionDraftIdStore by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        TransactionDraftIdStore(
+            getSharedPreferences(TODO_DRAFT_ID_PREFERENCES, Context.MODE_PRIVATE),
+        )
     }
 
     /** Stable retry ids for the one source-scoped Bitcoin bill-pay table. */
@@ -251,6 +265,7 @@ open class VaultApplication : Application() {
         const val BTC_BUY_DRAFT_ID_PREFERENCES = "btc_buy_draft_ids"
         const val BTC_BILL_PAY_DRAFT_ID_PREFERENCES = "btc_bill_pay_draft_ids"
         const val BTC_TRANSFER_DRAFT_ID_PREFERENCES = "btc_transfer_draft_ids"
+        const val TODO_DRAFT_ID_PREFERENCES = "todo_draft_ids"
     }
 
     val database: VaultDatabase by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
