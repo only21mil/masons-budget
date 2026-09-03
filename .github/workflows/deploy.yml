@@ -106,23 +106,17 @@ jobs:
           printf '%s' "$checks" |
             node .github/workflows/scripts/release_check_gate.mjs
 
+  # Reuses release-preflight.yml instead of re-running the ASC probe inline
+  # (audit 2026-09-02 finding 8): one implementation of the read-only App Store
+  # Connect checks serves deploy, the dedicated preflight entry point, and the
+  # secret-presence report. The 15-minute bound lives on the called job, since
+  # workflow_call jobs do not accept their own timeout-minutes.
   preflight:
     name: Verify App Store Connect visibility
     needs: release-gate
     if: github.repository == 'only21mil/masons-budget'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Probe exact bundle and latest build
-        env:
-          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          ASC_BUNDLE_ID: com.sats21m.masonsbudget
-        run: node .github/workflows/scripts/app_store_connect_preflight.mjs
+    uses: ./.github/workflows/release-preflight.yml
+    secrets: inherit
 
   build:
     needs: preflight

@@ -55,15 +55,32 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Compare against the merge base
+      # Base selection and the fail-closed rules are shared with swift.yml via
+      # the changed-base action (audit 2026-09-02 finding 8: the two
+      # hand-rolled detectors had drifted). Only the tree routing below is
+      # client-specific.
+      - name: Compute the comparison base
+        id: base
+        uses: ./.github/actions/changed-base
+        with:
+          event-name: ${{ github.event_name }}
+          event-ref: ${{ github.ref }}
+          head-sha: ${{ github.sha }}
+          before-sha: ${{ github.event.before }}
+          base-ref: ${{ github.event.pull_request.base.ref }}
+          merge-group-base-sha: ${{ github.event.merge_group.base_sha }}
+          # A push to main always reports every tree as changed. The default
+          # branch must be verified whole after a merge, which is the property
+          # the trigger comment above is protecting.
+          main-push-policy: verify-all
+
+      - name: Route the trees
         id: filter
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          IS_MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-          BEFORE_SHA: ${{ github.event.before }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
-          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
-          HEAD_SHA: ${{ github.sha }}
+          VERIFY_ALL: ${{ steps.base.outputs.verify-all }}
+          DIFF_BASE: ${{ steps.base.outputs.base }}
+          DIFF_HEAD: ${{ steps.base.outputs.head }}
+          CHANGED_FILES: ${{ steps.base.outputs.changed-files }}
         run: |
           set -euo pipefail
 
@@ -72,51 +89,14 @@ jobs:
             for t in linux android backend tooling; do echo "$t=true" >> "$GITHUB_OUTPUT"; done
           }
 
-          diff_base=""
-          diff_head=HEAD
-          if [ "$IS_MAIN_PUSH" = "true" ]; then
-            if [[ "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ ]] &&
-              [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
-              diff_base="$BEFORE_SHA"
-            fi
-          elif [ "$EVENT_NAME" = "pull_request" ]; then
-            base="origin/${BASE_REF:-main}"
-            git fetch -q origin "${BASE_REF:-main}"
-            diff_base="$(git merge-base HEAD "$base")"
-          elif [ "$EVENT_NAME" = "merge_group" ]; then
-            if [[ ! "$MERGE_GROUP_BASE_SHA" =~ ^[0-9a-f]{40}$ ||
-              ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-              verify_all "Merge-group SHAs are missing or malformed; verifying every tree."
-              exit 0
-            fi
-            if ! git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" ||
-              ! git cat-file -e "${HEAD_SHA}^{commit}"; then
-              verify_all "Merge-group comparison commit is unavailable; verifying every tree."
-              exit 0
-            fi
-            if ! git merge-base --is-ancestor "$MERGE_GROUP_BASE_SHA" "$HEAD_SHA"; then
-              verify_all "Merge-group base is not an ancestor of its head; verifying every tree."
-              exit 0
-            fi
-            diff_base="$MERGE_GROUP_BASE_SHA"
-            diff_head="$HEAD_SHA"
-          fi
-
-          if [ -n "$diff_base" ]; then
-            scripts/check-convex-generated-change.sh "$diff_base" "$diff_head"
-          else
-            echo "No meaningful commit range; skipping the Convex generated-file heuristic."
-          fi
-
-          if [ "$IS_MAIN_PUSH" = "true" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            verify_all "Verifying every tree (main push or manual dispatch)."
+          if [ "$VERIFY_ALL" = "true" ]; then
+            verify_all "No usable comparison range; verifying every tree."
             exit 0
           fi
 
-          if ! files="$(git diff --name-only "$diff_base" "$diff_head")"; then
-            verify_all "Comparison range could not be diffed; verifying every tree."
-            exit 0
-          fi
+          scripts/check-convex-generated-change.sh "$DIFF_BASE" "$DIFF_HEAD"
+
+          files="$(cat "$CHANGED_FILES")"
           printf '%s\n' "$files" | sed 's/^/  /'
 
           # shared/, convex/ and the workflow itself reach every client, so they
