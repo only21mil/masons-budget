@@ -64,6 +64,80 @@ object Money {
             .toLong()
     }
 
+    /**
+     * The one user-amount parser: strips the display adornments sheets accept
+     * (grouping commas, a `$` or `₿` prefix) and returns the positive decimal
+     * value. The messages are user-facing; write sheets surface them directly.
+     *
+     * There was a time when three sheets each carried a private copy of this
+     * with slightly different symbol handling; that drift is exactly where a
+     * money bug hides, so every sheet parses through here now.
+     */
+    fun parsePositiveAmount(raw: String): BigDecimal {
+        val cleaned = raw.trim()
+            .replace(",", "")
+            .removePrefix("$")
+            .removePrefix("₿")
+            .trim()
+        require(cleaned.isNotEmpty()) { "Enter an amount" }
+        val value = cleaned.toBigDecimalOrNull() ?: throw IllegalArgumentException("Enter a valid amount")
+        require(value > BigDecimal.ZERO) { "Amount must be positive" }
+        return value
+    }
+
+    /**
+     * Exact minor-unit conversion at [scale]. Refuses values carrying more
+     * than [scale] decimal places and results outside the Long range; the
+     * thrown message is user-facing.
+     */
+    fun exactMinorUnits(
+        value: BigDecimal,
+        scale: Int,
+        unitName: String,
+    ): Long {
+        if (value.scale().coerceAtLeast(0) > scale) {
+            throw IllegalArgumentException(
+                when (scale) {
+                    0 -> "$unitName must be a whole number"
+                    else -> "$unitName supports at most $scale decimal places"
+                },
+            )
+        }
+        return try {
+            value.movePointRight(scale).longValueExact()
+        } catch (error: ArithmeticException) {
+            throw IllegalArgumentException(
+                when (scale) {
+                    0 -> "$unitName must be a whole number"
+                    else -> "$unitName supports at most $scale decimal places"
+                },
+                error,
+            )
+        }
+    }
+
+    /**
+     * The null-returning variant for callers that render their own failure
+     * copy: null means "unparseable, wrong scale, out of range, or the wrong
+     * sign for [allowZero]".
+     */
+    fun exactPositiveMinorUnitsOrNull(
+        raw: String,
+        scale: Int,
+        allowZero: Boolean,
+    ): Long? =
+        runCatching {
+            val normalized = raw.trim()
+                .replace(",", "")
+                .removePrefix("$")
+                .removePrefix("₿")
+                .trim()
+            if (normalized.isEmpty()) return null
+            val value = BigDecimal(normalized)
+            val minorUnits = exactMinorUnits(value, scale, unitName = "amount")
+            minorUnits.takeIf { if (allowZero) it >= 0L else it > 0L }
+        }.getOrNull()
+
     fun parseCents(value: String?): Long = parseMinorUnits(value, USD_SCALE)
 
     /** BTC amounts carry 8 decimal places; the result is satoshis. */

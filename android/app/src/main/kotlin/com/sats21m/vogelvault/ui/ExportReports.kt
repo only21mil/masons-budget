@@ -3,6 +3,8 @@ package com.sats21m.vogelvault.ui
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -109,12 +111,13 @@ internal object ExportReports {
     ): CsvExport {
         val balance = data.btcBalance.value?.takeIf { viewer.sharesNetWorth(it.owner) }
         val scopedAccounts = balance?.accounts.orEmpty().netWorthScopeFor(viewer)
-        val totalCents = scopedAccounts.fold(0L) { total, account ->
-            Math.addExact(total, account.fiatCents)
-        }
+        // The house convention wraps exact sums (sumLongOrNull, matching
+        // FinancePresentation/FinancialDisplay): an overflowing account total
+        // must degrade the export, never crash the click handler.
+        val totalCents = scopedAccounts.sumLongOrNull { it.fiatCents }
         val content = buildString {
             appendLine("Date,Total USD,BTC USD")
-            if (balance != null) {
+            if (balance != null && totalCents != null) {
                 appendCsvRow(
                     balance.asOf,
                     exactUsd(totalCents),
@@ -173,6 +176,15 @@ fun ExportScreen(
 ) {
     val context = LocalContext.current
     val today = LocalDate.now()
+    // When the chooser returns, the share target had its turn to read the
+    // stream. The plaintext CSV must not linger in cacheDir/exports after
+    // that; anything left by a process death mid-share is removed by the
+    // startup purge in MainActivity.onCreate instead.
+    val shareLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) {
+        purgeExportedCsvFiles(context)
+    }
     Panel(
         title = stringResource(R.string.export_reports_title),
         source = stringResource(R.string.export_reports_scope),
@@ -185,13 +197,22 @@ fun ExportScreen(
                 .padding(VaultSpace.md),
         ) {
             ExportButton(stringResource(R.string.export_transactions)) {
-                shareCsv(context, ExportReports.transactions(state.activeProfile, state.data, today))
+                shareCsv(
+                    context,
+                    ExportReports.transactions(state.activeProfile, state.data, today),
+                ) { intent -> shareLauncher.launch(intent) }
             }
             ExportButton(stringResource(R.string.export_budget_summary)) {
-                shareCsv(context, ExportReports.budgetSummary(state.activeProfile, state.data))
+                shareCsv(
+                    context,
+                    ExportReports.budgetSummary(state.activeProfile, state.data),
+                ) { intent -> shareLauncher.launch(intent) }
             }
             ExportButton(stringResource(R.string.export_net_worth_history)) {
-                shareCsv(context, ExportReports.netWorthHistory(state.activeProfile, state.data, today))
+                shareCsv(
+                    context,
+                    ExportReports.netWorthHistory(state.activeProfile, state.data, today),
+                ) { intent -> shareLauncher.launch(intent) }
             }
         }
     }
@@ -214,6 +235,7 @@ private fun ExportButton(
 private fun shareCsv(
     context: Context,
     report: CsvExport,
+    launchShare: (Intent) -> Unit,
 ) {
     val exportDirectory = File(context.cacheDir, "exports").apply { mkdirs() }
     val file = File(exportDirectory, report.filename).apply {
@@ -230,7 +252,20 @@ private fun shareCsv(
         clipData = ClipData.newUri(context.contentResolver, report.filename, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
-    context.startActivity(
-        Intent.createChooser(intent, context.getString(R.string.export_share_chooser)),
-    )
+    launchShare(Intent.createChooser(intent, context.getString(R.string.export_share_chooser)))
+}
+
+/**
+ * Removes every CSV left under cacheDir/exports. The share flow deletes its
+ * file when the chooser returns; this also sweeps files stranded by a process
+ * death mid-share or by an earlier version, at next launch.
+ */
+internal fun purgeExportedCsvFiles(context: Context) {
+    val exportDirectory = File(context.cacheDir, "exports")
+    val files = exportDirectory.listFiles() ?: return
+    for (file in files) {
+        if (file.isFile) {
+            file.delete()
+        }
+    }
 }

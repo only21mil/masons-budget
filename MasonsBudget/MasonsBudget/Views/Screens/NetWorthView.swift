@@ -65,6 +65,10 @@ struct NetWorthView: View {
         totalBtc - coldBtc
     }
 
+    private var totalBtcUsd: Decimal {
+        totalBtc * btcPrice
+    }
+
     private var coldSubtitle: String {
         let labels = canonicalBTC?.accounts.filter { $0.custody == .selfCustody }.map(\.label) ?? []
         return labels.isEmpty ? "Self-custody" : labels.prefix(2).joined(separator: " · ")
@@ -118,12 +122,12 @@ struct NetWorthView: View {
             AmountView(sats: totalSats, unit: unit, size: 32, weight: .bold, btcPrice: btcPrice)
 
             HStack(spacing: 8) {
-                let change = yearlyBtcChange
+                let change = yearlyStackUsdChange
                 let positive = change >= 0
                 Image(systemName: positive ? AppIcon.arrowUp : "arrow.down.right")
                     .font(AppFont.sectionHeaderMedium)
                     .foregroundStyle(positive ? theme.success : theme.danger)
-                Text("\(positive ? "+" : "")\(AppFormatter.formatBtc(change)) BTC")
+                Text("\(positive ? "+" : "")\(AppFormatter.formatCurrency(change))")
                     .font(AppFont.captionStrong)
                     .foregroundStyle(positive ? theme.success : theme.danger)
                 Text("past year")
@@ -141,29 +145,38 @@ struct NetWorthView: View {
         .glassCard(padding: 18, radius: 22)
     }
 
-    private var monthlyBtcValues: [CGFloat] {
+    // Snapshots store the BTC stack's USD value AT CAPTURE TIME. Deriving a
+    // historical BTC amount by dividing the stored value by today's price
+    // back-projects the stack through every price move since and plots price
+    // drift as if it were stack change — so the series stays in capture-time
+    // USD, and the change math stays in Decimal end to end.
+    private var monthlyBtcStackUsd: [Decimal] {
         let mySnaps = snapshots.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
         let cal = Calendar.current
         let now = Date()
-        var values: [CGFloat] = []
+        var values: [Decimal] = []
         for offset in stride(from: -11, through: 0, by: 1) {
             guard let monthDate = cal.date(byAdding: .month, value: offset, to: now) else { continue }
             let snap = mySnaps.first(where: { cal.isDate($0.date, equalTo: monthDate, toGranularity: .month) })
             if let s = snap {
-                values.append(CGFloat(NSDecimalNumber(decimal: s.btcValue / btcPrice).doubleValue))
+                values.append(s.btcValue)
             } else if offset == 0 {
-                values.append(CGFloat(NSDecimalNumber(decimal: totalBtc).doubleValue))
+                values.append(totalBtcUsd)
             } else {
                 values.append(values.last ?? 0)
             }
         }
-        return values.isEmpty ? [CGFloat(NSDecimalNumber(decimal: totalBtc).doubleValue)] : values
+        return values.isEmpty ? [totalBtcUsd] : values
     }
 
-    private var yearlyBtcChange: Decimal {
-        let values = monthlyBtcValues
-        guard let first = values.first, first > 0, let last = values.last else { return 0 }
-        return Decimal(Double(last - first))
+    private var monthlyBtcValues: [CGFloat] {
+        monthlyBtcStackUsd.map { CGFloat(NSDecimalNumber(decimal: $0).doubleValue) }
+    }
+
+    private var yearlyStackUsdChange: Decimal {
+        let values = monthlyBtcStackUsd
+        guard let first = values.first, let last = values.last else { return 0 }
+        return last - first
     }
 
     private var barChart: some View {

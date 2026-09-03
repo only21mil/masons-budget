@@ -1,3 +1,5 @@
+import { isRealIsoDate } from "./dateValidation";
+
 export const OPERATOR_IMPORT_SCHEMA = "vogel-vault.ledger-batch/v1" as const;
 export const OPERATOR_IMPORT_MAX_OPS = 100;
 
@@ -32,7 +34,11 @@ function textAt(value: unknown, path: string, max: number, identifier = false, a
 function optionalText(row: Record<string, unknown>, key: string, path: string, max = 16_384): string | undefined { return row[key] === undefined ? undefined : textAt(row[key], `${path}.${key}`, max, false, true); }
 function int64At(value: unknown, path: string): bigint { if (typeof value !== "string" || !/^-?(?:0|[1-9][0-9]*)$/u.test(value) || value === "-0") fail("INVALID_INTEGER", path, `${path} must be a canonical decimal integer string`); const parsed = BigInt(value); if (parsed < I64_MIN || parsed > I64_MAX) fail("INTEGER_OUT_OF_RANGE", path, `${path} exceeds int64`); return parsed; }
 function requireBtcTuple(sats: bigint, priceCents: bigint, usdCents: bigint, toleranceBps: bigint, path: string) { const scale = 100_000_000n; const implied = sats * priceCents; const target = usdCents * scale; const difference = implied >= target ? implied - target : target - implied; const allowed = (target * toleranceBps) / 10_000n + scale; if (difference > allowed) fail("INCONSISTENT_BTC_TUPLE", path, `${path} BTC and USD units are inconsistent`); }
-function dateAt(value: unknown, path: string): string { if (typeof value !== "string" || !/^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/u.test(value)) fail("INVALID_DATE", path, `${path} must be yyyy-MM-dd`); const [year, month, day] = value.split("-").map(Number) as [number, number, number]; const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0); const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]; if (day > days[month - 1]!) fail("INVALID_DATE", path, `${path} is not a real date`); return value; }
+// Real-date detection is dateValidation.isRealIsoDate — the same calendar rule
+// the writeback and row paths enforce — instead of a third private copy of the
+// leap-year and days-in-month tables. The leading shape check keeps this
+// envelope's own INVALID_DATE message for malformed text.
+function dateAt(value: unknown, path: string): string { if (typeof value !== "string" || !/^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/u.test(value)) fail("INVALID_DATE", path, `${path} must be yyyy-MM-dd`); if (!isRealIsoDate(value)) fail("INVALID_DATE", path, `${path} is not a real date`); return value; }
 function common(row: Record<string, unknown>, path: string): Common { return { op_id: textAt(row.op_id, `${path}.op_id`, 128, true), record_id: textAt(row.record_id, `${path}.record_id`, 256, true), source_locator: textAt(row.source_locator, `${path}.source_locator`, 512, true), owner: literalAt(row.owner, ["victor", "rachel", "mason", "maddox"], `${path}.owner`), date: dateAt(row.date, `${path}.date`) }; }
 function ownerSource(op: OperatorImportOp, path: string) { const mapping: Record<string, readonly ImportOwner[]> = { transactions: ["victor"], "mason-transactions": ["mason"], "maddox-transactions": ["maddox"], income: ["victor"], "bitcoin-buys": ["victor"], "mason-bitcoin-buys": ["mason"], "bitcoin-bill-pays": ["victor", "rachel", "mason", "maddox"] }; if (!mapping[op.source_file]?.includes(op.owner)) fail("OWNER_SOURCE_MISMATCH", `${path}.owner`, "owner does not match source_file"); }
 

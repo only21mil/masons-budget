@@ -129,12 +129,16 @@ struct BudgetView: View {
         }
     }
 
+    private static let monthChipFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateFormat = "MMM"
+        return df
+    }()
+
     private func monthChip(offset: Int) -> some View {
         let isSelected = offset == selectedMonthOffset
         let date = Calendar.current.date(byAdding: .month, value: -offset, to: Date()) ?? Date()
-        let df = DateFormatter()
-        df.dateFormat = "MMM"
-        let label = df.string(from: date)
+        let label = Self.monthChipFormatter.string(from: date)
         let year = Calendar.current.component(.year, from: date)
         let rate = savingsRateForOffset(offset)
 
@@ -178,7 +182,9 @@ struct BudgetView: View {
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(isCurrent ? "Spent / Limit" : "Spent / Income")
+                // The denominator is the sum of category budgets, never
+                // income — label it as the limit it actually is.
+                Text("Spent / Limit")
                     .font(AppFont.labelSmall)
                     .foregroundStyle(theme.textMuted)
                 Spacer()
@@ -204,7 +210,7 @@ struct BudgetView: View {
             .frame(height: 8)
 
             HStack {
-                Text("\(Int(pct * 100))% of income spent")
+                Text("\(Int(pct * 100))% of budget spent")
                     .font(AppFont.labelSmallRegular)
                     .foregroundStyle(theme.textMuted)
                 Spacer()

@@ -8,11 +8,12 @@
 //
 // This mirrors the boundary the previous Linux client shipped with (SAT-1572).
 
+import { lstatSync, readFileSync, unlinkSync } from "node:fs"
 import { writeFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import path from "node:path"
 
-import { BrowserWindow, app, dialog, ipcMain, safeStorage, session } from "electron"
+import { BrowserWindow, Menu, app, dialog, ipcMain, safeStorage, session } from "electron"
 import type { IpcMainInvokeEvent, WebContents } from "electron"
 
 import {
@@ -24,6 +25,7 @@ import {
 import {
   type JsonPostResponse,
   type RemoteSnapshotResult,
+  READ_ENV_KEYS,
   REMOTE_READ_LIMITS,
   createRemoteReadConfigurationProvider,
   createRemoteReader,
@@ -223,7 +225,50 @@ async function readCappedText(
   return { text: text + decoder.decode(), truncated: false }
 }
 
-const remoteReadConfiguration = createRemoteReadConfigurationProvider(() => process.env)
+// Consumed once at module load, before any IPC handler or read configuration
+// can resolve. `consumeBootReadCredential` is declared below; declarations
+// hoist, and the credential must never be reachable from process.env.
+const bootReadCredential = consumeBootReadCredential()
+
+const remoteReadConfiguration = createRemoteReadConfigurationProvider(() =>
+  bootReadCredential === null
+    ? process.env
+    : { ...process.env, [READ_ENV_KEYS.credential]: bootReadCredential }
+)
+
+/**
+ * The installed launcher hands over the production read credential as a 0600
+ * file instead of an environment variable: a process's environment stays
+ * readable for its whole lifetime through `/proc/<pid>/environ` and `ps eww`,
+ * and every Chromium child would inherit it. The file is read exactly once
+ * here — before any read configuration can resolve — and deleted immediately,
+ * so the credential lives in main-process memory only, same as the
+ * safeStorage device credential. Dev runs keep the plain environment path.
+ */
+function consumeBootReadCredential(): string | null {
+  const tokenFile = process.env.VOGEL_VAULT_CONVEX_READ_TOKEN_FILE?.trim()
+  delete process.env.VOGEL_VAULT_CONVEX_READ_TOKEN_FILE
+  if (tokenFile === undefined || tokenFile === "") return null
+
+  try {
+    const stats = lstatSync(tokenFile)
+    if (stats.isSymbolicLink() || !stats.isFile()) return null
+    // Same discipline as deviceCredentialStore: owner-only file, owner uid.
+    if ((stats.mode & 0o777) !== 0o600) return null
+    if (typeof process.getuid === "function" && stats.uid !== process.getuid()) return null
+    const credential = readFileSync(tokenFile, { encoding: "utf8" }).trim()
+    return credential === "" ? null : credential
+  } catch {
+    return null
+  } finally {
+    try {
+      unlinkSync(tokenFile)
+    } catch {
+      // Best effort: a lingering file is the 0600 file the launcher made, in
+      // the user's runtime directory — never an environment-wide exposure.
+    }
+  }
+}
 
 function registerRemoteSnapshot(): void {
   // Configuration is resolved per call, so disabling reads or rotating the
@@ -462,7 +507,23 @@ if (!app.requestSingleInstanceLock()) {
     }
   })
 
+  // Packaged builds get no application menu at all. Electron's default menu
+  // ships a "Toggle Developer Tools" accelerator that Alt reveals even under
+  // autoHideMenuBar, and a financial app has no business keeping that path in
+  // production. Dev runs keep the default menu for debugging.
+  app.on("web-contents-created", (_event, contents) => {
+    if (!app.isPackaged) return
+    contents.on("before-input-event", (event, input) => {
+      if (input.type !== "keyDown") return
+      const key = input.key.toLowerCase()
+      if (key === "f12" || (input.control && input.shift && key === "i")) {
+        event.preventDefault()
+      }
+    })
+  })
+
   void app.whenReady().then(() => {
+    if (app.isPackaged) Menu.setApplicationMenu(null)
     hardenSession()
     // Registered before the first window so no renderer can invoke a channel
     // that is not yet handled.

@@ -72,6 +72,9 @@ const api = {
   upsertBtcTransfer: mutation<Record<string, unknown>, UpsertResult>(
     "tables:upsertBtcTransferFromDevice",
   ),
+  deleteBtcTransfer: mutation<Record<string, unknown>, DeleteResult>(
+    "tables:deleteBtcTransferFromDevice",
+  ),
 };
 
 let t: T;
@@ -1955,7 +1958,9 @@ describe("device budget mutations", () => {
 
   it("supports Mason, rejects folded collisions, and requires a positive revision", async () => {
     await seedBudgets();
-    const device = await fullDevice("mason-budget-delete-device");
+    // Mason's budget is mason-surface: the credential must carry mason's
+    // profile, because the resolved owner derives from the credential (H1).
+    const device = await fullDevice("mason-budget-delete-device", "mason");
     await t.run(async (ctx) => {
       const mason = await ctx.db
         .query("budgetDocuments")
@@ -1987,9 +1992,12 @@ describe("device budget mutations", () => {
       }),
     ).resolves.toMatchObject({ removed: true });
 
+    // The folded-collision guard is exercised on the adult surface, which
+    // needs its own credential-bound owner.
+    const adultDevice = await fullDevice("adult-budget-delete-device");
     await expectDeviceError(
       t.mutation(api.deleteBudgetCategory, {
-        ...authArgs(device),
+        ...authArgs(adultDevice),
         owner: "victor",
         sourceFile: "budget",
         month: CURRENT_MONTH,
@@ -2083,7 +2091,7 @@ describe("device bitcoin mutations", () => {
           feeUsdCents: 0n,
         },
       }),
-      "OWNER_SOURCE_MISMATCH",
+      "OWNER_MISMATCH",
     );
 
     const state = await t.run(async (ctx) => ({
@@ -2210,9 +2218,12 @@ describe("device bitcoin mutations", () => {
     await seedBtcLedger("victor");
     await seedBtcLedger("mason");
     const device = await fullDevice();
+    // Mason-owned surfaces need a mason-profile credential: the resolved owner
+    // derives from the credential, not the request (H1).
+    const masonDevice = await fullDevice("mason-buy-device", "mason");
     await expect(
       t.mutation(api.upsertBtcBuy, {
-        ...authArgs(device),
+        ...authArgs(masonDevice),
         owner: "mason",
         sourceFile: "mason-bitcoin-buys",
         buy: {
@@ -2233,7 +2244,7 @@ describe("device bitcoin mutations", () => {
     const buyBase = await buyRevision("buy-1", "mason-bitcoin-buys");
     await expectDeviceError(
       t.mutation(api.upsertBtcBuy, {
-        ...authArgs(device),
+        ...authArgs(masonDevice),
         owner: "mason",
         sourceFile: "mason-bitcoin-buys",
         baseUpdatedAtMs: buyBase - 1,
@@ -2252,7 +2263,7 @@ describe("device bitcoin mutations", () => {
     );
     await expect(
       t.mutation(api.deleteBtcBuy, {
-        ...authArgs(device),
+        ...authArgs(masonDevice),
         owner: "mason",
         sourceFile: "mason-bitcoin-buys",
         entityId: "buy-1",
@@ -2303,13 +2314,15 @@ describe("device bitcoin mutations", () => {
       "ENTITY_CONFLICT",
       "bill-1",
     );
+    // The credential profile gates the request owner before the owner↔source
+    // mapping is ever consulted.
     await expect(
       t.mutation(api.upsertBtcBillPay, {
         ...billPay,
         owner: "mason",
         billPay: { ...billPay.billPay, owner: "mason" },
       }),
-    ).rejects.toThrow(/belongs to victor/);
+    ).rejects.toThrow(/must match credential profile victor/);
     await expect(
       t.mutation(api.deleteBtcBillPay, {
         ...authArgs(device),
@@ -2322,7 +2335,8 @@ describe("device bitcoin mutations", () => {
   });
 
   it("reconciles the canonical balance document, exact totals, and row mirror", async () => {
-    const device = await fullDevice();
+    // son-balances is mason-owned, so the credential must carry mason's profile.
+    const device = await fullDevice("mason-balance-device", "mason");
     const base = {
       ...authArgs(device),
       owner: "mason",
@@ -2630,5 +2644,399 @@ describe("device bitcoin mutations", () => {
       document!.accounts.find((account) => account.key === "zeus"),
     ).not.toHaveProperty("fiatValuation");
     expect(document!.totals.fiatCents).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// H1 regression: every money-surface device mutation derives its owner from the
+// credential's server-stored profile. A paired child credential must not be
+// able to write or delete any other family member's ledger, no matter what
+// `owner` the request names.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("money writes bind to the credential profile", () => {
+  it("blocks a child credential from every adult money surface", async () => {
+    const mason = await fullDevice("h1-mason-device", "mason");
+
+    const upserts = [
+      {
+        name: "upsertTransaction",
+        call: () =>
+          t.mutation(api.upsertTransaction, {
+            ...authArgs(mason),
+            owner: "victor",
+            sourceFile: "transactions",
+            transaction: {
+              id: "h1-tx",
+              owner: "victor",
+              date: "2026-07-30",
+              merchant: "Must not land",
+              amountCents: 1_500n,
+              kind: "spend",
+              category: "Groceries",
+              card: "river",
+              amountSats: 1_000n,
+              bitcoinAccountKey: "river",
+            },
+          }),
+      },
+      {
+        name: "upsertBudgetCategory",
+        call: () =>
+          t.mutation(api.upsertBudgetCategory, {
+            ...authArgs(mason),
+            owner: "victor",
+            sourceFile: "budget",
+            month: CURRENT_MONTH,
+            category: { name: "Food", budgetCents: 1n },
+          }),
+      },
+      {
+        name: "upsertBtcBuy",
+        call: () =>
+          t.mutation(api.upsertBtcBuy, {
+            ...authArgs(mason),
+            owner: "victor",
+            sourceFile: "bitcoin-buys",
+            buy: {
+              id: "h1-buy",
+              owner: "victor",
+              date: "2026-07-30",
+              source: "river",
+              sats: 100n,
+              priceUsdCents: 10_000_000n,
+              usdCents: 1_000n,
+            },
+          }),
+      },
+      {
+        name: "upsertBtcBillPay",
+        call: () =>
+          t.mutation(api.upsertBtcBillPay, {
+            ...authArgs(mason),
+            owner: "victor",
+            sourceFile: "bitcoin-bill-pays",
+            billPay: {
+              id: "h1-bill",
+              owner: "victor",
+              date: "2026-07-30",
+              merchant: "Must not land",
+              category: "Bills",
+              budgetEffect: "budget_category",
+              platform: "river_bitcoin_bill_pay",
+              amountUsdCents: 100n,
+              btcSpentSats: 1n,
+              btcPriceCents: 10_000_000n,
+              feeUsdCents: 0n,
+            },
+          }),
+      },
+      {
+        name: "upsertBtcTransfer",
+        call: () =>
+          t.mutation(api.upsertBtcTransfer, {
+            ...authArgs(mason),
+            owner: "victor",
+            sourceFile: "btc-transfers",
+            transfer: {
+              id: "h1-transfer",
+              owner: "victor",
+              date: "2026-07-30",
+              fromAccountKey: "river",
+              toAccountKey: "coldcard",
+              sats: 1n,
+              feeSats: 0n,
+            },
+          }),
+      },
+      {
+        name: "upsertBtcAccount",
+        call: () =>
+          t.mutation(api.upsertBtcAccount, {
+            ...authArgs(mason),
+            owner: "victor",
+            sourceFile: "btc-balance-snapshot",
+            account: {
+              key: "h1-account",
+              owner: "victor",
+              label: "Must not land",
+              custody: "exchange",
+              sats: 0n,
+              asOf: "2026-07-30T00:00:00.000Z",
+            },
+          }),
+      },
+    ];
+
+    for (const upsert of upserts) {
+      await expectDeviceError(upsert.call(), "OWNER_MISMATCH");
+    }
+
+    const deletes = [
+      {
+        name: "deleteTransaction",
+        call: () =>
+          t.mutation(api.deleteTransaction, {
+            ...authArgs(mason),
+            owner: "victor",
+            sourceFile: "transactions",
+            entityId: "h1-tx",
+            baseUpdatedAtMs: 1,
+          }),
+      },
+      {
+        name: "deleteBudgetCategory",
+        call: () =>
+          t.mutation(api.deleteBudgetCategory, {
+            ...authArgs(mason),
+            owner: "victor",
+            sourceFile: "budget",
+            month: CURRENT_MONTH,
+            entityId: "Food",
+            baseUpdatedAtMs: 1,
+          }),
+      },
+      {
+        name: "deleteBtcBuy",
+        call: () =>
+          t.mutation(api.deleteBtcBuy, {
+            ...authArgs(mason),
+            owner: "victor",
+            sourceFile: "bitcoin-buys",
+            entityId: "h1-buy",
+            baseUpdatedAtMs: 1,
+          }),
+      },
+      {
+        name: "deleteBtcBillPay",
+        call: () =>
+          t.mutation(api.deleteBtcBillPay, {
+            ...authArgs(mason),
+            owner: "victor",
+            sourceFile: "bitcoin-bill-pays",
+            entityId: "h1-bill",
+            baseUpdatedAtMs: 1,
+          }),
+      },
+      {
+        name: "deleteBtcTransfer",
+        call: () =>
+          t.mutation(api.deleteBtcTransfer, {
+            ...authArgs(mason),
+            owner: "victor",
+            sourceFile: "btc-transfers",
+            entityId: "h1-transfer",
+            baseUpdatedAtMs: 1,
+          }),
+      },
+      {
+        name: "deleteBtcAccount",
+        call: () =>
+          t.mutation(api.deleteBtcAccount, {
+            ...authArgs(mason),
+            owner: "victor",
+            sourceFile: "btc-balance-snapshot",
+            entityId: "h1-account",
+            baseUpdatedAtMs: 1,
+          }),
+      },
+    ];
+
+    for (const deletion of deletes) {
+      await expectDeviceError(deletion.call(), "OWNER_MISMATCH");
+    }
+
+    const state = await t.run(async (ctx) => ({
+      transactions: await ctx.db.query("transactions").collect(),
+      buys: await ctx.db.query("btcBuys").collect(),
+      billPays: await ctx.db.query("btcBillPays").collect(),
+      transfers: await ctx.db.query("btcTransfers").collect(),
+      tombstones: await ctx.db.query("rowTombstones").collect(),
+      budget: await ctx.db
+        .query("budgetDocuments")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "budget"))
+        .unique(),
+    }));
+    expect(state.transactions).toHaveLength(0);
+    expect(state.buys).toHaveLength(0);
+    expect(state.billPays).toHaveLength(0);
+    expect(state.transfers).toHaveLength(0);
+    expect(state.tombstones).toHaveLength(0);
+    // Nothing was created either: without a credential-bound owner the adult
+    // budget document is never touched, so it still does not exist.
+    expect(state.budget).toBeNull();
+  });
+
+  it("lets Rachel's credential drive the shared adult ledger under either spelling", async () => {
+    const rachel = await fullDevice("h1-rachel-device", "rachel");
+    const today = new Date().toISOString().slice(0, 10);
+
+    for (const owner of ["victor", "rachel"] as const) {
+      await t.mutation(api.upsertTransaction, {
+        ...authArgs(rachel),
+        owner,
+        sourceFile: "transactions",
+        transaction: {
+          id: `h1-rachel-${owner}`,
+          owner,
+          date: today,
+          merchant: "Household spend",
+          amountCents: 2_500n,
+          kind: "spend",
+          category: "Groceries",
+        },
+      });
+    }
+
+    const rows = await t.run(async (ctx) =>
+      ctx.db
+        .query("transactions")
+        .filter((q) => q.eq(q.field("owner"), "victor"))
+        .collect(),
+    );
+    expect(rows.map((row) => row.txId).sort()).toEqual([
+      "h1-rachel-rachel",
+      "h1-rachel-victor",
+    ]);
+  });
+
+  it("refuses money writes for a credential that predates profiles", async () => {
+    const deviceToken = freshSecret();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("mobileDevices", {
+        deviceId: "h1-unprofiled-device",
+        name: "Legacy credential",
+        tokenHash: await (async () => {
+          const data = new TextEncoder().encode(deviceToken);
+          const digest = await crypto.subtle.digest("SHA-256", data);
+          return Array.from(new Uint8Array(digest))
+            .map((byte) => byte.toString(16).padStart(2, "0"))
+            .join("");
+        })(),
+        pairedAt: Date.now(),
+        lastSeenAt: Date.now(),
+        pairId: "h1-legacy-pair",
+        capabilities: ["transactions:write"],
+        profile: undefined,
+      });
+    });
+
+    await expectDeviceError(
+      t.mutation(api.upsertTransaction, {
+        deviceId: "h1-unprofiled-device",
+        deviceToken,
+        owner: "mason",
+        sourceFile: "mason-transactions",
+        transaction: {
+          id: "h1-legacy-tx",
+          owner: "mason",
+          date: "2026-07-30",
+          merchant: "Must not land",
+          amountCents: 100n,
+          kind: "spend",
+          category: "Other",
+        },
+      }),
+      "PROFILE_BINDING_REQUIRED",
+    );
+  });
+});
+
+describe("money magnitude caps", () => {
+  it("rejects a single line item beyond the $1M sanity limit on every money surface", async () => {
+    await seedBudgets();
+    const device = await fullDevice("cap-device");
+    const today = new Date().toISOString().slice(0, 10);
+
+    await expectDeviceError(
+      t.mutation(api.upsertTransaction, {
+        ...authArgs(device),
+        owner: "victor",
+        sourceFile: "transactions",
+        transaction: {
+          id: "cap-tx",
+          owner: "victor",
+          date: today,
+          merchant: "Typo",
+          amountCents: 100_000_001n,
+          kind: "spend",
+          category: "Other",
+        },
+      }),
+      "VALIDATION_FAILED",
+    );
+    await expectDeviceError(
+      t.mutation(api.upsertTransaction, {
+        ...authArgs(device),
+        owner: "victor",
+        sourceFile: "transactions",
+        transaction: {
+          id: "cap-tx-sats",
+          owner: "victor",
+          date: today,
+          merchant: "Typo",
+          amountCents: 100n,
+          kind: "spend",
+          category: "Groceries",
+          card: "river",
+          amountSats: 1_000_000_001n,
+          bitcoinAccountKey: "river",
+        },
+      }),
+      "VALIDATION_FAILED",
+    );
+    await expectDeviceError(
+      t.mutation(api.upsertBtcBuy, {
+        ...authArgs(device),
+        owner: "victor",
+        sourceFile: "bitcoin-buys",
+        buy: {
+          id: "cap-buy",
+          owner: "victor",
+          date: today,
+          source: "river",
+          sats: 1_000_000_001n,
+          priceUsdCents: 1n,
+          usdCents: 1n,
+        },
+      }),
+      "VALIDATION_FAILED",
+    );
+    await expectDeviceError(
+      t.mutation(api.upsertBudgetCategory, {
+        ...authArgs(device),
+        owner: "victor",
+        sourceFile: "budget",
+        month: CURRENT_MONTH,
+        category: { name: "Cap", budgetCents: 100_000_001n },
+      }),
+      "VALIDATION_FAILED",
+    );
+  });
+
+  it("applies the same sign and magnitude rules to the admin budget upsert", async () => {
+    await seedBudgets();
+    const adminUpsertBudgetCategory =
+      "tables:upsertBudgetCategory" as unknown as Parameters<
+        typeof t.mutation
+      >[0];
+    for (const budgetCents of [-1n, 100_000_001n]) {
+      await expect(
+        t.mutation(adminUpsertBudgetCategory, {
+          viewer: "victor",
+          month: CURRENT_MONTH,
+          category: { name: "Parity", budgetCents },
+          token: syncToken,
+        } as never),
+      ).rejects.toThrow(/must not be negative|sanity limit/);
+    }
+    const budget = await t.run(async (ctx) =>
+      ctx.db
+        .query("budgetDocuments")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "budget"))
+        .unique(),
+    );
+    expect(
+      budget!.categories.find((category) => category.name === "Parity"),
+    ).toBeUndefined();
   });
 });

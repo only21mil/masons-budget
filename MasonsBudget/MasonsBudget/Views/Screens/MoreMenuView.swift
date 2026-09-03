@@ -285,7 +285,12 @@ struct SyncSetupView: View {
                 }
             } catch {
                 await MainActor.run {
-                    statusMessage = error.localizedDescription
+                    // Pairing responses can carry server-derived text (decoder
+                    // details, errorData). Classify to an authored message and
+                    // fall back to a fixed line instead of printing it.
+                    let result = ConvexWriteResult.classify(error)
+                    statusMessage = result.userMessage(operation: "Pairing")
+                        ?? "Pairing could not be completed. Check the pairing URL and try again."
                     isClaiming = false
                 }
             }

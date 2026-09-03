@@ -1,1 +1,583 @@
-{"status":"success","value":{"complete":true,"document":{"categories":[{"budgetCents":"620000","icon":"🏠","name":"Bills & Utilities"},{"budgetCents":"100000","icon":"🍔","name":"Dining & Drinks"},{"budgetCents":"90000","icon":"🚗","name":"Auto & Transport"},{"budgetCents":"350000","icon":"🛍️","name":"Shopping"},{"budgetCents":"150000","icon":"🛒","name":"Groceries"},{"budgetCents":"60000","icon":"🧘","name":"Health & Wellness"},{"budgetCents":"20000","icon":"🏥","name":"Medical"},{"budgetCents":"20000","icon":"🐕","name":"Pets"}],"coinbaseOneBalanceCents":"2642","income":{"monthlyGrossCents":"1865723","mtdIncomeCents":"0","payFrequency":"weekly","paychecks":[{"amountCents":"344153","date":"2026-01-02","netCents":"344153","note":"Direct deposit, 100% auto-invested to Bitcoin via River (estimated from weekly cadence)","platform":"River","source":"River"},{"amountCents":"50000","date":"2026-01-07","netCents":"50000","note":"DISCOUNT TIRE CO direct deposit auto-buy (estimated from weekly cadence)","platform":"Strike","source":"Strike"},{"amountCents":"344153","date":"2026-01-09","netCents":"344153","note":"Direct deposit, 100% auto-invested to Bitcoin via River (estimated from weekly cadence)","platform":"River","source":"River"},{"amountCents":"50000","date":"2026-01-14","netCents":"50000","note":"DISCOUNT TIRE CO direct deposit auto-buy (estimated from weekly cadence)","platform":"Strike","source":"Strike"},{"amountCents":"344153","date":"2026-01-16","netCents":"344153","note":"Direct deposit, 100% auto-invested to Bitcoin via River (estimated from weekly cadence)","platform":"River","source":"River"},{"amountCents":"50000","date":"2026-01-21","netCents":"50000","note":"DISCOUNT TIRE CO direct deposit auto-buy (estimated from weekly cadence)","platform":"Strike","source":"Strike"},{"amountCents":"344153","date":"2026-01-23","netCents":"344153","note":"Direct deposit, 100% auto-invested to Bitcoin via River (estimated from weekly cadence)","platform":"River","source":"River"},{"amountCents":"50000","date":"2026-01-28","netCents":"50000","note":"DISCOUNT TIRE CO direct deposit auto-buy (estimated from weekly cadence)","platform":"Strike","source":"Strike"},{"amountCents":"344153","date":"2026-01-30","netCents":"344153","note":"Direct deposit, 100% auto-invested to Bitcoin via River (estimated from weekly cadence)","platform":"River","source":"River"},{"amountCents":"50000","date":"2026-02-04","netCents":"50000","note":"DISCOUNT TIRE CO direct deposit auto-buy (estimated from weekly cadence)","platform":"Strike","source":"Strike"},{"amountCents":"344153","date":"2026-02-06","netCents":"344153","note":"Direct deposit, 100% auto-invested to Bitcoin via River (estimated from weekly cadence)","platform":"River","source":"River"},{"amountCents":"50000","date":"2026-02-11","netCents":"50000","note":"DISCOUNT TIRE CO direct deposit auto-buy (estimated from weekly cadence)","platform":"Strike","source":"Strike"},{"amountCents":"344153","date":"2026-02-13","netCents":"344153","note":"Direct deposit, 100% auto-invested to Bitcoin via River (estimated from weekly cadence)","platform":"River","source":"River"},{"amountCents":"50000","date":"2026-02-18","netCents":"50000","note":"DISCOUNT TIRE CO direct deposit auto-buy (estimated from weekly cadence)","platform":"Strike","source":"Strike"},{"amountCents":"344153","date":"2026-02-20","netCents":"344153","note":"Direct deposit, 100% auto-invested to Bitcoin via River (estimated from weekly cadence)","platform":"River","source":"River"},{"amountCents":"50000","date":"2026-02-25","netCents":"50000","note":"DISCOUNT TIRE CO direct deposit auto-buy (estimated from weekly cadence)","platform":"Strike","source":"Strike"},{"amountCents":"344153","date":"2026-02-27","netCents":"344153","note":"Direct deposit, 100% auto-invested to Bitcoin via River (estimated from weekly cadence)","platform":"River","source":"River"},{"amountCents":"50000","date":"2026-03-04","netCents":"50000","note":"DISCOUNT TIRE CO direct deposit auto-buy (estimated from weekly cadence)","platform":"Strike","source":"Strike"},{"amountCents":"344153","date":"2026-03-06","netCents":"344153","note":"Direct deposit, 100% auto-invested to Bitcoin via River (estimated from weekly cadence)","platform":"River","source":"River"},{"amountCents":"50000","date":"2026-03-11","netCents":"50000","note":"DISCOUNT TIRE CO direct deposit auto-buy (estimated from weekly cadence)","platform":"Strike","source":"Strike"},{"amountCents":"344153","date":"2026-03-13","netCents":"344153","note":"Direct deposit, 100% auto-invested to Bitcoin via River (estimated from weekly cadence)","platform":"River","source":"River"},{"amountCents":"8314700","date":"2026-03-13","netCents":"8314700","note":"Annual bonus — March (10% to WAP, remainder to River). Per finances.json WAP bonusTotal.","platform":"River","source":"River"},{"amountCents":"50000","date":"2026-03-18","netCents":"50000","note":"DISCOUNT TIRE CO direct deposit auto-buy (estimated from weekly cadence)","platform":"Strike","source":"Strike"},{"amountCents":"344153","date":"2026-03-20","netCents":"344153","note":"Direct deposit, 100% auto-invested to Bitcoin via River (estimated from weekly cadence)","platform":"River","source":"River"},{"amountCents":"50000","date":"2026-03-25","netCents":"50000","note":"DISCOUNT TIRE CO direct deposit auto-buy (estimated from weekly cadence)","platform":"Strike","source":"Strike"},{"amountCents":"344153","date":"2026-03-27","netCents":"344153","note":"Direct deposit, 100% auto-invested to Bitcoin via River (estimated from weekly cadence)","platform":"River","source":"River"},{"amountCents":"50000","date":"2026-04-01","netCents":"50000","note":"DISCOUNT TIRE CO direct deposit auto-buy","platform":"Strike","source":"Strike"},{"amountCents":"344152","date":"2026-04-03","netCents":"344152","note":"DISCOUNT TIRE CO direct deposit auto-buy","platform":"River","source":"River"},{"amountCents":"50000","date":"2026-04-08","netCents":"50000","note":"DISCOUNT TIRE CO direct deposit auto-buy","platform":"Strike","source":"Strike"},{"amountCents":"344151","date":"2026-04-10","netCents":"344151","note":"Direct deposit River, 100% auto-invested to Bitcoin","platform":"River","source":"River"},{"amountCents":"50000","date":"2026-04-15","netCents":"50000","note":"DISCOUNT TIRE CO direct deposit auto-buy","platform":"Strike","source":"Strike"},{"amountCents":"344179","date":"2026-04-17","netCents":"344179","note":"Direct deposit River, 100% auto-invested to Bitcoin","platform":"River","source":"River"},{"amountCents":"50000","date":"2026-04-22","netCents":"50000","note":"Direct deposit auto-buy","platform":"Strike","source":"Strike"},{"amountCents":"346152","date":"2026-04-24","netCents":"346152","note":"DISCOUNT TIRE CO direct deposit auto-buy","platform":"River","source":"River"},{"amountCents":"50000","date":"2026-04-29","netCents":"50000","note":"DISCOUNT TIRE CO direct deposit auto-buy from Strike receipt Apr 29 2026 7:25 PM","platform":"Strike","source":"Strike"},{"amountCents":"346153","date":"2026-05-01","netCents":"346153","note":"DISCOUNT TIRE CO direct deposit auto-buy from River receipt May 1 2026 8:31 AM CDT","platform":"River","source":"River"},{"amountCents":"50000","date":"2026-05-06","netCents":"50000","note":"DISCOUNT TIRE CO direct deposit auto-buy from Strike receipt May 6 2026, no fee","platform":"Strike","source":"Strike"},{"amountCents":"377729","date":"2026-05-08","netCents":"377729","note":"DISCOUNT TIRE CO direct deposit auto-buy from River receipt May 8 2026 7:45 AM CDT; 100% auto-invested","platform":"River","source":"River"},{"amountCents":"430883","date":"2026-05-15","netCents":"430883","note":"DISCOUNT TIRE CO direct deposit, 100% auto-invested to Bitcoin via River receipt May 15 2026 6:41 AM; reference 4BCSLP2RCU","platform":"River","source":"River"},{"amountCents":"428167","date":"2026-05-22","netCents":"428167","note":"DISCOUNT TIRE CO direct deposit, 100% auto-invested to Bitcoin via River receipt May 22 2026 7:45 AM CDT; reference EB4UI5SRKU","platform":"River","source":"River"},{"amountCents":"425841","date":"2026-05-27","netCents":"425841","note":"DISCOUNT TIRE CO direct deposit auto-buy from River payroll receipt May 27 2026 7:38 PM; 100% auto-invested to Bitcoin; BTC amount and price pending receipt","platform":"River","source":"River"},{"amountCents":"425843","date":"2026-06-05","netCents":"425843","note":"DISCOUNT TIRE CO direct deposit, 100% auto-invested to Bitcoin via River receipt Jun 5 2026 7:32 AM CDT; River fee $0.00","platform":"River","source":"River"},{"amountCents":"6744","date":"2026-06-06","netCents":"6744","note":"Aven cashback reward from activity screenshot sent 2026-06-15; tracked as income per Victor","platform":"Aven Cashback Reward","source":"Aven Cashback Reward"},{"amountCents":"13500","date":"2026-06-08","netCents":"13500","note":"Venmo payment from a buddy for helping him out; cash used for River Bitcoin buy on Jun 8 2026 at 1:18 PM.","platform":"Venmo","source":"Venmo"},{"amountCents":"84034","date":"2026-06-10","netCents":"84034","note":"Tax overpayment refund used for River Bitcoin buy on Jun 10 2026 at 1:04 PM.","platform":"IRS","source":"IRS"},{"amountCents":"1575","date":"2026-06-10","netCents":"1575","note":"Aven cashback reward from activity screenshot sent 2026-06-15; tracked as income per Victor","platform":"Aven Cashback Reward","source":"Aven Cashback Reward"},{"amountCents":"425841","date":"2026-06-12","netCents":"425841","note":"DISCOUNT TIRE CO direct deposit, 100% auto-invested to Bitcoin via River receipt Jun 12 2026 8:32 AM CDT; River fee $0.00","platform":"River","source":"River"},{"amountCents":"12061","date":"2026-06-13","netCents":"12061","note":"Aven cashback reward from activity screenshot sent 2026-06-15; tracked as income per Victor","platform":"Aven Cashback Reward","source":"Aven Cashback Reward"},{"amountCents":"100375","date":"2026-06-15","netCents":"100375","note":"Purse sales payout from The RealReal; description ST-Q9C5J5D; reference code X5CGA73BBQ; completed Jun 15 2026 2:28 AM.","platform":"The RealReal","source":"The RealReal"},{"amountCents":"425841","date":"2026-06-18","netCents":"425841","note":"DISCOUNT TIRE CO direct deposit auto-buy from River receipt Jun 18 2026 7:32 AM CDT; 100% auto-invested; reference YB3YMDYQW4; River fee $0.00","platform":"River","source":"River"},{"amountCents":"12528","date":"2026-06-26","netCents":"12528","note":"Aven cashback reward from activity screenshot resent 2026-06-27; tracked as income, not spending","platform":"Aven","source":"Aven"},{"amountCents":"425843","date":"2026-06-26","netCents":"425843","note":"DISCOUNT TIRE CO direct deposit auto-buy from River receipt Jun 26 2026 7:32 AM CDT; 100% auto-invested; reference COZMQMVF6A; River fee $0.00","platform":"River","source":"River"},{"amountCents":"2323","date":"2026-07-01","netCents":"2323","note":"River BTC buy from Spark screenshot IMG_0508; cash balance buy, subtotal $23.00, River fee $0.23, total paid $23.23; Victor identified Bitcoin buys as income.","platform":"River","source":"River"},{"amountCents":"425841","date":"2026-07-01","netCents":"425841","note":"River direct deposit auto-invest from Spark screenshot IMG_0507; 100% auto-invested in bitcoin; total $4,258.41.","platform":"River","source":"River"},{"amountCents":"13866","date":"2026-07-03","netCents":"13866","note":"Aven cashback reward from activity screenshot IMG_0449; tracked as income, not spending","platform":"Aven","source":"Aven"},{"amountCents":"91299","date":"2026-07-07","netCents":"91299","note":"River BTC buy from Spark screenshot IMG_0504; cash balance buy, subtotal $903.95, River fee $9.04, total paid $912.99; Victor identified Bitcoin buys as income.","platform":"River","source":"River"},{"amountCents":"425843","date":"2026-07-08","netCents":"425843","note":"DISCOUNT TIRE CO direct deposit auto-buy from River receipt Jul 8 2026 7:42 PM CDT; 100% auto-invested; reference BH2AGLWTA4; River fee $0.00","platform":"River","source":"River"},{"amountCents":"9813","date":"2026-07-15","netCents":"9813","note":"River cash-balance Bitcoin buy from receipt Jul 15 2026 8:20 AM CDT; 0.00148033 BTC at $65,634.01/BTC; subtotal $97.16; River fee $0.97; total paid $98.13; Victor identified this Bitcoin buy as income.","platform":"River","source":"River"},{"amountCents":"425842","date":"2026-07-15","netCents":"425842","note":"River direct-deposit auto-buy from receipt Jul 15 2026 7:44 PM CDT; 100% auto-invested; 0.06588050 BTC at $64,638.55/BTC; River fee $0.00; total $4,258.42.","platform":"River","source":"River"},{"amountCents":"2254660","date":"2026-07-15","netCents":"2254660","note":"River direct-deposit auto-buy from receipt Jul 15 2026 7:50 PM CDT; 99.77% auto-invested; 0.34768611 BTC at $64,696.03/BTC; subtotal $22,493.91; River fee $52.69; total direct deposit $22,546.60.","platform":"River","source":"River"}],"weeklyGrossCents":"430883","weeklyRiverCents":"430883","weeklyStrikeCents":"0","ytdIncomeCents":"22659768"},"month":"August 2026","monthlyHistory":[{"expensesCents":"1277500","incomeCents":"2782800","month":"January 2026","savingsBps":"5410"},{"expensesCents":"1304780","incomeCents":"1487880","month":"February 2026","savingsBps":"1230"},{"expensesCents":"1858738","incomeCents":"8320323","month":"March 2026","savingsBps":"7766"},{"expensesCents":"1300835","incomeCents":"1628634","month":"April 2026","savingsBps":"2013"},{"expensesCents":"2046255","incomeCents":"2058773","month":"May 2026","savingsBps":"61"}],"mtdIncomeCents":"0","owner":"victor","updatedAtMs":1785605567371.0,"ytdIncomeCents":"22659768"}}}
+{
+  "status": "success",
+  "value": {
+    "complete": true,
+    "document": {
+      "categories": [
+        {
+          "budgetCents": "400000",
+          "icon": "🛠",
+          "name": "Sample Category 1"
+        },
+        {
+          "budgetCents": "350000",
+          "icon": "🏠",
+          "name": "Sample Category 2"
+        },
+        {
+          "budgetCents": "300000",
+          "icon": "🍔",
+          "name": "Sample Category 3"
+        },
+        {
+          "budgetCents": "250000",
+          "icon": "🚗",
+          "name": "Sample Category 4"
+        },
+        {
+          "budgetCents": "200000",
+          "icon": "🎉",
+          "name": "Sample Category 5"
+        },
+        {
+          "budgetCents": "150000",
+          "icon": "💊",
+          "name": "Sample Category 6"
+        },
+        {
+          "budgetCents": "100000",
+          "icon": "🐾",
+          "name": "Sample Category 7"
+        },
+        {
+          "budgetCents": "50000",
+          "icon": "🎁",
+          "name": "Sample Category 8"
+        }
+      ],
+      "coinbaseOneBalanceCents": "0",
+      "income": {
+        "monthlyGrossCents": "800000",
+        "mtdIncomeCents": "0",
+        "payFrequency": "weekly",
+        "paychecks": [
+          {
+            "amountCents": "200000",
+            "date": "2098-05-08",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 1",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-05-15",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 2",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-05-22",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 3",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-05-29",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 4",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-06-05",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 5",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-06-12",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 6",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-06-19",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 7",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-06-26",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 8",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-07-03",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 9",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-07-10",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 10",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-07-17",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 11",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-07-24",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 12",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-07-31",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 13",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-08-07",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 14",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-08-14",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 15",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-08-21",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 16",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-08-28",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 17",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-09-04",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 18",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-09-11",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 19",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-09-18",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 20",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-09-25",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 21",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-10-02",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 22",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-10-09",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 23",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-10-16",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 24",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-10-23",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 25",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-10-30",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 26",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-11-06",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 27",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-11-13",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 28",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-11-20",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 29",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-11-27",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 30",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-12-04",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 31",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-12-11",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 32",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-12-18",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 33",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2098-12-25",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 34",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-01-01",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 35",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-01-08",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 36",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-01-15",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 37",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-01-22",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 38",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-01-29",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 39",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-02-05",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 40",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-02-12",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 41",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-02-19",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 42",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-02-26",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 43",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-03-05",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 44",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-03-12",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 45",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-03-19",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 46",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-03-26",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 47",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-04-02",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 48",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-04-09",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 49",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-04-16",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 50",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-04-23",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 51",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-04-30",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 52",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-05-07",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 53",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-05-14",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 54",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-05-21",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 55",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-05-28",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 56",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-06-04",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 57",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-06-11",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 58",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-06-18",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 59",
+            "platform": "Sample",
+            "source": "Payroll"
+          },
+          {
+            "amountCents": "200000",
+            "date": "2099-06-25",
+            "netCents": "150000",
+            "note": "Synthetic weekly paycheck fixture row 60",
+            "platform": "Sample",
+            "source": "Payroll"
+          }
+        ],
+        "weeklyGrossCents": "200000",
+        "weeklyRiverCents": "0",
+        "weeklyStrikeCents": "0",
+        "ytdIncomeCents": "9600000"
+      },
+      "month": "June 2099",
+      "monthlyHistory": [
+        {
+          "expensesCents": "600000",
+          "incomeCents": "800000",
+          "month": "January 2099",
+          "savingsBps": "2500"
+        },
+        {
+          "expensesCents": "600000",
+          "incomeCents": "800000",
+          "month": "February 2099",
+          "savingsBps": "2500"
+        },
+        {
+          "expensesCents": "600000",
+          "incomeCents": "800000",
+          "month": "March 2099",
+          "savingsBps": "2500"
+        },
+        {
+          "expensesCents": "600000",
+          "incomeCents": "800000",
+          "month": "April 2099",
+          "savingsBps": "2500"
+        },
+        {
+          "expensesCents": "600000",
+          "incomeCents": "800000",
+          "month": "May 2099",
+          "savingsBps": "2500"
+        }
+      ],
+      "mtdIncomeCents": "0",
+      "owner": "victor",
+      "updatedAtMs": 1700000000000,
+      "ytdIncomeCents": "9600000"
+    },
+    "readAuth": {
+      "deprecated": true,
+      "mode": "shared-token"
+    }
+  }
+}

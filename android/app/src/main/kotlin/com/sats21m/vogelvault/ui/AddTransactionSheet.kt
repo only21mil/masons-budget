@@ -42,11 +42,10 @@ import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.draftIdWriteOutcome
 import com.sats21m.vogelvault.onServerAccepted
 import com.sats21m.vogelvault.data.ConvexMutation
-import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.convexWriteFailureMessage
 import com.sats21m.vogelvault.data.TransactionInput
 import com.sats21m.vogelvault.data.TransactionKind
-import com.sats21m.vogelvault.data.TransactionWriteReceipt
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -55,7 +54,6 @@ import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import java.math.BigDecimal
-import java.math.RoundingMode
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -130,8 +128,6 @@ data class BillPayPrefill(
     val dateIso: String get() = date.toString()
 }
 
-internal typealias BillPayHandoff = BillPayPrefill
-
 internal const val PAYMENT_SOURCE_SELECTOR_TEST_TAG = "payment-source-selector"
 internal const val BITCOIN_ACCOUNT_SELECTOR_TEST_TAG = "bitcoin-account-selector"
 
@@ -180,8 +176,7 @@ internal fun prepareBillPayHandoff(
     }
     val merchant = draft.merchant.trim()
     require(merchant.isNotEmpty()) { "Enter a merchant or bill-pay recipient" }
-    val cents = parsePositiveDecimal(draft.amount)
-        .toMinorUnitsExact(scale = 2, unitName = "USD")
+    val cents = Money.exactMinorUnits(Money.parsePositiveAmount(draft.amount), 2, "USD")
     require(cents > 0L) { "Amount must resolve to at least one cent" }
     BillPayPrefill(
         merchant = merchant,
@@ -195,58 +190,21 @@ internal fun prepareBillPayHandoff(
 }
 
 /**
- * New rows are the one legitimate unfenced write. The typed receipt installs
- * the server revision on the shared client before the refresh callback runs.
+ * The payment-source surface uses the capability-scoped device gateway.
+ * Device rows are the one legitimate unfenced write: the receipt confirms
+ * acceptance without carrying a server revision.
  */
-internal suspend fun savePreparedTransaction(
-    row: PreparedTransaction,
-    client: ConvexMutationClient,
-): ConvexResult<TransactionWriteReceipt> =
-    client.upsertTransaction(
-        ConvexMutation.UpsertTransaction(
-            transaction = row.input,
-            sourceFile = row.sourceFile,
-        ),
-    )
-
-/** The payment-source surface uses the capability-scoped device gateway. */
 internal suspend fun savePreparedTransaction(
     row: PreparedTransaction,
     gateway: TransactionDeviceMutationGateway,
 ): ConvexResult<DeviceTransactionWriteReceipt> = gateway.upsert(row)
 
 /**
- * Starts the durable part of an add on a process-owned scope. The client
+ * Starts the durable part of an add on a process-owned scope. The gateway
  * installs an accepted receipt before returning; a disposed sheet suppresses
  * only its stale UI callbacks, never the write, the receipt installation, or
  * the acceptance signal.
  */
-internal fun launchPreparedTransactionSave(
-    scope: CoroutineScope,
-    row: PreparedTransaction,
-    client: ConvexMutationClient,
-    transactionDraftIds: TransactionDraftIdStore,
-    isUiActive: () -> Boolean,
-    onAccepted: () -> Unit,
-    onUiResult: (DraftIdWriteOutcome<TransactionWriteReceipt>) -> Unit,
-): Job = scope.launch {
-    val result = savePreparedTransaction(row, client)
-    val leaseReset = result !is ConvexResult.Ok ||
-        transactionDraftIds.rotateAfterAcceptance(row.sourceFile, row.input.id)
-    val outcome = draftIdWriteOutcome(result, leaseReset)
-    outcome.onServerAccepted {
-        // The ledger refresh belongs to the screen's view model, which
-        // outlives this sheet. An accepted write must become visible even
-        // when the user dismissed mid-flight — suppressing this with the
-        // sheet left committed, fenced rows invisible until an unrelated
-        // refresh.
-        onAccepted()
-    }
-    if (isUiActive()) {
-        onUiResult(outcome)
-    }
-}
-
 internal fun launchPreparedTransactionSave(
     scope: CoroutineScope,
     row: PreparedTransaction,
@@ -275,14 +233,8 @@ internal fun launchPreparedTransactionSave(
  * problem. Keeping those sentences separate tells the user which remedy is
  * available instead of reducing both causes to "not configured".
  */
-internal fun transactionWriteFailureMessage(result: ConvexResult<*>): String? = when (result) {
-    is ConvexResult.Ok -> null
-    ConvexResult.Disabled -> "Remote transaction writes are switched off"
-    ConvexResult.NotConfigured -> "Transaction writing has no usable Convex deployment or token"
-    ConvexResult.Unauthorized -> "The sync credential is missing or was rejected"
-    ConvexResult.Missing -> "Convex returned no write result"
-    is ConvexResult.Failed -> "Transaction was not saved (${result.reason})"
-}
+internal fun transactionWriteFailureMessage(result: ConvexResult<*>): String? =
+    convexWriteFailureMessage("Transaction was not saved", result)
 
 internal fun transactionWriteFailureMessage(outcome: DraftIdWriteOutcome<*>): String? =
     when (outcome) {
@@ -321,15 +273,15 @@ internal fun prepareTransaction(
     val merchant = draft.merchant.trim()
     require(merchant.isNotEmpty()) { "Enter a merchant or transfer destination" }
 
-    val parsed = parsePositiveDecimal(draft.amount)
+    val parsed = Money.parsePositiveAmount(draft.amount)
     val (amountCents, satsFromInput) = when (draft.inputUnit) {
         DisplayUnit.USD -> {
-            val cents = parsed.toMinorUnitsExact(scale = 2, unitName = "USD")
+            val cents = Money.exactMinorUnits(parsed, 2, "USD")
             cents to btcPriceCents.takeIf { it > 0L }?.let { Money.usdCentsToSats(cents, it) }
         }
 
         DisplayUnit.BTC -> {
-            val exactSats = parsed.toMinorUnitsExact(scale = 8, unitName = "BTC")
+            val exactSats = Money.exactMinorUnits(parsed, 8, "BTC")
             require(btcPriceCents > 0L) {
                 "An operational Bitcoin market quote is required to save BTC input as USD cents"
             }
@@ -337,7 +289,7 @@ internal fun prepareTransaction(
         }
 
         DisplayUnit.SATS -> {
-            val exactSats = parsed.toMinorUnitsExact(scale = 0, unitName = "sats")
+            val exactSats = Money.exactMinorUnits(parsed, 0, "sats")
             require(btcPriceCents > 0L) {
                 "An operational Bitcoin market quote is required to save sats input as USD cents"
             }
@@ -439,10 +391,10 @@ internal fun conversionPreview(
     inputUnit: DisplayUnit,
     btcPriceCents: Long,
 ): String? = runCatching {
-    val parsed = parsePositiveDecimal(amount)
+    val parsed = Money.parsePositiveAmount(amount)
     when (inputUnit) {
         DisplayUnit.USD -> {
-            val cents = parsed.toMinorUnitsExact(2, "USD")
+            val cents = Money.exactMinorUnits(parsed, 2, "USD")
             if (btcPriceCents <= 0L) {
                 Money.PRICE_UNAVAILABLE
             } else {
@@ -452,7 +404,7 @@ internal fun conversionPreview(
         }
 
         DisplayUnit.BTC -> {
-            val sats = parsed.toMinorUnitsExact(8, "BTC")
+            val sats = Money.exactMinorUnits(parsed, 8, "BTC")
             if (btcPriceCents <= 0L) {
                 "${Money.formatSats(sats)} / ${Money.PRICE_UNAVAILABLE}"
             } else {
@@ -461,7 +413,7 @@ internal fun conversionPreview(
         }
 
         DisplayUnit.SATS -> {
-            val sats = parsed.toMinorUnitsExact(0, "sats")
+            val sats = Money.exactMinorUnits(parsed, 0, "sats")
             if (btcPriceCents <= 0L) {
                 "${Money.formatBtc(sats)} / ${Money.PRICE_UNAVAILABLE}"
             } else {
@@ -478,15 +430,15 @@ internal fun convertAmountForUnit(
     btcPriceCents: Long,
 ): String? = runCatching {
     if (from == to) return@runCatching amount
-    val parsed = parsePositiveDecimal(amount)
+    val parsed = Money.parsePositiveAmount(amount)
     val sats = when (from) {
         DisplayUnit.USD -> {
             require(btcPriceCents > 0L) { "Bitcoin price unavailable" }
-            val cents = parsed.toMinorUnitsExact(2, "USD")
+            val cents = Money.exactMinorUnits(parsed, 2, "USD")
             Money.usdCentsToSats(cents, btcPriceCents)
         }
-        DisplayUnit.BTC -> parsed.toMinorUnitsExact(8, "BTC")
-        DisplayUnit.SATS -> parsed.toMinorUnitsExact(0, "sats")
+        DisplayUnit.BTC -> Money.exactMinorUnits(parsed, 8, "BTC")
+        DisplayUnit.SATS -> Money.exactMinorUnits(parsed, 0, "sats")
     }
     when (to) {
         DisplayUnit.SATS -> sats.toString()
@@ -504,43 +456,11 @@ internal fun convertAmountForUnit(
     }
 }.getOrNull()
 
-private fun parsePositiveDecimal(raw: String): BigDecimal {
-    val cleaned = raw.trim()
-        .replace(",", "")
-        .removePrefix("$")
-        .removePrefix("₿")
-        .trim()
-    require(cleaned.isNotEmpty()) { "Enter an amount" }
-    val value = cleaned.toBigDecimalOrNull() ?: throw IllegalArgumentException("Enter a valid amount")
-    require(value > BigDecimal.ZERO) { "Amount must be positive" }
-    return value
-}
-
-private fun BigDecimal.toMinorUnitsExact(
-    scale: Int,
-    unitName: String,
-): Long = try {
-    setScale(scale, RoundingMode.UNNECESSARY)
-        .movePointRight(scale)
-        .longValueExact()
-} catch (error: ArithmeticException) {
-    throw IllegalArgumentException(
-        when (scale) {
-            0 -> "$unitName must be a whole number"
-            else -> "$unitName supports at most $scale decimal places"
-        },
-        error,
-    )
-}
-
 private fun satsToCentsExact(
     sats: Long,
     btcPriceCents: Long,
 ): Long = try {
-    BigDecimal(sats)
-        .multiply(BigDecimal(btcPriceCents))
-        .divide(BigDecimal(Money.SATS_PER_BTC), 0, RoundingMode.HALF_UP)
-        .longValueExact()
+    Money.satsToUsdCents(sats, btcPriceCents)
 } catch (error: ArithmeticException) {
     throw IllegalArgumentException("Amount is outside the supported range", error)
 }
@@ -1053,4 +973,3 @@ private fun DropdownField(
     }
 }
 
-private val CARD_OPTIONS = listOf("Debit", "Credit", "Lightning", "On-chain", "Bank")

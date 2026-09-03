@@ -13,30 +13,22 @@
 // Rows the list does not recognise are never rewritten: an unknown or legacy
 // `card` string round-trips verbatim through the form.
 
+// The source tokens and the route spelling are the shared write contract's,
+// not a local copy: `PaymentSource` is an alias, and the labels table plus the
+// mapping table below are `Record<PaymentSource, …>`, so a source added in
+// shared/domain without a Linux-side mapping fails to compile instead of
+// silently diverging.
+import {
+  PAYMENT_SOURCES as SHARED_PAYMENT_SOURCES,
+  type PaymentSource as SharedPaymentSource,
+  type PaymentSourceRoute as SharedPaymentSourceRoute,
+} from "@vogel-vault/domain/writeContract"
+
 /** Wire values, persisted verbatim. Never store or match on the label. */
-export type PaymentSource =
-  | "river"
-  | "zeus_lightning"
-  | "zeus_on_chain"
-  | "strike"
-  | "coinbase_card"
-  | "aven"
-  | "sofi_card"
-  | "capital_one_vx"
-  | "river_bitcoin_bill_pay"
+export type PaymentSource = SharedPaymentSource
 
 /** Display order is the product order and is not sorted or derived. */
-export const PAYMENT_SOURCES: readonly PaymentSource[] = [
-  "river",
-  "zeus_lightning",
-  "zeus_on_chain",
-  "strike",
-  "coinbase_card",
-  "aven",
-  "sofi_card",
-  "capital_one_vx",
-  "river_bitcoin_bill_pay",
-]
+export const PAYMENT_SOURCES: readonly PaymentSource[] = SHARED_PAYMENT_SOURCES
 
 export const PAYMENT_SOURCE_LABELS: Readonly<Record<PaymentSource, string>> = {
   river: "River",
@@ -51,7 +43,7 @@ export const PAYMENT_SOURCE_LABELS: Readonly<Record<PaymentSource, string>> = {
 }
 
 /** Which table a source writes to. Only River Bitcoin Bill Pay leaves transactions. */
-export type PaymentSourceRoute = "transaction" | "billPay"
+export type PaymentSourceRoute = SharedPaymentSourceRoute
 export type PaymentSourceClassification = "bitcoin_native" | "fiat_card" | "bill_pay"
 export type PaymentSourceActivity = "spend" | "income" | "transfer" | "btc_bill_pay"
 
@@ -105,7 +97,7 @@ const PAYMENT_SOURCE_MAPPING: Readonly<Record<PaymentSource, PaymentSourceMappin
     supportedActivities: ["spend"],
   },
   river_bitcoin_bill_pay: {
-    route: "billPay",
+    route: "btc_bill_pay",
     classification: "bill_pay",
     supportedActivities: ["btc_bill_pay"],
   },
@@ -120,7 +112,7 @@ export type PaymentSourceRowFields =
       readonly bitcoinAccountKey?: string
     }
   | {
-      readonly route: "billPay"
+      readonly route: "btc_bill_pay"
       readonly platform: "river_bitcoin_bill_pay"
       readonly btcSpentSats?: bigint
     }
@@ -220,9 +212,9 @@ export function paymentSourceToRowFields(
   const mapping = PAYMENT_SOURCE_MAPPING[source]
   const sats = options.amountSats ?? null
   const positiveSats = sats !== null && sats > 0n ? sats : null
-  if (mapping.route === "billPay") {
+  if (mapping.route === "btc_bill_pay") {
     return {
-      route: "billPay",
+      route: "btc_bill_pay",
       platform: "river_bitcoin_bill_pay",
       ...(positiveSats === null ? {} : { btcSpentSats: positiveSats }),
     }
@@ -303,7 +295,7 @@ export function paymentSourceBlockReason(selection: PaymentSourceSelection): str
     }
     return null
   }
-  if (paymentSourceRoute(source) === "billPay") {
+  if (paymentSourceRoute(source) === "btc_bill_pay") {
     return `${paymentSourceLabel(source)} is recorded on the Bills page so the River balance ` +
       "is debited. Add it there instead of as a transaction."
   }
@@ -355,7 +347,7 @@ export function transactionSourceFields(selection: PaymentSourceSelection): {
     amountSats: selection.amountSats,
     bitcoinAccountKey: selection.bitcoinAccountKey,
   })
-  if (fields.route === "billPay") return {}
+  if (fields.route === "btc_bill_pay") return {}
   return {
     card: fields.card,
     ...(fields.amountSats === undefined ? {} : { amountSats: fields.amountSats }),

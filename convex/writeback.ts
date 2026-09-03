@@ -38,8 +38,9 @@
 import { ConvexError, v } from "convex/values";
 import type { DataModel } from "./_generated/dataModel";
 import { mutation, type MutationCtx } from "./_generated/server";
+import { timingSafeEqualStrings } from "./deviceAuth";
 import { requireIsoDate } from "./dateValidation";
-import { mergeTodoPayload, normalizeTodoRecord } from "./todoNormalize";
+import { mergeTodoPayload, normalizeTodoRecord, TODO_LANES } from "./todoNormalize";
 
 export { isRealIsoDate } from "./dateValidation";
 
@@ -53,7 +54,10 @@ declare const process: { env: Record<string, string | undefined> };
  * MIRROR of `validateSyncToken` in dataFiles.ts, including the escape-hatch
  * precedence documented in that file's banner (ALLOW_TOKENLESS_SYNC=true admits
  * the call even when CONVEX_SYNC_TOKEN is set — the hatch outranks the token, so
- * removing the hatch is the enforcement flip and re-setting it is the rollback).
+ * removing the hatch is the enforcement flip and re-setting it is the rollback),
+ * the timing-safe token comparison, and the generic client-visible rejection
+ * that names no environment variable (the specific detail goes to the server
+ * log only — see dataFiles.ts).
  *
  * A mirror rather than an import because the canonical function is module-
  * private in `dataFiles.ts`, which this change does not own: that file is live
@@ -83,13 +87,16 @@ function validateSyncToken(token?: string) {
     return;
   }
   if (!expected) {
+    console.error(
+      "AUTH-FAIL-CLOSED: CONVEX_SYNC_TOKEN is not configured; every write " +
+        "is being rejected. Configure the deployment write credential — do " +
+        "not set ALLOW_TOKENLESS_SYNC to recover.",
+    );
     throw new Error(
-      "Unauthorized: CONVEX_SYNC_TOKEN is not configured (fail-closed). " +
-        "Set the token on the deployment, or set ALLOW_TOKENLESS_SYNC=true to " +
-        "explicitly allow tokenless writes.",
+      "Unauthorized: write auth is not configured (fail-closed).",
     );
   }
-  if (!token || token !== expected) {
+  if (!token || !timingSafeEqualStrings(token, expected)) {
     throw new Error("Unauthorized: invalid sync token");
   }
 }
@@ -384,9 +391,11 @@ function requireId(value: string, field: string): string {
 }
 
 /**
- * Who made the change, for the audit log. Free text rather than a family
- * member: "victor@linux" and "rachel@ios" are the useful answers, and a value
- * that cannot be attributed is worse than a coarse one.
+ * The caller's display name for the audit log. Free text rather than a family
+ * member: "victor@linux" and "rachel@ios" are the useful answers. It is
+ * recorded as `claimedActor` only — the audit entry's `actor` field is derived
+ * server-side from the credential, because any sync-token holder could claim
+ * any name here.
  */
 function requireActor(value: string): string {
   return requireText(value, "actor", MAX_ACTOR);
@@ -430,7 +439,9 @@ function requireCategory(
   return category;
 }
 
-export const TODO_LANES = ["work", "personal", "sats"] as const;
+// Single Convex-side source: convex/todoNormalize.ts owns the lane list (the
+// domain copy is the cross-runtime contract; tests pin all three spellings).
+export { TODO_LANES };
 
 /**
  * The todo "category" is one of three MC2 lanes. `normalizeTodoLane` COERCES
@@ -635,11 +646,28 @@ interface AuditEntry {
   entity: "transaction" | "todo";
   file: string;
   id: string;
-  actor: string;
+  /**
+   * Server-derived from the credential that authorized the write. The shared
+   * sync token identifies no human, so attribution evidence is exactly as
+   * strong as that credential — `claimedActor` is the caller's display string
+   * and is NOT part of the attribution.
+   */
+  actor: typeof SERVER_WRITE_PRINCIPAL;
+  /** Client-asserted display value ("victor@linux"); never verified. */
+  claimedActor?: string;
   /** The exact stored record this write replaced; null for a create. */
   before: Record<string, unknown> | null;
   after: Record<string, unknown>;
 }
+
+/**
+ * The principal every write on this module is authorized by. There is exactly
+ * one credential class here — the deployment-wide CONVEX_SYNC_TOKEN — so the
+ * honest server-side attribution is the credential itself, not whatever actor
+ * string the caller felt like sending (any sync-token holder could claim any
+ * name).
+ */
+const SERVER_WRITE_PRINCIPAL = "sync-token";
 
 interface AuditLog {
   schema: string;
@@ -857,7 +885,8 @@ export const createTransaction = mutation({
       entity: "transaction",
       file,
       id,
-      actor,
+      actor: SERVER_WRITE_PRINCIPAL,
+      claimedActor: actor,
       before: null,
       after: record,
     });
@@ -1040,7 +1069,8 @@ export const editTransaction = mutation({
       entity: "transaction",
       file,
       id,
-      actor,
+      actor: SERVER_WRITE_PRINCIPAL,
+      claimedActor: actor,
       before: stored,
       after: record,
     });
@@ -1176,7 +1206,8 @@ export const createTodo = mutation({
       entity: "todo",
       file: TODO_FILE,
       id,
-      actor,
+      actor: SERVER_WRITE_PRINCIPAL,
+      claimedActor: actor,
       before: null,
       after: record,
     });
@@ -1302,7 +1333,8 @@ export const editTodo = mutation({
       entity: "todo",
       file: TODO_FILE,
       id,
-      actor,
+      actor: SERVER_WRITE_PRINCIPAL,
+      claimedActor: actor,
       before: stored,
       after: record,
     });

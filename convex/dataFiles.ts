@@ -1,12 +1,21 @@
 import { ConvexError, v } from "convex/values";
-import { query, mutation, type MutationCtx } from "./_generated/server";
+import {
+  query,
+  mutation,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 import { isValidAndroidReadToken } from "./androidReadToken";
 import {
+  authenticateDeviceForRead,
   authenticateDeviceForSelfRevoke,
   deviceCapabilityValidator,
   deviceProfileValidator,
+  equalSha256Hex,
+  hashDeviceToken,
   normalizeDeviceCapabilities,
   sha256Hex,
+  timingSafeEqualStrings,
   validateDeviceCredentialShape,
 } from "./deviceAuth";
 import {
@@ -15,9 +24,11 @@ import {
   todoUpdatedMs,
 } from "./todoNormalize";
 import { familyMemberValidator } from "./schema";
+import { isRealIsoDate } from "./dateValidation";
 import {
   executeTodoDeleteFromDevice,
   executeTodoUpsertFromDevice,
+  dataFileVisibleTo,
   todoDeviceInput,
   todoWriteOperationValidator,
 } from "./tables";
@@ -88,6 +99,11 @@ function warnPermissive(hatchVar: string, tokenVar: string, tokenSet: boolean) {
 //
 // Every approved caller of these mutations must send CONVEX_SYNC_TOKEN before
 // ALLOW_TOKENLESS_SYNC comes off, or its writes lock out.
+//
+// UNAUTHENTICATED-CALLER ERROR DISCIPLINE: the client-visible rejection is
+// generic and names no environment variable. The specific configuration detail
+// (which variable is missing) goes to the server log only, so a prober learns
+// that the door is locked, not which key unlocks it.
 function validateSyncToken(token?: string) {
   const expected = process.env.CONVEX_SYNC_TOKEN;
   if (process.env.ALLOW_TOKENLESS_SYNC === "true") {
@@ -99,13 +115,16 @@ function validateSyncToken(token?: string) {
     return;
   }
   if (!expected) {
+    console.error(
+      "AUTH-FAIL-CLOSED: CONVEX_SYNC_TOKEN is not configured; every write " +
+        "is being rejected. Configure the deployment write credential — do " +
+        "not set ALLOW_TOKENLESS_SYNC to recover.",
+    );
     throw new Error(
-      "Unauthorized: CONVEX_SYNC_TOKEN is not configured (fail-closed). " +
-        "Set the token on the deployment, or set ALLOW_TOKENLESS_SYNC=true to " +
-        "explicitly allow tokenless writes.",
+      "Unauthorized: write auth is not configured (fail-closed).",
     );
   }
-  if (!token || token !== expected) {
+  if (!token || !timingSafeEqualStrings(token, expected)) {
     throw new Error("Unauthorized: invalid sync token");
   }
 }
@@ -116,7 +135,8 @@ function validateSyncToken(token?: string) {
 // Confirmed live against production before this change.
 //
 // Same shape as validateSyncToken, same hatch precedence, for the reason in the
-// banner above.
+// banner above. Same generic-error discipline: no environment variable names
+// reach an unauthenticated caller.
 function validateReadToken(token?: string) {
   const expected = process.env.CONVEX_READ_TOKEN;
   if (process.env.ALLOW_TOKENLESS_READ === "true") {
@@ -128,13 +148,16 @@ function validateReadToken(token?: string) {
     return;
   }
   if (!expected) {
+    console.error(
+      "AUTH-FAIL-CLOSED: CONVEX_READ_TOKEN is not configured; every read " +
+        "is being rejected. Configure the deployment read credential — do " +
+        "not set ALLOW_TOKENLESS_READ to recover.",
+    );
     throw new ConvexError(
-      "Unauthorized: CONVEX_READ_TOKEN is not configured (fail-closed). " +
-        "Set the token on the deployment, or set ALLOW_TOKENLESS_READ=true to " +
-        "explicitly allow unauthenticated reads during cutover.",
+      "Unauthorized: read auth is not configured (fail-closed).",
     );
   }
-  if (!token || token !== expected) {
+  if (!token || !timingSafeEqualStrings(token, expected)) {
     throw new ConvexError("Unauthorized: invalid read token");
   }
 }
@@ -156,7 +179,7 @@ function validateConfiguredSyncToken(token?: string) {
       message: "Malformed sync credential.",
     });
   }
-  if (!token || token !== expected) {
+  if (!token || !timingSafeEqualStrings(token, expected)) {
     throw new ConvexError({
       code: "DEVICE_UNAUTHORIZED",
       message: "Unauthorized: invalid sync token",
@@ -265,27 +288,80 @@ function validateAndroidReadBootstrapSyncToken(token?: string) {
   ) {
     androidReadBootstrapFailure("VALIDATION_FAILED");
   }
-  if (!token || token !== expected) {
+  if (!token || !timingSafeEqualStrings(token, expected)) {
     androidReadBootstrapFailure("DEVICE_UNAUTHORIZED");
   }
 }
 
-function equalSha256Hex(left: string, right: string): boolean {
-  if (left.length !== 64 || right.length !== 64) return false;
-  let difference = 0;
-  for (let index = 0; index < 64; index += 1) {
-    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+// equalSha256Hex and timingSafeEqualStrings live in deviceAuth.ts so every
+// credential comparison in the deployment shares one constant-time implementation.
+
+/**
+ * How a read call authenticated.
+ *
+ * - shared token: the legacy household-wide CONVEX_READ_TOKEN. Deprecated for
+ *   reads; kept fully functional until every client has migrated.
+ * - device credential: the authoritative scope is the paired credential's
+ *   server-stored profile. Row queries validate the client-asserted viewer
+ *   against it; blob queries check the named file against it.
+ */
+type ReadAccess =
+  | { viaDevice: false }
+  | { viaDevice: true; profile: typeof deviceProfileValidator.type };
+
+async function authorizeReadAccess(
+  ctx: MutationCtx | QueryCtx,
+  args: { token?: string; deviceId?: string; deviceToken?: string },
+): Promise<ReadAccess> {
+  if (args.deviceId !== undefined || args.deviceToken !== undefined) {
+    if (args.deviceId === undefined || args.deviceToken === undefined) {
+      throw new ConvexError({
+        code: "VALIDATION_FAILED",
+        message: "Malformed device credential.",
+      });
+    }
+    const device = await authenticateDeviceForRead(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+    );
+    if (device.profile === undefined) {
+      throw new ConvexError({
+        code: "PROFILE_BINDING_REQUIRED",
+        message: "This device credential is not bound to a profile.",
+      });
+    }
+    return { viaDevice: true, profile: device.profile };
   }
-  return difference === 0;
+  validateReadToken(args.token);
+  return { viaDevice: false };
 }
 
 // ── Queries (called by the iOS app) ──
 
 /** Fetch a single data file by name. Returns the raw JSON data. */
 export const get = query({
-  args: { name: v.string(), token: v.optional(v.string()) },
-  handler: async (ctx, { name, token }) => {
-    validateReadToken(token);
+  args: {
+    name: v.string(),
+    token: v.optional(v.string()),
+    deviceId: v.optional(v.string()),
+    deviceToken: v.optional(v.string()),
+  },
+  handler: async (ctx, { name, token, deviceId, deviceToken }) => {
+    const access = await authorizeReadAccess(ctx, {
+      token,
+      deviceId,
+      deviceToken,
+    });
+    // A device credential reads blobs through its profile: a paired child
+    // credential cannot fetch an adult blob by name. The shared-token path
+    // remains household-wide — that is exactly its documented limitation.
+    if (access.viaDevice && !dataFileVisibleTo(access.profile, name)) {
+      throw new ConvexError({
+        code: "READ_FORBIDDEN",
+        message: "This file is outside the credential's profile scope.",
+      });
+    }
     const doc = await ctx.db
       .query("dataFiles")
       .withIndex("by_name", (q) => q.eq("name", name))
@@ -296,21 +372,43 @@ export const get = query({
 
 /** Fetch current versions of all data files — lightweight check for changes. */
 export const getVersions = query({
-  args: { token: v.optional(v.string()) },
-  handler: async (ctx, { token }) => {
-    validateReadToken(token);
+  args: {
+    token: v.optional(v.string()),
+    deviceId: v.optional(v.string()),
+    deviceToken: v.optional(v.string()),
+  },
+  handler: async (ctx, { token, deviceId, deviceToken }) => {
+    const access = await authorizeReadAccess(ctx, {
+      token,
+      deviceId,
+      deviceToken,
+    });
     const docs = await ctx.db.query("syncVersions").collect();
-    return Object.fromEntries(docs.map((d) => [d.name, d.version]));
+    const visible = access.viaDevice
+      ? docs.filter((d) => dataFileVisibleTo(access.profile, d.name))
+      : docs;
+    return Object.fromEntries(visible.map((d) => [d.name, d.version]));
   },
 });
 
 /** List all available data file names. */
 export const list = query({
-  args: { token: v.optional(v.string()) },
-  handler: async (ctx, { token }) => {
-    validateReadToken(token);
+  args: {
+    token: v.optional(v.string()),
+    deviceId: v.optional(v.string()),
+    deviceToken: v.optional(v.string()),
+  },
+  handler: async (ctx, { token, deviceId, deviceToken }) => {
+    const access = await authorizeReadAccess(ctx, {
+      token,
+      deviceId,
+      deviceToken,
+    });
     const docs = await ctx.db.query("dataFiles").collect();
-    return docs.map((d) => ({
+    const visible = access.viaDevice
+      ? docs.filter((d) => dataFileVisibleTo(access.profile, d.name))
+      : docs;
+    return visible.map((d) => ({
       name: d.name,
       version: d.version,
       updatedAt: d.updatedAt,
@@ -319,6 +417,130 @@ export const list = query({
 });
 
 // ── Mutations (called by the MC2 sync script) ──
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEGACY BLOB PAYLOAD VALIDATION (L-8 of the 2026-09-02 backend audit)
+//
+// The MC2-era doors stay open — that is their documented purpose — but "open"
+// means the shipped clients' decode contract must keep working, not that any
+// payload is accepted. These append mutations are the only route that can put
+// floats and arbitrary values into blobs shipped readers decode, so they
+// enforce the same class of rules the validating write path (writeback.ts)
+// applies one door over:
+//
+//   - amounts must be integer-cents-compatible exactly as the readers will
+//     parse them: the JSON number's shortest representation (Number#toString,
+//     which jsonNumberToMinorUnits parses lexically) may carry at most two
+//     fractional digits for USD and eight for BTC. 1.005 and float noise like
+//     0.1+0.2 are rejected outright — never rounded, never coerced.
+//   - the same $1,000,000 typo bound writeback.ts applies.
+//   - dates must be real ISO calendar dates, so a mistyped February cannot
+//     silently file spend under the wrong month.
+//   - signs follow the ledger convention: money out is positive, Income is
+//     positive, zero is always a typo.
+//
+// These doors stay open for whole-record payloads; the shape (which keys
+// exist) is unchanged, so every shipped decoder keeps reading what it read
+// before. Only values no reader should ever have been handed are refused.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MAX_ABS_BLOB_CENTS = 100_000_000; // $1,000,000.00, writeback parity
+const MAX_ABS_BLOB_SATS = 1_000_000_000; // ≈ $1M at $100k/BTC, row-layer parity
+
+const BLOB_CENTS_RE = /^-?\d+(?:\.\d{1,2})?$/;
+const BLOB_SATS_RE = /^-?\d+(?:\.\d{1,8})?$/;
+
+function rejectBlobPayload(message: string): never {
+  throw new ConvexError({ code: "VALIDATION_FAILED", message });
+}
+
+/** Integer-cents-compatible, bounded, and finite — the readers' own path. */
+function requireBlobCentsCompatible(value: number, field: string): number {
+  if (!Number.isFinite(value)) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: `${field} must be a finite number.`,
+    });
+  }
+  // The readers turn a stored JSON number back into cents via its shortest
+  // decimal representation, so THAT spelling is the contract.
+  if (!BLOB_CENTS_RE.test(value.toString())) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: `${field} of ${value} is not an exact number of cents; send ` +
+        `an amount that survives the cents round-trip.`,
+    });
+  }
+  const cents = Math.round(value * 100);
+  if (!Number.isSafeInteger(cents) || Math.abs(cents) > MAX_ABS_BLOB_CENTS) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: `${field} exceeds the ${MAX_ABS_BLOB_CENTS}-cent sanity limit; ` +
+        "if this is real, the limit is the thing to change.",
+    });
+  }
+  return value;
+}
+
+/** 8-dp-compatible satoshis, bounded like the row layer. */
+function requireBlobSatsCompatible(value: number, field: string): number {
+  if (!Number.isFinite(value)) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: `${field} must be a finite number.`,
+    });
+  }
+  if (!BLOB_SATS_RE.test(value.toString())) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: `${field} of ${value} is not an exact satoshi quantity.`,
+    });
+  }
+  const sats = Math.round(value * 100_000_000);
+  if (!Number.isSafeInteger(sats) || Math.abs(sats) > MAX_ABS_BLOB_SATS) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: `${field} exceeds the ${MAX_ABS_BLOB_SATS}-sat sanity limit; ` +
+        "if this is real, the limit is the thing to change.",
+    });
+  }
+  return value;
+}
+
+function requireBlobText(value: string, field: string, max: number): string {
+  if (
+    value.length === 0 ||
+    value.length > max ||
+    /[\u0000-\u001f\u007f]/.test(value)
+  ) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: `${field} must be 1-${max} characters with no control characters.`,
+    });
+  }
+  return value;
+}
+
+function requireBlobDate(value: string, field: string): string {
+  if (!isRealIsoDate(value)) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: `${field} must be a real ISO calendar date (yyyy-MM-dd).`,
+    });
+  }
+  return value;
+}
+
+const BLOB_FAMILY_MEMBERS = new Set(["victor", "rachel", "mason", "maddox"]);
+
+function requireBlobOwner(owner: string | null | undefined): void {
+  if (owner !== undefined && owner !== null && !BLOB_FAMILY_MEMBERS.has(owner)) {
+    throw new ConvexError({
+      code: "VALIDATION_FAILED",
+      message: "owner must name a family member.",
+    });
+  }
+}
 
 const appTransactionValidator = v.object({
   id: v.string(),
@@ -488,6 +710,32 @@ export const appendTransaction = mutation({
     validateSyncToken(token);
     const name = fileName ?? "transactions";
     const now = Date.now();
+
+    // Legacy door, but not a garbage door: validate the record class the
+    // shipped readers decode. Shape is unchanged; only values no reader
+    // should ever have been handed are refused.
+    requireBlobText(transaction.id, "transaction.id", 128);
+    requireBlobText(transaction.merchant, "transaction.merchant", 200);
+    requireBlobText(transaction.category, "transaction.category", 64);
+    requireBlobDate(transaction.date, "transaction.date");
+    if (transaction.note !== undefined && transaction.note !== null) {
+      requireBlobText(transaction.note, "transaction.note", 2_000);
+    }
+    const amountCents = requireBlobCentsCompatible(
+      transaction.amount,
+      "transaction.amount",
+    );
+    if (amountCents === 0) {
+      rejectBlobPayload(
+        "transaction.amount must not be zero — a zero-value transaction " +
+          "has no sign to check and is a typo in every case seen so far.",
+      );
+    }
+    if (transaction.category === "Income" && amountCents <= 0) {
+      rejectBlobPayload(
+        'a transaction categorised "Income" must carry a positive amount.',
+      );
+    }
 
     const existing = await ctx.db
       .query("dataFiles")
@@ -785,18 +1033,21 @@ export const claimAndroidReadBootstrap = mutation({
     if (!bootstrap) {
       androidReadBootstrapFailure("ANDROID_READ_BOOTSTRAP_NOT_FOUND");
     }
-    if (bootstrap.claimedAt !== undefined) {
-      androidReadBootstrapFailure("ANDROID_READ_BOOTSTRAP_ALREADY_CLAIMED");
-    }
 
-    const now = Date.now();
-    if (bootstrap.expiresAt <= now) {
-      androidReadBootstrapFailure("ANDROID_READ_BOOTSTRAP_EXPIRED");
-    }
-
+    // Verify possession of the raw proof BEFORE disclosing claim state or
+    // expiry. ALREADY_CLAIMED / EXPIRED reported ahead of the proof check turn
+    // this mutation into a state oracle for anyone who learns a pairId.
     const suppliedProofHash = await sha256Hex(proof);
     if (!equalSha256Hex(bootstrap.proofHash, suppliedProofHash)) {
       androidReadBootstrapFailure("ANDROID_READ_BOOTSTRAP_PROOF_INVALID");
+    }
+
+    const now = Date.now();
+    if (bootstrap.claimedAt !== undefined) {
+      androidReadBootstrapFailure("ANDROID_READ_BOOTSTRAP_ALREADY_CLAIMED");
+    }
+    if (bootstrap.expiresAt <= now) {
+      androidReadBootstrapFailure("ANDROID_READ_BOOTSTRAP_EXPIRED");
     }
 
     validateAndroidReadBootstrapCapabilities(bootstrap.capabilities);
@@ -813,7 +1064,7 @@ export const claimAndroidReadBootstrap = mutation({
         androidReadBootstrapFailure("CONFIG_MISSING");
       }
 
-      const tokenHash = await sha256Hex(deviceToken);
+      const storedTokenHash = await hashDeviceToken(deviceToken);
       if (bootstrap.profile === undefined) {
         androidReadBootstrapFailure("VALIDATION_FAILED");
       }
@@ -828,7 +1079,7 @@ export const claimAndroidReadBootstrap = mutation({
       await ctx.db.insert("mobileDevices", {
         deviceId,
         name: "Vogel Vault Android",
-        tokenHash,
+        tokenHash: storedTokenHash.hash,
         pairedAt: now,
         lastSeenAt: now,
         revokedAt: undefined,
@@ -952,17 +1203,21 @@ export const claimMobilePairing = mutation({
     if (!pairing) {
       pairingFailure("PAIRING_NOT_FOUND", "Pairing not found");
     }
+    // The proofHash IS the claim credential, so it is compared in constant time
+    // and verified BEFORE claim state or expiry are disclosed. Reporting
+    // ALREADY_CLAIMED / PAIRING_EXPIRED first would let anyone holding a pairId
+    // probe that slot's state without ever possessing its secret.
+    if (!equalSha256Hex(pairing.proofHash, proofHash)) {
+      pairingFailure("PAIRING_PROOF_INVALID", "Invalid pairing proof");
+    }
     if (pairing.claimedAt) {
       pairingFailure("PAIRING_ALREADY_CLAIMED", "Pairing already claimed");
     }
     if (pairing.expiresAt <= now) {
       pairingFailure("PAIRING_EXPIRED", "Pairing expired");
     }
-    if (pairing.proofHash !== proofHash) {
-      pairingFailure("PAIRING_PROOF_INVALID", "Invalid pairing proof");
-    }
 
-    const tokenHash = await sha256Hex(deviceToken);
+    const tokenHash = await hashDeviceToken(deviceToken);
     const existingDevice = await ctx.db
       .query("mobileDevices")
       .withIndex("by_device_id", (q) => q.eq("deviceId", deviceId))
@@ -974,7 +1229,7 @@ export const claimMobilePairing = mutation({
     const deviceRecord = {
       deviceId,
       name: deviceName.trim().slice(0, 80) || "Vogel Vault iPhone",
-      tokenHash,
+      tokenHash: tokenHash.hash,
       pairedAt: now,
       lastSeenAt: now,
       revokedAt: undefined,
@@ -1149,11 +1404,20 @@ export const removeTodoFromMobile = mutation({
 /**
  * List all todo delete tombstones (SAT-1327). Retained for compatibility
  * readers that must reject a blob todo whose updated_at predates its tombstone.
+ *
+ * A device credential authenticates this query but no per-profile filtering is
+ * possible: tombstones carry only an id and a timestamp, never todo content.
+ * That id-level residual is accepted while shipped clients converge through
+ * the blob; the row layer's tombstones are owner-checked.
  */
 export const listTodoTombstones = query({
-  args: { token: v.optional(v.string()) },
-  handler: async (ctx, { token }) => {
-    validateReadToken(token);
+  args: {
+    token: v.optional(v.string()),
+    deviceId: v.optional(v.string()),
+    deviceToken: v.optional(v.string()),
+  },
+  handler: async (ctx, { token, deviceId, deviceToken }) => {
+    await authorizeReadAccess(ctx, { token, deviceId, deviceToken });
     const docs = await ctx.db.query("todoTombstones").collect();
     return docs.map((d) => ({ id: d.id, deletedAt: d.deletedAt }));
   },
@@ -1182,6 +1446,41 @@ export const appendBillPay = mutation({
     validateSyncToken(token);
     const name = "bitcoin-bill-pays";
     const now = Date.now();
+
+    // Same legacy-door validation as appendTransaction: shape unchanged,
+    // garbage refused. A bill payment is money leaving in both currencies,
+    // so the principal amounts are positive and a fee is never negative.
+    requireBlobText(billPay.id, "billPay.id", 128);
+    requireBlobText(billPay.merchant, "billPay.merchant", 200);
+    requireBlobText(billPay.category, "billPay.category", 64);
+    requireBlobDate(billPay.date, "billPay.date");
+    requireBlobOwner(billPay.owner ?? null);
+    if (billPay.note !== undefined && billPay.note !== null) {
+      requireBlobText(billPay.note, "billPay.note", 2_000);
+    }
+    if (billPay.reference !== undefined && billPay.reference !== null) {
+      requireBlobText(billPay.reference, "billPay.reference", 256);
+    }
+    if (requireBlobCentsCompatible(billPay.amount_usd, "billPay.amount_usd") <= 0) {
+      rejectBlobPayload("billPay.amount_usd must be positive (a bill payment is a spend).");
+    }
+    if (requireBlobSatsCompatible(billPay.btc_spent, "billPay.btc_spent") <= 0) {
+      rejectBlobPayload("billPay.btc_spent must be positive (a bill payment is a spend).");
+    }
+    if (
+      billPay.btc_price !== undefined &&
+      billPay.btc_price !== null &&
+      requireBlobCentsCompatible(billPay.btc_price, "billPay.btc_price") <= 0
+    ) {
+      rejectBlobPayload("billPay.btc_price must be positive when supplied.");
+    }
+    if (
+      billPay.fee_usd !== undefined &&
+      billPay.fee_usd !== null &&
+      requireBlobCentsCompatible(billPay.fee_usd, "billPay.fee_usd") < 0
+    ) {
+      rejectBlobPayload("billPay.fee_usd must not be negative.");
+    }
 
     const existing = await ctx.db
       .query("dataFiles")

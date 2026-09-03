@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 // These DTOs decode the surviving legacy JSON blobs. They describe a wire
 // schema, not a live service or upstream system.
@@ -99,17 +100,28 @@ extension LegacyTransactionDTO {
             owner: canonicalOwner,
             amountSats: transaction.amountSats,
             enteredInBitcoin: transaction.enteredInBitcoin,
+            // The stored key carries the local composite identity
+            // "asOf-key-owner"; the server posts against the bare account key.
+            bitcoinAccountKey: transaction.bitcoinAccountKey.map {
+                LedgerMapper.wireAccountKey(from: $0, owner: canonicalOwner)
+            },
             updatedAtMs: transaction.updatedAtMs,
         )
     }
 
-    static func dateString(from date: Date) -> String {
+    // Shared date-only wire formatter. The transaction and todo DTOs must
+    // produce byte-identical yyyy-MM-dd strings, so this is the single copy.
+    private static let wireDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = .current
         formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    static func dateString(from date: Date) -> String {
+        wireDateFormatter.string(from: date)
     }
 
     func convexJSONObject() throws -> [String: Any] {
@@ -458,6 +470,8 @@ struct LegacyBillPaysWrapperDTO: Codable {
 }
 
 struct LegacyFinancesRetirementDTO: Decodable {
+    private static let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "LegacyBlob")
+
     let accounts: [String: LegacyFinanceAccountDTO]
 
     enum CodingKeys: String, CodingKey {
@@ -490,7 +504,9 @@ struct LegacyFinancesRetirementDTO: Decodable {
                     let account = try container.decode(LegacyFinanceAccountDTO.self, forKey: key)
                     decoded[key.stringValue] = account
                 } catch {
-                    print("[LegacyBlob] Failed to decode retirement account '\(key.stringValue)': \(error)")
+                    // Value-free diagnostic: the key is a real account name and
+                    // must never reach stdout or the unified log.
+                    Self.log.error("Failed to decode one retirement account row")
                 }
             }
             accounts = decoded
@@ -845,10 +861,12 @@ struct LegacyTodoDTO: Codable {
         guard let stringValue = try? container.decodeIfPresent(String.self, forKey: .priority) else {
             return nil
         }
+        // Legacy wire strings rank smaller-is-more-urgent; the app's editor and
+        // list queries rank 0=None..3=High, so remap onto that scale here.
         switch stringValue.lowercased() {
-        case "urgent", "high": return 1
+        case "urgent", "high": return 3
         case "medium", "normal": return 2
-        case "low": return 3
+        case "low": return 1
         default: return Int(stringValue)
         }
     }
@@ -869,19 +887,20 @@ struct LegacyTodoDTO: Codable {
         return nil
     }
 
+    /// Delegates to the shared transaction formatter — one date-only wire
+    /// format for every DTO in this file.
     static func dateString(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+        LegacyTransactionDTO.dateString(from: date)
     }
 
-    static func dateTimeString(_ date: Date) -> String {
+    private static let wireDateTimeFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    static func dateTimeString(_ date: Date) -> String {
+        wireDateTimeFormatter.string(from: date)
     }
 
     func convexJSONObject() throws -> [String: Any] {

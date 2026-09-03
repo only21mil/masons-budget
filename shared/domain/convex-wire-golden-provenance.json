@@ -1,11 +1,10 @@
 {
-  "version": 2,
-  "capturedDate": "2026-08-22",
-  "capturedDatePrecision": "day",
-  "deployment": "prod:keen-elephant-452",
-  "endpoint": "https://keen-elephant-452.convex.cloud/api/query",
+  "version": 3,
+  "generatedDate": "2026-09-03",
+  "origin": "synthetic",
+  "generator": "scripts/generate-convex-wire-golden-fixtures.mjs",
   "attestation": {
-    "method": "authenticated production HTTP capture",
+    "method": "synthetic fixture generation; contains no production household data",
     "credentialEchoChecked": true,
     "formats": [
       "json",
@@ -28,35 +27,31 @@
       "convex/tables.ts"
     ],
     "sha256": {
-      "getBudgetDocument": "9b705a4c690b9e13e85335f16e978f83b9ce49aef621a72ec0edf74bd45355a7",
-      "listBtcAccounts": "4fcfb421c5fc13b07f2d66686227fcce7f57bd35987c3ac8fbf98a9cf18195ba",
-      "listBtcBillPays": "5e2562fe25999f2a1c38057bc9c200a0f5291a4a27a716fa469f5b77bec7178e",
-      "listBtcBuys": "654029cee0e6d0ebde271273388f6724748b118be543c6ad55c4e9c6e162c6bd",
-      "listIncome": "e63d424ad7791e6a80a80c49d9492c090a2c4eb6478e7bff334729930794045d",
-      "listTodos": "af4996ac4677385466e77556aa97faffe1b6bb19c80aa8d9f749363f944b7c28",
-      "listTransactions": "2731c848a0e8454b152301c96119737a162cc7842d1f8bf9a05a74f7ad67eefb",
-      "rowCounts": "c4a03cf9e822f069957159a69c3f935a273cac6138a54a76d5cf71fd5824d822"
+      "getBudgetDocument": "efe85b727732392a4b46d4fd74c0e21666ca8c758f25d08bf85e3d78b89cbfc8",
+      "listBtcAccounts": "fdc76fdd2b748b511e844aa62099c1edec9e2d302462081cc6ed93b5acff665c",
+      "listBtcBillPays": "3707b536fdc9c3c69087b36167b5ce9ad8e25bf1ff152e5d16594c89e99204a8",
+      "listBtcBuys": "600965b9a0a0767a1f61c935bf35ece58417c01645d0cade5e1bd4cd6aa2c9f6",
+      "listIncome": "5705a48601bed5bd66331caf89ce584b6597facb653093a1908977f1ca444b2d",
+      "listTodos": "558cedf8aafebf5fd6b977f69c5e67b3ec7b02fa6e472d33e9716d71037a7361",
+      "listTransactions": "2511bbf52fd6dbebfa198ed1f6c7663247a33f0a8dfd735d14e39cebea1e2db2",
+      "rowCounts": "8f4506d7ad9b0e1df819b72b0d1fd81e0bb05de1229b94abb4541737be3f79a9"
     },
-    "reattestedNote": "Generated alongside this authenticated production capture using comment-free per-query TypeScript token dependency closures. Previously attested queries without wire captures are retained and refreshed."
-  },
-  "freshness": {
-    "warningAfterDays": 30,
-    "failAfterDays": 60
+    "reattestedNote": "Query shape digests re-derived from the committed contract (convex/tables.ts, 2026-09-03) after the read-auth change added the readAuth { mode: \"shared-token\", deprecated: true } deprecation marker to every shared-token row-query envelope (commit a248216). The envelope shapes of the 2026-08-22 production captures this file previously carried over are superseded by that contract change; shape parity with the old captures deliberately no longer holds."
   },
   "captures": {
-    "getBudgetDocument.convex_encoded_json.json": "ccda4464ac654eab08e8695f28bda3417014ff2622c0f20c318f83afcd1fb1c7",
-    "getBudgetDocument.json.json": "81a76c835f107b280dbf29b613a2d95a632fc3c9ed8f69d1b48094e2dec9dcca",
-    "listBtcAccounts.convex_encoded_json.json": "3c05f70171a93fa231c2633cf820b713c40dcc97b4415a0ace9e4d2d1ca17498",
-    "listBtcAccounts.json.json": "b37f1c35fad5283a671a20accf42f1fb7780c08ac2d6a22fa9e1895422efae5b",
-    "listBtcBillPays.convex_encoded_json.json": "c8016b8156bb2c8a11ed4acd1782aae23a5cdb058e942243922be9e1352e5482",
-    "listBtcBillPays.json.json": "70695b8e4da98cc0fb3ca5421f0de6a094ff532ef63e5189e83637bc03899b38",
-    "listBtcBuys.convex_encoded_json.json": "8cd2e10b6f1e611a644a54e124314dd6b503e919a9f29c6fc798c9ec701be904",
-    "listBtcBuys.json.json": "5ce885273872f2f369a748e96d192241b3f1168598b8d459cacdcd17cf4ff34f",
-    "listTodos.convex_encoded_json.json": "336cf7b40eb6e62828c8ac83241185a272f115ef4ae7f3f84b9d19400c74286c",
-    "listTodos.json.json": "116817829c9662bec345397103add3d99ae9ed9008f8d2243a9f9f956f563878",
-    "listTransactions.convex_encoded_json.json": "88d906159dfbf1a15471757183a7cc56ebc3a1f14646f8ee69707e321ed23579",
-    "listTransactions.json.json": "07fe40a437cb66b6599d00b19c88cc512fc545047b2480f65cf3d887d9a32747",
-    "rowCounts.convex_encoded_json.json": "40fe4939659d520f9f29287c49e914f732500a11c1e646eb18a29e7151b8cb66",
-    "rowCounts.json.json": "40fe4939659d520f9f29287c49e914f732500a11c1e646eb18a29e7151b8cb66"
+    "getBudgetDocument.convex_encoded_json.json": "30f532d158a2f3daf6570db492fa77023cc95faad44ec2290cf0fc6e5f8af7fc",
+    "getBudgetDocument.json.json": "896030a1ef825fb284a7615a29bd22b0a0970689183f6cbceba4e629f534c831",
+    "listBtcAccounts.convex_encoded_json.json": "a597e480d1d5fec108c9893cf8f840649a2e63b59a5962b552d8f6e515115190",
+    "listBtcAccounts.json.json": "849c10cf7f230e78cc0ccff2af5f8405fcd8fe98c5ea1562413ebe7f67fbb5bf",
+    "listBtcBillPays.convex_encoded_json.json": "74a7d771d069f53998382e8abcc2f4fddd9cb7dda79e4a4130d725a9620c7a79",
+    "listBtcBillPays.json.json": "26c9c11f652dc805eebd22192c176aea0dab1379b04ad5ae46224870cacdf7d3",
+    "listBtcBuys.convex_encoded_json.json": "c49af8a9f7db3f894afd714e17d6d66c36ad0cc32b3e3746b81d2a1788e5a564",
+    "listBtcBuys.json.json": "7e6bf4cb43c9ceabe2dd3d72150eb82e2d95044d264c4815590374f9a2baeb6f",
+    "listTodos.convex_encoded_json.json": "e06005b6eb4e5ad0af4227ddb3cfeefcff322af417b95cbeef96e20497a88a1e",
+    "listTodos.json.json": "82244b63c3fea20f194c08af287ece341279b486bdc7973f6b634af282f6f547",
+    "listTransactions.convex_encoded_json.json": "aff210d5a99d57f02f38670558875818f5fe42636b5e00c7ffc29e7b520e5aa5",
+    "listTransactions.json.json": "fdb5b4f5f65ea6e1a49d54f443d70251ec242815f008f9cac5f2c37fb0747185",
+    "rowCounts.convex_encoded_json.json": "7a993e1bc16367b9fe8d2e9a2964f56a499d27b67114db338a2c310f7795fdad",
+    "rowCounts.json.json": "7a993e1bc16367b9fe8d2e9a2964f56a499d27b67114db338a2c310f7795fdad"
   }
 }

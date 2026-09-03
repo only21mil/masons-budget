@@ -1373,7 +1373,11 @@ describe("owner is first class, and the two visibility rules keep their widths",
         updatedAtMs: 0,
       },
     ]);
-    expect(mason).toEqual({ rows: [], complete: true });
+    expect(mason).toEqual({
+      rows: [],
+      complete: true,
+      readAuth: { mode: "shared-token", deprecated: true },
+    });
     expect(victor.rows[0]).not.toHaveProperty("sourceKey");
     expect(victor.rows[0]).not.toHaveProperty("raw");
     expect(victor.rows[0]).not.toHaveProperty("sourceFile");
@@ -1835,6 +1839,7 @@ describe("public Linux/Android read contract", () => {
     });
     expect(response).toEqual({
       complete: true,
+      readAuth: { mode: "shared-token", deprecated: true },
       rows: [{
         transferId: "transfer-read-1",
         owner: "victor",
@@ -1867,6 +1872,7 @@ describe("public Linux/Android read contract", () => {
         expect.objectContaining({ incomeId: "income-1", amountCents: 250055n }),
       ],
       complete: false,
+      readAuth: { mode: "shared-token", deprecated: true },
     });
 
     const accounts = await t.query(fn.listBtcAccounts, {
@@ -3495,12 +3501,12 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
     for (const entry of readEntryPoints) {
       it(`${entry.name} fails closed`, async () => {
         await expect(entry.call()).rejects.toThrow(
-          /CONVEX_READ_TOKEN is not configured/,
+          /read auth is not configured/,
         );
       });
       it(`${entry.name} fails closed even when a token is supplied`, async () => {
         await expect(entry.call(freshSecret())).rejects.toThrow(
-          /CONVEX_READ_TOKEN is not configured/,
+          /read auth is not configured/,
         );
       });
     }
@@ -3508,7 +3514,7 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
     for (const entry of writeEntryPoints) {
       it(`${entry.name} fails closed`, async () => {
         await expect(entry.call()).rejects.toThrow(
-          /CONVEX_SYNC_TOKEN is not configured/,
+          /write auth is not configured/,
         );
       });
     }
@@ -3578,15 +3584,15 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
 
     it("both files fail closed identically with neither hatch nor token", async () => {
       await expect(t.query(fn.dataFilesGet, { name: "todos" })).rejects.toThrow(
-        /CONVEX_READ_TOKEN is not configured/,
+        /read auth is not configured/,
       );
       await expect(
         queryRows(fn.listTransactions, { viewer: "victor" }),
-      ).rejects.toThrow(/CONVEX_READ_TOKEN is not configured/);
+      ).rejects.toThrow(/read auth is not configured/);
 
       await expect(
         t.mutation(fn.dataFilesSync, { name: "probe", data: [] }),
-      ).rejects.toThrow(/CONVEX_SYNC_TOKEN is not configured/);
+      ).rejects.toThrow(/write auth is not configured/);
     });
   });
 });

@@ -1,1 +1,60 @@
-{"status":"success","value":{"complete":false,"rows":[{"completedAt":"2026-07-18T15:31:53.216Z","createdAt":"2026-06-10T23:21:24.587Z","done":true,"flagged":false,"lane":"sats","owner":"victor","priority":{"$integer":"AAAAAAAAAAA="},"project":"Reports","title":"Look into the Digital Observation algorithm. Needs to be fixed","todoId":"8A56A12C-DB12-4766-96BF-6E3AE7D1EFC9","updatedAt":"2026-07-18T15:31:53.216Z","updatedAtMs":1784388713216.0},{"completedAt":"2026-07-08T18:45:17.121Z","createdAt":"2026-06-12T10:41:42.581Z","done":true,"flagged":false,"lane":"sats","owner":"victor","priority":{"$integer":"AAAAAAAAAAA="},"project":"Inbox","title":"Fix the training/observation on the Manager GSDA","todoId":"8AD6CA6D-5AB4-4D4A-BE61-D38550037525","updatedAt":"2026-07-08T18:45:17.121Z","updatedAtMs":1783536317121.0},{"createdAt":"2026-07-08T18:45:07.476Z","done":false,"flagged":false,"lane":"sats","owner":"victor","priority":{"$integer":"AAAAAAAAAAA="},"project":"Inbox","title":"Transfer email about Marshall and Jacob Ebel","todoId":"E2588F55-8BDB-4109-BB79-AD9C7E8A4DC3","updatedAt":"2026-07-08T18:45:07.414Z","updatedAtMs":1783536307414.0}]}}
+{
+  "status": "success",
+  "value": {
+    "complete": false,
+    "readAuth": {
+      "deprecated": true,
+      "mode": "shared-token"
+    },
+    "rows": [
+      {
+        "completedAt": "2099-01-01T00:00:00.000Z",
+        "createdAt": "2099-01-01T00:00:00.000Z",
+        "done": true,
+        "flagged": false,
+        "lane": "home",
+        "owner": "victor",
+        "priority": {
+          "$integer": "AAAAAAAAAAA="
+        },
+        "project": "Sample",
+        "title": "Sample task one",
+        "todoId": "00000000-0000-4000-8000-000000000001",
+        "updatedAt": "2099-01-01T00:00:00.000Z",
+        "updatedAtMs": 1700000000000
+      },
+      {
+        "completedAt": "2099-01-02T00:00:00.000Z",
+        "createdAt": "2099-01-02T00:00:00.000Z",
+        "done": false,
+        "flagged": true,
+        "lane": "work",
+        "owner": "victor",
+        "priority": {
+          "$integer": "AQAAAAAAAAA="
+        },
+        "project": "Sample",
+        "title": "Sample task two",
+        "todoId": "00000000-0000-4000-8000-000000000002",
+        "updatedAt": "2099-01-02T00:00:00.000Z",
+        "updatedAtMs": 1700000000000
+      },
+      {
+        "completedAt": "2099-01-03T00:00:00.000Z",
+        "createdAt": "2099-01-03T00:00:00.000Z",
+        "done": false,
+        "flagged": false,
+        "lane": "home",
+        "owner": "victor",
+        "priority": {
+          "$integer": "AgAAAAAAAAA="
+        },
+        "project": "Sample",
+        "title": "Sample task three",
+        "todoId": "00000000-0000-4000-8000-000000000003",
+        "updatedAt": "2099-01-03T00:00:00.000Z",
+        "updatedAtMs": 1700000000000
+      }
+    ]
+  }
+}

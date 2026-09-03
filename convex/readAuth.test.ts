@@ -57,7 +57,7 @@ describe("read auth: no token configured, no hatch (the deployed default)", () =
   for (const entry of READ_ENTRY_POINTS) {
     it(`${entry.name} fails closed`, async () => {
       await expect(entry.call(t)).rejects.toThrow(
-        /CONVEX_READ_TOKEN is not configured/,
+        /read auth is not configured/,
       );
     });
 
@@ -65,7 +65,7 @@ describe("read auth: no token configured, no hatch (the deployed default)", () =
       // A caller guessing a token must not be able to talk the deployment into
       // an open state; with nothing configured there is nothing to match.
       await expect(entry.call(t, freshSecret())).rejects.toThrow(
-        /CONVEX_READ_TOKEN is not configured/,
+        /read auth is not configured/,
       );
     });
   }
@@ -125,7 +125,7 @@ describe("read auth: ALLOW_TOKENLESS_READ cutover hatch", () => {
     for (const value of ["TRUE", "True", "1", "yes", "false", " true"]) {
       setDeploymentEnv({ ALLOW_TOKENLESS_READ: value });
       await expect(t.query(api.list, {})).rejects.toThrow(
-        /CONVEX_READ_TOKEN is not configured/,
+        /read auth is not configured/,
       );
     }
   });

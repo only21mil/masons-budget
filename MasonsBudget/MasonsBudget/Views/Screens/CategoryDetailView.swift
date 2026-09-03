@@ -209,7 +209,9 @@ struct CategoryDetailView: View {
             .replacingOccurrences(of: "$", with: "")
             .replacingOccurrences(of: ",", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let value = Decimal(string: clean), value >= 0 else {
+        // Write-path parse: pinned POSIX locale so dot-decimal entry can't
+        // inflate in comma-decimal device regions.
+        guard let value = Decimal(string: clean, locale: Locale(identifier: "en_US_POSIX")), value >= 0 else {
             writeFeedback.reject("Enter a monthly limit of zero or more")
             return
         }
@@ -249,25 +251,44 @@ struct CategoryDetailView: View {
                     deletion.finish(result)
                 }
             } catch {
-                deletion.reject(error.localizedDescription)
+                // Server-derived text must never reach the UI (ConvexWriteResult
+                // docs); classify to an authored message with a fixed fallback.
+                let result = ConvexWriteResult.classify(error)
+                deletion.reject(
+                    result.userMessage(operation: "Delete budget category")
+                        ?? "The category could not be deleted. Try again after the next sync.",
+                )
             }
         }
     }
 
+    // Cached: DateFormatter construction per call was the avoidable cost here.
+    private static var cachedMonthKeyFormatter: (calendar: Calendar, formatter: DateFormatter)?
+
     static func monthKey(for date: Date, calendar: Calendar = .current) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = calendar.timeZone
-        formatter.dateFormat = "yyyy-MM"
+        let formatter: DateFormatter
+        if let cached = cachedMonthKeyFormatter, cached.calendar == calendar {
+            formatter = cached.formatter
+        } else {
+            formatter = DateFormatter()
+            formatter.calendar = calendar
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = calendar.timeZone
+            formatter.dateFormat = "yyyy-MM"
+            cachedMonthKeyFormatter = (calendar, formatter)
+        }
         return formatter.string(from: date)
     }
 
-    private func formatDate(_ date: Date) -> String {
+    private static let mediumDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    private func formatDate(_ date: Date) -> String {
+        Self.mediumDateFormatter.string(from: date)
     }
 }
 

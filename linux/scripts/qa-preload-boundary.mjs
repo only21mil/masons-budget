@@ -63,6 +63,9 @@ const convexRowsSource = stripComments(readFileSync(join(root, "electron", "conv
 const convexMutationsSource = stripComments(
   readFileSync(join(root, "electron", "convexMutations.ts"), "utf8"),
 )
+const approvedDeploymentSource = stripComments(
+  readFileSync(join(root, "electron", "approvedDeployment.ts"), "utf8"),
+)
 const credentialStoreSource = stripComments(
   readFileSync(join(root, "electron", "deviceCredentialStore.ts"), "utf8"),
 )
@@ -321,11 +324,18 @@ require_(
     credentialStoreSource.includes("chmod(directory, 0o700)"),
   "credential store: private atomic file replacement is preserved",
 )
+// The one origin literal lives in approvedDeployment.ts, which both the read
+// and write paths resolve through; convexMutations itself carries none.
 const mutationUrls = convexMutationsSource.match(/https?:\/\/[A-Za-z0-9._:/-]+/g) ?? []
 require_(
-  mutationUrls.length === 1 &&
-    mutationUrls[0] === "https://keen-elephant-452.convex.cloud",
+  mutationUrls.length === 0,
   "convexMutations: only the reviewed household origin is pinned",
+)
+const approvedOriginUrls = approvedDeploymentSource.match(/https?:\/\/[A-Za-z0-9._:/-]+/g) ?? []
+require_(
+  approvedOriginUrls.length === 1 &&
+    approvedOriginUrls[0] === "https://keen-elephant-452.convex.cloud",
+  "approvedDeployment: exactly the reviewed household origin is pinned",
 )
 require_(
   convexMutationsSource.includes('"convex_encoded_json"') &&
@@ -469,7 +479,9 @@ for (const [input, expected] of fileNameCases) {
 
 /** Obviously fake. A real credential must never appear in a file in this repo. */
 const SAMPLE_CREDENTIAL = "not-a-real-read-credential-0000"
-const SAMPLE_DEPLOYMENT = "https://example.invalid"
+// The deployment origin is pinned like mutations, so the sample is the
+// household origin itself — it is repo-public, never a secret.
+const SAMPLE_DEPLOYMENT = "https://keen-elephant-452.convex.cloud"
 
 const enabledEnv = {
   VOGEL_VAULT_REMOTE_READ: "1",
@@ -504,6 +516,14 @@ require_(
   resolveRemoteReadSettings({ ...enabledEnv, VOGEL_VAULT_CONVEX_URL: "http://example.invalid" })
     .readiness === "insecure-endpoint",
   "convex: an http deployment is refused",
+)
+
+// Reads are origin-pinned exactly like mutations: an HTTPS host that is not
+// the household deployment never receives the credential.
+require_(
+  resolveRemoteReadSettings({ ...enabledEnv, VOGEL_VAULT_CONVEX_URL: "https://stray-host.example" })
+    .readiness === "untrusted-endpoint",
+  "convex: an https deployment on a non-household origin is refused",
 )
 
 require_(
@@ -854,7 +874,7 @@ const tokenlessRows = createConvexRowRepository({
     generation: 1,
     settings: resolveRemoteReadSettings({
       VOGEL_VAULT_REMOTE_READ: "1",
-      VOGEL_VAULT_CONVEX_URL: "https://example.invalid",
+      VOGEL_VAULT_CONVEX_URL: SAMPLE_DEPLOYMENT,
     }),
   }),
   post: async () => {

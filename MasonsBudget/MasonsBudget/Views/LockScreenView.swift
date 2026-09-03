@@ -40,8 +40,11 @@ struct LockScreenView: View {
         let context = LAContext()
         var error: NSError?
 
+        // Fail closed: a device with no passcode/biometrics configured (or an
+        // LA lockdown) must stay locked, matching ProfileSwitcherView's
+        // convention — unlocking here would expose every credential surface.
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            isUnlocked = true
+            authError = "This device has no screen lock configured. Set a passcode or biometrics in Settings to unlock Vogel Vault."
             return
         }
 

@@ -271,7 +271,10 @@ private class CachingRowQueryRepository(
                                 usdCents = it.usdCents,
                                 feeUsdCents = it.feeUsdCents,
                                 costBasisStatus = it.costBasisStatus,
-                                updatedAtMs = stamp,
+                                // The row's server revision, matching the
+                                // transaction rows' semantics — never a
+                                // fetch-local timestamp.
+                                updatedAtMs = it.updatedAtMs,
                             )
                         },
                     fetchedAtMs = stamp,
@@ -436,7 +439,18 @@ private fun CachedTodoEntity.toDomain() =
     )
 
 private fun CachedBtcBuyEntity.toDomain() =
-    BtcBuy(buyId, date, source, sats, priceUsdCents, usdCents, costBasisStatus, owner, feeUsdCents)
+    BtcBuy(
+        buyId,
+        date,
+        source,
+        sats,
+        priceUsdCents,
+        usdCents,
+        costBasisStatus,
+        owner,
+        feeUsdCents,
+        updatedAtMs = updatedAtMs,
+    )
 
 private fun CachedBtcAccountEntity.toDomain() =
     BtcAccount(

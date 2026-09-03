@@ -12,7 +12,7 @@ import type { VogelVaultRowRequest } from "../shared/ipc.ts"
 const SECRET = "not-a-real-row-read-secret"
 const settings = resolveRemoteReadSettings({
   VOGEL_VAULT_REMOTE_READ: "1",
-  VOGEL_VAULT_CONVEX_URL: "https://example.invalid",
+  VOGEL_VAULT_CONVEX_URL: "https://keen-elephant-452.convex.cloud",
   VOGEL_VAULT_CONVEX_READ_TOKEN: SECRET,
 })
 
@@ -250,7 +250,7 @@ describe("main-process row repository", () => {
         generation: 1,
         settings: resolveRemoteReadSettings({
           VOGEL_VAULT_REMOTE_READ: "1",
-          VOGEL_VAULT_CONVEX_URL: "https://example.invalid",
+          VOGEL_VAULT_CONVEX_URL: "https://keen-elephant-452.convex.cloud",
         }),
       }),
       post: async () => {
@@ -359,7 +359,7 @@ describe("main-process row repository", () => {
       format: "convex_encoded_json",
     })
     expect(JSON.stringify(result, (_key, value) => typeof value === "bigint" ? value.toString() : value)).not.toContain(SECRET)
-    expect(JSON.stringify(result, (_key, value) => typeof value === "bigint" ? value.toString() : value)).not.toContain("example.invalid")
+    expect(JSON.stringify(result, (_key, value) => typeof value === "bigint" ? value.toString() : value)).not.toContain("convex.cloud")
   })
 
   it("keys both completed and in-flight caches by request plus config generation", async () => {

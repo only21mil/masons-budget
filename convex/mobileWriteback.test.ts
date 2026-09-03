@@ -354,6 +354,82 @@ describe("pairing", () => {
     ).rejects.toThrow(/Invalid pairing proof/);
   });
 
+  it("verifies the pairing proof before disclosing claim state or expiry", async () => {
+    // The proofHash IS the claim credential. A caller without it must learn
+    // nothing about a slot — not whether it was claimed, not whether it
+    // expired — even when it already knows the pairId.
+    const proofHash = freshProofHash();
+    const claimedPair = `pair-${crypto.randomUUID()}`;
+    await t.mutation(api.createMobilePairing, {
+      pairId: claimedPair,
+      proofHash,
+      expiresAt: Date.now() + 60_000,
+      token: syncToken,
+    });
+    await t.mutation(api.claimMobilePairing, {
+      pairId: claimedPair,
+      proofHash,
+      deviceName: "Phone",
+      deviceId: "state-probe-claimed",
+      deviceToken: freshSecret(),
+    });
+
+    const expiredPair = `pair-${crypto.randomUUID()}`;
+    await t.mutation(api.createMobilePairing, {
+      pairId: expiredPair,
+      proofHash: freshProofHash(),
+      expiresAt: Date.now() + 60_000,
+      token: syncToken,
+    });
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("mobilePairings")
+        .withIndex("by_pair_id", (q) => q.eq("pairId", expiredPair))
+        .unique();
+      await ctx.db.patch(row!._id, { expiresAt: Date.now() - 1 });
+    });
+
+    const wrongProof = freshProofHash();
+    for (const pairId of [claimedPair, expiredPair]) {
+      await expect(
+        t.mutation(api.claimMobilePairing, {
+          pairId,
+          proofHash: wrongProof,
+          deviceName: "Phone",
+          deviceId: `state-probe-${pairId}`,
+          deviceToken: freshSecret(),
+        }),
+      ).rejects.toThrow(/Invalid pairing proof/);
+    }
+    await expect(
+      t.mutation(api.claimMobilePairing, {
+        pairId: claimedPair,
+        proofHash,
+        deviceName: "Phone",
+        deviceId: "state-probe-replay",
+        deviceToken: freshSecret(),
+      }),
+    ).rejects.toThrow(/already claimed/);
+    await expect(
+      t.mutation(api.claimMobilePairing, {
+        pairId: expiredPair,
+        proofHash: await (async () => {
+          const row = await t.run(async (ctx) => {
+            const record = await ctx.db
+              .query("mobilePairings")
+              .withIndex("by_pair_id", (q) => q.eq("pairId", expiredPair))
+              .unique();
+            return record!.proofHash;
+          });
+          return row;
+        })(),
+        deviceName: "Phone",
+        deviceId: "state-probe-expired",
+        deviceToken: freshSecret(),
+      }),
+    ).rejects.toThrow(/expired/);
+  });
+
   it("rejects oversized or malformed claim credentials before pairing", async () => {
     const pairId = `pair-${crypto.randomUUID()}`;
     const proofHash = freshProofHash();

@@ -45,6 +45,7 @@ import {
 } from "../shared/domain/src/family";
 import { parseCents } from "../shared/domain/src/money";
 import { isIsoDate as domainIsIsoDate, TODO_LANES as DOMAIN_TODO_LANES } from "../shared/domain/src/todo";
+import { TODO_LANES as NORMALIZER_TODO_LANES } from "./todoNormalize";
 
 useIsolatedDeploymentEnv();
 
@@ -205,7 +206,9 @@ interface AuditEntry {
   entity: string;
   file: string;
   id: string;
+  /** Server-derived from the credential; display-only claimedActor rides along. */
   actor: string;
+  claimedActor?: string;
   before: Row | null;
   after: Row;
 }
@@ -319,10 +322,10 @@ describe("auth", () => {
     // No token configured and no hatch: fail-closed on all four doors.
     await expect(
       t.mutation(api.createTransaction, { ...BASE_TXN, id: "a", amountMinor: -1 }),
-    ).rejects.toThrow(/CONVEX_SYNC_TOKEN is not configured/);
+    ).rejects.toThrow(/write auth is not configured/);
     await expect(
       t.mutation(api.editTransaction, { id: "a", owner: "victor", actor: "x" }),
-    ).rejects.toThrow(/CONVEX_SYNC_TOKEN is not configured/);
+    ).rejects.toThrow(/write auth is not configured/);
     await expect(
       t.mutation(api.createTodo, {
         id: "a",
@@ -331,10 +334,10 @@ describe("auth", () => {
         owner: "victor",
         actor: "x",
       }),
-    ).rejects.toThrow(/CONVEX_SYNC_TOKEN is not configured/);
+    ).rejects.toThrow(/write auth is not configured/);
     await expect(
       t.mutation(api.editTodo, { id: "a", title: "x", actor: "x" }),
-    ).rejects.toThrow(/CONVEX_SYNC_TOKEN is not configured/);
+    ).rejects.toThrow(/write auth is not configured/);
   });
 
   it("writes nothing when the token is refused", async () => {
@@ -375,6 +378,9 @@ describe("mirror parity with the shared domain contract", () => {
   });
 
   it("uses the same three todo lanes", () => {
+    // One Convex-side source (todoNormalize.ts), re-exported by writeback and
+    // pinned against the cross-runtime domain contract.
+    expect([...TODO_LANES]).toEqual([...NORMALIZER_TODO_LANES]);
     expect([...TODO_LANES]).toEqual([...DOMAIN_TODO_LANES]);
   });
 
@@ -1221,7 +1227,10 @@ describe("audit log", () => {
     expect(created.after.amount).toBe(12.34);
 
     expect(edited.op).toBe("edit");
-    expect(edited.actor).toBe("rachel@ios");
+    // Attribution is server-derived from the credential; the caller's string
+    // is display-only.
+    expect(edited.actor).toBe("sync-token");
+    expect(edited.claimedActor).toBe("rachel@ios");
     // This is the answer to "whole-file replace gave no history": the prior
     // value is recoverable, byte for byte, from the same deployment.
     expect(edited.before).toEqual(created.after);
@@ -1301,7 +1310,8 @@ describe("audit log", () => {
         entity: "transaction",
         file: "transactions",
         id: `txn-${i}`,
-        actor: "victor@linux",
+        actor: "sync-token",
+        claimedActor: "victor@linux",
         before: null,
         after: { id: `txn-${i}` },
       });
@@ -1326,7 +1336,8 @@ describe("audit log", () => {
         entity: "transaction",
         file: "transactions",
         id: `txn-${i}`,
-        actor: "victor@linux",
+        actor: "sync-token",
+        claimedActor: "victor@linux",
         before: { note: fat },
         after: { note: fat },
       });

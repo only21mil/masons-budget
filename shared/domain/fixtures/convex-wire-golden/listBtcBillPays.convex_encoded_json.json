@@ -1,1 +1,87 @@
-{"status":"success","value":{"complete":false,"rows":[{"amountUsdCents":{"$integer":"ALwCAAAAAAA="},"billPayId":"river-billpay-qe3kbvq5qy","btcPriceCents":{"$integer":"4ZRhAAAAAAA="},"btcSpentSats":{"$integer":"38EqAAAAAAA="},"budgetEffect":"credit_card_payment","category":"Credit Card Payment","date":"2026-07-29","feeUsdCents":{"$integer":"AAAAAAAAAAA="},"merchant":"Aven Home Financ","month":"2026-07","note":"Credit-card Bitcoin bill pay; do not add to budget","owner":"victor","platform":"River","reference":"QE3KBVQ5QY","updatedAtMs":1785605567371.0},{"amountUsdCents":{"$integer":"fU4AAAAAAAA="},"billPayId":"river-billpay-4wpyofnute","btcPriceCents":{"$integer":"vA9hAAAAAAA="},"btcSpentSats":{"$integer":"5dEEAAAAAAA="},"budgetEffect":"credit_card_payment","category":"Credit Card Payment","date":"2026-07-28","feeUsdCents":{"$integer":"AAAAAAAAAAA="},"merchant":"Coinbase Card","month":"2026-07","note":"Credit-card Bitcoin bill pay; do not add to budget","owner":"victor","platform":"River","reference":"4WPYOFNUTE","updatedAtMs":1785605567371.0},{"amountUsdCents":{"$integer":"1qAAAAAAAAA="},"billPayId":"river-billpay-7opi5nlgo4","btcPriceCents":{"$integer":"IDZgAAAAAAA="},"btcSpentSats":{"$integer":"zfYJAAAAAAA="},"budgetEffect":"credit_card_payment","category":"Credit Card Payment","date":"2026-07-28","feeUsdCents":{"$integer":"AAAAAAAAAAA="},"merchant":"CHASE CREDIT CRD","month":"2026-07","note":"Credit-card Bitcoin bill pay; do not add to budget","owner":"victor","platform":"River","reference":"7OPI5NLGO4","updatedAtMs":1785605567371.0}]}}
+{
+  "status": "success",
+  "value": {
+    "complete": false,
+    "readAuth": {
+      "deprecated": true,
+      "mode": "shared-token"
+    },
+    "rows": [
+      {
+        "amountUsdCents": {
+          "$integer": "wNQBAAAAAAA="
+        },
+        "billPayId": "sample-billpay-000000001",
+        "btcPriceCents": {
+          "$integer": "IKEHAAAAAAA="
+        },
+        "btcSpentSats": {
+          "$integer": "ADZuAQAAAAA="
+        },
+        "budgetEffect": "credit_card_payment",
+        "category": "Credit Card Payment",
+        "date": "2099-01-10",
+        "feeUsdCents": {
+          "$integer": "AAAAAAAAAAA="
+        },
+        "merchant": "Example Merchant",
+        "month": "2099-01",
+        "note": "Synthetic bill pay fixture row 1",
+        "owner": "victor",
+        "platform": "Sample",
+        "reference": "sample-ref-000001",
+        "updatedAtMs": 1700000000000
+      },
+      {
+        "amountUsdCents": {
+          "$integer": "4JMEAAAAAAA="
+        },
+        "billPayId": "sample-billpay-000000002",
+        "btcPriceCents": {
+          "$integer": "IKEHAAAAAAA="
+        },
+        "btcSpentSats": {
+          "$integer": "AIeTAwAAAAA="
+        },
+        "budgetEffect": "budget_category",
+        "category": "Sample Category D",
+        "date": "2099-01-11",
+        "feeUsdCents": {
+          "$integer": "AAAAAAAAAAA="
+        },
+        "merchant": "Example Merchant Two",
+        "month": "2099-01",
+        "note": "Synthetic bill pay fixture row 2",
+        "owner": "rachel",
+        "platform": "Sample",
+        "reference": "sample-ref-000002",
+        "updatedAtMs": 1700000000000
+      },
+      {
+        "amountUsdCents": {
+          "$integer": "8EkCAAAAAAA="
+        },
+        "billPayId": "sample-billpay-000000003",
+        "btcPriceCents": {
+          "$integer": "IKEHAAAAAAA="
+        },
+        "btcSpentSats": {
+          "$integer": "gMPJAQAAAAA="
+        },
+        "budgetEffect": "budget_category",
+        "category": "Sample Category E",
+        "date": "2099-01-12",
+        "feeUsdCents": {
+          "$integer": "AAAAAAAAAAA="
+        },
+        "merchant": "Example Merchant Three",
+        "month": "2099-01",
+        "note": "Synthetic bill pay fixture row 3",
+        "owner": "victor",
+        "platform": "Sample",
+        "reference": "sample-ref-000003",
+        "updatedAtMs": 1700000000000
+      }
+    ]
+  }
+}

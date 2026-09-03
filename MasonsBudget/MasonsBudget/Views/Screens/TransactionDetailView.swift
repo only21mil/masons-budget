@@ -228,7 +228,9 @@ struct TransactionDetailView: View {
             .replacingOccurrences(of: "$", with: "")
             .replacingOccurrences(of: ",", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let amount = Decimal(string: cleanAmount) else { return }
+        // Write-path parse: pinned POSIX locale so dot-decimal entry can't
+        // inflate in comma-decimal device regions.
+        guard let amount = Decimal(string: cleanAmount, locale: Locale(identifier: "en_US_POSIX")) else { return }
         let previousMerchant = transaction.merchant
         let previousCategory = transaction.category
         let previousAmount = transaction.amount

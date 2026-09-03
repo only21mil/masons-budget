@@ -43,6 +43,7 @@ jobs:
     name: Detect changed trees
     if: github.repository == 'only21mil/masons-budget'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       linux: ${{ steps.filter.outputs.linux }}
       android: ${{ steps.filter.outputs.android }}
@@ -52,16 +53,34 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Compare against the merge base
+      # Base selection and the fail-closed rules are shared with swift.yml via
+      # the changed-base action (audit 2026-09-02 finding 8: the two
+      # hand-rolled detectors had drifted). Only the tree routing below is
+      # client-specific.
+      - name: Compute the comparison base
+        id: base
+        uses: ./.github/actions/changed-base
+        with:
+          event-name: ${{ github.event_name }}
+          event-ref: ${{ github.ref }}
+          head-sha: ${{ github.sha }}
+          before-sha: ${{ github.event.before }}
+          base-ref: ${{ github.event.pull_request.base.ref }}
+          merge-group-base-sha: ${{ github.event.merge_group.base_sha }}
+          # A push to main always reports every tree as changed. The default
+          # branch must be verified whole after a merge, which is the property
+          # the trigger comment above is protecting.
+          main-push-policy: verify-all
+
+      - name: Route the trees
         id: filter
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          IS_MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-          BEFORE_SHA: ${{ github.event.before }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
-          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
-          HEAD_SHA: ${{ github.sha }}
+          VERIFY_ALL: ${{ steps.base.outputs.verify-all }}
+          DIFF_BASE: ${{ steps.base.outputs.base }}
+          DIFF_HEAD: ${{ steps.base.outputs.head }}
+          CHANGED_FILES: ${{ steps.base.outputs.changed-files }}
         run: |
           set -euo pipefail
 
@@ -70,51 +89,14 @@ jobs:
             for t in linux android backend tooling; do echo "$t=true" >> "$GITHUB_OUTPUT"; done
           }
 
-          diff_base=""
-          diff_head=HEAD
-          if [ "$IS_MAIN_PUSH" = "true" ]; then
-            if [[ "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ ]] &&
-              [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
-              diff_base="$BEFORE_SHA"
-            fi
-          elif [ "$EVENT_NAME" = "pull_request" ]; then
-            base="origin/${BASE_REF:-main}"
-            git fetch -q origin "${BASE_REF:-main}"
-            diff_base="$(git merge-base HEAD "$base")"
-          elif [ "$EVENT_NAME" = "merge_group" ]; then
-            if [[ ! "$MERGE_GROUP_BASE_SHA" =~ ^[0-9a-f]{40}$ ||
-              ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-              verify_all "Merge-group SHAs are missing or malformed; verifying every tree."
-              exit 0
-            fi
-            if ! git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" ||
-              ! git cat-file -e "${HEAD_SHA}^{commit}"; then
-              verify_all "Merge-group comparison commit is unavailable; verifying every tree."
-              exit 0
-            fi
-            if ! git merge-base --is-ancestor "$MERGE_GROUP_BASE_SHA" "$HEAD_SHA"; then
-              verify_all "Merge-group base is not an ancestor of its head; verifying every tree."
-              exit 0
-            fi
-            diff_base="$MERGE_GROUP_BASE_SHA"
-            diff_head="$HEAD_SHA"
-          fi
-
-          if [ -n "$diff_base" ]; then
-            scripts/check-convex-generated-change.sh "$diff_base" "$diff_head"
-          else
-            echo "No meaningful commit range; skipping the Convex generated-file heuristic."
-          fi
-
-          if [ "$IS_MAIN_PUSH" = "true" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            verify_all "Verifying every tree (main push or manual dispatch)."
+          if [ "$VERIFY_ALL" = "true" ]; then
+            verify_all "No usable comparison range; verifying every tree."
             exit 0
           fi
 
-          if ! files="$(git diff --name-only "$diff_base" "$diff_head")"; then
-            verify_all "Comparison range could not be diffed; verifying every tree."
-            exit 0
-          fi
+          scripts/check-convex-generated-change.sh "$DIFF_BASE" "$DIFF_HEAD"
+
+          files="$(cat "$CHANGED_FILES")"
           printf '%s\n' "$files" | sed 's/^/  /'
 
           # shared/, convex/ and the workflow itself reach every client, so they
@@ -154,8 +136,11 @@ jobs:
       github.repository == 'only21mil/masons-budget' &&
       (needs.changes.result != 'success' || needs.changes.outputs.tooling == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -175,8 +160,11 @@ jobs:
     name: Shared domain contract
     if: github.repository == 'only21mil/masons-budget'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -191,18 +179,22 @@ jobs:
       - name: Parity tests against the Swift contract
         run: npm run test --workspace @vogel-vault/domain
 
-  # Real response bodies captured from Convex, replayed through the same
-  # repositories the shipped clients call. No socket or credential is involved.
-  # This runs on every PR rather than following client path filters: a committed
-  # capture, transport setting, or shared wire assumption can invalidate both
-  # clients even when neither client tree changed.
+  # Synthetic response bodies in the committed wire-shape fixture set, replayed
+  # through the same repositories the shipped clients call. No socket or
+  # credential is involved. This runs on every PR rather than following client
+  # path filters: a committed fixture, transport setting, or shared wire
+  # assumption can invalidate both clients even when neither client tree changed.
+  # The synthetic-content guard keeps production-shaped values out of the
+  # fixtures (they replaced verbatim production captures in 2026-09).
   convex-wire-golden:
-    name: Production wire golden decoders
+    name: Convex wire golden decoders
     if: github.repository == 'only21mil/masons-budget'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -211,7 +203,10 @@ jobs:
 
       - run: npm ci
 
-      - name: Fixture provenance and Linux production values
+      - name: Fixture synthetic-content guard
+        run: node scripts/check-convex-wire-golden-synthetic.mjs
+
+      - name: Fixture provenance and Linux values
         run: node scripts/check-convex-wire-golden-provenance.mjs
 
       - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
@@ -224,11 +219,11 @@ jobs:
       # legal and technical review before adoption.
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
 
-      - name: Linux production decoder
+      - name: Linux wire decoder
         run: npx vitest run test/convex-wire-golden.test.ts
         working-directory: linux
 
-      - name: Android production decoder
+      - name: Android wire decoder
         run: >-
           ./gradlew :app:testDebugUnitTest
           --tests 'com.sats21m.vogelvault.data.ConvexWireGolden*Test'
@@ -247,8 +242,11 @@ jobs:
     name: Convex functions
     if: github.repository == 'only21mil/masons-budget'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -287,8 +285,11 @@ jobs:
       needs.shared-domain.result == 'success' &&
       (needs.changes.result != 'success' || needs.changes.outputs.linux == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -373,6 +374,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Detect which Android modules exist
         id: probe

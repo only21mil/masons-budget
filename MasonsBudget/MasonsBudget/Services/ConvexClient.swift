@@ -50,36 +50,51 @@ enum ConvexConfig {
         URL(string: "https://keen-elephant-452.convex.cloud")!
     }
 
-    /// Whether the Convex URL has been configured (not placeholder).
-    static var isConfigured: Bool {
-        let url = deploymentURL.absoluteString
-        return !url.contains("placeholder")
-    }
+    // Resolving a token performs Security-framework I/O (and the Wave-1
+    // migration side effect) on every read of the migrating store. Memoize the
+    // resolved values and invalidate on explicit set/remove so the per-request
+    // `call()` no longer hits the Keychain twice per HTTP round trip, and so
+    // presence checks stay cheap. The empty token is cached too: an
+    // unconfigured build must not re-probe the Keychain on every request.
+    private static let tokenCacheLock = NSLock()
+    private static var cachedSyncToken: String?
+    private static var cachedReadToken: String?
 
     /// Optional sync token for an authorized write path. NEVER hardcode a shared secret here
     /// (see AGENTS.md). Stored in the Keychain after runtime injection; empty by default so
     /// native writes stay fail-closed (the server rejects an empty/invalid token).
     ///
-    /// Reading this property also attempts to migrate the Wave 1 UserDefaults value, if
+    /// The first read also attempts to migrate the Wave 1 UserDefaults value, if
     /// present. A failed Keychain write discards that cleartext value and leaves writes
     /// unauthorized instead of authenticating from insecure storage.
     static var syncToken: String {
-        syncTokenStore.token
+        tokenCacheLock.lock()
+        defer { tokenCacheLock.unlock() }
+        if let cached = cachedSyncToken { return cached }
+        let resolved = syncTokenStore.token
+        cachedSyncToken = resolved
+        return resolved
     }
 
     /// Presence-only view for UI status. UI callers must not retain or render the credential.
     static var hasSyncToken: Bool {
-        syncTokenStore.hasToken
+        !syncToken.isEmpty
     }
 
     @discardableResult
     static func setSyncToken(_ token: String) -> Bool {
-        syncTokenStore.set(token)
+        tokenCacheLock.lock()
+        cachedSyncToken = nil
+        tokenCacheLock.unlock()
+        return syncTokenStore.set(token)
     }
 
     @discardableResult
     static func removeSyncToken() -> Bool {
-        syncTokenStore.remove()
+        tokenCacheLock.lock()
+        cachedSyncToken = nil
+        tokenCacheLock.unlock()
+        return syncTokenStore.remove()
     }
 
     /// Optional read token.
@@ -94,24 +109,36 @@ enum ConvexConfig {
     ///
     /// Reading this property attempts to migrate the legacy UserDefaults value. A failed
     /// Keychain write discards that cleartext value and leaves reads unauthenticated
-    /// instead of authenticating from insecure storage.
+    /// instead of authenticating from insecure storage. Resolution is memoized;
+    /// see the cache note above `syncToken`.
     static var readToken: String {
-        readTokenStore.token
+        tokenCacheLock.lock()
+        defer { tokenCacheLock.unlock() }
+        if let cached = cachedReadToken { return cached }
+        let resolved = readTokenStore.token
+        cachedReadToken = resolved
+        return resolved
     }
 
     /// Presence-only view for UI status. UI callers must not retain or render the credential.
     static var hasReadToken: Bool {
-        readTokenStore.hasToken
+        !readToken.isEmpty
     }
 
     @discardableResult
     static func setReadToken(_ token: String) -> Bool {
-        readTokenStore.set(token)
+        tokenCacheLock.lock()
+        cachedReadToken = nil
+        tokenCacheLock.unlock()
+        return readTokenStore.set(token)
     }
 
     @discardableResult
     static func removeReadToken() -> Bool {
-        readTokenStore.remove()
+        tokenCacheLock.lock()
+        cachedReadToken = nil
+        tokenCacheLock.unlock()
+        return readTokenStore.remove()
     }
 
     /// Runtime kill switch for the public row API. Row reads are now the
@@ -383,20 +410,33 @@ enum AppWritebackConfig {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
+    // Memoized like ConvexConfig's tokens: every read performed Keychain I/O
+    // plus the legacy-migration probe, and task writes resolve this per write.
+    // `save`/`clear` are the only mutation points and invalidate the cache.
+    private static let deviceTokenCacheLock = NSLock()
+    private static var cachedDeviceToken: String?
+
     static var deviceToken: String {
+        deviceTokenCacheLock.lock()
+        defer { deviceTokenCacheLock.unlock() }
+        if let cached = cachedDeviceToken { return cached }
+        var resolved = ""
         if let token = AppWritebackDeviceTokenStore.store.read(), !token.isEmpty {
-            return token
-        }
-        let legacyToken = UserDefaults.standard.string(forKey: deviceTokenKey)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !legacyToken.isEmpty {
-            guard AppWritebackDeviceTokenStore.store.save(legacyToken) else {
-                return ""
+            resolved = token
+        } else {
+            let legacyToken = UserDefaults.standard.string(forKey: deviceTokenKey)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !legacyToken.isEmpty {
+                guard AppWritebackDeviceTokenStore.store.save(legacyToken) else {
+                    return ""
+                }
+                // The protected store verifies its own read before returning true.
+                UserDefaults.standard.removeObject(forKey: deviceTokenKey)
             }
-            // The protected store verifies its own read before returning true.
-            UserDefaults.standard.removeObject(forKey: deviceTokenKey)
+            resolved = legacyToken
         }
-        return legacyToken
+        cachedDeviceToken = resolved
+        return resolved
     }
 
     /// Presence-only view of the credential for UI status. Callers that do not
@@ -470,6 +510,9 @@ enum AppWritebackConfig {
         UserDefaults.standard.set(trimmedDeviceID, forKey: deviceIDKey)
         UserDefaults.standard.set(profile.rawValue, forKey: deviceProfileKey)
         UserDefaults.standard.removeObject(forKey: deviceTokenKey)
+        deviceTokenCacheLock.lock()
+        cachedDeviceToken = nil
+        deviceTokenCacheLock.unlock()
         return true
     }
 
@@ -479,6 +522,9 @@ enum AppWritebackConfig {
         UserDefaults.standard.removeObject(forKey: deviceTokenKey)
         UserDefaults.standard.removeObject(forKey: deviceProfileKey)
         AppWritebackDeviceTokenStore.store.clear()
+        deviceTokenCacheLock.lock()
+        cachedDeviceToken = nil
+        deviceTokenCacheLock.unlock()
     }
 }
 
@@ -1179,13 +1225,6 @@ enum ConvexError: LocalizedError {
     }
 }
 
-/// Response envelope from the Convex HTTP API.
-private struct ConvexQueryResponse: Decodable {
-    let status: String
-    let value: AnyCodable?
-    let errorMessage: String?
-}
-
 /// Strictly converts Convex's tagged int64 wire values into Swift `Int64` values.
 ///
 /// Convex serializes `v.int64()` as an object containing one `$integer` key whose
@@ -1284,34 +1323,6 @@ enum ConvexRowMutationError: LocalizedError, Equatable {
             "\(path) returned an unexpected response."
         case .bitcoinPostingRequiresTypedSatsAndAccount:
             "A Bitcoin payment source requires an amount entered in sats and a Bitcoin account."
-        }
-    }
-}
-
-/// Type-erased Codable wrapper for Convex responses.
-struct AnyCodable: Decodable {
-    let value: Any
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if container.decodeNil() {
-            value = NSNull()
-        } else if let bool = try? container.decode(Bool.self) {
-            value = bool
-        } else if let int = try? container.decode(Int64.self) {
-            value = int
-        } else if let double = try? container.decode(Double.self) {
-            value = double
-        } else if let string = try? container.decode(String.self) {
-            value = string
-        } else if let array = try? container.decode([AnyCodable].self) {
-            value = array.map(\.value)
-        } else if let dict = try? container.decode([String: AnyCodable].self) {
-            value = dict.mapValues(\.value)
-        } else {
-            throw DecodingError.dataCorrupted(
-                .init(codingPath: decoder.codingPath, debugDescription: "Unsupported type"),
-            )
         }
     }
 }

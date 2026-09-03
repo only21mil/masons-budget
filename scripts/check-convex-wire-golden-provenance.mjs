@@ -41,7 +41,23 @@ async function resolveVitestPath() {
   return null
 }
 
-if (provenance.version !== 2) {
+if (provenance.version === 3) {
+  if (provenance.origin !== "synthetic") {
+    failures.push(`unsupported provenance origin ${String(provenance.origin)} for version 3`)
+  }
+  if (provenance.deployment !== undefined || provenance.endpoint !== undefined) {
+    failures.push(
+      "synthetic provenance must not claim a production deployment or endpoint",
+    )
+  }
+} else if (provenance.version === 2) {
+  if (
+    provenance.deployment !== CAPTURE_DEPLOYMENT
+    || provenance.endpoint !== CAPTURE_ENDPOINT
+  ) {
+    failures.push("attestation deployment or endpoint differs from the capture target")
+  }
+} else {
   failures.push(`unsupported provenance version ${String(provenance.version)}`)
 }
 
@@ -59,13 +75,6 @@ if (
 if (provenance.attestation?.credentialEchoChecked !== true) {
   failures.push("attestation must confirm the credential-echo redaction check")
 }
-if (
-  provenance.deployment !== CAPTURE_DEPLOYMENT
-  || provenance.endpoint !== CAPTURE_ENDPOINT
-) {
-  failures.push("attestation deployment or endpoint differs from the capture target")
-}
-
 const expectedFiles = new Set()
 for (const query of queries ?? []) {
   for (const format of formats ?? []) {
@@ -156,54 +165,68 @@ if (failures.length > 0) {
   process.exit(1)
 }
 
-const capturedDate = provenance.capturedDate
-if (typeof capturedDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(capturedDate)) {
-  console.error("FAIL: capturedDate must be an ISO calendar date (YYYY-MM-DD)")
-  process.exit(1)
-}
-
-const capturedAt = new Date(`${capturedDate}T00:00:00.000Z`)
-const nowInput = process.env.CONVEX_WIRE_GOLDEN_NOW
-const now = nowInput === undefined ? new Date() : new Date(nowInput)
-if (Number.isNaN(capturedAt.valueOf()) || Number.isNaN(now.valueOf())) {
-  console.error("FAIL: capturedDate or CONVEX_WIRE_GOLDEN_NOW is not a valid date")
-  process.exit(1)
-}
-
-const ageDays = Math.floor((now.valueOf() - capturedAt.valueOf()) / 86_400_000)
-const warningAfterDays = provenance.freshness?.warningAfterDays
-const failAfterDays = provenance.freshness?.failAfterDays
-if (
-  !Number.isInteger(warningAfterDays)
-  || !Number.isInteger(failAfterDays)
-  || warningAfterDays < 1
-  || failAfterDays <= warningAfterDays
-) {
-  console.error("FAIL: freshness thresholds must be increasing positive integers")
-  process.exit(1)
-}
-if (ageDays < 0) {
-  console.error(`FAIL: capture date ${capturedDate} is ${Math.abs(ageDays)} days in the future`)
-  process.exit(1)
-}
-if (ageDays >= failAfterDays) {
+const dateValue = provenance.version === 3 ? provenance.generatedDate : provenance.capturedDate
+if (typeof dateValue !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
   console.error(
-    `::error::Production wire goldens are ${ageDays} days old (captured ${capturedDate}); `
-      + `the ${failAfterDays}-day freshness limit requires a new attested production capture.`,
+    `FAIL: ${provenance.version === 3 ? "generatedDate" : "capturedDate"} must be an ISO calendar date (YYYY-MM-DD)`,
   )
   process.exit(1)
 }
-if (ageDays >= warningAfterDays) {
-  console.warn(
-    `::warning::Production wire goldens are ${ageDays} days old (captured ${capturedDate}); `
-      + `refresh before the ${failAfterDays}-day hard limit.`,
-  )
-}
 
-try {
-  await access(valueTestPath)
-} catch {
-  failures.push(`missing Linux production value test ${path.relative(repoRoot, valueTestPath)}`)
+if (provenance.version === 3) {
+  // Synthetic fixtures do not go stale: there is no production capture to
+  // refresh, so the freshness ladder only ever applied to version 2.
+  try {
+    await access(valueTestPath)
+  } catch {
+    failures.push(`missing Linux production value test ${path.relative(repoRoot, valueTestPath)}`)
+  }
+} else {
+  const capturedAt = new Date(`${dateValue}T00:00:00.000Z`)
+  const nowInput = process.env.CONVEX_WIRE_GOLDEN_NOW
+  const now = nowInput === undefined ? new Date() : new Date(nowInput)
+  if (Number.isNaN(capturedAt.valueOf()) || Number.isNaN(now.valueOf())) {
+    console.error("FAIL: capturedDate or CONVEX_WIRE_GOLDEN_NOW is not a valid date")
+    process.exit(1)
+  }
+
+  const ageDays = Math.floor((now.valueOf() - capturedAt.valueOf()) / 86_400_000)
+  const warningAfterDays = provenance.freshness?.warningAfterDays
+  const failAfterDays = provenance.freshness?.failAfterDays
+  if (
+    !Number.isInteger(warningAfterDays)
+    || !Number.isInteger(failAfterDays)
+    || warningAfterDays < 1
+    || failAfterDays <= warningAfterDays
+  ) {
+    console.error("FAIL: freshness thresholds must be increasing positive integers")
+    process.exit(1)
+  }
+  if (ageDays < 0) {
+    console.error(
+      `FAIL: capture date ${dateValue} is ${Math.abs(ageDays)} days in the future`,
+    )
+    process.exit(1)
+  }
+  if (ageDays >= failAfterDays) {
+    console.error(
+      `::error::Production wire goldens are ${ageDays} days old (captured ${dateValue}); `
+        + `the ${failAfterDays}-day freshness limit requires a new attested production capture.`,
+    )
+    process.exit(1)
+  }
+  if (ageDays >= warningAfterDays) {
+    console.warn(
+      `::warning::Production wire goldens are ${ageDays} days old (captured ${dateValue}); `
+        + `refresh before the ${failAfterDays}-day hard limit.`,
+    )
+  }
+
+  try {
+    await access(valueTestPath)
+  } catch {
+    failures.push(`missing Linux production value test ${path.relative(repoRoot, valueTestPath)}`)
+  }
 }
 
 if (failures.length === 0) {
@@ -244,8 +267,10 @@ if (failures.length > 0) {
   process.exit(1)
 }
 
+const attestationNoun = provenance.version === 3 ? "synthetic wire fixtures" : "production wire captures"
 console.log(
-  `PASS: ${captureFiles.length} production wire captures match their provenance checksums `
+  `PASS: ${captureFiles.length} ${attestationNoun} match their provenance checksums `
     + `and ${Object.keys(actualQueryShapeDigests).length} attested query shapes; `
-    + `Linux production value test passed; age ${ageDays} days.`,
+    + `Linux production value test passed`
+    + (provenance.version === 3 ? "." : `; age ${ageDays} days.`),
 )

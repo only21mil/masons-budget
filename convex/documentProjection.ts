@@ -6,6 +6,27 @@
 // side of a cent (the classic example is 1.005). This module quotes JSON number
 // tokens before JSON.parse so money always reaches the integer parser in its
 // lexical form.
+//
+// SHARE-QUANTITY SINGLE SOURCE (quality audit 2026-09-02): the bounds,
+// canonicalization and quantization logic below used to be a full copy of
+// shared/domain/src/money.ts. The copy is gone — the logic is imported from
+// the @vogel-vault/domain workspace package, which the Convex bundler resolves
+// like any npm dependency. The re-exports keep this module's historic
+// context-aware signatures (`context` labels the offending field in error
+// messages) and byte-identical message text, so callers — including the
+// finance read path's repair tally — behave exactly as before. documentProjection.test.ts
+// pins the adapters against the domain implementation.
+
+import {
+  assertSharesDecimal as domainAssertSharesDecimal,
+  canonicalizeSharesDecimal as domainCanonicalizeSharesDecimal,
+  SHARES_DECIMAL_MAX_INTEGER_DIGITS,
+  SHARES_DECIMAL_MAX_LENGTH,
+  SHARES_DECIMAL_MAX_PRECISION,
+  SHARES_DECIMAL_MAX_RAW_LENGTH,
+  SHARES_DECIMAL_MAX_SCALE,
+  type SharesDecimalOptions,
+} from "@vogel-vault/domain/money";
 
 export const DOCUMENT_SOURCE_FILES = [
   "budget",
@@ -23,194 +44,54 @@ export type BtcBalanceSourceFile =
 export type FamilyMember = "victor" | "rachel" | "mason" | "maddox";
 export type Custody = "exchange" | "self_custody";
 
-export const SHARES_DECIMAL_MAX_INTEGER_DIGITS = 12;
-export const SHARES_DECIMAL_MAX_SCALE = 12;
-export const SHARES_DECIMAL_MAX_PRECISION = 24;
-export const SHARES_DECIMAL_MAX_LENGTH = 25;
+export {
+  SHARES_DECIMAL_MAX_INTEGER_DIGITS,
+  SHARES_DECIMAL_MAX_LENGTH,
+  SHARES_DECIMAL_MAX_PRECISION,
+  SHARES_DECIMAL_MAX_RAW_LENGTH,
+  SHARES_DECIMAL_MAX_SCALE,
+};
+export type { SharesDecimalOptions };
+
 /**
- * How long a share quantity may be *before* canonicalization.
+ * Assert an already-canonical share quantity, labelled by `context`.
  *
- * Quantization only ever removes fractional digits, so a value can be longer
- * than the canonical bound and still be legitimate — a lot written from an
- * IEEE-754 double arrives with 16 fractional digits. The slack is one extra
- * retained scale, far more fractional digits than a double can distinguish;
- * anything longer is corruption rather than float noise.
- */
-export const SHARES_DECIMAL_MAX_RAW_LENGTH =
-  SHARES_DECIMAL_MAX_LENGTH + SHARES_DECIMAL_MAX_SCALE;
-
-/**
- * The sign group is always captured so the digit groups keep stable indices; a
- * leading minus is only *accepted* when the caller opts into signed quantities.
- */
-const SHARES_DECIMAL_PATTERN = /^(-?)(0|[1-9]\d*)(?:\.(\d+))?$/;
-
-/**
- * Holdings are position sizes and stay unsigned; lots are signed, because a
- * statement reconciliation lot removes shares and is stored as a negative
- * quantity. The flag is opt-in so the unsigned rule remains the default.
- */
-export interface SharesDecimalOptions {
-  readonly signed?: boolean;
-}
-
-/**
- * Exact share quantities use one bounded, language-neutral wire contract.
- * Trailing fractional zeroes retain source precision; exponents, whitespace,
- * leading-zero ambiguity, minus zero, and allocation-sized inputs are refused,
- * as is a sign unless the caller opted into signed quantities. A value that
- * merely needs quantizing is refused too — canonicalizeSharesDecimal is the one
- * place allowed to change a quantity.
+ * The canonicalization rules are the domain's; this adapter only restores the
+ * Convex-side error-message convention, where the message names the field
+ * (e.g. "finances.holdings[2].shares") rather than the value — a stored
+ * quantity must never reach a log.
  */
 export function assertSharesDecimal(
   value: unknown,
   context = "sharesDecimal",
   options: SharesDecimalOptions = {},
 ): string {
-  const signed = options.signed === true;
-  const maxLength = signed
-    ? SHARES_DECIMAL_MAX_LENGTH + 1
-    : SHARES_DECIMAL_MAX_LENGTH;
-  if (typeof value !== "string" || value.length > maxLength) {
-    throw new RangeError(`${context} is not a canonical share quantity`);
+  try {
+    return domainAssertSharesDecimal(value, options);
+  } catch (error) {
+    if (error instanceof RangeError) {
+      throw new RangeError(`${context} is not a canonical share quantity`);
+    }
+    throw error;
   }
-
-  const match = SHARES_DECIMAL_PATTERN.exec(value);
-  if (!match) {
-    throw new RangeError(`${context} is not a canonical share quantity`);
-  }
-
-  const negative = match[1] === "-";
-  const whole = match[2]!;
-  const fraction = match[3] ?? "";
-  // An unsigned caller refuses the sign outright; a signed caller still refuses
-  // minus zero, which spells one value two ways and is therefore not canonical.
-  if (negative && (!signed || isZeroMagnitude(whole, fraction))) {
-    throw new RangeError(`${context} is not a canonical share quantity`);
-  }
-  if (
-    whole.length > SHARES_DECIMAL_MAX_INTEGER_DIGITS ||
-    fraction.length > SHARES_DECIMAL_MAX_SCALE ||
-    whole.length + fraction.length > SHARES_DECIMAL_MAX_PRECISION
-  ) {
-    throw new RangeError(`${context} exceeds the share quantity bounds`);
-  }
-
-  return value;
 }
 
 /**
- * Repair a share quantity into the canonical form, or throw.
- *
- * Blobs written before the contract tightened carry two real shapes the strict
- * pattern refuses: quantities with IEEE-754 noise (15-16 fractional digits
- * where 12 are retained) and negative reconciliation lots. Both are data, not
- * corruption, so they are canonicalized instead of rejected.
- *
- * The rules, in order:
- *   - an already-canonical in-bounds value comes back byte-identical, so
- *     retained trailing zeroes ("2.5000") survive untouched;
- *   - fractional digits past SHARES_DECIMAL_MAX_SCALE are quantized half away
- *     from zero with lexical and BigInt arithmetic only, never a JS number, and
- *     the carry may cross the decimal point;
- *   - zeroes *created by* that quantization are trimmed, being an artefact of
- *     rounding rather than source precision;
- *   - minus zero in any spelling normalizes to plain "0";
- *   - every bound is re-checked afterwards, so 13 integer digits, an exponent
- *     or padding still throw.
+ * Repair a share quantity into the canonical form, or throw — labelled by
+ * `context`, with the same message convention as assertSharesDecimal.
  */
 export function canonicalizeSharesDecimal(
   value: unknown,
   context = "sharesDecimal",
   options: SharesDecimalOptions = {},
 ): string {
-  const signed = options.signed === true;
-  const maxRawLength = signed
-    ? SHARES_DECIMAL_MAX_RAW_LENGTH + 1
-    : SHARES_DECIMAL_MAX_RAW_LENGTH;
-  if (typeof value !== "string" || value.length > maxRawLength) {
-    throw new RangeError(`${context} is not a canonical share quantity`);
-  }
-
-  const match = SHARES_DECIMAL_PATTERN.exec(value);
-  if (!match) {
-    throw new RangeError(`${context} is not a canonical share quantity`);
-  }
-
-  const negative = match[1] === "-";
-  if (negative && !signed) {
-    throw new RangeError(`${context} is not a canonical share quantity`);
-  }
-
-  const sourceWhole = match[2]!;
-  const sourceFraction = match[3] ?? "";
-  const { whole, fraction } =
-    sourceFraction.length <= SHARES_DECIMAL_MAX_SCALE
-      ? { whole: sourceWhole, fraction: sourceFraction }
-      : quantizeSharesMagnitude(sourceWhole, sourceFraction);
-
-  const magnitude = fraction === "" ? whole : `${whole}.${fraction}`;
-  // Minus zero has no canonical spelling of its own, so every form of it —
-  // including "-0.000", where the retained precision goes with the sign —
-  // collapses to plain "0".
-  const canonical = negative
-    ? isZeroMagnitude(whole, fraction)
-      ? "0"
-      : `-${magnitude}`
-    : magnitude;
-  return assertSharesDecimal(canonical, context, options);
-}
-
-/**
- * Drop fractional digits past the retained scale, rounding half away from zero.
- *
- * Only the first dropped digit decides, which is exactly what parseMinorUnits
- * does: a remainder whose leading digit is >= 5 is >= half the divisor. Digit
- * characters compare lexically, so no Number is constructed anywhere.
- */
-function quantizeSharesMagnitude(
-  whole: string,
-  fraction: string,
-): { whole: string; fraction: string } {
-  const kept = fraction.slice(0, SHARES_DECIMAL_MAX_SCALE);
-  const dropped = fraction.slice(SHARES_DECIMAL_MAX_SCALE);
-  const scaled = BigInt(`${whole}${kept}`) + (dropped[0]! >= "5" ? 1n : 0n);
-  // padStart guarantees at least one integer digit once the scale is sliced off,
-  // and the BigInt round-trip absorbs a carry into the integer part.
-  const digits = scaled.toString().padStart(SHARES_DECIMAL_MAX_SCALE + 1, "0");
-  const boundary = digits.length - SHARES_DECIMAL_MAX_SCALE;
-  return {
-    whole: digits.slice(0, boundary),
-    fraction: digits.slice(boundary).replace(/0+$/, ""),
-  };
-}
-
-/** The pattern forbids leading zeroes, so "0" is the only zero whole part. */
-function isZeroMagnitude(whole: string, fraction: string): boolean {
-  return whole === "0" && !/[1-9]/.test(fraction);
-}
-
-/**
- * Render a refused value for an error message without throwing on the way.
- *
- * `JSON.stringify` raises a TypeError on a bigint, which would replace the
- * RangeError this module promises with an unrelated failure the caller's catch
- * was never written for. The share assertions above never render a value at all
- * — their messages are positional by design, so a stored quantity cannot reach a
- * log — and this exists for the numeric parsers that still quote their input.
- */
-function renderRejected(value: unknown): string {
-  switch (typeof value) {
-    case "string":
-      return JSON.stringify(value);
-    case "bigint":
-      return `${value}n`;
-    case "number":
-    case "boolean":
-    case "undefined":
-      return String(value);
-    default:
-      return value === null ? "null" : typeof value;
+  try {
+    return domainCanonicalizeSharesDecimal(value, options);
+  } catch (error) {
+    if (error instanceof RangeError) {
+      throw new RangeError(`${context} is not a canonical share quantity`);
+    }
+    throw error;
   }
 }
 
@@ -951,8 +832,34 @@ function decimalText(
 }
 
 /**
+ * Render a refused value for an error message without throwing on the way —
+ * same convention as the domain's renderRejected, for this module's local
+ * document parsers (bigint-safe: JSON.stringify throws on bigint).
+ */
+function renderRejected(value: unknown): string {
+  switch (typeof value) {
+    case "string":
+      return JSON.stringify(value);
+    case "bigint":
+      return `${value}n`;
+    case "number":
+    case "boolean":
+    case "undefined":
+      return String(value);
+    default:
+      return value === null ? "null" : typeof value;
+  }
+}
+
+/**
  * Decimal text to integer minor units, rounded half away from zero without
  * ever constructing a JavaScript number.
+ *
+ * This is deliberately NOT the domain's parseMinorUnits: the document blobs
+ * carry scientific-notation tokens that the stricter reader contract refuses,
+ * and this parser must accept them (it feeds the one-shot migration), while
+ * the shared parser is the runtime read contract. renderRejected below keeps
+ * the domain's rendering convention for the message.
  */
 export function parseMinorUnits(
   value: unknown,
@@ -974,7 +881,6 @@ export function parseMinorUnits(
       `${context} is not a decimal value: ${renderRejected(value)}`,
     );
   }
-
   const sign = match[1] === "-" ? -1n : 1n;
   const whole = match[2] ?? "0";
   const fraction = match[3] ?? match[4] ?? "";

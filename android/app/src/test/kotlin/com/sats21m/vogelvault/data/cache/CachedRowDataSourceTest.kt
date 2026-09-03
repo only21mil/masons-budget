@@ -121,6 +121,34 @@ class CachedRowDataSourceTest {
         }
 
     @Test
+    fun `buy cache rows stamp the server revision the way transaction rows do`() =
+        runBlocking {
+            val buy = BtcBuy(
+                id = "revision-buy",
+                date = "2026-08-25",
+                source = "River",
+                sats = 100_000L,
+                priceUsdCents = 6_500_000L,
+                usdCents = 6_500L,
+                owner = FamilyMember.VICTOR,
+                updatedAtMs = 1_777_777_777_777L,
+            )
+            val remote = FakeRows().apply {
+                buys = ConvexResult.Ok(RowSnapshot(listOf(buy), true))
+            }
+            val source = CachedRowDataSource(remote, dao, clock = { 123L })
+
+            source.load(FamilyMember.VICTOR)
+
+            val key = CacheQueryKeys.btcBuys("victor", "visible")
+            assertEquals(
+                1_777_777_777_777L,
+                dao.observeBtcBuys(key).first().single().updatedAtMs,
+                "the cached buy must carry the row's server revision, not the fetch clock",
+            )
+        }
+
+    @Test
     fun `todo cache preserves exact owner revision and mutation fields`() =
         runBlocking {
             val todo = TodoItem(

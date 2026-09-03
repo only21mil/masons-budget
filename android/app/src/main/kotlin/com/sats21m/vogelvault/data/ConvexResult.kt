@@ -143,3 +143,24 @@ sealed class ConvexResult<out T> {
         else -> null
     }
 }
+
+/**
+ * The one exhaustive ConvexResult→banner-message mapping for write surfaces.
+ *
+ * Every write sheet answers the same five outcomes with the same sentence
+ * shapes; only the surface's own failure phrase differs. Keeping the mapping
+ * here is what stops the per-sheet copies from drifting apart (the 2026-09-02
+ * quality audit's R2). [prefix] is that phrase, e.g. "Bitcoin buy not saved".
+ */
+internal fun convexWriteFailureMessage(
+    prefix: String,
+    result: ConvexResult<*>,
+): String? =
+    when (result) {
+        is ConvexResult.Ok -> null
+        ConvexResult.Disabled -> "$prefix: authenticated writes are switched off."
+        ConvexResult.NotConfigured -> "$prefix: no usable Convex deployment or token is configured."
+        ConvexResult.Unauthorized -> "$prefix: the credential is missing or was rejected."
+        ConvexResult.Missing -> "$prefix: Convex returned no write result."
+        is ConvexResult.Failed -> "$prefix: the write failed (${result.reason})."
+    }

@@ -2,6 +2,7 @@ import type { FunctionReference } from "convex/server";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  freshSecret,
   setDeploymentEnv,
   testConvex,
   useIsolatedDeploymentEnv,
@@ -2047,5 +2048,87 @@ describe("cutover approval window", () => {
       }),
     ).rejects.toThrow(/changed before reconciliation/);
     expect((await snapshot()).document.postingActivatedAtMs).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// sameTransaction contract (quality audit): a retried create that omits the
+// account key replays idempotently, while an incoming row that ADDS a
+// bitcoinAccountKey the stored row lacks is never swallowed — the full write
+// path runs and the key (with its balance leg) is persisted.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("sameTransaction key contract", () => {
+  it("persists a bitcoinAccountKey addition instead of treating it as a replay", async () => {
+    // Seed the reachable legacy state directly: a sat-carrying Income row with
+    // no account key and no posting version (imported, not posted). The file
+    // beforeEach already provides the canonical activated River ledger.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("transactions", {
+        txId: "legacy-income-no-key",
+        owner: "victor",
+        date: "2026-08-01",
+        month: "2026-08",
+        merchant: "Income",
+        amountCents: 1n,
+        category: "Income",
+        amountSats: 12_000n,
+        sourceFile: "transactions",
+        updatedAtMs: 1,
+      });
+    });
+
+    await t.mutation(api.transaction, {
+      transaction: {
+        id: "legacy-income-no-key",
+        date: "2026-08-01",
+        merchant: "Income",
+        amountCents: 1n,
+        kind: "credit",
+        category: "Income",
+        amountSats: 12_000n,
+        bitcoinAccountKey: "river",
+      },
+      baseUpdatedAtMs: 1,
+    });
+
+    const stored = await t.run(async (ctx) =>
+      ctx.db
+        .query("transactions")
+        .withIndex("by_source_tx_id", (q) =>
+          q.eq("sourceFile", "transactions").eq("txId", "legacy-income-no-key"),
+        )
+        .unique(),
+    );
+    // The key was PERSISTED, and the posting activated — not swallowed.
+    expect(stored?.bitcoinAccountKey).toBe("river");
+    expect(stored?.balancePostingVersion).toBe(1n);
+    const accounts = await t.run(async (ctx) =>
+      ctx.db.query("btcAccounts").collect(),
+    );
+    expect(accounts.find((row) => row.key === "river")!.sats).toBe(1_012_000n);
+  });
+
+  it("replays a key-omitting retry of a posted Income create without a revision", async () => {
+    const fiatIncome = {
+      id: "replayed-income",
+      date: "2026-08-01",
+      merchant: "Income",
+      amountCents: 1n,
+      kind: "credit" as const,
+      category: "Income",
+    };
+    await t.mutation(api.transaction, {
+      transaction: { ...fiatIncome, amountSats: 12_000n },
+    });
+    // Retry of the same create, key still omitted, no revision: idempotent.
+    await expect(
+      t.mutation(api.transaction, {
+        transaction: { ...fiatIncome, amountSats: 12_000n },
+      }),
+    ).resolves.toMatchObject({ outcome: "updated" });
+    const accounts = await t.run(async (ctx) =>
+      ctx.db.query("btcAccounts").collect(),
+    );
+    expect(accounts.find((row) => row.key === "river")!.sats).toBe(1_012_000n);
   });
 });

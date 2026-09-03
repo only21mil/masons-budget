@@ -21,6 +21,26 @@ describe("renderer URL security policy", () => {
     expect(policy.allowsResource("https://127.0.0.1:5173/assets/index.js")).toBe(false)
   })
 
+  it("accepts every loopback spelling for the development server", () => {
+    for (const host of ["127.0.0.1", "localhost", "[::1]"]) {
+      const policy = createRendererSecurityPolicy("/opt/vogel-vault/dist", `http://${host}:5173/`)
+      expect(policy.allowsDocument(`http://${host}:5173/`)).toBe(true)
+    }
+  })
+
+  it("pins the development server to loopback, failing closed on any other host", () => {
+    for (const url of [
+      "http://192.168.1.20:5173/",
+      "http://dev-box.local:5173/",
+      "https://vite.example.test/",
+      "http://0.0.0.0:5173/",
+    ]) {
+      expect(() => createRendererSecurityPolicy("/tmp/dist", url)).toThrow(
+        "VITE_DEV_SERVER_URL is not a trusted renderer URL",
+      )
+    }
+  })
+
   it("requires the exact packaged index for IPC and contains resources by path", () => {
     const dist = "/opt/Vogel Vault/dist"
     const policy = createRendererSecurityPolicy(dist)

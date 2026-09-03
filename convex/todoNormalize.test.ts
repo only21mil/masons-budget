@@ -438,3 +438,41 @@ describe("todoUpdatedMs", () => {
     expect(todoUpdatedMs({ updated_at: "2026-07-20" })).toBe(Date.parse("2026-07-20"));
   });
 });
+
+describe("todoUpdatedMs parses stamps under the shared domain contract", () => {
+  // The parser mirrors shared/domain/src/todo.ts isoToMillis (zoneless = UTC,
+  // strict ISO, garbage = 0). These pins hold the mirror to the real domain
+  // implementation stamp by stamp, so LWW on the server cannot drift from LWW
+  // on the clients.
+  const stamps = [
+    "2026-07-20T10:30:00.000Z",
+    "2026-07-20T10:30:00Z",
+    "2026-07-20T10:30:00.5Z",
+    "2026-07-20T10:30:00.123456Z",
+    "2026-07-20T10:30:00+02:00",
+    "2026-07-20T10:30:00-0530",
+    "2026-07-20t10:30:00z",
+    "2026-07-20 10:30:00",
+    "2026-07-20",
+    "2026-02-30T00:00:00Z",
+    "2026-07-20T24:00:00Z",
+    "not-a-timestamp",
+    "",
+    "July 20, 2026",
+    "1710000000000",
+  ];
+
+  for (const stamp of stamps) {
+    it(`agrees with the domain for ${JSON.stringify(stamp)}`, async () => {
+      const domain = await import("../shared/domain/src/todo.ts");
+      expect(todoUpdatedMs({ updated_at: stamp })).toBe(
+        domain.todoUpdatedMillis({ updated_at: stamp }),
+      );
+    });
+  }
+
+  it("scores zero for stamps that are not strict ISO", () => {
+    expect(todoUpdatedMs({ updatedAt: "July 20, 2026" })).toBe(0);
+    expect(todoUpdatedMs({ updatedAt: "1710000000000" })).toBe(0);
+  });
+});

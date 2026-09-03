@@ -4,6 +4,7 @@ import android.app.KeyguardManager
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -37,6 +38,7 @@ import com.sats21m.vogelvault.ui.VaultLockController
 import com.sats21m.vogelvault.ui.VaultLockSnapshot
 import com.sats21m.vogelvault.ui.VaultLockedScreen
 import com.sats21m.vogelvault.ui.VaultViewModel
+import com.sats21m.vogelvault.ui.purgeExportedCsvFiles
 import com.sats21m.vogelvault.ui.requiresOnboarding
 import com.sats21m.vogelvault.ui.refreshMarketQuotesPeriodically
 import com.sats21m.vogelvault.ui.theme.LedgerPalettes
@@ -91,6 +93,22 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The whole activity surface carries household ledger amounts. FLAG_SECURE
+        // blanks the app from screenshots, screen recordings, and the recents
+        // thumbnail — the standard guard for finance apps, and the only one that
+        // also covers the Onboarding and Settings screens during a locked-session
+        // transition.
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE,
+        )
+        // Sweep CSV exports a share could not clean up itself (process death
+        // while a share target held the file open, or a share that never
+        // returned). The next launch must not inherit the leftover plaintext.
+        val vaultApp = application as VaultApplication
+        vaultApp.applicationScope.launch {
+            purgeExportedCsvFiles(applicationContext)
+        }
         val ledgerUiPreferences = LedgerUiPreferences(applicationContext)
         val initialLedgerSettings = ledgerUiPreferences.current()
         applyLedgerSystemBars(
@@ -317,8 +335,11 @@ class MainActivity : FragmentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             builder.setAllowedAuthenticators(BIOMETRIC_STRONG or DEVICE_CREDENTIAL)
         } else {
-            // BIOMETRIC_STRONG | DEVICE_CREDENTIAL is not supported on API 29.
-            // This compatibility path still requires device-owner authentication.
+            // 1.2.x deprecates setDeviceCredentialAllowed and claims device-
+            // credential support on API 23-29, but the lock gate must not ride
+            // an unverifiable library claim. Until the pinned 1.2.0-alpha05 is
+            // verified on a real API 29 device, this branch stays explicit: it
+            // still requires device-owner authentication and fails closed.
             builder.setDeviceCredentialAllowed(true)
         }
         return builder.build()

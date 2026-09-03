@@ -62,14 +62,27 @@ function ProfileControl() {
  * Global read indicator.
  *
  * Reports the WORST state across every slice, not one arbitrary slice — a single
- * failed read matters even when the rest are fine. Labelled "Read" so it reads
+ * failed read matters even when the rest are fine. The list is every row slice
+ * AppState loads (the same list `rowReadSucceeded` gates on), so a failed
+ * canonical BTC balance document, income read, or transfer read worsens the
+ * badge exactly like a failed transaction read. Labelled "Read" so it reads
  * as the app-wide indicator rather than implying that row age is read recency
  * or duplicating the per-slice badge that each page header already shows.
  */
 function GlobalSyncState() {
   const { data } = useAppState()
 
-  const slices = [data.transactions, data.budget, data.btcAccounts, data.btcBuys, data.billPays, data.todos]
+  const slices = [
+    data.transactions,
+    data.income,
+    data.budget,
+    data.btcBalanceDocument,
+    data.btcAccounts,
+    data.btcBuys,
+    data.billPays,
+    data.btcTransfers,
+    data.todos,
+  ]
   const rank: Record<Freshness, number> = {
     error: 0,
     loading: 1,

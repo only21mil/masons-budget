@@ -74,12 +74,21 @@ actor ConvexDataReader {
         try await client.fetchFile("btc-balance-snapshot", as: LegacyBTCSnapshotDTO.self)
     }
 
-    /// Read all BTC buy records from Convex.
-    func readBTCBuys(viewer: FamilyMember) async throws -> [LegacyBTCBuyDTO] {
-        try await rowOrBlob(
-            { try await rowReader.btcBuys(viewer: viewer, scope: .netWorth) },
-            blob: { try await client.fetchFile("bitcoin-buys", as: [LegacyBTCBuyDTO].self) },
-        )
+    /// Read all BTC buy records from Convex. The batch source records whether
+    /// the row list proved absence (row-authoritative) or came from the
+    /// compatibility blob, which cannot.
+    func readBTCBuys(viewer: FamilyMember) async throws -> ConvexReadBatch<[LegacyBTCBuyDTO]> {
+        if rowReadsEnabled() {
+            do {
+                let rows = try await rowReader.btcBuys(viewer: viewer, scope: .netWorth)
+                return ConvexReadBatch(value: rows, replacementOwners: nil, source: .rowAPI)
+            } catch let error as ConvexError where error.isRowAPIUnavailable {
+                log.notice("Public row API is not deployed; reading authenticated bitcoin-buys blob")
+            }
+        }
+
+        let blob = try await client.fetchFile("bitcoin-buys", as: [LegacyBTCBuyDTO].self)
+        return ConvexReadBatch(value: blob, replacementOwners: nil, source: .legacyBlob)
     }
 
     /// Read all BTC bill pay records from Convex.
@@ -127,17 +136,22 @@ actor ConvexDataReader {
         )
     }
 
-    /// Read Mason's BTC buys from Convex.
-    func readMasonBTCBuys(viewer: FamilyMember) async throws -> [LegacyBTCBuyDTO] {
-        try await rowOrBlob(
-            { try await rowReader.btcBuys(viewer: viewer, scope: .netWorth) },
-            blob: {
-                try await client.fetchFile(
-                    "mason-bitcoin-buys",
-                    as: [LegacyBTCBuyDTO].self,
-                )
-            },
+    /// Read Mason's BTC buys from Convex (same batch semantics as `readBTCBuys`).
+    func readMasonBTCBuys(viewer: FamilyMember) async throws -> ConvexReadBatch<[LegacyBTCBuyDTO]> {
+        if rowReadsEnabled() {
+            do {
+                let rows = try await rowReader.btcBuys(viewer: viewer, scope: .netWorth)
+                return ConvexReadBatch(value: rows, replacementOwners: nil, source: .rowAPI)
+            } catch let error as ConvexError where error.isRowAPIUnavailable {
+                log.notice("Public row API is not deployed; reading authenticated mason-bitcoin-buys blob")
+            }
+        }
+
+        let blob = try await client.fetchFile(
+            "mason-bitcoin-buys",
+            as: [LegacyBTCBuyDTO].self,
         )
+        return ConvexReadBatch(value: blob, replacementOwners: nil, source: .legacyBlob)
     }
 
     /// Read todos. The legacy blob fallback supports a raw array or `{ "todos": [...] }`.

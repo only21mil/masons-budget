@@ -12,7 +12,7 @@
 import { createServer } from "node:http"
 import { createReadStream, existsSync } from "node:fs"
 import { mkdir, writeFile } from "node:fs/promises"
-import { dirname, extname, join, resolve } from "node:path"
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
@@ -103,13 +103,22 @@ const MIME = {
 }
 
 function serve(directory) {
+  // Anchor the containment check with path.relative, never a string prefix:
+  // `startsWith(directory)` would let `/../dist-anything/x` resolve under a
+  // sibling whose name merely shares the prefix. Same pattern as
+  // electron/rendererSecurity.ts.
+  const resolvedDirectory = resolve(directory)
+  const isContained = (candidate) => {
+    const rel = relative(resolvedDirectory, resolve(candidate))
+    return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
+  }
   return new Promise((resolvePort) => {
     const server = createServer((request, response) => {
       const url = new URL(request.url, "http://localhost")
       const relative = url.pathname === "/" ? "/index.html" : url.pathname
-      const filePath = join(directory, decodeURIComponent(relative))
+      const filePath = join(resolvedDirectory, decodeURIComponent(relative))
 
-      if (!filePath.startsWith(directory) || !existsSync(filePath)) {
+      if (!isContained(filePath) || !existsSync(filePath)) {
         response.writeHead(404).end("not found")
         return
       }
