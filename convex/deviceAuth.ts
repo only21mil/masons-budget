@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
 
-import type { Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 
 export const DEVICE_CAPABILITIES = [
   "todos:write",
@@ -163,6 +163,42 @@ export async function authenticateDeviceForSelfRevoke(
     .unique();
   const tokenHash = await sha256Hex(deviceToken);
   if (!device || !equalSha256Hex(tokenHash, device.tokenHash)) {
+    throw new ConvexError({
+      code: "DEVICE_UNAUTHORIZED",
+      message: "Unauthorized mobile device",
+    });
+  }
+  return device;
+}
+
+/**
+ * Read scope for paired credentials.
+ *
+ * Every non-revoked paired device may read THROUGH its own profile: the
+ * caller's identity is the credential, and the caller's scope is derived from
+ * `device.profile` by the query layer — never from a client-asserted viewer.
+ * This is the migration path away from the shared CONVEX_READ_TOKEN, which is
+ * one household secret and authorizes no one in particular.
+ *
+ * Queries cannot write, so this performs no lastSeen update and no token
+ * rehash; only mutation paths migrate a legacy hash.
+ */
+export async function authenticateDeviceForRead(
+  ctx: QueryCtx | MutationCtx,
+  deviceId: string,
+  deviceToken: string,
+): Promise<Doc<"mobileDevices">> {
+  validateDeviceCredentialShape(deviceId, deviceToken);
+  const device = await ctx.db
+    .query("mobileDevices")
+    .withIndex("by_device_id", (q) => q.eq("deviceId", deviceId))
+    .unique();
+  const tokenHash = await sha256Hex(deviceToken);
+  if (
+    !device ||
+    device.revokedAt !== undefined ||
+    !equalSha256Hex(tokenHash, device.tokenHash)
+  ) {
     throw new ConvexError({
       code: "DEVICE_UNAUTHORIZED",
       message: "Unauthorized mobile device",

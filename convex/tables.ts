@@ -40,10 +40,11 @@
 import { ConvexError, v } from "convex/values";
 
 import type { Doc } from "./_generated/dataModel";
-import { query, mutation, type MutationCtx } from "./_generated/server";
+import { query, mutation, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { isRealIsoDate, requireIsoDate } from "./dateValidation";
 import {
   authenticateDevice,
+  authenticateDeviceForRead,
   markDeviceSeen,
   requireTaskProfileBinding,
   timingSafeEqualStrings,
@@ -223,12 +224,17 @@ function sharesNetWorthWith(
  * owners is what makes that an INDEX RANGE per owner rather than a table scan
  * plus a filter — the queries below never call `.filter()` on owner.
  *
- * HONEST SCOPE: `viewer` is asserted by the caller, and CONVEX_READ_TOKEN is one
- * shared household secret. This is not authorization and must not be described
- * as such — anyone holding the read token can pass any viewer. It is the same
- * trust level as today's client-side filter, with the bandwidth and correctness
- * win of doing it once, server-side, in one place. Per-identity auth is a
- * separate piece of work.
+ * HONEST SCOPE, shared-token path: `viewer` is asserted by the caller, and
+ * CONVEX_READ_TOKEN is one shared household secret. On that path this is not
+ * authorization and must not be described as such — anyone holding the read
+ * token can pass any viewer. It is the same trust level as today's client-side
+ * filter, with the bandwidth and correctness win of doing it once, server-side,
+ * in one place.
+ *
+ * Device-credential path: the authoritative viewer is the credential's
+ * server-stored profile and the client-asserted viewer is only an echo that
+ * must agree with it (authorizeQueryViewer below). A paired child credential
+ * therefore reads only its own rows through this layer.
  */
 type VisibilityScope = "visible" | "netWorth";
 
@@ -238,6 +244,71 @@ function ownersInScope(
 ): FamilyMember[] {
   const rule = scope === "netWorth" ? sharesNetWorthWith : canSeeDataOwnedBy;
   return FAMILY_MEMBERS.filter((owner) => rule(viewer, owner));
+}
+
+/**
+ * How a read authenticated, and whose eyes it sees through.
+ *
+ * `sharedToken` marks the legacy CONVEX_READ_TOKEN path, which is deprecated
+ * for reads: the response carries an explicit marker so every client can find
+ * its remaining shared-token calls and move them to deviceId + deviceToken.
+ */
+type ReadAuth =
+  | { viewer: FamilyMember; sharedToken: true }
+  | { viewer: FamilyMember; sharedToken: false };
+
+type DeviceReadRequest = {
+  viewer: FamilyMember;
+  token?: string;
+  deviceId?: string;
+  deviceToken?: string;
+};
+
+async function authorizeQueryViewer(
+  ctx: QueryCtx,
+  request: DeviceReadRequest,
+): Promise<ReadAuth> {
+  if (request.deviceId !== undefined || request.deviceToken !== undefined) {
+    if (request.deviceId === undefined || request.deviceToken === undefined) {
+      throw new ConvexError("Unauthorized: malformed device credential.");
+    }
+    const device = await authenticateDeviceForRead(
+      ctx,
+      request.deviceId,
+      request.deviceToken,
+    );
+    if (device.profile === undefined) {
+      throw new ConvexError({
+        code: "PROFILE_BINDING_REQUIRED",
+        message: "This device credential is not bound to a profile.",
+      });
+    }
+    // The credential decides whose eyes this is. A client-asserted viewer that
+    // disagrees is a spoofing attempt, not a preference.
+    if (request.viewer !== device.profile) {
+      throw new ConvexError(
+        "Unauthorized: viewer does not match the credential profile.",
+      );
+    }
+    return { viewer: device.profile, sharedToken: false };
+  }
+  validateReadToken(request.token);
+  return { viewer: request.viewer, sharedToken: true };
+}
+
+/**
+ * Deprecation marker on shared-token read envelopes. Additive and constant, so
+ * existing decoders that ignore unknown keys keep working; clients that read it
+ * can enumerate their remaining shared-token calls and migrate to
+ * deviceId + deviceToken, where the server — not a client assertion — decides
+ * whose data leaves the deployment.
+ */
+const SHARED_TOKEN_READ_MARKER = {
+  readAuth: { mode: "shared-token" as const, deprecated: true as const },
+};
+
+function readAuthDeprecation(auth: ReadAuth) {
+  return auth.sharedToken ? SHARED_TOKEN_READ_MARKER : {};
 }
 
 /**
@@ -259,6 +330,40 @@ function resolveOwner(raw: unknown, fileOwner: FamilyMember): FamilyMember {
 
 function postsToHouseholdBitcoinLedger(owner: FamilyMember): boolean {
   return owner === "victor" || owner === "rachel";
+}
+
+/**
+ * Owner scope of every named dataFiles blob, used by the device-credential
+ * read path so a paired child credential cannot pull an adult blob by name.
+ *
+ * Superset of BLOB_SOURCES (row upserts) plus the document-shaped blobs and
+ * the writeback audit log. The `todos` blob mixes every profile's rows into
+ * one file, so it is treated as adult-scope: children read todos through the
+ * profile-private row layer (listTodos), not the household blob.
+ *
+ * An unknown name is adult-scope only — a child credential must never read a
+ * file this map has not classified.
+ */
+export const DATA_FILE_OWNERS: Record<string, FamilyMember> = {
+  transactions: "victor",
+  "mason-transactions": "mason",
+  "maddox-transactions": "maddox",
+  todos: "victor",
+  "bitcoin-buys": "victor",
+  "mason-bitcoin-buys": "mason",
+  "bitcoin-bill-pays": "victor",
+  "btc-balance-snapshot": "victor",
+  "son-balances": "mason",
+  budget: "victor",
+  "mason-budget": "mason",
+  finances: "victor",
+  "writeback-audit": "victor",
+};
+
+export function dataFileVisibleTo(profile: DeviceProfile, name: string): boolean {
+  const owner = DATA_FILE_OWNERS[name];
+  if (owner === undefined) return isAdult(profile);
+  return canSeeDataOwnedBy(profile, owner);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1102,10 +1207,12 @@ export const listTransactions = query({
     month: v.optional(v.string()),
     limit: v.optional(v.float64()),
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, month, limit, token }) => {
-    validateReadToken(token);
-    const owners = ownersInScope(viewer, "visible");
+  handler: async (ctx, { viewer, month, limit, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const owners = ownersInScope(auth.viewer, "visible");
     const cap = requestedRowCap(limit, "listTransactions");
 
     const perOwner = await Promise.all(
@@ -1131,11 +1238,10 @@ export const listTransactions = query({
 
     const rows = perOwner.flat();
     rows.sort(byDateDescending);
-    return publicEnvelope(
-      rows.slice(0, cap).map(projectTransaction),
-      limit,
-      "listTransactions",
-    );
+    return {
+      ...publicEnvelope(rows.slice(0, cap).map(projectTransaction), limit, "listTransactions"),
+      ...readAuthDeprecation(auth),
+    };
   },
 });
 
@@ -1151,10 +1257,12 @@ export const listIncome = query({
     month: v.optional(v.string()),
     limit: v.optional(v.float64()),
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, month, limit, token }) => {
-    validateReadToken(token);
-    const owners = ownersInScope(viewer, "visible");
+  handler: async (ctx, { viewer, month, limit, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const owners = ownersInScope(auth.viewer, "visible");
     const cap = requestedRowCap(limit, "listIncome");
 
     const perOwner = await Promise.all(
@@ -1179,11 +1287,10 @@ export const listIncome = query({
 
     const rows = perOwner.flat();
     rows.sort(byIncomeDateDescending);
-    return publicEnvelope(
-      rows.slice(0, cap).map(projectIncome),
-      limit,
-      "listIncome",
-    );
+    return {
+      ...publicEnvelope(rows.slice(0, cap).map(projectIncome), limit, "listIncome"),
+      ...readAuthDeprecation(auth),
+    };
   },
 });
 
@@ -1194,9 +1301,11 @@ export const listTodos = query({
     done: v.optional(v.boolean()),
     limit: v.optional(v.float64()),
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, done, limit, token }) => {
-    validateReadToken(token);
+  handler: async (ctx, { viewer, done, limit, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
     const cap = requestedRowCap(limit, "listTodos");
     const wanted = done === undefined ? [false, true] : [done];
 
@@ -1220,11 +1329,10 @@ export const listTodos = query({
           : -1
         : b.updatedAtMs - a.updatedAtMs,
     );
-    return publicEnvelope(
-      rows.slice(0, cap).map(projectTodo),
-      limit,
-      "listTodos",
-    );
+    return {
+      ...publicEnvelope(rows.slice(0, cap).map(projectTodo), limit, "listTodos"),
+      ...readAuthDeprecation(auth),
+    };
   },
 });
 
@@ -1239,10 +1347,12 @@ export const listBtcBuys = query({
     month: v.optional(v.string()),
     limit: v.optional(v.float64()),
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, scope, month, limit, token }) => {
-    validateReadToken(token);
-    const owners = ownersInScope(viewer, scope);
+  handler: async (ctx, { viewer, scope, month, limit, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const owners = ownersInScope(auth.viewer, scope);
     const cap = requestedRowCap(limit, "listBtcBuys");
 
     const perOwner = await Promise.all(
@@ -1266,11 +1376,10 @@ export const listBtcBuys = query({
 
     const rows = perOwner.flat();
     rows.sort(byDateDescending);
-    return publicEnvelope(
-      rows.slice(0, cap).map(projectBtcBuy),
-      limit,
-      "listBtcBuys",
-    );
+    return {
+      ...publicEnvelope(rows.slice(0, cap).map(projectBtcBuy), limit, "listBtcBuys"),
+      ...readAuthDeprecation(auth),
+    };
   },
 });
 
@@ -1282,10 +1391,12 @@ export const listBtcBillPays = query({
     month: v.optional(v.string()),
     limit: v.optional(v.float64()),
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, scope, month, limit, token }) => {
-    validateReadToken(token);
-    const owners = ownersInScope(viewer, scope);
+  handler: async (ctx, { viewer, scope, month, limit, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const owners = ownersInScope(auth.viewer, scope);
     const cap = requestedRowCap(limit, "listBtcBillPays");
 
     const perOwner = await Promise.all(
@@ -1311,11 +1422,10 @@ export const listBtcBillPays = query({
 
     const rows = perOwner.flat();
     rows.sort(byDateDescending);
-    return publicEnvelope(
-      rows.slice(0, cap).map(projectBtcBillPay),
-      limit,
-      "listBtcBillPays",
-    );
+    return {
+      ...publicEnvelope(rows.slice(0, cap).map(projectBtcBillPay), limit, "listBtcBillPays"),
+      ...readAuthDeprecation(auth),
+    };
   },
 });
 
@@ -1325,9 +1435,11 @@ export const getMoneyOutToday = query({
     viewer: familyMemberValidator,
     date: v.string(),
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, date, token }) => {
-    validateReadToken(token);
+  handler: async (ctx, { viewer, date, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
     if (!isRealIsoDate(date)) {
       throw new ConvexError(
         "getMoneyOutToday: date must be a real ISO calendar date in yyyy-MM-dd form.",
@@ -1336,7 +1448,7 @@ export const getMoneyOutToday = query({
 
     // Net-worth scope is the spending scope here: adults share one household
     // ledger, while a child gets only their exact owner rows.
-    const owners = ownersInScope(viewer, "netWorth");
+    const owners = ownersInScope(auth.viewer, "netWorth");
     const [transactionRows, billPayRows] = await Promise.all([
       Promise.all(
         owners.map((owner) =>
@@ -1394,13 +1506,14 @@ export const getMoneyOutToday = query({
 
     return {
       date,
-      owner: canonicalLedgerOwner(viewer),
+      owner: canonicalLedgerOwner(auth.viewer),
       totalCents: sources.reduce(
         (total, source) =>
           checkedMoneyOutCentsAdd(total, source.contributionCents),
         0n,
       ),
       sources,
+      ...readAuthDeprecation(auth),
     };
   },
 });
@@ -1413,10 +1526,12 @@ export const listBtcTransfers = query({
     month: v.optional(v.string()),
     limit: v.optional(v.float64()),
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, scope, month, limit, token }) => {
-    validateReadToken(token);
-    const owners = ownersInScope(viewer, scope);
+  handler: async (ctx, { viewer, scope, month, limit, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const owners = ownersInScope(auth.viewer, scope);
     const cap = requestedRowCap(limit, "listBtcTransfers");
     const perOwner = await Promise.all(
       owners.map((owner) =>
@@ -1440,11 +1555,10 @@ export const listBtcTransfers = query({
     );
     const rows = perOwner.flat();
     rows.sort(byDateDescending);
-    return publicEnvelope(
-      rows.slice(0, cap).map(projectBtcTransfer),
-      limit,
-      "listBtcTransfers",
-    );
+    return {
+      ...publicEnvelope(rows.slice(0, cap).map(projectBtcTransfer), limit, "listBtcTransfers"),
+      ...readAuthDeprecation(auth),
+    };
   },
 });
 
@@ -1455,10 +1569,12 @@ export const listBtcAccounts = query({
     scope: scopeValidator,
     limit: v.optional(v.float64()),
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, scope, limit, token }) => {
-    validateReadToken(token);
-    const owners = ownersInScope(viewer, scope);
+  handler: async (ctx, { viewer, scope, limit, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const owners = ownersInScope(auth.viewer, scope);
     const cap = requestedRowCap(limit, "listBtcAccounts");
 
     const perOwner = await Promise.all(
@@ -1482,11 +1598,10 @@ export const listBtcAccounts = query({
           ? -1
           : 1,
     );
-    return publicEnvelope(
-      rows.slice(0, cap).map(projectBtcAccount),
-      limit,
-      "listBtcAccounts",
-    );
+    return {
+      ...publicEnvelope(rows.slice(0, cap).map(projectBtcAccount), limit, "listBtcAccounts"),
+      ...readAuthDeprecation(auth),
+    };
   },
 });
 
@@ -1501,10 +1616,12 @@ export const listBalanceDocuments = query({
     viewer: familyMemberValidator,
     scope: scopeValidator,
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, scope, token }) => {
-    validateReadToken(token);
-    const owners = ownersInScope(viewer, scope);
+  handler: async (ctx, { viewer, scope, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const owners = ownersInScope(auth.viewer, scope);
     const rows = (
       await Promise.all(
         owners.map((owner) =>
@@ -1521,6 +1638,7 @@ export const listBalanceDocuments = query({
 
     rows.sort((a, b) => (a.owner < b.owner ? -1 : a.owner > b.owner ? 1 : 0));
     return {
+      ...readAuthDeprecation(auth),
       rows: rows.map((row) => ({
         owner: row.owner,
         cashAppSats: row.cashAppSats,
@@ -1557,10 +1675,12 @@ export const getBudgetDocument = query({
     viewer: familyMemberValidator,
     scope: v.literal("netWorth"),
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, token }) => {
-    validateReadToken(token);
-    const source = budgetSourceFor(viewer);
+  handler: async (ctx, { viewer, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const source = budgetSourceFor(auth.viewer);
     if (source === null) return { document: null, complete: true };
     const doc = await ctx.db
       .query("budgetDocuments")
@@ -1571,6 +1691,7 @@ export const getBudgetDocument = query({
     return {
       document: doc ? publicBudgetDocument(doc) : null,
       complete: true,
+      ...readAuthDeprecation(auth),
     };
   },
 });
@@ -1585,10 +1706,12 @@ export const listBtcBalanceDocuments = query({
     viewer: familyMemberValidator,
     scope: scopeValidator,
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, scope, token }) => {
-    validateReadToken(token);
-    const owners = ownersInScope(viewer, scope);
+  handler: async (ctx, { viewer, scope, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const owners = ownersInScope(auth.viewer, scope);
     const rows = (
       await Promise.all(
         owners.map((owner) =>
@@ -1604,7 +1727,11 @@ export const listBtcBalanceDocuments = query({
     ).flat();
 
     rows.sort((a, b) => (a.owner < b.owner ? -1 : a.owner > b.owner ? 1 : 0));
-    return { rows: rows.map(publicBtcBalanceDocument), complete: true };
+    return {
+      ...readAuthDeprecation(auth),
+      rows: rows.map(publicBtcBalanceDocument),
+      complete: true,
+    };
   },
 });
 
@@ -1617,10 +1744,12 @@ export const getBtcSnapshotMetadata = query({
     viewer: familyMemberValidator,
     scope: scopeValidator,
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, scope, token }) => {
-    validateReadToken(token);
-    const owners = ownersInScope(viewer, scope);
+  handler: async (ctx, { viewer, scope, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
+    const owners = ownersInScope(auth.viewer, scope);
     const rows = (
       await Promise.all(
         owners.map((owner) =>
@@ -1645,7 +1774,7 @@ export const getBtcSnapshotMetadata = query({
         updatedAtMs: row.updatedAtMs,
       }));
     rows.sort((a, b) => (a.owner < b.owner ? -1 : a.owner > b.owner ? 1 : 0));
-    return { rows, complete: true };
+    return { ...readAuthDeprecation(auth), rows, complete: true };
   },
 });
 
@@ -1659,9 +1788,11 @@ export const getFinanceDocument = query({
     viewer: familyMemberValidator,
     scope: scopeValidator,
     token: v.optional(v.string()),
+  deviceId: v.optional(v.string()),
+  deviceToken: v.optional(v.string()),
   },
-  handler: async (ctx, { viewer, scope, token }) => {
-    validateReadToken(token);
+  handler: async (ctx, { viewer, scope, token, deviceId, deviceToken }) => {
+    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
     const doc = await ctx.db
       .query("financeDocuments")
       .withIndex(PUBLIC_QUERY_INDEX_PLAN.getFinanceDocument.all.name, (q) =>
@@ -1675,7 +1806,7 @@ export const getFinanceDocument = query({
     // still produces at most one constant log line rather than one per value.
     const repairs: SharesRepairTally = { repaired: false };
     const accounts = doc.accounts
-      .filter((account) => rule(viewer, account.owner))
+      .filter((account) => rule(auth.viewer, account.owner))
       .map((account) => publicFinanceAccount(account, repairs));
     if (repairs.repaired) console.warn(STORED_SHARES_REPAIRED_WARNING);
     if (accounts.length === 0) {
@@ -1692,6 +1823,7 @@ export const getFinanceDocument = query({
         updatedAtMs: doc.updatedAtMs,
       },
       complete: true,
+      ...readAuthDeprecation(auth),
     };
   },
 });
@@ -4118,7 +4250,7 @@ export const upsertBtcAccount = mutation({
  * replaced in place so category ordering remains stable.
  *
  * `month` is an optimistic scope guard, not a month selector. getBudgetDocument
- * exposes the one document selected by budgetSourceFor(viewer), and callers
+ * exposes the one document selected by budgetSourceFor(auth.viewer), and callers
  * derive spend from that document's own month. Refusing a stale month here keeps
  * a category edit made from a June screen from changing the July document.
  */

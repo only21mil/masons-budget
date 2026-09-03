@@ -1,7 +1,13 @@
 import { ConvexError, v } from "convex/values";
-import { query, mutation, type MutationCtx } from "./_generated/server";
+import {
+  query,
+  mutation,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 import { isValidAndroidReadToken } from "./androidReadToken";
 import {
+  authenticateDeviceForRead,
   authenticateDeviceForSelfRevoke,
   deviceCapabilityValidator,
   deviceProfileValidator,
@@ -20,6 +26,7 @@ import { familyMemberValidator } from "./schema";
 import {
   executeTodoDeleteFromDevice,
   executeTodoUpsertFromDevice,
+  dataFileVisibleTo,
   todoDeviceInput,
   todoWriteOperationValidator,
 } from "./tables";
@@ -287,13 +294,72 @@ function validateAndroidReadBootstrapSyncToken(token?: string) {
 // equalSha256Hex and timingSafeEqualStrings live in deviceAuth.ts so every
 // credential comparison in the deployment shares one constant-time implementation.
 
+/**
+ * How a read call authenticated.
+ *
+ * - shared token: the legacy household-wide CONVEX_READ_TOKEN. Deprecated for
+ *   reads; kept fully functional until every client has migrated.
+ * - device credential: the authoritative scope is the paired credential's
+ *   server-stored profile. Row queries validate the client-asserted viewer
+ *   against it; blob queries check the named file against it.
+ */
+type ReadAccess =
+  | { viaDevice: false }
+  | { viaDevice: true; profile: typeof deviceProfileValidator.type };
+
+async function authorizeReadAccess(
+  ctx: MutationCtx | QueryCtx,
+  args: { token?: string; deviceId?: string; deviceToken?: string },
+): Promise<ReadAccess> {
+  if (args.deviceId !== undefined || args.deviceToken !== undefined) {
+    if (args.deviceId === undefined || args.deviceToken === undefined) {
+      throw new ConvexError({
+        code: "VALIDATION_FAILED",
+        message: "Malformed device credential.",
+      });
+    }
+    const device = await authenticateDeviceForRead(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+    );
+    if (device.profile === undefined) {
+      throw new ConvexError({
+        code: "PROFILE_BINDING_REQUIRED",
+        message: "This device credential is not bound to a profile.",
+      });
+    }
+    return { viaDevice: true, profile: device.profile };
+  }
+  validateReadToken(args.token);
+  return { viaDevice: false };
+}
+
 // ── Queries (called by the iOS app) ──
 
 /** Fetch a single data file by name. Returns the raw JSON data. */
 export const get = query({
-  args: { name: v.string(), token: v.optional(v.string()) },
-  handler: async (ctx, { name, token }) => {
-    validateReadToken(token);
+  args: {
+    name: v.string(),
+    token: v.optional(v.string()),
+    deviceId: v.optional(v.string()),
+    deviceToken: v.optional(v.string()),
+  },
+  handler: async (ctx, { name, token, deviceId, deviceToken }) => {
+    const access = await authorizeReadAccess(ctx, {
+      token,
+      deviceId,
+      deviceToken,
+    });
+    // A device credential reads blobs through its profile: a paired child
+    // credential cannot fetch an adult blob by name. The shared-token path
+    // remains household-wide — that is exactly its documented limitation.
+    if (access.viaDevice && !dataFileVisibleTo(access.profile, name)) {
+      throw new ConvexError({
+        code: "READ_FORBIDDEN",
+        message: "This file is outside the credential's profile scope.",
+      });
+    }
     const doc = await ctx.db
       .query("dataFiles")
       .withIndex("by_name", (q) => q.eq("name", name))
@@ -304,21 +370,43 @@ export const get = query({
 
 /** Fetch current versions of all data files — lightweight check for changes. */
 export const getVersions = query({
-  args: { token: v.optional(v.string()) },
-  handler: async (ctx, { token }) => {
-    validateReadToken(token);
+  args: {
+    token: v.optional(v.string()),
+    deviceId: v.optional(v.string()),
+    deviceToken: v.optional(v.string()),
+  },
+  handler: async (ctx, { token, deviceId, deviceToken }) => {
+    const access = await authorizeReadAccess(ctx, {
+      token,
+      deviceId,
+      deviceToken,
+    });
     const docs = await ctx.db.query("syncVersions").collect();
-    return Object.fromEntries(docs.map((d) => [d.name, d.version]));
+    const visible = access.viaDevice
+      ? docs.filter((d) => dataFileVisibleTo(access.profile, d.name))
+      : docs;
+    return Object.fromEntries(visible.map((d) => [d.name, d.version]));
   },
 });
 
 /** List all available data file names. */
 export const list = query({
-  args: { token: v.optional(v.string()) },
-  handler: async (ctx, { token }) => {
-    validateReadToken(token);
+  args: {
+    token: v.optional(v.string()),
+    deviceId: v.optional(v.string()),
+    deviceToken: v.optional(v.string()),
+  },
+  handler: async (ctx, { token, deviceId, deviceToken }) => {
+    const access = await authorizeReadAccess(ctx, {
+      token,
+      deviceId,
+      deviceToken,
+    });
     const docs = await ctx.db.query("dataFiles").collect();
-    return docs.map((d) => ({
+    const visible = access.viaDevice
+      ? docs.filter((d) => dataFileVisibleTo(access.profile, d.name))
+      : docs;
+    return visible.map((d) => ({
       name: d.name,
       version: d.version,
       updatedAt: d.updatedAt,
@@ -1164,11 +1252,20 @@ export const removeTodoFromMobile = mutation({
 /**
  * List all todo delete tombstones (SAT-1327). Retained for compatibility
  * readers that must reject a blob todo whose updated_at predates its tombstone.
+ *
+ * A device credential authenticates this query but no per-profile filtering is
+ * possible: tombstones carry only an id and a timestamp, never todo content.
+ * That id-level residual is accepted while shipped clients converge through
+ * the blob; the row layer's tombstones are owner-checked.
  */
 export const listTodoTombstones = query({
-  args: { token: v.optional(v.string()) },
-  handler: async (ctx, { token }) => {
-    validateReadToken(token);
+  args: {
+    token: v.optional(v.string()),
+    deviceId: v.optional(v.string()),
+    deviceToken: v.optional(v.string()),
+  },
+  handler: async (ctx, { token, deviceId, deviceToken }) => {
+    await authorizeReadAccess(ctx, { token, deviceId, deviceToken });
     const docs = await ctx.db.query("todoTombstones").collect();
     return docs.map((d) => ({ id: d.id, deletedAt: d.deletedAt }));
   },

@@ -1373,7 +1373,11 @@ describe("owner is first class, and the two visibility rules keep their widths",
         updatedAtMs: 0,
       },
     ]);
-    expect(mason).toEqual({ rows: [], complete: true });
+    expect(mason).toEqual({
+      rows: [],
+      complete: true,
+      readAuth: { mode: "shared-token", deprecated: true },
+    });
     expect(victor.rows[0]).not.toHaveProperty("sourceKey");
     expect(victor.rows[0]).not.toHaveProperty("raw");
     expect(victor.rows[0]).not.toHaveProperty("sourceFile");
@@ -1835,6 +1839,7 @@ describe("public Linux/Android read contract", () => {
     });
     expect(response).toEqual({
       complete: true,
+      readAuth: { mode: "shared-token", deprecated: true },
       rows: [{
         transferId: "transfer-read-1",
         owner: "victor",
@@ -1867,6 +1872,7 @@ describe("public Linux/Android read contract", () => {
         expect.objectContaining({ incomeId: "income-1", amountCents: 250055n }),
       ],
       complete: false,
+      readAuth: { mode: "shared-token", deprecated: true },
     });
 
     const accounts = await t.query(fn.listBtcAccounts, {
