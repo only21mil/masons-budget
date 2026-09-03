@@ -1,65 +1,107 @@
 # Convex production deploy hatch state
 
-Checked: 2026-07-27
+Checked: 2026-09-02 (docs refreshed; production environment not re-probed from
+this checkout — no deployment binding and no authorized operator session here)
 
 Target: production (`prod:keen-elephant-452`)
 
-Source base: `build/finish-vogel-vault` at `e2d0781`
+## Implemented verification (code)
 
-## Verdict
+The hatches are fail-open ONLY on the exact opt-in string. Every gate evaluates
+`process.env.ALLOW_TOKENLESS_{READ,SYNC} === "true"` — literally `true`,
+lowercase, no whitespace. Any other value (`TRUE`, `1`, `yes`, `" true"`,
+`false`) leaves the gate fail-closed. This exact-literal contract is pinned by
+`convex/mutationAuth.test.ts` ("only the exact string \"true\" opens the
+hatch") and `convex/readAuth.test.ts`.
 
-**Do not deploy from this evidence.** The production escape-hatch and token
-configuration remains unknown because both authorized read-only commands failed
-before reaching the deployment. The checkout did not have a
-`CONVEX_DEPLOYMENT` binding, and the CLI reported:
+Gates implementing the precedence (hatch checked first, then token):
 
-```text
-No CONVEX_DEPLOYMENT set, run `npx convex dev` to configure a Convex project
-```
+| Module | Sync gate | Read gate |
+| --- | --- | --- |
+| `convex/dataFiles.ts` | `validateSyncToken` | `validateReadToken` |
+| `convex/tables.ts` (mirror) | `validateSyncToken` | `validateReadToken` |
+| `convex/writeback.ts` (mirror) | `validateSyncToken` | — |
+| `convex/marketQuotes.ts` | — | `validateReadToken` |
 
-No suggested configuration command was run. In particular, no `convex dev`,
-`deploy`, `run`, import/export, or environment mutation was performed.
+`convex/readCanary.ts` is deliberately hatch-free and fails closed on an
+unconfigured token, so it always reports the true configured posture.
+
+Unauthenticated callers receive a generic rejection that names no environment
+variable; the specific variable and recovery guidance is logged server-side
+only (`AUTH-FAIL-CLOSED: …`). Fail-open admissions still log `PERMISSIVE` on
+every call.
 
 ## Production state
 
 | Variable | Current production state |
 | --- | --- |
-| `ALLOW_TOKENLESS_READ` | **Unknown.** The environment listing failed. Repository documentation recorded it absent on 2026-07-26, but that is not a current production observation. |
-| `ALLOW_TOKENLESS_SYNC` | **Unknown.** Both the environment listing and the direct read failed. |
+| `ALLOW_TOKENLESS_READ` | **Unknown.** The environment listing failed on the last authorized attempt (2026-07-27, see history below). Repository documentation recorded it absent on 2026-07-26, but that is not a current production observation. |
+| `ALLOW_TOKENLESS_SYNC` | **Unknown.** Both the environment listing and the direct read failed on the same attempt. |
 | `CONVEX_READ_TOKEN` | **Unknown** (presence only could not be determined). |
 | `CONVEX_SYNC_TOKEN` | **Unknown** (presence only could not be determined). |
 
-The names of other configured production variables also could not be
-determined. The failed listing returned no variable names or values.
+**Do not deploy from this evidence.** The earlier attempt failed before reaching
+the deployment (`No CONVEX_DEPLOYMENT set`); no `convex dev`, deploy, run,
+import/export, or environment mutation was performed then, and none has been
+performed since from an audit context.
 
-## Commands attempted
+## How to verify auth in production (both sides)
 
-These were the only Convex production commands run:
+Both probes are metadata-equivalent: the read probe queries file metadata only,
+and the write probe targets `dataFiles:remove` on a random name that cannot
+exist, so it is a no-op whether auth is open or enforced. Neither prints
+payloads, server error text, or token values; known-good tokens are copied to
+mode-0600 files and removed from child environments.
+
+Read side (existing since the 2026-07-26 cutover):
 
 ```bash
-npx convex env list --prod
-npx convex env get ALLOW_TOKENLESS_SYNC --prod
+CONVEX_READ_TOKEN="$CONVEX_READ_TOKEN" \
+  scripts/verify-read-auth.sh --expect enforced
 ```
 
-Their output was captured privately to avoid exposing environment values. Both
-commands exited unsuccessfully with the missing-deployment-binding error above.
+Write side (added 2026-09-02 — this is the check that had never been run):
 
-## Required state and correction
+```bash
+CONVEX_SYNC_TOKEN="$CONVEX_SYNC_TOKEN" \
+  scripts/verify-sync-auth.sh --expect enforced
+```
 
-The deploy gate requires both `ALLOW_TOKENLESS_READ` and
-`ALLOW_TOKENLESS_SYNC` to be absent, with both `CONVEX_READ_TOKEN` and
-`CONVEX_SYNC_TOKEN` configured. A configured token is not sufficient when its
-matching hatch is `"true"` because the hatch is evaluated first.
-
-After an authorized operator supplies the production deployment binding, repeat
-the read-only preflight and do not deploy unless the required state is
-confirmed. If either hatch is present, remove it with the corresponding exact
-command:
+`ENFORCED` from both proves the deployment currently rejects anonymous and
+wrong credentials on both gates and accepts the configured ones. `OPEN` from
+either means a hatch is set or a token is missing — treat as an incident: find
+the variable with `npx convex env list --prod` (authorized operator only),
+remove the hatch, and re-run the probe:
 
 ```bash
 npx convex env remove ALLOW_TOKENLESS_READ --prod
 npx convex env remove ALLOW_TOKENLESS_SYNC --prod
 ```
 
-Those mutation commands are recorded for the authorized deploy operator; they
-were **not** run during this check.
+`TOKEN-UNCONFIGURED` means the deployment has no credential configured: reads
+and writes fail closed, and clients are locked out — set the token, do not set
+the hatch.
+
+## Required state and deploy gate
+
+The deploy gate requires both `ALLOW_TOKENLESS_READ` and `ALLOW_TOKENLESS_SYNC`
+to be absent, with both `CONVEX_READ_TOKEN` and `CONVEX_SYNC_TOKEN` configured,
+and both probes reporting `ENFORCED`. A configured token is not sufficient when
+its matching hatch is `"true"` because the hatch is evaluated first.
+
+After an authorized operator supplies the production deployment binding, run
+both probes and do not deploy unless the required state is confirmed. A hatch
+may be re-set only as an approved incident rollback (see
+docs/convex-read-auth-cutover.md), and must be removed again with the probes
+re-run before the next deploy.
+
+## History
+
+- 2026-07-26: read-auth cutover recorded `ENFORCED` for reads
+  (docs/convex-read-auth-cutover.md). Write-side state was not probed.
+- 2026-07-27: environment listing attempt failed with no deployment binding;
+  both hatch values recorded **Unknown** (previous version of this file).
+- 2026-09-02: hatch contract made explicit and test-pinned (literal `"true"`
+  only); `scripts/verify-sync-auth.sh` added so the write gate can finally be
+  probed like the read gate. Production still requires an authorized run of
+  both probes to close the record.
